@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useRef, use } from "react";
 import {
   MapPin,
   Phone,
@@ -29,6 +29,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     storeId: string;
     storeName: string;
     storeAddress?: string;
+    /** Sessão ASSINADA — é ela que autoriza PUXAR pedido. Sessão antiga (de
+     *  antes do QR) não tem; o puxar pede para entrar de novo. */
+    token?: string;
   } | null>(null);
 
   // Login Form State
@@ -43,9 +46,186 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  // ── Estado de sincronização VISÍVEL ─────────────────────────────────────
+  // Antes, falha de rede só ia para console.error: a lista congelava e a tela
+  // dizia "Nenhuma entrega pendente!" com quatro entregas atribuídas.
+  const [jaSincronizou, setJaSincronizou] = useState(false);
+  const [syncErro, setSyncErro] = useState<"rede" | "servidor" | null>(null);
+  const [ultimaSync, setUltimaSync] = useState<Date | null>(null);
+  const falhasSeguidasRef = useRef(0);
+
+  /** Trava por pedido: baixa em andamento não aceita segundo toque. */
+  const baixandoRef = useRef<Set<string>>(new Set());
+  /** Baixas confirmadas há <30s: o polling não pode ressuscitá-las. */
+  const baixasLocaisRef = useRef<Map<string, number>>(new Map());
+  /** Descarta resposta de polling que chegou fora de ordem. */
+  const reqIdRef = useRef(0);
+  /** Sessão vigente: resposta de outra sessão (troca de turno) é ignorada. */
+  const sessaoRef = useRef<string | null>(null);
+
+  // ── PUXAR PEDIDO (QR da comanda / número digitado) ───────────────────────
+  /** Código aguardando confirmação — vem do QR (?p=) ou do teclado. */
+  const [codigoPuxar, setCodigoPuxar] = useState<string | null>(null);
+  const [puxando, setPuxando] = useState(false);
+  const [showTeclado, setShowTeclado] = useState(false);
+  const [tecladoValor, setTecladoValor] = useState("");
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerErro, setScannerErro] = useState("");
+  const scannerRef = useRef<any>(null);
+
+  /** Puxa o pedido do código confirmado. A autorização é a sessão assinada. */
+  const puxarPedido = async (codigo: string) => {
+    if (!session || puxando) return;
+    if (!session.token) {
+      // Sessão de antes do QR não tem assinatura — sem ela o servidor recusa.
+      setToastMsg("🔑 Entre de novo para poder puxar pedidos.");
+      setTimeout(() => setToastMsg(null), 4000);
+      handleLogout();
+      return;
+    }
+    setPuxando(true);
+    try {
+      const res = await fetch("/api/motoboys/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ codigo }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (res.ok && data.success) {
+        localStorage.removeItem(`firehub_motoboy_puxar_${slug}`);
+        setCodigoPuxar(null);
+        setShowTeclado(false);
+        setTecladoValor("");
+        setToastMsg(data.jaEraSeu ? "✅ Este pedido já era seu!" : `✅ Pedido #${data.numero} é seu! Boa entrega.`);
+        setTimeout(() => setToastMsg(null), 3500);
+        fetchMotoboyOrders();
+      } else if (data.precisaLogin) {
+        setToastMsg("🔑 Sua entrada expirou. Entre de novo.");
+        setTimeout(() => setToastMsg(null), 4000);
+        handleLogout();
+      } else {
+        setToastMsg(`⚠️ ${data.error || "Não consegui puxar. Confirme com a loja."}`);
+        setTimeout(() => setToastMsg(null), 5000);
+        setCodigoPuxar(null);
+      }
+    } catch {
+      setToastMsg("⚠️ Sem conexão — o pedido NÃO foi puxado. Tente de novo.");
+      setTimeout(() => setToastMsg(null), 4500);
+    } finally {
+      setPuxando(false);
+    }
+  };
+
+  /** Devolve um pedido puxado por engano (só o próprio, até 10 min). */
+  const soltarPedido = async (orderId: string) => {
+    if (!session?.token) return;
+    if (!confirm("Devolver este pedido para a loja?")) return;
+    try {
+      const res = await fetch("/api/motoboys/orders", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ orderId }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (res.ok && data.success) {
+        setToastMsg("↩️ Pedido devolvido para a loja.");
+        fetchMotoboyOrders();
+      } else {
+        setToastMsg(`⚠️ ${data.error || "Não consegui devolver."}`);
+      }
+      setTimeout(() => setToastMsg(null), 4000);
+    } catch {
+      setToastMsg("⚠️ Sem conexão.");
+      setTimeout(() => setToastMsg(null), 3000);
+    }
+  };
+
+  // QR escaneado antes do login: com a sessão pronta, o código pendente vira a
+  // folha de confirmação — só o NÚMERO, nunca dados do cliente antes do claim.
+  useEffect(() => {
+    if (!session) return;
+    try {
+      const pendente = localStorage.getItem(`firehub_motoboy_puxar_${slug}`);
+      if (pendente && /^\d{8}-\d{1,6}$/.test(pendente)) setCodigoPuxar(pendente);
+    } catch {}
+  }, [session, slug]);
+
+  // Scanner de QR dentro do app (html5-qrcode, o mesmo do estoque). A câmera
+  // nativa do iPhone abriria o Safari — onde a sessão do Chrome não existe;
+  // por isso o caminho que a tela ensina é ESTE botão, com a sessão garantida.
+  useEffect(() => {
+    if (!showScanner) return;
+    let vivo = true;
+    setScannerErro("");
+    const desistir = setTimeout(() => {
+      if (vivo) setScannerErro("A câmera está demorando. Use o botão Digitar — funciona igual.");
+    }, 6000);
+    (async () => {
+      try {
+        const { Html5Qrcode } = await import("html5-qrcode");
+        if (!vivo) return;
+        const leitor = new Html5Qrcode("leitor-qr-motoboy");
+        scannerRef.current = leitor;
+        await leitor.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 240, height: 240 } },
+          (texto: string) => {
+            // O QR carrega a URL /loja/<slug>/motoboy?p=CODIGO — ou só o código.
+            const m = String(texto).match(/(\d{8}-\d{1,6})/);
+            if (!m) return;
+            leitor.stop().catch(() => {});
+            if (vivo) {
+              setShowScanner(false);
+              setCodigoPuxar(m[1]);
+            }
+          },
+          () => {}
+        );
+        clearTimeout(desistir);
+      } catch (e: any) {
+        if (vivo) setScannerErro("Não consegui abrir a câmera. Use o botão Digitar.");
+      }
+    })();
+    return () => {
+      vivo = false;
+      clearTimeout(desistir);
+      try { scannerRef.current?.stop?.().catch(() => {}); } catch {}
+      scannerRef.current = null;
+    };
+  }, [showScanner]);
+
+  /** Reimpõe ENTREGUE nas baixas locais recentes (janela de 30s). */
+  const aplicarBaixasLocais = (lista: any[]): any[] => {
+    const agora = Date.now();
+    for (const [id, quando] of baixasLocaisRef.current) {
+      if (agora - quando > 30_000) baixasLocaisRef.current.delete(id);
+    }
+    if (baixasLocaisRef.current.size === 0) return lista;
+    // Sobrescreve o status (não filtra: filtrar tiraria o pedido do contador
+    // "CONCLUÍDAS HOJE" e ele cairia na frente do entregador).
+    return lista.map((o) =>
+      baixasLocaisRef.current.has(o.id) && o.status !== "ENTREGUE" && o.status !== "ENCERRADO"
+        ? { ...o, status: "ENTREGUE" }
+        : o
+    );
+  };
+
   // Load Saved Motoboy Session from Cookie / localStorage
   useEffect(() => {
     try {
+      // ── CÓDIGO PENDENTE PELA URL (?p=AAAAMMDD-numero, o QR da comanda) ────
+      // Capturado ANTES de qualquer coisa e guardado no localStorage: é o que
+      // faz o código sobreviver ao fluxo de login inteiro quando o QR abre num
+      // navegador sem sessão. Sai da barra na hora (replaceState) para não ser
+      // reprocessado num refresh de amanhã.
+      const url = new URL(window.location.href);
+      const p = url.searchParams.get("p");
+      if (p && /^\d{8}-\d{1,6}$/.test(p)) {
+        localStorage.setItem(`firehub_motoboy_puxar_${slug}`, p);
+        url.searchParams.delete("p");
+        window.history.replaceState({}, "", url.toString());
+      }
+
       const saved = localStorage.getItem(`firehub_motoboy_session_${slug}`);
       if (saved) {
         setSession(JSON.parse(saved));
@@ -56,21 +236,51 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // Fetch Orders for Authenticated Motoboy
   const fetchMotoboyOrders = async () => {
     if (!session) return;
+    // Número desta requisição: resposta antiga que chegar DEPOIS de uma mais
+    // nova é descartada — era ela que ressuscitava o pedido recém-entregue.
+    const reqId = ++reqIdRef.current;
+    const sessaoDaChamada = session.motoboyId;
     setLoadingOrders(true);
     try {
       const res = await fetch(`/api/motoboys/orders?motoboyId=${session.motoboyId}&storeId=${session.storeId}`);
+      if (reqId !== reqIdRef.current || sessaoRef.current !== sessaoDaChamada) return;
       if (res.ok) {
         const data = await res.json();
-        setOrders(data.orders || []);
+        if (reqId !== reqIdRef.current || sessaoRef.current !== sessaoDaChamada) return;
+        setOrders(aplicarBaixasLocais(data.orders || []));
         setBevKeywords(data.customBeverageKeywords || "");
+        setJaSincronizou(true);
+        setSyncErro(null);
+        setUltimaSync(new Date());
+        falhasSeguidasRef.current = 0;
+        // Servidor concorda com a baixa → solta a trava local daquele pedido.
+        for (const o of data.orders || []) {
+          if ((o.status === "ENTREGUE" || o.status === "ENCERRADO") && baixasLocaisRef.current.has(o.id)) {
+            baixasLocaisRef.current.delete(o.id);
+          }
+        }
+      } else {
+        const data = await res.json().catch(() => ({} as any));
+        if ((data as any)?.precisaRelogar) {
+          // Cadastro desativado no painel: derruba a sessão na hora.
+          handleLogout();
+          setLoginError("Seu acesso foi encerrado pela loja.");
+          return;
+        }
+        // Um 500 solto de restart se cura no tique seguinte; só pinta o
+        // vermelho na SEGUNDA falha seguida.
+        falhasSeguidasRef.current++;
+        if (falhasSeguidasRef.current >= 2) setSyncErro("servidor");
       }
       // O localStorage "firehub_created_routes" que era lido aqui só existia no
       // navegador da LOJA — no celular do motoboy estava sempre vazio. A rota
       // (nome, cor, sequência) agora vem do servidor, junto com cada pedido.
     } catch (err) {
       console.error("Erro ao carregar pedidos do motoboy:", err);
+      falhasSeguidasRef.current++;
+      if (falhasSeguidasRef.current >= 2) setSyncErro("rede");
     } finally {
-      setLoadingOrders(false);
+      if (reqId === reqIdRef.current) setLoadingOrders(false);
     }
   };
 
@@ -81,6 +291,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
 
   useEffect(() => {
     if (!session) return;
+    sessaoRef.current = session.motoboyId;
 
     fetchMotoboyOrders();
     const interval = setInterval(fetchMotoboyOrders, 10000); // Polling 10s
@@ -99,7 +310,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       fetch("/api/motoboys/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ motoboyId: session.motoboyId, lat, lng })
+        body: JSON.stringify({ motoboyId: session.motoboyId, storeId: session.storeId, lat, lng })
       }).then(() => setGpsStatus("ativo"))
         .catch(e => console.warn("Erro enviando GPS do motoboy:", e));
     };
@@ -127,6 +338,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     // 12s): é o momento em que a loja mais precisa saber onde ele está.
     const aoVoltar = () => {
       if (document.visibilityState !== "visible") return;
+      // Celular no bolso suspende o polling junto com o GPS: na volta, a
+      // lista também pode estar velha — sincroniza os dois na hora.
+      fetchMotoboyOrders();
       if ("geolocation" in navigator) {
         ultimoEnvio = 0;
         navigator.geolocation.getCurrentPosition(
@@ -188,9 +402,14 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         motoboyName,
         storeId,
         storeName,
-        storeAddress
+        storeAddress,
+        token: data.token as string | undefined,
       };
 
+      // Limpa o que era do entregador ANTERIOR antes de entrar o novo — cobre
+      // a troca de turno no mesmo celular que não passou pelo botão Sair.
+      limparDadosDeSessao();
+      sessaoRef.current = motoboyId;
       setSession(sessObj);
       localStorage.setItem(`firehub_motoboy_session_${slug}`, JSON.stringify(sessObj));
 
@@ -202,8 +421,36 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     }
   };
 
+  /**
+   * Zera tudo o que pertence a UM entregador. O componente não é desmontado na
+   * saída: sem isto, o próximo motoboy no mesmo celular abria o app vendo
+   * nome, telefone, endereço e valor dos clientes do anterior — com o botão
+   * verde de "Confirmar Entrega" funcionando.
+   */
+  const limparDadosDeSessao = () => {
+    setOrders([]);
+    setBevKeywords("");
+    setBeverageModalOrder(null);
+    setBeveragesList([]);
+    setToastMsg(null);
+    setLoadingOrders(false);
+    setJaSincronizou(false);
+    setSyncErro(null);
+    setUltimaSync(null);
+    setCodigoPuxar(null);
+    setShowTeclado(false);
+    setTecladoValor("");
+    setShowScanner(false);
+    falhasSeguidasRef.current = 0;
+    baixandoRef.current.clear();
+    baixasLocaisRef.current.clear();
+    reqIdRef.current++;
+  };
+
   // Logout
   const handleLogout = () => {
+    sessaoRef.current = null;
+    limparDadosDeSessao();
     setSession(null);
     localStorage.removeItem(`firehub_motoboy_session_${slug}`);
   };
@@ -235,6 +482,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // ESTE motoboy NESTA loja) e dispara os efeitos: parceiro, WhatsApp, fatura.
   const handleMarkDelivered = async (orderId: string) => {
     if (!session) return;
+    // Trava POR PEDIDO, conferida aqui (e não só no botão): dois toques
+    // rápidos — ou o botão do modal de bebidas chamando direto — disparavam
+    // dois PATCH, e cada um mandava WhatsApp, iFood conclude e NFC-e. A trava
+    // antiga era UMA string para a lista inteira: tocar no pedido B liberava
+    // o botão de A com o PATCH de A ainda no ar.
+    if (baixandoRef.current.has(orderId)) return;
+    baixandoRef.current.add(orderId);
     setUpdatingOrderId(orderId);
 
     // A confirmação de entrega É uma posição conhecida: o motoboy está na
@@ -247,7 +501,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
           fetch("/api/motoboys/location", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ motoboyId: session.motoboyId, lat: pos.coords.latitude, lng: pos.coords.longitude })
+            body: JSON.stringify({ motoboyId: session.motoboyId, storeId: session.storeId, lat: pos.coords.latitude, lng: pos.coords.longitude })
           }).then(() => setGpsStatus("ativo")).catch(() => {});
         },
         () => {},
@@ -264,8 +518,14 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success) {
+        // Registra a baixa ANTES do estado: o polling de 10s pode voltar com
+        // uma resposta que saiu do servidor antes do PATCH e "ressuscitar" o
+        // pedido na lista — o entregador via a entrega desfazer sozinha.
+        // aplicarBaixasLocais() reimpõe ENTREGUE por até 30s (a loja PODE
+        // reverter uma baixa errada; trava eterna esconderia a reversão).
+        baixasLocaisRef.current.set(orderId, Date.now());
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "ENTREGUE" } : o));
-        setToastMsg("✅ Entrega confirmada com sucesso!");
+        setToastMsg(data.jaEntregue ? "✅ Este pedido já estava confirmado." : "✅ Entrega confirmada com sucesso!");
         setTimeout(() => setToastMsg(null), 3000);
       } else {
         // Falha SEM mensagem é o que escondeu este botão quebrado por meses.
@@ -276,6 +536,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       setToastMsg("⚠️ Sem conexão — a entrega NÃO foi confirmada. Tente de novo.");
       setTimeout(() => setToastMsg(null), 4500);
     } finally {
+      baixandoRef.current.delete(orderId);
       setUpdatingOrderId(null);
     }
   };
@@ -287,15 +548,21 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // sequência que a loja montou no mapa (routeSequence 1º, 2º, 3º…); quem não
   // tem sequência entra depois, do pedido mais antigo para o mais novo, que é
   // a ordem justa de atendimento.
+  // ENCERRADO conta como CONCLUÍDO. O filtro antigo só conhecia ENTREGUE, e o
+  // pedido que a loja encerrava voltava para a lista de PENDENTES do
+  // entregador — que confirmava de novo, num laço sem fim. E CANCELLED (grafia
+  // que caminhos antigos gravaram) não era escondido.
+  const FINALIZADO = (s: string) => s === "ENTREGUE" || s === "ENCERRADO";
+  const CANCELADO = (s: string) => s === "CANCELADO" || s === "CANCELED" || s === "CANCELLED";
   const activeOrders = orders
-    .filter(o => o.status !== "ENTREGUE" && o.status !== "CANCELADO" && o.status !== "CANCELED")
+    .filter(o => !FINALIZADO(o.status) && !CANCELADO(o.status))
     .sort((a, b) => {
       const sa = a.routeSequence ?? Infinity;
       const sb = b.routeSequence ?? Infinity;
       if (sa !== sb) return sa - sb;
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
-  const completedOrders = orders.filter(o => o.status === "ENTREGUE");
+  const completedOrders = orders.filter(o => FINALIZADO(o.status));
 
   // Change Password State
   const [showPassModal, setShowPassModal] = useState(false);
@@ -325,6 +592,14 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao alterar senha");
+      // A troca de senha invalida a sessão assinada antiga (o hash entra na
+      // assinatura). O servidor manda uma nova — sem gravá-la, o PRÓPRIO
+      // aparelho que trocou a senha perderia o "puxar" no tique seguinte.
+      if (data.token && session) {
+        const sessNova = { ...session, token: data.token as string };
+        setSession(sessNova);
+        localStorage.setItem(`firehub_motoboy_session_${slug}`, JSON.stringify(sessNova));
+      }
       setPassMsg("✅ Senha alterada com sucesso!");
       setTimeout(() => {
         setShowPassModal(false);
@@ -424,7 +699,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 gap: 8, marginTop: "0.5rem", boxShadow: "0 4px 14px rgba(37,99,235,0.4)"
               }}
             >
-              {loadingLogin ? <Loader2 size={20} className="animate-spin" /> : <Lock size={18} />}
+              {loadingLogin ? <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} /> : <Lock size={18} />}
               Entrar no aplicativo
             </button>
           </form>
@@ -484,11 +759,28 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             >
               <Lock size={14} /> Senha
             </button>
+            {/* PUXAR pedido: escanear o QR da comanda, ou digitar o número.
+                O caminho ensinado é o scanner DE DENTRO do app — a câmera
+                nativa do iPhone abriria outro navegador, sem a sessão. */}
+            <button
+              onClick={() => setShowScanner(true)}
+              style={{ background: "#7C3AED", color: "#fff", border: "none", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+              title="Escanear o QR da comanda para puxar o pedido"
+            >
+              📷 Escanear
+            </button>
+            <button
+              onClick={() => { setTecladoValor(""); setShowTeclado(true); }}
+              style={{ background: "#F5F3FF", color: "#6D28D9", border: "1.5px solid #DDD6FE", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 800, cursor: "pointer" }}
+              title="Digitar o número da comanda para puxar o pedido"
+            >
+              #️⃣
+            </button>
             <button
               onClick={fetchMotoboyOrders}
               style={{ background: "#334155", color: "#fff", border: "none", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
             >
-              <RefreshCw size={14} className={loadingOrders ? "animate-spin" : ""} /> Sync
+              <RefreshCw size={14} style={loadingOrders ? { animation: "spin 1s linear infinite" } : undefined} /> Sync
             </button>
 
             <button
@@ -513,24 +805,52 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
           <div style={{ textAlign: "center" }}>
             <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 700 }}>ENTREGAS PENDENTES</span>
             <p style={{ margin: "4px 0 0 0", fontSize: "1.6rem", fontWeight: 900, color: "#2563EB" }}>
-              {activeOrders.length}
+              {jaSincronizou ? activeOrders.length : "–"}
             </p>
           </div>
 
           <div style={{ textAlign: "center", borderLeft: "1px solid #E2E8F0" }}>
             <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 700 }}>CONCLUÍDAS HOJE</span>
             <p style={{ margin: "4px 0 0 0", fontSize: "1.6rem", fontWeight: 900, color: "#16A34A" }}>
-              {completedOrders.length}
+              {jaSincronizou ? completedOrders.length : "–"}
             </p>
           </div>
         </div>
+
+        {/* Tarja de sync quebrado — a lista pode estar VELHA e o entregador
+            precisa saber. Tocável para tentar de novo na hora. */}
+        {syncErro && (
+          <div
+            onClick={fetchMotoboyOrders}
+            style={{
+              background: "#FEF2F2", border: "1.5px solid #FECACA", color: "#B91C1C",
+              borderRadius: "12px", padding: "10px 14px", marginBottom: "1rem",
+              fontSize: "0.82rem", fontWeight: 800, cursor: "pointer", textAlign: "center",
+            }}
+          >
+            ⚠️ {syncErro === "rede" ? "Sem conexão" : "Erro no servidor"} — a lista pode estar desatualizada.
+            {ultimaSync ? ` Última atualização: ${ultimaSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.` : ""}
+            {" "}Toque para tentar agora.
+          </div>
+        )}
 
         {/* Section: ACTIVE ROUTES */}
         <h2 style={{ fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: 6 }}>
           <MapPin size={18} color="#2563EB" /> Minhas Entregas Pendentes ({activeOrders.length})
         </h2>
 
-        {activeOrders.length === 0 ? (
+        {/* Três estados, não dois: antes da PRIMEIRA sincronização a tela não
+            pode afirmar "nenhuma entrega" — era mentira sempre que a rede
+            falhava no boot, e o entregador confiava. Preso a `jaSincronizou`
+            (não a loadingOrders) para não piscar esqueleto a cada polling. */}
+        {!jaSincronizou ? (
+          <div style={{ background: "#FFFFFF", borderRadius: "14px", padding: "2.5rem 1rem", textAlign: "center", color: "#94A3B8", border: "1px solid #E2E8F0" }}>
+            <Loader2 size={40} style={{ margin: "0 auto 0.5rem", animation: "spin 1s linear infinite" }} />
+            <p style={{ fontWeight: 800, fontSize: "0.95rem", color: "#334155", margin: 0 }}>
+              Carregando suas entregas…
+            </p>
+          </div>
+        ) : activeOrders.length === 0 ? (
           <div style={{ background: "#FFFFFF", borderRadius: "14px", padding: "2.5rem 1rem", textAlign: "center", color: "#94A3B8", border: "1px solid #E2E8F0" }}>
             <PackageCheck size={48} style={{ margin: "0 auto 0.5rem", opacity: 0.5 }} />
             <p style={{ fontWeight: 800, fontSize: "0.95rem", color: "#334155", margin: "0 0 4px 0" }}>
@@ -550,8 +870,34 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             const cleanPhone = (order.customerPhone || "").replace(/\D/g, "");
             const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
 
-            const mapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${addr}`)}`;
-            const wazeNavUrl = `https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes`;
+            // ── O QUE VAI PARA O NAVEGADOR DE MAPA NÃO É O QUE O HUMANO LÊ ──
+            //
+            // O endereço do pedido carrega "Comp: Esquina Com Sn17" e
+            // "Ref: Em Frente A Uninter" — ótimos para o entregador, veneno
+            // para o geocodificador: o Google Maps abria com esse texto,
+            // não resolvia o destino e NÃO GERAVA A ROTA (reclamação da
+            // Ragnar em 03/09/2026). Para o mapa vai só o que geocodifica:
+            // rua, número, bairro e cidade. Complemento e referência ficam
+            // no card, onde sempre estiveram.
+            // O corte é em " - " COM espaços dos dois lados, que é o separador
+            // do iFood. Hífen colado é nome de rua — "Tv. WE-34", "Rod. BR-101"
+            // — e cortá-lo mandaria "Tv. WE, 34" para o geocodificador.
+            const addrParaMapa = addr
+              .split(/\s+[-|]\s+/)
+              .filter((parte: string) => !/^\s*(comp(lemento)?|ref(er[êe]ncia)?|obs)\s*[:.]/i.test(parte.trim()))
+              .join(", ")
+              // \s+ e não \s{2,}: há endereço em produção com QUEBRA DE LINHA no
+              // meio ("Rua Gertrudes..., 1001\n1001 - Comp: ..."), e um \n
+              // sozinho vira %0A na URL — mais um jeito de o mapa abrir sem rota.
+              .replace(/\s+/g, " ")
+              .trim();
+            const temDestino = addrParaMapa && addrParaMapa !== "Endereço a confirmar";
+            const mapsNavUrl = temDestino
+              ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addrParaMapa)}&travelmode=driving&dir_action=navigate`
+              : null;
+            const wazeNavUrl = temDestino
+              ? `https://waze.com/ul?q=${encodeURIComponent(addrParaMapa)}&navigate=yes`
+              : null;
 
             const changeAmount = (order as any).changeAmount;
             const rawNotes = order.notes || "";
@@ -636,7 +982,11 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                   )}
                 </div>
 
-                {/* Quick Navigation Buttons (Google Maps + Waze + WhatsApp) */}
+                {/* Quick Navigation Buttons (Google Maps + Waze + WhatsApp).
+                    Sem destino geocodificável os botões nem aparecem: um link
+                    para "Endereço a confirmar" abre o mapa sem rota nenhuma e
+                    o entregador perde tempo achando que o app quebrou. */}
+                {mapsNavUrl && wazeNavUrl && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.85rem" }}>
                   <a
                     href={mapsNavUrl}
@@ -664,6 +1014,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                     🧭 Waze
                   </a>
                 </div>
+                )}
 
                 {waLink && (
                   <a
@@ -692,12 +1043,28 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                   }}
                 >
                   {updatingOrderId === order.id ? (
-                    <Loader2 size={18} className="animate-spin" />
+                    <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} />
                   ) : (
                     <CheckCircle2 size={18} />
                   )}
                   Confirmar Entrega Realizada
                 </button>
+
+                {/* Devolver: só para pedido que ELE MESMO puxou, e só nos
+                    primeiros 10 minutos — depois disso é conversa com a loja. */}
+                {(order as any).motoboyPuxadoEm &&
+                  Date.now() - new Date((order as any).motoboyPuxadoEm).getTime() < 10 * 60_000 && (
+                  <button
+                    onClick={() => soltarPedido(order.id)}
+                    style={{
+                      width: "100%", marginTop: 8, padding: "9px", background: "#FFF7ED",
+                      color: "#C2410C", border: "1.5px solid #FED7AA", borderRadius: "10px",
+                      fontSize: "0.8rem", fontWeight: 800, cursor: "pointer"
+                    }}
+                  >
+                    ↩️ Não vou levar este pedido
+                  </button>
+                )}
 
               </div>
             );
@@ -775,6 +1142,90 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── SCANNER DE QR ─────────────────────────────────────────────────── */}
+      {showScanner && (
+        <div
+          onClick={() => setShowScanner(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.9)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "18px", width: "100%", maxWidth: 380, padding: "1.1rem", textAlign: "center" }}>
+            <h3 style={{ margin: "0 0 8px", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A" }}>📷 Aponte para o QR da comanda</h3>
+            <div id="leitor-qr-motoboy" style={{ width: "100%", borderRadius: 12, overflow: "hidden", background: "#0F172A", minHeight: 260 }} />
+            {scannerErro && (
+              <p style={{ fontSize: "0.8rem", color: "#B91C1C", fontWeight: 700, margin: "10px 0 0" }}>{scannerErro}</p>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button
+                onClick={() => { setShowScanner(false); setTecladoValor(""); setShowTeclado(true); }}
+                style={{ flex: 1, padding: "11px", borderRadius: 10, border: "1.5px solid #DDD6FE", background: "#F5F3FF", color: "#6D28D9", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+              >#️⃣ Digitar o número</button>
+              <button
+                onClick={() => setShowScanner(false)}
+                style={{ flex: 1, padding: "11px", borderRadius: 10, border: "none", background: "#F1F5F9", color: "#475569", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+              >Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TECLADO: digitar o número da comanda ──────────────────────────── */}
+      {showTeclado && (
+        <div
+          onClick={() => setShowTeclado(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.8)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "18px", width: "100%", maxWidth: 340, padding: "1.25rem", textAlign: "center" }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A" }}>Número da comanda</h3>
+            <p style={{ margin: "0 0 12px", fontSize: "0.8rem", color: "#64748B" }}>É o número grande no topo do papel.</p>
+            <input
+              inputMode="numeric"
+              pattern="[0-9]*"
+              autoFocus
+              value={tecladoValor}
+              onChange={(e) => setTecladoValor(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="Ex: 47"
+              style={{ width: "100%", padding: "14px", borderRadius: 12, border: "2px solid #CBD5E1", fontSize: "1.6rem", fontWeight: 900, textAlign: "center", letterSpacing: "2px", outline: "none", boxSizing: "border-box" }}
+            />
+            <button
+              onClick={() => { if (tecladoValor) setCodigoPuxar(tecladoValor); setShowTeclado(false); }}
+              disabled={!tecladoValor || puxando}
+              style={{ width: "100%", marginTop: 12, padding: "13px", borderRadius: 12, border: "none", background: tecladoValor ? "linear-gradient(135deg,#7C3AED,#6D28D9)" : "#E2E8F0", color: tecladoValor ? "#fff" : "#94A3B8", fontWeight: 900, fontSize: "0.95rem", cursor: tecladoValor ? "pointer" : "default" }}
+            >Puxar pedido</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── CONFIRMAÇÃO DO PUXAR — só o NÚMERO, nunca dados do cliente antes
+             do claim: o papel no lixo não pode virar leitor de endereços. ── */}
+      {codigoPuxar && session && (
+        <div
+          onClick={() => { if (!puxando) setCodigoPuxar(null); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.85)", backdropFilter: "blur(4px)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: 360, padding: "1.5rem", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+            <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#F5F3FF", color: "#7C3AED", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "0.9rem", fontSize: "1.8rem" }}>🛵</div>
+            <h3 style={{ margin: "0 0 6px", fontSize: "1.2rem", fontWeight: 900, color: "#0F172A" }}>
+              Puxar o pedido #{codigoPuxar.includes("-") ? codigoPuxar.split("-")[1] : codigoPuxar}?
+            </h3>
+            <p style={{ margin: "0 0 1.1rem", fontSize: "0.85rem", color: "#64748B" }}>
+              Ele entra na sua lista e a loja vê o seu nome nele.
+            </p>
+            <button
+              onClick={() => puxarPedido(codigoPuxar)}
+              disabled={puxando}
+              style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", fontWeight: 900, fontSize: "1rem", cursor: puxando ? "wait" : "pointer", opacity: puxando ? 0.75 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            >
+              {puxando ? <><Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> Puxando…</> : "Sim, é minha entrega"}
+            </button>
+            <button
+              onClick={() => { setCodigoPuxar(null); localStorage.removeItem(`firehub_motoboy_puxar_${slug}`); }}
+              disabled={puxando}
+              style={{ width: "100%", marginTop: 8, padding: "12px", borderRadius: 12, border: "none", background: "#F1F5F9", color: "#475569", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
+            >Cancelar</button>
           </div>
         </div>
       )}

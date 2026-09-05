@@ -45,6 +45,8 @@ interface SessionOrder {
   createdAt: string;
   status: string;
   items: {
+    /** Necessário para EDITAR o item lançado (quantidade / remover). */
+    id: string;
     quantity: number;
     price: number;
     menuProduct: { name: string };
@@ -264,6 +266,16 @@ export default function MesasApp({
   const [loading, setLoading] = useState(true);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [menuCategories, setMenuCategories] = useState<string[]>([]);
+  /**
+   * Os itens que a tela escondeu por serem só opção de combo.
+   *
+   * Guardados, e não descartados, porque "sumiu do cardápio da mesa" era
+   * impossível de investigar: o garçom via um cardápio menor que o do balcão e
+   * ninguém tinha como saber o que faltava nem por quê. Agora a própria tela
+   * responde — e deixa lançar, para o caso de a loja querer vender o item.
+   */
+  const [menuOcultos, setMenuOcultos] = useState<(MenuItem & { motivo: string })[]>([]);
+  const [mostrarOcultos, setMostrarOcultos] = useState(false);
 
   // UI State
   const [selectedTable, setSelectedTable] = useState<TableItem | null>(null);
@@ -387,34 +399,92 @@ export default function MesasApp({
         if (Array.isArray(data)) {
           // Esconde itens stub de integração (iFood, JotaJá, 99Food)
           const HIDDEN_CATS = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
+          // O prefixo do id diz como o registro NASCEU, não o que ele É hoje:
+          // cardápio importado do sistema antigo reaproveita ids `ifood-…` (o
+          // porquê está em SEM_PRODUTO_DE_INTEGRACAO, cardapio-interno.ts — o
+          // servidor já filtra assim). Condenar por prefixo escondia desta tela
+          // 8 dos 13 pastéis de carne da Pastelaria da Paulista — ativos, com
+          // categoria própria e combo montado — e sem aparecer nem no aviso de
+          // ocultos, porque espelho fica fora dele de propósito. Prefixo só
+          // condena o espelho que ninguém adotou: o inativo.
           const isIntegration = (p: any) => {
-            if (p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-")) return true;
+            const temPrefixoDeEspelho =
+              p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-");
+            if (temPrefixoDeEspelho && p.active === false) return true;
             return HIDDEN_CATS.has((p.category || "").toUpperCase().trim());
           };
 
           // Adicionais e sabores são MenuProduct de R$ 0,00 que existem só para
           // preencher a pergunta do combo. Viravam card no cardápio do garçom.
-          const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(data);
+          //
+          // Quem decide isso é o SERVIDOR, em `apenasOpcaoDeCombo`. Aqui o
+          // `price` já veio trocado pelo preço do salão, então um item que a
+          // loja precificou só no delivery chega como zero — e calcular a regra
+          // com esse número escondia item vendável da mesa, calado. O cálculo
+          // local fica como reserva para um payload antigo, sem a bandeira.
+          const temBandeira = data.some((p: any) => p.apenasOpcaoDeCombo !== undefined);
+          const soOpcaoDeCombo = temBandeira
+            ? new Set(data.filter((p: any) => p.apenasOpcaoDeCombo).map((p: any) => String(p.id)))
+            : idsSoDeOpcaoDeCombo(data);
 
+          const paraItem = (p: any) => ({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            // A categoria REAL, sempre. Antes todo combo virava "Combos" e perdia
+            // a dele — e numa loja onde quase todo item é combo (a Pastelaria da
+            // Paulista tem 69 de 186) isso apagava as abas de "Pastéis de carne",
+            // "Pastéis Doces", "Pastéis especiais"... O garçom procurava a aba,
+            // não achava, e concluía que os pastéis não estavam no sistema.
+            // Combo continua tendo aba própria: ela é montada à parte, abaixo.
+            category: p.category || "Outros",
+            isCombo: p.isCombo,
+            imageUrl: p.imageUrl || null,
+            comboGroups: p.comboGroups,
+            comboConfig: p.comboConfig,
+          });
+
+          // Vendáveis de verdade: o que passa por todos os filtros.
           const items = data
             .filter((p: any) => p.active !== false && !isIntegration(p))
             // O cadastro tem um interruptor por canal e esta tela era a única
             // que ignorava o dela: o que a loja desligava para a mesa continuava
             // aparecendo aqui. Balcão já olha activePDV, totem já olha activeTotem.
             .filter((p: any) => p.activeGarcom !== false)
-            .filter((p: any) => !soOpcaoDeCombo.has(p.id))
-            .map((p: any) => ({
-              id: p.id,
-              name: p.name,
-              price: p.price,
-              category: p.isCombo ? "Combos" : (p.category || "Outros"),
-              isCombo: p.isCombo,
-              imageUrl: p.imageUrl || null,
-              comboGroups: p.comboGroups,
-              comboConfig: p.comboConfig
-            }));
+            .filter((p: any) => !soOpcaoDeCombo.has(String(p.id)))
+            .map(paraItem);
           setMenuItems(items);
-          const cats = ["Todos", ...Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros")))];
+
+          // ── TUDO que não entrou, e o motivo de cada um ──────────────────────
+          //
+          // Antes a tela só descartava. Quando a loja dizia "sumiu item do
+          // cardápio da mesa", não havia como saber qual nem por quê sem abrir o
+          // banco — e são quatro motivos diferentes, com consertos diferentes.
+          // Espelho de integração fica de fora da lista de propósito: aquilo
+          // nunca foi cardápio da loja e só faria ruído.
+          const motivoDeOcultar = (p: any): string | null => {
+            if (isIntegration(p)) return null;
+            if (p.active === false) return "pausado no cardápio";
+            if (p.activeGarcom === false) return "desligado para o garçom no cadastro";
+            if (p.apenasEmCombo === true) return "complemento de combo — aparece dentro da pergunta do combo";
+            if (soOpcaoDeCombo.has(String(p.id))) return "sem preço em nenhum canal — não dá para lançar na comanda";
+            return null;
+          };
+
+          setMenuOcultos(
+            data
+              .map((p: any) => {
+                const motivo = motivoDeOcultar(p);
+                return motivo ? { ...paraItem(p), motivo } : null;
+              })
+              .filter(Boolean) as (MenuItem & { motivo: string })[]
+          );
+          // "Combos" é uma aba TRANSVERSAL: o combo aparece na categoria dele e
+          // também aqui, para quem quer ver só os montados. Só entra na lista se
+          // a loja tiver algum.
+          const reais = Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros"))).sort();
+          const temCombo = items.some((i: MenuItem) => i.isCombo);
+          const cats = ["Todos", ...(temCombo ? ["Combos"] : []), ...reais];
           setMenuCategories(cats as string[]);
         }
       }
@@ -430,6 +500,69 @@ export default function MesasApp({
       }
     } catch { /* silent */ }
   }, []);
+
+  // ── EDITAR PEDIDO JÁ LANÇADO ───────────────────────────────────────────
+  //
+  // Garçom lança errado, cliente muda de ideia — e a comanda era leitura pura:
+  // a única saída era fechar a conta com item que ninguém consumiu. Só em mesa
+  // ABERTA (o servidor também recusa fechada); cancelar o pedido devolve o
+  // estoque baixado, reduzir quantidade não (a devolução registrada é por
+  // pedido — está avisado no confirm).
+  const [editandoItem, setEditandoItem] = useState<string | null>(null);
+
+  const editarQtdItem = useCallback(async (orderId: string, itemId: string, quantity: number) => {
+    if (!selectedTable?.openSession || quantity < 1 || editandoItem) return;
+    setEditandoItem(itemId);
+    try {
+      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itens: [{ itemId, quantity }] }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) alert(data.error || "Não consegui alterar o item.");
+      await fetchSessionDetail(selectedTable.openSession.id);
+      fetchTables();
+    } catch { alert("Sem conexão — o item não foi alterado."); }
+    finally { setEditandoItem(null); }
+  }, [selectedTable, editandoItem, fetchSessionDetail, fetchTables]);
+
+  const removerItemPedido = useCallback(async (orderId: string, itemId: string, nome: string, ultimo: boolean) => {
+    if (!selectedTable?.openSession || editandoItem) return;
+    const aviso = ultimo
+      ? `Remover "${nome}"?\n\nÉ o último item: o PEDIDO INTEIRO será cancelado e o estoque devolvido.`
+      : `Remover "${nome}" deste pedido?\n\n(O estoque deste item não volta sozinho — se precisar, ajuste no Estoque.)`;
+    if (!confirm(aviso)) return;
+    setEditandoItem(itemId);
+    try {
+      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ removerItemIds: [itemId] }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) alert(data.error || "Não consegui remover o item.");
+      await fetchSessionDetail(selectedTable.openSession.id);
+      fetchTables();
+    } catch { alert("Sem conexão — o item não foi removido."); }
+    finally { setEditandoItem(null); }
+  }, [selectedTable, editandoItem, fetchSessionDetail, fetchTables]);
+
+  const cancelarPedidoMesa = useCallback(async (orderId: string, numero: string | number) => {
+    if (!selectedTable?.openSession || editandoItem) return;
+    if (!confirm(`Cancelar o pedido #${numero} inteiro?\n\nEle sai da conta da mesa e o estoque baixado é devolvido.`)) return;
+    setEditandoItem(orderId);
+    try {
+      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) alert(data.error || "Não consegui cancelar o pedido.");
+      await fetchSessionDetail(selectedTable.openSession.id);
+      fetchTables();
+    } catch { alert("Sem conexão — o pedido não foi cancelado."); }
+    finally { setEditandoItem(null); }
+  }, [selectedTable, editandoItem, fetchSessionDetail, fetchTables]);
 
   /** Quem está sentado na mesa. Recarrega junto com a comanda. */
   const carregarPessoas = useCallback(async (sessionId: string) => {
@@ -1014,7 +1147,10 @@ export default function MesasApp({
   const filteredMenu = useMemo(() => {
     return menuItems.filter(m => {
       const matchSearch = m.name.toLowerCase().includes(menuSearch.toLowerCase());
-      const matchCat = menuCat === "Todos" || m.category === menuCat;
+      const matchCat =
+        menuCat === "Todos" ? true
+          : menuCat === "Combos" ? !!m.isCombo
+            : m.category === menuCat;
       return matchSearch && matchCat;
     });
   }, [menuItems, menuSearch, menuCat]);
@@ -1024,7 +1160,12 @@ export default function MesasApp({
   // do que a mesa era realmente cobrada.
   const cartTotal = cart.reduce((s, c) => s + (c.unitPrice ?? c.item.price) * c.qty, 0);
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
-  const sessionTotal = sessionDetail?.orders.reduce((s, o) => s + o.totalAmount, 0) || selectedTable?.openSession?.totalAmount || 0;
+  // Cancelado fora da soma: o fechamento e a conta já o descontam no servidor
+  // — mostrar um total maior aqui faria a tela discordar do caixa na frente do
+  // cliente, exatamente na hora de pagar.
+  const sessionTotal = sessionDetail?.orders
+    .filter((o) => o.status !== "CANCELADO" && o.status !== "CANCELED" && o.status !== "CANCELLED")
+    .reduce((s, o) => s + o.totalAmount, 0) || selectedTable?.openSession?.totalAmount || 0;
 
   // ─── Fechamento ───────────────────────────────────────────────────────────
   // O consumo vem da conta do servidor quando ela já chegou. É o mesmo número
@@ -1189,6 +1330,57 @@ export default function MesasApp({
                 }}>{cat}</button>
               ))}
             </div>
+
+            {/* ── O que a tela escondeu, e por quê ─────────────────────────
+                Sem isto o garçom via um cardápio menor que o do balcão e não
+                tinha como saber o que faltava — a queixa chegava como "sumiu
+                item da mesa" e ninguém conseguia investigar. Agora a tela
+                responde sozinha, e deixa lançar se a loja quiser vender. */}
+            {menuOcultos.length > 0 && (
+              <button
+                onClick={() => setMostrarOcultos(v => !v)}
+                style={{
+                  marginTop: 6, padding: "5px 10px", borderRadius: 8,
+                  border: "1px solid #E2E8F0", background: mostrarOcultos ? "#FEF3C7" : "#F8FAFC",
+                  color: "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  fontFamily: "inherit", width: "100%", textAlign: "left",
+                }}
+              >
+                {mostrarOcultos ? "▾" : "▸"} {menuOcultos.length} {menuOcultos.length === 1 ? "item do cardápio não aparece aqui" : "itens do cardápio não aparecem aqui"}
+                <span style={{ fontWeight: 500 }}> — toque para ver quais e por quê</span>
+              </button>
+            )}
+
+            {mostrarOcultos && menuOcultos.length > 0 && (
+              <div style={{ marginTop: 6, padding: "8px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8 }}>
+                {Array.from(new Set(menuOcultos.map(o => o.motivo))).map(motivo => {
+                  const doMotivo = menuOcultos.filter(o => o.motivo === motivo);
+                  const conserto =
+                    motivo.startsWith("pausado")
+                      ? "Conserto: reativar o item no cardápio."
+                      : motivo.startsWith("desligado")
+                        ? "Conserto: ligar o interruptor do garçom no cadastro do item."
+                        : motivo.startsWith("complemento")
+                        ? "Isto é o certo: complemento não se vende avulso. Se for um item de verdade, recadastre fora do combo."
+                        : "Conserto: dar um preço de salão ao item. Sem preço ele somaria R$ 0,00 na comanda — por isso só aparece como opção dentro do combo.";
+                  return (
+                    <div key={motivo} style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#92400E" }}>
+                        {doMotivo.length} {doMotivo.length === 1 ? "item" : "itens"} — {motivo}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: "#B45309", marginBottom: 5 }}>{conserto}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {doMotivo.map(o => (
+                          <span key={o.id} style={{ fontSize: 11, background: "#fff", border: "1px solid #FDE68A", borderRadius: 6, padding: "3px 7px", color: "#92400E" }}>
+                            {o.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* ─── QUEM ESTÁ PEDINDO ───────────────────────────────────────
@@ -1730,17 +1922,38 @@ export default function MesasApp({
                 Pedidos da mesa
               </div>
               {sessionDetail?.orders && sessionDetail.orders.length > 0 ? (
-                sessionDetail.orders.map((order, i) => (
+                sessionDetail.orders.map((order, i) => {
+                  // Cancelado fica visível — riscado — em vez de sumir: quem
+                  // olha a comanda precisa ver que o pedido existiu e foi
+                  // cancelado, não se perguntar para onde ele foi.
+                  const cancelado = order.status === "CANCELADO" || order.status === "CANCELED" || order.status === "CANCELLED";
+                  return (
                   <div key={order.id} style={{
                     padding: "10px 12px", marginBottom: 6, borderRadius: 10,
-                    background: "#F8FAFC", border: "1px solid #F1F5F9",
+                    background: cancelado ? "#FEF2F2" : "#F8FAFC",
+                    border: cancelado ? "1px solid #FECACA" : "1px solid #F1F5F9",
+                    opacity: cancelado ? 0.75 : 1,
                   }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, fontSize: 13, color: "#334155" }}>
-                        Pedido #{order.dailyOrderNumber || "—"}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, gap: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: cancelado ? "#B91C1C" : "#334155", textDecoration: cancelado ? "line-through" : "none" }}>
+                        Pedido #{order.dailyOrderNumber || "—"}{cancelado ? " (cancelado)" : ""}
                       </span>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: "#7C3AED" }}>
-                        {fmt(order.totalAmount)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 800, fontSize: 13, color: cancelado ? "#B91C1C" : "#7C3AED", textDecoration: cancelado ? "line-through" : "none" }}>
+                          {fmt(order.totalAmount)}
+                        </span>
+                        {!cancelado && (
+                          <button
+                            onClick={() => cancelarPedidoMesa(order.id, order.dailyOrderNumber || "—")}
+                            disabled={!!editandoItem}
+                            title="Cancelar este pedido inteiro (devolve o estoque)"
+                            style={{
+                              border: "1px solid #FECACA", background: "#fff", color: "#DC2626",
+                              borderRadius: 7, padding: "2px 8px", fontSize: 11, fontWeight: 800,
+                              cursor: editandoItem ? "wait" : "pointer",
+                            }}
+                          >Cancelar</button>
+                        )}
                       </span>
                     </div>
                     {order.items.map((item, j) => {
@@ -1749,15 +1962,49 @@ export default function MesasApp({
                       const dono = item.tableGuestId
                         ? pessoas.find(p => p.id === item.tableGuestId)
                         : null;
+                      const travado = editandoItem === item.id;
                       return (
-                        <div key={j} style={{ fontSize: 12, color: "#64748B", paddingLeft: 4 }}>
-                          {item.quantity}x {item.menuProduct.name} — {fmt(item.price * item.quantity)}
-                          <span style={{
-                            marginLeft: 6, fontSize: 11, fontWeight: 700,
-                            color: item.tableGuestId ? "#0369A1" : "#94A3B8",
-                          }}>
-                            {item.tableGuestId ? `👤 ${dono?.name || "cliente"}` : "🍽️ mesa"}
+                        <div key={j} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#64748B", paddingLeft: 4, marginBottom: 2, textDecoration: cancelado ? "line-through" : "none" }}>
+                          {/* Quantidade EDITÁVEL: − / número / +. O total do
+                              pedido é recalculado no servidor, nunca aqui. */}
+                          {!cancelado ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                              <button
+                                onClick={() => item.quantity <= 1
+                                  ? removerItemPedido(order.id, item.id, item.menuProduct.name, order.items.length === 1)
+                                  : editarQtdItem(order.id, item.id, item.quantity - 1)}
+                                disabled={!!editandoItem}
+                                title={item.quantity <= 1 ? "Remover o item" : "Diminuir"}
+                                style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", color: "#DC2626", fontWeight: 900, fontSize: 12, cursor: editandoItem ? "wait" : "pointer", lineHeight: 1 }}
+                              >−</button>
+                              <span style={{ minWidth: 22, textAlign: "center", fontWeight: 800, color: travado ? "#94A3B8" : "#334155" }}>{item.quantity}x</span>
+                              <button
+                                onClick={() => editarQtdItem(order.id, item.id, item.quantity + 1)}
+                                disabled={!!editandoItem}
+                                title="Aumentar"
+                                style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", color: "#16A34A", fontWeight: 900, fontSize: 12, cursor: editandoItem ? "wait" : "pointer", lineHeight: 1 }}
+                              >+</button>
+                            </span>
+                          ) : (
+                            <span style={{ fontWeight: 800, flexShrink: 0 }}>{item.quantity}x</span>
+                          )}
+                          <span style={{ minWidth: 0 }}>
+                            {item.menuProduct.name} — {fmt(item.price * item.quantity)}
+                            <span style={{
+                              marginLeft: 6, fontSize: 11, fontWeight: 700,
+                              color: item.tableGuestId ? "#0369A1" : "#94A3B8",
+                            }}>
+                              {item.tableGuestId ? `👤 ${dono?.name || "cliente"}` : "🍽️ mesa"}
+                            </span>
                           </span>
+                          {!cancelado && (
+                            <button
+                              onClick={() => removerItemPedido(order.id, item.id, item.menuProduct.name, order.items.length === 1)}
+                              disabled={!!editandoItem}
+                              title="Remover este item"
+                              style={{ marginLeft: "auto", border: "none", background: "none", color: "#DC2626", cursor: editandoItem ? "wait" : "pointer", fontSize: 13, flexShrink: 0, padding: "0 2px" }}
+                            >🗑️</button>
+                          )}
                         </div>
                       );
                     })}
@@ -1765,7 +2012,8 @@ export default function MesasApp({
                       {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                     </div>
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <div style={{ textAlign: "center", padding: 30, color: "#CBD5E1" }}>
                   <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>

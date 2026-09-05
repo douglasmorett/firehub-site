@@ -54,6 +54,11 @@ export async function PATCH(req: NextRequest) {
     where: { id: orderId },
     data: {
       motoboyId: motoboyId || null,
+      // A LOJA atribuindo (ou desatribuindo) apaga o carimbo de "puxou pelo
+      // app": senão o selo "puxou 19:42" ficava ao lado do nome de quem a loja
+      // escolheu DEPOIS — a etiqueta erraria exatamente na discussão para a
+      // qual foi criada.
+      motoboyPuxadoEm: null,
     },
     include: {
       motoboy: true,

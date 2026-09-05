@@ -112,8 +112,15 @@ export default function VendaPresencialPage() {
 
   // Esconde itens stub de integração (iFood, JotaJá, 99Food)
   const HIDDEN_CATEGORIES = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
+  // O prefixo do id diz como o registro NASCEU, não o que ele É hoje: cardápio
+  // importado reaproveita ids `ifood-…` (ver SEM_PRODUTO_DE_INTEGRACAO em
+  // cardapio-interno.ts — o servidor já filtra assim). Condenar por prefixo
+  // escondia do balcão os mesmos 8 pastéis de carne que sumiam da mesa na
+  // Pastelaria da Paulista. Prefixo só condena espelho não adotado: o inativo.
   const isIntegrationItem = (p: any) => {
-    if (p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-")) return true;
+    const temPrefixoDeEspelho =
+      p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-");
+    if (temPrefixoDeEspelho && p.active === false) return true;
     const cat = (p.category || "").toUpperCase().trim();
     return HIDDEN_CATEGORIES.has(cat);
   };
@@ -121,21 +128,39 @@ export default function VendaPresencialPage() {
   const categories = useMemo(() => {
     const activeTodayProducts = products.filter(p => {
       if (p.active === false || p.activePDV === false) return false;
+      if (p.apenasOpcaoDeCombo === true) return false;
       if (!isAvailableToday(p, currentDayCode)) return false;
       if (isIntegrationItem(p)) return false;
       return true;
     });
-    const cats = Array.from(new Set(activeTodayProducts.map(p => p.isCombo ? "Combos" : (p.category || "Outros"))));
+    // A categoria REAL, sempre — mesma correção da mesa. Combo virava "Combos"
+    // e apagava a aba da categoria dele; numa loja de cardápio no molde iFood,
+    // onde quase tudo é combo, sobrava uma aba só com o cardápio inteiro dentro.
+    const reais = Array.from(new Set(activeTodayProducts.map(p => p.category || "Outros"))).sort();
+    const temCombo = activeTodayProducts.some(p => p.isCombo);
+    const cats = [...(temCombo ? ["Combos"] : []), ...reais];
     return ["Todos", ...cats.sort()];
   }, [products, currentDayCode]);
 
   const filtered = products.filter(p => {
     if (p.active === false) return false;
     if (p.activePDV === false) return false;
+    // Complemento nunca é item avulso — vale aqui como vale na mesa. O
+    // servidor decide e manda a bandeira (menu-products com `?canal=`),
+    // porque só lá os quatro preços e o carimbo `apenasEmCombo` existem.
+    //
+    // Na Pastelaria da Paulista o balcão já não os mostrava, mas por
+    // coincidência do cadastro: os 101 adicionais dela estão com activePDV
+    // desligado. Loja que criar complemento sem desligar o PDV via todos
+    // eles como card de R$ 0,00.
+    if (p.apenasOpcaoDeCombo === true) return false;
     if (!isAvailableToday(p, currentDayCode)) return false;
     if (isIntegrationItem(p)) return false;
-    const cat = p.isCombo ? "Combos" : (p.category || "Outros");
-    if (selectedCategory !== "Todos" && cat !== selectedCategory) return false;
+    // "Combos" é aba transversal: o item aparece na categoria dele e também lá.
+    if (selectedCategory !== "Todos") {
+      const bate = selectedCategory === "Combos" ? !!p.isCombo : (p.category || "Outros") === selectedCategory;
+      if (!bate) return false;
+    }
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });

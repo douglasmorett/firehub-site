@@ -171,7 +171,18 @@ export async function processChatbotAI(
       // preço de canal (que embute a comissão da plataforma). Sem este filtro o
       // robô listava o mesmo item duas vezes com valores diferentes e podia
       // cotar o preço do iFood para quem pede direto no WhatsApp.
-      where: { franchiseeId: targetFranchiseeId, active: true, ...SEM_PRODUTO_DE_INTEGRACAO },
+      // E o complemento que só existe dentro do combo também: sem este filtro,
+      // o robô oferecia "Molho BBQ — R$ 4,00" como se fosse um prato.
+      //
+      // Os dois filtros vivem dentro de um AND, e não um NOT solto ao lado do
+      // spread: SEM_PRODUTO_DE_INTEGRACAO também traz um NOT, e num objeto
+      // literal o segundo NOT sobrescreve o primeiro — o filtro de complemento
+      // parecia estar lá e não valia ("NOT is specified more than once").
+      where: {
+        franchiseeId: targetFranchiseeId,
+        active: true,
+        AND: [{ NOT: { apenasEmCombo: true } }, SEM_PRODUTO_DE_INTEGRACAO],
+      },
       select: {
         id: true, name: true, description: true, price: true, priceDelivery: true, category: true,
         isCombo: true, isBeverage: true, availableDays: true, tags: true,
@@ -449,7 +460,13 @@ export async function processChatbotAI(
   // de pastel, por exemplo) são cadastrados soltos e com preço zero. Se
   // entram na lista, o robô os anuncia como prato vendável — e por R$ 0,00.
   // Eles continuam aparecendo como escolha dentro do combo a que pertencem.
-  const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(products);
+  //
+  // Sobre `produtosCrus` e não `products`: em `products` o preço já foi
+  // resolvido para DELIVERY, e ali um item que a loja só precificou no salão
+  // aparece como zero — seria classificado como adicional e sumiria do robô,
+  // que é o mesmo defeito que escondia item da mesa na Pastelaria da Paulista.
+  // Na lista crua os quatro preços ainda existem, e a regra decide certo.
+  const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(produtosCrus as any[]);
 
   products.forEach((p: any) => {
     if (soOpcaoDeCombo.has(String(p.id))) return;
@@ -1036,25 +1053,45 @@ ${hoursText}
 
 TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO:
 ${(() => {
+  // ⚠️ Este bloco cotava R$ 5,00 para TODA loja e prometia frete grátis
+  // desligado. Três erros somados, medidos em produção em 03/09/2026:
+  //
+  // 1. O tipo gravado pela tela de entrega é "KM" — o código comparava com
+  //    "RADIUS", que não existe em NENHUMA loja da base (as 6 com faixas usam
+  //    "KM"). Os ramos por zona nunca rodaram para ninguém.
+  // 2. A faixa é {km, fee, time} — o código lia z.radius/z.maxKm, que não
+  //    existem. Mesmo casando o tipo, as faixas sairiam como "? km".
+  // 3. O frete grátis lia só o VALOR (freeShippingMinValue), ignorando o
+  //    TOGGLE (freeShippingActive). A Pastel da Paulista desativou a regra, o
+  //    valor 60 ficou gravado, e o robô seguiu prometendo "grátis acima de 60"
+  //    — enquanto o pedido real saía com taxa de R$ 13.
+  //
+  // E o fallback inventava "R$ 5,00" para loja sem config — número que não
+  // existe em lugar nenhum. Robô não inventa preço: sem config, ele diz que a
+  // taxa é confirmada pelo endereço.
   const zones = Array.isArray((user as any).deliveryZones) ? (user as any).deliveryZones : [];
   const zoneType = (user as any).deliveryZoneType || "";
   const dc = (user.deliveryConfig as any) || {};
   const fixedFee = dc.fixedFee ?? dc.defaultFee ?? dc.deliveryFee ?? dc.fixedDeliveryFee ?? dc.fee ?? null;
-  const freeMin = dc.freeShippingMinValue || dc.freeDeliveryMinValue || 0;
+  const freteGratisLigado = dc.freeShippingActive !== false && dc.freeDeliveryActive !== false;
+  const freeMin = freteGratisLigado ? (dc.freeShippingMinValue || dc.freeDeliveryMinValue || 0) : 0;
+  const kmDaFaixa = (z: any) => Number(z.km ?? z.radius ?? z.maxKm ?? 0);
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
     taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
-  } else if (zones.length > 0 && zoneType === "RADIUS") {
-    const maxKm = Math.max(...zones.map((z: any) => Number(z.radius || z.maxKm || 0)));
+  } else if (zones.length > 0) {
+    const maxKm = Math.max(...zones.map(kmDaFaixa));
     taxaText = `TIPO DE ENTREGA DA LOJA: POR RAIO DE DISTÂNCIA DA LOJA!\n- FAIXAS DE KM E TAXAS PERMITIDAS:\n` +
-      zones.map((z: any) => `  * Até ${z.radius || z.maxKm || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
-      `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM.`;
+      zones.map((z: any) => `  * Até ${kmDaFaixa(z) || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
+      `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM.` +
+      `\n- A TAXA EXATA de um endereço vem da validação no mapa. NUNCA cite uma taxa única como se valesse para todo mundo.`;
   } else if (fixedFee !== null) {
     taxaText = `- Taxa Padrão de Entrega da Loja: R$ ${Number(fixedFee).toFixed(2)}`;
   } else {
-    taxaText = "- Taxa Padrão de Entrega da Loja: R$ 5,00 (ou conforme distância/bairro do cliente).";
+    taxaText = "- A loja NÃO tem taxa fixa cadastrada. NUNCA invente um valor de entrega: peça o endereço e diga que a taxa é confirmada pelo mapa.";
   }
   if (freeMin > 0) taxaText += `\n- FRETE GRÁTIS para pedidos acima de R$ ${Number(freeMin).toFixed(2)}`;
+  else taxaText += `\n- NÃO EXISTE frete grátis nesta loja. NUNCA prometa isenção de taxa por valor de pedido.`;
   return taxaText;
 })()}
 

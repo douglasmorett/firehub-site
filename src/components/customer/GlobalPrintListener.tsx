@@ -220,6 +220,12 @@ export default function GlobalPrintListener() {
                     // por isso o roteamento por canal (iFood) também nunca valeu
                     // aqui, só na tela de pedidos.
                     source: order.source,
+                    // De qual LOJA veio (merchant do iFood, loja do 99Food ou a
+                    // própria): a impressora de uma marca filtra por isto.
+                    ifoodStoreMerchant: (order as any).ifoodStoreMerchant,
+                    food99AppShopId: (order as any).food99AppShopId,
+                    food99ShopId: (order as any).food99ShopId,
+                    franchiseeId: (order as any).franchiseeId,
                     printerConfig: activePrinterConfig,
                     customBeverageKeywords: activePrinterConfig?.customBeverageKeywords || "",
                     autoBeverageTag: activePrinterConfig?.autoBeverageTag !== false,

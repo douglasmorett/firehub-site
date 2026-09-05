@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { ehProdutoDeIntegracao } from "@/lib/cardapio-interno";
+import { ehProdutoDeIntegracao, idsSoDeOpcaoDeCombo, combosQueUsamOpcao } from "@/lib/cardapio-interno";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
 
@@ -29,6 +29,113 @@ function ChannelBadges({ product, onToggle }: { product: any; onToggle: (key: st
           </button>
         );
       })}
+    </div>
+  );
+}
+
+const moeda = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
+
+/**
+ * As perguntas do combo abertas embaixo do card — o "Complementos" do portal
+ * do iFood.
+ *
+ * O que estava errado: cada opção de combo ("Adicional de Catupiry", "Baby
+ * 13cm", "4 Nuggets") é um MenuProduct, e o painel a listava como ITEM da
+ * categoria em que foi cadastrada. A Pastel da Paulista tinha 102 "itens" a
+ * R$ 0,00 numa categoria "Adicionais" que ninguém compra — e a única forma de
+ * ver o que um combo oferecia era abrir o formulário dele.
+ *
+ * Agora a opção some da lista de categorias e aparece aqui, dentro do combo
+ * que a oferece, com a regra da pergunta e o acréscimo cobrado. Editar o
+ * combo continua sendo o formulário; este painel é só leitura, com um atalho.
+ */
+function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }: {
+  produto: any;
+  catalogo: Map<string, any>;
+  onEditarCombo: () => void;
+  onEditarOpcao: (opcao: any) => void;
+}) {
+  const grupos: any[] = produto.comboGroups || [];
+  return (
+    <div style={{ flexBasis: "100%", width: "100%", marginTop: "2px", paddingTop: "10px", borderTop: "1px dashed #E2E8F0" }}>
+      <div style={{ display: "grid", gap: "8px" }}>
+        {grupos.map((g, gIdx) => {
+          const minimo = g.minQty === null || g.minQty === undefined ? Number(g.maxQty) : Number(g.minQty);
+          const obrigatoria = minimo > 0;
+          const regra = !obrigatoria
+            ? `Opcional · até ${g.maxQty}`
+            : minimo === Number(g.maxQty)
+              ? (Number(g.maxQty) === 1 ? "Obrigatória · 1 escolha" : `Obrigatória · exatamente ${g.maxQty}`)
+              : `Obrigatória · de ${minimo} a ${g.maxQty}`;
+          const itens: any[] = g.items || [];
+          return (
+            <div key={g.id || gIdx} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "8px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "6px" }}>
+                <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#1D4ED8", background: "#EFF6FF", padding: "1px 7px", borderRadius: "20px" }}>
+                  Pergunta {gIdx + 1}
+                </span>
+                <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{g.title}</span>
+                <span style={{ fontSize: "0.66rem", fontWeight: 700, color: obrigatoria ? "#B91C1C" : "#475569", background: obrigatoria ? "#FEF2F2" : "#F1F5F9", border: `1px solid ${obrigatoria ? "#FECACA" : "#E2E8F0"}`, padding: "1px 7px", borderRadius: "20px" }}>
+                  {regra}
+                </span>
+              </div>
+
+              {itens.length === 0 ? (
+                <p style={{ margin: 0, fontSize: "0.75rem", color: "#94A3B8", fontStyle: "italic" }}>Nenhuma opção nesta pergunta.</p>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "4px" }}>
+                  {itens.map((it: any) => {
+                    const opcaoId = String(it.menuProduct?.id || it.menuProductId || "");
+                    const opcao = catalogo.get(opcaoId);
+                    const nome = opcao?.name || it.menuProduct?.name || "Item excluído do cardápio";
+                    const pausada = (opcao?.active ?? it.menuProduct?.active) === false;
+                    const acrescimo = Number(it.additionalPrice) || 0;
+                    const porCanal = [it.additionalPriceSalao, it.additionalPriceDelivery, it.additionalPriceTotem].some(v => Number(v) > 0);
+                    return (
+                      <div key={it.id || opcaoId} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", minWidth: 0, opacity: pausada ? 0.6 : 1 }}>
+                        <span title={nome} style={{ flex: 1, minWidth: 0, fontSize: "0.78rem", fontWeight: 700, color: opcao || it.menuProduct ? "#1E293B" : "#EF4444", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {nome}
+                          {it.optionNote && <span style={{ fontWeight: 500, color: "#64748B" }}> · {it.optionNote}</span>}
+                          {pausada && <span title="Opção pausada"> ⏸️</span>}
+                        </span>
+                        {it.maxPerItem ? (
+                          <span style={{ fontSize: "0.62rem", color: "#64748B", fontWeight: 700, whiteSpace: "nowrap" }}>máx {it.maxPerItem}</span>
+                        ) : null}
+                        <span
+                          title={porCanal ? "Cobra valor diferente por canal (balcão, delivery, totem)" : "Quanto esta opção soma ao preço do combo"}
+                          style={{ fontSize: "0.76rem", fontWeight: 800, color: acrescimo > 0 ? "#E8360C" : "#16A34A", whiteSpace: "nowrap" }}
+                        >
+                          {acrescimo > 0 ? `+${moeda(acrescimo)}` : "Grátis"}
+                          {porCanal && <span style={{ fontSize: "0.6rem", color: "#7C3AED", marginLeft: "3px" }}>por canal</span>}
+                        </span>
+                        {opcao && (
+                          <button type="button" onClick={() => onEditarOpcao(opcao)} title="Editar nome, foto ou descrição desta opção"
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#94A3B8", padding: 0, lineHeight: 0 }}>
+                            <Edit3 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap", marginTop: "8px" }}>
+        <p style={{ margin: 0, fontSize: "0.72rem", color: "#64748B" }}>
+          O cliente só vê estas opções depois de escolher <strong>{produto.name}</strong>. Elas não aparecem como itens do cardápio.
+        </p>
+        <button
+          type="button"
+          onClick={onEditarCombo}
+          style={{ padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #93C5FD", background: "#EFF6FF", color: "#1D4ED8", fontSize: "0.76rem", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}
+        >
+          ✏️ Editar perguntas e opções
+        </button>
+      </div>
     </div>
   );
 }
@@ -65,13 +172,30 @@ export default function MenuProductManager({
    */
   const isIntegrationCategory = (catName: string) => ehProdutoDeIntegracao(catName);
 
+  /**
+   * Produto que existe SÓ para ser opção de combo (adicional, sabor, tamanho).
+   *
+   * Sai da lista de categorias e passa a aparecer dentro do combo que o usa,
+   * no painel "Complementos" — como no portal do iFood. A regra é a mesma que
+   * o site, o totem, o balcão, a mesa e o robô usam para não vendê-lo avulso
+   * (src/lib/cardapio-interno.ts). Se o combo que o usava for apagado, ele
+   * volta a aparecer na categoria, a R$ 0,00, para a loja decidir o que fazer.
+   */
+  const soOpcaoDeCombo = useMemo(() => idsSoDeOpcaoDeCombo(products), [products]);
+  const usosDaOpcao = useMemo(() => combosQueUsamOpcao(products), [products]);
+  const produtosPorId = useMemo(() => new Map<string, any>((products || []).map((p: any) => [String(p.id), p])), [products]);
+  const ehOpcaoDeCombo = (p: any) => soOpcaoDeCombo.has(String(p?.id));
+  /** Card de combo com os complementos abertos, por id do produto. */
+  const [complementosAbertos, setComplementosAbertos] = useState<Record<string, boolean>>({});
+  const [mostrarOpcoesSemCombo, setMostrarOpcoesSemCombo] = useState(false);
+
   // Categorias dinâmicas (inicia com as do servidor combinadas com quaisquer categorias presentes nos produtos)
   const [dynCategories, setDynCategories] = useState(() => {
     const existingMap = new Map((initialCategories || []).map(c => [(c.name || "").toLowerCase().trim(), c]));
     const list = [...(initialCategories || [])];
     (products || []).forEach(p => {
       const catName = (p.category || "").trim();
-      if (!catName || isIntegrationCategory(catName)) return;
+      if (!catName || isIntegrationCategory(catName) || ehOpcaoDeCombo(p)) return;
       if (!existingMap.has(catName.toLowerCase())) {
         const newCat = {
           id: `virtual-${catName.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
@@ -116,7 +240,7 @@ export default function MenuProductManager({
 
       (products || []).forEach(p => {
         const catName = (p.category || "").trim();
-        if (!catName || isIntegrationCategory(catName)) return;
+        if (!catName || isIntegrationCategory(catName) || ehOpcaoDeCombo(p)) return;
         const key = catName.toLowerCase();
         if (!existingMap.has(key)) {
           const newCat = {
@@ -322,7 +446,7 @@ export default function MenuProductManager({
     // categorias que a pessoa realmente abriu e mexeu.
     const porCategoria: Record<string, any[]> = {};
     (products || []).forEach(p => {
-      if (isHiddenIntegrationItem(p)) return;
+      if (isHiddenIntegrationItem(p) || ehOpcaoDeCombo(p)) return;
       const chave = (p.category || "").toLowerCase().trim();
       if (!porCategoria[chave]) porCategoria[chave] = [];
       porCategoria[chave].push(p);
@@ -1031,6 +1155,9 @@ export default function MenuProductManager({
           active: true,
           isCombo: false,
           isBeverage: false,
+          // O carimbo. Nasceu dentro da pergunta do combo, então é complemento —
+          // e continua sendo mesmo que alguém lhe dê um preço depois.
+          apenasEmCombo: true,
         }),
       });
       if (!res.ok) { alert("Não consegui cadastrar o item."); return; }
@@ -1070,9 +1197,38 @@ export default function MenuProductManager({
     return false;
   };
 
-  const itemProducts = products.filter(p => !p.isCombo && !isHiddenIntegrationItem(p));
-  const comboProducts = products.filter(p => p.isCombo && !isHiddenIntegrationItem(p));
-  const noPhotoCount = products.filter(p => !p.imageUrl && !isHiddenIntegrationItem(p)).length;
+  const itemProducts = products.filter(p => !p.isCombo && !isHiddenIntegrationItem(p) && !ehOpcaoDeCombo(p));
+  const comboProducts = products.filter(p => p.isCombo && !isHiddenIntegrationItem(p) && !ehOpcaoDeCombo(p));
+  const noPhotoCount = products.filter(p => !p.imageUrl && !isHiddenIntegrationItem(p) && !ehOpcaoDeCombo(p)).length;
+
+  /**
+   * Categorias que só guardam opção de combo — a "Adicionais" da Pastel da
+   * Paulista. Sem nenhum item vendável dentro, não são categoria do cardápio:
+   * não aparecem na lista. Uma categoria nova e vazia continua aparecendo,
+   * senão a loja não teria onde cadastrar o primeiro item.
+   */
+  const categoriasSoDeOpcoes = useMemo(() => {
+    const vendaveis = new Set<string>();
+    const comOpcao = new Set<string>();
+    for (const p of products || []) {
+      if (isHiddenIntegrationItem(p)) continue;
+      const chave = (p.category || "").toLowerCase().trim();
+      if (ehOpcaoDeCombo(p)) comOpcao.add(chave); else vendaveis.add(chave);
+    }
+    return new Set([...comOpcao].filter(c => !vendaveis.has(c)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, soOpcaoDeCombo, dynCategories]);
+
+  /** Opção que nenhum combo oferece: fora das categorias e fora de qualquer "Complementos". */
+  const opcoesSemCombo = useMemo(
+    () => (products || []).filter((p: any) => ehOpcaoDeCombo(p) && !isHiddenIntegrationItem(p) && !usosDaOpcao.has(String(p.id))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [products, soOpcaoDeCombo, usosDaOpcao, dynCategories]
+  );
+
+  /** O formulário está aberto numa opção de combo, não num item do cardápio. */
+  const editandoOpcao = !!editingId && soOpcaoDeCombo.has(editingId);
+  const combosDaOpcaoEditada = editandoOpcao ? (usosDaOpcao.get(editingId as string) || []) : [];
 
   const handleCleanNoPhoto = async () => {
     if (!confirm("Deseja excluir todos os produtos que não possuem foto? (Eles serão removidos do cardápio e desvinculados de todos os combos automaticamente)")) return;
@@ -1322,7 +1478,7 @@ export default function MenuProductManager({
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={() => setTab("all")} className={`btn ${tab === "all" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 800 }} title="Ver cardápio completo com itens e combos agrupados por categoria, exatamente como no site e no iFood">
-            📋 Cardápio Completo ({products.filter(p => !isHiddenIntegrationItem(p)).length})
+            📋 Cardápio Completo ({itemProducts.length + comboProducts.length})
           </button>
           <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
             🍔 Apenas Itens ({itemProducts.length})
@@ -1429,8 +1585,8 @@ export default function MenuProductManager({
             {/* Header com botão Fechar X */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", borderBottom: "1px solid #F1F5F9", paddingBottom: "1rem" }}>
               <div>
-                <span style={{ fontSize: "0.72rem", background: "#FEF2F2", color: "#DC2626", fontWeight: 800, padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  {editingId ? "✏️ Editar Produto" : "✨ Novo Produto"}
+                <span style={{ fontSize: "0.72rem", background: editandoOpcao ? "#EFF6FF" : "#FEF2F2", color: editandoOpcao ? "#1D4ED8" : "#DC2626", fontWeight: 800, padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  {editandoOpcao ? "🧩 Editar Opção de Combo" : editingId ? "✏️ Editar Produto" : "✨ Novo Produto"}
                 </span>
                 <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#0F172A", margin: "6px 0 0", letterSpacing: "-0.5px" }}>
                   {editingId ? (name || "Editar Produto") : (isCombo ? "Novo Combo" : "Novo Produto")}
@@ -1450,6 +1606,24 @@ export default function MenuProductManager({
                 <X size={20} />
               </button>
             </div>
+
+            {/* OPÇÃO DE COMBO: quem chega aqui pelo painel "Complementos" está
+                editando um "Adicional de Catupiry", não um item à venda. Os
+                canais e as tags não valem para ela — o que a mostra é a
+                pergunta do combo, e o que cobra é o acréscimo lá dentro. */}
+            {editandoOpcao && (
+              <div style={{ marginBottom: "1.25rem", padding: "12px 14px", background: "#EFF6FF", border: "1.5px solid #93C5FD", borderRadius: "12px" }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: "0.88rem", color: "#1E3A8A" }}>🧩 Este item é uma opção de combo</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1E40AF", lineHeight: 1.55 }}>
+                  Ele não aparece no cardápio como item nem é vendido avulso.{" "}
+                  {combosDaOpcaoEditada.length > 0 ? (
+                    <>O cliente só o vê dentro das perguntas de <strong>{combosDaOpcaoEditada.map(c => c.name).join(", ")}</strong>, e o valor cobrado é o acréscimo definido em cada combo.</>
+                  ) : (
+                    <>Nenhum combo o oferece ainda: adicione-o a uma pergunta de combo, ou exclua-o.</>
+                  )}
+                </p>
+              </div>
+            )}
 
             {/* PREVIEW HERO COM A FOTO DESTACADA DO PRODUTO & CONTROLES DE FOTO DIRETO AO LADO */}
             <div style={{
@@ -1833,7 +2007,7 @@ export default function MenuProductManager({
             </div>
 
             {/* TAGS DE PRODUTO */}
-            {!isCombo && (
+            {!isCombo && !editandoOpcao && (
               <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#FFF7ED", borderRadius: "14px", border: "1.5px solid #FCD34D" }}>
                 <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem", color: "#92400E" }}>🏷️ Tags do Produto <span style={{ fontSize: "0.7rem", fontWeight: 400, color: "#B45309" }}>(aparecem no cardápio digital)</span></p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
@@ -1972,7 +2146,7 @@ export default function MenuProductManager({
             </div>
 
             {/* CANAIS DE VENDA */}
-            <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
+            {!editandoOpcao && <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
               <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem", color: "#0F172A" }}>📡 Canais de Venda Disponíveis</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
                 {CHANNELS.map(ch => {
@@ -1995,7 +2169,7 @@ export default function MenuProductManager({
                   );
                 })}
               </div>
-            </div>
+            </div>}
 
             {/* SINALIZAÇÃO DE BEBIDA NA COMANDA */}
             <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: isBeverage ? "#EFF6FF" : "#F8FAFC", borderRadius: "14px", border: `1.5px solid ${isBeverage ? "#3B82F6" : "#E2E8F0"}`, transition: "all 0.2s" }}>
@@ -2476,7 +2650,12 @@ export default function MenuProductManager({
             const matchesName = p.name.toLowerCase().includes(term);
             const matchesDesc = p.description?.toLowerCase().includes(term);
             const matchesCategory = p.category?.toLowerCase().includes(term);
-            if (!matchesName && !matchesDesc && !matchesCategory) return false;
+            // A opção não é mais item da lista, então "catupiry" precisa achar
+            // os combos que a oferecem — é lá que ela mora agora.
+            const matchesOpcao = (p.comboGroups || []).some((g: any) =>
+              (g.items || []).some((it: any) => (it.menuProduct?.name || "").toLowerCase().includes(term))
+            );
+            if (!matchesName && !matchesDesc && !matchesCategory && !matchesOpcao) return false;
           }
           if (selectedCategoryFilter !== "TODAS") {
             if (p.category !== selectedCategoryFilter) return false;
@@ -2507,6 +2686,9 @@ export default function MenuProductManager({
         // Filtra as categorias ativas a exibir
         const categoriesToDisplay = dynCategories
           .filter(c => !["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE"].includes(c.name.toUpperCase()))
+          // A gaveta de opções de combo ("Adicionais") não é categoria do
+          // cardápio: o que está nela aparece dentro de cada combo.
+          .filter(c => !categoriasSoDeOpcoes.has((c.name || "").toLowerCase().trim()))
           .filter(c => selectedCategoryFilter === "TODAS" || c.name === selectedCategoryFilter);
 
         // Produtos sem categoria cadastrada ou em categoria avulsa
@@ -2688,6 +2870,23 @@ export default function MenuProductManager({
                                         Margem: {(((p.price - p.cost) / p.price) * 100).toFixed(0)}%
                                       </span>
                                     )}
+
+                                    {/* Complementos — abre as perguntas do combo embaixo do card */}
+                                    {(p.comboGroups?.length > 0) && (() => {
+                                      const totalOpcoes = p.comboGroups.reduce((s: number, g: any) => s + (g.items?.length || 0), 0);
+                                      const aberto = !!complementosAbertos[p.id];
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => setComplementosAbertos(prev => ({ ...prev, [p.id]: !aberto }))}
+                                          title="Ver as perguntas e opções deste combo"
+                                          style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "0.66rem", fontWeight: 800, padding: "2px 8px", borderRadius: "12px", cursor: "pointer", background: aberto ? "#1D4ED8" : "#EFF6FF", color: aberto ? "#FFF" : "#1D4ED8", border: "1px solid #93C5FD" }}
+                                        >
+                                          🧩 Complementos · {p.comboGroups.length} {p.comboGroups.length === 1 ? "pergunta" : "perguntas"} · {totalOpcoes} {totalOpcoes === 1 ? "opção" : "opções"}
+                                          {aberto ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                                        </button>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               </div>
@@ -2764,6 +2963,15 @@ export default function MenuProductManager({
                                   <Trash2 size={12} />
                                 </button>
                               </div>
+
+                              {complementosAbertos[p.id] && p.comboGroups?.length > 0 && (
+                                <ComplementosDoCombo
+                                  produto={p}
+                                  catalogo={produtosPorId}
+                                  onEditarCombo={() => openEdit(p)}
+                                  onEditarOpcao={(opcao) => openEdit(opcao)}
+                                />
+                              )}
                             </div>
                           ))}
                         </div>
@@ -2773,6 +2981,42 @@ export default function MenuProductManager({
                 </div>
               );
             })}
+
+            {/* ─── OPÇÕES SEM COMBO ──────────────────────────────────────
+                Opção que nenhum combo oferece (na Paulista, 46 dos 101
+                adicionais vieram soltos da importação). Fora das categorias
+                e fora de qualquer "Complementos", ela não teria como ser
+                achada — e opção que não se acha não se apaga nem se
+                aproveita. Fica aqui, recolhida, com o que dá para fazer. */}
+            {opcoesSemCombo.length > 0 && selectedCategoryFilter === "TODAS" && !searchTerm.trim() && (
+              <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px dashed #CBD5E1", overflow: "hidden" }}>
+                <button
+                  type="button"
+                  onClick={() => setMostrarOpcoesSemCombo(v => !v)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "12px 18px", background: "#F8FAFC", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+                >
+                  <span>
+                    <span style={{ fontSize: "1rem", fontWeight: 800, color: "#475569" }}>🧩 Opções de combo sem uso</span>
+                    <span style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600, marginLeft: "8px" }}>({opcoesSemCombo.length})</span>
+                    <span style={{ display: "block", fontSize: "0.74rem", color: "#94A3B8", marginTop: "2px" }}>
+                      Cadastradas como opção, mas nenhum combo as oferece. Não aparecem em canal nenhum.
+                    </span>
+                  </span>
+                  {mostrarOpcoesSemCombo ? <ChevronUp size={20} color="#64748B" /> : <ChevronDown size={20} color="#64748B" />}
+                </button>
+                {mostrarOpcoesSemCombo && (
+                  <div style={{ padding: "10px 14px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "6px" }}>
+                    {opcoesSemCombo.map(p => (
+                      <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 10px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", minWidth: 0 }}>
+                        <span title={p.name} style={{ flex: 1, minWidth: 0, fontSize: "0.82rem", fontWeight: 700, color: "#1E293B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                        <button onClick={() => openEdit(p)} className="btn btn-outline" style={{ padding: "3px 7px", fontSize: "0.7rem", borderRadius: "8px" }} title="Editar"><Edit3 size={11} /></button>
+                        <button onClick={() => handleDelete(p.id, p.name)} className="btn btn-outline" style={{ padding: "3px 7px", fontSize: "0.7rem", borderRadius: "8px", color: "var(--danger)" }} title="Excluir"><Trash2 size={11} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Se houver produtos sem categoria correspondente */}
             {uncategorizedProducts.length > 0 && (
@@ -2914,9 +3158,9 @@ export default function MenuProductManager({
             <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "0.75rem 0", padding: "7px 12px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0", fontSize: "0.76rem", fontWeight: 700, color: "#475569", flexShrink: 0, flexWrap: "wrap" }}>
               <span>📁 {reorderList.length} categorias</span>
               <span>•</span>
-              <span>🍔 {products.filter(p => !p.isCombo && !isHiddenIntegrationItem(p)).length} itens</span>
+              <span>🍔 {itemProducts.length} itens</span>
               <span>•</span>
-              <span>📦 {products.filter(p => p.isCombo && !isHiddenIntegrationItem(p)).length} combos</span>
+              <span>📦 {comboProducts.length} combos</span>
               {categoriasMexidas.size > 0 && (
                 <span style={{ marginLeft: "auto", color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", fontWeight: 900 }}>
                   {categoriasMexidas.size} {categoriasMexidas.size === 1 ? "categoria alterada" : "categorias alteradas"}

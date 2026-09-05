@@ -76,10 +76,14 @@ export type OpcoesDeMontagem = {
   /** Dono do pedido. Também é quem pode ter o nome do espelho atualizado. */
   franchiseeId: string;
   /**
-   * `active` do espelho quando ele é criado agora. Não é tocado em produto que
-   * já existe — quem desativou no painel desativou por algum motivo.
+   * ⚠️ `active` FOI REMOVIDO de propósito.
+   *
+   * O espelho nunca deve aparecer no cardápio — ele existe só para satisfazer
+   * a relação obrigatória do item do pedido. Enquanto isso era escolha de quem
+   * chamava, cinco caminhos criavam o espelho ativo e o cardápio da loja
+   * enchia de itens vindos do iFood. Agora nasce sempre inativo e fora dos
+   * quatro canais, e não há como um caminho novo errar de novo.
    */
-  active?: boolean;
   /** Prefixo do id do espelho. `auth` e `poll` aceitam externalCode como id. */
   idDoItem?: (i: any, idx: number) => string;
 };
@@ -93,7 +97,7 @@ export type OpcoesDeMontagem = {
  */
 export async function montarItensDoPedidoIfood(
   rawItems: any[],
-  { franchiseeId, active = true, idDoItem }: OpcoesDeMontagem
+  { franchiseeId, idDoItem }: OpcoesDeMontagem
 ) {
   const { getIfoodItemUnitPrice } = await import("./ifood-api");
   const lista = Array.isArray(rawItems) ? rawItems : [];
@@ -131,6 +135,19 @@ export async function montarItensDoPedidoIfood(
       menuProduct: {
         connectOrCreate: {
           where: { id: produtoId },
+          // ⚠️ REGRA MÁXIMA: pedido de integração NÃO POLUI O CARDÁPIO.
+          //
+          // Este produto é um ESPELHO — existe só porque `CustomerOrderItem`
+          // exige um `menuProductId`, e sem ele o pedido do iFood não grava.
+          // Ele nunca foi cardápio da loja: é o item como o iFood mandou.
+          //
+          // Nascia ATIVO em cinco dos oito caminhos de importação
+          // (import-order, rescue-orders, sync-orders, webhook e o de
+          // cancelamento), e o resultado era uma categoria "iFood" enchendo o
+          // cardápio de itens que o lojista nunca cadastrou — 16 deles só na
+          // Ragnar. O parâmetro `active` saiu de propósito: não existe caminho
+          // em que um espelho deva aparecer para o cliente, então isso deixou
+          // de ser escolha de quem chama.
           create: {
             id: produtoId,
             franchiseeId,
@@ -138,7 +155,11 @@ export async function montarItensDoPedidoIfood(
             description: "",
             price: precoUnitario,
             category: "iFood",
-            active,
+            active: false,
+            activePDV: false,
+            activeDelivery: false,
+            activeTotem: false,
+            activeGarcom: false,
           },
         },
       },

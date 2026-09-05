@@ -4,7 +4,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { registrar99Food } from "@/lib/webhook-99food-log";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
-import { aplicarPedidoAlterado99, tokenDaLoja } from "@/lib/food99-status";
+import { aplicarPedidoAlterado99, sincronizar99Food, tokenDaLoja } from "@/lib/food99-status";
 import { donoDoAppShopId, donoDoShopId } from "@/lib/food99-lojas";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
@@ -532,7 +532,11 @@ export async function POST(req: NextRequest) {
                 customerName: p.cliente.nome,
                 customerPhone: p.cliente.telefone,
                 customerAddress: p.cliente.endereco,
-                status: "NOVO",
+                // O aceite automatico da loja vale para o 99Food tambem. Com ele
+                // ligado o pedido ja nasce ACEITO e e confirmado no 99Food logo
+                // abaixo; desligado, nasce NOVO e fica tocando no painel para o
+                // lojista aceitar, exatamente como sempre foi.
+                status: franchisee.autoAcceptOrders ? "ACEITO" : "NOVO",
                 paymentMethod: p.pagamento.texto,
                 totalAmount: p.total,
                 deliveryFee: p.taxaEntrega,
@@ -554,10 +558,41 @@ export async function POST(req: NextRequest) {
                 // So nao estava sendo usado na hora de gravar.
                 openDeliveryReference: p.numeroNoParceiro || displayId || "",
                 openDeliveryChannel: "99FOOD",
+                // DE QUAL loja do 99Food veio, quando a conta tem mais de uma:
+                // e por aqui que a impressora de uma marca recebe so a comanda
+                // dela (lib/loja-de-origem.ts). Os dois ids, porque o evento
+                // ora traz um, ora o outro.
+                food99AppShopId: appShopId ? String(appShopId) : undefined,
+                food99ShopId: merchantId ? String(merchantId) : undefined,
                 deliveryBy: p.entreguePor,
                 items: { create: items },
               },
             });
+
+            // ── Confirmar no 99Food, quando a loja aceita sozinha ─────────
+            //
+            // Gravar ACEITO aqui NAO avisa o 99Food: quem chama o `confirm`
+            // deles e `sincronizar99Food`, e ela so roda nas trocas de status
+            // (customer-order/status, kds, motoboys/*). Um pedido que nasce
+            // aceito nunca passa por essas rotas, entao sem esta chamada ele
+            // ficaria aceito aqui e nao-confirmado la — e pedido nao
+            // confirmado a tempo o 99Food cancela.
+            //
+            // Sem `await`: a resposta ao webhook corre contra 6 segundos, e o
+            // ACK nao pode esperar a ida ao 99Food.
+            if (franchisee.autoAcceptOrders) {
+              sincronizar99Food(
+                {
+                  openDeliveryOrderId: String(orderId),
+                  franchiseeId: franchisee.id,
+                  status: "NOVO",
+                  deliveryBy: p.entreguePor,
+                },
+                "ACEITO"
+              ).catch((e) =>
+                console.error(`[99Food Webhook] falha ao confirmar ${orderId} no 99Food:`, e?.message)
+              );
+            }
             created++;
             registrar99Food({ tipo: eventType || "orderNew", reconhecido: true, pedidoCriado: true, payload: event });
             console.log(

@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 import { comboParaImpressao } from "@/lib/parse-combo";
+import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila agora é lida diretamente do banco de dados no endpoint GET.
@@ -94,17 +95,24 @@ export async function GET(req: NextRequest) {
     // PrintRequest ainda não existem — e um erro aqui pararia a impressão de
     // mesa e balcão de TODAS as lojas de uma vez. Então as partes novas
     // falham sozinhas e as comandas continuam saindo.
-    let owner: { printerConfig: unknown; storeName: string | null; name: string | null; printQueuePolledAt?: Date | null } | null = null;
+    type DonoDaFila = {
+      printerConfig: unknown;
+      storeName: string | null;
+      name: string | null;
+      slug: string | null;
+      printQueuePolledAt?: Date | null;
+    };
+    let owner: DonoDaFila | null = null;
     try {
       owner = await prisma.user.findUnique({
         where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true, printQueuePolledAt: true },
+        select: { printerConfig: true, storeName: true, name: true, slug: true, printQueuePolledAt: true },
       });
     } catch (err) {
       console.error("[PrintQueue] printQueuePolledAt ausente? (falta db push)", (err as any)?.code || err);
       owner = await prisma.user.findUnique({
         where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true },
+        select: { printerConfig: true, storeName: true, name: true, slug: true },
       });
     }
     const pc: any = (owner?.printerConfig as any) || null;
@@ -123,6 +131,7 @@ export async function GET(req: NextRequest) {
         .catch(() => { /* tabela ainda não existe: nada a apagar */ });
     }
     const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
+    const slugDaLoja = owner?.slug || "";
 
     const jobs = recentOrders.map(pedidoDoBanco => {
       // O Assistente só sabe ler `comboSelections` em array, e o combo do
@@ -139,6 +148,23 @@ export async function GET(req: NextRequest) {
           comboSelections: comboParaImpressao(i.comboSelections),
         })),
       };
+      const destinos = destinosDoPedido(printers, order as any);
+      // ── QR "PUXAR PEDIDO" ──────────────────────────────────────────
+      //
+      // Esta fila imprime o delivery quando o painel não está aberto num
+      // navegador (pedido do site, do robô, do iFood) — e até aqui o QR do
+      // motoboy só saía pelo navegador. Mesma regra dos dois trilhos
+      // (lib/qr-puxar.ts): só entrega da própria loja, e só na impressora
+      // marcada para isso.
+      //
+      // Dois lugares, de propósito. Cada `destino` leva o SEU QR (o Assistente
+      // 1.2.4 lê dali, impressora a impressora). No `order` inteiro o QR só vai
+      // quando TODAS as impressoras o querem: o Assistente antigo imprime o que
+      // vier no `order` em todas, e assim a loja que desligou o QR na cozinha
+      // não o vê lá — fica sem QR até o auto-update, em vez de com QR onde não
+      // pediu. Loja sem impressora cadastrada cai na impressora única: vai.
+      const qr = camposDoQrPuxar(order as any, slugDaLoja);
+      const qrEmTodas = destinos.length === 0 || destinos.every(d => qrLigadoNaImpressora(d.impressora, pc));
       return {
       id: "job_" + order.id,
       // ── QUEM ENTREGA ESTE PEDIDO ────────────────────────────────────
@@ -153,7 +179,7 @@ export async function GET(req: NextRequest) {
       // Aqui o servidor decide (lib/entrega-parceira.ts) e o código de coleta
       // só viaja quando a entrega é mesmo do parceiro. Assim a regra antiga,
       // instalada nas lojas hoje, não tem mais como concluir errado.
-      order: { ...order, ...camposDeEntregaParaImpressao(order) },
+      order: { ...order, ...camposDeEntregaParaImpressao(order), ...(qrEmTodas ? qr : {}) },
       storeName: (order as any).franchisee?.storeName || (order as any).franchisee?.name || "FIREHUB",
       // Escalar compativel com o assistente ja instalado. Vale para instalacao
       // de UMA impressora; com varias, quem resolve e o printerConfig abaixo.
@@ -184,7 +210,7 @@ export async function GET(req: NextRequest) {
       // Campo ADITIVO: Assistente antigo não conhece `destinos`, ignora, e
       // continua imprimindo como sempre imprimiu. Nada regride para quem
       // ainda não atualizou.
-      destinos: destinosDoPedido(printers, order as any).map(d => ({
+      destinos: destinos.map(d => ({
         printer: d.impressora.name,
         copies: Number(d.impressora.copies) > 0 ? Number(d.impressora.copies) : 1,
         paperWidth: d.impressora.paperWidth || pc?.defaultPaperWidth || "80mm",
@@ -192,6 +218,8 @@ export async function GET(req: NextRequest) {
         escposProfile: d.impressora.escposProfile ?? undefined,
         somenteBebidas: d.impressora.somenteBebidas === true,
         items: d.itens,
+        // O QR desta impressora (vazio = esta não imprime QR).
+        ...(qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
       })),
       createdAt: order.createdAt.toISOString(),
       };

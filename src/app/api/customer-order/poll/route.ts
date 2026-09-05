@@ -31,13 +31,25 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
   try {
     const { getIfoodToken, getTokenDaLojaIfood } = await import("@/lib/ifood-api");
-    let merchantId = process.env.IFOOD_MERCHANT_UUID;
+    // TODAS as lojas iFood da conta, não só a do campo `ifoodMerchantId`.
+    // Quem integrou três lojas no mesmo login (Ragnar Burguer, Ragnar Pizza e
+    // Tadala Burguer) precisa ver os pedidos das três com o painel aberto — e
+    // não só as da loja que por acaso está no campo único do User.
+    let merchantPrincipal = process.env.IFOOD_MERCHANT_UUID || "";
+    let merchants: string[] = [];
     if (sessionUserId) {
       const u = await prisma.user.findUnique({ where: { id: sessionUserId }, select: { ifoodMerchantId: true } });
-      if (u?.ifoodMerchantId) merchantId = u.ifoodMerchantId;
+      if (u?.ifoodMerchantId) merchantPrincipal = u.ifoodMerchantId;
+      const integracoes = await prisma.ifoodIntegration.findMany({
+        where: { userId: sessionUserId, active: true },
+        select: { merchantId: true },
+      });
+      merchants = [...new Set([merchantPrincipal, ...integracoes.map((i) => i.merchantId)].filter(Boolean))];
+    } else if (merchantPrincipal) {
+      merchants = [merchantPrincipal];
     }
 
-    if (!merchantId) return; // Se a loja não tem integração com iFood, aborta em vez de puxar do Hakim
+    if (merchants.length === 0) return; // Se a loja não tem integração com iFood, aborta em vez de puxar do Hakim
 
     // O app do iFood é DISTRIBUÍDO: não existe token central que enxergue as
     // lojas — cada uma tem o seu. Usar o token global com o merchant da loja
@@ -74,7 +86,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
     // Poll events from iFood
     const montarHeaders = (t: string): Record<string, string> => {
       const h: Record<string, string> = { Authorization: `Bearer ${t}` };
-      if (merchantId) h["x-polling-merchants"] = merchantId;
+      if (merchants.length > 0) h["x-polling-merchants"] = merchants.join(",");
       return h;
     };
 
@@ -95,6 +107,18 @@ async function pollIfoodEvents(sessionUserId?: string) {
         res = await fetch(url, { method: "GET", headers: montarHeaders(central) });
         origemDoToken = "central";
       }
+    }
+
+    // ── 403 COM VÁRIAS LOJAS NO HEADER ──────────────────────────────────────
+    // O `x-polling-merchants` é tudo ou nada: se UMA das lojas da lista não for
+    // autorizada para este token, o iFood recusa a chamada inteira e o painel
+    // ficaria cego — inclusive para a loja que funciona. Aqui ele volta a puxar
+    // só a principal; o cron, que tenta loja a loja, é quem descobre e registra
+    // qual delas precisa reconectar.
+    if (res.status === 403 && merchants.length > 1 && merchantPrincipal && token) {
+      console.warn(`[iFood Poll] 403 com ${merchants.length} lojas no header — repetindo só com a principal.`);
+      merchants = [merchantPrincipal];
+      res = await fetch(url, { method: "GET", headers: montarHeaders(token) });
     }
 
     if (!res.ok) {
@@ -279,7 +303,6 @@ async function pollIfoodEvents(sessionUserId?: string) {
             // no totem. O espelho é sempre categoria "iFood".
             const items = await montarItensDoPedidoIfood(rawIfoodItems, {
               franchiseeId: eventFranchisee.id,
-              active: false,
               idDoItem: (i: any, idx: number) =>
                 i?.id || i?.externalCode || i?.code || `ifitem-${idx}-${Math.random().toString(36).slice(2)}`,
             });
@@ -407,6 +430,21 @@ async function pollIfoodEvents(sessionUserId?: string) {
                   return generateDailyOrderNumber(eventFranchisee.id);
                 })(),
                 ifoodOrderId: orderId,
+                // De qual loja iFood veio, e o conserto do rótulo da integração
+                // — este é o caminho que roda durante o movimento (5s), então é
+                // aqui que a correção precisa acontecer para valer na prática.
+                ...(await (async () => {
+                  const { nomeDaLojaDoPedidoIfood } = await import("@/lib/ifood-eventos");
+                  const nome = await nomeDaLojaDoPedidoIfood({
+                    franchiseeId: eventFranchisee.id,
+                    merchantId: eventMerchantId,
+                    orderData,
+                  });
+                  return {
+                    ifoodStoreName: nome ?? undefined,
+                    ifoodStoreMerchant: eventMerchantId ?? undefined,
+                  };
+                })()),
                 ifoodReference: orderData.displayId ?? undefined,
                 scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
                 changeAmount,
@@ -487,7 +525,11 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
               if (newStatus && (STATUS_RANK[newStatus] || 0) >= currentRank) {
                 const updateData: any = { status: newStatus };
-                if (isConcluded) {
+                // Mesmo motivo do cron (lib/ifood-eventos.ts): carimbar
+                // CONCLUDED em pedido SEM entregador do iFood fazia o painel
+                // tratar entrega da própria loja como entrega parceira, apagando
+                // da tela o motoboy que fez a corrida.
+                if (isConcluded && (exists as any)?.ifoodDriverName) {
                   updateData.ifoodDriverStatus = "CONCLUDED";
                 }
 
@@ -872,8 +914,15 @@ export async function GET(req: NextRequest) {
         createdAt: true, updatedAt: true, scheduledDatetime: true,
         cancelledBy: true, cancelReason: true, cancelDispute: true,
         motoboyId: true, motoboyFee: true,
+        // Quando o ENTREGADOR puxou pelo app (QR/número): o select é explícito,
+        // campo novo não chega sozinho — e sem ele o selo "puxou 19:42" não
+        // teria de onde sair.
+        motoboyPuxadoEm: true,
         isRoutePriority: true, routeId: true, tableSessionId: true,
         ifoodOrderId: true, ifoodReference: true, ifoodPickupCode: true,
+        ifoodStoreName: true, ifoodStoreMerchant: true,
+        // De qual loja do 99Food veio: a impressora de uma marca filtra por isto.
+        food99AppShopId: true, food99ShopId: true,
         ifoodDriverName: true, ifoodDriverPhone: true,
         ifoodDriverStatus: true, ifoodDriverRequestedAt: true,
         openDeliveryOrderId: true, openDeliveryReference: true, openDeliveryChannel: true,

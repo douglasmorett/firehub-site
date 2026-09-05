@@ -107,6 +107,19 @@ export interface PartnerDeliveryInfo {
   pickupCode?: string;
 }
 
+/**
+ * Estados que o iFood emite para um entregador DELE, ao longo da corrida.
+ *
+ * `CONCLUDED` não está aqui de propósito: quem grava esse valor é o próprio
+ * FireHub, ao concluir o pedido, e não o iFood ao mover um entregador. Tratá-lo
+ * como prova de entrega parceira transformava todo pedido finalizado — inclusive
+ * os entregues pelo motoboy da loja — em "Motoboy iFood".
+ */
+const ESTADOS_DE_ENTREGADOR_IFOOD = new Set([
+  "REQUESTED", "ASSIGNED", "GOING_TO_ORIGIN", "ARRIVED_AT_ORIGIN",
+  "COLLECTED", "DISPATCHED", "ARRIVED_AT_DESTINATION", "DELIVERED", "FAILED",
+]);
+
 export const getPartnerDeliveryInfo = (order: any): PartnerDeliveryInfo => {
   if (!order) return { isPartner: false, partnerName: "" };
 
@@ -155,7 +168,19 @@ export const getPartnerDeliveryInfo = (order: any): PartnerDeliveryInfo => {
       //
       // Entrega parceira se prova por quem vai entregar — `deliveryBy` explícito
       // ou um entregador do iFood atribuído — nunca pela existência de um código.
-      Boolean(order.ifoodDriverName) || (order.ifoodDriverStatus && order.ifoodDriverStatus !== "UNASSIGNED")
+      //
+      // ⚠️ E "tem status ≠ UNASSIGNED" NÃO prova entregador. O próprio FireHub
+      // carimbava `ifoodDriverStatus = "CONCLUDED"` em TODO pedido do iFood ao
+      // concluir, inclusive nos entregues pelo motoboy da loja. Resultado: o
+      // pedido saía certo com o nome do entregador e, ao virar Finalizado,
+      // trocava para "Motoboy iFood" — a tela mandava "não enviar motoboy da
+      // loja" num pedido que era da loja, e o entregador que fez a corrida
+      // sumia do registro que fecha o pagamento dele. Eram 4.130 pedidos na
+      // base quando isto foi medido, em 03/09/2026.
+      //
+      // Agora só contam os estados que o iFood emite para um entregador DELE.
+      // CONCLUDED ficou de fora de propósito: quem carimba é a gente, não eles.
+      Boolean(order.ifoodDriverName) || ESTADOS_DE_ENTREGADOR_IFOOD.has(String(order.ifoodDriverStatus || "").toUpperCase())
     );
     if (isIfoodPartner) {
       return { isPartner: true, partnerName: "iFood", pickupCode };
@@ -505,7 +530,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           }}>
             #{seqNum} — {order.customerName}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, marginTop: "1px" }}>
+          {/* Coluna, não linha: o selo do canal em cima e o da loja iFood
+              embaixo. Lado a lado, os dois juntos não cabiam na largura da
+              coluna do quadro e o nome saía cortado ("Ragnar Burge") — e com
+              `flexShrink: 0` não havia largura de tela que resolvesse, porque o
+              bloco simplesmente não encolhia. */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 0, minWidth: 0, marginTop: "1px" }}>
             {/* Brendi ganha roxo (violeta #EDE9FE/#6D28D9) — tom diferente do
                 lilás da IA (#F3E8FF/#7C3AED) de propósito: os dois convivem na
                 mesma tela e o atendente distingue o canal pela cor.
@@ -537,6 +567,26 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 ? "🖥️ Totem"
                 : "Online"}
             </span>
+
+            {/* DE QUAL loja iFood veio, logo abaixo do selo.
+                Só aparece quando a conta tem mais de uma loja conectada — numa
+                loja só seria ruído repetido em todo pedido. Sem isto, três
+                marcas caem no mesmo painel indistinguíveis: o dono olhou um
+                pedido da Ragnar Pizza que tinha acabado de entrar e concluiu
+                que não tinha entrado. */}
+            {order.source === "IFOOD" && (order as any).ifoodStoreName && (
+              <span style={{
+                padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800,
+                background: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA",
+                // Nome de loja não pode sair cortado: se não couber numa linha,
+                // quebra em duas. Cortar é pior que ocupar mais altura — o
+                // atendente precisa saber em qual saco vai o pedido.
+                maxWidth: "100%", whiteSpace: "normal", wordBreak: "break-word",
+                textAlign: "right", lineHeight: 1.25,
+              }}>
+                🏪 {(order as any).ifoodStoreName}
+              </span>
+            )}
           </div>
         </div>
 
@@ -856,9 +906,36 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   {motoboys?.map((m: any) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
+                  {/* O motoboy ATRIBUÍDO aparece mesmo se foi desativado depois:
+                      sem isto o select mostrava borda verde de "atribuído" com o
+                      rótulo vazio "Motoboy", e a loja não via QUEM está com o
+                      pedido — justamente o caso em que mais precisa ver. */}
+                  {(order.motoboyId || (order as any).motoboy?.id) &&
+                    !motoboys?.some((m: any) => m.id === (order.motoboyId || (order as any).motoboy?.id)) &&
+                    (order as any).motoboy?.name && (
+                    <option value={order.motoboyId || (order as any).motoboy?.id}>
+                      {(order as any).motoboy.name} (inativo)
+                    </option>
+                  )}
                 </select>
               );
             })()}
+
+            {/* "puxou 19:42": o ENTREGADOR pegou este pedido pelo app (QR ou
+                número) — em oposição a "a loja atribuiu". É a testemunha
+                quando dois entregadores discutem quem levou. */}
+            {(order as any).motoboyPuxadoEm && order.motoboyId && (
+              <span
+                title="O entregador puxou este pedido pelo app"
+                style={{
+                  fontSize: "0.68rem", fontWeight: 800, padding: "2px 7px", borderRadius: 6,
+                  background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                🛵 puxou {new Date((order as any).motoboyPuxadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
           </div>
 
           {/* Right: Icon buttons */}
@@ -1149,6 +1226,37 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [adDuration, setAdDuration] = useState(60); // minutos
   const [showAltaDemandaLog, setShowAltaDemandaLog] = useState(false);
   const [showAgendamentos, setShowAgendamentos] = useState(false);
+
+  // ── O QUE ESTA LOJA MOSTRA NA BARRA ────────────────────────────────────────
+  //
+  // Mesma regra do `labelFieldsConfig`: Json no User e AUSENTE = TUDO LIGADO.
+  // Loja nova nasce com tudo aparecendo, e esconder é opcional — quem só faz
+  // delivery não quer "Mesas" e "Pedidos Balcão" ocupando a barra o dia todo,
+  // mas ninguém deveria precisar ligar coisa nenhuma para começar a usar.
+  const [barraConfig, setBarraConfig] = useState<Record<string, boolean>>(
+    () => ((user?.painelPedidosConfig as Record<string, boolean>) || {})
+  );
+  const [showBarraConfig, setShowBarraConfig] = useState(false);
+  const [salvandoBarra, setSalvandoBarra] = useState(false);
+
+  /** Chave ausente = ligada. Só o `false` explícito esconde. */
+  const naBarra = (chave: string) => barraConfig[chave] !== false;
+
+  const salvarBarraConfig = async (novo: Record<string, boolean>) => {
+    setBarraConfig(novo);           // a tela responde na hora
+    setSalvandoBarra(true);
+    try {
+      await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ painelPedidosConfig: novo }),
+      });
+    } catch {
+      showToast("⚠️ Não consegui salvar a preferência", "#EF4444");
+    } finally {
+      setSalvandoBarra(false);
+    }
+  };
   const [scheduleLeadHours, setScheduleLeadHours] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("scheduleLeadHours");
@@ -1223,7 +1331,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // Drag state
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
-  const [weather, setWeather] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   // Default date — will be overridden by cash session openedAt if available
   const _now = new Date();
@@ -1313,9 +1420,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const seqNum = getDisplayOrderNumber(order);
 
     // 1. Prepara dados do pedido
+    // Espalha a config REAL por baixo do fallback: o formato antigo descartava
+    // o objeto inteiro quando `printers` estava vazio — e com ele iam flags
+    // como a do QR do motoboy, justamente na loja de uma impressora só.
     const activeConfig = printerConfig && printerConfig.printers?.length > 0
       ? printerConfig
-      : { autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
+      : { ...(printerConfig || {}), autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
 
     const payStr = (order.paymentMethod || "").toString();
     const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;
@@ -1348,6 +1458,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       changeAmount: order.changeAmount,
       ifoodReference: order.ifoodReference,
       ifoodPickupCode: order.ifoodPickupCode,
+      // A loja de origem tem que chegar na comanda: com três marcas na mesma
+      // impressora, o papel precisa dizer de qual delas é o pedido.
+      ifoodStoreName: (order as any).ifoodStoreName,
+      // DE QUAL LOJA veio, para a impressora que recebe só uma marca
+      // (lib/loja-de-origem.ts): o merchant do iFood, a loja do 99Food, ou a
+      // própria loja. Sem isto o roteamento por loja não tem o que comparar.
+      ifoodStoreMerchant: (order as any).ifoodStoreMerchant,
+      food99AppShopId: (order as any).food99AppShopId,
+      food99ShopId: (order as any).food99ShopId,
+      franchiseeId: (order as any).franchiseeId,
       openDeliveryReference: order.openDeliveryReference,
       source: order.source,
       notes: order.notes,
@@ -1407,21 +1527,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const t = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(t);
   }, []);
-
-  // Weather fetch
-  useEffect(() => {
-    const fetchWeather = async () => {
-      try {
-        const latLng = user.storeLatLng as any;
-        const weatherUrl = latLng?.lat ? `/api/weather?lat=${latLng.lat}&lng=${latLng.lng}` : `/api/weather?city=${encodeURIComponent(user.city || user.storeAddress?.split(",").pop()?.trim() || "Sa\u0303o Paulo")}`;
-        const res = await fetch(weatherUrl);
-        if (res.ok) setWeather(await res.json());
-      } catch {}
-    };
-    fetchWeather();
-    const wt = setInterval(fetchWeather, 10 * 60 * 1000);
-    return () => clearInterval(wt);
-  }, [user.city, user.storeAddress, (user.storeLatLng as any)?.lat]);
 
   // FAST POLLING — 3s via lightweight API (pauses during drag)
   const isDraggingRef = useRef(false);
@@ -1608,11 +1713,43 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     });
   }, [orders, autoAccept]);
 
+  // ── O aceite automatico precisa existir FORA deste navegador ─────────────
+  //
+  // Este interruptor so vivia no localStorage, entao ele valia enquanto esta
+  // aba estivesse aberta e so nela: fechou o painel, parou de aceitar. E o
+  // servidor nunca ficava sabendo — a coluna `autoAcceptOrders` do User (a
+  // mesma que o cardapio proprio ja usa em customer-order/route.ts) continuava
+  // false para todo mundo, porque nenhuma tela a escrevia.
+  //
+  // Isso passou a importar de verdade com o 99Food: e esta coluna que decide se
+  // a loja pode ir para OPENAPI (o modo em que o app do 99Food nao precisa ficar
+  // online) — porque OPENAPI so e seguro onde o FireHub confirma o pedido
+  // sozinho, e quem faz o webhook confirmar sozinho e justamente o aceite
+  // automatico. Ver src/lib/food99-abertura.ts.
+  const gravarAceiteAutomatico = (valor: boolean) =>
+    fetch("/api/store-settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoAcceptOrders: valor }),
+    }).catch(() => {});
+
+  // Quem ja tinha o aceite ligado neste navegador nao pode perder a escolha:
+  // na primeira montagem o valor local sobe para o servidor uma vez. Sem isto,
+  // a coluna ficaria false ate o lojista desligar e religar o botao.
+  const aceiteMigradoRef = useRef(false);
+  useEffect(() => {
+    if (aceiteMigradoRef.current) return;
+    aceiteMigradoRef.current = true;
+    if (autoAccept) gravarAceiteAutomatico(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Toggle auto accept
   const toggleAutoAccept = () => {
     const next = !autoAccept;
     setAutoAccept(next);
     localStorage.setItem("autoAcceptOrders", next.toString());
+    gravarAceiteAutomatico(next);
   };
 
   // Pre-initialize AudioContext on first user interaction (required by browser autoplay policy)
@@ -3650,6 +3787,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
 
             {/* Filtro de pedidos por canais / integrações */}
+            {naBarra("filtroCanais") && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
               <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
                 Filtro de pedidos
@@ -3809,42 +3947,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </button>
               </div>
             </div>
+            )}
 
-            {/* Weather + Clock — right aligned */}
+            {/* Relógio — a régua de clima que morava aqui saiu inteira (não
+                ajudava a despachar pedido e mostrava a cidade errada), e o
+                relógio virou opcional junto com o resto da barra: quem tem o
+                horário na tela do computador não precisa dele aqui. */}
+            {naBarra("relogio") && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
-              {weather && (
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "#F0F9FF", padding: "0.3rem 0.7rem", borderRadius: "10px", border: "1px solid #BAE6FD" }}>
-                  <span style={{ fontSize: "1.2rem" }}>{weather.current.icon}</span>
-                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>{weather.current.temp}°</span>
-                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>{weather.current.text}</span>
-                  </div>
-                  <div style={{ width: "1px", height: "22px", background: "#CBD5E1" }} />
-                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>💧 {weather.current.humidity}%</span>
-                    <span style={{ fontSize: "0.58rem", color: "#64748B" }}>💨 {weather.current.wind} km/h</span>
-                  </div>
-                  {weather.forecast?.length > 0 && (
-                    <>
-                      <div style={{ width: "1px", height: "22px", background: "#CBD5E1" }} />
-                      <div style={{ display: "flex", gap: "0.4rem" }}>
-                        {weather.forecast.map((f: any, i: number) => (
-                          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.2 }}>
-                            <span style={{ fontSize: "0.55rem", color: "#94A3B8" }}>
-                              {new Date(f.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
-                            </span>
-                            <span style={{ fontSize: "0.8rem" }}>{f.icon}</span>
-                            <span style={{ fontSize: "0.55rem", color: "#0F172A", fontWeight: 600 }}>{f.tempMax}°/{f.tempMin}°</span>
-                            {f.rainChance > 20 && <span style={{ fontSize: "0.5rem", color: "#3B82F6" }}>🌧 {f.rainChance}%</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                <span style={{ fontSize: "0.72rem", color: "#64748B" }}>{weather?.city || user.city || ""}{weather?.state ? `/${weather.state}` : ""}</span>
                 <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem" }}>
                   <span style={{ fontSize: "1.05rem", fontWeight: 700, color: "#0F172A" }}>
                     {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -3855,11 +3966,87 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </div>
               </div>
             </div>
+            )}
           </div>
+
+          {/* ── O QUE APARECE NESTA BARRA ─────────────────────────────────────
+              Config POR LOJA, tudo ligado por padrão. Quem só faz delivery
+              esconde "Mesas" e "Pedidos Balcão"; quem não usa roteirização
+              esconde o mapa. Nada exige configurar para começar a usar. */}
+          {showBarraConfig && (
+            <div
+              onClick={() => setShowBarraConfig(false)}
+              style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, padding: "1.25rem 1.5rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.4)", maxHeight: "85vh", overflowY: "auto" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
+                    <Settings size={18} /> O que aparece nesta barra
+                  </h3>
+                  <button onClick={() => setShowBarraConfig(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8", lineHeight: 1 }}>×</button>
+                </div>
+                <p style={{ fontSize: "0.8rem", color: "#64748B", margin: "0 0 14px" }}>
+                  Desmarque o que sua loja não usa. Vale só para esta loja, e você pode religar quando quiser.
+                </p>
+
+                {[
+                  { chave: "filtroCanais", rotulo: "Filtro de pedidos por canal", ajuda: "iFood, 99Food, Brendi, Retirada, Site" },
+                  { chave: "relogio", rotulo: "Relógio", ajuda: "Hora e data no canto da barra" },
+                  { chave: "botaoResumo", rotulo: "Resumo das vendas", ajuda: "" },
+                  { chave: "botaoAltaDemanda", rotulo: "Alta Demanda", ajuda: "Aumenta o tempo de entrega no movimento" },
+                  { chave: "botaoAgendamentos", rotulo: "Agendamentos", ajuda: "" },
+                  { chave: "botaoBalcao", rotulo: "Pedidos Balcão", ajuda: "Venda presencial" },
+                  { chave: "botaoMesas", rotulo: "Mesas", ajuda: "Atendimento no salão" },
+                  { chave: "botaoAlertas", rotulo: "Alertas de Produção", ajuda: "Amarelo/vermelho por tempo" },
+                  { chave: "botaoRoteirizacao", rotulo: "Roteirização", ajuda: "Mapa de entregas" },
+                  { chave: "botaoMotoboys", rotulo: "App Motoboys", ajuda: "Link de acesso dos entregadores" },
+                ].map((item) => (
+                  <label
+                    key={item.chave}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10,
+                      border: "1px solid #E2E8F0", marginBottom: 6, cursor: "pointer", userSelect: "none",
+                      background: naBarra(item.chave) ? "#F8FAFC" : "#fff",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={naBarra(item.chave)}
+                      onChange={(e) => salvarBarraConfig({ ...barraConfig, [item.chave]: e.target.checked })}
+                      style={{ width: 16, height: 16, accentColor: "#2563EB", cursor: "pointer", flexShrink: 0 }}
+                    />
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: "block", fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>{item.rotulo}</span>
+                      {item.ajuda && <span style={{ display: "block", fontSize: "0.72rem", color: "#94A3B8" }}>{item.ajuda}</span>}
+                    </span>
+                  </label>
+                ))}
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 14 }}>
+                  <button
+                    onClick={() => salvarBarraConfig({})}
+                    style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}
+                    title="Volta ao padrão: tudo aparecendo"
+                  >
+                    Mostrar tudo
+                  </button>
+                  <span style={{ fontSize: "0.75rem", color: salvandoBarra ? "#2563EB" : "#94A3B8" }}>
+                    {salvandoBarra ? "Salvando..." : "Salvo automaticamente"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Row 2: Action buttons */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", flexWrap: "wrap" }}>
+            {naBarra("botaoResumo") && (
             <button onClick={() => setShowResumo(true)} style={{ padding: "5px 12px", background: "#1E293B", color: "#fff", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px" }}>💰 Resumo das vendas</button>
+            )}
+            {naBarra("botaoAltaDemanda") && (
             <button
               onClick={() => setShowAltaDemandaModal(true)}
               style={{
@@ -3873,6 +4060,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               <Zap size={14} /> {altaDemanda.active ? "⚡ Alta Demanda ON" : "Alta Demanda"}
             </button>
+            )}
+            {naBarra("botaoAgendamentos") && (
             <button
               onClick={() => setShowAgendamentos(true)}
               style={{
@@ -3895,7 +4084,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {scheduledOrders.length}
               </span>
             </button>
+            )}
 
+            {naBarra("botaoBalcao") && (
             <a
               href="/store/venda-presencial"
               style={{
@@ -3907,7 +4098,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               🛒 Pedidos Balcão
             </a>
+            )}
 
+            {naBarra("botaoMesas") && (
             <a
               href="/store/mesas"
               style={{
@@ -3919,8 +4112,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               🍽️ Mesas
             </a>
+            )}
 
             {/* Configurações de Alerta de Produção */}
+            {naBarra("botaoAlertas") && (
             <button
               onClick={() => setShowAlertModal(true)}
               style={{
@@ -3934,8 +4129,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               <Bell size={14} /> ⏱️ Alertas de Produção
             </button>
+            )}
 
             {/* Módulo de Roteirização */}
+            {naBarra("botaoRoteirizacao") && (
             <button
               onClick={() => setShowRoteirizacaoModal(true)}
               style={{
@@ -3949,8 +4146,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               <MapPin size={14} /> 🗺️ Roteirização
             </button>
+            )}
 
             {/* App Motoboys Link Button */}
+            {naBarra("botaoMotoboys") && (
             <button
               onClick={() => setShowMotoboyLinkModal(true)}
               style={{
@@ -3963,6 +4162,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               title="App Motoboys - Copiar Link de Acesso para seus Entregadores"
             >
               🛵 App Motoboys
+            </button>
+            )}
+
+            {/* A engrenagem NUNCA é escondida: é por ela que o lojista traz de
+                volta o que escondeu. Um botão de configuração que some com a
+                própria configuração é uma armadilha sem saída. */}
+            <button
+              onClick={() => setShowBarraConfig(true)}
+              style={{
+                padding: "5px 10px", border: "1.5px solid #CBD5E1", borderRadius: "8px",
+                fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: "5px",
+                background: "#F8FAFC", color: "#475569",
+              }}
+              title="Escolher o que aparece nesta barra"
+            >
+              <Settings size={14} />
             </button>
           </div>
 

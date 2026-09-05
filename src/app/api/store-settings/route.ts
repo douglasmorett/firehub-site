@@ -61,6 +61,21 @@ export async function PUT(req: Request) {
   if (body.allowScheduledOrders !== undefined) data.allowScheduledOrders = Boolean(body.allowScheduledOrders);
   if (body.storeAlertSound !== undefined) data.storeAlertSound = body.storeAlertSound;
   if (body.ifoodSyncDeliveryTime !== undefined) data.ifoodSyncDeliveryTime = Boolean(body.ifoodSyncDeliveryTime);
+  // O que a loja mostra na barra do painel de pedidos. Só booleanos entram: é
+  // config de exibição, e aceitar objeto solto aqui viraria porta para gravar
+  // qualquer coisa no registro da loja.
+  if (body.painelPedidosConfig !== undefined) {
+    const bruto = body.painelPedidosConfig;
+    if (bruto === null) {
+      data.painelPedidosConfig = null; // volta ao padrão: tudo ligado
+    } else if (bruto && typeof bruto === "object" && !Array.isArray(bruto)) {
+      const limpo: Record<string, boolean> = {};
+      for (const [k, v] of Object.entries(bruto)) {
+        if (/^[a-zA-Z0-9_]{1,40}$/.test(k)) limpo[k] = Boolean(v);
+      }
+      data.painelPedidosConfig = limpo;
+    }
+  }
 
   const updatedUser = await prisma.user.update({ where: { id: currentUser.id }, data });
 

@@ -643,6 +643,13 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     ? `(${seqNumStr}) ${deliveryTypeTag}  ${refTag}`.trim()
     : `${deliveryTypeTag}  ${refTag}`.trim();
 
+  // DE QUAL loja iFood veio, quando a conta tem mais de uma no mesmo painel.
+  // O servidor so manda `ifoodStoreName` nesse caso — numa loja so o campo vem
+  // vazio e a comanda sai exatamente como sempre saiu. Sem isto, a comanda da
+  // Ragnar Pizza e a da Ragnar Burguer sao identicas e o atendente nao sabe em
+  // qual saco vai.
+  const lojaOrigem = (order.ifoodStoreName || "").toString().trim();
+
   const dByStr = (order.deliveryBy || order.deliveredBy || "").toString().toUpperCase();
   const srcStr = (order.source || "").toString().toUpperCase();
   const odChannelStr = (order.openDeliveryChannel || "").toString().toUpperCase();
@@ -690,6 +697,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const pCode = order.ifoodPickupCode || order.openDeliveryPickupCode || "";
 
   res += DOUBLE_HEIGHT + BOLD_ON + centerLine(headerLine) + BOLD_OFF + DOUBLE_OFF;
+  // Logo abaixo do numero, em destaque: e a primeira coisa que a cozinha
+  // precisa saber quando a mesma impressora recebe tres marcas.
+  if (lojaOrigem) {
+    res += DOUBLE_HEIGHT + BOLD_ON + centerLine(cleanAscii(lojaOrigem).toUpperCase()) + BOLD_OFF + DOUBLE_OFF;
+  }
   if (isPartnerDriver) {
     res += DOUBLE_HEIGHT + centerLine(`*** MOTOBOY ${partnerLabel} (ENTREGA PARCEIRA) ***`)
          + centerLine("NAO USAR MOTOBOY DA LOJA!") + DOUBLE_OFF;
@@ -1021,6 +1033,39 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
     res += divider;
     res += DOUBLE_HEIGHT + BOLD_ON + wrapLines((ehMesa ? "!! TOTAL A PAGAR: " : "!! COBRAR DO CLIENTE NA ENTREGA: ") + totalValStr + " !!", 2) + BOLD_OFF + DOUBLE_OFF;
+  }
+
+  // ── QR "PUXAR PEDIDO" ──────────────────────────────────────────────────
+  //
+  // So sai quando o servidor mandou `qrPuxarUrl` — ele ja decidiu tudo la
+  // (entrega da loja, nao-parceira, flag da loja ligada). O QR carrega a URL
+  // do app do motoboy com ?p=AAAAMMDD-numero: NADA de segredo no papel, o
+  // numero ja esta impresso em corpo dobrado no topo desta mesma comanda.
+  //
+  // ESC/POS: GS ( k — o comando de QR do padrao Epson, que as POS-58/80
+  // genericas seguem. Impressora que NAO conhece o comando simplesmente o
+  // ignora (dados de funcao ficam fora do fluxo de texto), e o rodape com o
+  // numero digitavel sai do mesmo jeito — o app aceita digitar o numero, entao
+  // nenhuma loja fica sem o recurso por causa da impressora. No perfil
+  // "legacy" o QR nem e tentado: e o perfil das impressoras que imprimem lixo
+  // com comando desconhecido.
+  if (order.qrPuxarUrl && profile !== "legacy") {
+    const dadosQr = String(order.qrPuxarUrl);
+    const len = dadosQr.length + 3;
+    const pL = String.fromCharCode(len & 0xff);
+    const pH = String.fromCharCode((len >> 8) & 0xff);
+    res += LF + CENTER;
+    res += GS + "(k" + "\x04\x00" + "\x31\x41" + "\x32\x00";            // modelo 2
+    res += GS + "(k" + "\x03\x00" + "\x31\x43" + "\x06";                // modulo 6
+    res += GS + "(k" + "\x03\x00" + "\x31\x45" + "\x31";                // correcao M
+    res += GS + "(k" + pL + pH + "\x31\x50\x30" + dadosQr;              // dados
+    res += GS + "(k" + "\x03\x00" + "\x31\x51\x30";                     // imprime
+    res += LF + BOLD_ON + centerLine("MOTOBOY: escaneie para puxar") + BOLD_OFF;
+    const codigoCurto = String(order.qrPuxarCodigo || "").split("-").pop() || "";
+    if (codigoCurto) {
+      res += centerLine("ou digite o numero " + codigoCurto + " no app");
+    }
+    res += LEFT;
   }
 
   res += LF + centerLine("Obrigado pela preferencia!") + LEFT + FEED + CUT;
@@ -1477,6 +1522,12 @@ setInterval(async () => {
               ...job.order,
               items: Array.isArray(destino.items) ? destino.items : job.order?.items,
               somenteBebidas: destino.somenteBebidas === true,
+              // O QR do motoboy e POR IMPRESSORA: o servidor poe qrPuxarUrl
+              // dentro do destino que deve imprimi-lo, e deixa de fora o da
+              // cozinha. O que vier no job.order inteiro nao vale aqui — e o
+              // que o Assistente antigo imprimia em todas, sem distinguir.
+              qrPuxarUrl: destino.qrPuxarUrl || undefined,
+              qrPuxarCodigo: destino.qrPuxarCodigo || undefined,
             },
             storeName: job.storeName || "FIREHUB",
             copies: Number(destino.copies) > 0 ? Number(destino.copies) : perfil.copies,

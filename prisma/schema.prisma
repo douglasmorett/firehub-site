@@ -163,6 +163,14 @@ model User {
   /// padrao. Json em User e o padrao da casa para config de loja
   /// (printerConfig, totemConfig, kdsScreens). Ausente = tudo ligado.
   labelFieldsConfig Json?
+
+  /// O que a loja quer ver na barra do painel de pedidos — filtros de canal e
+  /// botões de atalho. Mesma regra do `labelFieldsConfig`: Json em User, e
+  /// AUSENTE = TUDO LIGADO. Loja nova nasce com tudo aparecendo; esconder é
+  /// opcional e por loja, porque quem só faz delivery não quer "Mesas" e
+  /// "Pedidos Balcão" ocupando a barra o dia inteiro.
+  /// Formato: { "relogio": false, "filtroIfood": true, "botaoMesas": false, ... }
+  painelPedidosConfig Json?
   stockInvoices   StockInvoice[]
   menuCategories  MenuCategory[]
   routeSchedules  RouteSchedule[]
@@ -493,6 +501,11 @@ model MenuProduct {
   /// canal desliga na tela; o padrão é o cardápio inteiro em todo lugar.
   activeTotem     Boolean             @default(true)   // Disponível no Totem de autoatendimento
   activeGarcom    Boolean             @default(true)   // Disponível para o garçom (mesa)
+  /// Complemento: nasceu DENTRO da pergunta de um combo e nunca é item avulso.
+  /// O preço não serve de sinal — um adicional pode ter preço e ainda assim
+  /// não ser vendável sozinho. Carimbado na criação por MenuProductManager
+  /// (`criarOpcaoNaHora`); as telas de venda o escondem sempre.
+  apenasEmCombo   Boolean             @default(false)  // Só aparece dentro do combo
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   franchisee      User?               @relation(fields: [franchiseeId], references: [id])
@@ -619,6 +632,11 @@ model CustomerOrder {
   motoboyFee       Float?
   deliveryDistance Float?
   motoboyId        String?
+  /// Quando o ENTREGADOR puxou o pedido pelo app (QR da comanda ou número
+  /// digitado) — em oposição a "a loja atribuiu". É a única testemunha quando
+  /// dois entregadores discutem quem levou; a loja atribuir/desatribuir limpa
+  /// o campo, senão o selo "puxou 19:42" ficaria ao lado do nome errado.
+  motoboyPuxadoEm  DateTime?
   status           String              @default("NOVO")
   source           String              @default("ONLINE")
   notes            String?
@@ -640,6 +658,24 @@ model CustomerOrder {
   // === IFOOD ===
   ifoodOrderId        String?  @unique   // ID do pedido no iFood (idempotência)
   ifoodReference      String?            // Número de exibição do pedido no iFood (#ABC123)
+  /// DE QUAL loja iFood veio o pedido, quando a conta tem mais de uma.
+  ///
+  /// A Ragnar tem Ragnar Burguer, Ragnar Pizza e Tadala Burguer no mesmo
+  /// painel. Sem isto, todo pedido chega marcado só como "iFood" e é
+  /// indistinguível: o lojista olhou um pedido da Pizza que tinha acabado de
+  /// entrar e concluiu que não tinha entrado. Na cozinha é pior — o atendente
+  /// não sabe em qual saco vai.
+  ///
+  /// Guarda o NOME (não só o id) de propósito: a tela e a comanda imprimem
+  /// direto, sem join, e o dado sobrevive à remoção da integração.
+  ifoodStoreName      String?            // "Ragnar Pizza"
+  ifoodStoreMerchant  String?            // UUID da loja de origem, para filtro e conferência
+  /// De qual loja do 99Food veio — a conta pode ter mais de uma no mesmo
+  /// painel (Food99Store). O `app_shop_id` é o vínculo; o `shop_id` é o id do
+  /// lado deles. Os dois, porque o evento ora traz um, ora o outro. É por eles
+  /// que a impressora de uma marca recebe só a comanda daquela marca.
+  food99AppShopId     String?
+  food99ShopId        String?
   scheduledDatetime   DateTime?          // Cen1: Data/hora agendada (SCHEDULED orders)
   changeAmount        Float?             // Cen5: Valor do troco (pagamento em dinheiro)
   customerCpfCnpj     String?            // Cen5: CPF/CNPJ do cliente para NF

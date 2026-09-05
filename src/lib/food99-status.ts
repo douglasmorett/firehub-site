@@ -57,11 +57,12 @@ export function ehPedido99Food(pedido: {
  * O token vale semanas (o da Brasa Burguer vence em 24/09). Sem cache, TODA
  * mudança de status pagaria uma ida ao 99Food só para redescobrir o mesmo
  * valor — e a loja movimentada, que muda status o dia inteiro, seria a mais
- * penalizada. A margem de 5 min evita usar um token que vence no meio da
- * chamada seguinte.
+ * penalizada. O cache expira 24h antes do vencimento (RENOVAR_FALTANDO_MS),
+ * e nao 5 minutos antes como ja foi: com a margem curta ele engolia a janela
+ * de renovacao inteira, e a renovacao virava uma unica tentativa na ultima
+ * hora de vida do token.
  */
 const cacheToken = new Map<string, { token: string; expiraEm: number }>();
-const MARGEM_EXPIRACAO_MS = 5 * 60_000;
 
 /** Renova quando falta menos que isto para vencer. Um dia dá folga de sobra. */
 const RENOVAR_FALTANDO_MS = 24 * 60 * 60_000;
@@ -106,7 +107,14 @@ async function tokenDeUmId(id: string): Promise<{ auth_token: string; token_expi
 
 export async function tokenDaLoja(lojaId: string): Promise<string | null> {
   const emCache = cacheToken.get(lojaId);
-  if (emCache && emCache.expiraEm - MARGEM_EXPIRACAO_MS > Date.now()) return emCache.token;
+  // O cache nao pode viver mais que a janela de renovacao, senao ele a engole:
+  // com a margem de 5 min, um processo de pe ha semanas devolvia o token do
+  // cache ate 5 minutos antes de vencer, e a regra de renovar faltando 24h
+  // (RENOVAR_FALTANDO_MS, usada em tokenDeUmId) nunca chegava a rodar. A
+  // renovacao passava a depender de um unico tique dar certo na ultima hora --
+  // e, falhando, o token vence e o webhook passa a descartar pedido novo.
+  // Expirando o cache 24h antes, a renovacao tem um dia inteiro de tentativas.
+  if (emCache && emCache.expiraEm - RENOVAR_FALTANDO_MS > Date.now()) return emCache.token;
 
   const guardar = (t: { auth_token: string; token_expiration_time: number }) => {
     cacheToken.set(lojaId, { token: t.auth_token, expiraEm: t.token_expiration_time * 1000 });

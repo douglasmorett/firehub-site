@@ -132,7 +132,6 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
   // Extract items
   const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
     franchiseeId: franchisee.id,
-    active: true,
   });
 
   const total = typeof orderData.total === "object"

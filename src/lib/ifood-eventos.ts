@@ -25,19 +25,147 @@ export type ResultadoEventos = {
   descartados: number;
 };
 
+/**
+ * Puxa a fila de eventos do iFood com UM token.
+ *
+ * `merchants` vazio (o que o cron faz) significa SEM o header
+ * `x-polling-merchants`: o iFood entrega tudo o que aquele token enxerga. É
+ * assim que uma loja iFood recém-autorizada aparece — filtrando, ela nunca
+ * apareceria, porque não dá para pedir o que não se sabe que existe. Quem
+ * chama sem filtro precisa peneirar depois, no `merchantEsperado`.
+ *
+ * Com lista, o header é tudo ou nada: basta UMA loja não estar autorizada
+ * para aquele token e o iFood responde 403 na chamada inteira, levando junto
+ * as que funcionavam. Por isso, no 403, repete-se loja a loja — as autorizadas
+ * entregam seus pedidos e as recusadas voltam nomeadas.
+ */
+export async function puxarEventosIfood(opts: {
+  token: string;
+  merchants: string[];
+  log?: string[];
+}): Promise<{ eventos: any[]; naoAutorizados: string[]; erro?: string }> {
+  const url = "https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true";
+
+  const pedir = async (lista: string[]) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${opts.token}` };
+    if (lista.length > 0) headers["x-polling-merchants"] = lista.join(",");
+    const res = await fetch(url, { method: "GET", headers });
+    const texto = await res.text().catch(() => "");
+    return { res, texto };
+  };
+
+  const lerEventos = (texto: string): any[] => {
+    if (!texto) return [];
+    try {
+      const lidos = JSON.parse(texto);
+      return Array.isArray(lidos) ? lidos : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const primeira = await pedir(opts.merchants);
+  if (primeira.res.ok) {
+    return { eventos: lerEventos(primeira.texto), naoAutorizados: [] };
+  }
+
+  if (primeira.res.status !== 403 || opts.merchants.length < 2) {
+    return {
+      eventos: [],
+      naoAutorizados: primeira.res.status === 403 ? [...opts.merchants] : [],
+      erro: `${primeira.res.status} ${primeira.texto.slice(0, 120)}`,
+    };
+  }
+
+  opts.log?.push(`  [!] 403 no polling com ${opts.merchants.length} lojas — repetindo uma a uma`);
+  const eventos: any[] = [];
+  const naoAutorizados: string[] = [];
+  for (const merchant of opts.merchants) {
+    const uma = await pedir([merchant]);
+    if (uma.res.ok) eventos.push(...lerEventos(uma.texto));
+    else naoAutorizados.push(merchant);
+  }
+  if (naoAutorizados.length > 0) {
+    opts.log?.push(`  [!] loja(s) sem autorização para este token: ${naoAutorizados.join(", ")}`);
+  }
+  return { eventos, naoAutorizados };
+}
+
+/**
+ * O nome da loja iFood de onde veio o pedido — e, de quebra, conserta o rótulo
+ * da integração.
+ *
+ * Duas coisas que só o detalhe do pedido resolve:
+ *
+ * 1. `orderData.merchant.name` é o nome como a loja aparece no app do iFood
+ *    ("Ragnar Pizza"). É a ÚNICA fonte: este aplicativo tem só `order` e
+ *    `events` por loja, então pedir o detalhe do merchant volta 403 e a
+ *    listagem volta `200 []`.
+ *
+ * 2. A integração costuma nascer com o nome do cadastro do FireHub, porque na
+ *    hora de cadastrar não há pedido de onde tirar o nome real. Três lojas
+ *    escritas "PIETRO CUNHA ROCHA 01797511238" na tela não distinguem nada.
+ *
+ * Fica aqui, e não no cron, porque quem importa pedido durante o movimento é o
+ * polling do painel aberto (a cada 5s) — o cron de 60s quase nunca ganha a
+ * corrida. Deixar a correção só lá significava, na prática, nunca corrigir.
+ */
+export async function nomeDaLojaDoPedidoIfood(opts: {
+  franchiseeId: string;
+  merchantId?: string | null;
+  orderData: any;
+}): Promise<string | null> {
+  const nome = String(opts.orderData?.merchant?.name || "").trim();
+  if (!nome) return null;
+
+  if (opts.merchantId) {
+    try {
+      const integ = await prisma.ifoodIntegration.findFirst({
+        where: { userId: opts.franchiseeId, merchantId: opts.merchantId },
+        select: { id: true, label: true },
+      });
+      if (integ && (integ.label || "").trim() !== nome) {
+        const atual = (integ.label || "").trim();
+        const generico =
+          !atual || /^loja principal$/i.test(atual) || /^loja ifood/i.test(atual);
+        // Só troca o que não identifica a loja: o nome do cadastro repetido em
+        // todas, um placeholder, ou vazio. Nome já bom fica como está.
+        const loja = await prisma.user.findUnique({
+          where: { id: opts.franchiseeId },
+          select: { storeName: true, name: true },
+        });
+        const doCadastro =
+          atual === (loja?.storeName || "").trim() || atual === (loja?.name || "").trim();
+        if (generico || doCadastro) {
+          await prisma.ifoodIntegration.update({ where: { id: integ.id }, data: { label: nome } });
+          console.log(`[iFood] Rótulo de ${opts.merchantId} corrigido para "${nome}".`);
+        }
+      }
+    } catch {
+      // Nunca pode derrubar a importação de um pedido.
+    }
+  }
+
+  return nome;
+}
+
 export async function processarEventosIfood(opts: {
   events: any[];
   token: string;
   log: string[];
-  merchantEsperado?: string | null;
+  /** Uma loja, ou TODAS as lojas daquela chamada de polling. */
+  merchantEsperado?: string | string[] | null;
 }): Promise<ResultadoEventos> {
   const { token, log } = opts;
 
   let descartados = 0;
   let events = opts.events || [];
-  if (opts.merchantEsperado) {
+  const esperados = opts.merchantEsperado
+    ? new Set((Array.isArray(opts.merchantEsperado) ? opts.merchantEsperado : [opts.merchantEsperado]).filter(Boolean))
+    : null;
+  if (esperados && esperados.size > 0) {
     const antes = events.length;
-    events = events.filter((e) => e && e.merchantId === opts.merchantEsperado);
+    events = events.filter((e) => e && esperados.has(e.merchantId));
     descartados = antes - events.length;
     if (descartados > 0) {
       log.push("  [x] " + descartados + " evento(s) de outro merchant descartado(s)");
@@ -183,7 +311,6 @@ export async function processarEventosIfood(opts: {
                 if (cancelFranchisee) {
                   const cancelItems = await montarItensDoPedidoIfood(cancelOrderData.items ?? [], {
                     franchiseeId: cancelFranchisee.id,
-                    active: true,
                   });
 
                   const cancelTotal = typeof cancelOrderData.total === "object"
@@ -298,7 +425,6 @@ export async function processarEventosIfood(opts: {
           // Extract items
           const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
             franchiseeId: eventFranchisee.id,
-            active: false,
           });
 
           const total = typeof orderData.total === "object"
@@ -417,6 +543,13 @@ export async function processarEventosIfood(opts: {
           // trava de ifoodOrderId único e o número dele ficava queimado. Buraco
           // na sequência, que o lojista lê como "sumiu um pedido".
           //
+          // De qual loja iFood veio — a conta pode ter várias no mesmo painel.
+          const nomeDaLoja = await nomeDaLojaDoPedidoIfood({
+            franchiseeId: eventFranchisee.id,
+            merchantId: eventMerchantId,
+            orderData,
+          });
+
           // Agora número e pedido nascem na MESMA transação: se a gravação falhar
           // — inclusive por duplicidade — o contador volta atrás junto.
           await prisma.$transaction(async (tx) => {
@@ -427,6 +560,8 @@ export async function processarEventosIfood(opts: {
               franchiseeId: eventFranchisee.id,
               dailyOrderNumber: numeroDoDia,
               ifoodOrderId: orderId,
+              ifoodStoreName: nomeDaLoja ?? undefined,
+              ifoodStoreMerchant: eventMerchantId ?? undefined,
               ifoodReference: orderData.displayId ?? undefined,
               ifoodPickupCode: ifoodPickupCode ?? undefined,
               scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
@@ -555,7 +690,17 @@ export async function processarEventosIfood(opts: {
 
           if (newStatus) {
             const updateData: any = { status: newStatus };
-            if (isConcluded) {
+            // ⚠️ `ifoodDriverStatus = CONCLUDED` SÓ em pedido que teve entregador
+            // do iFood de verdade.
+            //
+            // Antes era carimbado em todo pedido concluído, inclusive nos
+            // entregues pelo motoboy da loja. O painel decide "entrega parceira"
+            // por esse campo, então o pedido saía certo com o nome do entregador
+            // e, ao virar Finalizado, trocava para "Motoboy iFood": a tela
+            // mandava "não enviar motoboy da loja" num pedido que era da loja, e
+            // o entregador que fez a corrida sumia do registro que fecha o
+            // pagamento dele. 4.130 pedidos na base quando foi medido.
+            if (isConcluded && (exists as any)?.ifoodDriverName) {
               updateData.ifoodDriverStatus = "CONCLUDED";
             }
 

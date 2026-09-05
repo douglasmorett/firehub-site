@@ -37,6 +37,8 @@ export default async function FranchiseeCustomerOrdersPage() {
       storeLatLng: true,
       storeTimezone: true,
       allowScheduledOrders: true,
+      // O que esta loja mostra na barra do painel. Ausente = tudo ligado.
+      painelPedidosConfig: true,
     },
   }).catch((err) => {
     console.error("[PedidosClientes] Erro ao buscar usuário:", err);

@@ -245,7 +245,6 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
     const rawItems = orderData.items ?? [];
     const items = await montarItensDoPedidoIfood(rawItems, {
       franchiseeId: franchisee.id,
-      active: true,
     });
 
     const total = typeof orderData.total === "object"

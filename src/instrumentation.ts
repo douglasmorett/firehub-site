@@ -9,9 +9,19 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 
-  const { garantirColunasDePreco, garantirColunasBrendi, garantirEstruturaDeLotes, garantirEstruturaDeCaixa } =
-    await import("./lib/garantir-colunas");
+  const {
+    garantirColunasDePreco,
+    garantirColunasDoSchema,
+    garantirColunasBrendi,
+    garantirEstruturaDeLotes,
+    garantirEstruturaDeCaixa,
+  } = await import("./lib/garantir-colunas");
   await garantirColunasDePreco();
+  // As colunas que o schema.prisma declara e que nunca ganharam DDL — 39 no
+  // levantamento de 03/09/2026, entre elas as que o cardápio público lê e as
+  // que todo pedido novo grava. Precisa vir ANTES do primeiro request, que é
+  // a única ordem que impede o 500 de "campo no schema, coluna ausente".
+  await garantirColunasDoSchema();
   // Colunas brendi* no banco ANTES de qualquer rota da integração rodar —
   // elas ainda não estão no schema.prisma, então o boot é quem garante a ordem.
   await garantirColunasBrendi();

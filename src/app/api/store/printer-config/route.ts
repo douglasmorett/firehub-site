@@ -37,12 +37,16 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: targetId },
-    select: { printerConfig: true, storeName: true, name: true },
+    select: { printerConfig: true, storeName: true, name: true, slug: true },
   });
 
   const pConfig = (user?.printerConfig as any) || { autoprint: true, printers: [] };
   return NextResponse.json({
     ...pConfig,
     storeName: user?.storeName || user?.name || "FIREHUB",
+    // O QR "puxar pedido" da comanda leva a URL do app do motoboy DESTA loja —
+    // e a URL é montada pelo slug. Vem junto da config para o print.ts não
+    // precisar de outra chamada.
+    storeSlug: user?.slug || "",
   });
 }

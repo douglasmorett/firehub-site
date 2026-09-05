@@ -35,6 +35,11 @@ const INSTRUCOES = [
   // A OPÇÃO do combo também tem preço por canal. Quem modela o cardápio como o
   // iFood e o Anota AI põe o preço na opção de tamanho, e o produto fica com
   // preço base zero — nessas lojas as três colunas acima não alcançam nada.
+  // Complemento carimbado na criação, dentro da pergunta do combo. Sem esta
+  // coluna o sistema volta a adivinhar pelo preço — e adivinhava errado nos
+  // dois sentidos: escondia pastel sem preço de salão e mostrava adicional
+  // com preço como se fosse item avulso.
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "apenasEmCombo" BOOLEAN DEFAULT false`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceSalao" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceDelivery" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceTotem" DOUBLE PRECISION`,
@@ -45,10 +50,56 @@ const ESPERADAS = [
   "MenuProduct.priceSalao",
   "MenuProduct.priceDelivery",
   "MenuProduct.priceTotem",
+  "MenuProduct.apenasEmCombo",
   "ComboGroupItem.additionalPriceSalao",
   "ComboGroupItem.additionalPriceDelivery",
   "ComboGroupItem.additionalPriceTotem",
 ];
+
+/**
+ * Carimba de uma vez os complementos que já existiam antes da coluna.
+ *
+ * O `apenasEmCombo` só é preenchido na criação, pela pergunta do combo. Todo
+ * cardápio cadastrado antes dele nasce `false` — e aí a classificação volta a
+ * depender de heurística em tempo de leitura, em toda tela, para sempre.
+ *
+ * Este UPDATE congela a classificação nos dados, uma vez, usando exatamente o
+ * que a heurística de `cardapio-interno.ts` já decide hoje: item SEM pergunta
+ * própria, SEM preço em canal nenhum, e que ou é oferecido dentro de algum
+ * combo ou está na categoria que o cadastro usa para as opções.
+ *
+ * ── O que ele NÃO toca, e é o ponto ────────────────────────────────────────
+ *
+ * Combo com pergunta própria fica de fora pelo `NOT EXISTS` em ComboGroup.
+ * Isso é o que protege o cardápio no molde iFood, onde o pastel é um combo de
+ * preço base R$ 0,00 e o valor sai da opção de tamanho — preço zero ali é
+ * normal e não quer dizer complemento nenhum.
+ *
+ * ── Por que roda a cada boot sem estragar nada ─────────────────────────────
+ *
+ * O `= false` no WHERE faz a segunda execução casar zero linhas: quem já foi
+ * carimbado sai do alcance. O corte por `createdAt` garante que item novo
+ * nunca seja carimbado por aqui — quem nasce dentro do combo já vem com o
+ * carimbo, e quem nasce fora não deve receber.
+ *
+ * RESSALVA para quem for mexer: no dia em que a tela permitir DESmarcar um
+ * complemento, este UPDATE precisa de um guarda de verdade (uma marca de
+ * migração já executada), senão o próximo boot desfaz a escolha do lojista.
+ */
+const CARIMBO_DE_COMPLEMENTO = `
+  UPDATE "MenuProduct" p SET "apenasEmCombo" = true
+  WHERE p."apenasEmCombo" = false
+    AND p."createdAt" < TIMESTAMP '2026-09-04 00:00:00'
+    AND NOT EXISTS (SELECT 1 FROM "ComboGroup" g WHERE g."menuProductId" = p."id")
+    AND COALESCE(p."price", 0) <= 0
+    AND COALESCE(p."priceSalao", 0) <= 0
+    AND COALESCE(p."priceDelivery", 0) <= 0
+    AND COALESCE(p."priceTotem", 0) <= 0
+    AND (
+      LOWER(TRIM(COALESCE(p."category", ''))) = 'adicionais'
+      OR EXISTS (SELECT 1 FROM "ComboGroupItem" i WHERE i."menuProductId" = p."id")
+    )
+`;
 
 export async function garantirColunasDePreco(): Promise<void> {
   // Ambiente sem banco de verdade (dev local usa .env higienizado): não há o
@@ -65,11 +116,17 @@ export async function garantirColunasDePreco(): Promise<void> {
         await prisma.$executeRawUnsafe(sql);
       }
 
+      // Depois das colunas existirem, e nunca antes.
+      const carimbados = await prisma.$executeRawUnsafe(CARIMBO_DE_COMPLEMENTO);
+      if (Number(carimbados) > 0) {
+        console.log(`[Boot] ${carimbados} complemento(s) antigo(s) carimbados com apenasEmCombo.`);
+      }
+
       const rows = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
         WHERE table_name IN ('MenuProduct', 'ComboGroupItem')
           AND column_name IN (
-            'priceSalao', 'priceDelivery', 'priceTotem',
+            'priceSalao', 'priceDelivery', 'priceTotem', 'apenasEmCombo',
             'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem'
           )
       `;
@@ -271,6 +328,8 @@ const INSTRUCOES_LOTES = [
   // kdsScreens), e não sofre a armadilha da coluna escalar ausente do mesmo
   // jeito, porque nada além desta tela lê o campo.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "labelFieldsConfig" JSONB`,
+  // O que a loja mostra na barra do painel de pedidos. Ausente = tudo ligado.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "painelPedidosConfig" JSONB`,
 
   // Token da API de Conversões do Meta. Sem ele a venda só existe pelo pixel do
   // navegador, que perde de 30% a 50% dos eventos.
@@ -466,4 +525,152 @@ export async function temEstruturaDeLotes(): Promise<boolean> {
     cacheTemLotes = false;
   }
   return cacheTemLotes;
+}
+
+/**
+ * ── COLUNAS QUE O SCHEMA DECLARA E O BANCO PODE NÃO TER ─────────────────────
+ *
+ * A regra escrita no topo deste arquivo — "coluna nova entra AQUI e no
+ * schema.prisma no MESMO commit" — vinha sendo furada. Varrendo
+ * prisma/schema.prisma commit a commit desde 15/08/2026: 39 colunas foram
+ * adicionadas a tabelas que JÁ EXISTIAM, e nenhuma delas tinha DDL em lugar
+ * nenhum. O Dockerfile diz na cara que o deploy não roda `prisma db push`, e o
+ * resto deste arquivo explica por que não deve rodar. Então quem tem essas
+ * colunas em produção tem porque alguém rodou o push na mão; quem não tem
+ * serve 500 no primeiro request que tocar o campo.
+ *
+ * Isto não é hipótese — é a mesma família de duas quedas já registradas neste
+ * repositório: `MenuProduct.sortOrder` derrubou /loja em 24/08/2026, e "o
+ * deploy apagava as colunas do iFood" (851169d). As mais caras da lista abaixo
+ * são as que ficam no caminho quente:
+ *
+ *   - CustomerOrder.gaClientId / gaSessionId → gravadas em TODO pedido novo
+ *     (src/app/api/customer-order/route.ts). Sem a coluna, pedido não entra.
+ *   - User.gaMeasurementId / gtmContainerId → lidas ao abrir o cardápio
+ *     público (src/app/loja/[slug]/page.tsx). Sem a coluna, cardápio não abre.
+ *   - CustomerOrder.acceptedAt / readyAt / dispatchedAt / deliveredAt →
+ *     gravadas pela extensão do Prisma em QUALQUER mudança de status. Sem as
+ *     colunas, nenhum pedido muda de fase.
+ *
+ * MESMA CATEGORIA das garantias acima: instruções fixas, escritas no código,
+ * aditivas e idempotentes. As nuláveis não alteram e não apagam nada. As seis
+ * NOT NULL levam DEFAULT junto, porque `ADD COLUMN ... NOT NULL` sem default
+ * falha em tabela que já tem linha dentro — com default o Postgres 11+ resolve
+ * sem reescrever a tabela.
+ *
+ * NÃO cria índice, de propósito. `PosTerminal.deviceToken` e
+ * `Ambassador.linkedUserId` são `@unique` no schema, mas o que serve 500 é a
+ * coluna ausente, não o índice. Um `CREATE UNIQUE INDEX` num banco que já
+ * tenha valor repetido falharia a cada boot e sujaria o log para sempre —
+ * isso é decisão de gente, com o dado na mão.
+ */
+const INSTRUCOES_COLUNAS_DO_SCHEMA = [
+  // ── User (a loja) ──
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "gaMeasurementId" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "gaApiSecret" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "gtmContainerId" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "etaConfig" JSONB`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "onboardingData" JSONB`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "metaIaSemanaReferencia" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "metaIaGeracoesUsadas" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "showAddressOnMenu" BOOLEAN NOT NULL DEFAULT true`,
+
+  // ── CustomerOrder — o caminho mais quente do sistema ──
+  // De qual loja iFood veio o pedido — conta com várias lojas no mesmo painel.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreName" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreMerchant" TEXT`,
+  // De qual loja do 99Food veio — conta com mais de uma no mesmo painel.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "food99AppShopId" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "food99ShopId" TEXT`,
+  // Quando o ENTREGADOR puxou o pedido pelo app (QR/número da comanda).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "motoboyPuxadoEm" TIMESTAMP(3)`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "gaClientId" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "gaSessionId" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "acceptedAt" TIMESTAMP(3)`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "readyAt" TIMESTAMP(3)`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "dispatchedAt" TIMESTAMP(3)`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "deliveredAt" TIMESTAMP(3)`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodDropCodeAt" TIMESTAMP(3)`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodDropCodeRequired" BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "posOrderId" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "posTerminalId" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "posStatus" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "posDadosTransacao" JSONB`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "posTentativas" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "tableSessionId" TEXT`,
+
+  // ── Item do pedido ──
+  `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "notes" TEXT`,
+  `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "tableGuestId" TEXT`,
+
+  // ── Cardápio ──
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "ComboGroup" ADD COLUMN IF NOT EXISTS "minQty" INTEGER`,
+  `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "maxPerItem" INTEGER`,
+  `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "optionNote" TEXT`,
+
+  // ── Cliente da loja ──
+  `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "birthDate" TEXT`,
+
+  // ── Totem ──
+  `ALTER TABLE "TotemLicense" ADD COLUMN IF NOT EXISTS "posTerminalId" TEXT`,
+
+  // ── Embaixadores ──
+  `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "parentAmbassadorId" TEXT`,
+  `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "linkedUserId" TEXT`,
+  `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "level2Percent" DOUBLE PRECISION NOT NULL DEFAULT 3`,
+
+  // ── Tabelas que também nasceram nesta janela ──
+  // Se a tabela não existir no banco desta loja, estas seis falham sozinhas e
+  // as 33 de cima continuam valendo. É por isso que o catch é por instrução.
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "waiterId" TEXT`,
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "waiterTip" DOUBLE PRECISION`,
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "waiterCommission" DOUBLE PRECISION`,
+  `ALTER TABLE "PosTerminal" ADD COLUMN IF NOT EXISTS "deviceToken" TEXT`,
+  `ALTER TABLE "PosTerminal" ADD COLUMN IF NOT EXISTS "lastSeenAt" TIMESTAMP(3)`,
+  `ALTER TABLE "PosTerminal" ADD COLUMN IF NOT EXISTS "appVersion" TEXT`,
+];
+
+let colunasDoSchemaOk = false;
+
+export async function garantirColunasDoSchema(): Promise<void> {
+  if (colunasDoSchemaOk) return;
+
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia de colunas do schema.");
+    colunasDoSchemaOk = true;
+    return;
+  }
+
+  let aplicadas = 0;
+  const falhas: string[] = [];
+
+  for (const sql of INSTRUCOES_COLUNAS_DO_SCHEMA) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+      aplicadas++;
+    } catch (err: any) {
+      // O try/catch é POR INSTRUÇÃO, e não em volta do laço. O caso esperado é
+      // tabela que não existe ("relation does not exist") num banco que nunca
+      // recebeu o módulo de mesa ou de maquininha. Com o catch em volta do
+      // laço, a primeira dessas abortaria justamente as que evitam o 500 do
+      // cardápio e do pedido.
+      const tabela = sql.match(/ALTER TABLE "(\w+)"/)?.[1] ?? "?";
+      const coluna = sql.match(/IF NOT EXISTS "(\w+)"/)?.[1] ?? "?";
+      falhas.push(`${tabela}.${coluna}: ${String(err?.message || "").slice(0, 90)}`);
+    }
+  }
+
+  // Marca resolvido mesmo com falha: isto roda uma vez por instância, e
+  // repetir não conserta banco fora do ar. O log é que diz o que conferir.
+  colunasDoSchemaOk = true;
+
+  if (falhas.length === 0) {
+    console.log(`[Boot] ✅ ${aplicadas} colunas do schema garantidas no banco.`);
+  } else {
+    console.error(
+      `[Boot] 🛑 ${aplicadas} colunas garantidas, ${falhas.length} falharam:\n  ` + falhas.join("\n  "),
+    );
+  }
 }

@@ -248,25 +248,29 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
 }
 
 /**
- * Chamada quando um CustomerOrder é confirmado (ACEITO / ENTREGUE / qualquer status não cancelado).
+ * Recalcula o ciclo de UM mês de UMA loja lendo os pedidos do banco.
  *
- * Recalcula totalSales do mês inteiro e atualiza amountDue em tempo real.
- * O franqueado vê imediatamente quanto deve no painel financeiro.
+ * Não confia em quem chamou: soma o mês inteiro de novo a cada execução, então
+ * pode ser chamada quantas vezes for, em qualquer ordem, sem duplicar nada.
+ *
+ * `yearMonth` opcional — sem ele usa o mês corrente NO FUSO DA LOJA (é o
+ * comportamento de quem chama a cada pedido confirmado). Passar o mês serve
+ * para a varredura de fechamento, que precisa reconstruir o mês anterior.
  */
-export async function trackSaleForBilling(franchiseeId: string) {
+export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
     select: { email: true, planPercent: true, storeTimezone: true, isFranqueadoHakim: true },
   });
 
   const tz = user?.storeTimezone || "America/Sao_Paulo";
-  const yearMonth = getCurrentYearMonth(0, tz);
+  const mes = yearMonth || getCurrentYearMonth(0, tz);
 
-  const cycle = await ensureCycle(franchiseeId, yearMonth);
+  const cycle = await ensureCycle(franchiseeId, mes);
 
   const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0 || user?.isFranqueadoHakim === true || user?.email?.toLowerCase() === "contatohakim@gmail.com";
 
-  const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
+  const { monthStart, monthEnd } = intervaloDoMes(mes, tz);
 
   const agg = await prisma.customerOrder.aggregate({
     where: {
@@ -290,14 +294,139 @@ export async function trackSaleForBilling(franchiseeId: string) {
   const taxasDoCiclo = (cycle.metaAdsFee ?? 0) + (cycle.totemFee ?? 0);
   const pendingVal = isExempt ? 0 : parseFloat((amountDue + taxasDoCiclo).toFixed(2));
 
+  // Loja isenta tem que gravar `amountDue` ZERO, não a mensalidade que ela
+  // teria se pagasse.
+  //
+  // Só o pendente era zerado aqui. O `amountDue` cheio continuava no ciclo, e o
+  // painel de Custos (api/admin/usage-costs) lê exatamente essas duas colunas:
+  // mostra `amountDue` como "Receita" e `amountDue - amountPending` como "Pago".
+  // Resultado medido em 02/09/2026: a Hakim Centro aparecia com Receita
+  // R$ 100,00 e "Pago: R$ 100,00" em verde, dinheiro que nunca foi cobrado de
+  // ninguém — e esses R$ 100 ainda entravam no faturamento total da plataforma
+  // e no cálculo da margem média.
+  //
+  // O fechamento SEMPRE soube disso: `closeMonth` grava `amountDue: 0` para
+  // loja isenta e para mensalidade perdoada (ver os dois updates abaixo, com o
+  // mesmo motivo escrito). Quem divergia era este caminho em tempo real, então
+  // o número do admin só ficava certo depois que o mês fechava.
+  const devidoGravado = isExempt ? 0 : amountDue;
+
   await prisma.franchiseeBillingCycle.update({
-    where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
-    data: { totalSales, amountDue, amountPending: pendingVal },
+    where: { franchiseeId_yearMonth: { franchiseeId, yearMonth: mes } },
+    data: { totalSales, amountDue: devidoGravado, amountPending: pendingVal },
   });
 
   console.log(
-    `[Billing] ${franchiseeId} ${yearMonth} | Vendas=${totalSales.toFixed(2)} Devido=${amountDue.toFixed(2)} Pendente=${pendingVal}`
+    `[Billing] ${franchiseeId} ${mes} | Vendas=${totalSales.toFixed(2)} Devido=${devidoGravado.toFixed(2)}${isExempt ? " (isenta)" : ""} Pendente=${pendingVal}`
   );
+
+  return { yearMonth: mes, totalSales, amountDue: devidoGravado, amountPending: pendingVal };
+}
+
+/**
+ * Chamada quando um CustomerOrder é confirmado (ACEITO / ENTREGUE / qualquer
+ * status não cancelado). Recalcula o mês corrente da loja em tempo real, para o
+ * franqueado ver no painel financeiro quanto deve.
+ *
+ * ⚠️ Isto NÃO é a garantia de que a loja será cobrada — ver
+ * `garantirCiclosDoMes` logo abaixo. Só uma parte dos caminhos que criam pedido
+ * chega até aqui.
+ */
+export async function trackSaleForBilling(franchiseeId: string) {
+  return recalcularCiclo(franchiseeId);
+}
+
+/**
+ * Cria/atualiza o ciclo de TODA loja que vendeu no mês — inclusive quem nunca
+ * passou por `trackSaleForBilling`.
+ *
+ * ── O buraco que isto fecha ──────────────────────────────────────────────────
+ *
+ * O ciclo de cobrança só nascia quando alguém chamava `trackSaleForBilling`, e
+ * ela é chamada em apenas cinco lugares: o checkout do cardápio digital
+ * (POST /api/customer-order), a troca de status pelo painel
+ * (POST /api/customer-order/status), a baixa do motoboy próprio, o webhook da
+ * Pagar.me e a confirmação de pagamento online.
+ *
+ * Só que `CustomerOrder` é criado em ONZE lugares. Pedido que entra por iFood,
+ * 99Food, Jotajá, Brendi, totem, balcão, mesa, pela API pública /v1/orders ou
+ * pelo robô do WhatsApp é gravado direto no banco e não encosta em nenhum dos
+ * cinco. O iFood ainda troca o status com `updateMany` direto
+ * (src/lib/ifood-eventos.ts), então nem pela mudança de estado o cálculo
+ * dispara.
+ *
+ * Consequência medida em 02/09/2026: loja que vende SÓ por integração terminava
+ * o mês sem ciclo nenhum. E o cron de fechamento procura ciclos com
+ * `status: "OPEN"` — sem ciclo, não há o que fechar, não sai boleto, a loja usa
+ * o sistema de graça e no painel de Custos aparece com Receita R$ 0,00 dando
+ * prejuízo. Não era erro de tela: era faturamento que ninguém cobrou.
+ *
+ * A correção NÃO é sair chamando `trackSaleForBilling` nos onze lugares — foi
+ * exatamente essa dependência de "cada caminho lembrar de avisar" que criou o
+ * buraco, e o décimo segundo caminho ia esquecer de novo. Aqui a pergunta é
+ * feita ao contrário: quem vendeu neste mês? Essa lista sai do banco, não da
+ * memória de quem escreveu a rota.
+ *
+ * Roda no cron diário para o mês corrente (mantém o painel do admin vivo) e
+ * para o mês anterior antes de fechar (garante que ninguém escapa do boleto).
+ */
+export async function garantirCiclosDoMes(yearMonth: string) {
+  // A janela de busca é a do fuso de Brasília ABERTA em um dia para cada lado.
+  // Ela serve só para achar CANDIDATAS: o valor de cada loja é recalculado
+  // depois, no fuso dela, por `recalcularCiclo`. Alargar aqui pode trazer uma
+  // loja a mais para a conferência — nunca somar venda no mês errado.
+  const { monthStart, monthEnd } = intervaloDoMes(yearMonth);
+  const buscaInicio = new Date(monthStart.getTime() - 24 * 60 * 60 * 1000);
+  const buscaFim = new Date(monthEnd.getTime() + 24 * 60 * 60 * 1000);
+
+  const vendedoras = await prisma.customerOrder.groupBy({
+    by: ["franchiseeId"],
+    where: {
+      ...VENDAS_QUE_CONTAM,
+      createdAt: { gte: buscaInicio, lt: buscaFim },
+    },
+    _count: { id: true },
+  });
+
+  let criados = 0;
+  let atualizados = 0;
+  let jaFechados = 0;
+  const erros: string[] = [];
+
+  for (const v of vendedoras) {
+    if (!v.franchiseeId) continue;
+    try {
+      const existente = await prisma.franchiseeBillingCycle.findUnique({
+        where: { franchiseeId_yearMonth: { franchiseeId: v.franchiseeId, yearMonth } },
+        select: { id: true, status: true },
+      });
+
+      // Ciclo já fechado NÃO se mexe.
+      //
+      // Este cron roda DE HORA EM HORA (scripts/cron-runner.js), e
+      // `recalcularCiclo` sobrescreve `amountDue` e `amountPending`. Sem esta
+      // guarda, todo mês anterior seria recalculado 24 vezes por dia por cima
+      // de ciclo CLOSED — apagando o valor que foi de fato boletado no Asaas e
+      // ressuscitando pendência de quem já pagou. Depois de fechado, quem manda
+      // é o boleto, não o recálculo.
+      if (existente && existente.status !== "OPEN") {
+        jaFechados++;
+        continue;
+      }
+
+      await recalcularCiclo(v.franchiseeId, yearMonth);
+
+      if (existente) atualizados++;
+      else {
+        criados++;
+        console.log(`[Billing] Ciclo ${yearMonth} CRIADO na varredura para ${v.franchiseeId} — vendeu sem nunca ter passado por trackSaleForBilling.`);
+      }
+    } catch (err: any) {
+      erros.push(`${v.franchiseeId}: ${err?.message}`);
+    }
+  }
+
+  return { yearMonth, lojasComVenda: vendedoras.length, criados, atualizados, jaFechados, erros };
 }
 
 /**

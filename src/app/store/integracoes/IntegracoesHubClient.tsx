@@ -8,6 +8,7 @@ export default function IntegracoesHubClient({
   ifoodWidgetId,
   ifoodConnected: initialIfoodConnected,
   userEmail,
+  storeName,
   facebookPixelId: initialFacebookPixelId,
   gaMeasurementId: initialGaMeasurementId,
   gtmContainerId: initialGtmContainerId,
@@ -25,6 +26,7 @@ export default function IntegracoesHubClient({
   ifoodWidgetId?: string;
   ifoodConnected?: boolean;
   userEmail: string;
+  storeName?: string;
   facebookPixelId?: string;
   gaMeasurementId?: string;
   gtmContainerId?: string;
@@ -617,6 +619,7 @@ export default function IntegracoesHubClient({
       .then(d => { if (d.integrations) setIfoodIntegrations(d.integrations); })
       .catch(() => {})
       .finally(() => setIfoodLoading(false));
+    carregarEscopoIfood();
   }, []);
 
   const handleConnectIfoodOAuth = () => {
@@ -654,6 +657,35 @@ export default function IntegracoesHubClient({
   // errado faz o pedido de uma loja cair no painel da outra.
   const [candidatosIfood, setCandidatosIfood] = useState<{ merchantId: string; nome: string }[]>([]);
 
+  // Lojas que a conta do iFood já autorizou e que ainda não estão aqui. Vêm do
+  // escopo do token, porque o iFood não tem endpoint que as liste neste app.
+  const [escopoPendentes, setEscopoPendentes] = useState(0);
+  const [escopoTrazendo, setEscopoTrazendo] = useState(false);
+
+  const carregarEscopoIfood = async () => {
+    try {
+      const d = await fetch("/api/ifood/integration/escopo").then(r => r.json());
+      setEscopoPendentes(Array.isArray(d?.pendentes) ? d.pendentes.length : 0);
+    } catch { setEscopoPendentes(0); }
+  };
+
+  const trazerLojasDoEscopo = async () => {
+    const preco = (escopoPendentes * 50).toFixed(2);
+    if (!confirm(
+      `Conectar ${escopoPendentes} loja(s) do iFood que você já autorizou?\n\n` +
+      `Elas passam a receber pedido neste mesmo painel. O nome de cada uma aparece ` +
+      `no primeiro pedido dela.\n\nCusto adicional: até +R$${preco}/mês.`
+    )) return;
+    setEscopoTrazendo(true);
+    try {
+      const d = await fetch("/api/ifood/integration/escopo", { method: "POST" }).then(r => r.json());
+      showToast(d?.message || "Lojas conectadas!", "#10B981");
+      setTimeout(() => window.location.reload(), 1200);
+    } catch {
+      showToast("⚠️ Erro ao conectar as lojas", "#EF4444");
+    } finally { setEscopoTrazendo(false); }
+  };
+
   const handleLinkAuthorizationCode = async () => {
     if (!authCodeInput.trim()) {
       showToast("⚠️ Digite o código de autorização gerado no iFood", "#EF4444");
@@ -668,19 +700,34 @@ export default function IntegracoesHubClient({
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast("🎉 Loja iFood vinculada com sucesso!", "#10B981");
-        const linkedMerchantId = data.merchantId || authCodeInput.trim();
-        setIfMerchant(linkedMerchantId);
-        setIfoodIntegrations(prev => [
-          { id: "main", label: "Loja Principal", merchantId: linkedMerchantId, connected: true, active: true, createdAt: new Date().toISOString() },
-          ...prev.filter(i => i.merchantId !== linkedMerchantId)
-        ]);
-        setOpenModal(null);
-        setTimeout(() => { window.location.reload(); }, 600);
-      } else if (data.hasToken) {
-        // Token obtido mas merchantId não detectado — pedir UUID manualmente
-        setNeedsMerchantId(true);
-        showToast("✅ Autorização OK! Agora cole o Merchant ID da sua loja.", "#F59E0B");
+        showToast(data.message || "🎉 Loja iFood vinculada com sucesso!", "#10B981");
+
+        // Lojas autorizadas que ele ainda não trouxe para cá: a lista aparece
+        // para ele MARCAR as que quer. Nada entra sozinho — cada adicional
+        // custa R$50/mês, e ele pode ter no portal loja que não quer no FireHub.
+        if (Array.isArray(data.merchantsDisponiveis) && data.merchantsDisponiveis.length > 0) {
+          setCandidatosIfood(
+            data.merchantsDisponiveis.map((m: any) => ({ merchantId: m.id, nome: m.name || "" }))
+          );
+        }
+
+        // ⚠️ NADA de linha inventada aqui. Duas mentiras moravam neste ponto:
+        // sem merchantId usava-se o próprio código de autorização como se
+        // fosse o ID da loja (a contagem pulava para 2 e o reload devolvia
+        // para 1), e o rótulo entrava como "Loja Principal", que sobrescrevia
+        // na tela o nome real da loja — o card virava "PIETRO CUNHA ROCHA" e
+        // só voltava a ser "Ragnar Burger" quando o lojista saía e entrava.
+        //
+        // A lista vem do servidor, que é quem sabe.
+        if (data.merchantId) setIfMerchant(data.merchantId);
+        else if (data.needsMerchantId) setNeedsMerchantId(true);
+
+        try {
+          const lista = await fetch("/api/ifood/integration/list").then(r => r.json());
+          if (lista?.integrations) setIfoodIntegrations(lista.integrations);
+        } catch {}
+
+        setAuthCodeInput("");
       } else {
         showToast(data.error || "Código de autorização inválido ou expirado", "#EF4444");
       }
@@ -698,15 +745,26 @@ export default function IntegracoesHubClient({
    * dono — a lista é uma conveniência para ele não ter que caçar o UUID no
    * portal, nunca um atalho que pula validação.
    */
-  const handleEscolherMerchant = async (merchantId: string, nome: string) => {
+  const handleEscolherMerchant = async (merchantId: string, nome: string, confirmarCnpjDiferente = false) => {
     setConnectingAuthCode(true);
     try {
       const res = await fetch("/api/ifood/auth/link-merchant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ merchantId }),
+        body: JSON.stringify({ merchantId, confirmarCnpjDiferente }),
       });
       const data = await res.json();
+
+      // Marca com CNPJ próprio na mesma conta do iFood é o caso comum de quem
+      // tem várias lojas. Pergunta, em vez de recusar e deixar o lojista sem
+      // caminho nenhum na tela.
+      if (res.status === 409 && data.codigo === "CNPJ_DIVERGENTE") {
+        const ok = confirm(`${data.error}\n\n${data.details}\n\nVincular assim mesmo?`);
+        setConnectingAuthCode(false);
+        if (ok) await handleEscolherMerchant(merchantId, nome, true);
+        return;
+      }
+
       if (res.ok && (data.success ?? true)) {
         showToast(`🎉 ${nome || "Loja"} vinculada! Os pedidos vão começar a chegar.`, "#10B981");
         setCandidatosIfood([]);
@@ -756,24 +814,46 @@ export default function IntegracoesHubClient({
     }
   };
 
-  const handleAddIfoodIntegration = async () => {
-    if (!newIfLabel.trim() || !newIfMerchantId.trim()) {
-      showToast("⚠️ Nome e Merchant ID são obrigatórios", "#EF4444");
+  /**
+   * Adiciona OUTRA loja iFood na mesma conta.
+   *
+   * Passa pelo link-merchant, e não mais pelo create: o create gravava a
+   * integração sem perguntar nada ao iFood — dava para cadastrar um UUID
+   * qualquer, começar a pagar os +R$50 e nunca receber um pedido, porque o
+   * lojista só descobriria o erro no log do servidor. O link-merchant confere a
+   * loja no iFood, recusa merchant de outro franqueado e traz o nome real dela.
+   */
+  const handleAddIfoodIntegration = async (confirmarCnpjDiferente = false) => {
+    const uuid = newIfMerchantId.trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
+      showToast("⚠️ Cole o Merchant ID no formato UUID (ex: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", "#EF4444");
       return;
     }
     setIfAdding(true);
     try {
-      const res = await fetch("/api/ifood/integration/create", {
+      const res = await fetch("/api/ifood/auth/link-merchant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: newIfLabel, merchantId: newIfMerchantId, widgetId: newIfWidgetId }),
+        body: JSON.stringify({ merchantId: uuid, confirmarCnpjDiferente }),
       });
       const data = await res.json();
-      if (res.ok && data.success) {
-        showToast(data.billingNotice || "✅ Integração iFood adicionada!", "#10B981");
-        setIfoodIntegrations(prev => [...prev, data.integration]);
+
+      // CNPJ diferente do cadastrado: é o caso normal de quem tem várias lojas
+      // (marcas diferentes no mesmo login do iFood). Pergunta em vez de barrar.
+      if (res.status === 409 && data.codigo === "CNPJ_DIVERGENTE") {
+        const ok = confirm(
+          `${data.error}\n\n${data.details}\n\nVincular assim mesmo?`
+        );
+        setIfAdding(false);
+        if (ok) await handleAddIfoodIntegration(true);
+        return;
+      }
+
+      if (res.ok && (data.success ?? true)) {
+        showToast(data.message || `🎉 ${data.storeName || "Loja"} vinculada!`, "#10B981");
         setNewIfLabel(""); setNewIfMerchantId(""); setNewIfWidgetId("");
         setShowAddIfoodForm(false);
+        setTimeout(() => window.location.reload(), 900);
       } else {
         showToast(`⚠️ ${data.error || "Erro ao adicionar"}`, "#EF4444");
       }
@@ -782,7 +862,11 @@ export default function IntegracoesHubClient({
   };
 
   const handleRemoveIfoodIntegration = async (id: string) => {
-    if (!confirm("Tem certeza que deseja remover esta integração iFood?")) return;
+    // Pelo nome, não por "esta integração": numa conta com três lojas iFood o
+    // lojista precisa ler QUAL delas vai parar de receber pedido.
+    const alvo = ifoodIntegrations.find(i => i.id === id);
+    const nomeDela = alvo?.label?.trim() || alvo?.merchantId || "esta loja";
+    if (!confirm(`Remover "${nomeDela}" do iFood?\n\nSó ela para de receber pedido. As outras lojas iFood desta conta continuam conectadas.`)) return;
     try {
       const res = await fetch(`/api/ifood/integration/delete?id=${id}`, { method: "DELETE" });
       if (res.ok) {
@@ -1482,18 +1566,30 @@ export default function IntegracoesHubClient({
                               texto genérico quando a label ainda é um
                               placeholder ("Loja Principal") ou não existe. */}
                           {(() => {
-                            const rotulo = (ifoodIntegrations?.[0] as any)?.label?.trim();
+                            // A integração PRINCIPAL é a do merchant que está no
+                            // User, não a mais antiga da lista: numa conta com
+                            // três lojas, [0] mostrava o nome de uma com o
+                            // Merchant ID de outra logo abaixo.
+                            const principal =
+                              ifoodIntegrations.find(i => i.merchantId === ifMerchant) ?? ifoodIntegrations?.[0];
+                            const rotulo = (principal as any)?.label?.trim();
                             const generico = !rotulo || /^loja principal$/i.test(rotulo) || /^loja ifood/i.test(rotulo);
-                            const titulo = generico
-                              ? (ifMerchant ? "Integração Principal" : "Loja iFood Conectada")
-                              : rotulo;
+
+                            // O NOME da loja, sempre — nunca o e-mail da conta.
+                            // Com três lojas iFood no mesmo painel, "Integração
+                            // Principal" e um e-mail embaixo não dizem QUAL loja
+                            // é: o lojista não tem como saber o que está
+                            // desconectando. Nome em cima, Merchant ID embaixo.
+                            const titulo = !generico
+                              ? rotulo
+                              : (storeName?.trim() || "Loja iFood Conectada");
                             return (
                               <>
                                 <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>
                                   {titulo}
                                 </div>
-                                <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>
-                                  {ifMerchant || userEmail}
+                                <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: ifMerchant ? "monospace" : "inherit" }}>
+                                  {ifMerchant || "Identificando a loja — entra sozinha no primeiro pedido"}
                                 </div>
                               </>
                             );
@@ -1502,9 +1598,26 @@ export default function IntegracoesHubClient({
                         <span style={{ fontSize: "0.7rem", background: "#DCFCE7", color: "#15803D", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Ativa</span>
                         <button
                           onClick={async () => {
-                            if (!confirm("Deseja desconectar a integração iFood desta loja?")) return;
+                            // O merchant vai na URL de propósito: sem ele a rota
+                            // desconecta a CONTA inteira, e quem tem três lojas
+                            // iFood perdia as três num clique só.
+                            //
+                            // E o aviso diz o NOME da loja que vai sair. Com
+                            // várias no mesmo painel, "desconectar a integração
+                            // iFood" não informa nada: o lojista clica sem saber
+                            // qual das lojas dele para de receber pedido.
+                            const principal =
+                              ifoodIntegrations.find(i => i.merchantId === ifMerchant) ?? ifoodIntegrations?.[0];
+                            const nomeDela = (principal as any)?.label?.trim() || storeName?.trim() || "esta loja";
+                            const outras = ifoodIntegrations.filter(i => i.merchantId !== ifMerchant).length;
+                            const pergunta = outras > 0
+                              ? `Desconectar "${nomeDela}" do iFood?\n\nSó ela para de receber pedido. As outras ${outras} loja(s) iFood desta conta continuam conectadas.`
+                              : `Desconectar "${nomeDela}" do iFood?\n\nOs pedidos dela param de chegar no FireHub até você conectar de novo.`;
+                            if (!confirm(pergunta)) return;
                             try {
-                              const r = await fetch("/api/ifood/auth?step=disconnect");
+                              const r = await fetch(
+                                `/api/ifood/auth?step=disconnect${ifMerchant ? `&merchantId=${encodeURIComponent(ifMerchant)}` : ""}`
+                              );
                               if (r.ok) {
                                 showToast("🔌 iFood desconectado com sucesso", "#F59E0B");
                                 setTimeout(() => window.location.reload(), 500);
@@ -1534,6 +1647,18 @@ export default function IntegracoesHubClient({
                           <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{integ.label || `Loja iFood (${integ.merchantId.slice(0, 6)})`}</div>
                           <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>{integ.merchantId}</div>
                         </div>
+                        {/* O selo de estado vem ANTES do preço, e é o mesmo da
+                            integração principal. Mostrar só "+R$50/mês" fazia a
+                            loja adicional parecer uma cobrança em vez de uma
+                            loja funcionando — e não dizia o que o lojista mais
+                            quer saber olhando aqui: se ela está recebendo. */}
+                        <span style={{
+                          fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
+                          background: integ.active ? "#DCFCE7" : "#F1F5F9",
+                          color: integ.active ? "#15803D" : "#64748B",
+                        }}>
+                          {integ.active ? "🟢 Ativa" : "⚪ Inativa"}
+                        </span>
                         <span style={{
                           fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
                           background: "#FEF3C7", color: "#92400E",
@@ -1552,34 +1677,62 @@ export default function IntegracoesHubClient({
                   </div>
                 )}
 
+                {/* ── LOJAS AUTORIZADAS QUE FALTAM ──────────────────────────
+                    Sem lista e sem escolha: o iFood não dá o nome de uma loja
+                    que ainda não mandou pedido, então pedir para o lojista
+                    apontar UUID é pedir para ele errar. Aqui é um botão só,
+                    com o preço na frente, e o nome de cada uma se corrige no
+                    primeiro pedido dela. */}
+                {escopoPendentes > 0 && (
+                  <div style={{ padding: "14px 16px", borderRadius: 14, background: "#EFF6FF", border: "1.5px solid #93C5FD", marginBottom: "16px" }}>
+                    <div style={{ fontSize: "0.88rem", fontWeight: 800, color: "#1E40AF", marginBottom: 4 }}>
+                      Você tem {escopoPendentes} loja{escopoPendentes > 1 ? "s" : ""} do iFood autorizada{escopoPendentes > 1 ? "s" : ""} fora do FireHub
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#1D4ED8", marginBottom: 12, lineHeight: 1.5 }}>
+                      {escopoPendentes > 1 ? "Elas já estão" : "Ela já está"} autorizada{escopoPendentes > 1 ? "s" : ""} no
+                      seu iFood, mas {escopoPendentes > 1 ? "não recebem" : "não recebe"} pedido aqui.
+                      Conectando, {escopoPendentes > 1 ? "os pedidos delas caem" : "os pedidos dela caem"} neste
+                      mesmo painel. O nome aparece no primeiro pedido.
+                      <br />
+                      <strong>+R$50,00/mês por loja adicional.</strong>
+                    </div>
+                    <button
+                      onClick={trazerLojasDoEscopo}
+                      disabled={escopoTrazendo}
+                      style={{
+                        padding: "10px 16px", borderRadius: 10, border: "none",
+                        background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff",
+                        fontWeight: 800, fontSize: "0.85rem", cursor: escopoTrazendo ? "wait" : "pointer",
+                        fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6,
+                        opacity: escopoTrazendo ? 0.7 : 1,
+                      }}
+                    >
+                      {escopoTrazendo
+                        ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Conectando...</>
+                        : <><Plus size={14} /> Conectar {escopoPendentes > 1 ? `as ${escopoPendentes}` : "a loja"}</>}
+                    </button>
+                  </div>
+                )}
+
                 {/* Formulário para adicionar nova integração */}
                 {showAddIfoodForm ? (
                   <div style={{ padding: "16px", borderRadius: 14, border: "1.5px dashed #CBD5E1", background: "#F8FAFC", marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#334155", marginBottom: 12 }}>Nova Integração iFood</div>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#334155", marginBottom: 4 }}>Adicionar outra loja iFood</div>
+                    <div style={{ fontSize: "0.76rem", color: "#64748B", marginBottom: 12, lineHeight: 1.45 }}>
+                      Para quem tem mais de uma loja no iFood (marcas diferentes no mesmo login).
+                      Os pedidos de todas elas caem neste mesmo painel.
+                    </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                       <div>
-                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: 3, display: "block" }}>Nome da Loja iFood *</label>
-                        <input
-                          type="text" placeholder="Ex: Hakim Praia, Loja Shopping..."
-                          value={newIfLabel} onChange={e => setNewIfLabel(e.target.value)}
-                          style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit", outline: "none" }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: 3, display: "block" }}>Merchant ID (iFood) *</label>
+                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: 3, display: "block" }}>Merchant ID da outra loja *</label>
                         <input
                           type="text" placeholder="Ex: 6a5fb96d-68bd-46af-ada4-456a9a160787"
                           value={newIfMerchantId} onChange={e => setNewIfMerchantId(e.target.value)}
                           style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
                         />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", marginBottom: 3, display: "block" }}>Widget ID (Chat) — opcional</label>
-                        <input
-                          type="text" placeholder="Cole o ID do widget..."
-                          value={newIfWidgetId} onChange={e => setNewIfWidgetId(e.target.value)}
-                          style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                        />
+                        <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 4 }}>
+                          Está no Portal do Parceiro do iFood, em Configurações da loja. O nome vem de lá — não precisa digitar.
+                        </div>
                       </div>
                     </div>
 
@@ -1596,7 +1749,7 @@ export default function IntegracoesHubClient({
                         style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}
                       >Cancelar</button>
                       <button
-                        onClick={handleAddIfoodIntegration} disabled={ifAdding}
+                        onClick={() => handleAddIfoodIntegration()} disabled={ifAdding}
                         style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #EA580C, #C2410C)", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", opacity: ifAdding ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}
                       >
                         {ifAdding ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Adicionando...</> : <><Plus size={14} /> Adicionar</>}
@@ -1636,18 +1789,37 @@ export default function IntegracoesHubClient({
                     mudo: a loja ficava sem pedido nenhum, para sempre, sem nada
                     na tela explicando. Agora ele vê os nomes e resolve num
                     clique. */}
-                {candidatosIfood.length > 1 && (
+                {/* Só entra em tela a lista que TEM NOME — a que veio dos
+                    eventos, onde o nome sai do detalhe de um pedido. Lista de
+                    UUID sem nome não adianta: ninguém reconhece a própria loja
+                    olhando para "ea2c4d55-efd2-4fa7-…", e errar põe o pedido de
+                    uma loja no painel da outra. As lojas autorizadas sem pedido
+                    ainda são oferecidas pelo bloco de baixo, com uma
+                    confirmação só. */}
+                {candidatosIfood.filter(c => c.nome?.trim()).length > 1 && (
                   <div style={{ padding: "16px", borderRadius: 14, background: "#FFFBEB", border: "2px solid #FCD34D", marginBottom: "16px" }}>
                     <div style={{ fontSize: "0.9rem", fontWeight: 800, color: "#92400E", marginBottom: 4 }}>
                       ⚠️ Achamos {candidatosIfood.length} lojas do iFood nesta conta
                     </div>
+                    {/* O iFood não entrega o nome destas lojas: este aplicativo
+                        tem só `order` e `events` por loja, e pedir o detalhe do
+                        merchant volta 403. O nome só existe dentro de um pedido.
+                        Então o texto precisa dizer o caminho que NÃO exige
+                        adivinhar UUID — autorizar cada loja e colar o código
+                        dela, que agora vincula aquela loja direto. */}
                     <div style={{ fontSize: "0.78rem", color: "#B45309", marginBottom: 12, lineHeight: 1.5 }}>
-                      Qual delas é <strong>esta</strong> loja do FireHub? Os pedidos só começam a
-                      entrar depois de você escolher — e é você quem sabe, porque escolher errado
-                      faria o pedido de uma loja aparecer no painel da outra.
+                      São lojas suas que já estão autorizadas no iFood, mas ainda não estão aqui.
+                      O iFood não informa o nome delas — ele só aparece no primeiro pedido.
+                      <br /><br />
+                      <strong>Não precisa adivinhar pelo código.</strong> Clique em
+                      &quot;1. Conectar e Autorizar&quot; com a loja que você quer selecionada lá no
+                      iFood e cole o código dela aqui: ela entra sozinha, sem você escolher da
+                      lista. Use a lista abaixo só se souber o ID de cor.
+                      <br /><br />
+                      Cada loja adicional custa <strong>+R$50,00/mês</strong>.
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {candidatosIfood.map((c) => (
+                      {candidatosIfood.filter(c => c.nome?.trim()).map((c) => (
                         <button
                           key={c.merchantId}
                           type="button"
@@ -1852,6 +2024,30 @@ export default function IntegracoesHubClient({
                     )}
                     <div style={{ fontSize: "0.78rem", color: "#166534", marginTop: 4 }}>
                       Os pedidos chegam sozinhos no painel. Não é preciso fazer mais nada.
+                    </div>
+
+                    {/* A duvida que gerou este bloco veio de lojista, nao de
+                        suporte: "so entra pedido se eu deixar o 99 aberto".
+                        Nunca foi o app aberto que trazia pedido — era o app
+                        aberto que segurava a loja no ar e confirmava os
+                        pedidos (order_confirm_method = BAPP). Agora o FireHub
+                        confirma sozinho, e a tela precisa dizer: senao o
+                        habito continua. */}
+                    <div style={{ background: "#fff", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 12px", marginTop: 10 }}>
+                      <div style={{ fontSize: "0.83rem", fontWeight: 800, color: "#15803D" }}>
+                        🔓 Você não precisa deixar o app do 99Food aberto
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: 4, lineHeight: 1.5 }}>
+                        Os pedidos chegam aqui sozinhos, pela internet — o computador da loja nem
+                        precisa estar ligado. Com o <strong>aceite automático ligado</strong>, a gente aceita e
+                        confirma no 99Food na hora. Com ele desligado, o pedido fica tocando aqui
+                        esperando você aceitar, como sempre foi.
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "#166534", marginTop: 6, opacity: 0.85, lineHeight: 1.5 }}>
+                        Se você <strong>pausar ou fechar a loja no app do 99Food</strong>, a gente respeita e não
+                        reabre por conta própria. E quem abre e fecha no horário é a agenda cadastrada
+                        <strong> no 99Food</strong> — o horário do FireHub abre e fecha só o seu cardápio digital.
+                      </div>
                     </div>
 
                     {/* A lista só aparece com 2+ lojas: com uma, o cabeçalho

@@ -34,6 +34,9 @@ export const SELECT_DO_CARDAPIO = {
   priceSalao: true, priceDelivery: true, priceTotem: true,
   imageUrl: true, active: true, isCombo: true, isBeverage: true,
   activePDV: true, activeDelivery: true, activeTotem: true, activeGarcom: true,
+  // Opcao que so existe dentro de combo: a tela de cadastro precisa do campo
+  // para marcar, e o cardapio de venda para esconder do avulso.
+  apenasEmCombo: true,
   cost: true, tags: true, availableDays: true, description: true,
   comboConfig: true,
   comboGroups: {

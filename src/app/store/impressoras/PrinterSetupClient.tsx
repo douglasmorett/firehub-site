@@ -31,7 +31,17 @@ type PrinterEntry = {
   modulos?: ModuloDePedido[];
   // So bebida: mesmo dentro de combo, so a bebida sai nesta impressora.
   somenteBebidas?: boolean;
+  // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
+  // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
+  qrPuxar?: boolean;
+  // De quais LOJAS recebe pedido, quando a conta tem mais de uma na mesma
+  // integracao (tres marcas no iFood). Chaves de lib/loja-de-origem.ts.
+  // Ausente ou vazio = de todas.
+  lojas?: string[];
 };
+
+/** Uma loja de origem que a impressora pode escolher receber. */
+export type LojaDeOrigem = { chave: string; nome: string; emoji: string; origem: string };
 
 type AssistantStatus = "checking" | "disconnected" | "connected";
 type DetectedPrinter = { name: string; driver: string; port: string; status: string };
@@ -40,20 +50,31 @@ const ASSISTANT_URL = "http://localhost:7891";
 
 /* ─── Componente principal ───────────────────────────────────── */
 export default function PrinterSetupClient({
-  storeName, franchiseeId, initialConfig, categories,
+  storeName, storeSlug, franchiseeId, initialConfig, categories, lojasDeOrigem = [],
 }: {
   storeName: string;
+  /** Slug da loja: monta a URL do QR do motoboy na comanda de teste. */
+  storeSlug: string;
   franchiseeId: string;
   initialConfig: PrinterConfig | null;
   categories: string[];
+  /** As lojas de origem que uma impressora pode escolher (vazio = a conta tem uma só). */
+  lojasDeOrigem?: LojaDeOrigem[];
 }) {
   const [status, setStatus] = useState<AssistantStatus>("checking");
   const [availablePrinters, setAvailablePrinters] = useState<DetectedPrinter[]>([]);
-  const [config, setConfig] = useState<PrinterConfig>(
-    initialConfig
-      ? { ...initialConfig, autoprint: initialConfig.autoprint !== undefined ? initialConfig.autoprint : true }
-      : { autoprint: true, printers: [] }
-  );
+  const [config, setConfig] = useState<PrinterConfig>(() => {
+    if (!initialConfig) return { autoprint: true, printers: [] };
+    // A primeira versão do QR do motoboy tinha um interruptor único da loja
+    // (`qrPuxarPedido`). Hoje a marca é por impressora: quem havia desligado o
+    // interruptor antigo chega aqui com todas desmarcadas — e o campo velho
+    // some ao salvar, para não existirem duas verdades.
+    const { qrPuxarPedido, ...resto } = initialConfig as PrinterConfig & { qrPuxarPedido?: boolean };
+    const printers = (resto.printers || []).map(p =>
+      qrPuxarPedido === false ? { ...p, qrPuxar: false } : p
+    );
+    return { ...resto, printers, autoprint: resto.autoprint !== undefined ? resto.autoprint : true };
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testingPrinter, setTestingPrinter] = useState<string | null>(null);
@@ -219,6 +240,8 @@ export default function PrinterSetupClient({
               // e o novo usa para rotear o que vem pela fila da nuvem.
               modulos: pr.modulos || [],
               somenteBebidas: pr.somenteBebidas === true,
+              qrPuxar: pr.qrPuxar !== false,
+              lojas: pr.lojas || [],
             })),
           }),
         }).catch(() => {});
@@ -284,6 +307,15 @@ export default function PrinterSetupClient({
     }));
   };
 
+  const toggleLoja = (printerId: string, chave: string) => {
+    const printer = config.printers.find(p => p.id === printerId);
+    if (!printer) return;
+    const atuais = printer.lojas || [];
+    updatePrinter(printerId, {
+      lojas: atuais.includes(chave) ? atuais.filter(c => c !== chave) : [...atuais, chave],
+    });
+  };
+
   const toggleCategory = (printerId: string, cat: string) => {
     const printer = config.printers.find(p => p.id === printerId);
     if (!printer) return;
@@ -343,7 +375,8 @@ export default function PrinterSetupClient({
         storeName,
         entry?.paperWidth || config.defaultPaperWidth || "80mm",
         entry?.columns,
-        config as any,
+        // O slug entra só para a URL do QR de teste; não é gravado na config.
+        { ...config, storeSlug } as any,
         entry?.escposProfile
       );
 
@@ -525,6 +558,10 @@ export default function PrinterSetupClient({
             <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: config.autoprint ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
           </button>
         </div>
+
+        {/* O QR do motoboy é marcado POR IMPRESSORA, dentro de cada cartão
+            abaixo (nasce ligado em todas). O interruptor único da loja que
+            ficava aqui foi absorvido pela marca de cada impressora. */}
 
         {/* Marcador Inteligente de Bebidas */}
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1.25rem" }}>
@@ -821,6 +858,40 @@ export default function PrinterSetupClient({
               </p>
             </div>
 
+            {/* ── De qual loja ──
+                Só aparece quando a conta tem mais de uma loja na mesma
+                integração (três marcas no iFood, duas no 99Food) ou é um grupo
+                de lojas. Categoria e canal não separam uma marca da outra —
+                para eles é tudo "iFood". Vazio = recebe de todas, que é como
+                toda impressora configurada antes continua funcionando. */}
+            {lojasDeOrigem.length > 0 && (
+              <div style={{ marginBottom: "1rem" }}>
+                <label style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", letterSpacing: "0.4px", display: "block", marginBottom: 6 }}>
+                  DE QUAIS LOJAS ESTA IMPRESSORA RECEBE
+                  <span style={{ fontWeight: 400, marginLeft: 6 }}>(vazio = todas)</span>
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {lojasDeOrigem.map(loja => {
+                    const active = (printer.lojas || []).includes(loja.chave);
+                    return (
+                      <button
+                        key={loja.chave}
+                        onClick={() => toggleLoja(printer.id, loja.chave)}
+                        title={`${loja.origem}: ${loja.nome}`}
+                        style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${active ? "#0F766E" : "#E2E8F0"}`, background: active ? "#0F766E12" : "#fff", color: active ? "#0F766E" : "#64748B", fontSize: "0.78rem", fontWeight: active ? 700 : 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+                      >
+                        {active ? "✓ " : ""}{loja.emoji} {loja.origem} · {loja.nome}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0", lineHeight: 1.4 }}>
+                  💡 Três marcas no iFood na mesma conta: a impressora da cozinha da pizza marca só a loja da pizza.
+                  Pedido de uma loja que nenhuma impressora marcou sai em todas, para não ficar sem comanda.
+                </p>
+              </div>
+            )}
+
             {/* ── Só bebida ──
                 Filtrar por categoria não alcança a bebida que vem DENTRO de um
                 combo: o "Combo 2 + Guaravita" tem categoria "Combos", não
@@ -861,6 +932,45 @@ export default function PrinterSetupClient({
                   ⚠️ Este computador está com o Assistente {versaoInstalada}. A separação da bebida
                   dentro do combo só funciona a partir da {VERSAO_ASSISTENTE_ATUAL} — até atualizar,
                   esta impressora vai receber o pedido inteiro. Baixe o instalador lá em cima.
+                </p>
+              )}
+            </div>
+
+            {/* ── QR do motoboy ──
+                Por impressora, e LIGADO por padrão (regra da casa: nasce com
+                tudo ativo, a loja desliga onde não quer — a cozinha não
+                precisa de QR; a via que vai grampeada no saco, sim). O QR
+                carrega só o número da comanda; quem autoriza puxar é o app do
+                motoboy logado. */}
+            <div style={{ marginBottom: "1rem" }}>
+              <button
+                onClick={() => updatePrinter(printer.id, { qrPuxar: printer.qrPuxar === false })}
+                style={{
+                  width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                  padding: "12px 14px", borderRadius: 12,
+                  border: printer.qrPuxar !== false ? "2px solid #7C3AED" : "1.5px solid #E2E8F0",
+                  background: printer.qrPuxar !== false ? "#F5F3FF" : "#fff",
+                  color: printer.qrPuxar !== false ? "#5B21B6" : "#64748B",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: "0.88rem" }}>
+                  {printer.qrPuxar !== false ? "✓" : "○"} 🛵 QR code para o motoboy puxar o pedido
+                </div>
+                <div style={{ fontSize: "0.76rem", fontWeight: 500, marginTop: 3, lineHeight: 1.4, opacity: 0.9 }}>
+                  {printer.qrPuxar !== false
+                    ? "A comanda de entrega sai daqui com um QR no rodapé: o entregador escaneia no app dele e o pedido entra no nome de quem puxou. Só em entrega da própria loja — mesa, balcão e entrega do iFood saem sem QR."
+                    : "Sem QR nesta impressora. O entregador ainda puxa o pedido digitando o número da comanda no app."}
+                </div>
+              </button>
+              {/* O QR é impresso pelo Assistente (comando ESC/POS de QR). Num
+                  Assistente antigo o campo é ignorado e a comanda sai como
+                  sempre — e a marca por impressora, na fila da nuvem, só vale a
+                  partir da versão que a lê. */}
+              {printer.qrPuxar !== false && versaoDesatualizada && (
+                <p style={{ fontSize: "0.74rem", color: "#B45309", margin: "6px 0 0", fontWeight: 700, lineHeight: 1.4 }}>
+                  Este computador está com o Assistente {versaoInstalada}; o QR no papel sai com a
+                  {" "}{VERSAO_ASSISTENTE_ATUAL}. Ele se atualiza sozinho em até 6 horas — ou baixe o
+                  instalador lá em cima. Até lá o entregador puxa digitando o número.
                 </p>
               )}
             </div>

@@ -141,6 +141,11 @@ export default function RoteirizacaoModal({
   const [activeTab, setActiveTab] = useState<"PENDING" | "ROTAS">("PENDING");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+
+  // Motoboys no mapa: LIGADO por padrão. Quem não quiser ver desmarca — o
+  // contrário (nascer desmarcado) esconderia informação de quem nem sabe que
+  // ela existe.
+  const [mostrarMotoboys, setMostrarMotoboys] = useState(true);
   const [hoveredOrderId, setHoveredOrderId] = useState<string | null>(null);
   const [motoboys, setMotoboys] = useState<Motoboy[]>([]);
 
@@ -1551,45 +1556,60 @@ export default function RoteirizacaoModal({
     });
 
     // 3. Render Motoboys Markers with Helmets & Blue Name Badges (Saipos Style)
-    motoboys.forEach(mb => {
+    (mostrarMotoboys ? motoboys : []).forEach(mb => {
       const mbLat = (mb as any).lastLat;
       const mbLng = (mb as any).lastLng;
       if (!mbLat || !mbLng) return;
 
-      // Posição parada há mais de 30 min não é posição — é onde o entregador
-      // ESTAVA quando fechou o app. Mostrar isso como "tempo real" faz a loja
-      // montar rota contando com alguém que talvez nem esteja trabalhando.
       const atualizadoEm = (mb as any).lastLocationUpdate ? new Date((mb as any).lastLocationUpdate).getTime() : 0;
       const minAtras = atualizadoEm ? Math.round((Date.now() - atualizadoEm) / 60000) : null;
-      if (minAtras !== null && minAtras > 30) return;
 
+      // ── POSIÇÃO ANTIGA APARECE, MAS COM CARA DE ANTIGA ────────────────────
+      //
+      // Antes havia `if (minAtras > 30) return`: o entregador simplesmente
+      // sumia do mapa. A intenção era certa — posição de 2h atrás não é
+      // "tempo real" e não serve para montar rota — mas a execução jogava fora
+      // justamente a informação de ONDE ELE FOI VISTO POR ÚLTIMO, que é o que
+      // a loja procura depois que ele dá baixa e fecha o app.
+      //
+      // Agora a posição velha continua no mapa, apagada e sem cor de alerta,
+      // com o horário em destaque. Some só quando nunca houve posição.
+      const recente = minAtras !== null && minAtras <= 30;
+      const corCapacete = recente ? "#DC2626" : "#94A3B8";
+      const corNome = recente ? "#1D4ED8" : "#64748B";
+
+      // Nome ABAIXO do capacete: em cima ele brigava com o pino de entrega
+      // que costuma ficar logo acima, e o dono pediu embaixo.
       const mbHtml = `
         <div style="
           display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer;
+          opacity: ${recente ? 1 : 0.75};
         ">
           <div style="
-            background: #1D4ED8; color: #FFFFFF; font-size: 0.72rem; font-weight: 900;
-            padding: 2px 7px; border-radius: 4px; border: 1.5px solid #FFFFFF;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3); text-transform: uppercase; white-space: nowrap;
-            margin-bottom: 2px;
-          ">
-            ${mb.name}
-          </div>
-          <div style="
-            background: #DC2626; color: #FFFFFF; width: 30px; height: 30px; border-radius: 50%;
+            background: ${corCapacete}; color: #FFFFFF; width: 30px; height: 30px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
             border: 2px solid #FFFFFF; box-shadow: 0 3px 8px rgba(0,0,0,0.35); font-size: 0.95rem;
           ">
             ⛑️
           </div>
+          <div style="
+            background: ${corNome}; color: #FFFFFF; font-size: 0.72rem; font-weight: 900;
+            padding: 2px 7px; border-radius: 4px; border: 1.5px solid #FFFFFF;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3); text-transform: uppercase; white-space: nowrap;
+            margin-top: 2px;
+          ">
+            ${mb.name}
+          </div>
         </div>
       `;
 
+      // O capacete agora é o bloco de CIMA, então a âncora sobe junto: o ponto
+      // do mapa é onde está o capacete, não onde está a etiqueta do nome.
       const mbIcon = L.divIcon({
         html: mbHtml,
         className: `custom-motoboy-pin-${mb.id}`,
         iconSize: [60, 48],
-        iconAnchor: [30, 44],
+        iconAnchor: [30, 15],
       });
 
       // Data e hora COMPLETAS da última atualização: "há X min" sozinho não
@@ -1601,9 +1621,14 @@ export default function RoteirizacaoModal({
       const mbMarker = L.marker([mbLat, mbLng], { icon: mbIcon, zIndexOffset: 950 })
         .addTo(map)
         .bindPopup(`<b>🛵 Entregador ${mb.name}</b><br/>📍 ${
-          minAtras === null ? "Localização GPS" : minAtras <= 1 ? "Atualizado agora" : `Atualizado há ${minAtras} min`
+          minAtras === null ? "Localização GPS"
+            : minAtras <= 1 ? "Atualizado agora"
+            : recente ? `Atualizado há ${minAtras} min`
+            // Posição velha não pode se anunciar como se fosse de agora: quem
+            // lê tem que saber que está vendo o ÚLTIMO lugar onde ele apareceu.
+            : `Visto por último há ${minAtras >= 60 ? `${Math.floor(minAtras / 60)}h${String(minAtras % 60).padStart(2, "0")}` : `${minAtras} min`}`
         }${dataHora ? `<br/><span style="color:#64748B;font-size:0.78rem;">🕒 ${dataHora}</span>` : ""}`)
-        .bindTooltip(dataHora ? `${mb.name} · ${dataHora}` : mb.name, { direction: "top", offset: [0, -40] });
+        .bindTooltip(dataHora ? `${mb.name} · ${dataHora}` : mb.name, { direction: "top", offset: [0, -12] });
 
       markersRef.current.set(`MOTOBOY_${mb.id}`, mbMarker);
     });
@@ -1650,7 +1675,7 @@ export default function RoteirizacaoModal({
         }
       });
     }
-  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, storeAddress, storeCity]);
+  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity]);
 
   // Toggle order selection for forming a route
   const toggleOrderSelection = (id: string) => {
@@ -2323,6 +2348,27 @@ export default function RoteirizacaoModal({
                 <Navigation size={15} style={{ transform: "rotate(45deg)", color: "#2563EB" }} />
                 Centralizar Visão
               </button>
+
+              {/* Filtro de motoboys — nasce MARCADO. Com muitos entregadores o
+                  mapa fica poluído na hora de montar rota, então quem quiser
+                  ver só os pinos de entrega desmarca aqui. */}
+              <label
+                title="Mostrar ou esconder os entregadores no mapa"
+                style={{
+                  background: "#FFFFFF", color: "#0F172A", border: "1.5px solid #CBD5E1",
+                  borderRadius: "8px", padding: "8px 12px", fontSize: "0.82rem", fontWeight: 800,
+                  cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                  display: "flex", alignItems: "center", gap: "6px", userSelect: "none",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={mostrarMotoboys}
+                  onChange={(e) => setMostrarMotoboys(e.target.checked)}
+                  style={{ width: 15, height: 15, accentColor: "#2563EB", cursor: "pointer" }}
+                />
+                ⛑️ Motoboys
+              </label>
             </div>
 
             {/* ─── FLOATING ROUTE SELECTION ACTION BAR (OVER MAP BOTTOM) ─── */}

@@ -510,7 +510,26 @@ export default function StoreTopNav({
   const card: React.CSSProperties = {
     background: "#fff", borderRadius: 20, padding: "1.5rem", width: "100%", maxWidth: 480,
     boxShadow: "0 20px 60px rgba(0,0,0,0.3)", position: "relative",
+    // O fechamento tem uma linha por forma de pagamento, mais iFood, cupom,
+    // pendente, fiado, mesa e os avisos: num notebook (768px de altura, ou
+    // Windows a 125%) o cartão ficava mais alto que a janela. Centralizado num
+    // overlay fixo e sem rolagem, ele vazava por cima E por baixo — o X e o
+    // botão "Encerrar Caixa" saíam da tela, e o operador não tinha como fechar
+    // nem confirmar. O menu "Movimentar caixa" já tinha este teto.
+    maxHeight: "calc(100vh - 32px)", overflowY: "auto", WebkitOverflowScrolling: "touch",
   };
+
+  // Esc fecha o modal do caixa. Enquanto o X podia estar fora da tela, era a
+  // única saída — e continua sendo a mais rápida. Os avisos (pendente, em
+  // branco, diferença) exigem resposta explícita, então ali o Esc não fecha.
+  useEffect(() => {
+    if (!showCloseModal) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !closeWarn && !showPendingWarn && !showBlankWarn) setShowCloseModal(false);
+    };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [showCloseModal, closeWarn, showPendingWarn, showBlankWarn]);
 
   return (
     <>
@@ -1038,7 +1057,13 @@ export default function StoreTopNav({
                     )}
                   </tfoot>
                 </table>
-                <div style={{ display:"flex", gap:8 }}>
+                {/* Gruda no rodapé do cartão enquanto a tabela rola: o botão
+                    de encerrar fica sempre à vista, seja qual for a altura da
+                    tela. */}
+                <div style={{ display:"flex", gap:8, position:"sticky", bottom:0, background:"#fff", paddingTop:10, boxShadow:"0 -10px 12px -8px rgba(15,23,42,0.12)",
+                              // Sticky para dentro do padding do cartão: sem isto a linha
+                              // de baixo da tabela aparecia por uma fresta embaixo dos botões.
+                              marginBottom:"-1.5rem", paddingBottom:"1.5rem" }}>
                   <a href="/store/caixa/historico" style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.85rem", cursor:"pointer", textAlign:"center", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                     <History size={15} /> Histórico
                   </a>

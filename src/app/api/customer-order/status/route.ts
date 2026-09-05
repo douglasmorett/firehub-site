@@ -134,6 +134,13 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
+  // Status igual ao atual não é transição: sem esta guarda, um segundo clique
+  // em "Entregue" no painel (ENTREGUE → ENTREGUE, que o ADMIN passa direto)
+  // disparava DE NOVO o WhatsApp "seu pedido chegou" e os efeitos da entrega.
+  if (order.status === status) {
+    return NextResponse.json({ success: true, semMudanca: true, order });
+  }
+
   // State machine: só permite transições válidas (exceto ADMIN que tem controle total)
   if (role !== "ADMIN") {
     const allowedNext = ALLOWED_TRANSITIONS[order.status] ?? [];

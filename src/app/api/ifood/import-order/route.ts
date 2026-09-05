@@ -95,7 +95,6 @@ export async function POST(req: NextRequest) {
     // "dummy_id", e o id cru podia colidir com um produto do cardápio da loja.
     const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
       franchiseeId,
-      active: true,
     });
 
     const customer = orderData.customer || {};
