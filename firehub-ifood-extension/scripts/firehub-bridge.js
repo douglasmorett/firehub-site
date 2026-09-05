@@ -252,6 +252,16 @@ if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.onMessage)
     if (msg && msg.action === "IFOOD_CONNECTED_ALERT") {
       removeIfoodDisconnectedBanner();
     }
+    if (msg && msg.action === "IFOOD_TAB_MISSING_ALERT") {
+      showIfoodDisconnectedBanner(
+        msg.reason || "A aba de Configurações de entrega do portal iFood não está aberta.",
+        { id: "firehub-ifood-tab-alert", titulo: "Abra o portal iFood para o prazo mudar", botao: "🗔 Abrir a tela de entrega" }
+      );
+    }
+    if (msg && msg.action === "IFOOD_TAB_PRESENT") {
+      const el = document.getElementById("firehub-ifood-tab-alert");
+      if (el) el.remove();
+    }
     if (msg && msg.action === "ETA_UPDATED") {
       updateFloatingPill(msg.formatted, msg.ordersInProduction, msg.mode, msg.shouldPause);
     }
@@ -267,11 +277,13 @@ if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged)
 setTimeout(createFloatingCornerPill, 500);
 
 // ── BANNER DE ALERTA DE DESCONEXÃO NO FIREHUB ──
-function showIfoodDisconnectedBanner(reasonText) {
-  if (document.getElementById("firehub-ifood-disconnect-alert")) return;
+function showIfoodDisconnectedBanner(reasonText, opcoes) {
+  const o = opcoes || {};
+  const id = o.id || "firehub-ifood-disconnect-alert";
+  if (document.getElementById(id)) return;
 
   const alertContainer = document.createElement("div");
-  alertContainer.id = "firehub-ifood-disconnect-alert";
+  alertContainer.id = id;
   alertContainer.style.cssText = `
     position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 999999;
     background: #FEF2F2; border: 2px solid #EF4444; color: #991B1B;
@@ -284,15 +296,15 @@ function showIfoodDisconnectedBanner(reasonText) {
   alertContainer.innerHTML = `
     <span style="font-size: 18px;">⚠️</span>
     <div style="flex: 1;">
-      <div style="font-size: 14px; font-weight: 900; color: #7F1D1D;">O Portal iFood foi desconectado!</div>
-      <div style="font-size: 12px; font-weight: 600; color: #991B1B;">Sua extensão do iFood foi desconectada ou a sessão deslogou. Clique no botão ao lado para relogar no iFood.</div>
+      <div style="font-size: 14px; font-weight: 900; color: #7F1D1D;">${o.titulo || "O Portal iFood foi desconectado!"}</div>
+      <div style="font-size: 12px; font-weight: 600; color: #991B1B;">${o.titulo ? reasonText : "Sua extensão do iFood foi desconectada ou a sessão deslogou. Clique no botão ao lado para relogar no iFood."}</div>
     </div>
-    <button id="firehub-reconnect-ifood-btn" style="
+    <button class="firehub-reconnect-ifood-btn" style="
       background: #EF4444; color: #FFFFFF; border: none; padding: 8px 16px;
       border-radius: 10px; font-weight: 900; font-size: 12px; cursor: pointer;
       box-shadow: 0 4px 12px rgba(239,68,68,0.3); transition: all 0.2s; flex-shrink: 0;
-    ">🔑 Reconectar no iFood</button>
-    <button id="firehub-close-ifood-alert-btn" style="
+    ">${o.botao || "🔑 Reconectar no iFood"}</button>
+    <button class="firehub-close-ifood-alert-btn" style="
       background: none; border: none; color: #991B1B; font-weight: 900; font-size: 16px;
       cursor: pointer; padding: 0 4px; line-height: 1; flex-shrink: 0;
     " title="Fechar aviso">✕</button>
@@ -300,20 +312,21 @@ function showIfoodDisconnectedBanner(reasonText) {
 
   document.body.appendChild(alertContainer);
 
-  const btn = document.getElementById("firehub-reconnect-ifood-btn");
+  // Clique do lojista: o UNICO caminho que abre ou foca a aba do iFood.
+  const btn = alertContainer.querySelector(".firehub-reconnect-ifood-btn");
   if (btn) {
     btn.addEventListener("click", () => {
       if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
         chrome.runtime.sendMessage({ action: "FOCUS_OR_OPEN_IFOOD" }).catch(() => {});
       }
-      removeIfoodDisconnectedBanner();
+      alertContainer.remove();
     });
   }
 
-  const closeBtn = document.getElementById("firehub-close-ifood-alert-btn");
+  const closeBtn = alertContainer.querySelector(".firehub-close-ifood-alert-btn");
   if (closeBtn) {
     closeBtn.addEventListener("click", () => {
-      removeIfoodDisconnectedBanner();
+      alertContainer.remove();
     });
   }
 }
