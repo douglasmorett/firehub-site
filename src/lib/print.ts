@@ -118,6 +118,9 @@ type PrinterEntry = {
   /* QR "puxar pedido" do motoboy no rodape da comanda de entrega.
      Ausente = LIGADO (nasce ligado em todas; a loja desliga onde nao quer). */
   qrPuxar?: boolean;
+  /* Recebe a conta da mesa (a impressao pedida no modulo de mesas).
+     Ausente = automatico, decidido por lib/impressao-da-conta.ts. */
+  contaDaMesa?: boolean;
   /* De quais LOJAS recebe pedido, quando a conta tem mais de uma na mesma
      integracao (tres marcas no iFood, duas no 99Food). Chaves de
      lib/loja-de-origem.ts. Ausente ou vazio = de todas. */

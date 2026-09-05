@@ -7,6 +7,11 @@ import {
   impressoraAtendeModulo,
   type ModuloDePedido,
 } from "@/lib/modulo-do-pedido";
+import {
+  contaSaiNestaImpressora,
+  impressorasDaContaDaMesa,
+  materializarEscolhaDaConta,
+} from "@/lib/impressao-da-conta";
 
 /* ─── Tipos ─────────────────────────────────────────────────── */
 type PrinterConfig = {
@@ -34,6 +39,10 @@ type PrinterEntry = {
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
+  // Recebe a impressao PEDIDA no modulo de mesa (a conta da mesa).
+  // Ausente = automatico: vale o palpite de lib/impressao-da-conta.ts (a
+  // impressora do caixa) ate a loja marcar as que quer.
+  contaDaMesa?: boolean;
   // De quais LOJAS recebe pedido, quando a conta tem mais de uma na mesma
   // integracao (tres marcas no iFood). Chaves de lib/loja-de-origem.ts.
   // Ausente ou vazio = de todas.
@@ -88,6 +97,11 @@ export default function PrinterSetupClient({
   // antigo devolve, e havia build reportando "2.0.0" com código mais velho que
   // o de hoje — a ordem mentiria.
   const versaoDesatualizada = !!versaoInstalada && versaoInstalada !== VERSAO_ASSISTENTE_ATUAL;
+
+  // A loja desmarcou a conta da mesa em TODAS as impressoras: o botao
+  // "Imprimir Conta" do modulo de mesas passa a recusar, e e melhor dizer
+  // isso aqui do que deixar o garcom descobrir na frente do cliente.
+  const contaSemImpressora = impressorasDaContaDaMesa(config.printers) === null;
 
   const selo =
     status === "connected"
@@ -241,6 +255,7 @@ export default function PrinterSetupClient({
               modulos: pr.modulos || [],
               somenteBebidas: pr.somenteBebidas === true,
               qrPuxar: pr.qrPuxar !== false,
+              contaDaMesa: contaSaiNestaImpressora(pr, config.printers),
               lojas: pr.lojas || [],
             })),
           }),
@@ -313,6 +328,23 @@ export default function PrinterSetupClient({
     const atuais = printer.lojas || [];
     updatePrinter(printerId, {
       lojas: atuais.includes(chave) ? atuais.filter(c => c !== chave) : [...atuais, chave],
+    });
+  };
+
+  /**
+   * Liga/desliga a conta da mesa NESTA impressora.
+   *
+   * Congela antes o palpite nas outras (materializarEscolhaDaConta): enquanto
+   * ninguem escolheu, marcar a cozinha faria passar a valer "so as marcadas"
+   * e tiraria o caixa da lista sem ninguem ter pedido isso.
+   */
+  const toggleContaDaMesa = (id: string) => {
+    setConfig(c => {
+      const congelados = materializarEscolhaDaConta(c.printers);
+      return {
+        ...c,
+        printers: congelados.map(p => p.id === id ? { ...p, contaDaMesa: !p.contaDaMesa } : p),
+      };
     });
   };
 
@@ -971,6 +1003,41 @@ export default function PrinterSetupClient({
                   Este computador está com o Assistente {versaoInstalada}; o QR no papel sai com a
                   {" "}{VERSAO_ASSISTENTE_ATUAL}. Ele se atualiza sozinho em até 6 horas — ou baixe o
                   instalador lá em cima. Até lá o entregador puxa digitando o número.
+                </p>
+              )}
+            </div>
+
+            {/* ── Conta da mesa ──
+                A impressao que o garcom PEDE no modulo de mesas (botao
+                "Imprimir Conta"), e nao a comanda que nasce do pedido. Enquanto
+                a loja nao marcar nenhuma vale o palpite de sempre — a impressora
+                do caixa — e e ele que aparece marcado aqui: a tela mostra o que o
+                papel ja faz hoje. O primeiro clique congela esse palpite nas
+                outras impressoras (lib/impressao-da-conta.ts). */}
+            <div style={{ marginBottom: "1rem" }}>
+              <button
+                onClick={() => toggleContaDaMesa(printer.id)}
+                style={{
+                  width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                  padding: "12px 14px", borderRadius: 12,
+                  border: contaSaiNestaImpressora(printer, config.printers) ? "2px solid #0D9488" : "1.5px solid #E2E8F0",
+                  background: contaSaiNestaImpressora(printer, config.printers) ? "#F0FDFA" : "#fff",
+                  color: contaSaiNestaImpressora(printer, config.printers) ? "#0F766E" : "#64748B",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: "0.88rem" }}>
+                  {contaSaiNestaImpressora(printer, config.printers) ? "✓" : "○"} 🧾 Imprimir a conta da mesa
+                </div>
+                <div style={{ fontSize: "0.76rem", fontWeight: 500, marginTop: 3, lineHeight: 1.4, opacity: 0.9 }}>
+                  {contaSaiNestaImpressora(printer, config.printers)
+                    ? "Quando o garçom pedir a conta no módulo de mesas, o cupom com o consumo, a taxa e a divisão por pessoa sai nesta impressora."
+                    : "A conta pedida no módulo de mesas não sai aqui. As comandas dos pedidos da mesa continuam saindo normalmente."}
+                </div>
+              </button>
+              {contaSemImpressora && (
+                <p style={{ fontSize: "0.74rem", color: "#DC2626", margin: "6px 0 0", fontWeight: 800, lineHeight: 1.4 }}>
+                  ⚠️ Nenhuma impressora está marcada para a conta da mesa. Enquanto ficar assim, o
+                  botão “Imprimir Conta” do módulo de mesas vai avisar que não há para onde mandar.
                 </p>
               )}
             </div>
