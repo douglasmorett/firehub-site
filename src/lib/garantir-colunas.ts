@@ -685,11 +685,28 @@ const INSTRUCOES_MESA = [
      CONSTRAINT "PrintRequest_pkey" PRIMARY KEY ("id")
    )`,
   `CREATE INDEX IF NOT EXISTS "PrintRequest_franchiseeId_createdAt_idx" ON "PrintRequest"("franchiseeId", "createdAt")`,
-  `DO $ BEGIN
-     ALTER TABLE "PrintRequest" ADD CONSTRAINT "PrintRequest_franchiseeId_fkey"
-       FOREIGN KEY ("franchiseeId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-   EXCEPTION WHEN duplicate_object THEN NULL; END $`,
 ];
+
+/**
+ * A chave estrangeira entra a parte, e nao na lista acima.
+ *
+ * O caminho usual seria um bloco anonimo (DO ... EXCEPTION WHEN
+ * duplicate_object), que e o que as garantias vizinhas fazem. Mas por
+ * `$executeRawUnsafe` o Prisma trata o cifrao como marcador de parametro e o
+ * Postgres responde `syntax error at or near "$"` — barulho no log a cada boot,
+ * sem criar nada. Conferir antes em `pg_constraint` faz o mesmo servico sem
+ * bloco anonimo, e e igualmente repetivel.
+ */
+async function garantirChaveDaImpressao(): Promise<void> {
+  const existe = await prisma.$queryRaw<{ conname: string }[]>`
+    SELECT conname FROM pg_constraint WHERE conname = 'PrintRequest_franchiseeId_fkey'
+  `;
+  if (existe.length > 0) return;
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "PrintRequest" ADD CONSTRAINT "PrintRequest_franchiseeId_fkey" ` +
+      `FOREIGN KEY ("franchiseeId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE`
+  );
+}
 
 let mesaOk = false;
 
@@ -712,6 +729,12 @@ export async function garantirEstruturaDeMesa(): Promise<void> {
       } catch (err: any) {
         console.error(`[Boot] Instrução de mesa falhou: ${err?.message}`);
       }
+    }
+
+    try {
+      await garantirChaveDaImpressao();
+    } catch (err: any) {
+      console.error(`[Boot] Chave estrangeira de PrintRequest: ${err?.message}`);
     }
 
     const colunas = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
