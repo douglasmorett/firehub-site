@@ -1878,6 +1878,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
         router.refresh();
 
+        // O status local mudou, mas o iFood recusou acompanhar (token vencido,
+        // loja desconectada…). Antes isso morria no log do servidor e o lojista
+        // só descobria pela reclamação do cliente.
+        const data = await res.json().catch(() => ({}));
+        if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#F59E0B");
+
         // 🖨️ Impressão Automática ao Aceitar Pedido (se autoprint estiver ativado)
         if (newStatus === "ACEITO" && printerConfig?.autoprint !== false) {
           const targetOrder = orders.find(o => o.id === orderId);

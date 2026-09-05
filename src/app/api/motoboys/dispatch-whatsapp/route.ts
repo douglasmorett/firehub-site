@@ -68,7 +68,8 @@ export async function POST(req: NextRequest) {
           const orders = await prisma.customerOrder.findMany({
             where: { id: { in: orderIds } },
             select: {
-              id: true, openDeliveryOrderId: true, ifoodOrderId: true, status: true, franchiseeId: true,
+              id: true, openDeliveryOrderId: true, ifoodOrderId: true, ifoodStoreMerchant: true,
+              status: true, franchiseeId: true,
               // O canal decide o parceiro: o id do 99Food mora no mesmo campo
               // do JotaJá, e sem isto o dispatch ia sempre para o JotaJá.
               openDeliveryChannel: true, source: true, deliveryBy: true,
@@ -99,18 +100,11 @@ export async function POST(req: NextRequest) {
                 console.warn(`[Motoboy Dispatch → Jotajá] Erro sync ${ord.openDeliveryOrderId}:`, err?.message);
               }
             }
+            // Com a credencial do dono do pedido — o token central só alcança
+            // a Hakim, e nas outras lojas o despacho era um 403 engolido.
             if (ord.ifoodOrderId) {
-              try {
-                const { getIfoodToken } = await import("@/lib/ifood-api");
-                const token = await getIfoodToken();
-                const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-                const baseUrl = `https://merchant-api.ifood.com.br/order/v1.0/orders/${ord.ifoodOrderId}`;
-                await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
-                const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
-                console.log(`[Motoboy Dispatch → iFood] dispatch ${ord.ifoodOrderId}: ${r.status}`);
-              } catch (err: any) {
-                console.warn(`[Motoboy Dispatch → iFood] Erro sync ${ord.ifoodOrderId}:`, err?.message);
-              }
+              const { despacharNoIfood } = await import("@/lib/ifood-pedido");
+              await despacharNoIfood(ord, "Motoboy Dispatch → iFood");
             }
           }
         })();

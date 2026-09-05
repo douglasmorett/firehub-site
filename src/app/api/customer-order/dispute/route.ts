@@ -44,83 +44,55 @@ export async function PUT(req: Request) {
   let ifoodResult = "no_ifood";
   if (order.ifoodOrderId) {
     try {
-      const { getIfoodToken } = await import("@/lib/ifood-api");
-      const token = await getIfoodToken();
-      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+      // Com a credencial do DONO do pedido: o token central só alcança a
+      // Hakim, e nas outras lojas a disputa era respondida com um 403 que
+      // ninguém via — o cliente ficava sem resposta no iFood.
+      const { chamarPeloPedido } = await import("@/lib/ifood-pedido");
       const disputeId = order.cancelDispute?.disputeId;
-      const baseUrl = "https://merchant-api.ifood.com.br/order/v1.0";
+      const base = "/order/v1.0";
+      const post = (path: string, corpo: unknown = {}) =>
+        chamarPeloPedido(order, path, { method: "POST", body: JSON.stringify(corpo) }, "iFood Dispute");
 
       if (action === "update_delivery_time") {
         const { additionalMinutes = 10, reason = "OUT_FOR_DELIVERY" } = body;
         if (disputeId) {
-          const r = await fetch(`${baseUrl}/disputes/${disputeId}/accept`, {
-            method: "POST", headers,
-            body: JSON.stringify({ additionalMinutes, reason }),
-          });
-          const respText = await r.text().catch(() => "");
-          console.log(`[iFood Dispute] UPDATE_TIME disputes/${disputeId}/accept: ${r.status} ${respText}`);
+          const r = await post(`${base}/disputes/${disputeId}/accept`, { additionalMinutes, reason });
           ifoodResult = `disputes_accept_time:${r.status}`;
         } else {
-          const r = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/updateEta`, {
-            method: "POST", headers,
-            body: JSON.stringify({ additionalMinutes }),
-          });
+          const r = await post(`${base}/orders/${order.ifoodOrderId}/updateEta`, { additionalMinutes });
           ifoodResult = `updateEta:${r.status}`;
         }
       } else if (action === "deny_delivery") {
         if (disputeId) {
-          const r = await fetch(`${baseUrl}/disputes/${disputeId}/reject`, {
-            method: "POST", headers,
-            body: JSON.stringify({ reason: "CANNOT_DELIVER" }),
-          });
+          const r = await post(`${base}/disputes/${disputeId}/reject`, { reason: "CANNOT_DELIVER" });
           ifoodResult = `disputes_reject_time:${r.status}`;
         }
       } else if (action === "accept") {
         // Try Disputes API first (correct endpoint)
         if (disputeId) {
-          const r = await fetch(`${baseUrl}/disputes/${disputeId}/accept`, {
-            method: "POST", headers,
-            body: JSON.stringify({ reason: "CUSTOMER_SATISFACTION" }),
-          });
-          const respText = await r.text().catch(() => "");
-          console.log(`[iFood Dispute] ACCEPT disputes/${disputeId}/accept: ${r.status} ${respText}`);
+          const r = await post(`${base}/disputes/${disputeId}/accept`, { reason: "CUSTOMER_SATISFACTION" });
           ifoodResult = `disputes_accept:${r.status}`;
 
           if (!r.ok) {
-            const r2 = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/acceptCancellation`, { method: "POST", headers });
-            console.log(`[iFood Dispute] ACCEPT fallback acceptCancellation: ${r2.status}`);
+            const r2 = await post(`${base}/orders/${order.ifoodOrderId}/acceptCancellation`);
             ifoodResult += `,fallback:${r2.status}`;
           }
         } else {
-          const r = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/acceptCancellation`, { method: "POST", headers });
-          console.log(`[iFood Dispute] ACCEPT acceptCancellation (no disputeId): ${r.status}`);
+          const r = await post(`${base}/orders/${order.ifoodOrderId}/acceptCancellation`);
           ifoodResult = `acceptCancellation:${r.status}`;
         }
       } else if (action === "deny") {
         const reason = denyReason || "Pedido já em andamento";
         if (disputeId) {
-          const r = await fetch(`${baseUrl}/disputes/${disputeId}/reject`, {
-            method: "POST", headers,
-            body: JSON.stringify({ reason }),
-          });
-          const respText = await r.text().catch(() => "");
-          console.log(`[iFood Dispute] DENY disputes/${disputeId}/reject: ${r.status} ${respText}`);
+          const r = await post(`${base}/disputes/${disputeId}/reject`, { reason });
           ifoodResult = `disputes_reject:${r.status}`;
 
           if (!r.ok) {
-            const r2 = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/denyCancellation`, {
-              method: "POST", headers,
-              body: JSON.stringify({ reason }),
-            });
-            console.log(`[iFood Dispute] DENY fallback denyCancellation: ${r2.status}`);
+            const r2 = await post(`${base}/orders/${order.ifoodOrderId}/denyCancellation`, { reason });
             ifoodResult += `,fallback:${r2.status}`;
           }
         } else {
-          const r = await fetch(`${baseUrl}/orders/${order.ifoodOrderId}/denyCancellation`, {
-            method: "POST", headers,
-            body: JSON.stringify({ reason }),
-          });
-          console.log(`[iFood Dispute] DENY denyCancellation (no disputeId): ${r.status}`);
+          const r = await post(`${base}/orders/${order.ifoodOrderId}/denyCancellation`, { reason });
           ifoodResult = `denyCancellation:${r.status}`;
         }
       }

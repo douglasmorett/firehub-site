@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { getIfoodToken } from "@/lib/ifood-api";
+import { chamarPeloPedido } from "@/lib/ifood-pedido";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -26,6 +26,8 @@ export async function GET(req: NextRequest) {
     where: { id: orderId },
     select: {
       ifoodOrderId: true,
+      ifoodStoreMerchant: true,
+      franchiseeId: true,
       ifoodDriverName: true,
       ifoodDriverPhone: true,
       ifoodDriverVehicle: true,
@@ -64,11 +66,12 @@ export async function GET(req: NextRequest) {
 
   // Buscar tracking na API do iFood
   try {
-    const token = await getIfoodToken();
-
-    const res = await fetch(
-      `https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/tracking`,
-      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }
+    // Com a credencial do dono do pedido (o token central só alcança a Hakim).
+    const res = await chamarPeloPedido(
+      order,
+      `/order/v1.0/orders/${order.ifoodOrderId}/tracking`,
+      { method: "GET", idempotente: true },
+      "iFood Tracking",
     );
 
     if (!res.ok) {
@@ -80,8 +83,7 @@ export async function GET(req: NextRequest) {
           message: "Tracking ainda não disponível",
         });
       }
-      const errText = await res.text().catch(() => "");
-      console.error(`[iFood Tracking] Erro ${res.status}: ${errText.slice(0, 200)}`);
+      console.error(`[iFood Tracking] Erro ${res.status}: ${res.texto.slice(0, 200)}`);
       return NextResponse.json({
         tracking: null,
         driver: driverInfo,
@@ -89,7 +91,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const data = await res.json();
+    const data = res.data ?? {};
 
     // Atualiza ETA no banco se disponível
     if (data.expectedDelivery || data.deliveryEtaEnd) {

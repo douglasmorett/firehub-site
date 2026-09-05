@@ -104,21 +104,11 @@ export async function POST(req: NextRequest) {
           }
         }
         // ── Sync iFood ──
+        // Com a credencial do dono do pedido — o token central só alcança a
+        // Hakim, e nas outras lojas o despacho era um 403 engolido pelo log.
         if (ord.ifoodOrderId) {
-          try {
-            const { getIfoodToken } = await import("@/lib/ifood-api");
-            const token = await getIfoodToken();
-            const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-            const baseUrl = `https://merchant-api.ifood.com.br/order/v1.0/orders/${ord.ifoodOrderId}`;
-            if (ord.status === "ACEITO" || ord.status === "NOVO") {
-              await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers }).catch(() => {});
-            }
-            await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
-            const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
-            console.log(`[Route Dispatch → iFood] dispatch ${ord.ifoodOrderId}: ${r.status}`);
-          } catch (err: any) {
-            console.warn(`[Route Dispatch → iFood] Erro sync ${ord.ifoodOrderId}:`, err?.message);
-          }
+          const { despacharNoIfood } = await import("@/lib/ifood-pedido");
+          await despacharNoIfood(ord, "Route Dispatch → iFood");
         }
       }
     })();

@@ -52,15 +52,16 @@ export async function GET(req: Request) {
 
   if (order.ifoodOrderId) {
     try {
-      const { getIfoodToken } = await import("@/lib/ifood-api");
-      const token = await getIfoodToken();
-      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-      const baseUrl = `https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/cancellationReasons`;
-
-      console.log(`[iFood cancellationReasons] Fetching reasons for order ${order.ifoodOrderId}...`);
-      const res = await fetch(baseUrl, { method: "GET", headers });
+      // Com a credencial do dono do pedido (o token central só alcança a Hakim).
+      const { chamarPeloPedido } = await import("@/lib/ifood-pedido");
+      const res = await chamarPeloPedido(
+        order,
+        `/order/v1.0/orders/${order.ifoodOrderId}/cancellationReasons`,
+        { method: "GET", idempotente: true },
+        "iFood cancellationReasons",
+      );
       if (res.ok) {
-        const data = await res.json();
+        const data = res.data;
         console.log(`[iFood cancellationReasons] Received data:`, JSON.stringify(data));
         
         let reasons: any[] = [];

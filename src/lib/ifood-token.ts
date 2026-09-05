@@ -182,6 +182,128 @@ function centralPermitido(explicito?: boolean) {
   return process.env.IFOOD_CENTRAL_FALLBACK !== "off";
 }
 
+type IntegracaoComToken = {
+  id: string;
+  label: string | null;
+  merchantId: string;
+  accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: Date | null;
+  clientId: string | null;
+  clientSecret: string | null;
+};
+
+const SELECT_INTEGRACAO = {
+  id: true, label: true, merchantId: true, accessToken: true,
+  refreshToken: true, tokenExpiresAt: true, clientId: true, clientSecret: true,
+} as const;
+
+/**
+ * A cascata em si: integração → usuário → central. É compartilhada entre o
+ * contexto da sessão (telas) e o contexto do pedido (transições de status).
+ */
+async function cascataDeCredenciais(opts: {
+  userId: string;
+  franchiseeId: string;
+  integracoes: IntegracaoComToken[];
+  permitirCentral?: boolean;
+  /**
+   * Empilhar TODAS as integrações com token, não só a primeira. É o que o
+   * pedido precisa: numa conta com três lojas do iFood, o token de uma não
+   * abre o pedido da outra, e chamarComContexto só troca de credencial se
+   * houver próxima na lista.
+   */
+  todas?: boolean;
+}): Promise<{ credenciais: Credencial[]; lojaEscolhida: IntegracaoComToken | null }> {
+  const { userId, franchiseeId, integracoes } = opts;
+  const credenciais: Credencial[] = [];
+  let lojaEscolhida = integracoes[0] ?? null;
+
+  // 1) Integração com token próprio — a resposta preferida.
+  for (const integ of integracoes) {
+    const token = await tokenDaIntegracao(integ);
+    if (token) {
+      if (credenciais.length === 0) lojaEscolhida = integ;
+      credenciais.push({ token, origem: "integracao", integrationId: integ.id });
+      if (!opts.todas) break;
+    }
+  }
+
+  // 2) O token do distribuído que ainda mora no usuário.
+  const tokenUser = (await tokenDoUsuario(franchiseeId)) ?? (await tokenDoUsuario(userId));
+  if (tokenUser && !credenciais.some((c) => c.token === tokenUser)) {
+    credenciais.push({ token: tokenUser, origem: "usuario" });
+  }
+
+  // 3) O centralizado, por último e só se permitido.
+  if (centralPermitido(opts.permitirCentral)) {
+    try {
+      const central = await getIfoodToken();
+      if (central) credenciais.push({ token: central, origem: "central" });
+    } catch (e: any) {
+      // Falta de segredo do app central não pode derrubar a loja que tem token
+      // próprio — por isso o erro morre aqui.
+      console.warn("[iFood token] central indisponível:", e?.message);
+    }
+  }
+
+  return { credenciais, lojaEscolhida };
+}
+
+/**
+ * O contexto de um PEDIDO — resolvido pelo dono do pedido, nunca pela sessão.
+ *
+ * As transições de status (confirm, dispatch, conclude, cancel) chamavam o
+ * iFood com `getIfoodToken()`, o app centralizado, que só alcança a Hakim.
+ * Nas outras lojas cada chamada era um 403 engolido pelo log — o pedido saía
+ * para entrega aqui e ficava parado lá (ver lib/ifood-pedido.ts).
+ *
+ * Resolver pela sessão também não serviria: o ADMIN em modo suporte e o app do
+ * motoboy (que nem tem sessão de lojista) mexem em pedidos de outra conta. O
+ * dono é `franchiseeId`, e a integração preferida é a do merchant do pedido —
+ * numa conta com várias lojas do iFood, o token de uma não abre o pedido da
+ * outra.
+ */
+export async function contextoDoPedido(pedido: {
+  franchiseeId: string;
+  /** CustomerOrder.ifoodStoreMerchant — a loja do iFood de onde o pedido veio. */
+  ifoodStoreMerchant?: string | null;
+}): Promise<ContextoIfood> {
+  const dono = await prisma.user.findUnique({
+    where: { id: pedido.franchiseeId },
+    select: { id: true, ownerId: true, ifoodMerchantId: true },
+  });
+  if (!dono) throw new ErroIfood("Loja do pedido não encontrada.", 404);
+  const franchiseeId = dono.ownerId || dono.id;
+
+  const todas = await prisma.ifoodIntegration.findMany({
+    where: { userId: franchiseeId, active: true },
+    orderBy: { createdAt: "asc" },
+    select: SELECT_INTEGRACAO,
+  });
+  // A integração do merchant do pedido vai na frente; as outras ficam como
+  // reserva, porque a loja antiga pode ter o pedido gravado sem merchantId.
+  const doPedido = todas.filter((i) => i.merchantId === pedido.ifoodStoreMerchant);
+  const integracoes = [...doPedido, ...todas.filter((i) => !doPedido.includes(i))];
+
+  const { credenciais, lojaEscolhida } = await cascataDeCredenciais({
+    userId: dono.id, franchiseeId, integracoes, todas: true,
+  });
+
+  if (credenciais.length === 0) {
+    throw new ErroIfood(
+      "Esta loja não tem uma autorização válida do iFood. Reconecte a loja em Integrações.",
+      409,
+    );
+  }
+
+  return {
+    merchantId: pedido.ifoodStoreMerchant || lojaEscolhida?.merchantId || dono.ifoodMerchantId || "",
+    label: lojaEscolhida?.label ?? undefined,
+    credenciais,
+  };
+}
+
 /**
  * Qual loja e com quais credenciais falar com o iFood.
  *
@@ -213,18 +335,9 @@ export async function contextoIfood(opts: {
     throw new ErroIfood("Esta loja iFood não está integrada nesta conta.", 404);
   }
 
-  const credenciais: Credencial[] = [];
-  let lojaEscolhida = integracoes[0] ?? null;
-
-  // 1) Integração com token próprio — a resposta preferida.
-  for (const integ of integracoes) {
-    const token = await tokenDaIntegracao(integ);
-    if (token) {
-      lojaEscolhida = integ;
-      credenciais.push({ token, origem: "integracao", integrationId: integ.id });
-      break;
-    }
-  }
+  const { credenciais, lojaEscolhida } = await cascataDeCredenciais({
+    userId, franchiseeId, integracoes, permitirCentral: opts.permitirCentral,
+  });
 
   const alvo =
     lojaEscolhida?.merchantId ||
@@ -236,24 +349,6 @@ export async function contextoIfood(opts: {
 
   if (!alvo) throw new ErroIfood("Nenhuma loja iFood conectada nesta conta.", 404);
 
-  // 2) O token do distribuído que ainda mora no usuário.
-  const tokenUser = (await tokenDoUsuario(franchiseeId)) ?? (await tokenDoUsuario(userId));
-  if (tokenUser && !credenciais.some((c) => c.token === tokenUser)) {
-    credenciais.push({ token: tokenUser, origem: "usuario" });
-  }
-
-  // 3) O centralizado, por último e só se permitido.
-  if (centralPermitido(opts.permitirCentral)) {
-    try {
-      const central = await getIfoodToken();
-      if (central) credenciais.push({ token: central, origem: "central" });
-    } catch (e: any) {
-      // Falta de segredo do app central não pode derrubar a loja que tem token
-      // próprio — por isso o erro morre aqui.
-      console.warn("[iFood token] central indisponível:", e?.message);
-    }
-  }
-
   if (credenciais.length === 0) {
     throw new ErroIfood(
       "Esta loja não tem uma autorização válida do iFood. Reconecte a loja em Integrações.",
@@ -261,7 +356,7 @@ export async function contextoIfood(opts: {
     );
   }
 
-  return { merchantId: alvo, label: lojaEscolhida?.label, credenciais };
+  return { merchantId: alvo, label: lojaEscolhida?.label ?? undefined, credenciais };
 }
 
 /** Todas as lojas iFood da conta — para o seletor das telas. */

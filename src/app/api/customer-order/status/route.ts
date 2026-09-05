@@ -174,76 +174,59 @@ export async function PUT(req: Request) {
   }
 
   // ── Sync with iFood ──
+  //
+  // Com a credencial do DONO do pedido. Isto usava `getIfoodToken()`, o app
+  // centralizado, que só alcança a Hakim: para as outras lojas cada confirm,
+  // dispatch, conclude e cancel daqui era um 403 que o log engolia — o pedido
+  // saía para entrega no painel e ficava parado no iFood (lib/ifood-pedido.ts).
+  // A recusa agora volta na resposta, em `avisoIfood`, para o painel mostrar.
+  let avisoIfood: string | null = null;
   if (order.ifoodOrderId) {
     try {
-      const { getIfoodToken } = await import("@/lib/ifood-api");
-      const token = await getIfoodToken();
-      const ifoodId = order.ifoodOrderId;
-      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-      const baseUrl = `https://merchant-api.ifood.com.br/order/v1.0/orders/${ifoodId}`;
+      const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
+      const { mensagemDeErro } = await import("@/lib/ifood-http");
+      let resposta: Awaited<ReturnType<typeof acaoNoPedidoIfood>> | null = null;
 
       if (status === "ACEITO") {
-        // Confirm order on iFood
-        const r = await fetch(`${baseUrl}/confirm`, { method: "POST", headers });
-        console.log(`[iFood Sync] confirm ${ifoodId}: ${r.status}`);
+        resposta = await acaoNoPedidoIfood(order, "confirm");
       }
 
       if (status === "PRONTO") {
-        // Envia readyToPickup para o iFood (acelera a alocação/chegada do motoboy parceiro do iFood e notifica cliente)
-        const r = await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers });
-        console.log(`[iFood Sync] readyToPickup ${ifoodId}: ${r.status}`);
+        // readyToPickup acelera a alocação do motoboy parceiro e avisa o cliente.
+        resposta = await acaoNoPedidoIfood(order, "readyToPickup");
       }
 
       if (status === "SAIU_ENTREGA") {
-        // Garantir que startPreparation e readyToPickup foram enviados ao iFood
-        if (order.status === "ACEITO" || order.status === "NOVO") {
-          await fetch(`${baseUrl}/startPreparation`, { method: "POST", headers }).catch(() => {});
-        }
-        await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
-
-        // Dispatch (pedidos de entrega)
-        const r = await fetch(`${baseUrl}/dispatch`, { method: "POST", headers });
-        console.log(`[iFood Sync] dispatch ${ifoodId}: ${r.status}`);
+        resposta = await despacharNoIfood(order);
       }
 
       if (status === "ENTREGUE") {
         const isPickup = order.deliveryType !== "DELIVERY";
-        if (isPickup) {
-          await fetch(`${baseUrl}/readyToPickup`, { method: "POST", headers }).catch(() => {});
-        } else {
-          await fetch(`${baseUrl}/dispatch`, { method: "POST", headers }).catch(() => {});
-        }
-        // Conclude order (works for both delivery and pickup)
-        const r2 = await fetch(`${baseUrl}/conclude`, { method: "POST", headers, body: JSON.stringify({}) });
-        console.log(`[iFood Sync] conclude ${ifoodId}: ${r2.status}`);
+        await acaoNoPedidoIfood(order, isPickup ? "readyToPickup" : "dispatch");
+        resposta = await acaoNoPedidoIfood(order, "conclude");
       }
 
       if (status === "CANCELADO") {
-        // Cancel on iFood
         updateData.cancelledBy = "LOJA";
         if (cancelReason) updateData.cancelReason = cancelReason;
 
         const codeToUse = cancellationCode || "501";
-
-        const cancelRes = await fetch(`${baseUrl}/requestCancellation`, {
-          method: "POST", headers,
-          body: JSON.stringify({ reason: cancelReason || "CANCELLED_BY_RESTAURANT", cancellationCode: String(codeToUse) }),
+        resposta = await acaoNoPedidoIfood(order, "requestCancellation", {
+          body: { reason: cancelReason || "CANCELLED_BY_RESTAURANT", cancellationCode: String(codeToUse) },
         });
 
-        if (!cancelRes.ok) {
-          // Fallback: try deny (for NOVO orders) or direct cancel
-          const fallbackUrl = order.status === "NOVO" ? `${baseUrl}/deny` : `${baseUrl}/cancel`;
-          const fallbackRes = await fetch(fallbackUrl, {
-            method: "POST", headers,
-            body: JSON.stringify({ reason: cancelReason || "Cancelado pela loja", cancelCodeId: String(codeToUse) }),
+        if (!resposta.ok) {
+          // Fallback: deny para pedido ainda NOVO, cancel para os demais.
+          resposta = await acaoNoPedidoIfood(order, order.status === "NOVO" ? "deny" : "cancel", {
+            body: { reason: cancelReason || "Cancelado pela loja", cancelCodeId: String(codeToUse) },
           });
-          console.log(`[iFood Sync] cancel fallback ${ifoodId}: ${fallbackRes.status}`);
-        } else {
-          console.log(`[iFood Sync] ✅ cancel ${ifoodId}: ${cancelRes.status}`);
         }
       }
+
+      if (resposta && !resposta.ok) avisoIfood = mensagemDeErro(resposta);
     } catch (err: any) {
       console.error(`[iFood Sync] Erro ${order.ifoodOrderId}:`, err?.message);
+      avisoIfood = "Não foi possível avisar o iFood desta mudança.";
       // Don't block local update even if iFood sync fails
     }
   }
@@ -488,7 +471,9 @@ export async function PUT(req: Request) {
     );
   }
 
-  return NextResponse.json({ success: true });
+  // `avisoIfood` vem preenchido quando o iFood recusou a ação: o status local
+  // mudou, mas o lojista precisa saber que o iFood não acompanhou.
+  return NextResponse.json({ success: true, avisoIfood });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });

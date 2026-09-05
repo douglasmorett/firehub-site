@@ -194,7 +194,7 @@ export async function PUT(req: NextRequest) {
     // qual parceiro mandar o "pronto".
     select: {
       id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true,
-      ifoodOrderId: true, openDeliveryOrderId: true,
+      ifoodOrderId: true, ifoodStoreMerchant: true, openDeliveryOrderId: true,
       openDeliveryChannel: true, source: true, deliveryBy: true,
     },
   });
@@ -257,18 +257,11 @@ export async function PUT(req: NextRequest) {
 
     // 🚀 Sincronizar com iFood, Jotajá e WhatsApp de forma assíncrona (não-bloqueante para resposta instantânea no KDS)
     (async () => {
+      // Com a credencial do dono do pedido — o token central só alcança a
+      // Hakim, e nas outras lojas o "pronto" era um 403 engolido pelo log.
       if (order.ifoodOrderId) {
-        try {
-          const { getIfoodToken } = await import("@/lib/ifood-api");
-          const token = await getIfoodToken();
-          const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-          await fetch(`https://merchant-api.ifood.com.br/order/v1.0/orders/${order.ifoodOrderId}/readyToPickup`, {
-            method: "POST",
-            headers,
-          });
-        } catch (errIfood) {
-          console.warn("[KDS iFood Sync Error]:", errIfood);
-        }
+        const { acaoNoPedidoIfood } = await import("@/lib/ifood-pedido");
+        await acaoNoPedidoIfood(order, "readyToPickup", { rotulo: "KDS → iFood" });
       }
 
       // O "pronto" do KDS vale para os dois parceiros que usam este campo, mas

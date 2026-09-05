@@ -416,20 +416,15 @@ export async function PATCH(req: NextRequest) {
     // não espera parceiro nenhum. Cada efeito falha sozinho e vira log.
     (async () => {
       // iFood: conclude fecha o pedido (dispatch antes, se for entrega).
+      // Com a credencial do dono do pedido — o app do motoboy não tem sessão
+      // de lojista, e o token central só alcança a Hakim.
       if ((order as any).ifoodOrderId) {
-        try {
-          const { getIfoodToken } = await import("@/lib/ifood-api");
-          const token = await getIfoodToken();
-          const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-          const baseUrl = `https://merchant-api.ifood.com.br/order/v1.0/orders/${(order as any).ifoodOrderId}`;
-          if (order.deliveryType === "DELIVERY") {
-            await fetch(`${baseUrl}/dispatch`, { method: "POST", headers }).catch(() => {});
-          }
-          const r = await fetch(`${baseUrl}/conclude`, { method: "POST", headers, body: JSON.stringify({}) });
-          console.log(`[Motoboy Entrega → iFood] conclude ${(order as any).ifoodOrderId}: ${r.status}`);
-        } catch (e: any) {
-          console.warn("[Motoboy Entrega → iFood] erro:", e?.message);
+        const { acaoNoPedidoIfood } = await import("@/lib/ifood-pedido");
+        const rotulo = "Motoboy Entrega → iFood";
+        if (order.deliveryType === "DELIVERY") {
+          await acaoNoPedidoIfood(order, "dispatch", { rotulo });
         }
+        await acaoNoPedidoIfood(order, "conclude", { rotulo });
       }
 
       // 99Food e Jotajá dividem o campo openDeliveryOrderId; o canal separa.
