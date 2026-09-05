@@ -851,6 +851,9 @@ export async function GET(req: NextRequest) {
       const d = new Date(raw);
       return isNaN(d.getTime()) ? fallback : d;
     };
+    // Teto de idade do pedido "em andamento" que ignora o período (ver o OR abaixo).
+    const DIAS_ATIVO_SEM_PERIODO = 7;
+    const ATIVO_SEM_PERIODO_DESDE = new Date(Date.now() - DIAS_ATIVO_SEM_PERIODO * 24 * 60 * 60 * 1000);
     const from = parseDate(req.nextUrl.searchParams.get("from"), new Date(Date.now() - 24 * 60 * 60 * 1000));
     const to = parseDate(req.nextUrl.searchParams.get("to"), new Date(Date.now() + 24 * 60 * 60 * 1000));
 
@@ -862,12 +865,31 @@ export async function GET(req: NextRequest) {
         status: { not: "ENCERRADO" },
         AND: [{
           OR: [
-            // Em andamento: sempre visível, mesmo de ontem. É o pedido que a
-            // loja ainda precisa tocar.
-            { status: { in: ACTIVE_STATUSES } },
+            // Em andamento: visível mesmo fora do período escolhido, porque é o
+            // pedido que a loja ainda precisa tocar. Mas com um teto de idade.
+            //
+            // Sem o teto, um pedido que travou em NOVO/ACEITO e nunca foi
+            // entregue nem cancelado voltava ao painel TODO DIA, para sempre.
+            // Foi o que aconteceu com quatro pedidos duplicados do JotaJá de
+            // 31/07 e 01/08/2026: seguiram entulhando o painel e a
+            // roteirização por mais de um mês, e não havia saída limpa — o
+            // cancelamento pela tela dispara WhatsApp ao cliente, e marcar
+            // ENTREGUE emitiria NFC-e e contaria a venda.
+            //
+            // Nada é apagado: passado o teto, o pedido volta a obedecer ao
+            // período, então basta abrir a data dele para encontrá-lo e
+            // resolvê-lo. Sete dias é folgado para qualquer operação real —
+            // pedido em andamento há uma semana não é operação, é resíduo.
+            {
+              AND: [
+                { status: { in: ACTIVE_STATUSES } },
+                { createdAt: { gte: ATIVO_SEM_PERIODO_DESDE } },
+              ],
+            },
             // Finalizado/cancelado: só dentro do período que a tela mostra.
             { createdAt: { gte: from, lte: to } },
-            // Agendado para o período, ainda que criado antes dele.
+            // Agendado para o período, ainda que criado antes dele. Continua
+            // valendo para o agendamento distante, que não tem teto de idade.
             { scheduledDatetime: { gte: from, lte: to } },
           ],
         }],
