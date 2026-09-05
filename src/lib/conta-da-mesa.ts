@@ -249,6 +249,17 @@ export function montarCupomDaConta(
     items.push({ name: "Gorjeta", qty: 1, price: conta.gorjeta });
   }
 
+  // O cupom soma unitário × quantidade para montar o subtotal e imprime
+  // `totalAmount` como total. O unitário aqui é derivado por divisão, então um
+  // item com preço de mais de duas casas faria os dois números divergirem por
+  // centavos no papel — e "Subtotal 99,99 / Total 100,00" numa conta que o
+  // cliente confere é discussão na mesa. A diferença entra como linha própria.
+  const somaImpressa = items.reduce((soma, i) => soma + Math.round(i.price * i.qty * 100), 0);
+  const diferenca = Math.round(conta.total * 100) - somaImpressa;
+  if (diferenca !== 0) {
+    items.push({ name: "Ajuste de centavos", qty: 1, price: Math.round(diferenca) / 100 });
+  }
+
   const rateio = conta.pessoas.map((p) => ({ nome: p.nome, valor: p.aPagar }));
   const resumoDoRateio =
     rateio.length > 0 ? ` | ${rateio.map((r) => `${r.nome} ${fmtReais(r.valor)}`).join(" | ")}` : "";
