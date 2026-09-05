@@ -21,12 +21,9 @@ const SETTINGS_URL_MATCH = SETTINGS_URL + "*";
 // faixa muda de verdade ou quando passou o intervalo minimo. Evita um save por
 // minuto num portal de terceiro (rate-limit / revisao).
 const MIN_APPLY_INTERVAL_MS = 3 * 60 * 1000;
-const TAB_CREATE_COOLDOWN_MS = 2 * 60 * 1000;
 const BRIDGE_FRESH_MS = 30000;
 
-// Locks em memoria contra corrida dentro do mesmo ciclo de vida do SW.
-// O lock duravel fica em storage, porque variavel de modulo morre com o SW.
-let creatingSettingsTab = false;
+// Lock em memoria contra corrida dentro do mesmo ciclo de vida do SW.
 let applyInFlight = false;
 
 // ── ESTADO DO BRIDGE (em storage.session: sobrevive a morte do SW) ──
@@ -192,8 +189,11 @@ async function handleFocusOrOpenIfood(sendResponse, forceFocus) {
   }
 
   if (!forceFocus) {
-    const created = await createSettingsTabGuarded();
-    if (sendResponse) sendResponse({ success: !!created, tabId: created });
+    // Sem gesto do lojista a extensao NAO abre aba. Antes abria em segundo plano com
+    // cooldown e, quando o portal caia no login (URL diferente da de configuracoes),
+    // a busca nao achava a aba e outra era criada a cada 2 minutos — dezenas de abas.
+    avisarAbaFaltando();
+    if (sendResponse) sendResponse({ success: false, reason: "sem-aba" });
     return;
   }
 
@@ -214,35 +214,18 @@ async function handleFocusOrOpenIfood(sendResponse, forceFocus) {
 }
 
 /**
- * Cria a aba de configuracoes em segundo plano COM GUARDA.
- * Sem isso, calculateAndApply (chamada pelo bridge a cada poucos segundos)
- * dispara chrome.tabs.create repetidamente antes da aba aparecer no
- * tabs.query, abrindo dezenas de abas do iFood. O timestamp vai pro storage
- * porque variavel de modulo do SW MV3 morre a cada ~30s de ociosidade.
+ * A aba de configuracoes do iFood NUNCA e criada automaticamente (decisao de
+ * 04/09/2026). A extensao so trabalha com a aba que o lojista deixou aberta;
+ * sem ela, avisa no painel do FireHub e no popup, e nada mais.
  */
-async function createSettingsTabGuarded() {
-  if (creatingSettingsTab) return null;
-
-  const store = await chrome.storage.local.get("lastSettingsTabCreate");
-  const lastCreate = store.lastSettingsTabCreate || 0;
-  if (Date.now() - lastCreate < TAB_CREATE_COOLDOWN_MS) {
-    console.log("[FireHub] Criacao de aba em cooldown, ignorando.");
-    return null;
-  }
-
-  // Recheca: outra chamada pode ter criado a aba enquanto esperavamos o storage.
-  const existing = await chrome.tabs.query({ url: SETTINGS_URL_MATCH });
-  if (existing.length > 0) return existing[0].id || null;
-
-  creatingSettingsTab = true;
-  try {
-    await chrome.storage.local.set({ lastSettingsTabCreate: Date.now() });
-    console.log("[FireHub] Criando 1 unica aba de configuracoes em segundo plano...");
-    const tab = await chrome.tabs.create({ url: SETTINGS_URL, active: false });
-    return tab.id || null;
-  } finally {
-    creatingSettingsTab = false;
-  }
+function avisarAbaFaltando() {
+  chrome.storage.local.set({
+    ifoodApplyError: "Abra a tela Configuracoes > Entrega do portal iFood e deixe a aba aberta"
+  });
+  notifyBridgeTabs({
+    action: "IFOOD_TAB_MISSING_ALERT",
+    reason: "A aba de Configurações de entrega do portal iFood não está aberta. O prazo não muda até você abrir e deixar aberta."
+  });
 }
 
 // ── FUNCOES INJETADAS NA PAGINA DO IFOOD ──
@@ -589,14 +572,13 @@ async function calculateAndApply(count, opts) {
     const settingsTabs = await chrome.tabs.query({ url: SETTINGS_URL_MATCH });
     console.log("[FireHub] Despachando " + recommendedMinutes + " min | Abas de Config: " + settingsTabs.length);
 
-    if (settingsTabs.length === 0) {
-      await chrome.storage.local.set({ pendingETA: recommendedMinutes });
-      await createSettingsTabGuarded();
+    if (settingsTabs.length === 0 || !settingsTabs[0].id) {
+      avisarAbaFaltando();
       return { dispatched: false, reason: "sem-aba", recommendedMinutes: recommendedMinutes };
     }
 
     const tabId = settingsTabs[0].id;
-    if (!tabId) return { dispatched: false, reason: "sem-aba", recommendedMinutes: recommendedMinutes };
+    notifyBridgeTabs({ action: "IFOOD_TAB_PRESENT" });
 
     // Avisa a pilula da aba do iFood (so display, nao automacao).
     chrome.tabs.sendMessage(tabId, {
