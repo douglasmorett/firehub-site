@@ -91,6 +91,8 @@ export default function PrinterSetupClient({
   const [showHelp, setShowHelp] = useState(false);
   /** Versão do Assistente que está rodando neste computador. */
   const [versaoInstalada, setVersaoInstalada] = useState<string | null>(null);
+  /** Comandas em que o Assistente (1.2.6+) DESISTIU de imprimir. */
+  const [falhasAssistente, setFalhasAssistente] = useState<{ pedido: string; impressora: string; tentativas: number; quando: string }[]>([]);
 
   // Comparação literal de propósito: qualquer diferença é motivo de aviso.
   // Comparar por ordem de versão exigiria confiar no formato que cada build
@@ -186,6 +188,7 @@ export default function PrinterSetupClient({
       setStatus("connected");
       setAvailablePrinters(connectedData.printers || []);
       setVersaoInstalada((connectedData as any).version || null);
+      setFalhasAssistente(Array.isArray((connectedData as any).falhasRecentes) ? (connectedData as any).falhasRecentes : []);
       if (userClicked) {
         alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(connectedData.printers || []).length} impressora(s) detectada(s) neste computador.`);
       }
@@ -486,6 +489,21 @@ export default function PrinterSetupClient({
                       ? `⚠️ Assistente ${versaoInstalada} — a versão atual é ${VERSAO_ASSISTENTE_ATUAL}. Baixe o instalador ao lado e instale por cima (não precisa desinstalar). Esta é a última atualização manual: a partir da 1.2.0 ele se atualiza sozinho.`
                       : `Assistente ${versaoInstalada} — atualizado`}
                   </p>
+                )}
+                {/* O Assistente tenta por quase 8 minutos antes de desistir de uma
+                    comanda. Quando desiste, isto era um console.error num programa
+                    sem janela: a loja só descobria pelo cliente. */}
+                {falhasAssistente.length > 0 && (
+                  <div style={{ margin: "6px 0 0", padding: "6px 10px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, fontSize: "0.72rem", color: "#991B1B" }}>
+                    <strong>Comandas que NÃO saíram</strong> (o Assistente desistiu depois de várias tentativas):
+                    <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
+                      {falhasAssistente.slice(0, 8).map((f, i) => (
+                        <li key={i}>
+                          Pedido #{f.pedido} na impressora “{f.impressora}” às {new Date(f.quando).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ({f.tentativas} tentativas). Imprima de novo pelo painel de pedidos.
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             </div>

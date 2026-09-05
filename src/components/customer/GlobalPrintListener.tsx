@@ -5,12 +5,28 @@ import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
 
 const LOCK_PREFIX = "firehub_autoprinted_v4_";
 
+/**
+ * A marca de "já imprimi" é SÓ o id do pedido.
+ *
+ * Ela era também a referência curta da plataforma (o #ABCD do iFood, o índice
+ * do dia do 99Food), e a marca vive 48 h neste localStorage. Só que essas
+ * referências REPETEM: no banco, em 7 dias, a Ragnar teve o iFood "4743" às
+ * 01:02 e de novo às 06:02 do mesmo dia, e a Brasa tem o 99Food "403001" a
+ * "403009" TODO DIA. O segundo pedido com a mesma referência era "já impresso"
+ * — e a loja via o #30 e o #32 saírem e o #31 nunca. A referência só serve de
+ * chave quando o pedido não tem id, o que não acontece com pedido do banco.
+ */
+function chavesDoPedido(order: any): string[] {
+  if (order?.id) return [String(order.id)];
+  return [order?.ifoodReference, order?.openDeliveryReference].filter(Boolean).map(String);
+}
+
 function isOrderPrinted(order: any): boolean {
   if (!order) return true;
   if (typeof window === "undefined") return false;
 
   const memorySet = (window as any).__FIREHUB_PRINTED_IDS__ as Set<string> | undefined;
-  const keys = [order.id, order.ifoodReference, order.openDeliveryReference].filter(Boolean);
+  const keys = chavesDoPedido(order);
 
   for (const key of keys) {
     if (memorySet && memorySet.has(key)) return true;
@@ -30,8 +46,7 @@ function claimOrderPrint(order: any) {
   }
   const memorySet = (window as any).__FIREHUB_PRINTED_IDS__ as Set<string>;
 
-  const keys = [order.id, order.ifoodReference, order.openDeliveryReference].filter(Boolean);
-  for (const key of keys) {
+  for (const key of chavesDoPedido(order)) {
     memorySet.add(key);
     try {
       localStorage.setItem(LOCK_PREFIX + key, Date.now().toString());
@@ -45,30 +60,55 @@ function claimOrderPrint(order: any) {
  * A reivindicação vem antes de imprimir (e precisa vir: é o que impede dois
  * polls de imprimir o mesmo pedido). Mas, se a impressão falha — Assistente
  * fechado, spooler ocupado, impressora religando — a marca ficava e o pedido
- * nunca mais saía, sem aviso nenhum. Solto, ele volta na próxima rodada de
- * 5 s enquanto estiver dentro dos 30 minutos que a tela considera recente.
+ * nunca mais saía, sem aviso nenhum. Solto, ele volta enquanto estiver dentro
+ * dos 30 minutos que a tela considera recente.
+ *
+ * As tentativas são ESPAÇADAS. Eram três, uma a cada rodada de 5 s: uma
+ * impressora religando ou um spooler travado por 15 segundos bastava para o
+ * pedido ser dado por impresso para sempre — e o #31 sumia entre o #30 e o
+ * #32. Agora a espera dobra a cada falha (15 s, 30 s, 60 s…), o que cobre
+ * uma troca de bobina inteira antes de desistir.
  */
-const MAX_TENTATIVAS_LOCAIS = 3;
-const tentativasPorPedido = new Map<string, number>();
+const MAX_TENTATIVAS_LOCAIS = 6;
+const ESPERA_BASE_MS = 15_000;
+const tentativasPorPedido = new Map<string, { falhas: number; naoAntesDe: number }>();
 
-function releaseOrderPrint(order: any) {
-  if (!order || typeof window === "undefined") return;
-  // Impressora que não existe falharia a cada 5 s por 30 min; três vezes basta.
-  const chave = String(order.id || order.ifoodReference || order.openDeliveryReference || "");
-  const falhas = (tentativasPorPedido.get(chave) || 0) + 1;
-  tentativasPorPedido.set(chave, falhas);
-  if (falhas >= MAX_TENTATIVAS_LOCAIS) {
-    console.warn(`[GlobalPrint Master] Pedido ${chave} falhou ${falhas}x; fica como impresso.`);
-    return;
-  }
+/** Ainda em espera depois de uma falha? Então esta rodada não mexe nele. */
+function emEsperaDeNovaTentativa(order: any): boolean {
+  const t = tentativasPorPedido.get(chavesDoPedido(order)[0] || "");
+  return !!t && Date.now() < t.naoAntesDe;
+}
+
+function desfazerReivindicacao(order: any) {
   const memorySet = (window as any).__FIREHUB_PRINTED_IDS__ as Set<string> | undefined;
-  const keys = [order.id, order.ifoodReference, order.openDeliveryReference].filter(Boolean);
-  for (const key of keys) {
+  for (const key of chavesDoPedido(order)) {
     memorySet?.delete(key);
     try {
       localStorage.removeItem(LOCK_PREFIX + key);
     } catch {}
   }
+}
+
+function releaseOrderPrint(order: any, contarFalha = true) {
+  if (!order || typeof window === "undefined") return;
+  const chave = chavesDoPedido(order)[0] || "";
+  if (!contarFalha) {
+    // Não havia Assistente para tentar: solta sem gastar tentativa, para que
+    // o pedido saia assim que ele voltar (o auto-update reinicia o programa).
+    desfazerReivindicacao(order);
+    return;
+  }
+  const atual = tentativasPorPedido.get(chave) || { falhas: 0, naoAntesDe: 0 };
+  atual.falhas += 1;
+  if (atual.falhas >= MAX_TENTATIVAS_LOCAIS) {
+    tentativasPorPedido.set(chave, atual);
+    console.error(`[GlobalPrint Master] Pedido ${chave} falhou ${atual.falhas}x; desistindo (fica como impresso).`);
+    return;
+  }
+  atual.naoAntesDe = Date.now() + Math.min(ESPERA_BASE_MS * 2 ** (atual.falhas - 1), 5 * 60_000);
+  tentativasPorPedido.set(chave, atual);
+  desfazerReivindicacao(order);
+  console.warn(`[GlobalPrint Master] Pedido ${chave} não saiu (${atual.falhas}/${MAX_TENTATIVAS_LOCAIS}); nova tentativa em ${Math.round((atual.naoAntesDe - Date.now()) / 1000)} s.`);
 }
 
 export default function GlobalPrintListener() {
@@ -162,6 +202,8 @@ export default function GlobalPrintListener() {
 
                 // ATOMIC CHECK: Se já foi impresso ou reclamado, ignora!
                 if (isOrderPrinted(order)) continue;
+                // Falhou há pouco: espera o prazo da nova tentativa.
+                if (emEsperaDeNovaTentativa(order)) continue;
 
                 // Reivindica atomicamente ANTES de disparar a impressão
                 claimOrderPrint(order);
@@ -243,12 +285,15 @@ export default function GlobalPrintListener() {
                   );
 
                   if (!result.success) {
-                    // Não saiu: solta a reivindicação para tentar de novo no
-                    // próximo poll, em vez de dar o pedido por impresso. Só
-                    // quando HAVIA Assistente e ele falhou (attempted): sem
-                    // Assistente nesta máquina não há o que tentar de novo, e
-                    // cada tentativa refaz oito sondas de localhost.
-                    if (result.attempted) releaseOrderPrint(order);
+                    // Não saiu: solta a reivindicação para tentar de novo, em
+                    // vez de dar o pedido por impresso. Com Assistente que
+                    // falhou (attempted), conta a tentativa e espera. Sem
+                    // Assistente nesta máquina, solta sem contar: ele pode
+                    // estar reiniciando (o auto-update faz isso) e o pedido
+                    // precisa sair quando ele voltar. As sondas de localhost
+                    // ficam em cache em lib/print.ts, então isto não custa
+                    // oito chamadas por pedido por rodada.
+                    releaseOrderPrint(order, result.attempted);
                     // Fallback para Fila de Impressão na nuvem
                     await fetch("/api/store/print-queue", {
                       method: "POST",

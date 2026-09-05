@@ -1488,6 +1488,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       console.warn("[Print] Erro na impressão local:", err);
     }
 
+    // Não saiu por aqui: a marca de "já imprimi" cai, para que a próxima
+    // chance (o ouvinte global, um novo aceite) não a encontre e desista. O
+    // Assistente deduplica por id, então isto não gera comanda em dobro.
+    if (!printedLocally && !isManual) unmarkAutoPrinted(order);
+
     if (printedLocally) {
       setTimeout(() => {
         if (orderKey) printingInProgressRef.current.delete(orderKey);
@@ -1535,20 +1540,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const autoPrintedIdsRef = useRef<Set<string>>(new Set());
   const previousStatusRef = useRef<Map<string, string>>(new Map(initialOrders.map((o: any) => [o.id, o.status])));
 
+  // A marca de "já imprimi" é SÓ o id do pedido. Era também a referência
+  // curta da plataforma (#ABCD do iFood, índice do dia do 99Food), e este
+  // conjunto vive enquanto a aba viver — dias, num PC de caixa. Essas
+  // referências repetem (o 99Food reinicia todo dia; o iFood repetiu "4743"
+  // duas vezes no mesmo dia na Ragnar), e o segundo pedido era "já impresso":
+  // o #30 e o #32 saíam, o #31 não. Mesma regra do GlobalPrintListener.
+  const chaveDeImpressao = (o: any): string | null =>
+    o?.id ? String(o.id) : (o?.ifoodReference || o?.openDeliveryReference || null);
+
   const markAutoPrinted = (o: any) => {
-    if (!o) return;
-    if (o.id) autoPrintedIdsRef.current.add(o.id);
-    if (o.ifoodReference) autoPrintedIdsRef.current.add(o.ifoodReference);
-    if (o.openDeliveryReference) autoPrintedIdsRef.current.add(o.openDeliveryReference);
+    const chave = chaveDeImpressao(o);
+    if (chave) autoPrintedIdsRef.current.add(chave);
+  };
+
+  const unmarkAutoPrinted = (o: any) => {
+    const chave = chaveDeImpressao(o);
+    if (chave) autoPrintedIdsRef.current.delete(chave);
   };
 
   const isAutoPrinted = (o: any) => {
-    if (!o) return false;
-    return (
-      (o.id && autoPrintedIdsRef.current.has(o.id)) ||
-      (o.ifoodReference && autoPrintedIdsRef.current.has(o.ifoodReference)) ||
-      (o.openDeliveryReference && autoPrintedIdsRef.current.has(o.openDeliveryReference))
-    );
+    const chave = chaveDeImpressao(o);
+    return !!chave && autoPrintedIdsRef.current.has(chave);
   };
 
   useEffect(() => {
@@ -1624,6 +1637,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }
                 });
               }
+
+              // ── O PEDIDO DA IA NÃO É "NOVO" PARA ESTE DETECTOR ──────────
+              //
+              // O robô do WhatsApp cria o rascunho (CRIANDO_IA) na primeira
+              // mensagem e, quando o cliente confirma, vira NOVO no MESMO
+              // registro. O id já estava em `knownOrderIds` desde o rascunho,
+              // então o pedido nunca entrava em `freshOrders` — e a tela não
+              // imprimia. Quem salvava era o ouvinte global (só nos 30 min
+              // após a criação) ou a fila da nuvem. Aqui a mudança de status
+              // conta como chegada.
+              const statusAnterior = previousStatusRef.current;
+              newOrders.forEach((o: any) => {
+                if (statusAnterior.get(o.id) !== "CRIANDO_IA" || o.status === "CRIANDO_IA") return;
+                if (o.status === "CANCELADO" || o.status === "ENCERRADO") return;
+                if (printerConfig?.autoprint !== false && !isAutoPrinted(o)) {
+                  markAutoPrinted(o);
+                  console.log("[AutoPrint] 🖨️ Pedido da IA confirmado; imprimindo:", o.id);
+                  handlePrint(o, "cozinha");
+                }
+              });
 
               // Atualizar IDs e status conhecidos
               knownOrderIdsRef.current = new Set(newOrders.map((o: any) => o.id));

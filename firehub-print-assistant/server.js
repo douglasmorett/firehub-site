@@ -109,44 +109,59 @@ public class RawPrint {
     if (!OpenPrinter(name, out h, IntPtr.Zero)) return false;
     var di = new DOCINFOA { pDocName="FireHub", pDataType="RAW" };
     if (!StartDocPrinter(h, 1, ref di)) { ClosePrinter(h); return false; }
-    StartPagePrinter(h);
+    if (!StartPagePrinter(h)) { EndDocPrinter(h); ClosePrinter(h); return false; }
     IntPtr p = Marshal.AllocCoTaskMem(data.Length);
     Marshal.Copy(data, 0, p, data.Length);
-    int w; WritePrinter(h, p, data.Length, out w);
+    // WritePrinter era chamado sem olhar o retorno: spooler que recusava os
+    // bytes virava "impresso". Agora so e sucesso se TODOS os bytes entraram.
+    int w; bool escreveu = WritePrinter(h, p, data.Length, out w);
     Marshal.FreeCoTaskMem(p);
     EndPagePrinter(h); EndDocPrinter(h); ClosePrinter(h);
-    return true;
+    return escreveu && w == data.Length;
   }
 }
 "@
 
 $bytes = [System.IO.File]::ReadAllBytes($FilePath)
 $ok = $false
+$usada = ""
+
+# Impressora "virtual" nao imprime papel: PDF, XPS, OneNote, fax, "enviar para
+# arquivo". Mandar comanda para uma delas e perder a comanda com cara de OK.
+function EhVirtual($p) {
+  if (-not $p) { return $true }
+  $n = "$($p.Name) $($p.DriverName) $($p.PortName)"
+  return ($n -match "PDF|XPS|OneNote|Fax|PORTPROMPT|FILE:|nul:|SHRFAX|Microsoft Print")
+}
 
 if ($PrinterName -and $PrinterName.Trim() -ne "") {
+  # Impressora NOMEADA pelo site: e ela ou nada. Este script desviava para a
+  # impressora padrao do Windows quando ela falhava — e num PC de loja a
+  # padrao costuma ser "Microsoft Print to PDF" ou a impressora do outro
+  # setor. O cupom "saia" (OK no log, marcado como impresso) sem existir no
+  # papel certo: era o #31 que ninguem via entre o #30 e o #32.
   $ok = [RawPrint]::Send($PrinterName, $bytes)
-}
-
-if (-not $ok) {
-  # Tenta buscar impressora padrão do Windows
+  if ($ok) { $usada = $PrinterName }
+} else {
+  # Sem nome: a padrao do Windows, depois a primeira termica fisica — nunca
+  # uma virtual.
   try {
-    $defaultPrinter = (Get-WmiObject -Class Win32_Printer -ErrorAction SilentlyContinue | Where-Object { $_.Default -eq $true }).Name
-    if ($defaultPrinter) { $ok = [RawPrint]::Send($defaultPrinter, $bytes) }
+    $def = Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq (Get-WmiObject -Class Win32_Printer -ErrorAction SilentlyContinue | Where-Object { $_.Default -eq $true }).Name }
+    if ($def -and -not (EhVirtual $def)) { $ok = [RawPrint]::Send($def.Name, $bytes); if ($ok) { $usada = $def.Name } }
   } catch {}
+  if (-not $ok) {
+    try {
+      $any = Get-Printer -ErrorAction SilentlyContinue | Where-Object { -not (EhVirtual $_) -and ($_.PortName -like "USB*" -or $_.PortName -like "LPT*" -or $_.DriverName -like "*elgin*" -or $_.DriverName -like "*pos*" -or $_.DriverName -like "*epson*" -or $_.DriverName -like "*bematech*") } | Select-Object -First 1
+      if ($any) { $ok = [RawPrint]::Send($any.Name, $bytes); if ($ok) { $usada = $any.Name } }
+    } catch {}
+  }
 }
 
 if (-not $ok) {
-  # Tenta primeira impressora USB / Térmica física instalada
-  try {
-    $anyPrinter = (Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.PortName -like "USB*" -or $_.PortName -like "LPT*" -or $_.DriverName -like "*elgin*" -or $_.DriverName -like "*pos*" -or $_.DriverName -like "*epson*" -or $_.DriverName -like "*bematech*" } | Select-Object -First 1).Name
-    if ($anyPrinter) { $ok = [RawPrint]::Send($anyPrinter, $bytes) }
-  } catch {}
+  $erro = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+  throw "Falha ao enviar dados para impressora '$PrinterName' (Win32 $erro)"
 }
-
-if (-not $ok) {
-  throw "Falha ao enviar dados para impressora ($PrinterName)"
-}
-Write-Output "OK"
+Write-Output "OK $usada"
 `, "utf-8");
 
 /**
@@ -1276,11 +1291,18 @@ function getOrderDeduplicationKeys(order, printerName) {
   // comanda seria engolida por esta chave.
   const temIdentidade = Boolean(order.id || order.ifoodReference || order.openDeliveryReference || order.openDeliveryOrderId);
 
+  // As referencias curtas da plataforma so entram quando o pedido NAO tem id.
+  // Elas repetem: o indice do dia do 99Food ("403001") volta todo dia, e o
+  // #ABCD do iFood repetiu duas vezes no mesmo dia na mesma loja. Com id
+  // presente (todo pedido do banco), a referencia so servia para engolir um
+  // pedido novo legitimo que herdou a referencia de um pedido de horas atras.
+  const temId = Boolean(order.id);
+
   return [
     order.id ? `id_${order.id}` : null,
-    order.ifoodReference ? `ifood_${order.ifoodReference}` : null,
-    order.openDeliveryReference ? `jotaja_${order.openDeliveryReference}` : null,
-    order.openDeliveryOrderId ? `opd_${order.openDeliveryOrderId}` : null,
+    (!temId && order.ifoodReference) ? `ifood_${order.ifoodReference}` : null,
+    (!temId && order.openDeliveryReference) ? `jotaja_${order.openDeliveryReference}` : null,
+    (!temId && order.openDeliveryOrderId) ? `opd_${order.openDeliveryOrderId}` : null,
     // seq_ na mesma condicao: a numeracao REINICIA a meia-noite, e numa loja
     // que vira a madrugada o #1 de ontem as 23h colide com o #1 de hoje as
     // 00h30 — dentro da janela de 2h, a comanda de hoje seria engolida.
@@ -1319,8 +1341,8 @@ function markOrderAsPrinted(order, printerName) {
       if (now - time > 7200000) printedOrdersCache.delete(k);
     }
     // Poda junto o contador de falhas, que so cresce.
-    for (const [k, falhas] of tentativasFalhas.entries()) {
-      if (!printedOrdersCache.has(k.replace("::", "::id_")) && falhas >= MAX_TENTATIVAS) tentativasFalhas.delete(k);
+    for (const [k, t] of tentativasFalhas.entries()) {
+      if (!printedOrdersCache.has(k.replace("::", "::id_")) && t.falhas >= MAX_TENTATIVAS) tentativasFalhas.delete(k);
     }
   }
   salvarPrintedCache();
@@ -1340,24 +1362,60 @@ function unmarkOrderAsPrinted(order, printerName) {
  * ninguem. Agora a falha desmarca, e o proximo ciclo tenta de novo.
  *
  * Com limite: impressora que nao existe falharia a cada 3 s para sempre.
- * Depois de MAX_TENTATIVAS o pedido fica marcado e o log diz por que. */
-const tentativasFalhas = new Map();
-const MAX_TENTATIVAS = 3;
+ * Depois de MAX_TENTATIVAS o pedido fica marcado e o log diz por que.
+ *
+ * E com ESPERA entre as tentativas. Eram tres, e a fila da nuvem volta a
+ * cada 3 s: uma impressora religando, uma troca de bobina ou um spooler
+ * travado por dez segundos esgotava as tres e o pedido era dado por impresso
+ * para sempre — o #30 e o #32 saiam, o #31 nao, e nenhum log na loja. Agora a
+ * marca fica no lugar durante a espera (15 s, 30 s, 60 s, 2 min, 4 min) e so
+ * depois dela o pedido volta a ser aceito; sao quase 8 minutos de tentativas
+ * antes de desistir. Quem chega durante a espera recebe `aguardando`, para o
+ * navegador nao tomar a espera por sucesso. */
+const tentativasFalhas = new Map(); // chave -> { falhas, timer }
+const MAX_TENTATIVAS = 6;
+const ESPERA_BASE_MS = 15_000;
+/* Ultimas desistencias, para o /status: e a unica janela que a loja tem. */
+const falhasRecentes = [];
 const chaveDeFalha = (order, printerName) =>
   `${String(printerName || "").toLowerCase().trim()}::${order?.id || order?.ifoodReference || order?.openDeliveryReference || order?.dailyOrderNumber || ""}`;
+
+function emEsperaDeNovaTentativa(order, printerName) {
+  const t = tentativasFalhas.get(chaveDeFalha(order, printerName));
+  return t ? t : null;
+}
+
+function esquecerFalhas(order, printerName) {
+  const chave = chaveDeFalha(order, printerName);
+  const t = tentativasFalhas.get(chave);
+  if (t && t.timer) clearTimeout(t.timer);
+  tentativasFalhas.delete(chave);
+}
 
 function liberarParaNovaTentativa(order, printerName) {
   if (!order || !printerName) return;
   const chave = chaveDeFalha(order, printerName);
-  const falhas = (tentativasFalhas.get(chave) || 0) + 1;
-  tentativasFalhas.set(chave, falhas);
+  const atual = tentativasFalhas.get(chave) || { falhas: 0, timer: null };
+  atual.falhas += 1;
+  if (atual.timer) { clearTimeout(atual.timer); atual.timer = null; }
   const rotulo = order.dailyOrderNumber || order.id;
-  if (falhas >= MAX_TENTATIVAS) {
-    console.error(`[PrintServer] Pedido #${rotulo} falhou ${falhas}x em ${printerName}; desistindo (fica como impresso).`);
+  if (atual.falhas >= MAX_TENTATIVAS) {
+    tentativasFalhas.set(chave, atual);
+    console.error(`[PrintServer] Pedido #${rotulo} falhou ${atual.falhas}x em ${printerName}; desistindo (fica como impresso).`);
+    falhasRecentes.unshift({ pedido: String(rotulo), impressora: printerName, tentativas: atual.falhas, quando: new Date().toISOString() });
+    if (falhasRecentes.length > 30) falhasRecentes.length = 30;
     return;
   }
-  unmarkOrderAsPrinted(order, printerName);
-  console.warn(`[PrintServer] Pedido #${rotulo} liberado para nova tentativa (${falhas}/${MAX_TENTATIVAS}).`);
+  const espera = Math.min(ESPERA_BASE_MS * 2 ** (atual.falhas - 1), 5 * 60_000);
+  atual.timer = setTimeout(() => {
+    const t = tentativasFalhas.get(chave);
+    if (!t) return; // imprimiu nesse meio-tempo
+    t.timer = null;
+    unmarkOrderAsPrinted(order, printerName);
+    console.warn(`[PrintServer] Pedido #${rotulo} liberado para nova tentativa (${t.falhas}/${MAX_TENTATIVAS}).`);
+  }, espera);
+  tentativasFalhas.set(chave, atual);
+  console.warn(`[PrintServer] Pedido #${rotulo} nao saiu em ${printerName} (${atual.falhas}/${MAX_TENTATIVAS}); nova tentativa em ${Math.round(espera / 1000)} s.`);
 }
 
 /* ─── Fila Serial de Impressão (FIFO Queue — Evita gargalos, spooler lock e ordem errada) ─ */
@@ -1400,6 +1458,14 @@ async function processPrintQueue() {
         }
         printedOrdersCache.set(manualKey, Date.now());
       } else if (isOrderAlreadyPrinted(order, targetPrinter)) {
+        // Marcado porque FALHOU ha pouco e esta esperando a nova tentativa:
+        // nao e "ja impresso". Responder ok:true aqui fazia o navegador dar o
+        // pedido por saido e nunca mais tentar.
+        const espera = emEsperaDeNovaTentativa(order, targetPrinter);
+        if (espera && espera.timer) {
+          resolve({ ok: false, aguardando: true, message: `Falhou ${espera.falhas}x em ${targetPrinter}; nova tentativa agendada.` });
+          continue;
+        }
         console.log(`[PrintServer] ⚠️ Pedido #${order?.dailyOrderNumber || order?.ifoodReference || order?.openDeliveryReference || order?.id} já impresso nos últimos 120 min. Ignorando duplicação automática.`);
         resolve({ ok: true, duplicated: true, message: "Pedido já impresso recentemente." });
         continue;
@@ -1430,7 +1496,7 @@ async function processPrintQueue() {
       // Pausa de 150ms entre impressões para liberar a spooler do Windows com segurança
       await new Promise(r => setTimeout(r, 150));
 
-      tentativasFalhas.delete(chaveDeFalha(order, targetPrinter));
+      esquecerFalhas(order, targetPrinter);
       resolve({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols - perfil ${perfil.profile})` });
     } catch (e) {
       console.error("[PrintServer] Erro ao imprimir job:", e.message);
@@ -1453,7 +1519,14 @@ function enqueuePrintJob(jobParams) {
 }
 
 // Polling background da Fila de Impressão na Nuvem (roda a cada 3s)
+//
+// Uma rodada por vez, com prazo: sem a trava, uma resposta que demorava
+// empilhava rodadas a cada 3 s, e sem o prazo uma conexao que morria no meio
+// segurava a rodada pelos minutos do padrao do Node.
+let puxandoFila = false;
 setInterval(async () => {
+  if (puxandoFila) return;
+  puxandoFila = true;
   try {
     // Sem loja identificada não há fila: puxar sem franchiseeId traria pedido
     // de outras lojas para esta impressora. O site envia esse id no POST /config.
@@ -1462,7 +1535,7 @@ setInterval(async () => {
     const fetchFn = globalThis.fetch || (await import("node-fetch")).default;
     const domain = currentConfig.domain || "firehubfood.com.br";
     const url = `https://${domain}/api/store/print-queue?franchiseeId=${encodeURIComponent(currentConfig.franchiseeId)}`;
-    const res = await fetchFn(url);
+    const res = await fetchFn(url, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return;
     const data = await res.json();
     const rawJobs = Array.isArray(data.jobs) ? data.jobs : [];
@@ -1541,6 +1614,8 @@ setInterval(async () => {
     }
   } catch (err) {
     // Erros silenciosos quando offline
+  } finally {
+    puxandoFila = false;
   }
 }, 3000);
 
@@ -1573,6 +1648,9 @@ app.get("/status", (req, res) => {
     // unico caso em que interessa: e a diferenca entre saber qual etapa falhou
     // e ficar adivinhando a quilometros da loja.
     ...(printers.length === 0 ? { printersDiag: diagnosticoImpressoras } : {}),
+    // Pedidos em que o Assistente DESISTIU de imprimir (esgotou as tentativas).
+    // Antes isso so existia no console de um programa sem janela.
+    falhasRecentes,
     config: currentConfig
   });
 });

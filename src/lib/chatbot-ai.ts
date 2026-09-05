@@ -1960,6 +1960,13 @@ async function syncAiOrderToDatabase({
         status: finalStatus,
         notes: notesText,
         ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
+        // O pedido nasce AGORA, quando o cliente confirma — não quando o robô
+        // abriu o rascunho na primeira mensagem. Com o createdAt do rascunho,
+        // uma conversa de 40 minutos entregava à impressão um pedido "de 40
+        // minutos atrás": o ouvinte do painel só imprime o que tem menos de
+        // 30 min, e a fila da nuvem só lê 2 h. O número do dia já era gerado
+        // aqui, no fechamento; a data acompanha.
+        ...(isFinal && existingDraft.status === "CRIANDO_IA" ? { createdAt: new Date() } : {}),
         items: {
           create: orderItemsData.map((i: any) => ({
             quantity: i.quantity,

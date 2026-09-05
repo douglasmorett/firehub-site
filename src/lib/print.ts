@@ -89,11 +89,11 @@ type PrintOrder = {
  *
  * MANTENHA IGUAL a firehub-print-assistant/package.json ao gerar um instalador.
  */
-// ⚠️ SÓ suba para "1.2.6" NO MESMO COMMIT que trocar o instalador em
-// public/downloads pelo build 1.2.6. Anunciar versão nova com instalador
-// velho no site faz o auto-update de TODAS as lojas baixar e reinstalar o
-// 1.2.5 em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.5";
+// ⚠️ SÓ suba a versão NO MESMO COMMIT que trocar o instalador em
+// public/downloads pelo build correspondente. Anunciar versão nova com
+// instalador velho no site faz o auto-update de TODAS as lojas baixar e
+// reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.6";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 
@@ -148,14 +148,31 @@ export function resolveColumns(p?: { paperWidth?: string; columns?: number } | n
 }
 
 /* ─── Tenta obter URL ativa do assistente (localhost ou 127.0.0.1) ── */
+//
+// Com cache curto: sem ele, cada pedido de cada rodada refazia as oito sondas
+// (até 16 s quando não há Assistente na máquina), e por isso o ouvinte de
+// impressão evitava tentar de novo — dando o pedido por impresso. A URL
+// encontrada vale 60 s; "não achei" vale 20 s. Falha numa chamada real
+// esquece o cache, para a próxima sondar de novo.
+let urlDoAssistenteEmCache: { url: string | null; ate: number } | null = null;
+
+function esquecerUrlDoAssistente() {
+  urlDoAssistenteEmCache = null;
+}
+
 async function getAssistantUrl(): Promise<string | null> {
+  if (urlDoAssistenteEmCache && Date.now() < urlDoAssistenteEmCache.ate) return urlDoAssistenteEmCache.url;
   for (const url of ASSISTANT_URLS) {
     try {
       const res = await fetchAssistente(`${url}/status`, { signal: AbortSignal.timeout(2000) });
       const data = await res.json();
-      if (data.ok) return url;
+      if (data.ok) {
+        urlDoAssistenteEmCache = { url, ate: Date.now() + 60_000 };
+        return url;
+      }
     } catch {}
   }
+  urlDoAssistenteEmCache = { url: null, ate: Date.now() + 20_000 };
   return null;
 }
 
@@ -285,9 +302,13 @@ async function printToDevice(
       }),
     });
     const data = await res.json();
+    // `ok:false` com `aguardando` é o Assistente dizendo que este pedido
+    // falhou há pouco nesta impressora e está em espera: conta como não saiu.
+    if (data?.aguardando) console.warn(`[FireHub Print] ${targetPrinter}: ${data.message || "em espera"}`);
     return data.ok === true;
   } catch (err) {
     console.error("[FireHub Print]", err);
+    esquecerUrlDoAssistente();
     return false;
   }
 }
