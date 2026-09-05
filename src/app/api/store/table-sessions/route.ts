@@ -32,6 +32,11 @@ export async function GET(req: NextRequest) {
       if (!tableSession || tableSession.franchiseeId !== targetFranchiseeId) {
         return NextResponse.json({ error: "Session not found" }, { status: 404 });
       }
+      // O garçom pelo link trabalha com a mesa ABERTA; histórico de sessão
+      // fechada (quem fechou, como pagou) é assunto do painel.
+      if (operador.tipo === "garcom" && tableSession.status !== "OPEN") {
+        return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      }
       return NextResponse.json(tableSession);
     }
 
@@ -103,19 +108,31 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const tableSession = await prisma.tableSession.create({
-      data: {
-        tableId,
-        franchiseeId: targetFranchiseeId,
-        customerName: customerName || null,
-        // waiterId informado mas não é desta loja: nem o nome entra, senão o
-        // card da mesa mostraria um garçom que não existe aqui.
-        waiterName: garcomDaMesa?.name || (waiterId ? null : waiterName || null),
-        waiterId: garcomDaMesa?.id || null,
-        status: "OPEN",
-        openedAt: new Date()
-      }
-    });
+    // A checagem de "mesa livre" acima serve para a mensagem; a que vale é
+    // esta, dentro da transação serializável: dois aparelhos ocupando a
+    // mesma mesa no mesmo instante passariam os dois pela leitura de fora.
+    let ocupada = false;
+    const tableSession = await prisma.$transaction(async (tx) => {
+      const abertas = await tx.tableSession.count({ where: { tableId, status: "OPEN" } });
+      if (abertas > 0) { ocupada = true; return null; }
+      return tx.tableSession.create({
+        data: {
+          tableId,
+          franchiseeId: targetFranchiseeId,
+          customerName: customerName || null,
+          // waiterId informado mas não é desta loja: nem o nome entra, senão o
+          // card da mesa mostraria um garçom que não existe aqui.
+          waiterName: garcomDaMesa?.name || (waiterId ? null : waiterName || null),
+          waiterId: garcomDaMesa?.id || null,
+          status: "OPEN",
+          openedAt: new Date()
+        }
+      });
+    }, { isolationLevel: "Serializable" });
+
+    if (ocupada || !tableSession) {
+      return NextResponse.json({ error: "Table already has an open session" }, { status: 400 });
+    }
 
     return NextResponse.json(tableSession);
   } catch (error: any) {

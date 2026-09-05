@@ -72,8 +72,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const nomeAntigo = `Mesa ${sessao.table.number}`;
   const nomeNovo = `Mesa ${destino.number}`;
 
+  // A checagem de "destino livre" acima é só para a mensagem bonita. A que
+  // VALE é esta, dentro da transação serializável: dois garçons movendo
+  // contas para a mesma mesa no mesmo instante (ou um movendo enquanto o
+  // caixa abre a mesa) passariam os dois pela leitura de fora, e a mesa
+  // terminaria com duas contas abertas.
+  let conflito: string | null = null;
   await prisma.$transaction(async (tx) => {
-    await tx.tableSession.update({ where: { id }, data: { tableId: destino.id } });
+    const ocupadas = await tx.tableSession.count({ where: { tableId: destino.id, status: "OPEN" } });
+    if (ocupadas > 0) { conflito = `A mesa ${destino.number} acabou de ser ocupada`; return; }
+    const movida = await tx.tableSession.updateMany({
+      where: { id, status: "OPEN" },
+      data: { tableId: destino.id },
+    });
+    if (movida.count !== 1) { conflito = "Esta conta acabou de ser fechada"; return; }
     // Pedido lançado sem nome de cliente nasce como "Mesa N": acompanha a mudança.
     await tx.customerOrder.updateMany({
       where: { tableSessionId: id, customerName: nomeAntigo },
@@ -83,7 +95,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { tableSessionId: id, customerAddress: nomeAntigo },
       data: { customerAddress: nomeNovo },
     });
-  });
+  }, { isolationLevel: "Serializable" });
+
+  if (conflito) return NextResponse.json({ error: conflito }, { status: 409 });
 
   return NextResponse.json({ ok: true, de: sessao.table.number, para: destino.number, tableId: destino.id });
 }

@@ -18,7 +18,9 @@ export default async function PaginaDeMesasDoGarcom({ params }: { params: Promis
   const destinoDoLogin = `/garcom/${encodeURIComponent(slug)}`;
 
   const auth = await autenticarGarcom();
-  if (!auth.ok) redirect(destinoDoLogin);
+  // Leva o motivo: quem abre o atalho no dia seguinte, depois do caixa
+  // fechado, vê "o turno encerrou" em vez de um formulário mudo.
+  if (!auth.ok) redirect(`${destinoDoLogin}?motivo=${encodeURIComponent(auth.codigo)}`);
 
   // Cookie de OUTRA loja neste endereço: volta para o login desta, que vai
   // mostrar o formulário (e não um redirect de volta para cá).

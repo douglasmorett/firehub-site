@@ -32,8 +32,20 @@ export async function GET() {
   const impressoras: any[] = Array.isArray(pc?.printers) ? pc.printers.filter((p: any) => p?.name) : [];
   const ultimo = loja?.printQueuePolledAt ?? null;
 
+  // A fila da nuvem só importa para quem lança pedido no servidor (mesa e
+  // balcão); loja só de delivery imprime pelo navegador e nunca consultou a
+  // fila — e não é problema nenhum. Sem esta distinção o aviso "nunca
+  // consultou" ficaria aceso para sempre nessas lojas.
+  const lojaId = eu.ownerId || eu.id;
+  const seteDias = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const [mesas, presenciais] = await Promise.all([
+    prisma.table.count({ where: { franchiseeId: lojaId } }),
+    prisma.customerOrder.count({ where: { franchiseeId: lojaId, source: "PRESENCIAL", createdAt: { gte: seteDias } } }),
+  ]);
+
   return NextResponse.json({
     temImpressora: impressoras.length > 0,
+    usaSalao: mesas > 0 || presenciais > 0,
     ultimoPoll: ultimo ? ultimo.toISOString() : null,
     paradoHaSegundos: ultimo ? Math.max(0, Math.round((Date.now() - ultimo.getTime()) / 1000)) : null,
   });

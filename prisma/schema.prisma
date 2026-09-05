@@ -60,11 +60,12 @@ model User {
   resetTokenExp   DateTime?       // Expiração do token de recuperação
   /// Último fechamento de caixa. Sessão de garçom emitida antes disto é
   /// recusada: fechar o caixa encerra o turno de todo mundo no celular.
-  caixaFechadoEm  DateTime?
+  cashClosedAt    DateTime?
   /// Última vez que o Assistente de Impressão desta loja consultou a fila da
   /// nuvem (GET /api/store/print-queue). Nulo = nunca. É o que permite o painel
   /// avisar que a impressão parou antes de a loja descobrir pela comanda que não saiu.
   printQueuePolledAt DateTime?
+  printRequests   PrintRequest[]
   trialEndsAt     DateTime?       // Data limite de teste/benefício concedido
   notificationPhone String?       // Telefone VIP para receber alertas e acessar relatórios pelo bot oficial
   isFireHubSystem   Boolean       @default(false) // Define se esta conta é a matriz oficial do sistema FireHub
@@ -1119,11 +1120,15 @@ model Waiter {
 /// mesmo jeito que puxa uma comanda, sem atualização. `payload` já está no
 /// formato que o cupom entende (id, items, totalAmount, deliveryType...).
 model PrintRequest {
-  id           String   @id @default(cuid())
-  franchiseeId String
-  kind         String   // CONTA_DA_MESA
-  payload      Json
-  createdAt    DateTime @default(now())
+  id             String   @id @default(cuid())
+  franchiseeId   String
+  franchisee     User     @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
+  kind           String   // CONTA_DA_MESA
+  payload        Json
+  /// Quem pediu a impressão (auditoria) e de qual mesa.
+  requestedBy    String?
+  tableSessionId String?
+  createdAt      DateTime @default(now())
 
   @@index([franchiseeId, createdAt])
 }

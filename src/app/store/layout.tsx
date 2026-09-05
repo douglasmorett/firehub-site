@@ -143,11 +143,15 @@ export default async function StoreLayout({ children }: { children: React.ReactN
             Cada faixa decide sozinha se aparece, e as duas somem quando não há
             o que avisar: faixa que fica na tela à toa vira paisagem, e aí não
             serve no dia em que importa. */}
+        {/* Fora do HideOnCompras de propósito: ele esconde os avisos em
+            /store/orders, e é justamente na tela de pedidos que o caixa passa
+            o expediente — o aviso de impressão parada precisa aparecer LÁ. O
+            próprio componente se esconde em /store/compras. */}
+        <AvisoImpressaoParada />
         <HideOnCompras>
           <div style={{ padding: "1rem 1.5rem 0" }}>
             <AvisoCaixaAberto24h />
             <AvisoRoboDesconectado />
-            <AvisoImpressaoParada />
           </div>
         </HideOnCompras>
 

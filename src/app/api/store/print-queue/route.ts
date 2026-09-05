@@ -52,12 +52,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ jobs: [] });
     }
 
-    // Padrão: 2 horas atrás
+    // Padrão: 2 horas atrás. Piso de 6 horas: este endpoint não tem
+    // autenticação (só o id da loja, que está no HTML do cardápio), e sem o
+    // piso um `since=2000-01-01` devolvia todos os pedidos da loja desde
+    // sempre. O Assistente descarta o que passa de 6 h de qualquer jeito.
+    const pisoDoSince = new Date(Date.now() - 6 * 60 * 60 * 1000);
     let sinceDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
     if (sinceParam) {
       const parsedSince = new Date(sinceParam);
       if (!isNaN(parsedSince.getTime())) {
-        sinceDate = parsedSince;
+        sinceDate = parsedSince < pisoDoSince ? pisoDoSince : parsedSince;
       }
     }
 
@@ -82,20 +86,41 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // Uma unica leitura da config da loja (nao repete o JSON por pedido)
-    const owner = await prisma.user.findUnique({
-      where: { id: franchiseeId },
-      select: { printerConfig: true, storeName: true, name: true, printQueuePolledAt: true },
-    });
+    // Uma unica leitura da config da loja (nao repete o JSON por pedido).
+    //
+    // TOLERANTE ao banco atrasado: este GET é chamado por todo Assistente de
+    // toda loja a cada 3 s. Se o código subir antes do `prisma db push`
+    // (passo manual em produção), a coluna `printQueuePolledAt` e a tabela
+    // PrintRequest ainda não existem — e um erro aqui pararia a impressão de
+    // mesa e balcão de TODAS as lojas de uma vez. Então as partes novas
+    // falham sozinhas e as comandas continuam saindo.
+    let owner: { printerConfig: unknown; storeName: string | null; name: string | null; printQueuePolledAt?: Date | null } | null = null;
+    try {
+      owner = await prisma.user.findUnique({
+        where: { id: franchiseeId },
+        select: { printerConfig: true, storeName: true, name: true, printQueuePolledAt: true },
+      });
+    } catch (err) {
+      console.error("[PrintQueue] printQueuePolledAt ausente? (falta db push)", (err as any)?.code || err);
+      owner = await prisma.user.findUnique({
+        where: { id: franchiseeId },
+        select: { printerConfig: true, storeName: true, name: true },
+      });
+    }
     const pc: any = (owner?.printerConfig as any) || null;
 
     // Carimba a consulta — no máximo uma vez por minuto (o Assistente bate a
     // cada 3 s). É o que deixa o painel avisar "a impressão parou" antes de a
-    // loja descobrir pela comanda que não saiu.
-    if (owner && Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000) {
+    // loja descobrir pela comanda que não saiu. Na mesma passada, apaga as
+    // impressões avulsas com mais de um dia: a fila só lê 2 h, e a tabela não
+    // precisa virar histórico eterno de contas com nome de gente.
+    if (owner && "printQueuePolledAt" in owner && Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000) {
       prisma.user
         .update({ where: { id: franchiseeId }, data: { printQueuePolledAt: new Date() } })
         .catch((err) => console.error("[PrintQueue] carimbo do poll:", err));
+      prisma.printRequest
+        .deleteMany({ where: { franchiseeId, createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } })
+        .catch(() => { /* tabela ainda não existe: nada a apagar */ });
     }
     const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
 
@@ -180,10 +205,16 @@ export async function GET(req: NextRequest) {
     // (a da cozinha): conta é papel do caixa. Sem impressora assim, todas as
     // do salão; sem nenhuma cadastrada, `destinos` vazio e o Assistente usa
     // a padrão, como sempre fez.
-    const avulsas = await prisma.printRequest.findMany({
-      where: { franchiseeId, createdAt: { gt: sinceDate } },
-      orderBy: { createdAt: "asc" },
-    });
+    let avulsas: { id: string; payload: unknown; createdAt: Date }[] = [];
+    try {
+      avulsas = await prisma.printRequest.findMany({
+        where: { franchiseeId, createdAt: { gt: sinceDate } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, payload: true, createdAt: true },
+      });
+    } catch (err) {
+      console.error("[PrintQueue] PrintRequest indisponível (falta db push?)", (err as any)?.code || err);
+    }
 
     const doSalao = printers.filter(
       (p) => p && p.name && impressoraAtendeModulo(p.modulos, "salao") && p.somenteBebidas !== true
@@ -222,6 +253,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ jobs: [...jobs, ...jobsAvulsos] });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
+    // arquivo do servidor e nome de coluna) não pode sair para quem chamar.
+    console.error("[PrintQueue GET]", err);
+    return NextResponse.json({ error: "fila indisponível" }, { status: 500 });
   }
 }

@@ -117,7 +117,7 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
     select: {
       id: true, name: true, login: true, active: true, franchiseeId: true,
       credentialsUpdatedAt: true, commissionRate: true,
-      franchisee: { select: { caixaFechadoEm: true } },
+      franchisee: { select: { cashClosedAt: true } },
     },
   });
 
@@ -145,7 +145,7 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
   // Fechar o caixa encerra o turno: todo garçom precisa entrar de novo. É o
   // "sair" que ninguém lembra de fazer no celular no fim da noite — sem isto,
   // o celular de quem já foi embora continuaria abrindo mesa no dia seguinte.
-  const caixaFechadoEm = w.franchisee?.caixaFechadoEm;
+  const caixaFechadoEm = w.franchisee?.cashClosedAt;
   if (caixaFechadoEm && token.iat * 1000 + 999 < caixaFechadoEm.getTime()) {
     return {
       ok: false,
@@ -208,7 +208,9 @@ export async function resolverOperadorDaMesa(): Promise<OperadorDaMesa | null> {
           franchiseeId: u.ownerId || u.id,
           userId: u.id,
           ownerId: u.ownerId,
-          name: u.name || u.email || "painel",
+          // Nunca o e-mail: é o identificador de login do painel e iria parar
+          // em registro que o garçom lê (quem fechou, quem registrou baixa).
+          name: (u.name || "").trim() || "painel",
         };
       }
     }

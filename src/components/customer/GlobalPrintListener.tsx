@@ -48,8 +48,19 @@ function claimOrderPrint(order: any) {
  * nunca mais saía, sem aviso nenhum. Solto, ele volta na próxima rodada de
  * 5 s enquanto estiver dentro dos 30 minutos que a tela considera recente.
  */
+const MAX_TENTATIVAS_LOCAIS = 3;
+const tentativasPorPedido = new Map<string, number>();
+
 function releaseOrderPrint(order: any) {
   if (!order || typeof window === "undefined") return;
+  // Impressora que não existe falharia a cada 5 s por 30 min; três vezes basta.
+  const chave = String(order.id || order.ifoodReference || order.openDeliveryReference || "");
+  const falhas = (tentativasPorPedido.get(chave) || 0) + 1;
+  tentativasPorPedido.set(chave, falhas);
+  if (falhas >= MAX_TENTATIVAS_LOCAIS) {
+    console.warn(`[GlobalPrint Master] Pedido ${chave} falhou ${falhas}x; fica como impresso.`);
+    return;
+  }
   const memorySet = (window as any).__FIREHUB_PRINTED_IDS__ as Set<string> | undefined;
   const keys = [order.id, order.ifoodReference, order.openDeliveryReference].filter(Boolean);
   for (const key of keys) {
@@ -227,8 +238,11 @@ export default function GlobalPrintListener() {
 
                   if (!result.success) {
                     // Não saiu: solta a reivindicação para tentar de novo no
-                    // próximo poll, em vez de dar o pedido por impresso.
-                    releaseOrderPrint(order);
+                    // próximo poll, em vez de dar o pedido por impresso. Só
+                    // quando HAVIA Assistente e ele falhou (attempted): sem
+                    // Assistente nesta máquina não há o que tentar de novo, e
+                    // cada tentativa refaz oito sondas de localhost.
+                    if (result.attempted) releaseOrderPrint(order);
                     // Fallback para Fila de Impressão na nuvem
                     await fetch("/api/store/print-queue", {
                       method: "POST",

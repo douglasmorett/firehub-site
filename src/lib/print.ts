@@ -227,6 +227,15 @@ async function printToDevice(
           // mesmo sendo entrega da própria loja. Ver lib/entrega-parceira.ts.
           ...camposDeEntregaParaImpressao(order),
           source: (order as any).source,
+          // Conta da mesa (src/lib/conta-da-mesa.ts): o Assistente novo imprime
+          // o bloco por pessoa a partir de `rateio` e limpa o cupom por `kind`;
+          // o antigo ignora campo que nao conhece.
+          kind: (order as any).kind,
+          rateio: (order as any).rateio,
+          consumo: (order as any).consumo,
+          taxaServico: (order as any).taxaServico,
+          gorjeta: (order as any).gorjeta,
+          tableSessionId: (order as any).tableSessionId,
           // Comanda da cozinha. Assistente antigo ignora campo que não conhece,
           // então mandar isto para uma loja que ainda não atualizou o Assistente
           // não muda nada: o cupom sai como sempre saiu, com valores.

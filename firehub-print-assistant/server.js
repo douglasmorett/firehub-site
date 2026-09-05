@@ -409,7 +409,12 @@ function rawPrint(printerName, dataBuffer) {
       try { fs.unlinkSync(tmpFile); } catch (_) {}
       if (err) {
         console.error("[Print] Erro:", stderr || err.message);
-        reject(new Error(stderr || err.message));
+        const falha = new Error(stderr || err.message);
+        // Timeout NAO prova que nada saiu: o PowerShell pode ter entregue os
+        // bytes ao spooler e sido morto depois. Nesse caso nao se libera nova
+        // tentativa — comanda a mais e pior do que comanda atrasada.
+        falha.talvezImprimiu = Boolean(err.killed || err.signal || err.code === "ETIMEDOUT");
+        reject(falha);
       } else {
         console.log("[Print] OK ->", printerName);
         resolve(true);
@@ -625,9 +630,13 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   let res = PREAMBLE[profile] || PREAMBLE.safe;
 
   // 1. TOP HEADER (Número + Tipo + Tag) — Usando DOUBLE_HEIGHT para não quebrar linha
+  // Conta da mesa (src/lib/conta-da-mesa.ts no site): nao e pedido. Nada de
+  // numero de pedido, "Qtd Pedidos", taxa de entrega nem etiqueta de bebida —
+  // e papel que vai para a mao do cliente.
+  const ehConta = order.kind === "CONTA_DA_MESA";
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
   const deliveryTypeTag = order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : "RETIRADA";
-  const orderRef = order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : "");
+  const orderRef = ehConta ? "" : (order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : ""));
   const refTag = orderRef ? `#${orderRef}` : "";
 
   const headerLine = seqNumStr
@@ -705,7 +714,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (order.customerPhone && !/^0+$/.test(String(order.customerPhone).trim())) {
     res += wrapLines("Telefone: " + cleanAscii(order.customerPhone), 2);
   }
-  res += "Qtd Pedidos: 1" + LF;
+  if (!ehConta) res += "Qtd Pedidos: 1" + LF;
 
   // 3. ENTREGA SECTION
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
@@ -852,7 +861,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const semValores = order?.semValores === true;
 
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
-  res += LF + DOUBLE_HEIGHT + makeHeaderTitle("RESUMO DO PEDIDO") + DOUBLE_OFF + LF;
+  res += LF + DOUBLE_HEIGHT + makeHeaderTitle(ehConta ? "CONTA DA MESA" : "RESUMO DO PEDIDO") + DOUBLE_OFF + LF;
 
   if (somenteBebidas) {
     res += LF + INVERSE_ON + banner("!! SO BEBIDAS DESTE PEDIDO !!", "!! SO BEBIDAS !!") + INVERSE_OFF + LF;
@@ -878,7 +887,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       // marcado como se ele proprio fosse a bebida, inclusive quando a loja ja
       // tinha tirado a bebida de dentro dele. Dentro do combo, quem leva a tag
       // e a linha da bebida, logo abaixo.
-      const isItemBev = comboSels.length === 0 && isBeverageItem(item);
+      const isItemBev = !ehConta && comboSels.length === 0 && isBeverageItem(item);
       const bevTag = isItemBev ? "  <=== BEBIDA" : "";
       const itemLabel = `${name}${bevTag}`;
       // A inversão entra DEPOIS de montar a linha, nunca antes.
@@ -897,7 +906,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
           let selName = cleanAscii(sel.name || "");
           selName = selName.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
-          const isSelBev = isBeverageName(selName);
+          const isSelBev = !ehConta && isBeverageName(selName);
           const selBevTag = isSelBev ? "  <=== BEBIDA" : "";
           res += marcarBebida(makeBoxText(`  - ${qPrefix}${selName}${selBevTag}`), isSelBev);
         });
@@ -910,7 +919,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     });
   }
 
-  if (hasBeverages) {
+  if (hasBeverages && !ehConta) {
     res += INVERSE_ON + banner("!! ATENCAO: POSSUI BEBIDA NESTE PEDIDO !!", "!! CONTEM BEBIDA !!") + INVERSE_OFF + LF;
     res += boxBorder;
   }
@@ -948,7 +957,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
   const dFee = typeof order.deliveryFee === "number" ? order.deliveryFee : 0;
   const dFeeLabel = order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:";
-  res += rightAlign(dFeeLabel, "R$ " + Number(dFee).toFixed(2).replace(".", ","));
+  if (!ehConta) res += rightAlign(dFeeLabel, "R$ " + Number(dFee).toFixed(2).replace(".", ","));
 
   // TOTAL BOX — destaque limpo
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");
@@ -1151,6 +1160,43 @@ app.post("/config", (req, res) => {
 /* ─── Deduplicação de Impressões (Trava de 2 HORAS anti-duplicidade) ─ */
 const printedOrdersCache = new Map();
 
+/* ── O cache sobrevive a reinicio ─────────────────────────────────────
+ *
+ * Era so memoria: qualquer reinicio (queda, PC religado, e o auto-update,
+ * que roda a cada 6 h e reinstala) nascia com o cache vazio e reimprimia
+ * TODAS as comandas das ultimas 2 h — inclusive, agora, as contas de mesa,
+ * que sao papel que vai para o cliente. Gravado em disco a cada marca (com
+ * atraso de 1 s para nao escrever a cada job) e recarregado no boot. */
+const PRINTED_CACHE_FILE = path.join(process.env.APPDATA || os.homedir(), "FireHub", "printed-cache.json");
+let salvarCacheAgendado = null;
+function salvarPrintedCache() {
+  if (salvarCacheAgendado) return;
+  salvarCacheAgendado = setTimeout(() => {
+    salvarCacheAgendado = null;
+    try {
+      const limite = Date.now() - 7200000;
+      const vivos = [...printedOrdersCache.entries()].filter(([, t]) => t > limite);
+      fs.mkdirSync(path.dirname(PRINTED_CACHE_FILE), { recursive: true });
+      fs.writeFileSync(PRINTED_CACHE_FILE, JSON.stringify(vivos));
+    } catch (e) {
+      console.warn("[PrintServer] nao consegui gravar printed-cache.json:", e.message);
+    }
+  }, 1000);
+}
+(function carregarPrintedCache() {
+  try {
+    if (!fs.existsSync(PRINTED_CACHE_FILE)) return;
+    const limite = Date.now() - 7200000;
+    let n = 0;
+    for (const [k, t] of JSON.parse(fs.readFileSync(PRINTED_CACHE_FILE, "utf8"))) {
+      if (typeof k === "string" && Number(t) > limite) { printedOrdersCache.set(k, Number(t)); n++; }
+    }
+    if (n) console.log(`[PrintServer] ${n} marcas de "ja impresso" recarregadas do disco.`);
+  } catch (e) {
+    console.warn("[PrintServer] printed-cache.json ilegivel, ignorando:", e.message);
+  }
+})();
+
 /**
  * Chaves que identificam "este pedido JA foi impresso".
  *
@@ -1227,11 +1273,17 @@ function markOrderAsPrinted(order, printerName) {
     for (const [k, time] of printedOrdersCache.entries()) {
       if (now - time > 7200000) printedOrdersCache.delete(k);
     }
+    // Poda junto o contador de falhas, que so cresce.
+    for (const [k, falhas] of tentativasFalhas.entries()) {
+      if (!printedOrdersCache.has(k.replace("::", "::id_")) && falhas >= MAX_TENTATIVAS) tentativasFalhas.delete(k);
+    }
   }
+  salvarPrintedCache();
 }
 
 function unmarkOrderAsPrinted(order, printerName) {
   for (const k of getOrderDeduplicationKeys(order, printerName)) printedOrdersCache.delete(String(k));
+  salvarPrintedCache();
 }
 
 /* ── Falha DEPOIS de marcado como impresso ───────────────────────────
@@ -1276,6 +1328,7 @@ async function processPrintQueue() {
     const { printer, order, storeName, copies = 1, paperWidth, columns, escposProfile, force = false, resolve, reject } = job;
 
     let targetPrinter = printer || currentConfig.printer;
+    let marcado = false;
     try {
       if (!targetPrinter) {
         const detected = listPrintersCached();
@@ -1322,10 +1375,12 @@ async function processPrintQueue() {
       }
 
       markOrderAsPrinted(order, targetPrinter);
+      marcado = true;
 
       for (let i = 0; i < copies; i++) {
         await rawPrint(targetPrinter, data);
       }
+      ultimaImpressaoEm = Date.now();
 
       // Pausa de 150ms entre impressões para liberar a spooler do Windows com segurança
       await new Promise(r => setTimeout(r, 150));
@@ -1334,7 +1389,10 @@ async function processPrintQueue() {
       resolve({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols - perfil ${perfil.profile})` });
     } catch (e) {
       console.error("[PrintServer] Erro ao imprimir job:", e.message);
-      liberarParaNovaTentativa(order, targetPrinter);
+      // Falha ANTES de marcar (largura, cupom) nao e "ja impresso": nao ha o
+      // que soltar. E timeout do spooler pode ter impresso: tambem nao solta.
+      if (marcado && !e?.talvezImprimiu) liberarParaNovaTentativa(order, targetPrinter);
+      else if (marcado) console.warn("[PrintServer] Timeout na impressora; mantendo como impresso para nao duplicar.");
       reject(e);
     }
   }
@@ -1624,6 +1682,12 @@ startServer(0);
 const UPDATE_DRY = process.env.FIREHUB_UPDATE_DRY === "1";
 const VERSAO_LOCAL_UPDATE = process.env.FIREHUB_FAKE_VERSION || VERSAO_ASSISTENTE;
 let atualizacaoEmAndamento = false;
+/* Ultima comanda que saiu nesta maquina. O auto-update reinicia o
+ * Assistente; fazer isso no meio do jantar, com a fila cheia, e a pior hora
+ * possivel. Se imprimiu nos ultimos 30 min, adia e tenta de novo em 15. */
+let ultimaImpressaoEm = 0;
+const JANELA_CALMA_MS = 30 * 60_000;
+const REVERIFICAR_EM_MS = 15 * 60_000;
 const tentativasDeVersao = new Map(); // versao -> timestamp da última falha
 
 function logUpdate(msg) {
@@ -1655,6 +1719,13 @@ async function verificarAtualizacao() {
 
     versaoAlvo = info.versao;
     if (!versaoRemotaEhMaisNova(info.versao, VERSAO_LOCAL_UPDATE)) return;
+
+    if (ultimaImpressaoEm && Date.now() - ultimaImpressaoEm < JANELA_CALMA_MS) {
+      const min = Math.round((Date.now() - ultimaImpressaoEm) / 60_000);
+      logUpdate(`Versão ${info.versao} disponível, mas imprimiu há ${min} min; adiando 15 min.`);
+      setTimeout(verificarAtualizacao, REVERIFICAR_EM_MS);
+      return;
+    }
 
     const ultimaFalha = tentativasDeVersao.get(info.versao) || 0;
     if (Date.now() - ultimaFalha < 24 * 3600_000) return;

@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
+import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { calcularContaDaMesa, montarCupomDaConta, sanearTaxa } from "@/lib/conta-da-mesa";
 
 export const dynamic = "force-dynamic";
@@ -74,8 +74,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const taxaPct = sanearTaxa(body?.taxa, taxaPadrao);
   const gorjeta =
     body?.gorjeta !== undefined && body?.gorjeta !== null && body?.gorjeta !== ""
-      ? Math.max(0, Number(body.gorjeta) || 0)
+      ? Number(body.gorjeta)
       : null;
+  // Mesma régua do fechamento: negativa ou absurda é pedido malformado.
+  if (gorjeta !== null && (!Number.isFinite(gorjeta) || gorjeta < 0 || gorjeta > 100_000)) {
+    return NextResponse.json({ error: "Gorjeta inválida" }, { status: 400 });
+  }
 
   const conta = calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta);
   if (conta.total <= 0) {
@@ -93,6 +97,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       franchiseeId: lojaId,
       kind: "CONTA_DA_MESA",
       payload: cupom as unknown as Prisma.InputJsonValue,
+      requestedBy: rotuloDoOperador(operador),
+      tableSessionId: id,
     },
   });
 

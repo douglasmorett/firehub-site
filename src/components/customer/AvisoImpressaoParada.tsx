@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 /**
  * A faixa de "a impressão parou".
@@ -23,9 +24,18 @@ import { useEffect, useState } from "react";
  * Assistente não tem o que consertar.
  */
 const TOLERANCIA_S = 3 * 60;
+const CHAVE_DISPENSA = "fh_aviso_impressao_dispensado_ate";
 
 export default function AvisoImpressaoParada() {
-  const [estado, setEstado] = useState<{ temImpressora: boolean; ultimoPoll: string | null; paradoHaSegundos: number | null } | null>(null);
+  const pathname = usePathname();
+  const [estado, setEstado] = useState<{ temImpressora: boolean; usaSalao?: boolean; ultimoPoll: string | null; paradoHaSegundos: number | null } | null>(null);
+  const [dispensadoAte, setDispensadoAte] = useState<number>(0);
+
+  useEffect(() => {
+    try {
+      setDispensadoAte(Number(localStorage.getItem(CHAVE_DISPENSA) || 0));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     let vivo = true;
@@ -40,15 +50,25 @@ export default function AvisoImpressaoParada() {
       }
     };
     conferir();
-    const t = setInterval(conferir, 60_000);
+    const t = setInterval(conferir, 2 * 60_000);
     return () => { vivo = false; clearInterval(t); };
   }, []);
 
+  // /store/compras é módulo à parte (o HideOnCompras esconde tudo lá).
+  if (pathname?.startsWith("/store/compras")) return null;
   if (!estado || !estado.temImpressora) return null;
+  if (dispensadoAte > Date.now()) return null;
 
-  const nuncaConsultou = estado.ultimoPoll === null;
-  const parado = !nuncaConsultou && (estado.paradoHaSegundos ?? 0) > TOLERANCIA_S;
+  // "Nunca consultou" só é problema para quem lança pedido no servidor.
+  const nuncaConsultou = estado.ultimoPoll === null && estado.usaSalao === true;
+  const parado = estado.ultimoPoll !== null && (estado.paradoHaSegundos ?? 0) > TOLERANCIA_S;
   if (!nuncaConsultou && !parado) return null;
+
+  const dispensarPorHoje = () => {
+    const ate = Date.now() + 24 * 60 * 60 * 1000;
+    try { localStorage.setItem(CHAVE_DISPENSA, String(ate)); } catch {}
+    setDispensadoAte(ate);
+  };
 
   const minutos = Math.floor((estado.paradoHaSegundos ?? 0) / 60);
   const tempo = minutos >= 120 ? `${Math.floor(minutos / 60)} horas` : `${minutos} min`;
@@ -75,15 +95,27 @@ export default function AvisoImpressaoParada() {
             : "Comanda de mesa, de balcão e a conta da mesa não vão sair até ele voltar. Confira se o Assistente de Impressão está aberto no PC do caixa e se o PC está ligado e com internet."}
         </div>
       </div>
-      <a
-        href="/store/impressoras"
-        style={{
-          background: "#EA580C", color: "#fff", textDecoration: "none", borderRadius: 10,
-          padding: "10px 18px", fontWeight: 800, fontSize: "0.85rem", whiteSpace: "nowrap",
-        }}
-      >
-        Abrir Impressoras →
-      </a>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <a
+          href="/store/impressoras"
+          style={{
+            background: "#EA580C", color: "#fff", textDecoration: "none", borderRadius: 10,
+            padding: "10px 18px", fontWeight: 800, fontSize: "0.85rem", whiteSpace: "nowrap",
+          }}
+        >
+          Abrir Impressoras →
+        </a>
+        <button
+          type="button"
+          onClick={dispensarPorHoje}
+          style={{
+            background: "none", border: "1px solid #FDBA74", color: "#9A3412", borderRadius: 10,
+            padding: "9px 14px", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit",
+          }}
+        >
+          Dispensar por hoje
+        </button>
+      </div>
     </div>
   );
 }

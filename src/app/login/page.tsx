@@ -59,7 +59,7 @@ export default function FireHubLoginPage() {
       } catch {}
       // ── VOLTAR PARA ONDE A PESSOA QUERIA IR ──────────────────────────────
       //
-      // O middleware já grava `callbackUrl` ao mandar para cá (middleware.ts),
+      // O proxy já grava `callbackUrl` ao mandar para cá (proxy.ts, ex-middleware),
       // mas isto aqui NUNCA lia o parâmetro: o login sempre despejava em
       // /store. Quem escaneava o QR de uma etiqueta com a sessão expirada —
       // o caso mais comum no celular de cozinha — entrava e aterrissava na
@@ -79,7 +79,7 @@ export default function FireHubLoginPage() {
       if (bruto) {
         try {
           // Aceita "/store/estoque" e também a URL absoluta deste mesmo site
-          // (é o formato que o middleware grava, com `request.url`).
+          // (formato antigo, absoluto; o proxy hoje grava caminho relativo).
           const u = new URL(bruto, window.location.origin);
           if (u.origin === window.location.origin && u.pathname.startsWith("/") && !u.pathname.startsWith("//")) {
             destino = u.pathname + u.search;

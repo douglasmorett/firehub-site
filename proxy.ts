@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-// ─── CORS: allowed origins (inlined for Edge Runtime compatibility) ───
+// ─── CORS: allowed origins (lista fixa aqui, sem import de config) ───
 const ALLOWED_ORIGINS = [
   "https://firehubfood.com.br",
   "https://www.firehubfood.com.br",

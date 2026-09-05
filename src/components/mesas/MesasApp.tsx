@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ComboModal from "@/components/customer/ComboModal";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
@@ -241,11 +241,19 @@ export default function MesasApp({
       // Descobre o motivo (senha trocada, caixa fechado, desativado...) para
       // a tela de login explicar, em vez de só pedir a senha de novo.
       let motivo = "sessao";
+      let sessaoVale = false;
       try {
         const me = await fetch("/api/garcom/me", { cache: "no-store" });
         const d = await me.json().catch(() => ({}));
-        if (!me.ok && typeof d?.codigo === "string") motivo = d.codigo;
+        if (me.ok) sessaoVale = true;
+        else if (typeof d?.codigo === "string") motivo = d.codigo;
       } catch { /* fica o genérico */ }
+      if (sessaoVale) {
+        // Sessão válida e mesmo assim 401: é uma rota que o garçom não alcança,
+        // não o fim do turno. Redirecionar aqui viraria um laço login → mesas.
+        showToast("❌ Esta ação não está disponível pelo acesso do garçom");
+        return res;
+      }
       window.location.assign(`/garcom/${encodeURIComponent(slug)}?motivo=${encodeURIComponent(motivo)}`);
     }
     return res;
@@ -289,7 +297,8 @@ export default function MesasApp({
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showNewTableModal, setShowNewTableModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
-  const [showTransferModal, setShowTransferModal] = useState(false);
+  /** Mesa de ORIGEM da transferência (nulo = modal fechado). */
+  const [showTransferModal, setShowTransferModal] = useState<TableItem | null>(null);
   const [showEditModal, setShowEditModal] = useState<TableItem | null>(null);
   const [editNumber, setEditNumber] = useState("");
   const [editLabel, setEditLabel] = useState("");
@@ -640,11 +649,16 @@ export default function MesasApp({
    */
   const taxaSugeridaDaMesa = (t: TableItem | null): number => {
     const padrao = 10;
-    if (ehGarcom && garcom?.commissionRate != null) return Number(garcom.commissionRate) || padrao;
+    // 0% é comissão válida (garçom de salário fixo); só nulo/inválido cai no padrão.
+    const valida = (v: unknown) => v != null && Number.isFinite(Number(v)) ? Number(v) : null;
+    if (ehGarcom) return valida(garcom?.commissionRate) ?? padrao;
     const waiterId = t?.openSession?.waiterId;
     const w = waiterId ? waiters.find((x) => x.id === waiterId) : null;
-    return w && w.commissionRate != null ? Number(w.commissionRate) || padrao : padrao;
+    return valida(w?.commissionRate) ?? padrao;
   };
+
+  /** Sessão para a qual a taxa já foi sugerida: reabrir o modal não desfaz o que o gerente ajustou. */
+  const sessaoComTaxaSugerida = useRef<string | null>(null);
 
   /**
    * Manda a conta da mesa para a impressora. O servidor monta o cupom e o
@@ -680,8 +694,14 @@ export default function MesasApp({
               p?.name && impressoraAtendeModulo(p.modulos, "salao") && p.somenteBebidas !== true);
             const doCaixa = doSalao.filter((p: any) => !(Array.isArray(p.categories) && p.categories.length > 0));
             const escolhidas = (doCaixa.length > 0 ? doCaixa : doSalao).map((p: any) => ({ ...p, categories: [] }));
-            const r = await printOrder(data.cupom as any, cfg.storeName || "FIREHUB", { ...cfg, printers: escolhidas }, {}, false);
-            saiuLocal = r.success;
+            // Sem impressora do salão cadastrada, o caminho local detectaria
+            // uma impressora qualquer e a fila da nuvem mandaria para a
+            // `currentConfig.printer` do Assistente: duas impressoras
+            // diferentes, a mesma conta em papel dobrado. Nesse caso, só a fila.
+            if (escolhidas.length > 0) {
+              const r = await printOrder(data.cupom as any, cfg.storeName || "FIREHUB", { ...cfg, printers: escolhidas }, {}, false);
+              saiuLocal = r.success;
+            }
           }
         } catch { /* sem Assistente nesta máquina: a fila da nuvem entrega */ }
       }
@@ -698,9 +718,15 @@ export default function MesasApp({
   const abrirFechamento = async () => {
     const sessionId = selectedTable?.openSession?.id;
     if (!sessionId) return;
-    // Sugere a taxa cadastrada do garçom da mesa; o gerente ajusta se quiser.
-    const taxa = taxaSugeridaDaMesa(selectedTable);
-    setServiceFee(taxa);
+    // Sugere a taxa cadastrada do garçom da mesa UMA vez por mesa: se o
+    // gerente mudou para 0% e fechou o modal para lançar um item, reabrir
+    // não pode voltar para 10% por baixo dele.
+    let taxa = useServiceFee ? serviceFee : 0;
+    if (sessaoComTaxaSugerida.current !== sessionId) {
+      sessaoComTaxaSugerida.current = sessionId;
+      taxa = taxaSugeridaDaMesa(selectedTable);
+      setServiceFee(taxa);
+    }
     setShowCloseModal(true);
     setValorPagamento("");
     await Promise.all([
@@ -942,10 +968,11 @@ export default function MesasApp({
    * de novo na cozinha.
    */
   const transferTable = async (toTableId: string) => {
-    if (!selectedTable?.openSession) return;
+    const origem = showTransferModal || selectedTable;
+    if (!origem?.openSession) return;
     setActionLoading(true);
     try {
-      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/transferir`, {
+      const res = await chamar(`/api/store/table-sessions/${origem.openSession.id}/transferir`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ toTableId }),
@@ -956,7 +983,7 @@ export default function MesasApp({
         return;
       }
       showToast(`↔️ Conta movida da mesa ${data.de} para a mesa ${data.para}`);
-      setShowTransferModal(false);
+      setShowTransferModal(null);
       await fetchTables();
       const updated = await chamar("/api/store/tables");
       if (updated.ok) {
@@ -1578,18 +1605,21 @@ export default function MesasApp({
                 background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: 13,
                 cursor: "pointer", boxShadow: "0 2px 6px rgba(220,38,38,0.2)",
               }}>💰 Fechar Conta</button>
-              <button onClick={() => imprimirConta()} disabled={imprimindoConta} style={{
-                padding: "10px 0", borderRadius: 10, border: "1.5px solid #C4B5FD",
+              {/* Lado a lado: no celular o painel tem 46vh e cada linha de botão
+                  custa 44px; três linhas cheias empurravam o Total para fora. */}
+              <button onClick={() => imprimirConta(taxaSugeridaDaMesa(selectedTable))} disabled={imprimindoConta}
+                title="Imprime a conta com a taxa cadastrada do garçom" style={{
+                padding: "10px 4px", borderRadius: 10, border: "1.5px solid #C4B5FD",
                 background: "#F5F3FF", color: "#6D28D9", fontWeight: 800, fontSize: 13,
-                cursor: "pointer", gridColumn: "1 / -1", opacity: imprimindoConta ? 0.6 : 1,
-              }}>{imprimindoConta ? "Enviando conta..." : `🧾 Imprimir Conta (taxa ${taxaSugeridaDaMesa(selectedTable)}%)`}</button>
-              <button onClick={() => setShowTransferModal(true)} disabled={freeTables.length === 0}
+                cursor: "pointer", opacity: imprimindoConta ? 0.6 : 1,
+              }}>{imprimindoConta ? "Enviando..." : `🧾 Conta (${taxaSugeridaDaMesa(selectedTable)}%)`}</button>
+              <button onClick={() => setShowTransferModal(selectedTable)} disabled={freeTables.length === 0}
                 title={freeTables.length === 0 ? "Nenhuma mesa livre" : "Mover a conta para outra mesa"} style={{
-                padding: "10px 0", borderRadius: 10, border: "1.5px solid #E2E8F0",
+                padding: "10px 4px", borderRadius: 10, border: "1.5px solid #E2E8F0",
                 background: "#F8FAFC", color: "#475569", fontWeight: 800, fontSize: 13,
-                cursor: freeTables.length === 0 ? "not-allowed" : "pointer", gridColumn: "1 / -1",
+                cursor: freeTables.length === 0 ? "not-allowed" : "pointer",
                 opacity: freeTables.length === 0 ? 0.5 : 1,
-              }}>↔️ Transferir para outra mesa</button>
+              }}>↔️ Transferir</button>
               {(selectedTable.openSession.totalAmount === 0) && (
                 <button onClick={() => setShowFreeConfirm(true)} style={{
                   padding: "10px 0", borderRadius: 10, border: "1.5px solid #F59E0B",
@@ -1895,6 +1925,40 @@ export default function MesasApp({
                 placeholder="Ex: Varanda, VIP, Terraço"
                 style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit" }} />
             </div>
+            {/* Mesa ocupada: dá para mover o cliente daqui mesmo, sem precisar
+                voltar ao painel dela. Só aparece quando há mesa livre. */}
+            {showEditModal.openSession && (
+              <div style={{ marginBottom: 16, padding: 14, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 4 }}>
+                  Esta mesa está ocupada
+                </div>
+                <p style={{ margin: "0 0 10px", fontSize: 12, color: "#64748B", lineHeight: 1.5 }}>
+                  {showEditModal.openSession.customerName ? `${showEditModal.openSession.customerName} · ` : ""}
+                  {fmt(showEditModal.openSession.totalAmount || 0)} em consumo. A conta inteira vai junto; nada é relançado na cozinha.
+                </p>
+                <button
+                  onClick={() => {
+                    const origem = showEditModal;
+                    setShowEditModal(null);
+                    setEditNumber("");
+                    setEditLabel("");
+                    setShowTransferModal(origem);
+                  }}
+                  disabled={freeTables.filter(t => t.id !== showEditModal.id).length === 0}
+                  title={freeTables.filter(t => t.id !== showEditModal.id).length === 0 ? "Nenhuma mesa livre" : "Mover o cliente para uma mesa livre"}
+                  style={{
+                    width: "100%", padding: "11px 0", borderRadius: 10,
+                    border: "1.5px solid #C4B5FD", background: "#F5F3FF", color: "#6D28D9",
+                    fontWeight: 800, fontSize: 13, fontFamily: "inherit",
+                    cursor: freeTables.filter(t => t.id !== showEditModal.id).length === 0 ? "not-allowed" : "pointer",
+                    opacity: freeTables.filter(t => t.id !== showEditModal.id).length === 0 ? 0.5 : 1,
+                  }}
+                >
+                  ↔️ Transferir cliente para outra mesa
+                </button>
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => { setShowEditModal(null); setEditNumber(""); setEditLabel(""); }}
                 style={{
@@ -2078,13 +2142,17 @@ export default function MesasApp({
                       borderBottom: i < pagamentosDaMesa.length - 1 ? "1px solid #F1F5F9" : "none",
                       background: "#F0FDF4",
                     }}>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {p.guestName ? `👤 ${p.guestName}` : "🍽️ Da mesa"}
+                      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {p.guestName ? `👤 ${p.guestName}` : "🍽️ Da mesa"}
+                        </span>
+                        {p.por && (
+                          <span title={`Registrado por ${p.por}`} style={{ fontSize: 11, color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            por {p.por}
+                          </span>
+                        )}
                       </span>
                       <span style={{ fontSize: 12, color: "#15803D", fontWeight: 600 }}>{p.method}</span>
-                      {p.por && (
-                        <span title={`Registrado por ${p.por}`} style={{ fontSize: 11, color: "#64748B", whiteSpace: "nowrap" }}>· {p.por}</span>
-                      )}
                       <span style={{ fontSize: 14, fontWeight: 900, color: "#15803D" }}>{fmt(p.amount)}</span>
                       <button
                         onClick={() => apagarPagamento(p.uid)}
@@ -2253,26 +2321,26 @@ export default function MesasApp({
       )}
 
       {/* ─── TRANSFER MODAL ─── */}
-      {showTransferModal && selectedTable?.openSession && (
+      {showTransferModal?.openSession && (
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
           display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
-        }} onClick={() => setShowTransferModal(false)}>
+        }} onClick={() => setShowTransferModal(null)}>
           <div onClick={e => e.stopPropagation()} style={{
             background: "#fff", borderRadius: 20, padding: 24, width: "100%", maxWidth: 420,
             maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
           }}>
             <h3 style={{ margin: "0 0 4px", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>
-              ↔️ Transferir a Mesa {selectedTable.number}
+              ↔️ Transferir a Mesa {showTransferModal.number}
             </h3>
             <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748B" }}>
               A conta inteira (pedidos, pessoas e pagamentos) vai para a mesa escolhida. Nada é relançado na cozinha.
             </p>
-            {freeTables.length === 0 ? (
+            {freeTables.filter(t => t.id !== showTransferModal.id).length === 0 ? (
               <p style={{ color: "#B45309", fontWeight: 700, fontSize: 14 }}>Nenhuma mesa livre no momento.</p>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: 8 }}>
-                {freeTables.map(t => (
+                {freeTables.filter(t => t.id !== showTransferModal.id).map(t => (
                   <button key={t.id} onClick={() => transferTable(t.id)} disabled={actionLoading} style={{
                     padding: "14px 6px", borderRadius: 12, border: "2px solid #E2E8F0", background: "#fff",
                     fontWeight: 800, fontSize: 15, color: "#0F172A", cursor: "pointer",
@@ -2284,7 +2352,7 @@ export default function MesasApp({
                 ))}
               </div>
             )}
-            <button onClick={() => setShowTransferModal(false)} style={{
+            <button onClick={() => setShowTransferModal(null)} style={{
               marginTop: 16, width: "100%", padding: "12px 0", borderRadius: 12,
               border: "1.5px solid #E2E8F0", background: "#F8FAFC", color: "#64748B",
               fontWeight: 700, fontSize: 14, cursor: "pointer",
