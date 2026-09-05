@@ -1,36 +1,30 @@
-# Runbook — subir o módulo de mesas (acesso do garçom, conta impressa, Assistente 1.2.3)
+# Runbook — subir o módulo de mesas (acesso do garçom, conta impressa, Assistente 1.2.5)
 
 Ordem obrigatória. Fora dela, a impressão de **todas** as lojas para.
 
-## 1. Banco ANTES do código
+## 1. Banco — já aplicado, e o boot regarante
 
-O `Dockerfile` não roda migração (`entrypoint.sh` só sobe `node server.js`), e não há pasta
-`prisma/migrations`: o schema é aplicado à mão. Se o container subir antes, o Prisma Client
-novo pede colunas que não existem.
+**Não use `prisma db push` neste banco.** Produção tem tabelas e colunas que
+nenhum `schema.prisma` declara (`AmbassadorApplication`, `Food99Store`, colunas
+`brendi*`, `emergencyFine`, `routeSequence`, `totemIdempotencyKey`). O push
+pediria `--accept-data-loss` e apagaria tudo isso, inclusive candidaturas de
+embaixador.
 
-```bash
-# 1. Testar na branch da Neon (Branches → New Branch → auto-delete 1 day)
-DATABASE_URL="<url da branch>" npx prisma db push
+O caminho é o que o repositório já usa: instruções aditivas e idempotentes em
+`src/lib/garantir-colunas.ts` (`garantirEstruturaDeMesa`), aplicadas no boot
+antes do primeiro request.
 
-# 2. Só então produção
-DATABASE_URL="<url de produção>" npx prisma db push
-```
-
-Tudo é **aditivo** — não pede `--accept-data-loss`:
-
-| Tabela/Modelo | O que entra |
+| Tabela | O que entra |
 | --- | --- |
 | `Waiter` | `login`, `passwordHash`, `credentialsUpdatedAt`, `lastLoginAt`, único `(franchiseeId, login)` |
 | `TableSession` | `closedByKind`, `closedByName` |
 | `User` | `cashClosedAt`, `printQueuePolledAt` |
 | `PrintRequest` | tabela nova (conta da mesa na fila de impressão) |
 
-O índice único aceita nulos sem conflito, então garçons já cadastrados não travam o push.
-
-**Rede de segurança**: se o código subir antes por engano, o `GET /api/store/print-queue`
-foi feito tolerante — a coluna e a tabela novas falham sozinhas e as comandas continuam
-saindo. Isso é rede, não plano: o acesso do garçom e o fechamento de caixa **quebram** sem
-o push.
+**Status: aplicado em produção em 04/09/2026** — 8 colunas, tabela e índice
+criados; `AmbassadorApplication` e `Food99Store` conferidas intactas. O boot
+roda as mesmas instruções de novo, sem efeito (é idempotente), e cobre qualquer
+banco que ainda não as tenha.
 
 ## 2. Deploy do site
 
@@ -46,12 +40,12 @@ O terceiro confirma que o `proxy.ts` (ex-`middleware.ts`, renomeado para a conve
 Next 16) está ativo no build. Se vier 200, o proxy não subiu e o painel está sem CORS,
 sem HTTPS forçado e sem o bloqueio anônimo de `/api/admin`.
 
-## 3. Assistente de Impressão 1.2.3
+## 3. Assistente de Impressão 1.2.5
 
 O instalador em `public/downloads` e `VERSAO_ASSISTENTE_ATUAL` sobem no mesmo commit. A
 partir do deploy, todo Assistente 1.2.x baixa e reinstala sozinho em até 6 h.
 
-O 1.2.3 traz duas proteções que **precisam** estar no ar antes da atualização em massa:
+O 1.2.5 traz duas proteções que **precisam** estar no ar antes da atualização em massa:
 
 - **marcas de "já impresso" gravadas em disco** (`%APPDATA%\FireHub\printed-cache.json`):
   sem isso, todo reinício reimprimia as comandas das últimas 2 h — e o próprio

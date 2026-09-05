@@ -89,11 +89,11 @@ type PrintOrder = {
  *
  * MANTENHA IGUAL a firehub-print-assistant/package.json ao gerar um instalador.
  */
-// ⚠️ SÓ suba para "1.2.5" NO MESMO COMMIT que trocar o instalador em
-// public/downloads pelo build 1.2.5. Anunciar versão nova com instalador
+// ⚠️ SÓ suba para "1.2.6" NO MESMO COMMIT que trocar o instalador em
+// public/downloads pelo build 1.2.6. Anunciar versão nova com instalador
 // velho no site faz o auto-update de TODAS as lojas baixar e reinstalar o
-// 1.2.4 em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.4";
+// 1.2.5 em loop, a cada 6 horas, para sempre.
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.5";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 
