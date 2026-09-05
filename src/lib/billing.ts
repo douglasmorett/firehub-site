@@ -260,7 +260,7 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
 export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { email: true, planPercent: true, storeTimezone: true, isFranqueadoHakim: true },
+    select: { email: true, planPercent: true, storeTimezone: true, isFranqueadoHakim: true, trialEndsAt: true },
   });
 
   const tz = user?.storeTimezone || "America/Sao_Paulo";
@@ -292,7 +292,8 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
   // e o boleto saía certo, mas as telas de admin que leem esta coluna mostravam
   // um valor menor do que o que a loja ia receber.
   const taxasDoCiclo = (cycle.metaAdsFee ?? 0) + (cycle.totemFee ?? 0);
-  const pendingVal = isExempt ? 0 : parseFloat((amountDue + taxasDoCiclo).toFixed(2));
+  const emTeste = !!user?.trialEndsAt && new Date(user.trialEndsAt) > new Date();
+  const pendingVal = (isExempt || emTeste) ? 0 : parseFloat((amountDue + taxasDoCiclo).toFixed(2));
 
   // Loja isenta tem que gravar `amountDue` ZERO, não a mensalidade que ela
   // teria se pagasse.
@@ -477,16 +478,23 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     motivosUso = uso.motivos;
   }
 
-  // Período de teste isenta APENAS a cobrança que nasce do uso sem venda.
+  // Período de teste isenta a mensalidade inteira — com venda ou sem.
   //
-  // Quem vendeu pelo sistema paga sobre o que vendeu, em teste ou não — é o
-  // trato do "use first, pay later", e mexer nisso tiraria do faturamento
-  // lojas que já vendem (a Pastel da Paulista faturou R$ 3.782 num mês em que
-  // tinha benefício concedido). O teste serve para o lojista experimentar sem
-  // levar boleto por ter ligado o robô, não para vender de graça.
+  // A regra anterior isentava só quem não tinha vendido nada, e isso cobrava
+  // exatamente quem estava fazendo o que o teste existe para permitir: a Point
+  // Mix vendeu R$ 184,92 experimentando o sistema e recebeu boleto de R$ 100.
+  // Pior, o painel do lojista (`getCurrentCycleView`) mostra R$ 0,00 o teste
+  // inteiro — o valor só aparecia no boleto. Quem está em teste não recebe
+  // fatura; a cobrança começa quando o teste acaba, e aí vale a regra do uso.
   const trialAte = cycle.franchisee?.trialEndsAt;
-  const emTeste = !!trialAte && trialAte > new Date();
-  const isentoPorTeste = emTeste && totalSales === 0;
+  // O que vale e o teste DURANTE o mes faturado, nao na hora em que o cron
+  // roda. Com `new Date()` aqui a SORRISO CAR — teste ate 02/09, agosto inteiro
+  // dentro dele — foi cobrada porque o fechamento de agosto rodou em 03/09, um
+  // dia depois. O ciclo e sempre de um mes que ja passou: comparar com "agora"
+  // cobra justamente quem passou o mes faturado inteiro em teste e so perdeu o
+  // beneficio no intervalo entre o fim do mes e a execucao do fechamento.
+  const emTeste = !!trialAte && trialAte >= monthEnd;
+  const isentoPorTeste = emTeste;
 
   const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage);
 
@@ -576,7 +584,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         // Fica gravado por que não cobrou. Sem isto, "por que essa loja não foi
         // cobrada?" vira arqueologia toda vez.
         notes: isSpecialStore ? "Isento (loja oficial/própria)."
-          : isentoPorTeste ? `Em período de teste até ${trialAte?.toLocaleDateString("pt-BR")}, sem vendas no mês. Uso detectado: ${motivosUso.join(", ") || "nenhum"}.`
+          : isentoPorTeste ? `Em período de teste até ${trialAte?.toLocaleDateString("pt-BR")} — cobriu o mês inteiro, mensalidade isenta. Vendas no mês: R$ ${totalSales.toFixed(2)}. Uso detectado: ${motivosUso.join(", ") || "nenhum"}.`
           : !hasUsage ? "Não usou nenhuma funcionalidade no mês."
           : "Valor abaixo do mínimo de cobrança.",
       },
@@ -585,7 +593,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       charged: false,
       amountPending: 0,
       message: isSpecialStore ? "Isento (loja oficial / própria)."
-        : isentoPorTeste ? "Em período de teste, sem vendas — nada cobrado."
+        : isentoPorTeste ? "Em período de teste no mês inteiro — mensalidade isenta."
         : "Nada a cobrar neste mês.",
     };
   }
@@ -786,8 +794,8 @@ export async function getCurrentCycleView(franchiseeId: string) {
   }
 
   // Mesma conta do fechamento, para o painel bater com o boleto.
-  const previsaoPorVendas = vendasDoMes > 0 ? calcMensalidade(vendasDoMes, true).mensalidade : 0;
-  const devidoAgora = Math.max(previsaoPorVendas, previsaoPorUso?.valor || 0);
+  const previsaoPorVendas = (vendasDoMes > 0 && !emTeste) ? calcMensalidade(vendasDoMes, true).mensalidade : 0;
+  const devidoAgora = emTeste ? 0 : Math.max(previsaoPorVendas, previsaoPorUso?.valor || 0);
 
   // Loja que só recebe pedido de marketplace nunca passa por `ensureCycle`, e
   // por isso pode não ter linha de ciclo no meio do mês. O valor previsto tem
@@ -816,7 +824,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const totem = cycle.totemFee ?? 0;
   const taxasDoCiclo = trafegoPago + totem;
 
-  const mensalidadePrevista = Math.max(cycle.amountDue, devidoAgora);
+  const mensalidadePrevista = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   // O abatimento de pagamentos online desconta a MENSALIDADE, não as taxas —
   // mesma conta do fechamento, para o painel bater com o boleto.
   const mensalidadePendente = Math.max(0, mensalidadePrevista - cycle.amountOffset);
