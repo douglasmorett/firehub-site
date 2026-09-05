@@ -47,6 +47,20 @@ function preenchimentoForcado(group: ComboGroupData): Record<string, number> {
   const itens = (group.items || []).filter(i => i.menuProduct?.active !== false);
   if (itens.length === 0) return {};
 
+  // "Não há escolha nenhuma" só quando o grupo EXIGE o teto cheio. A conta de
+  // baixo (soma dos tetos == max) não basta sozinha: um grupo "Tamanho" com
+  // mín 1 / máx 6 e uma única opção sem teto próprio soma 6 == 6 e vinha
+  // pré-marcado com SEIS unidades — na Pastel da Paulista o garçom lançava
+  // 6 pastéis de uma vez, e mexer no mínimo no cadastro não mudava nada,
+  // porque esta regra nunca olhou para ele. Grupo com liberdade (mín < máx,
+  // incluindo o opcional de mín 0) começa vazio: quem decide é o cliente.
+  const minBruto = Number(group.minQty);
+  const exigido =
+    group.minQty === null || group.minQty === undefined || !Number.isFinite(minBruto) || minBruto < 0
+      ? max
+      : Math.min(minBruto, max);
+  if (exigido !== max) return {};
+
   const tetos = itens.map(i => {
     const t = Number(i.maxPerItem);
     return Number.isFinite(t) && t > 0 ? t : max;
