@@ -172,7 +172,15 @@ export async function GET(req: Request) {
           quantity: true,
           price: true,
           productName: true,
-          menuProduct: { select: { id: true, name: true, price: true, imageUrl: true, isCombo: true } },
+          // `comboSelections` e `notes` entram para o "repetir pedido" conseguir
+          // remontar a sacola do jeito que o cliente pediu da última vez.
+          // `active` do produto entra para a tela saber avisar quando um item
+          // saiu do cardápio, em vez de repetir um pedido que não pode ser feito.
+          comboSelections: true,
+          notes: true,
+          menuProduct: {
+            select: { id: true, name: true, price: true, imageUrl: true, isCombo: true, active: true },
+          },
         },
       },
     },

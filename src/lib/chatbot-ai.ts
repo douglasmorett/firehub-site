@@ -293,6 +293,11 @@ export async function processChatbotAI(
   const chatbotConfig = (user.chatbotConfig as any) || {};
   const delivConfig = (user.deliveryConfig as any) || {};
   const minimumOrderValue = parseFloat(delivConfig.minimumOrderValue) || 26.00;
+  // Mínimo da retirada: ausente = herda o da entrega, igual ao cardápio.
+  const minimumOrderValuePickup =
+    delivConfig.minimumOrderValuePickup === undefined || delivConfig.minimumOrderValuePickup === null || delivConfig.minimumOrderValuePickup === ""
+      ? minimumOrderValue
+      : parseFloat(delivConfig.minimumOrderValuePickup) || 0;
   
   const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
   const personality = chatbotConfig.personality || "SIMPATICO";
@@ -952,7 +957,9 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
           Faltam ${"${(minimumOrderValue - 19).toFixed(2).replace('.', ',')}"} reais — quer que eu acrescente mais uma esfirra pra fechar?"
          (troque os valores pelos reais do pedido).
        - Se o cliente NÃO quiser completar, ofereça a RETIRADA NO BALCÃO caso a loja aceite
-         (veja "Aceita Retirada no Balcão" acima) — retirada não tem pedido mínimo.
+         (veja "Aceita Retirada no Balcão" acima) — ${minimumOrderValuePickup > 0
+           ? `na retirada o mínimo é R$ ${minimumOrderValuePickup.toFixed(2).replace(".", ",")}`
+           : "retirada não tem pedido mínimo"}.
        - Em 01/09/2026 você montou um pedido de 19,00 reais e foi pedir confirmação para
          mandar para a cozinha, com o mínimo da loja em 26,00. É isto que esta regra impede.
 
@@ -1047,6 +1054,7 @@ DADOS DA LOJA:
 - Tempo Médio de Entrega da Loja: 45 a 60 minutos
 - Aceita Retirada no Balcão: ${chatbotConfig.acceptsPickup ? "SIM" : "NÃO"}
 - ⚠️ PEDIDO MÍNIMO PARA ENTREGA: R$ ${minimumOrderValue.toFixed(2).replace(".", ",")} (subtotal dos itens, SEM a taxa de entrega)
+- ⚠️ PEDIDO MÍNIMO PARA RETIRADA NO BALCÃO: ${minimumOrderValuePickup > 0 ? `R$ ${minimumOrderValuePickup.toFixed(2).replace(".", ",")}` : "não há — qualquer valor fecha"}
 - Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
 - Quadro Geral de Horários:
 ${hoursText}
@@ -1383,6 +1391,7 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
                   storeProducts: products,
                   autoAccept: user.chatbotConfig ? (user.chatbotConfig as any).autoAcceptOrders === true : false,
                   minimumOrderValue,
+                  minimumOrderValuePickup,
                   lojaAberta: estadoAtualDaLoja.aberta,
                   textoDoHorario: estadoAtualDaLoja.texto,
                 });
@@ -1556,6 +1565,7 @@ async function syncAiOrderToDatabase({
   storeProducts,
   autoAccept,
   minimumOrderValue,
+  minimumOrderValuePickup,
   lojaAberta,
   textoDoHorario,
 }: {
@@ -1567,6 +1577,8 @@ async function syncAiOrderToDatabase({
   autoAccept?: boolean;
   /** Piso de subtotal para ENTREGA, cadastrado pela loja. */
   minimumOrderValue?: number;
+  /** Piso de subtotal para RETIRADA. Ausente = mesmo da entrega; 0 = sem mínimo. */
+  minimumOrderValuePickup?: number;
   /** A loja está aberta agora? Pedido com a loja fechada não entra. */
   lojaAberta?: boolean;
   /** Frase pronta para explicar ao cliente quando a loja volta a atender. */
@@ -1883,21 +1895,29 @@ async function syncAiOrderToDatabase({
   // para a cozinha. Aqui o modelo não decide: se o SUBTOTAL (itens, sem a taxa)
   // não alcança o mínimo, o pedido de ENTREGA não fecha.
   //
-  // Retirada não entra: mínimo é regra de entrega. E rascunho também não — o
-  // cliente ainda está montando, travar no meio seria implicância.
-  const minimoDaLoja = Number(minimumOrderValue) || 0;
-  if (isFinal && deliveryType === "DELIVERY" && minimoDaLoja > 0 && totalItemsSum < minimoDaLoja) {
+  // Retirada tem o mínimo DELA, cadastrado pela loja — em geral zero, porque
+  // quem vem buscar não gera custo de entrega. Ausente, herda o da entrega.
+  // Rascunho não entra: o cliente ainda está montando, travar no meio seria
+  // implicância.
+  const minimoDaEntrega = Number(minimumOrderValue) || 0;
+  const minimoDaRetirada =
+    minimumOrderValuePickup === undefined || minimumOrderValuePickup === null
+      ? minimoDaEntrega
+      : Number(minimumOrderValuePickup) || 0;
+  const minimoDaLoja = deliveryType === "RETIRADA" ? minimoDaRetirada : minimoDaEntrega;
+  const comoRecebe = deliveryType === "RETIRADA" ? "para retirada" : "para entrega";
+  if (isFinal && minimoDaLoja > 0 && totalItemsSum < minimoDaLoja) {
     const falta = centavos(minimoDaLoja - totalItemsSum);
     console.warn(
-      `[Chatbot AI Order Sync] 🛑 Pedido ABAIXO DO MÍNIMO recusado: subtotal R$ ${totalItemsSum.toFixed(2)} < mínimo R$ ${minimoDaLoja.toFixed(2)}. ` +
+      `[Chatbot AI Order Sync] 🛑 Pedido ABAIXO DO MÍNIMO recusado (${deliveryType}): subtotal R$ ${totalItemsSum.toFixed(2)} < mínimo R$ ${minimoDaLoja.toFixed(2)}. ` +
       `Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
     );
     return {
       gravado: false,
-      motivo: `abaixo do pedido mínimo: subtotal R$ ${totalItemsSum.toFixed(2).replace(".", ",")}, mínimo R$ ${minimoDaLoja.toFixed(2).replace(".", ",")} (faltam R$ ${falta.toFixed(2).replace(".", ",")})`,
+      motivo: `abaixo do pedido mínimo ${comoRecebe}: subtotal R$ ${totalItemsSum.toFixed(2).replace(".", ",")}, mínimo R$ ${minimoDaLoja.toFixed(2).replace(".", ",")} (faltam R$ ${falta.toFixed(2).replace(".", ",")})`,
       regraDeNegocio: true,
       mensagemParaOCliente:
-        `Opa! 😊 Deu R$ ${totalItemsSum.toFixed(2).replace(".", ",")} em itens, e o pedido mínimo para entrega aqui é R$ ${minimoDaLoja.toFixed(2).replace(".", ",")}. ` +
+        `Opa! 😊 Deu R$ ${totalItemsSum.toFixed(2).replace(".", ",")} em itens, e o pedido mínimo ${comoRecebe} aqui é R$ ${minimoDaLoja.toFixed(2).replace(".", ",")}. ` +
         `Faltam R$ ${falta.toFixed(2).replace(".", ",")} — quer incluir mais alguma coisa pra eu fechar pra você?`,
     };
   }

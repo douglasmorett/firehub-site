@@ -357,10 +357,50 @@ export default function CustomerStorePage({
   const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
 
-  // Pedido Mínimo da Loja
-  const storeMinOrder = Number(delivConfig.minimumOrderValue || 0);
+  // Pedido Mínimo da Loja — separado por tipo de recebimento.
+  //
+  // O mínimo existe para cobrir o custo da entrega, tanto que a descrição do
+  // campo no painel fala em "pedido de entrega" e o robô do WhatsApp promete ao
+  // cliente que retirada não tem mínimo. O cardápio, porém, cobrava o valor de
+  // todo mundo — inclusive de quem ia buscar no balcão, que não gera custo
+  // nenhum de entrega.
+  //
+  // `minimumOrderValuePickup` ausente = loja que nunca configurou: herda o
+  // mínimo da entrega, que é exatamente como o cardápio sempre se comportou.
+  // Zero = retirada sem mínimo.
+  const storeMinOrderDelivery = Number(delivConfig.minimumOrderValue || 0);
+  const pickupMinConfigured =
+    delivConfig.minimumOrderValuePickup !== undefined &&
+    delivConfig.minimumOrderValuePickup !== null &&
+    delivConfig.minimumOrderValuePickup !== "";
+  const storeMinOrderPickup = pickupMinConfigured
+    ? Number(delivConfig.minimumOrderValuePickup) || 0
+    : storeMinOrderDelivery;
+  const pickupAvailable = !franchisee.storeDeliveryOnly;
+
+  // O mínimo que vale agora é o do caminho que o cliente escolheu.
+  const storeMinOrder = deliveryType === "PICKUP" ? storeMinOrderPickup : storeMinOrderDelivery;
   const isBelowMinOrder = Boolean(storeMinOrder > 0 && cartTotal > 0 && cartTotal < storeMinOrder);
   const remainingForMinOrder = storeMinOrder > 0 ? Math.max(0, storeMinOrder - cartTotal) : 0;
+
+  // Na sacola ele ainda não escolheu como recebe, então travar pelo mínimo da
+  // entrega esconderia a retirada de quem já tinha direito a ela. Aqui só
+  // barra o valor que não alcança nenhum dos dois caminhos.
+  const minOrderToLeaveCart = pickupAvailable
+    ? Math.min(storeMinOrderDelivery, storeMinOrderPickup)
+    : storeMinOrderDelivery;
+  const isBelowCartMin = Boolean(minOrderToLeaveCart > 0 && cartTotal > 0 && cartTotal < minOrderToLeaveCart);
+  const remainingForCartMin = minOrderToLeaveCart > 0 ? Math.max(0, minOrderToLeaveCart - cartTotal) : 0;
+
+  // Fecha o pedido, mas só retirando. Dizer isso agora, e não no último clique
+  // depois do endereço inteiro digitado.
+  const somenteRetiradaPorValor = Boolean(
+    pickupAvailable &&
+    cartTotal > 0 &&
+    storeMinOrderDelivery > storeMinOrderPickup &&
+    cartTotal < storeMinOrderDelivery &&
+    cartTotal >= storeMinOrderPickup
+  );
 
   // Fidelidade, Cashback, Carimbos, Indicação & Níveis VIP
   const loyalty = (franchisee.storeLoyalty as any) || {};
@@ -556,6 +596,135 @@ export default function CustomerStorePage({
   const deleteFromCart = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
   const clearCart = () => setCart([]);
   const getQty = (id: string) => cart.find(i => i.id === id)?.quantity || 0;
+
+  // ── REPETIR UM PEDIDO ANTERIOR ────────────────────────────────────────────
+  //
+  // O preço NUNCA vem do pedido antigo. Cada item é reconstruído a partir do
+  // produto que está no cardápio agora: se a esfirra subiu de R$ 8 para R$ 9,
+  // a sacola recebe R$ 9. Repetir com o valor congelado colocaria o cliente
+  // para fechar um pedido por um preço que a loja não pratica mais — e o
+  // prejuízo (ou a discussão no balcão) seria do lojista.
+  //
+  // `comboSelections` foi gravado de formas diferentes ao longo do tempo: às
+  // vezes array, às vezes string JSON, às vezes string JSON DENTRO de string.
+  // Por isso o parse desenrola até duas vezes antes de desistir.
+  const lerSelecoes = (bruto: any): any[] => {
+    let v = bruto;
+    for (let i = 0; i < 2 && typeof v === "string"; i++) {
+      try { v = JSON.parse(v); } catch { return []; }
+    }
+    return Array.isArray(v) ? v : [];
+  };
+
+  const [resumoRepeticao, setResumoRepeticao] = useState<
+    null | { adicionados: number; forasDoCardapio: string[]; mudaramDePreco: { nome: string; de: number; para: number }[] }
+  >(null);
+
+  const repetirPedido = (pedido: any) => {
+    const itens = pedido?.items || [];
+    if (!itens.length) return;
+
+    const forasDoCardapio: string[] = [];
+    const mudaramDePreco: { nome: string; de: number; para: number }[] = [];
+    const novos: CartItem[] = [];
+
+    for (const it of itens) {
+      const idProduto = it?.menuProduct?.id;
+      // O cardápio de hoje é a fonte da verdade — não o pedido antigo.
+      const atual = idProduto ? menuProducts.find(p => p.id === idProduto) : undefined;
+      const nome = it?.menuProduct?.name || it?.productName || "Item";
+
+      // Saiu do cardápio ou foi desativado: não entra na sacola caladamente.
+      if (!atual || it?.menuProduct?.active === false) {
+        forasDoCardapio.push(nome);
+        continue;
+      }
+
+      // O preço do combo é `base de hoje + adicionais escolhidos`. Conferido
+      // contra pedidos reais: "Monte seu Combo" gravado a R$ 49,88 = base
+      // R$ 46,90 + R$ 2,98 de adicionais, e o "Combo do Solteiro" a R$ 41,84 =
+      // base de R$ 34,90 na época + R$ 6,94 — hoje a base é R$ 39,86, e é essa
+      // diferença que o aviso mostra ao cliente.
+      //
+      // LIMITE CONHECIDO: o preço do ADICIONAL vem gravado na seleção, então um
+      // adicional que mudou de preço entra pelo valor antigo. A base, que é a
+      // maior parte do valor, vem sempre do cardápio atual. Para fechar isso de
+      // vez seria preciso casar cada seleção com o item de combo atual — os ids
+      // gravados são de origem externa e não batem com MenuProduct.
+      const selecoes = lerSelecoes(it.comboSelections);
+      const extraSum = selecoes.reduce(
+        (s: number, sel: any) => s + (Number(sel?.price) || 0) * (Number(sel?.quantity) || 1),
+        0
+      );
+
+      const precoNovo = atual.price + extraSum;
+      const precoAntigo = Number(it.price) || 0;
+      if (precoAntigo > 0 && Math.abs(precoNovo - precoAntigo) >= 0.01) {
+        mudaramDePreco.push({ nome, de: precoAntigo, para: precoNovo });
+      }
+
+      const qtd = Number(it.quantity) || 1;
+      const temCombo = selecoes.length > 0;
+
+      novos.push({
+        ...atual,
+        // Combo e item com observação viram linha própria, como no addToCart:
+        // agrupar pelo id do produto misturaria escolhas diferentes do mesmo combo.
+        id: temCombo || it.notes ? `${atual.id}_${Date.now()}_${novos.length}` : atual.id,
+        price: precoNovo,
+        quantity: qtd,
+        ...(temCombo ? { comboSelections: selecoes } : {}),
+        ...(it.notes ? { notes: String(it.notes) } : {}),
+      } as CartItem);
+    }
+
+    if (novos.length === 0) {
+      setResumoRepeticao({ adicionados: 0, forasDoCardapio, mudaramDePreco });
+      return;
+    }
+
+    setCart(prev => {
+      const copia = [...prev];
+      for (const n of novos) {
+        // Item simples e sem observação soma na linha existente, em vez de
+        // criar duas linhas iguais quando o cliente repete com a sacola cheia.
+        const iguais = !n.comboSelections && !n.notes;
+        const idx = iguais ? copia.findIndex(i => i.id === n.id && !i.comboSelections && !(i as any).notes) : -1;
+        if (idx >= 0) copia[idx] = { ...copia[idx], quantity: copia[idx].quantity + n.quantity };
+        else copia.push(n);
+      }
+      return copia;
+    });
+
+    const valorTotal = novos.reduce((s, n) => s + n.price * n.quantity, 0);
+    trackPixelEvent("AddToCart", { content_name: "Repetir pedido", value: valorTotal, currency: "BRL" });
+    trackGaEvent("add_to_cart", {
+      currency: "BRL",
+      value: valorTotal,
+      items: novos.map(n => ({
+        item_id: String(n.id).split("_")[0],
+        item_name: n.name,
+        quantity: n.quantity,
+        price: n.price,
+      })),
+    });
+
+    setResumoRepeticao({ adicionados: novos.length, forasDoCardapio, mudaramDePreco });
+  };
+
+  /** O pedido mais recente que dá para repetir. */
+  const ultimoPedido = myOrdersList && myOrdersList.length > 0 ? myOrdersList[0] : null;
+
+  // Cliente identificado já chega com o histórico carregado: sem isto o botão
+  // "Pedir de novo" da sacola só apareceria depois de ele abrir Pedidos e
+  // buscar na mão — que é justamente o trabalho que o botão deveria poupar.
+  useEffect(() => {
+    const tel = customer?.phone || customerPhone;
+    if (!tel || myOrdersList.length > 0 || myOrdersLoading) return;
+    if (String(tel).replace(/\D/g, "").length < 8) return;
+    fetchMyOrders(tel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.phone]);
 
   const isManualScrollRef = useRef(false);
 
@@ -1038,7 +1207,12 @@ export default function CustomerStorePage({
       return;
     }
     if (storeMinOrder > 0 && cartTotal < storeMinOrder) {
-      alert(`⚠️ O pedido mínimo desta loja é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.`);
+      const qual = deliveryType === "PICKUP" ? "para retirada" : "para entrega";
+      const saidaPelaRetirada =
+        deliveryType === "DELIVERY" && pickupAvailable && cartTotal >= storeMinOrderPickup
+          ? ` Se preferir, escolha "Retirar no Balcão" — o mínimo ${storeMinOrderPickup > 0 ? `é de R$ ${storeMinOrderPickup.toFixed(2).replace(".", ",")}` : "não se aplica"} nesse caso.`
+          : "";
+      alert(`⚠️ O pedido mínimo desta loja ${qual} é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.${saidaPelaRetirada}`);
       return;
     }
     if (!customerName.trim()) { alert("Por favor, informe seu nome."); return; }
@@ -1334,10 +1508,68 @@ export default function CustomerStorePage({
       <div className="cart-body" style={{ flex: 1, overflowY: "auto", padding: "1rem 1.25rem", minHeight: 0 }}>
         {!isCheckout ? (
           cart.length === 0 ? (
-            <div className="cart-empty" style={{ padding: "3rem 1rem", textAlign: "center", color: "#94A3B8" }}>
+            <div className="cart-empty" style={{ padding: "2.5rem 1rem", textAlign: "center", color: "#94A3B8" }}>
               <ShoppingCart size={42} style={{ opacity: 0.3, marginBottom: "8px" }} />
               <p style={{ fontWeight: 700, fontSize: "0.95rem", color: "#64748B", margin: "0 0 4px" }}>Sua sacola está vazia</p>
               <p style={{ fontSize: "0.8rem", margin: 0 }}>Adicione itens do cardápio para começar seu pedido.</p>
+
+              {/* ── REPETIR O ÚLTIMO PEDIDO ────────────────────────────────────
+                  Sacola vazia é onde o cliente que já comprou aqui está a um
+                  clique de comprar de novo. Quem tem pedido carregado repete
+                  direto; quem não está identificado recebe o convite para
+                  entrar, em vez de um vazio sem saída. */}
+              {ultimoPedido ? (
+                <div style={{ marginTop: 20, borderTop: "1px dashed #E2E8F0", paddingTop: 18 }}>
+                  <p style={{ fontSize: "0.8rem", color: "#475569", margin: "0 0 10px", lineHeight: 1.5 }}>
+                    Seu último pedido foi<br />
+                    <strong style={{ color: "#0F172A" }}>
+                      {(ultimoPedido.items || [])
+                        .slice(0, 3)
+                        .map((it: any) => `${it.quantity}x ${it.menuProduct?.name || it.productName || "item"}`)
+                        .join(", ")}
+                      {(ultimoPedido.items || []).length > 3 && ` +${(ultimoPedido.items || []).length - 3}`}
+                    </strong>
+                  </p>
+                  <button
+                    onClick={() => repetirPedido(ultimoPedido)}
+                    style={{
+                      width: "100%", padding: "12px", borderRadius: 12, border: "none",
+                      background: "#059669", color: "#fff", fontWeight: 800,
+                      fontSize: "0.88rem", cursor: "pointer",
+                    }}
+                  >
+                    🔁 Pedir de novo
+                  </button>
+                  <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "8px 0 0", lineHeight: 1.4 }}>
+                    Os itens entram na sacola pelo preço de hoje.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ marginTop: 20, borderTop: "1px dashed #E2E8F0", paddingTop: 18 }}>
+                  <p style={{ fontSize: "0.8rem", color: "#475569", margin: "0 0 10px", lineHeight: 1.5 }}>
+                    Já pediu aqui antes?
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (customer) {
+                        // Já identificado: só faltava carregar o histórico.
+                        fetchMyOrders(customer?.phone || customerPhone);
+                        setShowMyOrdersModal(true);
+                      } else {
+                        setAuthMode("login");
+                        setShowAuth(true);
+                      }
+                    }}
+                    style={{
+                      width: "100%", padding: "12px", borderRadius: 12,
+                      border: "1.5px solid #059669", background: "#F0FDF4",
+                      color: "#047857", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer",
+                    }}
+                  >
+                    {customer ? "🔁 Ver meus pedidos e repetir" : "Entre na sua conta e repita seu último pedido"}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -1521,7 +1753,7 @@ export default function CustomerStorePage({
               </div>
 
               {/* AVISO DE PEDIDO MÍNIMO (SE HOUVER) */}
-              {isBelowMinOrder && (
+              {isBelowCartMin && (
                 <div style={{
                   padding: "10px 12px",
                   background: "#FFFBEB",
@@ -1534,8 +1766,31 @@ export default function CustomerStorePage({
                 }}>
                   <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</span>
                   <div style={{ fontSize: "0.78rem", color: "#92400E", lineHeight: 1.35 }}>
-                    <div style={{ fontWeight: 800 }}>Pedido Mínimo da Loja: R$ {storeMinOrder.toFixed(2).replace(".", ",")}</div>
-                    <div>Adicione mais <strong>R$ {remainingForMinOrder.toFixed(2).replace(".", ",")}</strong> para continuar.</div>
+                    <div style={{ fontWeight: 800 }}>Pedido Mínimo da Loja: R$ {minOrderToLeaveCart.toFixed(2).replace(".", ",")}</div>
+                    <div>Adicione mais <strong>R$ {remainingForCartMin.toFixed(2).replace(".", ",")}</strong> para continuar.</div>
+                    {storeMinOrderDelivery > minOrderToLeaveCart && (
+                      <div style={{ marginTop: "3px" }}>Para <strong>entrega</strong>, o mínimo é R$ {storeMinOrderDelivery.toFixed(2).replace(".", ",")}.</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Alcança a retirada, mas não a entrega. */}
+              {somenteRetiradaPorValor && (
+                <div style={{
+                  padding: "10px 12px",
+                  background: "#EFF6FF",
+                  border: "1px solid #BFDBFE",
+                  borderRadius: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  margin: "4px 0"
+                }}>
+                  <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>🛍️</span>
+                  <div style={{ fontSize: "0.78rem", color: "#1E40AF", lineHeight: 1.35 }}>
+                    <div style={{ fontWeight: 800 }}>Abaixo de R$ {storeMinOrderDelivery.toFixed(2).replace(".", ",")} a loja não entrega.</div>
+                    <div>Mas você pode <strong>retirar no balcão</strong>{storeMinOrderPickup > 0 ? ` — mínimo de R$ ${storeMinOrderPickup.toFixed(2).replace(".", ",")}` : " — sem valor mínimo"}. É só continuar.</div>
                   </div>
                 </div>
               )}
@@ -1617,6 +1872,13 @@ export default function CustomerStorePage({
                 <button
                   type="button"
                   onClick={() => {
+                    // Trocar para entrega abaixo do mínimo dela levaria o
+                    // cliente a preencher o endereço todo para só então
+                    // descobrir que não fecha.
+                    if (storeMinOrderDelivery > 0 && cartTotal < storeMinOrderDelivery) {
+                      alert(`⚠️ Para entrega, o pedido mínimo é de R$ ${storeMinOrderDelivery.toFixed(2).replace(".", ",")} — faltam R$ ${(storeMinOrderDelivery - cartTotal).toFixed(2).replace(".", ",")}. Você pode adicionar mais itens ou seguir com a retirada no balcão.`);
+                      return;
+                    }
                     setDeliveryType("DELIVERY");
                     if (isNeighborhoodType) {
                       if (customerNeighborhood) calcDeliveryFee(customerNeighborhood);
@@ -2086,9 +2348,19 @@ export default function CustomerStorePage({
             <button
               type="button"
               onClick={() => {
-                if (isBelowMinOrder) {
-                  alert(`⚠️ O pedido mínimo desta loja é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.`);
+                if (isBelowCartMin) {
+                  alert(`⚠️ O pedido mínimo desta loja é de R$ ${minOrderToLeaveCart.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForCartMin.toFixed(2).replace(".", ",")} em itens para continuar.`);
                   return;
+                }
+                // Só dá para retirada: já entra no checkout com ela marcada, em
+                // vez de deixar o cliente preencher o endereço para levar um
+                // "não atingiu o mínimo" no último clique.
+                if (somenteRetiradaPorValor) {
+                  setDeliveryType("PICKUP");
+                  setDeliveryFee(0);
+                  setDeliveryFeeCalculated(true);
+                  setDeliveryAvailable(true);
+                  setDeliveryMessage("Retirada no balcão selecionada.");
                 }
                 setIsCheckout(true);
                 trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" });
@@ -2108,19 +2380,19 @@ export default function CustomerStorePage({
                 padding: "13px",
                 borderRadius: "12px",
                 border: "none",
-                background: isBelowMinOrder ? "#94A3B8" : "#0F172A",
+                background: isBelowCartMin ? "#94A3B8" : "#0F172A",
                 color: "#FFFFFF",
                 fontWeight: 800,
                 fontSize: "0.95rem",
-                cursor: isBelowMinOrder ? "not-allowed" : "pointer",
+                cursor: isBelowCartMin ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                boxShadow: isBelowMinOrder ? "none" : "0 4px 14px rgba(15, 23, 42, 0.25)",
+                boxShadow: isBelowCartMin ? "none" : "0 4px 14px rgba(15, 23, 42, 0.25)",
                 transition: "all 0.2s ease"
               }}
             >
-              <span>{isBelowMinOrder ? `Falta R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")}` : "Continuar pedido"}</span>
+              <span>{isBelowCartMin ? `Falta R$ ${remainingForCartMin.toFixed(2).replace(".", ",")}` : "Continuar pedido"}</span>
               <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
             </button>
           ) : (
@@ -3168,18 +3440,31 @@ export default function CustomerStorePage({
                     <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "8px" }}>
                       {o.items?.map((it: any) => `${it.quantity}x ${it.menuProduct?.name || "Item"}`).join(", ")}
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #F1F5F9", paddingTop: "8px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #F1F5F9", paddingTop: "8px", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>R$ {Number(o.totalAmount || 0).toFixed(2).replace(".", ",")}</span>
-                      <button
-                        onClick={() => {
-                          setOrderSuccess(o.id);
-                          setTrackingStatus(o.status);
-                          setShowMyOrdersModal(false);
-                        }}
-                        style={{ padding: "5px 12px", borderRadius: "8px", border: "1px solid #3B82F6", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}
-                      >
-                        Acompanhar Rota →
-                      </button>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {/* Repetir joga os mesmos itens na sacola, sempre pelo preço
+                            de hoje — ver repetirPedido(). */}
+                        <button
+                          onClick={() => {
+                            repetirPedido(o);
+                            setShowMyOrdersModal(false);
+                          }}
+                          style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer" }}
+                        >
+                          🔁 Repetir pedido
+                        </button>
+                        <button
+                          onClick={() => {
+                            setOrderSuccess(o.id);
+                            setTrackingStatus(o.status);
+                            setShowMyOrdersModal(false);
+                          }}
+                          style={{ padding: "5px 12px", borderRadius: "8px", border: "1px solid #3B82F6", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}
+                        >
+                          Acompanhar →
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -3194,6 +3479,61 @@ export default function CustomerStorePage({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── RESULTADO DO "PEDIR DE NOVO" ────────────────────────────────────
+          O cliente precisa saber o que mudou desde a última vez ANTES de
+          fechar o pedido. Repetir em silêncio um item que subiu de preço, ou
+          esconder que um produto saiu do cardápio, vira reclamação na entrega. */}
+      {resumoRepeticao && (
+        <div
+          onClick={() => setResumoRepeticao(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, padding: 22, maxWidth: 400, width: "100%", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <h3 style={{ margin: "0 0 6px", fontSize: "1.1rem", fontWeight: 900, color: "#0F172A" }}>
+              {resumoRepeticao.adicionados > 0 ? "🔁 Itens na sua sacola" : "Não deu para repetir"}
+            </h3>
+
+            {resumoRepeticao.adicionados > 0 && (
+              <p style={{ margin: "0 0 12px", fontSize: "0.85rem", color: "#475569", lineHeight: 1.5 }}>
+                {resumoRepeticao.adicionados} {resumoRepeticao.adicionados === 1 ? "item foi adicionado" : "itens foram adicionados"} pelo preço de hoje.
+              </p>
+            )}
+
+            {resumoRepeticao.mudaramDePreco.length > 0 && (
+              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 12, padding: "10px 12px", marginBottom: 10 }}>
+                <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#92400E", marginBottom: 6 }}>
+                  Mudou de preço desde o seu último pedido:
+                </div>
+                {resumoRepeticao.mudaramDePreco.map((m, i) => (
+                  <div key={i} style={{ fontSize: "0.78rem", color: "#78350F", lineHeight: 1.6 }}>
+                    • {m.nome}: <s>R$ {m.de.toFixed(2).replace(".", ",")}</s>{" "}
+                    <strong>R$ {m.para.toFixed(2).replace(".", ",")}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {resumoRepeticao.forasDoCardapio.length > 0 && (
+              <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: "10px 12px", marginBottom: 10 }}>
+                <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#991B1B", marginBottom: 6 }}>
+                  Não está mais disponível:
+                </div>
+                {resumoRepeticao.forasDoCardapio.map((n, i) => (
+                  <div key={i} style={{ fontSize: "0.78rem", color: "#7F1D1D", lineHeight: 1.6 }}>• {n}</div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => setResumoRepeticao(null)}
+              style={{ width: "100%", padding: 12, borderRadius: 12, border: "none", background: "#0F172A", color: "#fff", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", marginTop: 4 }}
+            >
+              {resumoRepeticao.adicionados > 0 ? "Ver minha sacola" : "Fechar"}
+            </button>
           </div>
         </div>
       )}
