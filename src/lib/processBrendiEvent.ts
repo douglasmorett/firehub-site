@@ -53,6 +53,23 @@ export interface ProcessResult {
   action: "created" | "updated" | "cancelled" | "dispute" | "skipped" | "error";
   orderId: string;
   message?: string;
+  /**
+   * Só para `action: "error"`: reenviar este evento tem chance de dar certo?
+   *
+   * Banco fora, rede até a Brendi, GET que falhou — sim, e é por isso que o
+   * webhook responde 500 nesses casos, para a Brendi mandar de novo.
+   *
+   * "Não existe loja com este merchant" — não. Reenviar em 30 s encontra
+   * exatamente o mesmo nada, e o 500 ainda faz a Brendi marcar nosso endpoint
+   * como quebrado. Foi o que aconteceu enquanto nenhuma loja estava conectada:
+   * TODO evento virava 500, inclusive a validação da URL no cadastro da
+   * integração. Estes casos respondem 200, ficam registrados no diagnóstico, e
+   * o evento continua na fila do polling (não é ackado) para entrar sozinho
+   * assim que a loja for conectada.
+   *
+   * Ausente = true, que é o comportamento antigo para todo erro não listado.
+   */
+  reenviarAdianta?: boolean;
   /** Presentes apenas no modo apenasPrever. */
   traduzido?: any;
   cru?: any;
@@ -303,7 +320,8 @@ export async function processBrendiEvent(
       if (!lojaCredencial) {
         const msg = `nenhuma loja para autenticar o GET do pedido (merchant evento: ${merchantIdDoEvento || "N/A"})`;
         console.error(`[Brendi] ❌ ${orderId}: ${msg}`);
-        return { action: "error", orderId, message: msg };
+        // Sem credencial nenhuma no banco não há o que reenviar resolva.
+        return { action: "error", orderId, message: msg, reenviarAdianta: false };
       }
 
       // GET /v1/orders/{uuid} com até 3 tentativas resilientes — a Brendi não
@@ -364,14 +382,17 @@ export async function processBrendiEvent(
         } else if (conectadas.length > 1) {
           const msg = `merchant ${eventMerchantId || "N/A"} não bate com nenhuma loja e há ${conectadas.length}+ conectadas — recusado para não adivinhar a dona`;
           console.error(`[Brendi] ❌ ${orderId}: ${msg}`);
-          return { action: "error", orderId, message: msg };
+          // A recusa é proposital e estável: reenviar traz a mesma recusa.
+          return { action: "error", orderId, message: msg, reenviarAdianta: false };
         }
       }
 
       if (!franchisee) {
         const msg = `Nenhuma loja com merchantId correspondente (merchant: ${eventMerchantId || "N/A"})`;
         console.error(`[Brendi] ❌ ${orderId}: ${msg}`);
-        return { action: "error", orderId, message: msg };
+        // Pedido de restaurante que não é cliente nosso, ou merchantId ainda
+        // não preenchido na tela de Integrações. Reenvio não muda nenhum dos dois.
+        return { action: "error", orderId, message: msg, reenviarAdianta: false };
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;

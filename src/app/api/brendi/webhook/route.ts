@@ -257,8 +257,34 @@ export async function POST(req: NextRequest) {
         const result = await processBrendiEvent(eventoMinimo);
 
         if (result.action === "error") {
-          // Falha NOSSA (banco, rede até a Brendi, loja sem amarração). O 500
-          // lá embaixo faz a Brendi reenviar — e o polling também vai ver o
+          // ── REENVIAR RESOLVE, OU NÃO? ────────────────────────────────────
+          //
+          // Só faz sentido devolver 500 (que é o que faz a Brendi mandar de
+          // novo) quando a próxima tentativa tem chance de dar certo: banco
+          // fora, rede, GET que falhou.
+          //
+          // "Não existe loja com este merchant" é estável — e era justamente
+          // o estado do sistema inteiro enquanto nenhuma loja estivesse
+          // conectada: TODO evento virava 500, inclusive a validação da URL no
+          // cadastro da integração no painel da Brendi. Endpoint que responde
+          // 500 na validação é endpoint reprovado.
+          //
+          // Nestes casos respondemos 200 e NÃO ackamos: o evento continua na
+          // fila do polling e entra sozinho quando a loja for conectada.
+          if (result.reenviarAdianta === false) {
+            console.warn(`[Brendi Webhook] ${orderId}: ${result.message} — 200 (reenviar não resolve; evento segue na fila do polling)`);
+            registrarBrendi({
+              tipo: eventType || "(sem tipo)",
+              reconhecido: true,
+              pedidoCriado: false,
+              motivo: `NÃO PROCESSADO: ${result.message || "sem detalhe"} — evento NÃO ackado, volta pelo polling quando a loja estiver conectada`,
+              payload: event,
+            });
+            continue;
+          }
+
+          // Falha NOSSA e transitória (banco, rede até a Brendi). O 500 lá
+          // embaixo faz a Brendi reenviar — e o polling também vai ver o
           // evento, porque ele NÃO foi ackado. Antes de derrubar o lote, os
           // eventos que JÁ deram certo são ackados para não voltarem.
           registrarBrendi({
@@ -355,7 +381,10 @@ export async function POST(req: NextRequest) {
     // openDeliveryOrderId.
     console.error("[Brendi Webhook] Erro ao processar:", err);
     registrarBrendi({ tipo: "erro", reconhecido: false, pedidoCriado: false, motivo: err?.message, payload: null });
-    return NextResponse.json({ ok: false, error: err?.message || "erro interno" }, { status: 500 });
+    // Mensagem genérica: este endpoint não tem autenticação, e o detalhe
+    // interno (id de loja, nome de coluna, caminho de arquivo) não pode sair
+    // para quem chamar. O motivo completo fica no log e no /api/brendi/diagnostico.
+    return NextResponse.json({ ok: false, error: "erro ao processar o evento" }, { status: 500 });
   }
 }
 
