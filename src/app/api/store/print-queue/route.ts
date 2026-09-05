@@ -53,10 +53,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ jobs: [] });
     }
 
-    // Padrão: 2 horas atrás. Piso de 6 horas: este endpoint não tem
-    // autenticação (só o id da loja, que está no HTML do cardápio), e sem o
-    // piso um `since=2000-01-01` devolvia todos os pedidos da loja desde
-    // sempre. O Assistente descarta o que passa de 6 h de qualquer jeito.
+    // Padrão: 2 horas atrás. Piso de 6 horas para o `since` que vem de fora:
+    // este endpoint não tem autenticação (só o id da loja, que está no HTML
+    // do cardápio), e sem o piso um `since=2000-01-01` devolvia todos os
+    // pedidos da loja desde sempre. O atraso de um Assistente que ficou
+    // desligado é decidido abaixo, pelo carimbo do servidor — não por quem chama.
     const pisoDoSince = new Date(Date.now() - 6 * 60 * 60 * 1000);
     let sinceDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
     if (sinceParam) {
@@ -65,27 +66,6 @@ export async function GET(req: NextRequest) {
         sinceDate = parsedSince < pisoDoSince ? pisoDoSince : parsedSince;
       }
     }
-
-    const where: any = {
-      createdAt: { gt: sinceDate },
-      status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
-      franchiseeId,
-    };
-
-    const recentOrders = await prisma.customerOrder.findMany({
-      where,
-      orderBy: { createdAt: "asc" },
-      include: {
-        franchisee: {
-          select: { storeName: true, name: true }
-        },
-        items: {
-          include: {
-            menuProduct: true,
-          }
-        }
-      }
-    });
 
     // Uma unica leitura da config da loja (nao repete o JSON por pedido).
     //
@@ -116,6 +96,52 @@ export async function GET(req: NextRequest) {
       });
     }
     const pc: any = (owner?.printerConfig as any) || null;
+
+    // ── O ATRASO: o que chegou enquanto o Assistente estava desligado ──────
+    //
+    // A fila só entregava as últimas 2 h. PC da loja desligado das 20h às
+    // 23h30: os pedidos das 20h às 21h30 nunca chegavam ao Assistente quando
+    // ele voltava — e a regra da casa é que impressora (ou PC) desligado não
+    // perde pedido, por mais tempo que fique fora. `printQueuePolledAt` diz
+    // quando este Assistente consultou pela última vez; se foi antes da janela
+    // normal, a fila entrega tudo desde então (menos o que foi cancelado no
+    // meio-tempo, que não precisa mais de comanda). O carimbo é gravado no
+    // máximo uma vez por minuto, daí a folga de 60 s; o Assistente deduplica
+    // por id por 48 h, então a folga não repete papel. Teto de 7 dias.
+    const ultimaConsulta = owner?.printQueuePolledAt?.getTime() ?? null;
+    const inicioDoAtraso =
+      ultimaConsulta && ultimaConsulta < sinceDate.getTime()
+        ? new Date(Math.max(ultimaConsulta - 60_000, Date.now() - 7 * 24 * 60 * 60 * 1000))
+        : null;
+    if (inicioDoAtraso) {
+      console.log(`[PrintQueue] loja ${franchiseeId}: Assistente voltou depois de ${Math.round((Date.now() - ultimaConsulta!) / 60_000)} min; entregando o atraso desde ${inicioDoAtraso.toISOString()}.`);
+    }
+
+    const where: any = {
+      status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
+      franchiseeId,
+      OR: [
+        { createdAt: { gt: sinceDate } },
+        ...(inicioDoAtraso
+          ? [{ createdAt: { gt: inicioDoAtraso }, status: { notIn: ["CANCELADO", "CANCELED"] } }]
+          : []),
+      ],
+    };
+
+    const recentOrders = await prisma.customerOrder.findMany({
+      where,
+      orderBy: { createdAt: "asc" },
+      include: {
+        franchisee: {
+          select: { storeName: true, name: true }
+        },
+        items: {
+          include: {
+            menuProduct: true,
+          }
+        }
+      }
+    });
 
     // Carimba a consulta — no máximo uma vez por minuto (o Assistente bate a
     // cada 3 s). É o que deixa o painel avisar "a impressão parou" antes de a

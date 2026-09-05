@@ -91,8 +91,8 @@ export default function PrinterSetupClient({
   const [showHelp, setShowHelp] = useState(false);
   /** Versão do Assistente que está rodando neste computador. */
   const [versaoInstalada, setVersaoInstalada] = useState<string | null>(null);
-  /** Comandas em que o Assistente (1.2.6+) DESISTIU de imprimir. */
-  const [falhasAssistente, setFalhasAssistente] = useState<{ pedido: string; impressora: string; tentativas: number; quando: string }[]>([]);
+  /** Comandas que o Assistente (1.2.6+) guarda esperando a impressora responder. */
+  const [pendentesAssistente, setPendentesAssistente] = useState<{ pedido: string; impressora: string; tentativas: number; desde: string; erro?: string }[]>([]);
 
   // Comparação literal de propósito: qualquer diferença é motivo de aviso.
   // Comparar por ordem de versão exigiria confiar no formato que cada build
@@ -188,7 +188,7 @@ export default function PrinterSetupClient({
       setStatus("connected");
       setAvailablePrinters(connectedData.printers || []);
       setVersaoInstalada((connectedData as any).version || null);
-      setFalhasAssistente(Array.isArray((connectedData as any).falhasRecentes) ? (connectedData as any).falhasRecentes : []);
+      setPendentesAssistente(Array.isArray((connectedData as any).pendentes) ? (connectedData as any).pendentes : []);
       if (userClicked) {
         alert(`✅ Assistente FireHub conectado com sucesso!\n\n${(connectedData.printers || []).length} impressora(s) detectada(s) neste computador.`);
       }
@@ -490,16 +490,16 @@ export default function PrinterSetupClient({
                       : `Assistente ${versaoInstalada} — atualizado`}
                   </p>
                 )}
-                {/* O Assistente tenta por quase 8 minutos antes de desistir de uma
-                    comanda. Quando desiste, isto era um console.error num programa
-                    sem janela: a loja só descobria pelo cliente. */}
-                {falhasAssistente.length > 0 && (
-                  <div style={{ margin: "6px 0 0", padding: "6px 10px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, fontSize: "0.72rem", color: "#991B1B" }}>
-                    <strong>Comandas que NÃO saíram</strong> (o Assistente desistiu depois de várias tentativas):
+                {/* Comanda que não saiu fica pendente no Assistente, em disco, e
+                    ele insiste até a impressora responder. Isto era um console
+                    num programa sem janela: a loja só descobria pelo cliente. */}
+                {pendentesAssistente.length > 0 && (
+                  <div style={{ margin: "6px 0 0", padding: "6px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 6, fontSize: "0.72rem", color: "#92400E" }}>
+                    <strong>Comandas aguardando a impressora</strong> — saem sozinhas assim que ela responder; confira cabo, papel e se está ligada:
                     <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
-                      {falhasAssistente.slice(0, 8).map((f, i) => (
+                      {pendentesAssistente.slice(0, 10).map((f, i) => (
                         <li key={i}>
-                          Pedido #{f.pedido} na impressora “{f.impressora}” às {new Date(f.quando).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ({f.tentativas} tentativas). Imprima de novo pelo painel de pedidos.
+                          Pedido #{f.pedido} em “{f.impressora}” desde {new Date(f.desde).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ({f.tentativas} tentativas{f.erro ? `: ${f.erro}` : ""})
                         </li>
                       ))}
                     </ul>

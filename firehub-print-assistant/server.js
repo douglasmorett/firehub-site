@@ -1217,7 +1217,13 @@ app.post("/config", (req, res) => {
   res.json({ ok: true, config: currentConfig });
 });
 
-/* ─── Deduplicação de Impressões (Trava de 2 HORAS anti-duplicidade) ─ */
+/* ─── Deduplicação de Impressões ─
+   48 h, nao mais 2: a fila da nuvem passou a entregar o ATRASO (pedidos desde
+   a ultima consulta, quando o PC ficou desligado), e um pedido impresso no
+   ultimo minuto antes do desligamento voltaria na fila horas depois. Impressao
+   automatica do mesmo pedido na mesma impressora nunca e legitima duas vezes
+   no mesmo dia; a manual passa por `force`. */
+const JANELA_IMPRESSO_MS = 48 * 3600_000;
 const printedOrdersCache = new Map();
 
 /* ── O cache sobrevive a reinicio ─────────────────────────────────────
@@ -1234,7 +1240,7 @@ function salvarPrintedCache() {
   salvarCacheAgendado = setTimeout(() => {
     salvarCacheAgendado = null;
     try {
-      const limite = Date.now() - 7200000;
+      const limite = Date.now() - JANELA_IMPRESSO_MS;
       const vivos = [...printedOrdersCache.entries()].filter(([, t]) => t > limite);
       fs.mkdirSync(path.dirname(PRINTED_CACHE_FILE), { recursive: true });
       fs.writeFileSync(PRINTED_CACHE_FILE, JSON.stringify(vivos));
@@ -1246,7 +1252,7 @@ function salvarPrintedCache() {
 (function carregarPrintedCache() {
   try {
     if (!fs.existsSync(PRINTED_CACHE_FILE)) return;
-    const limite = Date.now() - 7200000;
+    const limite = Date.now() - JANELA_IMPRESSO_MS;
     let n = 0;
     for (const [k, t] of JSON.parse(fs.readFileSync(PRINTED_CACHE_FILE, "utf8"))) {
       if (typeof k === "string" && Number(t) > limite) { printedOrdersCache.set(k, Number(t)); n++; }
@@ -1320,7 +1326,7 @@ function isOrderAlreadyPrinted(order, printerName) {
   const now = Date.now();
   for (const k of keys) {
     const printedAt = printedOrdersCache.get(String(k));
-    if (printedAt && (now - printedAt) < 7200000) { // 2 horas de trava anti-duplicidade
+    if (printedAt && (now - printedAt) < JANELA_IMPRESSO_MS) { // janela anti-duplicidade
       return true;
     }
   }
@@ -1338,11 +1344,7 @@ function markOrderAsPrinted(order, printerName) {
 
   if (printedOrdersCache.size > 2000) {
     for (const [k, time] of printedOrdersCache.entries()) {
-      if (now - time > 7200000) printedOrdersCache.delete(k);
-    }
-    // Poda junto o contador de falhas, que so cresce.
-    for (const [k, t] of tentativasFalhas.entries()) {
-      if (!printedOrdersCache.has(k.replace("::", "::id_")) && t.falhas >= MAX_TENTATIVAS) tentativasFalhas.delete(k);
+      if (now - time > JANELA_IMPRESSO_MS) printedOrdersCache.delete(k);
     }
   }
   salvarPrintedCache();
@@ -1353,69 +1355,111 @@ function unmarkOrderAsPrinted(order, printerName) {
   salvarPrintedCache();
 }
 
-/* ── Falha DEPOIS de marcado como impresso ───────────────────────────
+/* ── Falha DEPOIS de marcado como impresso: fica PENDENTE ate sair ────
  *
  * A marca vem antes do rawPrint (e precisa vir: e o que impede a fila da
  * nuvem, que volta a cada 3 s, de imprimir o mesmo pedido duas vezes). Mas,
- * quando a impressao falhava — spooler ocupado, impressora religando, nome
- * errado —, a marca ficava e a comanda nunca mais saia, sem erro na tela de
- * ninguem. Agora a falha desmarca, e o proximo ciclo tenta de novo.
+ * quando a impressao falha — spooler ocupado, impressora desligada, bobina
+ * acabou —, a marca ficava e a comanda nunca mais saia, sem erro na tela de
+ * ninguem. Depois virou "tres tentativas em nove segundos", e desistia.
  *
- * Com limite: impressora que nao existe falharia a cada 3 s para sempre.
- * Depois de MAX_TENTATIVAS o pedido fica marcado e o log diz por que.
+ * Regra da casa: impressora desligada NAO perde pedido, nao importa quanto
+ * tempo fique desligada. O job que falhou vai para `pendentes`, gravado em
+ * disco (sobrevive a reinicio e ao auto-update), e e tentado de novo a cada
+ * 30 s ate sair. A marca de "ja impresso" fica no lugar nesse meio-tempo,
+ * para a fila da nuvem e o navegador nao criarem copias — e quem mandar o
+ * mesmo pedido recebe `aguardando`, nao "ja impresso".
  *
- * E com ESPERA entre as tentativas. Eram tres, e a fila da nuvem volta a
- * cada 3 s: uma impressora religando, uma troca de bobina ou um spooler
- * travado por dez segundos esgotava as tres e o pedido era dado por impresso
- * para sempre — o #30 e o #32 saiam, o #31 nao, e nenhum log na loja. Agora a
- * marca fica no lugar durante a espera (15 s, 30 s, 60 s, 2 min, 4 min) e so
- * depois dela o pedido volta a ser aceito; sao quase 8 minutos de tentativas
- * antes de desistir. Quem chega durante a espera recebe `aguardando`, para o
- * navegador nao tomar a espera por sucesso. */
-const tentativasFalhas = new Map(); // chave -> { falhas, timer }
-const MAX_TENTATIVAS = 6;
-const ESPERA_BASE_MS = 15_000;
-/* Ultimas desistencias, para o /status: e a unica janela que a loja tem. */
-const falhasRecentes = [];
+ * A fila da nuvem so entrega as ultimas horas: sem esta lista local, um
+ * pedido que falhou as 20h e cuja impressora so voltou as 23h ja teria
+ * sumido da fila. Aqui ele espera o tempo que for. */
+const PENDENTES_FILE = path.join(process.env.APPDATA || os.homedir(), "FireHub", "pendentes.json");
+const pendentes = new Map(); // chave -> { job, falhas, desde, naoAntesDe, ultimoErro }
+const ESPERA_PENDENTE_MS = 30_000;
+const ESPERA_PENDENTE_MAX_MS = 2 * 60_000;
+/* Sete dias: comanda mais velha que isso ja nao serve a ninguem, e a lista
+   nao pode crescer para sempre num PC que ficou meses sem impressora. */
+const PENDENTE_VALIDADE_MS = 7 * 24 * 3600_000;
+
 const chaveDeFalha = (order, printerName) =>
   `${String(printerName || "").toLowerCase().trim()}::${order?.id || order?.ifoodReference || order?.openDeliveryReference || order?.dailyOrderNumber || ""}`;
 
-function emEsperaDeNovaTentativa(order, printerName) {
-  const t = tentativasFalhas.get(chaveDeFalha(order, printerName));
-  return t ? t : null;
-}
-
-function esquecerFalhas(order, printerName) {
-  const chave = chaveDeFalha(order, printerName);
-  const t = tentativasFalhas.get(chave);
-  if (t && t.timer) clearTimeout(t.timer);
-  tentativasFalhas.delete(chave);
-}
-
-function liberarParaNovaTentativa(order, printerName) {
-  if (!order || !printerName) return;
-  const chave = chaveDeFalha(order, printerName);
-  const atual = tentativasFalhas.get(chave) || { falhas: 0, timer: null };
-  atual.falhas += 1;
-  if (atual.timer) { clearTimeout(atual.timer); atual.timer = null; }
-  const rotulo = order.dailyOrderNumber || order.id;
-  if (atual.falhas >= MAX_TENTATIVAS) {
-    tentativasFalhas.set(chave, atual);
-    console.error(`[PrintServer] Pedido #${rotulo} falhou ${atual.falhas}x em ${printerName}; desistindo (fica como impresso).`);
-    falhasRecentes.unshift({ pedido: String(rotulo), impressora: printerName, tentativas: atual.falhas, quando: new Date().toISOString() });
-    if (falhasRecentes.length > 30) falhasRecentes.length = 30;
-    return;
+function salvarPendentes() {
+  try {
+    fs.mkdirSync(path.dirname(PENDENTES_FILE), { recursive: true });
+    fs.writeFileSync(PENDENTES_FILE, JSON.stringify([...pendentes.entries()]));
+  } catch (e) {
+    console.warn("[PrintServer] nao consegui gravar pendentes.json:", e.message);
   }
-  const espera = Math.min(ESPERA_BASE_MS * 2 ** (atual.falhas - 1), 5 * 60_000);
-  atual.timer = setTimeout(() => {
-    const t = tentativasFalhas.get(chave);
-    if (!t) return; // imprimiu nesse meio-tempo
-    t.timer = null;
-    unmarkOrderAsPrinted(order, printerName);
-    console.warn(`[PrintServer] Pedido #${rotulo} liberado para nova tentativa (${t.falhas}/${MAX_TENTATIVAS}).`);
-  }, espera);
-  tentativasFalhas.set(chave, atual);
-  console.warn(`[PrintServer] Pedido #${rotulo} nao saiu em ${printerName} (${atual.falhas}/${MAX_TENTATIVAS}); nova tentativa em ${Math.round(espera / 1000)} s.`);
+}
+
+(function carregarPendentes() {
+  try {
+    if (!fs.existsSync(PENDENTES_FILE)) return;
+    const limite = Date.now() - PENDENTE_VALIDADE_MS;
+    for (const [k, p] of JSON.parse(fs.readFileSync(PENDENTES_FILE, "utf8"))) {
+      if (p && p.job && Number(p.desde) > limite) pendentes.set(k, { ...p, naoAntesDe: 0 });
+    }
+    if (pendentes.size) console.log(`[PrintServer] ${pendentes.size} comanda(s) pendente(s) recarregada(s) do disco; saem quando a impressora responder.`);
+  } catch (e) {
+    console.warn("[PrintServer] pendentes.json ilegivel, ignorando:", e.message);
+  }
+})();
+
+function pendenteDe(order, printerName) {
+  return pendentes.get(chaveDeFalha(order, printerName)) || null;
+}
+
+function guardarPendente(job, erro) {
+  const chave = chaveDeFalha(job.order, job.printer);
+  const atual = pendentes.get(chave) || { job: null, falhas: 0, desde: Date.now() };
+  atual.job = {
+    printer: job.printer, order: job.order, storeName: job.storeName, copies: job.copies,
+    paperWidth: job.paperWidth, columns: job.columns, escposProfile: job.escposProfile,
+  };
+  atual.falhas += 1;
+  atual.ultimoErro = String(erro || "").split("\n")[0].slice(0, 200);
+  atual.naoAntesDe = Date.now() + Math.min(ESPERA_PENDENTE_MS * 2 ** (atual.falhas - 1), ESPERA_PENDENTE_MAX_MS);
+  pendentes.set(chave, atual);
+  salvarPendentes();
+  const rotulo = job.order?.dailyOrderNumber || job.order?.id;
+  console.warn(`[PrintServer] Pedido #${rotulo} nao saiu em ${job.printer} (${atual.falhas}x); fica pendente, nova tentativa em ${Math.round((atual.naoAntesDe - Date.now()) / 1000)} s.`);
+}
+
+function esquecerPendente(order, printerName) {
+  if (pendentes.delete(chaveDeFalha(order, printerName))) salvarPendentes();
+}
+
+/* O laco que insiste: a cada 30 s, tudo que venceu a espera volta para a
+   fila serial, marcado como retentativa (a marca de "ja impresso" e nossa,
+   entao nao barra). Na ordem em que falhou, para o #31 sair antes do #32. */
+setInterval(() => {
+  const agora = Date.now();
+  const vencidos = [...pendentes.entries()]
+    .filter(([, p]) => agora >= p.naoAntesDe)
+    .sort((a, b) => a[1].desde - b[1].desde);
+  for (const [chave, p] of vencidos) {
+    if (agora - p.desde > PENDENTE_VALIDADE_MS) {
+      console.error(`[PrintServer] Pedido #${p.job?.order?.dailyOrderNumber || p.job?.order?.id} pendente ha 7 dias em ${p.job?.printer}; descartado.`);
+      pendentes.delete(chave); salvarPendentes();
+      continue;
+    }
+    p.naoAntesDe = agora + ESPERA_PENDENTE_MAX_MS; // ate a tentativa responder
+    enqueuePrintJob({ ...p.job, force: false, retentativa: true }).catch(() => {});
+  }
+}, 30_000);
+
+/* Para o /status: o que esta esperando a impressora. */
+function listarPendentes() {
+  return [...pendentes.values()]
+    .sort((a, b) => a.desde - b.desde)
+    .map(p => ({
+      pedido: String(p.job?.order?.dailyOrderNumber || p.job?.order?.id || ""),
+      impressora: p.job?.printer || "",
+      tentativas: p.falhas,
+      desde: new Date(p.desde).toISOString(),
+      erro: p.ultimoErro || "",
+    }));
 }
 
 /* ─── Fila Serial de Impressão (FIFO Queue — Evita gargalos, spooler lock e ordem errada) ─ */
@@ -1428,7 +1472,7 @@ async function processPrintQueue() {
 
   while (printJobQueue.length > 0) {
     const job = printJobQueue.shift();
-    const { printer, order, storeName, copies = 1, paperWidth, columns, escposProfile, force = false, resolve, reject } = job;
+    const { printer, order, storeName, copies = 1, paperWidth, columns, escposProfile, force = false, retentativa = false, resolve, reject } = job;
 
     let targetPrinter = printer || currentConfig.printer;
     let marcado = false;
@@ -1457,16 +1501,17 @@ async function processPrintQueue() {
           continue;
         }
         printedOrdersCache.set(manualKey, Date.now());
-      } else if (isOrderAlreadyPrinted(order, targetPrinter)) {
-        // Marcado porque FALHOU ha pouco e esta esperando a nova tentativa:
-        // nao e "ja impresso". Responder ok:true aqui fazia o navegador dar o
-        // pedido por saido e nunca mais tentar.
-        const espera = emEsperaDeNovaTentativa(order, targetPrinter);
-        if (espera && espera.timer) {
-          resolve({ ok: false, aguardando: true, message: `Falhou ${espera.falhas}x em ${targetPrinter}; nova tentativa agendada.` });
+      } else if (!retentativa && isOrderAlreadyPrinted(order, targetPrinter)) {
+        // Marcado porque FALHOU e esta pendente, esperando a impressora: nao
+        // e "ja impresso". Responder ok:true aqui fazia o navegador dar o
+        // pedido por saido e nunca mais tentar. A retentativa do proprio laco
+        // de pendentes nao passa por esta checagem — a marca e dela.
+        const p = pendenteDe(order, targetPrinter);
+        if (p) {
+          resolve({ ok: false, aguardando: true, message: `Pendente: falhou ${p.falhas}x em ${targetPrinter}; o Assistente tenta de novo sozinho ate sair.` });
           continue;
         }
-        console.log(`[PrintServer] ⚠️ Pedido #${order?.dailyOrderNumber || order?.ifoodReference || order?.openDeliveryReference || order?.id} já impresso nos últimos 120 min. Ignorando duplicação automática.`);
+        console.log(`[PrintServer] ⚠️ Pedido #${order?.dailyOrderNumber || order?.ifoodReference || order?.openDeliveryReference || order?.id} já impresso (48 h). Ignorando duplicação automática.`);
         resolve({ ok: true, duplicated: true, message: "Pedido já impresso recentemente." });
         continue;
       }
@@ -1496,14 +1541,18 @@ async function processPrintQueue() {
       // Pausa de 150ms entre impressões para liberar a spooler do Windows com segurança
       await new Promise(r => setTimeout(r, 150));
 
-      esquecerFalhas(order, targetPrinter);
+      esquecerPendente(order, targetPrinter);
       resolve({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols - perfil ${perfil.profile})` });
     } catch (e) {
       console.error("[PrintServer] Erro ao imprimir job:", e.message);
       // Falha ANTES de marcar (largura, cupom) nao e "ja impresso": nao ha o
       // que soltar. E timeout do spooler pode ter impresso: tambem nao solta.
-      if (marcado && !e?.talvezImprimiu) liberarParaNovaTentativa(order, targetPrinter);
-      else if (marcado) console.warn("[PrintServer] Timeout na impressora; mantendo como impresso para nao duplicar.");
+      if (marcado && !e?.talvezImprimiu) {
+        guardarPendente({ printer: targetPrinter, order, storeName, copies, paperWidth, columns, escposProfile }, e.message);
+      } else if (marcado) {
+        console.warn("[PrintServer] Timeout na impressora; mantendo como impresso para nao duplicar.");
+        esquecerPendente(order, targetPrinter);
+      }
       reject(e);
     }
   }
@@ -1539,20 +1588,22 @@ setInterval(async () => {
     if (!res.ok) return;
     const data = await res.json();
     const rawJobs = Array.isArray(data.jobs) ? data.jobs : [];
-    const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
-    const jobs = rawJobs.filter(j => {
-      const orderTime = j.order?.createdAt ? new Date(j.order.createdAt).getTime() : Date.now();
-      return orderTime >= sixHoursAgo;
-    });
+    // Sem corte de idade aqui: quem decide a janela e o servidor, que passou a
+    // entregar tambem o ATRASO (pedidos desde a ultima consulta deste
+    // Assistente, quando o PC ficou desligado). Cortar em 6 h jogava fora
+    // exatamente o que a loja quer ver sair quando religa.
+    const jobs = rawJobs;
     if (jobs.length > 0) {
-      // Ordenação estrita FIFO por número de comanda (ex: #87 antes de #88) e horário
+      // FIFO pela HORA e, na mesma hora, pelo numero. O numero do dia reinicia
+      // a meia-noite, entao ordenar por ele primeiro embaralhava o atraso de
+      // dois dias (#3 de hoje antes do #40 de ontem).
       jobs.sort((a, b) => {
-        const seqA = Number(a.order?.dailyOrderNumber || a.order?.orderSeqNumber || 0);
-        const seqB = Number(b.order?.dailyOrderNumber || b.order?.orderSeqNumber || 0);
-        if (seqA && seqB && seqA !== seqB) return seqA - seqB;
         const timeA = a.order?.createdAt ? new Date(a.order.createdAt).getTime() : 0;
         const timeB = b.order?.createdAt ? new Date(b.order.createdAt).getTime() : 0;
-        return timeA - timeB;
+        if (timeA !== timeB) return timeA - timeB;
+        const seqA = Number(a.order?.dailyOrderNumber || a.order?.orderSeqNumber || 0);
+        const seqB = Number(b.order?.dailyOrderNumber || b.order?.orderSeqNumber || 0);
+        return seqA - seqB;
       });
 
       for (const job of jobs) {
@@ -1648,9 +1699,9 @@ app.get("/status", (req, res) => {
     // unico caso em que interessa: e a diferenca entre saber qual etapa falhou
     // e ficar adivinhando a quilometros da loja.
     ...(printers.length === 0 ? { printersDiag: diagnosticoImpressoras } : {}),
-    // Pedidos em que o Assistente DESISTIU de imprimir (esgotou as tentativas).
-    // Antes isso so existia no console de um programa sem janela.
-    falhasRecentes,
+    // Comandas esperando a impressora responder (o Assistente insiste ate
+    // sair). Antes isso so existia no console de um programa sem janela.
+    pendentes: listarPendentes(),
     config: currentConfig
   });
 });

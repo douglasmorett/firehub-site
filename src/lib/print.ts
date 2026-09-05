@@ -197,10 +197,11 @@ async function printToDevice(
   somenteBebidas = false,
   /** ESTA impressora imprime o QR do motoboy? Decidido por impressora, la no printOrder. */
   qrPuxar = true
-): Promise<boolean> {
+): Promise<{ ok: boolean; aguardando: boolean }> {
+  const nao = { ok: false, aguardando: false };
   try {
     const baseUrl = await getAssistantUrl();
-    if (!baseUrl) return false;
+    if (!baseUrl) return nao;
 
     let targetPrinter = printerName;
     if (!targetPrinter) {
@@ -209,7 +210,7 @@ async function printToDevice(
         targetPrinter = printers[0].name;
       }
     }
-    if (!targetPrinter) return false;
+    if (!targetPrinter) return nao;
 
     const res = await fetchAssistente(`${baseUrl}/print`, {
       method: "POST",
@@ -303,13 +304,14 @@ async function printToDevice(
     });
     const data = await res.json();
     // `ok:false` com `aguardando` é o Assistente dizendo que este pedido
-    // falhou há pouco nesta impressora e está em espera: conta como não saiu.
-    if (data?.aguardando) console.warn(`[FireHub Print] ${targetPrinter}: ${data.message || "em espera"}`);
-    return data.ok === true;
+    // falhou nesta impressora e está PENDENTE lá: ele insiste sozinho até
+    // sair. Não saiu ainda, mas ninguém precisa mandar de novo.
+    if (data?.aguardando) console.warn(`[FireHub Print] ${targetPrinter}: ${data.message || "pendente no Assistente"}`);
+    return { ok: data.ok === true, aguardando: data?.aguardando === true };
   } catch (err) {
     console.error("[FireHub Print]", err);
     esquecerUrlDoAssistente();
-    return false;
+    return nao;
   }
 }
 
@@ -322,9 +324,9 @@ export async function printOrder(
   force = false,
   /** Comanda da cozinha: mesmos itens, sem preço nenhum na folha. */
   semValores = false
-): Promise<{ success: boolean; printed: number; attempted: boolean }> {
+): Promise<{ success: boolean; printed: number; attempted: boolean; aguardando: boolean }> {
   const baseUrl = await getAssistantUrl();
-  if (!baseUrl) return { success: false, printed: 0, attempted: false };
+  if (!baseUrl) return { success: false, printed: 0, attempted: false, aguardando: false };
 
   let printersToUse = printerConfig?.printers || [];
   if (!printersToUse.length || printersToUse.every(p => !p.name)) {
@@ -342,7 +344,7 @@ export async function printOrder(
     }
   }
 
-  if (!printersToUse.length) return { success: false, printed: 0, attempted: true };
+  if (!printersToUse.length) return { success: false, printed: 0, attempted: true, aguardando: false };
 
   // ── DE QUE MUNDO E ESTE PEDIDO ─────────────────────────────────────────
   // Categoria nunca soube de onde o pedido veio: a impressora do balcao
@@ -375,6 +377,8 @@ export async function printOrder(
   }
 
   let printed = 0;
+  // Alguma impressora respondeu "pendente no Assistente": ele vai insistir.
+  let aguardando = false;
 
   for (const printer of uniquePrinters) {
     if (!printer.name) continue;
@@ -425,10 +429,11 @@ export async function printOrder(
       printer.somenteBebidas === true,
       qrLigadoNaImpressora(printer, printerConfig as any)
     );
-    if (result) printed++;
+    if (result.ok) printed++;
+    if (result.aguardando) aguardando = true;
   }
 
-  return { success: printed > 0, printed, attempted: true };
+  return { success: printed > 0, printed, attempted: true, aguardando };
 }
 
 /* ─── Comanda de teste ─────────────────────────────────────
@@ -481,7 +486,7 @@ export async function printTestReceipt(
     false,
     false,
     qrLigadoNaImpressora(entrada, printerConfig as any)
-  );
+  ).then(r => r.ok);
 }
 
 /* ─── Regua de calibracao de largura ───────────────────────

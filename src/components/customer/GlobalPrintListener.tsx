@@ -63,14 +63,18 @@ function claimOrderPrint(order: any) {
  * nunca mais saía, sem aviso nenhum. Solto, ele volta enquanto estiver dentro
  * dos 30 minutos que a tela considera recente.
  *
- * As tentativas são ESPAÇADAS. Eram três, uma a cada rodada de 5 s: uma
- * impressora religando ou um spooler travado por 15 segundos bastava para o
- * pedido ser dado por impresso para sempre — e o #31 sumia entre o #30 e o
- * #32. Agora a espera dobra a cada falha (15 s, 30 s, 60 s…), o que cobre
- * uma troca de bobina inteira antes de desistir.
+ * As tentativas são ESPAÇADAS e NÃO ACABAM. Eram três, uma a cada rodada de
+ * 5 s: uma impressora religando ou um spooler travado por 15 segundos
+ * bastava para o pedido ser dado por impresso para sempre — e o #31 sumia
+ * entre o #30 e o #32. Agora a espera dobra a cada falha (15 s, 30 s, 60 s,
+ * até 2 min) e continua enquanto o pedido estiver em andamento, mesmo depois
+ * dos 30 minutos que a tela considera "recente": impressora desligada não
+ * perde pedido, por mais tempo que fique desligada. Quando o Assistente
+ * responde `aguardando`, ele assumiu o pedido como pendente (gravado em
+ * disco) e insiste sozinho — aí o navegador para de tentar.
  */
-const MAX_TENTATIVAS_LOCAIS = 6;
 const ESPERA_BASE_MS = 15_000;
+const ESPERA_MAX_MS = 2 * 60_000;
 const tentativasPorPedido = new Map<string, { falhas: number; naoAntesDe: number }>();
 
 /** Ainda em espera depois de uma falha? Então esta rodada não mexe nele. */
@@ -100,15 +104,15 @@ function releaseOrderPrint(order: any, contarFalha = true) {
   }
   const atual = tentativasPorPedido.get(chave) || { falhas: 0, naoAntesDe: 0 };
   atual.falhas += 1;
-  if (atual.falhas >= MAX_TENTATIVAS_LOCAIS) {
-    tentativasPorPedido.set(chave, atual);
-    console.error(`[GlobalPrint Master] Pedido ${chave} falhou ${atual.falhas}x; desistindo (fica como impresso).`);
-    return;
-  }
-  atual.naoAntesDe = Date.now() + Math.min(ESPERA_BASE_MS * 2 ** (atual.falhas - 1), 5 * 60_000);
+  atual.naoAntesDe = Date.now() + Math.min(ESPERA_BASE_MS * 2 ** Math.min(atual.falhas - 1, 10), ESPERA_MAX_MS);
   tentativasPorPedido.set(chave, atual);
   desfazerReivindicacao(order);
-  console.warn(`[GlobalPrint Master] Pedido ${chave} não saiu (${atual.falhas}/${MAX_TENTATIVAS_LOCAIS}); nova tentativa em ${Math.round((atual.naoAntesDe - Date.now()) / 1000)} s.`);
+  console.warn(`[GlobalPrint Master] Pedido ${chave} não saiu (${atual.falhas}x); nova tentativa em ${Math.round((atual.naoAntesDe - Date.now()) / 1000)} s.`);
+}
+
+/** Já falhou antes? Então continua elegível mesmo depois dos 30 minutos. */
+function jaFalhouAntes(order: any): boolean {
+  return tentativasPorPedido.has(chavesDoPedido(order)[0] || "");
 }
 
 export default function GlobalPrintListener() {
@@ -194,7 +198,9 @@ export default function GlobalPrintListener() {
               const statusUpper = (order.status || "").toUpperCase();
               const isFinished = FINAL_STATUSES.includes(statusUpper);
               const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : now;
-              const isRecent = orderTime > thirtyMinutesAgo;
+              // Pedido que já falhou continua na mira até sair ou ser
+              // finalizado, por mais velho que fique.
+              const isRecent = orderTime > thirtyMinutesAgo || jaFalhouAntes(order);
 
               if (!isFinished && isRecent) {
                 // IGNORAR RASCUNHOS IA (CRIANDO_IA) — Rascunho não deve ser impresso até o pedido ser finalizado pelo cliente!
@@ -284,7 +290,16 @@ export default function GlobalPrintListener() {
                     false
                   );
 
-                  if (!result.success) {
+                  if (result.success) {
+                    tentativasPorPedido.delete(chavesDoPedido(order)[0] || "");
+                  } else if (result.aguardando) {
+                    // O Assistente assumiu: o pedido está pendente lá, em
+                    // disco, e ele insiste até a impressora responder. A
+                    // reivindicação fica, para este navegador não mandar de
+                    // novo a cada rodada.
+                    tentativasPorPedido.delete(chavesDoPedido(order)[0] || "");
+                    console.warn(`[GlobalPrint Master] Pedido ${order.id} pendente no Assistente; ele imprime quando a impressora voltar.`);
+                  } else {
                     // Não saiu: solta a reivindicação para tentar de novo, em
                     // vez de dar o pedido por impresso. Com Assistente que
                     // falhou (attempted), conta a tentativa e espera. Sem
