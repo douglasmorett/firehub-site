@@ -146,6 +146,17 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [freeShippingActive, setFreeShippingActive] = useState<boolean>(Boolean(initialDelivConfig.freeShippingActive));
   const [freeShippingMinValue, setFreeShippingMinValue] = useState<string>(initialDelivConfig.freeShippingMinValue ? String(initialDelivConfig.freeShippingMinValue) : "60.00");
   const [minimumOrderValue, setMinimumOrderValue] = useState<string>(initialDelivConfig.minimumOrderValue ? String(initialDelivConfig.minimumOrderValue) : "26.00");
+  // Mínimo da retirada. Vazio = nunca configurado, e o cardápio herda o mínimo
+  // da entrega (o comportamento que ele sempre teve). "0" = sem mínimo.
+  const [minimumOrderValuePickup, setMinimumOrderValuePickup] = useState<string>(
+    initialDelivConfig.minimumOrderValuePickup === undefined || initialDelivConfig.minimumOrderValuePickup === null
+      ? ""
+      : String(initialDelivConfig.minimumOrderValuePickup)
+  );
+  // Campo vazio grava `null`: é o que o cardápio lê como "herda o mínimo da
+  // entrega". Gravar 0 aqui liberaria a retirada sem a loja ter pedido isso.
+  const pickupMinToSave = () =>
+    minimumOrderValuePickup.trim() === "" ? null : parseFloat(minimumOrderValuePickup) || 0;
   const [savingFreeShipping, setSavingFreeShipping] = useState(false);
   const [dirtyFreeShipping, setDirtyFreeShipping] = useState(false);
 
@@ -449,7 +460,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           </div>
           
           <div className="input-group" style={{ background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-            <label style={{ color: "#334155", fontWeight: 700 }}>🛒 Pedido Mínimo (R$)</label>
+            <label style={{ color: "#334155", fontWeight: 700 }}>🛵 Pedido Mínimo para Entrega (R$)</label>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
               <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "#64748B" }}>R$</span>
               <input type="number" step="0.01" min="0" className="input-field" value={minimumOrderValue} onChange={e => { setMinimumOrderValue(e.target.value); setDirtyInfo(true); setDirtyFreeShipping(true); }} placeholder="26.00" style={{ flex: 1, background: "#fff" }} />
@@ -457,13 +468,30 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             <p style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 6, lineHeight: 1.3 }}>Valor mínimo exigido para que o cliente consiga finalizar um pedido de entrega.</p>
           </div>
 
+          {/* Quem vem buscar não gera custo de entrega, e a loja quase sempre
+              quer um mínimo menor (ou nenhum) para esse cliente. Enquanto este
+              campo não existiu, o cardápio cobrava o mínimo da entrega de todo
+              mundo — enquanto o robô do WhatsApp dizia ao cliente o contrário. */}
+          {!storeDeliveryOnly && (
+            <div className="input-group" style={{ background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+              <label style={{ color: "#334155", fontWeight: 700 }}>🛍️ Pedido Mínimo para Retirada (R$)</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "#64748B" }}>R$</span>
+                <input type="number" step="0.01" min="0" className="input-field" value={minimumOrderValuePickup} onChange={e => { setMinimumOrderValuePickup(e.target.value); setDirtyInfo(true); setDirtyFreeShipping(true); }} placeholder="0.00 (sem mínimo)" style={{ flex: 1, background: "#fff" }} />
+              </div>
+              <p style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 6, lineHeight: 1.3 }}>
+                Digite <strong>0</strong> para não exigir valor mínimo de quem retira no balcão. Deixe o campo <strong>vazio</strong> para cobrar o mesmo mínimo da entrega.
+              </p>
+            </div>
+          )}
+
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "1rem", cursor: "pointer" }}>
           <input type="checkbox" checked={storeDeliveryOnly} onChange={e => { setStoreDeliveryOnly(e.target.checked); setDirtyInfo(true); }} style={{ transform: "scale(1.2)" }} />
           <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#334155" }}>🛵 Loja Exclusiva de Delivery (Sem consumo no local)</span>
         </label>
         <div style={{ marginTop: "1.5rem" }}>
-          <SectionSaveBtn dirty={dirtyInfo} saving={savingInfo} onSave={async () => { await saveInfo(); await saveFields({ deliveryConfig: { freeShippingActive, freeShippingMinValue: parseFloat(freeShippingMinValue) || 0, minimumOrderValue: parseFloat(minimumOrderValue) || 0 } }); setDirtyFreeShipping(false); }} label="Salvar Informações" />
+          <SectionSaveBtn dirty={dirtyInfo} saving={savingInfo} onSave={async () => { await saveInfo(); await saveFields({ deliveryConfig: { freeShippingActive, freeShippingMinValue: parseFloat(freeShippingMinValue) || 0, minimumOrderValue: parseFloat(minimumOrderValue) || 0, minimumOrderValuePickup: pickupMinToSave() } }); setDirtyFreeShipping(false); }} label="Salvar Informações" />
         </div>
       </div>}
 
@@ -975,6 +1003,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                       freeShippingActive,
                       freeShippingMinValue: parseFloat(freeShippingMinValue) || 0,
                       minimumOrderValue: parseFloat(minimumOrderValue) || 0,
+                      minimumOrderValuePickup: pickupMinToSave(),
                     },
                   });
                   setDirtyFreeShipping(false);

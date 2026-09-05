@@ -357,10 +357,50 @@ export default function CustomerStorePage({
   const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
 
-  // Pedido Mínimo da Loja
-  const storeMinOrder = Number(delivConfig.minimumOrderValue || 0);
+  // Pedido Mínimo da Loja — separado por tipo de recebimento.
+  //
+  // O mínimo existe para cobrir o custo da entrega, tanto que a descrição do
+  // campo no painel fala em "pedido de entrega" e o robô do WhatsApp promete ao
+  // cliente que retirada não tem mínimo. O cardápio, porém, cobrava o valor de
+  // todo mundo — inclusive de quem ia buscar no balcão, que não gera custo
+  // nenhum de entrega.
+  //
+  // `minimumOrderValuePickup` ausente = loja que nunca configurou: herda o
+  // mínimo da entrega, que é exatamente como o cardápio sempre se comportou.
+  // Zero = retirada sem mínimo.
+  const storeMinOrderDelivery = Number(delivConfig.minimumOrderValue || 0);
+  const pickupMinConfigured =
+    delivConfig.minimumOrderValuePickup !== undefined &&
+    delivConfig.minimumOrderValuePickup !== null &&
+    delivConfig.minimumOrderValuePickup !== "";
+  const storeMinOrderPickup = pickupMinConfigured
+    ? Number(delivConfig.minimumOrderValuePickup) || 0
+    : storeMinOrderDelivery;
+  const pickupAvailable = !franchisee.storeDeliveryOnly;
+
+  // O mínimo que vale agora é o do caminho que o cliente escolheu.
+  const storeMinOrder = deliveryType === "PICKUP" ? storeMinOrderPickup : storeMinOrderDelivery;
   const isBelowMinOrder = Boolean(storeMinOrder > 0 && cartTotal > 0 && cartTotal < storeMinOrder);
   const remainingForMinOrder = storeMinOrder > 0 ? Math.max(0, storeMinOrder - cartTotal) : 0;
+
+  // Na sacola ele ainda não escolheu como recebe, então travar pelo mínimo da
+  // entrega esconderia a retirada de quem já tinha direito a ela. Aqui só
+  // barra o valor que não alcança nenhum dos dois caminhos.
+  const minOrderToLeaveCart = pickupAvailable
+    ? Math.min(storeMinOrderDelivery, storeMinOrderPickup)
+    : storeMinOrderDelivery;
+  const isBelowCartMin = Boolean(minOrderToLeaveCart > 0 && cartTotal > 0 && cartTotal < minOrderToLeaveCart);
+  const remainingForCartMin = minOrderToLeaveCart > 0 ? Math.max(0, minOrderToLeaveCart - cartTotal) : 0;
+
+  // Fecha o pedido, mas só retirando. Dizer isso agora, e não no último clique
+  // depois do endereço inteiro digitado.
+  const somenteRetiradaPorValor = Boolean(
+    pickupAvailable &&
+    cartTotal > 0 &&
+    storeMinOrderDelivery > storeMinOrderPickup &&
+    cartTotal < storeMinOrderDelivery &&
+    cartTotal >= storeMinOrderPickup
+  );
 
   // Fidelidade, Cashback, Carimbos, Indicação & Níveis VIP
   const loyalty = (franchisee.storeLoyalty as any) || {};
@@ -1038,7 +1078,12 @@ export default function CustomerStorePage({
       return;
     }
     if (storeMinOrder > 0 && cartTotal < storeMinOrder) {
-      alert(`⚠️ O pedido mínimo desta loja é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.`);
+      const qual = deliveryType === "PICKUP" ? "para retirada" : "para entrega";
+      const saidaPelaRetirada =
+        deliveryType === "DELIVERY" && pickupAvailable && cartTotal >= storeMinOrderPickup
+          ? ` Se preferir, escolha "Retirar no Balcão" — o mínimo ${storeMinOrderPickup > 0 ? `é de R$ ${storeMinOrderPickup.toFixed(2).replace(".", ",")}` : "não se aplica"} nesse caso.`
+          : "";
+      alert(`⚠️ O pedido mínimo desta loja ${qual} é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.${saidaPelaRetirada}`);
       return;
     }
     if (!customerName.trim()) { alert("Por favor, informe seu nome."); return; }
@@ -1521,7 +1566,7 @@ export default function CustomerStorePage({
               </div>
 
               {/* AVISO DE PEDIDO MÍNIMO (SE HOUVER) */}
-              {isBelowMinOrder && (
+              {isBelowCartMin && (
                 <div style={{
                   padding: "10px 12px",
                   background: "#FFFBEB",
@@ -1534,8 +1579,31 @@ export default function CustomerStorePage({
                 }}>
                   <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</span>
                   <div style={{ fontSize: "0.78rem", color: "#92400E", lineHeight: 1.35 }}>
-                    <div style={{ fontWeight: 800 }}>Pedido Mínimo da Loja: R$ {storeMinOrder.toFixed(2).replace(".", ",")}</div>
-                    <div>Adicione mais <strong>R$ {remainingForMinOrder.toFixed(2).replace(".", ",")}</strong> para continuar.</div>
+                    <div style={{ fontWeight: 800 }}>Pedido Mínimo da Loja: R$ {minOrderToLeaveCart.toFixed(2).replace(".", ",")}</div>
+                    <div>Adicione mais <strong>R$ {remainingForCartMin.toFixed(2).replace(".", ",")}</strong> para continuar.</div>
+                    {storeMinOrderDelivery > minOrderToLeaveCart && (
+                      <div style={{ marginTop: "3px" }}>Para <strong>entrega</strong>, o mínimo é R$ {storeMinOrderDelivery.toFixed(2).replace(".", ",")}.</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Alcança a retirada, mas não a entrega. */}
+              {somenteRetiradaPorValor && (
+                <div style={{
+                  padding: "10px 12px",
+                  background: "#EFF6FF",
+                  border: "1px solid #BFDBFE",
+                  borderRadius: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  margin: "4px 0"
+                }}>
+                  <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>🛍️</span>
+                  <div style={{ fontSize: "0.78rem", color: "#1E40AF", lineHeight: 1.35 }}>
+                    <div style={{ fontWeight: 800 }}>Abaixo de R$ {storeMinOrderDelivery.toFixed(2).replace(".", ",")} a loja não entrega.</div>
+                    <div>Mas você pode <strong>retirar no balcão</strong>{storeMinOrderPickup > 0 ? ` — mínimo de R$ ${storeMinOrderPickup.toFixed(2).replace(".", ",")}` : " — sem valor mínimo"}. É só continuar.</div>
                   </div>
                 </div>
               )}
@@ -1617,6 +1685,13 @@ export default function CustomerStorePage({
                 <button
                   type="button"
                   onClick={() => {
+                    // Trocar para entrega abaixo do mínimo dela levaria o
+                    // cliente a preencher o endereço todo para só então
+                    // descobrir que não fecha.
+                    if (storeMinOrderDelivery > 0 && cartTotal < storeMinOrderDelivery) {
+                      alert(`⚠️ Para entrega, o pedido mínimo é de R$ ${storeMinOrderDelivery.toFixed(2).replace(".", ",")} — faltam R$ ${(storeMinOrderDelivery - cartTotal).toFixed(2).replace(".", ",")}. Você pode adicionar mais itens ou seguir com a retirada no balcão.`);
+                      return;
+                    }
                     setDeliveryType("DELIVERY");
                     if (isNeighborhoodType) {
                       if (customerNeighborhood) calcDeliveryFee(customerNeighborhood);
@@ -2086,9 +2161,19 @@ export default function CustomerStorePage({
             <button
               type="button"
               onClick={() => {
-                if (isBelowMinOrder) {
-                  alert(`⚠️ O pedido mínimo desta loja é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.`);
+                if (isBelowCartMin) {
+                  alert(`⚠️ O pedido mínimo desta loja é de R$ ${minOrderToLeaveCart.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForCartMin.toFixed(2).replace(".", ",")} em itens para continuar.`);
                   return;
+                }
+                // Só dá para retirada: já entra no checkout com ela marcada, em
+                // vez de deixar o cliente preencher o endereço para levar um
+                // "não atingiu o mínimo" no último clique.
+                if (somenteRetiradaPorValor) {
+                  setDeliveryType("PICKUP");
+                  setDeliveryFee(0);
+                  setDeliveryFeeCalculated(true);
+                  setDeliveryAvailable(true);
+                  setDeliveryMessage("Retirada no balcão selecionada.");
                 }
                 setIsCheckout(true);
                 trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" });
@@ -2108,19 +2193,19 @@ export default function CustomerStorePage({
                 padding: "13px",
                 borderRadius: "12px",
                 border: "none",
-                background: isBelowMinOrder ? "#94A3B8" : "#0F172A",
+                background: isBelowCartMin ? "#94A3B8" : "#0F172A",
                 color: "#FFFFFF",
                 fontWeight: 800,
                 fontSize: "0.95rem",
-                cursor: isBelowMinOrder ? "not-allowed" : "pointer",
+                cursor: isBelowCartMin ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                boxShadow: isBelowMinOrder ? "none" : "0 4px 14px rgba(15, 23, 42, 0.25)",
+                boxShadow: isBelowCartMin ? "none" : "0 4px 14px rgba(15, 23, 42, 0.25)",
                 transition: "all 0.2s ease"
               }}
             >
-              <span>{isBelowMinOrder ? `Falta R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")}` : "Continuar pedido"}</span>
+              <span>{isBelowCartMin ? `Falta R$ ${remainingForCartMin.toFixed(2).replace(".", ",")}` : "Continuar pedido"}</span>
               <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
             </button>
           ) : (
