@@ -18,6 +18,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { calcularContaDaMesa, montarCupomDaConta, sanearTaxa } from "@/lib/conta-da-mesa";
+import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Mesma régua do fechamento: negativa ou absurda é pedido malformado.
   if (gorjeta !== null && (!Number.isFinite(gorjeta) || gorjeta < 0 || gorjeta > 100_000)) {
     return NextResponse.json({ error: "Gorjeta inválida" }, { status: 400 });
+  }
+
+  // A loja pode ter desmarcado a conta em TODAS as impressoras (tela de
+  // Impressoras). Aí o papel não sairia em lugar nenhum — nem na impressora
+  // local, nem pela fila da nuvem — e o garçom ficaria esperando por ele.
+  // Recusar aqui é o que faz aparecer o motivo na tela.
+  const dono = await prisma.user.findUnique({
+    where: { id: lojaId },
+    select: { printerConfig: true },
+  });
+  const impressorasDaLoja = (dono?.printerConfig as any)?.printers;
+  if (impressorasDaContaDaMesa(Array.isArray(impressorasDaLoja) ? impressorasDaLoja : []) === null) {
+    return NextResponse.json(
+      { error: "Nenhuma impressora está marcada para imprimir a conta da mesa. Marque uma em Impressoras." },
+      { status: 400 }
+    );
   }
 
   const conta = calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta);

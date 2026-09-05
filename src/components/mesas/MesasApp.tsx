@@ -7,7 +7,7 @@ import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
 import { printOrder } from "@/lib/print";
-import { impressoraAtendeModulo } from "@/lib/modulo-do-pedido";
+import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface TableItem {
@@ -821,12 +821,12 @@ export default function MesasApp({
           const cfgRes = await chamar("/api/store/printer-config");
           const cfg = cfgRes.ok ? await cfgRes.json() : null;
           if (cfg) {
-            // Conta é papel do caixa: impressora do salão que tira a comanda
-            // inteira. Nem a só-de-bebida, nem a que filtra por categoria.
-            const doSalao = (cfg.printers || []).filter((p: any) =>
-              p?.name && impressoraAtendeModulo(p.modulos, "salao") && p.somenteBebidas !== true);
-            const doCaixa = doSalao.filter((p: any) => !(Array.isArray(p.categories) && p.categories.length > 0));
-            const escolhidas = (doCaixa.length > 0 ? doCaixa : doSalao).map((p: any) => ({ ...p, categories: [] }));
+            // Quem recebe a conta é a mesma regra da fila da nuvem: as
+            // impressoras marcadas na tela de Impressoras e, enquanto a loja
+            // não marcar nenhuma, o palpite do caixa (lib/impressao-da-conta.ts).
+            // Papel e nuvem escolhendo diferente sairia dobrado, em duas.
+            const marcadas = impressorasDaContaDaMesa<any>(cfg.printers || []);
+            const escolhidas = (marcadas || []).map((p: any) => ({ ...p, categories: [] }));
             // Sem impressora do salão cadastrada, o caminho local detectaria
             // uma impressora qualquer e a fila da nuvem mandaria para a
             // `currentConfig.printer` do Assistente: duas impressoras

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { destinosDoPedido } from "@/lib/roteamento-de-impressao";
-import { impressoraAtendeModulo } from "@/lib/modulo-do-pedido";
+import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
@@ -228,11 +228,11 @@ export async function GET(req: NextRequest) {
     // ── IMPRESSÕES AVULSAS (conta da mesa) ───────────────────────────
     //
     // Não nascem de pedido: ficam em PrintRequest, já no formato de cupom
-    // (src/lib/conta-da-mesa.ts). Vão para as impressoras do SALÃO que tiram
-    // a comanda inteira — nem a só-de-bebida, nem a que filtra por categoria
-    // (a da cozinha): conta é papel do caixa. Sem impressora assim, todas as
-    // do salão; sem nenhuma cadastrada, `destinos` vazio e o Assistente usa
-    // a padrão, como sempre fez.
+    // (src/lib/conta-da-mesa.ts). Vão para as impressoras que a loja marcou
+    // na tela de Impressoras — e, enquanto ela não marcar nenhuma, para o
+    // palpite de sempre (a do salão que tira a comanda inteira: conta é papel
+    // do caixa). A regra mora em src/lib/impressao-da-conta.ts, porque a tela
+    // de mesas decide o mesmo para a impressora local.
     let avulsas: { id: string; payload: unknown; createdAt: Date }[] = [];
     try {
       avulsas = await prisma.printRequest.findMany({
@@ -244,13 +244,14 @@ export async function GET(req: NextRequest) {
       console.error("[PrintQueue] PrintRequest indisponível (falta db push?)", (err as any)?.code || err);
     }
 
-    const doSalao = printers.filter(
-      (p) => p && p.name && impressoraAtendeModulo(p.modulos, "salao") && p.somenteBebidas !== true
-    );
-    const doCaixa = doSalao.filter((p) => !(Array.isArray(p.categories) && p.categories.length > 0));
-    const paraConta = doCaixa.length > 0 ? doCaixa : doSalao;
+    // `null` = a loja desmarcou a conta em TODAS as impressoras: a fila não
+    // entrega o cupom nenhum. Mandar com `destinos` vazio faria o Assistente
+    // cair na impressora padrão dele — exatamente o papel que a loja disse não
+    // querer. O PrintRequest fica no banco e some sozinho em 24 h.
+    const paraConta = impressorasDaContaDaMesa(printers);
+    const destinosDaConta = paraConta || [];
 
-    const jobsAvulsos = avulsas.map((pedido) => {
+    const jobsAvulsos = (paraConta === null ? [] : avulsas).map((pedido) => {
       const order: any = pedido.payload;
       return {
         id: "job_" + pedido.id,
@@ -266,7 +267,7 @@ export async function GET(req: NextRequest) {
           defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
           printers,
         },
-        destinos: paraConta.map((d) => ({
+        destinos: destinosDaConta.map((d) => ({
           printer: d.name,
           copies: Number(d.copies) > 0 ? Number(d.copies) : 1,
           paperWidth: d.paperWidth || pc?.defaultPaperWidth || "80mm",
