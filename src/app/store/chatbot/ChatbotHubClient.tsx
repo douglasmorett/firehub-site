@@ -498,6 +498,24 @@ export default function ChatbotHubClient() {
   }, [config.connected, qrCodeUrl]);
 
   // Salvar Configurações
+  /**
+   * "Aceita retirada" mora no cadastro da loja (`storeDeliveryOnly`), que é o
+   * que o cardápio e o robô leem. Este botão grava lá — e mantém a cópia no
+   * chatbotConfig só para a tela não piscar até o próximo carregamento.
+   */
+  const salvarAceitaRetirada = async (aceita: boolean) => {
+    await handleSaveConfig({ acceptsPickup: aceita });
+    try {
+      await fetch("/api/store-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeDeliveryOnly: !aceita }),
+      });
+    } catch (e) {
+      console.error("[Chatbot] não consegui gravar a retirada no cadastro da loja", e);
+    }
+  };
+
   const handleSaveConfig = async (newFields: any) => {
     try {
       setSaving(true);
@@ -2887,13 +2905,13 @@ export default function ChatbotHubClient() {
                     🏪 Aceita Retirada no Balcão?
                   </div>
                   <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px" }}>
-                    Se marcado como &quot;SIM&quot;, quando o cliente perguntar sobre retirada, o robô informará o endereço da sua loja e que aceita retirada no local.
+                    É a mesma chave do cardápio online (Configurações → Informações): marcando &quot;SIM&quot;, o botão &quot;Retirar no Balcão&quot; aparece para o cliente e o robô passa a informar o endereço da loja.
                   </div>
                 </div>
 
                 <div style={{ display: "flex", gap: "6px" }}>
                   <button
-                    onClick={() => handleSaveConfig({ acceptsPickup: true })}
+                    onClick={() => salvarAceitaRetirada(true)}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
                       background: config.acceptsPickup ? "#16A34A" : "#E2E8F0",
@@ -2904,7 +2922,7 @@ export default function ChatbotHubClient() {
                     SIM
                   </button>
                   <button
-                    onClick={() => handleSaveConfig({ acceptsPickup: false })}
+                    onClick={() => salvarAceitaRetirada(false)}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
                       background: config.acceptsPickup === false || !config.acceptsPickup ? "#DC2626" : "#E2E8F0",

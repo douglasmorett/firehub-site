@@ -487,8 +487,12 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "1rem", cursor: "pointer" }}>
-          <input type="checkbox" checked={storeDeliveryOnly} onChange={e => { setStoreDeliveryOnly(e.target.checked); setDirtyInfo(true); }} style={{ transform: "scale(1.2)" }} />
-          <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#334155" }}>🛵 Loja Exclusiva de Delivery (Sem consumo no local)</span>
+          {/* A pergunta é feita pelo lado de quem atende: "aceito retirada?".
+              O rótulo antigo — "Loja Exclusiva de Delivery (Sem consumo no
+              local)" — se lia como "não tenho salão", e quem marcava por não
+              ter mesa desligava sem querer a retirada no balcão. */}
+          <input type="checkbox" checked={!storeDeliveryOnly} onChange={e => { setStoreDeliveryOnly(!e.target.checked); setDirtyInfo(true); }} style={{ transform: "scale(1.2)" }} />
+          <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#334155" }}>🛍️ Aceitar retirada no balcão (o cliente busca na loja)</span>
         </label>
         <div style={{ marginTop: "1.5rem" }}>
           <SectionSaveBtn dirty={dirtyInfo} saving={savingInfo} onSave={async () => { await saveInfo(); await saveFields({ deliveryConfig: { freeShippingActive, freeShippingMinValue: parseFloat(freeShippingMinValue) || 0, minimumOrderValue: parseFloat(minimumOrderValue) || 0, minimumOrderValuePickup: pickupMinToSave() } }); setDirtyFreeShipping(false); }} label="Salvar Informações" />

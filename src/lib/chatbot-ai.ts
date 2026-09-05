@@ -98,6 +98,10 @@ export async function processChatbotAI(
       // As outras duas formas de a loja estar fechada, além do horário.
       storePause: true,
       storeOpen: true,
+      // Sem esta linha o campo chega `undefined`, e `!undefined` é `true`: o
+      // robô passaria a prometer retirada em TODA loja, inclusive nas que não
+      // atendem no balcão. Select explícito não perdoa coluna esquecida.
+      storeDeliveryOnly: true,
       deliveryConfig: true,
       deliveryZones: true,
       deliveryZoneType: true,
@@ -293,6 +297,10 @@ export async function processChatbotAI(
   const chatbotConfig = (user.chatbotConfig as any) || {};
   const delivConfig = (user.deliveryConfig as any) || {};
   const minimumOrderValue = parseFloat(delivConfig.minimumOrderValue) || 26.00;
+  // Quem decide se a loja aceita retirada é a própria loja, não uma segunda
+  // chave dentro do chatbotConfig. Enquanto foram dois campos, o robô podia
+  // prometer retirada que o cardápio não oferecia — e o contrário também.
+  const aceitaRetirada = !(user as any).storeDeliveryOnly;
   // Mínimo da retirada: ausente = herda o da entrega, igual ao cardápio.
   const minimumOrderValuePickup =
     delivConfig.minimumOrderValuePickup === undefined || delivConfig.minimumOrderValuePickup === null || delivConfig.minimumOrderValuePickup === ""
@@ -1052,7 +1060,7 @@ DADOS DA LOJA:
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio: ${storeLink}
 - Tempo Médio de Entrega da Loja: 45 a 60 minutos
-- Aceita Retirada no Balcão: ${chatbotConfig.acceptsPickup ? "SIM" : "NÃO"}
+- Aceita Retirada no Balcão: ${aceitaRetirada ? "SIM" : "NÃO"}
 - ⚠️ PEDIDO MÍNIMO PARA ENTREGA: R$ ${minimumOrderValue.toFixed(2).replace(".", ",")} (subtotal dos itens, SEM a taxa de entrega)
 - ⚠️ PEDIDO MÍNIMO PARA RETIRADA NO BALCÃO: ${minimumOrderValuePickup > 0 ? `R$ ${minimumOrderValuePickup.toFixed(2).replace(".", ",")}` : "não há — qualquer valor fecha"}
 - Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}

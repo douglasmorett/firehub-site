@@ -22,7 +22,15 @@ model User {
   storeBanner     String?
   storeLogo       String?
   storeHours      Json?
-  storeDeliveryOnly Boolean   @default(true)
+  /// Loja que NÃO aceita retirada no balcão. Nasce `false` — retirada é o
+  /// padrão, e quem não atende é que desmarca.
+  ///
+  /// Nasceu `true`, e como nenhuma rota de criação preenche o campo, toda loja
+  /// começava recusando retirada sem ninguém ter escolhido isso: o cardápio
+  /// simplesmente não desenhava o botão "Retirar no Balcão". Um cliente da
+  /// Hakim Centro foi reclamar pelo WhatsApp em 04/09/2026 que não achava a
+  /// opção — ela nunca tinha existido, em aparelho nenhum.
+  storeDeliveryOnly Boolean   @default(false)
   paymentFees     Json?
   deliveryZoneType String?
   deliveryZones   Json?
