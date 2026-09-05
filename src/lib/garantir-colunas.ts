@@ -631,6 +631,115 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "PosTerminal" ADD COLUMN IF NOT EXISTS "appVersion" TEXT`,
 ];
 
+
+/**
+ * ── Acesso do garçom e conta da mesa ───────────────────────────────────────
+ *
+ * MESMA CATEGORIA das garantias acima: instruções fixas, escritas no código,
+ * aditivas e idempotentes. `ADD COLUMN IF NOT EXISTS` de coluna NULÁVEL não
+ * altera e não apaga; `CREATE TABLE/INDEX IF NOT EXISTS` não toca no que já
+ * existe; o `DO $ ... EXCEPTION WHEN duplicate_object` torna o
+ * `ADD CONSTRAINT` repetível (o Postgres não aceita `IF NOT EXISTS` em
+ * constraint). Rodar mil vezes é igual a rodar uma.
+ *
+ * POR QUE NÃO `prisma db push`: o banco de produção tem tabelas e colunas
+ * que nenhum schema.prisma declara (AmbassadorApplication, Food99Store,
+ * emergencyFine, routeSequence...). Um push pediria `--accept-data-loss` e
+ * APAGARIA tudo isso — inclusive candidaturas de embaixador. A garantia por
+ * DDL aditivo aplica só o que falta e não tem como apagar nada.
+ *
+ * A ORDEM É O PONTO: roda no boot, antes do primeiro request. É a única forma
+ * de impedir o 500 de "campo no schema, coluna ausente" — e aqui o estrago
+ * seria grande, porque `GET /api/store/print-queue` é chamado pelo Assistente
+ * de TODA loja a cada 3 s: sem a coluna, a impressão de mesa e balcão pararia
+ * em toda a base ao mesmo tempo.
+ *
+ * O índice único de `Waiter(franchiseeId, login)` aceita nulos sem conflito,
+ * então garçom já cadastrado (sem login) não trava a criação.
+ */
+const INSTRUCOES_MESA = [
+  // Acesso próprio do garçom pelo link (src/lib/garcom-auth.ts).
+  `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "login" TEXT`,
+  `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "passwordHash" TEXT`,
+  `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "credentialsUpdatedAt" TIMESTAMP(3)`,
+  `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "lastLoginAt" TIMESTAMP(3)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "Waiter_franchiseeId_login_key" ON "Waiter"("franchiseeId", "login")`,
+
+  // Fechar o caixa encerra o turno do garçom; e o carimbo do poll da fila.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "cashClosedAt" TIMESTAMP(3)`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "printQueuePolledAt" TIMESTAMP(3)`,
+
+  // Quem fechou a mesa (painel ou garçom).
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "closedByKind" TEXT`,
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "closedByName" TEXT`,
+
+  // Impressão que não nasce de pedido — hoje, a conta da mesa.
+  `CREATE TABLE IF NOT EXISTS "PrintRequest" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "kind" TEXT NOT NULL,
+     "payload" JSONB NOT NULL,
+     "requestedBy" TEXT,
+     "tableSessionId" TEXT,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "PrintRequest_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE INDEX IF NOT EXISTS "PrintRequest_franchiseeId_createdAt_idx" ON "PrintRequest"("franchiseeId", "createdAt")`,
+  `DO $ BEGIN
+     ALTER TABLE "PrintRequest" ADD CONSTRAINT "PrintRequest_franchiseeId_fkey"
+       FOREIGN KEY ("franchiseeId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+   EXCEPTION WHEN duplicate_object THEN NULL; END $`,
+];
+
+let mesaOk = false;
+
+export async function garantirEstruturaDeMesa(): Promise<void> {
+  if (mesaOk) return;
+
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia da estrutura de mesa.");
+    mesaOk = true;
+    return;
+  }
+
+  try {
+    // Catch por instrução: uma que falhe (tabela ausente numa loja antiga) não
+    // pode levar as outras junto — é o mesmo desenho das garantias acima.
+    for (const sql of INSTRUCOES_MESA) {
+      try {
+        await prisma.$executeRawUnsafe(sql);
+      } catch (err: any) {
+        console.error(`[Boot] Instrução de mesa falhou: ${err?.message}`);
+      }
+    }
+
+    const colunas = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
+      SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND ((table_name = 'Waiter' AND column_name IN ('login', 'passwordHash', 'credentialsUpdatedAt', 'lastLoginAt'))
+          OR (table_name = 'User' AND column_name IN ('cashClosedAt', 'printQueuePolledAt'))
+          OR (table_name = 'TableSession' AND column_name IN ('closedByKind', 'closedByName')))
+    `;
+    const tabela = await prisma.$queryRaw<{ tabela: string }[]>`
+      SELECT table_name AS tabela FROM information_schema.tables
+      WHERE table_schema = current_schema() AND table_name = 'PrintRequest'
+    `;
+
+    const faltando = 8 - colunas.length;
+    if (faltando > 0 || tabela.length === 0) {
+      console.error(
+        `[Boot] 🛑 Estrutura de mesa incompleta: ${faltando} coluna(s) e ${tabela.length === 0 ? "a tabela PrintRequest" : "nenhuma tabela"} faltando.`
+      );
+      return;
+    }
+    mesaOk = true;
+    console.log("[Boot] ✅ Acesso do garçom e conta da mesa garantidos no banco.");
+  } catch (err: any) {
+    console.error(`[Boot] 🛑 Garantia da estrutura de mesa falhou: ${err?.message}`);
+  }
+}
+
 let colunasDoSchemaOk = false;
 
 export async function garantirColunasDoSchema(): Promise<void> {

@@ -15,6 +15,7 @@ export async function register() {
     garantirColunasBrendi,
     garantirEstruturaDeLotes,
     garantirEstruturaDeCaixa,
+    garantirEstruturaDeMesa,
   } = await import("./lib/garantir-colunas");
   await garantirColunasDePreco();
   // As colunas que o schema.prisma declara e que nunca ganharam DDL — 39 no
@@ -33,4 +34,10 @@ export async function register() {
   // Sangria e reforço de caixa. Sem a tabela, o esperado do fechamento ignora
   // todo dinheiro que entrou ou saiu no meio do turno.
   await garantirEstruturaDeCaixa();
+  // Acesso do garçom (login na tabela Waiter), quem fechou a mesa e a tabela
+  // PrintRequest da conta impressa. Vem antes do primeiro request porque o GET
+  // da fila de impressão — que todo Assistente chama a cada 3 s — lê uma das
+  // colunas novas: sem ela, a comanda de mesa e de balcão pararia em todas as
+  // lojas de uma vez.
+  await garantirEstruturaDeMesa();
 }
