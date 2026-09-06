@@ -28,6 +28,11 @@ const casos: [string, any, boolean][] = [
   ["OFFLINE:CARD (maquininha)", { payments: { prepaid: 0, pending: 25, methods: [{ type: "OFFLINE", method: "CARD", value: 25 }] } }, false],
   ["PENDING:CASH (medido no B-6001)", { payments: { prepaid: 0, pending: 25, methods: [{ type: "PENDING", method: "CASH", value: 25, changeFor: 25 }] } }, false],
   ["ONLINE:IFOOD (pago pelo iFood)", { payments: { prepaid: 25, pending: 0, methods: [{ type: "ONLINE", method: "IFOOD", value: 25 }] } }, true],
+  // O suporte alertou que PREPAID nao prova que o dinheiro entrou: o que vale
+  // e o `status`. Pedido marcado PREPAID mas com status nao aprovado NAO pode
+  // sair como pago, senao a loja entrega de graca.
+  ["PREPAID:PIX com status PENDING (nao pago)", { payments: { prepaid: 50, pending: 0, methods: [{ type: "PREPAID", method: "PIX", status: "PENDING", value: 50 }] } }, false],
+  ["PREPAID:PIX com status CONFIRMED (pago)", { payments: { prepaid: 50, pending: 0, methods: [{ type: "PREPAID", method: "PIX", status: "CONFIRMED", value: 50 }] } }, true],
   ["OFFLINE:VALE (vale na entrega)", { payments: { prepaid: 0, pending: 25, methods: [{ type: "OFFLINE", method: "VALE", value: 25 }] } }, false],
 ];
 

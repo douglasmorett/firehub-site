@@ -79,18 +79,41 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
       hasChange = true;
     }
 
+    // ── O `type` NÃO PROVA QUE O DINHEIRO ENTROU ──────────────────────────
+    //
+    // Aviso do suporte da Brendi em 05/09/2026, com essas palavras:
+    // "PREPAID/PENDING não necessariamente refletem se o pagamento foi
+    // realmente realizado ou aprovado" — o que vale é `methods[].status`
+    // (ex.: "CONFIRMED"), porque há nomenclaturas legadas vindas de
+    // Open Delivery, Colibri e outras integrações.
+    //
+    // Então, quando o status VEM e não diz aprovado, o pagamento não conta
+    // como pago por mais que o `type` diga PREPAID — senão a loja entrega uma
+    // comanda marcada "Pago Online" de um pedido que ninguém pagou.
+    // Status ausente mantém o comportamento anterior: quem decide é o
+    // `type`/`prepaid`, que foi o que medimos no pedido real 6005.
+    //
+    // Restrito à Brendi de propósito: `status` em `payments[]` de outro canal
+    // pode significar outra coisa, e trocar um defeito por outro não é conserto.
+    const rawStatus = (payment.status || '').toString().toUpperCase();
+    const statusNegaPagamento =
+      source === 'BRENDI' && rawStatus !== '' &&
+      !/CONFIRM|APPROV|PAID|SUCCESS|CAPTUR|ACCEPT|PAGO/.test(rawStatus);
+
     const pOffline = payment.prepaid === false ||
       rawType === 'OFFLINE' ||
       rawType === 'PENDING' ||
+      statusNegaPagamento ||
       isCash;
 
-    const pOnline = payment.prepaid === true ||
+    const pOnline = !statusNegaPagamento && (
+      payment.prepaid === true ||
       rawType === 'ONLINE' ||
       rawType === 'PREPAID' ||
       isPartnerPayment ||
       rawMethod === 'DIGITAL_WALLET' ||
       rawMethod === 'ONLINE' ||
-      rawMethod === 'IFOOD_PAY';
+      rawMethod === 'IFOOD_PAY');
 
     if (pOffline) anyExplicitOffline = true;
     if (pOnline) anyOnlinePrepaid = true;
