@@ -795,21 +795,49 @@ export async function processBrendiEvent(
       const customerAddress = (() => {
         const addr = orderData.delivery?.deliveryAddress;
         if (!addr) return "";
+        // ── OS NOMES QUE A BRENDI USA DE VERDADE ──────────────────────────
+        //
+        // Estes campos vinham da spec Open Delivery (`streetName`,
+        // `streetNumber`, `neighborhood`). O payload real, medido no pedido
+        // B-6002 da sandbox em 05/09/2026, usa `street`, `number` e
+        // `district`. Nenhum casava: o endereço caía inteiro no
+        // `formattedAddress` e a comanda do motoboy saía SEM BAIRRO e SEM
+        // COMPLEMENTO — que é justamente o que ele precisa para achar a porta.
+        // Os dois conjuntos ficam aceitos: quebrar o JotaJá para consertar a
+        // Brendi seria trocar um defeito por outro.
         const formatted = addr.formattedAddress || "";
-        const street = addr.streetName ? `${addr.streetName}${addr.streetNumber ? ` ${addr.streetNumber}` : ""}${addr.complement ? ` ${addr.complement}` : ""}` : formatted;
-        const neighborhood = addr.neighborhood || "";
+        const via = addr.street || addr.streetName || "";
+        const numero = addr.number || addr.streetNumber || "";
+        const complemento = addr.complement || "";
+        const bairro = addr.district || addr.neighborhood || "";
         const city = addr.city || "";
+
+        const rua = via
+          ? `${via}${numero ? `, ${numero}` : ""}${complemento ? ` - ${complemento}` : ""}`
+          : formatted;
+
         const parts: string[] = [];
-        if (street) parts.push(street);
+        if (rua) parts.push(rua);
         // Dedup: não repetir o bairro quando já veio embutido na rua formatada
-        if (neighborhood && (!street || !street.toLowerCase().includes(neighborhood.toLowerCase()))) {
-          parts.push(neighborhood);
+        if (bairro && (!rua || !rua.toLowerCase().includes(bairro.toLowerCase()))) {
+          parts.push(bairro);
         }
         if (city) parts.push(city);
         return parts.join(" - ");
       })();
 
       const deliveryType = (() => {
+        // `type` é o campo REAL da Brendi ("DELIVERY" / "TAKEOUT"), confirmado
+        // nos dois pedidos de teste. Antes a decisão dependia de `orderType`
+        // (que nunca vem) e caía nos sinais indiretos abaixo — acertando por
+        // sorte: TAKEOUT pelo objeto `takeout` presente, DELIVERY por ter
+        // endereço formatado. Um pedido de entrega com taxa zero e endereço
+        // só em `street` teria virado RETIRADA, e a comanda sairia sem
+        // endereço nenhum.
+        const tipoDireto = String(orderData.type || "").toUpperCase();
+        if (tipoDireto === "DELIVERY") return "DELIVERY";
+        if (tipoDireto === "TAKEOUT" || tipoDireto === "TOGO" || tipoDireto === "PICKUP") return "RETIRADA";
+
         const ot = (orderData.orderType || "").toUpperCase();
         const dm = (orderData.deliveryMode || orderData.takeoutMode || "").toUpperCase();
         const takeout =
