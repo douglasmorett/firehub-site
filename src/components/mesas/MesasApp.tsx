@@ -510,7 +510,13 @@ export default function MesasApp({
   // pedido — está avisado no confirm).
   const [editandoItem, setEditandoItem] = useState<string | null>(null);
 
-  const editarQtdItem = useCallback(async (orderId: string, itemId: string, quantity: number) => {
+  // Editor de quantidade de item já lançado. A quantidade é ABSOLUTA ("fica
+  // com 3"), nunca um incremento, e só vai ao servidor no Confirmar.
+  const [editorQtd, setEditorQtd] = useState<{
+    orderId: string; itemId: string; nome: string; atual: number; novo: number; preco: number; ultimoDoPedido: boolean;
+  } | null>(null);
+
+  const editarQtdItem = useCallback(async (orderId: string, itemId: string, quantity: number, nome?: string, atual?: number) => {
     if (!selectedTable?.openSession || quantity < 1 || editandoItem) return;
     setEditandoItem(itemId);
     try {
@@ -521,6 +527,7 @@ export default function MesasApp({
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) alert(data.error || "Não consegui alterar o item.");
+      else if (nome) showToast(`✅ ${nome}: ${atual ?? "?"}x → ${quantity}x · pedido ${fmt(Number(data.totalAmount) || 0)}`);
       await fetchSessionDetail(selectedTable.openSession.id);
       fetchTables();
     } catch { alert("Sem conexão — o item não foi alterado."); }
@@ -998,7 +1005,11 @@ export default function MesasApp({
     if ((item.isCombo || groups.length > 0) && groups.length > 0) {
       setComboProduct({ ...item, comboGroups: groups });
     } else {
+      // Cada toque no card soma UM. Dizer quantos ficaram evita o garçom tocar
+      // de novo "para garantir" e depois somar outra vez no carrinho.
+      const ex = cart.find(i => i.item.id === item.id && !i.comboSelections && (i.guestId || null) === pessoaAtiva);
       addToCart(item);
+      showToast(`${item.name}: ${(ex?.qty ?? 0) + 1}x no pedido`);
     }
   };
 
@@ -1522,14 +1533,26 @@ export default function MesasApp({
                       if (c.qty <= 1) setCart(prev => prev.filter(x => x.uid !== c.uid));
                       else setCart(prev => prev.map(x => x.uid === c.uid ? { ...x, qty: x.qty - 1 } : x));
                     }} style={{
-                      width: 28, height: 28, borderRadius: 7, border: "1px solid #E2E8F0",
+                      width: 38, height: 38, borderRadius: 9, border: "1px solid #E2E8F0",
                       background: "#F8FAFC", cursor: "pointer", fontWeight: 700, fontSize: 16,
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}>−</button>
-                    <span style={{ fontWeight: 800, fontSize: 14, minWidth: 18, textAlign: "center" }}>{c.qty}</span>
+                    {/* Número DIGITÁVEL e absoluto: quem quer 3 digita 3. Com o
+                        número só de leitura, o jeito de chegar em 3 era tocar
+                        "+" — e tocar "+" com 3 já marcados dava 6. */}
+                    <input
+                      type="number" inputMode="numeric" min={1} max={99} value={c.qty}
+                      onChange={(e) => {
+                        const n = Math.max(1, Math.min(99, Math.floor(Number(e.target.value) || 1)));
+                        setCart(prev => prev.map(x => x.uid === c.uid ? { ...x, qty: n } : x));
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      aria-label={`Quantidade de ${c.item.name}`}
+                      style={{ width: 46, height: 38, textAlign: "center", fontWeight: 900, fontSize: 16, color: "#1E293B", border: "1.5px solid #C4B5FD", borderRadius: 9, background: "#FAF5FF", outline: "none" }}
+                    />
                     <button onClick={() => setCart(prev => prev.map(x => x.uid === c.uid ? { ...x, qty: x.qty + 1 } : x))}
                       style={{
-                        width: 28, height: 28, borderRadius: 7, border: "none",
+                        width: 38, height: 38, borderRadius: 9, border: "none",
                         background: "#7C3AED", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 16,
                         display: "flex", alignItems: "center", justifyContent: "center",
                       }}>+</button>
@@ -1800,18 +1823,18 @@ export default function MesasApp({
               {/* Lado a lado: no celular o painel tem 46vh e cada linha de botão
                   custa 44px; três linhas cheias empurravam o Total para fora. */}
               <button onClick={() => imprimirConta(taxaSugeridaDaMesa(selectedTable))} disabled={imprimindoConta}
-                title="Imprime a conta com a taxa cadastrada do garçom" style={{
+                title={`Imprime a comanda da mesa com a taxa de serviço de ${taxaSugeridaDaMesa(selectedTable)}%`} style={{
                 padding: "10px 4px", borderRadius: 10, border: "1.5px solid #C4B5FD",
                 background: "#F5F3FF", color: "#6D28D9", fontWeight: 800, fontSize: 13,
                 cursor: "pointer", opacity: imprimindoConta ? 0.6 : 1,
-              }}>{imprimindoConta ? "Enviando..." : `🧾 Conta (${taxaSugeridaDaMesa(selectedTable)}%)`}</button>
+              }}>{imprimindoConta ? "Enviando..." : "🧾 Imprimir comanda"}</button>
               <button onClick={() => setShowTransferModal(selectedTable)} disabled={freeTables.length === 0}
-                title={freeTables.length === 0 ? "Nenhuma mesa livre" : "Mover a conta para outra mesa"} style={{
+                title={freeTables.length === 0 ? "Nenhuma mesa livre para receber esta conta" : "Levar esta conta inteira para outra mesa"} style={{
                 padding: "10px 4px", borderRadius: 10, border: "1.5px solid #E2E8F0",
                 background: "#F8FAFC", color: "#475569", fontWeight: 800, fontSize: 13,
                 cursor: freeTables.length === 0 ? "not-allowed" : "pointer",
                 opacity: freeTables.length === 0 ? 0.5 : 1,
-              }}>↔️ Transferir</button>
+              }}>↔️ Mudar de mesa</button>
               {(selectedTable.openSession.totalAmount === 0) && (
                 <button onClick={() => setShowFreeConfirm(true)} style={{
                   padding: "10px 0", borderRadius: 10, border: "1.5px solid #F59E0B",
@@ -1967,24 +1990,28 @@ export default function MesasApp({
                         <div key={j} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#64748B", paddingLeft: 4, marginBottom: 2, textDecoration: cancelado ? "line-through" : "none" }}>
                           {/* Quantidade EDITÁVEL: − / número / +. O total do
                               pedido é recalculado no servidor, nunca aqui. */}
+                          {/* Quantidade: um TOQUE abre o editor, que só grava ao
+                              confirmar. Antes eram botões −/+ de 20px que gravavam
+                              no servidor a cada toque: na Pastel da Paulista o
+                              garçom já tinha 3 lançados, tocou "+" três vezes
+                              achando que estava marcando 3, e a mesa virou 6. */}
                           {!cancelado ? (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                              <button
-                                onClick={() => item.quantity <= 1
-                                  ? removerItemPedido(order.id, item.id, item.menuProduct.name, order.items.length === 1)
-                                  : editarQtdItem(order.id, item.id, item.quantity - 1)}
-                                disabled={!!editandoItem}
-                                title={item.quantity <= 1 ? "Remover o item" : "Diminuir"}
-                                style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", color: "#DC2626", fontWeight: 900, fontSize: 12, cursor: editandoItem ? "wait" : "pointer", lineHeight: 1 }}
-                              >−</button>
-                              <span style={{ minWidth: 22, textAlign: "center", fontWeight: 800, color: travado ? "#94A3B8" : "#334155" }}>{item.quantity}x</span>
-                              <button
-                                onClick={() => editarQtdItem(order.id, item.id, item.quantity + 1)}
-                                disabled={!!editandoItem}
-                                title="Aumentar"
-                                style={{ width: 20, height: 20, borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", color: "#16A34A", fontWeight: 900, fontSize: 12, cursor: editandoItem ? "wait" : "pointer", lineHeight: 1 }}
-                              >+</button>
-                            </span>
+                            <button
+                              onClick={() => setEditorQtd({
+                                orderId: order.id, itemId: item.id, nome: item.menuProduct.name,
+                                atual: item.quantity, novo: item.quantity, preco: item.price,
+                                ultimoDoPedido: order.items.length === 1,
+                              })}
+                              disabled={!!editandoItem}
+                              title="Alterar a quantidade"
+                              style={{
+                                display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
+                                minHeight: 30, padding: "0 10px", borderRadius: 8,
+                                border: "1px solid #C7D2FE", background: travado ? "#F1F5F9" : "#EEF2FF",
+                                color: travado ? "#94A3B8" : "#3730A3", fontWeight: 900, fontSize: 13,
+                                cursor: editandoItem ? "wait" : "pointer",
+                              }}
+                            >{item.quantity}x <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>✎</span></button>
                           ) : (
                             <span style={{ fontWeight: 800, flexShrink: 0 }}>{item.quantity}x</span>
                           )}
@@ -2022,6 +2049,50 @@ export default function MesasApp({
                 </div>
               )}
             </div>
+
+            {/* Editor de quantidade (item já lançado). Botões grandes, número
+                digitável, prévia do valor e UM Confirmar — nada grava antes. */}
+            {editorQtd && (
+              <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+                onClick={() => setEditorQtd(null)}>
+                <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", background: "#fff", borderRadius: "16px 16px 0 0", padding: "16px 18px 18px", boxShadow: "0 -10px 30px rgba(0,0,0,0.2)" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.4 }}>Quantidade</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#1E293B", marginTop: 2 }}>{editorQtd.nome}</div>
+                  <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 12 }}>Lançado: {editorQtd.atual}x · {fmt(editorQtd.preco)} cada</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
+                    <button onClick={() => setEditorQtd({ ...editorQtd, novo: Math.max(0, editorQtd.novo - 1) })}
+                      style={{ width: 52, height: 52, borderRadius: 14, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: 26, fontWeight: 800, color: "#DC2626", cursor: "pointer" }}>−</button>
+                    <input
+                      type="number" inputMode="numeric" min={0} max={99} value={editorQtd.novo}
+                      onChange={(e) => setEditorQtd({ ...editorQtd, novo: Math.max(0, Math.min(99, Math.floor(Number(e.target.value) || 0))) })}
+                      onFocus={(e) => e.target.select()}
+                      style={{ width: 84, height: 56, textAlign: "center", fontSize: 28, fontWeight: 900, color: "#1E293B", border: "2px solid #7C3AED", borderRadius: 14, outline: "none" }}
+                    />
+                    <button onClick={() => setEditorQtd({ ...editorQtd, novo: Math.min(99, editorQtd.novo + 1) })}
+                      style={{ width: 52, height: 52, borderRadius: 14, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: 26, fontWeight: 800, color: "#16A34A", cursor: "pointer" }}>+</button>
+                  </div>
+                  <div style={{ textAlign: "center", marginTop: 10, fontSize: 13, color: editorQtd.novo === 0 ? "#DC2626" : "#475569", fontWeight: 700 }}>
+                    {editorQtd.novo === 0
+                      ? (editorQtd.ultimoDoPedido ? "Zero remove o item e CANCELA o pedido inteiro" : "Zero remove o item deste pedido")
+                      : editorQtd.novo === editorQtd.atual
+                        ? "Sem alteração"
+                        : `Fica ${editorQtd.novo}x = ${fmt(editorQtd.preco * editorQtd.novo)} (antes ${fmt(editorQtd.preco * editorQtd.atual)})`}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                    <button onClick={() => setEditorQtd(null)} style={{ flex: 1, height: 46, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", fontWeight: 800, fontSize: 14, color: "#475569", cursor: "pointer" }}>Cancelar</button>
+                    <button
+                      disabled={editorQtd.novo === editorQtd.atual || !!editandoItem}
+                      onClick={async () => {
+                        const e = editorQtd; setEditorQtd(null);
+                        if (e.novo === 0) removerItemPedido(e.orderId, e.itemId, e.nome, e.ultimoDoPedido);
+                        else editarQtdItem(e.orderId, e.itemId, e.novo, e.nome, e.atual);
+                      }}
+                      style={{ flex: 2, height: 46, borderRadius: 12, border: "none", background: editorQtd.novo === editorQtd.atual ? "#CBD5E1" : (editorQtd.novo === 0 ? "#DC2626" : "#7C3AED"), color: "#fff", fontWeight: 900, fontSize: 14, cursor: editorQtd.novo === editorQtd.atual ? "default" : "pointer" }}
+                    >{editorQtd.novo === 0 ? "Remover" : `Confirmar ${editorQtd.novo}x`}</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Panel Footer - Total */}
             <div style={{
@@ -2579,23 +2650,28 @@ export default function MesasApp({
             maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
           }}>
             <h3 style={{ margin: "0 0 4px", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>
-              ↔️ Transferir a Mesa {showTransferModal.number}
+              ↔️ Mudar a Mesa {showTransferModal.number} para…
             </h3>
             <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748B" }}>
-              A conta inteira (pedidos, pessoas e pagamentos) vai para a mesa escolhida. Nada é relançado na cozinha.
+              <b style={{ color: "#0F172A" }}>Toque na mesa que vai receber esta conta.</b> Vai tudo junto: pedidos, pessoas e pagamentos. Nada é relançado na cozinha.
             </p>
             {freeTables.filter(t => t.id !== showTransferModal.id).length === 0 ? (
               <p style={{ color: "#B45309", fontWeight: 700, fontSize: 14 }}>Nenhuma mesa livre no momento.</p>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: 8 }}>
                 {freeTables.filter(t => t.id !== showTransferModal.id).map(t => (
-                  <button key={t.id} onClick={() => transferTable(t.id)} disabled={actionLoading} style={{
+                  <button key={t.id} disabled={actionLoading} onClick={() => {
+                    // Um toque errado levava a conta inteira para a mesa errada,
+                    // sem volta pela tela. Confirmar custa um toque e evita isso.
+                    const valor = fmt(showTransferModal.openSession?.totalAmount || 0);
+                    if (confirm(`Levar a conta da Mesa ${showTransferModal.number} (${valor}) para a Mesa ${t.number}?`)) transferTable(t.id);
+                  }} style={{
                     padding: "14px 6px", borderRadius: 12, border: "2px solid #E2E8F0", background: "#fff",
                     fontWeight: 800, fontSize: 15, color: "#0F172A", cursor: "pointer",
                     opacity: actionLoading ? 0.6 : 1,
                   }}>
                     Mesa {t.number}
-                    {t.label && <div style={{ fontSize: 11, fontWeight: 600, color: "#64748B", marginTop: 2 }}>{t.label}</div>}
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#16A34A", marginTop: 2 }}>{t.label || "livre"}</div>
                   </button>
                 ))}
               </div>
