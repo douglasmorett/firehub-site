@@ -115,7 +115,14 @@ export async function POST(req: NextRequest) {
     const body = JSON.parse(rawBody);
     events = Array.isArray(body) ? body : [body];
   } catch {
-    return NextResponse.json({ error: "Body inválido" }, { status: 400 });
+    // Sonda de disponibilidade chega com corpo vazio ou não-JSON — e responder
+    // 400 fazia o iFood contar o webhook como FORA DO AR (e-mail "Erros no
+    // Webhook" de 06/09/2026, com o endpoint de pé e respondendo KEEPALIVE
+    // normalmente; medido: POST sem corpo levava 400 em 0,6s). Corpo sem
+    // evento não tem nada a processar: 200 e pronto. Nenhuma segurança mora
+    // neste 400 — evento forjado já não cria pedido, porque o conteúdo vem
+    // sempre da API do iFood, nunca do corpo da requisição.
+    return NextResponse.json({ received: true, events: 0 });
   }
 
   // Processa eventos assincronicamente no background para não estourar o Timeout da Vercel
@@ -131,6 +138,14 @@ export async function POST(req: NextRequest) {
 
   // Responde 200 ao iFood (exige resposta em até 3 segundos para evitar retries infinitos)
   return NextResponse.json({ received: true });
+}
+
+// Sonda HEAD responde leve e sem efeito colateral. Sem isto o Next atendia
+// HEAD com o GET abaixo — ou seja, uma sonda de disponibilidade disparava o
+// polling de eventos com ACK, e um soluço no token virava 500 na cara do
+// healthcheck.
+export function HEAD() {
+  return new NextResponse(null, { status: 200 });
 }
 
 // Polling de eventos (alternativa/backup ao webhook)
