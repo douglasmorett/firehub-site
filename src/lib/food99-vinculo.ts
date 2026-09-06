@@ -1,6 +1,13 @@
 import { prisma } from "@/lib/prisma";
-import { listarLojasAutorizadas, vincularLojas, type LojaAutorizada } from "@/lib/food99-api";
-import { lojas99DaConta, salvarLoja99, slotsDaConta, donosPorShopId } from "@/lib/food99-lojas";
+import { listarLojasAutorizadas, vincularLojas, getAuthToken, type LojaAutorizada } from "@/lib/food99-api";
+import {
+  lojas99DaConta,
+  salvarLoja99,
+  slotsDaConta,
+  donosPorShopId,
+  donosPorAppShopId,
+  trocarAppShopId,
+} from "@/lib/food99-lojas";
 
 /**
  * /src/lib/food99-vinculo.ts — a "etapa 2" do 99Food, por API.
@@ -95,6 +102,85 @@ export async function autorizadasLivresPara(
   return { ok: true, livres, total: r.lojas.length };
 }
 
+/**
+ * Lojas que o 99Food JÁ vinculou ao app — com o app_shop_id que ELES
+ * escolheram — e que nenhuma conta do FireHub reconhece ainda (ou que já são
+ * desta conta).
+ *
+ * ── O que a v3 mostrou em 06/09/2026 ────────────────────────────────────────
+ *
+ * A página de autorização vincula, sim — mas com um id do 99Food (o próprio
+ * shop_id, ou algo como `BCkpxsW2KAHowtV574U2-4253`), nunca com o nosso. As
+ * três lojas do Lucas estavam vinculadas o dia inteiro, e o FireHub perguntava
+ * pelo id dele. Reconhecer o id deles é o que fecha o autoatendimento: o
+ * lojista autoriza, o 99Food vincula, e a tela adota o vínculo.
+ */
+export async function vinculadasSemDonoPara(
+  lojaId: string
+): Promise<{ ok: true; lojas: LojaAutorizada[] } | { ok: false; erro: string; errno: number }> {
+  const r = await listarLojasAutorizadas();
+  if (!r.ok) return { ok: false, erro: r.erro, errno: r.errno };
+
+  const [donosApp, donosShop] = await Promise.all([donosPorAppShopId(), donosPorShopId()]);
+  const lojas = r.lojas.filter((l) => {
+    if (!l.vinculada || !l.appShopId) return false;
+    const donoApp = donosApp.get(l.appShopId);
+    const donoShop = donosShop.get(l.shopId);
+    // Já é desta conta com este mesmo id → nada a adotar (o token já é lido
+    // direto). Se pertence a OUTRA conta por qualquer um dos dois ids, não é
+    // candidata: adivinhar aqui é despejar pedido na cozinha errada.
+    if (donoApp === lojaId) return false;
+    if (donoApp && donoApp !== lojaId) return false;
+    if (donoShop && donoShop !== lojaId) return false;
+    return true;
+  });
+  return { ok: true, lojas };
+}
+
+/**
+ * Adota um vínculo que o 99Food fez com o id DELES: confirma que o token vem
+ * por esse id, grava a loja com ele e passa a usá-lo. Se a conta já tinha a
+ * mesma loja gravada com um id antigo (reautorização), a linha é atualizada —
+ * não duplicada.
+ */
+export async function adotarVinculo(lojaId: string, loja: LojaAutorizada): Promise<ResultadoVinculo> {
+  if (!loja.appShopId) return { ok: false, erro: "o 99Food não informou o app_shop_id desta loja" };
+
+  const t = await getAuthToken(loja.appShopId);
+  if (!t.autorizada) {
+    return { ok: false, erro: `o 99Food diz que a loja está vinculada, mas não devolve token para ${loja.appShopId}` };
+  }
+
+  const gravadas = await lojas99DaConta(lojaId).catch(() => []);
+  const mesmaLoja = gravadas.find((g) => g.shopId === loja.shopId);
+  let gravou = false;
+  if (mesmaLoja && mesmaLoja.appShopId !== loja.appShopId) {
+    gravou = await trocarAppShopId(lojaId, loja.shopId, loja.appShopId);
+  }
+  if (!gravou) {
+    await salvarLoja99({ userId: lojaId, appShopId: loja.appShopId, shopId: loja.shopId, label: loja.nome }).catch(
+      () => false
+    );
+  }
+  await prisma.user
+    .update({
+      where: { id: lojaId },
+      data: { food99AppId: loja.appShopId, food99MerchantId: loja.shopId, food99Connected: true },
+    })
+    .catch(() => null);
+
+  console.log(
+    `[99Food] vínculo adotado: conta ${lojaId} ↔ shop ${loja.shopId} (${loja.nome ?? "sem nome"}) com o app_shop_id do 99Food ${loja.appShopId}`
+  );
+  return {
+    ok: true,
+    appShopId: loja.appShopId,
+    shopId: loja.shopId,
+    nome: loja.nome,
+    expiraEm: new Date(t.token.token_expiration_time * 1000).toISOString(),
+  };
+}
+
 export async function religarVinculosDaConta(lojaId: string): Promise<{ religadas: string[]; erro?: string }> {
   const gravadas = (await lojas99DaConta(lojaId).catch(() => [])).filter((g) => g.shopId);
   if (gravadas.length === 0) return { religadas: [] };
@@ -102,13 +188,29 @@ export async function religarVinculosDaConta(lojaId: string): Promise<{ religada
   const r = await listarLojasAutorizadas();
   if (!r.ok) return { religadas: [], erro: r.erro };
 
+  const religadas: string[] = [];
+
+  // Caso 1: a loja segue vinculada, mas sob um id NOVO do 99Food (o lojista
+  // reautorizou pela página deles). Adotar o id novo é o que religa.
+  for (const g of gravadas) {
+    const la = r.lojas.find((l) => l.shopId === g.shopId && l.vinculada && l.appShopId && l.appShopId !== g.appShopId);
+    if (!la) continue;
+    const a = await adotarVinculo(lojaId, la);
+    if (a.ok) religadas.push(a.appShopId);
+    else console.warn(`[99Food] adotar id novo de ${g.shopId} falhou: ${a.erro}`);
+  }
+
+  // Caso 2: a loja está autorizada e SEM vínculo — refaz com o mesmo id de antes.
   const pendentes = gravadas.filter((g) => r.lojas.some((l) => l.shopId === g.shopId && !l.vinculada));
-  if (pendentes.length === 0) return { religadas: [] };
+  if (pendentes.length > 0) {
+    const v = await vincularLojas(pendentes.map((g) => ({ shopId: g.shopId as string, appShopId: g.appShopId })));
+    if (!v.ok) return { religadas, erro: v.erro };
+    for (const s of v.sucesso) {
+      console.log(`[99Food] vínculo religado: ${s.appShopId} ↔ shop ${s.shopId}`);
+      religadas.push(s.appShopId);
+    }
+    for (const f of v.falha) console.warn(`[99Food] religar ${f.appShopId} ↔ shop ${f.shopId} recusado: ${f.motivo}`);
+  }
 
-  const v = await vincularLojas(pendentes.map((g) => ({ shopId: g.shopId as string, appShopId: g.appShopId })));
-  if (!v.ok) return { religadas: [], erro: v.erro };
-
-  for (const s of v.sucesso) console.log(`[99Food] vínculo religado: ${s.appShopId} ↔ shop ${s.shopId}`);
-  for (const f of v.falha) console.warn(`[99Food] religar ${f.appShopId} ↔ shop ${f.shopId} recusado: ${f.motivo}`);
-  return { religadas: v.sucesso.map((s) => s.appShopId) };
+  return { religadas };
 }

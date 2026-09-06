@@ -10,7 +10,7 @@ import {
   detalheDaLoja,
 } from "@/lib/food99-api";
 import { salvarLoja99, lojas99DaConta, desativarLoja99, donosPorAppShopId, slotsDaConta } from "@/lib/food99-lojas";
-import { vincularParaConta, autorizadasLivresPara } from "@/lib/food99-vinculo";
+import { vincularParaConta, autorizadasLivresPara, vinculadasSemDonoPara, adotarVinculo } from "@/lib/food99-vinculo";
 
 export const dynamic = "force-dynamic";
 
@@ -264,6 +264,47 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
     console.warn(`[99Food] getAuthorizedShops indisponível: ${autorizadas.erro}`);
   }
 
+  // ── Vínculo que o 99Food já fez, com o id DELES ───────────────────────────
+  //
+  // A página de autorização vincula sozinha e escolhe o app_shop_id (o
+  // próprio shop_id, ou um código como `BCkpxsW2KAHowtV574U2-4253`). É o caso
+  // das três lojas do Lucas em 06/09: vinculadas o dia inteiro enquanto a
+  // tela perguntava pelo id do FireHub. Uma só sem dono → é a dele, adota e
+  // fica verde. Várias → ele escolhe (POST { appShopId }).
+  const vinculadas = await vinculadasSemDonoPara(lojaId);
+  if (vinculadas.ok) {
+    if (vinculadas.lojas.length === 1) {
+      const a = await adotarVinculo(lojaId, vinculadas.lojas[0]);
+      if (a.ok) {
+        return {
+          conectado: true,
+          disponivel: true,
+          expiraEm: a.expiraEm,
+          lojaNo99: { nome: a.nome, shopId: a.shopId, endereco: null },
+          lojas: await lojas99DaConta(lojaId).catch(() => []),
+          adotouVinculo: a,
+          mensagem: a.nome
+            ? `Loja "${a.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
+            : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
+        };
+      }
+      return { ...semVinculo, erro: a.erro, mensagem: `A loja está vinculada no 99Food, mas não consegui usá-la: ${a.erro}` };
+    }
+    if (vinculadas.lojas.length > 1) {
+      return {
+        conectado: false,
+        disponivel: true,
+        candidatos: vinculadas.lojas.map((l) => ({
+          appShopId: String(l.appShopId),
+          shopId: l.shopId,
+          nome: l.nome || `Loja 99Food ${l.shopId}`,
+        })),
+        vinculosNo99: vinculadas.lojas.length,
+        mensagem: "Encontrei mais de uma loja autorizada no 99Food. Escolha qual é a sua.",
+      };
+    }
+  }
+
   const vinculos = await listarLojasVinculadas();
   if (!vinculos.ok) {
     return { ...semVinculo, erro: direto.erro || vinculos.erro, mensagem: vinculos.erro };
@@ -396,6 +437,21 @@ export async function POST(req: NextRequest) {
 
   if (corpo?.appShopId) {
     const escolhido = String(corpo.appShopId);
+
+    // Primeiro a v3: vínculo feito pelo 99Food com o id deles, sem dono aqui.
+    // `vinculadasSemDonoPara` já exclui o que pertence a outra conta.
+    const vinculadas = await vinculadasSemDonoPara(r.lojaId);
+    if (vinculadas.ok) {
+      const alvo = vinculadas.lojas.find((l) => l.appShopId === escolhido);
+      if (alvo) {
+        const a = await adotarVinculo(r.lojaId, alvo);
+        if (!a.ok) return NextResponse.json({ error: a.erro }, { status: 502 });
+        return NextResponse.json({
+          conectado: true,
+          mensagem: `Loja "${a.nome || "99Food"}" conectada. Os pedidos chegam automaticamente.`,
+        });
+      }
+    }
 
     const vinculos = await listarLojasVinculadas();
     if (!vinculos.ok) {

@@ -45,16 +45,32 @@ import { parseJson99Food } from "./json-ids-longos";
  * porque ninguém tinha feito a etapa 2. Ver food99-vinculo.ts.
  */
 
-const BASE = process.env.FOOD99_BASE_URL || "https://openapi.didi-food.com";
-
 /**
- * Host da documentação OFICIAL (developer-food.99app.com → Documentos do
- * desenvolvedor → Food): `https://openapi.99food.com`. O BASE acima aponta para
- * `openapi.didi-food.com`, que respondeu a tudo até 04/09/2026 e desde então
- * diz que o app não tem loja nenhuma. Os endpoints v3 (getAuthorizedShops,
- * shopBind) só estão documentados neste host — e o diagnóstico sonda os dois.
+ * ── O host, e por que ele mudou em 06/09/2026 ───────────────────────────────
+ *
+ * Até aqui tudo ia para `openapi.didi-food.com` (o host do swagger antigo). A
+ * documentação OFICIAL (developer-food.99app.com → Documentos do desenvolvedor
+ * → Food) põe TODOS os endpoints em `openapi.99food.com`. E a prova de que
+ * não é só nome: em 06/09 o v3 `getAuthorizedShops` no host oficial listava
+ * as três lojas do Lucas como VINCULADAS, com app_shop_id, enquanto o
+ * `authtoken/get` no host antigo respondia 10101 para esses mesmos ids — e o
+ * `shop/list` de lá dizia que o app não tinha loja nenhuma. A Brasa Burguer
+ * parou de receber pedido em 04/09 01:11 sem ninguém mexer em nada: é o mesmo
+ * sintoma, no mesmo host.
+ *
+ * `FOOD99_BASE_URL` continua mandando, se um dia precisar voltar. O host
+ * antigo fica disponível só para o diagnóstico comparar (`?host=didi`).
  */
-const BASE_V3 = process.env.FOOD99_BASE_URL_V3 || "https://openapi.99food.com";
+const BASE_OFICIAL = "https://openapi.99food.com";
+const BASE_ANTIGA = "https://openapi.didi-food.com";
+const BASE = process.env.FOOD99_BASE_URL || BASE_OFICIAL;
+const BASE_V3 = process.env.FOOD99_BASE_URL_V3 || BASE_OFICIAL;
+
+export function hostPorNome(nome?: string | null): string {
+  if (nome === "didi" || nome === "didi-food") return BASE_ANTIGA;
+  if (nome === "99food" || nome === "oficial") return BASE_OFICIAL;
+  return BASE;
+}
 
 /** Loja ainda não autorizou o app. Não é falha: é o estado inicial. */
 export const ERRO_SEM_AUTORIZACAO = 10101;
@@ -426,11 +442,12 @@ export async function diagnosticoRefresh(appShopId: string): Promise<RespostaFoo
   });
 }
 
-export async function diagnosticoAuth(appShopId: string): Promise<RespostaFood99<TokenDaLoja>> {
+export async function diagnosticoAuth(appShopId: string, host?: string | null): Promise<RespostaFood99<TokenDaLoja>> {
   const cred = credenciaisDoApp();
   if (!cred) return { errno: -2, errmsg: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados no servidor." };
   return chamar<TokenDaLoja>("/v1/auth/authtoken/get", {
     query: { app_id: cred.appId, app_secret: cred.appSecret, app_shop_id: appShopId },
+    base: hostPorNome(host),
   });
 }
 
@@ -813,7 +830,7 @@ export async function sondarListaVinculadas(
   host: "didi-food" | "99food"
 ): Promise<{ host: string; errno: number; errmsg: string; total: number | null; cru: any }> {
   const cred = credenciaisDoApp();
-  const base = host === "99food" ? BASE_V3 : BASE;
+  const base = hostPorNome(host);
   if (!cred) return { host: base, errno: -2, errmsg: "sem credenciais", total: null, cru: null };
   const params = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: 1, page_size: 100 };
   const corpo = { ...params, sign: assinarOficial(params, cred.appSecret) };

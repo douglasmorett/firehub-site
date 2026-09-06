@@ -135,9 +135,14 @@ export async function GET(req: NextRequest) {
     candidatos.push({ rotulo: "informado na URL (?appShopId=)", appShopId: aMao });
   }
 
+  // `?host=didi` testa o token no host antigo (openapi.didi-food.com); sem o
+  // parâmetro vale o host em uso (o oficial, openapi.99food.com). É o que
+  // separa "vínculo não existe" de "estamos perguntando no lugar errado".
+  const host = String(req.nextUrl.searchParams.get("host") || "").trim() || null;
+
   const testes = [];
   for (const c of candidatos) {
-    const r = await diagnosticoAuth(c.appShopId);
+    const r = await diagnosticoAuth(c.appShopId, host);
 
     // 10101 na leitura crua não encerra a pergunta: a doc manda criar o token
     // com refresh antes de concluir "não autorizada". Aqui o refresh é feito à
@@ -197,13 +202,16 @@ export async function GET(req: NextRequest) {
   // endpoint para o app, o que é conversa com o suporte deles, não código.
   const autorizadasV3 = await listarLojasAutorizadas();
 
-  // O mesmo shop/list nos dois hosts (o do swagger antigo e o da doc oficial).
-  // Se um deles listar loja e o outro não, a "queda" de 04/09 foi mudança de
-  // host, não de vínculo.
-  const shopListPorHost = {
-    didiFood: await sondarListaVinculadas("didi-food"),
-    food99: await sondarListaVinculadas("99food"),
-  };
+  // O mesmo shop/list nos dois hosts (o do swagger antigo e o da doc oficial),
+  // só quando pedido (`?hosts=1`): cada chamada gasta a única permitida a cada
+  // 20s, e três seguidas viram 10005 em todas — inclusive na lista de cima.
+  const shopListPorHost =
+    req.nextUrl.searchParams.get("hosts") === "1"
+      ? {
+          didiFood: await sondarListaVinculadas("didi-food"),
+          food99: await sondarListaVinculadas("99food"),
+        }
+      : null;
 
   const eventos = ler99Food();
   const pedidos99 = await prisma.customerOrder.count({

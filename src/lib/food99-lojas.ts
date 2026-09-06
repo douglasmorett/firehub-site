@@ -260,6 +260,30 @@ export async function salvarLoja99(dados: {
 }
 
 /**
+ * Troca o app_shop_id de uma loja da conta, achada pelo shop_id.
+ *
+ * Existe porque o 99Food refaz o vínculo com um id NOVO quando o lojista
+ * reautoriza pela página deles — o id é escolhido lá, não aqui. A linha antiga
+ * (com o id morto) continuaria mandando o webhook procurar um dono que não
+ * responde; atualizar em vez de inserir mantém histórico, cobrança e o mesmo
+ * `userId` na mesma linha.
+ */
+export async function trocarAppShopId(userId: string, shopId: string, appShopId: string): Promise<boolean> {
+  if (!(await temTabela())) return false;
+  try {
+    const n = await prisma.$executeRaw`
+      UPDATE "Food99Store"
+      SET "appShopId" = ${appShopId}, "connected" = true, "active" = true, "updatedAt" = NOW()
+      WHERE "userId" = ${userId} AND "shopId" = ${shopId}
+    `;
+    return Number(n) > 0;
+  } catch (e: any) {
+    console.error("[99Food lojas] Falha ao trocar app_shop_id:", e?.message);
+    return false;
+  }
+}
+
+/**
  * Desliga UMA loja, sem tocar nas outras da conta.
  *
  * `active = false` em vez de DELETE: o histórico de qual vínculo já existiu é o
