@@ -30,13 +30,20 @@ export type TipoDeAlerta =
   /** O robô caiu / desconectou do WhatsApp. */
   | "robo_desconectado"
   /** Pedido passou do prazo e ainda não saiu para entrega. */
-  | "pedido_atrasado";
+  | "pedido_atrasado"
+  /**
+   * A loja estava ligada ao 99Food e perdeu o vínculo — pedido de lá deixa de
+   * entrar, em silêncio. A Brasa Burguer ficou assim de 04/09 a 06/09/2026 sem
+   * ninguém saber: o único sintoma era "não veio pedido", que parece dia fraco.
+   */
+  | "99food_desconectado";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
   pedido_de_atendente: true,
   robo_desconectado: true,
   pedido_atrasado: true,
+  "99food_desconectado": true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -44,6 +51,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   pedido_de_atendente: "Cliente pediu para falar com atendente",
   robo_desconectado: "Robô desconectou do WhatsApp",
   pedido_atrasado: "Pedido atrasado que ainda não saiu para entrega",
+  "99food_desconectado": "Loja perdeu a conexão com o 99Food (pedidos de lá param de entrar)",
 };
 
 /** O dono ligou este alerta? Sem config salva, vale o padrão. */

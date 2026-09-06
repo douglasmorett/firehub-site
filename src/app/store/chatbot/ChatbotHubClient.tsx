@@ -1699,6 +1699,11 @@ export default function ChatbotHubClient() {
                 titulo: "Robô desconectou do WhatsApp",
                 detalhe: "A sessão caiu e ninguém está respondendo os clientes.",
               },
+              {
+                id: "99food_desconectado",
+                titulo: "Loja perdeu a conexão com o 99Food",
+                detalhe: "Os pedidos do 99Food param de entrar no FireHub sem nenhum aviso na tela — só o movimento cai. Um aviso por dia enquanto estiver assim.",
+              },
             ];
             const alertas = config.alertas || {};
             const ligado = (id: string) => (typeof alertas[id] === "boolean" ? alertas[id] : true);

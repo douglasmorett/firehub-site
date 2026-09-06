@@ -51,6 +51,52 @@ import { prisma } from "@/lib/prisma";
 import { setShopStatus, setConfirmMethod, estadoOperacionalDaLoja } from "@/lib/food99-api";
 import { tokensDaConta } from "@/lib/food99-status";
 import { lojas99DaConta } from "@/lib/food99-lojas";
+import { avisarDono } from "@/lib/alertas-do-dono";
+import { sendEmail } from "@/lib/mail";
+
+/**
+ * Quando cada loja foi avisada de que caiu, para avisar UMA vez por dia.
+ *
+ * ── Por que este alerta existe ──────────────────────────────────────────────
+ *
+ * A Brasa Burguer perdeu o vínculo com o 99Food em 04/09/2026 01:08 e ficou
+ * dois dias sem pedido de lá. O cron gritava no log a cada 5 minutos ("sem
+ * auth_token") — e log ninguém lê. Para o lojista o sintoma era "dia fraco";
+ * para a operação do FireHub, nada. O aviso vai para os dois: o dono pelo
+ * WhatsApp que já recebe os outros alertas, e a operação por e-mail, porque é
+ * ela que sabe religar.
+ *
+ * Em memória de propósito (mesmo motivo de `ultimaEscrita`): o custo de perder
+ * isto num deploy é um aviso a mais, e coluna nova exige DDL no boot.
+ */
+const ultimoAvisoDeQueda = new Map<string, number>();
+const REAVISAR_APOS_MS = 24 * 60 * 60_000;
+
+async function avisarQueCaiu99(lojaId: string, nome: string, emailDaLoja: string | null) {
+  const ultimo = ultimoAvisoDeQueda.get(lojaId) ?? 0;
+  if (Date.now() - ultimo < REAVISAR_APOS_MS) return;
+  ultimoAvisoDeQueda.set(lojaId, Date.now());
+
+  const texto =
+    `⚠️ *Sua loja perdeu a conexão com o 99Food*\n\n` +
+    `Os pedidos do 99Food *pararam de entrar* no FireHub para *${nome}*.\n\n` +
+    `Para voltar: painel → Integrações → 99Food → *Conectar com o 99Food* e autorize de novo. ` +
+    `Se já autorizou e continua assim, fale com o suporte do FireHub.`;
+
+  await avisarDono(lojaId, "99food_desconectado", texto).catch(() => false);
+
+  const operacao = (process.env.ALERTA_EMAIL_OPERACAO || "contatohakim@gmail.com").trim();
+  const html =
+    `<p><strong>${nome}</strong> perdeu a conexão com o 99Food — o app não devolve token para nenhum ` +
+    `app_shop_id da conta, e todo pedido novo de lá está sendo descartado.</p>` +
+    `<p>Conta: ${emailDaLoja || lojaId}<br/>Loja (id): ${lojaId}</p>` +
+    `<p>Diagnóstico: <a href="https://firehubfood.com.br/api/99food/diagnostico">/api/99food/diagnostico</a> ` +
+    `(logado como a loja).</p>` +
+    `<p>Este aviso repete no máximo uma vez por dia enquanto a loja seguir sem token.</p>`;
+  await sendEmail({ to: operacao, subject: `[FireHub] ${nome} caiu do 99Food`, html }).catch(() => null);
+
+  console.error(`[99Food online] ${nome}: dono e operação avisados da queda`);
+}
 
 /**
  * Última vez que cada token RECEBEU uma escrita, para não repetir à toa.
@@ -212,6 +258,7 @@ export async function manterLojaOnline99(
     // o webhook descartar pedido novo em silêncio. Vale gritar: é acionável.
     resultado.erros.push("sem auth_token utilizável — a loja precisa reconectar em Integrações → 99Food");
     console.error(`[99Food online] ${nome}: sem auth_token — pedido novo será descartado até reconectar`);
+    await avisarQueCaiu99(loja.id, nome, loja.email);
     return resultado;
   }
 
