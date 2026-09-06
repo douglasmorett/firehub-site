@@ -6,6 +6,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { disponivelHoje } from "@/lib/cardapio-interno";
+import { estadoDaLoja } from "@/lib/loja-aberta";
 
 export async function POST(req: Request) {
   try {
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
     const franchisee = await prisma.user.findFirst({
       where: franchiseeId ? { id: franchiseeId } : { slug: franchiseeSlug },
       select: {
-        id: true, slug: true, storeName: true, storeOpen: true, storePause: true, storeHours: true,
+        id: true, slug: true, storeName: true, storeOpen: true, storePause: true, storeHours: true, storeTimezone: true,
         autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true
       }
     });
@@ -47,15 +48,27 @@ export async function POST(req: Request) {
     // uma aba aberta desde antes do fechamento (ou um POST direto) criava
     // pedido de madrugada — que tocava na loja vazia e nunca seria feito.
     // Pedido AGENDADO passa: ele é para quando a loja estiver aberta.
+    //
+    // NO FUSO DA LOJA, não no do servidor. A primeira versão desta trava usava
+    // `isStoreOpen` (store-hours.ts), que lê `new Date().getHours()` — a hora do
+    // PROCESSO, e o container roda em UTC. Efeito medido em 06/09/2026 na Pastel
+    // da Paulista (17:00–23:15): às 20:28 de Brasília o servidor já marcava
+    // 23:28, respondia "Loja fechada agora — fechado · abre amanhã" e nenhum
+    // cliente conseguia fechar pedido, nem entrega nem retirada, das 20:15 até
+    // o fechamento de verdade — todo dia, desde o deploy de 27/08. A tela dizia
+    // "Aberta" porque o navegador do cliente está no fuso certo; só o POST
+    // recusava. `estadoDaLoja` é a peça feita para o servidor: usa
+    // `storeTimezone` e ainda entende o turno de ontem que atravessa a madrugada.
     const ehAgendado = Boolean(body.scheduledDatetime || body.scheduledDate || body.isScheduled);
     if (!ehAgendado) {
-      const { isStoreOpen } = await import("@/lib/store-hours");
-      const statusAgora = isStoreOpen(franchisee.storeHours as any);
-      if (!statusAgora.open) {
-        return NextResponse.json(
-          { error: `Loja fechada agora${statusAgora.text ? ` — ${statusAgora.text.toLowerCase()}` : ""}.` },
-          { status: 400 }
-        );
+      const estadoAgora = estadoDaLoja({
+        storeHours: franchisee.storeHours,
+        storePause: franchisee.storePause,
+        storeOpen: franchisee.storeOpen,
+        timezone: franchisee.storeTimezone,
+      });
+      if (!estadoAgora.aberta) {
+        return NextResponse.json({ error: estadoAgora.texto }, { status: 400 });
       }
     }
 

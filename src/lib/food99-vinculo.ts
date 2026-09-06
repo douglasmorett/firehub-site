@@ -227,6 +227,12 @@ export async function religarVinculosDaConta(lojaId: string): Promise<{ religada
     for (const s of v.sucesso) {
       console.log(`[99Food] vínculo religado: ${s.appShopId} ↔ shop ${s.shopId}`);
       religadas.push(s.appShopId);
+      // A linha volta a contar como conectada — é o que a cobrança e a tela
+      // leem. Sem isto a loja religada ficava `connected = false` para sempre.
+      const g = gravadas.find((x) => x.shopId === s.shopId);
+      await salvarLoja99({ userId: lojaId, appShopId: s.appShopId, shopId: s.shopId, label: g?.label ?? null }).catch(
+        () => false
+      );
     }
     for (const f of v.falha) console.warn(`[99Food] religar ${f.appShopId} ↔ shop ${f.shopId} recusado: ${f.motivo}`);
   }
