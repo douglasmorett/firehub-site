@@ -21,6 +21,20 @@ function priceVal(val: any): number {
  * methods[] + prepaid/pending. Errar aqui cobra o cliente duas vezes (ou deixa
  * o motoboy sem saber que precisa cobrar) — por isso a decisão online/offline
  * é sempre por flag explícita, nunca por adivinhação.
+ *
+ * ── Os valores da Brendi, confirmados pelo suporte em 05/09/2026 ────────────
+ *
+ *   type   → "ONLINE"  (eletrônico, JÁ CONFIRMADO)  |  "OFFLINE" (presencial)
+ *   method → "PIX" | "CARD" | "CASH" | "IFOOD" (integração iFood ativa)
+ *            | outros integrados (VALE, iFood Refeição…)
+ *
+ * "ONLINE:PIX" e "ONLINE:CARD" chegam PAGOS — pedido online só é enviado
+ * depois do pagamento aprovado, então o motoboy não pode cobrar de novo.
+ * "CASH" e "OFFLINE" cobram no recebimento.
+ *
+ * Na prática o `type` também chega como **"PENDING"** (medido no pedido real
+ * B-6001), que não estava na lista deles — por isso as duas grafias são
+ * tratadas, e a decisão final ainda considera `prepaid`/`pending` do total.
  */
 export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA' | 'BRENDI' | 'PDV' | 'SITE' = 'IFOOD'): ParsedPaymentInfo {
   const paymentsObj = orderData?.payments || {};
@@ -92,6 +106,11 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
       baseName = 'Crédito';
     } else if (rawMethod.includes('PIX') || rawName.toLowerCase().includes('pix')) {
       baseName = 'Pix';
+    } else if (rawMethod === 'IFOOD') {
+      // Valor que a BRENDI usa quando a loja tem a integração com o iFood
+      // ligada (confirmado pelo suporte deles em 05/09/2026). Sem esta linha
+      // caía no default 'Cartão' e a comanda dizia cartão num pedido do iFood.
+      baseName = 'iFood';
     } else if (rawMethod === 'DIGITAL_WALLET' || rawMethod === 'ONLINE' || rawMethod === 'IFOOD_PAY' || rawMethod === 'APP' || isPartnerPayment) {
       baseName = source === 'JOTAJA' ? 'JotaJá App' : source === 'BRENDI' ? 'Brendi App' : 'iFood App';
     }

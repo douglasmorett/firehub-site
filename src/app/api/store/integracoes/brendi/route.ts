@@ -144,21 +144,21 @@ export async function POST(req: NextRequest) {
       (clientId && !pareceMascarado(clientId) ? clientId : atual?.brendiClientId) || null;
     const novoSecret = clientSecret || atual?.brendiClientSecret || null;
 
-    // ── O MERCHANT ID É O PRÓPRIO CLIENT ID ─────────────────────────────────
+    // ── O MERCHANT ID NÃO SE DIGITA: ELE SE APRENDE ─────────────────────────
     //
-    // Medido na sandbox em 05/09/2026, não suposto: no `GET /v1/orders/{id}` o
-    // campo `merchant.id` veio EXATAMENTE igual ao Client ID da integração
-    // (`5480e656-…`). E não existe endpoint de merchant na API deles — as cinco
-    // variantes (`/v1/merchants`, `/v1/merchant`, `/v1/merchants/me`,
-    // `/merchants`, `/v1/me`) respondem 404 —, nem o painel exibe esse id em
-    // lugar nenhum. Ou seja: pedir ao lojista que "copie o Merchant ID" era
-    // pedir um dado que ele não tem onde achar, e sem ele a amarração
-    // pedido→loja caía no fallback de "a única loja conectada" — que recusa
-    // assim que a segunda loja conectar.
+    // Na sandbox o `merchant.id` do pedido veio igual ao Client ID, e por um
+    // momento assumimos que era regra. O suporte da Brendi desmentiu em
+    // 05/09/2026, com todas as letras: o `merchant.id` "é um identificador
+    // interno da BRENDI pro restaurante" e "não tem relação direta com seu
+    // Client ID da integração" — na sandbox os dois coincidiram por acaso.
+    // Assumir a igualdade quebraria a amarração na primeira loja real em que
+    // eles diferissem.
     //
-    // Então o padrão passa a ser o Client ID, e o campo continua editável para
-    // o dia em que a Brendi separar os dois.
-    const novoMerchant = merchantId || atual?.brendiMerchantId || novoClientId || null;
+    // O mesmo suporte disse o que fazer: "armazene o merchant.id que vier na
+    // resposta dos pedidos". É o que `processBrendiEvent` passou a fazer
+    // sozinho no primeiro pedido. Aqui o campo volta a ser só o que o lojista
+    // digitar (praticamente nunca — ele não tem onde copiar esse id).
+    const novoMerchant = merchantId || atual?.brendiMerchantId || null;
 
     if (!novoClientId || !novoSecret) {
       return NextResponse.json(

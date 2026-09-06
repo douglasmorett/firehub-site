@@ -2284,18 +2284,17 @@ export default function IntegracoesHubClient({
                     </label>
                     <input
                       type="text"
-                      placeholder="Deixe em branco — usamos o Client ID"
+                      placeholder="Deixe em branco — preenchemos no 1º pedido"
                       value={brMerchantId}
                       onChange={e => setBrMerchantId(e.target.value)}
                       style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
                     />
-                    {/* Medido na sandbox em 05/09/2026: `merchant.id` do pedido vem
-                        igual ao Client ID, a API não tem endpoint de merchant e o
-                        painel da Brendi não exibe esse código em lugar nenhum.
-                        Pedir para "colar o Merchant ID" mandava o lojista procurar
-                        um dado que não existe na tela dele. */}
+                    {/* O suporte da Brendi confirmou em 05/09/2026: esse código é
+                        interno deles, não aparece no painel e não tem relação com o
+                        Client ID. A orientação foi guardar o que vier no pedido — é
+                        o que o FireHub faz sozinho no primeiro pedido que chega. */}
                     <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "4px 0 0" }}>
-                      Na Brendi esse código é o próprio Client ID. Deixe em branco que o FireHub preenche sozinho.
+                      A Brendi não mostra esse código no painel. Deixe em branco: o FireHub aprende sozinho no primeiro pedido que chegar.
                     </p>
                   </div>
                 </div>

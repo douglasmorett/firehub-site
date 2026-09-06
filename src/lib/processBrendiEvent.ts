@@ -126,6 +126,33 @@ async function lojaBrendiPorMerchantId(merchantId: string): Promise<LojaBrendi |
   return Array.isArray(rows) && rows[0] ? rows[0] : null;
 }
 
+/**
+ * Grava o `merchant.id` aprendido no primeiro pedido.
+ *
+ * Só grava se NENHUMA outra loja já reivindicou esse id — pedido caindo na
+ * cozinha errada é pior que pedido recusado com log, e essa é a mesma trava
+ * que a tela de Integrações aplica. Falha aqui não derruba o pedido: a loja
+ * segue sem o id e o fallback de "única loja conectada" continua valendo.
+ */
+async function adotarMerchantId(lojaId: string, merchantId: string): Promise<void> {
+  try {
+    const dono = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "User" WHERE "brendiMerchantId" = ${merchantId} AND "id" <> ${lojaId} LIMIT 1
+    `;
+    if (Array.isArray(dono) && dono.length > 0) {
+      console.warn(`[Brendi] merchant ${merchantId} já pertence à loja ${dono[0].id} — não adotado por ${lojaId}`);
+      return;
+    }
+    await prisma.$executeRaw`
+      UPDATE "User" SET "brendiMerchantId" = ${merchantId}
+      WHERE "id" = ${lojaId} AND "brendiMerchantId" IS NULL
+    `;
+    console.log(`[Brendi] ✅ loja ${lojaId} adotou o merchant ${merchantId} (aprendido no pedido)`);
+  } catch (e: any) {
+    console.warn(`[Brendi] não consegui gravar o merchant ${merchantId} na loja ${lojaId}: ${e?.message}`);
+  }
+}
+
 async function lojaBrendiPorId(id: string): Promise<LojaBrendi | null> {
   const rows = await prisma.$queryRaw<LojaBrendi[]>`
     SELECT "id", "ownerId", "storeName", "brendiMerchantId"
@@ -402,8 +429,25 @@ export async function processBrendiEvent(
         if (conectadas.length === 1) {
           franchisee = conectadas[0];
           console.warn(
-            `[Brendi] ⚠️ ${orderId}: merchant ${eventMerchantId || "N/A"} sem loja correspondente — usando a ÚNICA loja conectada (${franchisee.id}); conferir brendiMerchantId da loja`
+            `[Brendi] ⚠️ ${orderId}: merchant ${eventMerchantId || "N/A"} sem loja correspondente — usando a ÚNICA loja conectada (${franchisee.id})`
           );
+          // ── E APRENDE O MERCHANT ID AQUI ────────────────────────────────
+          //
+          // O suporte da Brendi (05/09/2026): o `merchant.id` "é um
+          // identificador interno da BRENDI pro restaurante", não tem relação
+          // com o Client ID, o endpoint `/v1/merchants` não é público e o
+          // painel não o exibe. A orientação foi textual: "armazene o
+          // merchant.id que vier na resposta dos pedidos".
+          //
+          // Este é o único momento em que dá para aprendê-lo com segurança:
+          // há exatamente UMA loja conectada, então o pedido só pode ser dela.
+          // A partir daqui a resolução é estrita e o fallback deixa de ser
+          // necessário — que é o que faz a segunda loja poder conectar sem
+          // pedido nenhum cair na cozinha errada.
+          if (eventMerchantId && !franchisee.brendiMerchantId) {
+            await adotarMerchantId(franchisee.id, eventMerchantId);
+            franchisee.brendiMerchantId = eventMerchantId;
+          }
         } else if (conectadas.length > 1) {
           const msg = `merchant ${eventMerchantId || "N/A"} não bate com nenhuma loja e há ${conectadas.length}+ conectadas — recusado para não adivinhar a dona`;
           console.error(`[Brendi] ❌ ${orderId}: ${msg}`);
