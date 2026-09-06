@@ -9,6 +9,8 @@ import {
   food99Configurado,
   ERRO_SEM_AUTORIZACAO,
   listarLojasVinculadas,
+  listarLojasAutorizadas,
+  sondarListaVinculadas,
 } from "@/lib/food99-api";
 import { ler99Food } from "@/lib/webhook-99food-log";
 import { lojas99DaConta } from "@/lib/food99-lojas";
@@ -189,6 +191,20 @@ export async function GET(req: NextRequest) {
   // devolve.
   const vinculos = await listarLojasVinculadas();
 
+  // A etapa 2 por API (doc oficial): quem AUTORIZOU o app, vinculado ou não.
+  // É esta lista que separa "o lojista não autorizou" de "autorizou e ninguém
+  // vinculou" — e 10006 aqui significa que o 99Food ainda não liberou o
+  // endpoint para o app, o que é conversa com o suporte deles, não código.
+  const autorizadasV3 = await listarLojasAutorizadas();
+
+  // O mesmo shop/list nos dois hosts (o do swagger antigo e o da doc oficial).
+  // Se um deles listar loja e o outro não, a "queda" de 04/09 foi mudança de
+  // host, não de vínculo.
+  const shopListPorHost = {
+    didiFood: await sondarListaVinculadas("didi-food"),
+    food99: await sondarListaVinculadas("99food"),
+  };
+
   const eventos = ler99Food();
   const pedidos99 = await prisma.customerOrder.count({
     where: { franchiseeId: lojaId, source: "99FOOD" },
@@ -256,6 +272,16 @@ export async function GET(req: NextRequest) {
     },
     appId: appIdVisivel(),
     autorizacao: { autorizada: !!autorizada, appShopIdValido: autorizada?.appShopId ?? null, testes },
+    lojasAutorizadasV3: autorizadasV3.ok
+      ? {
+          ok: true,
+          quantidade: autorizadasV3.lojas.length,
+          semVinculo: autorizadasV3.lojas.filter((l) => !l.vinculada).length,
+          lojas: autorizadasV3.lojas,
+          cru: autorizadasV3.cru,
+        }
+      : { ok: false, errno: autorizadasV3.errno, erro: autorizadasV3.erro, cru: autorizadasV3.cru ?? null },
+    shopListPorHost,
     lojasVinculadasAoApp: vinculos.ok
       ? {
           ok: true,

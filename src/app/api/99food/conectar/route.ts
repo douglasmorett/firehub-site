@@ -10,6 +10,7 @@ import {
   detalheDaLoja,
 } from "@/lib/food99-api";
 import { salvarLoja99, lojas99DaConta, desativarLoja99, donosPorAppShopId, slotsDaConta } from "@/lib/food99-lojas";
+import { vincularParaConta, autorizadasLivresPara } from "@/lib/food99-vinculo";
 
 export const dynamic = "force-dynamic";
 
@@ -213,6 +214,56 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
 
   if (!procurarVinculos) return semVinculo;
 
+  // ── Etapa 2 por API: quem autorizou e ainda não está vinculado ────────────
+  //
+  // Autorizar (o lojista, na página do getUrl) e vincular (nós, no shopBind)
+  // são coisas diferentes — ver food99-vinculo.ts. Antes deste bloco a tela
+  // olhava só o shop/list, que lista quem JÁ está vinculado: a loja recém-
+  // autorizada nunca aparecia ali, e o lojista ficava clicando em autorizar.
+  //
+  // Uma só autorizada e livre → é a dele, vincula na hora e a tela fica verde.
+  // Mais de uma → ele escolhe (POST { shopId }). Nada → segue para o caminho
+  // antigo, que ainda cobre vínculo já feito sem dono aqui dentro.
+  const autorizadas = await autorizadasLivresPara(lojaId);
+  if (autorizadas.ok) {
+    if (autorizadas.livres.length === 1) {
+      const v = await vincularParaConta(lojaId, autorizadas.livres[0]);
+      if (v.ok) {
+        return {
+          conectado: true,
+          disponivel: true,
+          expiraEm: v.expiraEm,
+          lojaNo99: { nome: v.nome, shopId: v.shopId, endereco: null },
+          lojas: await lojas99DaConta(lojaId).catch(() => []),
+          vinculouAgora: v,
+          mensagem: v.nome
+            ? `Loja "${v.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
+            : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
+        };
+      }
+      return { ...semVinculo, erro: v.erro, mensagem: `A loja autorizou, mas o vínculo não fechou: ${v.erro}` };
+    }
+    if (autorizadas.livres.length > 1) {
+      return {
+        conectado: false,
+        disponivel: true,
+        candidatos: autorizadas.livres.map((l) => ({
+          // Prefixo para a tela distinguir "vincular pelo shop_id" (etapa 2) de
+          // "adotar um app_shop_id já vinculado" (caminho antigo, abaixo).
+          appShopId: `shop:${l.shopId}`,
+          shopId: l.shopId,
+          nome: l.nome || `Loja 99Food ${l.shopId}`,
+        })),
+        vinculosNo99: autorizadas.total,
+        mensagem: "Encontrei mais de uma loja autorizada no 99Food. Escolha qual é a sua.",
+      };
+    }
+  } else {
+    // Sem permissão (10006) ou fora do ar: fica no log e segue para o caminho
+    // antigo — um endpoint a mais não pode virar tela vermelha.
+    console.warn(`[99Food] getAuthorizedShops indisponível: ${autorizadas.erro}`);
+  }
+
   const vinculos = await listarLojasVinculadas();
   if (!vinculos.ok) {
     return { ...semVinculo, erro: direto.erro || vinculos.erro, mensagem: vinculos.erro };
@@ -315,6 +366,34 @@ export async function POST(req: NextRequest) {
   // do 99Food e contra o que já pertence a outra loja: sem isso, um id
   // digitado na requisição sequestraria a integração do vizinho.
   const corpo = await req.json().catch(() => ({} as any));
+
+  // Escolha entre lojas AUTORIZADAS e ainda sem vínculo (etapa 2): a tela manda
+  // o shop_id que o lojista apontou, e o vínculo é feito aqui, com o id desta
+  // conta. `autorizadasLivresPara` já exclui o que pertence a outra conta.
+  if (corpo?.shopId) {
+    const shopId = String(corpo.shopId);
+    const autorizadas = await autorizadasLivresPara(r.lojaId);
+    if (!autorizadas.ok) {
+      return NextResponse.json(
+        { error: `Não consegui listar as lojas autorizadas no 99Food: ${autorizadas.erro}` },
+        { status: 502 }
+      );
+    }
+    const alvo = autorizadas.livres.find((l) => l.shopId === shopId);
+    if (!alvo) {
+      return NextResponse.json(
+        { error: "Essa loja não está autorizada no 99Food, ou já pertence a outra loja do FireHub." },
+        { status: 404 }
+      );
+    }
+    const v = await vincularParaConta(r.lojaId, alvo);
+    if (!v.ok) return NextResponse.json({ error: v.erro }, { status: 502 });
+    return NextResponse.json({
+      conectado: true,
+      mensagem: `Loja "${v.nome || "99Food"}" conectada. Os pedidos chegam automaticamente.`,
+    });
+  }
+
   if (corpo?.appShopId) {
     const escolhido = String(corpo.appShopId);
 

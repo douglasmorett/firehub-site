@@ -381,13 +381,20 @@ export default function IntegracoesHubClient({
   };
 
   /** Só usado no caso raro de haver mais de uma loja autorizada sem dono. */
-  const handleEscolher99Food = async (appShopId: string) => {
+  /**
+   * Dois tipos de candidato, e o servidor sabe a diferença pelo prefixo:
+   * `shop:<id>` é uma loja AUTORIZADA que ainda precisa ser vinculada (o
+   * servidor faz o vínculo com o id desta conta); sem prefixo é um vínculo já
+   * feito, sem dono aqui dentro, que só precisa ser adotado.
+   */
+  const handleEscolher99Food = async (c: { appShopId: string; shopId: string | null }) => {
     setFood99Saving(true);
     try {
+      const corpo = c.appShopId.startsWith("shop:") && c.shopId ? { shopId: c.shopId } : { appShopId: c.appShopId };
       const res = await fetch("/api/99food/conectar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appShopId }),
+        body: JSON.stringify(corpo),
       });
       const data = await res.json();
       if (res.ok && data.conectado) {
@@ -2182,7 +2189,7 @@ export default function IntegracoesHubClient({
                       {food99Candidatos.map((c) => (
                         <button
                           key={c.appShopId}
-                          onClick={() => handleEscolher99Food(c.appShopId)}
+                          onClick={() => handleEscolher99Food(c)}
                           disabled={food99Saving}
                           style={{ textAlign: "left", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #93C5FD", background: "#fff", cursor: "pointer" }}
                         >

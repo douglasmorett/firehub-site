@@ -28,25 +28,33 @@ import { parseJson99Food } from "./json-ids-longos";
  * 5. getAuthToken(app_shop_id) passa a devolver o token, e os pedidos começam
  *    a chegar no webhook.
  *
- * ── O que o `app_shop_id` faz, e o que ele NÃO faz ──────────────────────────
- * A URL devolvida pelo getUrl não carrega `appShopId` na query (o swagger
- * mostra um exemplo com ele; a URL de hoje traz só app_id, uid, time e sign).
- * Isso já foi lido como "o endpoint ignora o app_shop_id" — e está errado.
+ * ── Autorizar NÃO é vincular (doc oficial, lida em 06/09/2026) ─────────────
+ * O `getUrl` oficial aceita SÓ `app_id`. O `app_shop_id` que este arquivo
+ * mandava nele nunca chegou a lugar nenhum — e as duas leituras anteriores
+ * ("o endpoint ignora" / "ele viaja dentro do uid") eram tentativas de
+ * explicar um vínculo que, na verdade, alguém criou à mão no portal.
  *
- * A prova é a Brasa Burguer: o `shop/detail` do 99Food devolve, para ela,
- * `app_shop_id = cmt1hle8y0001ia04z3ss479k`, que é o id dela no FireHub. Esse
- * valor só pode ter chegado lá pelo nosso getUrl. Ou seja: ele viaja, só que
- * dentro do `uid` — a URL é um handle para o pedido que o geramos.
+ * O que a página do getUrl faz é a ETAPA 1: o lojista AUTORIZA o app. O
+ * vínculo — o `app_shop_id`, o token, o que o webhook enxerga — é a ETAPA 2, e
+ * nasce no `shopBind` (v3), chamado por NÓS, com o id que NÓS escolhemos. Quem
+ * autorizou e ainda não foi vinculado aparece no `getAuthorizedShops` (v3) com
+ * `bound_flag = 0`. O `shop/list` v1 lista só quem já está vinculado — por
+ * isso uma loja recém-autorizada nunca aparecia nele.
  *
- * Consequência que manda no desenho da tela: o link vale para A LOJA QUE O
- * GEROU. Um link gerado no painel da loja A e autorizado pelo dono da loja B
- * amarra a loja B ao app_shop_id da A — e a tela da B fica dizendo "não
- * autorizada" para sempre, por mais que ele autorize. Por isso o passo 4
- * existe: listar é o único jeito de encontrar um vínculo que nasceu com o id
- * errado, ou sem id nenhum.
+ * Foi exatamente o Frangoso: autorizou três vezes, e a API respondia 10101
+ * porque ninguém tinha feito a etapa 2. Ver food99-vinculo.ts.
  */
 
 const BASE = process.env.FOOD99_BASE_URL || "https://openapi.didi-food.com";
+
+/**
+ * Host da documentação OFICIAL (developer-food.99app.com → Documentos do
+ * desenvolvedor → Food): `https://openapi.99food.com`. O BASE acima aponta para
+ * `openapi.didi-food.com`, que respondeu a tudo até 04/09/2026 e desde então
+ * diz que o app não tem loja nenhuma. Os endpoints v3 (getAuthorizedShops,
+ * shopBind) só estão documentados neste host — e o diagnóstico sonda os dois.
+ */
+const BASE_V3 = process.env.FOOD99_BASE_URL_V3 || "https://openapi.99food.com";
 
 /** Loja ainda não autorizou o app. Não é falha: é o estado inicial. */
 export const ERRO_SEM_AUTORIZACAO = 10101;
@@ -95,9 +103,9 @@ export function food99Configurado(): boolean {
 
 async function chamar<T = any>(
   caminho: string,
-  opcoes: { metodo?: "GET" | "POST"; query?: Record<string, string>; corpo?: any; idsCrus?: string[] } = {}
+  opcoes: { metodo?: "GET" | "POST"; query?: Record<string, string>; corpo?: any; idsCrus?: string[]; base?: string } = {}
 ): Promise<RespostaFood99<T>> {
-  const url = new URL(`${BASE}${caminho}`);
+  const url = new URL(`${opcoes.base || BASE}${caminho}`);
   for (const [k, v] of Object.entries(opcoes.query || {})) {
     url.searchParams.set(k, v);
   }
@@ -125,14 +133,13 @@ async function chamar<T = any>(
 /**
  * URL da página onde o LOJISTA autoriza o FireHub, com a conta dele.
  *
- * ATENÇÃO: a URL devolvida NÃO mostra o `app_shop_id` na query, mas ele viaja
- * dentro do `uid` (ver o cabeçalho deste arquivo). Então o link resultante
- * pertence a ESTA loja: quem autorizar por ele fica amarrado a `lojaId`,
- * mesmo que seja o dono de outra loja. Nunca reaproveite o link de um lojista
- * com outro — gere um por loja, no painel dela.
+ * A doc oficial só aceita `app_id` aqui — o `app_shop_id` segue no corpo por
+ * compatibilidade, mas NÃO amarra nada. A página é a etapa 1 (o lojista
+ * autoriza); quem amarra o id da loja é o `shopBind`, depois. Um link serve
+ * para qualquer loja que o dono escolher autorizar na página.
  *
- * A URL carrega timestamp e assinatura, então tem validade curta: gere na hora
- * do clique, nunca guarde.
+ * A URL vale 7 dias segundo a doc, mas carrega timestamp e assinatura: gere na
+ * hora do clique, nunca guarde.
  */
 export async function getAuthorizationUrl(lojaId: string): Promise<{ url: string } | { erro: string }> {
   const cred = credenciaisDoApp();
@@ -629,6 +636,196 @@ export async function listarLojasVinculadas(): Promise<
   }
 
   return { ok: false, erro: "Nenhuma variante de assinatura foi aceita pelo 99Food.", tentativas };
+}
+
+// ── v3: autorização e vínculo por API ───────────────────────────────────────
+//
+// O que a doc oficial diz, e o swagger v1 não dizia: autorizar e vincular são
+// DUAS coisas. O lojista autoriza na página do getUrl; o vínculo — o
+// app_shop_id, o token, o que o webhook enxerga — nasce no `shopBind`, chamado
+// por NÓS, com o id que NÓS escolhemos. Sem esta chamada a loja fica
+// "autorizada" no painel do lojista e invisível para a API, para sempre. Foi
+// exatamente o Frangoso em 06/09/2026.
+//
+// Os dois endpoints têm acesso controlado ("If you are unable to use it, please
+// contact us"): 10006 aqui é "pedir liberação ao 99Food", não bug nosso.
+
+/**
+ * Assinatura como a doc oficial descreve (Authentication & Signature
+ * Mechanism): chaves em ordem ASCII, `k=v` unidas por `&`, segredo colado no
+ * fim SEM `&`, MD5. Duas regras que não estão no swagger e decidem o
+ * `shopBind`: valor vazio não entra, e array/objeto entra como a string
+ * literal `Array` (`shop_infos=Array`) — é assim que o PHP deles serializa, e
+ * a doc mostra o exemplo em Python fazendo o mesmo de propósito.
+ */
+function assinarOficial(params: Record<string, unknown>, segredo: string): string {
+  const pares = Object.keys(params)
+    .filter((k) => k !== "sign" && params[k] !== undefined && params[k] !== null && params[k] !== "")
+    .sort()
+    .map((k) => {
+      const v = params[k];
+      const texto = typeof v === "object" ? "Array" : String(v);
+      return `${k}=${texto}`;
+    });
+  return md5(pares.join("&") + segredo);
+}
+
+export interface LojaAutorizada {
+  shopId: string;
+  nome: string | null;
+  /** Só vem quando a loja já está vinculada ao app. */
+  appShopId: string | null;
+  vinculada: boolean;
+}
+
+let cacheAutorizadas: { em: number; lojas: LojaAutorizada[]; cru: any } | null = null;
+const CACHE_AUTORIZADAS_MS = 15_000;
+
+/**
+ * Lojas que autorizaram o app — vinculadas ou não (`bound_flag`).
+ *
+ * É a única forma de descobrir, por API, quem autorizou e ainda espera o
+ * vínculo. A tela de Integrações pergunta isto de 25 em 25s enquanto o
+ * lojista autoriza, daí o cache curto.
+ */
+export async function listarLojasAutorizadas(): Promise<
+  { ok: true; lojas: LojaAutorizada[]; cru: any } | { ok: false; errno: number; erro: string; cru?: any }
+> {
+  const cred = credenciaisDoApp();
+  if (!cred) return { ok: false, errno: -2, erro: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados." };
+
+  if (cacheAutorizadas && Date.now() - cacheAutorizadas.em < CACHE_AUTORIZADAS_MS) {
+    return { ok: true, lojas: cacheAutorizadas.lojas, cru: cacheAutorizadas.cru };
+  }
+
+  const lojas: LojaAutorizada[] = [];
+  let cru: any = null;
+
+  // A doc recomenda páginas de 5 a 15 (máximo 50) para não estourar timeout.
+  for (let pagina = 1; pagina <= 10; pagina++) {
+    const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: pagina, page_size: 15 };
+    const corpo = { ...base, sign: assinarOficial(base, cred.appSecret) };
+    const r = await chamar<any>("/v3/auth/authorization/getAuthorizedShops", {
+      metodo: "POST",
+      corpo,
+      idsCrus: ["app_id"],
+      base: BASE_V3,
+    });
+
+    if (r.errno !== 0) {
+      return {
+        ok: false,
+        errno: r.errno,
+        erro:
+          r.errno === 10006
+            ? "O 99Food não liberou o endpoint getAuthorizedShops para este app (10006 Permission denied). É preciso pedir a liberação ao suporte deles."
+            : `${r.errno} ${r.errmsg}`,
+        cru: r,
+      };
+    }
+
+    const d: any = r.data ?? {};
+    if (pagina === 1) cru = d;
+    for (const s of Array.isArray(d.shops) ? d.shops : []) {
+      if (s?.shop_id == null) continue;
+      lojas.push({
+        shopId: String(s.shop_id),
+        nome: s.shop_name ? String(s.shop_name).trim() : null,
+        appShopId: s.app_shop_id ? String(s.app_shop_id) : null,
+        vinculada: Number(s.bound_flag) === 1,
+      });
+    }
+    if (!d.total_page || pagina >= Number(d.total_page)) break;
+  }
+
+  cacheAutorizadas = { em: Date.now(), lojas, cru };
+  return { ok: true, lojas, cru };
+}
+
+export interface VinculoFeito {
+  shopId: string;
+  appShopId: string;
+  authToken: string;
+  expiraEm: number;
+}
+
+/**
+ * Cria o vínculo — a etapa 2. Aceita até 50 lojas; cada uma volta em
+ * `sucesso` (já com o token) ou em `falha` (com o motivo do 99Food). Só existe
+ * em produção, e só para loja que autorizou e ainda não está vinculada.
+ */
+export async function vincularLojas(itens: { shopId: string; appShopId: string }[]): Promise<
+  | { ok: true; sucesso: VinculoFeito[]; falha: { shopId: string; appShopId: string; motivo: string }[]; cru: any }
+  | { ok: false; errno: number; erro: string; cru?: any }
+> {
+  const cred = credenciaisDoApp();
+  if (!cred) return { ok: false, errno: -2, erro: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados." };
+  if (itens.length === 0 || itens.length > 50) return { ok: false, errno: -3, erro: "Informe de 1 a 50 lojas." };
+
+  // shop_id vai como INTEIRO cru (idsCrus), igual ao app_id: são 19 dígitos.
+  const shop_infos = itens.map((i) => ({ shop_id: i.shopId, app_shop_id: i.appShopId }));
+  const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), shop_infos };
+  const corpo = { ...base, sign: assinarOficial(base, cred.appSecret) };
+  const r = await chamar<any>("/v3/auth/authorization/shopBind", {
+    metodo: "POST",
+    corpo,
+    idsCrus: ["app_id", "shop_id"],
+    base: BASE_V3,
+  });
+
+  if (r.errno !== 0) {
+    return {
+      ok: false,
+      errno: r.errno,
+      erro:
+        r.errno === 10006
+          ? "O 99Food não liberou o endpoint shopBind para este app (10006 Permission denied). É preciso pedir a liberação ao suporte deles."
+          : `${r.errno} ${r.errmsg}`,
+      cru: r,
+    };
+  }
+
+  // Vinculou: as listas em cache ficaram velhas na hora.
+  cacheAutorizadas = null;
+  cacheLojas = null;
+
+  const d: any = r.data ?? r;
+  const sucesso: VinculoFeito[] = (Array.isArray(d.success_list) ? d.success_list : []).map((s: any) => ({
+    shopId: String(s.shop_id),
+    appShopId: String(s.app_shop_id),
+    authToken: String(s.auth_token || ""),
+    expiraEm: Number(s.token_expiration_time || 0),
+  }));
+  const falha = (Array.isArray(d.failure_list) ? d.failure_list : []).map((f: any) => ({
+    shopId: String(f.shop_id),
+    appShopId: String(f.app_shop_id),
+    motivo: String(f.reason || "sem motivo"),
+  }));
+  return { ok: true, sucesso, falha, cru: d };
+}
+
+/**
+ * Sonda do `shop/list` num host específico, sem cache — só para o diagnóstico
+ * responder "em qual host este app tem loja?". O rate limit deles (1 a cada
+ * 20s) pode devolver 10005 aqui; é informação, não falha.
+ */
+export async function sondarListaVinculadas(
+  host: "didi-food" | "99food"
+): Promise<{ host: string; errno: number; errmsg: string; total: number | null; cru: any }> {
+  const cred = credenciaisDoApp();
+  const base = host === "99food" ? BASE_V3 : BASE;
+  if (!cred) return { host: base, errno: -2, errmsg: "sem credenciais", total: null, cru: null };
+  const params = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: 1, page_size: 100 };
+  const corpo = { ...params, sign: assinarOficial(params, cred.appSecret) };
+  const r = await chamar<any>("/v1/shop/shop/list", { metodo: "POST", corpo, idsCrus: ["app_id"], base });
+  const d: any = r.data ?? {};
+  return {
+    host: base,
+    errno: r.errno,
+    errmsg: r.errmsg,
+    total: r.errno === 0 ? Number(d.total ?? d.total_cnt ?? 0) : null,
+    cru: r.errno === 0 ? d : r,
+  };
 }
 
 /**

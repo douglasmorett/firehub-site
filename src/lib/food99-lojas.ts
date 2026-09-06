@@ -176,6 +176,35 @@ export async function donosPorAppShopId(): Promise<Map<string, string>> {
   return donos;
 }
 
+/**
+ * Mesma pergunta de donosPorAppShopId, pelo `shop_id` do 99Food. Chave =
+ * shop_id. É o que impede a etapa 2 (shopBind) de vincular a loja do vizinho:
+ * o `getAuthorizedShops` lista TODAS as lojas autorizadas ao app, de todas as
+ * contas, e uma que já tem dono aqui dentro não é candidata para mais ninguém.
+ */
+export async function donosPorShopId(): Promise<Map<string, string>> {
+  const donos = new Map<string, string>();
+
+  if (await temTabela()) {
+    try {
+      const linhas = await prisma.$queryRaw<{ shopId: string | null; userId: string }[]>`
+        SELECT "shopId", "userId" FROM "Food99Store"
+      `;
+      for (const l of linhas) if (l.shopId) donos.set(l.shopId, l.userId);
+    } catch {
+      // segue com as colunas antigas
+    }
+  }
+
+  const antigos = await prisma.user.findMany({
+    where: { food99MerchantId: { not: null } },
+    select: { id: true, food99MerchantId: true },
+  });
+  for (const u of antigos) if (u.food99MerchantId) donos.set(u.food99MerchantId, u.id);
+
+  return donos;
+}
+
 /** Mesma pergunta, pelo shop_id do 99Food (o id da loja no lado deles). */
 export async function donoDoShopId(shopId: string): Promise<string | null> {
   if (await temTabela()) {

@@ -53,6 +53,7 @@ import { tokensDaConta } from "@/lib/food99-status";
 import { lojas99DaConta } from "@/lib/food99-lojas";
 import { avisarDono } from "@/lib/alertas-do-dono";
 import { sendEmail } from "@/lib/mail";
+import { religarVinculosDaConta } from "@/lib/food99-vinculo";
 
 /**
  * Quando cada loja foi avisada de que caiu, para avisar UMA vez por dia.
@@ -251,6 +252,18 @@ export async function manterLojaOnline99(
   } catch (e: any) {
     resultado.erros.push(`falha ao obter token: ${e?.message}`);
     return resultado;
+  }
+
+  if (tokens.length === 0) {
+    // Antes de gritar, tenta religar: a loja pode seguir AUTORIZADA no 99Food
+    // com o vínculo caído (bound_flag 0) — foi a Brasa Burguer em 04/09. O
+    // religamento usa o shopId gravado e o MESMO app_shop_id de antes; dando
+    // certo, os tokens voltam nesta mesma rodada e ninguém precisa clicar.
+    const religado = await religarVinculosDaConta(loja.id).catch(() => ({ religadas: [] as string[] }));
+    if (religado.religadas.length > 0) {
+      console.log(`[99Food online] ${nome}: vínculo religado sozinho (${religado.religadas.join(", ")})`);
+      tokens = await tokensDaConta(loja.id).catch(() => []);
+    }
   }
 
   if (tokens.length === 0) {
