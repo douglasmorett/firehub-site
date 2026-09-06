@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   diagnosticoAuth,
-  getAuthToken,
+  diagnosticoRefresh,
   appIdVisivel,
   food99Configurado,
   ERRO_SEM_AUTORIZACAO,
@@ -138,11 +138,23 @@ export async function GET(req: NextRequest) {
     const r = await diagnosticoAuth(c.appShopId);
 
     // 10101 na leitura crua não encerra a pergunta: a doc manda criar o token
-    // com refresh antes de concluir "não autorizada". getAuthToken faz isso.
-    // Chamar aqui é o que faz o diagnóstico CONSERTAR a loja que só está sem
-    // token — foi assim que a Brasa Burguer ficou dois dias sem pedido.
+    // com refresh antes de concluir "não autorizada". Aqui o refresh é feito à
+    // mão, e não via getAuthToken, para a resposta CRUA dele aparecer: em
+    // 06/09 o refresh falhou para todo mundo, inclusive a Brasa Burguer, e o
+    // boolean não dizia por quê. O errno diz.
+    let refreshCru: { errno: number; errmsg: string } | null = null;
+    let segundaLeitura: typeof r | null = null;
+    if (r.errno === ERRO_SEM_AUTORIZACAO) {
+      const rf = await diagnosticoRefresh(c.appShopId);
+      refreshCru = { errno: rf.errno, errmsg: rf.errmsg };
+      if (rf.errno === 0) segundaLeitura = await diagnosticoAuth(c.appShopId);
+    }
     const aposRefresh =
-      r.errno === ERRO_SEM_AUTORIZACAO ? await getAuthToken(c.appShopId) : null;
+      segundaLeitura && segundaLeitura.errno === 0 && segundaLeitura.data?.auth_token
+        ? { autorizada: true as const, token: segundaLeitura.data }
+        : refreshCru
+        ? { autorizada: false as const }
+        : null;
     const autorizada = (r.errno === 0 && !!r.data?.auth_token) || !!aposRefresh?.autorizada;
     const dados = aposRefresh?.autorizada ? aposRefresh.token : r.data;
 
@@ -152,6 +164,7 @@ export async function GET(req: NextRequest) {
       errmsg: r.errmsg,
       autorizada,
       refreshTentado: aposRefresh !== null,
+      refresh: refreshCru,
       autorizadaAposRefresh: aposRefresh?.autorizada ?? null,
       tokenPrefixo: dados?.auth_token ? `${dados.auth_token.slice(0, 8)}…` : null,
       expiraEm: dados?.token_expiration_time

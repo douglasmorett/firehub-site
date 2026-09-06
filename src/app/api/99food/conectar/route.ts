@@ -9,7 +9,7 @@ import {
   listarLojasVinculadas,
   detalheDaLoja,
 } from "@/lib/food99-api";
-import { salvarLoja99, lojas99DaConta, desativarLoja99, donosPorAppShopId } from "@/lib/food99-lojas";
+import { salvarLoja99, lojas99DaConta, desativarLoja99, donosPorAppShopId, slotsDaConta } from "@/lib/food99-lojas";
 
 export const dynamic = "force-dynamic";
 
@@ -115,50 +115,93 @@ export async function GET(req: NextRequest) {
  * Falhar aqui não derruba nada: sem o nome a tela volta ao texto genérico, mas
  * o estado "conectado" continua valendo — ele vem do token, não daqui.
  */
-async function comNomeDaLoja(lojaId: string, token: string, expiraEm: number) {
-  const loja = await detalheDaLoja(token).catch(() => null);
+interface LojaConectada {
+  appShopId: string;
+  shopId: string | null;
+  label: string | null;
+  nome: string | null;
+  endereco: string | null;
+  expiraEm: string;
+}
 
-  // Mantém a tabela em dia sem depender de ninguém rodar a migração: toda vez
-  // que a tela confirma uma conexão, a loja é gravada (é idempotente). É o que
-  // faz a Brasa Burguer aparecer na lista sozinha, sem intervenção.
-  if (loja?.appShopId) {
-    await salvarLoja99({
-      userId: lojaId,
-      appShopId: loja.appShopId,
-      shopId: loja.shopId,
-      label: loja.nome,
-    }).catch(() => false);
+/**
+ * Pergunta ao 99Food, id por id, quais lojas desta conta têm token — e grava
+ * as que têm.
+ *
+ * Os ids consultados são: o da conta (a primeira loja), os das lojas já
+ * gravadas, o `food99AppId` antigo se existir, e o PRÓXIMO slot livre. Este
+ * último é o que pega uma loja recém-autorizada pelo botão "Conectar outra
+ * loja": ela não tem linha ainda, mas o link que o lojista abriu carregava
+ * exatamente esse id. Sem consultá-lo, a segunda loja autorizava de verdade e
+ * a tela nunca ficava sabendo.
+ *
+ * Gravar aqui (idempotente) é o que mantém a tabela em dia sem ninguém rodar
+ * migração — e é o que faz a Brasa Burguer aparecer na lista sozinha.
+ */
+async function sincronizarLojasDaConta(lojaId: string): Promise<{ conectadas: LojaConectada[]; erro?: string }> {
+  const gravadas = await lojas99DaConta(lojaId).catch(() => []);
+  const { conhecidos, proximo } = slotsDaConta(lojaId, gravadas);
+
+  const antigo = await prisma.user.findUnique({ where: { id: lojaId }, select: { food99AppId: true } });
+  const ids = Array.from(new Set([...conhecidos, ...(antigo?.food99AppId ? [antigo.food99AppId] : []), proximo]));
+
+  const conectadas: LojaConectada[] = [];
+  let erro: string | undefined;
+
+  for (const id of ids) {
+    const r = await getAuthToken(id);
+    if (!r.autorizada) {
+      if (r.erro && !erro) erro = r.erro;
+      continue;
+    }
+
+    const detalhe = await detalheDaLoja(r.token.auth_token).catch(() => null);
+    const jaGravada = gravadas.find((g) => g.appShopId === id);
+    const loja: LojaConectada = {
+      appShopId: id,
+      shopId: detalhe?.shopId ?? jaGravada?.shopId ?? null,
+      label: detalhe?.nome ?? jaGravada?.label ?? null,
+      nome: detalhe?.nome ?? jaGravada?.label ?? null,
+      endereco: detalhe?.endereco ?? null,
+      expiraEm: new Date(r.token.token_expiration_time * 1000).toISOString(),
+    };
+    conectadas.push(loja);
+
+    await salvarLoja99({ userId: lojaId, appShopId: id, shopId: loja.shopId, label: loja.label }).catch(() => false);
   }
 
-  return {
-    conectado: true,
-    disponivel: true,
-    expiraEm: new Date(expiraEm * 1000).toISOString(),
-    lojaNo99: loja,
-    lojas: await lojas99DaConta(lojaId).catch(() => []),
-    mensagem: loja?.nome
-      ? `Loja "${loja.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
-      : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
-  };
+  return { conectadas, erro };
 }
 
 async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
-  const direto = await getAuthToken(lojaId);
-  if (direto.autorizada) {
-    return comNomeDaLoja(lojaId, direto.token.auth_token, direto.token.token_expiration_time);
+  const { conectadas, erro } = await sincronizarLojasDaConta(lojaId);
+
+  if (conectadas.length > 0) {
+    const primeira = conectadas[0];
+    // A lista da tela vem do banco quando ele responde — é a mesma que o
+    // webhook e a cobrança leem. Sem tabela, vale o que acabou de ser
+    // confirmado com o 99Food, para a tela não dizer "nenhuma".
+    const doBanco = await lojas99DaConta(lojaId).catch(() => []);
+    const lojas = doBanco.length
+      ? doBanco
+      : conectadas.map((c) => ({ appShopId: c.appShopId, shopId: c.shopId, label: c.label }));
+
+    return {
+      conectado: true,
+      disponivel: true,
+      expiraEm: primeira.expiraEm,
+      lojaNo99: { nome: primeira.nome, shopId: primeira.shopId, endereco: primeira.endereco },
+      lojas,
+      mensagem:
+        conectadas.length > 1
+          ? `${conectadas.length} lojas conectadas ao 99Food. Os pedidos chegam automaticamente.`
+          : primeira.nome
+          ? `Loja "${primeira.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
+          : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
+    };
   }
 
-  // Já adotamos um app_shop_id diferente do nosso id numa conexão anterior?
-  const loja = await prisma.user.findUnique({
-    where: { id: lojaId },
-    select: { food99AppId: true },
-  });
-  if (loja?.food99AppId) {
-    const porVinculo = await getAuthToken(loja.food99AppId);
-    if (porVinculo.autorizada) {
-      return comNomeDaLoja(lojaId, porVinculo.token.auth_token, porVinculo.token.token_expiration_time);
-    }
-  }
+  const direto = { erro };
 
   const semVinculo = {
     conectado: false,
@@ -317,17 +360,31 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Qual id vai dentro do link. A primeira loja usa o id da conta; "Conectar
+  // outra loja" usa o próximo slot livre — porque só existe um vínculo por id,
+  // e autorizar dois estabelecimentos com o mesmo link foi exatamente o que
+  // deixou o segundo do Lucas no limbo em 06/09. Sincroniza antes de escolher:
+  // um slot autorizado há um minuto e ainda sem linha seria reemitido, e o
+  // estabelecimento seguinte colidiria com ele.
+  let appShopId = r.lojaId;
+  if (corpo?.outraLoja === true) {
+    await sincronizarLojasDaConta(r.lojaId);
+    const gravadas = await lojas99DaConta(r.lojaId).catch(() => []);
+    appShopId = slotsDaConta(r.lojaId, gravadas).proximo;
+  }
+
   // Gerada na hora do clique de propósito: a URL carrega timestamp e
   // assinatura, e perde a validade. Guardar uma URL dessas em banco daria um
   // botão que funciona hoje e falha calado na semana que vem.
-  const resultado = await getAuthorizationUrl(r.lojaId);
+  const resultado = await getAuthorizationUrl(appShopId);
   if ("erro" in resultado) {
     return NextResponse.json({ error: resultado.erro }, { status: 502 });
   }
 
-  console.log(`[99Food] URL de autorização gerada para a loja ${r.lojaId} (${r.nome})`);
+  console.log(`[99Food] URL de autorização gerada para a loja ${r.lojaId} (${r.nome}) com app_shop_id ${appShopId}`);
   return NextResponse.json({
     url: resultado.url,
+    appShopId,
     instrucao:
       "Abra este link e entre com a conta que a sua loja usa no 99Food " +
       "(a mesma onde você vê os pedidos). Depois de autorizar, volte e atualize esta tela.",

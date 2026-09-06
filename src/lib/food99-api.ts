@@ -405,6 +405,20 @@ export async function detalheDaLoja(authToken: string): Promise<LojaNoNoveNove |
  * Foi exatamente essa ambiguidade que segurou o caso da Brasa Burguer: o
  * lojista tinha autorizado, e a tela continuava dizendo "ainda não conectou".
  */
+/**
+ * Resposta CRUA do `authtoken/refresh`. `refreshAuthToken` devolve só true/false,
+ * e em 06/09/2026 o "false" escondeu a pergunta que importava: o refresh falhou
+ * POR QUÊ? "Loja não vinculada", "limite de 2 minutos" e "app inválido" viram o
+ * mesmo boolean — e cada um leva a um conserto diferente.
+ */
+export async function diagnosticoRefresh(appShopId: string): Promise<RespostaFood99> {
+  const cred = credenciaisDoApp();
+  if (!cred) return { errno: -2, errmsg: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados no servidor." };
+  return chamar("/v1/auth/authtoken/refresh", {
+    query: { app_id: cred.appId, app_secret: cred.appSecret, app_shop_id: appShopId },
+  });
+}
+
 export async function diagnosticoAuth(appShopId: string): Promise<RespostaFood99<TokenDaLoja>> {
   const cred = credenciaisDoApp();
   if (!cred) return { errno: -2, errmsg: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados no servidor." };

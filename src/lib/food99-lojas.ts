@@ -93,6 +93,42 @@ export async function donoDoAppShopId(appShopId: string): Promise<string | null>
 }
 
 /**
+ * Os identificadores que uma conta usa no 99Food, e o próximo livre.
+ *
+ * ── Por que existe ──────────────────────────────────────────────────────────
+ *
+ * O `app_shop_id` que mandamos no `getUrl` viaja dentro do link e vira o id do
+ * vínculo. Até aqui ele era sempre o id da conta — então a conta inteira tinha
+ * UM identificador, e uma conta com três estabelecimentos no 99Food tentava
+ * vincular os três sob o mesmo id. Só pode existir um vínculo por id: foi
+ * exatamente o que aconteceu com o Lucas em 06/09/2026, dois estabelecimentos
+ * autorizados com o mesmo link.
+ *
+ * A regra: a primeira loja fica com o id da conta (compatível com tudo que já
+ * está conectado); as seguintes ganham `<id>-2`, `<id>-3`, … O número é
+ * derivado das lojas já gravadas, então gerar o link duas vezes sem autorizar
+ * dá o mesmo slot — e não deixa buraco.
+ *
+ * `conhecidos` é o que se consulta para saber quem está conectado;
+ * `proximo` é o que se consulta para PEGAR uma loja recém-autorizada que ainda
+ * não tem linha — e o que o botão "Conectar outra loja" usa no link.
+ */
+export function slotsDaConta(lojaId: string, lojas: Loja99[]): { conhecidos: string[]; proximo: string } {
+  const conhecidos = Array.from(new Set([lojaId, ...lojas.map((l) => l.appShopId)]));
+
+  const padrao = new RegExp(`^${lojaId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:-(\\d+))?$`);
+  let maior = 1;
+  for (const id of conhecidos) {
+    const m = padrao.exec(id);
+    if (!m) continue;
+    const n = m[1] ? Number(m[1]) : 1;
+    if (n > maior) maior = n;
+  }
+
+  return { conhecidos, proximo: `${lojaId}-${maior + 1}` };
+}
+
+/**
  * Todo app_shop_id que JÁ tem dono, e de quem é. Chave = app_shop_id.
  *
  * ── O buraco que isto fecha ─────────────────────────────────────────────────

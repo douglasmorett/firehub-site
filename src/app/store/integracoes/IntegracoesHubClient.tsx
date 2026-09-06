@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { CheckCircle2, ShieldCheck, Zap, Key, Store, Save, ExternalLink, RefreshCw, X, ArrowRight, Activity, CreditCard, Radio, Plus, Trash2, Loader2 } from "lucide-react";
 
 export default function IntegracoesHubClient({
@@ -176,6 +176,8 @@ export default function IntegracoesHubClient({
   const [food99Lojas, setFood99Lojas] = useState<{ appShopId: string; shopId: string | null; label: string | null }[]>([]);
   /** Fica preenchido depois que o lojista abre a autorização — é o gatilho do "Já autorizei". */
   const [food99Aguardando, setFood99Aguardando] = useState(false);
+  /** Quantas lojas a espera precisa ver para dar "conectado": 1 na primeira, N+1 na "outra loja". */
+  const food99EsperadasRef = useRef(1);
   /** Só aparece quando há mais de uma loja autorizada e não dá para adivinhar qual é a dele. */
   const [food99Candidatos, setFood99Candidatos] = useState<
     { appShopId: string; nome: string; shopId: string | null }[]
@@ -411,16 +413,29 @@ export default function IntegracoesHubClient({
    * gesto já se perdeu. Então abre-se em branco no clique e troca-se a URL
    * quando ela chega.
    */
-  const handleConectar99Food = async () => {
+  /**
+   * `outraLoja` pede ao servidor um id NOVO para o link. Sem isso o segundo
+   * estabelecimento da mesma conta era autorizado sob o mesmo id do primeiro,
+   * e só existe um vínculo por id — o segundo ficava no limbo.
+   *
+   * O laço de espera passa a contar lojas em vez de olhar "conectado": para a
+   * segunda loja, "conectado" já é verdade antes de o lojista autorizar.
+   */
+  const handleConectar99Food = async (outraLoja = false) => {
     setFood99Saving(true);
     const janela = window.open("", "_blank");
     try {
-      const res = await fetch("/api/99food/conectar", { method: "POST" });
+      const res = await fetch("/api/99food/conectar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(outraLoja ? { outraLoja: true } : {}),
+      });
       const data = await res.json();
 
       if (res.ok && data.url) {
         if (janela) janela.location.href = data.url;
         else window.location.href = data.url; // popup bloqueado: vai na mesma aba
+        food99EsperadasRef.current = outraLoja ? Math.max(food99Lojas.length, 1) + 1 : 1;
         setFood99Aguardando(true);
         showToast("🔗 Autorize na aba que abriu — esta tela conecta sozinha", "#F59E0B");
       } else {
@@ -458,7 +473,7 @@ export default function IntegracoesHubClient({
    * barato cobre o resto.
    */
   useEffect(() => {
-    if (!food99Aguardando || food99Connected || openModal !== "99food") return;
+    if (!food99Aguardando || openModal !== "99food") return;
 
     let cancelado = false;
     let tentativas = 0;
@@ -473,7 +488,11 @@ export default function IntegracoesHubClient({
         const data = await res.json();
         if (cancelado) return;
 
-        if (data.conectado) {
+        // Conta lojas, não "conectado": esperando a segunda, "conectado" já é
+        // verdade desde antes do clique. Sem tabela a lista vem vazia mesmo com
+        // uma loja de pé, daí o mínimo de 1 quando conectado.
+        const lojasAgora = Math.max((data.lojas || []).length, data.conectado ? 1 : 0);
+        if (data.conectado && lojasAgora >= food99EsperadasRef.current) {
           setFood99Connected(true);
           setFood99Aguardando(false);
           setFood99Candidatos([]);
@@ -513,7 +532,7 @@ export default function IntegracoesHubClient({
       cancelado = true;
       clearInterval(id);
     };
-  }, [food99Aguardando, food99Connected, openModal]);
+  }, [food99Aguardando, openModal]);
 
   /**
    * Desliga UMA loja do 99Food, sem tocar nas outras da conta.
@@ -2095,7 +2114,7 @@ export default function IntegracoesHubClient({
                     {/* Mesmo fluxo de autorização: a loja nova entra AO LADO da
                         atual, em vez de substituí-la como acontecia antes. */}
                     <button
-                      onClick={handleConectar99Food}
+                      onClick={() => handleConectar99Food(true)}
                       disabled={food99Saving || !food99Disponivel}
                       style={{ marginTop: 12, padding: "8px 14px", borderRadius: 10, border: "1.5px dashed #15803D", background: "#fff", color: "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
                     >
@@ -2141,7 +2160,7 @@ export default function IntegracoesHubClient({
 
                 {/* Sem isto o laço automático seria invisível e o lojista ficaria
                     olhando uma tela parada, achando que precisa fazer algo. */}
-                {food99Aguardando && !food99Connected && (
+                {food99Aguardando && (
                   <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "12px 14px", borderRadius: "12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ fontSize: "1.1rem" }}>⏳</span>
                     <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
@@ -2215,7 +2234,7 @@ export default function IntegracoesHubClient({
                   )}
                   {!food99Connected && (
                     <button
-                      onClick={handleConectar99Food}
+                      onClick={() => handleConectar99Food()}
                       disabled={food99Saving || !food99Disponivel}
                       style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: food99Disponivel ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(245,158,11,0.3)", opacity: food99Saving || !food99Disponivel ? 0.7 : 1 }}
                     >
