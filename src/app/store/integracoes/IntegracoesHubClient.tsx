@@ -986,6 +986,9 @@ export default function IntegracoesHubClient({
       title: "Brendi",
       subtitle: "Cardápio digital + IA no WhatsApp",
       icon: "🤖",
+      // Logo oficial no lugar do emoji: o lojista reconhece a marca antes de
+      // ler o nome, e é assim que ele vê a Brendi no painel dela.
+      logo: "/images/logos/brendi.webp",
       gradient: "linear-gradient(135deg, #8B5CF6, #6D28D9)",
       badge: brConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Pedidos do cardápio e da IA da Brendi caem direto no FireHub via Open Delivery, com status sincronizado.",
@@ -1093,9 +1096,18 @@ export default function IntegracoesHubClient({
             {/* Top row: Logo + Status Badge */}
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
-                <div style={{ width: "52px", height: "52px", borderRadius: "16px", background: item.gradient, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.6rem", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }}>
-                  {item.icon}
-                </div>
+                {/* Integração com logo própria usa a marca; as demais seguem
+                    com o emoji sobre o gradiente. Fundo claro porque as logos
+                    são coloridas e sumiriam sobre o gradiente escuro. */}
+                {(item as { logo?: string }).logo ? (
+                  <div style={{ width: "52px", height: "52px", borderRadius: "16px", background: "#fff", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px", boxShadow: "0 6px 16px rgba(0,0,0,0.08)" }}>
+                    <img src={(item as { logo?: string }).logo} alt={item.title} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  </div>
+                ) : (
+                  <div style={{ width: "52px", height: "52px", borderRadius: "16px", background: item.gradient, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.6rem", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }}>
+                    {item.icon}
+                  </div>
+                )}
 
                 <span style={{ background: item.badge.bg, border: `1px solid ${item.badge.border}`, color: item.badge.color, padding: "4px 10px", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
                   {item.badge.text}
@@ -2209,8 +2221,8 @@ export default function IntegracoesHubClient({
             {openModal === "brendi" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #8B5CF6, #6D28D9)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
-                    🤖
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#fff", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", padding: "7px" }}>
+                    <img src="/images/logos/brendi.webp" alt="Brendi" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
                   </div>
                   <div>
                     <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Brendi</h2>
