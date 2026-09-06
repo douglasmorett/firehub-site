@@ -303,6 +303,26 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
         mensagem: "Encontrei mais de uma loja autorizada no 99Food. Escolha qual é a sua.",
       };
     }
+
+    // Autorizou o FireHub, mas o 99Food só admite UM integrador por loja e
+    // ela ainda está com outro (Saipos, Brendi…). Nenhum clique aqui resolve:
+    // é no painel do 99Food que o lojista solta a loja do sistema antigo. A
+    // tela diz exatamente isso, com o nome das lojas — senão ele fica
+    // clicando em autorizar, como o Frangoso ficou o dia inteiro.
+    if (vinculadas.deOutroIntegrador.length > 0) {
+      const nomes = vinculadas.deOutroIntegrador.map((l) => l.nome || l.shopId).join(", ");
+      return {
+        conectado: false,
+        disponivel: true,
+        candidatos: [],
+        presaEmOutroIntegrador: vinculadas.deOutroIntegrador.map((l) => ({ shopId: l.shopId, nome: l.nome })),
+        vinculosNo99: vinculadas.deOutroIntegrador.length,
+        mensagem:
+          `${nomes}: autorizou o FireHub, mas o 99Food só permite um sistema integrado por loja e ` +
+          "ela ainda está ligada a outro. No painel do 99Food, em Aplicativos autorizados, desautorize o " +
+          "sistema antigo dessa loja e clique em Verificar agora — o FireHub assume o vínculo sozinho.",
+      };
+    }
   }
 
   const vinculos = await listarLojasVinculadas();

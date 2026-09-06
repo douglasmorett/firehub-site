@@ -117,12 +117,15 @@ export async function autorizadasLivresPara(
  */
 export async function vinculadasSemDonoPara(
   lojaId: string
-): Promise<{ ok: true; lojas: LojaAutorizada[] } | { ok: false; erro: string; errno: number }> {
+): Promise<
+  | { ok: true; lojas: LojaAutorizada[]; deOutroIntegrador: LojaAutorizada[] }
+  | { ok: false; erro: string; errno: number }
+> {
   const r = await listarLojasAutorizadas();
   if (!r.ok) return { ok: false, erro: r.erro, errno: r.errno };
 
   const [donosApp, donosShop] = await Promise.all([donosPorAppShopId(), donosPorShopId()]);
-  const lojas = r.lojas.filter((l) => {
+  const semDono = r.lojas.filter((l) => {
     if (!l.vinculada || !l.appShopId) return false;
     const donoApp = donosApp.get(l.appShopId);
     const donoShop = donosShop.get(l.shopId);
@@ -134,7 +137,23 @@ export async function vinculadasSemDonoPara(
     if (donoShop && donoShop !== lojaId) return false;
     return true;
   });
-  return { ok: true, lojas };
+
+  // ── "Vinculada" a quem? ─────────────────────────────────────────────────
+  //
+  // O getAuthorizedShops diz `bound_flag 1` para loja vinculada a QUALQUER
+  // integrador, e o app_shop_id que vem junto é o do integrador que a tem.
+  // Em 06/09 as três lojas do Lucas vinham "vinculadas" — ao Saipos e ao
+  // Brendi, não ao FireHub — e o token por esses ids é 10101 para nós. A doc
+  // do shopBind é explícita: "the store must be unbound". Uma loja por
+  // integrador. Então só é adotável a que devolve token; as outras estão com
+  // outro sistema, e a tela precisa dizer isso com todas as letras.
+  const lojas: LojaAutorizada[] = [];
+  const deOutroIntegrador: LojaAutorizada[] = [];
+  for (const l of semDono) {
+    const t = await getAuthToken(l.appShopId as string);
+    (t.autorizada ? lojas : deOutroIntegrador).push(l);
+  }
+  return { ok: true, lojas, deOutroIntegrador };
 }
 
 /**

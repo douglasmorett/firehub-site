@@ -14,6 +14,7 @@ import {
 } from "@/lib/food99-api";
 import { ler99Food } from "@/lib/webhook-99food-log";
 import { lojas99DaConta } from "@/lib/food99-lojas";
+import { vincularParaConta } from "@/lib/food99-vinculo";
 
 export const dynamic = "force-dynamic";
 
@@ -213,6 +214,18 @@ export async function GET(req: NextRequest) {
         }
       : null;
 
+  // `?vincular=<shop_id>` tenta a etapa 2 (shopBind) para ESTA conta e devolve
+  // o que o 99Food respondeu — inclusive o motivo de recusa. É a única forma
+  // de saber, sem achismo, se uma loja "vinculada" está presa a outro
+  // integrador. Só faz efeito se der certo; recusa não muda nada.
+  const vincular = String(req.nextUrl.searchParams.get("vincular") || "").trim();
+  const tentativaDeVinculo = vincular
+    ? await vincularParaConta(lojaId, {
+        shopId: vincular,
+        nome: autorizadasV3.ok ? autorizadasV3.lojas.find((l) => l.shopId === vincular)?.nome ?? null : null,
+      })
+    : null;
+
   const eventos = ler99Food();
   const pedidos99 = await prisma.customerOrder.count({
     where: { franchiseeId: lojaId, source: "99FOOD" },
@@ -280,6 +293,7 @@ export async function GET(req: NextRequest) {
     },
     appId: appIdVisivel(),
     autorizacao: { autorizada: !!autorizada, appShopIdValido: autorizada?.appShopId ?? null, testes },
+    tentativaDeVinculo,
     lojasAutorizadasV3: autorizadasV3.ok
       ? {
           ok: true,
