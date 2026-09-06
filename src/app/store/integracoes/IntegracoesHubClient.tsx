@@ -2268,15 +2268,23 @@ export default function IntegracoesHubClient({
 
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <Store size={14} color="#8B5CF6" /> Merchant ID (Código da Loja na Brendi)
+                      <Store size={14} color="#8B5CF6" /> Merchant ID (opcional)
                     </label>
                     <input
                       type="text"
-                      placeholder="Cole aqui o Merchant ID da sua loja"
+                      placeholder="Deixe em branco — usamos o Client ID"
                       value={brMerchantId}
                       onChange={e => setBrMerchantId(e.target.value)}
                       style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
                     />
+                    {/* Medido na sandbox em 05/09/2026: `merchant.id` do pedido vem
+                        igual ao Client ID, a API não tem endpoint de merchant e o
+                        painel da Brendi não exibe esse código em lugar nenhum.
+                        Pedir para "colar o Merchant ID" mandava o lojista procurar
+                        um dado que não existe na tela dele. */}
+                    <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "4px 0 0" }}>
+                      Na Brendi esse código é o próprio Client ID. Deixe em branco que o FireHub preenche sozinho.
+                    </p>
                   </div>
                 </div>
 

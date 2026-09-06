@@ -143,7 +143,22 @@ export async function POST(req: NextRequest) {
     const novoClientId =
       (clientId && !pareceMascarado(clientId) ? clientId : atual?.brendiClientId) || null;
     const novoSecret = clientSecret || atual?.brendiClientSecret || null;
-    const novoMerchant = merchantId || atual?.brendiMerchantId || null;
+
+    // ── O MERCHANT ID É O PRÓPRIO CLIENT ID ─────────────────────────────────
+    //
+    // Medido na sandbox em 05/09/2026, não suposto: no `GET /v1/orders/{id}` o
+    // campo `merchant.id` veio EXATAMENTE igual ao Client ID da integração
+    // (`5480e656-…`). E não existe endpoint de merchant na API deles — as cinco
+    // variantes (`/v1/merchants`, `/v1/merchant`, `/v1/merchants/me`,
+    // `/merchants`, `/v1/me`) respondem 404 —, nem o painel exibe esse id em
+    // lugar nenhum. Ou seja: pedir ao lojista que "copie o Merchant ID" era
+    // pedir um dado que ele não tem onde achar, e sem ele a amarração
+    // pedido→loja caía no fallback de "a única loja conectada" — que recusa
+    // assim que a segunda loja conectar.
+    //
+    // Então o padrão passa a ser o Client ID, e o campo continua editável para
+    // o dia em que a Brendi separar os dois.
+    const novoMerchant = merchantId || atual?.brendiMerchantId || novoClientId || null;
 
     if (!novoClientId || !novoSecret) {
       return NextResponse.json(
