@@ -351,14 +351,27 @@ export async function despacharBrendi(orderId: string, storeId: string): Promise
 }
 
 /**
- * ATENÇÃO (herança do 99Food): quando a entrega é da própria Brendi
- * (Brendi Motoboy/aiChef), quem dá baixa provavelmente é ELA — quem chama
- * deve condicionar por `deliveryBy` antes de mandar delivered. Pergunta
- * aberta com a Brendi; até a resposta, o wrapper existe e a decisão é de quem
- * chama (brendi-status.ts).
+ * Fecha o pedido de ENTREGA.
+ *
+ * A pergunta "quem dá baixa quando a Brendi é que entrega?" tem resposta, e
+ * ela vem no próprio pedido: o campo de topo `sendDelivered` (booleano) diz se
+ * esta chamada é nossa. Medido no primeiro pedido real da sandbox em
+ * 05/09/2026. Quem decide é `brendi-status.ts`, lendo a flag gravada — não
+ * mais o palpite por `deliveryBy`.
  */
 export async function entregueBrendi(orderId: string, storeId: string): Promise<ResultadoBrendi> {
   return acaoDePedido("delivered", orderId, storeId);
+}
+
+/**
+ * Fecha o pedido de RETIRADA — o equivalente ao `delivered` quando o cliente
+ * busca no balcão. Governado por `sendPickedUp` no pedido.
+ *
+ * Faltava: sem esta chamada, todo pedido de retirada ficava aberto para sempre
+ * do lado da Brendi, por mais que a loja o finalizasse aqui.
+ */
+export async function retiradoBrendi(orderId: string, storeId: string): Promise<ResultadoBrendi> {
+  return acaoDePedido("pickedUp", orderId, storeId);
 }
 
 /**

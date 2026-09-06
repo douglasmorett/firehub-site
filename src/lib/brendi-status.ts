@@ -4,9 +4,11 @@ import {
   prontoBrendi,
   despacharBrendi,
   entregueBrendi,
+  retiradoBrendi,
   solicitarCancelamentoBrendi,
   type ResultadoBrendi,
 } from "@/lib/brendi-api";
+import { prisma } from "@/lib/prisma";
 
 /**
  * /src/lib/brendi-status.ts
@@ -34,8 +36,25 @@ import {
  *      mesmo com a Brendi lenta, e o que ficou para trás sai no log.
  *   3. Etapas atrasadas são reenviadas quando a loja pula status: um confirm
  *      repetido custa uma chamada; um confirm que faltou custa a venda.
- *   4. `delivered` só na entrega própria — quando a Brendi entrega
- *      (Brendi Motoboy/aiChef), quem dá baixa é ela.
+ *   4. O FECHAMENTO é decidido pelo PEDIDO, não por palpite — ver abaixo.
+ *
+ * ── Quem fecha o pedido: a resposta vem no payload ──────────────────────────
+ *
+ * O pedido da Brendi carrega no topo `sendPreparing`, `sendDelivered`,
+ * `sendPickedUp` e `sendTracking`: booleanos que dizem, pedido a pedido, quais
+ * chamadas a loja deve mandar. Medido no primeiro pedido real da sandbox em
+ * 05/09/2026 — numa retirada vieram `sendPreparing: true`, `sendPickedUp:
+ * true`, `sendDelivered: false`.
+ *
+ * Antes disso, o `delivered` era decidido por `deliveryBy === "MERCHANT"`, um
+ * palpite tomado sem nenhum dado do parceiro, e o `pickedUp` não existia — o
+ * que deixava TODO pedido de retirada aberto para sempre do lado deles, por
+ * mais que a loja o finalizasse aqui.
+ *
+ * As flags são gravadas em `CustomerOrder.brendiSendFlags` quando o pedido
+ * entra (processBrendiEvent). Pedido antigo, sem flags, cai no comportamento
+ * anterior — que continua valendo como último recurso, nunca como primeira
+ * escolha.
  */
 
 /**
@@ -113,7 +132,7 @@ export interface ResultadoSyncBrendi {
  *   PREPARANDO        → preparing       cliente vê "em preparo" no WhatsApp
  *   PRONTO            → readyForPickup  chama o entregador / avisa retirada
  *   SAIU_ENTREGA      → dispatch        cliente acompanha a saída
- *   ENTREGUE          → delivered       SÓ na entrega própria (ver abaixo)
+ *   ENTREGUE          → pickedUp e/ou delivered, conforme o pedido pedir
  *   CANCELADO         → requestCancellation   senão o cliente fica esperando
  *
  * A Brendi não expõe `/deny`: recusar pedido novo TAMBÉM é requestCancellation
@@ -191,6 +210,9 @@ export async function sincronizarBrendi(
   // Status anterior desconhecido = rank 0 = reenvia tudo (dúvida manda).
   const anterior = RANK_STATUS[String(pedido.status || "").toUpperCase().trim()] ?? 0;
 
+  // As flags do pedido, uma consulta só, usadas na escada e no fechamento.
+  const flags = await sendFlagsDoPedido(orderId);
+
   // No pulo direto para ENTREGUE a escada para no readyForPickup: `dispatch`
   // não entra como etapa atrasada porque pedido de RETIRADA nunca despacha —
   // e o deliveryType não chega até aqui. `dispatch` só sai quando a loja
@@ -204,25 +226,61 @@ export async function sincronizarBrendi(
     // de fazer, e a conta é assimétrica (repetir custa uma chamada; faltar
     // custa o pedido).
     if (etapa.rank <= anterior && etapa.rank !== alvo) continue;
+    // O pedido pode dispensar o `preparing` (`sendPreparing: false`). As outras
+    // etapas não têm flag correspondente e seguem sempre.
+    if (etapa.rotulo === "preparing" && flags && flags.sendPreparing === false) {
+      console.log(`[Brendi Sync] ℹ️ ${orderId} não pede 'preparing' (sendPreparing falso) — pulado`);
+      continue;
+    }
     const atrasada = etapa.rank !== alvo ? " (atrasado)" : "";
     await executar(`${etapa.rotulo}${atrasada}`, () => etapa.enviar(orderId, storeId));
   }
 
   if (alvo === 5) {
-    // "delivered" só na entrega própria: quando a Brendi entrega
-    // (Brendi Motoboy/aiChef), quem dá baixa é ela — mesma regra do 99Food,
-    // onde a baixa do pedido entregue pelo 99 é da DiDi. Pedido sem
-    // `deliveryBy` também NÃO manda: é pergunta aberta com a Brendi
-    // (blueprint §7.8), e baixa dupla é pior que baixa que o originador dá
-    // sozinho no CONCLUDED.
-    if (pedido.deliveryBy === "MERCHANT") {
+    // ── O FECHAMENTO, decidido pelo PEDIDO ────────────────────────────────
+    //
+    // `sendPickedUp` fecha a retirada; `sendDelivered` fecha a entrega. Os dois
+    // vêm do próprio pedido (ver o cabeçalho deste arquivo). Um pedido pode
+    // pedir os dois, um, ou nenhum — quando é a Brendi que entrega, ela mesma
+    // dá a baixa e mandar de novo seria baixa dupla.
+    if (flags) {
+      if (flags.sendPickedUp) await executar("pickedUp", () => retiradoBrendi(orderId, storeId));
+      if (flags.sendDelivered) await executar("delivered", () => entregueBrendi(orderId, storeId));
+      if (!flags.sendPickedUp && !flags.sendDelivered) {
+        console.log(`[Brendi Sync] ℹ️ ${orderId} não pede fechamento nosso (sendPickedUp e sendDelivered falsos) — quem dá baixa é a Brendi`);
+      }
+    } else if (pedido.deliveryBy === "MERCHANT") {
+      // Sem flags (pedido anterior a esta mudança): vale a regra antiga.
       await executar("delivered", () => entregueBrendi(orderId, storeId));
     } else {
       console.log(
-        `[Brendi Sync] ℹ️ ${orderId} não é entrega própria (deliveryBy=${pedido.deliveryBy ?? "?"}) — 'delivered' não se aplica, quem dá baixa é a Brendi`
+        `[Brendi Sync] ℹ️ ${orderId} sem flags e não é entrega própria (deliveryBy=${pedido.deliveryBy ?? "?"}) — 'delivered' não se aplica`
       );
     }
   }
 
   return { ok: erros.length === 0, acoes, erros };
+}
+
+/**
+ * As flags `send*` gravadas quando o pedido entrou. `null` quando o pedido é
+ * anterior à coluna, ou quando ela ainda não existe neste banco — nos dois
+ * casos quem chama volta para a regra antiga em vez de deixar de fechar.
+ */
+async function sendFlagsDoPedido(
+  orderId: string
+): Promise<{ sendPickedUp?: boolean; sendDelivered?: boolean; sendPreparing?: boolean } | null> {
+  try {
+    const linhas = await prisma.$queryRaw<{ brendiSendFlags: any }[]>`
+      SELECT "brendiSendFlags" FROM "CustomerOrder"
+      WHERE "openDeliveryOrderId" = ${orderId}
+      LIMIT 1
+    `;
+    const f = Array.isArray(linhas) && linhas[0] ? linhas[0].brendiSendFlags : null;
+    if (!f || typeof f !== "object") return null;
+    // Objeto vazio conta como ausente: nada a obedecer.
+    return Object.keys(f).length > 0 ? f : null;
+  } catch {
+    return null;
+  }
 }

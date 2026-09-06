@@ -178,6 +178,19 @@ const INSTRUCOES_BRENDI = [
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiMerchantId" TEXT`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiConnected" BOOLEAN DEFAULT false`,
   `CREATE INDEX IF NOT EXISTS "User_brendiMerchantId_idx" ON "User"("brendiMerchantId")`,
+  // ── QUAIS AVISOS ESTE PEDIDO ESPERA DE VOLTA ──────────────────────────────
+  //
+  // O pedido da Brendi carrega no topo `sendPreparing`, `sendDelivered`,
+  // `sendPickedUp` e `sendTracking` — booleanos que dizem, pedido a pedido,
+  // quais chamadas de status a loja deve mandar. Medido no primeiro pedido
+  // real da sandbox (05/09/2026): numa retirada vieram `sendPreparing: true`,
+  // `sendPickedUp: true`, `sendDelivered: false`.
+  //
+  // Antes disso `brendi-status.ts` decidia o `delivered` por
+  // `deliveryBy === "MERCHANT"` — um palpite, tomado sem nenhum dado do
+  // parceiro. Guardar o objeto inteiro (em vez de quatro colunas) deixa
+  // qualquer flag futura chegar sem migração nova.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "brendiSendFlags" JSONB`,
 ];
 
 /**

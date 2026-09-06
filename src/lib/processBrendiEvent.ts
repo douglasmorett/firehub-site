@@ -90,6 +90,31 @@ interface LojaBrendi {
 // LEFT(email, 8) em vez de LIKE 'deleted_%': o underscore é curinga no LIKE e
 // o escape dele dentro de template literal do Prisma é armadilha — LEFT não tem
 // pattern nenhum para escapar.
+/**
+ * Guarda os `send*` do pedido — quais chamadas de status a Brendi espera de
+ * volta desta vez.
+ *
+ * Nunca lança e nunca bloqueia: pedido gravado sem as flags simplesmente cai
+ * no comportamento anterior em `brendi-status.ts`. A coluna é garantida no
+ * boot e não está no schema.prisma, daí o SQL cru.
+ */
+async function gravarSendFlags(orderId: string, orderData: any): Promise<void> {
+  try {
+    const flags: Record<string, boolean> = {};
+    for (const chave of ["sendPreparing", "sendDelivered", "sendPickedUp", "sendTracking"]) {
+      if (typeof orderData?.[chave] === "boolean") flags[chave] = orderData[chave];
+    }
+    if (Object.keys(flags).length === 0) return;
+    await prisma.$executeRaw`
+      UPDATE "CustomerOrder"
+      SET "brendiSendFlags" = ${JSON.stringify(flags)}::jsonb
+      WHERE "openDeliveryOrderId" = ${orderId}
+    `;
+  } catch (e: any) {
+    console.warn(`[Brendi] flags de status não gravadas para ${orderId}: ${e?.message}`);
+  }
+}
+
 async function lojaBrendiPorMerchantId(merchantId: string): Promise<LojaBrendi | null> {
   const rows = await prisma.$queryRaw<LojaBrendi[]>`
     SELECT "id", "ownerId", "storeName", "brendiMerchantId"
@@ -984,6 +1009,18 @@ export async function processBrendiEvent(
           return { action: "error", orderId, message: `FALHA TOTAL: ${lastCreateError?.message}` };
         }
       }
+
+      // ── QUAIS AVISOS ESTE PEDIDO ESPERA DE VOLTA ─────────────────────────
+      //
+      // O pedido diz, ele mesmo, quais chamadas de status a loja deve mandar:
+      // `sendPreparing`, `sendDelivered`, `sendPickedUp`, `sendTracking`.
+      // Guardar isso é o que permite `brendi-status.ts` parar de adivinhar o
+      // `delivered` por `deliveryBy` (ver lib/brendi-status.ts).
+      //
+      // SQL cru porque `brendiSendFlags` é garantida no boot e ainda não está
+      // no schema.prisma — regra da casa. E fora do caminho crítico: pedido
+      // gravado sem as flags cai no comportamento antigo, que é seguro.
+      await gravarSendFlags(orderId, orderData);
 
       // Auto-confirmar pedidos CREATED — originadores Open Delivery cancelam
       // pedido não confirmado dentro do SLA deles. Falha aqui não é crítica:
