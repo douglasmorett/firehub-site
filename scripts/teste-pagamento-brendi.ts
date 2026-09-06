@@ -18,6 +18,10 @@
 import { parseOrderPaymentInfo } from "../src/lib/payment-parser";
 
 const casos: [string, any, boolean][] = [
+  // MEDIDO no pedido real 6005, pago de verdade: o `type` chega "PREPAID",
+  // e nao "ONLINE" como o suporte descreveu — do mesmo jeito que o a receber
+  // chega "PENDING" e nao "OFFLINE". As quatro grafias sao tratadas.
+  ["PREPAID:PIX (medido no 6005, pago)", { payments: { prepaid: 50, pending: 0, methods: [{ type: "PREPAID", method: "PIX", value: 50 }] } }, true],
   ["ONLINE:PIX (pago)", { payments: { prepaid: 25, pending: 0, methods: [{ type: "ONLINE", method: "PIX", value: 25 }] } }, true],
   ["ONLINE:CARD (pago)", { payments: { prepaid: 25, pending: 0, methods: [{ type: "ONLINE", method: "CARD", value: 25 }] } }, true],
   ["OFFLINE:CASH (cobrar)", { payments: { prepaid: 0, pending: 25, methods: [{ type: "OFFLINE", method: "CASH", value: 25, changeFor: 50 }] } }, false],

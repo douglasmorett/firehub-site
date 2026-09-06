@@ -375,14 +375,67 @@ export async function retiradoBrendi(orderId: string, storeId: string): Promise<
 }
 
 /**
+ * Os únicos motivos de cancelamento que a Brendi aceita.
+ *
+ * Medidos contra a API em 05/09/2026, no erro que ela mesma devolve:
+ * `{"path":["code"],"message":"Required","expected":"'SYSTEMIC_ISSUES' | …"}`.
+ *
+ * Até aqui mandávamos `cancellationCode: "501"` — o código numérico do padrão
+ * Open Delivery, que o iFood e o JotaJá usam. A Brendi **não** usa números e o
+ * campo nem se chama assim: é `code`, com um destes textos. O resultado é que
+ * **nenhum cancelamento nosso jamais teria funcionado**: HTTP 400 em toda
+ * tentativa, virando linha de log enquanto o cliente esperava por um pedido que
+ * a loja já tinha cancelado.
+ */
+export const MOTIVOS_CANCELAMENTO_BRENDI = [
+  "SYSTEMIC_ISSUES",
+  "DUPLICATE_APPLICATION",
+  "UNAVAILABLE_ITEM",
+  "RESTAURANT_WITHOUT_DELIVERY_PERSON",
+  "OUTDATED_MENU",
+  "ORDER_OUTSIDE_THE_DELIVERY_AREA",
+  "BLOCKED_CUSTOMER",
+  "OUTSIDE_DELIVERY_HOURS",
+  "INTERNAL_DIFFICULTIES_OF_THE_RESTAURANT",
+  "RISK_AREA",
+  "DELIVERY_PROBLEM",
+] as const;
+
+export type MotivoCancelamentoBrendi = (typeof MOTIVOS_CANCELAMENTO_BRENDI)[number];
+
+/**
+ * Traduz o motivo que veio da tela (texto livre, escrito pelo lojista) para um
+ * dos códigos aceitos.
+ *
+ * O default é `INTERNAL_DIFFICULTIES_OF_THE_RESTAURANT` — o mais genérico e o
+ * mais honesto quando não se sabe: pedido recusado por dificuldade da loja. O
+ * texto original continua indo em `reason`, então nada se perde para quem lê.
+ */
+export function motivoCancelamentoBrendi(texto?: string | null): MotivoCancelamentoBrendi {
+  const t = String(texto || "").toUpperCase();
+  // Um código já válido vindo de cima passa direto.
+  if ((MOTIVOS_CANCELAMENTO_BRENDI as readonly string[]).includes(t)) return t as MotivoCancelamentoBrendi;
+
+  if (/DUPLICAD|DUPLICAT|REPETID/.test(t)) return "DUPLICATE_APPLICATION";
+  if (/INDISPON|SEM ESTOQUE|ACABOU|FALTA/.test(t)) return "UNAVAILABLE_ITEM";
+  if (/MOTOBOY|ENTREGADOR/.test(t)) return "RESTAURANT_WITHOUT_DELIVERY_PERSON";
+  if (/CARD(Á|A)PIO|PRE(Ç|C)O/.test(t)) return "OUTDATED_MENU";
+  if (/(Á|A)REA DE ENTREGA|FORA DA (Á|A)REA|LONGE|DIST(Â|A)NCIA/.test(t)) return "ORDER_OUTSIDE_THE_DELIVERY_AREA";
+  if (/RISCO|PERIGO|VIOL(Ê|E)NCIA/.test(t)) return "RISK_AREA";
+  if (/FECHAD|HOR(Á|A)RIO/.test(t)) return "OUTSIDE_DELIVERY_HOURS";
+  if (/ENTREGA|ROTA/.test(t)) return "DELIVERY_PROBLEM";
+  if (/CLIENTE|TROTE|BLOQUEAD/.test(t)) return "BLOCKED_CUSTOMER";
+  if (/SISTEMA|INTERNET|QUEDA/.test(t)) return "SYSTEMIC_ISSUES";
+  return "INTERNAL_DIFFICULTIES_OF_THE_RESTAURANT";
+}
+
+/**
  * Solicita cancelamento — e também é a RECUSA de pedido novo: a Brendi não
  * expõe `/deny` como o JotaJá, então recusar = requestCancellation com motivo.
  *
- * `cancellationCode: "501"` é o código Open Delivery de "restaurante não pode
- * aceitar" (o mesmo que o deny do JotaJá usa). A lista de códigos que a Brendi
- * de fato aceita é pergunta aberta (blueprint §7.9); código desconhecido do
- * lado deles não pode virar recusa silenciosa — por isso vai o default, nunca
- * um valor cru vindo da tela.
+ * O campo obrigatório é `code`, com um dos textos de
+ * `MOTIVOS_CANCELAMENTO_BRENDI`. O `reason` continua indo junto porque é o que
+ * uma pessoa lê do outro lado.
  */
 export async function solicitarCancelamentoBrendi(
   orderId: string,
@@ -390,8 +443,8 @@ export async function solicitarCancelamentoBrendi(
   reason?: string
 ): Promise<ResultadoBrendi> {
   return acaoDePedido("requestCancellation", orderId, storeId, {
+    code: motivoCancelamentoBrendi(reason),
     reason: reason || "Restaurante não pode aceitar o pedido no momento.",
-    cancellationCode: "501",
   });
 }
 
