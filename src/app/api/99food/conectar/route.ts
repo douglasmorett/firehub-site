@@ -9,7 +9,7 @@ import {
   listarLojasVinculadas,
   detalheDaLoja,
 } from "@/lib/food99-api";
-import { salvarLoja99, lojas99DaConta, desativarLoja99 } from "@/lib/food99-lojas";
+import { salvarLoja99, lojas99DaConta, desativarLoja99, donosPorAppShopId } from "@/lib/food99-lojas";
 
 export const dynamic = "force-dynamic";
 
@@ -176,17 +176,26 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   }
 
   // Vínculos que ainda não pertencem a nenhuma loja do FireHub.
-  const jaAdotados = await prisma.user.findMany({
-    where: { food99AppId: { not: null } },
-    select: { food99AppId: true },
-  });
-  const tomados = new Set(jaAdotados.map((u) => u.food99AppId));
+  //
+  // A pergunta é "de quem é este app_shop_id?", e ela tem DUAS fontes: a
+  // tabela `Food99Store` (onde mora quem conectou pelo caminho novo, a Brasa
+  // Burguer inclusive) e as colunas antigas do User. Ler só as colunas fazia a
+  // loja de quem já está conectado voltar a contar como órfã — ver
+  // donosPorAppShopId(), que existe por causa disso.
+  //
+  // O que é da PRÓPRIA loja não bloqueia: reconhecer o vínculo dela de novo é
+  // idempotente, e é o que conserta uma conta que perdeu a linha na tabela.
+  const donos = await donosPorAppShopId();
 
   // O shop/list devolve só ids (app_id, shop_id, app_shop_id, city_id) — não
   // manda shop_name. Então o rótulo cai no id da loja no 99Food, que é o que
   // o lojista consegue conferir no painel dele.
   const orfaos = vinculos.lojas
-    .filter((l) => l.app_shop_id && !tomados.has(String(l.app_shop_id)))
+    .filter((l) => {
+      if (!l.app_shop_id) return false;
+      const dono = donos.get(String(l.app_shop_id));
+      return !dono || dono === lojaId;
+    })
     .map((l) => ({
       appShopId: String(l.app_shop_id),
       nome: String(l.shop_name || l.name || `Loja 99Food ${l.shop_id ?? ""}`).trim(),
@@ -219,6 +228,18 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
     };
   }
 
+  // Zero órfãos tem TRÊS causas diferentes, e a tela dizia a mesma frase nas
+  // três — "Loja ainda não autorizada", que é a resposta certa só na primeira.
+  // Foi isso que segurou o caso do Frangoso em 06/09: ele tinha autorizado, a
+  // consulta voltou `ok` com lista vazia, e a tela repetiu que ele não tinha
+  // autorizado. O lojista clica em autorizar de novo e nada muda, para sempre.
+  const semOrfaos =
+    vinculos.lojas.length === 0
+      ? "Você autorizou no 99Food? Ainda não vejo nenhuma loja vinculada ao FireHub lá. " +
+        "Se você acabou de autorizar, espere alguns segundos e clique em Verificar agora."
+      : `O 99Food tem ${vinculos.lojas.length} loja(s) vinculada(s) ao FireHub, mas todas já ` +
+        "pertencem a outra loja aqui dentro. Fale com o suporte do FireHub — não clique em autorizar de novo.";
+
   return {
     conectado: false,
     disponivel: true,
@@ -226,9 +247,12 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
     // Mais de um vínculo sem dono: a tela mostra os nomes e o lojista aponta o
     // dele. Continua sendo um clique, e sem chance de pegar a loja do vizinho.
     candidatos: orfaos,
+    // Quantas o 99Food devolveu, independente de dono. É o número que separa
+    // "não autorizou" de "autorizou e nós não estamos enxergando".
+    vinculosNo99: vinculos.lojas.length,
     mensagem: orfaos.length
       ? "Encontrei mais de uma loja autorizada no 99Food. Escolha qual é a sua."
-      : "Loja ainda não autorizada. Clique em conectar para autorizar no 99Food.",
+      : semOrfaos,
   };
 }
 
@@ -260,11 +284,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Essa loja não está autorizada no 99Food." }, { status: 404 });
     }
 
-    const dono = await prisma.user.findFirst({
-      where: { food99AppId: escolhido, NOT: { id: r.lojaId } },
-      select: { id: true },
-    });
-    if (dono) {
+    // A trava lia só `User.food99AppId` — nulo em toda a base — então NUNCA
+    // disparava: dava para digitar o app_shop_id do vizinho e levar os pedidos
+    // dele junto, porque o `ON CONFLICT` do salvarLoja99 troca o dono.
+    const donos = await donosPorAppShopId();
+    const dono = donos.get(escolhido);
+    if (dono && dono !== r.lojaId) {
       return NextResponse.json({ error: "Essa loja do 99Food já está ligada a outra loja no FireHub." }, { status: 409 });
     }
 

@@ -2127,6 +2127,15 @@ export default function IntegracoesHubClient({
                     <div style={{ fontSize: "0.76rem", color: "#64748B", marginTop: 10 }}>
                       Você não precisa de código, App ID nem Secret. A autorização é feita na sua própria conta.
                     </div>
+                    {/* O link carrega a identidade DESTA loja (vai dentro do
+                        `uid` da URL do 99Food). Autorizar por um link aberto no
+                        painel de outra loja amarra a autorização à outra loja —
+                        e esta tela fica "não autorizada" para sempre, sem erro
+                        nenhum. Já aconteceu; o lojista não tem como adivinhar. */}
+                    <div style={{ fontSize: "0.76rem", color: "#B45309", marginTop: 8, lineHeight: 1.5 }}>
+                      ⚠️ O botão gera um link <b>desta loja</b>. Não use um link que alguém abriu no
+                      painel de outra loja — a autorização iria para a loja errada.
+                    </div>
                   </div>
                 )}
 

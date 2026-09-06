@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -10,6 +10,7 @@ import {
   listarLojasVinculadas,
 } from "@/lib/food99-api";
 import { ler99Food } from "@/lib/webhook-99food-log";
+import { lojas99DaConta } from "@/lib/food99-lojas";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ interface Candidato {
   appShopId: string;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
@@ -107,6 +108,29 @@ export async function GET() {
     candidatos.push({ rotulo: "app_shop_id adotado na conexão", appShopId: loja.food99AppId });
   }
 
+  // A `Food99Store` é onde mora quem conectou pelo caminho novo — e as colunas
+  // do User ficam nulas nesse caso, então sem isto a loja que ESTÁ conectada
+  // aparecia como "nunca autorizou". Vale também o `shopId`: quando o vínculo
+  // não nasce com o nosso id, o candidato mais provável é o id da loja no lado
+  // deles, que é o que aparece como `cid` na URL de autorização.
+  for (const l of await lojas99DaConta(lojaId)) {
+    if (!candidatos.some((c) => c.appShopId === l.appShopId)) {
+      candidatos.push({ rotulo: `Food99Store: ${l.label || "loja da conta"}`, appShopId: l.appShopId });
+    }
+    if (l.shopId && !candidatos.some((c) => c.appShopId === l.shopId)) {
+      candidatos.push({ rotulo: `shop_id no 99Food (${l.label || "loja da conta"})`, appShopId: l.shopId });
+    }
+  }
+
+  // `?appShopId=…` testa um id à mão, sem deploy e sem terminal no servidor.
+  // É o que responde "para ONDE foi este vínculo": o `cid` que aparece na URL
+  // de autorização, ou o id de outra loja do FireHub quando a suspeita é que o
+  // link foi gerado no painel errado. Só lê — nada aqui grava.
+  const aMao = String(req.nextUrl.searchParams.get("appShopId") || "").trim();
+  if (aMao && !candidatos.some((c) => c.appShopId === aMao)) {
+    candidatos.push({ rotulo: "informado na URL (?appShopId=)", appShopId: aMao });
+  }
+
   const testes = [];
   for (const c of candidatos) {
     const r = await diagnosticoAuth(c.appShopId);
@@ -151,10 +175,18 @@ export async function GET() {
 
   if (!autorizada) {
     parou_em = "autorizacao";
-    diagnostico =
-      "Nenhum app_shop_id testado tem autorização no 99Food. Enquanto isso não mudar, " +
-      "nenhum pedido será entregue aqui — o lojista precisa abrir a URL de autorização " +
-      "e concluir com a conta 99Food da loja.";
+    // Não autorizada com o app TENDO vínculos é um problema diferente de não
+    // autorizada com o app vazio, e mandar "autorize de novo" no primeiro caso
+    // é o conselho errado: o lojista já autorizou, o vínculo é que nasceu com
+    // outro app_shop_id (link gerado no painel de outra loja, por exemplo).
+    const temVinculos = vinculos.ok && vinculos.lojas.length > 0;
+    diagnostico = temVinculos
+      ? `Nenhum app_shop_id testado tem autorização, MAS o app tem ${vinculos.ok ? vinculos.lojas.length : 0} ` +
+        "vínculo(s) no 99Food. Ou seja: alguém autorizou, e o vínculo não ficou com o id desta loja. " +
+        "Veja 'lojasVinculadasAoApp' e teste o app_shop_id de lá com ?appShopId=… nesta mesma URL."
+      : "Nenhum app_shop_id testado tem autorização no 99Food. Enquanto isso não mudar, " +
+        "nenhum pedido será entregue aqui — o lojista precisa abrir a URL de autorização " +
+        "e concluir com a conta 99Food da loja.";
   } else if (eventos.length === 0) {
     parou_em = "webhook";
     diagnostico =
@@ -198,7 +230,18 @@ export async function GET() {
     appId: appIdVisivel(),
     autorizacao: { autorizada: !!autorizada, appShopIdValido: autorizada?.appShopId ?? null, testes },
     lojasVinculadasAoApp: vinculos.ok
-      ? { ok: true, quantidade: vinculos.lojas.length, variante: vinculos.variante, lojas: vinculos.lojas }
+      ? {
+          ok: true,
+          quantidade: vinculos.lojas.length,
+          variante: vinculos.variante,
+          lojas: vinculos.lojas,
+          // O payload CRU, sempre. Em 06/09/2026 esta consulta voltou
+          // `ok: true` com zero lojas tendo duas vinculadas de verdade, e não
+          // havia como saber se o formato mudou ou se a lista estava vazia
+          // mesmo — as duas coisas viravam "0". Sem isto, descobrir exige
+          // terminal no servidor de produção.
+          cru: vinculos.cru ?? null,
+        }
       : { ok: false, erro: vinculos.erro, tentativas: vinculos.tentativas },
     webhook: {
       urlQueDeveEstarNoPortal: "https://firehubfood.com.br/api/99food/webhook",

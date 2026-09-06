@@ -92,6 +92,54 @@ export async function donoDoAppShopId(appShopId: string): Promise<string | null>
   return antigo?.id ?? null;
 }
 
+/**
+ * Todo app_shop_id que JÁ tem dono, e de quem é. Chave = app_shop_id.
+ *
+ * ── O buraco que isto fecha ─────────────────────────────────────────────────
+ *
+ * /api/99food/conectar procura "vínculos órfãos" no 99Food para adotar o da
+ * loja que acabou de autorizar, e montava a lista de tomados lendo SÓ
+ * `User.food99AppId`. Em produção, em 06/09/2026, esse campo estava nulo em
+ * TODAS as contas — inclusive na Brasa Burguer, que recebe pedido do 99Food
+ * todo dia e mora na `Food99Store`. O caminho de sucesso (`comNomeDaLoja`)
+ * grava na tabela e não mexe na coluna, então quem conecta direito some da
+ * lista de tomados.
+ *
+ * Resultado: a loja da Brasa Burguer contava como órfã para qualquer outro
+ * lojista. Com um órfão só ela era adotada sozinha; com mais de um ela
+ * aparecia na pergunta "qual destas é a sua?". E o `ON CONFLICT` do
+ * `salvarLoja99` troca o `userId` — ou seja, os pedidos dela passariam a cair
+ * na cozinha de outra loja, e ninguém saberia por quê.
+ *
+ * Inclui linha inativa de propósito: `active = false` é uma loja que saiu do
+ * FireHub, mas o vínculo continua de pé no 99Food e o dono continua sendo
+ * quem era. Deixar essa reaparecer como órfã para o vizinho é o mesmo estrago.
+ */
+export async function donosPorAppShopId(): Promise<Map<string, string>> {
+  const donos = new Map<string, string>();
+
+  if (await temTabela()) {
+    try {
+      const linhas = await prisma.$queryRaw<{ appShopId: string; userId: string }[]>`
+        SELECT "appShopId", "userId" FROM "Food99Store"
+      `;
+      for (const l of linhas) if (l.appShopId) donos.set(l.appShopId, l.userId);
+    } catch {
+      // segue com o que der — as colunas antigas abaixo ainda entram
+    }
+  }
+
+  // As colunas antigas continuam valendo: elas são o vínculo de quem conectou
+  // antes da tabela existir, e some delas nada é migrado automaticamente.
+  const antigos = await prisma.user.findMany({
+    where: { food99AppId: { not: null } },
+    select: { id: true, food99AppId: true },
+  });
+  for (const u of antigos) if (u.food99AppId) donos.set(u.food99AppId, u.id);
+
+  return donos;
+}
+
 /** Mesma pergunta, pelo shop_id do 99Food (o id da loja no lado deles). */
 export async function donoDoShopId(shopId: string): Promise<string | null> {
   if (await temTabela()) {

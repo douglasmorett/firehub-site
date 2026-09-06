@@ -28,17 +28,22 @@ import { parseJson99Food } from "./json-ids-longos";
  * 5. getAuthToken(app_shop_id) passa a devolver o token, e os pedidos começam
  *    a chegar no webhook.
  *
- * ── Por que o passo 4 existe ────────────────────────────────────────────────
- * O desenho anterior pulava dele: mandava o nosso id da loja como app_shop_id
- * em getUrl e depois perguntava o token por esse mesmo id. Parecia fechar, mas
- * o endpoint IGNORA o app_shop_id — verificado mandando três valores
- * diferentes (o nosso id, um texto qualquer, e nenhum) e recebendo URLs
- * equivalentes, sem o parâmetro em nenhuma delas. O swagger ainda documenta
- * uma URL com `appShopId` na query; a que o 99Food devolve hoje não tem.
+ * ── O que o `app_shop_id` faz, e o que ele NÃO faz ──────────────────────────
+ * A URL devolvida pelo getUrl não carrega `appShopId` na query (o swagger
+ * mostra um exemplo com ele; a URL de hoje traz só app_id, uid, time e sign).
+ * Isso já foi lido como "o endpoint ignora o app_shop_id" — e está errado.
  *
- * Consequência prática: o lojista autorizava de verdade e a nossa tela seguia
- * dizendo "não conectado", porque perguntávamos por um id que o vínculo nunca
- * teve. É preciso listar para descobrir.
+ * A prova é a Brasa Burguer: o `shop/detail` do 99Food devolve, para ela,
+ * `app_shop_id = cmt1hle8y0001ia04z3ss479k`, que é o id dela no FireHub. Esse
+ * valor só pode ter chegado lá pelo nosso getUrl. Ou seja: ele viaja, só que
+ * dentro do `uid` — a URL é um handle para o pedido que o geramos.
+ *
+ * Consequência que manda no desenho da tela: o link vale para A LOJA QUE O
+ * GEROU. Um link gerado no painel da loja A e autorizado pelo dono da loja B
+ * amarra a loja B ao app_shop_id da A — e a tela da B fica dizendo "não
+ * autorizada" para sempre, por mais que ele autorize. Por isso o passo 4
+ * existe: listar é o único jeito de encontrar um vínculo que nasceu com o id
+ * errado, ou sem id nenhum.
  */
 
 const BASE = process.env.FOOD99_BASE_URL || "https://openapi.didi-food.com";
@@ -120,11 +125,11 @@ async function chamar<T = any>(
 /**
  * URL da página onde o LOJISTA autoriza o FireHub, com a conta dele.
  *
- * ATENÇÃO: o `app_shop_id` mandado aqui é IGNORADO pelo 99Food hoje. A URL
- * devolvida não o carrega, e mandar valores diferentes (ou nenhum) devolve a
- * mesma página. Ele segue sendo enviado porque o swagger o exige, mas NÃO
- * conte com ele para amarrar a autorização à loja: quem faz essa amarração é
- * listarLojasVinculadas(), depois que o lojista autoriza.
+ * ATENÇÃO: a URL devolvida NÃO mostra o `app_shop_id` na query, mas ele viaja
+ * dentro do `uid` (ver o cabeçalho deste arquivo). Então o link resultante
+ * pertence a ESTA loja: quem autorizar por ele fica amarrado a `lojaId`,
+ * mesmo que seja o dono de outra loja. Nunca reaproveite o link de um lojista
+ * com outro — gere um por loja, no painel dela.
  *
  * A URL carrega timestamp e assinatura, então tem validade curta: gere na hora
  * do clique, nunca guarde.
@@ -429,7 +434,7 @@ let assinaturaBoa: { nome: string; fn: Assinador } | null = null;
  * ou três vezes seguidas, e só a primeira vira chamada de verdade.
  */
 const JANELA_RATE_LIMIT_MS = 20_000;
-let cacheLojas: { em: number; lojas: LojaVinculada[]; variante: string } | null = null;
+let cacheLojas: { em: number; lojas: LojaVinculada[]; variante: string; cru: any } | null = null;
 
 export interface LojaVinculada {
   shop_id?: string;
@@ -439,18 +444,52 @@ export interface LojaVinculada {
 }
 
 /**
+ * Acha a lista de lojas dentro da resposta, seja qual for o nome do campo.
+ *
+ * Em 06/09/2026 o `shop/list` respondeu `errno 0` e a leitura antiga
+ * (`shop_list` / `list` / `shops`) devolveu ZERO lojas — com duas vinculadas de
+ * verdade: a Brasa Burguer, que recebe pedido todo dia, e o Frangoso,
+ * autorizado minutos antes. Lista vazia com `ok: true` vira "Loja ainda não
+ * autorizada" na tela do lojista, sem erro nenhum. É o pior tipo de defeito,
+ * porque parece resposta.
+ *
+ * Como o que está em dúvida é justamente o NOME do campo, procurar por nome de
+ * novo seria repetir a aposta. Isto procura pela FORMA: o primeiro array de
+ * objetos que tenham `shop_id` ou `app_shop_id`, em qualquer profundidade. E,
+ * quando nem assim acha, quem chama continua com o payload cru em mãos — é o
+ * que o diagnóstico mostra, em vez de a gente adivinhar de novo.
+ */
+function lojasDaResposta(d: any, profundidade = 0): LojaVinculada[] {
+  if (!d || profundidade > 4) return [];
+
+  if (Array.isArray(d)) {
+    const parecemLojas = d.some(
+      (x) => x && typeof x === "object" && ("shop_id" in x || "app_shop_id" in x)
+    );
+    return parecemLojas ? (d as LojaVinculada[]) : [];
+  }
+
+  if (typeof d !== "object") return [];
+
+  for (const valor of Object.values(d)) {
+    const achou = lojasDaResposta(valor, profundidade + 1);
+    if (achou.length) return achou;
+  }
+  return [];
+}
+
+/**
  * Lojas atualmente vinculadas ao app FireHub no 99Food.
  *
- * É o que fecha o autoatendimento. A página de autorização NÃO carrega o
- * app_shop_id (a doc mostra um exemplo com `appShopId` na query, mas a URL que
- * o endpoint devolve hoje não tem esse parâmetro — foi verificado mandando
- * três valores diferentes e recebendo a mesma URL). Ou seja: depois que o
- * lojista autoriza, não há como saber por qual identificador perguntar pelo
- * token dele. Esta listagem é a resposta: a loja recém-autorizada aparece aqui,
- * com o app_shop_id que o 99Food atribuiu.
+ * É o resgate do autoatendimento. Quando o vínculo nasce com o app_shop_id
+ * certo, `getAuthToken(lojaId)` já resolve e ninguém precisa desta chamada.
+ * Ela existe para o caso contrário: o lojista autorizou por um link gerado no
+ * painel de outra loja, ou por fora do FireHub, e o vínculo carrega um
+ * identificador que não é o nosso. Aí a loja recém-autorizada só aparece aqui.
  */
 export async function listarLojasVinculadas(): Promise<
-  { ok: true; lojas: LojaVinculada[]; variante: string } | { ok: false; erro: string; tentativas?: string[] }
+  | { ok: true; lojas: LojaVinculada[]; variante: string; cru?: any }
+  | { ok: false; erro: string; tentativas?: string[] }
 > {
   const cred = credenciaisDoApp();
   if (!cred) return { ok: false, erro: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados." };
@@ -459,7 +498,12 @@ export async function listarLojasVinculadas(): Promise<
   // a única chamada permitida — o lojista clicando "Já autorizei" duas vezes
   // seguidas é o caso comum, e a segunda não pode virar uma mensagem de erro.
   if (cacheLojas && Date.now() - cacheLojas.em < JANELA_RATE_LIMIT_MS) {
-    return { ok: true, lojas: cacheLojas.lojas, variante: `${cacheLojas.variante} (cache)` };
+    return {
+      ok: true,
+      lojas: cacheLojas.lojas,
+      variante: `${cacheLojas.variante} (cache)`,
+      cru: cacheLojas.cru,
+    };
   }
 
   // app_id fica STRING aqui e sai como número cru na serialização (idsCrus).
@@ -480,10 +524,22 @@ export async function listarLojasVinculadas(): Promise<
 
     if (r.errno === 0) {
       assinaturaBoa = variante;
-      const d: any = r.data || {};
-      const lojas: LojaVinculada[] = d.shop_list || d.list || d.shops || (Array.isArray(d) ? d : []);
-      cacheLojas = { em: Date.now(), lojas, variante: variante.nome };
-      return { ok: true, lojas, variante: variante.nome };
+      const d: any = r.data ?? {};
+      const lojas = lojasDaResposta(d);
+
+      // Resposta aceita e nenhuma loja reconhecida é sinal de que o formato
+      // mudou (ou nunca foi o que supomos). Fica no log porque é a única
+      // chance de descobrir isso sem alguém abrir o diagnóstico na hora certa
+      // — e é barato: só acontece quando a lista vem vazia.
+      if (lojas.length === 0) {
+        console.warn(
+          "[99Food] shop/list aceito e sem loja reconhecida. Payload cru:",
+          JSON.stringify(d).slice(0, 1000)
+        );
+      }
+
+      cacheLojas = { em: Date.now(), lojas, variante: variante.nome, cru: d };
+      return { ok: true, lojas, variante: variante.nome, cru: d };
     }
 
     tentativas.push(`${variante.nome} → ${r.errno} ${r.errmsg}`);
