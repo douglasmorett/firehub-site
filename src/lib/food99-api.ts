@@ -160,11 +160,40 @@ export interface TokenDaLoja {
 }
 
 /**
- * Token da loja. Só existe depois que o dono autorizou.
+ * Última tentativa de criar token, por loja. O 99Food aceita um refresh a cada
+ * dois minutos, e esta função é chamada em laço pela tela de Integrações.
+ */
+const ultimoRefresh = new Map<string, number>();
+const INTERVALO_REFRESH_MS = 2 * 60_000;
+
+/**
+ * Token da loja.
  *
- * Devolve `autorizada: false` no errno 10101 em vez de tratar como erro — é o
- * estado normal de quem ainda não clicou em autorizar, e a tela precisa saber
- * diferenciar "ainda não conectou" de "deu problema".
+ * ── O que o 10101 significa de verdade ──────────────────────────────────────
+ *
+ * A doc do `authtoken/get` diz, com todas as letras: *"If you don't have a
+ * auth token yet or the auth token expired, please call auth/authtoken/refresh
+ * api first."* Ou seja, 10101 responde a DUAS perguntas ao mesmo tempo:
+ *
+ *   - a loja não autorizou o app (aí não há o que fazer aqui), OU
+ *   - a loja autorizou e **ainda não existe token** — ou o que existia caducou.
+ *
+ * O código tratava as duas como "não autorizada" e desistia. `refreshAuthToken`
+ * só era chamado quando o `get` DAVA CERTO e o vencimento estava perto — não
+ * havia caminho nenhum que se recuperasse de um 10101.
+ *
+ * O estrago disso apareceu inteiro em 06/09/2026:
+ *
+ *   - A Brasa Burguer parou de receber pedido em 04/09 01:08, do nada. O
+ *     `shop/list` passou a devolver `total: 0` e todo `authtoken/get` do app
+ *     virou 10101 — inclusive o dela, que recebia pedido no dia anterior.
+ *   - O Frangoso autorizou de verdade (o portal registrou a hora) e a tela
+ *     seguia dizendo "não autorizada", porque loja recém-autorizada ainda não
+ *     tem token: é exatamente o caso que a doc manda resolver com refresh.
+ *
+ * Então agora o 10101 vira uma tentativa de criar o token, e só depois disso
+ * "não autorizada" é uma resposta. O intervalo existe porque o refresh é
+ * limitado a um a cada dois minutos e a tela pergunta de 5 em 5 segundos.
  */
 export async function getAuthToken(
   lojaId: string
@@ -172,11 +201,38 @@ export async function getAuthToken(
   const cred = credenciaisDoApp();
   if (!cred) return { autorizada: false, erro: "FOOD99_APP_ID / FOOD99_APP_SECRET não configurados." };
 
-  const r = await chamar<TokenDaLoja>("/v1/auth/authtoken/get", {
-    query: { app_id: cred.appId, app_secret: cred.appSecret, app_shop_id: lojaId },
-  });
+  const consultar = () =>
+    chamar<TokenDaLoja>("/v1/auth/authtoken/get", {
+      query: { app_id: cred.appId, app_secret: cred.appSecret, app_shop_id: lojaId },
+    });
 
-  if (r.errno === ERRO_SEM_AUTORIZACAO) return { autorizada: false };
+  const r = await consultar();
+
+  if (r.errno === ERRO_SEM_AUTORIZACAO) {
+    const ultima = ultimoRefresh.get(lojaId) ?? 0;
+    if (Date.now() - ultima < INTERVALO_REFRESH_MS) return { autorizada: false };
+    ultimoRefresh.set(lojaId, Date.now());
+
+    console.log(`[99Food] ${lojaId} sem token (10101) — criando um com authtoken/refresh`);
+    if (!(await refreshAuthToken(lojaId))) {
+      // Refresh recusado é a resposta honesta de "esta loja não autorizou o
+      // app": não há vínculo para o qual criar token.
+      return { autorizada: false };
+    }
+
+    // "This api always generate a new token, and you need to get it with
+    // auth/authtoken/get api" — por isso a segunda consulta.
+    const novo = await consultar();
+    if (novo.errno === 0 && novo.data?.auth_token) {
+      console.log(`[99Food] ${lojaId} token criado — vence em ${new Date(novo.data.token_expiration_time * 1000).toISOString()}`);
+      return { autorizada: true, token: novo.data };
+    }
+    return {
+      autorizada: false,
+      erro: novo.errno === ERRO_SEM_AUTORIZACAO ? undefined : novo.errmsg,
+    };
+  }
+
   if (r.errno !== 0 || !r.data?.auth_token) {
     return { autorizada: false, erro: r.errmsg || "Falha ao consultar o token da loja." };
   }

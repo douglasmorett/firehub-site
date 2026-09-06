@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   diagnosticoAuth,
+  getAuthToken,
   appIdVisivel,
   food99Configurado,
   ERRO_SEM_AUTORIZACAO,
@@ -125,7 +126,8 @@ export async function GET(req: NextRequest) {
   // `?appShopId=…` testa um id à mão, sem deploy e sem terminal no servidor.
   // É o que responde "para ONDE foi este vínculo": o `cid` que aparece na URL
   // de autorização, ou o id de outra loja do FireHub quando a suspeita é que o
-  // link foi gerado no painel errado. Só lê — nada aqui grava.
+  // link foi gerado no painel errado. Não grava nada no banco; o único efeito
+  // colateral é o refresh de token no 99Food, que é o conserto documentado.
   const aMao = String(req.nextUrl.searchParams.get("appShopId") || "").trim();
   if (aMao && !candidatos.some((c) => c.appShopId === aMao)) {
     candidatos.push({ rotulo: "informado na URL (?appShopId=)", appShopId: aMao });
@@ -134,22 +136,34 @@ export async function GET(req: NextRequest) {
   const testes = [];
   for (const c of candidatos) {
     const r = await diagnosticoAuth(c.appShopId);
+
+    // 10101 na leitura crua não encerra a pergunta: a doc manda criar o token
+    // com refresh antes de concluir "não autorizada". getAuthToken faz isso.
+    // Chamar aqui é o que faz o diagnóstico CONSERTAR a loja que só está sem
+    // token — foi assim que a Brasa Burguer ficou dois dias sem pedido.
+    const aposRefresh =
+      r.errno === ERRO_SEM_AUTORIZACAO ? await getAuthToken(c.appShopId) : null;
+    const autorizada = (r.errno === 0 && !!r.data?.auth_token) || !!aposRefresh?.autorizada;
+    const dados = aposRefresh?.autorizada ? aposRefresh.token : r.data;
+
     testes.push({
       ...c,
       errno: r.errno,
       errmsg: r.errmsg,
-      autorizada: r.errno === 0 && !!r.data?.auth_token,
-      // Prefixo só: confirma que veio token sem imprimir a credencial inteira.
-      tokenPrefixo: r.data?.auth_token ? `${r.data.auth_token.slice(0, 8)}…` : null,
-      expiraEm: r.data?.token_expiration_time
-        ? new Date(r.data.token_expiration_time * 1000).toISOString()
+      autorizada,
+      refreshTentado: aposRefresh !== null,
+      autorizadaAposRefresh: aposRefresh?.autorizada ?? null,
+      tokenPrefixo: dados?.auth_token ? `${dados.auth_token.slice(0, 8)}…` : null,
+      expiraEm: dados?.token_expiration_time
+        ? new Date(dados.token_expiration_time * 1000).toISOString()
         : null,
-      leitura:
-        r.errno === 0
-          ? "AUTORIZADA sob este app_shop_id."
-          : r.errno === ERRO_SEM_AUTORIZACAO
-          ? "O 99Food não conhece autorização para este app_shop_id."
-          : `Erro ${r.errno} — não é falta de autorização, é outra coisa.`,
+      leitura: autorizada
+        ? aposRefresh?.autorizada
+          ? "AUTORIZADA — o token não existia e foi criado agora com authtoken/refresh."
+          : "AUTORIZADA sob este app_shop_id."
+        : r.errno === ERRO_SEM_AUTORIZACAO
+        ? "O 99Food não conhece autorização para este app_shop_id (e o refresh não criou token)."
+        : `Erro ${r.errno} — não é falta de autorização, é outra coisa.`,
     });
   }
 
