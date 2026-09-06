@@ -413,11 +413,34 @@ export async function processBrendiEvent(
         franchisee = await lojaBrendiPorMerchantId(eventMerchantId);
       }
 
-      // 2. Loja alvo do chamador — aceita APENAS se compatível com o merchant.id
+      // 2. Loja alvo do chamador — aceita se compatível com o merchant.id, OU
+      //    se ela ainda não tem merchant nenhum (e aí aprende o dela).
+      //
+      // ── POR QUE O "ainda não tem" IMPORTA: A SEGUNDA LOJA ─────────────────
+      //
+      // `targetFranchiseeId` é a loja cujo PRÓPRIO feed produziu este evento —
+      // o cron e o poll do painel buscam loja a loja, autenticados com a
+      // credencial de cada uma, então um evento vindo do feed da loja B só
+      // pode ser da loja B. É evidência mais forte que a comparação de id.
+      //
+      // Sem o segundo ramo, a segunda loja a conectar NUNCA recebia pedido: ela
+      // nasce sem `brendiMerchantId`, a comparação com o merchant do pedido dá
+      // falso, e o fallback do passo 3 recusa porque já há 2+ conectadas. E não
+      // era um tropeço só no primeiro pedido — como ela nunca aprendia o
+      // merchant, TODO pedido dela seria recusado, para sempre, com a loja
+      // aparecendo "conectada" na tela. Exatamente o cenário que começa no dia
+      // em que o segundo cliente ligar a integração.
       if (!franchisee && targetFranchiseeId) {
         const candidata = await lojaBrendiPorId(targetFranchiseeId);
-        if (candidata && (!eventMerchantId || candidata.brendiMerchantId === eventMerchantId)) {
+        const compativel = candidata && (!eventMerchantId || candidata.brendiMerchantId === eventMerchantId);
+        const semMerchantAinda = candidata && !candidata.brendiMerchantId && !!eventMerchantId;
+        if (compativel || semMerchantAinda) {
           franchisee = candidata;
+          if (semMerchantAinda) {
+            await adotarMerchantId(candidata!.id, eventMerchantId!);
+            candidata!.brendiMerchantId = eventMerchantId!;
+            console.log(`[Brendi] ${orderId}: loja ${candidata!.id} aprendeu o merchant pelo próprio feed`);
+          }
         }
       }
 
