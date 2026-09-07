@@ -690,7 +690,6 @@ const INSTRUCOES_MESA = [
   // da nuvem nunca mais devolve o pedido — o fim do "reinstalou/reiniciou e
   // imprimiu tudo de novo" (Brasa Burguer, 06/09/2026).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "printedAt" TIMESTAMP(3)`,
-  `ALTER TABLE "PrintRequest" ADD COLUMN IF NOT EXISTS "printedAt" TIMESTAMP(3)`,
 
   // Quem fechou a mesa (painel ou garçom).
   `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "closedByKind" TEXT`,
@@ -708,6 +707,9 @@ const INSTRUCOES_MESA = [
      CONSTRAINT "PrintRequest_pkey" PRIMARY KEY ("id")
    )`,
   `CREATE INDEX IF NOT EXISTS "PrintRequest_franchiseeId_createdAt_idx" ON "PrintRequest"("franchiseeId", "createdAt")`,
+  // Depois do CREATE TABLE, de propósito: num banco novo a tabela nasce aqui
+  // em cima, e o ALTER antes dela falharia (e a coluna ficaria faltando).
+  `ALTER TABLE "PrintRequest" ADD COLUMN IF NOT EXISTS "printedAt" TIMESTAMP(3)`,
 ];
 
 /**
