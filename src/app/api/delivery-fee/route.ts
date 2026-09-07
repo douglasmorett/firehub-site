@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyStoreDeliveryAddress } from "@/lib/geocoding";
+import { avaliarEntrega, raioMaximoKm, taxaFixaDaLoja } from "@/lib/area-de-entrega";
 
-// GET: Calculate delivery fee for a given address/neighborhood/coords
+/**
+ * GET: taxa de entrega para um endereço/bairro/GPS. A decisão vem de
+ * `avaliarEntrega` (src/lib/area-de-entrega.ts) — a MESMA regra da rota de
+ * pedido e do robô.
+ *
+ * Esta rota falhava ABERTA: endereço que o mapa não achava, mapa fora do ar ou
+ * loja sem pino viravam "disponível, R$ 5,00". Agora:
+ *   - ATENDE       → taxa da faixa/bairro;
+ *   - FORA         → indisponível, com o motivo;
+ *   - DESCONHECIDO → disponível com a taxa da faixa MAIS CARA e aviso: a venda
+ *                    não se perde, a loja não paga a diferença, e o pedido chega
+ *                    marcado para conferência (rota de pedido).
+ */
 export async function GET(req: NextRequest) {
   const franchiseeId = req.nextUrl.searchParams.get("franchiseeId");
   const street = req.nextUrl.searchParams.get("street") || "";
@@ -16,114 +28,58 @@ export async function GET(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: {
-      deliveryZoneType: true,
-      deliveryZones: true,
-      deliveryConfig: true,
-      storeLatLng: true,
-      storeAddress: true,
-      city: true
-    }
+    select: { deliveryZoneType: true, deliveryZones: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, city: true },
   });
-
   if (!user) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
 
-  const zones = (user.deliveryZones as any) || [];
-  const zoneType = user.deliveryZoneType || "RADIUS";
-  const delivConfig = (user.deliveryConfig as any) || {};
-  const defaultStoreFee = Number(delivConfig.deliveryFee || delivConfig.defaultFee || (Array.isArray(zones) && zones[0]?.fee) || 5);
-
-  const isNeighborhoodMode = zoneType === "NEIGHBORHOOD" || (
-    zoneType !== "RADIUS" && zoneType !== "DISTANCE" && zoneType !== "KM" && Array.isArray(zones) && zones.some((z: any) => z && z.name && !z.km && !z.radius)
-  );
-
-  // 1. MODO BAIRROS
-  if (isNeighborhoodMode) {
-    if (!neighborhood && !address) {
-      return NextResponse.json({ fee: 0, available: false, type: "neighborhood", message: "Selecione seu bairro para calcular a entrega." });
-    }
-    const searchTarget = (neighborhood || address || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    const zone = Array.isArray(zones)
-      ? zones.find((z: any) => {
-          if (!z.name) return false;
-          const zClean = String(z.name).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          return zClean === searchTarget || searchTarget.includes(zClean) || zClean.includes(searchTarget);
-        })
-      : null;
-
-    if (zone) {
-      return NextResponse.json({ fee: Number(zone.fee) || 0, available: true, type: "neighborhood", neighborhood: zone.name, message: `Bairro atendido: ${zone.name}` });
-    }
-
-    if (Array.isArray(zones) && zones.length > 0) {
-      // Se a loja cadastrou bairros específicos e este não bateu -> Fora da área de entrega
-      return NextResponse.json({
-        fee: 0,
-        available: false,
-        type: "neighborhood",
-        message: "Bairro não atendido pela loja. Por favor, selecione um dos bairros cadastrados."
-      });
-    }
-
-    return NextResponse.json({ fee: defaultStoreFee, available: true, type: "neighborhood", message: "Taxa padrão da loja" });
-  }
-
-  // 2. MODO RAIO / DISTÂNCIA EM KM
   const hasCoords = latStr && lngStr && !isNaN(parseFloat(latStr)) && !isNaN(parseFloat(lngStr));
-  const customerCoords = hasCoords ? { lat: parseFloat(latStr!), lng: parseFloat(lngStr!) } : null;
-  const fullQuery = address || `${street} ${number}, ${neighborhood}`.trim() || neighborhood || "";
+  const coords = hasCoords ? { lat: parseFloat(latStr!), lng: parseFloat(lngStr!) } : null;
+  const fullQuery = address || `${street} ${number}, ${neighborhood}`.trim().replace(/^,\s*|,\s*$/g, "") || neighborhood || "";
 
-  if (!customerCoords && (!fullQuery || fullQuery.trim().length < 3)) {
-    return NextResponse.json({ fee: 0, available: false, type: "radius", message: "Informe o endereço completo (rua, número e bairro) para calcular o frete." });
+  const v = await avaliarEntrega(user, {
+    endereco: fullQuery,
+    bairro: neighborhood || null,
+    coords,
+    partes: { street, number, neighborhood, city: user.city || "" },
+  });
+  const type = v.modo === "BAIRRO" ? "neighborhood" : "radius";
+  const brl = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+
+  if (v.modo === "BAIRRO" && v.resultado === "DESCONHECIDO") {
+    return NextResponse.json({ fee: 0, available: false, type, message: "Selecione seu bairro para calcular a entrega." });
+  }
+  if (v.modo === "KM" && !coords && fullQuery.trim().length < 4) {
+    return NextResponse.json({ fee: 0, available: false, type, message: "Informe o endereço completo (rua, número e bairro) para calcular o frete." });
   }
 
-  try {
-    const check = await verifyStoreDeliveryAddress(
-      user.storeAddress,
-      user.storeLatLng as any,
-      user.city,
-      zones,
-      zoneType,
-      fullQuery,
-      customerCoords,
-      delivConfig,
-      { street, number, neighborhood, city: user.city || "" }
-    );
-
-    if (!check || !check.addressFound) {
-      return NextResponse.json({
-        fee: defaultStoreFee,
-        available: true,
-        type: "radius",
-        message: `Taxa calculada: R$ ${defaultStoreFee.toFixed(2).replace('.', ',')}`
-      });
-    }
-
-    if (!check.isWithinRadius && check.distanceKm && check.maxRadiusKm) {
-      return NextResponse.json({
-        fee: 0,
-        available: false,
-        type: "radius",
-        distanceKm: check.distanceKm,
-        maxRadiusKm: check.maxRadiusKm,
-        message: `Endereço fora do raio de entrega (${check.distanceKm} km. Raio máximo: ${check.maxRadiusKm} km).`
-      });
-    }
-
-    const finalFee = check.deliveryFee !== undefined ? Number(check.deliveryFee) : defaultStoreFee;
-
+  if (v.resultado === "FORA") {
     return NextResponse.json({
-      fee: finalFee,
-      available: true,
-      type: "radius",
-      distanceKm: check.distanceKm,
-      maxRadiusKm: check.maxRadiusKm,
-      matchedAddress: check.matchedAddress,
-      message: check.distanceKm ? `Distância aproximada: ${check.distanceKm} km` : `Taxa de entrega calculada`
+      fee: 0, available: false, type, distanceKm: v.distanciaKm, maxRadiusKm: v.raioMaxKm,
+      message: v.modo === "BAIRRO"
+        ? "Bairro não atendido pela loja. Por favor, selecione um dos bairros cadastrados."
+        : `Endereço fora do raio de entrega (${v.distanciaKm} km. Raio máximo: ${v.raioMaxKm} km).`,
     });
-  } catch {
-    return NextResponse.json({ fee: defaultStoreFee, available: true, type: "radius", message: "Taxa padrão da loja" });
   }
-}
 
+  if (v.resultado === "DESCONHECIDO") {
+    // Nem "fora" nem "atende". Cobra a faixa mais cara e avisa; o pedido vai
+    // marcado para a loja conferir (ver customer-order/route.ts).
+    const zonas = Array.isArray(user.deliveryZones) ? (user.deliveryZones as any[]) : [];
+    const maisCara = Math.max(0, ...zonas.map((z: any) => Number(z?.fee) || 0));
+    const fee = maisCara || taxaFixaDaLoja(user) || 0;
+    return NextResponse.json({
+      fee, available: true, unknown: true, type, maxRadiusKm: v.raioMaxKm ?? raioMaximoKm(user),
+      message: `Não localizamos esse endereço no mapa. Confira rua, número e bairro ou use "Minha localização". Por enquanto a taxa é ${brl(fee)}, e a loja confirma a entrega.`,
+    });
+  }
+
+  // ATENDE
+  // Loja sem área cadastrada segue como sempre: R$ 5,00 quando não há taxa fixa.
+  const fee = v.taxa ?? taxaFixaDaLoja(user) ?? (v.modo === "SEM_AREA" ? 5 : 0);
+  return NextResponse.json({
+    fee, available: true, type, distanceKm: v.distanciaKm, maxRadiusKm: v.raioMaxKm, matchedAddress: v.enderecoNoMapa, neighborhood: v.bairro,
+    message: v.modo === "BAIRRO" ? `Bairro atendido: ${v.bairro}`
+      : v.modo === "KM" ? `Distância aproximada: ${v.distanciaKm} km`
+      : "Taxa padrão da loja",
+  });
+}

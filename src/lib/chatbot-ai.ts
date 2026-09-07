@@ -1,5 +1,6 @@
 import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
+import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { prisma } from "@/lib/prisma";
 import fs from "fs";
 
@@ -117,6 +118,22 @@ export async function processChatbotAI(
   }
 
   const targetFranchiseeId = user.ownerId || user.id;
+
+  // Os DADOS DA LOJA são do dono: horário, pausa, interruptor, área de entrega,
+  // taxas. O robô era carregado pelo usuário da instância; numa conta de
+  // funcionário isso lia o horário e a área do FUNCIONÁRIO e gravava o pedido
+  // no DONO — duas lojas diferentes na mesma conversa.
+  if (user.ownerId) {
+    const dono = await prisma.user.findUnique({
+      where: { id: user.ownerId },
+      select: {
+        storeName: true, storePhone: true, storeAddress: true, storeLatLng: true, storeTimezone: true, city: true, slug: true,
+        storeHours: true, storePause: true, storeOpen: true, storeDeliveryOnly: true,
+        deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, storeCoupons: true,
+      },
+    });
+    if (dono) Object.assign(user, dono);
+  }
 
   // Extrai telefone limpo se fornecido remoteJid
   let clientPhoneDigits = "";
@@ -721,42 +738,41 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   // "centro" numa frase qualquer para o sistema tratar como endereço.
   const addressRegex = /\b(rua|r\.|avenida|av\.|bairro|estrada|est\.|alameda|travessa|praça|praca|rodovia|rod\.|quadra|qd|lote|lt|condomínio|condominio|loteamento|km)\b/i;
 
-  if (addressRegex.test(potentialAddressText)) {
+  // A decisão é de `avaliarEntrega` (src/lib/area-de-entrega.ts) — a mesma do
+  // site e da gravação do pedido, mais abaixo. O texto aqui só CONTA ao modelo
+  // o que o sistema decidiu; o que segura de verdade é a trava em
+  // syncAiOrderToDatabase. Antes este bloco dizia "NUNCA RECUSE ESSE PEDIDO" e,
+  // em loja por bairro, inventava um raio de 10 km com taxa de R$ 5,00.
+  const modoDaAreaDaLoja = modoDaArea(user);
+  const bairroNoTexto = modoDaAreaDaLoja === "BAIRRO" ? bairroCadastrado(potentialAddressText, user) : null;
+  if (modoDaAreaDaLoja !== "SEM_AREA" && (addressRegex.test(potentialAddressText) || bairroNoTexto)) {
     try {
-      const { verifyStoreDeliveryAddress } = await import("@/lib/geocoding");
-      const geoResult = await verifyStoreDeliveryAddress(
-        user.storeAddress,
-        user.storeLatLng as any,
-        user.city,
-        (user.deliveryZones as any) || [],
-        user.deliveryZoneType,
-        potentialAddressText
-      );
-
-      if (geoResult && geoResult.addressFound && geoResult.distanceKm != null) {
-        if (geoResult.isWithinRadius) {
-          addressValidationText = `
-🗺️ VALIDAÇÃO DE MAPA E RAIO DE ENTREGA EM TEMPO REAL:
-- Endereço do cliente no mapa: "${geoResult.matchedAddress || geoResult.searchedQuery}"
-- Distância calculada no mapa até a loja: ${geoResult.distanceKm} KM
-- Raio Máximo Configurado da Loja: ${geoResult.maxRadiusKm} KM
-- RESULTADO DO MAPA: ✅ ATENDE COM SUCESSO!
-- Taxa de Entrega Calculada: R$ ${geoResult.deliveryFee?.toFixed(2)} (${geoResult.estimatedTimeMin} min)
-- INSTRUÇÃO OBRIGATÓRIA DA IA: Diga ao cliente que a loja atende esse endereço SIM com muita alegria! A taxa de entrega é de R$ ${geoResult.deliveryFee?.toFixed(2)}. NUNCA RECUSE ESSE PEDIDO!
+      const v = await avaliarEntrega(user, { endereco: potentialAddressText });
+      const brl = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+      if (v.resultado === "ATENDE") {
+        addressValidationText = `
+🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
+- ${v.modo === "BAIRRO" ? `Bairro cadastrado: ${v.bairro}` : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja (raio máximo ${v.raioMaxKm} km)${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
+- RESULTADO: ✅ A LOJA ATENDE. Taxa de entrega: ${brl(v.taxa ?? 0)}${v.tempoMin ? ` (${v.tempoMin} min)` : ""}.
+- Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.
 `;
-        } else {
-          addressValidationText = `
-🗺️ VALIDAÇÃO DE MAPA E RAIO DE ENTREGA EM TEMPO REAL:
-- Endereço do cliente no mapa: "${geoResult.matchedAddress || geoResult.searchedQuery}"
-- Distância calculada no mapa até a loja: ${geoResult.distanceKm} KM
-- Raio Máximo Configurado da Loja: ${geoResult.maxRadiusKm} KM
-- RESULTADO DO MAPA: 🛑 FORA DO RAIO MÁXIMO (${geoResult.distanceKm} km excede o limite de ${geoResult.maxRadiusKm} km da loja)!
-- INSTRUÇÃO OBRIGATÓRIA DA IA: Informe com gentileza que o endereço do cliente fica a ${geoResult.distanceKm} km da loja, o que ultrapassa o nosso raio máximo de entrega de ${geoResult.maxRadiusKm} km.
+      } else if (v.resultado === "FORA") {
+        addressValidationText = `
+🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
+- ${v.modo === "BAIRRO" ? "O bairro informado NÃO está entre os bairros que a loja entrega." : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja, e a loja entrega até ${v.raioMaxKm} km.`}
+- RESULTADO: 🛑 FORA DA ÁREA DE ENTREGA. É PROIBIDO anotar entrega para este endereço, cotar taxa ou pedir pagamento.
+- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && v.distanciaKm != null ? ` (fica a ${v.distanciaKm} km; entregamos até ${v.raioMaxKm} km)` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.
 `;
-        }
+      } else {
+        addressValidationText = `
+🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
+- O sistema NÃO conseguiu localizar este endereço no mapa (${v.motivo}).
+- RESULTADO: ❓ ÁREA NÃO CONFIRMADA. NÃO prometa entrega, NÃO cote taxa por conta própria e NÃO finalize entrega com "finalized": true.
+- Peça o BAIRRO exato e um ponto de referência. Se mesmo assim não der, diga que um atendente vai confirmar a área de entrega${aceitaRetirada ? " (ou ofereça retirada no balcão)" : ""}.
+`;
       }
     } catch (errGeo) {
-      console.warn("[Chatbot AI] Erro no geocoding do mapa:", errGeo);
+      console.warn("[Chatbot AI] Erro na validação de área:", errGeo);
     }
   }
 
@@ -1094,13 +1110,15 @@ ${(() => {
   const kmDaFaixa = (z: any) => Number(z.km ?? z.radius ?? z.maxKm ?? 0);
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
-    taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n");
+    taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
+      "\n- A LOJA SÓ ENTREGA NESTES BAIRROS. Bairro fora da lista: NÃO anote entrega nem cote taxa — ofereça retirada ou peça outro endereço. O sistema recusa a gravação de entrega fora da lista.";
   } else if (zones.length > 0) {
     const maxKm = Math.max(...zones.map(kmDaFaixa));
     taxaText = `TIPO DE ENTREGA DA LOJA: POR RAIO DE DISTÂNCIA DA LOJA!\n- FAIXAS DE KM E TAXAS PERMITIDAS:\n` +
       zones.map((z: any) => `  * Até ${kmDaFaixa(z) || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
       `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM.` +
-      `\n- A TAXA EXATA de um endereço vem da validação no mapa. NUNCA cite uma taxa única como se valesse para todo mundo.`;
+      `\n- A TAXA EXATA de um endereço vem da validação no mapa. NUNCA cite uma taxa única como se valesse para todo mundo.` +
+      `\n- Endereço FORA do raio: NÃO anote entrega. Endereço que o sistema NÃO localizou: NÃO finalize entrega — peça bairro e ponto de referência. O sistema recusa a gravação nesses dois casos.`;
   } else if (fixedFee !== null) {
     taxaText = `- Taxa Padrão de Entrega da Loja: R$ ${Number(fixedFee).toFixed(2)}`;
   } else {
@@ -1402,6 +1420,8 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
                   minimumOrderValuePickup,
                   lojaAberta: estadoAtualDaLoja.aberta,
                   textoDoHorario: estadoAtualDaLoja.texto,
+                  loja: user,
+                  aceitaRetirada,
                 });
               }
             } else if (rawJsonPayload) {
@@ -1442,7 +1462,9 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
             // ainda chamaria um atendente para um caso que se resolve sozinho,
             // com o cliente completando o pedido.
             console.warn(`[Chatbot AI] 📏 Fechamento barrado por regra da loja. Loja=${targetFranchiseeId} motivo="${motivo}".`);
-            cleanText = recusa.mensagemParaOCliente;
+            cleanText = recusa.chamarAtendente
+              ? `${recusa.mensagemParaOCliente}\n[[CHAMAR_ATENDENTE]]`
+              : recusa.mensagemParaOCliente;
           } else {
             console.error(`[Chatbot AI] 🚨 CONFIRMAÇÃO SEM LASTRO bloqueada. Loja=${targetFranchiseeId} motivo="${motivo}". A resposta foi trocada e o atendente foi acionado.`);
             cleanText =
@@ -1563,6 +1585,8 @@ type SyncResultado =
       /** O que dizer ao cliente. Sem isto ele ouviria "problema técnico" por uma
        *  recusa que não tem nada de técnico. */
       mensagemParaOCliente?: string;
+      /** true quando, além da mensagem, um atendente humano precisa entrar (área não confirmada). */
+      chamarAtendente?: boolean;
     };
 
 async function syncAiOrderToDatabase({
@@ -1576,6 +1600,8 @@ async function syncAiOrderToDatabase({
   minimumOrderValuePickup,
   lojaAberta,
   textoDoHorario,
+  loja,
+  aceitaRetirada,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -1591,6 +1617,10 @@ async function syncAiOrderToDatabase({
   lojaAberta?: boolean;
   /** Frase pronta para explicar ao cliente quando a loja volta a atender. */
   textoDoHorario?: string;
+  /** Área de entrega da loja (zonas, tipo, pino no mapa). Sem isto, não há regra de área. */
+  loja?: LojaParaEntrega;
+  /** A loja aceita retirada no balcão? Muda o que se oferece a quem está fora da área. */
+  aceitaRetirada?: boolean;
 }): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
@@ -1605,7 +1635,9 @@ async function syncAiOrderToDatabase({
   // Rascunho passa: o cliente pode ir montando enquanto conversa. O que não
   // passa é FINALIZAR — e é o `isFinal` que decide, mais abaixo, então aqui a
   // checagem olha o mesmo sinal do payload.
-  if (lojaAberta === false && payload?.finalized === true) {
+  const statusDoPayload = String(payload?.status || "").toUpperCase().replace(/_/g, "");
+  const querFinalizar = payload?.finalized === true || statusDoPayload === "NOVO" || statusDoPayload === "ACEITO" || statusDoPayload === "FINALIZADO";
+  if (lojaAberta === false && querFinalizar) {
     console.warn(
       `[Chatbot AI Order Sync] 🕐 Pedido recusado: loja FECHADA. ` +
       `Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
@@ -1859,10 +1891,10 @@ async function syncAiOrderToDatabase({
   if (!freteValido && freteBruto !== 0) {
     console.warn(`[chatbot-ai] frete recusado (${freteBruto}) — gravando 0.`);
   }
-  const deliveryFee = freteValido ? centavos(freteBruto) : 0;
+  let deliveryFee = freteValido ? centavos(freteBruto) : 0;
 
   // Recalcula o total de forma determinística — NUNCA confiar no valor total chutado pela IA!
-  const totalOrderAmount = centavos(totalItemsSum + deliveryFee);
+  let totalOrderAmount = centavos(totalItemsSum + deliveryFee);
 
   // ── PEDIDO FINALIZADO SEM UM ÚNICO ITEM NÃO É PEDIDO ──────────────────────
   //
@@ -1894,6 +1926,67 @@ async function syncAiOrderToDatabase({
     /retirad|balc[ãa]o|buscar|takeout|pickup/.test(textoDeEntrega) ||
     (!payload.address && deliveryFee === 0);
   const deliveryType = ehRetirada ? "RETIRADA" : "DELIVERY";
+
+  // ── A LOJA ENTREGA NESTE ENDEREÇO? ────────────────────────────────────────
+  //
+  // Pedido #64 da Hakim Centro, 06/09/2026: o robô fechou entrega para o
+  // bairro Aquários, longe dos 5 km da loja, cobrando a faixa dos 4 km. A área
+  // vivia só no prompt. Agora quem decide é `avaliarEntrega`, a mesma regra do
+  // site: FORA não fecha; endereço que o mapa não acha também não fecha
+  // sozinho — um atendente confirma; ATENDE fecha com a taxa da regra, não
+  // com a que o modelo escreveu. Rascunho passa: o cliente ainda está montando.
+  let vereditoDaArea: VeredictoDeEntrega | null = null;
+  if (isFinal && deliveryType === "DELIVERY" && loja && modoDaArea(loja) !== "SEM_AREA") {
+    vereditoDaArea = await avaliarEntrega(loja, { endereco: payload.address, bairro: payload.neighborhood || payload.bairro || null });
+    const primeiroNome = String(customerName || "").trim().split(" ")[0];
+    const saudacao = primeiroNome && primeiroNome !== "Cliente" ? `Poxa, ${primeiroNome}!` : "Poxa!";
+    const retirada = aceitaRetirada
+      ? " Se quiser, deixo o pedido para RETIRADA no balcão — é só me dizer! 😊"
+      : " Se tiver outro endereço dentro da área, me manda que eu anoto! 😊";
+    if (vereditoDaArea.resultado === "FORA") {
+      console.warn(
+        `[Chatbot AI Order Sync] 🛑 Pedido recusado: FORA DA ÁREA (${vereditoDaArea.motivo}). ` +
+        `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
+      );
+      const lista = bairrosAtendidos(loja);
+      const explicacao = vereditoDaArea.modo === "BAIRRO"
+        ? `a gente ainda não entrega nesse bairro.${lista.length ? ` Atendemos: ${lista.slice(0, 12).map((b) => b.name).join(", ")}${lista.length > 12 ? "…" : ""}.` : ""}`
+        : `esse endereço fica a ${vereditoDaArea.distanciaKm} km da loja, e nossa entrega vai até ${vereditoDaArea.raioMaxKm} km.`;
+      return {
+        gravado: false,
+        motivo: `endereço fora da área de entrega (${vereditoDaArea.motivo})`,
+        regraDeNegocio: true,
+        mensagemParaOCliente: `${saudacao} 😕 Conferi aqui e ${explicacao}${retirada}`,
+      };
+    }
+    if (vereditoDaArea.resultado === "DESCONHECIDO") {
+      console.warn(
+        `[Chatbot AI Order Sync] ❓ Pedido segurado: ÁREA NÃO CONFIRMADA (${vereditoDaArea.motivo}). ` +
+        `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
+      );
+      return {
+        gravado: false,
+        motivo: `área de entrega não confirmada (${vereditoDaArea.motivo})`,
+        regraDeNegocio: true,
+        chamarAtendente: true,
+        mensagemParaOCliente:
+          `Não consegui localizar esse endereço no mapa para confirmar se está na nossa área de entrega. 🗺️ ` +
+          `Me manda o bairro certinho e um ponto de referência? Já chamei um atendente da loja para confirmar com você por aqui — não precisa repetir o pedido!`,
+      };
+    }
+    if (vereditoDaArea.taxa != null) {
+      const daRegra = centavos(vereditoDaArea.taxa);
+      if (Math.abs(daRegra - deliveryFee) >= 0.01) {
+        console.warn(`[Chatbot AI Order Sync] frete da IA (${deliveryFee}) ≠ frete da área (${daRegra}) — gravando o da área.`);
+      }
+      deliveryFee = daRegra;
+      const dc: any = loja.deliveryConfig || {};
+      if (dc.freeShippingActive === true && Number(dc.freeShippingMinValue) > 0 && totalItemsSum >= Number(dc.freeShippingMinValue)) {
+        deliveryFee = 0;
+      }
+      totalOrderAmount = centavos(totalItemsSum + deliveryFee);
+    }
+  }
 
   // ── PEDIDO MÍNIMO: TRAVA DE VERDADE, NÃO PEDIDO DE FAVOR ──────────────────
   //
@@ -1930,9 +2023,10 @@ async function syncAiOrderToDatabase({
     };
   }
 
-  const notesText = payload.finalized
+  const notesText = (payload.finalized
     ? `🤖 Pedido finalizado via IA pelo WhatsApp`
-    : `🤖 Pedido sendo montado pela IA no WhatsApp`;
+    : `🤖 Pedido sendo montado pela IA no WhatsApp`) +
+    (vereditoDaArea ? ` · Entrega: ${descreverVeredicto(vereditoDaArea)}` : "");
 
   // Preenchidos pelo ramo que efetivamente gravar — são a prova que sobe para
   // o chamador e vira o "nº do pedido" que o cliente recebe.

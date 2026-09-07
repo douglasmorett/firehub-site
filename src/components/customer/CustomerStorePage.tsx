@@ -35,6 +35,7 @@ import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
 import { isStoreOpen } from "@/lib/store-hours";
+import { bairroCadastrado } from "@/lib/area-de-entrega";
 import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import "./store.css";
@@ -212,6 +213,9 @@ export default function CustomerStorePage({
   const [deliveryCalculating, setDeliveryCalculating] = useState(false);
   const [deliveryMessage, setDeliveryMessage] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
+  // Coordenadas do "Minha localização": vão no pedido para o servidor conferir
+  // a área pelo GPS, não pelo texto (que o mapa às vezes não acha).
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [showVipTooltip, setShowVipTooltip] = useState(false);
 
@@ -1024,6 +1028,7 @@ export default function CustomerStorePage({
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
+          setGpsCoords({ lat: latitude, lng: longitude });
           // Reverse geocode para obter rua, número e bairro
           try {
             const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`, {
@@ -1095,11 +1100,8 @@ export default function CustomerStorePage({
         setDeliveryMessage("");
         return;
       }
-      const searchTarget = neigh.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const found = availableNeighborhoods.find(z => {
-        const zClean = z.name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        return zClean === searchTarget || searchTarget.includes(zClean) || zClean.includes(searchTarget);
-      });
+      // A mesma regra do servidor: "Centro" não vira "Centro Norte".
+      const found = bairroCadastrado(neigh, availableNeighborhoods.map((z: any) => ({ name: String(z.name), fee: Number(z.fee) || 0, time: Number(z.time) || 45 })));
 
       if (found) {
         setDeliveryFee(Number(found.fee) || 0);
@@ -1119,6 +1121,8 @@ export default function CustomerStorePage({
     const fullNum = customerNumber.trim();
     const fullNeigh = (neigh || customerNeighborhood || "").trim();
     const addrQuery = customAddress || `${fullStreet}, ${fullNum} - ${fullNeigh}, ${franchisee.city || ""}`.trim();
+    // Endereço digitado de novo: o GPS de antes não vale mais.
+    setGpsCoords(null);
 
     if (!fullStreet || !fullNum || (!isNeighborhoodType && !fullNeigh) || addrQuery.length < 5) {
       setDeliveryFee(null);
@@ -1252,6 +1256,7 @@ export default function CustomerStorePage({
           franchiseeSlug: franchisee.slug,
           customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? finalAddress : null,
+          customerCoords: deliveryType === "DELIVERY" ? gpsCoords : null,
           deliveryType, paymentMethod, notes,
           // Troco em dinheiro: vai para a cozinha/motoboy junto do pedido.
           changeAmount: (() => {

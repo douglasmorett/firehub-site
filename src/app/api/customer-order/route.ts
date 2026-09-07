@@ -8,6 +8,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
+import { avaliarEntrega, descreverVeredicto, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 
 export async function POST(req: Request) {
   try {
@@ -30,7 +31,11 @@ export async function POST(req: Request) {
       where: franchiseeId ? { id: franchiseeId } : { slug: franchiseeSlug },
       select: {
         id: true, slug: true, storeName: true, storeOpen: true, storePause: true, storeHours: true, storeTimezone: true,
-        autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true
+        autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true,
+        // A área de entrega, para o SERVIDOR conferir — antes só o navegador
+        // conferia, e um POST direto (ou aba antiga) entrava com qualquer
+        // endereço e qualquer taxa.
+        deliveryZones: true, deliveryZoneType: true, storeLatLng: true, storeAddress: true, city: true
       }
     });
     if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
@@ -84,6 +89,35 @@ export async function POST(req: Request) {
       if (hoje >= pause.from && hoje <= pause.to) {
         const [a, m, d] = String(pause.to).split("-");
         return NextResponse.json({ error: `Loja em pausa até ${d}/${m}/${a}.` }, { status: 400 });
+      }
+    }
+
+    // ── A LOJA ENTREGA NESTE ENDEREÇO? ──────────────────────────────────────
+    //
+    // A mesma regra do robô e da API de taxa (src/lib/area-de-entrega.ts).
+    // FORA → recusa. ATENDE → a taxa é a da faixa/bairro, não a que veio no
+    // corpo. DESCONHECIDO (mapa não achou) → aceita com a taxa informada e
+    // marca o pedido para a loja conferir a área.
+    let veredictoDaArea: VeredictoDeEntrega | null = null;
+    if (deliveryType === "DELIVERY") {
+      const coordsBrutas = body.customerCoords;
+      const coords =
+        coordsBrutas && Number.isFinite(Number(coordsBrutas.lat)) && Number.isFinite(Number(coordsBrutas.lng))
+          ? { lat: Number(coordsBrutas.lat), lng: Number(coordsBrutas.lng) }
+          : null;
+      try {
+        veredictoDaArea = await avaliarEntrega(franchisee, { endereco: customerAddress, coords });
+      } catch (e: any) {
+        console.warn(`[customer-order] avaliarEntrega falhou na loja ${franchisee.id}: ${e?.message || e}`);
+      }
+      if (veredictoDaArea?.resultado === "FORA") {
+        const detalhe = veredictoDaArea.modo === "KM" && veredictoDaArea.distanciaKm != null
+          ? ` (${veredictoDaArea.distanciaKm} km da loja; entregamos até ${veredictoDaArea.raioMaxKm} km)`
+          : veredictoDaArea.modo === "BAIRRO" ? " (bairro não atendido)" : "";
+        return NextResponse.json(
+          { error: `Endereço fora da área de entrega${detalhe}. Revise o endereço ou escolha retirar no balcão.` },
+          { status: 400 }
+        );
       }
     }
 
@@ -248,7 +282,18 @@ export async function POST(req: Request) {
       );
     }
 
-    const originalFee = feeForaDaFaixa ? 0 : feeInformada;
+    let originalFee = feeForaDaFaixa ? 0 : feeInformada;
+    let notaDaArea = "";
+    if (veredictoDaArea?.resultado === "ATENDE" && veredictoDaArea.taxa != null && veredictoDaArea.modo !== "SEM_AREA") {
+      // A taxa é a da regra da loja. Se o navegador mandou outra, vale a regra.
+      const daRegra = Math.round(Number(veredictoDaArea.taxa) * 100) / 100;
+      if (Math.abs(daRegra - originalFee) >= 0.01) {
+        console.warn(`[customer-order] taxa do corpo (${originalFee}) ≠ taxa da área (${daRegra}) na loja ${franchisee.id} — gravando a da área.`);
+      }
+      originalFee = daRegra;
+    } else if (veredictoDaArea?.resultado === "DESCONHECIDO") {
+      notaDaArea = ` [⚠️ Endereço não localizado no mapa — confira a área de entrega e a taxa]`;
+    }
     let fee = originalFee;
     let freeShippingNote = "";
 
@@ -299,6 +344,9 @@ export async function POST(req: Request) {
     }
     if (freeShippingNote) {
       orderNotes = `${orderNotes} ${freeShippingNote}`.trim();
+    }
+    if (notaDaArea) {
+      orderNotes = `${orderNotes}${notaDaArea}`.trim();
     }
     const finalNotes = orderNotes || null;
 
