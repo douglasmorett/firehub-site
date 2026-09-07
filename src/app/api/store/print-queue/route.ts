@@ -91,12 +91,13 @@ export async function GET(req: NextRequest) {
       name: string | null;
       slug: string | null;
       printQueuePolledAt?: Date | null;
+      printQueueEstado?: unknown;
     };
     let owner: DonoDaFila | null = null;
     try {
       owner = await prisma.user.findUnique({
         where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true, slug: true, printQueuePolledAt: true },
+        select: { printerConfig: true, storeName: true, name: true, slug: true, printQueuePolledAt: true, printQueueEstado: true },
       });
     } catch (err) {
       console.error("[PrintQueue] printQueuePolledAt ausente? (falta db push)", (err as any)?.code || err);
@@ -174,7 +175,14 @@ export async function GET(req: NextRequest) {
     // loja descobrir pela comanda que não saiu. Na mesma passada, apaga as
     // impressões avulsas com mais de um dia: a fila só lê 2 h, e a tabela não
     // precisa virar histórico eterno de contas com nome de gente.
-    if (owner && "printQueuePolledAt" in owner && Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000) {
+    // A VERSÃO do Assistente é exceção ao "uma vez por minuto": quando ela
+    // muda, grava na passada seguinte. A loja que acabou de atualizar vê o
+    // aviso de "Assistente desatualizado" sumir do painel em segundos, em vez
+    // de ficar olhando para um alerta já resolvido até o próximo carimbo.
+    const versaoSalva = String((owner as any)?.printQueueEstado?.versao || "");
+    const versaoAgora = String((estadoDoAssistente as any)?.versao || "");
+    const versaoMudou = !!estadoDoAssistente && versaoAgora !== versaoSalva;
+    if (owner && "printQueuePolledAt" in owner && (versaoMudou || Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000)) {
       const carimbo = { printQueuePolledAt: new Date() };
       prisma.user
         .update({

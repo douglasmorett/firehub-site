@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { fetchAssistente, printersParaAssistente } from "@/lib/print";
+import { fetchAssistente, printersParaAssistente, VERSAO_ASSISTENTE_ATUAL } from "@/lib/print";
 import { traduzErroDeImpressao } from "@/lib/erro-de-impressao";
 
 /**
@@ -32,11 +32,23 @@ import { traduzErroDeImpressao } from "@/lib/erro-de-impressao";
  *   4. Nunca consultou e a loja usa salão → o aviso antigo.
  *   5. Impressora cadastrada que não existe naquele PC → comanda nunca sai.
  *   6. Comanda presa (pendente) → impressora desligada/sem papel/em erro.
+ *   7. Assistente antigo no PC do caixa → comanda em dobro a cada reinício.
  *
  * Só aparece para loja com impressora cadastrada: quem não imprime pelo
  * Assistente não tem o que consertar.
  */
 const TOLERANCIA_S = 3 * 60;
+
+/** `a` é mais nova que `b`? ("1.2.8" > "1.2.6"). Igual ou menor = false. */
+function versaoMaisNova(a: string, b: string): boolean {
+  const x = String(a || "").split(".").map((n) => parseInt(n, 10) || 0);
+  const y = String(b || "").split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((x[i] || 0) > (y[i] || 0)) return true;
+    if ((x[i] || 0) < (y[i] || 0)) return false;
+  }
+  return false;
+}
 const CHAVE_DISPENSA = "fh_aviso_impressao_dispensado_ate";
 const PORTAS_DO_ASSISTENTE = [7899, 7900, 7901, 7891];
 
@@ -172,6 +184,21 @@ export default function AvisoImpressaoParada() {
   const presas = !filaMuda ? Math.max(0, Number(estado.pendentes) || 0) : 0;
   const acabouDeVincular = vinculadoEm > 0 && Date.now() - vinculadoEm < 60_000;
 
+  // ── Assistente antigo no PC do caixa ────────────────────────────────────
+  //
+  // Desde a 1.2.7 o Assistente conta a própria versão em cada consulta da
+  // fila. Fila respondendo e NENHUMA versão informada só pode ser versão
+  // anterior a essa — e é justamente ela que reimprime tudo ao reabrir,
+  // porque não confirma no servidor a comanda que saiu.
+  //
+  // Não é detalhe de manutenção: em 07/09/2026 a Brasa Burguer imprimia as
+  // comandas, o Assistente sumia (a atualização automática o fechava), ela
+  // abria de novo e as mesmas comandas saíam outra vez. Nada no painel dizia
+  // isso — a loja descobriu pela pilha de papel repetido.
+  const versaoRelatada = estado.versaoAssistente || null;
+  const assistenteAntigo =
+    !filaMuda && (!versaoRelatada || versaoMaisNova(VERSAO_ASSISTENTE_ATUAL, versaoRelatada));
+
   const minutos = Math.floor((estado.paradoHaSegundos ?? 0) / 60);
   const tempo = minutos >= 120 ? `${Math.floor(minutos / 60)} horas` : `${minutos} min`;
 
@@ -206,6 +233,14 @@ export default function AvisoImpressaoParada() {
     titulo = presas === 1 ? "1 comanda não saiu na impressora" : `${presas} comandas não saíram na impressora`;
     const erro = traduzErroDeImpressao(estado.erroImpressao);
     texto = `O Assistente tenta de novo a cada 30 segundos até sair. Confira se a impressora está ligada, com papel e sem erro no Windows.${erro ? ` Último erro: ${erro}.` : ""}`;
+  } else if (assistenteAntigo) {
+    titulo = versaoRelatada
+      ? `O Assistente de Impressão do PC do caixa está desatualizado (v${versaoRelatada})`
+      : "O Assistente de Impressão do PC do caixa é de uma versão antiga";
+    texto =
+      `Nessa versão, toda vez que ele fecha e abre de novo — inclusive quando se atualiza sozinho — as comandas das últimas 2 horas saem OUTRA VEZ. ` +
+      `A versão ${VERSAO_ASSISTENTE_ATUAL} confirma no servidor cada comanda que já saiu, então nada se repete. ` +
+      `Baixe em Impressoras e instale por cima, no PC do caixa: a configuração e as impressoras continuam como estão.`;
   } else {
     return null;
   }
