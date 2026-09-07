@@ -213,6 +213,10 @@ async function avaliar(opts) {
           await set({ n99Desconectado: false });
           const falhas = relato.n99.filter((x) => !x.ok);
           if (falhas.length) erros.push("99Food: " + falhas.map((f) => f.nome + " (" + (f.erro || "falhou") + ")").join(", "));
+          // Grampeado no limite da loja não é falha: aplicou o que dava, e o
+          // lojista precisa saber por que o número ficou menor do que a conta.
+          const avisos = relato.n99.filter((x) => x.ok && x.aviso);
+          if (avisos.length) erros.push("99Food: " + avisos.map((f) => f.nome + " ficou em " + f.minutos + " min (" + f.aviso + ")").join(", "));
           if (relato.n99.some((x) => x.ok)) ultimo.n99 = { minutos: prazo.preparo99, em: Date.now() };
         }
       }
@@ -399,7 +403,15 @@ function fn99ListarLojas() {
 /**
  * 99Food — escreve `minutos` de preparo nas lojas dadas: lê settingInfo,
  * manda avgProduceTime (o que o botão Salvar da aba Configurações de
- * operações manda, com os períodos especiais no mesmo valor) e relê.
+ * operações manda) e relê para conferir.
+ *
+ * Duas coisas que o 99 cobra, medidas na Brasa e na Chapa Quente em
+ * 07/09/2026:
+ *   - cada loja tem seu limite (`produceTimeConf`: min 3, max 30 min lá).
+ *     Pedir 43 volta "O tempo de preparo excede o tempo máximo" — então a
+ *     extensão GRAMPEIA no limite da loja e avisa, em vez de falhar;
+ *   - `multiPeriodsProduceTime: "[]"` volta "Erro no tipo do parâmetro".
+ *     Loja sem tempo especial simplesmente não manda o campo.
  */
 function fn99AplicarLojas(lojas, minutos) {
   var app = { appCode: "1.0.0", versionCode: "rc.2508241000", originType: "6", osType: "12", passportAppId: "200108", lang: "pt-BR", locale: "pt-BR", country: "BR", location_country: "BR", countryCode: "BR" };
@@ -410,9 +422,8 @@ function fn99AplicarLojas(lojas, minutos) {
       body: new URLSearchParams(Object.assign({}, app, params)).toString(),
     }).then(function (r) { return r.json(); });
   }
-  var seg = Math.round(minutos * 60);
   function uma(l) {
-    var saida = { shopId: l.shopId, nome: l.nome, ok: false, minutos: minutos, antes: null, depois: null, erro: null, entregaPropria: null };
+    var saida = { shopId: l.shopId, nome: l.nome, ok: false, minutos: minutos, antes: null, depois: null, erro: null, aviso: null, entregaPropria: null };
     var base = { shopId: l.shopId, cityId: l.cityId, contractorId: l.contractorId, roleType: "1" };
     return post("/shop/query/settingInfo", base).then(function (a) {
       if (!a || a.errno !== 0) {
@@ -423,17 +434,30 @@ function fn99AplicarLojas(lojas, minutos) {
       var d = a.data || {};
       saida.antes = Math.round((d.avgProduceTime || 0) / 60);
       saida.entregaPropria = d.deliverType === 2;
+
+      var conf = d.produceTimeConf || {};
+      var minLoja = typeof conf.min === "number" && conf.min > 0 ? conf.min : 1;
+      var maxLoja = typeof conf.max === "number" && conf.max > 0 ? conf.max : 240;
+      var alvo = Math.max(minLoja, Math.min(maxLoja, minutos));
+      if (alvo !== minutos) saida.aviso = "o 99 limita esta loja a " + maxLoja + " min de preparo";
+      saida.minutos = alvo;
+      var seg = Math.round(alvo * 60);
+
       var periodos = Array.isArray(d.multiPeriodsProduceTime) ? d.multiPeriodsProduceTime : [];
       var jaEsta = d.avgProduceTime === seg && periodos.every(function (p) { return (p.periods || []).every(function (q) { return q.preparationTime === seg; }); });
-      var escrever = jaEsta ? Promise.resolve({ errno: 0 }) : post("/shop/setting/avgProduceTime", Object.assign({}, base, {
-        appVersion: "1.3.58", avgProduceTime: String(seg), source: "0",
-        multiPeriodsProduceTime: JSON.stringify(periodos.map(function (p) { return { days: p.days, periods: (p.periods || []).map(function (q) { return { begin: q.begin, end: q.end, preparationTime: seg }; }) }; })),
-      }));
+      var corpo = Object.assign({}, base, { appVersion: "1.3.58", avgProduceTime: String(seg), source: "0" });
+      // Lista vazia quebra o 99: só manda o campo quando há tempo especial.
+      if (periodos.length) {
+        corpo.multiPeriodsProduceTime = JSON.stringify(periodos.map(function (p) {
+          return { days: p.days, periods: (p.periods || []).map(function (q) { return { begin: q.begin, end: q.end, preparationTime: seg }; }) };
+        }));
+      }
+      var escrever = jaEsta ? Promise.resolve({ errno: 0 }) : post("/shop/setting/avgProduceTime", corpo);
       return escrever.then(function (w) {
         if (!w || w.errno !== 0) { saida.erro = (w && w.errmsg) || "99Food recusou"; return saida; }
         return post("/shop/query/settingInfo", base).then(function (b) {
           saida.depois = b && b.data ? Math.round((b.data.avgProduceTime || 0) / 60) : null;
-          saida.ok = saida.depois === minutos;
+          saida.ok = saida.depois === alvo;
           if (!saida.ok) saida.erro = "99Food não confirmou (" + saida.depois + " min)";
           return saida;
         });

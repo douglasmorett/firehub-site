@@ -36,6 +36,7 @@ function sanearRelato(raw: unknown) {
     minutos: Number.isFinite(Number(r?.minutos)) ? Math.floor(Number(r.minutos)) : null,
     ok: r?.ok === true,
     erro: r?.erro ? texto(r.erro, 160) : null,
+    aviso: r?.aviso ? texto(r.aviso, 160) : null,
   }));
 }
 

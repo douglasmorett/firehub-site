@@ -243,7 +243,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const r = resultadoDaLoja(plat, l);
       let tag = "";
       if (!l.presente) tag = `<span class="tag erro">não está neste login</span>`;
-      else if (l.ativa && r) tag = r.ok ? `<span class="tag ok">✓ ${r.minutos} min</span>` : `<span class="tag erro" title="${String(r.erro || "").replace(/"/g, "'")}">✗ ${r.erro || "falhou"}</span>`;
+      else if (l.ativa && r) {
+        if (r.ok && r.aviso) tag = `<span class="tag" style="color:#FDE68A" title="${String(r.aviso).replace(/"/g, "'")}">✓ ${r.minutos} min (limite)</span>`;
+        else if (r.ok) tag = `<span class="tag ok">✓ ${r.minutos} min</span>`;
+        else tag = `<span class="tag erro" title="${String(r.erro || "").replace(/"/g, "'")}">✗ ${r.erro || "falhou"}</span>`;
+      }
       else if (plat === "ifood" && (l.entrega === false || l.entregaPropria === false)) tag = `<span class="tag">${l.entrega === false ? "sem delivery" : "entrega pelo iFood"}</span>`;
       else if (plat === "n99" && l.signatario && l.signatario !== l.nome) tag = `<span class="tag">${l.signatario}</span>`;
       row.innerHTML = `<input type="checkbox" ${l.ativa ? "checked" : ""}><span class="nome">${l.nome}</span>${tag}`;
