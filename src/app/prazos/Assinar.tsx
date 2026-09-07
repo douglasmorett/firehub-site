@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PLANOS } from "./planos";
 
 /**
  * Preço com seletor de lojas, e a barra fixa do celular.
@@ -11,12 +12,6 @@ import { useState } from "react";
  * loja, que é o número que faz quem tem três lojas subir de faixa.
  */
 
-export const PLANOS = [
-  { lojas: 1, preco: "R$ 49,90", centavos: 4990, url: "https://pay.cakto.com.br/5otxn7d_1091761" },
-  { lojas: 2, preco: "R$ 59,80", centavos: 5980, url: "https://pay.cakto.com.br/kqn3qtd" },
-  { lojas: 3, preco: "R$ 69,70", centavos: 6970, url: "https://pay.cakto.com.br/odfz3a2" },
-  { lojas: 5, preco: "R$ 89,50", centavos: 8950, url: "https://pay.cakto.com.br/37ekn8o" },
-];
 
 const LARANJA = "#FF5722";
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import DemoAoVivo from "./DemoAoVivo";
-import { SeletorDePlano, BarraFixa, PLANOS } from "./Assinar";
+import { SeletorDePlano, BarraFixa } from "./Assinar";
+import { CHECKOUT_PADRAO } from "./planos";
 
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
@@ -37,7 +38,7 @@ export const metadata: Metadata = {
  */
 
 const LARANJA = "#FF5722";
-const CHECKOUT = PLANOS[0].url;
+const CHECKOUT = CHECKOUT_PADRAO;
 const ZIP = "https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip";
 
 function Botao({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
