@@ -65,10 +65,16 @@
   function passoDoSeletor(el) {
     var tag = el.tagName.toLowerCase();
     if (el.id && !/\d{4,}/.test(el.id)) return "#" + esc(el.id);
-    var attrs = ["data-droppable", "data-column", "data-column-id", "data-testid", "data-test", "data-id", "data-status", "aria-label"];
-    for (var i = 0; i < attrs.length; i++) {
-      var v = el.getAttribute(attrs[i]);
-      if (v && v.length <= 60) return tag + "[" + attrs[i] + "=\"" + v.replace(/"/g, "\\\"") + "\"]";
+    // Qualquer atributo data-* curto identifica melhor que classe ou posicao:
+    // e o que o painel usa para saber qual coluna e qual (data-etapa,
+    // data-droppable, data-status...). Nao da para adivinhar o nome, entao vale
+    // o primeiro que houver. `aria-label` entra pelo mesmo motivo.
+    var atributos = el.attributes;
+    for (var a = 0; a < atributos.length; a++) {
+      var nome = atributos[a].name, valor = atributos[a].value;
+      if ((nome.indexOf("data-") === 0 || nome === "aria-label") && valor && valor.length <= 60 && !/^(true|false|\d+)$/.test(valor)) {
+        return tag + "[" + nome + "=\"" + valor.replace(/"/g, "\\\"") + "\"]";
+      }
     }
     var cls = classesUteis(el);
     var base = tag + (cls.length ? "." + cls.map(esc).join(".") : "");
@@ -152,18 +158,39 @@
     return "Coluna";
   }
 
-  /** Do elemento clicado, sobe até o contêiner que é "a coluna". */
+  /**
+   * Do elemento clicado, sobe até o contêiner que é "a coluna".
+   *
+   * Duas etapas, porque o clique costuma cair num CARD: primeiro sobe até o
+   * elemento que contém a lista de cards; depois continua subindo enquanto o
+   * pai ainda for esta mesma coluna (mesma lista dentro, largura parecida),
+   * para chegar ao contêiner que também tem o CABEÇALHO — é lá que moram o
+   * título e o contador. Parar na lista dava rótulo com o nome do primeiro
+   * pedido e perdia o contador (visto no teste de 07/09/2026). O pai que já é
+   * a linha do kanban inteiro é bem mais largo e tem outra lista: para ali.
+   */
   function escolherContainer(el) {
-    var atual = el, candidato = null, passos = 0;
+    var atual = el, lista = null, primeiroAlto = null, passos = 0;
+    var cabe = function (e) { return e.offsetWidth >= 120 && e.offsetWidth <= window.innerWidth * 0.7; };
     while (atual && atual !== document.body && passos < 10) {
-      var lista = acharListaRasa(atual);
-      var alto = atual.offsetHeight >= 150 && atual.offsetWidth >= 120 && atual.offsetWidth <= window.innerWidth * 0.7;
-      if (lista && alto) { candidato = atual; break; }
-      if (!candidato && alto && acharRotulo(atual) !== "Coluna") candidato = atual;
+      var l = acharListaRasa(atual);
+      if (l && cabe(atual)) { lista = l; break; }
+      if (!primeiroAlto && atual.offsetHeight >= 150 && cabe(atual) && acharRotulo(atual) !== "Coluna") primeiroAlto = atual;
       atual = atual.parentElement;
       passos++;
     }
-    return candidato || el.parentElement || el;
+    // Coluna vazia (sem card nenhum): fica com o primeiro bloco alto que tem título.
+    if (!lista || !atual || atual === document.body) return primeiroAlto || el.parentElement || el;
+
+    var cont = atual;
+    for (var i = 0; i < 4; i++) {
+      var pai = cont.parentElement;
+      if (!pai || pai === document.body) break;
+      if (pai.offsetWidth > cont.offsetWidth * 1.3 + 40) break;
+      if (acharListaRasa(pai) !== lista) break;
+      cont = pai;
+    }
+    return cont;
   }
 
   function acharListaRasa(cont) {
@@ -202,12 +229,26 @@
     return col;
   }
 
+  /** O contêiner achado é mesmo ESTA coluna? Quem responde é o cabeçalho. */
+  function rotuloConfere(cont, rotulo) {
+    var alvo = String(rotulo || "").toLowerCase().trim();
+    if (!alvo || alvo === "coluna") return true;
+    if (acharRotulo(cont).toLowerCase().trim() === alvo) return true;
+    // Cabeçalho pode não ser o primeiro texto; basta o título existir no bloco.
+    return (cont.textContent || "").toLowerCase().indexOf(alvo) !== -1;
+  }
+
   function resolverColuna(col) {
+    // O seletor e o caminho rapido, mas nao e identidade: com `nth-of-type`, a
+    // coluna vizinha passa a casar quando a marcada some — e os pedidos dela
+    // seriam contados como se fossem desta (visto no teste de 07/09/2026).
+    // Identidade e o texto do cabecalho; seletor que leva a outro cabecalho
+    // e descartado.
     var cont = acha(col.seletor);
-    if (cont) return cont;
+    if (cont && rotuloConfere(cont, col.rotulo)) return cont;
     // Fallback pelo texto do cabeçalho: o painel mudou de classe, o título não.
     var alvo = String(col.rotulo || "").toLowerCase();
-    if (!alvo || alvo === "coluna") return null;
+    if (!alvo || alvo === "coluna") return cont;
     var todos = document.querySelectorAll("*");
     for (var i = 0; i < todos.length; i++) {
       var el = todos[i];

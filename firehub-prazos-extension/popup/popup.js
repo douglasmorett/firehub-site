@@ -29,11 +29,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function aplicarConta(conta) {
     estado.conta = conta;
-    const receitas = (conta && conta.config && conta.config.receitas) || {};
-    estado.receitas = receitas;
+    // As colunas marcadas nascem no navegador (o leitor grava no storage) e o
+    // servidor guarda uma CÓPIA para restaurar noutro PC. A cópia só vale
+    // quando não há nada aqui: sobrescrever o local com o que veio do servidor
+    // apagava as colunas recém-marcadas sempre que a cópia ainda não tinha
+    // subido (visto no teste de 07/09/2026).
+    const doServidor = (conta && conta.config && conta.config.receitas) || {};
+    const temLocal = Object.keys(estado.receitas || {}).length > 0;
+    if (!temLocal && Object.keys(doServidor).length > 0) estado.receitas = doServidor;
     modoAtivo = (conta && conta.config && conta.config.modo) || "auto";
     regras = (conta && conta.config && Array.isArray(conta.config.regrasManuais)) ? conta.config.regrasManuais.slice() : [];
-    return chrome.storage.local.set({ conta, receitas });
+    return chrome.storage.local.set(temLocal ? { conta } : { conta, receitas: estado.receitas });
   }
 
   async function salvarConfig(corpo) {

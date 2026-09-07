@@ -128,7 +128,8 @@ export function sanearReceitas(raw: unknown): Record<string, ReceitaDoPainel> {
   let hosts = 0;
   for (const [host, receita] of Object.entries(raw as Record<string, any>)) {
     if (hosts++ >= 10) break;
-    if (!/^[a-z0-9.-]{3,120}$/i.test(host)) continue;
+    // Host com porta é normal em painel local/self-hosted (e no teste da extensão).
+    if (!/^[a-z0-9.-]{3,120}(:\d{2,5})?$/i.test(host)) continue;
     const colunasRaw = Array.isArray(receita?.colunas) ? receita.colunas : [];
     const colunas: ColunaMarcada[] = [];
     for (const c of colunasRaw.slice(0, 12)) {
