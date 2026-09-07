@@ -96,14 +96,30 @@ export async function POST(req: NextRequest) {
   if (!igual(daQuery, segredo) && !igual(doCorpo, segredo)) {
     return respostaPrazos({ error: "não autorizado" }, { status: 401 });
   }
-  // Assinatura HMAC (quando a Cakto manda): v1=<hmac-sha256(segredo, "ts.corpo")>.
-  const assinatura = req.headers.get("x-cakto-signature") || "";
-  const ts = req.headers.get("x-cakto-timestamp") || "";
-  if (assinatura && ts) {
-    const esperado = "v1=" + crypto.createHmac("sha256", segredo).update(`${ts}.${bruto}`).digest("hex");
-    if (!igual(assinatura.trim(), esperado)) {
-      console.error("[Prazos Cakto] assinatura HMAC não confere.");
-      return respostaPrazos({ error: "assinatura inválida" }, { status: 401 });
+  // Assinatura HMAC, quando vier. É conferência EXTRA, não a porta: quem
+  // autentica é o segredo compartilhado acima (query/header/corpo, por HTTPS).
+  // O teste de 07/09/2026 mostrou que a assinatura real da Cakto não bate com
+  // a fórmula da documentação (`v1=hmac("{ts}.{corpo}")`), e recusar por isso
+  // derrubava a integração inteira. Então: confere as formas conhecidas, e o
+  // que não bater vira log — com o suficiente para descobrir a fórmula certa.
+  const assinatura = (req.headers.get("x-cakto-signature") || "").trim();
+  const ts = (req.headers.get("x-cakto-timestamp") || "").trim();
+  if (assinatura) {
+    const hmac = (dados: string, saida: "hex" | "base64") =>
+      crypto.createHmac("sha256", segredo).update(dados).digest(saida);
+    const candidatos: string[] = [];
+    for (const base of [ts ? `${ts}.${bruto}` : "", bruto, ts]) {
+      if (!base) continue;
+      for (const saida of ["hex", "base64"] as const) {
+        const h = hmac(base, saida);
+        candidatos.push(h, `v1=${h}`, `sha256=${h}`);
+      }
+    }
+    const bate = candidatos.some((c) => igual(assinatura, c));
+    if (!bate) {
+      console.warn(
+        `[Prazos Cakto] assinatura não bate com nenhuma fórmula conhecida (aceito pelo segredo). recebida=${assinatura.slice(0, 24)}… ts=${ts || "-"} tam=${bruto.length}`
+      );
     }
   }
 
