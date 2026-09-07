@@ -1,22 +1,16 @@
 /**
- * FireHub Prazos — script do Portal do Parceiro (portal.ifood.com.br).
+ * FireHub Prazos — script do 99Food Admin (merchant.99app.com).
  *
- * Só duas funções, de propósito:
- *   1. a pílula flutuante com o prazo em vigor, quantas lojas receberam e o
- *      motivo de qualquer parada;
- *   2. avisar o service worker quando a sessão do portal cai (tela de login).
- *
- * Quem mexe no prazo é o service worker, pela API do próprio portal rodando
- * no contexto desta página — este script não dirige o DOM. E se a extensão
- * interna do FireHub estiver na mesma aba (a pílula dela tem id
- * `firehub-corner-pill`), esta avisa e o service worker recusa escrever: uma
- * mão só no campo.
+ * Igual ao do iFood: a pílula flutuante com o tempo de preparo em vigor e o
+ * motivo de qualquer parada, e o aviso ao service worker quando a sessão cai.
+ * Quem escreve o tempo de preparo é o service worker, pela API interna do
+ * 99 (executada no contexto desta página) — este script não dirige o DOM.
  */
 (function () {
-  if (window.__fhPrazosIfood) return;
-  window.__fhPrazosIfood = true;
+  if (window.__fhPrazos99) return;
+  window.__fhPrazos99 = true;
 
-  var ID = "fhprazos-pill";
+  var ID = "fhprazos-pill-99";
 
   function css(el, obj) { for (var k in obj) el.style[k] = obj[k]; }
 
@@ -40,23 +34,18 @@
     var p = document.getElementById(ID);
     var t = document.getElementById(ID + "-texto");
     if (!p || !t) return;
-    if (document.getElementById("firehub-corner-pill")) {
-      t.textContent = "FireHub Prazos: extensão FireHub interna ativa nesta aba — use só uma";
-      p.style.border = "1.5px solid #EF4444";
-      return;
-    }
     if (erro) {
       t.textContent = "FireHub Prazos: " + erro;
       p.style.border = "1.5px solid #EF4444";
       p.style.background = "linear-gradient(135deg,#7F1D1D,#450A0A)";
       return;
     }
-    if (prazo && typeof prazo.minutos === "number") {
-      var n = (prazo.lojasIfood || []).length;
-      var okN = ultimo && Array.isArray(ultimo.ifood) ? ultimo.ifood.filter(function (x) { return x.ok; }).length : null;
-      t.textContent = "FireHub Prazos: " + prazo.minutos + " min · " + prazo.pedidos + " ped." +
+    if (prazo && typeof prazo.preparo99 === "number") {
+      var n = (prazo.lojas99 || []).length;
+      var okN = ultimo && Array.isArray(ultimo.n99) ? ultimo.n99.filter(function (x) { return x.ok; }).length : null;
+      t.textContent = "FireHub Prazos · 99Food: preparo " + prazo.preparo99 + " min · " + prazo.pedidos + " ped." +
         (n ? " · " + (okN !== null ? okN + "/" + n : n) + " loja(s)" : " · nenhuma loja marcada") +
-        (prazo.pausar ? " · PAUSAR A LOJA" : "");
+        (prazo.pausar ? " · ESTOURO" : "");
       p.style.border = prazo.pausar ? "1.5px solid #EF4444" : "1.5px solid #22C55E";
       p.style.background = prazo.pausar ? "linear-gradient(135deg,#7F1D1D,#450A0A)" : "linear-gradient(135deg,#0F172A,#1E293B)";
       return;
@@ -75,11 +64,8 @@
 
   function conferirSessao() {
     var href = location.href.toLowerCase();
-    if (href.indexOf("openid-connect") !== -1 || href.indexOf("callback") !== -1 || href.indexOf("response_type=") !== -1) return;
-    var senha = document.querySelector('input[type="password"]');
-    var texto = (document.body ? document.body.innerText : "").toLowerCase();
-    var deslogado = !!(senha && (texto.indexOf("fazer login") !== -1 || texto.indexOf("sessão expirou") !== -1 || texto.indexOf("entre com sua conta") !== -1 || href.indexOf("login.ifood.com.br") !== -1));
-    try { chrome.runtime.sendMessage({ tipo: "IFOOD_SESSAO", conectado: !deslogado }).catch(function () {}); } catch (e) {}
+    var deslogado = /\/login|passport|signin/.test(href) && !!document.querySelector('input[type="password"]');
+    try { chrome.runtime.sendMessage({ tipo: "N99_SESSAO", conectado: !deslogado }).catch(function () {}); } catch (e) {}
   }
 
   chrome.runtime.onMessage.addListener(function (msg, sender, responder) {
@@ -90,5 +76,5 @@
   criarPilula();
   atualizarDoStorage();
   conferirSessao();
-  setInterval(conferirSessao, 8000);
+  setInterval(conferirSessao, 15000);
 })();

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "FireHub Prazos",
-  "version": "0.1.0",
-  "description": "Ajusta o prazo de entrega no Portal do Parceiro sozinho, pela carga da cozinha do seu painel e pelos motoboys na casa.",
+  "version": "0.2.0",
+  "description": "Ajusta sozinho o prazo de entrega no iFood e o tempo de preparo no 99Food, pela fila da cozinha do seu painel de pedidos.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -26,6 +26,7 @@
   "host_permissions": [
     "https://portal.ifood.com.br/*",
     "https://*.ifood.com.br/*",
+    "https://merchant.99app.com/*",
     "https://firehubfood.com.br/*"
   ],
   "optional_host_permissions": [
@@ -43,6 +44,15 @@
       ],
       "js": [
         "scripts/ifood.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://merchant.99app.com/*"
+      ],
+      "js": [
+        "scripts/noventanove.js"
       ],
       "run_at": "document_idle"
     }

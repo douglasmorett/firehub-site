@@ -1202,6 +1202,8 @@ model PrazoConta {
   /// PILOTO (grátis por prazo) · ATIVO (assinatura em dia) · BLOQUEADO (não pagou) · CANCELADO
   status       String   @default("PILOTO")
   motoboys     Int      @default(2)
+  /// Lojas ativas que o plano inclui, por plataforma (1 = base; +1 por loja adicional na Cakto).
+  lojasIncluidas Int   @default(1)
   /// { modo: "auto"|"manual", regrasManuais: [{ maxPedidos, minutos }],
   ///   receitas: { [host]: { colunas: [{ id, rotulo, seletor, badge, metodo }] } } }
   config       Json?
@@ -1213,6 +1215,22 @@ model PrazoConta {
   criadoPor    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+/// Transições do prazo de uma conta FireHub Prazos — base do relatório do dono.
+/// tipo: "prazo" (abre um trecho com estes valores) | "parou" (painel sem leitura).
+model PrazoEvento {
+  id        String   @id @default(cuid())
+  contaId   String
+  em        DateTime @default(now())
+  tipo      String
+  pedidos   Int?
+  minutos   Int?
+  pausar    Boolean  @default(false)
+  preparo99 Int?
+  detalhe   Json?
+
+  @@index([contaId, em])
 }
 
 // ========== SESSÕES DE CAIXA ==========

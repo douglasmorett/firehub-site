@@ -106,7 +106,7 @@ export async function GET() {
       "Table", "TableSession", "TableGuest", "Waiter",
       "PosTerminal", "DailyOrderCounter", "ChatbotConversationState",
       // FireHub Prazos (extensão vendida fora do FireHub) — criada no boot por garantirEstruturaDePrazos().
-      "PrazoConta",
+      "PrazoConta", "PrazoEvento",
     ];
     const tabelas = await prisma.$queryRaw<{ t: string }[]>`
       SELECT table_name AS t FROM information_schema.tables

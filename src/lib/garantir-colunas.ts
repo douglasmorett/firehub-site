@@ -761,6 +761,20 @@ const INSTRUCOES_PRAZOS = [
      CONSTRAINT "PrazoConta_pkey" PRIMARY KEY ("id")
    )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "PrazoConta_email_key" ON "PrazoConta"("email")`,
+  `ALTER TABLE "PrazoConta" ADD COLUMN IF NOT EXISTS "lojasIncluidas" INTEGER NOT NULL DEFAULT 1`,
+  `CREATE TABLE IF NOT EXISTS "PrazoEvento" (
+     "id" TEXT NOT NULL,
+     "contaId" TEXT NOT NULL,
+     "em" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "tipo" TEXT NOT NULL,
+     "pedidos" INTEGER,
+     "minutos" INTEGER,
+     "pausar" BOOLEAN NOT NULL DEFAULT false,
+     "preparo99" INTEGER,
+     "detalhe" JSONB,
+     CONSTRAINT "PrazoEvento_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE INDEX IF NOT EXISTS "PrazoEvento_contaId_em_idx" ON "PrazoEvento"("contaId", "em")`,
 ];
 
 let prazosOk = false;

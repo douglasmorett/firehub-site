@@ -9,6 +9,7 @@ type Conta = {
   whatsapp: string | null;
   status: string;
   motoboys: number;
+  lojasIncluidas: number;
   config: any;
   ultimoEstado: any;
   caktoRef: string | null;
@@ -40,7 +41,7 @@ export default function PrazosAdminClient() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
-  const [form, setForm] = useState({ email: "", senha: "", nomeLoja: "", whatsapp: "", status: "PILOTO", motoboys: 2, observacoes: "" });
+  const [form, setForm] = useState({ email: "", senha: "", nomeLoja: "", whatsapp: "", status: "PILOTO", motoboys: 2, lojasIncluidas: 1, observacoes: "" });
   const [salvando, setSalvando] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -72,7 +73,7 @@ export default function PrazosAdminClient() {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.error || "falha ao criar");
-      setForm({ email: "", senha: "", nomeLoja: "", whatsapp: "", status: "PILOTO", motoboys: 2, observacoes: "" });
+      setForm({ email: "", senha: "", nomeLoja: "", whatsapp: "", status: "PILOTO", motoboys: 2, lojasIncluidas: 1, observacoes: "" });
       await carregar();
     } catch (e: any) {
       setErro(e?.message || "falha ao criar");
@@ -104,11 +105,11 @@ export default function PrazosAdminClient() {
   const botao = (bg: string, fg = "#fff"): React.CSSProperties => ({ background: bg, color: fg, border: "none", borderRadius: 8, padding: "6px 10px", fontWeight: 700, fontSize: ".78rem", cursor: "pointer" });
 
   return (
-    <div style={{ maxWidth: 1200 }}>
+    <div style={{ maxWidth: 1240 }}>
       <h1 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "0 0 4px" }}>⏱️ FireHub Prazos — contas da extensão</h1>
       <p style={{ color: "#64748B", margin: "0 0 1.25rem", fontSize: ".9rem" }}>
-        Produto vendido fora do FireHub: a extensão ajusta o prazo no Portal do Parceiro pela carga do painel que o
-        lojista já usa. Cada conta aqui é um cliente (ou um piloto) — e um lead.
+        Produto vendido fora do FireHub: a extensão ajusta o prazo no Portal do Parceiro (iFood) e o tempo de preparo no
+        99Food Admin pela carga do painel que o lojista já usa. Cada conta aqui é um cliente (ou um piloto) — e um lead.
       </p>
 
       {/* ── Como instalar / o que dizer ao piloto ───────────────────────── */}
@@ -119,18 +120,19 @@ export default function PrazosAdminClient() {
           <li>No Chrome: <code>chrome://extensions</code> → ligar <b>Modo do desenvolvedor</b> → <b>Carregar sem compactação</b> → escolher a pasta.</li>
           <li>Fixar o ícone 🔥, entrar com e-mail e senha da conta abaixo.</li>
           <li>Abrir o painel de pedidos do sistema dele (Saipos, Cardápio Web…) e clicar <b>Marcar coluna</b> na extensão, em cada coluna que conta pedido na cozinha (ex.: "Em preparo" e "Pronto").</li>
-          <li>Deixar aberta a aba <b>Configurações → Entrega</b> do Portal do Parceiro. Entrega própria: com entrega do iFood não há prazo para ajustar.</li>
+          <li>Deixar abertos e logados o <b>Portal do Parceiro</b> e/ou o <b>99Food Admin</b> na conta das lojas, e marcar na extensão <b>quais lojas</b> mudam de prazo. Todas as lojas têm que estar no mesmo login.</li>
         </ol>
         <div style={{ marginTop: 8, color: "#7C2D12" }}>
-          Cakto: cadastrar o webhook em <code>https://firehubfood.com.br/api/prazos/cakto?s=SEGREDO</code>, com o mesmo SEGREDO na env
+          Cakto: webhook em <code>https://firehubfood.com.br/api/prazos/cakto?s=SEGREDO</code>, com o mesmo SEGREDO na env
           <code> CAKTO_WEBHOOK_SECRET</code> do Coolify. Compra aprovada cria a conta e manda a senha por e-mail; sem pagamento vira BLOQUEADO e a extensão para.
+          A cota de lojas vem do nome da oferta ("3 lojas") — ou ajuste aqui na coluna <b>Lojas</b>.
         </div>
       </div>
 
       {/* ── Nova conta ──────────────────────────────────────────────────── */}
       <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: "1.25rem" }}>
         <div style={{ fontWeight: 800, marginBottom: 10 }}>Nova conta</div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.5fr 1.2fr .9fr .6fr", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1.2fr 1.5fr 1.2fr .9fr .6fr .6fr", gap: 8, alignItems: "center" }}>
           <input style={input} placeholder="e-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <input style={input} placeholder="senha (mín. 6)" value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} />
           <input style={input} placeholder="nome da loja" value={form.nomeLoja} onChange={(e) => setForm({ ...form, nomeLoja: e.target.value })} />
@@ -139,6 +141,7 @@ export default function PrazosAdminClient() {
             <option>PILOTO</option><option>ATIVO</option><option>BLOQUEADO</option><option>CANCELADO</option>
           </select>
           <input style={input} type="number" min={1} max={50} title="motoboys" value={form.motoboys} onChange={(e) => setForm({ ...form, motoboys: Number(e.target.value) || 1 })} />
+          <input style={input} type="number" min={1} max={50} title="lojas incluídas no plano" value={form.lojasIncluidas} onChange={(e) => setForm({ ...form, lojasIncluidas: Number(e.target.value) || 1 })} />
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
           <input style={{ ...input, flex: 1 }} placeholder="observações (sistema que usa, quem indicou…)" value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} />
@@ -146,6 +149,7 @@ export default function PrazosAdminClient() {
             {salvando ? "Criando…" : "Criar conta"}
           </button>
         </div>
+        <div style={{ color: "#94A3B8", fontSize: ".72rem", marginTop: 4 }}>Colunas numéricas: motoboys · lojas incluídas no plano (por plataforma).</div>
         {erro && <div style={{ color: "#B91C1C", fontWeight: 700, marginTop: 8, fontSize: ".85rem" }}>{erro}</div>}
       </div>
 
@@ -154,19 +158,24 @@ export default function PrazosAdminClient() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".84rem" }}>
           <thead>
             <tr style={{ background: "#F8FAFC", textAlign: "left" }}>
-              {["Conta", "Status", "Motoboys", "Último sinal da extensão", "Ações"].map((h) => (
+              {["Conta", "Status", "Motoboys", "Lojas", "Último sinal da extensão", "Ações"].map((h) => (
                 <th key={h} style={{ padding: "10px 12px", borderBottom: "1px solid #E2E8F0", fontSize: ".72rem", textTransform: "uppercase", color: "#64748B" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {carregando && <tr><td colSpan={5} style={{ padding: 16, color: "#64748B" }}>Carregando…</td></tr>}
-            {!carregando && contas.length === 0 && <tr><td colSpan={5} style={{ padding: 16, color: "#64748B" }}>Nenhuma conta ainda.</td></tr>}
+            {carregando && <tr><td colSpan={6} style={{ padding: 16, color: "#64748B" }}>Carregando…</td></tr>}
+            {!carregando && contas.length === 0 && <tr><td colSpan={6} style={{ padding: 16, color: "#64748B" }}>Nenhuma conta ainda.</td></tr>}
             {contas.map((c) => {
               const u = c.ultimoEstado || {};
               const cor = COR_DO_STATUS[c.status] || COR_DO_STATUS.CANCELADO;
               const colunas = Array.isArray(u.colunas) ? u.colunas.map((x: any) => `${x.rotulo} ${x.n}`).join(" · ") : "";
               const receitas = c.config?.receitas ? Object.keys(c.config.receitas) : [];
+              const lojasIfood: any[] = (c.config?.lojasIfood || []).filter((l: any) => l.ativa);
+              const lojas99: any[] = (c.config?.lojas99 || []).filter((l: any) => l.ativa);
+              const relatoIfood: any[] = u.lojas?.ifood || [];
+              const relato99: any[] = u.lojas?.n99 || [];
+              const cota = c.lojasIncluidas || 1;
               return (
                 <tr key={c.id} style={{ borderBottom: "1px solid #F1F5F9", verticalAlign: "top" }}>
                   <td style={{ padding: "10px 12px" }}>
@@ -181,6 +190,7 @@ export default function PrazosAdminClient() {
                   <td style={{ padding: "10px 12px" }}>
                     <span style={{ background: cor.bg, color: cor.fg, fontWeight: 800, padding: "3px 8px", borderRadius: 8, fontSize: ".74rem" }}>{c.status}</span>
                     <div style={{ color: "#64748B", fontSize: ".72rem", marginTop: 4 }}>modo {c.config?.modo || "auto"}{receitas.length ? ` · painel: ${receitas.join(", ")}` : " · nenhuma coluna marcada"}</div>
+                    <div style={{ color: "#64748B", fontSize: ".72rem" }}>99: {c.config?.preparo99?.modo === "faixas" ? "faixas próprias" : `iFood − ${c.config?.preparo99?.desconto ?? 15} min`}</div>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -189,13 +199,32 @@ export default function PrazosAdminClient() {
                       <button style={botao("#E2E8F0", "#0F172A")} onClick={() => alterar(c.id, { motoboys: c.motoboys + 1 })}>+</button>
                     </div>
                   </td>
+                  <td style={{ padding: "10px 12px", minWidth: 200 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <button style={botao("#E2E8F0", "#0F172A")} title="lojas incluídas no plano" onClick={() => alterar(c.id, { lojasIncluidas: Math.max(1, cota - 1) })}>−</button>
+                      <b>{cota}</b> <span style={{ color: "#64748B", fontSize: ".72rem" }}>no plano</span>
+                      <button style={botao("#E2E8F0", "#0F172A")} onClick={() => alterar(c.id, { lojasIncluidas: Math.min(50, cota + 1) })}>+</button>
+                    </div>
+                    <div style={{ fontSize: ".74rem", color: "#475569" }}>
+                      🛵 {lojasIfood.length ? lojasIfood.map((l) => {
+                        const r = relatoIfood.find((x) => x.id === l.uuid);
+                        return <span key={l.uuid} title={r?.erro || ""} style={{ color: r ? (r.ok ? "#15803D" : "#B91C1C") : "#475569" }}>{l.nome}{r ? (r.ok ? ` ✓${r.minutos}` : " ✗") : ""}</span>;
+                      }).reduce((acc: any[], el, i) => (i ? [...acc, " · ", el] : [el]), []) : <span style={{ color: "#94A3B8" }}>nenhuma iFood</span>}
+                    </div>
+                    <div style={{ fontSize: ".74rem", color: "#475569" }}>
+                      🟡 {lojas99.length ? lojas99.map((l) => {
+                        const r = relato99.find((x) => x.id === l.shopId);
+                        return <span key={l.shopId} title={r?.erro || ""} style={{ color: r ? (r.ok ? "#15803D" : "#B91C1C") : "#475569" }}>{l.nome}{r ? (r.ok ? ` ✓${r.minutos}` : " ✗") : ""}</span>;
+                      }).reduce((acc: any[], el, i) => (i ? [...acc, " · ", el] : [el]), []) : <span style={{ color: "#94A3B8" }}>nenhuma 99Food</span>}
+                    </div>
+                  </td>
                   <td style={{ padding: "10px 12px", minWidth: 260 }}>
                     {u.visto ? (
                       <>
-                        <div><b>{haQuanto(u.visto)}</b>{u.host ? ` · ${u.host}` : ""}{u.versao ? ` · v${u.versao}` : ""}</div>
-                        <div>{typeof u.pedidos === "number" ? `${u.pedidos} pedidos → ${u.minutos} min${u.pausar ? " + PAUSAR" : ""}` : "sem leitura"}</div>
+                        <div><b>{haQuanto(u.visto)}</b>{u.host ? ` · ${u.host}` : ""}{u.versao ? ` · v${u.versao}` : ""}{u.lendo === false ? " · painel sem leitura" : ""}</div>
+                        <div>{typeof u.pedidos === "number" ? `${u.pedidos} pedidos → iFood ${u.minutos} min${u.pausar ? " + PAUSAR" : ""}${typeof u.preparo99 === "number" ? ` · 99 preparo ${u.preparo99} min` : ""}` : "sem leitura"}</div>
                         {colunas && <div style={{ color: "#64748B", fontSize: ".75rem" }}>{colunas}</div>}
-                        {u.aplicadoEm && <div style={{ color: "#15803D", fontSize: ".75rem" }}>iFood: {u.aplicadoMinutos} min {u.aplicadoOk === false ? "(falhou)" : "aplicado"} {haQuanto(u.aplicadoEm)}</div>}
+                        {u.aplicadoEm && <div style={{ color: u.aplicadoOk === false ? "#B91C1C" : "#15803D", fontSize: ".75rem" }}>aplicado {u.aplicadoOk === false ? "com falha" : "ok"} {haQuanto(u.aplicadoEm)}</div>}
                         {u.erro && <div style={{ color: "#B91C1C", fontSize: ".75rem" }}>⚠️ {u.erro}</div>}
                       </>
                     ) : (

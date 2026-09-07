@@ -1,40 +1,66 @@
-# 🔥 FireHub Prazos — extensão do Chrome
+# FireHub Prazos — extensão vendida (v0.2.0)
 
-Ajusta o **prazo de entrega no Portal do Parceiro (iFood)** sozinho, pela carga da
-cozinha lida no painel que a loja já usa (Saipos, Cardápio Web, FireHub, qualquer
-kanban numa aba do Chrome) e pelos motoboys na casa.
+Extensão do Chrome vendida fora do FireHub (assinatura na Cakto). Lê a fila da
+cozinha no painel de pedidos que o lojista já usa e ajusta sozinha:
 
-É o produto vendido fora do FireHub. A extensão interna (`firehub-ifood-extension`)
-é outra, não muda, e as duas **não podem rodar na mesma conta do iFood ao mesmo
-tempo** — esta detecta a outra e recusa escrever.
+- **iFood** — o prazo de entrega de cada loja marcada, no Portal do Parceiro;
+- **99Food** — o tempo de preparo de cada loja marcada, no 99Food Admin (o 99
+  soma por cima o prazo de entrega da área, que é tabela fixa por raio).
 
-## Instalar (piloto, sem Web Store)
-
-1. Baixe `https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip` e descompacte numa pasta.
-2. No Chrome: `chrome://extensions` → ligue **Modo do desenvolvedor** → **Carregar sem compactação** → escolha a pasta.
-3. Fixe o ícone 🔥 (quebra-cabeça → alfinete).
-
-## Usar
-
-1. Abra o popup e entre com o **e-mail e a senha da conta FireHub Prazos** (não é o login do iFood).
-2. Abra o painel de pedidos do seu sistema numa aba. No popup, clique **Marcar coluna na aba atual**,
-   aceite a permissão para o site, e clique em cada coluna que tem pedido em produção
-   (ex.: "Em preparo" e "Pronto"). Esc ou **Concluir** para terminar. Os números aparecem ao vivo no popup.
-3. Ajuste **Motoboys na casa** (ou use as faixas manuais).
-4. Abra **Configurações → Entrega** no Portal do Parceiro e **deixe a aba aberta**. Ligue o **Robô**.
-
-Só faz sentido para **entrega própria**: com entrega do iFood o prazo é deles.
+Não confundir com `firehub-ifood-extension` (a interna, das lojas FireHub):
+esta não sabe calcular — o servidor (`/api/prazos/*`) é quem devolve "ponha M
+minutos no iFood e P de preparo no 99Food, nestas lojas". Sem conta ativa,
+é um popup sem função.
 
 ## Como funciona
 
-- O leitor lê as colunas marcadas a cada 2 s e manda a soma ao service worker.
-- O service worker pergunta ao servidor (`POST /api/prazos/calcular`) que prazo cabe — a tabela mora lá,
-  junto com a conta e o status de pagamento. Conta sem pagamento recebe 402 e a extensão para.
-- O prazo é escrito na aba do iFood de fora da página (`chrome.scripting`), com ±5 min e Salvar, e conferido lendo de volta.
-- Coluna marcada que some do painel **não vira zero**: o prazo é mantido e o popup avisa para remarcar.
-- A extensão **nunca abre aba do iFood sozinha**.
+1. `scripts/leitor.js` roda no painel do lojista (registrado por host, com a
+   permissão pedida no clique **Marcar coluna**): soma as colunas marcadas e
+   manda `PRAZOS_LEITURA` ao service worker.
+2. `scripts/background.js` chama `POST /api/prazos/calcular` e recebe o prazo
+   do iFood, o preparo do 99 e as lojas marcadas de cada plataforma.
+3. Escreve pelas APIs internas dos próprios portais, executadas **no contexto
+   da página** (`chrome.scripting.executeScript` com `world: "MAIN"`), com o
+   cookie/token que a página usa — o mesmo que o botão Salvar faz:
+   - iFood: `PATCH portal-api.ifood.com.br/next-web-bff/delivery/merchants/{uuid}?setupV2=…&deliveredBy=MERCHANT`
+     com as faixas de raio; a extensão **desloca** todas as faixas pela mesma
+     diferença (preserva a escada 34/44/53… de quem escalona por distância);
+   - 99Food: `POST b.99app.com/shop/setting/avgProduceTime` com
+     `avgProduceTime` (segundos) e os períodos especiais no mesmo valor.
+   Depois lê de volta e confere. Uma aba de cada portal aberta e logada basta
+   (não precisa estar na tela de configuração).
+4. `scripts/ifood.js` e `scripts/noventanove.js` só mostram a pílula 🔥 com o
+   estado e avisam quando a sessão do portal cai.
 
-## Servidor
+## Regras que valem mais que o código
 
-Rotas em `src/app/api/prazos/*`, conta em `PrazoConta` (`src/lib/prazos.ts`). Admin em `/admin/prazos`.
-Webhook da Cakto em `POST /api/prazos/cakto?s=<CAKTO_WEBHOOK_SECRET>`.
+- Só mexe em loja **marcada** no popup. Loja do login não marcada fica como está.
+- Todas as lojas de uma plataforma precisam estar **no mesmo login** — é dentro
+  dele que a extensão troca de loja (pela API, sem clicar).
+- Coluna marcada que sumiu do painel **não vira zero**: segura o último prazo e avisa.
+- Servidor recusou (conta sem pagamento, `402`) = para de escrever, com o motivo na tela.
+- Nunca abre aba do iFood/99Food sozinha: só pelo clique do lojista.
+- Cota de lojas do plano (`lojasIncluidas`, por plataforma) é conferida no servidor.
+
+## Popup
+
+Login da conta → colunas marcadas → lojas do iFood e do 99Food (caixinhas, lidas
+das abas abertas com **Atualizar lista**) → regra do iFood (auto por motoboys ou
+faixas manuais) → regra do 99 (iFood − N min de entrega, ou faixas próprias em
+minutos de preparo) → robô liga/desliga → Relatório (`/prazos/relatorio`) →
+Trocar senha.
+
+## Instalar (lojista)
+
+`https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip` →
+`chrome://extensions` → Modo do desenvolvedor → Carregar sem compactação.
+Guia com passos em `https://firehubfood.com.br/prazos#instalar`.
+
+## Testar
+
+- Servidor: `scripts/teste-prazos-api.js` no scratch da sessão de 07/09/2026
+  (conta piloto no banco, login → config → calcular → cota → 402).
+- Navegador de verdade: `driver-cdp.js` + `kanban/kanban.html` (Edge com
+  `--load-extension`; Chrome 152 ignora o flag).
+- Escrita real: ver a sessão de 07/09/2026 — iFood em 3 lojas com deslocamento
+  e restauração faixa a faixa; 99Food na Brasa (30→35→30) e Chapa Quente.

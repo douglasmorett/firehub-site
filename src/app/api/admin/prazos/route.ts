@@ -3,7 +3,7 @@
  *
  * GET lista (sem hash de senha, com o último sinal da extensão para suporte).
  * POST cria (e-mail, senha, loja, WhatsApp, status, motoboys).
- * PATCH muda status, senha, motoboys, loja, WhatsApp, observações.
+ * PATCH muda status, senha, motoboys, lojas incluídas no plano, loja, WhatsApp, observações.
  *
  * Só ADMIN: é aqui que se dá e se tira acesso ao produto.
  */
@@ -24,7 +24,7 @@ async function admin() {
 }
 
 const SELECAO = {
-  id: true, email: true, nomeLoja: true, whatsapp: true, status: true, motoboys: true,
+  id: true, email: true, nomeLoja: true, whatsapp: true, status: true, motoboys: true, lojasIncluidas: true,
   config: true, ultimoEstado: true, caktoRef: true, observacoes: true, criadoPor: true,
   createdAt: true, updatedAt: true,
 };
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
   const whatsapp = String(body?.whatsapp || "").replace(/\D/g, "").slice(0, 20) || null;
   const status = STATUS_DE_CONTA.includes(body?.status) ? body.status : "PILOTO";
   const motoboys = Number.isInteger(Number(body?.motoboys)) && Number(body.motoboys) >= 1 ? Number(body.motoboys) : 2;
+  const lojasIncluidas = Number.isInteger(Number(body?.lojasIncluidas)) && Number(body.lojasIncluidas) >= 1 ? Math.min(50, Number(body.lojasIncluidas)) : 1;
 
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return NextResponse.json({ error: "E-mail inválido" }, { status: 400 });
   if (senha.length < 6) return NextResponse.json({ error: "Senha com pelo menos 6 caracteres" }, { status: 400 });
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
 
   const conta = await prisma.prazoConta.create({
     data: {
-      email, nomeLoja, whatsapp, status, motoboys,
+      email, nomeLoja, whatsapp, status, motoboys, lojasIncluidas,
       senhaHash: await bcrypt.hash(senha, 10),
       observacoes: String(body?.observacoes || "").slice(0, 500) || null,
       criadoPor: quem.email || quem.id || "admin",
@@ -85,6 +86,11 @@ export async function PATCH(req: NextRequest) {
     const m = Number(body.motoboys);
     if (!Number.isInteger(m) || m < 1 || m > 50) return NextResponse.json({ error: "motoboys entre 1 e 50" }, { status: 400 });
     dados.motoboys = m;
+  }
+  if (body?.lojasIncluidas !== undefined) {
+    const n = Number(body.lojasIncluidas);
+    if (!Number.isInteger(n) || n < 1 || n > 50) return NextResponse.json({ error: "lojasIncluidas entre 1 e 50" }, { status: 400 });
+    dados.lojasIncluidas = n;
   }
   if (body?.nomeLoja !== undefined) dados.nomeLoja = String(body.nomeLoja).trim().slice(0, 80) || undefined;
   if (body?.whatsapp !== undefined) dados.whatsapp = String(body.whatsapp).replace(/\D/g, "").slice(0, 20) || null;
