@@ -4,6 +4,7 @@ import { dataHoraDaLoja } from "@/lib/fuso";
 import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
 import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
 import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
+import { registrarChamadaWebhook } from "@/lib/ifood-webhook-registro";
 
 
 import { parseOrderPaymentInfo } from "@/lib/payment-parser";
@@ -123,8 +124,13 @@ export async function POST(req: NextRequest) {
     // evento não tem nada a processar: 200 e pronto. Nenhuma segurança mora
     // neste 400 — evento forjado já não cria pedido, porque o conteúdo vem
     // sempre da API do iFood, nunca do corpo da requisição.
+    registrarChamadaWebhook("sonda (corpo vazio)", 200);
     return NextResponse.json({ received: true, events: 0 });
   }
+
+  // A tela de homologação (aba Eventos) mostra as últimas chamadas recebidas
+  // como prova viva de "webhook configurado e respondendo 200".
+  registrarChamadaWebhook(String(events[0]?.fullCode || events[0]?.code || "evento"), 200);
 
   // Processa eventos assincronicamente no background para não estourar o Timeout da Vercel
   after(async () => {
