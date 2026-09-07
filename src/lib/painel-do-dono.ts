@@ -16,6 +16,7 @@
  * ao WhatsApp — o dono está esperando a mensagem.
  */
 import { prisma } from "@/lib/prisma";
+import { inicioDoDiaDaLoja } from "@/lib/fuso";
 
 /**
  * Status que significam "ainda está na loja".
@@ -143,10 +144,11 @@ export async function montarResumoGerencial(
   opts: { deliveryZones?: unknown; caixaAberto?: boolean; timezone?: string | null } = {}
 ): Promise<ResumoGerencial> {
   const agora = new Date();
-  const inicioDoDia = new Date(agora);
-  inicioDoDia.setHours(0, 0, 0, 0);
-  const fimDoDia = new Date(agora);
-  fimDoDia.setHours(23, 59, 59, 999);
+  // Meia-noite DA LOJA, não do container (UTC). Com setHours(0,0,0,0) o "hoje"
+  // do dono virava às 21:00 de Brasília: o faturamento zerava no meio do
+  // jantar e as contas que vencem hoje já apareciam como vencidas.
+  const inicioDoDia = inicioDoDiaDaLoja(opts.timezone, agora);
+  const fimDoDia = new Date(inicioDoDia.getTime() + 24 * 60 * 60_000 - 1);
   const daquiUmaSemana = new Date(agora.getTime() + 7 * 24 * 60 * 60_000);
 
   const prazoMin = prazoDeEntregaMin(opts.deliveryZones);

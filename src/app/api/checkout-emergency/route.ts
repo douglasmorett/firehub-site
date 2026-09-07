@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createAsaasPayment } from "@/lib/asaas";
+import { getCurrentYearMonth, intervaloDoMes } from "@/lib/billing";
 
 export async function POST(req: Request) {
   try {
@@ -26,8 +27,10 @@ export async function POST(req: Request) {
     if (!user) return NextResponse.json({ error: "User não encontrado" }, { status: 404 });
 
     // Verifica se já fez retirada de emergência no mês
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Início do mês EM BRASÍLIA: com getMonth() do container (UTC) o mês virava
+    // às 21:00 do último dia e a multa da segunda retirada sumia (ou aparecia)
+    // três horas antes da hora.
+    const { monthStart: startOfMonth } = intervaloDoMes(getCurrentYearMonth());
     const emergencyOrdersThisMonth = await prisma.order.count({
       where: {
         userId: user.id,

@@ -293,7 +293,7 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
     // Como o pedido resgatado entra no fim da fila (createdAt = agora), a hora
     // original do iFood fica registrada aqui para nao se perder no relatorio.
     orderData.createdAt ? `🕐 Feito no iFood às ${new Date(orderData.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} (resgatado depois)` : null,
-    scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
+    scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : null,
     discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
     customerNote ? `💬 ${customerNote}` : null,
   ].filter(Boolean).join(" | ");

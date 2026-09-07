@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
+import { dataDaLoja } from "@/lib/fuso";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -53,24 +54,20 @@ export async function POST(req: NextRequest) {
     const staff = users.filter(u => u.role === "STAFF");
 
     const today = new Date();
-    const thisMonth = today.getMonth();
-    const thisYear = today.getFullYear();
-    
-    const ordersThisMonth = orders.filter(o => {
-      const d = new Date(o.createdAt);
-      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-    });
+    // "Este mês" EM BRASÍLIA — getMonth() do container (UTC) já é o mês
+    // seguinte a partir das 21:00 do último dia.
+    const mesAtual = dataDaLoja(undefined, today).slice(0, 7);
+    const doMesAtual = (quando: Date | string) => dataDaLoja(undefined, new Date(quando)).slice(0, 7) === mesAtual;
+
+    const ordersThisMonth = orders.filter(o => doMesAtual(o.createdAt));
     const revenueThisMonth = ordersThisMonth.reduce((acc, o) => acc + o.totalAmount, 0);
 
-    const invoicesThisMonth = invoices.filter(inv => {
-      const d = new Date(inv.createdAt);
-      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-    });
+    const invoicesThisMonth = invoices.filter(inv => doMesAtual(inv.createdAt));
     const spentThisMonth = invoicesThisMonth.reduce((acc, inv) => acc + (inv.aiValue || 0), 0);
 
     const systemContext = `
 SISTEMA: Portal Hakim — Distribuidora de Alimentos
-DATA ATUAL: ${today.toLocaleDateString("pt-BR")} ${today.toLocaleTimeString("pt-BR")}
+DATA ATUAL: ${today.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} ${today.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}
 ADMINISTRADOR: ${session.user?.name} (${session.user?.email})
 
 ═══ RESUMO EXECUTIVO ═══
@@ -86,7 +83,7 @@ ADMINISTRADOR: ${session.user?.name} (${session.user?.email})
 • Contas já pagas: ${paidPayables.length} (R$ ${paidPayables.reduce((a, p) => a + p.value, 0).toFixed(2)})
 
 ═══ LOJISTAS ═══
-${franchisees.map(f => `• ${f.name} (${f.email}) — Cidade: ${f.city || "N/I"} — Desde: ${new Date(f.createdAt).toLocaleDateString("pt-BR")}`).join("\n")}
+${franchisees.map(f => `• ${f.name} (${f.email}) — Cidade: ${f.city || "N/I"} — Desde: ${new Date(f.createdAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}`).join("\n")}
 
 ═══ EQUIPE / FUNCIONÁRIOS ═══
 ${staff.map(s => `• ${s.name} (${s.email}) — Permissões: ${s.permissions || "nenhuma"}`).join("\n") || "Nenhum funcionário cadastrado."}
@@ -97,14 +94,14 @@ ${products.map(p => `• ${p.name} — R$ ${p.price.toFixed(2)} — ${p.active ?
 ═══ TODOS OS PEDIDOS (HISTÓRICO COMPLETO) ═══
 ${orders.map(o => {
   const items = o.items.map((i: any) => `${i.quantity}x ${i.product?.name || "?"}`).join(", ");
-  return `• #${o.id.slice(-6)} | ${(o.user as any)?.name} (${(o.user as any)?.city || "?"}) | R$ ${o.totalAmount.toFixed(2)} | Status: ${o.status} | ${new Date(o.createdAt).toLocaleDateString("pt-BR")} | Itens: ${items}`;
+  return `• #${o.id.slice(-6)} | ${(o.user as any)?.name} (${(o.user as any)?.city || "?"}) | R$ ${o.totalAmount.toFixed(2)} | Status: ${o.status} | ${new Date(o.createdAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} | Itens: ${items}`;
 }).join("\n") || "Nenhum pedido."}
 
 ═══ CONTAS A PAGAR (TODAS) ═══
-${payables.map(p => `• ${p.supplierName} | R$ ${p.value.toFixed(2)} | Status: ${p.status} | Vence: ${new Date(p.dueDate).toLocaleDateString("pt-BR")} | Recebido: ${new Date(p.receivedDate).toLocaleDateString("pt-BR")}${p.barcode ? " | Cód. barras: Sim" : ""}`).join("\n") || "Nenhuma conta pendente."}
+${payables.map(p => `• ${p.supplierName} | R$ ${p.value.toFixed(2)} | Status: ${p.status} | Vence: ${new Date(p.dueDate).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} | Recebido: ${new Date(p.receivedDate).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}${p.barcode ? " | Cód. barras: Sim" : ""}`).join("\n") || "Nenhuma conta pendente."}
 
 ═══ NOTAS FISCAIS DE COMPRAS (TODAS) ═══
-${invoices.map(inv => `• ${inv.description} | R$ ${(inv.aiValue || 0).toFixed(2)} | Categoria: ${inv.aiCategory || "N/I"} | Data NF: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString("pt-BR") : "N/I"} | Status: ${inv.status} | Por: ${inv.uploadedBy} | Em: ${new Date(inv.createdAt).toLocaleDateString("pt-BR")}`).join("\n") || "Nenhuma nota."}
+${invoices.map(inv => `• ${inv.description} | R$ ${(inv.aiValue || 0).toFixed(2)} | Categoria: ${inv.aiCategory || "N/I"} | Data NF: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "N/I"} | Status: ${inv.status} | Por: ${inv.uploadedBy} | Em: ${new Date(inv.createdAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}`).join("\n") || "Nenhuma nota."}
 
 ═══ ROTAS DE ENTREGA ═══
 ${routes.map(r => {

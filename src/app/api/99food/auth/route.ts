@@ -36,13 +36,31 @@ export async function GET(req: NextRequest) {
   }
 
   if (step === "disconnect") {
+    // Um GET que desfaz vínculo em produção não pode disparar por acidente —
+    // prefetch do navegador, favorito antigo, clique errado. Sem a palavra
+    // explícita, não acontece nada. A tela manda `confirmar=DESCONECTAR`
+    // depois de o lojista digitá-la.
+    if (req.nextUrl.searchParams.get("confirmar") !== "DESCONECTAR") {
+      return NextResponse.json(
+        { error: "Desconectar exige confirmação explícita (confirmar=DESCONECTAR). Nada foi alterado." },
+        { status: 400 }
+      );
+    }
+
     const u = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true, food99AppId: true },
+      select: { id: true, ownerId: true, food99AppId: true, storeName: true },
     });
     if (!u) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
     const lojaId = u.ownerId || u.id;
+
+    // Rastro de QUEM desligou e QUANDO. A Brasa Burguer perdeu o vínculo em
+    // 04/09/2026 e ninguém conseguiu dizer se foi este botão, o painel do
+    // 99Food ou outro sistema — porque nada ficava registrado.
+    console.warn(
+      `[99Food] DESCONECTAR acionado: loja ${lojaId} (${u.storeName ?? "sem nome"}) por ${session.user.email} em ${new Date().toISOString()} — vai chamar shop/unbind`
+    );
 
     // Desfaz o vínculo NO 99FOOD antes de limpar aqui. Antes esta rota só
     // apagava os campos do nosso banco — e como "conectado" passou a ser o que

@@ -593,14 +593,27 @@ export default function IntegracoesHubClient({
     }
   };
 
+  /**
+   * Desconectar aqui DESFAZ o vínculo no 99Food (shop/unbind) — e para voltar
+   * o lojista precisa autorizar de novo lá. Um `confirm()` de um clique era
+   * pouco para isso: a Brasa Burguer perdeu o vínculo em 04/09/2026 às 01:11,
+   * três minutos depois do último pedido, na hora de fechar a loja — o botão
+   * parece "fechar o 99" e não é. Agora exige a palavra escrita, e o texto diz
+   * o que o botão NÃO faz.
+   */
   const handleDisconnect99Food = async () => {
-    // A confirmação nomeia a loja: é a última chance de perceber que se está
-    // desligando a errada, e a partir daqui os pedidos dela param de chegar.
     const alvo = food99Loja?.nome ? `"${food99Loja.nome}"` : "esta loja";
-    if (!confirm(`Desconectar ${alvo} do 99Food?\n\nOs pedidos dela param de chegar no FireHub até você conectar de novo.`)) return;
+    const digitado = prompt(
+      `ATENÇÃO: isto NÃO fecha nem pausa a loja no 99Food.\n\n` +
+        `Isto DESFAZ a integração de ${alvo} com o FireHub: os pedidos do 99Food param de chegar aqui ` +
+        `e, para voltar, será preciso autorizar o FireHub de novo no 99Food.\n\n` +
+        `Para fechar a loja ou pausar pedidos, use o app do 99Food.\n\n` +
+        `Se quer mesmo desconectar, digite DESCONECTAR:`
+    );
+    if ((digitado || "").trim().toUpperCase() !== "DESCONECTAR") return;
     setFood99Saving(true);
     try {
-      const res = await fetch("/api/99food/auth?step=disconnect");
+      const res = await fetch("/api/99food/auth?step=disconnect&confirmar=DESCONECTAR");
       if (res.ok) {
         setFood99Connected(false);
         setFood99Aguardando(false);

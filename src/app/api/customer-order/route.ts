@@ -7,6 +7,7 @@ import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { disponivelHoje } from "@/lib/cardapio-interno";
 import { estadoDaLoja } from "@/lib/loja-aberta";
+import { dataDaLoja } from "@/lib/fuso";
 
 export async function POST(req: Request) {
   try {
@@ -72,14 +73,17 @@ export async function POST(req: Request) {
       }
     }
 
-    // Verificar pausa programada
+    // Verificar pausa programada. Para pedido AGENDADO esta é a única trava de
+    // pausa (o `estadoDaLoja` acima não roda para ele). Comparar DATA da loja
+    // com data: `new Date("AAAA-MM-DDT00:00")` era meia-noite do container
+    // (UTC), então a pausa começava às 21:00 da véspera e voltava a aceitar
+    // pedido às 21:00 do último dia de férias.
     const pause = franchisee.storePause as any;
-    if (pause?.active) {
-      const today = new Date();
-      const from = new Date(pause.from + "T00:00");
-      const to = new Date(pause.to + "T23:59");
-      if (today >= from && today <= to) {
-        return NextResponse.json({ error: `Loja em pausa até ${to.toLocaleDateString("pt-BR")}.` }, { status: 400 });
+    if (pause?.active && pause.from && pause.to) {
+      const hoje = dataDaLoja(franchisee.storeTimezone);
+      if (hoje >= pause.from && hoje <= pause.to) {
+        const [a, m, d] = String(pause.to).split("-");
+        return NextResponse.json({ error: `Loja em pausa até ${d}/${m}/${a}.` }, { status: 400 });
       }
     }
 

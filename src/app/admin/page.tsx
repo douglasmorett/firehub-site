@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import AdminDashboardClient from "@/components/admin/AdminDashboardClient";
+import { getCurrentYearMonth, intervaloDoMes } from "@/lib/billing";
+import { inicioDoDiaDaLojaAtras } from "@/lib/fuso";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "FireHub Admin — Visão Geral" };
@@ -59,13 +61,12 @@ export default async function AdminPage() {
   const assinantes = lojistas.filter(l => !isLojistaInTrial(l)).length;
 
   // Novos este mês
-  const startOfMonth = new Date();
-  startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0);
+  // Fronteiras EM BRASÍLIA — setHours/getMonth respondem no fuso do container (UTC).
+  const { monthStart: startOfMonth } = intervaloDoMes(getCurrentYearMonth());
   const novosMes = lojistas.filter(l => new Date(l.createdAt) >= startOfMonth).length;
 
   // Novos esta semana
-  const startOfWeek = new Date();
-  startOfWeek.setDate(startOfWeek.getDate() - 7); startOfWeek.setHours(0, 0, 0, 0);
+  const startOfWeek = inicioDoDiaDaLojaAtras(7);
   const novosSemana = lojistas.filter(l => new Date(l.createdAt) >= startOfWeek).length;
 
   // MRR = soma dos amountDue do último billing de cada lojista
@@ -91,11 +92,9 @@ export default async function AdminPage() {
   const comPendencia = Object.keys(pendingMap).length;
 
   // ── Série temporal: cadastros por mês (últimos 6 meses) ───
-  const now = new Date();
   const monthlyGrowth = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-    const next = new Date(now.getFullYear(), now.getMonth() - (5 - i) + 1, 1);
-    const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
+    const { monthStart: d, monthEnd: next } = intervaloDoMes(getCurrentYearMonth(-(5 - i)));
+    const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit", timeZone: "America/Sao_Paulo" });
     const count = lojistas.filter(l => {
       const c = new Date(l.createdAt);
       return c >= d && c < next;

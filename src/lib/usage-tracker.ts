@@ -24,8 +24,11 @@ const PRICING = {
 };
 
 function getYearMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  // Mês DE BRASÍLIA, o mesmo que fecha o ciclo em billing.ts. Com getMonth() do
+  // container (UTC) o custo das 21:00 às 24:00 do último dia caía no mês
+  // seguinte e sumia do ciclo fechado.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" })
+    .format(new Date()).slice(0, 7);
 }
 
 // ── WhatsApp Message Tracking ──────────────────────────────────────

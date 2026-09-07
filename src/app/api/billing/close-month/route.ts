@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { closeBillingCycle } from "@/lib/billing";
+import { closeBillingCycle, getCurrentYearMonth } from "@/lib/billing";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -59,8 +59,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const yearMonth = req.nextUrl.searchParams.get("yearMonth") ?? 
-    new Date().toISOString().slice(0, 7);
+  // Sem parâmetro, o mês corrente EM BRASÍLIA — toISOString() é UTC e, das
+  // 21:00 às 24:00 do último dia, apontava para o mês seguinte.
+  const yearMonth = req.nextUrl.searchParams.get("yearMonth") ?? getCurrentYearMonth();
 
   const cycles = await prisma.franchiseeBillingCycle.findMany({
     where: { yearMonth },

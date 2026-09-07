@@ -815,7 +815,7 @@ export async function processBrendiEvent(
 
       const notesArr = [
         `Pedido Brendi #${String(displayIdReal ?? orderId.slice(-6)).toUpperCase()}`,
-        (scheduledDatetime && isExplicitScheduled) ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
+        (scheduledDatetime && isExplicitScheduled) ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : null,
         discountTotal > 0
           ? `🏷️ ${discountDetails[0]?.description || "Desconto"}: -R$${discountTotal.toFixed(2)}` +
             (discountPlatform > 0 ? ` (Plataforma: R$${discountPlatform.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : "")

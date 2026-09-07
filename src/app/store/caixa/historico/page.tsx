@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-const fmtDate = (d: Date) => new Date(d).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
+const fmtDate = (d: Date) => new Date(d).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit", timeZone: "America/Sao_Paulo" });
 const fmtDur = (open: Date, close: Date) => {
   const m = Math.round((new Date(close).getTime() - new Date(open).getTime()) / 60000);
   return m < 60 ? `${m}min` : `${Math.floor(m/60)}h${String(m%60).padStart(2,"0")}`;

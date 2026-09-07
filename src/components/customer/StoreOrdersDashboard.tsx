@@ -1372,7 +1372,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, [user.cashOpen]);
   const [showResumo, setShowResumo] = useState(false);
   const storeName = user.storeName || user.name;
-  const storeStatus = isStoreOpen(user.storeHours as any);
+  const storeStatus = isStoreOpen(user.storeHours as any, undefined, user.storeTimezone);
   const storeUrl = user.slug ? `/loja/${user.slug}` : null;
 
   const [printerConfig, setPrinterConfig] = useState<any>(null);

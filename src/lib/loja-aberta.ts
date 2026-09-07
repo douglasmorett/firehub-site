@@ -15,32 +15,12 @@
  * seguinte. Agora ele recebe o estado pronto e a ordem de não vender.
  */
 import { normalizeStoreHours, type StoreDayHour } from "@/lib/store-hours";
+import { FUSO_PADRAO, relogioDaLoja } from "@/lib/fuso";
 
-export const FUSO_PADRAO = "America/Sao_Paulo";
+export { FUSO_PADRAO, relogioDaLoja };
 
 /** Segunda = 0, como a lista de `normalizeStoreHours`. */
 const DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
-
-type Relogio = { minutos: number; diaIdx: number };
-
-/** Hora e dia da semana no fuso da LOJA, não no do servidor. */
-export function relogioDaLoja(timezone: string | null | undefined, agora: Date): Relogio {
-  const tz = timezone || FUSO_PADRAO;
-  const partes = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz, hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false,
-  }).formatToParts(agora);
-
-  const pega = (tipo: string) => partes.find((p) => p.type === tipo)?.value || "";
-  const hora = Number(pega("hour"));
-  const minuto = Number(pega("minute"));
-  const SEMANA: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
-
-  return {
-    // "24" aparece em algumas engines para meia-noite; vira 0.
-    minutos: ((Number.isFinite(hora) ? hora : 0) % 24) * 60 + (Number.isFinite(minuto) ? minuto : 0),
-    diaIdx: SEMANA[pega("weekday")] ?? 0,
-  };
-}
 
 function paraMinutos(hhmm: string): number | null {
   const [h, m] = String(hhmm || "").split(":").map(Number);

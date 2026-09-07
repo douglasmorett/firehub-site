@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { dataDaLoja } from "@/lib/fuso";
 
 export async function createPayable(data: {
   supplierName: string;
@@ -143,9 +144,10 @@ export async function createRecurringPayable(data: {
       }
     });
 
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
+    // Ano e mês DE BRASÍLIA: das 21:00 às 24:00 do último dia o container (UTC)
+    // já está no mês seguinte, e a primeira parcela nascia um mês à frente.
+    const [currentYear, mesHumano] = dataDaLoja().split("-").map(Number);
+    const currentMonth = mesHumano - 1;
     const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
     const cappedDay = Math.min(Number(data.dueDateDay), lastDay);
     const dueDate = new Date(currentYear, currentMonth, cappedDay, 12, 0, 0);

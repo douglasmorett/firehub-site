@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import AmbassadorDashboard from "@/components/ambassador/AmbassadorDashboard";
 import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
 import { calcMensalidade } from "@/lib/firehub-billing";
+import { getCurrentYearMonth, intervaloDoMes } from "@/lib/billing";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Portal do Embaixador - FireHub" };
@@ -69,8 +70,10 @@ export default async function EmbaixadorPage() {
   }
 
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  // Mês EM BRASÍLIA (o mesmo do fechamento de cobrança): com getMonth() do
+  // container (UTC) as vendas das 21:00 às 24:00 do último dia caíam na
+  // comissão do mês seguinte.
+  const { monthStart: startOfMonth, monthEnd: endOfMonth } = intervaloDoMes(getCurrentYearMonth());
 
   // Coleta dados de vendas de um conjunto de lojas, aplicando o percentual que
   // vale para elas: `commissionPercent` nas lojas próprias (nível 1) e

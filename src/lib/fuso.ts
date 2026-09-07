@@ -45,6 +45,42 @@ function offsetDoFuso(data: Date, timeZone: string): number {
 
 export const FUSO_PADRAO = "America/Sao_Paulo";
 
+/** "YYYY-MM-DD" de hoje **no fuso da loja** — para comparar com datas de pausa, promoção, agenda. */
+export function dataDaLoja(timeZone: string | null | undefined = FUSO_PADRAO, agora: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timeZone || FUSO_PADRAO, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(agora);
+}
+
+/**
+ * Hora (minutos desde 00:00) e dia da semana (Segunda = 0, como a lista de
+ * `normalizeStoreHours`) **no fuso da loja**, não no do processo.
+ *
+ * É a ÚNICA forma certa de perguntar "que horas são na loja?" em código que
+ * pode rodar no servidor. `new Date().getHours()` responde no fuso do
+ * container (UTC): às 20:28 de Brasília ele diz 23:28, e uma loja que fecha
+ * às 23:15 aparece fechada no meio do jantar — foi assim que o checkout do
+ * site recusou pedidos de todas as lojas, das 20:15 às 23:15, de 27/08 a
+ * 06/09/2026.
+ */
+export function relogioDaLoja(timeZone: string | null | undefined, agora: Date = new Date()): { minutos: number; diaIdx: number } {
+  const tz = timeZone || FUSO_PADRAO;
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false,
+  }).formatToParts(agora);
+
+  const pega = (tipo: string) => partes.find((p) => p.type === tipo)?.value || "";
+  const hora = Number(pega("hour"));
+  const minuto = Number(pega("minute"));
+  const SEMANA: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+
+  return {
+    // "24" aparece em algumas engines para meia-noite; vira 0.
+    minutos: ((Number.isFinite(hora) ? hora : 0) % 24) * 60 + (Number.isFinite(minuto) ? minuto : 0),
+    diaIdx: SEMANA[pega("weekday")] ?? 0,
+  };
+}
+
 /**
  * O instante em que começou o dia corrente **no fuso da loja**.
  *

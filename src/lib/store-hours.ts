@@ -1,3 +1,5 @@
+import { dataDaLoja, relogioDaLoja } from "@/lib/fuso";
+
 export const DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 
 export const DAY_MAP: Record<string, string> = {
@@ -185,14 +187,26 @@ export function normalizeStoreHours(raw: any): StoreDayHour[] {
 
 /**
  * Verifica se a loja está aberta no momento com base nos horários configurados.
+ *
+ * O relógio é o DA LOJA (`timezone`, padrão America/Sao_Paulo), nunca o do
+ * processo. Esta função rodava com `new Date().getHours()`: no navegador dava
+ * certo por sorte (cliente e loja no mesmo fuso), mas no servidor — que roda
+ * em UTC — dizia "fechada" três horas antes da hora, e o checkout do site
+ * recusou pedido de todas as lojas das 20:15 às 23:15, de 27/08 a 06/09/2026.
+ * Agora ela responde igual no servidor, no SSR e no navegador, e ainda acerta
+ * para um cliente em outro fuso pedindo de uma loja em Brasília.
+ *
+ * `agora` existe para teste; em produção não passe.
  */
 export function isStoreOpen(
   rawHours: any,
-  rawPause?: any
+  rawPause?: any,
+  timezone?: string | null,
+  agora: Date = new Date()
 ): { open: boolean; text: string } {
   // Verificar pausa programada
   if (rawPause && typeof rawPause === "object" && rawPause.active) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dataDaLoja(timezone, agora);
     const from = rawPause.from || "";
     const to = rawPause.to || "";
     if (from && to && today >= from && today <= to) {
@@ -204,15 +218,12 @@ export function isStoreOpen(
   }
 
   const hours = normalizeStoreHours(rawHours);
-  const now = new Date();
-  const dayIdx = now.getDay() === 0 ? 6 : now.getDay() - 1;
+  const { minutos: nowMin, diaIdx: dayIdx } = relogioDaLoja(timezone, agora);
   const todayHour = hours[dayIdx];
 
   if (!todayHour || !todayHour.active) {
     return { open: false, text: "Fechado hoje" };
   }
-
-  const nowMin = now.getHours() * 60 + now.getMinutes();
 
   if (Array.isArray(todayHour.shifts) && todayHour.shifts.length > 0) {
     const activeShifts = todayHour.shifts.filter(

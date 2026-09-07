@@ -10,7 +10,7 @@ import { redirect } from "next/navigation";
 export const metadata = { title: "Lojistas — Admin FireHub" };
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-const fmtDate = (d: Date | null) => d ? new Date(d).toLocaleDateString("pt-BR") : "—";
+const fmtDate = (d: Date | null) => d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
 const daysSince = (d: Date) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
 const TRIAL_DAYS = 15;
 

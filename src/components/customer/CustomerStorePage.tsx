@@ -66,6 +66,7 @@ type Franchisee = {
   storeBanner: string | null;
   storeLogo?: string | null;
   storeHours?: any;
+  storeTimezone?: string | null;
   storeDeliveryOnly?: boolean;
   paymentFees?: any;
   deliveryZoneType?: string | null;
@@ -226,7 +227,7 @@ export default function CustomerStorePage({
   const [pendingAmount, setPendingAmount] = useState(0);
 
   const storeName = franchisee.storeName || franchisee.name;
-  const storeStatus = isStoreOpen(franchisee.storeHours as any);
+  const storeStatus = isStoreOpen(franchisee.storeHours as any, undefined, franchisee.storeTimezone);
   // Fechada AGORA por qualquer motivo: horário, chave manual ou pausa. É o
   // que desarma o botão de finalizar antes de o cliente preencher tudo.
   const lojaFechadaAgora = !storeStatus.open || franchisee.storeOpen === false;

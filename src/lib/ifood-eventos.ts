@@ -499,7 +499,7 @@ export async function processarEventosIfood(opts: {
 
           const notesArr = [
             `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
-            scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR")}` : null,
+            scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : null,
             discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
             customerNote ? `💬 ${customerNote}` : null,
           ].filter(Boolean).join(" | ");
