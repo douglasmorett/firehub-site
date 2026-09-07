@@ -733,6 +733,61 @@ async function garantirChaveDaImpressao(): Promise<void> {
   );
 }
 
+/**
+ * ── FireHub Prazos: a conta da extensão vendida fora do FireHub ─────────────
+ *
+ * Tabela própria, e não uma linha em `User`, de propósito: quem assina a
+ * extensão não é loja FireHub — não tem cardápio, pedidos, caixa nem painel.
+ * Misturar no `User` faria toda tela do sistema tratar esses e-mails como
+ * lojas. E o cadastro (e-mail, loja, WhatsApp) é lead para o FireHub: fica
+ * separado para ser lido como tal.
+ */
+const INSTRUCOES_PRAZOS = [
+  `CREATE TABLE IF NOT EXISTS "PrazoConta" (
+     "id" TEXT NOT NULL,
+     "email" TEXT NOT NULL,
+     "senhaHash" TEXT NOT NULL,
+     "nomeLoja" TEXT NOT NULL,
+     "whatsapp" TEXT,
+     "status" TEXT NOT NULL DEFAULT 'PILOTO',
+     "motoboys" INTEGER NOT NULL DEFAULT 2,
+     "config" JSONB,
+     "ultimoEstado" JSONB,
+     "caktoRef" TEXT,
+     "observacoes" TEXT,
+     "criadoPor" TEXT,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "PrazoConta_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "PrazoConta_email_key" ON "PrazoConta"("email")`,
+];
+
+let prazosOk = false;
+
+export async function garantirEstruturaDePrazos(): Promise<void> {
+  if (prazosOk) return;
+
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia da estrutura de Prazos.");
+    prazosOk = true;
+    return;
+  }
+
+  try {
+    for (const sql of INSTRUCOES_PRAZOS) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    prazosOk = true;
+    console.log("[Boot] ✅ Tabela PrazoConta (FireHub Prazos) garantida.");
+  } catch (err: any) {
+    // Sem a tabela só a extensão vendida deixa de logar — nada do FireHub
+    // depende dela. O log diz o que conferir; não derruba o boot.
+    console.error(`[Boot] 🛑 Estrutura de Prazos falhou: ${err?.message}`);
+  }
+}
+
 let mesaOk = false;
 
 export async function garantirEstruturaDeMesa(): Promise<void> {

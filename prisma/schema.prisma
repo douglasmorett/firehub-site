@@ -1187,6 +1187,34 @@ model PrintRequest {
   @@index([franchiseeId, createdAt])
 }
 
+// ========== FIREHUB PRAZOS (extensão vendida fora do FireHub) ==========
+/// Conta da extensão "FireHub Prazos". NÃO é loja FireHub: é um cliente que só
+/// usa a extensão para ajustar o prazo no Portal do Parceiro pela carga da
+/// cozinha dele (Saipos, Cardápio Web, o que for). O e-mail é o que amarra com
+/// a assinatura na Cakto; `status` é o que corta o uso quando não paga. É
+/// também o cadastro de lead para o FireHub (e-mail, loja, WhatsApp).
+model PrazoConta {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  senhaHash    String
+  nomeLoja     String
+  whatsapp     String?
+  /// PILOTO (grátis por prazo) · ATIVO (assinatura em dia) · BLOQUEADO (não pagou) · CANCELADO
+  status       String   @default("PILOTO")
+  motoboys     Int      @default(2)
+  /// { modo: "auto"|"manual", regrasManuais: [{ maxPedidos, minutos }],
+  ///   receitas: { [host]: { colunas: [{ id, rotulo, seletor, badge, metodo }] } } }
+  config       Json?
+  /// Último sinal da extensão: { visto, host, pedidos, colunas, minutos, pausar, aplicadoEm, erro, versao }
+  ultimoEstado Json?
+  /// Referência da Cakto (assinatura/cliente) quando a conta nasce ou muda pelo webhook.
+  caktoRef     String?
+  observacoes  String?
+  criadoPor    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 // ========== SESSÕES DE CAIXA ==========
 model CashSession {
   id              String    @id @default(cuid())

@@ -125,6 +125,10 @@ export default async function AdminSidebar() {
               <Tag size={18} style={{ marginRight: "10px" }} /> Validação / Etiquetas
             </a>
           )}
+          {/* Contas da extensão FireHub Prazos (produto vendido fora do FireHub). A página é só ADMIN. */}
+          <a href="/admin/prazos" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", borderLeft: "3px solid #FF5722", background: "rgba(255,87,34,0.06)" }}>
+            <span style={{ marginRight: "10px", fontSize: 18, lineHeight: 1 }}>⏱️</span> FireHub Prazos
+          </a>
 
           {/* ===== FINANCEIRO ===== */}
           <p style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, padding: "12px 12px 4px", margin: 0 }}>Financeiro</p>
