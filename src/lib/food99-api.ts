@@ -28,21 +28,23 @@ import { parseJson99Food } from "./json-ids-longos";
  * 5. getAuthToken(app_shop_id) passa a devolver o token, e os pedidos começam
  *    a chegar no webhook.
  *
- * ── Autorizar NÃO é vincular (doc oficial, lida em 06/09/2026) ─────────────
- * O `getUrl` oficial aceita SÓ `app_id`. O `app_shop_id` que este arquivo
- * mandava nele nunca chegou a lugar nenhum — e as duas leituras anteriores
- * ("o endpoint ignora" / "ele viaja dentro do uid") eram tentativas de
- * explicar um vínculo que, na verdade, alguém criou à mão no portal.
+ * ── Como o vínculo nasce (medido em 06/09/2026, nos dois sentidos) ──────────
  *
- * O que a página do getUrl faz é a ETAPA 1: o lojista AUTORIZA o app. O
- * vínculo — o `app_shop_id`, o token, o que o webhook enxerga — é a ETAPA 2, e
- * nasce no `shopBind` (v3), chamado por NÓS, com o id que NÓS escolhemos. Quem
- * autorizou e ainda não foi vinculado aparece no `getAuthorizedShops` (v3) com
- * `bound_flag = 0`. O `shop/list` v1 lista só quem já está vinculado — por
- * isso uma loja recém-autorizada nunca aparecia nele.
+ * O `app_shop_id` mandado no `getUrl` É honrado: quando o lojista autoriza
+ * pela página e a loja está LIVRE, o 99Food cria o vínculo com esse id — a
+ * Brasa Burguer reautorizou às 21h de 06/09 e apareceu no `getAuthorizedShops`
+ * vinculada como `cmt1hle8y0001ia04z3ss479k`, o id dela aqui. A doc oficial
+ * não lista o parâmetro, mas ele viaja dentro do `uid` do link.
  *
- * Foi exatamente o Frangoso: autorizou três vezes, e a API respondia 10101
- * porque ninguém tinha feito a etapa 2. Ver food99-vinculo.ts.
+ * O que NÃO acontece: uma loja já vinculada a OUTRO app não troca de dono ao
+ * autorizar o nosso. Ela fica "autorizada" no painel do lojista, o
+ * `getAuthorizedShops` a mostra com `bound_flag 1` e o `app_shop_id` do outro
+ * app, e o `shopBind` recusa com "shop has bound another app". Foram as três
+ * lojas do Lucas (vinculadas ao hub Brendi) — não o Frangoso "sem etapa 2".
+ *
+ * Então a etapa 2 por API (`shopBind`, food99-vinculo.ts) é o resgate para
+ * loja autorizada e livre cujo vínculo não nasceu; o caso comum já fecha na
+ * própria página. E loja presa em outro app só sai de lá pelo lojista.
  */
 
 /**
