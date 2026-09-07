@@ -232,7 +232,7 @@ export default function AvisoImpressaoParada() {
   } else if (presas > 0) {
     titulo = presas === 1 ? "1 comanda não saiu na impressora" : `${presas} comandas não saíram na impressora`;
     const erro = traduzErroDeImpressao(estado.erroImpressao);
-    texto = `O Assistente tenta de novo a cada 30 segundos até sair. Confira se a impressora está ligada, com papel e sem erro no Windows.${erro ? ` Último erro: ${erro}.` : ""}`;
+    texto = `O Assistente tenta de novo em 3 segundos, depois vai espaçando até 2 minutos, e não desiste enquanto não sair. Confira se a impressora está ligada, com papel e sem erro no Windows.${erro ? ` Último erro: ${erro}.` : ""}`;
   } else if (assistenteAntigo) {
     titulo = versaoRelatada
       ? `O Assistente de Impressão do PC do caixa está desatualizado (v${versaoRelatada})`

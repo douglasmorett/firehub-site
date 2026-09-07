@@ -1532,7 +1532,24 @@ function unmarkOrderAsPrinted(order, printerName) {
  * sumido da fila. Aqui ele espera o tempo que for. */
 const PENDENTES_FILE = path.join(process.env.APPDATA || os.homedir(), "FireHub", "pendentes.json");
 const pendentes = new Map(); // chave -> { job, falhas, desde, naoAntesDe, ultimoErro }
-const ESPERA_PENDENTE_MS = 30_000;
+/* ── QUANTO ESPERAR ANTES DE TENTAR DE NOVO ────────────────────────────────
+ *
+ * Era 30 s para a PRIMEIRA retentativa, dobrando ate 2 min. Isso e uma
+ * eternidade para o motivo mais comum de falha: a impressora ocupada com a
+ * comanda anterior, no meio do movimento. A comanda saia — so que minutos
+ * depois, e fora de ordem.
+ *
+ * Medido na Brasa Burguer em 07/09/2026, no jantar: comandas confirmadas
+ * 121 s, 199 s, 210 s, 453 s, 589 s, 614 s, 744 s e 1014 s depois de o pedido
+ * chegar. A escada antiga previa 90, 210, 210, 450, 570, 690, 810 e 1050 —
+ * ou seja, a demora inteira era espera de retentativa, nao impressao (uma
+ * impressao leva ~0,8 s). Para a loja isso e "travando".
+ *
+ * Agora comeca em 3 s e dobra ate o mesmo teto de 2 min: uma falha passageira
+ * se resolve antes de o atendente olhar para a impressora, e a impressora
+ * realmente desligada acomoda no mesmo ritmo lento de antes.
+ */
+const ESPERA_PENDENTE_MS = 3_000;
 const ESPERA_PENDENTE_MAX_MS = 2 * 60_000;
 /* Sete dias: comanda mais velha que isso ja nao serve a ninguem, e a lista
    nao pode crescer para sempre num PC que ficou meses sem impressora. */
@@ -1587,9 +1604,12 @@ function esquecerPendente(order, printerName) {
   if (pendentes.delete(chaveDeFalha(order, printerName))) salvarPendentes();
 }
 
-/* O laco que insiste: a cada 30 s, tudo que venceu a espera volta para a
-   fila serial, marcado como retentativa (a marca de "ja impresso" e nossa,
-   entao nao barra). Na ordem em que falhou, para o #31 sair antes do #32. */
+/* O laco que insiste: a cada 3 s, tudo que venceu a espera volta para a fila
+   serial, marcado como retentativa (a marca de "ja impresso" e nossa, entao
+   nao barra). Na ordem em que falhou, para o #31 sair antes do #32.
+   Rodava a cada 30 s — com a espera de 3 s isso viraria 30 s na pratica, que
+   e justamente o que este ajuste veio tirar. O laco so varre um Map pequeno:
+   acordar de 3 em 3 s nao custa nada. */
 setInterval(() => {
   const agora = Date.now();
   const vencidos = [...pendentes.entries()]
@@ -1604,7 +1624,7 @@ setInterval(() => {
     p.naoAntesDe = agora + ESPERA_PENDENTE_MAX_MS; // ate a tentativa responder
     enqueuePrintJob({ ...p.job, force: false, retentativa: true }).catch(() => {});
   }
-}, 30_000);
+}, 3_000);
 
 /* Para o /status: o que esta esperando a impressora. */
 function listarPendentes() {

@@ -94,7 +94,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.8";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.9";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 
