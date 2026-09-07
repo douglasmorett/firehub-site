@@ -388,6 +388,8 @@ export async function aplicarPedidoAlterado99(
       data: {
         totalAmount: p.total,
         deliveryFee: p.taxaEntrega,
+        // O desconto acompanha o total refeito: a cobrança é sobre o bruto.
+        discountTotal: p.descontos.total > 0 ? p.descontos.total : null,
         notes,
         items: { create: itens99ParaPrisma(p.itens, pedido.franchiseeId) },
       },

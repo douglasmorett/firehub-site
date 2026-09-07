@@ -540,6 +540,11 @@ export async function POST(req: NextRequest) {
                 paymentMethod: p.pagamento.texto,
                 totalAmount: p.total,
                 deliveryFee: p.taxaEntrega,
+                // Desconto do 99Food (cupom, promoção, entrega) registrado ao
+                // lado do total: a mensalidade é sobre o bruto do pedido.
+                ...(p.descontos.total > 0
+                  ? { discountTotal: p.descontos.total, discountDetails: p.descontos as any }
+                  : {}),
                 notes: p.observacoes,
                 source: "99FOOD",
                 openDeliveryOrderId: orderId,

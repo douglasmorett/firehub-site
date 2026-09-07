@@ -331,6 +331,10 @@ export async function POST(req: Request) {
         notes: finalNotes,
         totalAmount: finalTotal,
         deliveryFee: fee,
+        // O cupom da loja fica REGISTRADO, não só abatido: a mensalidade é
+        // sobre o bruto do pedido (lib/billing.ts, faturamentoBruto), e sem
+        // isto o desconto sumia do total e a base de cobrança encolhia junto.
+        ...(discount > 0 ? { discountTotal: centavos(discount), discountMerchant: centavos(discount) } : {}),
         status: initialStatus,
         kdsStage: initialKdsStage,
         kdsProductionAt: initialKdsProductionAt,

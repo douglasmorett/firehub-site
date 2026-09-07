@@ -32,6 +32,8 @@ type Order = {
   gatewayPaymentId?: string | null;
   pagarmeOrderId?: string | null;
   paymentPaidAt?: string | null;
+  /** Desconto total do pedido (cupom da loja + do marketplace). A cobrança é sobre o bruto. */
+  discountTotal?: number | null;
 };
 
 // Configura taxa por forma de pagamento (padrão FireHub)
@@ -1517,7 +1519,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                       <th style={{ padding: "10px 12px" }}>Data / Hora</th>
                       <th style={{ padding: "10px 12px" }}>Cliente</th>
                       <th style={{ padding: "10px 12px" }}>Forma de Pagam.</th>
-                      <th style={{ padding: "10px 12px" }}>Valor Total</th>
+                      <th style={{ padding: "10px 12px" }}>Valor bruto</th>
                       <th style={{ padding: "10px 12px" }}>Comissão (1%)</th>
                     </tr>
                   </thead>
@@ -1530,7 +1532,12 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                       </tr>
                     ) : (
                       filtered.slice(0, 50).map((o: any) => {
-                        const comissaoPedido = (o.totalAmount || 0) * 0.01;
+                        // A comissão é sobre o BRUTO (o que o cliente pagou +
+                        // cupom da loja + cupom do marketplace) — a mesma base
+                        // que lib/billing.ts usa. Mostrar o líquido aqui fazia
+                        // a soma das linhas não bater com o topo do extrato.
+                        const bruto = (o.totalAmount || 0) + (o.discountTotal || 0);
+                        const comissaoPedido = bruto * 0.01;
                         return (
                           <tr key={o.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                             <td style={{ padding: "10px 12px", fontWeight: 800, color: "#0F172A" }}>
@@ -1541,7 +1548,14 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                             </td>
                             <td style={{ padding: "10px 12px" }}>{o.customerName}</td>
                             <td style={{ padding: "10px 12px" }}>{o.paymentMethod || "Online"}</td>
-                            <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0F172A" }}>{fmtR(o.totalAmount)}</td>
+                            <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0F172A" }}>
+                              {fmtR(bruto)}
+                              {(o.discountTotal || 0) > 0 && (
+                                <div style={{ fontSize: "0.7rem", fontWeight: 500, color: "#64748B" }}>
+                                  pago {fmtR(o.totalAmount)} + cupom {fmtR(o.discountTotal)}
+                                </div>
+                              )}
+                            </td>
                             <td style={{ padding: "10px 12px", fontWeight: 800, color: "#2563EB" }}>{fmtR(comissaoPedido)}</td>
                           </tr>
                         );

@@ -171,6 +171,13 @@ export interface PedidoTraduzido {
   entreguePor: "99FOOD" | "MERCHANT";
   total: number;
   taxaEntrega: number;
+  /**
+   * Tudo que foi abatido do pedido, em reais — cupom do 99Food, promoção de
+   * item, desconto na entrega. `total` é o que o cliente pagou; a mensalidade
+   * do FireHub é sobre o bruto (total + descontos), então isto precisa ser
+   * gravado, não só subtraído.
+   */
+  descontos: { total: number; itens: number; entrega: number; cupom: number; promocoes: unknown[] };
   observacoes: string;
   itens: ItemTraduzido[];
 }
@@ -192,6 +199,20 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
   // são reserva para app antigo que não mande esse campo.
   const totalCentavos =
     preco.real_pay_price ?? preco.customer_need_paying_money ?? preco.real_price ?? preco.order_price ?? 0;
+
+  // Os três descontos que o swagger separa no `price`: `items_discount`
+  // (promoção de item), `delivery_discount` (na entrega) e `coupon_discount`
+  // (cupom no pedido). O `real_pay_price` já vem com todos abatidos.
+  const descontoItens = centavosParaReais(preco.items_discount);
+  const descontoEntrega = centavosParaReais(preco.delivery_discount);
+  const descontoCupom = centavosParaReais(preco.coupon_discount);
+  const descontos = {
+    total: Math.round((descontoItens + descontoEntrega + descontoCupom) * 100) / 100,
+    itens: descontoItens,
+    entrega: descontoEntrega,
+    cupom: descontoCupom,
+    promocoes: Array.isArray(o.promotions) ? o.promotions : [],
+  };
 
   // order_index é o número sequencial do dia na loja, que é o que o lojista vê
   // no app do 99Food e o que ele vai procurar quando ligar reclamando.
@@ -218,6 +239,7 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     entreguePor: quemEntrega99(o.delivery_type),
     total: centavosParaReais(totalCentavos),
     taxaEntrega: centavosParaReais(preco.delivery_price),
+    descontos,
     observacoes: String(o.remark ?? "").trim(),
     itens: Array.isArray(o.order_items) ? o.order_items.map(traduzirItem) : [],
   };

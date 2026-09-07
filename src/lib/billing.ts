@@ -7,7 +7,8 @@
  *   Taxa = 1% do faturamento mensal do franqueado
  *   Mínimo: R$100 · Máximo: R$400
  *
- * Base de cálculo: soma de CustomerOrder.totalAmount do mês dos pedidos que são
+ * Base de cálculo: soma do valor BRUTO (totalAmount + discountTotal, ver
+ * faturamentoBruto abaixo) do mês dos pedidos que são
  * venda de verdade (ver VENDAS_QUE_CONTAM abaixo). Isso inclui TODA origem
  * gravada como CustomerOrder —
  * cardápio digital, chatbot de WhatsApp, mesa, balcão, totem e os pedidos
@@ -68,6 +69,27 @@ const VENDAS_QUE_CONTAM = {
   status: { notIn: ["CANCELADO", "CRIANDO_IA"] as string[] },
   NOT: { status: "AGUARDANDO_PAGAMENTO", paymentPaidAt: null },
 };
+
+/**
+ * Base de cálculo da mensalidade = valor BRUTO do pedido que entrou, não o
+ * que o cliente pagou.
+ *
+ * `totalAmount` é líquido: já vem descontado o cupom da loja e o cupom do
+ * marketplace (iFood/99Food). Cobrar 1% sobre o líquido abria uma guerra
+ * pelo teto — bastava cupom para a base encolher, e a promoção do iFood, que
+ * a loja nem paga, ainda derrubava a nossa comissão. O que a loja vendeu foi
+ * o pedido inteiro; é sobre isso que o plano cobra (decisão do dono,
+ * 06/09/2026).
+ *
+ * `discountTotal` guarda TODO desconto aplicado (loja + marketplace): o iFood
+ * grava desde os benefícios, o 99Food e o cupom do checkout passaram a gravar
+ * em 06/09. Pedido antigo sem o campo entra pelo líquido — não há como
+ * reconstruir o que não foi guardado.
+ */
+const CAMPOS_DO_BRUTO = { totalAmount: true, discountTotal: true } as const;
+function faturamentoBruto(soma: { totalAmount: number | null; discountTotal: number | null }): number {
+  return (soma.totalAmount ?? 0) + (soma.discountTotal ?? 0);
+}
 
 /**
  * O lojista usou alguma funcionalidade nossa no mês?
@@ -278,10 +300,10 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
       ...VENDAS_QUE_CONTAM,
       createdAt: { gte: monthStart, lt: monthEnd },
     },
-    _sum: { totalAmount: true },
+    _sum: CAMPOS_DO_BRUTO,
   });
 
-  const totalSales = agg._sum.totalAmount ?? 0;
+  const totalSales = faturamentoBruto(agg._sum);
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
 
   // As taxas já acumuladas no ciclo (tráfego pago, totem) entram no pendente.
@@ -465,10 +487,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       ...VENDAS_QUE_CONTAM,
       createdAt: { gte: monthStart, lt: monthEnd },
     },
-    _sum: { totalAmount: true },
+    _sum: CAMPOS_DO_BRUTO,
   });
 
-  const totalSales = agg._sum.totalAmount ?? 0;
+  const totalSales = faturamentoBruto(agg._sum);
 
   let hasUsage = totalSales > 0;
   let motivosUso: string[] = hasUsage ? ["vendas no mês"] : [];
@@ -780,9 +802,9 @@ export async function getCurrentCycleView(franchiseeId: string) {
       ...VENDAS_QUE_CONTAM,
       createdAt: { gte: monthStart, lt: monthEnd },
     },
-    _sum: { totalAmount: true },
+    _sum: CAMPOS_DO_BRUTO,
   });
-  const vendasDoMes = aggVendas._sum.totalAmount ?? 0;
+  const vendasDoMes = faturamentoBruto(aggVendas._sum);
 
   const emTeste = !!user?.trialEndsAt && user.trialEndsAt > new Date();
   let previsaoPorUso: { valor: number; motivos: string[] } | null = null;
