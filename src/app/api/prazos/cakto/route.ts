@@ -126,7 +126,16 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body !== "object") return respostaPrazos({ ok: true, ignorado: true, motivo: "corpo vazio" });
 
   const evento = String(body.event || body.type || body.event_type || "").trim();
-  const dados: any = body.data && typeof body.data === "object" ? body.data : body;
+  // No disparo "Agrupado" a Cakto manda `data` como LISTA de itens da venda
+  // (a documentação mostra objeto, que é o disparo "Individual"). Visto no
+  // evento de teste de 07/09/2026: `data` array virava "sem e-mail" e a
+  // compra era ignorada em silêncio. Entre vários itens, vale o nosso.
+  const nomeDoItem = (x: any) => `${x?.offer?.name || ""} ${x?.product?.name || ""}`;
+  const dados: any = Array.isArray(body.data)
+    ? body.data.find((x: any) => /prazo/i.test(nomeDoItem(x))) || body.data[0] || {}
+    : body.data && typeof body.data === "object"
+      ? body.data
+      : body;
   const cliente: any = dados.customer && typeof dados.customer === "object" ? dados.customer : {};
   const email = String(cliente.email || dados.customerEmail || dados.email || "").toLowerCase().trim();
   const nome = String(cliente.name || dados.customerName || dados.name || "").trim();
