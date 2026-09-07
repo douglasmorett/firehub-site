@@ -70,6 +70,7 @@ export async function GET() {
       ["User", "gtmContainerId"], ["User", "etaConfig"],
       ["User", "onboardingData"], ["User", "metaIaSemanaReferencia"],
       ["User", "metaIaGeracoesUsadas"], ["User", "showAddressOnMenu"],
+      ["User", "printQueueEstado"], ["CustomerOrder", "printedAt"], ["PrintRequest", "printedAt"],
       ["CustomerOrder", "gaClientId"], ["CustomerOrder", "gaSessionId"],
       ["CustomerOrder", "acceptedAt"], ["CustomerOrder", "readyAt"],
       ["CustomerOrder", "dispatchedAt"], ["CustomerOrder", "deliveredAt"],

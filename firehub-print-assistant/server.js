@@ -73,13 +73,27 @@ liberarLoopbackNoNavegador();
 const tmpDir = path.join(os.tmpdir(), "firehub-print");
 if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
-// Cria o script PowerShell de raw printing em disco (evita problemas de heredoc inline)
-const PS_SCRIPT_PATH = path.join(tmpDir, "rawprint.ps1");
-fs.writeFileSync(PS_SCRIPT_PATH, `
-param([string]$PrinterName, [string]$FilePath)
-$ErrorActionPreference = 'Stop'
+// Pasta durável do Assistente (%APPDATA%\FireHub): config, cache de "já
+// impresso", pendentes e a DLL de impressão. Fica aqui em cima porque a
+// impressão precisa dela antes da seção de configuração, mais abaixo.
+const APP_DIR = path.join(process.env.APPDATA || os.homedir(), "FireHub");
+try { if (!fs.existsSync(APP_DIR)) fs.mkdirSync(APP_DIR, { recursive: true }); } catch {}
 
-Add-Type @"
+/* ─── A classe que fala com o spooler (winspool.drv) ──────────────────────
+ *
+ * Compilada UMA vez em DLL (%APPDATA%\FireHub\RawPrint-<hash>.dll) e carregada
+ * pelo script a cada impressao. Antes, cada comanda recompilava este C# do
+ * zero num PowerShell novo (csc.exe): medido em 06/09/2026, de 1,2 s a 3,9 s
+ * por comanda num PC de escritorio — e num PC de loja lento, com antivirus,
+ * o bastante para estourar o prazo do spooler de vez em quando. Com a DLL
+ * pronta o mesmo caminho leva ~0,4 s. Se a DLL nao existir ou nao carregar,
+ * o script compila em linha, exatamente como sempre fez: nenhuma loja
+ * imprime pior do que imprimia.
+ *
+ * O hash no nome do arquivo e o que troca a DLL quando este C# mudar numa
+ * versao nova: cada versao compila a sua e nunca carrega a de outra.
+ */
+const RAWPRINT_CS = `
 using System;
 using System.Runtime.InteropServices;
 public class RawPrint {
@@ -120,7 +134,68 @@ public class RawPrint {
     return escreveu && w == data.Length;
   }
 }
+`;
+
+const RAWPRINT_HASH = require("crypto").createHash("md5").update(RAWPRINT_CS).digest("hex").slice(0, 8);
+const RAWPRINT_DLL = path.join(APP_DIR, `RawPrint-${RAWPRINT_HASH}.dll`);
+
+function compilarRawPrintDll() {
+  if (process.platform !== "win32") return;
+  try {
+    // DLL de versao anterior (outro hash) nao serve mais: apaga o que der.
+    // A que estiver em uso por outro processo falha ao apagar, e tudo bem.
+    for (const arquivo of fs.readdirSync(APP_DIR)) {
+      if (/^RawPrint-[0-9a-f]{8}\.(dll|cs)$/i.test(arquivo) && !arquivo.includes(RAWPRINT_HASH)) {
+        try { fs.unlinkSync(path.join(APP_DIR, arquivo)); } catch {}
+      }
+    }
+    if (fs.existsSync(RAWPRINT_DLL)) return;
+    const fonte = path.join(APP_DIR, `RawPrint-${RAWPRINT_HASH}.cs`);
+    fs.writeFileSync(fonte, RAWPRINT_CS, "utf-8");
+    const script = path.join(tmpDir, "compila-rawprint.ps1");
+    fs.writeFileSync(script, [
+      "param([string]$Fonte, [string]$Saida)",
+      "$ErrorActionPreference = 'Stop'",
+      "Add-Type -TypeDefinition ([System.IO.File]::ReadAllText($Fonte)) -OutputAssembly $Saida",
+      'Write-Output "OK $Saida"',
+    ].join("\n"), "utf-8");
+    // Em segundo plano: a impressao nao espera por isto. Enquanto a DLL nao
+    // existe, o script compila em linha.
+    exec(
+      `powershell -NoProfile -ExecutionPolicy Bypass -File "${script}" -Fonte "${fonte}" -Saida "${RAWPRINT_DLL}"`,
+      { timeout: 90_000, windowsHide: true },
+      (err, stdout, stderr) => {
+        if (err) console.warn("[Print] DLL RawPrint nao compilou; cada impressao compila em linha, como antes:", String(stderr || err.message).split("\n")[0]);
+        else console.log(`[Print] DLL RawPrint pronta: ${RAWPRINT_DLL}`);
+      }
+    );
+  } catch (e) {
+    console.warn("[Print] DLL RawPrint: nao preparei a compilacao:", e.message);
+  }
+}
+compilarRawPrintDll();
+
+// Script PowerShell de raw printing, gravado em disco (evita heredoc inline)
+const PS_SCRIPT_PATH = path.join(tmpDir, "rawprint.ps1");
+fs.writeFileSync(PS_SCRIPT_PATH, `
+param([string]$PrinterName, [string]$FilePath, [string]$DllPath)
+$ErrorActionPreference = 'Stop'
+
+# A classe RawPrint vem da DLL pre-compilada quando ela existe (carrega em
+# milissegundos). Sem ela, ou se nao carregar, compila aqui mesmo — o caminho
+# de sempre, so mais lento.
+$pronta = $false
+if ($DllPath -and (Test-Path $DllPath)) {
+  try {
+    [System.Reflection.Assembly]::LoadFrom($DllPath) | Out-Null
+    $pronta = ($null -ne ([type]'RawPrint'))
+  } catch { $pronta = $false }
+}
+if (-not $pronta) {
+Add-Type @"
+${RAWPRINT_CS}
 "@
+}
 
 $bytes = [System.IO.File]::ReadAllBytes($FilePath)
 $ok = $false
@@ -161,6 +236,9 @@ if (-not $ok) {
   $erro = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
   throw "Falha ao enviar dados para impressora '$PrinterName' (Win32 $erro)"
 }
+# Prova de que saiu: o Assistente le este arquivo quando este processo estoura
+# o prazo. Com o marcador, imprimiu (so demorou); sem ele, nao imprimiu.
+try { [System.IO.File]::WriteAllText($FilePath + ".ok", $usada) } catch {}
 Write-Output "OK $usada"
 `, "utf-8");
 
@@ -399,6 +477,26 @@ function listPrintersCached(forcar = false) {
   return cacheDeImpressoras.lista;
 }
 
+
+/* ─── Impressora "de verdade" quando ninguem disse qual ───────────────────
+ *
+ * Sem impressora no pedido nem na config, o Assistente pegava a PRIMEIRA da
+ * lista do Windows — e a lista vem na ordem do registro, onde "Microsoft
+ * Print to PDF", "OneNote" e "Fax" aparecem antes da termica com frequencia.
+ * A comanda ia para o PDF, o spooler dizia OK, e o pedido ficava marcado como
+ * impresso sem papel nenhum. O script PowerShell ja sabia desviar de
+ * impressora virtual, mas so quando NAO recebia nome; aqui o nome era
+ * escolhido antes e passado adiante. Mesma lista de virtuais do script.
+ */
+const IMPRESSORA_VIRTUAL = /PDF|XPS|OneNote|Fax|PORTPROMPT|FILE:|nul:|SHRFAX|Microsoft Print/i;
+function ehImpressoraVirtual(p) {
+  return IMPRESSORA_VIRTUAL.test(`${(p && p.name) || ""} ${(p && p.driver) || ""} ${(p && p.port) || ""}`);
+}
+function impressoraPadraoFisica() {
+  const fisica = listPrintersCached().find(p => p && p.name && !ehImpressoraVirtual(p));
+  return fisica ? fisica.name : "";
+}
+
 // Aquece o cache logo depois de subir, para a primeira consulta da tela ja
 // encontrar a lista pronta em vez de pagar a deteccao inteira na hora.
 setTimeout(() => {
@@ -410,26 +508,48 @@ setTimeout(() => {
 
 /**
  * Envia dados RAW para a impressora usando script PowerShell externo
+ *
+ * Prazo por comanda: com a DLL pronta uma impressao leva ~0,5 s; o que passa
+ * de 20 s e impressora travada ou PowerShell preso, e a resposta certa e
+ * olhar o marcador, nao esperar mais. FIREHUB_PRAZO_IMPRESSAO_MS so existe
+ * para o teste do caminho de estouro.
  */
+const PRAZO_IMPRESSAO_MS = Number(process.env.FIREHUB_PRAZO_IMPRESSAO_MS) > 0
+  ? Number(process.env.FIREHUB_PRAZO_IMPRESSAO_MS)
+  : 20_000;
+
 function rawPrint(printerName, dataBuffer) {
   return new Promise((resolve, reject) => {
-    const tmpFile = path.join(tmpDir, `receipt_${Date.now()}.bin`);
+    const tmpFile = path.join(tmpDir, `receipt_${Date.now()}_${process.pid}_${Math.floor(Math.random() * 1e6)}.bin`);
+    // O script grava `<arquivo>.ok` DEPOIS de o spooler aceitar todos os bytes.
+    // E a prova de que saiu quando o PowerShell estoura o prazo: com o
+    // marcador, imprimiu (so demorou); sem ele, NAO imprimiu — e o pedido
+    // volta para os pendentes em vez de ficar "impresso" sem papel. Antes o
+    // estouro era tratado como "talvez imprimiu" e a comanda era dada por
+    // saida: era um dos jeitos de o pedido sumir sem erro em lugar nenhum.
+    const marcador = tmpFile + ".ok";
     // O stream carrega bytes de comando (0x00-0xFF). Gravar como UTF-8 transformaria
     // qualquer byte >= 0x80 em dois bytes e corromperia o comando (ex: GS W do 58mm).
     const payload = Buffer.isBuffer(dataBuffer) ? dataBuffer : Buffer.from(String(dataBuffer), "latin1");
     fs.writeFileSync(tmpFile, payload);
 
-    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${PS_SCRIPT_PATH}" -PrinterName "${printerName}" -FilePath "${tmpFile}"`;
-    exec(cmd, { timeout: 15000 }, (err, stdout, stderr) => {
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${PS_SCRIPT_PATH}" -PrinterName "${printerName}" -FilePath "${tmpFile}" -DllPath "${RAWPRINT_DLL}"`;
+    exec(cmd, { timeout: PRAZO_IMPRESSAO_MS, windowsHide: true }, (err, stdout, stderr) => {
+      const saiu = fs.existsSync(marcador);
       try { fs.unlinkSync(tmpFile); } catch (_) {}
+      try { fs.unlinkSync(marcador); } catch (_) {}
+      if (err && saiu) {
+        console.warn(`[Print] ${printerName}: o PowerShell passou do prazo, mas os bytes entraram no spooler (marcador presente). Dado como impresso.`);
+        resolve(true);
+        return;
+      }
       if (err) {
-        console.error("[Print] Erro:", stderr || err.message);
-        const falha = new Error(stderr || err.message);
-        // Timeout NAO prova que nada saiu: o PowerShell pode ter entregue os
-        // bytes ao spooler e sido morto depois. Nesse caso nao se libera nova
-        // tentativa — comanda a mais e pior do que comanda atrasada.
-        falha.talvezImprimiu = Boolean(err.killed || err.signal || err.code === "ETIMEDOUT");
-        reject(falha);
+        const estourou = Boolean(err.killed || err.signal || err.code === "ETIMEDOUT");
+        const motivo = estourou
+          ? `impressora nao respondeu em ${Math.round(PRAZO_IMPRESSAO_MS / 1000)} s`
+          : String(stderr || err.message).trim();
+        console.error("[Print] Erro:", motivo);
+        reject(new Error(motivo));
       } else {
         console.log("[Print] OK ->", printerName);
         resolve(true);
@@ -1091,8 +1211,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 // Config durável em %APPDATA%\FireHub. O config.json vivia em %TEMP%, que a
 // limpeza de disco do Windows apaga — e junto ia a calibração de largura.
 // Migra sozinho do caminho antigo na primeira execução.
-const APP_DIR = path.join(process.env.APPDATA || os.homedir(), "FireHub");
-try { if (!fs.existsSync(APP_DIR)) fs.mkdirSync(APP_DIR, { recursive: true }); } catch {}
+// APP_DIR (%APPDATA%\FireHub) e definido no topo do arquivo, junto com a DLL de impressao.
 const CONFIG_FILE = path.join(APP_DIR, "config.json");
 const LEGACY_CONFIG_FILE = path.join(tmpDir, "config.json");
 
@@ -1462,6 +1581,21 @@ function listarPendentes() {
     }));
 }
 
+
+/* O que vai na query da fila da nuvem (ver o laco de polling). Curto de
+   proposito: e uma URL, e ela sai a cada 3 s. A lista de impressoras vem do
+   cache SEM forcar deteccao — forcar aqui faria os PowerShell de resgate
+   rodarem a cada 30 s no PC em que o registro falha. */
+function parametrosDeEstado() {
+  const lista = listarPendentes();
+  const comErro = lista.find(p => p.erro);
+  const locais = (cacheDeImpressoras.lista || []).map(p => p && p.name).filter(Boolean).join("|").slice(0, 600);
+  return `&v=${encodeURIComponent(VERSAO_ASSISTENTE)}&pendentes=${lista.length}` +
+    (portaAtiva ? `&porta=${portaAtiva}` : "") +
+    (comErro ? `&erro=${encodeURIComponent(String(comErro.erro).slice(0, 120))}` : "") +
+    (locais ? `&impressoras=${encodeURIComponent(locais)}` : "");
+}
+
 /* ─── Fila Serial de Impressão (FIFO Queue — Evita gargalos, spooler lock e ordem errada) ─ */
 const printJobQueue = [];
 let isProcessingPrintQueue = false;
@@ -1478,8 +1612,7 @@ async function processPrintQueue() {
     let marcado = false;
     try {
       if (!targetPrinter) {
-        const detected = listPrintersCached();
-        if (detected.length > 0) targetPrinter = detected[0].name;
+        targetPrinter = impressoraPadraoFisica();
       }
       if (!targetPrinter) {
         reject(new Error("Impressora não especificada e nenhuma detectada"));
@@ -1546,12 +1679,13 @@ async function processPrintQueue() {
     } catch (e) {
       console.error("[PrintServer] Erro ao imprimir job:", e.message);
       // Falha ANTES de marcar (largura, cupom) nao e "ja impresso": nao ha o
-      // que soltar. E timeout do spooler pode ter impresso: tambem nao solta.
-      if (marcado && !e?.talvezImprimiu) {
+      // que soltar. Depois de marcado, TODA falha vira pendente — inclusive o
+      // estouro de prazo: o rawPrint so falha por prazo quando o marcador de
+      // "saiu" nao existe, ou seja, quando os bytes NAO entraram no spooler.
+      // (Antes o estouro era "talvez imprimiu" e a comanda era dada por saida
+      // — um pedido a menos, sem erro em lugar nenhum.)
+      if (marcado) {
         guardarPendente({ printer: targetPrinter, order, storeName, copies, paperWidth, columns, escposProfile }, e.message);
-      } else if (marcado) {
-        console.warn("[PrintServer] Timeout na impressora; mantendo como impresso para nao duplicar.");
-        esquecerPendente(order, targetPrinter);
       }
       reject(e);
     }
@@ -1565,6 +1699,57 @@ function enqueuePrintJob(jobParams) {
     printJobQueue.push({ ...jobParams, resolve, reject });
     processPrintQueue();
   });
+}
+
+
+/* ── Confirmacao para o servidor: "esta comanda saiu" ──────────────────────
+ *
+ * A fila da nuvem devolvia as ultimas 2 h (e o atraso) a cada consulta, e quem
+ * impedia a comanda de sair duas vezes era SO o cache local de "ja impresso".
+ * Cache local morre com o processo (versoes antigas), com a troca de PC, com
+ * a reinstalacao, com o APPDATA de outro usuario — e cada morte era o
+ * Assistente reimprimindo tudo que chegou nas ultimas horas, no meio do
+ * servico. Foi a queixa da Brasa Burguer em 06/09/2026: "abre um prompt,
+ * reinicia e imprime tudo de novo".
+ *
+ * Agora, depois que TODOS os destinos de um job saem (impresso, ja impresso
+ * ou sem bebida para imprimir), o id vai para `confirmados`, e no inicio da
+ * proxima consulta o Assistente avisa o servidor (POST /ack). O servidor
+ * marca o pedido como impresso e a fila nunca mais o devolve — para este
+ * Assistente, para o proximo, para o PC novo. Job com destino pendente nao e
+ * confirmado: volta na fila ate sair de verdade. Falhou o POST? Fica no
+ * conjunto e tenta na proxima rodada.
+ */
+const confirmados = new Set();
+
+function registrarResultado(job, promessas) {
+  if (!job || !job.id || !promessas.length) return;
+  Promise.allSettled(promessas).then((resultados) => {
+    const tudoSaiu = resultados.every((r) => r.status === "fulfilled" && r.value && r.value.ok === true);
+    if (tudoSaiu) confirmados.add(String(job.id));
+  });
+}
+
+async function confirmarImpressos(fetchFn, base) {
+  if (confirmados.size === 0) return;
+  const ids = [...confirmados].slice(0, 200);
+  try {
+    const res = await fetchFn(`${base}/api/store/print-queue/ack`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ franchiseeId: currentConfig.franchiseeId, ids }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) for (const id of ids) confirmados.delete(id);
+  } catch {
+    // Sem rede agora: os ids ficam e vao na proxima rodada.
+  }
+}
+
+/* Onde mora a fila. FIREHUB_FILA_BASE so existe para o teste automatizado
+   apontar para um servidor local; na loja e sempre o host configurado. */
+function baseDaFila() {
+  return process.env.FIREHUB_FILA_BASE || `https://${currentConfig.domain || "firehubfood.com.br"}`;
 }
 
 // Polling background da Fila de Impressão na Nuvem (roda a cada 3s)
@@ -1582,8 +1767,17 @@ setInterval(async () => {
     if (!currentConfig.franchiseeId) return;
 
     const fetchFn = globalThis.fetch || (await import("node-fetch")).default;
-    const domain = currentConfig.domain || "firehubfood.com.br";
-    const url = `https://${domain}/api/store/print-queue?franchiseeId=${encodeURIComponent(currentConfig.franchiseeId)}`;
+    const base = baseDaFila();
+    // Primeiro conta ao servidor o que ja saiu (ver `confirmados`), para a
+    // consulta logo abaixo ja nao trazer de volta o que acabou de imprimir.
+    await confirmarImpressos(fetchFn, base);
+    // Junto com a consulta vai o ESTADO deste Assistente — versao, quantas
+    // comandas esperam a impressora, o ultimo erro e as impressoras que o
+    // Windows enxerga. O servidor guarda (User.printQueueEstado) e o painel
+    // avisa "3 comandas nao sairam na ELGIN i8" em vez de a loja descobrir
+    // pelo cliente. Sem isto, tudo que o Assistente sabia morria no console
+    // de um programa sem janela.
+    const url = `${base}/api/store/print-queue?franchiseeId=${encodeURIComponent(currentConfig.franchiseeId)}${parametrosDeEstado()}`;
     const res = await fetchFn(url, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return;
     const data = await res.json();
@@ -1607,6 +1801,7 @@ setInterval(async () => {
       });
 
       for (const job of jobs) {
+        const promessas = [];
         // O SERVIDOR ja decidiu para quem este pedido vai, com as mesmas
         // regras do navegador: qual impressora, com quais itens, e se e uma
         // comanda so de bebida.
@@ -1622,7 +1817,7 @@ setInterval(async () => {
           // manda `destinos`. Comporta-se como sempre se comportou.
           const alvo = currentConfig.printer;
           const perfil = resolvePrinterProfile(alvo, job);
-          enqueuePrintJob({
+          promessas.push(enqueuePrintJob({
             printer: alvo,
             order: job.order,
             storeName: job.storeName || "FIREHUB",
@@ -1631,13 +1826,14 @@ setInterval(async () => {
             columns: perfil.columns,
             escposProfile: perfil.profile,
             force: false
-          }).catch(() => {});
+          }));
+          registrarResultado(job, promessas);
           continue;
         }
 
         for (const destino of destinos) {
           const perfil = resolvePrinterProfile(destino.printer, destino);
-          enqueuePrintJob({
+          promessas.push(enqueuePrintJob({
             printer: destino.printer,
             // Os itens ja vem filtrados para ESTA impressora, e a marca de
             // so-bebida viaja dentro do pedido porque e la que buildEscPos
@@ -1659,8 +1855,9 @@ setInterval(async () => {
             columns: destino.columns || perfil.columns,
             escposProfile: destino.escposProfile || perfil.profile,
             force: false
-          }).catch(() => {});
+          }));
         }
+        registrarResultado(job, promessas);
       }
     }
   } catch (err) {
@@ -1693,6 +1890,12 @@ app.get("/status", (req, res) => {
     ok: true,
     app: "FireHub-Thermal-Printer-v2",
     version: VERSAO_ASSISTENTE,
+    // Identidade desta instancia (a trava de instancia unica le daqui) e
+    // sinais de vida para diagnostico a distancia.
+    pid: process.pid,
+    porta: portaAtiva,
+    iniciadoEm: new Date(INICIADO_EM).toISOString(),
+    ultimaImpressaoEm: ultimaImpressaoEm ? new Date(ultimaImpressaoEm).toISOString() : null,
     name: "FireHub Assistente de Impressão",
     printers,
     // Por que a lista veio como veio. So aparece quando ela esta VAZIA, que e o
@@ -1724,8 +1927,7 @@ app.post("/print-raw", async (req, res) => {
     const { printer, data, copies = 1 } = req.body;
     let targetPrinter = printer || currentConfig.printer;
     if (!targetPrinter) {
-      const detected = listPrintersCached();
-      if (detected.length > 0) targetPrinter = detected[0].name;
+      targetPrinter = impressoraPadraoFisica();
     }
     if (!targetPrinter || !data) return res.status(400).json({ error: "Dados ou impressora faltando" });
     const buf = Buffer.from(data, "base64");
@@ -1741,8 +1943,7 @@ app.post("/print-test", async (req, res) => {
     const { printer, storeName, paperWidth, columns, escposProfile } = req.body;
     let targetPrinter = printer || currentConfig.printer;
     if (!targetPrinter) {
-      const detected = listPrintersCached();
-      if (detected.length > 0) targetPrinter = detected[0].name;
+      targetPrinter = impressoraPadraoFisica();
     }
     if (!targetPrinter) return res.status(400).json({ error: "Impressora não especificada" });
 
@@ -1823,6 +2024,10 @@ function startServer(portIndex = 0) {
     console.log(`  📋 Impressoras: http://localhost:${currentPort}/printers`);
     console.log("");
     attachWebSocket(server);
+    portaAtiva = currentPort;
+    // Trava de instancia unica (acima): agora e 5 s depois.
+    sairSeForDuplicata("ao subir");
+    setTimeout(() => sairSeForDuplicata("5 s depois de subir"), 5000);
   });
 
   server.on("error", (err) => {
@@ -1833,6 +2038,79 @@ function startServer(portIndex = 0) {
       console.error("[PrintServer] Erro no servidor de impressão:", err);
     }
   });
+}
+
+/* ─── O PC do caixa nao pode dormir ────────────────────────────────────────
+ *
+ * O Windows de loja vem com "suspender apos 15/30 min sem uso". Ninguem mexe
+ * no PC do caixa entre um pedido e outro — e, dormindo, o Assistente para:
+ * nem a fila da nuvem nem o navegador imprimem, ate alguem encostar no mouse.
+ * Ai as comandas saem todas de uma vez, atrasadas. E a cara exata do "pula
+ * impressao" da Brasa Burguer (06/09/2026): o carimbo da fila mostrava o
+ * Assistente consultando, sumindo por 15-20 min com pedido entrando, e
+ * voltando.
+ *
+ * `prevent-app-suspension` e o mesmo pedido que um player de video faz:
+ * segura o PC acordado enquanto o Assistente estiver aberto, mas deixa a
+ * TELA apagar (isso e `prevent-display-sleep`, que nao interessa aqui).
+ * So existe dentro do Electron; em `node server.js` o require falha e nada
+ * acontece — por isso o try.
+ */
+try {
+  const { app: electronApp, powerSaveBlocker } = require("electron");
+  if (electronApp && powerSaveBlocker && typeof electronApp.whenReady === "function") {
+    electronApp.whenReady().then(() => {
+      try {
+        const id = powerSaveBlocker.start("prevent-app-suspension");
+        console.log(`[PrintServer] PC segurado acordado enquanto o Assistente estiver aberto (bloqueio ${id}).`);
+      } catch (e) {
+        console.warn("[PrintServer] Nao consegui impedir o PC de dormir:", e.message);
+      }
+    }).catch(() => {});
+  }
+} catch {}
+
+/* ─── Uma instancia so ─────────────────────────────────────────────────────
+ *
+ * Duas copias do Assistente no mesmo PC imprimem a mesma comanda DUAS VEZES:
+ * o cache de "ja impresso" vive na memoria de cada processo, e a fila da
+ * nuvem entrega o mesmo pedido as duas. Chega-se a duas sem querer — o atalho
+ * aberto duas vezes (o programa abre calado na bandeja), ou o auto-update
+ * religando o executavel enquanto o instalador tambem o abre.
+ *
+ * A trava fica AQUI, nao no main.js: quem sobe primeiro fica com a primeira
+ * porta livre da lista, e quem chega depois cai numa porta mais adiante.
+ * Entao, depois de ouvir, cada instancia pergunta as portas ANTERIORES se ha
+ * um Assistente vivo la — se ha, esta e a duplicata e sai. A pergunta se
+ * repete 5 s depois, para o caso de as duas terem subido no mesmo instante
+ * (as duas escutam antes de qualquer uma responder; na segunda passada a da
+ * porta mais alta enxerga a outra e sai). A resposta so vale se for de um
+ * Assistente de verdade (app: FireHub-Thermal-Printer-v2) — outra coisa
+ * qualquer ocupando a porta nao derruba ninguem.
+ */
+let portaAtiva = null;
+const INICIADO_EM = Date.now();
+
+async function haOutroAssistenteAntes() {
+  if (!portaAtiva || typeof globalThis.fetch !== "function") return null;
+  for (const porta of PORTS) {
+    if (porta === portaAtiva) break;
+    try {
+      const res = await globalThis.fetch(`http://127.0.0.1:${porta}/status`, { signal: AbortSignal.timeout(1500) });
+      if (!res.ok) continue;
+      const info = await res.json();
+      if (info && info.app === "FireHub-Thermal-Printer-v2" && info.pid !== process.pid) return porta;
+    } catch {}
+  }
+  return null;
+}
+
+async function sairSeForDuplicata(momento) {
+  const porta = await haOutroAssistenteAntes();
+  if (!porta) return;
+  console.error(`[PrintServer] Ja existe um Assistente na porta ${porta}; esta copia (porta ${portaAtiva}, ${momento}) sai para nao imprimir em dobro.`);
+  try { if (server) server.close(); } catch {}
+  setTimeout(() => process.exit(0), 200);
 }
 
 startServer(0);
@@ -1886,6 +2164,17 @@ function versaoRemotaEhMaisNova(remota, local) {
   return false;
 }
 
+
+/* A ultima instalacao disparada pelo auto-update, para nao repetir uma que
+   nao pegou. Em disco porque quem le e o processo que nasce DEPOIS dela. */
+const UPDATE_TENTATIVA_FILE = path.join(APP_DIR, "update-tentativa.json");
+function lerTentativaDeUpdate() {
+  try { return JSON.parse(fs.readFileSync(UPDATE_TENTATIVA_FILE, "utf8")); } catch { return null; }
+}
+function gravarTentativaDeUpdate(t) {
+  try { fs.writeFileSync(UPDATE_TENTATIVA_FILE, JSON.stringify(t)); } catch {}
+}
+
 async function verificarAtualizacao() {
   if (atualizacaoEmAndamento) return;
   let versaoAlvo = null;
@@ -1899,6 +2188,18 @@ async function verificarAtualizacao() {
 
     versaoAlvo = info.versao;
     if (!versaoRemotaEhMaisNova(info.versao, VERSAO_LOCAL_UPDATE)) return;
+
+    // A instalacao anterior desta MESMA versao nao pegou? (ainda estou na
+    // versao de antes.) Sem esta trava era baixar, fechar e reinstalar a
+    // cada 6 h para sempre — e cada reinicio, na loja, e uma cara de "abriu
+    // um prompt de comando e o Assistente sumiu" (Brasa Burguer,
+    // 06/09/2026). Uma tentativa por dia e o teto.
+    const tentativaAnterior = lerTentativaDeUpdate();
+    if (tentativaAnterior && tentativaAnterior.versao === info.versao && tentativaAnterior.localAntes === VERSAO_LOCAL_UPDATE
+        && Date.now() - Number(tentativaAnterior.em || 0) < 24 * 3600_000) {
+      logUpdate(`Instalação da ${info.versao} feita há ${Math.round((Date.now() - Number(tentativaAnterior.em)) / 60_000)} min não pegou (ainda na ${VERSAO_LOCAL_UPDATE}); não insisto por 24 h.`);
+      return;
+    }
 
     if (ultimaImpressaoEm && Date.now() - ultimaImpressaoEm < JANELA_CALMA_MS) {
       const min = Math.round((Date.now() - ultimaImpressaoEm) / 60_000);
@@ -1944,6 +2245,7 @@ async function verificarAtualizacao() {
     // em 3s. Instalar por cima do executavel ainda aberto e o jeito conhecido
     // de deixar a loja sem Assistente nenhum.
     const comando = `ping -n 6 127.0.0.1 >nul & "${exePath}" /S & ping -n 4 127.0.0.1 >nul${relancar}`;
+    gravarTentativaDeUpdate({ versao: info.versao, localAntes: VERSAO_LOCAL_UPDATE, em: Date.now() });
     logUpdate(`Instalando ${info.versao} em silêncio e reiniciando.`);
     const filho = spawn("cmd.exe", ["/c", comando], { detached: true, stdio: "ignore", windowsHide: true });
     filho.unref();

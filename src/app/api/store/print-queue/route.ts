@@ -47,6 +47,16 @@ export async function GET(req: NextRequest) {
     const franchiseeId = searchParams.get("franchiseeId");
     const sinceParam = searchParams.get("since");
 
+    // ── O que o Assistente conta de si (1.2.7+) ────────────────────────────
+    //
+    // Versão, comandas esperando a impressora, último erro e as impressoras
+    // que o Windows daquele PC enxerga. Não há autenticação neste GET, então
+    // só entra o que passa no crivo (estadoInformado). Vai para
+    // User.printQueueEstado junto com o carimbo, uma vez por minuto — é o que
+    // o painel e o alerta do dono leem para dizer "3 comandas não saíram na
+    // ELGIN i8" em vez de a loja descobrir pelo cliente.
+    const estadoDoAssistente = estadoInformado(searchParams);
+
     // Sem loja identificada nao ha fila: este endpoint e consumido pelo
     // assistente local e nunca deve devolver pedido de outra loja.
     if (!franchiseeId) {
@@ -128,20 +138,36 @@ export async function GET(req: NextRequest) {
       ],
     };
 
-    const recentOrders = await prisma.customerOrder.findMany({
-      where,
-      orderBy: { createdAt: "asc" },
-      include: {
-        franchisee: {
-          select: { storeName: true, name: true }
-        },
-        items: {
-          include: {
-            menuProduct: true,
+    // ── O que o Assistente já confirmou não volta ─────────────────────────
+    //
+    // `printedAt` é o carimbo do POST /ack (Assistente 1.2.7+): a comanda
+    // saiu, e a fila não a devolve nunca mais — nem depois de reinstalar,
+    // atualizar ou trocar de PC. Antes, quem segurava a duplicata era só o
+    // cache local do Assistente, e cada reinício dele reimprimia as últimas
+    // 2 h. A consulta é feita com o filtro e, se a coluna ainda não existir
+    // (falta db push), sem ele — a fila não pode parar por causa disso.
+    const consulta = (comCarimbo: boolean) =>
+      prisma.customerOrder.findMany({
+        where: comCarimbo ? { ...where, printedAt: null } : where,
+        orderBy: { createdAt: "asc" },
+        include: {
+          franchisee: {
+            select: { storeName: true, name: true }
+          },
+          items: {
+            include: {
+              menuProduct: true,
+            }
           }
         }
-      }
-    });
+      });
+    let recentOrders: Awaited<ReturnType<typeof consulta>>;
+    try {
+      recentOrders = await consulta(true);
+    } catch (err) {
+      console.error("[PrintQueue] printedAt ausente? (falta db push)", (err as any)?.code || err);
+      recentOrders = await consulta(false);
+    }
 
     // Carimba a consulta — no máximo uma vez por minuto (o Assistente bate a
     // cada 3 s). É o que deixa o painel avisar "a impressão parou" antes de a
@@ -149,9 +175,19 @@ export async function GET(req: NextRequest) {
     // impressões avulsas com mais de um dia: a fila só lê 2 h, e a tabela não
     // precisa virar histórico eterno de contas com nome de gente.
     if (owner && "printQueuePolledAt" in owner && Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000) {
+      const carimbo = { printQueuePolledAt: new Date() };
       prisma.user
-        .update({ where: { id: franchiseeId }, data: { printQueuePolledAt: new Date() } })
-        .catch((err) => console.error("[PrintQueue] carimbo do poll:", err));
+        .update({
+          where: { id: franchiseeId },
+          data: estadoDoAssistente ? { ...carimbo, printQueueEstado: estadoDoAssistente } : carimbo,
+        })
+        .catch(() =>
+          // Coluna printQueueEstado ainda ausente (falta db push): o carimbo,
+          // que é o que avisa "a impressão parou", não fica refém do estado.
+          prisma.user
+            .update({ where: { id: franchiseeId }, data: carimbo })
+            .catch((err) => console.error("[PrintQueue] carimbo do poll:", err))
+        );
       prisma.printRequest
         .deleteMany({ where: { franchiseeId, createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } })
         .catch(() => { /* tabela ainda não existe: nada a apagar */ });
@@ -261,11 +297,17 @@ export async function GET(req: NextRequest) {
     // de mesas decide o mesmo para a impressora local.
     let avulsas: { id: string; payload: unknown; createdAt: Date }[] = [];
     try {
-      avulsas = await prisma.printRequest.findMany({
-        where: { franchiseeId, createdAt: { gt: sinceDate } },
-        orderBy: { createdAt: "asc" },
-        select: { id: true, payload: true, createdAt: true },
-      });
+      // Mesmo carimbo de "já saiu" do pedido (ver acima); mesma tolerância à
+      // coluna ausente.
+      const buscar = (comCarimbo: boolean) =>
+        prisma.printRequest.findMany({
+          where: comCarimbo
+            ? { franchiseeId, createdAt: { gt: sinceDate }, printedAt: null }
+            : { franchiseeId, createdAt: { gt: sinceDate } },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, payload: true, createdAt: true },
+        });
+      avulsas = await buscar(true).catch(() => buscar(false));
     } catch (err) {
       console.error("[PrintQueue] PrintRequest indisponível (falta db push?)", (err as any)?.code || err);
     }
@@ -313,4 +355,32 @@ export async function GET(req: NextRequest) {
     console.error("[PrintQueue GET]", err);
     return NextResponse.json({ error: "fila indisponível" }, { status: 500 });
   }
+}
+
+/**
+ * O estado que o Assistente manda na query da consulta (server.js,
+ * `parametrosDeEstado`). Crivo porque a rota é pública: versão só em formato
+ * de versão, contagem pequena, textos curtos, no máximo 30 nomes de impressora.
+ * Assistente anterior à 1.2.7 não manda `v` — devolve null e o estado gravado
+ * não é tocado.
+ */
+function estadoInformado(q: URLSearchParams): Record<string, unknown> | null {
+  const versao = q.get("v") || "";
+  if (!/^\d+\.\d+\.\d+$/.test(versao)) return null;
+  const pendentes = Math.min(999, Math.max(0, parseInt(q.get("pendentes") || "0", 10) || 0));
+  const porta = parseInt(q.get("porta") || "", 10);
+  const erro = (q.get("erro") || "").slice(0, 120);
+  const impressoras = (q.get("impressoras") || "")
+    .split("|")
+    .map((s) => s.trim().slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 30);
+  return {
+    versao,
+    pendentes,
+    ...(Number.isFinite(porta) ? { porta } : {}),
+    ...(erro ? { erro } : {}),
+    impressoras,
+    em: new Date().toISOString(),
+  };
 }

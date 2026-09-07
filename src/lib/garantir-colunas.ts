@@ -681,6 +681,16 @@ const INSTRUCOES_MESA = [
   // Fechar o caixa encerra o turno do garçom; e o carimbo do poll da fila.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "cashClosedAt" TIMESTAMP(3)`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "printQueuePolledAt" TIMESTAMP(3)`,
+  // O que o Assistente contou na última consulta: versão, comandas esperando
+  // a impressora, último erro, impressoras que o Windows daquele PC enxerga.
+  // É o que deixa o painel dizer "3 comandas não saíram na ELGIN i8" em vez
+  // de a loja descobrir pelo cliente (06/09/2026).
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "printQueueEstado" JSONB`,
+  // "Esta comanda saiu": o Assistente confirma (POST print-queue/ack) e a fila
+  // da nuvem nunca mais devolve o pedido — o fim do "reinstalou/reiniciou e
+  // imprimiu tudo de novo" (Brasa Burguer, 06/09/2026).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "printedAt" TIMESTAMP(3)`,
+  `ALTER TABLE "PrintRequest" ADD COLUMN IF NOT EXISTS "printedAt" TIMESTAMP(3)`,
 
   // Quem fechou a mesa (painel ou garçom).
   `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "closedByKind" TEXT`,

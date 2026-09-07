@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { Printer, CheckCircle, Download, AlertCircle, Plus, Trash2, RefreshCw } from "lucide-react";
-import { VERSAO_ASSISTENTE_ATUAL, fetchAssistente } from "@/lib/print";
+import { VERSAO_ASSISTENTE_ATUAL, fetchAssistente, printersParaAssistente } from "@/lib/print";
 import {
   MODULOS,
   impressoraAtendeModulo,
@@ -246,21 +246,9 @@ export default function PrinterSetupClient({
               : {}),
             // Campo novo: assistente antigo ignora, assistente novo usa
             // para resolver largura/perfil POR IMPRESSORA (Cozinha 80mm + Bar 58mm).
-            printers: config.printers.map(pr => ({
-              name: pr.name,
-              paperWidth: pr.paperWidth || "80mm",
-              columns: pr.columns,
-              escposProfile: pr.escposProfile,
-              copies: pr.copies || 1,
-              categories: pr.categories || [],
-              // Campos novos. O Assistente antigo ignora o que não conhece,
-              // e o novo usa para rotear o que vem pela fila da nuvem.
-              modulos: pr.modulos || [],
-              somenteBebidas: pr.somenteBebidas === true,
-              qrPuxar: pr.qrPuxar !== false,
-              contaDaMesa: contaSaiNestaImpressora(pr, config.printers),
-              lojas: pr.lojas || [],
-            })),
+            // Mapeamento compartilhado com a faixa "Vincular agora" do painel
+            // (lib/print.ts): um só, para as duas telas nunca divergirem.
+            printers: printersParaAssistente(config.printers),
           }),
         }).catch(() => {});
       }

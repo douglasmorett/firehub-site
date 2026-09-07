@@ -2,6 +2,7 @@ import { camposDeEntregaParaImpressao } from "./entrega-parceira";
 import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { impressorasDaLoja } from "./loja-de-origem";
+import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -93,11 +94,11 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.6";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.7";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 
-type PrinterEntry = {
+export type PrinterEntry = {
   id: string;
   name: string;
   label: string;
@@ -136,6 +137,45 @@ type PrinterConfig = {
   defaultColumns?: number;
   printers: PrinterEntry[];
 };
+
+/**
+ * A lista de impressoras no formato que o POST /config do Assistente espera.
+ *
+ * Duas telas mandam essa lista — Impressoras (botão Salvar) e a faixa
+ * "Assistente não vinculado" do painel (botão Vincular agora). Um mapeamento
+ * só, para as duas nunca divergirem: campo esquecido numa delas seria
+ * impressora roteando de um jeito pelo navegador e de outro pela fila.
+ */
+export function printersParaAssistente(printers: Array<Pick<PrinterEntry, "name"> & Partial<PrinterEntry>>) {
+  const lista = Array.isArray(printers) ? printers : [];
+  return lista.map((pr) => ({
+    name: pr.name,
+    paperWidth: pr.paperWidth || "80mm",
+    columns: pr.columns,
+    escposProfile: pr.escposProfile,
+    copies: pr.copies || 1,
+    categories: pr.categories || [],
+    // O Assistente antigo ignora o que não conhece; o novo usa para rotear o
+    // que vem pela fila da nuvem.
+    modulos: pr.modulos || [],
+    somenteBebidas: pr.somenteBebidas === true,
+    qrPuxar: pr.qrPuxar !== false,
+    contaDaMesa: contaSaiNestaImpressora(pr as any, lista as any),
+    lojas: pr.lojas || [],
+  }));
+}
+
+/* Impressora virtual não põe papel na mesa: PDF, XPS, OneNote, fax, "enviar
+   para arquivo". A lista do Assistente vem na ordem do registro do Windows,
+   onde essas costumam aparecer ANTES da térmica — e "a primeira da lista"
+   mandava a comanda para o PDF com cara de OK. Mesma lista do Assistente
+   (server.js, IMPRESSORA_VIRTUAL). */
+const IMPRESSORA_VIRTUAL = /PDF|XPS|OneNote|Fax|PORTPROMPT|FILE:|nul:|SHRFAX|Microsoft Print/i;
+function primeiraImpressoraFisica(lista: unknown): string {
+  if (!Array.isArray(lista)) return "";
+  const fisica = lista.find((p: any) => p?.name && !IMPRESSORA_VIRTUAL.test(`${p.name} ${p.driver || ""} ${p.port || ""}`));
+  return fisica ? String(fisica.name) : "";
+}
 
 /* ─── Fonte unica da verdade da largura no site ──────────────
    Devolve undefined quando NAO ha calibracao. Assim o body do POST
@@ -206,14 +246,19 @@ async function printToDevice(
     let targetPrinter = printerName;
     if (!targetPrinter) {
       const printers = await fetchAssistente(`${baseUrl}/printers`).then(r => r.json()).catch(() => []);
-      if (Array.isArray(printers) && printers.length > 0) {
-        targetPrinter = printers[0].name;
-      }
+      targetPrinter = primeiraImpressoraFisica(printers);
     }
     if (!targetPrinter) return nao;
 
     const res = await fetchAssistente(`${baseUrl}/print`, {
       method: "POST",
+      // O Assistente imprime numa fila serial e responde quando ESTE job sai
+      // (ou falha). Sem prazo, uma impressora travada segurava esta chamada
+      // por minutos — e com ela o laço do ouvinte de impressão inteiro, que
+      // só volta a olhar pedido novo quando esta promessa resolve. O job
+      // continua na fila do Assistente depois do abort; quem volta a mandar
+      // recebe "já impresso" ou "aguardando", nunca uma cópia.
+      signal: AbortSignal.timeout(90_000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         printer: targetPrinter,
@@ -331,10 +376,11 @@ export async function printOrder(
   let printersToUse = printerConfig?.printers || [];
   if (!printersToUse.length || printersToUse.every(p => !p.name)) {
     const detected = await fetchAssistente(`${baseUrl}/printers`).then(r => r.json()).catch(() => []);
-    if (Array.isArray(detected) && detected.length > 0) {
+    const fisica = primeiraImpressoraFisica(detected);
+    if (fisica) {
       printersToUse = [{
         id: "detected",
-        name: detected[0].name,
+        name: fisica,
         label: "Impressora Padrão",
         categories: [],
         copies: 1,

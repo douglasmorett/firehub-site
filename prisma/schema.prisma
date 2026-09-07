@@ -73,6 +73,10 @@ model User {
   /// nuvem (GET /api/store/print-queue). Nulo = nunca. É o que permite o painel
   /// avisar que a impressão parou antes de a loja descobrir pela comanda que não saiu.
   printQueuePolledAt DateTime?
+  /// O que o Assistente contou na última consulta à fila: { versao, pendentes,
+  /// erro, impressoras, porta, em }. Preenchido pelo GET /api/store/print-queue
+  /// (Assistente 1.2.7+); nulo em loja cujo Assistente ainda não mandou nada.
+  printQueueEstado Json?
   printRequests   PrintRequest[]
   trialEndsAt     DateTime?       // Data limite de teste/benefício concedido
   notificationPhone String?       // Telefone VIP para receber alertas e acessar relatórios pelo bot oficial
@@ -744,6 +748,10 @@ model CustomerOrder {
   acceptedAt        DateTime?           // Entrou em producao (NOVO -> ACEITO/PREPARANDO)
   readyAt           DateTime?           // Ficou pronto na cozinha (-> PRONTO)
   dispatchedAt      DateTime?           // Saiu para entrega (-> SAIU_ENTREGA)
+  /// O Assistente de Impressão confirmou que a comanda saiu pela fila da nuvem
+  /// (POST /api/store/print-queue/ack). Depois disto a fila nunca mais devolve
+  /// este pedido — nem para um Assistente reinstalado, nem para um PC novo.
+  printedAt         DateTime?
   deliveredAt       DateTime?           // Chegou no cliente (-> ENTREGUE)
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
@@ -1173,6 +1181,8 @@ model PrintRequest {
   requestedBy    String?
   tableSessionId String?
   createdAt      DateTime @default(now())
+  /// Confirmação do Assistente de que o cupom saiu (mesma regra do pedido).
+  printedAt      DateTime?
 
   @@index([franchiseeId, createdAt])
 }

@@ -36,7 +36,15 @@ export type TipoDeAlerta =
    * entrar, em silêncio. A Brasa Burguer ficou assim de 04/09 a 06/09/2026 sem
    * ninguém saber: o único sintoma era "não veio pedido", que parece dia fraco.
    */
-  | "99food_desconectado";
+  | "99food_desconectado"
+  /**
+   * A impressão automática parou: o Assistente de Impressão deixou de consultar
+   * a fila enquanto pedidos entravam, ou há comanda que não sai na impressora
+   * (desligada, sem papel, nome trocado no Windows). A Brasa Burguer viveu isso
+   * em 04/09/2026 — a reclamação era "pula impressão", e o dono acabou
+   * desligando o 99Food achando que o problema era a integração.
+   */
+  | "impressao_parada";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -44,6 +52,7 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   robo_desconectado: true,
   pedido_atrasado: true,
   "99food_desconectado": true,
+  impressao_parada: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -52,6 +61,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   robo_desconectado: "Robô desconectou do WhatsApp",
   pedido_atrasado: "Pedido atrasado que ainda não saiu para entrega",
   "99food_desconectado": "Loja perdeu a conexão com o 99Food (pedidos de lá param de entrar)",
+  impressao_parada: "Impressão automática parou, ou comanda não está saindo na impressora",
 };
 
 /** O dono ligou este alerta? Sem config salva, vale o padrão. */

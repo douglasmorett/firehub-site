@@ -93,6 +93,14 @@ const jobs = [
     intervalMs: 5 * 60_000, // 5 minutos
   },
   {
+    // Impressao parada: Assistente mudo com pedido entrando, ou comanda presa
+    // na impressora. A cada 5 minutos; a rota segura a repeticao (um aviso por
+    // parada, e no maximo um por hora para comanda presa).
+    name: 'impressao-parada',
+    path: '/api/cron/impressao-parada',
+    intervalMs: 5 * 60_000, // 5 minutos
+  },
+  {
     name: 'billing-close',
     path: '/api/cron/billing-close',
     intervalMs: 60 * 60_000, // 1 hora (verifica internamente se é dia 1 às 03h)
