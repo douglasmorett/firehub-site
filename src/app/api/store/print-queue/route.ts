@@ -9,10 +9,14 @@ import { comboParaImpressao } from "@/lib/parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
-  // A fila agora é lida diretamente do banco de dados no endpoint GET.
-  // Esta função foi mantida para não quebrar chamadores existentes.
+  // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
+  // ser empurrado para lugar nenhum. Esta função continua existindo só para
+  // não quebrar quem ainda a chama.
   console.log(`[PrintQueue] 🖨️ Auto-print acionado (NO-OP). O endpoint GET fará a consulta no BD.`);
 }
+
+/** Reimpressão pedida na mão pelo painel. Ver o POST, logo abaixo. */
+const KIND_REIMPRESSAO = "REIMPRESSAO";
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,9 +37,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Franchisee ID obrigatorio" }, { status: 400 });
     }
 
-    pushJobToPrintQueue(targetId, order, storeName, paperWidth);
+    // ── REIMPRESSÃO PEDIDA NA MÃO ────────────────────────────────────────
+    //
+    // Este POST é o plano B do botão Imprimir do painel: ele só é chamado
+    // quando o Assistente DESTE computador não respondeu (o painel aberto no
+    // celular do dono, ou num PC que não é o do caixa). E ele era um NO-OP:
+    // respondia ok, o painel dizia "✅ Enviado para a fila de impressão" e
+    // NADA saía. A loja achava que tinha reimprimido.
+    //
+    // Agora vira uma linha em PrintRequest, a mesma mesa por onde a conta da
+    // mesa já passa — com `kind` próprio, porque a comanda reimpressa vai
+    // para as impressoras de COMANDA, não para a da conta.
+    //
+    // Por que isso reimprime mesmo um pedido já marcado como impresso: o job
+    // nasce com id NOVO (`job_<id da PrintRequest>`), então nem o `printedAt`
+    // do pedido (que só filtra a fila automática) nem o cache de "já impresso"
+    // do Assistente — que guarda por id de pedido — barram a saída. É de
+    // propósito: automático uma vez só, manual quantas vezes o lojista quiser.
+    if (!order || typeof order !== "object") {
+      return NextResponse.json({ error: "pedido obrigatorio" }, { status: 400 });
+    }
 
-    return NextResponse.json({ ok: true });
+    try {
+      const pedida = await prisma.printRequest.create({
+        data: {
+          franchiseeId: targetId,
+          kind: KIND_REIMPRESSAO,
+          payload: { ...order, storeName: storeName || undefined, paperWidth: paperWidth || undefined } as any,
+          requestedBy: session?.user?.email || null,
+        },
+        select: { id: true },
+      });
+      console.log(`[PrintQueue] 🖨️ Reimpressão enfileirada (${pedida.id}) para a loja ${targetId}.`);
+      return NextResponse.json({ ok: true, enfileirado: true, id: pedida.id });
+    } catch (err: any) {
+      // Tabela/coluna ainda ausente: melhor dizer a verdade do que responder
+      // ok e a loja ficar esperando um papel que não vem.
+      console.error("[PrintQueue] falha ao enfileirar reimpressão:", err?.code || err?.message);
+      return NextResponse.json({ error: "não consegui enfileirar a reimpressão" }, { status: 500 });
+    }
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -303,7 +343,7 @@ export async function GET(req: NextRequest) {
     // palpite de sempre (a do salão que tira a comanda inteira: conta é papel
     // do caixa). A regra mora em src/lib/impressao-da-conta.ts, porque a tela
     // de mesas decide o mesmo para a impressora local.
-    let avulsas: { id: string; payload: unknown; createdAt: Date }[] = [];
+    let avulsas: { id: string; payload: unknown; createdAt: Date; kind?: string }[] = [];
     try {
       // Mesmo carimbo de "já saiu" do pedido (ver acima); mesma tolerância à
       // coluna ausente.
@@ -313,7 +353,7 @@ export async function GET(req: NextRequest) {
             ? { franchiseeId, createdAt: { gt: sinceDate }, printedAt: null }
             : { franchiseeId, createdAt: { gt: sinceDate } },
           orderBy: { createdAt: "asc" },
-          select: { id: true, payload: true, createdAt: true },
+          select: { id: true, payload: true, createdAt: true, kind: true },
         });
       avulsas = await buscar(true).catch(() => buscar(false));
     } catch (err) {
@@ -327,7 +367,43 @@ export async function GET(req: NextRequest) {
     const paraConta = impressorasDaContaDaMesa(printers);
     const destinosDaConta = paraConta || [];
 
-    const jobsAvulsos = (paraConta === null ? [] : avulsas).map((pedido) => {
+    // Conta da mesa e reimpressão de comanda dividem a mesma tabela e o mesmo
+    // ack, mas não as mesmas impressoras: a conta é papel do caixa, a comanda
+    // reimpressa tem que sair onde a original sairia (cozinha, bar, balcão).
+    const contas = avulsas.filter((a) => a.kind !== KIND_REIMPRESSAO);
+    const reimpressoes = avulsas.filter((a) => a.kind === KIND_REIMPRESSAO);
+
+    const jobsReimpressos = reimpressoes.map((pedida) => {
+      const order: any = pedida.payload || {};
+      const destinos = destinosDoPedido(printers, order);
+      return {
+        id: "job_" + pedida.id,
+        order: { ...order, ...camposDeEntregaParaImpressao(order) },
+        storeName: order.storeName || owner?.storeName || owner?.name || "FIREHUB",
+        paperWidth: order.paperWidth || printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",
+        columns: printers[0]?.columns,
+        escposProfile: printers[0]?.escposProfile,
+        printerConfig: {
+          autoprint: pc?.autoprint !== false,
+          autoBeverageTag: pc?.autoBeverageTag !== false,
+          customBeverageKeywords: pc?.customBeverageKeywords || "",
+          defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
+          printers,
+        },
+        destinos: destinos.map((d) => ({
+          printer: d.impressora.name,
+          copies: Number(d.impressora.copies) > 0 ? Number(d.impressora.copies) : 1,
+          paperWidth: d.impressora.paperWidth || pc?.defaultPaperWidth || "80mm",
+          columns: d.impressora.columns ?? undefined,
+          escposProfile: d.impressora.escposProfile ?? undefined,
+          somenteBebidas: d.impressora.somenteBebidas === true,
+          items: d.itens,
+        })),
+        createdAt: pedida.createdAt.toISOString(),
+      };
+    });
+
+    const jobsAvulsos = (paraConta === null ? [] : contas).map((pedido) => {
       const order: any = pedido.payload;
       return {
         id: "job_" + pedido.id,
@@ -356,7 +432,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ jobs: [...jobs, ...jobsAvulsos] });
+    return NextResponse.json({ jobs: [...jobs, ...jobsAvulsos, ...jobsReimpressos] });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.
