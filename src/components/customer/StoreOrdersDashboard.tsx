@@ -3988,24 +3988,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
             )}
 
-            {/* Relógio — a régua de clima que morava aqui saiu inteira (não
-                ajudava a despachar pedido e mostrava a cidade errada), e o
-                relógio virou opcional junto com o resto da barra: quem tem o
-                horário na tela do computador não precisa dele aqui. */}
-            {naBarra("relogio") && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginLeft: "auto" }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem" }}>
-                  <span style={{ fontSize: "1.05rem", fontWeight: 700, color: "#0F172A" }}>
-                    {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                  </span>
-                  <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>
-                    {now.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                  </span>
-                </div>
-              </div>
-            </div>
-            )}
+            {/* Sem relógio nesta barra. A régua de clima saiu antes; o relógio
+                saiu em 06/09/2026 a pedido do dono: o painel recarrega a cada
+                10 segundos e, com os segundos pulando, dava para VER a
+                atualização acontecendo. Quem precisa da hora tem o relógio do
+                computador. */}
           </div>
 
           {/* ── O QUE APARECE NESTA BARRA ─────────────────────────────────────
@@ -4033,7 +4020,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 {[
                   { chave: "filtroCanais", rotulo: "Filtro de pedidos por canal", ajuda: "iFood, 99Food, Brendi, Retirada, Site" },
-                  { chave: "relogio", rotulo: "Relógio", ajuda: "Hora e data no canto da barra" },
                   { chave: "botaoResumo", rotulo: "Resumo das vendas", ajuda: "" },
                   { chave: "botaoAltaDemanda", rotulo: "Alta Demanda", ajuda: "Aumenta o tempo de entrega no movimento" },
                   { chave: "botaoAgendamentos", rotulo: "Agendamentos", ajuda: "" },
