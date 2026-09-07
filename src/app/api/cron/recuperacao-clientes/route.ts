@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { FUSO_PADRAO, dataDaLoja, horaDaLoja } from "@/lib/fuso";
 import { Prisma } from "@prisma/client";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
@@ -74,9 +75,6 @@ const ENVIOS_ATE_PAUSA_LONGA = 8;
 const aleatorio = (min: number, max: number) => Math.floor(min + Math.random() * (max - min));
 const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-const hojeEmSaoPaulo = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
-const horaEmSaoPaulo = () =>
-  Number(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "2-digit", hour12: false }));
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
@@ -84,25 +82,29 @@ export async function GET(req: NextRequest) {
   }
 
   const log: string[] = [];
-  const hora = horaEmSaoPaulo();
-  if (hora < 10 || hora >= 20) {
-    return NextResponse.json({ ok: true, pulado: `fora do horário (${hora}h em SP)`, enviados: 0 });
-  }
-
-  const hoje = hojeEmSaoPaulo();
   let enviadosNoTotal = 0;
 
   try {
     // Só lojas que ligaram pelo menos um dos marcos.
     const lojas = await prisma.user.findMany({
       where: { NOT: { chatbotConfig: { equals: Prisma.DbNull } } },
-      select: { id: true, storeName: true, name: true, slug: true, chatbotConfig: true },
+      select: { id: true, storeName: true, name: true, slug: true, chatbotConfig: true, storeTimezone: true },
     });
 
     for (const loja of lojas) {
       const cfg = (loja.chatbotConfig as any) || {};
       const marcosLigados = MARCOS.filter(m => cfg[m.ligado] === true);
       if (marcosLigados.length === 0) continue;
+
+      // Janela das 10h às 20h NO RELÓGIO DA LOJA. Era uma checagem só, em
+      // Brasília, antes do laço: uma loja em Manaus recebia mensagem às 9h dela.
+      const fuso = loja.storeTimezone || FUSO_PADRAO;
+      const hora = horaDaLoja(fuso);
+      if (hora < 10 || hora >= 20) {
+        log.push(`⏭️ ${loja.storeName || loja.name}: fora do horário (${hora}h na loja)`);
+        continue;
+      }
+      const hoje = dataDaLoja(fuso);
 
       // Já disparou hoje? Então acabou por hoje.
       if (cfg.ultimaRecuperacaoEm === hoje) {

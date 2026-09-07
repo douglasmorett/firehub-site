@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { fusoPorEndereco } from "@/lib/fuso-por-endereco";
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
@@ -141,6 +142,8 @@ export async function POST(req: NextRequest) {
         storeName: storeNameFinal,
         storePhone: phone || null,
         city: city || null,
+        // O fuso vem da cidade (ver fuso-por-endereco.ts); sem estado reconhecível, Brasília.
+        storeTimezone: fusoPorEndereco({ city })?.fuso ?? "America/Sao_Paulo",
         cpfCnpj: cnpjClean,
         slug,
         ambassadorId,

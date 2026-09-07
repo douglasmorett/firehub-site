@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
+import { FUSO_PADRAO } from "@/lib/fuso";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -423,7 +424,7 @@ export async function POST(req: Request) {
           difference: null,
           closedBy: "sistema — encerrado ao abrir outro caixa",
           notes:
-            `Turno encerrado automaticamente em ${agora.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} porque um caixa novo foi aberto. ` +
+            `Turno encerrado automaticamente em ${agora.toLocaleString("pt-BR", { timeZone: user.storeTimezone || FUSO_PADRAO })} porque um caixa novo foi aberto. ` +
             `Ninguém conferiu a gaveta: o esperado ficou registrado e o contado não existe. ` +
             `O dinheiro deste turno continua na gaveta e vai aparecer como sobra no fechamento seguinte.`,
         },
@@ -456,9 +457,9 @@ export async function POST(req: Request) {
     data: { cashOpen: true },
   });
 
-  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true } });
+  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true } });
   if (ownerInfo?.notificationPhone) {
-    const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+    const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
     const msg = `🟢 *Caixa Aberto*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *ABERTO* às ${timeStr} com R$ ${Number(openingAmount).toFixed(2).replace('.', ',')} de troco.\n\n_Ass: Seu Assistente FireHub 🔥_`;
     sendEvolutionMessage(user.targetId, ownerInfo.notificationPhone, msg).catch(() => {});
   }
@@ -554,9 +555,9 @@ export async function PUT(req: Request) {
     data: { cashOpen: false, cashClosedAt: new Date() },
   });
 
-  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true } });
+  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true } });
   if (ownerInfo?.notificationPhone) {
-    const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+    const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
     const msg = `🔴 *Caixa Fechado*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *FECHADO* às ${timeStr}.\n\nDiferença no caixa: R$ ${Number(difference.toFixed(2)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n_Ass: Seu Assistente FireHub 🔥_`;
     sendEvolutionMessage(user.targetId, ownerInfo.notificationPhone, msg).catch(() => {});
   }

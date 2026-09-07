@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle, ShieldCheck, Truck } from "lucide-react";
 
 import { DAYS, DAY_MAP, normalizeStoreHours, defaultHours } from "@/lib/store-hours";
+import { FUSOS_DO_BRASIL, fusoPorEndereco, rotuloDoFuso } from "@/lib/fuso-por-endereco";
 
 type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "fixed" | "free_shipping"; minOrderValue?: number; active: boolean };
 
@@ -29,6 +30,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [storeAddress, setStoreAddress] = useState(user.storeAddress || "");
   const [city, setCity] = useState(user.city || "");
   const [storeTimezone, setStoreTimezone] = useState(user.storeTimezone || "America/Sao_Paulo");
+  // O fuso segue o endereço: se cidade/endereço dizem o estado, o seletor obedece
+  // e fica travado; o lojista só escolhe à mão quando o cadastro não diz nada.
+  const fusoDoEndereco = fusoPorEndereco({ city, storeAddress });
+  const fusoEfetivo = fusoDoEndereco?.fuso ?? storeTimezone;
   const [storeBanner, setStoreBanner] = useState(user.storeBanner || "");
   const [storeLogo, setStoreLogo] = useState(user.storeLogo || "");
   const [storeDeliveryOnly, setStoreDeliveryOnly] = useState(user.storeDeliveryOnly || false);
@@ -170,7 +175,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     else throw new Error("Erro ao salvar");
   };
 
-  const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, notificationPhone, storeAddress, storeDeliveryOnly, showAddressOnMenu, city, storeTimezone }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
+  const saveInfo = async () => { setSavingInfo(true); try { await saveFields({ storeName, storePhone, notificationPhone, storeAddress, storeDeliveryOnly, showAddressOnMenu, city, storeTimezone: fusoEfetivo }); setDirtyInfo(false); } finally { setSavingInfo(false); } };
 
   // Valida sobreposição de turnos no mesmo dia
   const validateShifts = (): string | null => {
@@ -430,18 +435,17 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             </p>
           </div>
           <div className="input-group"><label>Cidade / Estado (UF)</label><input className="input-field" placeholder="Ex: Rio de Janeiro - RJ" value={city} onChange={e => { setCity(e.target.value); setDirtyInfo(true); }} /></div>
-          <div className="input-group"><label>Fuso Horário (Timezone)</label>
-            <select className="input-field" value={storeTimezone} onChange={e => { setStoreTimezone(e.target.value); setDirtyInfo(true); }} style={{ background: "#fff", cursor: "pointer" }}>
-              <option value="America/Sao_Paulo">🇧🇷 Brasília / Rio de Janeiro / São Paulo (GMT-3)</option>
-              <option value="America/Bahia">🇧🇷 Bahia / Nordeste (GMT-3)</option>
-              <option value="America/Fortaleza">🇧🇷 Ceará / Fortaleza (GMT-3)</option>
-              <option value="America/Recife">🇧🇷 Pernambuco / Recife (GMT-3)</option>
-              <option value="America/Belem">🇧🇷 Pará / Belém (GMT-3)</option>
-              <option value="America/Manaus">🇧🇷 Amazonas / Manaus (GMT-4)</option>
-              <option value="America/Cuiaba">🇧🇷 Mato Grosso / Cuiabá (GMT-4)</option>
-              <option value="America/Rio_Branco">🇧🇷 Acre / Rio Branco (GMT-5)</option>
-              <option value="America/Noronha">🇧🇷 Fernando de Noronha (GMT-2)</option>
+          <div className="input-group"><label>Fuso Horário da Loja</label>
+            <select className="input-field" value={fusoEfetivo} disabled={Boolean(fusoDoEndereco)}
+              onChange={e => { setStoreTimezone(e.target.value); setDirtyInfo(true); }}
+              style={{ background: fusoDoEndereco ? "#F1F5F9" : "#fff", cursor: fusoDoEndereco ? "not-allowed" : "pointer" }}>
+              {FUSOS_DO_BRASIL.map((f) => <option key={f.fuso} value={f.fuso}>🇧🇷 {f.rotulo}</option>)}
             </select>
+            <p style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "4px", lineHeight: 1.4 }}>
+              {fusoDoEndereco
+                ? `Definido pelo endereço cadastrado (${fusoDoEndereco.origem}): ${rotuloDoFuso(fusoDoEndereco.fuso)}. O horário de funcionamento, o "hoje" dos relatórios e a hora dos pedidos seguem este relógio. Para mudar, corrija a cidade/UF.`
+                : "Não reconhecemos o estado pelo endereço. Informe a cidade com a UF (ex: Manaus - AM) ou escolha o fuso aqui."}
+            </p>
           </div>
           <div className="input-group" style={{ gridColumn: "span 2" }}>
             <label>Endereço Completo</label>
@@ -1035,7 +1039,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 notificationPhone,
                 storeAddress: data.storeAddress,
                 city,
-                storeTimezone,
+                storeTimezone: fusoEfetivo,
                 storeBanner, 
                 storeLogo, 
                 storeDeliveryOnly,

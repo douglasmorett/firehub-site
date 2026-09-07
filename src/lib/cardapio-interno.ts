@@ -118,15 +118,17 @@ export function ehProdutoDeIntegracao(
 }
 
 /**
- * Dia da semana em São Paulo, no formato que `availableDays` grava.
+ * Dia da semana NO RELÓGIO DA LOJA, no formato que `availableDays` grava.
  *
  * `new Date().getDay()` responde pelo fuso do servidor, que roda em UTC. Depois
  * das 21h de Brasília o servidor já virou o dia: a promoção de sexta sumia do
- * cardápio às 21h de quinta e continuava no ar até as 21h de sexta.
+ * cardápio às 21h de quinta e continuava no ar até as 21h de sexta. E o
+ * relógio é o da LOJA (`storeTimezone`), não o de Brasília: em Manaus o dia
+ * vira uma hora depois.
  */
-export function diaDaSemanaEmSaoPaulo(ref: Date = new Date()): string {
+export function diaDaSemanaDaLoja(timeZone?: string | null, ref: Date = new Date()): string {
   const sigla = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Sao_Paulo",
+    timeZone: timeZone || "America/Sao_Paulo",
     weekday: "short",
   }).format(ref);
 
@@ -136,13 +138,18 @@ export function diaDaSemanaEmSaoPaulo(ref: Date = new Date()): string {
   return mapa[sigla] ?? "DOM";
 }
 
+/** @deprecated Use `diaDaSemanaDaLoja(storeTimezone)`. Mantido para quem ainda não passa o fuso. */
+export function diaDaSemanaEmSaoPaulo(ref: Date = new Date()): string {
+  return diaDaSemanaDaLoja("America/Sao_Paulo", ref);
+}
+
 /**
  * O produto está disponível hoje?
  *
  * `availableDays` é um JSON com as siglas dos dias. Ausente, vazio ou ilegível
  * significa "todo dia" — nunca esconder produto por causa de campo mal gravado.
  */
-export function disponivelHoje(availableDays: unknown, hoje = diaDaSemanaEmSaoPaulo()): boolean {
+export function disponivelHoje(availableDays: unknown, hoje = diaDaSemanaDaLoja()): boolean {
   if (!availableDays) return true;
   try {
     const dias = typeof availableDays === "string" ? JSON.parse(availableDays) : availableDays;

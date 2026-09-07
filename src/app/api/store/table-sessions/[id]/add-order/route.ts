@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { generateDailyOrderNumber } from "@/lib/order-number";
-import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
 
@@ -16,6 +17,7 @@ export async function POST(
     const operador = await resolverOperadorDaMesa();
     if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const targetFranchiseeId = operador.franchiseeId;
+    const hojeNaLoja = diaDaSemanaDaLoja(await fusoDaLoja(targetFranchiseeId));
 
     const { id } = await params;
     if (!id) return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
@@ -80,7 +82,7 @@ export async function POST(
       }
       // Produto de dia específico não sai fora do dia; a tela pode estar
       // aberta desde ontem.
-      if (!disponivelHoje(produto.availableDays)) {
+      if (!disponivelHoje(produto.availableDays, hojeNaLoja)) {
         recusados.push(produto.name);
         continue;
       }

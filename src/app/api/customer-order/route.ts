@@ -5,7 +5,7 @@ import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
-import { disponivelHoje } from "@/lib/cardapio-interno";
+import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
 
@@ -143,7 +143,7 @@ export async function POST(req: Request) {
       // vitrine já esconde o item, mas a aba aberta desde ontem — ou um POST
       // direto na rota — ainda mandava a esfirra de segunda no domingo, pelo
       // preço de promoção. Mesma regra do totem (api/totem/order).
-      if (!disponivelHoje((product as any).availableDays)) {
+      if (!disponivelHoje((product as any).availableDays, diaDaSemanaDaLoja(franchisee.storeTimezone))) {
         throw Object.assign(
           new Error(`"${product.name}" só está disponível em dias específicos e hoje não é um deles.`),
           { statusCode: 400 }

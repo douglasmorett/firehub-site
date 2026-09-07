@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { dataDaLoja } from "@/lib/fuso";
+import { fusoDaLoja } from "@/lib/fuso-da-loja";
 
 export async function createPayable(data: {
   supplierName: string;
@@ -146,7 +147,7 @@ export async function createRecurringPayable(data: {
 
     // Ano e mês DE BRASÍLIA: das 21:00 às 24:00 do último dia o container (UTC)
     // já está no mês seguinte, e a primeira parcela nascia um mês à frente.
-    const [currentYear, mesHumano] = dataDaLoja().split("-").map(Number);
+    const [currentYear, mesHumano] = dataDaLoja(await fusoDaLoja(targetFranchiseeId)).split("-").map(Number);
     const currentMonth = mesHumano - 1;
     const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
     const cappedDay = Math.min(Number(data.dueDateDay), lastDay);

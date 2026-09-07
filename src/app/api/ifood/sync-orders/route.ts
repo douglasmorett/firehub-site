@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { dataHoraDaLoja } from "@/lib/fuso";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken } from "@/lib/ifood-api";
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, role: true, ifoodMerchantId: true, ownerId: true },
+    select: { id: true, role: true, ifoodMerchantId: true, ownerId: true, storeTimezone: true },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
   if (!merchantId && user.ownerId) {
     const owner = await prisma.user.findUnique({
       where: { id: user.ownerId },
-      select: { id: true, role: true, ifoodMerchantId: true },
+      select: { id: true, role: true, ifoodMerchantId: true, storeTimezone: true },
     });
     if (owner?.ifoodMerchantId) {
       merchantId = owner.ifoodMerchantId;
@@ -199,7 +200,7 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
 
   const notesArr = [
     `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
-    scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : null,
+    scheduledDatetime ? `📅 AGENDADO para ${dataHoraDaLoja(scheduledDatetime, franchisee.storeTimezone)}` : null,
     discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
     customerNote ? `💬 ${customerNote}` : null,
   ].filter(Boolean).join(" | ");

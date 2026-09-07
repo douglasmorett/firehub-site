@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { orderByCardapio } from "@/lib/menu-order";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
-import { disponivelHoje } from "@/lib/cardapio-interno";
+import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { notFound } from "next/navigation";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 
@@ -186,7 +186,8 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   // Item fora do dia nem entra no payload: além de não aparecer, não vai no
   // HTML público. Quem é opção DENTRO de combo continua intacto — as opções
   // vêm pela consulta aninhada, que este filtro não toca.
-  const menuDoDia = (menuProducts as any[]).filter((p) => disponivelHoje(p.availableDays));
+  const hojeNaLoja = diaDaSemanaDaLoja(franchisee.storeTimezone);
+  const menuDoDia = (menuProducts as any[]).filter((p) => disponivelHoje(p.availableDays, hojeNaLoja));
 
   const menuComPrecoDoCanal = aplicarPrecoNoCardapio(menuDoDia as any[], "delivery");
 

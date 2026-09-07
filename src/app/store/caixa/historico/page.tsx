@@ -4,7 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-const fmtDate = (d: Date) => new Date(d).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit", timeZone: "America/Sao_Paulo" });
+// No relógio DA LOJA: o servidor roda em UTC e cada loja tem o seu fuso.
+const fmtDateEm = (tz: string | null | undefined) => (d: Date) =>
+  new Date(d).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit", timeZone: tz || "America/Sao_Paulo" });
 const fmtDur = (open: Date, close: Date) => {
   const m = Math.round((new Date(close).getTime() - new Date(open).getTime()) / 60000);
   return m < 60 ? `${m}min` : `${Math.floor(m/60)}h${String(m%60).padStart(2,"0")}`;
@@ -16,8 +18,9 @@ export default async function CaixaHistoricoPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
-  const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" }, select: { id: true, role: true } });
+  const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" }, select: { id: true, role: true, storeTimezone: true } });
   if (!user) redirect("/login");
+  const fmtDate = fmtDateEm(user.storeTimezone);
 
   const sessions = await prisma.cashSession.findMany({
     where: { franchiseeId: user.id, status: "CLOSED" },

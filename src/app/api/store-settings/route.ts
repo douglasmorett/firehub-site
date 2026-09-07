@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { fusoPorEndereco } from "@/lib/fuso-por-endereco";
 
 export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
@@ -53,6 +54,18 @@ export async function PUT(req: Request) {
     "deliveryConfig",    // Configurações de Entrega / Frete Grátis
   ]) {
     if (body[key] !== undefined) data[key] = body[key];
+  }
+
+  // O fuso segue o ENDEREÇO. Se cidade, endereço ou o próprio fuso vieram no
+  // corpo, deriva de novo: quando o cadastro diz o estado, é ele que vale, e o
+  // seletor só decide quando o endereço não diz nada. Uma loja de Manaus com
+  // "America/Sao_Paulo" esquecido no cadastro fechava o delivery uma hora antes.
+  if (data.city !== undefined || data.storeAddress !== undefined || data.storeTimezone !== undefined) {
+    const peloEndereco = fusoPorEndereco({
+      city: data.city !== undefined ? data.city : currentUser.city,
+      storeAddress: data.storeAddress !== undefined ? data.storeAddress : currentUser.storeAddress,
+    });
+    if (peloEndereco) data.storeTimezone = peloEndereco.fuso;
   }
   if (body.storeDeliveryOnly !== undefined) data.storeDeliveryOnly = body.storeDeliveryOnly;
   if (body.showAddressOnMenu !== undefined) data.showAddressOnMenu = Boolean(body.showAddressOnMenu);

@@ -14,6 +14,7 @@
  * eventos daquela loja.
  */
 import { prisma } from "./prisma";
+import { dataHoraDaLoja } from "./fuso";
 import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-number";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
@@ -499,7 +500,7 @@ export async function processarEventosIfood(opts: {
 
           const notesArr = [
             `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
-            scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : null,
+            scheduledDatetime ? `📅 AGENDADO para ${dataHoraDaLoja(scheduledDatetime, eventFranchisee.storeTimezone)}` : null,
             discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
             customerNote ? `💬 ${customerNote}` : null,
           ].filter(Boolean).join(" | ");

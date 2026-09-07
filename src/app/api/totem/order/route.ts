@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { autenticarTotem } from "@/lib/totem-auth";
-import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: auth.erro, code: auth.codigo }, { status: auth.status });
     }
     const licenca = auth.licenca;
+    const hojeNaLoja = diaDaSemanaDaLoja(await fusoDaLoja(licenca.franchiseeId));
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
@@ -210,7 +212,7 @@ export async function POST(req: NextRequest) {
 
       // Produto de dia específico não pode ser vendido fora do dia. O cardápio
       // já esconde, mas a tela pode estar aberta desde ontem.
-      if (!disponivelHoje(product.availableDays)) {
+      if (!disponivelHoje(product.availableDays, hojeNaLoja)) {
         recusados.push(product.name);
         continue;
       }

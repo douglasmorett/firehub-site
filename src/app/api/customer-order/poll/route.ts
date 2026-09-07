@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { dataHoraDaLoja } from "@/lib/fuso";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
@@ -409,7 +410,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
             const notesArr = [
               `Pedido iFood #${(orderData.displayId ?? orderId.slice(-6)).toUpperCase()}`,
-              scheduledDatetime ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : null,
+              scheduledDatetime ? `📅 AGENDADO para ${dataHoraDaLoja(scheduledDatetime, eventFranchisee.storeTimezone)}` : null,
               discountTotal > 0 ? `🏷️ Desconto R$${discountTotal.toFixed(2)} (iFood: R$${discountIfood.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : null,
               customerNote ? `💬 ${customerNote}` : null,
             ].filter(Boolean).join(" | ");

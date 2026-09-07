@@ -114,6 +114,16 @@ export function inicioDoDiaDaLojaAtras(dias: number, timeZone?: string | null, a
   return new Date(hoje.getTime() - dias * 24 * 60 * 60 * 1000);
 }
 
+/** Um instante escrito no relógio da loja, como "06/09/2026, 20:28:00" (pt-BR). */
+export function dataHoraDaLoja(instante: Date | string | number, timeZone?: string | null): string {
+  return new Date(instante).toLocaleString("pt-BR", { timeZone: timeZone || FUSO_PADRAO });
+}
+
+/** Hora cheia (0–23) no relógio da loja. */
+export function horaDaLoja(timeZone?: string | null, agora: Date = new Date()): number {
+  return Math.floor(relogioDaLoja(timeZone, agora).minutos / 60);
+}
+
 /** Antes desta hora local, ainda é o expediente da noite anterior. */
 export const HORA_DE_VIRADA_DO_EXPEDIENTE = 5;
 

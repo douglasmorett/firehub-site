@@ -20,6 +20,8 @@
  *      total zero ANTES de entrar em produção.
  */
 import { prisma } from "@/lib/prisma";
+import { dataHoraDaLoja } from "@/lib/fuso";
+import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { isBeverageName } from "@/lib/beverage";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { brendiFetch, confirmarPedidoBrendi } from "@/lib/brendi-api";
@@ -813,9 +815,10 @@ export async function processBrendiEvent(
         .filter((i: any) => i.specialInstructions?.trim())
         .map((i: any) => `${i.name || i.productName || 'Item'}: ${i.specialInstructions.trim()}`);
 
+      const fusoDaLojaAlvo = await fusoDaLoja(franchiseeIdToUse);
       const notesArr = [
         `Pedido Brendi #${String(displayIdReal ?? orderId.slice(-6)).toUpperCase()}`,
-        (scheduledDatetime && isExplicitScheduled) ? `📅 AGENDADO para ${scheduledDatetime.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : null,
+        (scheduledDatetime && isExplicitScheduled) ? `📅 AGENDADO para ${dataHoraDaLoja(scheduledDatetime, fusoDaLojaAlvo)}` : null,
         discountTotal > 0
           ? `🏷️ ${discountDetails[0]?.description || "Desconto"}: -R$${discountTotal.toFixed(2)}` +
             (discountPlatform > 0 ? ` (Plataforma: R$${discountPlatform.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : "")
