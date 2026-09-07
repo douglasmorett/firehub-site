@@ -69,6 +69,36 @@ function liberarLoopbackNoNavegador() {
 }
 liberarLoopbackNoNavegador();
 
+/* ─── O PC do caixa nao pode dormir ────────────────────────────────────────
+ *
+ * Mais abaixo o `powerSaveBlocker` (so no Electron) segura o PC acordado
+ * enquanto o Assistente estiver aberto. Isto aqui e o cinto do suspensorio, e
+ * vale mesmo se o programa for fechado: desliga "suspender" e "hibernar" no
+ * plano de energia do Windows.
+ *
+ * PC de loja sai de fabrica dormindo em 15-30 min sem ninguem mexer — e
+ * ninguem mexe no PC do caixa entre um pedido e outro. Dormindo ele NAO
+ * imprime por caminho nenhum: nem pela fila da nuvem, nem pelo navegador,
+ * porque o painel dorme junto. Quando alguem encosta no mouse, sai tudo de uma
+ * vez, atrasado. E a cara exata do "pula impressao": a Brasa Burguer ficou 18
+ * minutos muda no meio do servico em 06/09/2026, com quatro pedidos entrando,
+ * e voltou sozinha.
+ *
+ * So na TOMADA (-ac): notebook na bateria continua dormindo como sempre, se
+ * nao a bateria acabava no meio do expediente. Idempotente, e a loja desfaz
+ * pelo proprio Windows (Configuracoes > Sistema > Energia).
+ */
+function impedirQueOPcDurma() {
+  if (process.platform !== "win32") return;
+  for (const alvo of ["standby-timeout-ac", "hibernate-timeout-ac"]) {
+    exec(`powercfg /change ${alvo} 0`, { windowsHide: true, timeout: 15000 }, (err) => {
+      if (err) console.warn(`[PrintServer] nao consegui desligar ${alvo}:`, String(err.message).split("\n")[0]);
+    });
+  }
+  console.log("[PrintServer] 🔌 Suspensao e hibernacao desligadas na tomada — o PC do caixa nao dorme no meio do servico.");
+}
+impedirQueOPcDurma();
+
 /* ─── Helpers ──────────────────────────────────────────────── */
 const tmpDir = path.join(os.tmpdir(), "firehub-print");
 if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
@@ -82,13 +112,21 @@ try { if (!fs.existsSync(APP_DIR)) fs.mkdirSync(APP_DIR, { recursive: true }); }
 /* ─── A classe que fala com o spooler (winspool.drv) ──────────────────────
  *
  * Compilada UMA vez em DLL (%APPDATA%\FireHub\RawPrint-<hash>.dll) e carregada
- * pelo script a cada impressao. Antes, cada comanda recompilava este C# do
- * zero num PowerShell novo (csc.exe): medido em 06/09/2026, de 1,2 s a 3,9 s
- * por comanda num PC de escritorio — e num PC de loja lento, com antivirus,
- * o bastante para estourar o prazo do spooler de vez em quando. Com a DLL
- * pronta o mesmo caminho leva ~0,4 s. Se a DLL nao existir ou nao carregar,
- * o script compila em linha, exatamente como sempre fez: nenhuma loja
- * imprime pior do que imprimia.
+ * pelo script a cada impressao, em vez de recompilar este C# num PowerShell
+ * novo a cada comanda.
+ *
+ * O ganho medido, para nao virar lenda: 5 execucoes de cada, maquina ociosa,
+ * 07/09/2026 — 801 ms com a DLL contra 1082 ms compilando em linha, sendo que
+ * o piso do proprio PowerShell (subir o processo e sair) e 573 ms. Ou seja
+ * ~280 ms por comanda em condicao boa. O que interessa mesmo e a CAUDA: a
+ * primeira execucao deste mesmo script, a frio, levou 3,9 s — e num PC de loja
+ * com antivirus olhando o csc.exe escrever assembly em disco, esse e o tipo de
+ * pico que encosta no prazo.
+ *
+ * NAO e isto que conserta comanda perdida: quem conserta e o marcador `.ok`
+ * (ver rawPrint). Isto so tira o caminho lento do meio. Sem a DLL, ou se ela
+ * nao carregar, o script compila em linha exatamente como sempre fez: nenhuma
+ * loja imprime pior do que imprimia.
  *
  * O hash no nome do arquivo e o que troca a DLL quando este C# mudar numa
  * versao nova: cada versao compila a sua e nunca carrega a de outra.

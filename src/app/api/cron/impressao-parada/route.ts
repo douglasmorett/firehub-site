@@ -39,6 +39,16 @@ const REAVISAR_PARADA_MS = 24 * 60 * 60_000;
 const REAVISAR_PRESA_MS = 60 * 60_000;
 const CHAVE_CARIMBOS = "printAlerts";
 const MAX_NA_MENSAGEM = 8;
+/**
+ * O aviso só existe enquanto há pedido ENTRANDO sem sair comanda.
+ *
+ * Sem esta janela, a loja que fechou às 23h com o PC desligado continuaria
+ * elegível o dia inteiro: os pedidos das últimas horas do expediente ficam
+ * "depois da última consulta" para sempre, e às 23h do dia seguinte (24 h do
+ * reaviso) sairia um alerta sobre pedidos de ontem. Alerta que chega quando
+ * não há nada a fazer é o jeito mais rápido de ensinar o dono a ignorar todos.
+ */
+const PEDIDO_RECENTE_MS = 3 * 60 * 60_000;
 /** Pedido que não gera comanda: não conta como "ficou sem". */
 const SEM_COMANDA = ["CANCELADO", "CANCELED", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"];
 
@@ -111,7 +121,13 @@ export async function GET(req: NextRequest) {
             orderBy: { createdAt: "asc" },
             take: 50,
           });
-          if (pedidos.length > 0) {
+          // O aviso é sobre pedido que está entrando AGORA e não sai no papel.
+          // Loja fechada com o PC desligado não é falha nenhuma, e os pedidos
+          // do fim do expediente ficam "depois da última consulta" para sempre
+          // (ver PEDIDO_RECENTE_MS). A mensagem lista a lista inteira desde a
+          // parada; quem decide se ela sai são os recentes.
+          const recentes = pedidos.filter((p) => agora - p.createdAt.getTime() < PEDIDO_RECENTE_MS);
+          if (recentes.length > 0) {
             mensagem = mensagemDeParada(loja, pedidos, ultimaConsulta, agora);
             aoEnviar = () => { novos.paradoDesde = ultimaConsulta; novos.paradoAvisadoEm = agora; };
           }

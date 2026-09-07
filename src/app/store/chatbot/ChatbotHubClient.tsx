@@ -1714,6 +1714,16 @@ export default function ChatbotHubClient() {
             const ligado = (id: string) => (typeof alertas[id] === "boolean" ? alertas[id] : true);
             const numerosMudos: any[] = Array.isArray(config.numerosIgnorados) ? config.numerosIgnorados : [];
             const telefoneDeAlerta = String(stats?.notificationPhone || "");
+            // Alerta cadastrado NO PRÓPRIO NÚMERO DO ROBÔ não é enviado (o robô
+            // leria a mensagem como conversa dele mesmo, e responderia). A trava
+            // existe em lib/alertas-do-dono.ts e era muda: a loja cadastrava, o
+            // painel mostrava tudo verde e nenhum alerta chegava nunca.
+            const soDigitos = (v: unknown) => String(v || "").replace(/\D/g, "");
+            const numeroDoRobo = soDigitos(config.phone);
+            const alertaNoNumeroDoRobo =
+              telefoneDeAlerta.length > 0 &&
+              numeroDoRobo.length >= 10 &&
+              soDigitos(telefoneDeAlerta).slice(-10) === numeroDoRobo.slice(-10);
 
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -1779,7 +1789,15 @@ export default function ChatbotHubClient() {
                     </div>
                   </div>
 
-                  {telefoneDeAlerta ? (
+                  {alertaNoNumeroDoRobo ? (
+                    <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#991B1B", marginBottom: 12, lineHeight: 1.5 }}>
+                      ⚠️ O número de alerta (<strong>{telefoneDeAlerta}</strong>) é o <strong>mesmo do robô</strong> —
+                      e por isso <strong>nenhum alerta é enviado</strong>: o robô estaria mandando mensagem para si
+                      mesmo, e responderia a própria mensagem. Cadastre em{" "}
+                      <a href="/store/minha-loja" style={{ color: "#991B1B", fontWeight: 800 }}>Minha Loja</a> um
+                      número <strong>diferente</strong> (o seu celular pessoal), no campo &quot;WhatsApp do Proprietário&quot;.
+                    </div>
+                  ) : telefoneDeAlerta ? (
                     <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#166534", marginBottom: 12 }}>
                       Os alertas vão para <strong>{telefoneDeAlerta}</strong>. Para trocar, vá em{" "}
                       <a href="/store/minha-loja" style={{ color: "#166534", fontWeight: 800 }}>Minha Loja</a>.

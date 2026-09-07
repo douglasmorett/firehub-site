@@ -91,7 +91,11 @@ async function imprimir(porta, printer, id) {
   const r1 = await imprimir(7899, "NAO_EXISTE_FIREHUB", "harness_pend_1");
   const dt = Date.now() - t0;
   ok("impressora inexistente falha (HTTP 500)", r1.http === 500, `${dt} ms`);
-  ok("falha veio rapida (< 4 s)", dt < 4000, `${dt} ms`);
+  // O que importa aqui e nao TRAVAR: a falha tem que voltar bem antes do prazo
+  // de 20 s do rawPrint. O numero exato varia com a carga da maquina (medido
+  // entre 2,5 s e 4,5 s neste PC), entao o limite e folgado de proposito — um
+  // teste que acusa falha por a maquina estar ocupada ensina a ignorar o teste.
+  ok("falha volta bem antes do prazo (< 8 s)", dt < 8000, `${dt} ms`);
   const s2 = await esperarStatus(7899, 3000);
   ok("virou pendente no /status", s2 && s2.pendentes.length === 1 && s2.pendentes[0].impressora === "NAO_EXISTE_FIREHUB");
   const r2 = await imprimir(7899, "NAO_EXISTE_FIREHUB", "harness_pend_1");
