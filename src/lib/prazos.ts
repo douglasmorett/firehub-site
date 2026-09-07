@@ -70,6 +70,9 @@ export type ModoPreparo99 = "desconto" | "faixas";
 export type Preparo99 = { modo: ModoPreparo99; desconto: number; regras: RegraManual[] };
 
 export type ConfigPrazos = {
+  /** O robô escreve nos portais? Mora na conta, não no navegador: PC novo não
+   *  pode voltar em silêncio para "desligado" — e o suporte precisa enxergar. */
+  roboLigado: boolean;
   modo: ModoPrazo;
   regrasManuais: RegraManual[];
   receitas: Record<string, ReceitaDoPainel>;
@@ -256,6 +259,7 @@ export function sanearLojas99(raw: unknown): Loja99[] {
 export function lerConfig(raw: unknown): ConfigPrazos {
   const c = (raw && typeof raw === "object" ? raw : {}) as any;
   return {
+    roboLigado: c.roboLigado === true,
     modo: c.modo === "manual" ? "manual" : "auto",
     regrasManuais: sanearRegras(c.regrasManuais),
     receitas: sanearReceitas(c.receitas),

@@ -42,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const temLocal = Object.keys(estado.receitas || {}).length > 0;
     if (!temLocal && Object.keys(doServidor).length > 0) estado.receitas = doServidor;
     modoAtivo = cfg.modo || "auto";
+    estado.roboLigado = cfg.roboLigado === true;
     regras = Array.isArray(cfg.regrasManuais) ? cfg.regrasManuais.slice() : [];
     preparo99 = {
       modo: (cfg.preparo99 && cfg.preparo99.modo) || "desconto",
@@ -323,10 +324,13 @@ document.addEventListener("DOMContentLoaded", () => {
     salvarPreparo99();
   });
 
+  // O robô mora na conta (o servidor decide), não neste navegador.
   $("toggleRobo").addEventListener("change", async (e) => {
-    estado.roboLigado = e.target.checked;
-    await chrome.storage.local.set({ roboLigado: estado.roboLigado });
-    chrome.runtime.sendMessage({ tipo: "PRAZOS_RECALCULAR", force: true }).catch(() => {});
+    const ligado = e.target.checked;
+    estado.roboLigado = ligado;
+    await chrome.storage.local.set({ roboLigado: ligado });
+    const ok = await salvarConfig({ roboLigado: ligado });
+    if (!ok) { estado.roboLigado = !ligado; await chrome.storage.local.set({ roboLigado: !ligado }); render(); }
   });
 
   $("btnAbrirIfood").addEventListener("click", () => chrome.runtime.sendMessage({ tipo: "PRAZOS_ABRIR_IFOOD" }).catch(() => {}));

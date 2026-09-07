@@ -108,7 +108,7 @@ async function abaDe(padrao) {
  */
 async function avaliar(opts) {
   const options = opts || {};
-  const s = await get(["token", "conta", "leitura", "receitas", "roboLigado", "ultimoDespacho"]);
+  const s = await get(["token", "conta", "leitura", "receitas", "ultimoDespacho"]);
   if (!s.token) return { motivo: "sem-login" };
 
   const hosts = Object.keys(s.receitas || {}).filter((h) => (s.receitas[h].colunas || []).length > 0);
@@ -153,11 +153,14 @@ async function avaliar(opts) {
     lojas99: Array.isArray(d.lojas99) ? d.lojas99 : [],
     lojasIncluidas: d.lojasIncluidas || 1,
   };
-  await set({ prazo });
+  // O robô liga/desliga na CONTA, não neste navegador: PC novo (ou reinstalação)
+  // não pode voltar em silêncio para desligado. O storage aqui é só espelho.
+  const roboLigado = d.roboLigado === true;
+  await set({ prazo, roboLigado });
   await definirErro(null);
   avisarPilulas();
 
-  if (!s.roboLigado) return { motivo: "robo-desligado", prazo };
+  if (!roboLigado) return { motivo: "robo-desligado", prazo };
   if (prazo.lojasIfood.length === 0 && prazo.lojas99.length === 0) {
     await definirErro("Marque na extensão as lojas do iFood e/ou do 99Food que devem ter o prazo ajustado.");
     return { motivo: "sem-lojas", prazo };

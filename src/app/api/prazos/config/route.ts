@@ -49,6 +49,7 @@ export async function PUT(req: NextRequest) {
 
     const novaConfig = { ...atual };
     let mudouConfig = false;
+    if (body?.roboLigado !== undefined) { novaConfig.roboLigado = body.roboLigado === true; mudouConfig = true; }
     if (body?.modo !== undefined) { novaConfig.modo = body.modo === "manual" ? "manual" : "auto"; mudouConfig = true; }
     if (body?.regrasManuais !== undefined) { novaConfig.regrasManuais = sanearRegras(body.regrasManuais); mudouConfig = true; }
     if (body?.receitas !== undefined) { novaConfig.receitas = sanearReceitas(body.receitas); mudouConfig = true; }

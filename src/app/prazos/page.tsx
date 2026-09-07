@@ -21,7 +21,14 @@ export const metadata: Metadata = {
  * loja FireHub — é qualquer restaurante com iFood/99Food e um painel de
  * pedidos. O checkout é da Cakto; a conta nasce pelo webhook da compra.
  */
-const CHECKOUT_URL = "https://pay.cakto.com.br/firehub-prazos";
+const CHECKOUT_URL = "https://pay.cakto.com.br/5otxn7d_1091761";
+/** Uma loja por plataforma no plano base; cada loja a mais, R$ 9,90. */
+const PLANOS = [
+  { lojas: 1, preco: "R$ 49,90", url: CHECKOUT_URL },
+  { lojas: 2, preco: "R$ 59,80", url: "https://pay.cakto.com.br/kqn3qtd" },
+  { lojas: 3, preco: "R$ 69,70", url: "https://pay.cakto.com.br/odfz3a2" },
+  { lojas: 5, preco: "R$ 89,50", url: "https://pay.cakto.com.br/37ekn8o" },
+];
 const ZIP_URL = "https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip";
 const LARANJA = "#FF5722";
 
@@ -121,10 +128,19 @@ export default function PrazosLanding() {
       <section id="assinar" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#fff" }}>
         <div style={{ ...secao, textAlign: "center" }}>
           <h2 style={{ fontSize: "1.8rem", fontWeight: 900, margin: "0 0 6px" }}>R$ 49,90 por mês</h2>
-          <p style={{ color: "#CBD5E1", fontSize: "1.05rem", margin: "0 0 6px" }}>1 loja incluída (a mesma no iFood e no 99Food). Loja adicional: R$ 9,90/mês.</p>
+          <p style={{ color: "#CBD5E1", fontSize: "1.05rem", margin: "0 0 6px" }}>1 loja incluída (a mesma no iFood e no 99Food). Cada loja a mais: R$ 9,90/mês.</p>
           <p style={{ color: "#94A3B8", fontSize: ".9rem", margin: "0 0 22px" }}>Um pedido a menos cancelado por mês já paga. Sem fidelidade: cancela na Cakto quando quiser.</p>
-          <a href={CHECKOUT_URL} style={botao}>Assinar agora</a>
-          <div style={{ color: "#94A3B8", fontSize: ".8rem", marginTop: 14 }}>Pagamento seguro pela Cakto · o acesso chega no seu e-mail em segundos</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, maxWidth: 760, margin: "0 auto 22px" }}>
+            {PLANOS.map((p) => (
+              <a key={p.lojas} href={p.url} style={{ display: "block", textDecoration: "none", background: p.lojas === 1 ? "rgba(255,87,34,.14)" : "rgba(255,255,255,.05)", border: `1px solid ${p.lojas === 1 ? LARANJA : "#334155"}`, borderRadius: 14, padding: "14px 12px", color: "#fff" }}>
+                <div style={{ fontWeight: 900, fontSize: "1.25rem" }}>{p.preco}</div>
+                <div style={{ color: "#CBD5E1", fontSize: ".85rem", fontWeight: 700 }}>{p.lojas} loja{p.lojas > 1 ? "s" : ""}/mês</div>
+                <div style={{ color: LARANJA, fontSize: ".78rem", fontWeight: 800, marginTop: 6 }}>Assinar →</div>
+              </a>
+            ))}
+          </div>
+          <div style={{ color: "#94A3B8", fontSize: ".8rem" }}>Precisa de mais lojas? Fale com a gente: contato@firehubfood.com.br</div>
+          <div style={{ color: "#94A3B8", fontSize: ".8rem", marginTop: 6 }}>Pagamento seguro pela Cakto · o acesso chega no seu e-mail em segundos</div>
         </div>
       </section>
 

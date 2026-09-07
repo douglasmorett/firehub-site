@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       success: true,
       agora: new Date().toISOString(),
       dias,
-      conta: { nomeLoja: conta.nomeLoja, motoboys: conta.motoboys, modo: cfg.modo, status: conta.status },
+      conta: { nomeLoja: conta.nomeLoja, motoboys: conta.motoboys, modo: cfg.modo, status: conta.status, roboLigado: cfg.roboLigado },
       visto: estado.visto || null,
       lendo: estado.lendo !== false,
       lojas: {

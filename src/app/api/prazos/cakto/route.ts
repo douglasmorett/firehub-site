@@ -60,6 +60,17 @@ function statusPeloEvento(evento: string, statusDoPedido: string): "ATIVO" | "BL
   return null;
 }
 
+/**
+ * O webhook da Cakto é por produto, mas um erro de configuração lá (ou um
+ * webhook antigo reaproveitado) mandaria compra do Evo PDV criar conta de
+ * Prazos. Se o payload diz de que produto é e não é o nosso, ignora.
+ */
+function ehDoProduto(oferta: string, produto: string): boolean {
+  const texto = `${oferta} ${produto}`.trim();
+  if (!texto) return true;
+  return /prazo/i.test(texto);
+}
+
 /** "FireHub Prazos — 3 lojas" → 3; quantidade comprada → n; senão 1. */
 function cotaDaOferta(oferta: string, produto: string, quantidade: unknown): number {
   const q = Math.floor(Number(quantidade));
@@ -113,6 +124,9 @@ export async function POST(req: NextRequest) {
 
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return respostaPrazos({ ok: true, ignorado: true, motivo: "sem e-mail no payload" });
+  }
+  if (!ehDoProduto(oferta, produto)) {
+    return respostaPrazos({ ok: true, ignorado: true, motivo: `outro produto: ${produto || oferta}` });
   }
   const novoStatus = statusPeloEvento(evento, statusDoPedido);
   if (!novoStatus) {

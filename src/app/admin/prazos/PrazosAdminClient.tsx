@@ -189,7 +189,10 @@ export default function PrazosAdminClient() {
                   </td>
                   <td style={{ padding: "10px 12px" }}>
                     <span style={{ background: cor.bg, color: cor.fg, fontWeight: 800, padding: "3px 8px", borderRadius: 8, fontSize: ".74rem" }}>{c.status}</span>
-                    <div style={{ color: "#64748B", fontSize: ".72rem", marginTop: 4 }}>modo {c.config?.modo || "auto"}{receitas.length ? ` · painel: ${receitas.join(", ")}` : " · nenhuma coluna marcada"}</div>
+                    <div style={{ color: c.config?.roboLigado ? "#15803D" : "#B45309", fontSize: ".72rem", marginTop: 4, fontWeight: 700 }}>
+                      {c.config?.roboLigado ? "🤖 robô ligado" : "⏸️ robô desligado"}
+                    </div>
+                    <div style={{ color: "#64748B", fontSize: ".72rem" }}>modo {c.config?.modo || "auto"}{receitas.length ? ` · painel: ${receitas.join(", ")}` : " · nenhuma coluna marcada"}</div>
                     <div style={{ color: "#64748B", fontSize: ".72rem" }}>99: {c.config?.preparo99?.modo === "faixas" ? "faixas próprias" : `iFood − ${c.config?.preparo99?.desconto ?? 15} min`}</div>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
