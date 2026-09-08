@@ -127,6 +127,27 @@ export default function AdminOrderCard({ order, deliveryInfo }: { order: any, de
                   </li>
                 ))}
               </ul>
+
+              {/* Quando o boleto cobra mais (ou menos) do que as linhas somam —
+                  preço mudou depois do pedido e a cobrança saiu com o novo — a
+                  diferença fica escrita, para o total do cabeçalho não parecer
+                  errado. */}
+              {(() => {
+                const somaDosItens = order.items.reduce((s: number, i: any) => s + i.price * i.quantity, 0);
+                const ajuste = order.totalAmount - somaDosItens;
+                if (Math.abs(ajuste) < 0.01) return null;
+                return (
+                  <div style={{
+                    display: "flex", justifyContent: "space-between", gap: 8,
+                    marginTop: "0.5rem", padding: "0.4rem 1rem",
+                    fontSize: "0.8rem", color: "var(--warning)", fontWeight: 600,
+                  }}>
+                    <span>Atualização de preços (cobrança)</span>
+                    <span>{ajuste > 0 ? "+" : "−"} R$ {Math.abs(ajuste).toFixed(2)}</span>
+                  </div>
+                );
+              })()}
+
               {order.status === "PENDING_PAYMENT" && (
                 <div style={{ marginTop: "1rem" }}>
                   <Link href={`/admin/orders/${order.id}/edit`} className="btn btn-outline" style={{ fontSize: "0.85rem", width: "100%", textAlign: "center", display: "block" }}>

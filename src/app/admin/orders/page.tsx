@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import AdminSidebar from "@/components/AdminSidebar";
 import AdminOrderCard from "@/components/AdminOrderCard";
 import { getNextDeliveryInfo } from "@/lib/deliveryDates";
+import { sincronizarComCobranca } from "@/lib/pedido-cobranca";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "FireHub Admin — Pedidos de Insumos" };
@@ -18,7 +19,7 @@ export default async function AdminOrdersPage() {
   if (role !== "ADMIN" && role !== "STAFF") redirect("/store");
 
   // Buscar TODOS os pedidos de insumos (model Order), incluindo dados do user e itens
-  const orders = await prisma.order.findMany({
+  const consulta = {
     include: {
       user: {
         select: { id: true, name: true, email: true, city: true, cpfCnpj: true }
@@ -27,12 +28,18 @@ export default async function AdminOrdersPage() {
         include: { product: true }
       },
       history: {
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" as const }
       }
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: "desc" as const },
     take: 200
-  });
+  };
+  let orders = await prisma.order.findMany(consulta);
+
+  // Este painel e o boleto do cliente têm que dizer o mesmo número: quando a
+  // cobrança em aberto diverge, ela manda — ver src/lib/pedido-cobranca.ts.
+  const ajustes = await sincronizarComCobranca(orders);
+  if (Object.keys(ajustes).length > 0) orders = await prisma.order.findMany(consulta);
 
   // Obter datas de entrega por cidade
   const cityDeliveryMap: Record<string, any> = {};

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import GeneratePaymentLink from "@/components/GeneratePaymentLink";
+import { sincronizarComCobranca } from "@/lib/pedido-cobranca";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +21,17 @@ export default async function StoreOrdersPage() {
 
   const tz = user.storeTimezone || "America/Sao_Paulo";
 
-  const orders = await prisma.order.findMany({
+  const consulta = {
     where: { userId: user.id },
     include: { items: { include: { product: true } } },
-    orderBy: { createdAt: 'desc' }
-  });
+    orderBy: { createdAt: "desc" as const },
+  };
+  let orders = await prisma.order.findMany(consulta);
+
+  // O cliente não pode ver um valor aqui e receber um boleto com outro. Se a
+  // cobrança em aberto disser outro número, ela manda — ver pedido-cobranca.ts.
+  const ajustes = await sincronizarComCobranca(orders);
+  if (Object.keys(ajustes).length > 0) orders = await prisma.order.findMany(consulta);
 
   const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; border: string }> = {
     PENDING_PAYMENT: { label: "Aguardando Pagamento", bg: "#FEF3C7", color: "#92400E", border: "#FDE68A" },
@@ -163,6 +170,29 @@ export default async function StoreOrdersPage() {
                       ))}
                     </tbody>
                   </table>
+
+                  {/* A conta tem que fechar na tela. Quando o boleto cobra um
+                      valor que as linhas acima não somam (preço mudou depois do
+                      pedido e a cobrança saiu com o novo), a diferença aparece
+                      escrita, em vez de o cliente ficar com dois números e
+                      nenhuma explicação. */}
+                  {(() => {
+                    const somaDosItens = order.items.reduce((s, i) => s + i.price * i.quantity, 0);
+                    const ajuste = order.totalAmount - somaDosItens;
+                    if (Math.abs(ajuste) < 0.01) return null;
+                    return (
+                      <div style={{
+                        display: "flex", justifyContent: "space-between", gap: 8,
+                        marginTop: 6, paddingTop: 6, borderTop: "1px dashed #E2E8F0",
+                        fontSize: "0.78rem", color: "#92400E",
+                      }}>
+                        <span style={{ fontWeight: 600 }}>Atualização de preços</span>
+                        <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                          {ajuste > 0 ? "+" : "−"} R$ {Math.abs(ajuste).toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* ── Emergência badge ── */}
