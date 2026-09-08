@@ -86,6 +86,14 @@ const jobs = [
     intervalMs: 60 * 60_000, // 1 hora
   },
   {
+    // O painel do cliente não pode mostrar um valor e o boleto cobrar outro.
+    // De hora em hora porque a cobrança pode ser refeita (com o preço novo do
+    // catálogo) depois que o cliente já fechou a tela do pedido.
+    name: 'conciliar-cobrancas',
+    path: '/api/cron/conciliar-cobrancas',
+    intervalMs: 60 * 60_000, // 1 hora
+  },
+  {
     // A cada 5 minutos porque atraso pede reacao rapida — e quem segura a
     // repeticao e a propria rota: um aviso por PEDIDO a cada hora.
     name: 'pedidos-atrasados',
