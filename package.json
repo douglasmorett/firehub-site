@@ -8,7 +8,8 @@
     "start": "next start -p 3001",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "extensao:build": "node scripts/build-extensao-chrome.mjs"
+    "extensao:build": "node scripts/build-extensao-chrome.mjs",
+    "prazos:build": "node scripts/build-prazos-chrome.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.50.1",
