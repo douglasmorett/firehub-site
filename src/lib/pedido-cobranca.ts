@@ -102,39 +102,69 @@ export async function sincronizarComCobranca(
       if (cobrado === null) continue;
 
       const diferenca = Number((cobrado - pedido.totalAmount).toFixed(2));
-      if (Math.abs(diferenca) < 0.01) continue;
+      const somaDosItens = pedido.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
-      // Os preços de hoje explicam o valor cobrado?
+      // As duas contas são conferidas SEPARADAMENTE de propósito. Amarrar a
+      // reprecificação dos itens à correção do total deixava o pedido pela
+      // metade: uma vez que o total virasse o valor do boleto, a diferença
+      // sumia e as linhas ficavam para sempre com o preço velho — foi o que
+      // aconteceu com #MXESYD e #45LQ83 na primeira rodada (total certo,
+      // massa ainda a R$ 200).
+      const totalDivergente = Math.abs(diferenca) >= 0.01;
+      const itensNaoSomamOCobrado = Math.abs(somaDosItens - cobrado) >= 0.01;
+      if (!totalDivergente && !itensNaoSomamOCobrado) continue;
+
+      // Os preços de hoje explicam o valor cobrado, item a item?
       const produtos = await prisma.product.findMany({
         where: { id: { in: pedido.items.map((i) => i.productId) } },
         select: { id: true, price: true },
       });
-      const precoHoje = new Map(produtos.map((p) => [p.id, p.price]));
+      const precoHoje = new Map<string, number>(produtos.map((p) => [p.id, p.price]));
       const somaComPrecosDeHoje = pedido.items.reduce(
         (s, i) => s + (precoHoje.get(i.productId) ?? i.price) * i.quantity,
         0,
       );
       const explicaItemAItem = Math.abs(somaComPrecosDeHoje - cobrado) < 0.01;
 
-      await prisma.$transaction([
-        ...(explicaItemAItem
-          ? pedido.items
-              .filter((i) => (precoHoje.get(i.productId) ?? i.price) !== i.price)
-              .map((i) =>
-                prisma.orderItem.update({
-                  where: { id: i.id },
-                  data: { price: precoHoje.get(i.productId)! },
-                }),
-              )
-          : []),
-        prisma.order.update({ where: { id: pedido.id }, data: { totalAmount: cobrado } }),
-      ]);
+      const linhasParaReprecificar =
+        itensNaoSomamOCobrado && explicaItemAItem
+          ? pedido.items.filter((i) => (precoHoje.get(i.productId) ?? i.price) !== i.price)
+          : [];
 
-      ajustes[pedido.id] = { cobrado, diferenca, itensReprecificados: explicaItemAItem };
+      const escritas = [
+        ...linhasParaReprecificar.map((i) =>
+          prisma.orderItem.update({
+            where: { id: i.id },
+            data: { price: precoHoje.get(i.productId)! },
+          }),
+        ),
+        ...(totalDivergente
+          ? [prisma.order.update({ where: { id: pedido.id }, data: { totalAmount: cobrado } })]
+          : []),
+      ];
+      if (escritas.length === 0) {
+        // Nada a fazer que não fosse chute: a cobrança não bate com o pedido
+        // nem com os preços de hoje. A tela mostra a diferença como ajuste.
+        console.warn(
+          `[pedido-cobranca] #${pedido.id.slice(-6).toUpperCase()} sem acerto possível: ` +
+            `cobrado R$ ${cobrado.toFixed(2)}, itens somam R$ ${somaDosItens.toFixed(2)}, ` +
+            `preços de hoje somam R$ ${somaComPrecosDeHoje.toFixed(2)}`,
+        );
+        continue;
+      }
+
+      await prisma.$transaction(escritas);
+
+      ajustes[pedido.id] = {
+        cobrado,
+        diferenca,
+        itensReprecificados: linhasParaReprecificar.length > 0,
+      };
       console.log(
         `[pedido-cobranca] #${pedido.id.slice(-6).toUpperCase()} acertado pelo boleto: ` +
-          `R$ ${pedido.totalAmount.toFixed(2)} → R$ ${cobrado.toFixed(2)}` +
-          (explicaItemAItem ? " (itens reprecificados)" : " (ajuste no total)"),
+          `total R$ ${pedido.totalAmount.toFixed(2)} → R$ ${cobrado.toFixed(2)}; ` +
+          `${linhasParaReprecificar.length} linha(s) reprecificada(s) ` +
+          `(itens somavam R$ ${somaDosItens.toFixed(2)}, preços de hoje somam R$ ${somaComPrecosDeHoje.toFixed(2)})`,
       );
     } catch (e: any) {
       console.error(`[pedido-cobranca] falha ao acertar ${pedido.id}:`, e?.message);
