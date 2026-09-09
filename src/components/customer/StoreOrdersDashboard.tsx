@@ -3168,7 +3168,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       })()}
       {/* MODAL NEGOCIAÇÃO DE CANCELAMENTO OU PREVISÃO DE ENTREGA (iFood) */}
       {(() => {
-        const disputeOrder = orders.find((o: any) => o.cancelDispute?.pending === true);
+        // Disputa vencida não vira modal. O iFood dá ~10 minutos para responder;
+        // passado o prazo, quem decide é ele, e o pop-up só atrapalha — em
+        // 09/09 as 12 disputas pendentes do banco estavam TODAS vencidas, e
+        // abriam uma atrás da outra ao entrar na conta, com o contador zerado
+        // em "0 minutos e 00 segundos para responder".
+        const disputeOrder = orders.find((o: any) => {
+          if (o.cancelDispute?.pending !== true) return false;
+          const exp = o.cancelDispute?.expiresAt ? new Date(o.cancelDispute.expiresAt) : null;
+          if (exp && !Number.isNaN(exp.getTime()) && exp.getTime() <= now.getTime()) return false;
+          return true;
+        });
         if (!disputeOrder) return null;
         const dispute = (disputeOrder as any).cancelDispute;
         const orderNum = getDisplayOrderNumber(disputeOrder);
@@ -3275,9 +3285,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             reason: dueDateReason,
                           }),
                         });
+                        const d = await r.json().catch(() => ({} as any));
                         if (r.ok) {
                           setOrders((prev) => prev.map((o) => (o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o)));
-                          showToast("✅ Previsão de entrega enviada ao iFood com sucesso!", "#16A34A");
+                          // d.ifoodOk === false: gravou aqui, mas o iFood recusou.
+                          // A tela dizia "enviada com sucesso" nos dois casos, e o
+                          // lojista só descobria quando o cliente reclamava.
+                          if (d.ifoodOk === false) {
+                            showToast("⚠️ O iFood não aceitou a nova previsão. Responda pelo app do iFood ou fale com o cliente.", "#B45309");
+                          } else {
+                            showToast("✅ Previsão de entrega enviada ao iFood.", "#16A34A");
+                          }
                           router.refresh();
                         }
                       } catch {} finally {
@@ -3300,9 +3318,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ orderId: disputeOrder.id, action: "deny_delivery" }),
                         });
+                        const d = await r.json().catch(() => ({} as any));
                         if (r.ok) {
                           setOrders((prev) => prev.map((o) => (o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o)));
-                          showToast("Resposta enviada ao iFood.", "#374151");
+                          showToast(
+                            d.ifoodOk === false
+                              ? "⚠️ O iFood não aceitou a resposta. Responda pelo app do iFood."
+                              : "Resposta enviada ao iFood.",
+                            d.ifoodOk === false ? "#B45309" : "#374151"
+                          );
                           router.refresh();
                         }
                       } catch {} finally {

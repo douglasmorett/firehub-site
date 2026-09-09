@@ -41,7 +41,22 @@ export async function PUT(req: Request) {
   }
 
   // Sync with iFood using Disputes API
+  //
+  // `ifoodOk` existe porque esta rota devolvia 200 e a tela cantava "✅ enviada
+  // ao iFood com sucesso" mesmo quando o iFood recusava. Em 09/09/2026 o banco
+  // tinha 294 respostas de nova previsão de entrega gravadas — 145 com HTTP
+  // 400, 143 com 422, 6 com 403 — e NENHUMA aceita. O lojista achava que tinha
+  // respondido; o cliente ficava sem previsão e recorria ao iFood. Agora o
+  // motivo do iFood é guardado junto e a tela mostra o que de fato aconteceu.
   let ifoodResult = "no_ifood";
+  let ifoodOk: boolean | null = null;
+  let ifoodErro = "";
+  const registrar = (rotulo: string, r: { ok: boolean; status: number; texto: string }) => {
+    ifoodResult = `${rotulo}:${r.status}`;
+    ifoodOk = r.ok;
+    if (!r.ok) ifoodErro = (r.texto || "").slice(0, 300);
+    return r;
+  };
   if (order.ifoodOrderId) {
     try {
       // Com a credencial do DONO do pedido: o token central só alcança a
@@ -56,49 +71,44 @@ export async function PUT(req: Request) {
       if (action === "update_delivery_time") {
         const { additionalMinutes = 10, reason = "OUT_FOR_DELIVERY" } = body;
         if (disputeId) {
-          const r = await post(`${base}/disputes/${disputeId}/accept`, { additionalMinutes, reason });
-          ifoodResult = `disputes_accept_time:${r.status}`;
+          registrar("disputes_accept_time", await post(`${base}/disputes/${disputeId}/accept`, { additionalMinutes, reason }));
         } else {
-          const r = await post(`${base}/orders/${order.ifoodOrderId}/updateEta`, { additionalMinutes });
-          ifoodResult = `updateEta:${r.status}`;
+          registrar("updateEta", await post(`${base}/orders/${order.ifoodOrderId}/updateEta`, { additionalMinutes }));
         }
       } else if (action === "deny_delivery") {
         if (disputeId) {
-          const r = await post(`${base}/disputes/${disputeId}/reject`, { reason: "CANNOT_DELIVER" });
-          ifoodResult = `disputes_reject_time:${r.status}`;
+          registrar("disputes_reject_time", await post(`${base}/disputes/${disputeId}/reject`, { reason: "CANNOT_DELIVER" }));
         }
       } else if (action === "accept") {
         // Try Disputes API first (correct endpoint)
         if (disputeId) {
-          const r = await post(`${base}/disputes/${disputeId}/accept`, { reason: "CUSTOMER_SATISFACTION" });
-          ifoodResult = `disputes_accept:${r.status}`;
-
+          const r = registrar("disputes_accept", await post(`${base}/disputes/${disputeId}/accept`, { reason: "CUSTOMER_SATISFACTION" }));
           if (!r.ok) {
-            const r2 = await post(`${base}/orders/${order.ifoodOrderId}/acceptCancellation`);
-            ifoodResult += `,fallback:${r2.status}`;
+            const base2 = ifoodResult;
+            const r2 = registrar("disputes_accept", await post(`${base}/orders/${order.ifoodOrderId}/acceptCancellation`));
+            ifoodResult = `${base2},fallback:${r2.status}`;
           }
         } else {
-          const r = await post(`${base}/orders/${order.ifoodOrderId}/acceptCancellation`);
-          ifoodResult = `acceptCancellation:${r.status}`;
+          registrar("acceptCancellation", await post(`${base}/orders/${order.ifoodOrderId}/acceptCancellation`));
         }
       } else if (action === "deny") {
         const reason = denyReason || "Pedido já em andamento";
         if (disputeId) {
-          const r = await post(`${base}/disputes/${disputeId}/reject`, { reason });
-          ifoodResult = `disputes_reject:${r.status}`;
-
+          const r = registrar("disputes_reject", await post(`${base}/disputes/${disputeId}/reject`, { reason }));
           if (!r.ok) {
-            const r2 = await post(`${base}/orders/${order.ifoodOrderId}/denyCancellation`, { reason });
-            ifoodResult += `,fallback:${r2.status}`;
+            const base2 = ifoodResult;
+            const r2 = registrar("disputes_reject", await post(`${base}/orders/${order.ifoodOrderId}/denyCancellation`, { reason }));
+            ifoodResult = `${base2},fallback:${r2.status}`;
           }
         } else {
-          const r = await post(`${base}/orders/${order.ifoodOrderId}/denyCancellation`, { reason });
-          ifoodResult = `denyCancellation:${r.status}`;
+          registrar("denyCancellation", await post(`${base}/orders/${order.ifoodOrderId}/denyCancellation`, { reason }));
         }
       }
     } catch (err: any) {
       console.error(`[iFood Dispute] Erro:`, err?.message);
       ifoodResult = `error:${err?.message}`;
+      ifoodOk = false;
+      ifoodErro = String(err?.message || "").slice(0, 300);
     }
   }
 
@@ -110,31 +120,33 @@ export async function PUT(req: Request) {
       data: {
         status: "CANCELADO",
         cancelledBy: "CUSTOMER",
-        cancelDispute: { ...dispute, pending: false, resolved: "accepted", resolvedAt: new Date().toISOString(), ifoodResult },
+        cancelDispute: { ...dispute, pending: false, resolved: "accepted", resolvedAt: new Date().toISOString(), ifoodResult, ifoodOk, ifoodErro },
       } as any,
     });
   } else if (action === "update_delivery_time") {
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
-        cancelDispute: { ...dispute, pending: false, resolved: "accepted_time_update", resolvedAt: new Date().toISOString(), ifoodResult },
+        cancelDispute: { ...dispute, pending: false, resolved: "accepted_time_update", resolvedAt: new Date().toISOString(), ifoodResult, ifoodOk, ifoodErro },
       } as any,
     });
   } else if (action === "deny_delivery") {
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
-        cancelDispute: { ...dispute, pending: false, resolved: "denied_delivery", resolvedAt: new Date().toISOString(), ifoodResult },
+        cancelDispute: { ...dispute, pending: false, resolved: "denied_delivery", resolvedAt: new Date().toISOString(), ifoodResult, ifoodOk, ifoodErro },
       } as any,
     });
   } else {
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
-        cancelDispute: { ...dispute, pending: false, resolved: "denied", resolvedAt: new Date().toISOString(), denyReason, ifoodResult },
+        cancelDispute: { ...dispute, pending: false, resolved: "denied", resolvedAt: new Date().toISOString(), denyReason, ifoodResult, ifoodOk, ifoodErro },
       } as any,
     });
   }
 
-  return NextResponse.json({ success: true, action, ifoodResult });
+  // ifoodOk === false quer dizer: gravamos aqui, mas o iFood recusou. A tela
+  // precisa desse campo para não cantar vitória — ver o comentário lá em cima.
+  return NextResponse.json({ success: true, action, ifoodResult, ifoodOk, ifoodErro });
 }

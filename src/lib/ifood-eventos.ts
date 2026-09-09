@@ -258,8 +258,15 @@ export async function processarEventosIfood(opts: {
             reason: finalReason,
             customerName: meta.customerName || "",
             handshakeType: meta.handshakeType || actionType,
-            expiresAt: meta.expiresAt || "",
+            expiresAt: meta.expiresAt || meta.expirationDate || meta.timeoutDate || "",
             requestedAt: meta.createdAt || new Date().toISOString(),
+            // O payload cru da disputa, aparado. Existe porque respondemos 294
+            // disputas de nova previsão de entrega até 09/09/2026 e o iFood
+            // recusou TODAS (400, 422, 403) — e sem guardar o que ele mandou
+            // não dá para saber que forma de resposta ele espera. As
+            // 'alternatives', quando vierem, dizem exatamente quais respostas
+            // aquela disputa aceita.
+            metadata: JSON.parse(JSON.stringify(meta ?? {})),
           };
           await (prisma.customerOrder as any).updateMany({
             where: { ifoodOrderId: orderId } as any,
