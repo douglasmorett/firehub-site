@@ -13,7 +13,11 @@ aparece na busca da loja.
 
 ---
 
-## 0. Pendências da conta (bloqueiam tudo, e só você resolve)
+## 0. Pendências da conta — RESOLVIDAS em 09/09/2026
+
+> Item enviado para análise em 09/09/2026 (status **Revisão pendente**). O que segue nesta seção é histórico.
+
+### Como estava
 
 A taxa de US$ 5 **já foi paga**: a conta `contatohakim@gmail.com` tem publisher
 `529cf443-6bd1-4aad-8d41-e6e9c252a297`. Mas em 24/08/2026 o painel estava travado em três itens, e
@@ -148,9 +152,9 @@ lojista já tem aberta, na loja dele. A extensão não contorna autenticação n
 que o usuário já abriu.
 ```
 
-> **Falta construir** a página `/prazos/demo` (um kanban de mentira, público). Ela resolve o
-> "funcionalidade não demonstrável", que é a segunda causa de reprovação, e ainda serve de
-> demonstração clicável na página de venda.
+> `/prazos/demo` existe e foi validada com o `leitor.js` do pacote publicado (marca por badge, conta 4 → 9 → 6 → 4).
+> Conta de revisão: `revisao.chromestore@firehubfood.com.br`, status PILOTO, 2 lojas. A senha fica só no
+> console, aba *Instruções de teste* — não a escreva aqui.
 
 ---
 
@@ -195,3 +199,24 @@ alguns dias a duas semanas.
 Esse ID já está em `src/app/prazos/ativar/AtivacaoClient.tsx` (botão "Instalar no Chrome")
 e precisa entrar em `LINK_DA_EXTENSAO` (`src/app/api/prazos/cakto/route.ts`) quando a ficha
 for aprovada, no lugar do zip.
+
+## Armadilhas do formulário (vividas em 09/09/2026)
+
+- **"Você está usando código remoto?" vem marcado *Sim* por padrão.** É *Não*: o pacote não tem
+  `eval`, `new Function`, `import()` dinâmico nem `<script src>` externo — os dois
+  `executeScript` usam função local e o arquivo empacotado `scripts/leitor.js`. Deixar "Sim" reprova.
+- O campo **"Justificativa" logo abaixo desse rádio é do código remoto**, não da permissão opcional.
+  A explicação do `https://*/*` (pedida site a site, no clique) vai na **justificativa de host**.
+- **Pagamentos = "Contém compras no aplicativo"**: a extensão exige assinatura e tem o botão
+  "Adicionar mais lojas". "Sem custo financeiro" seria falso e é motivo de remoção.
+- **Ícone da Store exige 128x128 exato.** Os três ícones do pacote eram o mesmo 512x512 (o Chrome
+  escala, a loja recusa). Regerados em 16/48/128.
+- **Dados coletados** declarados: e-mail, a senha do login no nosso servidor, e o número de pedidos
+  lido da coluna marcada. Subdeclarar aqui é motivo de remoção depois.
+- O e-mail de contato do publisher precisa ser **adicionado e confirmado** (link por e-mail, 1 h).
+
+## Quando aprovar
+
+1. Em `src/app/prazos/instalar/page.tsx`, apagar o `<details>` do arquivo — fica só o botão da loja.
+2. Conferir que `chromewebstore.google.com/detail/pkkcnkbkacfiojiapodplkbkmdhhnjag` abre e instala.
+3. Fazer uma compra real de R$ 1 e seguir os dois botões do e-mail até a extensão entrar sozinha.
