@@ -55,6 +55,15 @@
         "scripts/noventanove.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://firehubfood.com.br/prazos/ativar*"
+      ],
+      "js": [
+        "scripts/ativar.js"
+      ],
+      "run_at": "document_idle"
     }
   ]
 }

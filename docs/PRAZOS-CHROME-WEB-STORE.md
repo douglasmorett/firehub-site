@@ -183,3 +183,15 @@ alguns dias a duas semanas.
 - **"Automação de site de terceiro"** → responda que a extensão age apenas na sessão que o próprio
   lojista já tem aberta, na loja dele, que ela não contorna autenticação e que altera apenas uma
   configuração que o lojista já pode alterar na mão nas mesmas telas.
+
+---
+
+## Item criado em 09/09/2026
+
+- **ID da extensão:** `pkkcnkbkacfiojiapodplkbkmdhhnjag`
+- **Link de instalação:** <https://chromewebstore.google.com/detail/pkkcnkbkacfiojiapodplkbkmdhhnjag>
+- **Painel:** <https://chrome.google.com/u/3/webstore/devconsole/529cf443-6bd1-4aad-8d41-e6e9c252a297/pkkcnkbkacfiojiapodplkbkmdhhnjag/edit>
+
+Esse ID já está em `src/app/prazos/ativar/AtivacaoClient.tsx` (botão "Instalar no Chrome")
+e precisa entrar em `LINK_DA_EXTENSAO` (`src/app/api/prazos/cakto/route.ts`) quando a ficha
+for aprovada, no lugar do zip.

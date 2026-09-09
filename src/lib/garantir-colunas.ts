@@ -762,6 +762,12 @@ const INSTRUCOES_PRAZOS = [
    )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "PrazoConta_email_key" ON "PrazoConta"("email")`,
   `ALTER TABLE "PrazoConta" ADD COLUMN IF NOT EXISTS "lojasIncluidas" INTEGER NOT NULL DEFAULT 1`,
+  // Ativação em um clique: o e-mail da compra manda um link com este código e a
+  // extensão entra sozinha, sem o lojista copiar senha. Único porque o código é
+  // a chave da busca; nulo depois de usado.
+  `ALTER TABLE "PrazoConta" ADD COLUMN IF NOT EXISTS "ativacaoCodigo" TEXT`,
+  `ALTER TABLE "PrazoConta" ADD COLUMN IF NOT EXISTS "ativadoEm" TIMESTAMP(3)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "PrazoConta_ativacaoCodigo_key" ON "PrazoConta"("ativacaoCodigo")`,
   `CREATE TABLE IF NOT EXISTS "PrazoEvento" (
      "id" TEXT NOT NULL,
      "contaId" TEXT NOT NULL,

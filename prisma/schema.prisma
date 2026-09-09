@@ -1211,6 +1211,12 @@ model PrazoConta {
   ultimoEstado Json?
   /// Referência da Cakto (assinatura/cliente) quando a conta nasce ou muda pelo webhook.
   caktoRef     String?
+  /// Código de uso único do link de ativação mandado no e-mail da compra.
+  /// Serve para a extensão entrar SEM o lojista digitar nada. Vira null ao ser
+  /// usado; a senha continua existindo para entrar num segundo computador.
+  ativacaoCodigo String? @unique
+  /// Quando o código foi usado. Também é o "instalou de fato" da conta.
+  ativadoEm      DateTime?
   observacoes  String?
   criadoPor    String?
   createdAt    DateTime @default(now())

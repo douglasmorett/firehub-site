@@ -700,6 +700,21 @@ chrome.runtime.onMessage.addListener((msg, sender, responder) => {
     return true;
   }
 
+  if (msg.tipo === "PRAZOS_ATIVAR") {
+    // Ativação pelo link do e-mail de compra (scripts/ativar.js). Guarda a
+    // sessão e segue o mesmo caminho do login pelo popup — se divergisse, a
+    // extensão ativada por link ficaria sem leitor até o lojista recarregar a
+    // aba do painel, e ele não teria como adivinhar isso.
+    (async () => {
+      if (!msg.token) { responder({ ok: false }); return; }
+      await set({ token: msg.token, conta: msg.conta || null, erro: null });
+      await religarLeitores();
+      await avisarLeitores({ tipo: "PRAZOS_RECEITA_ATUALIZADA" });
+      responder({ ok: true });
+    })();
+    return true;
+  }
+
   if (msg.tipo === "PRAZOS_SAIU") {
     (async () => {
       await set({ token: null, conta: null, prazo: null, leitura: null, erro: null, ultimoDespacho: null, ultimoAplicado: null });

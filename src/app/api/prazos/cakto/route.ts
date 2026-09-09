@@ -38,7 +38,10 @@ import { sendEmail } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
-const LINK_DA_EXTENSAO = "https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip";
+// Link de instalação na Chrome Web Store (item pkkcnkbkacfiojiapodplkbkmdhhnjag,
+// criado em 09/09/2026). Enquanto a ficha não for aprovada, este link mostra
+// "item não encontrado" — trocar para o zip se precisar vender antes disso.
+const LINK_DA_EXTENSAO = "https://chromewebstore.google.com/detail/pkkcnkbkacfiojiapodplkbkmdhhnjag";
 const LINK_DO_GUIA = "https://firehubfood.com.br/prazos#instalar";
 
 function igual(a: string, b: string): boolean {
@@ -181,6 +184,10 @@ export async function POST(req: NextRequest) {
     }
 
     const senha = crypto.randomBytes(6).toString("base64url").slice(0, 10);
+    // Código do link de ativação: é ele que faz a extensão entrar sem o lojista
+    // digitar nada. A senha continua existindo, para o segundo computador e
+    // para quem preferir entrar na mão.
+    const codigoAtivacao = crypto.randomBytes(18).toString("base64url");
     const conta = await prisma.prazoConta.create({
       data: {
         email,
@@ -190,23 +197,28 @@ export async function POST(req: NextRequest) {
         status: "ATIVO",
         lojasIncluidas: cota,
         caktoRef: referencia ? referencia.slice(0, 120) : null,
+        ativacaoCodigo: codigoAtivacao,
         criadoPor: "cakto",
         observacoes: oferta ? `Oferta Cakto: ${oferta}`.slice(0, 500) : null,
       },
     });
+    const linkAtivacao = `https://firehubfood.com.br/prazos/ativar?t=${codigoAtivacao}`;
 
     const html =
       `<p>Olá${nome ? `, ${nome}` : ""}! Sua assinatura do <b>FireHub Prazos</b> está ativa` +
       `${cota > 1 ? ` (${cota} lojas por plataforma)` : ""}.</p>` +
-      `<p><b>Seu acesso na extensão</b><br>E-mail: ${email}<br>Senha: <code>${senha}</code><br>` +
-      `<small>Troque a senha quando quiser, dentro da extensão (Trocar senha).</small></p>` +
-      `<p><b>Como instalar (3 minutos)</b><br>` +
-      `1. Baixe a extensão: <a href="${LINK_DA_EXTENSAO}">${LINK_DA_EXTENSAO}</a> e descompacte numa pasta.<br>` +
-      `2. No Chrome, abra <code>chrome://extensions</code>, ligue o <b>Modo do desenvolvedor</b> e clique em <b>Carregar sem compactação</b>, escolhendo a pasta.<br>` +
-      `3. Fixe o ícone 🔥, entre com o e-mail e a senha acima e, no painel de pedidos do seu sistema, clique em <b>Marcar coluna</b> em cada coluna que conta pedido na cozinha.<br>` +
-      `4. Deixe o <b>Portal do Parceiro (iFood)</b> e/ou o <b>99Food Admin</b> abertos e logados na conta das suas lojas, e marque na extensão quais lojas devem ter o prazo ajustado.</p>` +
-      `<p>Guia com imagens: <a href="${LINK_DO_GUIA}">${LINK_DO_GUIA}</a></p>` +
-      `<p>Qualquer dúvida, responda este e-mail.</p>`;
+      // O e-mail tem UM caminho principal, não uma lista de passos. Instrução
+      // longa é o que faz o lojista parar no meio e virar chamado de suporte.
+      `<p><b>No computador da loja, faça só isto:</b></p>` +
+      `<p style="margin:18px 0"><a href="${LINK_DA_EXTENSAO}" style="background:#FF5722;color:#fff;font-weight:bold;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block">1. Instalar a extensão no Chrome</a></p>` +
+      `<p style="margin:18px 0"><a href="${linkAtivacao}" style="background:#0F172A;color:#fff;font-weight:bold;padding:14px 26px;border-radius:10px;text-decoration:none;display:inline-block">2. Ativar minha conta</a></p>` +
+      `<p>Depois de instalar, clique no botão 2: a extensão entra sozinha, <b>sem você digitar senha nenhuma</b>.</p>` +
+      `<p>Aí é só abrir o painel de pedidos do seu sistema, clicar no ícone 🔥 e em <b>Marcar coluna</b>, e clicar na coluna que mostra os pedidos que estão na cozinha. ` +
+      `Deixe o <b>Portal do Parceiro (iFood)</b> e/ou o <b>99Food Admin</b> abertos e logados nas suas lojas, e marque na extensão quais devem ter o prazo ajustado.</p>` +
+      `<hr style="border:none;border-top:1px solid #E2E8F0;margin:22px 0">` +
+      `<p style="font-size:13px;color:#64748B"><b>Guarde para outro computador:</b> e-mail <b>${email}</b>, senha <code>${senha}</code>. ` +
+      `O botão de ativar vale uma vez só; nos outros computadores entre com essa senha (dá para trocar dentro da extensão).</p>` +
+      `<p style="font-size:13px;color:#64748B">Guia com imagens: <a href="${LINK_DO_GUIA}">${LINK_DO_GUIA}</a> — ou responda este e-mail que a gente instala junto com você.</p>`;
     await sendEmail({ to: email, subject: "FireHub Prazos — seu acesso à extensão", html }).catch((e) =>
       console.error("[Prazos Cakto] e-mail de boas-vindas falhou:", e?.message)
     );
