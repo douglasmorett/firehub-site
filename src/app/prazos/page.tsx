@@ -40,6 +40,7 @@ export const metadata: Metadata = {
 const LARANJA = "#FF5722";
 const CHECKOUT = CHECKOUT_PADRAO;
 const ZIP = "https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip";
+const WA = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Tenho%20uma%20d%C3%BAvida%20sobre%20o%20FireHub%20Prazos.";
 
 function Botao({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
@@ -152,8 +153,11 @@ export default function PrazosLanding() {
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 24 }}>
+          <div style={{ marginTop: 24, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
             <Botao>Assinar por R$ 49,90/mês</Botao>
+            <a href="/prazos/demo" style={{ color: "#475569", fontSize: ".95rem", textDecoration: "underline" }}>
+              Quer ver antes? Temos um painel de teste para você marcar uma coluna.
+            </a>
           </div>
         </div>
       </section>
@@ -332,6 +336,20 @@ export default function PrazosLanding() {
               <div style={{ color: "#475569", lineHeight: 1.65, marginTop: 8, maxWidth: 760 }}>{r}</div>
             </details>
           ))}
+        </div>
+      </section>
+
+      {/* ─────────── DÚVIDA ─────────── */}
+      <section style={{ background: "#fff" }}>
+        <div style={{ ...secao, paddingTop: 0, textAlign: "center" }}>
+          <div style={{ color: "#475569", fontSize: "1rem" }}>
+            Ficou com dúvida se funciona no seu caso?{" "}
+            <a href={WA} target="_blank" rel="noopener" style={{ color: "#16A34A", fontWeight: 800 }}>
+              Chama no WhatsApp
+            </a>{" "}
+            que a gente responde. Prefere ver funcionando primeiro?{" "}
+            <a href="/prazos/demo" style={{ color: "#FF5722", fontWeight: 800 }}>Abra o painel de teste</a>.
+          </div>
         </div>
       </section>
 
