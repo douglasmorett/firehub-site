@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
 import { FUSO_PADRAO } from "@/lib/fuso";
+import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -42,7 +43,9 @@ async function calcularEsperadoDoTurno(
   //
   // Sai da conferencia e volta em linha propria -- mesmo tratamento que ja foi
   // dado a `pendentesDePagamento`. Some da conta, nao da tela.
-  let foraDaConferencia = { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0 };
+  // `mesasAbertas`: pedidos de mesa cuja mesa AINDA não fechou. Não há dinheiro
+  // deles em lugar nenhum ainda — entram como informação, nunca conferência.
+  let foraDaConferencia = { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 };
   // Pedidos do turno que ainda não têm pagamento nenhum. Ficam FORA do
   // esperado (ver o porquê no laço abaixo) e voltam aqui só para o lojista
   // saber que existem — informação, nunca conferência.
@@ -61,12 +64,34 @@ async function calcularEsperadoDoTurno(
         status: { notIn: ["CANCELADO", "CRIANDO_IA"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { status: true, paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true },
+      select: { status: true, paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true },
     });
 
     for (const o of orders) {
       const pm = (o.paymentMethod || "").toLowerCase();
       const src = ((o as any).source || "").toUpperCase();
+
+      // ── PEDIDO DE MESA: O DINHEIRO ESTÁ NA MESA, NÃO NO PEDIDO ──────────
+      //
+      // O pedido de mesa nasce com paymentMethod "N/A" e nunca recebe a forma
+      // real: a baixa (Dinheiro, Débito, Crédito, Pix) é gravada na SESSÃO da
+      // mesa, no fechamento dela, junto com a taxa de serviço. Contar o pedido
+      // aqui pela forma dele é contar "N/A" — foi assim que o fechamento da
+      // Pastel da Paulista em 09/09 mostrou 26 pedidos "não identificados" e
+      // R$ 1.416,69 fora da conferência, com a caixa sem conseguir fechar.
+      //
+      // Então o pedido de mesa sai deste laço. Mesa já FECHADA: o valor entra
+      // pelas baixas da sessão, por forma, no bloco logo depois do laço. Mesa
+      // ainda ABERTA: ninguém pagou nada ainda; vira a linha "mesas abertas",
+      // informação para o lojista saber que existe conta em andamento.
+      if ((o as any).tableSessionId) {
+        const fechado = o.status === "ENTREGUE" || o.status === "ENCERRADO";
+        if (!fechado) {
+          foraDaConferencia.mesasAbertas += o.totalAmount || 0;
+          foraDaConferencia.mesasAbertasQtd += 1;
+        }
+        continue;
+      }
 
       const channelDisc = (o.discountIfood && o.discountIfood > 0)
         ? o.discountIfood
@@ -217,6 +242,49 @@ async function calcularEsperadoDoTurno(
     // a soma das proprias linhas impressas acima dele (R$ 472,10 de diferenca
     // no turno de 27/08 da Hakim Centro). Quem confere linha por linha e
     // depois olha o TOTAL nao tinha como fazer os dois baterem.
+    // ── AS BAIXAS DAS MESAS FECHADAS NESTE TURNO ──────────────────────────
+    //
+    // É aqui que o dinheiro da mesa entra na conferência — por forma, como o
+    // garçom registrou, e já com a taxa de serviço (que não existe em pedido
+    // nenhum, só na sessão). O critério é a mesa ter FECHADO depois de o caixa
+    // abrir: uma mesa aberta às 20h e paga às 23h é dinheiro deste turno, e a
+    // data do pedido não diz isso — a do fechamento diz.
+    //
+    // Envelopado em try/catch pelo mesmo motivo das movimentações: se por
+    // qualquer razão isto falhar, o caixa continua fechando como antes.
+    try {
+      const mesasFechadas = await prisma.tableSession.findMany({
+        where: {
+          status: "CLOSED",
+          closedAt: { gte: openSession.openedAt },
+          table: { franchiseeId: targetId },
+        },
+        select: { paymentMethods: true },
+      });
+      for (const mesa of mesasFechadas) {
+        for (const p of lerPagamentos(mesa.paymentMethods)) {
+          const m = p.method.toLowerCase();
+          const v = p.amount;
+          if (m.includes("dinheiro") || m.includes("cash")) expected.cash += v;
+          else if (m.includes("débito") || m.includes("debito") || m.includes("debit")) expected.debit += v;
+          else if (m.includes("crédito") || m.includes("credito") || m.includes("credit")) expected.credit += v;
+          else if (m.includes("pix")) expected.pix += v;
+          else if (m.includes("voucher") || m.includes("vale") || m.includes("meal") || m.includes("food")) expected.voucher += v;
+          else if (m.includes("maquininha") || m.includes("cartão") || m.includes("cartao")) expected.credit += v;
+          else {
+            // Forma que a mesa gravou e o caixa não soube ler: continua
+            // visível, fora da conferência, em vez de sumir na gaveta.
+            foraDaConferencia.naoIdentificado += v;
+            foraDaConferencia.naoIdentificadoQtd += 1;
+            continue;
+          }
+          expected.total += v;
+        }
+      }
+    } catch (e: any) {
+      console.error("[Caixa] Não consegui somar as baixas das mesas do turno:", e?.message);
+    }
+
     expected.cash += openSession.openingAmount;
     expected.total += openSession.openingAmount;
 
@@ -275,7 +343,7 @@ export async function GET() {
     ? await calcularEsperadoDoTurno(user.targetId, openSession)
     : {
         expected: { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 },
-        foraDaConferencia: { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0 },
+        foraDaConferencia: { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 },
         pendentesValor: 0, pendentesQuantidade: 0, movimentacaoEntradas: 0, movimentacaoSaidas: 0,
       };
   const { expected, foraDaConferencia, pendentesValor, pendentesQuantidade, movimentacaoEntradas, movimentacaoSaidas } = dados;
@@ -360,6 +428,9 @@ export async function GET() {
       fiadoQtd: foraDaConferencia.fiadoQtd,
       naoIdentificado: Number(foraDaConferencia.naoIdentificado.toFixed(2)),
       naoIdentificadoQtd: foraDaConferencia.naoIdentificadoQtd,
+      // Mesas ainda abertas: conta em andamento, sem dinheiro recebido.
+      mesasAbertas: Number(foraDaConferencia.mesasAbertas.toFixed(2)),
+      mesasAbertasQtd: foraDaConferencia.mesasAbertasQtd,
     },
     // Vendas de antes deste caixa abrir, cujo dinheiro pode estar na gaveta.
     foraDoTurno: {

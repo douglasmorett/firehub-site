@@ -179,7 +179,7 @@ export default function StoreTopNav({
   const [pendentes, setPendentes] = useState<{ valor: number; quantidade: number }>({ valor: 0, quantidade: 0 });
   // Fiado da equipe e forma que o sistema nao soube ler: existem como venda,
   // nao como cedula. Ficam fora da conferencia e visiveis na tela.
-  const [foraConf, setForaConf] = useState<{ fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number }>({ fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0 });
+  const [foraConf, setForaConf] = useState<{ fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas?: number; mesasAbertasQtd?: number }>({ fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 });
   const [actual, setActual]     = useState<Record<string,string>>({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
   /* Vendas de antes deste caixa abrir: o dinheiro delas está na gaveta e não
      entra no esperado. É a explicação da sobra que ninguém entendia. */
@@ -1021,6 +1021,23 @@ export default function StoreTopNav({
                         </td>
                         <td style={{ padding:"8px 10px", textAlign:"right", color:"#7E22CE", fontWeight:700 }}>{fmt(foraConf.fiado)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#7E22CE" }}>—</td>
+                      </tr>
+                    )}
+                    {/* Mesas ainda abertas: conta em andamento, ninguém pagou.
+                        O pedido de mesa nasce "N/A" e o dinheiro só existe
+                        quando a mesa fecha — aí entra por forma, pelas baixas
+                        da sessão. Antes tudo isso caía em "não identificada":
+                        26 pedidos e R$ 1.416,69 no fechamento da Paulista. */}
+                    {(foraConf.mesasAbertasQtd || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF7ED" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#C2410C" }}>
+                          🍽️ Mesas ainda abertas
+                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#C2410C", opacity:0.85 }}>
+                            {foraConf.mesasAbertasQtd} pedido{(foraConf.mesasAbertasQtd || 0) > 1 ? "s" : ""} — entram no caixa quando a mesa fechar
+                          </div>
+                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#C2410C", fontWeight:700 }}>{fmt(foraConf.mesasAbertas || 0)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#C2410C" }}>—</td>
                       </tr>
                     )}
                     {(foraConf.naoIdentificadoQtd || 0) > 0 && (
