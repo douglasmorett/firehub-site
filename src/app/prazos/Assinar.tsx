@@ -15,6 +15,21 @@ import { PLANOS } from "./planos";
 
 const LARANJA = "#FF5722";
 
+/**
+ * A Cakto soma uma taxa de serviço fixa de R$ 0,99 à cobrança, e ela só
+ * aparece no resumo do checkout — conferido em 09/09/2026 nas ofertas de
+ * 1 e de 5 lojas, no cartão e no Pix. A página inteira defende que não
+ * infla número; então ela também não pode esconder um. Dizer o total aqui
+ * custa uma linha e evita a única surpresa que existe no caminho.
+ *
+ * Se um dia essa taxa for desligada no painel da Cakto, apague daqui.
+ */
+const TAXA_CAKTO = 99; // centavos
+
+function reais(centavos: number) {
+  return "R$ " + (centavos / 100).toFixed(2).replace(".", ",");
+}
+
 function porLoja(centavos: number, lojas: number) {
   return "R$ " + (centavos / lojas / 100).toFixed(2).replace(".", ",");
 }
@@ -63,8 +78,12 @@ export function SeletorDePlano() {
       }}>
         Assinar por {p.preco}/mês
       </a>
-      <div style={{ color: "#94A3B8", fontSize: ".78rem", marginTop: 12 }}>
+      <div style={{ color: "#94A3B8", fontSize: ".78rem", marginTop: 12, lineHeight: 1.6 }}>
         7 dias de garantia · sem fidelidade · cancele quando quiser
+        <br />
+        No checkout a Cakto soma R$ 0,99 de taxa de serviço: o total dessa cobrança fica{" "}
+        <b style={{ color: "#CBD5E1" }}>{reais(p.centavos + TAXA_CAKTO)}</b>. Falamos antes para você não
+        levar susto lá.
       </div>
     </div>
   );

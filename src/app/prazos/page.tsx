@@ -571,6 +571,8 @@ export default function PrazosLanding() {
           <Botao style={{ fontSize: "1.15rem", padding: "18px 36px" }}>Assinar por R$ 49,90/mês</Botao>
           <div style={{ color: "#94A3B8", fontSize: ".82rem", marginTop: 16 }}>
             Pagamento pela Cakto · cartão ou Pix · 7 dias de garantia
+            <br />
+            A Cakto soma R$ 0,99 de taxa de serviço no checkout: o total dessa cobrança fica R$ 50,89.
           </div>
         </div>
       </section>
