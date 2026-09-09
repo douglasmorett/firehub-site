@@ -38,10 +38,10 @@ import { sendEmail } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
-// Link de instalação na Chrome Web Store (item pkkcnkbkacfiojiapodplkbkmdhhnjag,
-// criado em 09/09/2026). Enquanto a ficha não for aprovada, este link mostra
-// "item não encontrado" — trocar para o zip se precisar vender antes disso.
-const LINK_DA_EXTENSAO = "https://chromewebstore.google.com/detail/pkkcnkbkacfiojiapodplkbkmdhhnjag";
+// Página nossa que manda para a Chrome Web Store (item pkkcnkbkacfiojiapodplkbkmdhhnjag,
+// criado em 09/09/2026) e, enquanto a ficha não for aprovada, oferece o arquivo.
+// O e-mail já enviado não muda; a página muda. Por isso o link é nosso.
+const LINK_DA_EXTENSAO = "https://firehubfood.com.br/prazos/instalar";
 const LINK_DO_GUIA = "https://firehubfood.com.br/prazos#instalar";
 
 function igual(a: string, b: string): boolean {
