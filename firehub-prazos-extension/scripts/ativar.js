@@ -21,12 +21,26 @@
   if (window.__fhPrazosAtivar) return;
   window.__fhPrazosAtivar = true;
 
+  // Dois canais para a página, de propósito. O postMessage é imediato; o
+  // atributo no <html> é PERSISTENTE. A página é React e monta o listener num
+  // useEffect — se este script rodar antes disso (document_idle costuma
+  // ganhar da hidratação), um postMessage solitário se perde e a página conclui
+  // "não tem extensão". Visto no teste em Edge isolado de 09/09/2026. O
+  // atributo fica lá para a página ler quando acordar, e o aviso é repetido
+  // por alguns segundos para o caso do listener chegar no meio.
   function avisar(estado, texto) {
+    document.documentElement.setAttribute("data-fh-prazos", estado);
+    document.documentElement.setAttribute("data-fh-prazos-texto", texto || "");
     window.postMessage({ fonte: "firehub-prazos", estado: estado, texto: texto || "" }, window.location.origin);
   }
 
-  // A página espera este aviso para trocar "instale a extensão" por "ativando".
   avisar("extensao-presente");
+  var repeticoes = 0;
+  var repetidor = setInterval(function () {
+    var atual = document.documentElement.getAttribute("data-fh-prazos");
+    if (atual !== "extensao-presente" || ++repeticoes > 15) { clearInterval(repetidor); return; }
+    window.postMessage({ fonte: "firehub-prazos", estado: "extensao-presente", texto: "" }, window.location.origin);
+  }, 400);
 
   var codigo = new URLSearchParams(window.location.search).get("t");
   if (!codigo) {

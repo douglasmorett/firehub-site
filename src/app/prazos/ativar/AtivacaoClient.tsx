@@ -23,23 +23,46 @@ export default function AtivacaoClient() {
   const [detalhe, setDetalhe] = useState("");
 
   useEffect(() => {
-    // Se em 2,5 s nenhum content script falou, é porque a extensão não está
-    // neste navegador. Esperar mais que isso é deixar o lojista olhando para
-    // uma tela vazia sem saber o que fazer.
-    const relogio = setTimeout(() => setEstado((e) => (e === "procurando" ? "sem-extensao" : e)), 2500);
+    const FINAIS = new Set(["ativada", "ja-ativa", "erro", "sem-codigo"]);
+
+    function aplicar(estado: string, texto: string) {
+      if (estado === "extensao-presente") { setEstado((e) => (e === "procurando" ? "ativando" : e)); return; }
+      setEstado(estado as Estado);
+      setDetalhe(texto);
+    }
+
+    // O content script da extensão pode ter rodado ANTES deste efeito (ele
+    // entra em document_idle, que costuma ganhar da hidratação). Um postMessage
+    // disparado antes do listener existir se perde — foi exatamente o que o
+    // teste em Edge isolado mostrou em 09/09/2026. Por isso ele também grava o
+    // estado num atributo do <html>, que lemos aqui na chegada e seguimos
+    // lendo a cada 300 ms até um estado final.
+    const lerAtributo = () => {
+      const est = document.documentElement.getAttribute("data-fh-prazos");
+      if (!est) return false;
+      aplicar(est, document.documentElement.getAttribute("data-fh-prazos-texto") || "");
+      return FINAIS.has(est);
+    };
+    let acabou = lerAtributo();
+
+    // Se em 2,5 s ninguém falou por canal nenhum, a extensão não está neste
+    // navegador. Esperar mais é deixar o lojista olhando para uma tela vazia.
+    const relogio = setTimeout(() => {
+      if (!document.documentElement.getAttribute("data-fh-prazos")) setEstado((e) => (e === "procurando" ? "sem-extensao" : e));
+    }, 2500);
+
+    const vigia = setInterval(() => { if (acabou) { clearInterval(vigia); return; } acabou = lerAtributo(); }, 300);
 
     function ouvir(ev: MessageEvent) {
       if (ev.origin !== window.location.origin) return;
       const d = ev.data;
       if (!d || d.fonte !== "firehub-prazos") return;
       clearTimeout(relogio);
-      if (d.estado === "extensao-presente") { setEstado((e) => (e === "procurando" ? "ativando" : e)); return; }
-      setEstado(d.estado as Estado);
-      setDetalhe(String(d.texto || ""));
+      aplicar(String(d.estado), String(d.texto || ""));
     }
 
     window.addEventListener("message", ouvir);
-    return () => { clearTimeout(relogio); window.removeEventListener("message", ouvir); };
+    return () => { clearTimeout(relogio); clearInterval(vigia); window.removeEventListener("message", ouvir); };
   }, []);
 
   const caixa: React.CSSProperties = {
