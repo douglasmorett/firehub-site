@@ -68,7 +68,7 @@ export function SeletorDePlano() {
         </div>
       )}
       <div style={{ color: "#94A3B8", fontSize: ".85rem", marginTop: 10 }}>
-        Dá {(p.centavos / 100 / 30).toFixed(2).replace(".", ",")} por dia. Um pedido cancelado custa mais que isso.
+        Dá R$ {(p.centavos / 100 / 30).toFixed(2).replace(".", ",")} por dia. Um pedido cancelado custa mais que isso.
       </div>
 
       <a href={p.url} style={{
@@ -95,7 +95,7 @@ export function BarraFixa() {
     <>
       <div className="barra-fixa">
         <div>
-          <div style={{ fontWeight: 900, fontSize: "1rem", lineHeight: 1 }}>R$ 49,90<span style={{ fontSize: ".7rem", fontWeight: 700, color: "#94A3B8" }}>/mês</span></div>
+          <div style={{ fontWeight: 900, fontSize: "1rem", lineHeight: 1 }}>R$ 29,90<span style={{ fontSize: ".7rem", fontWeight: 700, color: "#94A3B8" }}>/mês</span></div>
           <div style={{ fontSize: ".64rem", color: "#94A3B8" }}>7 dias de garantia</div>
         </div>
         <a href={PLANOS[0].url} style={{

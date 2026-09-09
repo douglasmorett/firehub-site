@@ -10,10 +10,10 @@
 export type Plano = { lojas: number; preco: string; centavos: number; url: string };
 
 export const PLANOS: Plano[] = [
-  { lojas: 1, preco: "R$ 49,90", centavos: 4990, url: "https://pay.cakto.com.br/5otxn7d_1091761" },
-  { lojas: 2, preco: "R$ 59,80", centavos: 5980, url: "https://pay.cakto.com.br/kqn3qtd" },
-  { lojas: 3, preco: "R$ 69,70", centavos: 6970, url: "https://pay.cakto.com.br/odfz3a2" },
-  { lojas: 5, preco: "R$ 89,50", centavos: 8950, url: "https://pay.cakto.com.br/37ekn8o" },
+  { lojas: 1, preco: "R$ 29,90", centavos: 2990, url: "https://pay.cakto.com.br/5otxn7d_1091761" },
+  { lojas: 2, preco: "R$ 39,80", centavos: 3980, url: "https://pay.cakto.com.br/kqn3qtd" },
+  { lojas: 3, preco: "R$ 49,70", centavos: 4970, url: "https://pay.cakto.com.br/odfz3a2" },
+  { lojas: 5, preco: "R$ 69,50", centavos: 6950, url: "https://pay.cakto.com.br/37ekn8o" },
 ];
 
 export const CHECKOUT_PADRAO = PLANOS[0].url;

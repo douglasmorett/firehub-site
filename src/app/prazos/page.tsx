@@ -7,7 +7,7 @@ import { CHECKOUT_PADRAO } from "./planos";
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
   description:
-    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 49,90 por mês, 7 dias de garantia.",
+    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 29,90 por mês, 7 dias de garantia.",
   openGraph: {
     title: "O prazo do seu iFood muda sozinho quando a cozinha enche",
     description: "A extensão olha a fila da sua cozinha e escreve o prazo certo no iFood e no 99Food. Sem abrir o portal.",
@@ -32,7 +32,9 @@ export const metadata: Metadata = {
  *   - texto em linguagem de cozinha, não de software (o fator com maior
  *     efeito medido em conversão de landing: leitura simples converte muito
  *     mais que texto profissional);
- *   - preço no topo, porque em R$ 49,90 o preço é o argumento, não a objeção;
+ *   - preço no topo, porque em R$ 29,90 o preço é o argumento, não a objeção. O
+ *     alvo declarado pelo dono (09/09/2026) é uma mensalidade que o lojista
+ *     esquece que paga: R$ 1,00 por dia, menos que um pedido perdido;
  *   - um só botão, repetido, sempre com o mesmo texto;
  *   - a demonstração do produto acima da dobra, não descrição dele;
  *   - a objeção "o iFood já faz isso" respondida de frente, com o que a
@@ -100,9 +102,9 @@ export default function PrazosLanding() {
           </p>
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
-            <Botao>Assinar por R$ 49,90/mês</Botao>
+            <Botao>Assinar por R$ 29,90/mês</Botao>
             <div style={{ color: "#CBD5E1", fontSize: ".95rem" }}>
-              <b style={{ color: "#fff" }}>R$ 49,90 por mês.</b> Dá R$ 1,66 por dia.
+              <b style={{ color: "#fff" }}>R$ 29,90 por mês.</b> Dá R$ 1,00 por dia.
             </div>
           </div>
           <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 30 }}>
@@ -331,7 +333,7 @@ export default function PrazosLanding() {
             ))}
           </div>
           <div style={{ marginTop: 24, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-            <Botao>Assinar por R$ 49,90/mês</Botao>
+            <Botao>Assinar por R$ 29,90/mês</Botao>
             <a href="/prazos/demo" style={{ color: "#475569", fontSize: ".95rem", textDecoration: "underline" }}>
               Quer ver antes? Temos um painel de teste para você marcar uma coluna.
             </a>
@@ -443,11 +445,15 @@ export default function PrazosLanding() {
       {/* ─────────── PREÇO ─────────── */}
       <section id="assinar" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#fff" }}>
         <div style={secao}>
-          <h2 style={{ ...h2, textAlign: "center", color: "#fff" }}>R$ 49,90 por mês</h2>
-          <p style={{ color: "#CBD5E1", textAlign: "center", maxWidth: 620, margin: "0 auto 26px", lineHeight: 1.6 }}>
-            Com ticket de R$ 55, <b style={{ color: "#fff" }}>um único pedido perdido por atraso já custa quase
-            a mensalidade inteira</b> — R$ 46,64 do que o iFood ia te repassar. Se você tem mais de uma loja,
-            cada loja a mais sai por R$ 9,90.
+          <h2 style={{ ...h2, textAlign: "center", color: "#fff" }}>R$ 29,90 por mês. R$ 1,00 por dia.</h2>
+          <p style={{ color: "#CBD5E1", textAlign: "center", maxWidth: 640, margin: "0 auto 26px", lineHeight: 1.65 }}>
+            Com ticket de R$ 55, <b style={{ color: "#fff" }}>um único pedido perdido por atraso custa R$ 46,64</b>{" "}
+            do que o iFood ia te repassar — <b style={{ color: "#fff" }}>uma mensalidade e meia</b>. Um pedido
+            no mês inteiro já paga a extensão com folga.
+            <br />
+            <span style={{ fontSize: ".95rem" }}>
+              Cada loja a mais sai por R$ 9,90, e vale para as duas plataformas: mais uma no iFood e mais uma no 99Food.
+            </span>
           </p>
           <SeletorDePlano />
         </div>
@@ -565,14 +571,14 @@ export default function PrazosLanding() {
         <div style={{ ...secao, textAlign: "center" }}>
           <h2 style={{ ...h2, color: "#fff" }}>Hoje à noite o prazo já pode estar certo</h2>
           <p style={{ color: "#CBD5E1", maxWidth: 560, margin: "0 auto 24px", lineHeight: 1.6 }}>
-            R$ 49,90 por mês, 7 dias de garantia e sem fidelidade. O acesso chega no seu e-mail em
+            R$ 29,90 por mês, 7 dias de garantia e sem fidelidade. O acesso chega no seu e-mail em
             segundos.
           </p>
-          <Botao style={{ fontSize: "1.15rem", padding: "18px 36px" }}>Assinar por R$ 49,90/mês</Botao>
+          <Botao style={{ fontSize: "1.15rem", padding: "18px 36px" }}>Assinar por R$ 29,90/mês</Botao>
           <div style={{ color: "#94A3B8", fontSize: ".82rem", marginTop: 16 }}>
             Pagamento pela Cakto · cartão ou Pix · 7 dias de garantia
             <br />
-            A Cakto soma R$ 0,99 de taxa de serviço no checkout: o total dessa cobrança fica R$ 50,89.
+            A Cakto soma R$ 0,99 de taxa de serviço no checkout: o total dessa cobrança fica R$ 30,89.
           </div>
         </div>
       </section>

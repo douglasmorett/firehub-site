@@ -24,7 +24,7 @@ import { CHECKOUT_PADRAO } from "./planos";
  */
 
 const REPASSE = 1 - 0.12 - 0.032; // 84,8% — Plano Básico, pedido pago pelo app
-const MENSALIDADE = 49.9;
+const MENSALIDADE = 29.9;
 
 const real = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -129,7 +129,7 @@ export default function CalculadoraDePerda() {
           boxShadow: "0 10px 28px rgba(255,87,34,.3)",
         }}
       >
-        Assinar por R$ 49,90/mês
+        Assinar por R$ 29,90/mês
       </a>
     </div>
   );
