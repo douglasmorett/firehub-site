@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import PassoAPasso from "./PassoAPasso";
 
 export const metadata: Metadata = {
   title: "Instalar o FireHub Prazos",
@@ -17,7 +18,6 @@ export const metadata: Metadata = {
  */
 
 const LOJA = "https://chromewebstore.google.com/detail/pkkcnkbkacfiojiapodplkbkmdhhnjag";
-const ZIP = "https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip";
 
 export default function InstalarPage() {
   const p: React.CSSProperties = { color: "#475569", lineHeight: 1.65, margin: "10px 0 0" };
@@ -41,19 +41,12 @@ export default function InstalarPage() {
 
         <details style={{ marginTop: 22, textAlign: "left", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: "12px 14px" }}>
           <summary style={{ cursor: "pointer", fontWeight: 800, color: "#475569" }}>
-            A loja disse "item não encontrado"?
+            A loja disse "item não encontrado"? Instale pelo arquivo (2 minutos)
           </summary>
-          <div style={{ color: "#475569", lineHeight: 1.7, fontSize: ".93rem", marginTop: 10 }}>
-            A ficha ainda está em análise no Google. Enquanto isso dá para instalar pelo arquivo:
-            <ol style={{ paddingLeft: "1.2rem", margin: "8px 0 0" }}>
-              <li><a href={ZIP} style={{ color: "#C2410C", fontWeight: 700 }}>Baixe a extensão</a> e descompacte numa pasta.</li>
-              <li>No Chrome, abra <code>chrome://extensions</code>, ligue o <b>Modo do desenvolvedor</b> e clique em <b>Carregar sem compactação</b>, escolhendo a pasta.</li>
-              <li>Volte ao e-mail e clique em <b>2. Ativar minha conta</b>.</li>
-            </ol>
-            <div style={{ marginTop: 8, color: "#64748B" }}>
-              Quando a loja liberar, a gente te avisa para trocar pela instalação de um clique — ela se atualiza sozinha.
-            </div>
+          <div style={{ color: "#475569", fontSize: ".93rem", marginTop: 6 }}>
+            A ficha ainda está em análise no Google. Enquanto isso, são cinco passos, um clique cada:
           </div>
+          <PassoAPasso />
         </details>
       </div>
 
