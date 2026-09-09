@@ -49,6 +49,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             select: {
               id: true, quantity: true, price: true, productName: true,
               tableGuestId: true,
+              // As escolhas do combo entram na linha da conta: "Carne moida
+              // com Catupiry (2x Tradicional)". Sem isso o papel dizia "1x".
+              comboSelections: true,
               menuProduct: { select: { name: true } },
             },
           },
@@ -70,8 +73,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     select: { id: true, name: true },
   });
 
+  // Mesma escada da tela das mesas: comissão do garçom, senão a taxa padrão
+  // da LOJA (User.taxaServicoPadrao), senão 10. Antes o último degrau era 10
+  // cravado, e a casa que cobra 12% imprimia 10% quando a mesa não tinha
+  // garçom vinculado.
+  const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { taxaServicoPadrao: true } });
+  const taxaDaLoja = sanearTaxa(loja?.taxaServicoPadrao, TAXA_PADRAO);
   const taxaDoGarcom = mesa.waiter?.commissionRate;
-  const taxaPadrao = taxaDoGarcom !== null && taxaDoGarcom !== undefined ? sanearTaxa(taxaDoGarcom, TAXA_PADRAO) : TAXA_PADRAO;
+  const taxaPadrao = taxaDoGarcom !== null && taxaDoGarcom !== undefined ? sanearTaxa(taxaDoGarcom, taxaDaLoja) : taxaDaLoja;
   const taxaPct = sanearTaxa(body?.taxa, taxaPadrao);
   const gorjeta =
     body?.gorjeta !== undefined && body?.gorjeta !== null && body?.gorjeta !== ""

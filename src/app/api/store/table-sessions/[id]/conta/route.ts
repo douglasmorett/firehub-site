@@ -36,6 +36,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             select: {
               id: true, quantity: true, price: true, productName: true,
               tableGuestId: true,
+              // As escolhas do combo: é nelas que mora "2 pastéis" na Pastel
+              // da Paulista. Sem elas a conta diz "1x" onde há dois.
+              comboSelections: true,
               menuProduct: { select: { name: true } },
             },
           },

@@ -21,6 +21,8 @@
  * centavo para sempre.
  */
 
+import { parseComboSelections } from "./parse-combo";
+
 const emCentavos = (v: number) => Math.round((Number(v) || 0) * 100);
 const emReais = (c: number) => Math.round(c) / 100;
 
@@ -30,7 +32,27 @@ export type ItemDaMesaParaConta = {
   productName?: string | null;
   tableGuestId?: string | null;
   menuProduct?: { name?: string | null } | null;
+  /** As escolhas do combo, no formato que estiver gravado. */
+  comboSelections?: unknown;
 };
+
+/**
+ * Nome da linha com as escolhas do combo. Na Pastel da Paulista o sabor e o
+ * tamanho do pastel moram nas OPÇÕES, com quantidade na opção: "2 pastéis
+ * tradicionais" é UM item de quantidade 1 com "Tradicional ×2" dentro. A
+ * conta impressa mostrava só "1x Carne moida com Catupiry R$ 71,60", e o
+ * cliente lia um pastel onde havia dois. A comanda da cozinha já imprime as
+ * opções com "2x"; a conta precisa dizer a mesma coisa.
+ */
+function nomeDaLinha(item: ItemDaMesaParaConta): string {
+  const base = item.productName || item.menuProduct?.name || "Item";
+  const escolhas = parseComboSelections(item.comboSelections, 1);
+  if (escolhas.length === 0) return base;
+  const detalhe = escolhas
+    .map((e) => (e.quantity > 1 ? `${e.quantity}x ${e.name}` : e.name))
+    .join(", ");
+  return `${base} (${detalhe})`;
+}
 
 export type PedidoDaMesaParaConta = {
   status: string;
@@ -97,7 +119,7 @@ export function calcularContaDaMesa(
       somaDosItens += valor;
 
       const linha: LinhaDaConta = {
-        nome: item.productName || item.menuProduct?.name || "Item",
+        nome: nomeDaLinha(item),
         quantidade: item.quantity,
         valor: emReais(valor),
       };

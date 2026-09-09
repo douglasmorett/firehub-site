@@ -414,9 +414,17 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
 
   const defaultMinutes = isTakeoutOrder ? 40 : 45;
 
-  const deadline = isRealScheduled
-    ? new Date(order.scheduledDatetime)
-    : new Date(createdTime + defaultMinutes * 60000);
+  // Mesa não tem prazo. O pedido fica "em preparo" enquanto a mesa estiver
+  // aberta — uma hora, duas — e isso não é atraso, é gente comendo. Com o
+  // prazo de 45 min do delivery aplicado a ele, o painel pintava toda mesa
+  // de vermelho com "-70min atrasado" e o dono achava que o pedido estava
+  // travado. Sem prazo, o cartão mostra o tempo na mesa e nunca "atrasado".
+  const ehMesa = order.deliveryType === "MESA";
+  const deadline = ehMesa
+    ? null
+    : isRealScheduled
+      ? new Date(order.scheduledDatetime)
+      : new Date(createdTime + defaultMinutes * 60000);
   const remainingMs = deadline ? deadline.getTime() - now.getTime() : null;
   const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
 
@@ -440,11 +448,14 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   const isLate = !isFinished && remainingMins !== null && remainingMins < 0;
   const isUrgent = !isFinished && remainingMins !== null && remainingMins <= 5 && remainingMins >= 0;
 
+  const decorrido = elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`;
   const timerLabel = isFinished
-    ? (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`)
+    ? decorrido
     : remainingMins !== null
       ? (isLate ? `⚠️ -${Math.abs(remainingMins)}min atrasado` : `⏱️ ${remainingMins}min restante${remainingMins !== 1 ? "s" : ""}`)
-      : (elapsedMins < 60 ? `${elapsedMins}min` : `${Math.floor(elapsedMins / 60)}h${elapsedMins % 60}min`);
+      : ehMesa
+        ? `🍽️ ${decorrido} na mesa`
+        : decorrido;
   const timerColor = isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#64748B";
 
   const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";

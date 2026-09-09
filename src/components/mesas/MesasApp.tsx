@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { parseComboSelections } from "@/lib/parse-combo";
 import { useRouter } from "next/navigation";
 import ComboModal from "@/components/customer/ComboModal";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
@@ -52,6 +53,8 @@ interface SessionOrder {
     menuProduct: { name: string };
     /** Quem, na mesa, pediu este item. Nulo = lançado para a mesa toda. */
     tableGuestId?: string | null;
+    /** Escolhas do combo. É aqui que mora "2 pastéis" na Pastel da Paulista. */
+    comboSelections?: unknown;
   }[];
 }
 
@@ -2032,6 +2035,19 @@ export default function MesasApp({
                           )}
                           <span style={{ minWidth: 0 }}>
                             {item.menuProduct.name} — {fmt(item.price * item.quantity)}
+                            {/* As escolhas do combo, com quantidade. Na Pastel da
+                                Paulista "2 pastéis tradicionais" é UM item com
+                                "Tradicional ×2" dentro: a tela dizia "1x" e o
+                                garçom lia um pastel onde havia dois. */}
+                            {(() => {
+                              const escolhas = parseComboSelections(item.comboSelections, 1);
+                              if (escolhas.length === 0) return null;
+                              return (
+                                <span style={{ display: "block", fontSize: 11, color: "#7C3AED", fontWeight: 700, marginTop: 1 }}>
+                                  {escolhas.map((e) => (e.quantity > 1 ? `${e.quantity}x ${e.name}` : e.name)).join(" · ")}
+                                </span>
+                              );
+                            })()}
                             <span style={{
                               marginLeft: 6, fontSize: 11, fontWeight: 700,
                               color: item.tableGuestId ? "#0369A1" : "#94A3B8",
