@@ -196,9 +196,10 @@ alguns dias a duas semanas.
 - **Link de instalação:** <https://chromewebstore.google.com/detail/pkkcnkbkacfiojiapodplkbkmdhhnjag>
 - **Painel:** <https://chrome.google.com/u/3/webstore/devconsole/529cf443-6bd1-4aad-8d41-e6e9c252a297/pkkcnkbkacfiojiapodplkbkmdhhnjag/edit>
 
-Esse ID já está em `src/app/prazos/ativar/AtivacaoClient.tsx` (botão "Instalar no Chrome")
-e precisa entrar em `LINK_DA_EXTENSAO` (`src/app/api/prazos/cakto/route.ts`) quando a ficha
-for aprovada, no lugar do zip.
+Esse ID está em `src/app/prazos/ativar/AtivacaoClient.tsx` (botão "Instalar no Chrome") e em
+`src/app/prazos/instalar/page.tsx`. O e-mail da compra (`LINK_DA_EXTENSAO` em
+`src/app/api/prazos/cakto/route.ts`) aponta para `/prazos/instalar`, que é nossa — assim o e-mail já
+enviado continua certo quando a ficha for aprovada.
 
 ## Armadilhas do formulário (vividas em 09/09/2026)
 

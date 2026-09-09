@@ -114,11 +114,17 @@ export default function PrazosAdminClient() {
 
       {/* ── Como instalar / o que dizer ao piloto ───────────────────────── */}
       <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: "1.25rem", fontSize: ".85rem", lineHeight: 1.6 }}>
-        <div style={{ fontWeight: 800, color: "#9A3412", marginBottom: 4 }}>Como o piloto instala (mandar junto com e-mail e senha)</div>
+        <div style={{ fontWeight: 800, color: "#9A3412", marginBottom: 4 }}>Como o lojista instala (quem compra pela Cakto recebe isto por e-mail, com dois botões)</div>
         <ol style={{ margin: 0, paddingLeft: "1.2rem", color: "#7C2D12" }}>
-          <li>Baixar <a href={ZIP} style={{ fontWeight: 800 }}>{ZIP.replace("https://", "")}</a> e descompactar numa pasta.</li>
-          <li>No Chrome: <code>chrome://extensions</code> → ligar <b>Modo do desenvolvedor</b> → <b>Carregar sem compactação</b> → escolher a pasta.</li>
-          <li>Fixar o ícone 🔥, entrar com e-mail e senha da conta abaixo.</li>
+          <li>
+            <b>Instalar:</b> <a href="https://firehubfood.com.br/prazos/instalar" style={{ fontWeight: 800 }}>firehubfood.com.br/prazos/instalar</a> manda
+            para a Chrome Web Store (item <code>pkkcnkbkacfiojiapodplkbkmdhhnjag</code>). Enquanto a ficha estiver em análise, a mesma
+            página oferece o arquivo: <a href={ZIP} style={{ fontWeight: 800 }}>zip</a> → descompactar → <code>chrome://extensions</code> → Modo do desenvolvedor → Carregar sem compactação.
+          </li>
+          <li>
+            <b>Ativar:</b> o e-mail da compra traz o link <code>/prazos/ativar?t=…</code>. Um clique e a extensão entra sozinha, sem senha.
+            Conta criada aqui à mão <b>não tem esse link</b> — o piloto entra pelo ícone 🔥 com e-mail e senha.
+          </li>
           <li>Abrir o painel de pedidos do sistema dele (Saipos, Cardápio Web…) e clicar <b>Marcar coluna</b> na extensão, em cada coluna que conta pedido na cozinha (ex.: "Em preparo" e "Pronto").</li>
           <li>Deixar abertos e logados o <b>Portal do Parceiro</b> e/ou o <b>99Food Admin</b> na conta das lojas, e marcar na extensão <b>quais lojas</b> mudam de prazo. Todas as lojas têm que estar no mesmo login.</li>
         </ol>
