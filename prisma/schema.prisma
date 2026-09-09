@@ -100,6 +100,11 @@ model User {
   /// É um segredo por loja: dá acesso de escrita ao Gerenciador de Eventos
   /// dela. Nunca sai numa resposta de API para o navegador.
   metaCapiToken     String?        @db.Text
+  /// Taxa de serviço padrão das mesas, em porcentagem. Nulo = 10, o costume da
+  /// casa. Existe porque o valor vivia cravado em 10 no componente das mesas:
+  /// a loja que cobra 12% redigitava a cada fechamento, e redigitar é onde o
+  /// erro entra. Coluna criada no boot por garantir-colunas.ts.
+  taxaServicoPadrao Float?
   // Cota de imagens geradas por IA para anúncio. O pacote de R$50/semana
   // inclui 10 gerações; sem teto, um lojista indeciso clicando "gerar outra"
   // consumiria boa parte da margem sozinho (cada imagem custa ~R$0,21).

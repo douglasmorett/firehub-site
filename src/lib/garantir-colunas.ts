@@ -344,6 +344,11 @@ const INSTRUCOES_LOTES = [
   // O que a loja mostra na barra do painel de pedidos. Ausente = tudo ligado.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "painelPedidosConfig" JSONB`,
 
+  // Taxa de serviço padrão da loja, em porcentagem. Antes vivia como 10
+  // cravado no componente das mesas: a loja que cobra 12% redigitava a cada
+  // fechamento, e redigitar é onde o erro entra. Nulo = 10, que é o costume.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "taxaServicoPadrao" DOUBLE PRECISION`,
+
   // Token da API de Conversões do Meta. Sem ele a venda só existe pelo pixel do
   // navegador, que perde de 30% a 50% dos eventos.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "metaCapiToken" TEXT`,

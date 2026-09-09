@@ -60,7 +60,18 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ tables: formattedTables });
+    // A taxa de serviço cadastrada acompanha a lista: a tela da mesa precisa
+    // dela para mostrar o total COM taxa antes de o garçom abrir o fechamento.
+    // Nulo = 10, que é o costume da casa.
+    const loja = await prisma.user.findUnique({
+      where: { id: targetFranchiseeId },
+      select: { taxaServicoPadrao: true },
+    });
+
+    return NextResponse.json({
+      tables: formattedTables,
+      taxaServicoPadrao: loja?.taxaServicoPadrao ?? 10,
+    });
   } catch (error: any) {
     console.error("[Tables GET]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -129,6 +140,18 @@ export async function PUT(req: NextRequest) {
 
     const data = await req.json();
     const { id, number, label, capacity, isActive } = data;
+
+    // Sem id e com taxa: não é mesa, é a taxa de serviço padrão da loja. Fica
+    // aqui porque é a tela das mesas que a edita, no mesmo lugar onde o erro
+    // de digitar acontecia.
+    if (!id && data.taxaServicoPadrao !== undefined) {
+      const pct = Math.max(0, Math.min(100, Number(data.taxaServicoPadrao) || 0));
+      await prisma.user.update({
+        where: { id: targetFranchiseeId },
+        data: { taxaServicoPadrao: pct },
+      });
+      return NextResponse.json({ taxaServicoPadrao: pct });
+    }
 
     if (!id) return NextResponse.json({ error: "Table ID is required" }, { status: 400 });
 

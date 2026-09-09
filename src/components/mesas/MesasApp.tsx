@@ -362,7 +362,13 @@ export default function MesasApp({
   const [comandaAberta, setComandaAberta] = useState(false);
 
   // Close form
+  // A taxa começa no que a LOJA tem cadastrado (GET /api/store/tables). Antes
+  // era 10 cravado aqui: a casa que cobra 12% redigitava a cada fechamento, e
+  // redigitar na frente do cliente é onde o erro entra.
   const [serviceFee, setServiceFee] = useState(10);
+  const [taxaSalva, setTaxaSalva] = useState(10);
+  /** Espelho da taxa salva, para o refresh não apagar o que o garçom digitou. */
+  const taxaSalvaRef = useRef(10);
   const [useServiceFee, setUseServiceFee] = useState(true);
   const [waiterTip, setWaiterTip] = useState(0);
 
@@ -382,6 +388,13 @@ export default function MesasApp({
       if (res.ok) {
         const data = await res.json();
         setTables(data.tables || []);
+        if (typeof data.taxaServicoPadrao === "number") {
+          setTaxaSalva(data.taxaServicoPadrao);
+          // Só encosta no campo enquanto o garçom não mexeu nele, senão o
+          // refresh de 10 em 10 segundos apagaria o que ele acabou de digitar.
+          setServiceFee((atual) => (atual === taxaSalvaRef.current ? data.taxaServicoPadrao : atual));
+          taxaSalvaRef.current = data.taxaServicoPadrao;
+        }
       }
     } catch { /* silent */ } finally {
       setLoading(false);
@@ -783,12 +796,13 @@ export default function MesasApp({
   /** Abre o fechamento e busca a conta já rateada pelo servidor. */
   /**
    * Taxa de serviço sugerida: a comissão cadastrada do garçom da mesa (aba
-   * Garçons). Sem garçom vinculado, ou sem comissão, 10% — o que a casa
-   * costuma cobrar. O gerente pode mudar no modal; aqui é só o ponto de
-   * partida, para não ter que lembrar de cabeça a taxa de cada garçom.
+   * Garçons). Sem garçom vinculado, ou sem comissão, cai na taxa padrão da
+   * LOJA — antes caía em 10 cravado, e a casa que cobra 12% redigitava a cada
+   * fechamento. O gerente pode mudar no modal ou na própria tela da mesa;
+   * aqui é só o ponto de partida.
    */
   const taxaSugeridaDaMesa = (t: TableItem | null): number => {
-    const padrao = 10;
+    const padrao = taxaSalva;
     // 0% é comissão válida (garçom de salário fixo); só nulo/inválido cai no padrão.
     const valida = (v: unknown) => v != null && Number.isFinite(Number(v)) ? Number(v) : null;
     if (ehGarcom) return valida(garcom?.commissionRate) ?? padrao;
@@ -1749,6 +1763,7 @@ export default function MesasApp({
                         fontWeight: 600,
                       }}>
                         {table.openSession!.orderCount} ped. · {elapsed(table.openSession!.openedAt)}
+                        {useServiceFee && serviceFee > 0 ? ` · +${serviceFee}%` : ""}
                       </span>
                     </>
                   ) : (
@@ -2099,12 +2114,72 @@ export default function MesasApp({
               padding: "14px 18px", borderTop: "2px solid #E2E8F0",
               background: "#FAFAFE",
             }}>
+              {/* Consumo, taxa e total — na tela, não só no papel.
+                  A mesa mostrava "Total 60,00" e a comanda saía 66,00 porque a
+                  taxa de 10% só entrava no fechamento. O caixa cobrava um
+                  número que a tela nunca tinha mostrado. Agora os três aparecem
+                  aqui, e a taxa se muda ou se desmarca no mesmo lugar. */}
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#475569" }}>
+                <span>Consumo</span>
+                <span style={{ fontWeight: 700 }}>{fmt(sessionTotal)}</span>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#475569", marginTop: 6, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={useServiceFee}
+                  onChange={e => setUseServiceFee(e.target.checked)}
+                  style={{ accentColor: "#7C3AED", width: 16, height: 16 }}
+                />
+                Taxa de serviço
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={serviceFee}
+                  onChange={e => setServiceFee(Number(e.target.value))}
+                  disabled={!useServiceFee}
+                  style={{
+                    width: 48, padding: "3px 6px", borderRadius: 6, border: "1px solid #E2E8F0",
+                    textAlign: "center", fontFamily: "inherit", fontSize: 13,
+                    background: useServiceFee ? "#fff" : "#F1F5F9",
+                  }}
+                />%
+                <span style={{ marginLeft: "auto", fontWeight: 700, color: useServiceFee ? "#D97706" : "#94A3B8" }}>
+                  {useServiceFee ? fmt(sessionTotal * serviceFee / 100) : "sem taxa"}
+                </span>
+              </label>
+              {!ehGarcom && useServiceFee && serviceFee !== taxaSalva && (
+                <button
+                  onClick={async () => {
+                    const r = await chamar("/api/store/tables", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ taxaServicoPadrao: serviceFee }),
+                    });
+                    if (r.ok) {
+                      setTaxaSalva(serviceFee);
+                      taxaSalvaRef.current = serviceFee;
+                      showToast(`✅ ${serviceFee}% virou a taxa padrão da loja`);
+                    }
+                  }}
+                  style={{
+                    marginTop: 6, width: "100%", padding: "6px", borderRadius: 8,
+                    border: "1px dashed #7C3AED", background: "#FAF5FF", color: "#7C3AED",
+                    fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >
+                  Salvar {serviceFee}% como padrão da loja (hoje: {taxaSalva}%)
+                </button>
+              )}
               <div style={{
                 display: "flex", justifyContent: "space-between",
                 fontSize: 20, fontWeight: 900, color: "#0F172A",
+                marginTop: 8, paddingTop: 8, borderTop: "1px solid #E2E8F0",
               }}>
                 <span>Total</span>
-                <span style={{ color: "#7C3AED" }}>{fmt(sessionTotal)}</span>
+                <span style={{ color: "#7C3AED" }}>
+                  {fmt(sessionTotal + (useServiceFee ? sessionTotal * serviceFee / 100 : 0))}
+                </span>
               </div>
               <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
                 {selectedTable.openSession.orderCount} pedido{selectedTable.openSession.orderCount !== 1 ? "s" : ""} · Aberta há {elapsed(selectedTable.openSession.openedAt)}
