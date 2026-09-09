@@ -63,8 +63,8 @@ export default function KanbanDeDemonstracao() {
           <div style={{ color: "#CBD5E1", fontSize: ".95rem", lineHeight: 1.55, maxWidth: 720 }}>
             Este é um painel de pedidos de mentira, para você testar a extensão sem precisar de loja.
             Abra o popup do FireHub Prazos, clique em <b style={{ color: "#fff" }}>Marcar coluna na aba atual</b> e
-            clique na coluna <b style={{ color: "#fff" }}>Em preparo</b>. Depois use os botões abaixo para
-            encher e esvaziar a cozinha, e veja a contagem mudar no popup.
+            depois clique no <b style={{ color: "#fff" }}>cabeçalho da coluna do meio</b>, ali onde fica o
+            número. Use os botões abaixo para encher e esvaziar a cozinha e veja a contagem mudar no popup.
           </div>
         </div>
       </div>
@@ -85,6 +85,9 @@ export default function KanbanDeDemonstracao() {
           </button>
         </div>
 
+        <div style={{ color: "#475569", fontSize: ".9rem", fontWeight: 700, marginBottom: 8 }}>
+          👇 Com o modo de marcação ligado, clique no cabeçalho de uma destas colunas
+        </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {[
             { titulo: "Novos", lista: novos },
@@ -92,7 +95,7 @@ export default function KanbanDeDemonstracao() {
             { titulo: "Saiu para entrega", lista: entrega },
           ].map((c) => (
             <div key={c.titulo} style={coluna}>
-              <div style={cabecalho}>
+              <div style={{ ...cabecalho, cursor: "pointer" }} title="Clique aqui para marcar esta coluna na extensão">
                 <span>{c.titulo}</span>
                 <span style={contador}>{c.lista.length}</span>
               </div>

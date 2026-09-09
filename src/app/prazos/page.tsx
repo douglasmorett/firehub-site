@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import DemoAoVivo from "./DemoAoVivo";
+import CalculadoraDePerda from "./CalculadoraDePerda";
 import { SeletorDePlano, BarraFixa } from "./Assinar";
 import { CHECKOUT_PADRAO } from "./planos";
 
@@ -102,7 +103,8 @@ export default function PrazosLanding() {
             </div>
           </div>
           <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 30 }}>
-            7 dias de garantia · sem fidelidade · funciona com o sistema de pedidos que você já tem
+            Leva 2 minutos e o acesso chega no seu e-mail na hora · 7 dias de garantia · sem fidelidade ·
+            funciona com o sistema de pedidos que você já tem
           </div>
 
           <DemoAoVivo />
@@ -143,6 +145,51 @@ export default function PrazosLanding() {
             metade do tempo.
           </div>
         </div>
+
+        <h3 style={{ fontSize: "1.15rem", fontWeight: 900, margin: "34px 0 10px" }}>
+          A mesma sexta-feira, duas vezes
+        </h3>
+        <p style={{ ...p, marginBottom: 6 }}>
+          Um exemplo de uma noite, com 3 motoboys na casa: mesma cozinha, mesmos pedidos, muda só quem
+          escreve o prazo. Os minutos em laranja são os mesmos da demonstração lá em cima — a tabela
+          que a extensão usa de verdade.
+        </p>
+        {/* Grade, não <table>: no celular a coluna que vende (a laranja) ficava
+            fora da tela atrás de uma rolagem lateral, e é justamente ela que
+            o lojista precisa ver. Aqui cada hora vira um cartão empilhado. */}
+        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+          {[
+            ["19h", "3 pedidos na cozinha", "sai em 22 min — você prometeu de menos e espantou quem tinha pressa", "28 min", "#15803D", "#DCFCE7"],
+            ["20h", "8 pedidos na cozinha", "sai em 41 min — atrasou 11, e o cliente já pode cancelar", "58 min", "#B45309", "#FEF3C7"],
+            ["21h", "14 pedidos na cozinha", "sai em 63 min — atrasou 33, e a nota vai junto", "78 min", "#B91C1C", "#FEE2E2"],
+            ["22h", "6 pedidos na cozinha", "sai em 34 min — no limite", "38 min", "#B45309", "#FEF3C7"],
+            ["23h", "3 pedidos na cozinha", "sai em 24 min — de novo prometendo demais", "28 min", "#15803D", "#DCFCE7"],
+          ].map(([hora, fila, fixo, novo, cor, fundo]) => (
+            <div key={hora} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 13, padding: "12px 14px" }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline", marginBottom: 8 }}>
+                <span style={{ fontWeight: 900, fontSize: "1.05rem" }}>{hora}</span>
+                <span style={{ color: "#64748B", fontSize: ".92rem" }}>{fila}</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 11px" }}>
+                  <div style={{ fontSize: ".7rem", fontWeight: 800, color: "#94A3B8", letterSpacing: ".3px", marginBottom: 3 }}>PRAZO FIXO DE 30 MIN</div>
+                  <div style={{ color: "#475569", lineHeight: 1.5, fontSize: ".93rem" }}>{fixo}</div>
+                </div>
+                <div style={{ background: fundo, border: `1px solid ${cor}33`, borderRadius: 10, padding: "9px 11px" }}>
+                  <div style={{ fontSize: ".7rem", fontWeight: 800, color: "#B45309", letterSpacing: ".3px", marginBottom: 3 }}>🔥 COM A EXTENSÃO</div>
+                  <div style={{ fontWeight: 900, color: cor, fontSize: "1.15rem", lineHeight: 1.3 }}>{novo}</div>
+                  <div style={{ color: "#475569", fontSize: ".85rem" }}>é o que a fila aguenta</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p style={{ ...p, marginTop: 12, marginBottom: 0 }}>
+          Repare nas pontas: prazo fixo erra dos <b>dois</b> lados. Promete demais no pico e promete de menos
+          com a cozinha vazia — e aí quem estava com fome escolhe a loja do lado, que disse 25 minutos.
+        </p>
+
+        <CalculadoraDePerda />
       </section>
 
 
@@ -176,6 +223,88 @@ export default function PrazosLanding() {
                 Está escrito no blog de parceiros deles
               </a>.
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─────────── A REGRA É DELAS, NÃO NOSSA ───────────
+          Todas as frases entre aspas aqui foram conferidas na página oficial
+          no dia 08/09/2026, uma por uma. Nada de citação de segunda mão: se um
+          dia sair do ar ou mudar, esta seção muda junto. */}
+      <section style={secao}>
+        <h2 style={h2}>A gente não inventou esse problema. Quem escreveu foi o iFood e o 99</h2>
+        <p style={p}>
+          Não precisa acreditar na nossa palavra. Está tudo publicado por elas, e dá para conferir agora,
+          nos links de cada frase.
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 16, marginTop: 20 }}>
+          <div style={{ ...card, borderLeft: `4px solid ${LARANJA}` }}>
+            <div style={{ fontWeight: 900, marginBottom: 10 }}>O relógio do atraso, no iFood</div>
+            <blockquote style={{ margin: "0 0 10px", color: "#0F172A", lineHeight: 1.6, fontStyle: "italic" }}>
+              "Se o pedido for em restaurante e o atraso ultrapassar 10 minutos do prazo estimado durante a
+              preparação, é considerado atrasado."
+            </blockquote>
+            <div style={{ color: "#475569", lineHeight: 1.6, fontSize: ".95rem" }}>
+              A partir daí o cliente tem, no próprio aplicativo, o caminho para cancelar e pedir o dinheiro
+              de volta. E repare contra o que o relógio corre: <b>o prazo que a sua loja publicou</b>.
+            </div>
+            <a href="https://institucional.ifood.com.br/ajuda/problemas-com-o-pedido-ifood/" target="_blank" rel="noopener" style={{ color: LARANJA, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
+              Página de ajuda do iFood ↗
+            </a>
+          </div>
+
+          <div style={{ ...card, borderLeft: `4px solid ${LARANJA}` }}>
+            <div style={{ fontWeight: 900, marginBottom: 10 }}>Errar para cima também custa</div>
+            <blockquote style={{ margin: "0 0 10px", color: "#0F172A", lineHeight: 1.6, fontStyle: "italic" }}>
+              "Caso muitos entregadores fiquem esperando pelos pedidos, é um sinal de que seu tempo de preparo
+              não está equilibrado" — e "a loja pode ser fechada no iFood em caso de muitos entregadores
+              esperando".
+            </blockquote>
+            <div style={{ color: "#475569", lineHeight: 1.6, fontSize: ".95rem" }}>
+              Ou seja: prazo travado no alto não é o lado seguro. É o outro jeito de errar.
+            </div>
+            <a href="https://blog-parceiros.ifood.com.br/tempo-de-preparo/" target="_blank" rel="noopener" style={{ color: LARANJA, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
+              Blog de parceiros do iFood ↗
+            </a>
+          </div>
+
+          <div style={{ ...card, borderLeft: `4px solid ${LARANJA}` }}>
+            <div style={{ fontWeight: 900, marginBottom: 10 }}>No 99Food, os dois lados na mesma página</div>
+            <blockquote style={{ margin: "0 0 10px", color: "#0F172A", lineHeight: 1.6, fontStyle: "italic" }}>
+              "Tempo menor que o real: pode causar atrasos, avaliações negativas ou cancelamentos."
+              <br />
+              "Tempo maior que o real: pode afastar clientes, reduzir pedidos e impactar seus ganhos".
+            </blockquote>
+            <div style={{ color: "#475569", lineHeight: 1.6, fontSize: ".95rem" }}>
+              E a mesma página diz para que serve esse número: <i>"Ele será usado para calcular o prazo de
+              entrega exibido aos seus clientes."</i>
+            </div>
+            <a href="https://99app.com/99food/restaurantes/guias/como-configurar-o-tempo-de-preparo/" target="_blank" rel="noopener" style={{ color: LARANJA, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
+              Guia oficial do 99Food ↗
+            </a>
+          </div>
+
+          <div style={{ ...card, borderLeft: `4px solid ${LARANJA}` }}>
+            <div style={{ fontWeight: 900, marginBottom: 10 }}>Quanto de folga você tem</div>
+            <div style={{ color: "#475569", lineHeight: 1.7, fontSize: ".95rem" }}>
+              Para o <b>Selo Super Restaurante</b>, o iFood pede nota <b>≥ 4,7</b>, taxa de cancelamento
+              <b> ≤ 0,90%</b> e reclamações <b>≤ 1%</b>.
+              <div style={{ marginTop: 10, color: "#0F172A", fontWeight: 700 }}>
+                Com teto de 0,90%, um único cancelamento consome a folga que 111 pedidos bons construíram.
+              </div>
+            </div>
+            <a href="https://institucional.ifood.com.br/restaurantes/selo-super-do-ifood/" target="_blank" rel="noopener" style={{ color: LARANJA, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
+              Critérios do Selo Super ↗
+            </a>
+          </div>
+        </div>
+
+        <div style={{ ...card, marginTop: 18, background: "#0F172A", color: "#fff", border: "1px solid #334155" }}>
+          <div style={{ fontSize: "1.05rem", lineHeight: 1.7 }}>
+            As duas plataformas mandam você acertar o prazo, e as duas te punem quando ele está errado — para
+            cima ou para baixo. <b style={{ color: "#FF7A59" }}>Nenhuma das duas te dá uma mão para fazer isso
+            às 20h de sexta.</b> É essa mão.
           </div>
         </div>
       </section>
@@ -229,12 +358,13 @@ export default function PrazosLanding() {
                 ["Na mão, no portal", "Você olha a cozinha e digita", "Você, toda hora"],
                 ["Pré-configuração do iFood", "O horário que você programou", "Você programa; fora do horário volta ao padrão sozinho"],
                 ["Tempo de preparo por IA do iFood", "A média histórica da sua loja. Só no plano Entrega: no plano Básico não tem", "Ninguém, mas também não olha a fila de hoje"],
+                ["Extensão que negocia o atraso", "O pedido que já está atrasado, um por um", "Ninguém — mas o estrago já aconteceu"],
                 ["FireHub Prazos", "A fila que está na sua tela agora", "Ninguém"],
-              ].map(([a, b, c], i) => (
-                <tr key={a} style={{ borderTop: "1px solid #E2E8F0", background: i === 3 ? "#FFF7ED" : "#fff", fontWeight: i === 3 ? 700 : 400 }}>
-                  <td style={{ padding: "12px 14px" }}>{i === 3 ? "🔥 " : ""}{a}</td>
-                  <td style={{ padding: "12px 14px", color: i === 3 ? "#0F172A" : "#475569" }}>{b}</td>
-                  <td style={{ padding: "12px 14px", color: i === 3 ? "#0F172A" : "#475569" }}>{c}</td>
+              ].map(([a, b, c], i, arr) => (
+                <tr key={a} style={{ borderTop: "1px solid #E2E8F0", background: i === arr.length - 1 ? "#FFF7ED" : "#fff", fontWeight: i === arr.length - 1 ? 700 : 400 }}>
+                  <td style={{ padding: "12px 14px" }}>{i === arr.length - 1 ? "🔥 " : ""}{a}</td>
+                  <td style={{ padding: "12px 14px", color: i === arr.length - 1 ? "#0F172A" : "#475569" }}>{b}</td>
+                  <td style={{ padding: "12px 14px", color: i === arr.length - 1 ? "#0F172A" : "#475569" }}>{c}</td>
                 </tr>
               ))}
             </tbody>
@@ -245,20 +375,45 @@ export default function PrazosLanding() {
           Agenda não sabe que hoje faltou gente na chapa, que a promoção pegou, ou que entraram 14 pedidos
           em seis minutos. A fila na sua tela sabe.
         </p>
+        <p style={{ ...p, marginBottom: 0 }}>
+          E existe um caminho a mais, que é pedir mais tempo depois que o pedido já atrasou. Serve, mas é
+          remédio: o cliente já viu "seu pedido vai atrasar". <b>Escrever o prazo certo antes é não precisar
+          do remédio.</b>
+        </p>
       </section>
 
       {/* ─────────── 99FOOD ─────────── */}
       <section style={{ background: "#fff", borderTop: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F0" }}>
         <div style={secao}>
-          <h2 style={h2}>No 99Food também</h2>
+          <h2 style={h2}>No 99Food também, e lá é ainda mais direto</h2>
           <p style={p}>
-            No 99 o cliente vê o tempo de preparo somado ao tempo de entrega da área. A extensão mexe no
-            tempo de preparo, que é o que muda o que o cliente enxerga.
+            No 99 o cliente não vê "prazo": ele vê o <b>tempo de preparo somado ao tempo de entrega</b> da
+            faixa de distância que você cadastrou. Mexer na tabela de faixas é um parto. Mexer no tempo de
+            preparo muda o que o cliente enxerga na hora — e é exatamente aí que a extensão escreve.
           </p>
           <p style={p}>
-            A regra do 99 é separada da do iFood, porque a conta lá é outra. Você escolhe: seguir o iFood
-            descontando os minutos da entrega, ou escrever as suas faixas.
+            Quem diz isso é o próprio 99: o tempo de preparo <i>"será usado para calcular o prazo de entrega
+            exibido aos seus clientes"</i>. Tempo menor que o real gera atraso e cancelamento; maior, afasta
+            cliente. É o mesmo aperto do iFood, com outro nome.
           </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 14, marginTop: 18 }}>
+            <div style={{ ...card, padding: "1rem 1.15rem" }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>Você escolhe a regra do 99</div>
+              <div style={{ color: "#475569", lineHeight: 1.6, fontSize: ".95rem" }}>
+                Ou ela segue o iFood descontando os minutos da entrega, ou você escreve suas próprias faixas —
+                tantos pedidos na cozinha, tantos minutos de preparo. Configuração separada, porque a conta lá
+                é outra.
+              </div>
+            </div>
+            <div style={{ ...card, padding: "1rem 1.15rem" }}>
+              <div style={{ fontWeight: 900, marginBottom: 6 }}>O teto que a gente não esconde</div>
+              <div style={{ color: "#475569", lineHeight: 1.6, fontSize: ".95rem" }}>
+                A sua conta no 99 tem um tempo de preparo máximo — no geral, 30 minutos. Se a fila pedir mais
+                que isso, a extensão grava o máximo permitido e <b>avisa na tela</b> que segurou ali. Ela não
+                finge que deu certo.
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -287,8 +442,9 @@ export default function PrazosLanding() {
         <div style={secao}>
           <h2 style={{ ...h2, textAlign: "center", color: "#fff" }}>R$ 49,90 por mês</h2>
           <p style={{ color: "#CBD5E1", textAlign: "center", maxWidth: 620, margin: "0 auto 26px", lineHeight: 1.6 }}>
-            Um pedido cancelado por atraso custa mais que a mensalidade inteira. Se você tem mais de uma
-            loja, cada loja a mais sai por R$ 9,90.
+            Com ticket de R$ 55, <b style={{ color: "#fff" }}>um único pedido perdido por atraso já custa quase
+            a mensalidade inteira</b> — R$ 46,64 do que o iFood ia te repassar. Se você tem mais de uma loja,
+            cada loja a mais sai por R$ 9,90.
           </p>
           <SeletorDePlano />
         </div>
@@ -331,6 +487,10 @@ export default function PrazosLanding() {
                 <li>Anota pedido só no papel ou no WhatsApp</li>
                 <li>Não deixa computador ligado na loja</li>
                 <li>Tem lojas em logins separados do iFood</li>
+                <li>
+                  Precisa passar de 30 minutos de preparo no 99Food
+                  <span style={{ color: "#64748B", fontSize: ".88rem" }}> (é teto da plataforma, não nosso — no iFood não existe esse limite)</span>
+                </li>
               </ul>
             </div>
           </div>
@@ -371,8 +531,9 @@ export default function PrazosLanding() {
             ["Ela pode bagunçar minha loja?", "Ela só escreve o prazo de entrega. Não aceita, não recusa, não cancela e não pausa. E você desliga o robô num clique, quando quiser."],
             ["Extensão de Chrome é seguro? O que ela lê?", "Ela roda em três lugares: no seu painel de pedidos, no Portal do Parceiro e no 99Food Admin. Ela lê o número de pedidos da coluna que você marcou. Não lê senha, não lê suas outras abas e não vê nada de banco."],
             ["E se eu tiver várias lojas?", "Você marca na extensão quais lojas mudam de prazo. As que não marcar ficam como estão. Todas precisam estar no mesmo login do iFood, porque é dentro dele que ela troca de loja."],
+            ["O prazo do 99 é o mesmo do iFood?", "Não, e é de propósito. No 99 o cliente vê o tempo de preparo somado ao tempo de entrega da faixa que você cadastrou, então a extensão mexe só no preparo. Você configura essa regra separada: seguir o iFood descontando os minutos da entrega, ou escrever suas próprias faixas."],
+            ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa. E se cancelar dentro de 7 dias, o dinheiro volta inteiro."],
             ["E se eu deixar de pagar?", "Ela para de ajustar na hora e explica na tela por quê. Pagou de novo, volta sozinha. Sem ligação, sem cobrança chata."],
-            ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa."],
           ].map(([q, r]) => (
             <details key={q as string} style={{ borderBottom: "1px solid #E2E8F0", padding: "14px 0" }}>
               <summary style={{ fontWeight: 800, cursor: "pointer", fontSize: "1.03rem" }}>{q}</summary>
@@ -414,7 +575,7 @@ export default function PrazosLanding() {
       <footer style={{ textAlign: "center", color: "#94A3B8", fontSize: ".82rem", padding: "2.2rem 1rem", lineHeight: 1.8 }}>
         FireHub Prazos é um produto FireHub · <a href="https://firehubfood.com.br" style={{ color: "#64748B" }}>firehubfood.com.br</a> · contato@firehubfood.com.br
         <br />
-        <a href={ZIP} style={{ color: "#94A3B8" }}>Baixar a extensão</a> · <a href="/privacidade-extensao" style={{ color: "#94A3B8" }}>Política de privacidade</a>
+        <a href={ZIP} style={{ color: "#94A3B8" }}>Baixar a extensão</a> · <a href="/privacidade-prazos" style={{ color: "#94A3B8" }}>Política de privacidade</a>
         <br />
         <span style={{ fontSize: ".76rem" }}>
           Produto independente. Não somos iFood nem 99Food, e não temos vínculo com essas empresas.
