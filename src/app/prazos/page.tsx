@@ -6,7 +6,7 @@ import { CHECKOUT_PADRAO } from "./planos";
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
   description:
-    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 49,90 por mês, 30 dias de garantia.",
+    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 49,90 por mês, 7 dias de garantia.",
   openGraph: {
     title: "O prazo do seu iFood muda sozinho quando a cozinha enche",
     description: "A extensão olha a fila da sua cozinha e escreve o prazo certo no iFood e no 99Food. Sem abrir o portal.",
@@ -29,8 +29,11 @@ export const metadata: Metadata = {
  *   - a demonstração do produto acima da dobra, não descrição dele;
  *   - a objeção "o iFood já faz isso" respondida de frente, com o que a
  *     documentação do próprio iFood diz;
- *   - garantia de 30 dias em bloco próprio (7 dias é só o mínimo do CDC, e
- *     não contém um fim de semana cheio, que é quando o produto prova valor);
+ *   - garantia em bloco visual próprio, não em nota de rodapé. São 7 dias por
+ *     decisão do dono (08/09/2026), alinhados com o que está cadastrado na
+ *     Cakto — a pesquisa sugeria 30, mas o argumento dele venceu: um fim de
+ *     semana já basta para o lojista ver o produto trabalhando, e prazo curto
+ *     é mais fácil de honrar sem discussão;
  *   - números só quando medidos de verdade, com período declarado.
  *
  * Nada de biblioteca de animação nem fonte externa: a página tem que abrir
@@ -92,7 +95,7 @@ export default function PrazosLanding() {
             </div>
           </div>
           <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 30 }}>
-            30 dias de garantia · sem fidelidade · funciona com o sistema de pedidos que você já tem
+            7 dias de garantia · sem fidelidade · funciona com o sistema de pedidos que você já tem
           </div>
 
           <DemoAoVivo />
@@ -131,6 +134,41 @@ export default function PrazosLanding() {
           <div style={{ color: "#CBD5E1", fontSize: ".92rem", marginTop: 16, lineHeight: 1.55 }}>
             É a mesma cozinha, no mesmo mês. Qualquer prazo fixo que você escolher vai estar errado na
             metade do tempo.
+          </div>
+        </div>
+      </section>
+
+
+      {/* ─────────── A PROVOCAÇÃO (verdadeira, sem número inventado) ─────────── */}
+      <section style={{ background: "#0F172A", color: "#fff" }}>
+        <div style={secao}>
+          <h2 style={{ ...h2, color: "#fff" }}>Quem muda o prazo na sua loja hoje?</h2>
+          <p style={{ color: "#CBD5E1", lineHeight: 1.7, fontSize: "1.05rem", maxWidth: 720, margin: "0 0 16px" }}>
+            Se a resposta é "eu, quando lembro", você já sabe onde dói. E se a resposta é "ninguém, porque
+            deixei alto e travei", dói de outro jeito.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14, margin: "22px 0" }}>
+            {[
+              ["😐", "Prazo travado no alto", "Você põe 50 minutos e esquece, para o funcionário não errar. Aí o cliente que ia pedir às 15h da terça vê 50 minutos e pede na loja do lado."],
+              ["😤", "Prazo travado no baixo", "Você põe 30 para parecer rápido. Sábado 20h a cozinha lota, o pedido sai atrasado e vira nota baixa."],
+              ["🙂", "Prazo que acompanha a cozinha", "Baixo quando está vazio, alto quando está cheio. É o único que está certo nas duas horas."],
+            ].map(([e, t2, d]) => (
+              <div key={t2} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 14, padding: "1rem 1.15rem" }}>
+                <div style={{ fontSize: "1.5rem" }}>{e}</div>
+                <div style={{ fontWeight: 900, margin: "6px 0 6px" }}>{t2}</div>
+                <div style={{ color: "#CBD5E1", fontSize: ".95rem", lineHeight: 1.55 }}>{d}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: "#1E293B", border: "1px solid #334155", borderLeft: "4px solid #FF5722", borderRadius: 12, padding: "1rem 1.2rem", maxWidth: 760 }}>
+            <div style={{ color: "#CBD5E1", lineHeight: 1.65 }}>
+              E não é só o cliente que repara. O próprio iFood lista{" "}
+              <b style={{ color: "#fff" }}>"tempo de preparo e pontualidade na entrega"</b> entre as coisas que
+              contam para a sua loja aparecer no aplicativo, junto com cancelamento e nota.{" "}
+              <a href="https://blog-parceiros.ifood.com.br/aparecer-no-ifood/" target="_blank" rel="noopener" style={{ color: "#FF7A59", fontWeight: 700 }}>
+                Está escrito no blog de parceiros deles
+              </a>.
+            </div>
           </div>
         </div>
       </section>
@@ -254,14 +292,12 @@ export default function PrazosLanding() {
         <div style={{ ...card, borderColor: "#BBF7D0", background: "#F0FDF4", display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ fontSize: "2.4rem", lineHeight: 1 }}>🛡️</div>
           <div style={{ flex: 1, minWidth: 260 }}>
-            <div style={{ fontSize: "1.3rem", fontWeight: 900, marginBottom: 8 }}>30 dias de garantia, sem perguntar por quê</div>
+            <div style={{ fontSize: "1.3rem", fontWeight: 900, marginBottom: 8 }}>7 dias de garantia, sem perguntar por quê</div>
             <p style={{ color: "#166534", lineHeight: 1.6, margin: "0 0 10px" }}>
-              Assine, use por um mês inteiro. Se não fizer o que promete, você pede o dinheiro de volta e
-              recebe tudo. Não precisa justificar.
+              Assine e use no seu movimento. Se não fizer o que promete, você pede o dinheiro de volta e recebe tudo. Não precisa justificar.
             </p>
             <p style={{ color: "#166534", lineHeight: 1.6, margin: 0, fontSize: ".95rem" }}>
-              São 30 dias e não 7 de propósito: o valor dela aparece no fim de semana cheio. Em um mês
-              você passa por quatro.
+              Um fim de semana já basta para ver: é no sábado cheio que o prazo fixo quebra e a extensão mostra a diferença.
             </p>
           </div>
         </div>
@@ -358,12 +394,12 @@ export default function PrazosLanding() {
         <div style={{ ...secao, textAlign: "center" }}>
           <h2 style={{ ...h2, color: "#fff" }}>Hoje à noite o prazo já pode estar certo</h2>
           <p style={{ color: "#CBD5E1", maxWidth: 560, margin: "0 auto 24px", lineHeight: 1.6 }}>
-            R$ 49,90 por mês, 30 dias de garantia e sem fidelidade. O acesso chega no seu e-mail em
+            R$ 49,90 por mês, 7 dias de garantia e sem fidelidade. O acesso chega no seu e-mail em
             segundos.
           </p>
           <Botao style={{ fontSize: "1.15rem", padding: "18px 36px" }}>Assinar por R$ 49,90/mês</Botao>
           <div style={{ color: "#94A3B8", fontSize: ".82rem", marginTop: 16 }}>
-            Pagamento pela Cakto · cartão ou Pix · 30 dias de garantia
+            Pagamento pela Cakto · cartão ou Pix · 7 dias de garantia
           </div>
         </div>
       </section>

@@ -64,7 +64,7 @@ export function SeletorDePlano() {
         Assinar por {p.preco}/mês
       </a>
       <div style={{ color: "#94A3B8", fontSize: ".78rem", marginTop: 12 }}>
-        30 dias de garantia · sem fidelidade · cancele quando quiser
+        7 dias de garantia · sem fidelidade · cancele quando quiser
       </div>
     </div>
   );
@@ -77,7 +77,7 @@ export function BarraFixa() {
       <div className="barra-fixa">
         <div>
           <div style={{ fontWeight: 900, fontSize: "1rem", lineHeight: 1 }}>R$ 49,90<span style={{ fontSize: ".7rem", fontWeight: 700, color: "#94A3B8" }}>/mês</span></div>
-          <div style={{ fontSize: ".64rem", color: "#94A3B8" }}>30 dias de garantia</div>
+          <div style={{ fontSize: ".64rem", color: "#94A3B8" }}>7 dias de garantia</div>
         </div>
         <a href={PLANOS[0].url} style={{
           background: `linear-gradient(135deg, ${LARANJA}, #E64A19)`, color: "#fff", fontWeight: 900,
