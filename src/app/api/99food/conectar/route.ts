@@ -244,18 +244,20 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
       return { ...semVinculo, erro: v.erro, mensagem: `A loja autorizou, mas o vínculo não fechou: ${v.erro}` };
     }
     if (autorizadas.livres.length > 1) {
+      // Mais de uma candidata e nenhuma forma de saber qual é desta loja: o
+      // getAuthorizedShops responde pelo app_id do FireHub e mistura os
+      // clientes. Listar nome era vazar o vizinho — e em multicozinha nem
+      // nome nem CNPJ separam, porque várias marcas dividem os dois. Quem
+      // sabe o número é o lojista, que o lê no painel do 99Food. Então a tela
+      // pergunta o ID em vez de oferecer uma lista.
       return {
         conectado: false,
         disponivel: true,
-        candidatos: autorizadas.livres.map((l) => ({
-          // Prefixo para a tela distinguir "vincular pelo shop_id" (etapa 2) de
-          // "adotar um app_shop_id já vinculado" (caminho antigo, abaixo).
-          appShopId: `shop:${l.shopId}`,
-          shopId: l.shopId,
-          nome: l.nome || `Loja 99Food ${l.shopId}`,
-        })),
-        vinculosNo99: autorizadas.total,
-        mensagem: "Encontrei mais de uma loja autorizada no 99Food. Escolha qual é a sua.",
+        candidatos: [],
+        pedirIdDaLoja: true,
+        mensagem:
+          "Encontrei mais de uma loja autorizada no 99Food nesta conta. Para eu não conectar a loja " +
+          "errada, informe o ID da sua loja — ele aparece no painel do 99Food, em Aplicativos autorizados.",
       };
     }
   } else {
@@ -291,16 +293,16 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
       return { ...semVinculo, erro: a.erro, mensagem: `A loja está vinculada no 99Food, mas não consegui usá-la: ${a.erro}` };
     }
     if (vinculadas.lojas.length > 1) {
+      // Mesmo caso do bloco acima, agora entre vínculos já feitos pelo 99Food:
+      // sem nome na tela, o lojista digita o ID que ele lê no painel deles.
       return {
         conectado: false,
         disponivel: true,
-        candidatos: vinculadas.lojas.map((l) => ({
-          appShopId: String(l.appShopId),
-          shopId: l.shopId,
-          nome: l.nome || `Loja 99Food ${l.shopId}`,
-        })),
-        vinculosNo99: vinculadas.lojas.length,
-        mensagem: "Encontrei mais de uma loja autorizada no 99Food. Escolha qual é a sua.",
+        candidatos: [],
+        pedirIdDaLoja: true,
+        mensagem:
+          "Encontrei mais de uma loja vinculada ao FireHub no 99Food nesta conta. Para eu não conectar " +
+          "a loja errada, informe o ID da sua loja — ele aparece no painel do 99Food, em Aplicativos autorizados.",
       };
     }
 
@@ -448,28 +450,35 @@ export async function POST(req: NextRequest) {
       );
     }
     const alvo = autorizadas.livres.find((l) => l.shopId === shopId);
-    if (!alvo) {
-      return NextResponse.json(
-        { error: "Essa loja não está autorizada no 99Food, ou já pertence a outra loja do FireHub." },
-        { status: 404 }
-      );
+    if (alvo) {
+      const v = await vincularParaConta(r.lojaId, alvo);
+      if (!v.ok) return NextResponse.json({ error: v.erro }, { status: 502 });
+      return NextResponse.json({
+        conectado: true,
+        mensagem: `Loja "${v.nome || "99Food"}" conectada. Os pedidos chegam automaticamente.`,
+      });
     }
-    const v = await vincularParaConta(r.lojaId, alvo);
-    if (!v.ok) return NextResponse.json({ error: v.erro }, { status: 502 });
-    return NextResponse.json({
-      conectado: true,
-      mensagem: `Loja "${v.nome || "99Food"}" conectada. Os pedidos chegam automaticamente.`,
-    });
+    // Não está entre as livres: pode ser uma loja que o 99Food JÁ vinculou ao
+    // FireHub sozinho. Antes isso virava 404 e o lojista lia "não está
+    // autorizada" com a loja autorizada na cara dele. Agora cai no caminho de
+    // adoção logo abaixo, que aceita o mesmo número.
   }
 
-  if (corpo?.appShopId) {
-    const escolhido = String(corpo.appShopId);
+  const escolhido = String(corpo?.appShopId || corpo?.shopId || "");
+  if (escolhido) {
 
     // Primeiro a v3: vínculo feito pelo 99Food com o id deles, sem dono aqui.
     // `vinculadasSemDonoPara` já exclui o que pertence a outra conta.
+    //
+    // O lojista digita o id que ele LÊ no painel do 99Food, e o que aparece lá
+    // é o id da loja (`shop_id`) — o `app_shop_id` é interno do integrador.
+    // Por isso o casamento aceita os dois: quem digita 4253 não precisa saber
+    // que do nosso lado aquilo é "BCkpxsW2KAHowtV574U2-4253".
     const vinculadas = await vinculadasSemDonoPara(r.lojaId);
     if (vinculadas.ok) {
-      const alvo = vinculadas.lojas.find((l) => l.appShopId === escolhido);
+      const alvo = vinculadas.lojas.find(
+        (l) => l.appShopId === escolhido || String(l.shopId) === escolhido
+      );
       if (alvo) {
         const a = await adotarVinculo(r.lojaId, alvo);
         if (!a.ok) return NextResponse.json({ error: a.erro }, { status: 502 });
@@ -484,16 +493,22 @@ export async function POST(req: NextRequest) {
     if (!vinculos.ok) {
       return NextResponse.json({ error: `Não consegui listar as lojas no 99Food: ${vinculos.erro}` }, { status: 502 });
     }
-    const existe = vinculos.lojas.find((l) => String(l.app_shop_id) === escolhido);
+    const existe = vinculos.lojas.find(
+      (l) => String(l.app_shop_id) === escolhido || String(l.shop_id) === escolhido
+    );
     if (!existe) {
-      return NextResponse.json({ error: "Essa loja não está autorizada no 99Food." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Não achei esse ID entre as lojas autorizadas no 99Food. Confira o número no painel deles, em Aplicativos autorizados." },
+        { status: 404 }
+      );
     }
+    const idInterno = String(existe.app_shop_id);
 
     // A trava lia só `User.food99AppId` — nulo em toda a base — então NUNCA
     // disparava: dava para digitar o app_shop_id do vizinho e levar os pedidos
     // dele junto, porque o `ON CONFLICT` do salvarLoja99 troca o dono.
     const donos = await donosPorAppShopId();
-    const dono = donos.get(escolhido);
+    const dono = donos.get(idInterno);
     if (dono && dono !== r.lojaId) {
       return NextResponse.json({ error: "Essa loja do 99Food já está ligada a outra loja no FireHub." }, { status: 409 });
     }
@@ -503,14 +518,14 @@ export async function POST(req: NextRequest) {
     // — com uma loja é a dela, com várias é só reserva; quem manda é a tabela.
     await salvarLoja99({
       userId: r.lojaId,
-      appShopId: escolhido,
+      appShopId: idInterno,
       shopId: existe.shop_id != null ? String(existe.shop_id) : null,
       label: existe.shop_name ? String(existe.shop_name) : null,
     });
     await prisma.user.update({
       where: { id: r.lojaId },
       data: {
-        food99AppId: escolhido,
+        food99AppId: idInterno,
         food99Connected: true,
         ...(existe.shop_id != null ? { food99MerchantId: String(existe.shop_id) } : {}),
       },

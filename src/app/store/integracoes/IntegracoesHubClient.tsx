@@ -182,6 +182,16 @@ export default function IntegracoesHubClient({
   const [food99Candidatos, setFood99Candidatos] = useState<
     { appShopId: string; nome: string; shopId: string | null }[]
   >([]);
+  /**
+   * Mais de uma loja autorizada nesta conta do 99Food. A tela NÃO lista os
+   * nomes: o getAuthorizedShops responde pelo app_id do FireHub e devolve as
+   * lojas de todos os clientes, então a lista mostrava o vizinho — e em
+   * multicozinha nem nome nem CNPJ separam, porque várias marcas dividem os
+   * dois. Quem sabe qual é a dele é o lojista, que lê o número no painel do
+   * 99Food. Então perguntamos o ID.
+   */
+  const [food99PedirId, setFood99PedirId] = useState(false);
+  const [food99IdDigitado, setFood99IdDigitado] = useState("");
 
   // iFood multi-integration state
   const [ifMerchant, setIfMerchant] = useState(ifoodMerchantId || "");
@@ -369,9 +379,11 @@ export default function IntegracoesHubClient({
       setFood99Loja(data.lojaNo99 || null);
       setFood99Lojas(data.lojas || []);
       setFood99Candidatos(data.candidatos || []);
+      setFood99PedirId(Boolean(data.pedirIdDaLoja));
       if (data.conectado) {
         setFood99Aguardando(false);
         setFood99Candidatos([]);
+        setFood99PedirId(false);
       }
     } catch {
       setFood99Msg("Não consegui falar com o servidor para checar o 99Food.");
@@ -400,6 +412,7 @@ export default function IntegracoesHubClient({
       if (res.ok && data.conectado) {
         setFood99Connected(true);
         setFood99Candidatos([]);
+        setFood99PedirId(false);
         setFood99Aguardando(false);
         showToast("✅ " + data.mensagem, "#10B981");
       } else {
@@ -503,6 +516,7 @@ export default function IntegracoesHubClient({
           setFood99Connected(true);
           setFood99Aguardando(false);
           setFood99Candidatos([]);
+          setFood99PedirId(false);
           setFood99Msg(data.mensagem || "");
           setFood99Loja(data.lojaNo99 || null);
           setFood99Lojas(data.lojas || []);
@@ -513,8 +527,9 @@ export default function IntegracoesHubClient({
         // Mais de uma loja autorizada sem dono aqui dentro: só o lojista sabe
         // qual é a dele. Para o laço, senão a pergunta ficaria piscando embaixo
         // de quem está tentando responder.
-        if (Array.isArray(data.candidatos) && data.candidatos.length > 0) {
-          setFood99Candidatos(data.candidatos);
+        if (data.pedirIdDaLoja || (Array.isArray(data.candidatos) && data.candidatos.length > 0)) {
+          setFood99Candidatos(data.candidatos || []);
+          setFood99PedirId(Boolean(data.pedirIdDaLoja));
           setFood99Msg(data.mensagem || "");
           setFood99Loja(data.lojaNo99 || null);
           setFood99Lojas(data.lojas || []);
@@ -582,6 +597,7 @@ export default function IntegracoesHubClient({
       setFood99Loja(data.lojaNo99 || null);
       setFood99Lojas(data.lojas || []);
       setFood99Candidatos(data.candidatos || []);
+      setFood99PedirId(Boolean(data.pedirIdDaLoja));
       showToast(
         data.conectado ? "✅ 99Food conectado! Os pedidos chegam automaticamente." : `⏳ ${data.mensagem}`,
         data.conectado ? "#10B981" : "#F59E0B"
@@ -2193,26 +2209,40 @@ export default function IntegracoesHubClient({
                 {/* Só aparece quando o 99Food tem mais de uma loja autorizada sem
                     dono aqui dentro. Adivinhar seria despejar pedido na cozinha
                     errada, então quem aponta é o lojista — e continua um clique. */}
-                {!food99Connected && food99Candidatos.length > 0 && (
+                {/* Mais de uma loja autorizada nesta conta do 99Food.
+                    NÃO listamos os nomes: o getAuthorizedShops responde pelo
+                    app_id do FireHub e devolve as lojas de todos os clientes,
+                    então a lista mostrava o vizinho — e clicar no vizinho
+                    levaria os pedidos dele para esta cozinha. Nome e CNPJ
+                    também não servem de filtro: em multicozinha várias marcas
+                    dividem os dois. O número, não. Então pedimos o ID. */}
+                {!food99Connected && food99PedirId && (
                   <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
-                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1E3A8A", marginBottom: 10 }}>
-                      Qual destas é a sua loja?
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1E3A8A", marginBottom: 6 }}>
+                      Qual é o ID da sua loja no 99Food?
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {food99Candidatos.map((c) => (
-                        <button
-                          key={c.appShopId}
-                          onClick={() => handleEscolher99Food(c)}
-                          disabled={food99Saving}
-                          style={{ textAlign: "left", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #93C5FD", background: "#fff", cursor: "pointer" }}
-                        >
-                          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#1E3A8A" }}>{c.nome}</div>
-                          {c.shopId && (
-                            <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>ID {c.shopId}</div>
-                          )}
-                        </button>
-                      ))}
+                    <div style={{ fontSize: "0.76rem", color: "#1E40AF", marginBottom: 10, lineHeight: 1.5 }}>
+                      Você acha esse número no painel do 99Food, em Aplicativos autorizados, ao lado do nome da sua loja.
                     </div>
+                    <form
+                      onSubmit={(e) => { e.preventDefault(); const v = food99IdDigitado.trim(); if (v) handleEscolher99Food({ appShopId: v, shopId: v }); }}
+                      style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+                    >
+                      <input
+                        value={food99IdDigitado}
+                        onChange={(e) => setFood99IdDigitado(e.target.value)}
+                        placeholder="ex.: 4253"
+                        disabled={food99Saving}
+                        style={{ flex: "1 1 180px", minWidth: 0, padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #93C5FD", fontSize: "0.88rem", fontFamily: "monospace" }}
+                      />
+                      <button
+                        type="submit"
+                        disabled={food99Saving || !food99IdDigitado.trim()}
+                        style={{ padding: "10px 18px", borderRadius: "10px", border: "none", background: food99IdDigitado.trim() ? "#1D4ED8" : "#CBD5E1", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: food99IdDigitado.trim() ? "pointer" : "default" }}
+                      >
+                        {food99Saving ? "Conectando…" : "Conectar esta loja"}
+                      </button>
+                    </form>
                   </div>
                 )}
 
@@ -2243,7 +2273,7 @@ export default function IntegracoesHubClient({
                   </button>
                   {/* Reserva do laço automático: cobre a aba fechada cedo demais
                       e o lojista que autorizou ontem e só voltou hoje. */}
-                  {!food99Connected && food99Disponivel && food99Candidatos.length === 0 && (
+                  {!food99Connected && food99Disponivel && !food99PedirId && food99Candidatos.length === 0 && (
                     <button
                       onClick={handleVerificar99Food}
                       disabled={food99Saving}
