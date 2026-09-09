@@ -80,7 +80,13 @@ export function SeletorDePlano() {
         </div>
       )}
       <div style={{ color: "#94A3B8", fontSize: ".85rem", marginTop: 10 }}>
-        Dá R$ {(p.centavos / 100 / 30).toFixed(2).replace(".", ",")} por dia. Um pedido cancelado custa mais que isso.
+        {/* 29,90 ÷ 30 = 0,9967. Arredondar para "R$ 1,00" jogava fora o melhor
+            argumento de preço que a página tem — em low ticket, cruzar para
+            baixo de um real vale mais que os centavos. */}
+        {p.centavos / 100 / 30 < 1
+          ? "Dá menos de R$ 1 por dia."
+          : `Dá R$ ${(p.centavos / 100 / 30).toFixed(2).replace(".", ",")} por dia.`}{" "}
+        Um pedido cancelado custa mais que isso.
       </div>
 
       <a href={p.url} style={{

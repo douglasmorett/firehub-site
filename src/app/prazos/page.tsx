@@ -34,7 +34,9 @@ export const metadata: Metadata = {
  *     mais que texto profissional);
  *   - preço no topo, porque em R$ 29,90 o preço é o argumento, não a objeção. O
  *     alvo declarado pelo dono (09/09/2026) é uma mensalidade que o lojista
- *     esquece que paga: R$ 1,00 por dia, menos que um pedido perdido;
+ *     esquece que paga: menos de R$ 1 por dia (29,90 ÷ 30 = 0,9967 — nunca
+ *     arredondar isso para "R$ 1,00", cruzar para baixo de um real e o
+ *     argumento), menos que um pedido perdido;
  *   - um só botão, repetido, sempre com o mesmo texto;
  *   - a demonstração do produto acima da dobra, não descrição dele;
  *   - a objeção "o iFood já faz isso" respondida de frente, com o que a
@@ -104,7 +106,7 @@ export default function PrazosLanding() {
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
             <Botao>Assinar por R$ 29,90/mês</Botao>
             <div style={{ color: "#CBD5E1", fontSize: ".95rem" }}>
-              <b style={{ color: "#fff" }}>R$ 29,90 por mês.</b> Dá R$ 1,00 por dia.
+              <b style={{ color: "#fff" }}>R$ 29,90 por mês.</b> Dá menos de R$ 1 por dia.
             </div>
           </div>
           <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 30 }}>
@@ -445,7 +447,7 @@ export default function PrazosLanding() {
       {/* ─────────── PREÇO ─────────── */}
       <section id="assinar" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#fff" }}>
         <div style={secao}>
-          <h2 style={{ ...h2, textAlign: "center", color: "#fff" }}>R$ 29,90 por mês. R$ 1,00 por dia.</h2>
+          <h2 style={{ ...h2, textAlign: "center", color: "#fff" }}>R$ 29,90 por mês. Menos de R$ 1 por dia.</h2>
           <p style={{ color: "#CBD5E1", textAlign: "center", maxWidth: 640, margin: "0 auto 26px", lineHeight: 1.65 }}>
             Com ticket de R$ 55, <b style={{ color: "#fff" }}>um único pedido perdido por atraso custa R$ 46,64</b>{" "}
             do que o iFood ia te repassar — <b style={{ color: "#fff" }}>uma mensalidade e meia</b>. Um pedido
