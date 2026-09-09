@@ -90,7 +90,7 @@ export default function DemoAoVivo() {
             </div>
           </div>
         </div>
-        <div style={{ fontSize: ".64rem", color: "#94A3B8", marginTop: 8, textAlign: "center" }}>
+        <div style={{ fontSize: ".64rem", color: "#64748B", marginTop: 8, textAlign: "center" }}>
           A coluna laranja é a que você marcou com um clique.
         </div>
       </div>

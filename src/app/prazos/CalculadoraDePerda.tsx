@@ -73,7 +73,7 @@ export default function CalculadoraDePerda() {
         </div>
         <div>
           <label style={rotulo} htmlFor="calc-perda">
-            De cada 100 pedidos, quantos você perde por atraso? <b style={{ color: "#FF5722" }}>{perdaPct}</b>
+            De cada 100 pedidos, quantos você perde por atraso? <b style={{ color: "#C2410C" }}>{perdaPct}</b>
           </label>
           <input
             id="calc-perda" type="range" min={0} max={10} step={0.5}
@@ -81,7 +81,7 @@ export default function CalculadoraDePerda() {
             onChange={(e) => setPerdaPct(Number(e.target.value))}
             style={{ width: "100%", accentColor: "#FF5722", marginTop: 10 }}
           />
-          <div style={{ display: "flex", justifyContent: "space-between", color: "#94A3B8", fontSize: ".78rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#64748B", fontSize: ".78rem" }}>
             <span>nenhum</span><span>10 em 100</span>
           </div>
         </div>

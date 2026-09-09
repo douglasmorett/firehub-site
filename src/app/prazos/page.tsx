@@ -49,6 +49,9 @@ export const metadata: Metadata = {
  */
 
 const LARANJA = "#FF5722";
+// O laranja da marca sobre branco da contraste 3,16 — abaixo do minimo de
+// leitura. Este e o mesmo laranja escurecido, so para texto de link.
+const LARANJA_LINK = "#C2410C";
 const CHECKOUT = CHECKOUT_PADRAO;
 const ZIP = "https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip";
 const WA = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Tenho%20uma%20d%C3%BAvida%20sobre%20o%20FireHub%20Prazos.";
@@ -172,11 +175,11 @@ export default function PrazosLanding() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
                 <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "9px 11px" }}>
-                  <div style={{ fontSize: ".7rem", fontWeight: 800, color: "#94A3B8", letterSpacing: ".3px", marginBottom: 3 }}>PRAZO FIXO DE 30 MIN</div>
+                  <div style={{ fontSize: ".7rem", fontWeight: 800, color: "#64748B", letterSpacing: ".3px", marginBottom: 3 }}>PRAZO FIXO DE 30 MIN</div>
                   <div style={{ color: "#475569", lineHeight: 1.5, fontSize: ".93rem" }}>{fixo}</div>
                 </div>
                 <div style={{ background: fundo, border: `1px solid ${cor}33`, borderRadius: 10, padding: "9px 11px" }}>
-                  <div style={{ fontSize: ".7rem", fontWeight: 800, color: "#B45309", letterSpacing: ".3px", marginBottom: 3 }}>🔥 COM A EXTENSÃO</div>
+                  <div style={{ fontSize: ".7rem", fontWeight: 800, color: cor, letterSpacing: ".3px", marginBottom: 3 }}>🔥 COM A EXTENSÃO</div>
                   <div style={{ fontWeight: 900, color: cor, fontSize: "1.15rem", lineHeight: 1.3 }}>{novo}</div>
                   <div style={{ color: "#475569", fontSize: ".85rem" }}>é o que a fila aguenta</div>
                 </div>
@@ -249,7 +252,7 @@ export default function PrazosLanding() {
               A partir daí o cliente tem, no próprio aplicativo, o caminho para cancelar e pedir o dinheiro
               de volta. E repare contra o que o relógio corre: <b>o prazo que a sua loja publicou</b>.
             </div>
-            <a href="https://institucional.ifood.com.br/ajuda/problemas-com-o-pedido-ifood/" target="_blank" rel="noopener" style={{ color: LARANJA, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
+            <a href="https://institucional.ifood.com.br/ajuda/problemas-com-o-pedido-ifood/" target="_blank" rel="noopener" style={{ color: LARANJA_LINK, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
               Página de ajuda do iFood ↗
             </a>
           </div>
@@ -264,7 +267,7 @@ export default function PrazosLanding() {
             <div style={{ color: "#475569", lineHeight: 1.6, fontSize: ".95rem" }}>
               Ou seja: prazo travado no alto não é o lado seguro. É o outro jeito de errar.
             </div>
-            <a href="https://blog-parceiros.ifood.com.br/tempo-de-preparo/" target="_blank" rel="noopener" style={{ color: LARANJA, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
+            <a href="https://blog-parceiros.ifood.com.br/tempo-de-preparo/" target="_blank" rel="noopener" style={{ color: LARANJA_LINK, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
               Blog de parceiros do iFood ↗
             </a>
           </div>
@@ -280,7 +283,7 @@ export default function PrazosLanding() {
               E a mesma página diz para que serve esse número: <i>"Ele será usado para calcular o prazo de
               entrega exibido aos seus clientes."</i>
             </div>
-            <a href="https://99app.com/99food/restaurantes/guias/como-configurar-o-tempo-de-preparo/" target="_blank" rel="noopener" style={{ color: LARANJA, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
+            <a href="https://99app.com/99food/restaurantes/guias/como-configurar-o-tempo-de-preparo/" target="_blank" rel="noopener" style={{ color: LARANJA_LINK, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
               Guia oficial do 99Food ↗
             </a>
           </div>
@@ -294,7 +297,7 @@ export default function PrazosLanding() {
                 Com teto de 0,90%, um único cancelamento consome a folga que 111 pedidos bons construíram.
               </div>
             </div>
-            <a href="https://institucional.ifood.com.br/restaurantes/selo-super-do-ifood/" target="_blank" rel="noopener" style={{ color: LARANJA, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
+            <a href="https://institucional.ifood.com.br/restaurantes/selo-super-do-ifood/" target="_blank" rel="noopener" style={{ color: LARANJA_LINK, fontWeight: 700, fontSize: ".9rem", display: "inline-block", marginTop: 10 }}>
               Critérios do Selo Super ↗
             </a>
           </div>
@@ -548,11 +551,11 @@ export default function PrazosLanding() {
         <div style={{ ...secao, paddingTop: 0, textAlign: "center" }}>
           <div style={{ color: "#475569", fontSize: "1rem" }}>
             Ficou com dúvida se funciona no seu caso?{" "}
-            <a href={WA} target="_blank" rel="noopener" style={{ color: "#16A34A", fontWeight: 800 }}>
+            <a href={WA} target="_blank" rel="noopener" style={{ color: "#15803D", fontWeight: 800 }}>
               Chama no WhatsApp
             </a>{" "}
             que a gente responde. Prefere ver funcionando primeiro?{" "}
-            <a href="/prazos/demo" style={{ color: "#FF5722", fontWeight: 800 }}>Abra o painel de teste</a>.
+            <a href="/prazos/demo" style={{ color: LARANJA_LINK, fontWeight: 800 }}>Abra o painel de teste</a>.
           </div>
         </div>
       </section>
@@ -572,10 +575,10 @@ export default function PrazosLanding() {
         </div>
       </section>
 
-      <footer style={{ textAlign: "center", color: "#94A3B8", fontSize: ".82rem", padding: "2.2rem 1rem", lineHeight: 1.8 }}>
+      <footer style={{ textAlign: "center", color: "#64748B", fontSize: ".82rem", padding: "2.2rem 1rem", lineHeight: 1.8 }}>
         FireHub Prazos é um produto FireHub · <a href="https://firehubfood.com.br" style={{ color: "#64748B" }}>firehubfood.com.br</a> · contato@firehubfood.com.br
         <br />
-        <a href={ZIP} style={{ color: "#94A3B8" }}>Baixar a extensão</a> · <a href="/privacidade-prazos" style={{ color: "#94A3B8" }}>Política de privacidade</a>
+        <a href={ZIP} style={{ color: "#64748B" }}>Baixar a extensão</a> · <a href="/privacidade-prazos" style={{ color: "#64748B" }}>Política de privacidade</a>
         <br />
         <span style={{ fontSize: ".76rem" }}>
           Produto independente. Não somos iFood nem 99Food, e não temos vínculo com essas empresas.
