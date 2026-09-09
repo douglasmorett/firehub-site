@@ -14,6 +14,13 @@ export const metadata: Metadata = {
     siteName: "FireHub",
     locale: "pt_BR",
     type: "website",
+    images: [{ url: "https://firehubfood.com.br/prazos-og.jpg", width: 1200, height: 630, alt: "A extensão lendo a fila da cozinha e escrevendo o prazo no iFood e no 99Food" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "O prazo do seu iFood muda sozinho quando a cozinha enche",
+    description: "A extensão olha a fila da sua cozinha e escreve o prazo certo no iFood e no 99Food.",
+    images: ["https://firehubfood.com.br/prazos-og.jpg"],
   },
 };
 
