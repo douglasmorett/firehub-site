@@ -143,3 +143,71 @@ tráfego real antes de acreditar em qualquer faixa.
 Fontes principais: Unbounce Conversion Benchmark Report · Portent (velocidade) · Baymard (checkout
 e selos) · NN/g (leitura em F) · MECLABS (clareza) · Gourville 1998 (JCR) · Iyengar & Lepper 2000 ·
 CDC art. 49.
+
+## Adendo 08/09/2026 — o que a pesquisa de campo acrescentou
+
+### Citação de terceiro é o ativo mais barato, e o mais fácil de estragar
+
+Quando a plataforma em que o cliente vive já escreveu o seu argumento, **cite ela**, não você.
+É prova de graça e o cético não consegue descartar como propaganda.
+
+**Regra dura, aprendida errando:** relatório de pesquisa **parafraseia** e você não percebe. Ao
+montar o bloco de citações do FireHub Prazos, duas das cinco frases "oficiais" que o relatório
+trouxe **não existiam** nas páginas citadas. Antes de publicar qualquer frase entre aspas:
+
+1. abra a URL e peça a transcrição **literal**, exigindo "NÃO EXISTE" quando não houver;
+2. publique só o que voltou verbatim;
+3. anote a data da conferência no comentário do código, porque a página muda.
+
+Quando duas páginas oficiais da mesma empresa se contradizem (o iFood publica 1% e 0,90% de teto
+de cancelamento para o mesmo selo), **use a mais conservadora e diga qual você usou**.
+
+### A conta honesta converte mais que a conta inflada
+
+Toda calculadora de perda desse mercado soma "o valor do pedido **+** a comida que foi pro lixo".
+Isso conta o ingrediente duas vezes:
+
+```
+entregue:  + repasse  − ingrediente
+cancelado:      0     − ingrediente
+diferença =   repasse            ← a perda é só isto
+```
+
+E o repasse não é o ticket: é o ticket menos a comissão. Fazer a conta certa **diminui** o número
+e **aumenta** a credibilidade — e ainda sobra ordem de grandeza (17x a mensalidade no caso base).
+Mostre a fórmula na tela, com o link da tabela de comissão. Três campos, nunca sete, e **sem pedir
+e-mail**: pedir e-mail antes do resultado é um formulário de lead disfarçado.
+
+**E deixe a calculadora recusar a venda.** Se o lojista põe zero perda, escreva que o produto não
+serve para ele agora. Custa uma venda ruim e compra a confiança das outras.
+
+### Preço em low ticket: a taxa fixa do checkout muda a conta
+
+Baixar o preço custa mais do que parece porque a taxa **fixa** do gateway não encolhe junto.
+Na Cakto (R$ 2,49 fixos): a R$ 49,90 ela é 4,99% do preço; a R$ 39,90 vira **6,24%**. Cortar 20%
+do preço derruba 21,1% da receita e exige **+26,7% de assinantes** só para empatar.
+
+- **Não existe evidência de barreira psicológica em R$ 50 no Brasil.** O que circula é opinião de
+  blog. A evidência internacional é contraditória: Anderson & Simester 2003 acha efeito de
+  terminação 9; Fenneman 2022 (PLOS ONE, 4.788 decisões) falha em replicar.
+- **[E] Kim, Malkoc & Goodman 2021 (JCR, 7 estudos):** base **no** número redondo aumenta a compra
+  de add-on. Se o dinheiro está no upsell, R$ 50,00 tem respaldo melhor que R$ 49,90.
+- **[E] Recurly:** quanto mais barato o plano, mais ele churna — e o churn **involuntário** (cartão
+  recusado) é 7x maior na faixa barata que na cara. Ofereça Pix desde o dia 1.
+- **Precifique a expansão pelo mercado, não pelo medo.** Loja adicional a 0,20x da base é dinheiro
+  na mesa quando o setor pratica 0,45x a 1,00x — e é invisível, porque você nunca vê a receita que
+  não cobrou.
+- **Oferta de fundador = meses grátis, nunca preço menor.** Desconto recorrente vira preço de
+  referência permanente e dívida de grandfathering; meses grátis custam uma vez.
+
+### Dois defeitos de celular que passam despercebidos e custam caro
+
+- **Cor herdada em barra fixa.** Barra escura dentro de um `<main>` com `color` escuro: o preço
+  fica invisível e ninguém repara porque no desktop a barra nem aparece. Sempre declare a cor de
+  texto na própria barra.
+- **`<table>` com rolagem lateral esconde a coluna que vende.** A coluna do "depois" fica fora da
+  tela e o leitor só vê o problema. Em landing, use grade que empilha — a comparação vira um
+  cartão por linha, com o antes e o depois um embaixo do outro.
+
+Checklist novo: abra a página em 430px **e role até cada tabela**; confira se a coluna do resultado
+aparece sem rolar de lado, e se todo texto sobre fundo escuro tem cor declarada.

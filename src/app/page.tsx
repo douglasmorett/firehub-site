@@ -809,6 +809,10 @@ export default function Home() {
               <a href="#como-funciona">Como funciona</a>
               <a href="#planos">Planos</a>
               <a href="#faq">FAQ</a>
+              {/* Produto separado, vendido para quem não é cliente do FireHub:
+                  fica no rodapé de propósito, para não competir com o funil
+                  do sistema lá em cima. */}
+              <a href="/prazos">🔥 FireHub Prazos (extensão)</a>
             </div>
             <div className="footer-col">
               <h4>Contato</h4>
