@@ -218,6 +218,10 @@ enviado continua certo quando a ficha for aprovada.
 
 ## Quando aprovar
 
+0. **Subir a v0.2.1** (`build/chrome-store-prazos/firehub-prazos-v0.2.1.zip`) como atualização normal: ela
+   traz o `ativar.js` que grava `data-fh-prazos` no `<html>` (a v0.2.0 em análise só faz o postMessage,
+   que se perde se chegar antes do listener da página) e os ícones em 16/48/128. O botão de upload fica
+   travado enquanto o status é "Revisão pendente" — por isso não foi trocado antes.
 1. Em `src/app/prazos/instalar/page.tsx`, apagar o `<details>` do arquivo — fica só o botão da loja.
 2. Conferir que `chromewebstore.google.com/detail/pkkcnkbkacfiojiapodplkbkmdhhnjag` abre e instala.
 3. Fazer uma compra real de R$ 1 e seguir os dois botões do e-mail até a extensão entrar sozinha.

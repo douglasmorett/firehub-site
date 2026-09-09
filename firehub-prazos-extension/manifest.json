@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FireHub Prazos",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Ajusta sozinho o prazo de entrega no iFood e o tempo de preparo no 99Food, pela fila da cozinha do seu painel de pedidos.",
   "icons": {
     "16": "icons/icon16.png",
