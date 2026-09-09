@@ -276,8 +276,39 @@ document.addEventListener("DOMContentLoaded", () => {
     renderPlataforma("ifood");
     renderPlataforma("n99");
     const cota = (estado.conta && estado.conta.lojasIncluidas) || 1;
-    $("cotaTexto").textContent = "Seu plano: " + cota + " loja" + (cota > 1 ? "s" : "") + " por plataforma (iFood + 99Food). Precisa de mais? Contrate lojas adicionais em firehubfood.com.br/prazos.";
+    $("cotaTexto").textContent =
+      "Seu plano: " + cota + " loja" + (cota > 1 ? "s" : "") + " por plataforma — " + cota +
+      " no iFood e " + cota + " no 99Food. Cada R$ 9,90 a mais libera uma loja nas duas.";
   }
+
+  /** Leva ao checkout já na faixa de cima da que ele tem hoje. */
+  function abrirUpgrade() {
+    const cota = (estado.conta && estado.conta.lojasIncluidas) || 1;
+    const base = (estado.serverUrl || SERVIDOR_PADRAO).replace(/\/+$/, "");
+    chrome.tabs.create({ url: base + "/prazos?lojas=" + (cota + 1) + "#assinar" });
+  }
+
+  $("btnMaisLojas").addEventListener("click", abrirUpgrade);
+
+  $("btnJaComprei").addEventListener("click", async () => {
+    const b = $("btnJaComprei");
+    const antes = (estado.conta && estado.conta.lojasIncluidas) || 1;
+    b.disabled = true;
+    b.textContent = "🔄 Conferindo…";
+    await atualizarDoServidor();
+    const depois = (estado.conta && estado.conta.lojasIncluidas) || 1;
+    b.disabled = false;
+    b.textContent = "🔄 Já comprei";
+    if (depois > antes) {
+      mostrarAvisoLojas("");
+      $("cotaTexto").textContent =
+        "✅ Plano atualizado: agora são " + depois + " lojas por plataforma. Marque as novas aí em cima.";
+    } else {
+      // O pagamento da Cakto pode levar alguns segundos para virar webhook.
+      // Dizer isso é melhor que deixar o botão parecer quebrado.
+      mostrarAvisoLojas("Ainda não chegou a confirmação do pagamento. Ela costuma levar alguns segundos — a extensão confere sozinha a cada 20 s.");
+    }
+  });
 
   // ── MOTOBOYS / MODO / FAIXAS (iFood) ───────────────────────────────
   $("btnMenos").addEventListener("click", () => { const m = Math.max(1, (estado.conta?.motoboys || 2) - 1); salvarConfig({ motoboys: m }); });

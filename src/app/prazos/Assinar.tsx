@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PLANOS } from "./planos";
 
 /**
@@ -36,6 +36,18 @@ function porLoja(centavos: number, lojas: number) {
 
 export function SeletorDePlano() {
   const [i, setI] = useState(0);
+
+  // A extensão manda o lojista para cá quando ele estoura a cota de lojas
+  // (botão "Adicionar mais lojas" no popup), com ?lojas=N. Chegar já na faixa
+  // certa evita o passo em que ele precisa lembrar quantas lojas contratou.
+  useEffect(() => {
+    const pedido = Number(new URLSearchParams(window.location.search).get("lojas"));
+    if (!Number.isFinite(pedido) || pedido < 2) return;
+    // A menor faixa que atende: quem pede 4 cai na de 5, não na de 3.
+    const alvo = PLANOS.findIndex((op) => op.lojas >= pedido);
+    if (alvo >= 0) setI(alvo);
+  }, []);
+
   const p = PLANOS[i];
 
   return (
