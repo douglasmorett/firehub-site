@@ -306,21 +306,28 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
 
     // Autorizou o FireHub, mas o 99Food só admite UM integrador por loja e
     // ela ainda está com outro (Saipos, Brendi…). Nenhum clique aqui resolve:
-    // é no painel do 99Food que o lojista solta a loja do sistema antigo. A
-    // tela diz exatamente isso, com o nome das lojas — senão ele fica
-    // clicando em autorizar, como o Frangoso ficou o dia inteiro.
+    // é no painel do 99Food que o lojista solta a loja do sistema antigo.
+    //
+    // A mensagem NÃO cita nome de loja. `getAuthorizedShops` responde pelo
+    // app_id do FireHub, ou seja, devolve as lojas de TODOS os clientes que
+    // autorizaram — e a lista sem dono aqui dentro é justamente a dos que
+    // ainda não conectaram. Citar os nomes fazia o painel do Nik Esfihas
+    // anunciar "Frangoso, Braseou! Burguers na Brasa, Salz Burgueria", que
+    // são lojas de outros lojistas. Além de vazar, confunde: o lojista lê
+    // nome que não é dele e acha que errou de conta. O que ele precisa saber
+    // cabe sem nome nenhum — o problema é da loja DELE, e a solução é no
+    // painel do 99Food.
     if (vinculadas.deOutroIntegrador.length > 0) {
-      const nomes = vinculadas.deOutroIntegrador.map((l) => l.nome || l.shopId).join(", ");
       return {
         conectado: false,
         disponivel: true,
         candidatos: [],
-        presaEmOutroIntegrador: vinculadas.deOutroIntegrador.map((l) => ({ shopId: l.shopId, nome: l.nome })),
-        vinculosNo99: vinculadas.deOutroIntegrador.length,
+        presaEmOutroIntegrador: true,
         mensagem:
-          `${nomes}: autorizou o FireHub, mas o 99Food só permite um sistema integrado por loja e ` +
-          "ela ainda está ligada a outro. No painel do 99Food, em Aplicativos autorizados, desautorize o " +
-          "sistema antigo dessa loja e clique em Verificar agora — o FireHub assume o vínculo sozinho.",
+          "Atenção: o 99Food só deixa uma loja ficar ligada a um sistema por vez, e a sua ainda está " +
+          "ligada a outro. Você já autorizou o FireHub — falta soltar a loja do sistema antigo. " +
+          "No painel do 99Food, em Aplicativos autorizados, desautorize o sistema anterior e clique " +
+          "em Verificar agora. O FireHub assume o vínculo sozinho.",
       };
     }
   }
