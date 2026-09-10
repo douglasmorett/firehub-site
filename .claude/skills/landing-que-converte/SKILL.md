@@ -237,3 +237,25 @@ taxa de entrega. Regra que ficou:
   "quanto custa" sem abrir o site; a página precisa se descrever.
 - **Custo em palavras:** +49 visíveis (857 → 906) por três cartões — a seção antiga de citação
   única **virou** a seção de gatilhos em vez de somar mais uma dobra.
+
+## Adendo 10/09/2026 — o que a auditoria com skills (cro/offers/psychology + Lighthouse) achou
+
+- **O pixel pode estar carregado e mudo.** Na /prazos ao vivo `typeof fbq === "function"`,
+  `fbevents.js` e o config do pixel baixados — e **nenhuma requisição para `facebook.com/tr`**.
+  A CSP do site (`form-action 'self'`, `frame-src` sem o Facebook) barrava o caminho por
+  formulário/iframe que o pixel usa quando o payload cresce (metadados da página; o JSON-LD
+  engorda isso). Quem flagrou foi o `errors-in-console` do Lighthouse. **Checklist antes de
+  ligar anúncio:** abrir a landing, `performance.getEntriesByType("resource")` filtrado por
+  `facebook.com/tr` — tem que existir um por PageView. Sem isso o algoritmo otimiza no escuro.
+- **UTM não atravessa sozinha para o checkout de terceiro.** O `<a>` para a Cakto era limpo;
+  a venda chegaria como "direta". Solução: no clique (fase de captura, porque o seletor de plano
+  re-renderiza o href) anexar `utm_*`, `fbclid`, `gclid` e o gatilho como `utm_content`, e disparar
+  `InitiateCheckout` no pixel. Testar com `preventDefault` num listener de bolha e ler o `href`.
+- **Oferta em low ticket:** pilha de valor curta (5 itens, todos verdadeiros hoje) embaixo do
+  preço; garantia com a palavra **incondicional** e o **caminho nomeado** (onde cancela, quem
+  chama); "sem fidelidade" dito separado; a objeção específica do produto ("e se o iFood mudar
+  a tela?") no FAQ com a resposta que assume a responsabilidade. Identidade na sub-manchete
+  ("feita para quem entrega com motoboy próprio") pré-qualifica e reduz reembolso.
+- **TTFB de 2,4 s num trace pode ser pico:** conferir com `curl -w %{time_starttransfer}` três
+  vezes e ler `X-Nextjs-Prerender`/`X-Nextjs-Cache`. Aqui a página é estática e dá ~0,5 s —
+  isso é a latência do servidor, coisa de CDN na frente, não de página.
