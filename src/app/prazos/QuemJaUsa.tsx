@@ -24,7 +24,9 @@ type Loja = {
 };
 
 const LOJAS: Loja[] = [
-  { nome: "Franquias Hakim", detalhe: "as lojas de quem fez o produto", desde: "março de 2026", logo: "/prazos/logo-hakim.webp", iniciais: "HK" },
+  // O dono pediu para tratar o Hakim como cliente comum na página — sem
+  // "loja de quem fez o produto".
+  { nome: "Franquias Hakim", detalhe: "rede de franquias, várias lojas", desde: "março de 2026", logo: "/prazos/logo-hakim.webp", iniciais: "HK" },
   { nome: "Brasa Burguer", detalhe: "hamburgueria, motoboy próprio", desde: "maio de 2026", logo: "/prazos/logo-brasa-burguer.webp", iniciais: "BB" },
   { nome: "Point Mix", detalhe: "parceira FireHub", desde: "julho de 2026", iniciais: "PM" },
 ];
@@ -40,7 +42,7 @@ export default function QuemJaUsa() {
           Roda todo dia em loja de verdade
         </h2>
         <p style={{ color: "#475569", lineHeight: 1.6, fontSize: "1.05rem", margin: "0 0 20px", maxWidth: 640 }}>
-          A mesma lógica de prazo que você vai assinar já trabalha nestas cozinhas — inclusive nas nossas.
+          A mesma lógica de prazo que você vai assinar já trabalha nestas cozinhas, todo dia.
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
