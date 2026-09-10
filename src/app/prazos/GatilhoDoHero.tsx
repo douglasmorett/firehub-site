@@ -30,8 +30,8 @@ export default function GatilhoDoHero() {
       style={{
         display: "inline-flex", alignItems: "flex-start", gap: 10,
         background: "rgba(255,122,89,.12)", border: "1px solid rgba(255,122,89,.45)",
-        borderRadius: 14, padding: "10px 14px", marginBottom: 18, maxWidth: 760,
-        color: "#FFD9CF", lineHeight: 1.45, fontSize: ".98rem",
+        borderRadius: 14, padding: "9px 13px", marginBottom: 18, maxWidth: 760,
+        color: "#FFD9CF", lineHeight: 1.4, fontSize: ".94rem",
       }}
     >
       <span style={{ fontWeight: 900, color: "#FF7A59", whiteSpace: "nowrap", letterSpacing: ".3px", fontSize: ".8rem", marginTop: 3 }}>

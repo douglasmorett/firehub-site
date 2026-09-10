@@ -5,6 +5,7 @@ import CalculadoraDePerda from "./CalculadoraDePerda";
 import { SeletorDePlano, BarraFixa } from "./Assinar";
 import VoceSabia from "./VoceSabia";
 import GatilhoDoHero from "./GatilhoDoHero";
+import RastreioDeClique from "./RastreioDeClique";
 import { CHECKOUT_PADRAO, PLANOS } from "./planos";
 
 export const metadata: Metadata = {
@@ -68,6 +69,8 @@ const FAQ: [string, string][] = [
   ["Extensão de Chrome é seguro? O que ela lê?", "Ela roda em três lugares: no seu painel de pedidos, no Portal do Parceiro e no 99Food Admin. Ela lê o número de pedidos da coluna que você marcou. Não lê senha, não lê suas outras abas e não vê nada de banco."],
   ["E se eu tiver várias lojas?", "Você marca na extensão quais lojas mudam de prazo. As que não marcar ficam como estão. Cada loja a mais custa R$ 9,90 e vale para as duas plataformas: mais uma no iFood e mais uma no 99Food. Todas precisam estar no mesmo login do iFood."],
   ["O prazo do 99 é o mesmo do iFood?", "Não, e é de propósito. No 99 o cliente vê o tempo de preparo somado ao tempo de entrega da faixa que você cadastrou, então a extensão mexe só no preparo. Você configura essa regra separada."],
+  ["E se o iFood mudar a tela e ela parar?", "Acontece, e quem corre é a gente: a atualização é nossa, não sua. Enquanto isso ela segura o último prazo e avisa na tela, em vez de sumir com o prazo. Se ficar sem funcionar, você cancela na Cakto e, dentro dos 7 dias, o dinheiro volta inteiro."],
+  ["Dá para pagar no Pix?", "Sim: Pix Automático ou cartão, pela Cakto. No Pix a renovação também é automática, sem você lembrar todo mês."],
   ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa. E se cancelar dentro de 7 dias, o dinheiro volta inteiro."],
   ["E se eu deixar de pagar?", "Ela para de ajustar na hora e explica na tela por quê. Pagou de novo, volta sozinha."],
 ];
@@ -153,6 +156,7 @@ export default function PrazosLanding() {
   return (
     <main style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif", color: "#0F172A", background: "#F8FAFC" }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
+      <RastreioDeClique />
 
       {/* ─────────── HERO: a demonstração é a imagem ─────────── */}
       <section style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#fff" }}>
@@ -171,7 +175,7 @@ export default function PrazosLanding() {
 
           <p style={{ fontSize: "1.12rem", color: "#CBD5E1", maxWidth: 680, lineHeight: 1.55, margin: "0 0 20px" }}>
             A extensão olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e no 99Food.
-            Você deixa o portal aberto e não mexe em mais nada.
+            Feita para quem entrega com motoboy próprio. Você deixa o portal aberto e não mexe em mais nada.
           </p>
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
@@ -179,7 +183,7 @@ export default function PrazosLanding() {
             <div style={{ color: "#fff", fontWeight: 800, fontSize: "1.05rem" }}>Menos de R$ 1 por dia.</div>
           </div>
           <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 28 }}>
-            Leva 2 minutos · 7 dias de garantia · sem fidelidade
+            Leva 2 minutos · Pix ou cartão · 7 dias de garantia · sem fidelidade
           </div>
 
           <DemoAoVivo />
@@ -262,6 +266,24 @@ export default function PrazosLanding() {
             uma mensalidade e meia.
           </p>
           <SeletorDePlano />
+
+          {/* O que vem no preço. Cinco itens, todos verdadeiros hoje — nada de
+              "bônus no valor de R$ X". A pilha de valor em low ticket é curta. */}
+          <ul style={{ listStyle: "none", padding: 0, maxWidth: 720, margin: "22px auto 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "8px 24px", color: "#CBD5E1", lineHeight: 1.5, fontSize: ".98rem" }}>
+            {[
+              "iFood e 99Food, nas lojas que você marcar",
+              "Ajuste a cada mudança na fila, o dia inteiro",
+              "Relatório do dono: quanto tempo o prazo ficou alto, baixo e em estouro",
+              "Atualizações incluídas — quando o iFood muda a tela, quem corre é a gente",
+              "Suporte no WhatsApp com quem fez o produto e também toca loja",
+            ].map((t) => (
+              <li key={t} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ color: "#34D399", fontWeight: 900, flexShrink: 0 }}>✓</span>
+                <span>{t}</span>
+              </li>
+            ))}
+          </ul>
+
           <details style={{ ...detalhes, background: "#0B1220", border: "1px solid #334155", maxWidth: 720, margin: "18px auto 0" }}>
             <summary style={{ ...resumo, color: "#CBD5E1" }}>🧮 Quer fazer a conta da sua loja?</summary>
             <div style={{ color: "#0F172A" }}>
@@ -297,9 +319,10 @@ export default function PrazosLanding() {
         <div style={{ ...card, borderColor: "#BBF7D0", background: "#F0FDF4", display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontSize: "2.6rem", lineHeight: 1 }}>🛡️</div>
           <div style={{ flex: 1, minWidth: 260 }}>
-            <div style={{ fontSize: "1.3rem", fontWeight: 900, marginBottom: 6 }}>7 dias de garantia, sem perguntar por quê</div>
+            <div style={{ fontSize: "1.3rem", fontWeight: 900, marginBottom: 6 }}>7 dias de garantia, incondicional</div>
             <div style={{ color: "#166534", lineHeight: 1.55 }}>
-              Use no seu movimento. Não fez o que promete? Pede o dinheiro de volta e recebe tudo.
+              Use no seu movimento de verdade. Não fez o que promete? Cancela na Cakto ou manda um zap, e o
+              dinheiro volta inteiro — sem pergunta, sem formulário. Depois disso, sem fidelidade: para quando quiser.
             </div>
           </div>
         </div>

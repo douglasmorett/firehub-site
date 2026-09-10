@@ -134,11 +134,24 @@ const nextConfig: NextConfig = {
       // lojista tem um <iframe> de ns.html para o visitante sem JavaScript.
       // Sem esta linha ele seria bloqueado em silencio, do mesmo jeito que o
       // mapa acima — e ninguem descobriria, porque so quebra sem JS.
-      "frame-src 'self' https://*.mercadopago.com https://*.mercadolibre.com https://maps.google.com https://www.google.com https://www.googletagmanager.com https://www.firecheckapp.com.br",
+      // ── O pixel do Meta precisa do facebook.com em frame-src e form-action ─
+      //
+      // O fbevents.js manda os eventos para https://www.facebook.com/tr/ de
+      // três jeitos, conforme o tamanho do que tem a dizer: imagem (GET),
+      // fetch/beacon e, quando o payload passa do limite da URL, um <form>
+      // POST dentro de um <iframe> dele mesmo. Os dois últimos batiam em
+      // `form-action 'self'` e num frame-src sem o Facebook. O Lighthouse de
+      // 10/09/2026 flagrou na /prazos: "Sending form data to
+      // https://www.facebook.com/tr/ violates form-action" e "Framing
+      // https://www.facebook.com/ violates frame-src". Evento bloqueado é
+      // conversão que o anúncio nunca vê — o algoritmo otimiza no escuro e o
+      // relatório mente para baixo. Liberar só o facebook.com não abre nada
+      // além do que o pixel já fazia pela imagem.
+      "frame-src 'self' https://*.mercadopago.com https://*.mercadolibre.com https://maps.google.com https://www.google.com https://www.googletagmanager.com https://www.firecheckapp.com.br https://www.facebook.com",
       "media-src 'self' data: blob:",
       "object-src 'none'",
       "base-uri 'self'",
-      "form-action 'self'",
+      "form-action 'self' https://www.facebook.com",
       "frame-ancestors 'none'",
       "upgrade-insecure-requests",
     ].join("; ");

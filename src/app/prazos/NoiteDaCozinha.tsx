@@ -155,7 +155,9 @@ export default function NoiteDaCozinha() {
         <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
           <span style={{ width: 22, height: 3, background: LARANJA, borderRadius: 2 }} /> com a extensão
         </span>
-        <span style={{ marginLeft: "auto", color: CINZA_FRACO }}>
+        {/* CINZA_FRACO sobre branco dá 2,9 de contraste — o Lighthouse reprovou.
+            Legenda é texto: cor de texto. */}
+        <span style={{ marginLeft: "auto", color: CINZA_TEXTO }}>
           exemplo de uma noite · {MOTOBOYS} motoboys · a tabela é a mesma que a extensão usa
         </span>
       </figcaption>
