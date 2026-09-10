@@ -1486,10 +1486,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [printerConfig, setPrinterConfig] = useState<any>(null);
 
   useEffect(() => {
-    fetch("/api/store/printer-config")
-      .then(r => r.json())
-      .then(d => { if (d) setPrinterConfig(d); })
-      .catch(() => {});
+    const carregar = () =>
+      fetch("/api/store/printer-config")
+        .then(r => r.json())
+        .then(d => { if (d) setPrinterConfig(d); })
+        .catch(() => {});
+    carregar();
+    // O painel fica aberto o dia inteiro no PC do caixa, e a config vinha uma
+    // vez só: a campanha "converter" (ou uma impressora nova) configurada em
+    // Minha Loja só valia aqui depois de recarregar a página. Uma leitura a
+    // cada 5 min e ao voltar para a aba resolve sem ninguém precisar saber.
+    const timer = setInterval(carregar, 5 * 60 * 1000);
+    const aoFocar = () => { if (document.visibilityState === "visible") carregar(); };
+    document.addEventListener("visibilitychange", aoFocar);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", aoFocar); };
   }, []);
 
   // Espelha a largura REAL configurada em /store/impressoras no preview do recibo,

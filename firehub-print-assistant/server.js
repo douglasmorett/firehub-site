@@ -737,6 +737,23 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const rightAlign = padLine;
   const makeBoxLine = padLine;
 
+  // QR code em ESC/POS: GS ( k, o comando do padrao Epson que as POS-58/80
+  // genericas seguem. Impressora que NAO conhece o comando simplesmente o
+  // ignora (os dados de funcao ficam fora do fluxo de texto). Quem decide se
+  // tenta e o perfil: o "legacy" e o das impressoras que imprimem lixo com
+  // comando desconhecido, e nele o QR nem e montado.
+  const qrEscPos = (dados, modulo = 6) => {
+    const d = String(dados);
+    const len = d.length + 3;
+    const pL = String.fromCharCode(len & 0xff);
+    const pH = String.fromCharCode((len >> 8) & 0xff);
+    return GS + "(k" + "\x04\x00" + "\x31\x41" + "\x32\x00"                        // modelo 2
+      + GS + "(k" + "\x03\x00" + "\x31\x43" + String.fromCharCode(modulo)         // tamanho do modulo
+      + GS + "(k" + "\x03\x00" + "\x31\x45" + "\x31"                              // correcao M
+      + GS + "(k" + pL + pH + "\x31\x50\x30" + d                                  // dados
+      + GS + "(k" + "\x03\x00" + "\x31\x51\x30";                                  // imprime
+  };
+
   // Nao trunca mais: sub-item de combo e observacao passam a quebrar com
   // indentacao, mantendo a margem de 2 espacos do modelo da Hakim.
   const makeBoxText = (text) =>
@@ -1223,22 +1240,67 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // "legacy" o QR nem e tentado: e o perfil das impressoras que imprimem lixo
   // com comando desconhecido.
   if (order.qrPuxarUrl && profile !== "legacy") {
-    const dadosQr = String(order.qrPuxarUrl);
-    const len = dadosQr.length + 3;
-    const pL = String.fromCharCode(len & 0xff);
-    const pH = String.fromCharCode((len >> 8) & 0xff);
-    res += LF + CENTER;
-    res += GS + "(k" + "\x04\x00" + "\x31\x41" + "\x32\x00";            // modelo 2
-    res += GS + "(k" + "\x03\x00" + "\x31\x43" + "\x06";                // modulo 6
-    res += GS + "(k" + "\x03\x00" + "\x31\x45" + "\x31";                // correcao M
-    res += GS + "(k" + pL + pH + "\x31\x50\x30" + dadosQr;              // dados
-    res += GS + "(k" + "\x03\x00" + "\x31\x51\x30";                     // imprime
+    res += LF + CENTER + qrEscPos(order.qrPuxarUrl, 6);
     res += LF + BOLD_ON + centerLine("MOTOBOY: escaneie para puxar") + BOLD_OFF;
     const codigoCurto = String(order.qrPuxarCodigo || "").split("-").pop() || "";
     if (codigoCurto) {
       res += centerLine("ou digite o numero " + codigoCurto + " no app");
     }
     res += LEFT;
+  }
+
+  // ── CAMPANHA "CONVERTER PARA SITE PROPRIO" ────────────────────────────
+  //
+  // O bloco "VOCE GANHOU R$ X" + QR com cupom que vai grampeado no saco do
+  // pedido do iFood/99Food, para o proximo pedido daquele cliente entrar pelo
+  // site da loja, sem comissao. Quem decide SE sai e EM QUAL impressora e o
+  // servidor (lib/campanha-converter.ts): aqui so se desenha o que veio em
+  // `order.campanha`. Nunca na comanda da cozinha (semValores) — o bloco e
+  // para o cliente ler em casa, nao para a chapa.
+  //
+  // O titulo e o premio saem em corpo dobrado nos DOIS eixos (DOUBLE_SIZE):
+  // cada caractere ocupa duas colunas, entao a centralizacao e sobre
+  // columns/2. centerLine centraria sobre a largura simples e o texto sairia
+  // empurrado para a direita (ou cortado, na bobina de 58 mm).
+  const campanha = order.campanha && typeof order.campanha === "object" ? order.campanha : null;
+  if (campanha && !semValores) {
+    const centerBig = (text) => {
+      const t = cleanAscii(text).trim();
+      if (!t) return "";
+      const largura = Math.floor(columns / 2);
+      if (t.length > largura) return DOUBLE_HEIGHT + BOLD_ON + centerLine(t) + BOLD_OFF + DOUBLE_OFF;
+      return DOUBLE_SIZE + BOLD_ON + " ".repeat(Math.max(0, Math.floor((largura - t.length) / 2))) + t + LF + BOLD_OFF + DOUBLE_OFF;
+    };
+    res += LF + LEFT + divider + LF;
+    res += centerBig(campanha.titulo || "VOCE GANHOU");
+    res += centerBig(campanha.premio || "");
+    if (campanha.texto) res += BOLD_ON + centerLine(campanha.texto) + BOLD_OFF;
+    if (campanha.url && profile !== "legacy") {
+      // Modulo 8 (o do motoboy e 6): este QR e lido pelo cliente com a camera
+      // do celular, em casa, e nao pelo motoboy a 30 cm — quanto maior, melhor.
+      res += LF + CENTER + qrEscPos(campanha.url, 8) + LF;
+    }
+    res += LEFT + BOLD_ON + centerLine("Escaneie e faca seu proximo pedido") + BOLD_OFF;
+    if (campanha.codigo) {
+      res += centerLine("ou use o cupom " + String(campanha.codigo).toUpperCase());
+      if (campanha.endereco) {
+        // Na bobina de 58 mm o endereco nao cabe numa linha e a quebra por
+        // palavra cortaria o slug no meio ("pastel-d / a-paulista"). Parte
+        // em "/loja/", que e onde da para ler: dominio numa linha, loja na outra.
+        const endereco = cleanAscii(String(campanha.endereco)).trim();
+        const corte = endereco.indexOf("/loja/");
+        if (("em " + endereco).length <= columns || corte <= 0) {
+          res += centerLine("em " + endereco);
+        } else {
+          res += centerLine("em " + endereco.slice(0, corte));
+          res += centerLine(endereco.slice(corte));
+        }
+      }
+    }
+    for (const regra of Array.isArray(campanha.regras) ? campanha.regras : []) {
+      res += centerLine(String(regra));
+    }
+    res += LEFT + divider;
   }
 
   res += LF + centerLine("Obrigado pela preferencia!") + LEFT + FEED + CUT;
@@ -1875,9 +1937,15 @@ setInterval(async () => {
           // manda `destinos`. Comporta-se como sempre se comportou.
           const alvo = currentConfig.printer;
           const perfil = resolvePrinterProfile(alvo, job);
+          // A campanha "converter" diz em qual impressora sai. Sem `destinos`
+          // o servidor nao sabe qual e a padrao deste PC, entao manda o bloco
+          // com o nome dentro e a conferencia e feita aqui.
+          const campanhaDoJob = job.order && job.order.campanha ? job.order.campanha : null;
+          const mesmaImpressora = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+          const campanhaConfere = !campanhaDoJob || !campanhaDoJob.impressora || mesmaImpressora(campanhaDoJob.impressora, alvo);
           promessas.push(enqueuePrintJob({
             printer: alvo,
-            order: job.order,
+            order: campanhaConfere ? job.order : { ...job.order, campanha: undefined },
             storeName: job.storeName || "FIREHUB",
             copies: perfil.copies,
             paperWidth: perfil.paperWidth,
@@ -1906,6 +1974,9 @@ setInterval(async () => {
               // que o Assistente antigo imprimia em todas, sem distinguir.
               qrPuxarUrl: destino.qrPuxarUrl || undefined,
               qrPuxarCodigo: destino.qrPuxarCodigo || undefined,
+              // Idem para o bloco da campanha "converter": so no destino da
+              // impressora que a loja escolheu.
+              campanha: destino.campanha || undefined,
             },
             storeName: job.storeName || "FIREHUB",
             copies: Number(destino.copies) > 0 ? Number(destino.copies) : perfil.copies,

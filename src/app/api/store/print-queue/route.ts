@@ -7,6 +7,7 @@ import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 import { comboParaImpressao } from "@/lib/parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
+import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -130,6 +131,8 @@ export async function GET(req: NextRequest) {
       storeName: string | null;
       name: string | null;
       slug: string | null;
+      /** Campanha "converter para site próprio" mora em storeLoyalty.converter. */
+      storeLoyalty?: unknown;
       printQueuePolledAt?: Date | null;
       printQueueEstado?: unknown;
     };
@@ -137,13 +140,13 @@ export async function GET(req: NextRequest) {
     try {
       owner = await prisma.user.findUnique({
         where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true, slug: true, printQueuePolledAt: true, printQueueEstado: true },
+        select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, printQueuePolledAt: true, printQueueEstado: true },
       });
     } catch (err) {
       console.error("[PrintQueue] printQueuePolledAt ausente? (falta db push)", (err as any)?.code || err);
       owner = await prisma.user.findUnique({
         where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true, slug: true },
+        select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true },
       });
     }
     const pc: any = (owner?.printerConfig as any) || null;
@@ -275,6 +278,17 @@ export async function GET(req: NextRequest) {
       // pediu. Loja sem impressora cadastrada cai na impressora única: vai.
       const qr = camposDoQrPuxar(order as any, slugDaLoja);
       const qrEmTodas = destinos.length === 0 || destinos.every(d => qrLigadoNaImpressora(d.impressora, pc));
+      // ── CAMPANHA "CONVERTER PARA SITE PRÓPRIO" ─────────────────────
+      //
+      // O bloco "VOCÊ GANHOU R$ X" + QR com cupom no fim da comanda do
+      // iFood/99Food (lib/campanha-converter.ts). Vai POR DESTINO, só no da
+      // impressora que a loja escolheu — a cozinha não o vê. Sem `destinos`
+      // (loja sem impressora cadastrada) vai no pedido inteiro com o nome da
+      // impressora dentro, e o Assistente 1.2.10 confere antes de desenhar;
+      // Assistente antigo ignora o campo e imprime como sempre.
+      const campanhaSemDestino = destinos.length === 0
+        ? camposDaCampanhaSemDestino(order as any, owner?.storeLoyalty, slugDaLoja)
+        : {};
       return {
       id: "job_" + order.id,
       // ── QUEM ENTREGA ESTE PEDIDO ────────────────────────────────────
@@ -289,7 +303,7 @@ export async function GET(req: NextRequest) {
       // Aqui o servidor decide (lib/entrega-parceira.ts) e o código de coleta
       // só viaja quando a entrega é mesmo do parceiro. Assim a regra antiga,
       // instalada nas lojas hoje, não tem mais como concluir errado.
-      order: { ...order, ...camposDeEntregaParaImpressao(order), ...(qrEmTodas ? qr : {}) },
+      order: { ...order, ...camposDeEntregaParaImpressao(order), ...(qrEmTodas ? qr : {}), ...campanhaSemDestino },
       storeName: (order as any).franchisee?.storeName || (order as any).franchisee?.name || "FIREHUB",
       // Escalar compativel com o assistente ja instalado. Vale para instalacao
       // de UMA impressora; com varias, quem resolve e o printerConfig abaixo.
@@ -330,6 +344,8 @@ export async function GET(req: NextRequest) {
         items: d.itens,
         // O QR desta impressora (vazio = esta não imprime QR).
         ...(qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
+        // O bloco da campanha desta impressora (vazio = não é a escolhida).
+        ...camposDaCampanha(order as any, owner?.storeLoyalty, slugDaLoja, d.impressora.name),
       })),
       createdAt: order.createdAt.toISOString(),
       };
@@ -398,6 +414,9 @@ export async function GET(req: NextRequest) {
           escposProfile: d.impressora.escposProfile ?? undefined,
           somenteBebidas: d.impressora.somenteBebidas === true,
           items: d.itens,
+          // Reimpressão sai igual à original: com o bloco da campanha onde ele
+          // saiu da primeira vez.
+          ...camposDaCampanha(order, owner?.storeLoyalty, slugDaLoja, d.impressora.name),
         })),
         createdAt: pedida.createdAt.toISOString(),
       };

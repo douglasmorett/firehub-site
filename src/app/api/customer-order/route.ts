@@ -9,6 +9,32 @@ import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, descreverVeredicto, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { Prisma } from "@prisma/client";
+import { cuponsComCampanha, ORIGEM_CUPOM_CAMPANHA, FONTES_QUE_NAO_SAO_SITE, digitosDoTelefone } from "@/lib/campanha-converter";
+
+/**
+ * Este telefone já fez pedido PELO SITE nesta loja? É a regra do "só no
+ * primeiro pedido" do cupom da campanha "converter para site próprio".
+ *
+ * Marketplace e salão não contam (FONTES_QUE_NAO_SAO_SITE): o cliente do
+ * iFood é justamente quem a campanha quer trazer, e quem comeu na mesa nunca
+ * pediu pelo site. Cancelado e pagamento abandonado também não: ninguém
+ * comprou. Compara pelos 8 últimos dígitos, porque o telefone é gravado como
+ * o cliente digitou — com máscara, com 55, com ou sem o nono dígito.
+ */
+async function jaPediuPeloSite(franchiseeId: string, telefone: string): Promise<boolean> {
+  const digitos = digitosDoTelefone(telefone);
+  if (digitos.length < 8) return false;
+  const ultimos8 = digitos.slice(-8);
+  const linhas = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "CustomerOrder"
+    WHERE "franchiseeId" = ${franchiseeId}
+      AND "status" NOT IN ('CANCELADO', 'CANCELED', 'CRIANDO_IA', 'AGUARDANDO_PAGAMENTO')
+      AND COALESCE("source", 'ONLINE') NOT IN (${Prisma.join(FONTES_QUE_NAO_SAO_SITE)})
+      AND regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + ultimos8}
+    LIMIT 1`;
+  return linhas.length > 0;
+}
 
 export async function POST(req: Request) {
   try {
@@ -32,6 +58,9 @@ export async function POST(req: Request) {
       select: {
         id: true, slug: true, storeName: true, storeOpen: true, storePause: true, storeHours: true, storeTimezone: true,
         autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true,
+        // O cupom da campanha "converter para site próprio" mora aqui
+        // (lib/campanha-converter.ts) e é conferido como os demais.
+        storeLoyalty: true,
         // A área de entrega, para o SERVIDOR conferir — antes só o navegador
         // conferia, e um POST direto (ou aba antiga) entrava com qualquer
         // endereço e qualquer taxa.
@@ -305,11 +334,24 @@ export async function POST(req: Request) {
     // Aplicar cupom de desconto
     let discount = 0;
     if (couponCode) {
-      const coupons = (franchisee.storeCoupons as any[]) || [];
+      const coupons = cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty);
       const coupon = coupons.find((c: any) =>
         c.code?.toLowerCase() === couponCode.toLowerCase() && c.active !== false
       );
       if (coupon) {
+        // ── CUPOM DA CAMPANHA "CONVERTER": SÓ NO PRIMEIRO PEDIDO ──────────
+        // O prêmio impresso na comanda do iFood/99Food é para trazer o
+        // cliente ao site UMA vez; a partir daí ele já é cliente do site. Um
+        // pedido anterior pelo site, no mesmo telefone, encerra o direito —
+        // e a resposta diz isso com todas as letras, em vez de zerar o
+        // desconto em silêncio e o cliente ver o total subir na hora de pagar.
+        if (coupon.origem === ORIGEM_CUPOM_CAMPANHA && coupon.somentePrimeiroPedido === true) {
+          if (await jaPediuPeloSite(franchisee.id, customerPhone)) {
+            return NextResponse.json({
+              error: `O cupom ${coupon.code} vale só no primeiro pedido pelo site, e este telefone já fez pedido por aqui. Remova o cupom para continuar — os preços do cardápio são os mesmos, sem taxa de aplicativo.`,
+            }, { status: 400 });
+          }
+        }
         if (coupon.minOrderValue && totalAmount < coupon.minOrderValue) {
           discount = 0;
         } else {

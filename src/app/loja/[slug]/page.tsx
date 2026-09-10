@@ -4,6 +4,7 @@ import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { notFound } from "next/navigation";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
+import { cuponsComCampanha } from "@/lib/campanha-converter";
 
 export const revalidate = 60; // ⚡ Cache de Borda (Edge) de 60 segundos
 
@@ -193,7 +194,15 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
 
   return (
     <CustomerStorePage
-      franchisee={franchisee as any}
+      franchisee={{
+        ...franchisee,
+        // O cupom da campanha "converter para site próprio" entra na lista de
+        // cupons da loja: o QR da comanda do iFood/99Food abre este cardápio
+        // com ?cupom=, e o site o aplica como qualquer outro cupom
+        // (lib/campanha-converter.ts). Cupom cadastrado à mão com o mesmo
+        // código continua valendo o dele.
+        storeCoupons: cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty),
+      } as any}
       menuProducts={menuComPrecoDoCanal as any}
       storeCategories={storeCategories as any}
       storeRating={storeRating}

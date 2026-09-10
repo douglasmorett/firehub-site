@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { lerCampanha } from "@/lib/campanha-converter";
 
 export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -37,7 +38,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: targetId },
-    select: { printerConfig: true, storeName: true, name: true, slug: true },
+    select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true },
   });
 
   const pConfig = (user?.printerConfig as any) || { autoprint: true, printers: [] };
@@ -48,5 +49,9 @@ export async function GET() {
     // e a URL é montada pelo slug. Vem junto da config para o print.ts não
     // precisar de outra chamada.
     storeSlug: user?.slug || "",
+    // Campanha "converter para site próprio" (lib/campanha-converter.ts): o
+    // navegador imprime a comanda do iFood/99Food e precisa saber se ela leva
+    // o bloco do prêmio e em qual impressora. Mesma origem da fila da nuvem.
+    campanhaConverter: lerCampanha(user?.storeLoyalty),
   });
 }

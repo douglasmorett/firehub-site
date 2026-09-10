@@ -1,6 +1,7 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
 import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
+import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import {
@@ -94,7 +95,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.9";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.10";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 
@@ -136,6 +137,12 @@ type PrinterConfig = {
   defaultPaperWidth?: "58mm" | "80mm";
   defaultColumns?: number;
   printers: PrinterEntry[];
+  /* Vem do GET /api/store/printer-config: monta a URL do QR do motoboy e a
+     do QR da campanha. */
+  storeSlug?: string;
+  /* Campanha "converter para site próprio" (lib/campanha-converter.ts): se a
+     comanda do iFood/99Food leva o bloco "VOCÊ GANHOU" e em qual impressora. */
+  campanhaConverter?: CampanhaConverterConfig;
 };
 
 /**
@@ -236,7 +243,9 @@ async function printToDevice(
   semValores = false,
   somenteBebidas = false,
   /** ESTA impressora imprime o QR do motoboy? Decidido por impressora, la no printOrder. */
-  qrPuxar = true
+  qrPuxar = true,
+  /** O bloco da campanha "converter" para ESTA impressora (ausente = nao sai). */
+  campanha?: BlocoDaCampanha
 ): Promise<{ ok: boolean; aguardando: boolean }> {
   const nao = { ok: false, aguardando: false };
   try {
@@ -312,6 +321,11 @@ async function printToDevice(
           // a do balcão, que grampeia a via no saco, imprime. Assistente antigo
           // ignora campo desconhecido.
           ...(qrPuxar ? camposDoQrPuxar(order as any, (printerConfig as any)?.storeSlug) : {}),
+          // ── CAMPANHA "CONVERTER PARA SITE PRÓPRIO" ──────────────────────
+          // "VOCÊ GANHOU R$ X" em corpo dobrado + QR com o cupom, no fim da
+          // comanda do iFood/99Food. Decidido no printOrder, por impressora
+          // (lib/campanha-converter.ts). Assistente antigo ignora o campo.
+          ...(campanha ? { campanha } : {}),
           // Quem entrega, decidido AQUI. O payload não mandava `deliveryBy`:
           // no Assistente o campo chegava vazio e sobrava o código de coleta
           // para decidir, então todo pedido do iFood com código saía com
@@ -461,6 +475,19 @@ export async function printOrder(
     }
 
     const filteredOrder = { ...order, items: itemsToPrint };
+
+    // ── CAMPANHA "CONVERTER PARA SITE PRÓPRIO" ────────────────────────────
+    // Só em pedido do iFood/99Food, só na impressora que a loja escolheu,
+    // nunca na comanda da cozinha. Regra em lib/campanha-converter.ts — a
+    // mesma que a fila da nuvem aplica quando o painel não está aberto.
+    const { campanha } = camposDaCampanha(
+      order as any,
+      { converter: printerConfig?.campanhaConverter },
+      printerConfig?.storeSlug,
+      printer.name,
+      semValores
+    );
+
     const result = await printToDevice(
       printer.name,
       filteredOrder,
@@ -473,7 +500,8 @@ export async function printOrder(
       printer.escposProfile,
       semValores,
       printer.somenteBebidas === true,
-      qrLigadoNaImpressora(printer, printerConfig as any)
+      qrLigadoNaImpressora(printer, printerConfig as any),
+      campanha
     );
     if (result.ok) printed++;
     if (result.aguardando) aguardando = true;

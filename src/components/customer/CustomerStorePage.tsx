@@ -173,6 +173,35 @@ export default function CustomerStorePage({
   const [showCouponInput, setShowCouponInput] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState("");
+
+  // ── CUPOM QUE CHEGOU PELA URL (?cupom=) ──────────────────────────────────
+  // É o QR da comanda do iFood/99Food (campanha "converter para site próprio",
+  // lib/campanha-converter.ts): a pessoa escaneia e cai aqui já com o código.
+  // Fica guardado e é aplicado sozinho assim que a sacola alcança o mínimo —
+  // aplicar de cara, com a sacola vazia, esbarraria no pedido mínimo e a
+  // pessoa veria o cupom "recusado" antes de escolher qualquer coisa.
+  const [cupomDaUrl, setCupomDaUrl] = useState<{ code: string; discount: number; type: string; minOrderValue: number; somentePrimeiroPedido: boolean } | null>(null);
+  // Quem removeu o cupom na mão não o vê voltar a cada item que põe na sacola.
+  const cupomDaUrlAplicado = useRef(false);
+  useEffect(() => {
+    try {
+      const code = (new URLSearchParams(window.location.search).get("cupom") || "").trim().toUpperCase();
+      if (!code) return;
+      const lista = (((franchisee as any).storeCoupons || []) as any[]);
+      const achado = lista.find((c) => String(c?.code || "").toUpperCase() === code && c?.active !== false);
+      if (!achado) return;
+      setCupomDaUrl({
+        code,
+        discount: Number(achado.discount) || 0,
+        type: achado.type || "percent",
+        minOrderValue: Number(achado.minOrderValue) || 0,
+        somentePrimeiroPedido: achado.somentePrimeiroPedido === true,
+      });
+      setCouponCode(code);
+      setShowCouponInput(true);
+    } catch { /* sem URL legível: segue sem cupom */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Modais especiais de alto engajamento
@@ -861,6 +890,40 @@ export default function CustomerStorePage({
       }
     }
   };
+
+  // Aplica (e reaplica) o cupom da URL conforme a sacola muda. Abaixo do
+  // mínimo o cupom sai da conta e o aviso diz quanto falta — sem isso o
+  // desconto apareceria na sacola e sumiria no total, que é o servidor quem
+  // fecha (customer-order/route.ts zera o cupom abaixo do mínimo).
+  useEffect(() => {
+    if (!cupomDaUrl) return;
+    const minimo = cupomDaUrl.minOrderValue || 0;
+    const atingiu = cartTotal > 0 && cartTotal >= minimo;
+    const fmtR = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+    if (couponApplied?.code === cupomDaUrl.code) {
+      if (!atingiu) {
+        setCouponApplied(null);
+        cupomDaUrlAplicado.current = false;
+        if (cartTotal > 0) setCouponError(`⚠️ Falta ${fmtR(minimo - cartTotal)} para o cupom ${cupomDaUrl.code} valer (mínimo ${fmtR(minimo)}).`);
+      }
+      return;
+    }
+    if (atingiu && !couponApplied && !cupomDaUrlAplicado.current) {
+      cupomDaUrlAplicado.current = true;
+      setCouponCode(cupomDaUrl.code);
+      setCouponError("");
+      if (cupomDaUrl.type === "fixed") {
+        setCouponApplied({ code: cupomDaUrl.code, discount: cupomDaUrl.discount, isFreeShipping: false });
+      } else if (cupomDaUrl.type === "free_shipping") {
+        setCouponApplied({ code: cupomDaUrl.code, discount: deliveryFee || 0, isFreeShipping: true });
+      } else {
+        setCouponApplied({ code: cupomDaUrl.code, discount: cartTotal * (cupomDaUrl.discount / 100), pct: cupomDaUrl.discount, isFreeShipping: false });
+      }
+    } else if (!atingiu && cartTotal > 0 && !couponApplied) {
+      setCouponError(`🎁 Falta ${fmtR(minimo - cartTotal)} para o cupom ${cupomDaUrl.code} valer (mínimo ${fmtR(minimo)}).`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cupomDaUrl, cartTotal]);
 
   // Customer auth
   const handleAuth = async () => {
@@ -2471,6 +2534,22 @@ export default function CustomerStorePage({
       {!isPaused && franchisee.storeOpen === false && (
         <div style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
           🔴 Loja fechada no momento · Em breve voltamos!
+        </div>
+      )}
+
+      {/* PRÊMIO DA COMANDA (campanha "converter para site próprio") */}
+      {cupomDaUrl && (
+        <div style={{ background: "linear-gradient(135deg,#065F46,#059669)", color: "#fff", padding: "0.85rem 1.25rem", textAlign: "center" }}>
+          <p style={{ fontWeight: 900, fontSize: "1.05rem", margin: 0 }}>
+            🎁 Você ganhou {cupomDaUrl.type === "fixed"
+              ? `R$ ${cupomDaUrl.discount.toFixed(2).replace(".", ",")}`
+              : cupomDaUrl.type === "free_shipping" ? "frete grátis" : `${cupomDaUrl.discount}% de desconto`} para pedir por aqui!
+          </p>
+          <p style={{ fontSize: "0.8rem", opacity: 0.92, margin: "3px 0 0" }}>
+            O cupom <strong>{cupomDaUrl.code}</strong> entra sozinho na sua sacola
+            {cupomDaUrl.minOrderValue > 0 ? ` a partir de R$ ${cupomDaUrl.minOrderValue.toFixed(2).replace(".", ",")}` : ""}
+            {cupomDaUrl.somentePrimeiroPedido ? " · vale no seu primeiro pedido pelo site" : ""}.
+          </p>
         </div>
       )}
 

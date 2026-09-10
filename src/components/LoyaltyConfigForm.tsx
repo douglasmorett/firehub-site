@@ -1,11 +1,23 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Gift, Info, TrendingUp, Award, Users, Cake, Crown, Check, Sparkles, AlertCircle, HelpCircle
 } from "lucide-react";
+import {
+  CAMPANHA_PADRAO,
+  VERSAO_ASSISTENTE_COM_CAMPANHA,
+  formatarPremio,
+  lerCampanha,
+  normalizarCodigo,
+  versaoAtende,
+  type CampanhaConverterConfig,
+} from "@/lib/campanha-converter";
 
 export type LoyaltyConfig = {
   active: boolean;
+  // Campanha "Converter para site próprio": prêmio + QR no fim da comanda do
+  // iFood/99Food (lib/campanha-converter.ts).
+  converter: CampanhaConverterConfig;
   // Program 1: Cashback
   cashbackActive: boolean;
   rate: number;
@@ -39,6 +51,7 @@ export type LoyaltyConfig = {
 
 const DEFAULT_LOYALTY: LoyaltyConfig = {
   active: true,
+  converter: CAMPANHA_PADRAO,
   cashbackActive: true,
   rate: 5,
   minOrderValue: 20,
@@ -78,15 +91,98 @@ export default function LoyaltyConfigForm({
   initialConfig?: Partial<LoyaltyConfig>;
   onSave: (config: LoyaltyConfig) => Promise<void>;
 }) {
-  const [config, setConfig] = useState<LoyaltyConfig>({ ...DEFAULT_LOYALTY, ...initialConfig });
-  const [activeTab, setActiveTab] = useState<"cashback" | "stamps" | "referral" | "birthday" | "vip">("cashback");
+  const [config, setConfig] = useState<LoyaltyConfig>({
+    ...DEFAULT_LOYALTY,
+    ...initialConfig,
+    // O que está salvo pode ser parcial (campo novo, string onde era número):
+    // normaliza uma vez, na entrada.
+    converter: lerCampanha(initialConfig),
+  });
+  const [activeTab, setActiveTab] = useState<"converter" | "cashback" | "stamps" | "referral" | "birthday" | "vip">("converter");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const update = (key: keyof LoyaltyConfig, val: any) =>
     setConfig(prev => ({ ...prev, [key]: val }));
 
+  // ── CAMPANHA "CONVERTER PARA SITE PRÓPRIO" ──────────────────────────────
+  //
+  // O prêmio sai IMPRESSO, e quem imprime é o Assistente de Impressão no PC
+  // da loja. Sem ele conectado não há o que configurar — a tela pede para
+  // instalar antes, em vez de deixar a loja ativar uma campanha que nunca
+  // sairia no papel. O estado vem de /api/store/print-queue/status (o que o
+  // Assistente contou de si na última consulta à fila) e a lista de
+  // impressoras é a que o Windows daquele PC enxerga, mais as cadastradas.
+  type EstadoDoAssistente = {
+    ultimoPoll: string | null;
+    paradoHaSegundos: number | null;
+    versaoAssistente: string | null;
+    impressorasNoPc: string[];
+  };
+  const [assistente, setAssistente] = useState<EstadoDoAssistente | null>(null);
+  const [impressorasCadastradas, setImpressorasCadastradas] = useState<string[]>([]);
+  const [slugDaLoja, setSlugDaLoja] = useState("");
+  const [verificando, setVerificando] = useState(true);
+  const [erroConv, setErroConv] = useState("");
+
+  const verificarAssistente = async () => {
+    setVerificando(true);
+    try {
+      const [st, pc] = await Promise.all([
+        fetch("/api/store/print-queue/status").then(r => (r.ok ? r.json() : null)).catch(() => null),
+        fetch("/api/store/printer-config").then(r => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      setAssistente(st);
+      setImpressorasCadastradas(
+        Array.isArray(pc?.printers) ? pc.printers.map((p: any) => String(p?.name || "")).filter(Boolean) : []
+      );
+      setSlugDaLoja(String(pc?.storeSlug || ""));
+    } finally {
+      setVerificando(false);
+    }
+  };
+  useEffect(() => { verificarAssistente(); }, []);
+
+  const conv = config.converter;
+  const setConv = (patch: Partial<CampanhaConverterConfig>) =>
+    setConfig(prev => ({ ...prev, converter: { ...prev.converter, ...patch } }));
+
+  // Três estados, de propósito. NUNCA se conectou = não está instalado: a
+  // tela trava e manda instalar. Já se conectou mas está fechado agora (o
+  // dono configurando de casa, à noite, com o PC da loja desligado) = pode
+  // configurar e ativar, com o aviso de que o prêmio só sai com ele aberto.
+  // Conectou nos últimos 10 min = está aberto neste momento.
+  const assistenteJaConectou = !!assistente?.ultimoPoll;
+  const assistenteOnline =
+    assistenteJaConectou && assistente!.paradoHaSegundos !== null && assistente!.paradoHaSegundos <= 10 * 60;
+  // A versão é a da última consulta — vale mesmo com o Assistente fechado.
+  const versaoOk = assistenteJaConectou && versaoAtende(assistente?.versaoAssistente, VERSAO_ASSISTENTE_COM_CAMPANHA);
+  const impressoras = Array.from(new Set([
+    ...(assistente?.impressorasNoPc || []),
+    ...impressorasCadastradas,
+    ...(conv.impressora ? [conv.impressora] : []),
+  ]));
+  const fmtR = (v: number) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+
+  const alternarCampanha = () => {
+    if (conv.active) { setConv({ active: false }); setErroConv(""); return; }
+    if (!assistenteJaConectou) { setErroConv("Instale e abra o Assistente de Impressão no PC da loja antes de ativar — é ele que imprime o prêmio."); return; }
+    if (!versaoOk) { setErroConv(`Atualize o Assistente para a versão ${VERSAO_ASSISTENTE_COM_CAMPANHA} antes de ativar — é ela que desenha o QR code na comanda.`); return; }
+    if (!conv.impressora) { setErroConv("Escolha em qual impressora o prêmio vai sair."); return; }
+    if (!(conv.valor > 0)) { setErroConv("Informe o valor do prêmio."); return; }
+    if (!conv.codigo) { setErroConv("Informe o código do cupom (só letras e números)."); return; }
+    setErroConv("");
+    setConv({ active: true });
+  };
+
   const handleSave = async () => {
+    // Campanha ligada sem impressora não sai em lugar nenhum: não deixa salvar
+    // assim, e leva a pessoa para a aba certa com o motivo na tela.
+    if (config.converter.active && !config.converter.impressora) {
+      setActiveTab("converter");
+      setErroConv("Escolha a impressora do prêmio antes de salvar.");
+      return;
+    }
     setSaving(true);
     await onSave(config);
     setSaving(false);
@@ -133,12 +229,13 @@ export default function LoyaltyConfigForm({
       {/* Navegação por Sub-Programas (Abas) */}
       <div style={{ display: "flex", flexWrap: "wrap", background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0", padding: "6px 12px", gap: "6px" }}>
         {[
+          { key: "converter", label: "🧾 Converter iFood/99 → Site", badge: config.converter.active ? "Ativo" : "Novo", badgeRoxo: !config.converter.active },
           { key: "cashback", label: "💸 Cashback Automático", badge: config.cashbackActive ? "Ativo" : null },
           { key: "stamps", label: "🎫 Cartão de Carimbos", badge: config.stampsActive ? "Ativo" : null },
           { key: "referral", label: "🎁 Indique e Ganhe", badge: config.referralActive ? "Ativo" : null },
           { key: "birthday", label: "🎂 Aniversariantes & Chatbot", badge: config.birthdayActive ? "Ativo" : null },
           { key: "vip", label: "👑 Níveis VIP", badge: config.vipActive ? "Ativo" : null },
-        ].map(tab => (
+        ].map((tab: { key: string; label: string; badge: string | null; badgeRoxo?: boolean }) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as any)}
@@ -160,7 +257,7 @@ export default function LoyaltyConfigForm({
           >
             {tab.label}
             {tab.badge && (
-              <span style={{ fontSize: "0.65rem", padding: "1px 6px", borderRadius: 10, background: "#DCFCE7", color: "#15803D", fontWeight: 800 }}>
+              <span style={{ fontSize: "0.65rem", padding: "1px 6px", borderRadius: 10, background: tab.badgeRoxo ? "#EDE9FE" : "#DCFCE7", color: tab.badgeRoxo ? "#6D28D9" : "#15803D", fontWeight: 800 }}>
                 {tab.badge}
               </span>
             )}
@@ -170,6 +267,273 @@ export default function LoyaltyConfigForm({
 
       {/* CONTEÚDO DAS ABAS */}
       <div style={{ padding: "1.5rem" }}>
+        {/* TAB 0: CONVERTER IFOOD/99 → SITE PRÓPRIO */}
+        {activeTab === "converter" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: "#0F172A" }}>
+                  🧾 Campanha: Converter clientes do iFood e do 99Food para o seu site
+                </h3>
+                <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
+                  No fim da comanda dos pedidos do iFood e do 99Food sai, bem grande, <strong>“VOCÊ GANHOU {formatarPremio(conv)}”</strong> com um
+                  QR code. O cliente escaneia em casa e o próximo pedido dele entra pelo seu cardápio — sem comissão de aplicativo.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={alternarCampanha}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 20,
+                  border: "none",
+                  background: conv.active ? "#DCFCE7" : "#F1F5F9",
+                  color: conv.active ? "#15803D" : "#64748B",
+                  fontWeight: 800,
+                  fontSize: "0.78rem",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {conv.active ? "🟢 Campanha Ativa" : "⚪ Desativada — clique para ativar"}
+              </button>
+            </div>
+
+            {erroConv && (
+              <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: "0.82rem", color: "#B91C1C", fontWeight: 700, display: "flex", gap: 8, alignItems: "center" }}>
+                <AlertCircle size={16} /> {erroConv}
+              </div>
+            )}
+
+            {/* ── O ASSISTENTE DE IMPRESSÃO: sem ele, nada sai no papel ── */}
+            {verificando ? (
+              <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 14, padding: 14, marginBottom: 20, fontSize: "0.82rem", color: "#475569", fontWeight: 600 }}>
+                🔎 Verificando se o Assistente de Impressão está conectado no PC da loja…
+              </div>
+            ) : !assistenteJaConectou ? (
+              <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 14, padding: 16, marginBottom: 20 }}>
+                <strong style={{ color: "#B91C1C", fontSize: "0.95rem", display: "block", marginBottom: 6 }}>
+                  🖨️ Antes de configurar: instale o Assistente de Impressão FireHub no PC da loja
+                </strong>
+                <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: "#7F1D1D", lineHeight: 1.5 }}>
+                  O prêmio sai <strong>impresso na comanda</strong>, e quem imprime é o Assistente. Ele nunca se conectou a esta
+                  loja: instale no PC do caixa, com a impressora ligada, e volte aqui para escolher onde o prêmio sai.
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <a
+                    href="/downloads/FireHub-Assistente-Impressao-Setup.exe"
+                    download
+                    style={{ padding: "8px 14px", borderRadius: 10, background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none" }}
+                  >
+                    ⬇️ Baixar o Assistente (Windows)
+                  </a>
+                  <button
+                    type="button"
+                    onClick={verificarAssistente}
+                    style={{ padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#B91C1C", border: "1.5px solid #FECACA", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                  >
+                    🔄 Já instalei — verificar de novo
+                  </button>
+                </div>
+              </div>
+            ) : !versaoOk ? (
+              <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: 16, marginBottom: 20 }}>
+                <strong style={{ color: "#92400E", fontSize: "0.95rem", display: "block", marginBottom: 6 }}>
+                  ⬆️ Atualize o Assistente de Impressão para a versão {VERSAO_ASSISTENTE_COM_CAMPANHA}
+                </strong>
+                <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: "#78350F", lineHeight: 1.5 }}>
+                  O Assistente deste PC está na versão <strong>{assistente?.versaoAssistente || "antiga"}</strong>, que não sabe desenhar o QR code
+                  do prêmio. Baixe e instale por cima — as impressoras configuradas continuam como estão. Você já pode preencher a campanha;
+                  ela só liga quando a versão nova estiver rodando.
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <a
+                    href="/downloads/FireHub-Assistente-Impressao-Setup.exe"
+                    download
+                    style={{ padding: "8px 14px", borderRadius: 10, background: "#D97706", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none" }}
+                  >
+                    ⬇️ Baixar a versão {VERSAO_ASSISTENTE_COM_CAMPANHA}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={verificarAssistente}
+                    style={{ padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#92400E", border: "1.5px solid #FDE68A", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                  >
+                    🔄 Já atualizei — verificar de novo
+                  </button>
+                </div>
+              </div>
+            ) : !assistenteOnline ? (
+              <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "12px 14px", marginBottom: 20, fontSize: "0.82rem", color: "#78350F", lineHeight: 1.5 }}>
+                <strong style={{ color: "#92400E", display: "block", marginBottom: 4 }}>
+                  ⏸️ O Assistente {assistente?.versaoAssistente} está fechado agora (última conexão há {Math.max(1, Math.round((assistente?.paradoHaSegundos || 0) / 60))} min)
+                </strong>
+                Pode configurar e ativar normalmente: a campanha fica salva e o prêmio passa a sair assim que o Assistente estiver
+                aberto no PC da loja — é ele que imprime.
+                <button type="button" onClick={verificarAssistente} style={{ marginLeft: 8, background: "none", border: "none", color: "#92400E", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}>
+                  🔄 verificar de novo
+                </button>
+              </div>
+            ) : (
+              <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 14, padding: "10px 14px", marginBottom: 20, fontSize: "0.82rem", color: "#166534", fontWeight: 700, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <Check size={16} /> Assistente {assistente?.versaoAssistente} conectado no PC da loja
+                {impressoras.length > 0 ? ` · ${impressoras.length} impressora${impressoras.length > 1 ? "s" : ""} encontrada${impressoras.length > 1 ? "s" : ""}` : ""}
+                <button type="button" onClick={verificarAssistente} style={{ marginLeft: "auto", background: "none", border: "none", color: "#15803D", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>
+                  🔄 verificar de novo
+                </button>
+              </div>
+            )}
+
+            {/* ── Como funciona, sem letra miúda ── */}
+            <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 14, padding: 16, marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <HelpCircle size={20} color="#7C3AED" />
+                <strong style={{ color: "#0F172A", fontSize: "0.92rem" }}>Como funciona</strong>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.8rem", color: "#475569", lineHeight: 1.6 }}>
+                <li>🧾 Sai <strong>só na comanda de pedido do iFood e do 99Food</strong>. Nunca em pedido do site, do WhatsApp, do balcão ou da mesa — esse cliente já é seu, não faz sentido dar o desconto.</li>
+                <li>🖨️ Sai <strong>na impressora que você escolher</strong>, no fim da comanda, depois do resumo do pedido. A via da cozinha (sem valores) não leva o prêmio.</li>
+                <li>📱 O QR abre o seu cardápio <strong>já com o cupom aplicado</strong>. Quem não escaneia digita o código na sacola.</li>
+                <li>✅ O site confere sozinho o pedido mínimo e, se marcado, o <strong>“só no primeiro pedido”</strong> (pelo telefone do cliente).</li>
+                <li>💡 Grampeie a comanda no saco kraft: é assim que o prêmio chega à mesa do cliente.</li>
+              </ul>
+            </div>
+
+            <fieldset disabled={!assistenteJaConectou} style={{ border: "none", padding: 0, margin: 0, opacity: assistenteJaConectou ? 1 : 0.55 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20 }}>
+                {/* Configuração */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569", display: "block", marginBottom: 6 }}>O prêmio é</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {([["fixo", "💵 Valor fixo (R$)"], ["percentual", "％ do pedido"]] as const).map(([tipo, rotulo]) => (
+                        <button
+                          key={tipo}
+                          type="button"
+                          onClick={() => setConv({ tipo })}
+                          style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${conv.tipo === tipo ? "#7C3AED" : "#E2E8F0"}`, background: conv.tipo === tipo ? "#EDE9FE" : "#fff", color: conv.tipo === tipo ? "#6D28D9" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                        >
+                          {rotulo}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569", display: "block", marginBottom: 4 }}>
+                        {conv.tipo === "percentual" ? "Desconto (%)" : "Valor do prêmio (R$)"}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={conv.tipo === "percentual" ? 1 : 0.5}
+                        value={conv.valor === 0 ? "" : conv.valor}
+                        onChange={e => setConv({ valor: e.target.value === "" ? 0 : Math.max(0, parseFloat(e.target.value) || 0) })}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.95rem", fontWeight: 800 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569", display: "block", marginBottom: 4 }}>Pedido mínimo no site (R$)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="0 = sem mínimo"
+                        value={conv.pedidoMinimo === 0 ? "" : conv.pedidoMinimo}
+                        onChange={e => setConv({ pedidoMinimo: e.target.value === "" ? 0 : Math.max(0, parseFloat(e.target.value) || 0) })}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.95rem", fontWeight: 800 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569", display: "block", marginBottom: 6 }}>Quem pode usar</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {([[true, "🥇 Só no primeiro pedido pelo site"], [false, "♾️ Sempre que pedir pelo site"]] as const).map(([so, rotulo]) => (
+                        <button
+                          key={String(so)}
+                          type="button"
+                          onClick={() => setConv({ somentePrimeiroPedido: so })}
+                          style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${conv.somentePrimeiroPedido === so ? "#7C3AED" : "#E2E8F0"}`, background: conv.somentePrimeiroPedido === so ? "#EDE9FE" : "#fff", color: conv.somentePrimeiroPedido === so ? "#6D28D9" : "#475569", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}
+                        >
+                          {rotulo}
+                        </button>
+                      ))}
+                    </div>
+                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#64748B" }}>
+                      {conv.somentePrimeiroPedido
+                        ? "O site reconhece pelo telefone: quem já pediu pelo site não consegue usar o cupom de novo."
+                        : "Todo pedido pelo site com este cupom ganha o desconto — inclusive de quem já é cliente do site."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569", display: "block", marginBottom: 4 }}>Código do cupom (sai impresso, para quem não escaneia)</label>
+                    <input
+                      type="text"
+                      value={conv.codigo}
+                      maxLength={20}
+                      onChange={e => setConv({ codigo: normalizarCodigo(e.target.value) })}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.95rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: 1 }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569", display: "block", marginBottom: 4 }}>🖨️ Impressora em que o prêmio sai</label>
+                    {impressoras.length > 0 ? (
+                      <select
+                        value={conv.impressora}
+                        onChange={e => { setConv({ impressora: e.target.value }); setErroConv(""); }}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${conv.impressora ? "#CBD5E1" : "#F59E0B"}`, fontSize: "0.9rem", fontWeight: 700, background: "#fff" }}
+                      >
+                        <option value="">Escolha a impressora…</option>
+                        {impressoras.map(nome => (
+                          <option key={nome} value={nome}>{nome}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#B45309", fontWeight: 700, background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 10px" }}>
+                        O Assistente ainda não informou as impressoras deste PC. Atualize-o para a versão {VERSAO_ASSISTENTE_COM_CAMPANHA} ou cadastre a impressora em Impressoras e clique em “verificar de novo”.
+                      </p>
+                    )}
+                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#64748B" }}>
+                      Escolha a impressora da comanda que vai grampeada no saco (normalmente a do balcão/expedição), não a da cozinha.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Prévia da comanda */}
+                <div>
+                  <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#475569", display: "block", marginBottom: 6 }}>Assim vai sair no fim da comanda</label>
+                  <div style={{ fontFamily: "'Courier New', Courier, monospace", background: "#fff", border: "1px dashed #94A3B8", borderRadius: 6, padding: "14px 12px", textAlign: "center", color: "#111", maxWidth: 300, margin: "0 auto", boxShadow: "0 8px 20px rgba(0,0,0,0.08)" }}>
+                    <div style={{ color: "#94A3B8", fontSize: "0.68rem" }}>… resumo do pedido, total, pagamento …</div>
+                    <div style={{ borderTop: "1px dashed #111", margin: "8px 0" }} />
+                    <div style={{ fontWeight: 900, fontSize: "1.55rem", lineHeight: 1.1, letterSpacing: 1 }}>VOCE GANHOU</div>
+                    <div style={{ fontWeight: 900, fontSize: "1.55rem", lineHeight: 1.1, letterSpacing: 1 }}>{formatarPremio(conv)}</div>
+                    <div style={{ fontWeight: 700, fontSize: "0.78rem", marginTop: 4 }}>para lanchar conosco pelo nosso site!</div>
+                    <div
+                      title="Aqui sai o QR code de verdade"
+                      style={{ width: 92, height: 92, margin: "10px auto", background: "repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0 / 14px 14px", border: "4px solid #fff", outline: "1px solid #111" }}
+                    />
+                    <div style={{ fontWeight: 700, fontSize: "0.76rem" }}>Escaneie e faca seu proximo pedido</div>
+                    <div style={{ fontSize: "0.76rem" }}>ou use o cupom {conv.codigo || "……"}</div>
+                    <div style={{ fontSize: "0.76rem" }}>em firehubfood.com.br/loja/{slugDaLoja || "sua-loja"}</div>
+                    <div style={{ fontSize: "0.72rem", marginTop: 4 }}>{conv.somentePrimeiroPedido ? "Valido no seu PRIMEIRO pedido pelo site" : "Valido em todo pedido pelo site"}</div>
+                    {conv.pedidoMinimo > 0 && <div style={{ fontSize: "0.72rem" }}>Pedido minimo: {fmtR(conv.pedidoMinimo)}</div>}
+                    <div style={{ borderTop: "1px dashed #111", margin: "8px 0" }} />
+                    <div style={{ fontSize: "0.7rem" }}>Obrigado pela preferencia!</div>
+                  </div>
+                  <p style={{ margin: "8px 0 0", fontSize: "0.72rem", color: "#64748B", textAlign: "center" }}>
+                    “VOCE GANHOU” e o valor saem em letra dobrada; o QR sai grande, para a câmera do celular ler de longe.
+                  </p>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+        )}
+
         {/* TAB 1: CASHBACK AUTOMÁTICO */}
         {activeTab === "cashback" && (
           <div>
