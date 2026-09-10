@@ -3,6 +3,7 @@ import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import ToggleAdmin from "@/components/ToggleAdmin";
 import { ImpersonateButton } from "@/components/FranchiseeForm";
 import GrantDaysButton from "@/components/admin/GrantDaysButton";
+import ResetPasswordButton from "@/components/admin/ResetPasswordButton";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -172,6 +173,9 @@ export default async function AdminLojistasPage() {
                         )}
                         <ImpersonateButton id={l.id} />
                         <GrantDaysButton userId={l.id} storeName={l.storeName || l.name} />
+                        {l.role !== "ADMIN" && (
+                          <ResetPasswordButton userId={l.id} storeName={l.storeName || l.name || l.email || ""} email={l.email} />
+                        )}
                       </div>
                     </td>
                   </tr>
