@@ -349,6 +349,8 @@ export default function MesasApp({
   const [cart, setCart] = useState<{
     uid: string; item: MenuItem; qty: number; unitPrice?: number;
     comboSelections?: any[]; guestId?: string | null;
+    /* Observação do item ("sem cebola"), vinda do modal do produto. */
+    notes?: string;
   }[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
   const [menuCat, setMenuCat] = useState("Todos");
@@ -769,6 +771,7 @@ export default function MesasApp({
             comboSelections: c.comboSelections ? JSON.stringify(c.comboSelections) : null,
             // Sem dono = item da mesa. O rateio divide esses por igual.
             tableGuestId: c.guestId || null,
+            notes: (c.notes || "").trim() || null,
           })),
         }),
       });
@@ -1030,18 +1033,23 @@ export default function MesasApp({
     }
   };
 
-  const addToCart = (item: MenuItem, comboSelections?: any[], extraSum: number = 0) => {
+  // `notes`: a observação que o modal do produto pergunta ("Alguma
+  // observação?") e que a mesa descartava — o item chegava na cozinha sem o
+  // "sem cebola" que o garçom acabou de digitar. Item com observação é linha
+  // própria: não se junta com o mesmo produto sem ela.
+  const addToCart = (item: MenuItem, comboSelections?: any[], extraSum: number = 0, notes: string = "") => {
     const unitPrice = item.price + extraSum;
     const dono = pessoaAtiva;
+    const obs = String(notes || "").trim();
     setCart(prev => {
       const uid = `${item.id}-${prev.length}-${dono || "mesa"}`;
-      if (comboSelections && comboSelections.length > 0) {
-        return [...prev, { uid, item, qty: 1, comboSelections, unitPrice, guestId: dono }];
+      if ((comboSelections && comboSelections.length > 0) || obs) {
+        return [...prev, { uid, item, qty: 1, comboSelections: comboSelections && comboSelections.length > 0 ? comboSelections : undefined, unitPrice, guestId: dono, notes: obs || undefined }];
       }
       // Só junta na mesma linha se for o mesmo produto E da mesma pessoa: duas
       // cervejas de pessoas diferentes precisam continuar separadas para a
       // conta sair certa no fim.
-      const ex = prev.find(i => i.item.id === item.id && !i.comboSelections && (i.guestId || null) === dono);
+      const ex = prev.find(i => i.item.id === item.id && !i.comboSelections && !i.notes && (i.guestId || null) === dono);
       if (ex) return prev.map(i => i.uid === ex.uid ? { ...i, qty: i.qty + 1 } : i);
       return [...prev, { uid, item, qty: 1, unitPrice, guestId: dono }];
     });
@@ -1249,10 +1257,10 @@ export default function MesasApp({
     <ComboModal
       product={comboProduct as any}
       onClose={() => setComboProduct(null)}
-      onConfirm={(selections, extraSum, qty) => {
+      onConfirm={(selections, extraSum, qty, notes) => {
         // O ComboModal devolve { grupoId: { nome: qtd } }; o carrinho das
         // mesas guarda lista [{ name, quantity }]. Converte preservando a
-        // quantidade escolhida.
+        // quantidade escolhida — e a observação, que antes se perdia aqui.
         const lista: { name: string; quantity: number }[] = [];
         for (const porGrupo of Object.values(selections || {})) {
           for (const [nome, quantidade] of Object.entries((porGrupo || {}) as Record<string, number>)) {
@@ -1260,7 +1268,7 @@ export default function MesasApp({
           }
         }
         for (let i = 0; i < Math.max(1, qty || 1); i++) {
-          addToCart(comboProduct, lista, extraSum);
+          addToCart(comboProduct, lista, extraSum, notes || "");
         }
         setComboProduct(null);
       }}
@@ -1536,6 +1544,11 @@ export default function MesasApp({
                 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>{c.item.name}</div>
+                    {c.notes && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 6, padding: "2px 6px", marginTop: 2 }}>
+                        📝 {c.notes}
+                      </div>
+                    )}
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#7C3AED" }}>{fmt((c.unitPrice ?? c.item.price) * c.qty)}</div>
                     {pessoas.length > 0 && (
                       <div style={{ fontSize: 11, color: c.guestId ? "#0369A1" : "#94A3B8", fontWeight: 700, marginTop: 2 }}>

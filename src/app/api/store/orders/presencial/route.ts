@@ -63,6 +63,9 @@ export async function POST(req: Request) {
           quantity: item.quantity,
           price: item.price,
           comboSelections: item.comboSelections ? (typeof item.comboSelections === "string" ? item.comboSelections : JSON.stringify(item.comboSelections)) : null,
+          // Observação do item ("tirar o milho"): a coluna existia, a cozinha
+          // e a comanda já a imprimem, mas o balcão nunca a gravava.
+          notes: item.notes ? String(item.notes).trim().slice(0, 200) || null : null,
         })),
       },
     },

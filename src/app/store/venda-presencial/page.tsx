@@ -188,15 +188,22 @@ export default function VendaPresencialPage() {
     }
   };
 
-  const addToCart = (product: any, comboSelections?: { name: string; quantity: number }[], extraSum: number = 0) => {
+  // `notes` é a observação do item ("tirar o milho da pizza"). O modal do
+  // produto sempre perguntou "Alguma observação?" e devolvia a resposta — e
+  // este balcão a jogava fora: o pedido chegava na cozinha e na comanda sem
+  // ela (NIK Esfihas e Pizzas, 10/09/2026, ao vivo com o cliente). Item com
+  // observação é uma linha própria: não se junta com o mesmo produto sem ela.
+  const addToCart = (product: any, comboSelections?: { name: string; quantity: number }[], extraSum: number = 0, qty: number = 1, notes: string = "") => {
     const unitPrice = product.price + extraSum;
+    const quantidade = Math.max(1, Number(qty) || 1);
+    const obs = String(notes || "").trim();
     setCart(prev => {
-      if (comboSelections && comboSelections.length > 0) {
-        return [...prev, { product, qty: 1, comboSelections, unitPrice }];
+      if ((comboSelections && comboSelections.length > 0) || obs) {
+        return [...prev, { product, qty: quantidade, comboSelections: comboSelections && comboSelections.length > 0 ? comboSelections : undefined, unitPrice, notes: obs || undefined }];
       }
-      const ex = prev.find(i => i.product.id === product.id && !i.comboSelections);
-      if (ex) return prev.map(i => (i.product.id === product.id && !i.comboSelections) ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { product, qty: 1, unitPrice }];
+      const ex = prev.find(i => i.product.id === product.id && !i.comboSelections && !i.notes);
+      if (ex) return prev.map(i => (i.product.id === product.id && !i.comboSelections && !i.notes) ? { ...i, qty: i.qty + quantidade } : i);
+      return [...prev, { product, qty: quantidade, unitPrice }];
     });
   };
 
@@ -234,7 +241,8 @@ export default function VendaPresencialPage() {
         menuProductId: i.product.id,
         quantity: i.qty,
         price: i.unitPrice ?? i.product.price,
-        comboSelections: i.comboSelections ? JSON.stringify(i.comboSelections) : null
+        comboSelections: i.comboSelections ? JSON.stringify(i.comboSelections) : null,
+        notes: (i.notes || "").trim() || null,
       })),
     };
 
@@ -438,6 +446,17 @@ export default function VendaPresencialPage() {
                     ))}
                   </div>
                 )}
+                {/* Observação do item, editável na própria linha: produto sem
+                    complemento não passa pelo modal, e "sem cebola" precisa
+                    de um lugar para ser escrito. Vai para a cozinha e para a
+                    comanda como Obs: do item. */}
+                <input
+                  value={item.notes || ""}
+                  placeholder="📝 obs. do item (ex.: sem cebola)"
+                  maxLength={140}
+                  onChange={e => { const v = e.target.value; setCart(prev => prev.map((c, idx) => idx === index ? { ...c, notes: v } : c)); }}
+                  style={{ width: "100%", marginTop: 4, padding: "4px 8px", borderRadius: 6, border: `1px solid ${item.notes ? "#F59E0B" : "#E2E8F0"}`, background: item.notes ? "#FFFBEB" : "#fff", fontSize: "0.74rem", outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
+                />
                 <div style={{ fontSize: "0.78rem", color: "#C62828", fontWeight: 700, marginTop: 2 }}>{fmt((item.unitPrice ?? item.product.price) * item.qty)}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -563,14 +582,16 @@ export default function VendaPresencialPage() {
             comboGroups: comboProduct.comboGroups || []
           }}
           onClose={() => setComboProduct(null)}
-          onConfirm={(selections, extraSum) => {
+          onConfirm={(selections, extraSum, qty, notes) => {
             const formatted: { name: string; quantity: number }[] = [];
             Object.values(selections).forEach(groupObj => {
               Object.entries(groupObj).forEach(([itemName, qty]) => {
                 if (qty > 0) formatted.push({ name: itemName, quantity: qty });
               });
             });
-            addToCart(comboProduct, formatted, extraSum);
+            // Quantidade e observação do modal iam para o lixo: entrava 1
+            // unidade, sem a observação que o atendente acabou de digitar.
+            addToCart(comboProduct, formatted, extraSum, qty, notes);
             setComboProduct(null);
           }}
         />

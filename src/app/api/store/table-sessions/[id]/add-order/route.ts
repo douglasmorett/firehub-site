@@ -72,6 +72,7 @@ export async function POST(
       price: number;
       comboSelections: any;
       tableGuestId: string | null;
+      notes: string | null;
     }[] = [];
 
     for (const item of items) {
@@ -98,6 +99,7 @@ export async function POST(
         price: preco,
         comboSelections: item.comboSelections ?? null,
         tableGuestId: item.tableGuestId ? String(item.tableGuestId) : null,
+        notes: item.notes ? String(item.notes).trim().slice(0, 200) || null : null,
       });
     }
 
@@ -159,6 +161,8 @@ export async function POST(
             // Coluna Json: ausente (undefined) vira o nulo do banco; null literal o
             // Prisma recusa para Json.
             comboSelections: item.comboSelections ? (typeof item.comboSelections === "string" ? item.comboSelections : JSON.stringify(item.comboSelections)) : undefined,
+            // Observação do item ("sem cebola"): vai para a cozinha e para a comanda.
+            notes: item.notes ? String(item.notes).trim().slice(0, 200) || null : null,
           })),
         },
       },
