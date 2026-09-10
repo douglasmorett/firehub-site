@@ -123,6 +123,17 @@ export async function GET(req: NextRequest) {
         // "Receita R$ 380" em loja de teste parece dinheiro no caixa.
         emTeste: !!franchisee.trialEndsAt && franchisee.trialEndsAt > new Date(),
         trialEndsAt: franchisee.trialEndsAt ? franchisee.trialEndsAt.toISOString() : null,
+        // Teste que termina DENTRO deste mês: a partir daí as vendas entram na
+        // base (lib/billing.ts, inicioDaCobranca). "Não paga este mês" só vale
+        // quando o teste atravessa o mês inteiro.
+        cobraDesde:
+          franchisee.trialEndsAt && franchisee.trialEndsAt >= inicioMes && franchisee.trialEndsAt < fimMes
+            ? franchisee.trialEndsAt.toISOString()
+            : null,
+        // OPEN = acumulando (boleto no fechamento); CLOSED = boleto emitido;
+        // PAID = quitado. Sem isto a tabela não distingue "ainda vai fechar"
+        // de "boleto em aberto".
+        cycleStatus: billing?.status || null,
         revenue,
         costs,
         profit,

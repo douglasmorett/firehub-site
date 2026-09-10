@@ -25,6 +25,8 @@ type CostData = {
   /** Em período de teste neste mês: não paga nada, e a tabela diz isso. */
   emTeste?: boolean;
   trialEndsAt?: string | null;
+  cobraDesde?: string | null;
+  cycleStatus?: string | null;
   orders: number;
   profit: number;
   margin: number;
@@ -211,9 +213,15 @@ export default function AdminCostsTab() {
                             Burguer, a única loja de fato devendo setembro,
                             pareceu o problema, ao lado de cinco lojas em teste
                             "pagas" em verde. */}
+                        {/* Teste que acaba no meio do mês NÃO isenta o mês: as
+                            vendas a partir do fim dele entram na base (regra do
+                            dono, 10/09/2026). "Não paga este mês" só quando o
+                            teste atravessa o mês inteiro. E ciclo aberto não é
+                            "a receber": é acumulado, o boleto sai no fechamento. */}
                         {l.emTeste ? (
                           <div style={{ fontSize: "0.75rem", color: "#B45309", fontWeight: 700 }}>
-                            Em teste até {l.trialEndsAt ? new Date(l.trialEndsAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"} · não paga este mês
+                            Em teste até {l.trialEndsAt ? new Date(l.trialEndsAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"}
+                            {l.cobraDesde ? " · a partir daí as vendas entram na cobrança" : " · não paga este mês"}
                           </div>
                         ) : l.revenue.amountPaid >= l.revenue.amountDue && l.revenue.amountDue > 0 ? (
                           <div style={{ fontSize: "0.75rem", color: "#10B981" }}>
@@ -221,11 +229,20 @@ export default function AdminCostsTab() {
                           </div>
                         ) : (
                           <div style={{ fontSize: "0.75rem", color: "#64748B" }}>
-                            Pago: {fmt(l.revenue.amountPaid)}
-                            {l.revenue.amountDue - l.revenue.amountPaid > 0.009 && (
-                              <span style={{ marginLeft: 6, color: "#2563EB", fontWeight: 700 }}>
-                                · a receber: {fmt(l.revenue.amountDue - l.revenue.amountPaid)}
+                            {l.cobraDesde && (
+                              <span style={{ color: "#B45309", fontWeight: 700 }}>
+                                Saiu do teste em {new Date(l.cobraDesde).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ·{" "}
                               </span>
+                            )}
+                            {l.revenue.amountDue - l.revenue.amountPaid > 0.009 ? (
+                              <span style={{ color: "#2563EB", fontWeight: 700 }}>
+                                {l.cycleStatus === "OPEN"
+                                  ? `acumulado no mês: ${fmt(l.revenue.amountDue - l.revenue.amountPaid)} · boleto no fechamento`
+                                  : `boleto em aberto: ${fmt(l.revenue.amountDue - l.revenue.amountPaid)}`}
+                                {l.revenue.amountPaid > 0 && ` · pago: ${fmt(l.revenue.amountPaid)}`}
+                              </span>
+                            ) : (
+                              <>Pago: {fmt(l.revenue.amountPaid)}</>
                             )}
                           </div>
                         )}

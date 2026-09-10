@@ -15,6 +15,14 @@ import AjudaModulo from "@/components/AjudaModulo";
 type BillingCycle = {
   yearMonth: string; totalSales: number; amountDue: number;
   amountOffset: number; amountPending: number; status: string;
+  // Vindos de getCurrentCycleView (lib/billing.ts): de onde a base começa a
+  // contar (fim do teste no meio do mês), o fim do teste, o boleto e o mínimo
+  // por uso. Opcionais porque a resposta antiga não os tinha.
+  cobrancaDesde?: string | null;
+  trialEndsAt?: string | null;
+  mensalidadePrevista?: number;
+  taxas?: { trafegoPago: number; totem: number };
+  cobrancaPorUso?: { valor: number; motivos: string[] } | null;
   isExempt?: boolean;
   asaasBoletoUrl?: string | null; asaasBoletoCode?: string | null;
 };
@@ -180,7 +188,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       .catch(() => {});
   }, []);
 
-  const isExempt = isExemptAccount(userEmailClean) || (billingCycle as any)?.isExempt || (billingCycle as any)?.status === "ISENTO" || (billingCycle as any)?.status === "PAID";
+  // `status === "PAID"` NÃO é isenção: é boleto quitado. Tratar como isento
+  // fazia a loja que pagou o mês ler "Conta VIP — Isenção Ativa" na tela.
+  const isExempt = isExemptAccount(userEmailClean) || billingCycle?.isExempt === true || (billingCycle as any)?.status === "ISENTO";
 
   // ===== CUSTOS FIXOS =====
   const [fixedCosts, setFixedCosts] = useState<FixedCost[]>(initialFixedCosts);
@@ -576,8 +586,32 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem" }}>
         {/* ===== ABA MENSALIDADE FIREHUB ===== */}
         {activeTab === "mensalidade" && (() => {
-          const mensalidadeInfo = calcMensalidade(dre.receitaBruta);
-          const valFatura = isExempt ? 0 : mensalidadeInfo.mensalidade;
+          // A fatura de verdade é o ciclo do servidor (/api/billing/cycle): a
+          // mesma conta do boleto, com o período de teste descontado e as taxas
+          // somadas. Antes o valor era 1% da receita do período filtrado no
+          // DRE — ignorava teste, abatimento e taxas —, e o botão "Pagar
+          // agora (PIX)" só abria um alert dizendo "código gerado".
+          const ciclo = billingCycle;
+          const agora = new Date();
+          const testeAte = ciclo?.trialEndsAt ? new Date(ciclo.trialEndsAt) : null;
+          const emTeste = !!testeAte && testeAte > agora;
+          const cobraDesde = ciclo?.cobrancaDesde ? new Date(ciclo.cobrancaDesde) : null;
+          const dataCurta = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+          const baseVendas = ciclo ? ciclo.totalSales : dre.receitaBruta;
+          const valFatura = isExempt ? 0 : (ciclo ? ciclo.amountPending : calcMensalidade(dre.receitaBruta).mensalidade);
+          const statusCiclo = ciclo?.status || "OPEN";
+          const boletoUrl = ciclo?.asaasBoletoUrl || null;
+          const situacao = isExempt
+            ? "✨ Conta isenta"
+            : emTeste
+              ? (cobraDesde
+                ? `🧪 Em teste até ${dataCurta(testeAte!)} · a partir daí as vendas entram na cobrança`
+                : `🧪 Em teste até ${dataCurta(testeAte!)} · sem cobrança neste mês`)
+              : statusCiclo === "OPEN"
+                ? "⏳ Acumulando · o boleto sai no fechamento do mês (dia 1)"
+                : statusCiclo === "CLOSED"
+                  ? "📄 Boleto emitido"
+                  : "✅ Fatura paga";
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               {/* Card Principal de Fatura Atual */}
@@ -589,18 +623,28 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: isExempt ? 0 : "1.25rem" }}>
                   <div>
                     <span style={{ background: isExempt ? "#DCFCE7" : "#FEF3C7", color: isExempt ? "#15803D" : "#92400E", padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      {isExempt ? "✨ Conta VIP / Loja Oficial — Isenção Ativa" : "⚠️ Cobrança Pendente · Vencimento em 10 dias"}
+                      {isExempt ? "✨ Conta VIP / Loja Oficial — Isenção Ativa" : situacao}
                     </span>
                     <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>
                       {isExempt ? "Mensalidade FireHub Pro (Isento)" : "Mensalidade FireHub Pro"}
                     </h2>
                     <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
-                      {isExempt ? "Esta conta (contatohakim@gmail.com) é isenta de cobranças de mensalidade e comissão da plataforma." : "Plano Oficial: 1% sobre vendas · Mínimo R$ 100,00 · Teto Máximo R$ 400,00/mês"}
+                      {isExempt
+                        ? "Esta conta é isenta de mensalidade e de comissão da plataforma."
+                        : "Plano: 1% sobre o valor cheio das vendas (antes de cupons) · mínimo R$ 100,00 · teto R$ 400,00/mês"}
+                      {!isExempt && cobraDesde && !emTeste && (
+                        <> · Teste terminou em {dataCurta(cobraDesde)}: só as vendas a partir daí entram na conta.</>
+                      )}
+                      {!isExempt && ciclo?.cobrancaPorUso && (
+                        <> · Mínimo por uso do sistema ({ciclo.cobrancaPorUso.motivos.join(", ")}).</>
+                      )}
                     </p>
                   </div>
 
                   <div style={{ textAlign: "right", background: isExempt ? "#064E3B" : "#1E293B", padding: "12px 18px", borderRadius: "14px", border: isExempt ? "1px solid #10B981" : "1px solid #334155" }}>
-                    <div style={{ fontSize: "0.75rem", color: isExempt ? "#A7F3D0" : "#94A3B8", fontWeight: 700 }}>VALOR DA FATURA ATUAL</div>
+                    <div style={{ fontSize: "0.75rem", color: isExempt ? "#A7F3D0" : "#94A3B8", fontWeight: 700 }}>
+                      {statusCiclo === "OPEN" ? "ACUMULADO ATÉ AGORA" : "VALOR DA FATURA"}
+                    </div>
                     <div style={{ fontSize: "1.8rem", fontWeight: 900, color: isExempt ? "#34D399" : "#38BDF8", marginTop: 2 }}>
                       {isExempt ? "R$ 0,00 (ISENTO)" : fmtR(valFatura)}
                     </div>
@@ -610,17 +654,25 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 {/* Botões de Ação de Pagamento */}
                 {!isExempt && (
                   <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", borderTop: "1px solid #334155", paddingTop: "1.25rem" }}>
-                    <button
-                      onClick={() => alert(`🔑 Código PIX de ${fmtR(valFatura)} gerado com sucesso! Cole no seu app de banco.`)}
-                      style={{
-                        background: "linear-gradient(135deg, #10B981, #059669)", color: "#FFFFFF",
-                        border: "none", padding: "12px 22px", borderRadius: "12px", fontSize: "0.92rem",
-                        fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
-                        boxShadow: "0 4px 14px rgba(16, 185, 129, 0.4)", fontFamily: "inherit"
-                      }}
-                    >
-                      ⚡ Pagar Fatura Agora (PIX)
-                    </button>
+                    {boletoUrl ? (
+                      <a
+                        href={boletoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          background: "linear-gradient(135deg, #10B981, #059669)", color: "#FFFFFF",
+                          textDecoration: "none", padding: "12px 22px", borderRadius: "12px", fontSize: "0.92rem",
+                          fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                          boxShadow: "0 4px 14px rgba(16, 185, 129, 0.4)", fontFamily: "inherit"
+                        }}
+                      >
+                        ⚡ Abrir boleto / pagar
+                      </a>
+                    ) : (
+                      <span style={{ alignSelf: "center", fontSize: "0.82rem", color: "#94A3B8" }}>
+                        O boleto é gerado no fechamento do mês e aparece aqui.
+                      </span>
+                    )}
                     <button
                       onClick={() => setShowFaturaModal(true)}
                       style={{
@@ -639,12 +691,16 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               {/* Grid com Destaques Financeiros da Mensalidade */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
                 <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
-                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>📈 Vendas no Ciclo Atual</div>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>📈 Vendas na base de cálculo</div>
                   <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#0F172A", marginTop: 4 }}>
-                    {fmtR(dre.receitaBruta)}
+                    {fmtR(baseVendas)}
                   </div>
                   <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#64748B" }}>
-                    Base de cálculo da comissão de 1%
+                    {emTeste
+                      ? "Nada ainda: as vendas passam a contar quando o teste terminar"
+                      : cobraDesde && cobraDesde.getDate() !== 1
+                        ? `Vendas desde ${dataCurta(cobraDesde)} (fim do teste), valor cheio antes de cupons`
+                        : "Vendas do mês, valor cheio antes de cupons · 1% sobre isto"}
                   </p>
                 </div>
 
@@ -661,10 +717,16 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 <div style={{ background: "#EFF6FF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #BFDBFE" }}>
                   <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#1E40AF" }}>💳 Status do Ciclo</div>
                   <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#1D4ED8", marginTop: 4 }}>
-                    Aberto (Faturado)
+                    {isExempt ? "Isento" : emTeste ? "Em teste" : statusCiclo === "OPEN" ? "Aberto" : statusCiclo === "CLOSED" ? "Boleto emitido" : "Pago"}
                   </div>
                   <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1E40AF" }}>
-                    Vencimento regular em 10 dias
+                    {isExempt
+                      ? "Sem cobrança"
+                      : emTeste
+                        ? `Teste até ${dataCurta(testeAte!)}`
+                        : statusCiclo === "OPEN"
+                          ? "Fecha no dia 1 · o boleto aparece aqui"
+                          : statusCiclo === "CLOSED" ? "Pague pelo boleto acima" : "Tudo certo neste mês"}
                   </p>
                 </div>
               </div>
@@ -1496,7 +1558,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                   <div>
                     <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>VALOR DA MENSALIDADE</span>
                     <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#2563EB", marginTop: 2 }}>
-                      {fmtR(calcMensalidade(dre.receitaBruta).mensalidade)}
+                      {fmtR(isExempt ? 0 : billingCycle ? billingCycle.amountPending : calcMensalidade(dre.receitaBruta).mensalidade)}
                     </div>
                   </div>
                 </div>
@@ -1588,15 +1650,19 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 >
                   Fechar
                 </button>
-                <button
-                  onClick={() => {
-                    setShowFaturaModal(false);
-                    alert(`🔑 Código PIX de ${fmtR(calcMensalidade(dre.receitaBruta).mensalidade)} copiado com sucesso!`);
-                  }}
-                  style={{ background: "linear-gradient(135deg, #10B981, #059669)", border: "none", borderRadius: "8px", padding: "8px 16px", fontSize: "0.82rem", fontWeight: 900, color: "#FFFFFF", cursor: "pointer" }}
-                >
-                  ⚡ Pagar Fatura Agora (PIX)
-                </button>
+                {/* O botão de PIX daqui só mostrava um alert "código copiado":
+                    não havia código nenhum. O pagamento é pelo boleto que o
+                    fechamento gera no Asaas — quando existe, o link vai aqui. */}
+                {billingCycle?.asaasBoletoUrl && (
+                  <a
+                    href={billingCycle.asaasBoletoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ background: "linear-gradient(135deg, #10B981, #059669)", textDecoration: "none", borderRadius: "8px", padding: "8px 16px", fontSize: "0.82rem", fontWeight: 900, color: "#FFFFFF", cursor: "pointer" }}
+                  >
+                    ⚡ Abrir boleto / pagar
+                  </a>
+                )}
               </div>
             </div>
 

@@ -27,6 +27,12 @@ import { saveUploadedFile } from "@/lib/storage";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 54 fotos a ~1s cada cabem com folga
 
+/**
+ * De onde um cardápio importado pode ter ficado dependendo. Cada importação
+ * nova (MenuDino, iFood...) entra aqui, e o cron cuida do resto.
+ */
+const ORIGENS_DE_FORA = ["menudino", "static-images.ifood.com.br"];
+
 export async function POST(req: NextRequest) {
   return internalizar(req);
 }
@@ -46,12 +52,16 @@ async function internalizar(req: NextRequest) {
   }
 
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-  const dominio = String((body as any)?.dominio || "menudino");
+  // Sem `dominio` no corpo, cobre TODAS as origens conhecidas — é assim que o
+  // cron (GET, sem corpo) chama. O padrão era só "menudino", e as 193 fotos
+  // do Taurus, importadas do iFood em 09/09/2026, ficaram apontando para
+  // static-images.ifood.com.br por seis horas a fio sem nunca entrar aqui.
+  const dominios: string[] = (body as any)?.dominio ? [String((body as any).dominio)] : ORIGENS_DE_FORA;
   const franchiseeId = (body as any)?.franchiseeId ? String((body as any).franchiseeId) : null;
 
   const produtos = await prisma.menuProduct.findMany({
     where: {
-      imageUrl: { contains: dominio },
+      OR: dominios.map((d) => ({ imageUrl: { contains: d } })),
       ...(franchiseeId ? { franchiseeId } : {}),
     },
     select: { id: true, name: true, imageUrl: true },

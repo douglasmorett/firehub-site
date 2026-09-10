@@ -175,6 +175,10 @@ export function isExemptAccount(email?: string | null): boolean {
   const exemptList = [
     "contatohakim@gmail.com",
     "viniciusmenezes.ofc@gmail.com",
+    // Loja de teste da própria casa (integração Brendi): estava acumulando o
+    // mínimo de R$ 100 por mês como se fosse cliente. Dono, 10/09/2026:
+    // "tem que isentar, porque somos nós mesmos que estamos fazendo".
+    "brendi-sandbox@firehubfood.com.br",
     ...bypassEmails,
   ];
   return exemptList.includes(clean);
@@ -243,6 +247,38 @@ export function intervaloDoMes(yearMonth: string, timeZone = "America/Sao_Paulo"
 }
 
 /**
+ * A partir de que instante as vendas do mês entram na base da mensalidade.
+ *
+ * Regra do dono (10/09/2026): "a trial acabou dia 20? do dia 20 ao dia 30
+ * contabiliza o faturamento e cobra". Ou seja, o período de teste não é um mês
+ * de cortesia: é uma janela em que a venda não conta. Terminou a janela, a
+ * venda conta — no mesmo mês.
+ *
+ * Antes havia duas regras que não eram essa: o fechamento isentava o mês
+ * INTEIRO se o teste cobrisse o mês inteiro, e cobrava o mês inteiro (com os
+ * dias de teste dentro) se o teste terminasse no meio; e o recálculo a cada
+ * venda zerava tudo enquanto o teste durava e depois cobrava o mês inteiro. O
+ * Brasa Burguer (teste até 05/09) estava com R$ 4.349,28 vendidos DURANTE o
+ * teste dentro da base de setembro.
+ *
+ * Devolve `null` quando o teste cobre o mês inteiro (não há o que cobrar), o
+ * início do mês quando não há teste, e o fim do teste quando ele cai dentro
+ * do mês. Um lugar só, porque três funções somam vendas: o recálculo a cada
+ * pedido, o fechamento e o painel do lojista — e as três têm que bater.
+ */
+export function inicioDaCobranca(
+  monthStart: Date,
+  monthEnd: Date,
+  trialEndsAt: Date | string | null | undefined
+): Date | null {
+  if (!trialEndsAt) return monthStart;
+  const fimDoTeste = new Date(trialEndsAt);
+  if (isNaN(fimDoTeste.getTime())) return monthStart;
+  if (fimDoTeste >= monthEnd) return null;
+  return fimDoTeste > monthStart ? fimDoTeste : monthStart;
+}
+
+/**
  * Garante que existe um ciclo OPEN para o franqueado no mês atual.
  * Criado automaticamente ao primeiro pedido do mês.
  */
@@ -294,16 +330,21 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
 
   const { monthStart, monthEnd } = intervaloDoMes(mes, tz);
 
-  const agg = await prisma.customerOrder.aggregate({
-    where: {
-      franchiseeId,
-      ...VENDAS_QUE_CONTAM,
-      createdAt: { gte: monthStart, lt: monthEnd },
-    },
-    _sum: CAMPOS_DO_BRUTO,
-  });
+  // Só as vendas DEPOIS do período de teste entram na base (ver
+  // inicioDaCobranca). Teste cobrindo o mês inteiro = base zero.
+  const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  const agg = inicio
+    ? await prisma.customerOrder.aggregate({
+        where: {
+          franchiseeId,
+          ...VENDAS_QUE_CONTAM,
+          createdAt: { gte: inicio, lt: monthEnd },
+        },
+        _sum: CAMPOS_DO_BRUTO,
+      })
+    : null;
 
-  const totalSales = faturamentoBruto(agg._sum);
+  const totalSales = agg ? faturamentoBruto(agg._sum) : 0;
   const { mensalidade: amountDue } = calcMensalidade(totalSales);
 
   // As taxas já acumuladas no ciclo (tráfego pago, totem) entram no pendente.
@@ -314,7 +355,10 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
   // e o boleto saía certo, mas as telas de admin que leem esta coluna mostravam
   // um valor menor do que o que a loja ia receber.
   const taxasDoCiclo = (cycle.metaAdsFee ?? 0) + (cycle.totemFee ?? 0);
-  const emTeste = !!user?.trialEndsAt && new Date(user.trialEndsAt) > new Date();
+  // "Em teste" aqui significa: ainda não há nada cobrável neste mês — ou o
+  // teste cobre o mês inteiro, ou ainda não terminou (a base começa a contar
+  // no fim dele; até lá `totalSales` é zero de qualquer jeito).
+  const emTeste = inicio === null || inicio > new Date();
   const pendingVal = (isExempt || emTeste) ? 0 : parseFloat((amountDue + taxasDoCiclo).toFixed(2));
 
   // Loja isenta tem que gravar `amountDue` ZERO, não a mensalidade que ela
@@ -348,8 +392,8 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
   //
   // O fechamento já sabe: quem passou o mês em teste tem a mensalidade
   // perdoada lá (isentoPorTeste). Se o teste acaba no meio do mês, a próxima
-  // chamada daqui recalcula com `emTeste` falso e o valor cheio volta — que é
-  // o que já acontecia com o pendente.
+  // chamada daqui recalcula só com as vendas de depois dele (inicioDaCobranca)
+  // e o valor volta — sobre a base certa.
   const devidoGravado = (isExempt || emTeste) ? 0 : amountDue;
 
   await prisma.franchiseeBillingCycle.update({
@@ -499,42 +543,50 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const tz = cycle.franchisee?.storeTimezone || "America/Sao_Paulo";
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
 
-  const agg = await prisma.customerOrder.aggregate({
-    where: {
-      franchiseeId,
-      ...VENDAS_QUE_CONTAM,
-      createdAt: { gte: monthStart, lt: monthEnd },
-    },
-    _sum: CAMPOS_DO_BRUTO,
-  });
-
-  const totalSales = faturamentoBruto(agg._sum);
-
-  let hasUsage = totalSales > 0;
-  let motivosUso: string[] = hasUsage ? ["vendas no mês"] : [];
-  if (!hasUsage && !isSpecialStore) {
-    const uso = await detectarUsoDaLoja(franchiseeId, monthStart, monthEnd);
-    hasUsage = uso.usou;
-    motivosUso = uso.motivos;
-  }
-
-  // Período de teste isenta a mensalidade inteira — com venda ou sem.
+  // Período de teste: a venda feita DENTRO dele não conta; a de depois conta,
+  // no mesmo mês (regra do dono, ver inicioDaCobranca). Teste que cobre o mês
+  // inteiro = nada a cobrar.
   //
   // A regra anterior isentava só quem não tinha vendido nada, e isso cobrava
   // exatamente quem estava fazendo o que o teste existe para permitir: a Point
   // Mix vendeu R$ 184,92 experimentando o sistema e recebeu boleto de R$ 100.
-  // Pior, o painel do lojista (`getCurrentCycleView`) mostra R$ 0,00 o teste
-  // inteiro — o valor só aparecia no boleto. Quem está em teste não recebe
-  // fatura; a cobrança começa quando o teste acaba, e aí vale a regra do uso.
-  const trialAte = cycle.franchisee?.trialEndsAt;
+  // Depois passou a isentar o mês inteiro quando o teste cobria o mês inteiro
+  // — e a cobrar o mês inteiro, dias de teste dentro, quando terminava no meio.
+  //
   // O que vale e o teste DURANTE o mes faturado, nao na hora em que o cron
   // roda. Com `new Date()` aqui a SORRISO CAR — teste ate 02/09, agosto inteiro
   // dentro dele — foi cobrada porque o fechamento de agosto rodou em 03/09, um
   // dia depois. O ciclo e sempre de um mes que ja passou: comparar com "agora"
   // cobra justamente quem passou o mes faturado inteiro em teste e so perdeu o
   // beneficio no intervalo entre o fim do mes e a execucao do fechamento.
-  const emTeste = !!trialAte && trialAte >= monthEnd;
+  const trialAte = cycle.franchisee?.trialEndsAt;
+  const inicio = inicioDaCobranca(monthStart, monthEnd, trialAte);
+  const emTeste = inicio === null;
   const isentoPorTeste = emTeste;
+  const testeAcabouNoMes = !!inicio && !!trialAte && inicio.getTime() === new Date(trialAte).getTime();
+
+  const agg = await prisma.customerOrder.aggregate({
+    where: {
+      franchiseeId,
+      ...VENDAS_QUE_CONTAM,
+      createdAt: { gte: inicio ?? monthStart, lt: monthEnd },
+    },
+    _sum: CAMPOS_DO_BRUTO,
+  });
+
+  // A base cobrável. Com o teste cobrindo o mês inteiro, é a venda do mês
+  // inteiro — só para ficar registrada na nota; a mensalidade é perdoada.
+  const totalSales = faturamentoBruto(agg._sum);
+
+  // Uso também só conta depois do teste: quem usou o sistema nos dias de
+  // teste e nada depois não deve o mínimo.
+  let hasUsage = totalSales > 0;
+  let motivosUso: string[] = hasUsage ? ["vendas no mês"] : [];
+  if (!hasUsage && !isSpecialStore && !emTeste) {
+    const uso = await detectarUsoDaLoja(franchiseeId, inicio ?? monthStart, monthEnd);
+    hasUsage = uso.usou;
+    motivosUso = uso.motivos;
+  }
 
   const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage);
 
@@ -765,6 +817,12 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       asaasPaymentId,
       asaasBoletoUrl,
       asaasBoletoCode,
+      // Teste que acabou no meio do mês: fica escrito de onde a base começou,
+      // senão "por que a mensalidade não bate com as vendas do mês?" vira
+      // arqueologia toda vez.
+      ...(testeAcabouNoMes && inicio
+        ? { notes: `Período de teste até ${new Date(trialAte!).toLocaleDateString("pt-BR")}: só as vendas a partir daí entram na base (R$ ${totalSales.toFixed(2)}).` }
+        : {}),
     },
   });
 
@@ -814,20 +872,28 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // BOLETO saía certo, mas o lojista via um valor baixo o mês inteiro e tomava
   // o susto no dia 1. Contando aqui, painel e fatura falam a mesma coisa.
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
-  const aggVendas = await prisma.customerOrder.aggregate({
-    where: {
-      franchiseeId,
-      ...VENDAS_QUE_CONTAM,
-      createdAt: { gte: monthStart, lt: monthEnd },
-    },
-    _sum: CAMPOS_DO_BRUTO,
-  });
-  const vendasDoMes = faturamentoBruto(aggVendas._sum);
+  // Só as vendas depois do período de teste (inicioDaCobranca) — a mesma
+  // janela do recálculo e do fechamento, para o painel bater com o boleto.
+  const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  const aggVendas = inicio
+    ? await prisma.customerOrder.aggregate({
+        where: {
+          franchiseeId,
+          ...VENDAS_QUE_CONTAM,
+          createdAt: { gte: inicio, lt: monthEnd },
+        },
+        _sum: CAMPOS_DO_BRUTO,
+      })
+    : null;
+  const vendasDoMes = aggVendas ? faturamentoBruto(aggVendas._sum) : 0;
 
-  const emTeste = !!user?.trialEndsAt && user.trialEndsAt > new Date();
+  // Nada cobrável ainda: teste cobrindo o mês inteiro, ou ainda em curso.
+  const emTeste = inicio === null || inicio > new Date();
+  const cobrancaDesde = inicio ? inicio.toISOString() : null;
+  const trialEndsAt = user?.trialEndsAt ? new Date(user.trialEndsAt).toISOString() : null;
   let previsaoPorUso: { valor: number; motivos: string[] } | null = null;
   if (vendasDoMes === 0 && !emTeste) {
-    const uso = await detectarUsoDaLoja(franchiseeId, monthStart, monthEnd);
+    const uso = await detectarUsoDaLoja(franchiseeId, inicio ?? monthStart, monthEnd);
     if (uso.usou) {
       previsaoPorUso = { valor: calcMensalidade(0, true).mensalidade, motivos: uso.motivos };
     }
@@ -849,6 +915,8 @@ export async function getCurrentCycleView(franchiseeId: string) {
       taxas: { trafegoPago: 0, totem: 0 },
       status: "OPEN", isExempt: false,
       cobrancaPorUso: previsaoPorUso,
+      cobrancaDesde,
+      trialEndsAt,
     };
   }
 
@@ -884,5 +952,10 @@ export async function getCurrentCycleView(franchiseeId: string) {
     asaasBoletoUrl: cycle.asaasBoletoUrl,
     asaasBoletoCode: cycle.asaasBoletoCode,
     cobrancaPorUso: previsaoPorUso,
+    // De onde a base começa a contar neste mês (fim do teste, quando ele cai
+    // no meio do mês) — para o painel dizer "a partir de dd/mm" em vez de
+    // mostrar um valor que não bate com as vendas do mês.
+    cobrancaDesde,
+    trialEndsAt,
   };
 }
