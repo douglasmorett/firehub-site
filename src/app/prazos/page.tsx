@@ -6,6 +6,7 @@ import { SeletorDePlano, BarraFixa } from "./Assinar";
 import VoceSabia from "./VoceSabia";
 import GatilhoDoHero from "./GatilhoDoHero";
 import RastreioDeClique from "./RastreioDeClique";
+import QuemJaUsa from "./QuemJaUsa";
 import { CHECKOUT_PADRAO, PLANOS } from "./planos";
 
 export const metadata: Metadata = {
@@ -252,6 +253,9 @@ export default function PrazosLanding() {
           </div>
         </div>
       </section>
+
+      {/* ─────────── QUEM JÁ USA: prova de uso, antes do preço ─────────── */}
+      <QuemJaUsa />
 
       {/* ─────────── PREÇO ─────────── */}
       <section id="assinar" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#fff" }}>
