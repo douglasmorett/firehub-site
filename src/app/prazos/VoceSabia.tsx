@@ -1,4 +1,4 @@
-import { GATILHOS, OUTRAS_FONTES, PICO } from "./gatilhos";
+import { DESTAQUE, GATILHOS, OUTRAS_FONTES, PICO } from "./gatilhos";
 
 /**
  * A seção "Você sabia?" — os gatilhos de curiosidade da página.
@@ -32,6 +32,36 @@ export default function VoceSabia() {
           Não é a gente que diz. É o iFood — e quem pesquisa o seu cliente.
         </p>
 
+        {/* O destaque: a regra dos 10 minutos, com o número no tamanho de manchete.
+            É a citação mais concreta da página e o dono pediu que ela mandasse
+            na seção — o resto dos cartões vem embaixo dela. */}
+        <div
+          style={{
+            display: "flex", flexWrap: "wrap", gap: "18px 32px", alignItems: "center",
+            background: "linear-gradient(135deg, rgba(255,87,34,.22) 0%, rgba(255,87,34,.06) 100%)",
+            border: "1px solid rgba(255,122,89,.55)", borderRadius: 20,
+            padding: "1.5rem 1.6rem", marginBottom: 16,
+          }}
+        >
+          <div style={{ minWidth: 200, flex: "0 0 auto" }}>
+            <div style={{ fontSize: "clamp(3.2rem, 7vw, 4.8rem)", fontWeight: 900, lineHeight: 0.95, color: "#FF7A59", letterSpacing: "-1px" }}>
+              {DESTAQUE.numero}
+            </div>
+            <div style={{ color: "#FFD9CF", fontWeight: 800, fontSize: "1rem", marginTop: 8, maxWidth: 220, lineHeight: 1.3 }}>
+              {DESTAQUE.legenda}
+            </div>
+          </div>
+          <div style={{ flex: "1 1 360px" }}>
+            <blockquote style={{ margin: 0, fontSize: "clamp(1.15rem, 2.5vw, 1.5rem)", fontWeight: 800, lineHeight: 1.35, color: "#fff" }}>
+              “{DESTAQUE.citacao}”
+            </blockquote>
+            <a href={DESTAQUE.url} target="_blank" rel="noopener" style={{ color: "#FF7A59", fontWeight: 700, fontSize: ".92rem", display: "inline-block", marginTop: 10 }}>
+              {DESTAQUE.fonte} ↗
+            </a>
+            <p style={{ color: "#CBD5E1", lineHeight: 1.55, margin: "12px 0 0", fontSize: "1rem" }}>{DESTAQUE.ponte}</p>
+          </div>
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
           {GATILHOS.map((g) => (
             <article key={g.chave} style={cartao}>
@@ -54,7 +84,7 @@ export default function VoceSabia() {
           <a href={PICO.url} target="_blank" rel="noopener" style={{ color: "#FF7A59", fontWeight: 700 }}>
             “especialmente no horário de pico”
           </a>
-          . Só que o pico não marca hora. A extensão ajusta a cada mudança na sua fila — sem você lembrar.
+          . A extensão ajusta a cada mudança na sua fila — sem você lembrar.
         </p>
 
         <details style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 16, marginTop: 16, padding: "0.9rem 1.2rem" }}>

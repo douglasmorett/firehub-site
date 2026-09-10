@@ -67,6 +67,23 @@ export const GATILHOS: Gatilho[] = [
   },
 ];
 
+/**
+ * O destaque da seção: a regra dos 10 minutos. O dono viu essa citação
+ * dobrada dentro do <details> e pediu "mais destaque" — ela é a mais
+ * concreta de todas (um número, uma regra, a fonte é a página de ajuda que
+ * o próprio cliente lê) e por isso vira o número grande em cima dos cartões.
+ */
+export const DESTAQUE = {
+  numero: "10 min",
+  legenda: "é o que o iFood tolera de atraso",
+  citacao: "Se o pedido for em restaurante e o atraso ultrapassar 10 minutos do prazo estimado durante a preparação, é considerado atrasado.",
+  fonte: "Página de ajuda do iFood",
+  url: "https://institucional.ifood.com.br/ajuda/problemas-com-o-pedido-ifood/",
+  conferido: "08/09/2026",
+  /** A linha que liga a regra ao problema do prazo fixo. */
+  ponte: "A pré-configuração do iFood é por horário. Ela não sabe que hoje entraram 14 pedidos em 6 minutos. A fila na sua tela sabe.",
+};
+
 /** Frase que vira a ponte entre os gatilhos e o produto — também literal. */
 export const PICO = {
   citacao: "ajuste o tempo no Portal do Parceiro para refletir o que você de fato consegue cumprir, especialmente no horário de pico.",
@@ -75,11 +92,6 @@ export const PICO = {
 
 /** O que mais as plataformas e as pesquisas publicam — fica dobrado em <details>. */
 export const OUTRAS_FONTES: { texto: string; url: string; fonte: string }[] = [
-  {
-    texto: "“Se o pedido for em restaurante e o atraso ultrapassar 10 minutos do prazo estimado durante a preparação, é considerado atrasado.”",
-    url: "https://institucional.ifood.com.br/ajuda/problemas-com-o-pedido-ifood/",
-    fonte: "Página de ajuda do iFood",
-  },
   {
     texto: "“Prometer 20 minutos e entregar em 50, por exemplo, gera uma percepção mais negativa do que ter cadastrado 40 minutos”",
     url: "https://blog-parceiros.ifood.com.br/aparecer-no-ifood/",
