@@ -211,3 +211,29 @@ do preço derruba 21,1% da receita e exige **+26,7% de assinantes** só para emp
 
 Checklist novo: abra a página em 430px **e role até cada tabela**; confira se a coluna do resultado
 aparece sem rolar de lado, e se todo texto sobre fundo escuro tem cor declarada.
+
+## Adendo 09/09/2026 — gatilhos "você sabia?" sem número inventado
+
+O dono pediu gatilhos do tipo *"você sabia que ajustar o prazo em tempo real sobe em até 67% as suas
+vendas?"*. **Nenhuma fonte tem esse número** — o 67% que circula (Locomotiva/2025) é sobre preço da
+taxa de entrega. Regra que ficou:
+
+- **Gatilho = pergunta na voz do comprador + resposta literal de terceiro, com link e data.** A
+  curiosidade vem da pergunta ("Você sabia que o iFood escolhe quem aparece primeiro olhando o
+  tempo de preparo?"); a credibilidade vem da citação verbatim logo abaixo. Sem fonte, não entra —
+  e **diga ao dono qual número não existe**, em vez de publicar e torcer.
+- **Resumo de busca inventa.** O "5x mais cancelamentos na entrega própria" que um resumo atribuiu
+  ao iFood não existia na página; a Galunion do "33% de satisfação" deu 404. Só entrou o que voltou
+  verbatim do fetch, com "NÃO EXISTE" exigido no prompt.
+- **Quando duas páginas oficiais se contradizem** (ajuda do iFood: "as avaliações não influenciam a
+  ordem"; blog de parceiros: "avaliações dos clientes" entre os fatores), cite literalmente e **não
+  construa argumento próprio sobre o ponto contraditório** — use o que as duas confirmam (tempo de
+  preparo, pontualidade, cancelamento).
+- **Message match barato:** o pré-título do hero lê `?g=<chave>` e mostra o mesmo gancho do anúncio
+  (`/prazos?g=posicao|atraso|cliente`). Um anúncio por gatilho, um link por anúncio. Renderiza o
+  padrão no servidor e troca após montar — sem `useSearchParams`, que suspenderia o hero.
+- **JSON-LD (SoftwareApplication + Offer por faixa + FAQPage) só repete o que a página mostra.**
+  Nada de nota, avaliação ou contagem de clientes que não existe. Assistente de IA hoje responde
+  "quanto custa" sem abrir o site; a página precisa se descrever.
+- **Custo em palavras:** +49 visíveis (857 → 906) por três cartões — a seção antiga de citação
+  única **virou** a seção de gatilhos em vez de somar mais uma dobra.

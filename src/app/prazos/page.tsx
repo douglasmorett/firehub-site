@@ -3,7 +3,9 @@ import DemoAoVivo from "./DemoAoVivo";
 import NoiteDaCozinha from "./NoiteDaCozinha";
 import CalculadoraDePerda from "./CalculadoraDePerda";
 import { SeletorDePlano, BarraFixa } from "./Assinar";
-import { CHECKOUT_PADRAO } from "./planos";
+import VoceSabia from "./VoceSabia";
+import GatilhoDoHero from "./GatilhoDoHero";
+import { CHECKOUT_PADRAO, PLANOS } from "./planos";
 
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
@@ -46,9 +48,73 @@ export const metadata: Metadata = {
  *   - garantia de 7 dias, igual ao cadastro da Cakto, decisão do dono;
  *   - um só botão, repetido, sempre com o mesmo texto.
  *
+ * Acrescentado em 09/09/2026, a pedido do dono ("quero gatilhos: você sabia
+ * que…"): a seção "Você sabia?" logo depois do hero e o pré-título do hero,
+ * os dois em ./gatilhos.ts. Cada gatilho é frase literal do iFood ou de
+ * pesquisa com amostra — o "até 67% de aumento nas vendas" que ele sugeriu
+ * não existe em fonte nenhuma e ficou de fora. O pré-título casa com o
+ * anúncio via ?g=posicao|atraso|cliente (message match). E a página
+ * descreve a si mesma em JSON-LD (FAQ + oferta) para buscador e para os
+ * assistentes de IA que hoje respondem "quanto custa" sem abrir o site.
+ *
  * Nada de biblioteca de animação nem fonte externa: abre em menos de 2 s no
  * 4G, que é o item de maior efeito medido depois do texto.
  */
+
+const FAQ: [string, string][] = [
+  ["Funciona com o meu sistema?", "Se os pedidos aparecem em colunas numa página do Chrome, funciona. Saipos, Cardápio Web, Consumer, o que for. Você marca as colunas com um clique e pronto. Não precisa integração, não precisa mexer no seu sistema, não precisa autorização de ninguém."],
+  ["Preciso deixar o computador ligado?", "Sim. Ela roda no Chrome do computador da loja, com o painel e os portais abertos. Se a aba do painel fechar, ela segura o último prazo e avisa na tela, em vez de zerar e prometer 28 minutos na hora errada."],
+  ["Ela pode bagunçar minha loja?", "Ela só escreve o prazo de entrega. Não aceita, não recusa, não cancela e não pausa. E você desliga o robô num clique, quando quiser."],
+  ["Extensão de Chrome é seguro? O que ela lê?", "Ela roda em três lugares: no seu painel de pedidos, no Portal do Parceiro e no 99Food Admin. Ela lê o número de pedidos da coluna que você marcou. Não lê senha, não lê suas outras abas e não vê nada de banco."],
+  ["E se eu tiver várias lojas?", "Você marca na extensão quais lojas mudam de prazo. As que não marcar ficam como estão. Cada loja a mais custa R$ 9,90 e vale para as duas plataformas: mais uma no iFood e mais uma no 99Food. Todas precisam estar no mesmo login do iFood."],
+  ["O prazo do 99 é o mesmo do iFood?", "Não, e é de propósito. No 99 o cliente vê o tempo de preparo somado ao tempo de entrega da faixa que você cadastrou, então a extensão mexe só no preparo. Você configura essa regra separada."],
+  ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa. E se cancelar dentro de 7 dias, o dinheiro volta inteiro."],
+  ["E se eu deixar de pagar?", "Ela para de ajustar na hora e explica na tela por quê. Pagou de novo, volta sozinha."],
+];
+
+/**
+ * Dados estruturados: a FAQ e a oferta, do jeito que buscador e assistente
+ * de IA leem. Só repete o que a página já mostra — nada de nota, avaliação
+ * ou número de clientes que a gente não tem. O `<` vira `<` por causa
+ * do XSS descrito no guia do Next (docs/01-app/02-guides/json-ld.md).
+ */
+const JSON_LD = JSON.stringify([
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "FireHub Prazos",
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Google Chrome",
+    description: "Extensão para o Chrome que lê a fila do painel de pedidos e escreve o prazo de entrega no iFood e o tempo de preparo no 99Food, sozinha, o dia inteiro.",
+    url: "https://firehubfood.com.br/prazos",
+    image: "https://firehubfood.com.br/prazos-og.jpg",
+    author: { "@type": "Organization", name: "FireHub", url: "https://firehubfood.com.br" },
+    offers: PLANOS.map((p) => ({
+      "@type": "Offer",
+      name: p.lojas === 1 ? "1 loja" : `${p.lojas} lojas`,
+      price: (p.centavos / 100).toFixed(2),
+      priceCurrency: "BRL",
+      url: p.url,
+      availability: "https://schema.org/InStock",
+      priceSpecification: {
+        "@type": "UnitPriceSpecification",
+        price: (p.centavos / 100).toFixed(2),
+        priceCurrency: "BRL",
+        billingIncrement: 1,
+        unitCode: "MON",
+      },
+    })),
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQ.map(([q, r]) => ({
+      "@type": "Question",
+      name: q,
+      acceptedAnswer: { "@type": "Answer", text: r },
+    })),
+  },
+]).replace(/</g, "\\u003c");
 
 const LARANJA = "#FF5722";
 // O laranja da marca sobre branco dá contraste 3,16 — abaixo do mínimo de
@@ -86,6 +152,8 @@ export default function PrazosLanding() {
 
   return (
     <main style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif", color: "#0F172A", background: "#F8FAFC" }}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
+
       {/* ─────────── HERO: a demonstração é a imagem ─────────── */}
       <section style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#fff" }}>
         <div style={{ ...secao, paddingTop: "2.2rem", paddingBottom: "2.6rem" }}>
@@ -93,6 +161,8 @@ export default function PrazosLanding() {
             <div style={{ width: 34, height: 34, borderRadius: 10, background: `linear-gradient(135deg, ${LARANJA}, #F44336)`, display: "grid", placeItems: "center", fontSize: "1.1rem" }}>🔥</div>
             <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>FireHub Prazos</div>
           </div>
+
+          <GatilhoDoHero />
 
           <h1 style={{ fontSize: "clamp(1.9rem, 5vw, 3.1rem)", lineHeight: 1.08, fontWeight: 900, margin: "0 0 14px", maxWidth: 860 }}>
             O prazo do seu iFood sobe sozinho quando a cozinha enche.
@@ -115,6 +185,9 @@ export default function PrazosLanding() {
           <DemoAoVivo />
         </div>
       </section>
+
+      {/* ─────────── VOCÊ SABIA? os gatilhos, com a fonte na mão ─────────── */}
+      <VoceSabia />
 
       {/* ─────────── O PROBLEMA: um gráfico, uma frase ─────────── */}
       <section style={secao}>
@@ -219,43 +292,6 @@ export default function PrazosLanding() {
         </p>
       </section>
 
-      {/* ─────────── QUEM MANDA É O IFOOD ─────────── */}
-      <section style={{ background: "#0F172A", color: "#fff" }}>
-        <div style={secao}>
-          <div style={{ fontSize: ".74rem", fontWeight: 800, color: "#FF7A59", letterSpacing: ".5px", marginBottom: 10 }}>
-            NÃO É A GENTE QUE DIZ. É O IFOOD.
-          </div>
-          <blockquote style={{ margin: 0, fontSize: "clamp(1.15rem, 2.6vw, 1.5rem)", fontWeight: 800, lineHeight: 1.4, maxWidth: 760 }}>
-            "Se o pedido for em restaurante e o atraso ultrapassar 10 minutos do prazo estimado durante a
-            preparação, é considerado atrasado."
-          </blockquote>
-          <a href="https://institucional.ifood.com.br/ajuda/problemas-com-o-pedido-ifood/" target="_blank" rel="noopener" style={{ color: "#FF7A59", fontWeight: 700, fontSize: ".92rem", display: "inline-block", marginTop: 10 }}>
-            Página de ajuda do iFood ↗
-          </a>
-          <p style={{ color: "#CBD5E1", lineHeight: 1.6, maxWidth: 680, margin: "18px 0 0" }}>
-            A pré-configuração do iFood é por horário. Ela não sabe que hoje entraram 14 pedidos em 6
-            minutos. A fila na sua tela sabe.
-          </p>
-
-          <details style={{ ...detalhes, background: "#1E293B", border: "1px solid #334155" }}>
-            <summary style={{ ...resumo, color: "#CBD5E1" }}>Ver o que mais o iFood e o 99Food publicam</summary>
-            <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-              {[
-                ["\"a loja pode ser fechada no iFood em caso de muitos entregadores esperando\" — errar para cima também custa.", "https://blog-parceiros.ifood.com.br/tempo-de-preparo/", "Blog de parceiros do iFood"],
-                ["99Food: \"Tempo menor que o real: pode causar atrasos, avaliações negativas ou cancelamentos.\" E \"Tempo maior que o real: pode afastar clientes, reduzir pedidos e impactar seus ganhos\".", "https://99app.com/99food/restaurantes/guias/como-configurar-o-tempo-de-preparo/", "Guia oficial do 99Food"],
-                ["Selo Super Restaurante: nota ≥ 4,7, cancelamento ≤ 0,90%, reclamações ≤ 1%. Um cancelamento consome a folga de 111 pedidos bons.", "https://institucional.ifood.com.br/restaurantes/selo-super-do-ifood/", "Critérios do Selo Super"],
-              ].map(([t, u, l]) => (
-                <div key={u} style={{ color: "#CBD5E1", lineHeight: 1.55, fontSize: ".95rem" }}>
-                  {t}{" "}
-                  <a href={u} target="_blank" rel="noopener" style={{ color: "#FF7A59", fontWeight: 700 }}>{l} ↗</a>
-                </div>
-              ))}
-              <div style={{ color: "#94A3B8", fontSize: ".82rem" }}>Frases conferidas nas páginas oficiais em 08/09/2026.</div>
-            </div>
-          </details>
-        </div>
-      </section>
-
       {/* ─────────── GARANTIA ─────────── */}
       <section style={secao}>
         <div style={{ ...card, borderColor: "#BBF7D0", background: "#F0FDF4", display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
@@ -324,17 +360,8 @@ export default function PrazosLanding() {
       <section style={{ background: "#fff", borderTop: "1px solid #E2E8F0" }}>
         <div style={secao}>
           <h2 style={h2}>Perguntas que todo mundo faz</h2>
-          {[
-            ["Funciona com o meu sistema?", "Se os pedidos aparecem em colunas numa página do Chrome, funciona. Saipos, Cardápio Web, Consumer, o que for. Você marca as colunas com um clique e pronto. Não precisa integração, não precisa mexer no seu sistema, não precisa autorização de ninguém."],
-            ["Preciso deixar o computador ligado?", "Sim. Ela roda no Chrome do computador da loja, com o painel e os portais abertos. Se a aba do painel fechar, ela segura o último prazo e avisa na tela, em vez de zerar e prometer 28 minutos na hora errada."],
-            ["Ela pode bagunçar minha loja?", "Ela só escreve o prazo de entrega. Não aceita, não recusa, não cancela e não pausa. E você desliga o robô num clique, quando quiser."],
-            ["Extensão de Chrome é seguro? O que ela lê?", "Ela roda em três lugares: no seu painel de pedidos, no Portal do Parceiro e no 99Food Admin. Ela lê o número de pedidos da coluna que você marcou. Não lê senha, não lê suas outras abas e não vê nada de banco."],
-            ["E se eu tiver várias lojas?", "Você marca na extensão quais lojas mudam de prazo. As que não marcar ficam como estão. Cada loja a mais custa R$ 9,90 e vale para as duas plataformas: mais uma no iFood e mais uma no 99Food. Todas precisam estar no mesmo login do iFood."],
-            ["O prazo do 99 é o mesmo do iFood?", "Não, e é de propósito. No 99 o cliente vê o tempo de preparo somado ao tempo de entrega da faixa que você cadastrou, então a extensão mexe só no preparo. Você configura essa regra separada."],
-            ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa. E se cancelar dentro de 7 dias, o dinheiro volta inteiro."],
-            ["E se eu deixar de pagar?", "Ela para de ajustar na hora e explica na tela por quê. Pagou de novo, volta sozinha."],
-          ].map(([q, r]) => (
-            <details key={q as string} style={{ borderBottom: "1px solid #E2E8F0", padding: "14px 0" }}>
+          {FAQ.map(([q, r]) => (
+            <details key={q} style={{ borderBottom: "1px solid #E2E8F0", padding: "14px 0" }}>
               <summary style={{ fontWeight: 800, cursor: "pointer", fontSize: "1.03rem" }}>{q}</summary>
               <div style={{ color: "#475569", lineHeight: 1.65, marginTop: 8, maxWidth: 760 }}>{r}</div>
             </details>
