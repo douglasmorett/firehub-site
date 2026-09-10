@@ -294,6 +294,56 @@ const COLUMN_STATUS_MAP: Record<string, string> = {
   "col-cancelados": "CANCELADO"
 };
 
+/**
+ * As três personalizações de coluna do painel e a consequência de cada uma,
+ * escrita para o lojista ler ANTES de aplicar. `padrao` é como o painel sempre
+ * foi: Novos e Cancelado visíveis, sem coluna de Prontos. Chave ausente no Json
+ * = padrão, então quem nunca mexeu não vê diferença nenhuma.
+ */
+const OPCOES_COLUNAS: {
+  chave: string; padrao: boolean; rotulo: string; ajuda: string; aoDesligar: string[]; aoLigar: string[];
+}[] = [
+  {
+    chave: "colunaNovos", padrao: true,
+    rotulo: "Coluna Novos Pedidos",
+    ajuda: "Onde o pedido espera você clicar em Aceitar",
+    aoDesligar: [
+      "O aceite automático fica LIGADO e travado: todo pedido novo entra direto em Em Produção, sem esperar clique.",
+      "Nenhum pedido fica parado esperando você — nem à vista, nem escondido. É por isso que o aceite vira obrigatório.",
+      "Se a impressão automática estiver ligada, a comanda sai na hora, como já acontece com o aceite automático.",
+    ],
+    aoLigar: [
+      "O pedido novo volta a esperar o seu aceite nesta coluna.",
+      "O aceite automático volta a ser escolha sua: o botão continua no topo da coluna, e fica como estava.",
+    ],
+  },
+  {
+    chave: "colunaCancelados", padrao: true,
+    rotulo: "Coluna Cancelado",
+    ajuda: "Os pedidos cancelados do dia",
+    aoDesligar: [
+      "O pedido cancelado passa a aparecer na coluna Finalizado, com uma faixa vermelha escrita \"Pedido cancelado\".",
+      "Nada some e nada muda no cancelamento em si: só a coluna deixa de existir.",
+    ],
+    aoLigar: [
+      "Os cancelados voltam para a coluna própria, à direita de Finalizado.",
+    ],
+  },
+  {
+    chave: "colunaProntos", padrao: false,
+    rotulo: "Coluna Prontos",
+    ajuda: "Só o que já saiu da cozinha",
+    aoLigar: [
+      "O pedido marcado como \"Pronto Cozinha\" sai de Em Produção e vai para a nova coluna Prontos, entre Em Produção e Saiu para Entrega.",
+      "O selo \"Pronto Cozinha\" continua igual e os botões do card também. Só a coluna muda.",
+      "Em Produção passa a contar só o que ainda está sendo feito. A extensão FireHub Prazos usa esse número para calcular o tempo de preparo.",
+    ],
+    aoDesligar: [
+      "O pedido pronto volta a ficar em Em Produção com o selo, exatamente como hoje.",
+    ],
+  },
+];
+
 const DashboardColumn = memo(function DashboardColumn({
   columnId,
   title,
@@ -395,6 +445,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   onDragStart,
   onDragEnd,
   setOrders,
+  /** Card cancelado fora da coluna Cancelado (coluna oculta): ganha a faixa vermelha. */
+  destacarCancelado = false,
 }: any) {
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.NOVO;
   const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
@@ -625,6 +677,15 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               </span>
             </span>
           </div>
+
+          {/* Sem a coluna Cancelado, o cancelado mora em Finalizado — e
+              precisa gritar que é cancelado, senão vira "entregue" aos olhos
+              de quem passa o olho na coluna. */}
+          {destacarCancelado && order.status === "CANCELADO" && (
+            <div style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: "#FEE2E2", border: "1px solid #FCA5A5", color: "#B91C1C", fontWeight: 800, fontSize: "0.78rem" }}>
+              🚫 Pedido cancelado
+            </div>
+          )}
 
           {/* Badge Pronto Cozinha / Botão Marcar como Pronto Cozinha */}
           {order.kdsStage === "FINISHED" || order.kdsStage === "READY" ? (
@@ -1248,10 +1309,46 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     () => ((user?.painelPedidosConfig as Record<string, boolean>) || {})
   );
   const [showBarraConfig, setShowBarraConfig] = useState(false);
+  /** Aba da engrenagem: a barra de botões (a de sempre) ou as colunas do painel. */
+  const [abaConfig, setAbaConfig] = useState<"barra" | "painel">("barra");
+  /** Opção de coluna cuja consequência está aberta, esperando o "Entendi". */
+  const [confirmandoColuna, setConfirmandoColuna] = useState<string | null>(null);
   const [salvandoBarra, setSalvandoBarra] = useState(false);
 
   /** Chave ausente = ligada. Só o `false` explícito esconde. */
   const naBarra = (chave: string) => barraConfig[chave] !== false;
+
+  // ── AS COLUNAS DO PAINEL TAMBÉM SE PERSONALIZAM ────────────────────────────
+  //
+  // Mesmo Json, mesma regra (ausente = padrão), e o padrão é EXATAMENTE o
+  // painel de hoje: Novos visível, Cancelado visível, sem coluna de Prontos.
+  // Quem nunca abrir a engrenagem não vê diferença nenhuma. Existe para quem é
+  // metódico e faz questão de mudar — e cada mudança tem uma consequência, que
+  // a aba explica ANTES de aplicar.
+  const colNovos = naBarra("colunaNovos");
+  const colCancelados = naBarra("colunaCancelados");
+  const colProntos = barraConfig["colunaProntos"] === true;
+  // Sem a coluna Novos não existe lugar para um pedido esperar aceite. Então o
+  // aceite automático vira obrigatório — não é o botão do lojista que decide,
+  // é a ausência da coluna. Vale mesmo que este navegador tenha o botão
+  // desligado no localStorage: pedido parado sem ninguém ver é o problema que
+  // a coluna existia para evitar.
+  const aceiteObrigatorio = !colNovos;
+  const aceiteEfetivo = autoAccept || aceiteObrigatorio;
+  /** "Pronto na cozinha": o selo que hoje fica dentro de Em Produção. */
+  const prontoNaCozinha = (o: any) =>
+    o.kdsStage === "FINISHED" || o.kdsStage === "READY" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO");
+  /** Arrastar para a coluna Prontos = o mesmo clique de "Marcar como Pronto Cozinha". */
+  const marcarProntoCozinha = async (orderId: string) => {
+    try {
+      const res = await fetch("/api/kds", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, action: "finish_order" }),
+      });
+      if (res.ok) setOrders(prev => prev.map(o => o.id === orderId ? { ...o, kdsStage: "FINISHED" } : o));
+    } catch { /* o card fica onde está */ }
+  };
 
   const salvarBarraConfig = async (novo: Record<string, boolean>) => {
     setBarraConfig(novo);           // a tela responde na hora
@@ -1729,7 +1826,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // Auto-accept logic (apenas para pedidos recentes do dia/turno atual criados há menos de 6 horas)
   const autoAcceptedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!autoAccept) return;
+    // `aceiteEfetivo`, não `autoAccept`: com a coluna Novos oculta o aceite é
+    // obrigatório, independente do botão deste navegador.
+    if (!aceiteEfetivo) return;
     const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
     const novos = orders.filter(o => {
       if (o.status !== "NOVO") return false;
@@ -1755,7 +1854,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         }
       }).catch(() => {});
     });
-  }, [orders, autoAccept]);
+  }, [orders, aceiteEfetivo]);
 
   // ── O aceite automatico precisa existir FORA deste navegador ─────────────
   //
@@ -1794,6 +1893,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     setAutoAccept(next);
     localStorage.setItem("autoAcceptOrders", next.toString());
     gravarAceiteAutomatico(next);
+  };
+
+  /**
+   * Aplica uma mudança de coluna do painel — só depois de o lojista ler a
+   * consequência e confirmar. Esconder Novos liga o aceite automático de vez:
+   * não pode existir pedido esperando aceite numa coluna que não existe, e o
+   * servidor precisa saber (é a coluna `autoAcceptOrders` que o webhook lê).
+   */
+  const aplicarColuna = (chave: string, ligar: boolean) => {
+    salvarBarraConfig({ ...barraConfig, [chave]: ligar });
+    if (chave === "colunaNovos" && !ligar && !autoAccept) {
+      setAutoAccept(true);
+      localStorage.setItem("autoAcceptOrders", "true");
+      gravarAceiteAutomatico(true);
+    }
+    setConfirmandoColuna(null);
   };
 
   // Pre-initialize AudioContext on first user interaction (required by browser autoplay policy)
@@ -2123,6 +2238,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
+    // Prontos não é status: é o selo de "pronto na cozinha". Soltar aqui faz o
+    // que o botão do card faz — e nada além disso.
+    if (columnId === "col-prontos") {
+      if (!prontoNaCozinha(order)) marcarProntoCozinha(orderId);
+      return;
+    }
+
     const targetStatus = COLUMN_STATUS_MAP[columnId];
     if (!targetStatus) return;
 
@@ -2210,6 +2332,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     if (droppedColumn && droppedColumn !== "col-novos" && touchRef.current) {
       const order = orders.find(o => o.id === touchRef.current!.orderId);
       if (order) {
+        // Coluna Prontos: é o selo de cozinha, não um status (ver handleDrop).
+        if (droppedColumn === "col-prontos" && !prontoNaCozinha(order)) marcarProntoCozinha(order.id);
         let newStatus: string | null = null;
         if (droppedColumn === "col-preparo") newStatus = "PREPARANDO";
         if (droppedColumn === "col-transporte") newStatus = "SAIU_ENTREGA";
@@ -2319,7 +2443,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // ativas: quem está esperando no balcão há mais tempo é o próximo.
   const aguardandoPagamento = filteredOrders.filter(o => o.status === "AGUARDANDO_PAGAMENTO").sort(sortByOrderNumberAsc);
   const novos = filteredOrders.filter(o => (o.status === "NOVO" || o.status === "CRIANDO_IA") && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
-  const preparo = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberAsc);
+  const preparoBase = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO"));
+  // Coluna Prontos ligada: o que já saiu da cozinha muda de coluna em vez de
+  // ficar em Em Produção com o selo. Desligada (o padrão): tudo como hoje.
+  const prontos = colProntos ? preparoBase.filter(prontoNaCozinha).sort(sortByOrderNumberAsc) : [];
+  // Sem a coluna Novos, o pedido NOVO aparece aqui até o aceite automático
+  // (obrigatório nesse caso) o carimbar — que leva um tique. Nunca fica
+  // invisível: pedido que ninguém vê é o problema que a coluna existia para
+  // evitar.
+  const preparo = [
+    ...(colNovos ? [] : novos),
+    ...(colProntos ? preparoBase.filter(o => !prontoNaCozinha(o)) : preparoBase),
+  ].sort(sortByOrderNumberAsc);
   const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA").sort(sortByOrderNumberAsc);
   // ── COLUNAS DE ENCERRADOS VÃO DO MAIS RECENTE PARA O MAIS ANTIGO ──────────
   // As colunas ativas (Novos, Em Produção, Saiu para Entrega) são FIFO: o mais
@@ -2333,8 +2468,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // pelo scheduledDatetime) e o #92, recém-entregue, na 47ª posição.
   const sortByOrderNumberDesc = (a: any, b: any) => sortByOrderNumberAsc(b, a);
 
-  const finalizados = filteredOrders.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO" || (o.deliveryType !== "DELIVERY" && o.status === "PRONTO")).sort(sortByOrderNumberDesc);
   const cancelados = filteredOrders.filter(o => o.status === "CANCELADO").sort(sortByOrderNumberDesc);
+  // Sem a coluna Cancelado, o cancelado vai para Finalizado com uma faixa
+  // vermelha no card. Some a coluna, não o pedido.
+  const finalizados = filteredOrders
+    .filter(o =>
+      o.status === "ENTREGUE" || o.status === "ENCERRADO" ||
+      (o.deliveryType !== "DELIVERY" && o.status === "PRONTO") ||
+      (!colCancelados && o.status === "CANCELADO")
+    )
+    .sort(sortByOrderNumberDesc);
 
   // ── QUEM PODE APITAR ────────────────────────────────────────────────────
   //
@@ -4045,10 +4188,33 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                   <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
-                    <Settings size={18} /> O que aparece nesta barra
+                    <Settings size={18} /> Personalizar o painel
                   </h3>
-                  <button onClick={() => setShowBarraConfig(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8", lineHeight: 1 }}>×</button>
+                  <button onClick={() => { setShowBarraConfig(false); setConfirmandoColuna(null); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8", lineHeight: 1 }}>×</button>
                 </div>
+
+                {/* Duas abas: a barra de botões (o que sempre existiu) e as
+                    colunas do painel (novo). A primeira abre por padrão para
+                    quem já usava a engrenagem não estranhar nada. */}
+                <div style={{ display: "flex", gap: 6, margin: "10px 0 14px", borderBottom: "1px solid #E2E8F0" }}>
+                  {([["barra", "Botões da barra"], ["painel", "Colunas do painel"]] as const).map(([id, rotulo]) => (
+                    <button
+                      key={id}
+                      onClick={() => { setAbaConfig(id); setConfirmandoColuna(null); }}
+                      style={{
+                        padding: "8px 12px", border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
+                        fontWeight: 800, fontSize: "0.82rem",
+                        color: abaConfig === id ? "#2563EB" : "#64748B",
+                        borderBottom: abaConfig === id ? "2px solid #2563EB" : "2px solid transparent",
+                        marginBottom: -1,
+                      }}
+                    >
+                      {rotulo}
+                    </button>
+                  ))}
+                </div>
+
+                {abaConfig === "barra" && (<>
                 <p style={{ fontSize: "0.8rem", color: "#64748B", margin: "0 0 14px" }}>
                   Desmarque o que sua loja não usa. Vale só para esta loja, e você pode religar quando quiser.
                 </p>
@@ -4087,7 +4253,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 14 }}>
                   <button
-                    onClick={() => salvarBarraConfig({})}
+                    // Só zera as chaves da BARRA: as colunas do painel têm o
+                    // próprio "voltar ao padrão" na outra aba.
+                    onClick={() => salvarBarraConfig(Object.fromEntries(Object.entries(barraConfig).filter(([k]) => k.startsWith("coluna"))))}
                     style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}
                     title="Volta ao padrão: tudo aparecendo"
                   >
@@ -4097,6 +4265,79 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     {salvandoBarra ? "Salvando..." : "Salvo automaticamente"}
                   </span>
                 </div>
+                </>)}
+
+                {abaConfig === "painel" && (<>
+                <p style={{ fontSize: "0.8rem", color: "#64748B", margin: "0 0 14px" }}>
+                  Cada mudança aqui tem uma consequência no dia a dia, e ela aparece antes de você aplicar.
+                  Vale só para esta loja. Quem não mexer continua com o painel exatamente como está.
+                </p>
+
+                {OPCOES_COLUNAS.map((op) => {
+                  const ligada = op.padrao ? naBarra(op.chave) : barraConfig[op.chave] === true;
+                  const confirmando = confirmandoColuna === op.chave;
+                  const consequencias = ligada ? op.aoDesligar : op.aoLigar;
+                  return (
+                    <div key={op.chave} style={{ border: confirmando ? "1px solid #FCD34D" : "1px solid #E2E8F0", borderRadius: 10, marginBottom: 6, background: ligada ? "#F8FAFC" : "#fff", overflow: "hidden" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px" }}>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: "block", fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>{op.rotulo}</span>
+                          <span style={{ display: "block", fontSize: "0.72rem", color: "#94A3B8" }}>{op.ajuda}</span>
+                        </span>
+                        <button
+                          onClick={() => setConfirmandoColuna(confirmando ? null : op.chave)}
+                          aria-pressed={ligada}
+                          title={ligada ? "Ligada. Clique para ver o que muda ao desligar." : "Desligada. Clique para ver o que muda ao ligar."}
+                          style={{
+                            flexShrink: 0, padding: "5px 11px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
+                            fontWeight: 900, fontSize: "0.68rem", letterSpacing: "0.04em",
+                            background: ligada ? "#DCFCE7" : "#F1F5F9", color: ligada ? "#15803D" : "#64748B",
+                          }}
+                        >
+                          {ligada ? "LIGADA" : "DESLIGADA"}
+                        </button>
+                      </div>
+                      {confirmando && (
+                        <div style={{ borderTop: "1px solid #FCD34D", background: "#FFFBEB", padding: "10px 12px" }}>
+                          <div style={{ fontWeight: 800, fontSize: "0.78rem", color: "#92400E", marginBottom: 6 }}>
+                            {ligada ? "Se você desligar, é isto que muda:" : "Se você ligar, é isto que muda:"}
+                          </div>
+                          <ul style={{ margin: "0 0 10px", paddingLeft: 18, fontSize: "0.76rem", color: "#78350F", lineHeight: 1.45 }}>
+                            {consequencias.map((c, i) => <li key={i}>{c}</li>)}
+                          </ul>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              onClick={() => aplicarColuna(op.chave, !ligada)}
+                              style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#B45309", color: "#fff", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                            >
+                              Entendi, {ligada ? "desligar" : "ligar"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmandoColuna(null)}
+                              style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                            >
+                              Deixar como está
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 14 }}>
+                  <button
+                    onClick={() => { salvarBarraConfig(Object.fromEntries(Object.entries(barraConfig).filter(([k]) => !k.startsWith("coluna")))); setConfirmandoColuna(null); }}
+                    style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}
+                    title="Volta ao painel padrão: Novos e Cancelado visíveis, sem coluna Prontos"
+                  >
+                    Voltar ao painel padrão
+                  </button>
+                  <span style={{ fontSize: "0.75rem", color: salvandoBarra ? "#2563EB" : "#94A3B8" }}>
+                    {salvandoBarra ? "Salvando..." : "Salvo automaticamente"}
+                  </span>
+                </div>
+                </>)}
               </div>
             </div>
           )}
@@ -4350,6 +4591,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               ))}
             </DashboardColumn>
           )}
+          {/* A coluna Novos pode ser escondida pela engrenagem. Sem ela, o
+              aceite automático é obrigatório e o pedido novo entra direto em
+              Em Produção — ver `aceiteObrigatorio`. */}
+          {colNovos && (
           <DashboardColumn
             columnId="col-novos"
             title="Novos Pedidos" emoji="🔔" color="#3B82F6" count={novos.length} columnOrders={novos}
@@ -4412,10 +4657,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               />
             ))}
           </DashboardColumn>
+          )}
           <DashboardColumn columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color="#F59E0B" count={preparo.length} columnOrders={preparo}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-preparo"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
-            onDragOver={(e: any) => handleDragOver(e, "col-preparo")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-preparo")}>
+            onDragOver={(e: any) => handleDragOver(e, "col-preparo")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-preparo")}
+            headerBelow={aceiteObrigatorio ? (
+              /* Com Novos oculta, o botão de aceite some junto com a coluna.
+                 Esta faixa diz onde ele foi parar: ligado e travado. */
+              <div style={{ padding: "6px 0.85rem", borderBottom: "1px solid #E2E8F0", background: "#DCFCE7", color: "#15803D", fontSize: "0.72rem", fontWeight: 700 }}>
+                ✅ Aceite automático ligado e travado — a coluna Novos está oculta
+              </div>
+            ) : undefined}>
             {preparo.map(o => (
               <DashboardOrderCard
                 key={o.id}
@@ -4443,6 +4696,42 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               />
             ))}
           </DashboardColumn>
+          {/* Coluna Prontos — só existe se a loja ligou na engrenagem. Recebe
+              o que hoje fica em Em Produção com o selo "Pronto Cozinha". O
+              selo continua; só a coluna muda. */}
+          {colProntos && (
+          <DashboardColumn columnId="col-prontos" title="Prontos" emoji="✅" color="#059669" count={prontos.length} columnOrders={prontos}
+            isTabActive={activeColumnTab === "all" || activeColumnTab === "col-prontos"}
+            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            onDragOver={(e: any) => handleDragOver(e, "col-prontos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-prontos")}>
+            {prontos.map(o => (
+              <DashboardOrderCard
+                key={o.id}
+                order={o}
+                expanded={expandedId === o.id}
+                isLoading={loadingId === o.id}
+                isDragging={draggedOrderId === o.id}
+                now={now}
+                seqNum={getDisplayOrderNumber(o)}
+                timeAlertConfig={timeAlertConfig}
+                selectedOrderIds={selectedOrderIds}
+                motoboys={motoboys}
+                assigningId={assigningId}
+                onToggleSelectOrder={toggleSelectOrder}
+                onToggleExpand={(id: string) => setExpandedId(prev => prev === id ? null : id)}
+                onUpdateStatus={updateStatus}
+                onAssignMotoboy={assignMotoboy}
+                onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
+                onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
+                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                setOrders={setOrders}
+              />
+            ))}
+          </DashboardColumn>
+          )}
           <DashboardColumn columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color="#7C3AED" count={transporte.length} columnOrders={transporte}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-transporte"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
@@ -4482,6 +4771,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <DashboardOrderCard
                 key={o.id}
                 order={o}
+                destacarCancelado={!colCancelados}
                 expanded={expandedId === o.id}
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
@@ -4505,6 +4795,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               />
             ))}
           </DashboardColumn>
+          {/* A coluna Cancelado pode ser escondida pela engrenagem. Sem ela, o
+              cancelado aparece em Finalizado com a faixa vermelha. */}
+          {colCancelados && (
           <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-cancelados"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
@@ -4536,6 +4829,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               />
             ))}
           </DashboardColumn>
+          )}
         </div>
       </div>
 
