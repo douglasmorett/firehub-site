@@ -190,8 +190,54 @@ export async function processarEventosIfood(opts: {
         const isConcluded = code === "CON" || event.fullCode === "CONCLUDED";
         const isCancelled = code === "CAN" || event.fullCode === "CANCELLED";
         const isDispute = code === "HSD" || code === "CRR" || code === "DDC" || event.fullCode === "HANDSHAKE_DISPUTE" || event.fullCode === "CANCELLATION_REQUESTED" || event.fullCode === "DUE_DATE_CHANGE_REQUESTED";
+        // O desfecho da negociação: o iFood conta como a disputa terminou
+        // (aceita, recusada, alternativa, prazo esgotado).
+        const isSettlement = code === "HSS" || event.fullCode === "HANDSHAKE_SETTLEMENT";
 
         log.push(`  📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
+
+        // ── DESFECHO DA NEGOCIAÇÃO (HANDSHAKE_SETTLEMENT) ──────────────────
+        //
+        // Sem isto a disputa ficava "pendente" para sempre quando a resposta
+        // saía pelo app do iFood ou quando o prazo vencia — e o painel não
+        // tinha como dizer ao lojista "o cliente ficou com o reembolso" ou
+        // "o cancelamento parcial foi confirmado". O desfecho de um
+        // cancelamento parcial é o que marca o pedido como PARCIALMENTE
+        // cancelado (o pedido continua; só os itens contestados saem).
+        if (isSettlement) {
+          const meta = event.metadata || {};
+          const atual = await prisma.customerOrder.findFirst({
+            where: { ifoodOrderId: orderId },
+            select: { id: true, cancelDispute: true },
+          });
+          if (atual) {
+            const d: any = atual.cancelDispute || {};
+            const statusDesfecho = String(meta.status || meta.settlementStatus || "").toUpperCase();
+            const aceitou = statusDesfecho.includes("ACCEPT") || statusDesfecho.includes("ALTERNATIVE");
+            await prisma.customerOrder.update({
+              where: { id: atual.id },
+              data: {
+                cancelDispute: {
+                  ...d,
+                  pending: false,
+                  settlement: {
+                    status: statusDesfecho,
+                    reason: meta.reason ?? null,
+                    detailReason: meta.detailReason ?? null,
+                    at: meta.createdAt || new Date().toISOString(),
+                    raw: JSON.parse(JSON.stringify(meta ?? {})),
+                  },
+                  ...(d.parcial === true && aceitou ? { parcialConfirmado: true } : {}),
+                } as any,
+              } as any,
+            });
+            log.push(`  🤝 Desfecho da negociação de ${orderId}: ${statusDesfecho || "(sem status)"}${d.parcial ? " (cancelamento parcial)" : ""}`);
+          } else {
+            log.push(`  🤝 Desfecho da negociação de ${orderId} sem pedido no banco — confirmado sem gravar`);
+          }
+          if (event.id) processedEventIds.push({ id: event.id, orderId: event.orderId || "", eventType: event.fullCode || event.code || "" });
+          continue;
+        }
 
         // O iFood avisando que ESTE pedido vai exigir código de entrega na porta
         // do cliente. Sem guardar isso, a tela do entregador não tem como saber
@@ -235,8 +281,33 @@ export async function processarEventosIfood(opts: {
           const actionType = (meta.action || meta.handshakeType || meta.type || event.fullCode || "").toUpperCase();
           const rawReason = meta.message || meta.cancelCodeDescription || meta.subCodeDescription || meta.reason || meta.description || "";
           
+          // Cancelamento PARCIAL é outra coisa: o pedido continua, o cliente
+          // contesta alguns itens (que vêm listados em metadata.items) e a
+          // loja pode aceitar, recusar ou propor um reembolso até o teto que
+          // o iFood manda em `alternatives`. Regra do dono (10/09/2026): tem
+          // que ficar escrito "cancelamento parcial" e quais itens, para o
+          // lojista nunca confundir com cancelamento do pedido inteiro.
+          const itensContestados: { index: number; quantidade: number; valor: number; motivo: string; nome: string }[] = [];
           let disputeType = "CANCELLATION";
-          if (actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC") {
+          if (actionType === "PARTIAL_CANCELLATION" || String(meta.handshakeType || "").toUpperCase().includes("PARTIALLY")) {
+            disputeType = "PARTIAL_CANCELLATION";
+            const doPedido = await prisma.customerOrder.findFirst({
+              where: { ifoodOrderId: orderId },
+              select: { items: { select: { productName: true, quantity: true, menuProduct: { select: { name: true } } }, orderBy: { id: "asc" } } },
+            });
+            const nomes = (doPedido?.items || []).map((i) => i.productName || i.menuProduct?.name || "");
+            for (const it of (Array.isArray(meta.metadata?.items) ? meta.metadata.items : [])) {
+              const index = Number(it.index) || 0;
+              itensContestados.push({
+                index,
+                quantidade: Number(it.quantity) || 1,
+                // O iFood manda centavos em string ("6798" = R$ 67,98).
+                valor: Number(it.amount?.value ?? 0) / 100,
+                motivo: String(it.reason || "").trim(),
+                nome: nomes[index - 1] || it.name || `Item ${index}`,
+              });
+            }
+          } else if (actionType.includes("DUE_DATE") || actionType.includes("PREDICTION") || code === "DDC") {
             disputeType = "DUE_DATE_CHANGE";
           } else if (actionType.includes("RESEND") || actionType.includes("REPLACEMENT") || actionType.includes("REENVIO") || /reenvio|reenviar|repor|substituir/i.test(rawReason)) {
             disputeType = "RESEND_ITEMS";
@@ -244,10 +315,11 @@ export async function processarEventosIfood(opts: {
             disputeType = "REFUND_ITEMS";
           }
 
-          const finalReason = rawReason || (
+          const finalReason = rawReason || itensContestados.find((i) => i.motivo)?.motivo || (
             disputeType === "DUE_DATE_CHANGE" ? "O pedido está atrasado. Quero uma nova previsão de entrega." :
             disputeType === "RESEND_ITEMS" ? "Cliente prefere o reenvio de itens pra resolver o problema." :
             disputeType === "REFUND_ITEMS" ? "Cliente solicitou reembolso de item." :
+            disputeType === "PARTIAL_CANCELLATION" ? "Cliente pediu o cancelamento de parte do pedido pelo iFood." :
             "Cliente solicitou cancelamento do pedido pelo iFood."
           );
 
@@ -256,6 +328,12 @@ export async function processarEventosIfood(opts: {
             disputeId: meta.disputeId || "",
             type: disputeType,
             reason: finalReason,
+            parcial: disputeType === "PARTIAL_CANCELLATION",
+            itens: itensContestados,
+            // O que o iFood aceita como resposta além de aceitar/recusar
+            // (REFUND com teto, ADDITIONAL_TIME com motivos permitidos).
+            alternatives: Array.isArray(meta.alternatives) ? JSON.parse(JSON.stringify(meta.alternatives)) : [],
+            evidencias: Array.isArray(meta.metadata?.evidences) ? meta.metadata.evidences.length : 0,
             customerName: meta.customerName || "",
             handshakeType: meta.handshakeType || actionType,
             expiresAt: meta.expiresAt || meta.expirationDate || meta.timeoutDate || "",

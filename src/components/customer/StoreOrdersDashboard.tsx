@@ -687,6 +687,30 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             </div>
           )}
 
+          {/* Cancelamento PARCIAL (negociação do iFood): o pedido continua e
+              parte dele foi (ou está sendo) reembolsada. Tem que estar escrito
+              com os itens — senão vira "entregue normal" aos olhos de quem lê
+              o card, e a diferença para o cancelamento total some. */}
+          {(() => {
+            const cd: any = (order as any).cancelDispute;
+            if (!cd || cd.parcial !== true) return null;
+            const ativo = cd.pending === true || cd.resolved === "accepted_partial" || cd.resolved === "refund_proposed" || cd.parcialConfirmado === true;
+            if (!ativo) return null;
+            const itens: any[] = Array.isArray(cd.itens) ? cd.itens : [];
+            const valor = cd.valorReembolso ? `reembolso R$ ${Number(cd.valorReembolso).toFixed(2).replace(".", ",")}`
+              : cd.valorReembolsoProposto ? `proposta de reembolso R$ ${Number(cd.valorReembolsoProposto).toFixed(2).replace(".", ",")}` : "";
+            return (
+              <div style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: "#FFF7ED", border: "1px solid #FDBA74", color: "#C2410C", fontWeight: 800, fontSize: "0.76rem" }}>
+                ✂️ CANCELAMENTO PARCIAL{cd.pending ? " · em negociação" : cd.resolved === "refund_proposed" ? " · aguardando o cliente" : ""}
+                {(itens.length > 0 || valor) && (
+                  <span style={{ display: "block", fontWeight: 600, color: "#9A3412" }}>
+                    {itens.map((i: any) => `${i.quantidade}x ${i.nome}`).join(", ")}{itens.length > 0 && valor ? " · " : ""}{valor}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Badge Pronto Cozinha / Botão Marcar como Pronto Cozinha */}
           {order.kdsStage === "FINISHED" || order.kdsStage === "READY" ? (
             <div style={{ marginBottom: "4px" }}>
@@ -901,6 +925,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             )}
             {order.status === "CANCELADO" && (
               <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#DC2626", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Cancelado</span>
+            )}
+            {(order as any).cancelDispute?.parcial === true && ["accepted_partial", "refund_proposed"].includes((order as any).cancelDispute?.resolved) && (
+              <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#EA580C", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>✂️ Cancelamento parcial</span>
             )}
             {order.status === "ENCERRADO" && (
               <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
@@ -3510,12 +3537,24 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
         const timeLeftStr = timeLeft != null ? `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, "0")}` : null;
 
-        const isResend = dispute.type === "RESEND_ITEMS" || /reenvio|reenviar|repor|substituir|troca/i.test(dispute.reason || "");
-        const isRefund = dispute.type === "REFUND_ITEMS" || /reembolso|reembolsar/i.test(dispute.reason || "");
-        const isDueDate = dispute.type === "DUE_DATE_CHANGE" || /previsão|atraso|tempo/i.test(dispute.reason || "");
+        // Cancelamento PARCIAL (iFood): o pedido continua; o cliente contesta
+        // alguns itens, e a loja aceita, recusa ou propõe outro valor de
+        // reembolso — até o teto que o iFood mandou em `alternatives`. Tem que
+        // estar escrito "parcial" em tudo: aceitar aqui NÃO cancela o pedido.
+        const isParcial = dispute.type === "PARTIAL_CANCELLATION" || dispute.parcial === true;
+        const itensContestados: any[] = Array.isArray(dispute.itens) ? dispute.itens : [];
+        const reembolsoPedido = itensContestados.reduce((s: number, i: any) => s + (Number(i.valor) || 0), 0);
+        const altReembolso = (Array.isArray(dispute.alternatives) ? dispute.alternatives : []).find((a: any) => String(a?.type || "").toUpperCase() === "REFUND");
+        const tetoReembolso = Number(altReembolso?.maxAmount?.value ?? 0) / 100;
+        const fmtBR = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
+        const isResend = !isParcial && (dispute.type === "RESEND_ITEMS" || /reenvio|reenviar|repor|substituir|troca/i.test(dispute.reason || ""));
+        const isRefund = !isParcial && (dispute.type === "REFUND_ITEMS" || /reembolso|reembolsar/i.test(dispute.reason || ""));
+        const isDueDate = !isParcial && (dispute.type === "DUE_DATE_CHANGE" || /previsão|atraso|tempo/i.test(dispute.reason || ""));
 
-        const modalEmoji = isResend ? "📦" : isRefund ? "💰" : isDueDate ? "⏱️" : "⚠️";
-        const modalTitle = isResend
+        const modalEmoji = isParcial ? "✂️" : isResend ? "📦" : isRefund ? "💰" : isDueDate ? "⏱️" : "⚠️";
+        const modalTitle = isParcial
+          ? `Pedido #${orderNum}: CANCELAMENTO PARCIAL solicitado`
+          : isResend
           ? `Pedido #${orderNum}: Solicitação de Reenvio de Item`
           : isRefund
           ? `Pedido #${orderNum}: Solicitação de Reembolso`
@@ -3523,7 +3562,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           ? `Pedido #${orderNum}: Nova Previsão de Entrega`
           : `Pedido #${orderNum} em negociação`;
 
-        const modalSubtitle = isResend
+        const modalSubtitle = isParcial
+          ? `O cliente contesta PARTE do pedido pelo iFood. O pedido continua — só os itens abaixo seriam reembolsados.`
+          : isResend
           ? `O cliente prefere o reenvio de itens para resolver o problema no iFood.`
           : isRefund
           ? `O cliente solicitou o reembolso de um item pelo iFood.`
@@ -3531,10 +3572,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           ? `O cliente pediu atualização do tempo de entrega pelo iFood.`
           : `O cliente solicitou o cancelamento ${(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : (disputeOrder as any).source === "BRENDI" ? "pela Brendi" : "pelo iFood"}`;
 
-        const boxBg = isResend ? "#EFF6FF" : isRefund ? "#ECFDF5" : "#FEF3C7";
-        const boxBorder = isResend ? "#93C5FD" : isRefund ? "#A7F3D0" : "#FDE68A";
-        const boxTitleColor = isResend ? "#1D4ED8" : isRefund ? "#047857" : "#92400E";
-        const boxTextColor = isResend ? "#1E40AF" : isRefund ? "#065F46" : "#78350F";
+        const boxBg = isParcial ? "#FFF7ED" : isResend ? "#EFF6FF" : isRefund ? "#ECFDF5" : "#FEF3C7";
+        const boxBorder = isParcial ? "#FDBA74" : isResend ? "#93C5FD" : isRefund ? "#A7F3D0" : "#FDE68A";
+        const boxTitleColor = isParcial ? "#C2410C" : isResend ? "#1D4ED8" : isRefund ? "#047857" : "#92400E";
+        const boxTextColor = isParcial ? "#7C2D12" : isResend ? "#1E40AF" : isRefund ? "#065F46" : "#78350F";
 
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
@@ -3565,6 +3606,71 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <strong>Valor:</strong> R$ {disputeOrder.totalAmount?.toFixed(2)}<br/>
                 {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? ((disputeOrder as any).source === "BRENDI" ? "Brendi" : "Jotajá") : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
               </div>
+              {isParcial && (
+                <div style={{ background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: "10px", padding: "12px", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#C2410C", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    ✂️ Itens contestados — cancelamento parcial
+                  </div>
+                  {itensContestados.length === 0 ? (
+                    <div style={{ fontSize: "0.82rem", color: "#9A3412" }}>O iFood não detalhou os itens desta contestação.</div>
+                  ) : itensContestados.map((it: any, i: number) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.85rem", color: "#7C2D12", padding: "4px 0", borderTop: i ? "1px dashed #FED7AA" : "none" }}>
+                      <span>
+                        <strong>{it.quantidade}x {it.nome}</strong>
+                        {it.motivo ? <span style={{ display: "block", fontSize: "0.76rem", color: "#9A3412" }}>“{it.motivo}”</span> : null}
+                      </span>
+                      <strong style={{ whiteSpace: "nowrap" }}>{fmtBR(it.valor)}</strong>
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 8, fontSize: "0.82rem", color: "#7C2D12", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <span>Reembolso pedido pelo cliente{dispute.evidencias ? ` · ${dispute.evidencias} foto(s) anexada(s) no iFood` : ""}</span>
+                    <strong>{fmtBR(reembolsoPedido)}</strong>
+                  </div>
+                  {altReembolso && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #FED7AA" }}>
+                      <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#C2410C", display: "block", marginBottom: 4 }}>
+                        💰 Ou proponha outro valor de reembolso (até {fmtBR(tetoReembolso)})
+                      </label>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input
+                          id="dispute-refund-amount"
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          max={tetoReembolso || undefined}
+                          placeholder="0,00"
+                          style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid #FDBA74", fontSize: "0.9rem", fontWeight: 700, fontFamily: "inherit" }}
+                        />
+                        <button
+                          disabled={!!loadingId}
+                          onClick={async () => {
+                            const el = document.getElementById("dispute-refund-amount") as HTMLInputElement | null;
+                            const amount = parseFloat((el?.value || "").replace(",", "."));
+                            if (!(amount > 0)) { showToast("Informe o valor do reembolso que você propõe.", "#B45309"); return; }
+                            setLoadingId(disputeOrder.id);
+                            try {
+                              const r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "propose_refund", amount }) });
+                              const d = await r.json().catch(() => ({} as any));
+                              if (r.ok) {
+                                setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false, parcial: true, resolved: "refund_proposed", valorReembolsoProposto: amount } } : o));
+                                if (d.ifoodOk === false) showToast("⚠️ O iFood não aceitou a proposta: " + (d.ifoodErro || "responda pelo app do iFood."), "#B45309");
+                                else showToast("💰 Proposta de reembolso enviada ao cliente pelo iFood.", "#10B981");
+                                router.refresh();
+                              } else {
+                                showToast(d.error || "Não foi possível enviar a proposta.", "#DC2626");
+                              }
+                            } catch {} finally { setLoadingId(null); }
+                          }}
+                          style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#EA580C", color: "#fff", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+                        >
+                          Propor
+                        </button>
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "#9A3412", marginTop: 4 }}>O cliente decide no app do iFood se aceita a sua proposta.</div>
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Campo de motivo para resposta */}
               <div style={{ marginBottom: "16px" }}>
                 <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: "6px" }}>Sua resposta ao cliente (opcional/obrigatório para recusar):</label>
@@ -3594,17 +3700,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       } else {
                         r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "deny", denyReason: reason }) });
                       }
-                      if (r.ok) { setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false } } : o)); router.refresh(); }
+                      const d = await r.json().catch(() => ({} as any));
+                      if (r.ok) {
+                        setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false, resolved: "denied" } } : o));
+                        // d.ifoodOk === false: gravou aqui, mas o iFood recusou a resposta.
+                        if (d.ifoodOk === false) showToast("⚠️ Gravado aqui, mas o iFood não aceitou a resposta: " + (d.ifoodErro || "responda pelo app do iFood."), "#B45309");
+                        router.refresh();
+                      }
                     } catch {} finally { setLoadingId(null); }
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
-                  {loadingId === disputeOrder.id ? "..." : (isResend ? "📦 Reenviar item — manter pedido" : "✋ Recusar cancelamento — manter pedido")}
+                  {loadingId === disputeOrder.id ? "..." : (isResend ? "📦 Reenviar item — manter pedido" : isParcial ? "✋ Recusar — o pedido foi entregue corretamente" : "✋ Recusar cancelamento — manter pedido")}
                 </button>
                 <button
                   disabled={!!loadingId}
                   onClick={async () => {
-                    if (!confirm(isResend ? "Deseja recusar a proposta de reenvio e cancelar o pedido?" : "Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
+                    if (!confirm(isParcial
+                      ? `Aceitar o cancelamento PARCIAL? Só os itens contestados são reembolsados (${fmtBR(reembolsoPedido)}); o pedido continua.`
+                      : isResend ? "Deseja recusar a proposta de reenvio e cancelar o pedido?" : "Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
                     setLoadingId(disputeOrder.id);
                     try {
                       let r: Response;
@@ -3616,12 +3730,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       } else {
                         r = await fetch("/api/customer-order/dispute", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, action: "accept" }) });
                       }
-                      if (r.ok) { setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, status: "CANCELADO", cancelledBy: "LOJA", cancelDispute: { ...dispute, pending: false } } : o)); router.refresh(); }
+                      const d = await r.json().catch(() => ({} as any));
+                      if (r.ok) {
+                        // Parcial aceito: o pedido NÃO vira cancelado — fica
+                        // marcado "cancelamento parcial" com os itens e o valor.
+                        setOrders(prev => prev.map(o => o.id === disputeOrder.id
+                          ? (isParcial
+                            ? { ...o, cancelDispute: { ...dispute, pending: false, parcial: true, resolved: "accepted_partial", valorReembolso: reembolsoPedido } }
+                            : { ...o, status: "CANCELADO", cancelledBy: "LOJA", cancelDispute: { ...dispute, pending: false } })
+                          : o));
+                        if (d.ifoodOk === false) showToast("⚠️ Gravado aqui, mas o iFood não aceitou a resposta: " + (d.ifoodErro || "responda pelo app do iFood."), "#B45309");
+                        router.refresh();
+                      }
                     } catch {} finally { setLoadingId(null); }
                   }}
-                  style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
+                  style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: isParcial ? "#EA580C" : "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
-                  {loadingId === disputeOrder.id ? "..." : (isResend ? "❌ Recusar reenvio — cancelar pedido" : "✅ Aceitar cancelamento")}
+                  {loadingId === disputeOrder.id ? "..." : (isResend ? "❌ Recusar reenvio — cancelar pedido" : isParcial ? `✅ Aceitar cancelamento parcial — reembolsar ${fmtBR(reembolsoPedido)}` : "✅ Aceitar cancelamento")}
                 </button>
               </div>
             </div>
