@@ -279,7 +279,7 @@ export default function PrazosLanding() {
               "Ajuste a cada mudança na fila, o dia inteiro",
               "Relatório do dono: quanto tempo o prazo ficou alto, baixo e em estouro",
               "Atualizações incluídas — quando o iFood muda a tela, quem corre é a gente",
-              "Suporte no WhatsApp com quem fez o produto e também toca loja",
+              "Suporte no WhatsApp com quem fez o produto",
             ].map((t) => (
               <li key={t} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <span style={{ color: "#34D399", fontWeight: 900, flexShrink: 0 }}>✓</span>
