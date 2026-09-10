@@ -64,8 +64,24 @@ async function calcularEsperadoDoTurno(
         status: { notIn: ["CANCELADO", "CRIANDO_IA"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { status: true, paymentMethod: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true },
+      select: { status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true },
     });
+
+    // Uma parte de pagamento (do balcão dividido ou da baixa da mesa) na sua
+    // forma. A mesma régua do laço abaixo, para as duas nunca divergirem.
+    const somarParte = (metodo: string, v: number) => {
+      const m = metodo.toLowerCase();
+      if (m.includes("dinheiro") || m.includes("cash")) expected.cash += v;
+      else if (m.includes("débito") || m.includes("debito") || m.includes("debit")) expected.debit += v;
+      else if (m.includes("crédito") || m.includes("credito") || m.includes("credit")) expected.credit += v;
+      else if (m.includes("pix")) expected.pix += v;
+      else if (m.includes("voucher") || m.includes("vale") || m.includes("meal") || m.includes("food")) expected.voucher += v;
+      else if (m.includes("cart") || m.includes("maquin")) expected.credit += v;
+      else {
+        foraDaConferencia.naoIdentificado += v;
+        foraDaConferencia.naoIdentificadoQtd += 1;
+      }
+    };
 
     for (const o of orders) {
       const pm = (o.paymentMethod || "").toLowerCase();
@@ -90,6 +106,19 @@ async function calcularEsperadoDoTurno(
           foraDaConferencia.mesasAbertas += o.totalAmount || 0;
           foraDaConferencia.mesasAbertasQtd += 1;
         }
+        continue;
+      }
+
+      // ── PAGAMENTO DIVIDIDO (BALCÃO) ─────────────────────────────────────
+      //
+      // Metade no Pix, metade em dinheiro: cada parte vai para a SUA linha da
+      // conferência. Ler o `paymentMethod` de texto ("Dividido: Pix R$ 20,00 +
+      // Dinheiro R$ 15,00") pela régua de palavras jogaria o pedido inteiro na
+      // primeira forma que casasse.
+      const partes = lerPagamentos((o as any).paymentMethods);
+      if (partes.length > 0) {
+        expected.total += o.totalAmount || 0;
+        for (const p of partes) somarParte(p.method, p.amount);
         continue;
       }
 

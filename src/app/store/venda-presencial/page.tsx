@@ -40,6 +40,12 @@ export default function VendaPresencialPage() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [change, setChange] = useState(""); // troco
+  // Pagamento dividido (metade no Pix, metade em dinheiro), igual à mesa.
+  // Cada parte vai para a sua linha do fechamento de caixa; o resumo em
+  // texto vai no paymentMethod da comanda.
+  const [dividir, setDividir] = useState(false);
+  const [partes, setPartes] = useState<{ metodo: string; valor: string }[]>([]);
+  const valorDaParte = (p: { valor: string }) => Math.round((parseFloat(String(p.valor).replace(",", ".")) || 0) * 100) / 100;
   const [comboProduct, setComboProduct] = useState<any>(null);
   const [employeeAccountEnabled, setEmployeeAccountEnabled] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -178,6 +184,30 @@ export default function VendaPresencialPage() {
   const subtotal = cart.reduce((s, i) => s + (i.unitPrice ?? i.product.price) * i.qty, 0);
   const voucherFee = isVoucher ? subtotal * (voucherRate / 100) : 0;
   const total = subtotal + voucherFee;
+  const somaPartes = Math.round(partes.reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
+  const faltaDividir = Math.round((total - somaPartes) * 100) / 100;
+  const parteDinheiro = Math.round(partes.filter(p => p.metodo === "Dinheiro").reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
+  const ligarDivisao = (ligar: boolean) => {
+    setDividir(ligar);
+    if (ligar) {
+      setPaymentMethod("Dividido");
+      // Duas linhas para começar; a segunda já com o que falta.
+      setPartes([{ metodo: "Dinheiro", valor: "" }, { metodo: "PIX", valor: "" }]);
+    } else {
+      setPaymentMethod("Dinheiro");
+      setPartes([]);
+    }
+    setChange("");
+  };
+  const setParte = (idx: number, patch: Partial<{ metodo: string; valor: string }>) =>
+    setPartes(prev => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
+  // Preenche a linha com o que ainda falta — é o gesto mais comum ("o resto no Pix").
+  const completarParte = (idx: number) =>
+    setPartes(prev => {
+      const outras = prev.reduce((s, p, i) => (i === idx ? s : s + valorDaParte(p)), 0);
+      const resto = Math.max(0, Math.round((total - outras) * 100) / 100);
+      return prev.map((p, i) => (i === idx ? { ...p, valor: resto.toFixed(2) } : p));
+    });
 
   const handleProductClick = (product: any) => {
     const groups = getEffectiveComboGroups(product);
@@ -222,7 +252,25 @@ export default function VendaPresencialPage() {
       return setMsg("❌ Selecione o funcionário responsável pela conta.");
     }
 
+    if (dividir) {
+      const validas = partes.filter(p => valorDaParte(p) > 0);
+      if (validas.length < 2) return setMsg("❌ Para dividir, informe pelo menos duas formas com valor.");
+      if (Math.abs(faltaDividir) > 0.01) {
+        return setMsg(`❌ A soma das formas (${fmt(somaPartes)}) não bate com o total (${fmt(total)}). ${faltaDividir > 0 ? `Faltam ${fmt(faltaDividir)}.` : `Sobram ${fmt(-faltaDividir)}.`}`);
+      }
+      if (parteDinheiro > 0 && change && Number(change) < parteDinheiro) {
+        return setMsg(`❌ O valor em dinheiro entregue (${fmt(Number(change))}) é menor que a parte em dinheiro (${fmt(parteDinheiro)}).`);
+      }
+    }
+
     setLoading(true); setMsg("");
+    const partesValidas = dividir ? partes.filter(p => valorDaParte(p) > 0).map(p => ({ method: p.metodo, amount: valorDaParte(p) })) : null;
+    // No pagamento dividido o troco é sobre a PARTE em dinheiro, não sobre o
+    // total — então ele vai escrito na observação, e não em `change`, que a
+    // comanda calcula contra o total do pedido.
+    const trocoDividido = dividir && parteDinheiro > 0 && change && Number(change) > parteDinheiro
+      ? ` [Dinheiro ${fmt(parteDinheiro)} · cliente deu ${fmt(Number(change))} · troco ${fmt(Number(change) - parteDinheiro)}]`
+      : "";
     const body = {
       customerName: paymentMethod === "Conta Funcionário" && selectedEmployeeName
         ? `Func. ${selectedEmployeeName}`
@@ -231,10 +279,11 @@ export default function VendaPresencialPage() {
       customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? `Mesa ${tableNum}` : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
       paymentMethod,
-      change: paymentMethod === "Dinheiro" && change ? Number(change) : null,
+      ...(partesValidas ? { paymentMethods: partesValidas } : {}),
+      change: !dividir && paymentMethod === "Dinheiro" && change ? Number(change) : null,
       employeeId: selectedEmployeeId || null,
       employeeName: selectedEmployeeName || null,
-      notes,
+      notes: `${notes || ""}${trocoDividido}`.trim(),
       totalAmount: total,
       deliveryFee: 0,
       items: cart.map(i => ({
@@ -253,6 +302,7 @@ export default function VendaPresencialPage() {
     if (res.ok) {
       setMsg("✅ Pedido registrado!");
       setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange("");
+      if (dividir) ligarDivisao(false);
     } else {
       const err = await res.json();
       setMsg("❌ " + (err.error || "Erro ao registrar pedido."));
@@ -489,8 +539,54 @@ export default function VendaPresencialPage() {
                   {m === "Conta Funcionário" ? "👤 Conta Funcionário" : m}
                 </button>
               ))}
+              {/* Dividir entre formas, igual à mesa: metade no Pix, metade em dinheiro. */}
+              <button type="button" onClick={() => ligarDivisao(!dividir)}
+                style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${dividir ? "#7C3AED" : "#CBD5E1"}`,
+                  background: dividir ? "#7C3AED" : "#fff", color: dividir ? "#fff" : "#334155",
+                  fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}
+                title="Receber em mais de uma forma (ex.: parte no Pix, parte em dinheiro)">
+                ➗ Dividir
+              </button>
             </div>
           </div>
+
+          {dividir && (
+            <div style={{ marginBottom: 6, background: "#F5F3FF", border: "1.5px solid #DDD6FE", borderRadius: 8, padding: "8px" }}>
+              <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#5B21B6", marginBottom: 6 }}>
+                Pagamento dividido — cada parte entra no caixa na sua forma
+              </div>
+              {partes.map((p, idx) => (
+                <div key={idx} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}>
+                  <select value={p.metodo} onChange={e => setParte(idx, { metodo: e.target.value })}
+                    style={{ flex: "1 1 90px", padding: "5px 6px", borderRadius: 6, border: "1px solid #C4B5FD", fontSize: "0.78rem", fontFamily: "inherit", background: "#fff" }}>
+                    {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <input type="number" inputMode="decimal" step="0.01" min="0" placeholder="0,00" value={p.valor}
+                    onChange={e => setParte(idx, { valor: e.target.value })}
+                    style={{ width: 84, padding: "5px 6px", borderRadius: 6, border: "1px solid #C4B5FD", fontSize: "0.82rem", fontWeight: 700, fontFamily: "inherit" }} />
+                  <button type="button" onClick={() => completarParte(idx)} title="Preencher com o que falta"
+                    style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #C4B5FD", background: "#fff", color: "#5B21B6", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                    resto
+                  </button>
+                  {partes.length > 2 && (
+                    <button type="button" onClick={() => setPartes(prev => prev.filter((_, i) => i !== idx))} title="Remover esta forma"
+                      style={{ padding: "5px 7px", borderRadius: 6, border: "none", background: "#FEE2E2", color: "#DC2626", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, marginTop: 4 }}>
+                <button type="button" onClick={() => setPartes(prev => [...prev, { metodo: "Cartão Crédito", valor: "" }])}
+                  style={{ padding: "4px 8px", borderRadius: 6, border: "1px dashed #A78BFA", background: "#fff", color: "#5B21B6", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  + outra forma
+                </button>
+                <span style={{ fontSize: "0.76rem", fontWeight: 800, color: Math.abs(faltaDividir) <= 0.01 ? "#15803D" : "#B45309" }}>
+                  {Math.abs(faltaDividir) <= 0.01 ? `✓ fecha ${fmt(total)}` : faltaDividir > 0 ? `faltam ${fmt(faltaDividir)}` : `sobram ${fmt(-faltaDividir)}`}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Seleção do Funcionário quando forma for Conta Funcionário */}
           {paymentMethod === "Conta Funcionário" && (
@@ -531,14 +627,14 @@ export default function VendaPresencialPage() {
             </div>
           )}
 
-          {/* Troco (só Dinheiro) */}
-          {paymentMethod === "Dinheiro" && (
-            <input type="number" placeholder="Troco para... (opcional)" value={change} onChange={e => setChange(e.target.value)}
+          {/* Troco (só Dinheiro — no dividido, sobre a parte em dinheiro) */}
+          {(paymentMethod === "Dinheiro" || (dividir && parteDinheiro > 0)) && (
+            <input type="number" placeholder={dividir ? `Cliente deu em dinheiro... (parte: ${fmt(parteDinheiro)})` : "Troco para... (opcional)"} value={change} onChange={e => setChange(e.target.value)}
               style={{ width: "100%", marginBottom: 6, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem", outline: "none", fontFamily: "inherit" }} />
           )}
-          {paymentMethod === "Dinheiro" && change && Number(change) > 0 && (
+          {(paymentMethod === "Dinheiro" || (dividir && parteDinheiro > 0)) && change && Number(change) > 0 && (
             <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "4px 8px", marginBottom: 6, fontSize: "0.75rem", color: "#16A34A", fontWeight: 700 }}>
-              💵 Troco: {fmt(Math.max(0, Number(change) - total))}
+              💵 Troco: {fmt(Math.max(0, Number(change) - (dividir ? parteDinheiro : total)))}
             </div>
           )}
 

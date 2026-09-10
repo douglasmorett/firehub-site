@@ -644,6 +644,9 @@ model CustomerOrder {
   customerAddress  String?
   deliveryType     String              @default("DELIVERY")
   paymentMethod    String?
+  // Pagamento dividido (balcão): [{ method: "Pix", amount: 20 }, ...]. Nulo =
+  // uma forma só. Mesmo formato de TableSession.paymentMethods (lib/pagamentos-da-mesa.ts).
+  paymentMethods   Json?
   totalAmount      Float
   deliveryFee      Float               @default(0)
   motoboyFee       Float?

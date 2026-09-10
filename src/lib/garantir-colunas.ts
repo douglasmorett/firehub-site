@@ -349,6 +349,12 @@ const INSTRUCOES_LOTES = [
   // fechamento, e redigitar é onde o erro entra. Nulo = 10, que é o costume.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "taxaServicoPadrao" DOUBLE PRECISION`,
 
+  // Pagamento dividido no balcão ([{ method, amount }], o mesmo formato de
+  // TableSession.paymentMethods). Antes o balcão só aceitava UMA forma: quem
+  // pagava metade no Pix e metade em dinheiro virava "Dinheiro" inteiro, e a
+  // gaveta fechava com diferença. Nulo = pagamento numa forma só (paymentMethod).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "paymentMethods" JSONB`,
+
   // Token da API de Conversões do Meta. Sem ele a venda só existe pelo pixel do
   // navegador, que perde de 30% a 50% dos eventos.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "metaCapiToken" TEXT`,

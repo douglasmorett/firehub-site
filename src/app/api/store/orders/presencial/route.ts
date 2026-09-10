@@ -9,7 +9,32 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const data = await req.json();
-  const { customerName, customerPhone, customerAddress, deliveryType, paymentMethod, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change } = data;
+  const { customerName, customerPhone, customerAddress, deliveryType, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change } = data;
+  let paymentMethod: string = data.paymentMethod;
+
+  // ── PAGAMENTO DIVIDIDO ──────────────────────────────────────────────────
+  //
+  // O balcão pode receber metade no Pix e metade em dinheiro. As partes vêm
+  // em `paymentMethods` ([{ method, amount }], o formato da mesa) e têm que
+  // fechar com o total: gravar partes que não somam o pedido é criar uma
+  // diferença de caixa que ninguém vai achar. O `paymentMethod` (texto) vira o
+  // resumo "Dividido: Pix R$ 20,00 + Dinheiro R$ 15,00" — é o que a comanda e
+  // o painel mostram; o caixa lê as partes.
+  let paymentMethods: { method: string; amount: number }[] | null = null;
+  if (Array.isArray(data.paymentMethods) && data.paymentMethods.length > 0) {
+    const partes = data.paymentMethods
+      .map((p: any) => ({ method: String(p?.method || p?.metodo || "").trim(), amount: Math.round((Number(p?.amount ?? p?.valor) || 0) * 100) / 100 }))
+      .filter((p: { method: string; amount: number }) => p.method && p.amount > 0);
+    if (partes.length < 2) {
+      return NextResponse.json({ error: "Para dividir o pagamento, informe pelo menos duas formas com valor." }, { status: 400 });
+    }
+    const soma = Math.round(partes.reduce((s: number, p: { amount: number }) => s + p.amount, 0) * 100) / 100;
+    if (Math.abs(soma - (Number(totalAmount) || 0)) > 0.02) {
+      return NextResponse.json({ error: `A soma das formas (R$ ${soma.toFixed(2).replace(".", ",")}) não bate com o total do pedido (R$ ${(Number(totalAmount) || 0).toFixed(2).replace(".", ",")}).` }, { status: 400 });
+    }
+    paymentMethods = partes;
+    paymentMethod = "Dividido: " + partes.map((p: { method: string; amount: number }) => `${p.method} R$ ${p.amount.toFixed(2).replace(".", ",")}`).join(" + ");
+  }
 
   if (!items || items.length === 0) return NextResponse.json({ error: "Nenhum item informado" }, { status: 400 });
 
@@ -49,6 +74,7 @@ export async function POST(req: Request) {
       customerAddress: customerAddress || "",
       deliveryType: deliveryType || "RETIRADA",
       paymentMethod: paymentMethod || "Dinheiro",
+      ...(paymentMethods ? { paymentMethods } : {}),
       changeAmount: changeAmount ? Number(changeAmount) : (change ? Number(change) : null),
       employeeId: employeeId || null,
       employeeName: employeeName || null,
