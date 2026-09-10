@@ -423,29 +423,32 @@ async function pollIfoodEvents(sessionUserId?: string) {
             else if (isDispatched) initialStatus = "SAIU_ENTREGA";
             else if (isConcluded) initialStatus = "ENTREGUE";
 
-            await (prisma.customerOrder as any).create({
+            // De qual loja iFood veio, e o conserto do rótulo da integração
+            // — este é o caminho que roda durante o movimento (5s), então é
+            // aqui que a correção precisa acontecer para valer na prática.
+            const { nomeDaLojaDoPedidoIfood } = await import("@/lib/ifood-eventos");
+            const nomeDaLojaIfood = await nomeDaLojaDoPedidoIfood({
+              franchiseeId: eventFranchisee.id,
+              merchantId: eventMerchantId,
+              orderData,
+            });
+            const { generateDailyOrderNumberTx } = await import("@/lib/order-number");
+
+            // Número e gravação na MESMA transação. O mesmo pedido chega por
+            // aqui e pelo webhook (e por cada painel aberto da loja, que também
+            // faz este poll): quem grava por segundo cai na unicidade de
+            // ifoodOrderId. Fora da transação o contador já tinha subido e
+            // ninguém devolvia — a Hakim Centro perdeu de 1 a 9 números por dia
+            // em 09/2026 (#24 em 10/09), e o lojista lê o buraco como "pedido
+            // sumiu". Com o rollback o número volta junto (lib/order-number.ts).
+            await prisma.$transaction(async (tx) => {
+              await (tx.customerOrder as any).create({
               data: {
                 franchiseeId: eventFranchisee.id,
-                dailyOrderNumber: await (async () => {
-                  const { generateDailyOrderNumber } = await import("@/lib/order-number");
-                  return generateDailyOrderNumber(eventFranchisee.id);
-                })(),
+                dailyOrderNumber: await generateDailyOrderNumberTx(tx, eventFranchisee.id),
                 ifoodOrderId: orderId,
-                // De qual loja iFood veio, e o conserto do rótulo da integração
-                // — este é o caminho que roda durante o movimento (5s), então é
-                // aqui que a correção precisa acontecer para valer na prática.
-                ...(await (async () => {
-                  const { nomeDaLojaDoPedidoIfood } = await import("@/lib/ifood-eventos");
-                  const nome = await nomeDaLojaDoPedidoIfood({
-                    franchiseeId: eventFranchisee.id,
-                    merchantId: eventMerchantId,
-                    orderData,
-                  });
-                  return {
-                    ifoodStoreName: nome ?? undefined,
-                    ifoodStoreMerchant: eventMerchantId ?? undefined,
-                  };
-                })()),
+                ifoodStoreName: nomeDaLojaIfood ?? undefined,
+                ifoodStoreMerchant: eventMerchantId ?? undefined,
                 ifoodReference: orderData.displayId ?? undefined,
                 scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
                 changeAmount,
@@ -497,7 +500,8 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 createdAt: new Date(), // Entra no final da fila com o próximo número sequencial
                 items: { create: items },
               },
-            });
+              });
+            }, { timeout: 20000 });
             console.log(`[iFood Poll] ✅ Pedido ${orderId} criado com sucesso! (evento: ${code}/${event.fullCode}, status: ${initialStatus}, franchisee: ${eventFranchisee.id})`);
 
             // Auto-confirm to iFood se ainda é PLACED
