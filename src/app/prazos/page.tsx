@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 29,90 por mês, 7 dias de garantia.",
   openGraph: {
     title: "O prazo do seu iFood muda sozinho quando a cozinha enche",
-    description: "A extensão olha a fila da sua cozinha e escreve o prazo certo no iFood e no 99Food. Sem abrir o portal.",
+    description: "A extensão olha a fila da sua cozinha e escreve o prazo certo no iFood e no 99Food. Você deixa o portal aberto e ela faz o resto.",
     url: "https://firehubfood.com.br/prazos",
     siteName: "FireHub",
     locale: "pt_BR",
@@ -101,7 +101,7 @@ export default function PrazosLanding() {
 
           <p style={{ fontSize: "1.12rem", color: "#CBD5E1", maxWidth: 680, lineHeight: 1.55, margin: "0 0 20px" }}>
             A extensão olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e no 99Food.
-            Você não abre portal nenhum.
+            Você deixa o portal aberto e não mexe em mais nada.
           </p>
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
