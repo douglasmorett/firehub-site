@@ -22,6 +22,9 @@ type CostData = {
     total: number;
   };
   ativa: boolean;
+  /** Em período de teste neste mês: não paga nada, e a tabela diz isso. */
+  emTeste?: boolean;
+  trialEndsAt?: string | null;
   orders: number;
   profit: number;
   margin: number;
@@ -200,9 +203,32 @@ export default function AdminCostsTab() {
                       </td>
                       <td style={{ padding: "12px 16px", fontWeight: 600, color: "#1E293B" }}>
                         {fmt(l.revenue.amountDue)}
-                        <div style={{ fontSize: "0.75rem", color: l.revenue.amountPaid >= l.revenue.amountDue && l.revenue.amountDue > 0 ? "#10B981" : "#64748B" }}>
-                          Pago: {fmt(l.revenue.amountPaid)}
-                        </div>
+                        {/* Três leituras, e cada uma diz uma coisa diferente:
+                            em teste (não paga este mês), pago (dinheiro que
+                            entrou) e a receber (ciclo aberto, boleto por vir).
+                            "Pago: R$ 0,00" numa loja que só ainda não fechou o
+                            mês parecia inadimplência — foi assim que o Brasa
+                            Burguer, a única loja de fato devendo setembro,
+                            pareceu o problema, ao lado de cinco lojas em teste
+                            "pagas" em verde. */}
+                        {l.emTeste ? (
+                          <div style={{ fontSize: "0.75rem", color: "#B45309", fontWeight: 700 }}>
+                            Em teste até {l.trialEndsAt ? new Date(l.trialEndsAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"} · não paga este mês
+                          </div>
+                        ) : l.revenue.amountPaid >= l.revenue.amountDue && l.revenue.amountDue > 0 ? (
+                          <div style={{ fontSize: "0.75rem", color: "#10B981" }}>
+                            Pago: {fmt(l.revenue.amountPaid)}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: "0.75rem", color: "#64748B" }}>
+                            Pago: {fmt(l.revenue.amountPaid)}
+                            {l.revenue.amountDue - l.revenue.amountPaid > 0.009 && (
+                              <span style={{ marginLeft: 6, color: "#2563EB", fontWeight: 700 }}>
+                                · a receber: {fmt(l.revenue.amountDue - l.revenue.amountPaid)}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: "12px 16px", fontWeight: 700, color: "#EA1D2C" }}>
                         {fmt(l.costs.total)}

@@ -47,6 +47,8 @@ export async function GET(req: NextRequest) {
         city: true,
         storePhone: true,
         isFranqueadoHakim: true,
+        // Para a tabela dizer "em teste até dd/mm" em vez de "Pago R$ 0,00".
+        trialEndsAt: true,
       }
     });
 
@@ -116,6 +118,11 @@ export async function GET(req: NextRequest) {
         // esconder: é assim que se enxerga conta parada ocupando cadastro.
         ativa: pedidos > 0,
         orders: pedidos,
+        // Em teste = não paga nada neste mês. A tabela precisa dizer isso com
+        // todas as letras, senão "Pago R$ 0,00" parece inadimplência — e
+        // "Receita R$ 380" em loja de teste parece dinheiro no caixa.
+        emTeste: !!franchisee.trialEndsAt && franchisee.trialEndsAt > new Date(),
+        trialEndsAt: franchisee.trialEndsAt ? franchisee.trialEndsAt.toISOString() : null,
         revenue,
         costs,
         profit,

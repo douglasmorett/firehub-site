@@ -332,7 +332,25 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
   // loja isenta e para mensalidade perdoada (ver os dois updates abaixo, com o
   // mesmo motivo escrito). Quem divergia era este caminho em tempo real, então
   // o número do admin só ficava certo depois que o mês fechava.
-  const devidoGravado = isExempt ? 0 : amountDue;
+  // Loja em TESTE recebe o mesmo tratamento da isenta: `amountDue` zero.
+  //
+  // Só o pendente era zerado no teste, e o `amountDue` cheio ficava gravado.
+  // O painel de Custos lê `amountDue` como "Receita" e `amountDue -
+  // amountPending` como "Pago" — então cada loja em teste aparecia com a
+  // mensalidade inteira "paga" em verde. Medido em 10/09/2026: Paulista
+  // R$ 380,13, Taurus R$ 320,17, Ragnar R$ 220,77, Nik R$ 114,85 e Lucas
+  // R$ 100,00 "pagos", todas em teste, nenhuma cobrada — R$ 1.135,92 de
+  // faturamento que não existe, somado na receita total da plataforma. E o
+  // Brasa Burguer, a única loja de fato devendo setembro (R$ 104,73
+  // pendentes), era a única com "Pago: R$ 0,00", como se fosse ela a
+  // inadimplente. O dono leu exatamente isso e achou que a cobrança do Brasa
+  // tinha parado.
+  //
+  // O fechamento já sabe: quem passou o mês em teste tem a mensalidade
+  // perdoada lá (isentoPorTeste). Se o teste acaba no meio do mês, a próxima
+  // chamada daqui recalcula com `emTeste` falso e o valor cheio volta — que é
+  // o que já acontecia com o pendente.
+  const devidoGravado = (isExempt || emTeste) ? 0 : amountDue;
 
   await prisma.franchiseeBillingCycle.update({
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth: mes } },
@@ -340,7 +358,7 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
   });
 
   console.log(
-    `[Billing] ${franchiseeId} ${mes} | Vendas=${totalSales.toFixed(2)} Devido=${devidoGravado.toFixed(2)}${isExempt ? " (isenta)" : ""} Pendente=${pendingVal}`
+    `[Billing] ${franchiseeId} ${mes} | Vendas=${totalSales.toFixed(2)} Devido=${devidoGravado.toFixed(2)}${isExempt ? " (isenta)" : emTeste ? " (em teste)" : ""} Pendente=${pendingVal}`
   );
 
   return { yearMonth: mes, totalSales, amountDue: devidoGravado, amountPending: pendingVal };
