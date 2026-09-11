@@ -1289,6 +1289,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const ids = Array.from(selectedOrderIds);
 
     try {
+      // "Prontos" não é status: é o selo de pronto na cozinha (ver handleDrop).
+      if (bulkTargetStatus === "PRONTOS_COZINHA") {
+        for (const orderId of ids) await marcarProntoCozinha(orderId);
+        showToast(`${ids.length} pedido(s) marcados como prontos na cozinha!`, "#10B981");
+        setSelectedOrderIds(new Set());
+        setBulkTargetStatus("");
+        return;
+      }
+
       let successCount = 0;
       for (const orderId of ids) {
         const res = await fetch("/api/customer-order/status", {
@@ -4648,12 +4657,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   padding: "8px 14px", borderRadius: "8px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer"
                 }}
               >
+                {/* Os rótulos são os NOMES DAS COLUNAS do painel, na mesma
+                    ordem em que aparecem na tela. Quem seleciona três pedidos e
+                    escolhe "Finalizado" tem que ver os três na coluna
+                    Finalizado — "Entregue / Concluído" era um nome que não
+                    existia em coluna nenhuma. Aceitar continua separado porque
+                    é o que confirma no iFood e dá baixa no estoque; Em Produção
+                    sozinho não faz isso. "Prontos" só aparece para a loja que
+                    ligou a coluna, e faz o que o selo Pronto Cozinha faz. */}
                 <option value="">Mudar para...</option>
-                <option value="ACEITO">✅ Aceito</option>
-                <option value="PREPARANDO">👨‍🍳 Em Preparo</option>
+                <option value="ACEITO">✅ Aceitar (vai para Em Produção)</option>
+                <option value="PREPARANDO">👨‍🍳 Em Produção</option>
+                {colProntos && <option value="PRONTOS_COZINHA">✅ Prontos</option>}
                 <option value="SAIU_ENTREGA">🛵 Saiu para Entrega</option>
-                <option value="ENTREGUE">📦 Entregue / Concluído</option>
-                <option value="CANCELADO">❌ Cancelar</option>
+                <option value="ENTREGUE">✅ Finalizado</option>
+                <option value="CANCELADO">🚫 Cancelado</option>
               </select>
 
               <button

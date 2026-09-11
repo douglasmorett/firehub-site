@@ -11,7 +11,8 @@ import {
   Trash2,
   Loader2,
   RefreshCw,
-  CheckCircle2
+  CheckCircle2,
+  ExternalLink
 } from "lucide-react";
 
 interface Motoboy {
@@ -113,6 +114,16 @@ interface RoteirizacaoModalProps {
   storeLatLng?: { lat: number; lng: number } | null;
   onRefreshOrders?: () => void;
   onUpdateOrderStatus?: (orderId: string, status: string, motoboyId?: string) => Promise<void>;
+  /**
+   * A roteirização aberta como PÁGINA (/store/roteirizacao), numa aba só dela.
+   *
+   * A loja deixa o mapa aberto a noite inteira num monitor e a aba de pedidos
+   * em outro; sem isto, roteirizar era sempre um modal em cima do painel, e
+   * fechar o painel (ou trocar de aba) fechava o mapa junto. Neste modo o
+   * quadro ocupa a tela inteira, o botão "Abrir em aba separada" some (já
+   * está nela) e "Fechar" fecha a própria aba.
+   */
+  modoIndependente?: boolean;
 }
 
 const ROUTE_COLORS = [
@@ -136,7 +147,8 @@ export default function RoteirizacaoModal({
   storeId,
   storeLatLng = null,
   onRefreshOrders,
-  onUpdateOrderStatus
+  onUpdateOrderStatus,
+  modoIndependente = false
 }: RoteirizacaoModalProps) {
   const [activeTab, setActiveTab] = useState<"PENDING" | "ROTAS">("PENDING");
   const [searchTerm, setSearchTerm] = useState("");
@@ -1898,12 +1910,12 @@ export default function RoteirizacaoModal({
     <div style={{
       position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15, 23, 42, 0.75)",
       backdropFilter: "blur(4px)", display: isOpen ? "flex" : "none", alignItems: "center", justifyContent: "center",
-      padding: "1rem"
+      padding: modoIndependente ? 0 : "1rem"
     }}>
       <div style={{
-        background: "#F8FAFC", width: "100%", maxWidth: "1400px", height: "92vh",
-        borderRadius: "16px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
-        display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid #CBD5E1"
+        background: "#F8FAFC", width: "100%", maxWidth: modoIndependente ? "none" : "1400px", height: modoIndependente ? "100vh" : "92vh",
+        borderRadius: modoIndependente ? 0 : "16px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
+        display: "flex", flexDirection: "column", overflow: "hidden", border: modoIndependente ? "none" : "1px solid #CBD5E1"
       }}>
 
         {/* ─── HEADER BAR ─── */}
@@ -1922,6 +1934,22 @@ export default function RoteirizacaoModal({
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            {!modoIndependente && (
+              <a
+                href="/store/roteirizacao"
+                target="_blank"
+                rel="noopener"
+                title="Abre a roteirização numa aba só dela, para ficar aberta a noite toda separada da aba de pedidos"
+                style={{
+                  padding: "8px 14px", background: "#F0FDF4", border: "1px solid #86EFAC",
+                  borderRadius: "8px", fontSize: "0.85rem", fontWeight: 800, color: "#15803D",
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none"
+                }}
+              >
+                <ExternalLink size={16} /> Abrir em aba separada
+              </a>
+            )}
+
             <button
               onClick={() => setShowConfigModal(true)}
               style={{
@@ -1941,7 +1969,7 @@ export default function RoteirizacaoModal({
                 cursor: "pointer", display: "flex", alignItems: "center", gap: 4
               }}
             >
-              <X size={18} /> Fechar
+              <X size={18} /> {modoIndependente ? "Fechar aba" : "Fechar"}
             </button>
           </div>
         </div>
