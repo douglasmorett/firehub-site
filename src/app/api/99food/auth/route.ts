@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAuthToken, desvincularLoja } from "@/lib/food99-api";
+import { lojas99DaConta, desativarLoja99 } from "@/lib/food99-lojas";
 
 export const dynamic = "force-dynamic";
 
@@ -70,21 +71,60 @@ export async function GET(req: NextRequest) {
     let desvinculou = false;
     let aviso: string | undefined;
 
-    const token = await getAuthToken(u.food99AppId || lojaId);
+    // ── QUAL loja ──────────────────────────────────────────────────────────
+    //
+    // Com mais de uma loja na conta, `food99AppId` guarda a ÚLTIMA conectada:
+    // em 11/09/2026, logo depois de a Braseou entrar como segunda loja do
+    // Lucas, "Desconectar Frangoso" teria desfeito o vínculo da Braseou. Então
+    // a tela manda o `appShopId` da loja que o rótulo nomeia, e só sai o que é
+    // desta conta. Sem o parâmetro e com uma loja só, vale o caminho antigo;
+    // com várias e sem parâmetro, recusa — adivinhar aqui é desligar a errada.
+    const minhas = await lojas99DaConta(lojaId).catch(() => []);
+    const pedido = String(req.nextUrl.searchParams.get("appShopId") || "").trim();
+    let appShopId: string;
+    if (pedido) {
+      const meu = minhas.some((l) => l.appShopId === pedido) || pedido === lojaId || pedido === u.food99AppId;
+      if (!meu) return NextResponse.json({ error: "Essa loja não pertence a esta conta." }, { status: 404 });
+      appShopId = pedido;
+    } else if (minhas.length > 1) {
+      return NextResponse.json(
+        { error: "Esta conta tem mais de uma loja no 99Food. Diga qual desconectar (appShopId)." },
+        { status: 400 }
+      );
+    } else {
+      appShopId = minhas[0]?.appShopId || u.food99AppId || lojaId;
+    }
+
+    const token = await getAuthToken(appShopId);
     if (token.autorizada) {
       const r = await desvincularLoja(token.token.auth_token);
       desvinculou = r.ok;
       if (!r.ok) aviso = `O 99Food recusou o desvínculo: ${r.erro}`;
     }
 
-    await prisma.user.update({
-      where: { id: lojaId },
-      data: { food99Connected: false, food99MerchantId: null, food99AppId: null },
-    });
+    // A linha da loja fica inativa na tabela; as colunas do User só zeram
+    // quando não sobra loja nenhuma — senão a conta inteira apareceria
+    // desconectada com a outra loja ainda recebendo pedido.
+    await desativarLoja99(lojaId, appShopId).catch(() => false);
+    const restantes = await lojas99DaConta(lojaId).catch(() => []);
+    if (restantes.length === 0) {
+      await prisma.user.update({
+        where: { id: lojaId },
+        data: { food99Connected: false, food99MerchantId: null, food99AppId: null },
+      });
+    } else {
+      await prisma.user
+        .update({
+          where: { id: lojaId },
+          data: { food99AppId: restantes[0].appShopId, food99MerchantId: restantes[0].shopId ?? null },
+        })
+        .catch(() => null);
+    }
 
     return NextResponse.json({
       success: true,
-      connected: false,
+      connected: restantes.length > 0,
+      lojasRestantes: restantes.length,
       desvinculou,
       aviso,
       message: desvinculou

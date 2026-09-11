@@ -170,6 +170,11 @@ export default function IntegracoesHubClient({
   const [food99Saving, setFood99Saving] = useState(false);
   const [food99Disponivel, setFood99Disponivel] = useState(true);
   const [food99Msg, setFood99Msg] = useState("");
+  // Aviso que convive com o estado "conectado": a procura pela segunda loja
+  // não achou nada, ou achou mais de uma. Vai dentro do card verde — o
+  // `food99Msg` só aparece no card amarelo, e com uma loja de pé o lojista
+  // nunca o veria.
+  const [food99Aviso, setFood99Aviso] = useState("");
   /** Qual loja do 99Food está ligada — nome, id e endereço, vindos do shop/detail. */
   const [food99Loja, setFood99Loja] = useState<{ nome: string | null; shopId: string | null; endereco: string | null } | null>(null);
   /** TODAS as lojas do 99Food desta conta. Uma conta pode ter várias. */
@@ -376,11 +381,14 @@ export default function IntegracoesHubClient({
       setFood99Connected(!!data.conectado);
       setFood99Disponivel(data.disponivel !== false);
       setFood99Msg(data.mensagem || "");
+      setFood99Aviso(data.aviso || "");
       setFood99Loja(data.lojaNo99 || null);
       setFood99Lojas(data.lojas || []);
       setFood99Candidatos(data.candidatos || []);
       setFood99PedirId(Boolean(data.pedirIdDaLoja));
-      if (data.conectado) {
+      // Conectado sem pergunta pendente: nada a esperar. Com a pergunta (mais
+      // de uma loja nova para a conta escolher) ela fica, mesmo já conectado.
+      if (data.conectado && !data.pedirIdDaLoja && !(data.candidatos || []).length) {
         setFood99Aguardando(false);
         setFood99Candidatos([]);
         setFood99PedirId(false);
@@ -414,7 +422,11 @@ export default function IntegracoesHubClient({
         setFood99Candidatos([]);
         setFood99PedirId(false);
         setFood99Aguardando(false);
+        setFood99Aviso("");
         showToast("✅ " + data.mensagem, "#10B981");
+        // Recarrega para a lista trazer a loja que acabou de entrar — com duas
+        // lojas, o card só a mostra depois de ler o banco de novo.
+        await carregar99Food();
       } else {
         showToast(`⚠️ ${data.error || "Não consegui conectar essa loja"}`, "#EF4444");
       }
@@ -511,16 +523,25 @@ export default function IntegracoesHubClient({
         // Conta lojas, não "conectado": esperando a segunda, "conectado" já é
         // verdade desde antes do clique. Sem tabela a lista vem vazia mesmo com
         // uma loja de pé, daí o mínimo de 1 quando conectado.
+        // `lojaNova` é o servidor dizendo que ligou uma loja NESTA consulta —
+        // vale por si, sem depender da contagem (que falha quando a tabela
+        // não responde e a lista volta vazia).
         const lojasAgora = Math.max((data.lojas || []).length, data.conectado ? 1 : 0);
-        if (data.conectado && lojasAgora >= food99EsperadasRef.current) {
+        if (data.lojaNova || (data.conectado && lojasAgora >= food99EsperadasRef.current)) {
           setFood99Connected(true);
           setFood99Aguardando(false);
           setFood99Candidatos([]);
           setFood99PedirId(false);
           setFood99Msg(data.mensagem || "");
+          setFood99Aviso("");
           setFood99Loja(data.lojaNo99 || null);
           setFood99Lojas(data.lojas || []);
-          showToast("✅ 99Food conectado! Os pedidos chegam automaticamente.", "#10B981");
+          showToast(
+            data.lojaNova?.nome
+              ? `✅ Loja "${data.lojaNova.nome}" conectada ao 99Food! Os pedidos chegam automaticamente.`
+              : "✅ 99Food conectado! Os pedidos chegam automaticamente.",
+            "#10B981"
+          );
           return;
         }
 
@@ -531,6 +552,7 @@ export default function IntegracoesHubClient({
           setFood99Candidatos(data.candidatos || []);
           setFood99PedirId(Boolean(data.pedirIdDaLoja));
           setFood99Msg(data.mensagem || "");
+          setFood99Aviso(data.aviso || "");
           setFood99Loja(data.lojaNo99 || null);
           setFood99Lojas(data.lojas || []);
           setFood99Aguardando(false);
@@ -543,9 +565,11 @@ export default function IntegracoesHubClient({
 
       if (!cancelado && tentativas >= LIMITE) {
         setFood99Aguardando(false);
-        setFood99Msg(
-          "Não detectei a autorização. Se você já autorizou no 99Food, clique em Verificar agora."
-        );
+        // Nos dois cards: o amarelo lê food99Msg, o verde lê food99Aviso — e o
+        // laço não sabe em qual dos dois a tela está.
+        const desisti = "Não detectei a autorização. Se você já autorizou no 99Food, clique em Verificar agora.";
+        setFood99Msg(desisti);
+        setFood99Aviso(desisti);
       }
     };
 
@@ -594,13 +618,26 @@ export default function IntegracoesHubClient({
       const data = await res.json();
       setFood99Connected(!!data.conectado);
       setFood99Msg(data.mensagem || "");
+      setFood99Aviso(data.aviso || "");
       setFood99Loja(data.lojaNo99 || null);
       setFood99Lojas(data.lojas || []);
       setFood99Candidatos(data.candidatos || []);
       setFood99PedirId(Boolean(data.pedirIdDaLoja));
+      if (data.lojaNova || (data.conectado && !data.aviso)) setFood99Aguardando(false);
+      // Com uma loja já de pé, "conectado" é verdade antes e depois do clique —
+      // o que responde a pergunta do lojista é se entrou loja NOVA. Dizer
+      // "✅ conectado" sem ter achado nada era mentir para quem acabou de
+      // autorizar a segunda.
+      const nova = data.lojaNova;
       showToast(
-        data.conectado ? "✅ 99Food conectado! Os pedidos chegam automaticamente." : `⏳ ${data.mensagem}`,
-        data.conectado ? "#10B981" : "#F59E0B"
+        nova
+          ? `✅ Loja "${nova.nome || "99Food"}" conectada! Os pedidos chegam automaticamente.`
+          : data.aviso
+          ? `⏳ ${data.aviso}`
+          : data.conectado
+          ? "✅ 99Food conectado! Os pedidos chegam automaticamente."
+          : `⏳ ${data.mensagem}`,
+        nova || (data.conectado && !data.aviso) ? "#10B981" : "#F59E0B"
       );
     } catch {
       showToast("⚠️ Erro de conexão", "#EF4444");
@@ -629,12 +666,26 @@ export default function IntegracoesHubClient({
     if ((digitado || "").trim().toUpperCase() !== "DESCONECTAR") return;
     setFood99Saving(true);
     try {
-      const res = await fetch("/api/99food/auth?step=disconnect&confirmar=DESCONECTAR");
+      // Com mais de uma loja, o servidor precisa saber QUAL desligar: as
+      // colunas antigas do User guardam a ÚLTIMA conectada, e "Desconectar
+      // Frangoso" desfazia o vínculo da Braseou (11/09/2026). O id vai pela
+      // loja que o rótulo do botão nomeia.
+      const alvo = food99Lojas.find((l) => l.shopId && l.shopId === food99Loja?.shopId);
+      const qs = alvo ? `&appShopId=${encodeURIComponent(alvo.appShopId)}` : "";
+      const res = await fetch(`/api/99food/auth?step=disconnect&confirmar=DESCONECTAR${qs}`);
+      const data = await res.json().catch(() => ({} as any));
       if (res.ok) {
-        setFood99Connected(false);
         setFood99Aguardando(false);
-        showToast("✅ 99Food desconectado com sucesso", "#10B981");
+        showToast(
+          data.aviso ? `⚠️ ${data.aviso}` : "✅ 99Food desconectado com sucesso",
+          data.aviso ? "#F59E0B" : "#10B981"
+        );
+        // Sobrando loja, a conta continua conectada — a tela relê em vez de
+        // assumir "desconectado".
+        await carregar99Food();
         setOpenModal(null);
+      } else {
+        showToast(`⚠️ ${data.error || "Não consegui desconectar"}`, "#EF4444");
       }
     } catch {
       showToast("⚠️ Erro de conexão", "#EF4444");
@@ -2147,15 +2198,39 @@ export default function IntegracoesHubClient({
                       </div>
                     )}
 
+                    {/* O que a procura pela loja nova respondeu sem trazer loja:
+                        "ainda não vi", "achei mais de uma", "presa em outro
+                        sistema". Antes isso ia para food99Msg, que este card não
+                        mostra — e o lojista ficava olhando um card verde mudo. */}
+                    {food99Aviso && (
+                      <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 12px", marginTop: 10, fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
+                        ⏳ {food99Aviso}
+                      </div>
+                    )}
+
                     {/* Mesmo fluxo de autorização: a loja nova entra AO LADO da
                         atual, em vez de substituí-la como acontecia antes. */}
-                    <button
-                      onClick={() => handleConectar99Food(true)}
-                      disabled={food99Saving || !food99Disponivel}
-                      style={{ marginTop: 12, padding: "8px 14px", borderRadius: 10, border: "1.5px dashed #15803D", background: "#fff", color: "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
-                    >
-                      ➕ Conectar outra loja do 99Food
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                      <button
+                        onClick={() => handleConectar99Food(true)}
+                        disabled={food99Saving || !food99Disponivel}
+                        style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px dashed #15803D", background: "#fff", color: "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
+                      >
+                        ➕ Conectar outra loja do 99Food
+                      </button>
+                      {/* O "Verificar agora" do rodapé some quando já há uma loja
+                          ligada — e era o único jeito de puxar a segunda loja
+                          depois que o laço de espera desistia ou a aba foi
+                          fechada. Aqui ele diz o que faz: procurar a loja que
+                          o lojista acabou de autorizar. */}
+                      <button
+                        onClick={handleVerificar99Food}
+                        disabled={food99Saving || !food99Disponivel}
+                        style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #15803D", background: "#fff", color: "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
+                      >
+                        {food99Saving ? "Verificando…" : "🔍 Já autorizei outra loja — verificar agora"}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
@@ -2216,7 +2291,7 @@ export default function IntegracoesHubClient({
                     levaria os pedidos dele para esta cozinha. Nome e CNPJ
                     também não servem de filtro: em multicozinha várias marcas
                     dividem os dois. O número, não. Então pedimos o ID. */}
-                {!food99Connected && food99PedirId && (
+                {(food99PedirId || food99Candidatos.length > 0) && (
                   <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
                     <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1E3A8A", marginBottom: 6 }}>
                       Qual é o ID da sua loja no 99Food?

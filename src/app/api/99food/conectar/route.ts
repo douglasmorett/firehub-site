@@ -174,8 +174,60 @@ async function sincronizarLojasDaConta(lojaId: string): Promise<{ conectadas: Lo
   return { conectadas, erro };
 }
 
+/** Uma loja recém-descoberta no 99Food e ligada a esta conta nesta chamada. */
+interface LojaNova {
+  appShopId: string;
+  shopId: string | null;
+  nome: string | null;
+}
+
+type Candidato = { appShopId: string; nome: string; shopId: string | null };
+
+/**
+ * O que a procura por uma loja nova pode devolver. Cada ramo vira um campo
+ * diferente na resposta — e o MESMO ramo serve para a primeira loja da conta e
+ * para as seguintes, que é o que a versão anterior não fazia.
+ */
+type Achado =
+  | { tipo: "conectou"; loja: LojaNova }
+  | { tipo: "pedirId"; mensagem: string }
+  | { tipo: "presa"; mensagem: string }
+  | { tipo: "candidatos"; candidatos: Candidato[]; vinculosNo99: number; mensagem: string }
+  | { tipo: "nada"; mensagem: string; erro?: string; vinculosNo99?: number };
+
+function frasePadrao(nome: string | null): string {
+  return nome
+    ? `Loja "${nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
+    : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.";
+}
+
 async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
-  const { conectadas, erro } = await sincronizarLojasDaConta(lojaId);
+  let { conectadas, erro } = await sincronizarLojasDaConta(lojaId);
+
+  // ── A procura por loja nova vem ANTES de olhar se já há alguma ligada ──────
+  //
+  // A versão anterior devolvia "conectado" assim que achava a primeira loja e
+  // nunca chegava à procura — nem com ?procurar=1. Para a SEGUNDA loja da
+  // conta isso era um beco sem saída: o lojista autorizava no 99Food, o laço
+  // da tela contava 1 loja esperando 2 por quatro minutos e depois mandava
+  // clicar em "Verificar agora" — botão que a tela escondia quando já estava
+  // conectada. Foi o Frangoso + Braseou em 11/09/2026: autorizada no portal,
+  // e o FireHub sem nenhum caminho para enxergá-la.
+  let achado: Achado | null = null;
+  let lojaNova: LojaNova | null = null;
+  if (procurarVinculos) {
+    achado = await procurarLojaNova(lojaId, new Set(conectadas.map((c) => c.appShopId)));
+    if (achado.tipo === "conectou") {
+      lojaNova = achado.loja;
+      // Sincroniza de novo para a lista já trazer a loja nova com nome e
+      // endereço, e para o token dela ser confirmado pelo mesmo caminho das
+      // outras — em vez de a resposta dizer "conectada" só porque o vínculo
+      // acabou de ser pedido.
+      const deNovo = await sincronizarLojasDaConta(lojaId);
+      conectadas = deNovo.conectadas;
+      erro = deNovo.erro;
+    }
+  }
 
   if (conectadas.length > 0) {
     const primeira = conectadas[0];
@@ -187,33 +239,103 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
       ? doBanco
       : conectadas.map((c) => ({ appShopId: c.appShopId, shopId: c.shopId, label: c.label }));
 
+    // O que a procura achou sem trazer loja nova vira um AVISO ao lado do
+    // estado "conectado" — nunca no lugar dele. `mensagem` continua sendo a
+    // frase de conectado; `aviso` é o que a tela mostra dentro do card verde.
+    // Sem essa separação, uma procura sem resultado apagaria o "conectado" da
+    // primeira loja.
+    let aviso: string | undefined;
+    let extra: Record<string, unknown> = {};
+    if (achado && achado.tipo !== "conectou") {
+      if (achado.tipo === "pedirId") extra = { pedirIdDaLoja: true };
+      else if (achado.tipo === "presa") extra = { presaEmOutroIntegrador: true };
+      else if (achado.tipo === "candidatos") extra = { candidatos: achado.candidatos, vinculosNo99: achado.vinculosNo99 };
+      aviso =
+        achado.tipo === "nada" && !achado.erro
+          ? "Ainda não vi uma loja nova autorizada para o FireHub no 99Food. Se você acabou de autorizar, " +
+            "espere alguns segundos e clique em Verificar agora. Se já faz mais de um minuto, confira no " +
+            "painel do 99Food, em Aplicativos autorizados, se a loja aparece autorizada para o FireHub."
+          : achado.mensagem;
+    }
+
     return {
       conectado: true,
       disponivel: true,
       expiraEm: primeira.expiraEm,
       lojaNo99: { nome: primeira.nome, shopId: primeira.shopId, endereco: primeira.endereco },
       lojas,
-      mensagem:
-        conectadas.length > 1
-          ? `${conectadas.length} lojas conectadas ao 99Food. Os pedidos chegam automaticamente.`
-          : primeira.nome
-          ? `Loja "${primeira.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
-          : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
+      ...(lojaNova ? { lojaNova } : {}),
+      ...(aviso ? { aviso } : {}),
+      ...extra,
+      mensagem: lojaNova
+        ? frasePadrao(lojaNova.nome)
+        : conectadas.length > 1
+        ? `${conectadas.length} lojas conectadas ao 99Food. Os pedidos chegam automaticamente.`
+        : frasePadrao(primeira.nome),
     };
   }
-
-  const direto = { erro };
 
   const semVinculo = {
     conectado: false,
     disponivel: true,
-    erro: direto.erro,
+    erro,
     mensagem: "Loja ainda não autorizada. Clique em conectar para autorizar no 99Food.",
-    candidatos: [] as { appShopId: string; nome: string; shopId: string | null }[],
+    candidatos: [] as Candidato[],
   };
 
-  if (!procurarVinculos) return semVinculo;
+  if (!achado) return semVinculo;
 
+  switch (achado.tipo) {
+    case "conectou":
+      // O vínculo fechou mas o token ainda não respondeu pelo id novo na
+      // sincronização — raro (a doc diz que o shopBind já devolve o token).
+      // A tela precisa do "conectado"; a consulta seguinte confirma pelo
+      // caminho normal.
+      return {
+        conectado: true,
+        disponivel: true,
+        lojaNo99: { nome: achado.loja.nome, shopId: achado.loja.shopId, endereco: null },
+        lojas: await lojas99DaConta(lojaId).catch(() => []),
+        lojaNova: achado.loja,
+        mensagem: frasePadrao(achado.loja.nome),
+      };
+    case "pedirId":
+      return { conectado: false, disponivel: true, candidatos: [], pedirIdDaLoja: true, mensagem: achado.mensagem };
+    case "presa":
+      return { conectado: false, disponivel: true, candidatos: [], presaEmOutroIntegrador: true, mensagem: achado.mensagem };
+    case "candidatos":
+      return {
+        conectado: false,
+        disponivel: true,
+        erro,
+        candidatos: achado.candidatos,
+        vinculosNo99: achado.vinculosNo99,
+        mensagem: achado.mensagem,
+      };
+    case "nada":
+      return {
+        ...semVinculo,
+        erro: erro || achado.erro,
+        mensagem: achado.mensagem,
+        ...(achado.vinculosNo99 != null ? { vinculosNo99: achado.vinculosNo99 } : {}),
+      };
+  }
+}
+
+/**
+ * Procura, do lado do 99Food, uma loja autorizada para o FireHub que ainda não
+ * esteja ligada a esta conta — e liga, quando dá para saber sem ambiguidade.
+ *
+ * `jaLigadas` são os app_shop_id que esta conta JÁ tem de pé. Entram só para
+ * não serem "redescobertos" como órfãos no shop/list: sem isso, cada procura
+ * pela segunda loja adotaria a primeira de novo e diria que achou loja nova.
+ * Para a primeira loja o conjunto vem vazio, e o comportamento é o de sempre —
+ * inclusive reconhecer o vínculo da própria conta que perdeu a linha na tabela.
+ *
+ * Custa a única chamada de 20s do shop/list, então só roda a pedido
+ * (?procurar=1): o laço de espera da tela e o botão "Verificar agora".
+ */
+async function procurarLojaNova(lojaId: string, jaLigadas: Set<string>): Promise<Achado> {
   // ── Etapa 2 por API: quem autorizou e ainda não está vinculado ────────────
   //
   // Autorizar (o lojista, na página do getUrl) e vincular (nós, no shopBind)
@@ -228,20 +350,8 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   if (autorizadas.ok) {
     if (autorizadas.livres.length === 1) {
       const v = await vincularParaConta(lojaId, autorizadas.livres[0]);
-      if (v.ok) {
-        return {
-          conectado: true,
-          disponivel: true,
-          expiraEm: v.expiraEm,
-          lojaNo99: { nome: v.nome, shopId: v.shopId, endereco: null },
-          lojas: await lojas99DaConta(lojaId).catch(() => []),
-          vinculouAgora: v,
-          mensagem: v.nome
-            ? `Loja "${v.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
-            : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
-        };
-      }
-      return { ...semVinculo, erro: v.erro, mensagem: `A loja autorizou, mas o vínculo não fechou: ${v.erro}` };
+      if (v.ok) return { tipo: "conectou", loja: { appShopId: v.appShopId, shopId: v.shopId, nome: v.nome } };
+      return { tipo: "nada", erro: v.erro, mensagem: `A loja autorizou, mas o vínculo não fechou: ${v.erro}` };
     }
     if (autorizadas.livres.length > 1) {
       // Mais de uma candidata e nenhuma forma de saber qual é desta loja: o
@@ -251,10 +361,7 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
       // sabe o número é o lojista, que o lê no painel do 99Food. Então a tela
       // pergunta o ID em vez de oferecer uma lista.
       return {
-        conectado: false,
-        disponivel: true,
-        candidatos: [],
-        pedirIdDaLoja: true,
+        tipo: "pedirId",
         mensagem:
           "Encontrei mais de uma loja autorizada no 99Food nesta conta. Para eu não conectar a loja " +
           "errada, informe o ID da sua loja — ele aparece no painel do 99Food, em Aplicativos autorizados.",
@@ -277,29 +384,18 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   if (vinculadas.ok) {
     if (vinculadas.lojas.length === 1) {
       const a = await adotarVinculo(lojaId, vinculadas.lojas[0]);
-      if (a.ok) {
-        return {
-          conectado: true,
-          disponivel: true,
-          expiraEm: a.expiraEm,
-          lojaNo99: { nome: a.nome, shopId: a.shopId, endereco: null },
-          lojas: await lojas99DaConta(lojaId).catch(() => []),
-          adotouVinculo: a,
-          mensagem: a.nome
-            ? `Loja "${a.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`
-            : "Loja conectada ao 99Food. Os pedidos chegam automaticamente.",
-        };
-      }
-      return { ...semVinculo, erro: a.erro, mensagem: `A loja está vinculada no 99Food, mas não consegui usá-la: ${a.erro}` };
+      if (a.ok) return { tipo: "conectou", loja: { appShopId: a.appShopId, shopId: a.shopId, nome: a.nome } };
+      return {
+        tipo: "nada",
+        erro: a.erro,
+        mensagem: `A loja está vinculada no 99Food, mas não consegui usá-la: ${a.erro}`,
+      };
     }
     if (vinculadas.lojas.length > 1) {
       // Mesmo caso do bloco acima, agora entre vínculos já feitos pelo 99Food:
       // sem nome na tela, o lojista digita o ID que ele lê no painel deles.
       return {
-        conectado: false,
-        disponivel: true,
-        candidatos: [],
-        pedirIdDaLoja: true,
+        tipo: "pedirId",
         mensagem:
           "Encontrei mais de uma loja vinculada ao FireHub no 99Food nesta conta. Para eu não conectar " +
           "a loja errada, informe o ID da sua loja — ele aparece no painel do 99Food, em Aplicativos autorizados.",
@@ -321,10 +417,7 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
     // painel do 99Food.
     if (vinculadas.deOutroIntegrador.length > 0) {
       return {
-        conectado: false,
-        disponivel: true,
-        candidatos: [],
-        presaEmOutroIntegrador: true,
+        tipo: "presa",
         mensagem:
           "Atenção: o 99Food só deixa uma loja ficar ligada a um sistema por vez, e a sua ainda está " +
           "ligada a outro. Você já autorizou o FireHub — falta soltar a loja do sistema antigo. " +
@@ -335,9 +428,7 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   }
 
   const vinculos = await listarLojasVinculadas();
-  if (!vinculos.ok) {
-    return { ...semVinculo, erro: direto.erro || vinculos.erro, mensagem: vinculos.erro };
-  }
+  if (!vinculos.ok) return { tipo: "nada", erro: vinculos.erro, mensagem: vinculos.erro };
 
   // Vínculos que ainda não pertencem a nenhuma loja do FireHub.
   //
@@ -347,17 +438,21 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   // loja de quem já está conectado voltar a contar como órfã — ver
   // donosPorAppShopId(), que existe por causa disso.
   //
-  // O que é da PRÓPRIA loja não bloqueia: reconhecer o vínculo dela de novo é
-  // idempotente, e é o que conserta uma conta que perdeu a linha na tabela.
+  // O que é da PRÓPRIA loja e ainda não está de pé não bloqueia: reconhecer o
+  // vínculo dela de novo é idempotente, e é o que conserta uma conta que
+  // perdeu a linha na tabela. O que já está de pé (`jaLigadas`) fica de fora —
+  // não é loja nova.
   const donos = await donosPorAppShopId();
 
   // O shop/list devolve só ids (app_id, shop_id, app_shop_id, city_id) — não
   // manda shop_name. Então o rótulo cai no id da loja no 99Food, que é o que
   // o lojista consegue conferir no painel dele.
-  const orfaos = vinculos.lojas
+  const orfaos: Candidato[] = vinculos.lojas
     .filter((l) => {
       if (!l.app_shop_id) return false;
-      const dono = donos.get(String(l.app_shop_id));
+      const id = String(l.app_shop_id);
+      if (jaLigadas.has(id)) return false;
+      const dono = donos.get(id);
       return !dono || dono === lojaId;
     })
     .map((l) => ({
@@ -384,11 +479,17 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
         ...(escolhido.shopId ? { food99MerchantId: escolhido.shopId } : {}),
       },
     });
+    return { tipo: "conectou", loja: { appShopId: escolhido.appShopId, shopId: escolhido.shopId, nome: escolhido.nome } };
+  }
+
+  if (orfaos.length > 1) {
+    // Mais de um vínculo sem dono: a tela pede o ID e o lojista aponta o
+    // dele. Continua sendo um clique, e sem chance de pegar a loja do vizinho.
     return {
-      conectado: true,
-      disponivel: true,
-      adotouVinculo: escolhido,
-      mensagem: `Loja "${escolhido.nome}" conectada ao 99Food. Os pedidos chegam automaticamente.`,
+      tipo: "candidatos",
+      candidatos: orfaos,
+      vinculosNo99: vinculos.lojas.length,
+      mensagem: "Encontrei mais de uma loja autorizada no 99Food. Escolha qual é a sua.",
     };
   }
 
@@ -397,26 +498,17 @@ async function estadoDaConexao(lojaId: string, procurarVinculos: boolean) {
   // Foi isso que segurou o caso do Frangoso em 06/09: ele tinha autorizado, a
   // consulta voltou `ok` com lista vazia, e a tela repetiu que ele não tinha
   // autorizado. O lojista clica em autorizar de novo e nada muda, para sempre.
-  const semOrfaos =
-    vinculos.lojas.length === 0
-      ? "Você autorizou no 99Food? Ainda não vejo nenhuma loja vinculada ao FireHub lá. " +
-        "Se você acabou de autorizar, espere alguns segundos e clique em Verificar agora."
-      : `O 99Food tem ${vinculos.lojas.length} loja(s) vinculada(s) ao FireHub, mas todas já ` +
-        "pertencem a outra loja aqui dentro. Fale com o suporte do FireHub — não clique em autorizar de novo.";
-
   return {
-    conectado: false,
-    disponivel: true,
-    erro: direto.erro,
-    // Mais de um vínculo sem dono: a tela mostra os nomes e o lojista aponta o
-    // dele. Continua sendo um clique, e sem chance de pegar a loja do vizinho.
-    candidatos: orfaos,
+    tipo: "nada",
     // Quantas o 99Food devolveu, independente de dono. É o número que separa
     // "não autorizou" de "autorizou e nós não estamos enxergando".
     vinculosNo99: vinculos.lojas.length,
-    mensagem: orfaos.length
-      ? "Encontrei mais de uma loja autorizada no 99Food. Escolha qual é a sua."
-      : semOrfaos,
+    mensagem:
+      vinculos.lojas.length === 0
+        ? "Você autorizou no 99Food? Ainda não vejo nenhuma loja vinculada ao FireHub lá. " +
+          "Se você acabou de autorizar, espere alguns segundos e clique em Verificar agora."
+        : `O 99Food tem ${vinculos.lojas.length} loja(s) vinculada(s) ao FireHub, mas todas já ` +
+          "pertencem a outra loja aqui dentro. Fale com o suporte do FireHub — não clique em autorizar de novo.",
   };
 }
 
