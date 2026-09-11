@@ -6,7 +6,7 @@ import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
-import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
+import { lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 
@@ -1241,9 +1241,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [showMotoboyLinkModal, setShowMotoboyLinkModal] = useState(false);
   const [copiedMotoboyLink, setCopiedMotoboyLink] = useState(false);
   // O que o app dos entregadores faz na hora da entrega (User.appMotoboyConfig).
-  const [appMotoboyCfg, setAppMotoboyCfg] = useState<{ lembrarBebidas: boolean; pedirCodigoEntrega: boolean }>(() => lerAppMotoboyConfig(user?.appMotoboyConfig));
+  const [appMotoboyCfg, setAppMotoboyCfg] = useState<AppMotoboyConfig>(() => lerAppMotoboyConfig(user?.appMotoboyConfig));
   const [salvandoAppMotoboy, setSalvandoAppMotoboy] = useState(false);
-  const salvarAppMotoboy = async (novo: { lembrarBebidas: boolean; pedirCodigoEntrega: boolean }) => {
+  const salvarAppMotoboy = async (novo: AppMotoboyConfig) => {
     setAppMotoboyCfg(novo); // a tela responde na hora
     setSalvandoAppMotoboy(true);
     try {
@@ -5204,6 +5204,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   chave: "pedirCodigoEntrega" as const,
                   rotulo: "🔐 Pedir o código de entrega do cliente (iFood)",
                   ajuda: "Só nos pedidos em que o iFood exige o código de 4 dígitos. O app confere com o iFood antes de dar baixa — evita cancelamento por entrega não confirmada.",
+                },
+                {
+                  chave: "pedirCodigo99Food" as const,
+                  rotulo: "🔐 Pedir o código de entrega do cliente (99Food)",
+                  ajuda: "Nos pedidos do 99Food entregues pela loja. O app confere direto no 99Food e o pedido é concluído lá na hora — sem o entregador precisar abrir o site de confirmação.",
                 },
               ]).map((op) => (
                 <label key={op.chave} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", cursor: "pointer", borderTop: "1px solid #E2E8F0" }}>

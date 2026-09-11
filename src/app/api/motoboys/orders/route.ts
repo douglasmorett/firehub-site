@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
+import { ehPedido99Food } from "@/lib/food99-status";
 
 export async function GET(req: NextRequest) {
   try {
@@ -96,6 +97,10 @@ export async function GET(req: NextRequest) {
         // app não precisa dele, e id de parceiro não viaja para o celular.
         ifoodDropCodeRequired: true,
         ifoodOrderId: true,
+        // 99Food com entrega própria: todo pedido tem código do cliente.
+        deliveryBy: true,
+        openDeliveryOrderId: true,
+        openDeliveryChannel: true,
         items: {
           select: {
             quantity: true,
@@ -130,11 +135,19 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
 
-    const ordersComSequencia = orders.map(({ ifoodOrderId, ifoodDropCodeRequired, ...o }) => ({
-      ...o,
-      routeSequence: sequencias[o.id] ?? null,
-      pedeCodigoEntrega: appConfig.pedirCodigoEntrega && Boolean(ifoodDropCodeRequired) && Boolean(ifoodOrderId),
-    }));
+    const ordersComSequencia = orders.map(({ ifoodOrderId, ifoodDropCodeRequired, deliveryBy, openDeliveryOrderId, openDeliveryChannel, ...o }) => {
+      const pedeIfood = appConfig.pedirCodigoEntrega && Boolean(ifoodDropCodeRequired) && Boolean(ifoodOrderId);
+      const pede99 =
+        appConfig.pedirCodigo99Food &&
+        ehPedido99Food({ source: o.source, openDeliveryChannel, openDeliveryOrderId }) &&
+        deliveryBy === "MERCHANT";
+      return {
+        ...o,
+        routeSequence: sequencias[o.id] ?? null,
+        pedeCodigoEntrega: pedeIfood || pede99,
+        canalDoCodigo: pedeIfood ? "iFood" : pede99 ? "99Food" : null,
+      };
+    });
 
     return NextResponse.json({ success: true, orders: ordersComSequencia, customBeverageKeywords, appConfig });
 
@@ -402,20 +415,47 @@ export async function PATCH(req: NextRequest) {
     // lá — e o iFood cancela por entrega não confirmada. A regra é da loja
     // (App Motoboys → configurações). `semCodigo` é a saída para o cliente
     // que não tem o código; fica no log com o entregador que decidiu.
+    //
+    // No 99Food a regra é outra: não há aviso por pedido — o guia oficial
+    // trata o código como parte de toda entrega feita pela loja. Então todo
+    // pedido do 99 com entrega própria pede, e a conferência é o endpoint
+    // verifyDeliveryCode deles (23/07/2026), que já conclui o pedido lá.
     const exigeCodigo = Boolean((order as any).ifoodDropCodeRequired) && Boolean((order as any).ifoodOrderId);
+    const eh99Propria = ehPedido99Food(order as any) && (order as any).deliveryBy === "MERCHANT";
     let codigoConferido = false;
-    if (exigeCodigo && !semCodigo) {
-      const { lerAppMotoboyConfig } = await import("@/lib/app-motoboy-config");
+    let codigoConferido99 = false;
+    if ((exigeCodigo || eh99Propria) && !semCodigo) {
       const loja = await prisma.user.findUnique({ where: { id: String(storeId) }, select: { appMotoboyConfig: true } });
-      if (lerAppMotoboyConfig(loja?.appMotoboyConfig).pedirCodigoEntrega) {
-        const digitado = String(codigo ?? "").replace(/D/g, "");
+      const cfg = lerAppMotoboyConfig(loja?.appMotoboyConfig);
+      const canal = exigeCodigo ? "iFood" : "99Food";
+      if (exigeCodigo ? cfg.pedirCodigoEntrega : cfg.pedirCodigo99Food) {
+        const digitado = String(codigo ?? "").replace(/\D/g, "");
         if (!digitado) {
           return NextResponse.json(
-            { error: "Este pedido do iFood pede o código de entrega do cliente.", precisaCodigo: true },
+            { error: `Este pedido do ${canal} pede o código de entrega do cliente.`, precisaCodigo: true, canalDoCodigo: canal },
             { status: 428 },
           );
         }
-        try {
+        if (!exigeCodigo) {
+          const { conferirCodigoEntrega99 } = await import("@/lib/food99-status");
+          const r = await conferirCodigoEntrega99(
+            { openDeliveryOrderId: String((order as any).openDeliveryOrderId), franchiseeId: order.franchiseeId },
+            digitado,
+          );
+          if (r.conferido) {
+            codigoConferido99 = true;
+          } else if (r.errno === -1 || r.errno === -2) {
+            return NextResponse.json(
+              { error: `Não consegui conferir o código com o 99Food (${r.errmsg}). Tente de novo.`, parceiroIndisponivel: true },
+              { status: 502 },
+            );
+          } else {
+            return NextResponse.json(
+              { error: `O 99Food não aceitou este código (${r.errno}: ${r.errmsg}). Confira com o cliente e digite de novo.`, codigoIncorreto: true },
+              { status: 422 },
+            );
+          }
+        } else try {
           const { contextoDoPedido } = await import("@/lib/ifood-token");
           const { validarCodigoEntrega } = await import("@/lib/ifood-logistics");
           const ctx = await contextoDoPedido(order as any);
@@ -438,14 +478,14 @@ export async function PATCH(req: NextRequest) {
         } catch (e: any) {
           console.warn(`[Motoboy Entrega] verifyDeliveryCode ${order.id} falhou: ${e?.message}`);
           return NextResponse.json(
-            { error: `Não consegui conferir o código com o iFood: ${e?.message || "erro"}`, ifoodIndisponivel: true },
+            { error: `Não consegui conferir o código com o iFood: ${e?.message || "erro"}`, ifoodIndisponivel: true, parceiroIndisponivel: true },
             { status: 502 },
           );
         }
       }
     }
-    if (exigeCodigo && semCodigo) {
-      console.warn(`[Motoboy Entrega] ⚠️ pedido ${order.id} baixado SEM código de entrega (motoboy ${motoboyId})`);
+    if ((exigeCodigo || eh99Propria) && semCodigo) {
+      console.warn(`[Motoboy Entrega] ⚠️ pedido ${order.id} (${exigeCodigo ? "iFood" : "99Food"}) baixado SEM código de entrega (motoboy ${motoboyId})`);
     }
 
     // ── ESCRITA ATÔMICA: o Postgres decide a corrida ────────────────────────
@@ -499,7 +539,11 @@ export async function PATCH(req: NextRequest) {
       if ((order as any).openDeliveryOrderId) {
         try {
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
-          if (ehPedido99Food(order as any)) {
+          if (ehPedido99Food(order as any) && codigoConferido99) {
+            // O verifyDeliveryCode já concluiu o pedido lá (status 600); o
+            // `delivered` em cima disso seria recusa à toa no log.
+            console.log(`[Motoboy Entrega → 99Food] ${(order as any).openDeliveryOrderId} concluído pelo código de entrega`);
+          } else if (ehPedido99Food(order as any)) {
             await sincronizar99Food(
               {
                 openDeliveryOrderId: (order as any).openDeliveryOrderId,

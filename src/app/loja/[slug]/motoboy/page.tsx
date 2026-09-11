@@ -462,7 +462,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   /** Palavras de bebida personalizadas da loja — vêm junto com os pedidos. */
   const [bevKeywords, setBevKeywords] = useState<string>("");
   /** O que o dono ligou no painel (App Motoboys → configurações). */
-  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; pedirCodigoEntrega: boolean }>({ lembrarBebidas: true, pedirCodigoEntrega: true });
+  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; pedirCodigoEntrega: boolean; pedirCodigo99Food: boolean }>({ lembrarBebidas: true, pedirCodigoEntrega: true, pedirCodigo99Food: true });
 
   // Código de entrega do iFood: o cliente dita 4 dígitos, o servidor confere
   // com o iFood e só então dá a baixa.
@@ -558,8 +558,8 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         const alvo = orders.find((o) => o.id === orderId) || { id: orderId };
         setCodigoDigitado("");
         setCodigoErro("");
-        setCodigoModalOrder(alvo);
-      } else if (data.codigoIncorreto || data.ifoodIndisponivel) {
+        setCodigoModalOrder({ ...alvo, canalDoCodigo: data.canalDoCodigo || alvo.canalDoCodigo });
+      } else if (data.codigoIncorreto || data.ifoodIndisponivel || data.parceiroIndisponivel) {
         // Fica no teclado: digitar de novo é o caminho, não fechar.
         setCodigoErro(data.error || "Código não confere. Tente de novo.");
       } else {
@@ -1389,11 +1389,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               🔐
             </div>
             <h3 style={{ fontSize: "1.2rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px 0" }}>
-              Código de entrega do iFood
+              Código de entrega do {codigoModalOrder.canalDoCodigo || "iFood"}
             </h3>
             <p style={{ fontSize: "0.9rem", color: "#475569", margin: "0 0 1rem" }}>
-              Peça ao cliente o código de <b>4 dígitos</b> que aparece no app do iFood dele e digite aqui.
-              Sem ele o iFood pode cancelar a entrega.
+              Peça ao cliente o código de <b>4 dígitos</b> que aparece no app do {codigoModalOrder.canalDoCodigo || "iFood"} dele e digite aqui.
+              {codigoModalOrder.canalDoCodigo === "99Food"
+                ? " O 99Food conclui o pedido na hora em que o código confere."
+                : " Sem ele o iFood pode cancelar a entrega."}
             </p>
             <input
               autoFocus

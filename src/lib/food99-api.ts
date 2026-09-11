@@ -366,6 +366,33 @@ export async function pedidoEntregue(authToken: string, orderId: string): Promis
   });
 }
 
+/**
+ * Confere o código de 4 dígitos que o cliente dita ao entregador DA LOJA
+ * (entrega própria, delivery_type 2).
+ *
+ * Endpoint de 23/07/2026 — não existe no swagger de 2022 que deu origem a
+ * este arquivo. Fonte: portal developer-food.99app.com, "Logistics API →
+ * Verify Delivery Code": POST, `auth_token`, `order_id` e `delivery_code`
+ * (inteiros) no corpo; resposta `{errno:0}` quando confere. Ao conferir, o
+ * PRÓPRIO 99 põe o pedido em 600 (concluído) e dispara o webhook orderFinish
+ * — quem conferiu NÃO chama `delivered` depois.
+ *
+ * `delivery_code` vai como número porque a doc o declara `int`. Um código
+ * com zero à esquerda ("0123") perderia o zero; se um dia o 99 recusar um
+ * código certo assim, é aqui que se testa mandar como string.
+ */
+export async function verificarCodigoEntrega(authToken: string, orderId: string, codigo: string): Promise<RespostaFood99> {
+  return chamar("/v1/order/selfdelivery/verifyDeliveryCode", {
+    metodo: "POST",
+    corpo: {
+      auth_token: authToken,
+      order_id: String(orderId),
+      delivery_code: Number(String(codigo).replace(/\D/g, "")),
+    },
+    idsCrus: ["order_id"],
+  });
+}
+
 export async function detalheDoPedido(authToken: string, orderId: string): Promise<RespostaFood99> {
   return chamar("/v1/order/order/detail", {
     query: { auth_token: authToken, order_id: orderId },

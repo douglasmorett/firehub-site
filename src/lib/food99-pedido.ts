@@ -107,9 +107,18 @@ export function enderecoDoCliente(receiveAddress: any): string {
 export function telefoneDoCliente(receiveAddress: any): string {
   const a = receiveAddress || {};
   const ddi = a.calling_code ? String(a.calling_code).trim() : "";
-  const fone = a.phone ? String(a.phone).trim() : "";
+  // O 99 passou a mandar o número em `virtual_phone_number` (doc de 2026);
+  // `phone` continua na frente porque é o que as lojas em produção recebem.
+  const fone = String(a.phone || a.virtual_phone_number || "").trim();
   if (!fone) return "";
-  return ddi && !fone.startsWith(ddi) ? `${ddi} ${fone}` : fone;
+  const base = ddi && !fone.startsWith(ddi) ? `${ddi} ${fone}` : fone;
+  // O número do 99 é VIRTUAL e o mesmo para todo pedido ("+55 40202499" em
+  // todos os pedidos de 10/09/2026): sem o localizador de 8 dígitos como
+  // ramal, a ligação não chega ao cliente. É o mesmo papel do "(ID: …)" que
+  // o iFood já carrega neste campo — e o localizador também é o que o
+  // entregador digita no link de confirmação do 99.
+  const locator = a.locator ? String(a.locator).trim() : "";
+  return locator ? `${base} (ramal ${locator})` : base;
 }
 
 export interface ItemTraduzido {

@@ -7,6 +7,7 @@ import {
   pedidoPronto,
   pedidoEntregue,
   detalheDoPedido,
+  verificarCodigoEntrega,
 } from "@/lib/food99-api";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
 
@@ -155,6 +156,35 @@ export async function tokenDaLoja(lojaId: string): Promise<string | null> {
  * porque é ele que atende quem está em produção hoje. Quem tem uma loja só
  * acerta na primeira tentativa, exatamente como antes.
  */
+/**
+ * Conferência do código de entrega pelo app do motoboy (entrega própria).
+ *
+ * Tenta cada token da conta pela mesma razão do sync: o pedido não guarda de
+ * qual loja do 99 veio. Devolve o errno real para o log — ainda não sabemos
+ * qual número o 99 usa para "código errado" e qual para "pedido não pede
+ * código"; a primeira loja a usar vai ensinar, e o log é onde se aprende.
+ */
+export async function conferirCodigoEntrega99(
+  pedido: { openDeliveryOrderId: string; franchiseeId: string },
+  codigo: string,
+): Promise<{ conferido: boolean; errno: number; errmsg: string }> {
+  const tokens = await tokensDaConta(pedido.franchiseeId);
+  if (tokens.length === 0) {
+    return { conferido: false, errno: -2, errmsg: "loja sem autorização válida no 99Food" };
+  }
+  let ultimo = { errno: -1, errmsg: "sem resposta" };
+  for (const t of tokens) {
+    const r = await verificarCodigoEntrega(t, pedido.openDeliveryOrderId, codigo);
+    if (r.errno === 0) {
+      console.log(`[99Food] 🔐 código de entrega conferido para ${pedido.openDeliveryOrderId}`);
+      return { conferido: true, errno: 0, errmsg: r.errmsg };
+    }
+    ultimo = { errno: r.errno, errmsg: r.errmsg };
+  }
+  console.warn(`[99Food] verifyDeliveryCode ${pedido.openDeliveryOrderId}: ${ultimo.errno} ${ultimo.errmsg}`);
+  return { conferido: false, ...ultimo };
+}
+
 export async function tokensDaConta(lojaId: string): Promise<string[]> {
   const tokens: string[] = [];
   const juntar = (t: string | null) => {

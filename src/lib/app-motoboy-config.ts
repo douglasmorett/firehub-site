@@ -12,15 +12,22 @@
  *   entregador digita os 4 dígitos do cliente e o iFood confere. Nunca pede
  *   em pedido que o iFood não pediu — por isso ligado não incomoda ninguém, e
  *   é o que evita o cancelamento por "entrega não confirmada".
+ * - `pedirCodigo99Food`: no 99Food NÃO há aviso por pedido — o guia oficial
+ *   trata o código de 4 dígitos como parte de TODA entrega feita pela loja
+ *   ("caso o procedimento não seja seguido, eventuais prejuízos serão de
+ *   responsabilidade do lojista"). Então pede em todo pedido do 99 com
+ *   entrega própria; loja cujos pedidos não trazem código desliga aqui.
  */
 export type AppMotoboyConfig = {
   lembrarBebidas: boolean;
   pedirCodigoEntrega: boolean;
+  pedirCodigo99Food: boolean;
 };
 
 export const APP_MOTOBOY_PADRAO: AppMotoboyConfig = {
   lembrarBebidas: true,
   pedirCodigoEntrega: true,
+  pedirCodigo99Food: true,
 };
 
 export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
@@ -29,6 +36,7 @@ export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
     const o = bruto as Record<string, unknown>;
     if (typeof o.lembrarBebidas === "boolean") cfg.lembrarBebidas = o.lembrarBebidas;
     if (typeof o.pedirCodigoEntrega === "boolean") cfg.pedirCodigoEntrega = o.pedirCodigoEntrega;
+    if (typeof o.pedirCodigo99Food === "boolean") cfg.pedirCodigo99Food = o.pedirCodigo99Food;
   }
   return cfg;
 }

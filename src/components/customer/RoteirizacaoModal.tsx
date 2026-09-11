@@ -235,13 +235,13 @@ export default function RoteirizacaoModal({
   // Janeiro"). Toda busca abaixo levava "RJ" cravado; loja fora do estado
   // procurava rua no lugar errado. Sem pista no endereço, continua RJ.
   const estadoDaLoja = useMemo(() => {
-    const t = (storeAddress || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    const t = (storeAddress || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const cauda = t.slice(-40);
     const ufs: [RegExp, string][] = [
-      [/rio de janeiro|rj/, "RJ"],
-      [/sao paulo|sp/, "SP"],
-      [/minas gerais|mg/, "MG"],
-      [/espirito santo|es/, "ES"],
+      [/\brio de janeiro\b|\brj\b/, "RJ"],
+      [/\bsao paulo\b|\bsp\b/, "SP"],
+      [/\bminas gerais\b|\bmg\b/, "MG"],
+      [/\bespirito santo\b|\bes\b/, "ES"],
     ];
     for (const [re, uf] of ufs) if (re.test(cauda)) return uf;
     for (const [re, uf] of ufs) if (re.test(t)) return uf;
@@ -626,14 +626,14 @@ export default function RoteirizacaoModal({
     // "São Gonçalo", e a rua era validada contra o centro da CIDADE — a
     // quilômetros da casa. Era o pedido 17 da Lucas Pimenta (10/09/2026),
     // com o pino "num endereço nada a ver".
-    const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/s+/g, " ").trim();
+    const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
     const cidadeDaLoja = semAcento(storeCity || "");
     const ehCidadeOuEstado = (p: string) => {
       const n = semAcento(p);
       if (!n) return true;
       if (cidadeDaLoja && (n === cidadeDaLoja || n.startsWith(cidadeDaLoja + " ") || n.endsWith(" " + cidadeDaLoja))) return true;
       if (/^(rj|sp|mg|es|br|brasil|rio de janeiro|sao paulo|minas gerais|espirito santo)$/.test(n)) return true;
-      return /cep/.test(n) || /^d{5}-?d{3}$/.test(n);
+      return /\bcep\b/.test(n) || /^\d{5}-?\d{3}$/.test(n);
     };
 
     // Lista Completa de Bairros Conhecidos da Região (Prioridade MÁXIMA de identificação)
@@ -1058,8 +1058,8 @@ export default function RoteirizacaoModal({
       // município grande (São Gonçalo tem 250 km²) é folgada demais. Sem
       // bairro no resultado, a distância ao centróide continua decidindo.
       const normalizaBairro = (t: string) =>
-        (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
-          .replace(/^(bairro|jardim|jd|residencial|res|parque|pq|vila|vl)s+/, "").trim();
+        (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+          .replace(/^(bairro|jardim|jd|residencial|res|parque|pq|vila|vl)\s+/, "").trim();
       const bairroConfere = (res: { bairro?: string } | null, esperado: string) => {
         if (!res || !esperado || !res.bairro) return true;
         const a = normalizaBairro(res.bairro);
