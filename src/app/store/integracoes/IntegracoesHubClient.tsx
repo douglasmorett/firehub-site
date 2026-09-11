@@ -514,7 +514,7 @@ export default function IntegracoesHubClient({
     const conferir = async () => {
       if (cancelado) return;
       tentativas++;
-      const procurar = tentativas % 5 === 0;
+      const procurar = tentativas === 1 || tentativas % 5 === 0;
       try {
         const res = await fetch(`/api/99food/conectar${procurar ? "?procurar=1" : ""}`);
         const data = await res.json();
@@ -2272,12 +2272,21 @@ export default function IntegracoesHubClient({
                 {/* Sem isto o laço automático seria invisível e o lojista ficaria
                     olhando uma tela parada, achando que precisa fazer algo. */}
                 {food99Aguardando && (
-                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "12px 14px", borderRadius: "12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: "1.1rem" }}>⏳</span>
-                    <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
-                      <b>Esperando você autorizar no 99Food…</b><br />
-                      Pode deixar esta tela aberta — ela conecta sozinha assim que você concluir lá.
+                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "12px 14px", borderRadius: "12px", marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: "1.1rem" }}>⏳</span>
+                      <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
+                        <b>Esperando você autorizar no 99Food…</b><br />
+                        Pode deixar esta tela aberta — ela conecta sozinha assim que você concluir lá.
+                      </div>
                     </div>
+                    <button
+                      onClick={handleVerificar99Food}
+                      disabled={food99Saving}
+                      style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #D97706", background: "#fff", color: "#B45309", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      {food99Saving ? "Verificando…" : "🔍 Verificar agora"}
+                    </button>
                   </div>
                 )}
 
@@ -2285,19 +2294,14 @@ export default function IntegracoesHubClient({
                     dono aqui dentro. Adivinhar seria despejar pedido na cozinha
                     errada, então quem aponta é o lojista — e continua um clique. */}
                 {/* Mais de uma loja autorizada nesta conta do 99Food.
-                    NÃO listamos os nomes: o getAuthorizedShops responde pelo
-                    app_id do FireHub e devolve as lojas de todos os clientes,
-                    então a lista mostrava o vizinho — e clicar no vizinho
-                    levaria os pedidos dele para esta cozinha. Nome e CNPJ
-                    também não servem de filtro: em multicozinha várias marcas
-                    dividem os dois. O número, não. Então pedimos o ID. */}
+                    Aceita o ID ou o NOME da loja (ex.: Salz Burgueria). */}
                 {(food99PedirId || food99Candidatos.length > 0) && (
                   <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
                     <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1E3A8A", marginBottom: 6 }}>
-                      Qual é o ID da sua loja no 99Food?
+                      Qual é o nome ou ID da sua loja no 99Food?
                     </div>
                     <div style={{ fontSize: "0.76rem", color: "#1E40AF", marginBottom: 10, lineHeight: 1.5 }}>
-                      Você acha esse número no painel do 99Food, em Aplicativos autorizados, ao lado do nome da sua loja.
+                      Digite o nome da loja (ex.: Salz) ou o número de ID que aparece no painel do 99Food.
                     </div>
                     <form
                       onSubmit={(e) => { e.preventDefault(); const v = food99IdDigitado.trim(); if (v) handleEscolher99Food({ appShopId: v, shopId: v }); }}
@@ -2306,9 +2310,9 @@ export default function IntegracoesHubClient({
                       <input
                         value={food99IdDigitado}
                         onChange={(e) => setFood99IdDigitado(e.target.value)}
-                        placeholder="ex.: 4253"
+                        placeholder="ex.: Salz Burgueria ou 4253"
                         disabled={food99Saving}
-                        style={{ flex: "1 1 180px", minWidth: 0, padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #93C5FD", fontSize: "0.88rem", fontFamily: "monospace" }}
+                        style={{ flex: "1 1 180px", minWidth: 0, padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #93C5FD", fontSize: "0.88rem" }}
                       />
                       <button
                         type="submit"
@@ -2346,15 +2350,14 @@ export default function IntegracoesHubClient({
                   >
                     Fechar
                   </button>
-                  {/* Reserva do laço automático: cobre a aba fechada cedo demais
-                      e o lojista que autorizou ontem e só voltou hoje. */}
-                  {!food99Connected && food99Disponivel && !food99PedirId && food99Candidatos.length === 0 && (
+                  {/* Botão de verificação manual — fica SEMPRE visível (mesmo com lojas já conectadas) */}
+                  {food99Disponivel && !food99PedirId && food99Candidatos.length === 0 && (
                     <button
                       onClick={handleVerificar99Food}
                       disabled={food99Saving}
                       style={{ padding: "10px 18px", borderRadius: "10px", border: "1.5px solid #D97706", background: "#fff", color: "#B45309", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
                     >
-                      {food99Saving ? "Verificando…" : "Verificar agora"}
+                      {food99Saving ? "Verificando…" : "Verificar manual"}
                     </button>
                   )}
                   {!food99Connected && (

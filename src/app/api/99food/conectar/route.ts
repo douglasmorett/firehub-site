@@ -528,12 +528,13 @@ export async function POST(req: NextRequest) {
   // do 99Food e contra o que já pertence a outra loja: sem isso, um id
   // digitado na requisição sequestraria a integração do vizinho.
   const corpo = await req.json().catch(() => ({} as any));
+  const termo = String(corpo?.shopId || corpo?.appShopId || "").trim();
+  const termoLower = termo.toLowerCase();
 
   // Escolha entre lojas AUTORIZADAS e ainda sem vínculo (etapa 2): a tela manda
-  // o shop_id que o lojista apontou, e o vínculo é feito aqui, com o id desta
+  // o shop_id ou nome que o lojista apontou, e o vínculo é feito aqui, com o id desta
   // conta. `autorizadasLivresPara` já exclui o que pertence a outra conta.
-  if (corpo?.shopId) {
-    const shopId = String(corpo.shopId);
+  if (termo) {
     const autorizadas = await autorizadasLivresPara(r.lojaId);
     if (!autorizadas.ok) {
       return NextResponse.json(
@@ -541,7 +542,12 @@ export async function POST(req: NextRequest) {
         { status: 502 }
       );
     }
-    const alvo = autorizadas.livres.find((l) => l.shopId === shopId);
+    const alvo = autorizadas.livres.find(
+      (l) =>
+        l.shopId === termo ||
+        (l.appShopId && l.appShopId === termo) ||
+        (l.nome && (l.nome.toLowerCase() === termoLower || l.nome.toLowerCase().includes(termoLower)))
+    );
     if (alvo) {
       const v = await vincularParaConta(r.lojaId, alvo);
       if (!v.ok) return NextResponse.json({ error: v.erro }, { status: 502 });
@@ -553,23 +559,26 @@ export async function POST(req: NextRequest) {
     // Não está entre as livres: pode ser uma loja que o 99Food JÁ vinculou ao
     // FireHub sozinho. Antes isso virava 404 e o lojista lia "não está
     // autorizada" com a loja autorizada na cara dele. Agora cai no caminho de
-    // adoção logo abaixo, que aceita o mesmo número.
+    // adoção logo abaixo, que aceita o mesmo número ou nome.
   }
 
-  const escolhido = String(corpo?.appShopId || corpo?.shopId || "");
+  const escolhido = termo;
   if (escolhido) {
 
     // Primeiro a v3: vínculo feito pelo 99Food com o id deles, sem dono aqui.
     // `vinculadasSemDonoPara` já exclui o que pertence a outra conta.
     //
-    // O lojista digita o id que ele LÊ no painel do 99Food, e o que aparece lá
-    // é o id da loja (`shop_id`) — o `app_shop_id` é interno do integrador.
-    // Por isso o casamento aceita os dois: quem digita 4253 não precisa saber
+    // O lojista digita o id ou nome que ele LÊ no painel do 99Food, e o que aparece lá
+    // é o id da loja (`shop_id`) ou o nome — o `app_shop_id` é interno do integrador.
+    // Por isso o casamento aceita os dois: quem digita "Salz" ou 4253 não precisa saber
     // que do nosso lado aquilo é "BCkpxsW2KAHowtV574U2-4253".
     const vinculadas = await vinculadasSemDonoPara(r.lojaId);
     if (vinculadas.ok) {
       const alvo = vinculadas.lojas.find(
-        (l) => l.appShopId === escolhido || String(l.shopId) === escolhido
+        (l) =>
+          l.appShopId === escolhido ||
+          String(l.shopId) === escolhido ||
+          (l.nome && (l.nome.toLowerCase() === termoLower || l.nome.toLowerCase().includes(termoLower)))
       );
       if (alvo) {
         const a = await adotarVinculo(r.lojaId, alvo);
@@ -586,11 +595,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Não consegui listar as lojas no 99Food: ${vinculos.erro}` }, { status: 502 });
     }
     const existe = vinculos.lojas.find(
-      (l) => String(l.app_shop_id) === escolhido || String(l.shop_id) === escolhido
+      (l) =>
+        String(l.app_shop_id) === escolhido ||
+        String(l.shop_id) === escolhido ||
+        (l.shop_name && (String(l.shop_name).toLowerCase() === termoLower || String(l.shop_name).toLowerCase().includes(termoLower)))
     );
     if (!existe) {
       return NextResponse.json(
-        { error: "Não achei esse ID entre as lojas autorizadas no 99Food. Confira o número no painel deles, em Aplicativos autorizados." },
+        { error: "Não achei essa loja entre as autorizadas no 99Food. Confira o nome ou número no painel deles, em Aplicativos autorizados." },
         { status: 404 }
       );
     }
