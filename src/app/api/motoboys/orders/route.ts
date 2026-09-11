@@ -136,7 +136,10 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     const ordersComSequencia = orders.map(({ ifoodOrderId, ifoodDropCodeRequired, deliveryBy, openDeliveryOrderId, openDeliveryChannel, ...o }) => {
-      const pedeIfood = appConfig.pedirCodigoEntrega && Boolean(ifoodDropCodeRequired) && Boolean(ifoodOrderId);
+      // O iFood marca "exige código" também em pedido que ELE entrega (195 no
+      // banco em 11/09/2026, nenhum com motoboy da loja) — ali quem confere é o
+      // entregador do iFood, não o nosso.
+      const pedeIfood = appConfig.pedirCodigoEntrega && Boolean(ifoodDropCodeRequired) && Boolean(ifoodOrderId) && deliveryBy !== "IFOOD";
       const pede99 =
         appConfig.pedirCodigo99Food &&
         ehPedido99Food({ source: o.source, openDeliveryChannel, openDeliveryOrderId }) &&
@@ -420,7 +423,10 @@ export async function PATCH(req: NextRequest) {
     // trata o código como parte de toda entrega feita pela loja. Então todo
     // pedido do 99 com entrega própria pede, e a conferência é o endpoint
     // verifyDeliveryCode deles (23/07/2026), que já conclui o pedido lá.
-    const exigeCodigo = Boolean((order as any).ifoodDropCodeRequired) && Boolean((order as any).ifoodOrderId);
+    const exigeCodigo =
+      Boolean((order as any).ifoodDropCodeRequired) &&
+      Boolean((order as any).ifoodOrderId) &&
+      (order as any).deliveryBy !== "IFOOD"; // entrega do iFood: quem confere é o entregador deles
     const eh99Propria = ehPedido99Food(order as any) && (order as any).deliveryBy === "MERCHANT";
     let codigoConferido = false;
     let codigoConferido99 = false;
