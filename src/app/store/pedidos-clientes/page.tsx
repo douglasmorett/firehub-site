@@ -39,6 +39,8 @@ export default async function FranchiseeCustomerOrdersPage() {
       allowScheduledOrders: true,
       // O que esta loja mostra na barra do painel. Ausente = tudo ligado.
       painelPedidosConfig: true,
+      // O que o app dos entregadores faz na entrega (modal "App Motoboys").
+      appMotoboyConfig: true,
     },
   }).catch((err) => {
     console.error("[PedidosClientes] Erro ao buscar usuário:", err);

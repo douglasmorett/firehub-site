@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
+import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
 import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
@@ -405,6 +407,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
             const localizer = phone?.localizer;
             return localizer ? `${number} ID: ${localizer}` : number;
           })(),
+          customerLatLng: coordenadasDoIfood(orderData),
           customerAddress:  (() => {
             const addr = orderData.delivery?.deliveryAddress;
             if (!addr) return "";
@@ -486,6 +489,15 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
       }
 
     await autoConfirmIfoodOrder(orderId, token);
+  }
+
+  // Pedido passou a exigir código de entrega: só grava a marca — não há
+  // status para mudar. Sem isto o webhook confirmava o evento e a marca se
+  // perdia; o entregador dava baixa sem o código e o iFood cancelava.
+  if (ehEventoDeCodigo(event)) {
+    const marca = await marcarExigeCodigo(prisma, orderId);
+    console.log(`[iFood Webhook] 🔐 Pedido ${orderId} exige código de entrega (${marca})`);
+    return;
   }
 
   // ATUALIZAÇÕES DE STATUS (se o pedido já existia ou para atualizar status recebido)

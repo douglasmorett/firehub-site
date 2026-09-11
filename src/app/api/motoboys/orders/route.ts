@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
+import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,9 +27,12 @@ export async function GET(req: NextRequest) {
 
     const storeOwner = await prisma.user.findUnique({
       where: { id: storeId },
-      select: { storeTimezone: true, printerConfig: true }
+      select: { storeTimezone: true, printerConfig: true, appMotoboyConfig: true }
     });
     const tz = storeOwner?.storeTimezone || "America/Sao_Paulo";
+    // O que o dono configurou para a hora da entrega (lembrar bebidas, pedir
+    // o código do iFood). Vai junto com os pedidos, como as palavras de bebida.
+    const appConfig = lerAppMotoboyConfig(storeOwner?.appMotoboyConfig);
 
     // As palavras de bebida PERSONALIZADAS da loja ("guaravita", marca local…)
     // valem para o aviso do motoboy tanto quanto para a etiqueta da impressora.
@@ -87,6 +91,11 @@ export async function GET(req: NextRequest) {
         createdAt: true,
         updatedAt: true,
         motoboyPuxadoEm: true,
+        // Para o app saber ANTES de dar baixa que este pedido do iFood exige o
+        // código do cliente. O ifoodOrderId sai da resposta logo abaixo — o
+        // app não precisa dele, e id de parceiro não viaja para o celular.
+        ifoodDropCodeRequired: true,
+        ifoodOrderId: true,
         items: {
           select: {
             quantity: true,
@@ -121,12 +130,13 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
 
-    const ordersComSequencia = orders.map((o) => ({
+    const ordersComSequencia = orders.map(({ ifoodOrderId, ifoodDropCodeRequired, ...o }) => ({
       ...o,
       routeSequence: sequencias[o.id] ?? null,
+      pedeCodigoEntrega: appConfig.pedirCodigoEntrega && Boolean(ifoodDropCodeRequired) && Boolean(ifoodOrderId),
     }));
 
-    return NextResponse.json({ success: true, orders: ordersComSequencia, customBeverageKeywords });
+    return NextResponse.json({ success: true, orders: ordersComSequencia, customBeverageKeywords, appConfig });
 
   } catch (err: any) {
     console.error("[Motoboy Orders API Error]", err);
@@ -352,7 +362,7 @@ export async function DELETE(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { orderId, motoboyId, storeId } = await req.json().catch(() => ({} as any));
+    const { orderId, motoboyId, storeId, codigo, semCodigo } = await req.json().catch(() => ({} as any));
     if (!orderId || !motoboyId || !storeId) {
       return NextResponse.json({ error: "orderId, motoboyId e storeId são obrigatórios" }, { status: 400 });
     }
@@ -384,6 +394,60 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Este pedido foi CANCELADO — não entregue. Confirme com a loja." }, { status: 409 });
     }
 
+    // ── CÓDIGO DE ENTREGA DO iFOOD ──────────────────────────────────────────
+    //
+    // Pedido que recebeu DELIVERY_DROP_CODE_REQUESTED só está entregue para o
+    // iFood depois de verifyDeliveryCode com os 4 dígitos que o cliente dita.
+    // Dar baixa sem isso deixava o pedido "entregue" aqui e sem confirmação
+    // lá — e o iFood cancela por entrega não confirmada. A regra é da loja
+    // (App Motoboys → configurações). `semCodigo` é a saída para o cliente
+    // que não tem o código; fica no log com o entregador que decidiu.
+    const exigeCodigo = Boolean((order as any).ifoodDropCodeRequired) && Boolean((order as any).ifoodOrderId);
+    let codigoConferido = false;
+    if (exigeCodigo && !semCodigo) {
+      const { lerAppMotoboyConfig } = await import("@/lib/app-motoboy-config");
+      const loja = await prisma.user.findUnique({ where: { id: String(storeId) }, select: { appMotoboyConfig: true } });
+      if (lerAppMotoboyConfig(loja?.appMotoboyConfig).pedirCodigoEntrega) {
+        const digitado = String(codigo ?? "").replace(/D/g, "");
+        if (!digitado) {
+          return NextResponse.json(
+            { error: "Este pedido do iFood pede o código de entrega do cliente.", precisaCodigo: true },
+            { status: 428 },
+          );
+        }
+        try {
+          const { contextoDoPedido } = await import("@/lib/ifood-token");
+          const { validarCodigoEntrega } = await import("@/lib/ifood-logistics");
+          const ctx = await contextoDoPedido(order as any);
+          const r = await validarCodigoEntrega(ctx, String((order as any).ifoodOrderId), digitado);
+          if (r.conferido) {
+            codigoConferido = true;
+            console.log(`[Motoboy Entrega] 🔐 código conferido no iFood para ${order.id}`);
+          } else if (r.status === 422 || (r.ok && r.data?.success === false)) {
+            return NextResponse.json(
+              { error: "Código não confere. Confira com o cliente e digite de novo.", codigoIncorreto: true },
+              { status: 422 },
+            );
+          } else {
+            console.warn(`[Motoboy Entrega] verifyDeliveryCode ${order.id}: ${r.status} ${String(r.texto || "").slice(0, 200)}`);
+            return NextResponse.json(
+              { error: `O iFood não respondeu à conferência do código (${r.status || "sem resposta"}). Tente de novo.`, ifoodIndisponivel: true },
+              { status: 502 },
+            );
+          }
+        } catch (e: any) {
+          console.warn(`[Motoboy Entrega] verifyDeliveryCode ${order.id} falhou: ${e?.message}`);
+          return NextResponse.json(
+            { error: `Não consegui conferir o código com o iFood: ${e?.message || "erro"}`, ifoodIndisponivel: true },
+            { status: 502 },
+          );
+        }
+      }
+    }
+    if (exigeCodigo && semCodigo) {
+      console.warn(`[Motoboy Entrega] ⚠️ pedido ${order.id} baixado SEM código de entrega (motoboy ${motoboyId})`);
+    }
+
     // ── ESCRITA ATÔMICA: o Postgres decide a corrida ────────────────────────
     //
     // Dois toques rápidos no botão (ou o mesmo request duplicado pelo 4G)
@@ -398,7 +462,11 @@ export async function PATCH(req: NextRequest) {
         id: order.id,
         status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] },
       },
-      data: { status: "ENTREGUE", kdsStage: "FINISHED", kdsStationId: null },
+      data: {
+        status: "ENTREGUE", kdsStage: "FINISHED", kdsStationId: null,
+        // Mesmo carimbo que a aba Entrega do painel grava quando confere o código.
+        ...(codigoConferido ? { ifoodDriverStatus: "DELIVERED" } : {}),
+      },
     });
     if (escrita.count === 0) {
       const agora = await prisma.customerOrder.findUnique({

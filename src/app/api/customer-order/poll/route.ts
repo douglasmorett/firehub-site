@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
+import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -465,6 +467,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
                   const localizer = phone?.localizer || phone?.phoneLocalizer || orderData.customer?.phoneLocalizer || orderData.customer?.localizer;
                   return localizer ? `${number} (ID: ${localizer})` : number;
                 })(),
+                customerLatLng: coordenadasDoIfood(orderData),
                 customerAddress: (() => {
                   const addr = orderData.delivery?.deliveryAddress;
                   if (!addr) return "";
@@ -584,6 +587,17 @@ async function pollIfoodEvents(sessionUserId?: string) {
             where: { ifoodOrderId: orderId } as any,
             data: cancelData,
           });
+        }
+
+        // O aviso de que ESTE pedido exige código de entrega na porta do
+        // cliente. Este feed (todo painel aberto, a cada 8 s) consumia e
+        // confirmava o evento sem gravar nada — e o cron (lib/ifood-eventos),
+        // que sabe tratá-lo, nunca mais o via. O app do motoboy não tinha como
+        // saber que precisava pedir o código. O pedido já existe aqui (o
+        // catch-all acima cria se faltar), então a marca encontra a linha.
+        if (ehEventoDeCodigo(event)) {
+          const marca = await marcarExigeCodigo(prisma, orderId);
+          console.log(`[iFood Poll] 🔐 Pedido ${orderId} exige código de entrega (${marca})`);
         }
 
         // Evento processado com sucesso
@@ -932,7 +946,7 @@ export async function GET(req: NextRequest) {
       // sozinho: se a tela passar a precisar dele, some-o nesta lista.
       select: {
         id: true, dailyOrderNumber: true, franchiseeId: true,
-        customerName: true, customerPhone: true, customerAddress: true,
+        customerName: true, customerPhone: true, customerAddress: true, customerLatLng: true,
         deliveryType: true, deliveryBy: true, deliveryFee: true,
         paymentMethod: true, paymentPaidAt: true, gatewayProvider: true,
         totalAmount: true, changeAmount: true,

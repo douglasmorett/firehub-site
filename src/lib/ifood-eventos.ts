@@ -18,6 +18,7 @@ import { dataHoraDaLoja } from "./fuso";
 import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-number";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
+import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 
 export type ResultadoEventos = {
   created: number;
@@ -666,6 +667,7 @@ export async function processarEventosIfood(opts: {
                 const localizer = phone?.localizer;
                 return localizer ? `${number} ID: ${localizer}` : number;
               })(),
+              customerLatLng: coordenadasDoIfood(orderData),
               customerAddress: (() => {
                 const addr = orderData.delivery?.deliveryAddress;
                 if (!addr) return "";

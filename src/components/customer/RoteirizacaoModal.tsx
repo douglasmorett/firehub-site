@@ -231,6 +231,23 @@ export default function RoteirizacaoModal({
     return { lat: -22.5262, lng: -41.9461 }; // Default Rio das Ostras
   }, [storeLatLng]);
 
+  // UF da loja, lida do endereço cadastrado ("... São Gonçalo - Rio de
+  // Janeiro"). Toda busca abaixo levava "RJ" cravado; loja fora do estado
+  // procurava rua no lugar errado. Sem pista no endereço, continua RJ.
+  const estadoDaLoja = useMemo(() => {
+    const t = (storeAddress || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    const cauda = t.slice(-40);
+    const ufs: [RegExp, string][] = [
+      [/rio de janeiro|rj/, "RJ"],
+      [/sao paulo|sp/, "SP"],
+      [/minas gerais|mg/, "MG"],
+      [/espirito santo|es/, "ES"],
+    ];
+    for (const [re, uf] of ufs) if (re.test(cauda)) return uf;
+    for (const [re, uf] of ufs) if (re.test(t)) return uf;
+    return "RJ";
+  }, [storeAddress]);
+
   // Load Leaflet CSS & Script dynamically
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -603,6 +620,22 @@ export default function RoteirizacaoModal({
     const fullAddress = rawAddr.trim();
     let neighborhood = "";
 
+    // A cidade da loja nunca é bairro. O filtro dos passos 2 e 3 só conhecia
+    // as cidades da região de Rio das Ostras: em São Gonçalo, o endereço
+    // "Tv. Dom Bosco, 13 - ... - Alcantara - São Gonçalo" virava bairro
+    // "São Gonçalo", e a rua era validada contra o centro da CIDADE — a
+    // quilômetros da casa. Era o pedido 17 da Lucas Pimenta (10/09/2026),
+    // com o pino "num endereço nada a ver".
+    const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/s+/g, " ").trim();
+    const cidadeDaLoja = semAcento(storeCity || "");
+    const ehCidadeOuEstado = (p: string) => {
+      const n = semAcento(p);
+      if (!n) return true;
+      if (cidadeDaLoja && (n === cidadeDaLoja || n.startsWith(cidadeDaLoja + " ") || n.endsWith(" " + cidadeDaLoja))) return true;
+      if (/^(rj|sp|mg|es|br|brasil|rio de janeiro|sao paulo|minas gerais|espirito santo)$/.test(n)) return true;
+      return /cep/.test(n) || /^d{5}-?d{3}$/.test(n);
+    };
+
     // Lista Completa de Bairros Conhecidos da Região (Prioridade MÁXIMA de identificação)
     const knownNeighborhoods = [
       "Floresta das Gaivotas", "Enseada das Gaivotas", "Praiamar", "Praia Âncora", "Praia Ancora",
@@ -640,7 +673,7 @@ export default function RoteirizacaoModal({
       const bairroMatch = fullAddress.match(/(?:bairro|b\.:?)\s*([^-,]+)/i);
       if (bairroMatch && bairroMatch[1]) {
         const candidate = bairroMatch[1].trim();
-        if (candidate.length > 2 && candidate.toLowerCase() !== "asil" && !/brasil|rio das ostras|cabo frio|macae|macaé|rj/i.test(candidate)) {
+        if (candidate.length > 2 && candidate.toLowerCase() !== "asil" && !/brasil|rio das ostras|cabo frio|macae|macaé|rj/i.test(candidate) && !ehCidadeOuEstado(candidate)) {
           neighborhood = candidate;
         }
       }
@@ -650,7 +683,7 @@ export default function RoteirizacaoModal({
     if (!neighborhood) {
       const parts = fullAddress.split(/\s*-\s*|\s*,\s*/);
       if (parts.length >= 2) {
-        const filteredParts = parts.filter(p => !/rio das ostras|cabo frio|unamar|macaé|macae|rj|brasil|asil/i.test(p.trim()));
+        const filteredParts = parts.filter(p => !/rio das ostras|cabo frio|unamar|macaé|macae|rj|brasil|asil/i.test(p.trim()) && !ehCidadeOuEstado(p.trim()));
         if (filteredParts.length >= 2) {
           const lastPart = filteredParts[filteredParts.length - 1].trim();
           if (!/comp|complemento|casa|apto|bloco|sobrado|ponto|muro|portão|ref/i.test(lastPart) && lastPart.length < 35 && lastPart.toLowerCase() !== "asil") {
@@ -847,7 +880,7 @@ export default function RoteirizacaoModal({
     // Carregar cache local de geocodificação
     let localCache: Record<string, { lat: number; lng: number }> = {};
     try {
-      const stored = localStorage.getItem("firehub_geo_cache_v2");
+      const stored = localStorage.getItem("firehub_geo_cache_v3");
       if (stored) localCache = JSON.parse(stored);
     } catch {}
 
@@ -945,8 +978,8 @@ export default function RoteirizacaoModal({
           // adivinhar o que é rua, o que é bairro e o que é cidade.
           const ehEstruturada = query.includes("__params=1");
           const url = ehEstruturada
-            ? `https://nominatim.openstreetmap.org/search?format=json&limit=1&${query.replace("&__params=1", "")}`
-            : `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+            ? `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&${query.replace("&__params=1", "")}`
+            : `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1`;
           const res = await fetch(
             url,
             { headers: { "User-Agent": "FireHub-Roteirizacao/2.0" }, signal: AbortSignal.timeout(3500) }
@@ -958,7 +991,11 @@ export default function RoteirizacaoModal({
               const lng = parseFloat(data[0].lon);
               // FILTRO ANTI-MAR: Se o Nominatim retornar uma coordenada no oceano, ignora!
               if (!isPointInSea(lat, lng)) {
-                return { lat, lng };
+                // O bairro que o OSM diz que aquele ponto está. É o que deixa
+                // conferir o NOME do bairro, e não só a distância.
+                const a = data[0].address || {};
+                const bairro = a.suburb || a.neighbourhood || a.city_district || a.quarter || a.residential || a.village || "";
+                return { lat, lng, bairro: String(bairro) };
               }
             }
           }
@@ -990,7 +1027,7 @@ export default function RoteirizacaoModal({
             if (f?.geometry?.coordinates?.length === 2) {
               const lat = f.geometry.coordinates[1];
               const lng = f.geometry.coordinates[0];
-              if (!isPointInSea(lat, lng)) return { lat, lng };
+              if (!isPointInSea(lat, lng)) return { lat, lng, bairro: String(f.properties?.district || f.properties?.locality || "") };
             }
           }
         } catch {}
@@ -1013,6 +1050,24 @@ export default function RoteirizacaoModal({
       // Guarda a PROMESSA, não o resultado: quatro pedidos do mesmo bairro no
       // mesmo lote pediriam o centróide quatro vezes em paralelo, porque
       // nenhum teria preenchido o cache ainda quando os outros consultam.
+      // ── PRIMEIRO O NOME DO BAIRRO, DEPOIS A RUA ──────────────────────
+      // Regra pedida pelo dono (10/09/2026): conferir o bairro antes da rua.
+      // O geocodificador devolve em que bairro o ponto está; se o pedido diz
+      // "Alcantara" e o ponto está em "Centro", a rua é homônima de outro
+      // lugar e não serve — mesmo que passe na régua de distância, que num
+      // município grande (São Gonçalo tem 250 km²) é folgada demais. Sem
+      // bairro no resultado, a distância ao centróide continua decidindo.
+      const normalizaBairro = (t: string) =>
+        (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+          .replace(/^(bairro|jardim|jd|residencial|res|parque|pq|vila|vl)s+/, "").trim();
+      const bairroConfere = (res: { bairro?: string } | null, esperado: string) => {
+        if (!res || !esperado || !res.bairro) return true;
+        const a = normalizaBairro(res.bairro);
+        const b = normalizaBairro(esperado);
+        if (!a || !b) return true;
+        return a === b || a.includes(b) || b.includes(a);
+      };
+
       const centroidesDoBairro: Record<string, Promise<{ lat: number; lng: number } | null>> = {};
 
       const obterCentroide = async (
@@ -1022,7 +1077,7 @@ export default function RoteirizacaoModal({
         const chave = bairro.toLowerCase().trim();
         if (!chave) return doDicionario;
         if (!(chave in centroidesDoBairro)) {
-          centroidesDoBairro[chave] = fetchNominatim(`${bairro}, ${storeCity}, RJ, Brasil`);
+          centroidesDoBairro[chave] = fetchNominatim(`${bairro}, ${storeCity}, ${estadoDaLoja}, Brasil`);
         }
         const achado = await centroidesDoBairro[chave];
         return achado || doDicionario;
@@ -1057,18 +1112,18 @@ export default function RoteirizacaoModal({
             if (item.streetName) {
               const ruaComNumero = item.houseNumber ? `${item.houseNumber} ${item.streetName}` : item.streetName;
               const res0 = await fetchNominatim(
-                `street=${encodeURIComponent(ruaComNumero)}&city=${encodeURIComponent(storeCity)}&state=RJ&country=Brasil&countrycodes=br&__params=1`
+                `street=${encodeURIComponent(ruaComNumero)}&city=${encodeURIComponent(storeCity)}&state=${estadoDaLoja}&country=Brasil&countrycodes=br&__params=1`
               );
-              if (res0 && (!bCentroid || calculateHaversineKm(res0.lat, res0.lng, bCentroid.lat, bCentroid.lng) <= 2.8)) {
+              if (res0 && bairroConfere(res0, item.neighborhood) && (!bCentroid || calculateHaversineKm(res0.lat, res0.lng, bCentroid.lat, bCentroid.lng) <= 2.8)) {
                 coords = res0;
               }
             }
 
             // 1. Tentativa 1: Rua + Número + Bairro + Cidade (Ponto exato no bairro certo)
             if (!coords && item.streetName && item.houseNumber && item.neighborhood) {
-              const query1 = `${item.streetName}, ${item.houseNumber}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              const query1 = `${item.streetName}, ${item.houseNumber}, ${item.neighborhood}, ${storeCity}, ${estadoDaLoja}, Brasil`;
               const res1 = await fetchNominatim(query1);
-              if (res1) {
+              if (res1 && bairroConfere(res1, item.neighborhood)) {
                 // Se temos o centróide do bairro de referência, valida se a rua retornada não é em outro bairro homônimo
                 if (!bCentroid || calculateHaversineKm(res1.lat, res1.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
                   coords = res1;
@@ -1078,9 +1133,9 @@ export default function RoteirizacaoModal({
 
             // 2. Tentativa 2: Rua + Bairro + Cidade (SEM número predial, mas estritamente dentro do bairro correto)
             if (!coords && item.streetName && item.neighborhood) {
-              const query2 = `${item.streetName}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              const query2 = `${item.streetName}, ${item.neighborhood}, ${storeCity}, ${estadoDaLoja}, Brasil`;
               const res2 = await fetchNominatim(query2);
-              if (res2) {
+              if (res2 && bairroConfere(res2, item.neighborhood)) {
                 if (!bCentroid || calculateHaversineKm(res2.lat, res2.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
                   coords = res2;
                 }
@@ -1090,10 +1145,10 @@ export default function RoteirizacaoModal({
             // 3. Tentativa 3: Endereço Limpo Completo com Bairro
             if (!coords && item.cleanedStreet && item.neighborhood) {
               const query3 = item.cleanedStreet.toLowerCase().includes(item.neighborhood.toLowerCase())
-                ? `${item.cleanedStreet}, ${storeCity}, RJ, Brasil`
-                : `${item.cleanedStreet}, ${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+                ? `${item.cleanedStreet}, ${storeCity}, ${estadoDaLoja}, Brasil`
+                : `${item.cleanedStreet}, ${item.neighborhood}, ${storeCity}, ${estadoDaLoja}, Brasil`;
               const res3 = await fetchNominatim(query3);
-              if (res3) {
+              if (res3 && bairroConfere(res3, item.neighborhood)) {
                 if (!bCentroid || calculateHaversineKm(res3.lat, res3.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
                   coords = res3;
                 }
@@ -1109,7 +1164,7 @@ export default function RoteirizacaoModal({
               const resF = await fetchPhoton(
                 `${item.streetName}${item.houseNumber ? ` ${item.houseNumber}` : ""}, ${item.neighborhood || ""}, ${storeCity}`
               );
-              if (resF) {
+              if (resF && bairroConfere(resF, item.neighborhood)) {
                 const pertoDoBairro = !bCentroid || calculateHaversineKm(resF.lat, resF.lng, bCentroid.lat, bCentroid.lng) <= 2.8;
                 const pertoDaLoja = calculateHaversineKm(resF.lat, resF.lng, defaultCenter.lat, defaultCenter.lng) <= 15;
                 if (pertoDoBairro && pertoDaLoja) {
@@ -1120,7 +1175,7 @@ export default function RoteirizacaoModal({
 
             // 4. Tentativa 4: Bairro isolado no Nominatim (se a rua não existir na base cartográfica)
             if (!coords && item.neighborhood) {
-              const query4 = `${item.neighborhood}, ${storeCity}, RJ, Brasil`;
+              const query4 = `${item.neighborhood}, ${storeCity}, ${estadoDaLoja}, Brasil`;
               coords = await fetchNominatim(query4);
             }
 
@@ -1156,7 +1211,7 @@ export default function RoteirizacaoModal({
 
       if (hasNewCache) {
         try {
-          localStorage.setItem("firehub_geo_cache_v2", JSON.stringify(updatedCache));
+          localStorage.setItem("firehub_geo_cache_v3", JSON.stringify(updatedCache));
         } catch {}
       }
 

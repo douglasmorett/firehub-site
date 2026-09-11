@@ -188,6 +188,9 @@ model User {
   /// "Pedidos Balcão" ocupando a barra o dia inteiro.
   /// Formato: { "relogio": false, "filtroIfood": true, "botaoMesas": false, ... }
   painelPedidosConfig Json?
+  /// O que o dono configura para o app dos entregadores: { lembrarBebidas,
+  /// pedirCodigoEntrega }. Ausente = tudo ligado. Ver lib/app-motoboy-config.ts.
+  appMotoboyConfig Json?
   stockInvoices   StockInvoice[]
   menuCategories  MenuCategory[]
   routeSchedules  RouteSchedule[]
@@ -642,6 +645,10 @@ model CustomerOrder {
   customerName     String
   customerPhone    String
   customerAddress  String?
+  /// Ponto exato do endereço quando o parceiro manda (o iFood envia
+  /// latitude/longitude em todo pedido de entrega): { lat, lng }. Nulo =
+  /// a roteirização geocodifica pelo texto. Ver lib/ifood-coordenadas.ts.
+  customerLatLng   Json?
   deliveryType     String              @default("DELIVERY")
   paymentMethod    String?
   // Pagamento dividido (balcão): [{ method: "Pix", amount: 20 }, ...]. Nulo =

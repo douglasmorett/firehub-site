@@ -89,6 +89,12 @@ export async function PUT(req: Request) {
       data.painelPedidosConfig = limpo;
     }
   }
+  // O que o app dos entregadores faz na hora da entrega — só as chaves
+  // conhecidas, só booleano (lib/app-motoboy-config.ts).
+  if (body.appMotoboyConfig !== undefined) {
+    const { limparAppMotoboyConfig } = await import("@/lib/app-motoboy-config");
+    data.appMotoboyConfig = limparAppMotoboyConfig(body.appMotoboyConfig);
+  }
 
   const updatedUser = await prisma.user.update({ where: { id: currentUser.id }, data });
 

@@ -6,6 +6,7 @@ import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
+import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 
@@ -1239,6 +1240,24 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [showRoteirizacaoModal, setShowRoteirizacaoModal] = useState(false);
   const [showMotoboyLinkModal, setShowMotoboyLinkModal] = useState(false);
   const [copiedMotoboyLink, setCopiedMotoboyLink] = useState(false);
+  // O que o app dos entregadores faz na hora da entrega (User.appMotoboyConfig).
+  const [appMotoboyCfg, setAppMotoboyCfg] = useState<{ lembrarBebidas: boolean; pedirCodigoEntrega: boolean }>(() => lerAppMotoboyConfig(user?.appMotoboyConfig));
+  const [salvandoAppMotoboy, setSalvandoAppMotoboy] = useState(false);
+  const salvarAppMotoboy = async (novo: { lembrarBebidas: boolean; pedirCodigoEntrega: boolean }) => {
+    setAppMotoboyCfg(novo); // a tela responde na hora
+    setSalvandoAppMotoboy(true);
+    try {
+      const r = await fetch("/api/store-settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appMotoboyConfig: novo }),
+      });
+      if (!r.ok) throw new Error(String(r.status));
+    } catch {
+      showToast("⚠️ Não consegui salvar a configuração do app dos motoboys", "#EF4444");
+    } finally {
+      setSalvandoAppMotoboy(false);
+    }
+  };
   const [showJotajaManualModal, setShowJotajaManualModal] = useState(false);
   const [jjOrderNumber, setJjOrderNumber] = useState("");
   const [jjCustomerName, setJjCustomerName] = useState("");
@@ -5164,6 +5183,42 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               }}>
                 {typeof window !== "undefined" ? `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy` : `https://firehubfood.com.br/loja/${user.slug || "sua-loja"}/motoboy`}
               </div>
+            </div>
+
+            {/* ── O que o app faz na hora de confirmar a entrega ── */}
+            <div style={{
+              background: "#F8FAFC", border: "1.5px solid #CBD5E1", borderRadius: "10px",
+              padding: "1rem", marginBottom: "1.25rem"
+            }}>
+              <label style={{ fontSize: "0.76rem", fontWeight: 800, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: 4 }}>
+                Na hora de confirmar a entrega
+                {salvandoAppMotoboy && <span style={{ color: "#94A3B8", fontWeight: 600, textTransform: "none", marginLeft: 6 }}>· salvando…</span>}
+              </label>
+              {([
+                {
+                  chave: "lembrarBebidas" as const,
+                  rotulo: "🥤 Lembrar o motoboy das bebidas",
+                  ajuda: "Pergunta \"você entregou a bebida?\" antes de dar baixa em pedido com bebida.",
+                },
+                {
+                  chave: "pedirCodigoEntrega" as const,
+                  rotulo: "🔐 Pedir o código de entrega do cliente (iFood)",
+                  ajuda: "Só nos pedidos em que o iFood exige o código de 4 dígitos. O app confere com o iFood antes de dar baixa — evita cancelamento por entrega não confirmada.",
+                },
+              ]).map((op) => (
+                <label key={op.chave} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", cursor: "pointer", borderTop: "1px solid #E2E8F0" }}>
+                  <input
+                    type="checkbox"
+                    checked={appMotoboyCfg[op.chave]}
+                    onChange={(e) => salvarAppMotoboy({ ...appMotoboyCfg, [op.chave]: e.target.checked })}
+                    style={{ marginTop: 3, width: 18, height: 18, accentColor: "#2563EB", flexShrink: 0 }}
+                  />
+                  <span>
+                    <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{op.rotulo}</span>
+                    <span style={{ display: "block", fontSize: "0.76rem", color: "#64748B", marginTop: 2 }}>{op.ajuda}</span>
+                  </span>
+                </label>
+              ))}
             </div>
 
             <div style={{ display: "flex" }}>

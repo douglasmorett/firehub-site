@@ -249,6 +249,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         if (reqId !== reqIdRef.current || sessaoRef.current !== sessaoDaChamada) return;
         setOrders(aplicarBaixasLocais(data.orders || []));
         setBevKeywords(data.customBeverageKeywords || "");
+        if (data.appConfig) setAppConfig(data.appConfig);
         setJaSincronizou(true);
         setSyncErro(null);
         setUltimaSync(new Date());
@@ -460,16 +461,39 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const [beveragesList, setBeveragesList] = useState<{ name: string; quantity: number }[]>([]);
   /** Palavras de bebida personalizadas da loja — vêm junto com os pedidos. */
   const [bevKeywords, setBevKeywords] = useState<string>("");
+  /** O que o dono ligou no painel (App Motoboys → configurações). */
+  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; pedirCodigoEntrega: boolean }>({ lembrarBebidas: true, pedirCodigoEntrega: true });
+
+  // Código de entrega do iFood: o cliente dita 4 dígitos, o servidor confere
+  // com o iFood e só então dá a baixa.
+  const [codigoModalOrder, setCodigoModalOrder] = useState<any | null>(null);
+  const [codigoDigitado, setCodigoDigitado] = useState("");
+  const [codigoErro, setCodigoErro] = useState("");
 
   // Initiate Delivery Flow (Checks for Beverages)
   const handleInitiateDelivery = (order: any) => {
-    const bevList = getBeveragesFromOrder(order, bevKeywords);
+    const bevList = appConfig.lembrarBebidas ? getBeveragesFromOrder(order, bevKeywords) : [];
     if (bevList && bevList.length > 0) {
       setBeveragesList(bevList);
       setBeverageModalOrder(order);
     } else {
-      handleMarkDelivered(order.id);
+      prosseguirEntrega(order);
     }
+  };
+
+  /**
+   * Depois das bebidas: pedido do iFood que exige o código do cliente abre o
+   * teclado do código (`pedeCodigoEntrega` vem do servidor, já com a regra da
+   * loja aplicada); os outros dão baixa direto.
+   */
+  const prosseguirEntrega = (order: any) => {
+    if (order?.pedeCodigoEntrega) {
+      setCodigoDigitado("");
+      setCodigoErro("");
+      setCodigoModalOrder(order);
+      return;
+    }
+    handleMarkDelivered(order.id);
   };
 
   // Mark Order as Delivered
@@ -480,7 +504,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // nada acontecia, sem mensagem nenhuma. A baixa acabava sendo feita à mão
   // por alguém da loja. A rota nova valida a amarração (pedido atribuído a
   // ESTE motoboy NESTA loja) e dispara os efeitos: parceiro, WhatsApp, fatura.
-  const handleMarkDelivered = async (orderId: string) => {
+  const handleMarkDelivered = async (orderId: string, extra: { codigo?: string; semCodigo?: boolean } = {}) => {
     if (!session) return;
     // Trava POR PEDIDO, conferida aqui (e não só no botão): dois toques
     // rápidos — ou o botão do modal de bebidas chamando direto — disparavam
@@ -513,11 +537,12 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       const res = await fetch("/api/motoboys/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, motoboyId: session.motoboyId, storeId: session.storeId })
+        body: JSON.stringify({ orderId, motoboyId: session.motoboyId, storeId: session.storeId, ...extra })
       });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success) {
+        setCodigoModalOrder(null);
         // Registra a baixa ANTES do estado: o polling de 10s pode voltar com
         // uma resposta que saiu do servidor antes do PATCH e "ressuscitar" o
         // pedido na lista — o entregador via a entrega desfazer sozinha.
@@ -527,6 +552,16 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "ENTREGUE" } : o));
         setToastMsg(data.jaEntregue ? "✅ Este pedido já estava confirmado." : "✅ Entrega confirmada com sucesso!");
         setTimeout(() => setToastMsg(null), 3000);
+      } else if (data.precisaCodigo) {
+        // O servidor sabe que este pedido exige código (a lista do app pode
+        // estar defasada): abre o teclado em vez de mostrar erro.
+        const alvo = orders.find((o) => o.id === orderId) || { id: orderId };
+        setCodigoDigitado("");
+        setCodigoErro("");
+        setCodigoModalOrder(alvo);
+      } else if (data.codigoIncorreto || data.ifoodIndisponivel) {
+        // Fica no teclado: digitar de novo é o caminho, não fechar.
+        setCodigoErro(data.error || "Código não confere. Tente de novo.");
       } else {
         // Falha SEM mensagem é o que escondeu este botão quebrado por meses.
         setToastMsg(`⚠️ ${data.error || "Não consegui confirmar. Tente de novo."}`);
@@ -1309,9 +1344,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               <button
                 type="button"
                 onClick={() => {
-                  const targetId = beverageModalOrder.id;
+                  const alvo = beverageModalOrder;
                   setBeverageModalOrder(null);
-                  handleMarkDelivered(targetId);
+                  prosseguirEntrega(alvo);
                 }}
                 style={{
                   flex: 1.5, padding: "12px", background: "#16A34A", color: "#FFFFFF",
@@ -1327,6 +1362,96 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             <p style={{ fontSize: "0.74rem", color: "#94A3B8", margin: "10px 0 0" }}>
               "Ainda não" mantém o pedido pendente — nada é finalizado.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Código de entrega do iFood */}
+      {codigoModalOrder && (
+        <div
+          onClick={() => { if (updatingOrderId !== codigoModalOrder.id) setCodigoModalOrder(null); }}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", zIndex: 10000
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "400px",
+              padding: "1.5rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)", textAlign: "center",
+              boxSizing: "border-box"
+            }}>
+            <div style={{
+              width: "60px", height: "60px", borderRadius: "50%", background: "#FEF2F2",
+              color: "#DC2626", display: "inline-flex", alignItems: "center", justifyContent: "center",
+              marginBottom: "1rem", fontSize: "2rem"
+            }}>
+              🔐
+            </div>
+            <h3 style={{ fontSize: "1.2rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px 0" }}>
+              Código de entrega do iFood
+            </h3>
+            <p style={{ fontSize: "0.9rem", color: "#475569", margin: "0 0 1rem" }}>
+              Peça ao cliente o código de <b>4 dígitos</b> que aparece no app do iFood dele e digite aqui.
+              Sem ele o iFood pode cancelar a entrega.
+            </p>
+            <input
+              autoFocus
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              value={codigoDigitado}
+              onChange={(e) => { setCodigoDigitado(e.target.value.replace(/\D/g, "")); setCodigoErro(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && codigoDigitado.length >= 4) handleMarkDelivered(codigoModalOrder.id, { codigo: codigoDigitado }); }}
+              placeholder="• • • •"
+              style={{
+                width: "100%", boxSizing: "border-box", fontSize: "2rem", letterSpacing: "0.5em", textAlign: "center",
+                padding: "12px", borderRadius: "12px", border: `2px solid ${codigoErro ? "#DC2626" : "#CBD5E1"}`,
+                fontWeight: 900, color: "#0F172A", outline: "none"
+              }}
+            />
+            {codigoErro && (
+              <p style={{ color: "#DC2626", fontWeight: 800, fontSize: "0.85rem", margin: "8px 0 0" }}>{codigoErro}</p>
+            )}
+            <button
+              type="button"
+              disabled={codigoDigitado.length < 4 || updatingOrderId === codigoModalOrder.id}
+              onClick={() => handleMarkDelivered(codigoModalOrder.id, { codigo: codigoDigitado })}
+              style={{
+                width: "100%", marginTop: "1rem", padding: "14px",
+                background: codigoDigitado.length < 4 ? "#94A3B8" : "#16A34A", color: "#FFFFFF",
+                border: "none", borderRadius: "12px", fontWeight: 900, fontSize: "1rem", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6
+              }}
+            >
+              {updatingOrderId === codigoModalOrder.id
+                ? <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} />
+                : <CheckCircle2 size={18} />}
+              Conferir e confirmar entrega
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!confirm("Confirmar a entrega SEM o código? O iFood pode não reconhecer a entrega. Só faça isso se o cliente realmente não tem o código.")) return;
+                const alvo = codigoModalOrder.id;
+                setCodigoModalOrder(null);
+                handleMarkDelivered(alvo, { semCodigo: true });
+              }}
+              style={{
+                width: "100%", marginTop: "10px", padding: "10px", background: "#FFFFFF", color: "#B91C1C",
+                border: "1.5px solid #FCA5A5", borderRadius: "12px", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer"
+              }}
+            >
+              Cliente não tem o código
+            </button>
+            <button
+              type="button"
+              onClick={() => setCodigoModalOrder(null)}
+              style={{ marginTop: "10px", background: "none", border: "none", color: "#64748B", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+            >
+              Voltar
+            </button>
           </div>
         </div>
       )}

@@ -602,6 +602,10 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // ── CustomerOrder — o caminho mais quente do sistema ──
   // De qual loja iFood veio o pedido — conta com várias lojas no mesmo painel.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreName" TEXT`,
+  // Ponto exato do endereço que o iFood manda no pedido (lib/ifood-coordenadas.ts).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "customerLatLng" JSONB`,
+  // Configuração do app dos entregadores (lib/app-motoboy-config.ts).
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "appMotoboyConfig" JSONB`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreMerchant" TEXT`,
   // De qual loja do 99Food veio — conta com mais de uma no mesmo painel.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "food99AppShopId" TEXT`,
