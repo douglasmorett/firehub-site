@@ -208,6 +208,11 @@ export default function PrinterSetupClient({
 
   useEffect(() => { tryConnect(); }, [tryConnect]);
 
+  /** O editor do modelo de comanda abre em tela cheia, não plantado na
+   *  página: esta tela tem 680 px de largura e o editor precisa de duas
+   *  colunas — a lista de blocos e o papel — lado a lado para ser útil. */
+  const [modeloAberto, setModeloAberto] = useState(false);
+
   const saveConfig = async () => {
     setSaving(true);
     try {
@@ -434,13 +439,21 @@ export default function PrinterSetupClient({
               <p style={{ margin: "2px 0 0", fontSize: "0.82rem", color: "#64748B" }}>{storeName}</p>
             </div>
           </div>
-          <button
-            onClick={saveConfig}
-            disabled={saving}
-            style={{ padding: "10px 24px", borderRadius: 12, background: saved ? "#16A34A" : "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}
-          >
-            {saving ? "Salvando..." : saved ? "✅ Salvo!" : "Salvar configurações"}
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() => setModeloAberto(true)}
+              style={{ padding: "10px 20px", borderRadius: 12, background: "#fff", color: "#C62828", border: "1.5px solid #C62828", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit" }}
+            >
+              🧾 Personalizar impressão
+            </button>
+            <button
+              onClick={saveConfig}
+              disabled={saving}
+              style={{ padding: "10px 24px", borderRadius: 12, background: saved ? "#16A34A" : "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}
+            >
+              {saving ? "Salvando..." : saved ? "✅ Salvo!" : "Salvar configurações"}
+            </button>
+          </div>
         </div>
 
         {/* ── CARD: ASSISTENTE + DOWNLOAD ─────────────────────── */}
@@ -647,23 +660,6 @@ export default function PrinterSetupClient({
             </div>
           )}
         </div>
-
-        {/* ─── O MODELO DA COMANDA ───────────────────────────────────────
-            A loja que vem de outro sistema espera abrir a comanda e mexer.
-            Aqui ela mexe — e o papel da direita mostra a largura de verdade,
-            em vez de descobrir imprimindo. Enquanto ela não mexer, o campo
-            nem existe no printerConfig e a impressão segue igual. */}
-        <ComandaModeloEditor
-          modelo={config.comandaModelo}
-          nomeDaLoja={storeName || "Sua Loja"}
-          versaoInstalada={versaoInstalada || undefined}
-          versaoMinima="1.2.11"
-          colunasDaLoja={
-            config.printers.find(p => p.name)?.columns
-            ?? (config.printers.find(p => p.name)?.paperWidth === "58mm" ? 32 : 48)
-          }
-          onChange={(comandaModelo) => setConfig(c => ({ ...c, comandaModelo }))}
-        />
 
         {/* ─── O QUE IMPRIME ONDE ────────────────────────────────────────
             A loja pensa em dois mundos e eles têm impressoras diferentes. Antes,
@@ -1121,6 +1117,69 @@ export default function PrinterSetupClient({
           </div>
         ))}
       </div>
+
+      {/* ── PERSONALIZAR IMPRESSÃO ──────────────────────────────────────────
+          Em tela cheia de propósito. O editor precisa da lista de blocos e do
+          papel lado a lado para servir para alguma coisa, e esta página tem
+          680 px — plantado nela, as duas colunas se espremiam e o papel saía
+          menor que a bobina de verdade. */}
+      {modeloAberto && (
+        <div
+          onClick={() => setModeloAberto(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(15,23,42,0.7)", backdropFilter: "blur(3px)",
+            display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "24px 16px", zIndex: 9000, overflowY: "auto",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff", borderRadius: 18, width: "100%", maxWidth: 1120,
+              boxShadow: "0 30px 70px rgba(0,0,0,0.35)", overflow: "hidden",
+            }}
+          >
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              padding: "16px 20px", borderBottom: "1.5px solid #E2E8F0", flexWrap: "wrap",
+            }}>
+              <div>
+                <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>🧾 Personalizar impressão</h2>
+                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "#64748B" }}>{storeName}</p>
+              </div>
+              <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+                <button
+                  onClick={async () => { await saveConfig(); setModeloAberto(false); }}
+                  disabled={saving}
+                  style={{ padding: "9px 20px", borderRadius: 11, background: saved ? "#16A34A" : "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", border: "none", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  {saving ? "Salvando..." : saved ? "✅ Salvo!" : "Salvar e fechar"}
+                </button>
+                <button
+                  onClick={() => setModeloAberto(false)}
+                  title="Fechar sem salvar"
+                  style={{ width: 34, height: 34, borderRadius: "50%", border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: "1rem", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: "18px 20px 22px" }}>
+              <ComandaModeloEditor
+                modelo={config.comandaModelo}
+                nomeDaLoja={storeName || "Sua Loja"}
+                versaoInstalada={versaoInstalada || undefined}
+                versaoMinima="1.2.11"
+                colunasDaLoja={
+                  config.printers.find(p => p.name)?.columns
+                  ?? (config.printers.find(p => p.name)?.paperWidth === "58mm" ? 32 : 48)
+                }
+                onChange={(comandaModelo) => setConfig(c => ({ ...c, comandaModelo }))}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

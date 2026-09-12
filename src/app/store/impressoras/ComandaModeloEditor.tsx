@@ -106,10 +106,7 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
   };
 
   return (
-    <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", marginBottom: "1.5rem", border: BORDA }}>
-      <h2 style={{ fontSize: "1.05rem", fontWeight: 800, margin: "0 0 4px", color: "#0F172A" }}>
-        🧾 Modelo da comanda
-      </h2>
+    <div>
       <p style={{ fontSize: "0.84rem", color: "#64748B", margin: "0 0 14px", maxWidth: "62ch", lineHeight: 1.5 }}>
         Arraste para mudar a ordem, desligue o que não quer e escreva o que quiser. O papel ao lado
         mostra a largura exata que vai sair da sua impressora.
