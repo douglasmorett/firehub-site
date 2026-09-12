@@ -275,6 +275,36 @@ export async function manterLojaOnline99(
     return resultado;
   }
 
+  // ── UMA LOJA DA CONTA PODE CAIR SOZINHA ────────────────────────────────
+  //
+  // O alerta acima só dispara quando a conta INTEIRA fica sem token. Numa
+  // conta com três lojas no 99Food, as duas que continuam de pé escondem a
+  // terceira: `tokens.length` é 2, ninguém avisa, e os pedidos daquela loja
+  // somem em silêncio. Foi o que aconteceu na conta do Lucas Pimenta em
+  // 12/09/2026, com a Braseou e a Salz mudas enquanto o Frangoso entregava.
+  //
+  // Aqui cada linha da Food99Store é conferida uma a uma.
+  try {
+    const { lojas99DaConta } = await import("@/lib/food99-lojas");
+    const { tokenDeUmId } = await import("@/lib/food99-status");
+    const lojas = await lojas99DaConta(loja.id);
+    if (lojas.length > 1) {
+      const caidas: string[] = [];
+      for (const l of lojas) {
+        const t = await tokenDeUmId(l.appShopId).catch(() => null);
+        if (!t?.auth_token) caidas.push(l.label || l.appShopId);
+      }
+      if (caidas.length > 0 && caidas.length < lojas.length) {
+        const aviso = `${caidas.length} de ${lojas.length} lojas do 99Food desta conta estão sem autorização: ${caidas.join(", ")} — os pedidos delas não entram`;
+        resultado.erros.push(aviso);
+        console.error(`[99Food online] ${nome}: ${aviso}`);
+        await avisarQueCaiu99(loja.id, `${nome} — ${caidas.join(", ")}`, loja.email);
+      }
+    }
+  } catch (e: any) {
+    console.warn(`[99Food online] ${nome}: não deu para conferir loja a loja: ${e?.message}`);
+  }
+
   // Agora que os tokens existem, dá para decidir o modo (ver o bloco acima):
   // `tokens.length` é o número de lojas do 99Food desta conta.
   const recebeuPedido99 = await prisma.customerOrder

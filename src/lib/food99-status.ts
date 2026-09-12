@@ -88,7 +88,7 @@ const RENOVAR_FALTANDO_MS = 24 * 60 * 60_000;
  * O 99Food aceita uma renovação a cada dois minutos e, depois de renovar, o
  * valor novo só aparece consultando de novo — daí a segunda chamada.
  */
-async function tokenDeUmId(id: string): Promise<{ auth_token: string; token_expiration_time: number } | null> {
+export async function tokenDeUmId(id: string): Promise<{ auth_token: string; token_expiration_time: number } | null> {
   const r = await getAuthToken(id);
   if (!r.autorizada) return null;
 
