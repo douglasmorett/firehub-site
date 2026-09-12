@@ -22,15 +22,25 @@ export type ResultadoCodigo = "conferido" | "errado" | "indisponivel";
 /**
  * iFood, `POST /order/v1.0/orders/{id}/verifyDeliveryCode` (módulo Order).
  *
- * A referência da API responde `{success: true|false}` ("Delivery was
- * successfully confirmed or not"); o guia de implementação escreve
- * `{valid: true}`. Valem os dois. 422 é como o módulo Logistics diz "código
- * errado", e continua aceito pelo mesmo motivo.
+ * ── O que a produção responde, medido em 12/09/2026 ─────────────────────────
+ *
+ * A referência da API promete `{success: true|false}` e o guia escreve
+ * `{valid: true}`. Na Frangoso - Trindade, reenviando os códigos que o motoboy
+ * tinha digitado:
+ *
+ *   código certo            200 com corpo VAZIO — e o pedido fica confirmado
+ *   o mesmo código de novo  422 {"code":"ORDER_ALREADY_CONFIRMED"}
+ *
+ * Então 2xx é conferido, a menos que o corpo diga `false` com todas as letras.
+ * E "já confirmado" também é conferido: é o toque repetido do motoboy ou o
+ * cliente que confirmou antes — mandar redigitar ali prenderia o entregador
+ * num código que está certo. O 422 de código errado ainda não foi visto; fica
+ * como "errado" todo 422 que não seja o de já confirmado.
  */
 export function lerRespostaCodigoIfood(r: { ok: boolean; status: number; data?: unknown }): ResultadoCodigo {
-  const d = (r.data ?? {}) as { success?: unknown; valid?: unknown };
-  if (r.ok && (d.success === true || d.valid === true)) return "conferido";
-  if (r.status === 422 || (r.ok && (d.success === false || d.valid === false))) return "errado";
+  const d = (r.data ?? {}) as { success?: unknown; valid?: unknown; code?: unknown };
+  if (r.ok) return d.success === false || d.valid === false ? "errado" : "conferido";
+  if (r.status === 422) return d.code === "ORDER_ALREADY_CONFIRMED" ? "conferido" : "errado";
   return "indisponivel";
 }
 

@@ -3,10 +3,9 @@
  *
  *   node scripts/teste-codigo-de-entrega.mjs
  *
- * Os casos são as respostas documentadas do módulo Order (referência da API e
- * guia de implementação) e o 403 real que a Frangoso - Trindade recebeu em
- * 12/09/2026 nas três entregas da noite, quando a conferência ainda ia para o
- * módulo Logistics.
+ * Os casos são as respostas que a produção deu na Frangoso - Trindade em
+ * 12/09/2026 (o 403 do módulo Logistics; o 200 vazio e o 422
+ * ORDER_ALREADY_CONFIRMED do módulo Order) e as que a documentação descreve.
  */
 import { readFileSync } from "fs";
 import ts from "typescript";
@@ -26,26 +25,39 @@ const conferir = (nome, ok, detalhe) => {
 };
 const igual = (nome, obtido, esperado) => conferir(nome, obtido === esperado, `obtido ${obtido}, esperado ${esperado}`);
 
-console.log("\n1) iFood: o que confere, o que é código errado e o que é falha");
+console.log("\n1) iFood: o que a produção respondeu na Frangoso (12/09)");
+igual("200 com corpo vazio (código certo) confere", lerRespostaCodigoIfood({ ok: true, status: 200, data: null }), "conferido");
+igual(
+  "422 ORDER_ALREADY_CONFIRMED (mesmo código de novo) confere",
+  lerRespostaCodigoIfood({ ok: false, status: 422, data: { message: "Order is already confirmed", code: "ORDER_ALREADY_CONFIRMED" } }),
+  "conferido",
+);
+igual(
+  "403 Forbidden (era o endpoint do Logistics) não prende o motoboy",
+  lerRespostaCodigoIfood({ ok: false, status: 403, data: { error: { code: "Forbidden", message: "User is forbidden to access this resource" } } }),
+  "indisponivel",
+);
+
+console.log("\n2) iFood: o que a documentação descreve");
 igual("200 {success:true} (referência da API) confere", lerRespostaCodigoIfood({ ok: true, status: 200, data: { success: true } }), "conferido");
 igual("200 {valid:true} (guia de implementação) confere", lerRespostaCodigoIfood({ ok: true, status: 200, data: { valid: true } }), "conferido");
 igual("200 {success:false} é código errado", lerRespostaCodigoIfood({ ok: true, status: 200, data: { success: false } }), "errado");
 igual("200 {valid:false} é código errado", lerRespostaCodigoIfood({ ok: true, status: 200, data: { valid: false } }), "errado");
-igual("422 é código errado", lerRespostaCodigoIfood({ ok: false, status: 422, data: null }), "errado");
-igual(
-  "403 Forbidden da Frangoso (12/09) não prende o motoboy",
-  lerRespostaCodigoIfood({ ok: false, status: 403, data: { error: { code: "Forbidden", message: "User is forbidden to access this resource" } } }),
-  "indisponivel",
-);
+igual("202 sem corpo confere", lerRespostaCodigoIfood({ ok: true, status: 202, data: null }), "conferido");
+igual("204 confere", lerRespostaCodigoIfood({ ok: true, status: 204, data: null }), "conferido");
+
+console.log("\n3) iFood: o que prende e o que não prende");
+igual("422 sem código conhecido é código errado", lerRespostaCodigoIfood({ ok: false, status: 422, data: null }), "errado");
+igual("422 com outro código é código errado", lerRespostaCodigoIfood({ ok: false, status: 422, data: { code: "INVALID_CODE" } }), "errado");
+igual("422 com code em minúsculas não é o de já confirmado", lerRespostaCodigoIfood({ ok: false, status: 422, data: { code: "order_already_confirmed" } }), "errado");
+igual("400 não prende", lerRespostaCodigoIfood({ ok: false, status: 400, data: { code: "BadRequest" } }), "indisponivel");
 igual("404 não prende", lerRespostaCodigoIfood({ ok: false, status: 404, data: null }), "indisponivel");
 igual("500 não prende", lerRespostaCodigoIfood({ ok: false, status: 500, data: null }), "indisponivel");
 igual("sem resposta (status 0) não prende", lerRespostaCodigoIfood({ ok: false, status: 0 }), "indisponivel");
-igual("200 sem corpo não é prova de conferência", lerRespostaCodigoIfood({ ok: true, status: 200, data: null }), "indisponivel");
-igual("202 sem corpo não é prova de conferência", lerRespostaCodigoIfood({ ok: true, status: 202, data: null }), "indisponivel");
-igual("success:\"true\" em texto não conta", lerRespostaCodigoIfood({ ok: true, status: 200, data: { success: "true" } }), "indisponivel");
 igual("403 com {success:false} no corpo não vira código errado", lerRespostaCodigoIfood({ ok: false, status: 403, data: { success: false } }), "indisponivel");
+igual("403 com ORDER_ALREADY_CONFIRMED não vira conferido", lerRespostaCodigoIfood({ ok: false, status: 403, data: { code: "ORDER_ALREADY_CONFIRMED" } }), "indisponivel");
 
-console.log("\n2) O pedido já saiu para entrega no iFood?");
+console.log("\n4) O pedido já saiu para entrega no iFood?");
 for (const [status, esperado] of [
   ["SAIU_ENTREGA", true], ["SAIU_PARA_ENTREGA", true],
   ["PRONTO", false], ["ACEITO", false], ["PREPARANDO", false], ["EM_ROTA", false], ["NOVO", false],
