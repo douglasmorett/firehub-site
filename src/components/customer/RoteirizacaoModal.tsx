@@ -643,6 +643,52 @@ export default function RoteirizacaoModal({
       const updatedCache = { ...localCache };
       let hasNewCache = false;
 
+      // ── PRIMEIRO O SERVIDOR ─────────────────────────────────────────────
+      //
+      // O geocodificador limita por IP, e o IP daqui é o do Wi-Fi da loja —
+      // compartilhado com todo mundo em volta. Foi isso que deixou a
+      // roteirização do Lucas Pimenta sem carregar a noite de 11/09/2026,
+      // voltando na hora quando ele trocou para os dados móveis: outro IP.
+      //
+      // No servidor o IP é um só, o limite é respeitado por uma fila, e o
+      // endereço resolvido fica no banco para TODAS as lojas. O navegador só
+      // volta a falar com o geocodificador se o servidor não responder.
+      let faltam = toGeocode;
+      try {
+        const r = await fetch("/api/geocodificar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enderecos: toGeocode.slice(0, 40).map((t) => ({ id: t.id, endereco: t.rawAddr })) }),
+        });
+        if (r.ok) {
+          const { resultados } = await r.json();
+          const porId = new Map<string, { lat: number; lng: number; origem: string }>(
+            (resultados || []).map((x: any) => [x.id, x]),
+          );
+          const resolvidos = new Set<string>();
+          for (const item of toGeocode) {
+            const achado = porId.get(item.id);
+            if (!achado) continue;
+            updatedMap[item.id] = { lat: achado.lat, lng: achado.lng };
+            updatedCache[item.cacheKey] = { lat: achado.lat, lng: achado.lng };
+            hasNewCache = true;
+            resolvidos.add(item.id);
+            console.log(`[Roteirização] ${item.neighborhood || "(sem bairro)"} · ${item.streetName || "(sem rua)"} → ${achado.origem} (servidor)`);
+          }
+          if (resolvidos.size > 0 && isMounted) setGeocodedMap({ ...updatedMap });
+          faltam = toGeocode.filter((t) => !resolvidos.has(t.id));
+        } else {
+          console.warn("[Roteirização] servidor não geocodificou:", r.status, "— seguindo pelo navegador");
+        }
+      } catch (e: any) {
+        console.warn("[Roteirização] servidor indisponível:", e?.message, "— seguindo pelo navegador");
+      }
+      if (faltam.length === 0) {
+        if (hasNewCache) { try { localStorage.setItem("firehub_geo_cache_v3", JSON.stringify(updatedCache)); } catch {} }
+        if (isMounted) setGeocodingLoading(false);
+        return;
+      }
+
       const geo = criarGeocodificador({ storeCity, estado: estadoDaLoja, centroDaLoja: defaultCenter });
 
       // A política de uso do Nominatim é 1 requisição por segundo — e não é
@@ -650,9 +696,9 @@ export default function RoteirizacaoModal({
       // O limitador mora dentro de criarGeocodificador; de 1 em 1 endereço o
       // bloqueio não acontece, e o cache garante que cada um só paga uma vez.
       const BATCH_SIZE = 1;
-      for (let i = 0; i < toGeocode.length; i += BATCH_SIZE) {
+      for (let i = 0; i < faltam.length; i += BATCH_SIZE) {
         if (!isMounted) break;
-        const batch = toGeocode.slice(i, i + BATCH_SIZE);
+        const batch = faltam.slice(i, i + BATCH_SIZE);
 
         await Promise.all(
           batch.map(async (item) => {
@@ -894,8 +940,17 @@ export default function RoteirizacaoModal({
         updateWhenIdle: true,
       });
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; OpenStreetMap contributors',
+      // ── As imagens do mapa vêm de uma CDN, não do servidor do OSM ───────
+      //
+      // `tile.openstreetmap.org` é servido por doação e a política de uso deles
+      // pede que aplicativos NÃO o usem como fonte primária: em rede
+      // compartilhada (o Wi-Fi da loja, com o IP de todo o prédio) as imagens
+      // engasgam ou param. A CARTO serve o mesmo mapa do OpenStreetMap por CDN,
+      // com a atribuição exigida abaixo.
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+        // A CARTO exige o crédito dela junto com o do OpenStreetMap.
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: "abcd",
         maxZoom: 19,
         keepBuffer: 5,
       }).addTo(map);
