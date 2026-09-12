@@ -221,6 +221,22 @@ export default function RoteirizacaoModal({
   // contrário (nascer desmarcado) esconderia informação de quem nem sabe que
   // ela existe.
   const [mostrarMotoboys, setMostrarMotoboys] = useState(true);
+
+  /**
+   * Quais estados de pedido aparecem no mapa.
+   *
+   * A cor sozinha é adivinhação: o lojista ditou o significado dela (vermelho
+   * cozinha, roxo pronto, azul em entrega, verde entregue) mas quem abre o mapa
+   * sem ter ouvido isso não tem como saber. A legenda diz o que é cada uma — e,
+   * já que está ali, serve de interruptor: em noite cheia dá para esconder o que
+   * já saiu e ficar só com o que falta despachar.
+   */
+  const [estadosNoMapa, setEstadosNoMapa] = useState({
+    cozinha: true,
+    pronto: true,
+    rota: true,
+    entregue: true,
+  });
   const [hoveredOrderId, setHoveredOrderId] = useState<string | null>(null);
   const [motoboys, setMotoboys] = useState<Motoboy[]>([]);
 
@@ -403,6 +419,9 @@ export default function RoteirizacaoModal({
         if (parsed.autoPrint) setAutoPrint(parsed.autoPrint);
         if (parsed.maxOrdersPerRoute) setMaxOrdersPerRoute(parsed.maxOrdersPerRoute);
         if (parsed.maxDistanceKm) setMaxDistanceKm(parsed.maxDistanceKm);
+        if (parsed.estadosNoMapa && typeof parsed.estadosNoMapa === "object") {
+          setEstadosNoMapa((atual) => ({ ...atual, ...parsed.estadosNoMapa }));
+        }
       }
     } catch (e) {}
   }, []);
@@ -1157,6 +1176,11 @@ export default function RoteirizacaoModal({
         Date.now() - new Date(carimboEntrega).getTime() < 10_000;
       if ((order as any).__recemEntregue && !recemEntregue) return; // passou dos 10 s: sai do mapa
 
+      // Estado desmarcado na legenda não desenha pino. O pedido continua na
+      // lista e na rota — é só a vista do mapa que fica mais limpa.
+      const estadoDoPino = recemEntregue ? "entregue" : jaDespachado ? "rota" : prontoNaCozinha ? "pronto" : "cozinha";
+      if (!estadosNoMapa[estadoDoPino as keyof typeof estadosNoMapa]) return;
+
       let bgColor = recemEntregue ? "#16A34A" : jaDespachado ? "#2563EB" : prontoNaCozinha ? "#7C3AED" : "#EF4444";
       let labelText = getOrderDisplayNumber(order);
       let borderColor = "#ffffff";
@@ -1392,7 +1416,7 @@ export default function RoteirizacaoModal({
         }
       });
     }
-  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa]);
+  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa]);
 
   // O pino verde do recém-entregue precisa SUMIR sozinho ao completar os 10 s.
   // Sem um tique, ele só sairia no próximo evento que redesenhasse o mapa — e
@@ -2122,6 +2146,72 @@ export default function RoteirizacaoModal({
                 />
                 ⛑️ Motoboys
               </label>
+            </div>
+
+            {/* ─── LEGENDA DAS CORES, QUE TAMBÉM FILTRA ────────────────────
+                O significado das cores foi ditado pelo lojista e até agora só
+                existia na cabeça de quem ouviu. Aqui ele fica escrito, com a
+                contagem de cada estado — e cada linha liga e desliga aquele
+                grupo no mapa, para a tela não virar um amontoado de pinos em
+                noite cheia. A escolha fica salva neste navegador. */}
+            <div style={{
+              position: "absolute", bottom: "16px", left: "16px", zIndex: 999,
+              background: "#FFFFFF", border: "1.5px solid #CBD5E1", borderRadius: "10px",
+              padding: "9px 11px", boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
+              display: "flex", flexDirection: "column", gap: "5px", minWidth: "172px",
+            }}>
+              <div style={{ fontSize: "0.68rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "1px" }}>
+                O que aparece no mapa
+              </div>
+              {([
+                { chave: "cozinha" as const, cor: "#EF4444", rotulo: "Na cozinha" },
+                { chave: "pronto" as const, cor: "#7C3AED", rotulo: "Pronto" },
+                { chave: "rota" as const, cor: "#2563EB", rotulo: "Saiu para entrega" },
+                { chave: "entregue" as const, cor: "#16A34A", rotulo: "Entregue agora" },
+              ]).map((e) => {
+                const quantos = deliveryOrders.filter((o: any) => {
+                  const s = String(o.status || "").toUpperCase().trim();
+                  const pronto = s === "PRONTO" || s === "PRONTO_ENTREGA" || s === "PREPARADO" || o.kdsStage === "READY" || o.kdsStage === "FINISHED";
+                  const estado = o.__recemEntregue ? "entregue" : o.__jaDespachado ? "rota" : pronto ? "pronto" : "cozinha";
+                  return estado === e.chave;
+                }).length;
+                const ligado = estadosNoMapa[e.chave];
+                return (
+                  <label
+                    key={e.chave}
+                    title={ligado ? `Esconder os pedidos em "${e.rotulo}"` : `Mostrar os pedidos em "${e.rotulo}"`}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "7px", cursor: "pointer",
+                      fontSize: "0.78rem", fontWeight: 700, userSelect: "none",
+                      color: ligado ? "#0F172A" : "#94A3B8",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={ligado}
+                      onChange={(ev) => {
+                        const novo = { ...estadosNoMapa, [e.chave]: ev.target.checked };
+                        setEstadosNoMapa(novo);
+                        try {
+                          const salvo = localStorage.getItem("firehub_roteirizacao_config");
+                          const cfg = salvo ? JSON.parse(salvo) : {};
+                          cfg.estadosNoMapa = novo;
+                          localStorage.setItem("firehub_roteirizacao_config", JSON.stringify(cfg));
+                        } catch {}
+                      }}
+                      style={{ width: 14, height: 14, accentColor: e.cor, cursor: "pointer", flexShrink: 0 }}
+                    />
+                    <span style={{
+                      width: 13, height: 13, borderRadius: "50% 50% 50% 0",
+                      transform: "rotate(-45deg)", background: e.cor, flexShrink: 0,
+                      border: "1.5px solid #FFFFFF", boxShadow: "0 0 0 1px #CBD5E1",
+                      opacity: ligado ? 1 : 0.35,
+                    }} />
+                    <span style={{ flex: 1 }}>{e.rotulo}</span>
+                    <span style={{ color: "#64748B", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{quantos}</span>
+                  </label>
+                );
+              })}
             </div>
 
             {/* ─── FLOATING ROUTE SELECTION ACTION BAR (OVER MAP BOTTOM) ─── */}
