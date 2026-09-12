@@ -28,11 +28,13 @@ export async function POST(req: NextRequest) {
   const enderecos = Array.isArray(corpo?.enderecos) ? corpo.enderecos : [];
   if (enderecos.length === 0) return NextResponse.json({ resultados: [] });
 
-  // Teto por chamada: o painel manda os pedidos da tela, e um lote gigante
-  // seguraria a fila do servidor inteiro. O modal pagina sozinho.
+  // Teto por chamada. Cada endereço NOVO custa pelo menos 1,1 s (o limite do
+  // geocodificador) e pode custar cinco vezes isso; 40 não cabiam nos 60 s da
+  // rota. Com 15, o pior caso ainda termina e devolve resultado — e o que
+  // sobrar o navegador resolve, como antes.
   const lote = enderecos
     .filter((e: any) => e && typeof e.id === "string" && typeof e.endereco === "string" && e.endereco.trim())
-    .slice(0, 40);
+    .slice(0, 15);
 
   const usuario = await prisma.user.findUnique({
     where: { email: session.user.email },

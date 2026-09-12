@@ -83,13 +83,20 @@ export const popupDoPedido = (order: any, jaDespachado: boolean, pronto: boolean
   const num = getOrderDisplayNumber(order);
   const pag = getOrderPaymentInfo(order);
   const endereco = order.customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`.trim();
-  const prazo = order.prazoEntrega || order.scheduledDatetime || null;
+  // O prazo real, quando existe: agendamento do cliente, prazo do parceiro ou
+  // o tempo de entrega configurado pela loja. O fallback de 45 minutos só entra
+  // quando não há nenhum dos três — e aí aparece marcado como estimativa, para
+  // ninguém montar rota confiando num número que o sistema inventou.
+  const prazo =
+    order.scheduledDatetime || order.prazoEntrega || order.deliveryDeadline || order.ifoodDeliveryDateTime || null;
   const criado = order.createdAt ? new Date(order.createdAt) : null;
+  const minutosDaLoja = Number(order.estimatedDeliveryMinutes || order.deliveryTimeMinutes || 0);
   const entregarAte = prazo
     ? new Date(prazo)
     : criado
-    ? new Date(criado.getTime() + 45 * 60000)
+    ? new Date(criado.getTime() + (minutosDaLoja > 0 ? minutosDaLoja : 45) * 60000)
     : null;
+  const prazoEstimado = !prazo;
   const taxa = Number(order.deliveryFee || 0);
   const taxaMotoboy = Number(order.motoboyFee || 0);
   const estado = jaDespachado ? "🛵 saiu para entrega" : pronto ? "✅ pronto" : "👨‍🍳 na cozinha";
@@ -99,7 +106,7 @@ export const popupDoPedido = (order: any, jaDespachado: boolean, pronto: boolean
     order.customerPhone ? `📞 ${esc(order.customerPhone)}` : "",
     endereco ? `<span style="color:#334155;">📍 ${esc(endereco)}</span>` : "",
     entregarAte
-      ? `<b style="color:#B45309;">⏰ Entregar até ${entregarAte.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>`
+      ? `<b style="color:#B45309;">⏰ Entregar até ${entregarAte.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>${prazoEstimado ? ` <span style="color:#94A3B8;font-weight:400;">(estimado)</span>` : ""}`
       : "",
     `💰 R$ ${Number(order.totalAmount || 0).toFixed(2)}${taxa > 0 ? ` · entrega R$ ${taxa.toFixed(2)}` : ""}${taxaMotoboy > 0 ? ` · entregador R$ ${taxaMotoboy.toFixed(2)}` : ""}`,
     pag.methodRaw ? `💳 ${esc(pag.methodRaw)}${pag.changeNeeded > 0 ? ` — troco R$ ${pag.changeNeeded.toFixed(2)}` : ""}` : "",
@@ -551,13 +558,17 @@ export default function RoteirizacaoModal({
   }, [orders]);
 
   // Contagem de todos os pedidos elegíveis de entrega
+  // Só o que falta roteirizar. Os despachados agora vivem no mapa, mas
+  // contá-los aqui fazia o botão dizer "Mostrar Todos (14)" com 5 linhas na
+  // lista — o número prometia trabalho que não existe.
+  const naFilaDeRoteirizacao = (o: any) => !o.__jaDespachado && !o.__recemEntregue;
   const allDeliveryOrdersCount = useMemo(() => {
-    return baseDeliveryOrders.length;
+    return baseDeliveryOrders.filter(naFilaDeRoteirizacao).length;
   }, [baseDeliveryOrders]);
 
   // Contagem de pedidos prontos na cozinha
   const prontoOrdersCount = useMemo(() => {
-    return baseDeliveryOrders.filter((o: any) => {
+    return baseDeliveryOrders.filter(naFilaDeRoteirizacao).filter((o: any) => {
       const statusUpper = String(o.status || "").toUpperCase().trim();
       return (
         statusUpper === "PRONTO" ||
@@ -574,6 +585,10 @@ export default function RoteirizacaoModal({
   // Filter Delivery Orders (Strictly exclude Pickup/Retirada, Dispatched/Out for delivery, and respect onlyProntoOrders setting)
   const deliveryOrders = useMemo(() => {
     return baseDeliveryOrders.filter((o: any) => {
+      // "Mostrar só os prontos" é filtro da LISTA de quem falta roteirizar.
+      // Aplicado ao mapa, ele apagava justamente os pinos azuis que a loja
+      // pediu para manter à vista.
+      if (o.__jaDespachado || o.__recemEntregue) return true;
       if (onlyProntoOrders) {
         const statusUpper = String(o.status || "").toUpperCase().trim();
         const isPronto =
@@ -649,6 +664,7 @@ export default function RoteirizacaoModal({
     const initialMap = { ...geocodedMap };
     let initialUpdated = false;
     const toGeocode: {
+      jaDespachado?: boolean;
       id: string;
       idx: number;
       rawAddr: string;
@@ -690,6 +706,7 @@ export default function RoteirizacaoModal({
         }
         // SEMPRE coloca no toGeocode para buscar a rua exata no Nominatim
         toGeocode.push({
+          jaDespachado: Boolean((order as any).__jaDespachado || (order as any).__recemEntregue),
           id: order.id,
           idx,
           rawAddr,
@@ -730,11 +747,19 @@ export default function RoteirizacaoModal({
       // endereço resolvido fica no banco para TODAS as lojas. O navegador só
       // volta a falar com o geocodificador se o servidor não responder.
       let faltam = toGeocode;
+      const ordenados = [...toGeocode].sort((a, b) => {
+        const da = (a as any).jaDespachado ? 1 : 0;
+        const db = (b as any).jaDespachado ? 1 : 0;
+        return da - db;
+      });
+      const paraOServidor = ordenados.slice(0, 14);
       try {
         const r = await fetch("/api/geocodificar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enderecos: toGeocode.slice(0, 40).map((t) => ({ id: t.id, endereco: t.rawAddr })) }),
+          // Quem já está na rua vai para o fim da fila: as vagas do lote são
+          // dos pedidos que a loja precisa roteirizar AGORA.
+          body: JSON.stringify({ enderecos: paraOServidor.map((t) => ({ id: t.id, endereco: t.rawAddr })) }),
         });
         if (r.ok) {
           const { resultados } = await r.json();
@@ -1119,7 +1144,13 @@ export default function RoteirizacaoModal({
         statusPino === "PRONTO" || statusPino === "PRONTO_ENTREGA" || statusPino === "PREPARADO" ||
         (order as any).kdsStage === "READY" || (order as any).kdsStage === "FINISHED";
       const jaDespachado = Boolean((order as any).__jaDespachado);
-      const recemEntregue = Boolean((order as any).__recemEntregue);
+      // Mesma razão do bloco acima: a marca não expira sozinha, o relógio sim.
+      const carimboEntrega = (order as any).deliveredAt || (order as any).updatedAt;
+      const recemEntregue =
+        Boolean((order as any).__recemEntregue) &&
+        Boolean(carimboEntrega) &&
+        Date.now() - new Date(carimboEntrega).getTime() < 10_000;
+      if ((order as any).__recemEntregue && !recemEntregue) return; // passou dos 10 s: sai do mapa
 
       let bgColor = recemEntregue ? "#16A34A" : jaDespachado ? "#2563EB" : prontoNaCozinha ? "#7C3AED" : "#EF4444";
       let labelText = getOrderDisplayNumber(order);
@@ -1204,6 +1235,18 @@ export default function RoteirizacaoModal({
         .bindPopup(popupDoPedido(order, jaDespachado, prontoNaCozinha));
 
       orderMarker.on("click", () => {
+        // ── PINO AZUL E VERDE SÃO INFORMATIVOS, NÃO SELECIONÁVEIS ────────
+        //
+        // Desde que o pedido despachado passou a ficar no mapa, o pino dele
+        // aceitava clique como qualquer outro e entrava na próxima rota. Dali
+        // em diante nada barrava: a rota gravava o motoboy novo por cima, o
+        // despacho marcava SAIU_ENTREGA de novo, e o entregador que estava com
+        // a comida na mão levava 404 ao tentar dar baixa — preso na porta do
+        // cliente, que é exatamente o que passamos a noite consertando.
+        //
+        // Com o recém-entregue era pior: o despacho reescrevia ENTREGUE para
+        // SAIU_ENTREGA e o pedido sumia do faturamento do dia.
+        if (jaDespachado || recemEntregue) return;
         toggleOrderSelection(order.id);
       });
 
@@ -1351,7 +1394,16 @@ export default function RoteirizacaoModal({
   // ficaria lá parado, dizendo que a entrega acabou de acontecer.
   useEffect(() => {
     if (!isOpen) return;
-    const temRecente = deliveryOrders.some((o: any) => o.__recemEntregue);
+    // A marca `__recemEntregue` é gravada no objeto do pedido e nunca é
+    // limpa: decidir por ela deixava o timer se reagendando para sempre, o
+    // mapa se redesenhando a cada 2,5 s (fechando popup e derrubando o hover
+    // na tela que fica aberta a noite toda) e o pino verde eternizado dizendo
+    // que uma entrega acabou de acontecer. Quem decide é o relógio.
+    const aindaNaJanela = (o: any) => {
+      const q = o?.deliveredAt || o?.updatedAt;
+      return q ? Date.now() - new Date(q).getTime() < 10_000 : false;
+    };
+    const temRecente = deliveryOrders.some((o: any) => o.__recemEntregue && aindaNaJanela(o));
     if (!temRecente) return;
     const t = setTimeout(() => setTiqueDoMapa((n) => n + 1), 2500);
     return () => clearTimeout(t);

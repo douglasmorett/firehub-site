@@ -63,22 +63,30 @@ export async function POST(req: NextRequest) {
           sendOrderNotification(orderId, "SAIU_ENTREGA").catch(() => {});
         }
 
+        // ── O STATUS LIDO AQUI TEM QUE SER O ANTERIOR ────────────────────
+        //
+        // Esta rota grava SAIU_ENTREGA antes de sincronizar com o parceiro. Se
+        // os pedidos forem lidos DEPOIS, `ord.status` já é "SAIU_ENTREGA" — e
+        // o 99Food deixa de receber o `ready`, porque a função entende que o
+        // pedido já passou por ele. Loja que despacha direto de ACEITO (o
+        // normal na correria) mandaria confirm + dispatch sem ready, e o 99
+        // recusa o despacho: o pedido fica "confirmado" para sempre lá. É a
+        // mesma reclamação que fomos consertar. O /store/routes/dispatch já lê
+        // antes; aqui não lia.
+        const pedidosAntesDoDespacho = await prisma.customerOrder.findMany({
+          where: { id: { in: orderIds } },
+          select: {
+            id: true, openDeliveryOrderId: true, ifoodOrderId: true, ifoodStoreMerchant: true,
+            status: true, franchiseeId: true,
+            openDeliveryChannel: true, source: true, deliveryBy: true,
+            motoboyId: true,
+            motoboy: { select: { id: true, name: true, phone: true } },
+          },
+        });
+
         // Sync com Jotajá e iFood (assíncrono, não bloqueia resposta)
         (async () => {
-          const orders = await prisma.customerOrder.findMany({
-            where: { id: { in: orderIds } },
-            select: {
-              id: true, openDeliveryOrderId: true, ifoodOrderId: true, ifoodStoreMerchant: true,
-              status: true, franchiseeId: true,
-              // O canal decide o parceiro: o id do 99Food mora no mesmo campo
-              // do JotaJá, e sem isto o dispatch ia sempre para o JotaJá.
-              openDeliveryChannel: true, source: true, deliveryBy: true,
-              // O 99Food quer saber QUEM está levando (courier_info do
-              // selfdelivery/dispatch), então o motoboy vem junto.
-              motoboyId: true,
-              motoboy: { select: { id: true, name: true, phone: true } },
-            },
-          });
+          const orders = pedidosAntesDoDespacho;
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
           for (const ord of orders) {
             if (ehPedido99Food(ord)) {

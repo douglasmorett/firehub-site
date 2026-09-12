@@ -75,6 +75,10 @@ export async function GET() {
       ["CustomerOrder", "acceptedAt"], ["CustomerOrder", "readyAt"],
       ["CustomerOrder", "dispatchedAt"], ["CustomerOrder", "deliveredAt"],
       ["CustomerOrder", "ifoodDropCodeAt"], ["CustomerOrder", "ifoodDropCodeRequired"],
+      // Escrita em toda baixa de entrega com código — e o PATCH do app do
+      // motoboy lê o pedido SEM select, então a coluna ausente derrubaria
+      // TODA consulta de CustomerOrder: painel, KDS e baixa juntos.
+      ["CustomerOrder", "ifoodDropCodeInfo"],
       ["CustomerOrder", "posOrderId"], ["CustomerOrder", "posTerminalId"],
       ["CustomerOrder", "posStatus"], ["CustomerOrder", "posDadosTransacao"],
       ["CustomerOrder", "posTentativas"], ["CustomerOrder", "tableSessionId"],

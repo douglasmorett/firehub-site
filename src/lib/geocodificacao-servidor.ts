@@ -80,8 +80,17 @@ async function garantirTabela() {
  * esta fila, derrubariam o limite para todas as outras.
  */
 let ultimaVez: Promise<unknown> = Promise.resolve();
+/** Quantas consultas estão esperando a vez — o teto evita que uma loja com
+ *  muitos endereços novos prenda a roteirização de todas as outras no mesmo
+ *  container. Estourado o teto, a consulta é recusada e o navegador daquela
+ *  loja resolve sozinho, como fazia antes. */
+let naFilaAgora = 0;
+const TETO_DA_FILA = 25;
+
 function naFila<T>(fn: () => Promise<T>): Promise<T> {
-  const proxima = ultimaVez.then(fn, fn);
+  if (naFilaAgora >= TETO_DA_FILA) return Promise.reject(new Error("fila de geocodificação cheia"));
+  naFilaAgora++;
+  const proxima = ultimaVez.then(fn, fn).finally(() => { naFilaAgora--; });
   ultimaVez = proxima.catch(() => undefined);
   return proxima;
 }
@@ -121,9 +130,24 @@ export async function geocodificarNoServidor(
   const estado = estadoPeloEndereco(loja.endereco);
   const geo = criarGeocodificador({ storeCity: cidade, estado, centroDaLoja: loja.centro });
   const saida: ResultadoGeocodificacao[] = [];
-  const paraGravar: { chave: string; lat: number; lng: number; origem: string; bairro: string }[] = [];
+
+  // ── ORÇAMENTO DE TEMPO ────────────────────────────────────────────────
+  //
+  // Cada endereço novo espera 1,1 s antes de CADA consulta e pode disparar até
+  // cinco (rua estruturada, rua em texto, Photon, centróide do bairro, bairro
+  // no Photon). Um lote grande passa fácil dos 60 s que a plataforma dá à rota
+  // — e morrer no limite não devolvia nada e não gravava nada, então a próxima
+  // tentativa recomeçava do zero e estourava de novo, para sempre.
+  //
+  // Com prazo, a rota devolve o que conseguiu e o navegador resolve o resto
+  // pelo caminho antigo. Quem ficou de fora entra no cache na próxima abertura.
+  const prazo = Date.now() + 25_000;
 
   for (let i = 0; i < pedidos.length; i++) {
+    if (Date.now() > prazo && !noCache.has(chaves[i])) {
+      console.warn(`[Geocodificação] prazo estourado: ${pedidos.length - i} endereço(s) ficaram para a próxima`);
+      break;
+    }
     const p = pedidos[i];
     const chave = chaves[i];
     const achado = noCache.get(chave);
@@ -139,31 +163,33 @@ export async function geocodificarNoServidor(
         geo.geocodificarItem({ idx: i, neighborhood, streetName, houseNumber, cleanedStreet, dictFallback }),
       );
       saida.push({ id: p.id, lat: coords.lat, lng: coords.lng, origem, doCache: false });
-      // Só entra no cache o que veio de fonte de verdade. "Caiu na loja" é
-      // ausência de resposta — guardar isso seria congelar o erro para sempre,
-      // inclusive para as outras lojas.
+      // Grava NA HORA, não no fim: o lote pode ser interrompido pelo prazo ou
+      // pela plataforma, e o endereço que já custou uma ida à rede não pode se
+      // perder — ele vale para todas as lojas, não só para esta.
+      //
+      // Só entra o que veio de fonte de verdade. "Caiu na loja" é ausência de
+      // resposta; guardar isso congelaria o erro para sempre.
       if (!/loja \(endereço não localizado\)/.test(origem)) {
-        paraGravar.push({ chave, lat: coords.lat, lng: coords.lng, origem, bairro: neighborhood });
+        await gravarNoCache({ chave, lat: coords.lat, lng: coords.lng, origem, bairro: neighborhood, cidade });
       }
     } catch (e: any) {
       console.warn(`[Geocodificação] ${p.endereco.slice(0, 60)}: ${e?.message}`);
     }
   }
 
-  if (paraGravar.length > 0) {
-    try {
-      for (const g of paraGravar) {
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO "GeocodeCache" ("chave","lat","lng","origem","bairro","cidade")
-           VALUES ($1,$2,$3,$4,$5,$6)
-           ON CONFLICT ("chave") DO UPDATE SET "lat"=EXCLUDED."lat","lng"=EXCLUDED."lng","origem"=EXCLUDED."origem","ultimoUso"=NOW()`,
-          g.chave, g.lat, g.lng, g.origem, g.bairro, cidade,
-        );
-      }
-    } catch (e: any) {
-      console.warn("[Geocodificação] gravação do cache falhou:", e?.message);
-    }
-  }
-
   return saida;
+}
+
+/** Uma linha do cache. Falhar aqui nunca derruba a geocodificação em si. */
+async function gravarNoCache(g: { chave: string; lat: number; lng: number; origem: string; bairro: string; cidade: string }) {
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "GeocodeCache" ("chave","lat","lng","origem","bairro","cidade")
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT ("chave") DO UPDATE SET "lat"=EXCLUDED."lat","lng"=EXCLUDED."lng","origem"=EXCLUDED."origem","ultimoUso"=NOW()`,
+      g.chave, g.lat, g.lng, g.origem, g.bairro, g.cidade,
+    );
+  } catch (e: any) {
+    console.warn("[Geocodificação] gravação do cache falhou:", e?.message);
+  }
 }

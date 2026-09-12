@@ -1300,6 +1300,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // O que o app dos entregadores faz na hora da entrega (User.appMotoboyConfig).
   const [appMotoboyCfg, setAppMotoboyCfg] = useState<AppMotoboyConfig>(() => lerAppMotoboyConfig(user?.appMotoboyConfig));
   const [salvandoAppMotoboy, setSalvandoAppMotoboy] = useState(false);
+  /** Último bipe de chegada, para não empilhar notas no mesmo instante. */
+  const ultimoBipeRef = useRef(0);
   const salvarAppMotoboy = async (novo: AppMotoboyConfig) => {
     setAppMotoboyCfg(novo); // a tela responde na hora
     setSalvandoAppMotoboy(true);
@@ -1884,10 +1886,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     // tela agora porque você mudou o filtro".
                     const idadeMin = (Date.now() - new Date(o.createdAt).getTime()) / 60000;
                     const chegouAgora = idadeMin >= 0 && idadeMin < 15;
-                    if (chegouAgora && !esperaAceite && !jaFinalizado && o.status !== "CRIANDO_IA") {
-                      const canal = nomeDoCanal(o);
-                      console.log(`[Pedido novo] 🛎️ ${canal} #${o.dailyOrderNumber ?? ""} — tocando chegada`);
-                      tocarChegadaDePedido();
+                    // Venda do balcão, do PDV e da mesa é digitada pelo próprio
+                    // atendente: ele não precisa ser avisado de um pedido que
+                    // acabou de lançar. O bipe é para o que chega de fora.
+                    const canalDoNovo = canalDoPedido(o);
+                    const digitadoAqui = canalDoNovo.chave === "PDV" || canalDoNovo.chave === "MESA" || canalDoNovo.chave === "TOTEM";
+                    // Tablet que dormiu 10 min volta com vários pedidos de uma
+                    // vez: sem este freio, todas as notas tocam no mesmo instante
+                    // e viram um estouro só.
+                    const podeTocar = Date.now() - ultimoBipeRef.current > 1500;
+                    if (chegouAgora && !digitadoAqui && !esperaAceite && !jaFinalizado && o.status !== "CRIANDO_IA") {
+                      const canal = canalDoNovo.nome;
+                      console.log(`[Pedido novo] 🛎️ ${canal} #${o.dailyOrderNumber ?? ""} — chegada`);
+                      if (podeTocar) {
+                        ultimoBipeRef.current = Date.now();
+                        tocarChegadaDePedido();
+                      }
                       avisarChegada(o, canal);
                     }
                   }

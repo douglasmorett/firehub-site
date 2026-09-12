@@ -90,7 +90,11 @@ export function chaveDoCanal(pedido: PedidoParaCanal | null | undefined): ChaveD
   if (pedido.openDeliveryOrderId) return "JOTAJA";
 
   if (src === "WHATSAPP_IA" || pedido.status === "CRIANDO_IA") return "WHATSAPP_IA";
-  if (src === "PDV") return "PDV";
+  // A venda no balcão grava source "PRESENCIAL" (api/store/orders/presencial) e
+  // o lançamento de mesa grava o mesmo. Sem estas duas linhas o pedido do caixa
+  // caía em DESCONHECIDO e o selo dizia "Outro canal" — e a comanda de um
+  // balcão pré-pago imprimia "Pago via Outro canal (NÃO COBRAR)".
+  if (src === "PDV" || src === "PRESENCIAL" || src === "BALCAO" || src === "MANUAL" || src === "CAIXA") return "PDV";
   if (src === "TOTEM") return "TOTEM";
   if (pedido.tableNumber != null && String(pedido.tableNumber) !== "") return "MESA";
   if (src === "SITE" || src === "" || src === "WEB" || src === "ONLINE") return "SITE";

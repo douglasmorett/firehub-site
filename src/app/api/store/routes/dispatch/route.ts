@@ -56,8 +56,19 @@ export async function POST(req: NextRequest) {
     });
 
     // 2. Atualiza todos os pedidos para SAIU_ENTREGA e vincula ao motoboy
+    // ── REDE DE SEGURANÇA NO BANCO ──────────────────────────────────────
+    //
+    // Sem o filtro de status, despachar uma rota reescrevia QUALQUER pedido
+    // ligado a ela — inclusive um que já foi entregue ou que já está na rua
+    // com outro entregador. O pedido voltava para a rota, trocava de motoboy,
+    // e quem estava com a comida na mão levava 404 ao dar baixa. A tela já
+    // impede selecionar esses pedidos; isto impede o resto.
+    const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
     await prisma.customerOrder.updateMany({
-      where: { routeId },
+      where: {
+        routeId,
+        status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS, "SAIU_ENTREGA"] },
+      },
       data: {
         status: "SAIU_ENTREGA",
         motoboyId: finalMotoboyId,

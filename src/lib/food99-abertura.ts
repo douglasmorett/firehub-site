@@ -298,7 +298,10 @@ export async function manterLojaOnline99(
         const aviso = `${caidas.length} de ${lojas.length} lojas do 99Food desta conta estão sem autorização: ${caidas.join(", ")} — os pedidos delas não entram`;
         resultado.erros.push(aviso);
         console.error(`[99Food online] ${nome}: ${aviso}`);
-        await avisarQueCaiu99(loja.id, `${nome} — ${caidas.join(", ")}`, loja.email);
+        // Chave própria: o aviso de UMA loja caída não pode consumir a trava
+        // do aviso de a conta INTEIRA cair, que é o grave — sem chave separada,
+        // a Salz caindo às 19h engolia o alerta das 21h em que nada mais entra.
+        await avisarQueCaiu99(`${loja.id}:parcial`, `${nome} — ${caidas.join(", ")}`, loja.email);
       }
     }
   } catch (e: any) {
