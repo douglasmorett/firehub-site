@@ -289,6 +289,17 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // este estado, GPS negado no celular era invisível — o motoboy achava que
   // estava sendo acompanhado e o mapa da roteirização ficava vazio.
   const [gpsStatus, setGpsStatus] = useState<"buscando" | "ativo" | "negado">("buscando");
+  /** Quando a última posição foi ACEITA pelo servidor. É o que prova rastreio vivo. */
+  const [ultimoGps, setUltimoGps] = useState<number | null>(null);
+  /** Relógio da tela: sem ele o aviso de "posição parada" nunca se atualiza. */
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAgora(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  /** A permissão está como "perguntar sempre"? Então o rastreio morre a cada volta. */
+  const [permissaoFraca, setPermissaoFraca] = useState(false);
+  const wakeLockRef = useRef<any>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -296,6 +307,36 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
 
     fetchMotoboyOrders();
     const interval = setInterval(fetchMotoboyOrders, 10000); // Polling 10s
+
+    // ── MANTER A TELA ACESA ENQUANTO O ENTREGADOR ESTÁ NO APP ───────────
+    //
+    // Relato do lojista (11/09/2026, "urgente"): "a localização dos caras
+    // para, mesmo que eles autorizem o tempo todo; eles abrem o Maps e para".
+    // O navegador do celular suspende o JavaScript da aba assim que a tela
+    // apaga ou o app sai da frente — e com ele morre o watchPosition. O Wake
+    // Lock segura a tela acesa enquanto o app está aberto, que é o único
+    // controle que uma página web tem sobre isso.
+    const pedirWakeLock = async () => {
+      try {
+        if ("wakeLock" in navigator && document.visibilityState === "visible") {
+          wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+        }
+      } catch { /* bateria baixa ou navegador sem suporte: segue sem */ }
+    };
+    pedirWakeLock();
+
+    // ── "PERMITIR DESTA VEZ" É O QUE FAZ ELE PERGUNTAR SEMPRE ────────────
+    //
+    // "toda vez que ele entra lá, pergunta" — é a permissão concedida como
+    // "permitir desta vez". O app não consegue mudar isso, mas consegue
+    // DIZER ao entregador, em vez de deixá-lo achar que está tudo certo.
+    try {
+      (navigator as any).permissions?.query({ name: "geolocation" }).then((p: any) => {
+        const avaliar = () => setPermissaoFraca(p.state !== "granted");
+        avaliar();
+        p.onchange = avaliar;
+      }).catch(() => {});
+    } catch {}
 
     // Real-Time HTML5 Geolocation Tracking for Motoboy
     let watchId: number | null = null;
@@ -312,7 +353,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ motoboyId: session.motoboyId, storeId: session.storeId, lat, lng })
-      }).then(() => setGpsStatus("ativo"))
+      }).then(() => { setGpsStatus("ativo"); setUltimoGps(Date.now()); })
         .catch(e => console.warn("Erro enviando GPS do motoboy:", e));
     };
 
@@ -342,12 +383,28 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       // Celular no bolso suspende o polling junto com o GPS: na volta, a
       // lista também pode estar velha — sincroniza os dois na hora.
       fetchMotoboyOrders();
+      // O Wake Lock é perdido toda vez que a aba sai da frente. Sem pedir de
+      // novo, ele vale só até o entregador abrir o Maps pela primeira vez.
+      pedirWakeLock();
       if ("geolocation" in navigator) {
         ultimoEnvio = 0;
         navigator.geolocation.getCurrentPosition(
           (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
           () => {},
           { enableHighAccuracy: true, timeout: 10000 }
+        );
+        // ── O WATCH MORRE E NÃO AVISA ────────────────────────────────────
+        //
+        // Suspensa a aba, o watchPosition volta mudo: o id continua válido, o
+        // callback nunca mais dispara, e o app segue mostrando "GPS ativo"
+        // enquanto a loja não recebe posição nenhuma. Recriar o watch a cada
+        // volta é barato e é o que mantém o rastreio vivo depois que o
+        // entregador usa o Maps — que é o caminho normal do trabalho dele.
+        if (watchId !== null) { try { navigator.geolocation.clearWatch(watchId); } catch {} }
+        watchId = navigator.geolocation.watchPosition(
+          (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+          (err) => { if (err.code === err.PERMISSION_DENIED) setGpsStatus("negado"); },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
         );
       }
     };
@@ -359,6 +416,8 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       if (watchId !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchId);
       }
+      try { wakeLockRef.current?.release?.(); } catch {}
+      wakeLockRef.current = null;
     };
   }, [session]);
 
@@ -791,6 +850,28 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             {gpsStatus === "negado" && (
               <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#FCA5A5", fontWeight: 700 }}>
                 ⚠️ Ative a localização do celular para a loja te ver no mapa.
+              </p>
+            )}
+
+            {/* ── "GPS ATIVO" MENTINDO É PIOR QUE GPS DESLIGADO ────────────
+                O rastreio morre quando o entregador abre o Maps e a aba é
+                suspensa — e o selo continuava verde. A loja olhava o mapa,
+                via o entregador parado no mesmo ponto há meia hora e achava
+                que ele estava enrolando. Aqui o app conta a verdade: há
+                quanto tempo a loja não recebe a sua posição. */}
+            {gpsStatus === "ativo" && ultimoGps !== null && agora - ultimoGps > 120000 && (
+              <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#FBBF24", fontWeight: 700 }}>
+                📍 A loja não recebe sua posição há {Math.floor((agora - ultimoGps) / 60000)} min.
+                Deixe este app aberto na tela para voltar a aparecer no mapa.
+              </p>
+            )}
+
+            {/* A permissão "só desta vez" reinicia o rastreio a cada volta ao
+                app — e é a que o celular oferece primeiro. */}
+            {permissaoFraca && gpsStatus !== "negado" && (
+              <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#FBBF24", fontWeight: 700 }}>
+                💡 Marque <b>Permitir sempre</b> na localização deste site. Com "só desta vez",
+                o rastreio para toda vez que você sai do app.
               </p>
             )}
           </div>
