@@ -208,7 +208,21 @@ export default function IntegracoesHubClient({
   const [newIfMerchantId, setNewIfMerchantId] = useState("");
   const [newIfWidgetId, setNewIfWidgetId] = useState("");
   const [ifAdding, setIfAdding] = useState(false);
-  const [userCodeData, setUserCodeData] = useState<{ userCode: string; verificationUrl?: string } | null>(null);
+  /**
+    * O código do iFood e QUANDO ele morre.
+    *
+    * O `expiresIn` sempre veio na resposta da API e era jogado fora: o código
+    * abria numa aba nova, o lojista se perdia no portal, voltava e o link não
+    * funcionava mais — sem nada na tela explicando por quê. Era o "o link
+    * parou de funcionar de novo, link do iFood" (Lucas Pimenta, 11/09/2026).
+    */
+  const [userCodeData, setUserCodeData] = useState<{ userCode: string; verificationUrl?: string; expiraEm?: number } | null>(null);
+  const [agoraCodigo, setAgoraCodigo] = useState(() => Date.now());
+  useEffect(() => {
+    if (!userCodeData?.expiraEm) return;
+    const t = setInterval(() => setAgoraCodigo(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [userCodeData?.expiraEm]);
   const [loadingUserCode, setLoadingUserCode] = useState(false);
   const [showAddIfoodForm, setShowAddIfoodForm] = useState(false);
   const [authCodeInput, setAuthCodeInput] = useState("");
@@ -742,7 +756,10 @@ export default function IntegracoesHubClient({
       const data = await res.json();
       if (res.ok && data.userCode) {
         const targetUrl = data.verificationUrl || `https://portal.ifood.com.br/apps/code?c=${data.userCode}`;
-        setUserCodeData({ userCode: data.userCode, verificationUrl: targetUrl });
+        // expiresIn vem em segundos (o iFood manda 600 = 10 min).
+        const segundos = Number(data.expiresIn) > 0 ? Number(data.expiresIn) : 600;
+        setUserCodeData({ userCode: data.userCode, verificationUrl: targetUrl, expiraEm: Date.now() + segundos * 1000 });
+        setAgoraCodigo(Date.now());
         try { navigator.clipboard.writeText(data.userCode); } catch {}
         showToast("📋 Código copiado! Redirecionando para o iFood...", "#10B981");
         window.open(targetUrl, "_blank");
@@ -1896,6 +1913,74 @@ export default function IntegracoesHubClient({
                         <><Zap size={18} /> 1. Conectar e Autorizar no Portal iFood &rarr;</>
                       )}
                     </button>
+
+                    {/* ── O CÓDIGO NA TELA, COM O RELÓGIO CORRENDO ────────
+                        Antes o código só existia dentro da aba que abria no
+                        portal do iFood: fechou a aba, perdeu. E ninguém sabia
+                        que ele vale 10 minutos. */}
+                    {userCodeData && (() => {
+                      const restaMs = (userCodeData.expiraEm || 0) - agoraCodigo;
+                      const venceu = restaMs <= 0;
+                      const mm = Math.max(0, Math.floor(restaMs / 60000));
+                      const ss = Math.max(0, Math.floor((restaMs % 60000) / 1000));
+                      return (
+                        <div style={{
+                          padding: "12px 14px", borderRadius: 12,
+                          background: venceu ? "#FEF2F2" : "#FFF7ED",
+                          border: `1.5px solid ${venceu ? "#FCA5A5" : "#FED7AA"}`,
+                        }}>
+                          <div style={{ fontSize: "0.78rem", fontWeight: 800, color: venceu ? "#B91C1C" : "#9A3412", marginBottom: 6 }}>
+                            {venceu ? "⏰ Este código expirou" : `⏱️ Código válido por mais ${mm}:${String(ss).padStart(2, "0")}`}
+                          </div>
+                          {!venceu && (
+                            <>
+                              <div style={{
+                                fontSize: "1.6rem", fontWeight: 900, letterSpacing: "0.18em",
+                                color: "#0F172A", textAlign: "center", padding: "6px 0", fontFamily: "monospace",
+                              }}>
+                                {userCodeData.userCode}
+                              </div>
+                              <div style={{ fontSize: "0.74rem", color: "#7C2D12", lineHeight: 1.5 }}>
+                                Digite este código em <b>portal.ifood.com.br/apps/code</b>. Ele já foi copiado
+                                e a página do iFood abriu numa aba nova.
+                              </div>
+                              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => { try { navigator.clipboard.writeText(userCodeData.userCode); showToast("📋 Código copiado", "#10B981"); } catch {} }}
+                                  style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1.5px solid #FDBA74", background: "#fff", color: "#9A3412", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                                >
+                                  📋 Copiar código
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => window.open(userCodeData.verificationUrl, "_blank")}
+                                  style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "#EA580C", color: "#fff", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                                >
+                                  Abrir o iFood ↗
+                                </button>
+                              </div>
+                            </>
+                          )}
+                          {venceu && (
+                            <>
+                              <div style={{ fontSize: "0.76rem", color: "#7F1D1D", lineHeight: 1.5, marginBottom: 8 }}>
+                                O iFood dá 10 minutos para digitar o código. Passou disso, ele deixa de valer —
+                                não é problema da sua internet nem do FireHub. Gere outro e autorize em seguida.
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleGenerateUserCode}
+                                disabled={loadingUserCode}
+                                style={{ width: "100%", padding: "10px", borderRadius: 10, border: "none", background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}
+                              >
+                                🔄 Gerar um código novo
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
