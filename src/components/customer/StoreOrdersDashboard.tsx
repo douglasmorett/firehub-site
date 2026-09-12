@@ -7,6 +7,7 @@ import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import { lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
+import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 
@@ -610,26 +611,18 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 mão, esperando ser chamado. O selo errado fazia a equipe tratar
                 como delivery quem estava a dois metros do caixa. Ciano por ser a
                 única faixa ainda livre entre os canais. */}
+            {/* Cor e texto vêm de lib/canal-do-pedido.ts, que é o ÚNICO lugar
+                que sabe de onde veio o pedido. Esta cadeia de ternários não
+                tinha caso para o 99Food e ele caía no verde "Online", igual ao
+                pedido do site — o dono viu isso em 11/09/2026 e é exatamente o
+                tipo de erro que a cadeia copiada em cada tela produz. O 99Food
+                agora é AMARELO, a cor da marca deles. */}
             <span style={{
               padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.02em",
-              background: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#F3E8FF" : order.source === "IFOOD" ? "#FEE2E2" : order.source === "BRENDI" ? "#EDE9FE" : order.source === "JOTAJA" ? "#DBEAFE" : order.source === "PDV" ? "#E0E7FF" : order.source === "TOTEM" ? "#CFFAFE" : "#DCFCE7",
-              color: order.status === "CRIANDO_IA" || order.source === "WHATSAPP_IA" ? "#7C3AED" : order.source === "IFOOD" ? "#DC2626" : order.source === "BRENDI" ? "#6D28D9" : order.source === "JOTAJA" ? "#1D4ED8" : order.source === "PDV" ? "#4338CA" : order.source === "TOTEM" ? "#0E7490" : "#15803D"
+              background: canalDoPedido(order).fundo,
+              color: canalDoPedido(order).texto,
             }}>
-              {order.status === "CRIANDO_IA"
-                ? "🤖 IA criando..."
-                : order.source === "WHATSAPP_IA"
-                ? "🤖 IA Whats"
-                : order.source === "IFOOD"
-                ? `iFood #${order.ifoodReference || ""}`
-                : order.source === "BRENDI"
-                ? `Brendi #${order.openDeliveryReference || ""}`
-                : order.source === "JOTAJA"
-                ? `Jotajá #${order.openDeliveryReference || ""}`
-                : order.source === "PDV"
-                ? "PDV"
-                : order.source === "TOTEM"
-                ? "🖥️ Totem"
-                : "Online"}
+              {rotuloDoCanal(order)}
             </span>
 
             {/* DE QUAL loja iFood veio, logo abaixo do selo.
@@ -1807,6 +1800,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       console.log("[AutoPrint] 🖨️ Disparando impressão automática para pedido novo:", o.id);
                       handlePrint(o, "cozinha");
                     }
+
+                    // ── O BIPE DE "CHEGOU PEDIDO", EM QUALQUER CANAL ────────
+                    //
+                    // Fica de fora só o que entra na coluna Novos: ali o alerta
+                    // de aceite assume e dois sons juntos viram barulho. O
+                    // rascunho da IA também não toca — ainda não é pedido. E
+                    // pedido que aparece já entregue (sincronização de
+                    // histórico) não chegou agora, só apareceu agora.
+                    const esperaAceite = o.status === "NOVO";
+                    const jaFinalizado = o.status === "ENTREGUE" || o.status === "FINALIZADO" || o.status === "ENCERRADO";
+                    if (!esperaAceite && !jaFinalizado && o.status !== "CRIANDO_IA") {
+                      const canal = nomeDoCanal(o);
+                      console.log(`[Pedido novo] 🛎️ ${canal} #${o.dailyOrderNumber ?? ""} — tocando chegada`);
+                      tocarChegadaDePedido();
+                      avisarChegada(o, canal);
+                    }
                   }
                 });
               }
@@ -2029,6 +2038,59 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       playChime(t);
       playChime(t + 0.7);
       playChime(t + 1.4);
+    } catch {}
+  }, []);
+
+  /**
+   * ── O PEDIDO DE INTEGRAÇÃO CHEGAVA MUDO ─────────────────────────────────
+   *
+   * O painel só tinha UM som: o alerta que repete a cada 4 s enquanto houver
+   * pedido esperando aceite na coluna Novos. Pedido de marketplace quase nunca
+   * passa por lá — o do 99Food entra ACEITO (o webhook confirma na hora, senão
+   * eles cancelam) e o do iFood com aceite automático também. Medido em
+   * 12/09/2026: os 8 pedidos do 99Food da noite entraram sem um único bipe, e a
+   * loja só descobria olhando a tela.
+   *
+   * Este som é outro: toca UMA vez, quando o pedido CHEGA, de qualquer canal.
+   * Três notas subindo, timbre diferente do alerta de aceite, para o ouvido
+   * separar "chegou mais um" de "tem gente esperando você aceitar".
+   */
+  const tocarChegadaDePedido = useCallback(async () => {
+    try {
+      let ctx = audioCtxRef.current;
+      if (!ctx) {
+        ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioCtxRef.current = ctx;
+      }
+      if (ctx.state === "suspended") await ctx.resume();
+      const nota = (freq: number, quando: number, dur = 0.18) => {
+        const osc = ctx!.createOscillator();
+        const g = ctx!.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, quando);
+        g.gain.setValueAtTime(0.0001, quando);
+        g.gain.exponentialRampToValueAtTime(0.35, quando + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, quando + dur);
+        osc.connect(g).connect(ctx!.destination);
+        osc.start(quando);
+        osc.stop(quando + dur + 0.02);
+      };
+      const t = ctx.currentTime;
+      nota(523.25, t);
+      nota(659.25, t + 0.16);
+      nota(783.99, t + 0.32, 0.3);
+    } catch { /* sem permissão de áudio: o cartão na tela continua lá */ }
+  }, []);
+
+  /** Avisa na barra do sistema, para a aba em segundo plano. */
+  const avisarChegada = useCallback((pedido: any, canal: string) => {
+    try {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      const n = new Notification(`🛎️ Pedido novo — ${canal}`, {
+        body: `${pedido.customerName || "Cliente"} · R$ ${Number(pedido.totalAmount || 0).toFixed(2)}`,
+        tag: `chegada-${pedido.id}`,
+      });
+      n.onclick = () => { window.focus(); n.close(); };
     } catch {}
   }, []);
 
@@ -3239,7 +3301,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     (order as any).isPrepaid === true
                   );
 
-                  const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJá" : order.source === "BRENDI" ? "Brendi" : "Online";
+                  // Mesma história do selo: sem caso para o 99Food, a comanda
+                  // saía "Pago via Online" num pedido pago no 99Food.
+                  const onlineSource = nomeDoCanal(order);
 
                   let baseMethod = translatePayment(payMethodRaw).replace(/\s*\([^)]*\)/gi, "").trim();
                   if (!baseMethod) baseMethod = "Cartão";
