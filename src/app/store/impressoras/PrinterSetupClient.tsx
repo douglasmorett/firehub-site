@@ -55,8 +55,10 @@ type PrinterEntry = {
   lojas?: string[];
 };
 
-/** Uma loja de origem que a impressora pode escolher receber. */
-export type LojaDeOrigem = { chave: string; nome: string; emoji: string; origem: string };
+/** Uma loja de origem que a impressora pode escolher receber.
+ *  O tipo mora em lib/loja-de-origem.ts, que o quadro de pedidos também usa. */
+export type { LojaDeOrigem } from "@/lib/loja-de-origem";
+import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 
 type AssistantStatus = "checking" | "disconnected" | "connected";
 type DetectedPrinter = { name: string; driver: string; port: string; status: string };
@@ -207,11 +209,6 @@ export default function PrinterSetupClient({
   }, []);
 
   useEffect(() => { tryConnect(); }, [tryConnect]);
-
-  /** O editor do modelo de comanda abre em tela cheia, não plantado na
-   *  página: esta tela tem 680 px de largura e o editor precisa de duas
-   *  colunas — a lista de blocos e o papel — lado a lado para ser útil. */
-  const [modeloAberto, setModeloAberto] = useState(false);
 
   const saveConfig = async () => {
     setSaving(true);
@@ -440,12 +437,14 @@ export default function PrinterSetupClient({
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={() => setModeloAberto(true)}
-              style={{ padding: "10px 20px", borderRadius: 12, background: "#fff", color: "#C62828", border: "1.5px solid #C62828", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit" }}
+            {/* Página, não modal: o editor precisa de duas colunas e num
+                diálogo o cabeçalho ficava cortado pela faixa do topo. */}
+            <a
+              href="/store/impressoras/comanda"
+              style={{ padding: "10px 20px", borderRadius: 12, background: "#fff", color: "#C62828", border: "1.5px solid #C62828", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", textDecoration: "none", display: "inline-block" }}
             >
               🧾 Personalizar impressão
-            </button>
+            </a>
             <button
               onClick={saveConfig}
               disabled={saving}
@@ -1118,68 +1117,6 @@ export default function PrinterSetupClient({
         ))}
       </div>
 
-      {/* ── PERSONALIZAR IMPRESSÃO ──────────────────────────────────────────
-          Em tela cheia de propósito. O editor precisa da lista de blocos e do
-          papel lado a lado para servir para alguma coisa, e esta página tem
-          680 px — plantado nela, as duas colunas se espremiam e o papel saía
-          menor que a bobina de verdade. */}
-      {modeloAberto && (
-        <div
-          onClick={() => setModeloAberto(false)}
-          style={{
-            position: "fixed", inset: 0, background: "rgba(15,23,42,0.7)", backdropFilter: "blur(3px)",
-            display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "24px 16px", zIndex: 9000, overflowY: "auto",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#fff", borderRadius: 18, width: "100%", maxWidth: 1120,
-              boxShadow: "0 30px 70px rgba(0,0,0,0.35)", overflow: "hidden",
-            }}
-          >
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-              padding: "16px 20px", borderBottom: "1.5px solid #E2E8F0", flexWrap: "wrap",
-            }}>
-              <div>
-                <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>🧾 Personalizar impressão</h2>
-                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "#64748B" }}>{storeName}</p>
-              </div>
-              <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-                <button
-                  onClick={async () => { await saveConfig(); setModeloAberto(false); }}
-                  disabled={saving}
-                  style={{ padding: "9px 20px", borderRadius: 11, background: saved ? "#16A34A" : "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", border: "none", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit" }}
-                >
-                  {saving ? "Salvando..." : saved ? "✅ Salvo!" : "Salvar e fechar"}
-                </button>
-                <button
-                  onClick={() => setModeloAberto(false)}
-                  title="Fechar sem salvar"
-                  style={{ width: 34, height: 34, borderRadius: "50%", border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: "1rem", cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            <div style={{ padding: "18px 20px 22px" }}>
-              <ComandaModeloEditor
-                modelo={config.comandaModelo}
-                nomeDaLoja={storeName || "Sua Loja"}
-                versaoInstalada={versaoInstalada || undefined}
-                versaoMinima="1.2.11"
-                colunasDaLoja={
-                  config.printers.find(p => p.name)?.columns
-                  ?? (config.printers.find(p => p.name)?.paperWidth === "58mm" ? 32 : 48)
-                }
-                onChange={(comandaModelo) => setConfig(c => ({ ...c, comandaModelo }))}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

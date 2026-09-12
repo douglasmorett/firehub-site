@@ -187,5 +187,34 @@ conferir("tem os itens", cozinha.includes("Esfirra Duo"));
 conferir("nao tem total", !cozinha.includes("Total:"));
 conferir("nao tem o cliente (bloco fora do modelo)", !cozinha.includes("Larissa Moreira"));
 
+console.log("\n10) Centro e centro mesmo, tambem em corpo ampliado");
+// O recuo tem que sair em colunas NORMAIS. Contado em colunas do proprio
+// tamanho, o ajuste anda de dois em dois e o texto encosta a esquerda — foi
+// o que o lojista viu na previa em 12/09/2026.
+for (const tamanho of [1, 1.5, 2, 3]) {
+  const saida = legivel(buildEscPos(
+    { ...PEDIDO, blocos: [{ tipo: "numeroPedido", ligado: true, tamanho, alinhamento: "centro" }, { tipo: "itens", ligado: true }] },
+    "Salz Burgueria", 48, "safe"));
+  const linha = saida.split("\n").find((l) => l.includes("(79)")) || "";
+  const texto = linha.trim();
+  const esquerda = linha.length - linha.trimStart().length;
+  const direita = 48 - esquerda - Math.round(texto.length * tamanho);
+  // Sobra impar nao divide igual: 1 coluna de diferenca e o maximo aceitavel.
+  conferir(`${tamanho}x centralizado (${esquerda} a esquerda, ${direita} a direita)`,
+    Math.abs(esquerda - direita) <= 1);
+}
+
+console.log("\n11) Esconder a taxa de entrega nao mexe no total");
+const comTaxa = legivel(buildEscPos({ ...PEDIDO, blocos: MODELO_PADRAO }, "Salz Burgueria", 48, "safe"));
+const semTaxa = legivel(buildEscPos(
+  { ...PEDIDO, blocos: MODELO_PADRAO.map(b => b.tipo === "totais" ? { ...b, ocultarTaxaEntrega: true } : b) },
+  "Salz Burgueria", 48, "safe"));
+conferir("com a opcao desligada a taxa sai", comTaxa.includes("Taxa de Entrega"));
+conferir("com a opcao ligada a taxa some", !semTaxa.includes("Taxa de Entrega"));
+conferir("o subtotal continua", semTaxa.includes("Subtotal:"));
+conferir("o desconto continua", semTaxa.includes("Desconto"));
+const totalDe = (t) => (t.split("\n").find((l) => l.includes("Total:")) || "").trim();
+conferir(`o TOTAL nao muda (${totalDe(semTaxa)})`, totalDe(comTaxa) === totalDe(semTaxa) && totalDe(semTaxa).includes("27,87"));
+
 console.log(falhas === 0 ? "\nTUDO OK\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

@@ -27,10 +27,10 @@ import {
   aceitaFormato,
   aceitaTitulo,
   lerModelo,
+  linhasDoPapel,
   modeloPadrao,
   montarComanda,
   pedidoDeExemplo,
-  previaEmTexto,
   tamanhoValido,
   type Alinhamento,
   type Bloco,
@@ -91,7 +91,7 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
   const lista = atual[via];
   const exemplo = useMemo(() => pedidoDeExemplo(nomeDaLoja), [nomeDaLoja]);
   const papel = useMemo(
-    () => previaEmTexto(montarComanda(lista, exemplo, { colunas, comValores: via === "completo" }), colunas),
+    () => linhasDoPapel(montarComanda(lista, exemplo, { colunas, comValores: via === "completo" }), colunas),
     [lista, exemplo, colunas, via],
   );
 
@@ -202,6 +202,25 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                       </div>
                     )}
 
+                    {/* A única opção que uma seção tem: a linha da taxa.
+                        Fica dentro do bloco dos valores porque é lá que ela
+                        sai — procurar isso numa aba de configuração separada
+                        seria adivinhação. */}
+                    {bloco.tipo === "totais" && (
+                      <label style={{ display: "flex", gap: 7, alignItems: "flex-start", marginTop: 8, cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!bloco.ocultarTaxaEntrega}
+                          onChange={(e) => mexerNoBloco(i, { ocultarTaxaEntrega: e.target.checked })}
+                          style={{ marginTop: 2, width: 15, height: 15, accentColor: VERMELHO, cursor: "pointer", flexShrink: 0 }}
+                        />
+                        <span style={{ fontSize: "0.78rem", color: "#334155", lineHeight: 1.4 }}>
+                          <b>Não imprimir a linha da taxa de entrega.</b>{" "}
+                          <span style={{ color: "#64748B" }}>O total continua o mesmo — some a linha, não o dinheiro.</span>
+                        </span>
+                      </label>
+                    )}
+
                     {bloco.tipo === "textoLivre" && (
                       <>
                         <textarea
@@ -307,15 +326,35 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
         <div style={{ position: "sticky", top: 16 }}>
           <div style={{ ...rotuloStyle, marginBottom: 6 }}>COMO VAI SAIR — {colunas} COLUNAS</div>
           <div style={{ overflowX: "auto", background: "#F1F5F9", borderRadius: 12, padding: 12 }}>
-            <pre style={{
+            {/* ── O PAPEL ────────────────────────────────────────────────
+                Desenhado linha a linha, e não como texto puro: texto puro não
+                sabe mostrar letra ampliada, e a prévia dizia que o número do
+                pedido em 2x tinha o tamanho do resto — o lojista pedia centro,
+                via o texto encostado à esquerda e não tinha como saber que era
+                a prévia mentindo, não a impressora.
+
+                O recuo sai em colunas NORMAIS e só o texto é ampliado, que é
+                exatamente o que o Assistente manda para a impressora. */}
+            <div style={{
               margin: 0, background: "#FFFDF8", color: "#1A1512", padding: "16px 10px 22px",
               fontFamily: "ui-monospace, 'Cascadia Mono', Consolas, monospace",
               fontSize: colunas > 44 ? "11.5px" : colunas > 36 ? "12.5px" : "14px",
               lineHeight: 1.42, whiteSpace: "pre", width: "max-content", minWidth: "100%",
               boxShadow: "0 2px 10px rgba(60,40,25,0.12)",
             }}>
-              {papel || "(nenhum bloco ligado)"}
-            </pre>
+              {papel.length === 0 && <div style={{ color: "#94A3B8" }}>(nenhum bloco ligado)</div>}
+              {papel.map((l, i) => (
+                <div key={i} style={{ lineHeight: l.tamanho > 1 ? 1.18 : 1.42, minHeight: "1em" }}>
+                  {l.recuo > 0 ? " ".repeat(l.recuo) : ""}
+                  <span style={{
+                    fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined,
+                    fontWeight: l.negrito ? 700 : 400,
+                  }}>
+                    {l.texto}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
           <p style={{ fontSize: "0.74rem", color: "#94A3B8", margin: "8px 2px 0", lineHeight: 1.5 }}>
             Pedido de exemplo. A ordem, a largura e o tamanho das letras são exatamente os do papel;

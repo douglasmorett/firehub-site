@@ -35,6 +35,15 @@
  * firehub-print-assistant/scripts/teste-modelo-comanda.js.
  */
 
+/**
+ * A versão do Assistente em que `order.blocos` passou a ser lido.
+ *
+ * Fixa de propósito: usar a versão ATUAL do instalador faria a tela avisar
+ * "seu Assistente não lê o modelo" para quem está numa versão que lê, toda
+ * vez que o instalador subisse por qualquer outro motivo.
+ */
+export const VERSAO_MINIMA_DO_MODELO = "1.2.11";
+
 export type Alinhamento = "esquerda" | "centro" | "direita";
 
 /**
@@ -119,6 +128,14 @@ export type Bloco = {
   /** Um degrau de TAMANHOS: 1, 1.5, 2 ou 3. Ausente = 1. */
   tamanho?: Tamanho;
   alinhamento?: Alinhamento;
+  /**
+   * Só no bloco `totais`: a linha "Taxa de Entrega" não sai no papel.
+   *
+   * O TOTAL não muda — ele vem de `totalAmount`, que já inclui a taxa. Some a
+   * linha, não o dinheiro. Existe porque há loja que não quer o cliente
+   * vendo quanto da conta é entrega.
+   */
+  ocultarTaxaEntrega?: boolean;
 };
 
 export type ModeloDeComanda = {
@@ -295,6 +312,7 @@ export function blocosParaOAssistente(lista: Bloco[]): Bloco[] {
       if (x.titulo != null) saida.titulo = x.titulo;
       if (x.texto) saida.texto = x.texto;
       if (x.negrito) saida.negrito = true;
+      if (x.ocultarTaxaEntrega) saida.ocultarTaxaEntrega = true;
       if (x.tamanho && x.tamanho !== 1) saida.tamanho = x.tamanho;
       if (x.alinhamento && x.alinhamento !== "esquerda") saida.alinhamento = x.alinhamento;
       return saida;
@@ -477,7 +495,9 @@ export function montarComanda(
         if (!comValores) break;
         if (pedido.subtotal != null) por(linhaComValor("Subtotal:", dinheiro(pedido.subtotal), colunas));
         if (pedido.desconto) por(linhaComValor("Desconto (Cupom - Loja):", `-${dinheiro(pedido.desconto)}`, colunas));
-        if (pedido.taxaEntrega != null) por(linhaComValor("Taxa de Entrega:", dinheiro(pedido.taxaEntrega), colunas));
+        if (pedido.taxaEntrega != null && !bloco.ocultarTaxaEntrega) {
+          por(linhaComValor("Taxa de Entrega:", dinheiro(pedido.taxaEntrega), colunas));
+        }
         por("_".repeat(colunas));
         por(linhaComValor("Total:", dinheiro(pedido.total), larguraDoTamanho(colunas, 2)), { negrito: true, tamanho: 2 });
         por("_".repeat(colunas));
@@ -548,32 +568,68 @@ function linhaComValor(esquerda: string, direita: string, colunas: number): stri
 }
 
 /**
- * A comanda como TEXTO, do jeito que sai no papel — é o que a tela de edição
- * mostra. Usa a mesma quebra de linha e o mesmo alinhamento do papel, então a
- * prévia não é aproximação de largura: é a largura.
+ * Uma linha já quebrada na largura certa, pronta para desenhar.
+ *
+ * `recuo` é medido em colunas NORMAIS, não nas colunas do tamanho da linha —
+ * e é isso que faz o texto ampliado ficar centralizado de verdade. Ver
+ * `linhasDoPapel`.
  */
-export function previaEmTexto(linhas: LinhaDaComanda[], colunas: number): string {
-  const out: string[] = [];
+export type LinhaRenderizada = {
+  recuo: number;
+  texto: string;
+  tamanho: Tamanho;
+  negrito?: boolean;
+  /** Linha de QR: quem desenha mostra o código, não o texto. */
+  qr?: string;
+};
+
+/**
+ * Quebra, alinha e devolve a comanda linha a linha.
+ *
+ * ── Por que o recuo é contado em colunas normais ───────────────────────────
+ *
+ * Uma letra em 2x ocupa o lugar de duas letras normais — inclusive o ESPAÇO.
+ * Centralizar contando os espaços no mesmo tamanho do texto só consegue mexer
+ * de dois em dois: "(79) DELIVERY #3523" tem 19 caracteres e cabem 24 em 2x,
+ * então sobram 5 e a conta dá 2 de um lado e 3 do outro — que no papel viram
+ * 4 e 6 colunas. O lojista pede centro e vê o texto encostado à esquerda, com
+ * razão (relatado em 12/09/2026).
+ *
+ * Emitindo o recuo em colunas NORMAIS e só então ampliando o texto, sobram 10
+ * colunas e dá 5 de cada lado: centro exato. A impressora aceita isso sem
+ * truque nenhum — os espaços saem antes do comando de tamanho.
+ */
+export function linhasDoPapel(linhas: LinhaDaComanda[], colunas: number): LinhaRenderizada[] {
+  const out: LinhaRenderizada[] = [];
   for (const l of linhas) {
-    if (l.qr) { out.push(centralizar("[ QR ]", colunas)); continue; }
-    const largura = larguraDoTamanho(colunas, l.tamanho);
-    const partes = quebrar(l.texto, largura);
-    if (partes.length === 0) { out.push(""); continue; }
+    if (l.qr) {
+      out.push({ recuo: Math.max(0, Math.floor((colunas - 6) / 2)), texto: "[ QR ]", tamanho: 1, qr: l.qr });
+      continue;
+    }
+    const n = tamanhoValido(l.tamanho);
+    const partes = quebrar(l.texto, larguraDoTamanho(colunas, n));
+    if (partes.length === 0) { out.push({ recuo: 0, texto: "", tamanho: 1 }); continue; }
     for (const p of partes) {
-      out.push(
-        l.alinhamento === "centro" ? centralizar(p, largura)
-          : l.alinhamento === "direita" ? p.padStart(largura)
-          : p,
-      );
+      const sobra = Math.max(0, colunas - p.length * n);
+      const recuo =
+        l.alinhamento === "centro" ? Math.floor(sobra / 2)
+          : l.alinhamento === "direita" ? sobra
+          : 0;
+      out.push({ recuo, texto: p, tamanho: n, negrito: l.negrito });
     }
   }
-  return out.join("\n");
+  return out;
 }
 
-function centralizar(texto: string, colunas: number): string {
-  const t = texto.slice(0, colunas);
-  const sobra = Math.max(0, colunas - t.length);
-  return " ".repeat(Math.floor(sobra / 2)) + t;
+/**
+ * A comanda como TEXTO puro. Serve para conferência em teste; a tela desenha
+ * a partir de `linhasDoPapel`, porque texto plano não sabe mostrar a letra
+ * ampliada — e foi justamente isso que fez a prévia parecer desalinhada.
+ */
+export function previaEmTexto(linhas: LinhaDaComanda[], colunas: number): string {
+  return linhasDoPapel(linhas, colunas)
+    .map((l) => " ".repeat(l.recuo) + l.texto)
+    .join("\n");
 }
 
 /** Quebra por palavra, igual ao Assistente: a linha nunca é cortada no meio. */

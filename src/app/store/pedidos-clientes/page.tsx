@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import StoreOrdersDashboard from "@/components/customer/StoreOrdersDashboard";
+import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
+import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,9 @@ export default async function FranchiseeCustomerOrdersPage() {
       city: true,
       role: true,
       ownerId: true,
+      // Quem manda no grupo de lojas: sem ele, lojasDeOrigemDaConta enxerga
+      // só a loja logada e o selo da marca some em conta com grupo.
+      accountGroupId: true,
       storeHours: true,
       storeDeliveryOnly: true,
       storeLogo: true,
@@ -49,6 +54,17 @@ export default async function FranchiseeCustomerOrdersPage() {
   if (!user) redirect("/login");
 
   const targetFranchiseeId = (user as any).ownerId || user.id;
+
+  // De qual MARCA é cada pedido — a mesma lista que a tela de Impressoras
+  // usa para escolher de quais lojas cada impressora recebe. Vem vazia
+  // quando a conta não tem o que separar, e aí o selo não aparece.
+  //
+  // `.catch` porque isto é enfeite do cartão: uma consulta a mais não pode
+  // derrubar a tela de pedidos, que é a tela onde a loja trabalha.
+  const lojasDeOrigem: LojaDeOrigem[] = await lojasDeOrigemDaConta(
+    targetFranchiseeId,
+    (user as any).accountGroupId || null,
+  ).catch(() => []);
 
   // === MULTI-LOJAS: Resolver IDs das lojas ativas ===
   const cookieStore = await cookies();
@@ -145,6 +161,10 @@ export default async function FranchiseeCustomerOrdersPage() {
     <StoreOrdersDashboard
       user={user}
       orders={orders}
+      // De qual MARCA é cada pedido. Sem isto o selo da loja só saía para o
+      // iFood (que grava o nome na linha do pedido) e o do 99Food vinha sem
+      // marca nenhuma. Vazio quando a conta não tem o que separar.
+      lojasDeOrigem={lojasDeOrigem}
       isFranqueado={user.role === "FRANCHISEE" || user.role === "STAFF"}
       initialCashSessionOpenedAt={activeCashSessionOpenedAt}
       initialMotoboys={motoboys}

@@ -26,6 +26,44 @@
  * (roteamento-de-impressao.ts) decidem com a MESMA função.
  */
 
+/**
+ * Uma loja de origem com NOME, para a tela mostrar e a impressora escolher.
+ *
+ * Quem monta a lista é lib/lojas-de-origem-da-conta.ts (servidor, com banco).
+ * O tipo mora aqui porque o quadro de pedidos é componente de cliente e
+ * importar de lá arrastaria o prisma para o navegador.
+ */
+export type LojaDeOrigem = {
+  /** A chave principal, que a impressora guarda. */
+  chave: string;
+  /** Todas as chaves que significam esta loja. Ausente = só `chave`. */
+  chaves?: string[];
+  nome: string;
+  emoji: string;
+  origem: string;
+};
+
+/**
+ * O nome da loja de onde veio o pedido, ou vazio.
+ *
+ * Vazio também quando a conta não tem o que separar (a lista vem vazia) — e
+ * isso é o certo: numa loja só, o nome seria a mesma palavra repetida em
+ * todo pedido da tela.
+ */
+export function nomeDaLojaDoPedido(
+  pedido: PedidoComOrigem | null | undefined,
+  lojas: LojaDeOrigem[] | null | undefined,
+): { nome: string; emoji: string } | null {
+  if (!pedido || !lojas || lojas.length === 0) return null;
+  const doPedido = chavesDeLojaDoPedido(pedido);
+  if (doPedido.length === 0) return null;
+  for (const loja of lojas) {
+    const dela = loja.chaves && loja.chaves.length ? loja.chaves : [loja.chave];
+    if (dela.some((k) => doPedido.includes(k))) return { nome: loja.nome, emoji: loja.emoji };
+  }
+  return null;
+}
+
 const texto = (v: unknown) => String(v ?? "").trim().toLowerCase();
 
 export const chaveIfood = (merchantId: string) => `ifood:${texto(merchantId)}`;

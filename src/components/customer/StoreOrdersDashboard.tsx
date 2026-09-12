@@ -8,6 +8,7 @@ import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import { lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido";
+import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 
@@ -484,6 +485,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   setOrders,
   /** Card cancelado fora da coluna Cancelado (coluna oculta): ganha a faixa vermelha. */
   destacarCancelado = false,
+  /** As lojas da conta, para dizer de qual marca é este pedido. */
+  lojasDeOrigem,
 }: any) {
   /**
    * Resumo que abre ao passar o mouse no número do pedido.
@@ -734,7 +737,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               coluna do quadro e o nome saía cortado ("Ragnar Burge") — e com
               `flexShrink: 0` não havia largura de tela que resolvesse, porque o
               bloco simplesmente não encolhia. */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 0, minWidth: 0, marginTop: "1px" }}>
+          {/* `flexShrink: 0` mantinha esta coluna do tamanho do conteúdo: um
+              nome de loja comprido ("Frangoso - Frango Frito no Box") esticava
+              a coluna e o texto saía pela borda do cartão, em qualquer tela.
+              Cedendo espaço (`flexShrink: 1`) com teto de 48%, o nome quebra
+              em duas linhas dentro do cartão — e o nome do cliente, ao lado,
+              mantém os 120 px mínimos dele. */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 1, minWidth: 0, maxWidth: "48%", marginTop: "1px" }}>
             {/* Brendi ganha roxo (violeta #EDE9FE/#6D28D9) — tom diferente do
                 lilás da IA (#F3E8FF/#7C3AED) de propósito: os dois convivem na
                 mesma tela e o atendente distingue o canal pela cor.
@@ -759,25 +768,36 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               {rotuloDoCanal(order)}
             </span>
 
-            {/* DE QUAL loja iFood veio, logo abaixo do selo.
+            {/* DE QUAL loja veio, logo abaixo do selo do canal.
                 Só aparece quando a conta tem mais de uma loja conectada — numa
                 loja só seria ruído repetido em todo pedido. Sem isto, três
                 marcas caem no mesmo painel indistinguíveis: o dono olhou um
                 pedido da Ragnar Pizza que tinha acabado de entrar e concluiu
-                que não tinha entrado. */}
-            {order.source === "IFOOD" && (order as any).ifoodStoreName && (
-              <span style={{
-                padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800,
-                background: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA",
-                // Nome de loja não pode sair cortado: se não couber numa linha,
-                // quebra em duas. Cortar é pior que ocupar mais altura — o
-                // atendente precisa saber em qual saco vai o pedido.
-                maxWidth: "100%", whiteSpace: "normal", wordBreak: "break-word",
-                textAlign: "right", lineHeight: 1.25,
-              }}>
-                🏪 {(order as any).ifoodStoreName}
-              </span>
-            )}
+                que não tinha entrado.
+
+                Saía SÓ para o iFood, porque só ele grava `ifoodStoreName` na
+                linha do pedido. O 99Food guarda o nome noutro lugar
+                (Food99Store.label) e por isso o pedido dele chegava sem marca
+                nenhuma. Agora quem responde é lib/loja-de-origem.ts, pela
+                CHAVE da loja — e vale para qualquer integração. */}
+            {(() => {
+              const daLoja = nomeDaLojaDoPedido(order, lojasDeOrigem as LojaDeOrigem[] | undefined)
+                ?? ((order as any).ifoodStoreName ? { nome: (order as any).ifoodStoreName, emoji: "🏪" } : null);
+              if (!daLoja) return null;
+              return (
+                <span title={daLoja.nome} style={{
+                  padding: "2px 7px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800,
+                  background: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA",
+                  // Nome de loja não pode sair cortado: se não couber numa linha,
+                  // quebra em duas. Cortar é pior que ocupar mais altura — o
+                  // atendente precisa saber em qual saco vai o pedido.
+                  maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere",
+                  textAlign: "right", lineHeight: 1.25,
+                }}>
+                  {daLoja.emoji} {daLoja.nome}
+                </span>
+              );
+            })()}
           </div>
         </div>
 
@@ -1272,7 +1292,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   );
 });
 
-export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string }) {
+export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId, lojasDeOrigem = [] }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string; lojasDeOrigem?: LojaDeOrigem[] }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -4965,6 +4985,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             >
               {aguardandoPagamento.map(o => (
                 <DashboardOrderCard
+                  lojasDeOrigem={lojasDeOrigem}
                   key={o.id}
                   order={o}
                   expanded={expandedId === o.id}
@@ -5033,6 +5054,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           >
             {novos.map(o => (
               <DashboardOrderCard
+                  lojasDeOrigem={lojasDeOrigem}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
@@ -5072,6 +5094,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ) : undefined}>
             {preparo.map(o => (
               <DashboardOrderCard
+                  lojasDeOrigem={lojasDeOrigem}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
@@ -5107,6 +5130,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             onDragOver={(e: any) => handleDragOver(e, "col-prontos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-prontos")}>
             {prontos.map(o => (
               <DashboardOrderCard
+                  lojasDeOrigem={lojasDeOrigem}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
@@ -5139,6 +5163,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             onDragOver={(e: any) => handleDragOver(e, "col-transporte")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-transporte")}>
             {transporte.map(o => (
               <DashboardOrderCard
+                  lojasDeOrigem={lojasDeOrigem}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
@@ -5170,6 +5195,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             onDragOver={(e: any) => handleDragOver(e, "col-finalizado")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-finalizado")}>
             {finalizados.map(o => (
               <DashboardOrderCard
+                  lojasDeOrigem={lojasDeOrigem}
                 key={o.id}
                 order={o}
                 destacarCancelado={!colCancelados}
@@ -5205,6 +5231,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             onDragOver={(e: any) => handleDragOver(e, "col-cancelados")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-cancelados")}>
             {cancelados.map(o => (
               <DashboardOrderCard
+                  lojasDeOrigem={lojasDeOrigem}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}

@@ -886,18 +886,31 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     // FISICA da impressora enquanto o resto do cupom e montado sobre
     // `columns`. Misturar as duas referencias ja desalinhou cabecalho e corpo
     // no mesmo papel.
+    // O RECUO SAI EM COLUNAS NORMAIS, O TEXTO EM CORPO AMPLIADO
+    //
+    // Letra em 2x ocupa o lugar de duas letras normais — inclusive o ESPACO.
+    // Centralizando com os espacos no mesmo tamanho do texto, o ajuste so anda
+    // de dois em dois: "(79) DELIVERY #3523" tem 19 caracteres, cabem 24 em
+    // 2x, sobram 5 e a conta da 2 de um lado e 3 do outro — que no papel viram
+    // 4 e 6 colunas. O lojista pede centro e ve o texto encostado a esquerda,
+    // com razao (relatado em 12/09/2026).
+    //
+    // Emitindo os espacos ANTES do comando de tamanho, sobram 10 colunas e da
+    // 5 de cada lado: centro exato. Mesma conta de lib/comanda-modelo.ts.
     const linha = (texto, f) => {
-      const w = larguraDe(f.tamanho);
-      const partes = wrap(texto, w);
+      const n = Math.min(3, Math.max(1, Number(f.tamanho) || 1));
+      const partes = wrap(texto, larguraDe(f.tamanho));
       if (!partes.length) return LF;
-      let s = formatoDe(f.tamanho) + (f.negrito ? BOLD_ON : "");
+      let s = "";
       for (const p of partes) {
-        const sobra = Math.max(0, w - p.length);
-        s += (f.alinhamento === "centro" ? " ".repeat(Math.floor(sobra / 2)) + p
-            : f.alinhamento === "direita" ? " ".repeat(sobra) + p
-            : p) + LF;
+        const sobra = Math.max(0, columns - Math.round(p.length * n));
+        const recuo = f.alinhamento === "centro" ? Math.floor(sobra / 2)
+                    : f.alinhamento === "direita" ? sobra
+                    : 0;
+        s += " ".repeat(recuo) + formatoDe(f.tamanho) + (f.negrito ? BOLD_ON : "")
+           + p + (f.negrito ? BOLD_OFF : "") + RESET + LF;
       }
-      return s + (f.negrito ? BOLD_OFF : "") + RESET;
+      return s;
     };
 
     // Secao sem conteudo nao ganha titulo: pedido de retirada nao tem endereco,
@@ -968,7 +981,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           out += comTitulo(fatia("itens", "fimItens"), ehConta ? "CONTA DA MESA" : "RESUMO DO PEDIDO", bl);
           break;
         case "totais":
-          out += RESET + fatia("totais", "fimTotais");
+          // Em tres pedacos para dar conta de omitir SO a linha da taxa.
+          out += RESET + fatia("totais", "taxaEntrega");
+          if (!bl.ocultarTaxaEntrega) out += fatia("taxaEntrega", "fimTaxaEntrega");
+          out += fatia("fimTaxaEntrega", "fimTotais");
           break;
         case "pagamento":
           out += RESET + fatia("pagamento", "fimPagamento");
@@ -1358,7 +1374,12 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
   const dFee = typeof order.deliveryFee === "number" ? order.deliveryFee : 0;
   const dFeeLabel = order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:";
+  // A loja pode pedir para esta LINHA nao sair (modelo da comanda, bloco
+  // "Valores e total"). O TOTAL nao muda: ele vem de order.totalAmount, que ja
+  // inclui a taxa — some a linha, nao o dinheiro.
+  marcas.taxaEntrega = res.length;
   if (!ehConta) res += rightAlign(dFeeLabel, "R$ " + Number(dFee).toFixed(2).replace(".", ","));
+  marcas.fimTaxaEntrega = res.length;
 
   // TOTAL BOX — destaque limpo
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");
