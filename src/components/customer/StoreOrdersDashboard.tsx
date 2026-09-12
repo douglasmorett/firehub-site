@@ -450,6 +450,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   /** Card cancelado fora da coluna Cancelado (coluna oculta): ganha a faixa vermelha. */
   destacarCancelado = false,
 }: any) {
+  /** Resumo que abre ao passar o mouse no número do pedido. */
+  const [mostrarResumo, setMostrarResumo] = useState(false);
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.NOVO;
   const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
   const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
@@ -582,18 +584,80 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               <GripVertical size={14} />
             </div>
           )}
-          <div style={{
-            fontWeight: 800,
-            fontSize: (order.customerName || "").length > 25 ? "0.80rem" : (order.customerName || "").length > 15 ? "0.86rem" : "0.95rem",
-            color: "#0F172A",
-            flex: 1,
-            minWidth: "120px",
-            wordBreak: "keep-all",
-            overflowWrap: "normal",
-            lineHeight: "1.25",
-            letterSpacing: "-0.2px"
-          }}>
+          {/* ── O PEDIDO INTEIRO SEM ABRIR O PEDIDO ────────────────────────
+              Pedido do lojista (11/09/2026): "no outro aplicativo, quando você
+              deixa o mouse em cima do número, já aparece tudo — nome do
+              cliente, itens, e até o horário que tem para entregar". No painel
+              era preciso abrir o cartão para ver os itens, e o horário-limite
+              não aparecia em lugar nenhum: só o cronômetro contando.
+
+              Passa o mouse no número e sai o resumo. Some ao tirar o mouse, e
+              não atrapalha o toque no celular (só o mouse dispara). */}
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: (order.customerName || "").length > 25 ? "0.80rem" : (order.customerName || "").length > 15 ? "0.86rem" : "0.95rem",
+              color: "#0F172A",
+              flex: 1,
+              minWidth: "120px",
+              wordBreak: "keep-all",
+              overflowWrap: "normal",
+              lineHeight: "1.25",
+              letterSpacing: "-0.2px",
+              position: "relative",
+              cursor: "help",
+            }}
+            onMouseEnter={() => setMostrarResumo(true)}
+            onMouseLeave={() => setMostrarResumo(false)}
+          >
             #{seqNum} — {order.customerName}
+            {mostrarResumo && (
+              <div
+                onMouseEnter={(e) => e.stopPropagation()}
+                style={{
+                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 9999,
+                  width: 310, maxWidth: "88vw", background: "#0F172A", color: "#F8FAFC",
+                  borderRadius: 10, padding: "10px 12px", boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+                  fontSize: "0.76rem", fontWeight: 500, lineHeight: 1.45, letterSpacing: 0,
+                  whiteSpace: "normal", pointerEvents: "none",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontWeight: 800, color: canalDoPedido(order).texto === "#15803D" ? "#86EFAC" : "#FDE68A" }}>
+                    {rotuloDoCanal(order)}
+                  </span>
+                  <span style={{ fontWeight: 800 }}>R$ {Number(order.totalAmount || 0).toFixed(2)}</span>
+                </div>
+                {order.customerPhone && <div>📞 {order.customerPhone}</div>}
+                {(order.customerAddress || order.address) && (
+                  <div style={{ color: "#CBD5E1", marginTop: 2 }}>📍 {String(order.customerAddress || order.address).slice(0, 120)}</div>
+                )}
+                {/* O horário que a comida TEM que estar na porta do cliente — a
+                    informação que o lojista pediu e que não existia na tela. */}
+                {deadline && (
+                  <div style={{ marginTop: 4, fontWeight: 700, color: remainingMs !== null && remainingMs < 0 ? "#FCA5A5" : "#FDE68A" }}>
+                    ⏰ Entregar até {deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    {remainingMs !== null && (remainingMs < 0
+                      ? ` · atrasado ${Math.floor(Math.abs(remainingMs) / 60000)} min`
+                      : ` · faltam ${Math.floor(remainingMs / 60000)} min`)}
+                  </div>
+                )}
+                {order.paymentMethod && <div style={{ marginTop: 2, color: "#CBD5E1" }}>💳 {order.paymentMethod}</div>}
+                {Array.isArray(order.items) && order.items.length > 0 && (
+                  <div style={{ marginTop: 6, borderTop: "1px solid #334155", paddingTop: 5 }}>
+                    {order.items.slice(0, 7).map((it: any, i: number) => (
+                      <div key={i} style={{ color: "#E2E8F0" }}>
+                        {it.quantity ?? 1}× {nomeDoItem(it)}
+                      </div>
+                    ))}
+                    {order.items.length > 7 && (
+                      <div style={{ color: "#94A3B8" }}>+ {order.items.length - 7} item(ns)</div>
+                    )}
+                  </div>
+                )}
+                {order.notes && <div style={{ marginTop: 5, color: "#FDE68A" }}>📝 {String(order.notes).slice(0, 140)}</div>}
+              </div>
+            )}
           </div>
           {/* Coluna, não linha: o selo do canal em cima e o da loja iFood
               embaixo. Lado a lado, os dois juntos não cabiam na largura da
