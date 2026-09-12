@@ -67,6 +67,53 @@ export const getOrderDisplayNumber = (order: any): string => {
   return String(order.id || "").slice(-4).toUpperCase();
 };
 
+/**
+ * O que aparece ao clicar no pino do mapa.
+ *
+ * O lojista mostrou o que o outro sistema entrega aqui: número, cliente, taxa
+ * de entrega, taxa do entregador, endereço com complemento, prazo, forma de
+ * pagamento e — nos pedidos do 99Food — o localizador e o código de retirada.
+ * O nosso mostrava três linhas e nenhum horário. Quem está montando rota às
+ * 22h decide por estes dados; abrir o pedido no painel para ver o prazo é o
+ * que fazia a rota sair errada.
+ */
+export const popupDoPedido = (order: any, jaDespachado: boolean, pronto: boolean): string => {
+  const esc = (t: unknown) =>
+    String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+  const num = getOrderDisplayNumber(order);
+  const pag = getOrderPaymentInfo(order);
+  const endereco = order.customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`.trim();
+  const prazo = order.prazoEntrega || order.scheduledDatetime || null;
+  const criado = order.createdAt ? new Date(order.createdAt) : null;
+  const entregarAte = prazo
+    ? new Date(prazo)
+    : criado
+    ? new Date(criado.getTime() + 45 * 60000)
+    : null;
+  const taxa = Number(order.deliveryFee || 0);
+  const taxaMotoboy = Number(order.motoboyFee || 0);
+  const estado = jaDespachado ? "🛵 saiu para entrega" : pronto ? "✅ pronto" : "👨‍🍳 na cozinha";
+  const linhas: string[] = [
+    `<b style="color:#0F172A;font-size:0.95rem;">Pedido #${esc(num)}</b> <span style="color:#64748B;">${estado}</span>`,
+    `👤 ${esc(order.customerName || "Cliente")}`,
+    order.customerPhone ? `📞 ${esc(order.customerPhone)}` : "",
+    endereco ? `<span style="color:#334155;">📍 ${esc(endereco)}</span>` : "",
+    entregarAte
+      ? `<b style="color:#B45309;">⏰ Entregar até ${entregarAte.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>`
+      : "",
+    `💰 R$ ${Number(order.totalAmount || 0).toFixed(2)}${taxa > 0 ? ` · entrega R$ ${taxa.toFixed(2)}` : ""}${taxaMotoboy > 0 ? ` · entregador R$ ${taxaMotoboy.toFixed(2)}` : ""}`,
+    pag.methodRaw ? `💳 ${esc(pag.methodRaw)}${pag.changeNeeded > 0 ? ` — troco R$ ${pag.changeNeeded.toFixed(2)}` : ""}` : "",
+    // O que o entregador precisa na porta do cliente, sem sair do mapa.
+    (order as any).openDeliveryReference && /99/i.test(String(order.source || order.openDeliveryChannel || ""))
+      ? `🔑 Localizador ${esc((order as any).food99Locator || (order as any).openDeliveryReference)}`
+      : "",
+    (order as any).ifoodPickupCode ? `🔑 Código de retirada ${esc((order as any).ifoodPickupCode)}` : "",
+    order.notes ? `<span style="color:#92400E;">📝 ${esc(String(order.notes).slice(0, 160))}</span>` : "",
+    (order as any).motoboy?.name ? `🛵 ${esc((order as any).motoboy.name)}` : "",
+  ].filter(Boolean);
+  return `<div style="font-family: sans-serif; font-size: 0.82rem; padding: 2px; line-height:1.5; max-width: 280px;">${linhas.join("<br/>")}</div>`;
+};
+
 export const getOrderPaymentInfo = (order: any) => {
   if (!order) return { isCash: false, isCardOnDelivery: false, changeNeeded: 0, methodRaw: "" };
 
@@ -445,7 +492,19 @@ export default function RoteirizacaoModal({
         Boolean(o.motoboyId) ||
         Boolean(o.dispatchedAt);
 
-      if (isAlreadyDispatched) return false;
+      // ── O PEDIDO DESPACHADO NÃO SOME MAIS DO MAPA ───────────────────
+      //
+      // Ele era removido aqui, e com isso a loja perdia de vista tudo que já
+      // estava na rua: "o seu tá sumindo, a gente fica bem perdido no mapa,
+      // não sabe onde o motoboy tá indo… o cara tá no Laranjal, eu não vi em
+      // que lugar do Laranjal que era" (Lucas Pimenta, 11/09/2026).
+      //
+      // Agora ele fica, marcado como despachado: some da LISTA de quem falta
+      // roteirizar (filteredPendingOrders continua ignorando), mas o pino
+      // permanece, em azul, para a loja saber para onde o motoboy foi.
+      if (isAlreadyDispatched) {
+        (o as any).__jaDespachado = true;
+      }
 
       const deliveryTypeUpper = String(o.deliveryType || o.orderType || o.type || "").toUpperCase().trim();
       const isPickupType =
@@ -519,6 +578,8 @@ export default function RoteirizacaoModal({
   // Filtered Orders based on search term (ordenado do MENOR para o MAIOR número de pedido #137 -> #156)
   const filteredPendingOrders = useMemo(() => {
     const list = deliveryOrders.filter((o) => {
+      // Quem já saiu não entra na lista de "para roteirizar" — só no mapa.
+      if ((o as any).__jaDespachado) return false;
       const isInRoute = createdRoutes.some((r) => r.orders.some((ro) => ro.id === o.id));
       if (isInRoute) return false;
 
@@ -1032,11 +1093,23 @@ export default function RoteirizacaoModal({
 
       const assignedRoute = createdRoutes.find(r => r.orders.some(ro => ro.id === order.id));
       
-      let bgColor = "#EF4444"; // Default red pin badge like Saipos
+      // ── A COR DIZ EM QUE PÉ ESTÁ O PEDIDO ───────────────────────────
+      //
+      // Vermelho está na cozinha, roxo já ficou pronto, azul saiu com o
+      // motoboy. É a leitura que o lojista pediu, e é a mesma convenção que
+      // ele já usa no outro sistema — trocar as cores só o obrigaria a
+      // aprender duas.
+      const statusPino = String(order.status || "").toUpperCase().trim();
+      const prontoNaCozinha =
+        statusPino === "PRONTO" || statusPino === "PRONTO_ENTREGA" || statusPino === "PREPARADO" ||
+        (order as any).kdsStage === "READY" || (order as any).kdsStage === "FINISHED";
+      const jaDespachado = Boolean((order as any).__jaDespachado);
+
+      let bgColor = jaDespachado ? "#2563EB" : prontoNaCozinha ? "#7C3AED" : "#EF4444";
       let labelText = getOrderDisplayNumber(order);
       let borderColor = "#ffffff";
       let scaleCss = "scale(1)";
-      let zIdx = 100;
+      let zIdx = jaDespachado ? 80 : 100;
       let shadowCss = "0 4px 10px rgba(0,0,0,0.3)";
 
       if (isHovered) {
@@ -1112,13 +1185,7 @@ export default function RoteirizacaoModal({
 
       const orderMarker = L.marker([coords.lat, coords.lng], { icon: orderIcon, zIndexOffset: zIdx })
         .addTo(map)
-        .bindPopup(`
-          <div style="font-family: sans-serif; font-size: 0.85rem; padding: 4px;">
-            <b style="color:#0F172A;">Pedido #${getOrderDisplayNumber(order)}</b><br/>
-            <span>👤 ${order.customerName || "Cliente"}</span><br/>
-            <span style="color:#64748B;">📍 ${order.address || `${order.street || ""}, ${order.neighborhood || ""}`}</span>
-          </div>
-        `);
+        .bindPopup(popupDoPedido(order, jaDespachado, prontoNaCozinha));
 
       orderMarker.on("click", () => {
         toggleOrderSelection(order.id);
@@ -1147,8 +1214,22 @@ export default function RoteirizacaoModal({
       // Agora a posição velha continua no mapa, apagada e sem cor de alerta,
       // com o horário em destaque. Some só quando nunca houve posição.
       const recente = minAtras !== null && minAtras <= 30;
-      const corCapacete = recente ? "#DC2626" : "#94A3B8";
-      const corNome = recente ? "#1D4ED8" : "#64748B";
+
+      // ── COM ENTREGA OU VOLTANDO PARA A LOJA ────────────────────────────
+      //
+      // O lojista lê o mapa por cor: "o motoboy vermelho está em entrega;
+      // quando não está, você sabe que ele está voltando para a loja". Todos
+      // os capacetes eram vermelhos, então a informação não existia — dava
+      // para ver ONDE cada um estava, nunca QUEM estava livre para a próxima
+      // rota. Verde é quem pode receber pedido agora.
+      const entregasNaRua = orders.filter((o: any) => {
+        if (String(o.motoboyId || "") !== String(mb.id)) return false;
+        const s = String(o.status || "").toUpperCase().trim();
+        return s !== "ENTREGUE" && s !== "ENCERRADO" && !s.includes("CANCEL");
+      }).length;
+      const emEntrega = entregasNaRua > 0;
+      const corCapacete = !recente ? "#94A3B8" : emEntrega ? "#DC2626" : "#16A34A";
+      const corNome = !recente ? "#64748B" : emEntrega ? "#B91C1C" : "#15803D";
 
       // Nome ABAIXO do capacete: em cima ele brigava com o pino de entrega
       // que costuma ficar logo acima, e o dono pediu embaixo.
@@ -1170,7 +1251,7 @@ export default function RoteirizacaoModal({
             box-shadow: 0 2px 6px rgba(0,0,0,0.3); text-transform: uppercase; white-space: nowrap;
             margin-top: 2px;
           ">
-            ${mb.name}
+            ${mb.name}${emEntrega ? ` · ${entregasNaRua}` : ""}
           </div>
         </div>
       `;
@@ -1192,7 +1273,7 @@ export default function RoteirizacaoModal({
         : null;
       const mbMarker = L.marker([mbLat, mbLng], { icon: mbIcon, zIndexOffset: 950 })
         .addTo(map)
-        .bindPopup(`<b>🛵 Entregador ${mb.name}</b><br/>📍 ${
+        .bindPopup(`<b>🛵 Entregador ${mb.name}</b> <span style="color:${emEntrega ? "#B91C1C" : "#15803D"};font-weight:700;">${emEntrega ? `${entregasNaRua} entrega(s) na rua` : "livre"}</span><br/>📍 ${
           minAtras === null ? "Localização GPS"
             : minAtras <= 1 ? "Atualizado agora"
             : recente ? `Atualizado há ${minAtras} min`
