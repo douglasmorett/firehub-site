@@ -28,24 +28,61 @@ export type Alinhamento = "esquerda" | "centro" | "direita";
 /**
  * De quantas letras normais cada letra desta linha ocupa o lugar.
  *
- * Não é um tamanho em pontos: a impressora térmica não tem fontes, ela
- * multiplica a mesma matriz de pontos. 2 é o dobro de altura E de largura,
- * 4 é o quádruplo. Por isso o número de letras que cabe na linha é a largura
- * da bobina DIVIDIDA por este número — em 80 mm, um bloco em 4x cabe 12
- * caracteres por linha, não 48.
+ * ── Por que a escada é 1 / 1,5 / 2 / 3 e não um número qualquer ──────────
  *
- * O limite é 4 de propósito. O comando ESC/POS aceita até 8, mas a partir de
- * 5 o texto vira tarja em bobina de 58 mm e nenhuma informação útil de
- * comanda cabe em 6 caracteres por linha.
+ * A impressora térmica não tem fonte com tamanho em pontos: ela repete a
+ * mesma matriz de pontos N vezes, e N é NÚMERO INTEIRO. Só com isso, o
+ * degrau depois do normal já é o dobro — que é grande demais para título de
+ * seção e come bobina à toa.
+ *
+ * A saída é que a impressora tem DUAS fontes embutidas: a Fonte A, de 12
+ * pontos de largura (48 colunas em 80 mm), e a Fonte B, de 9 (64 colunas).
+ * Combinando fonte e multiplicador dá para chegar em degraus intermediários
+ * de verdade, não arredondados:
+ *
+ *   1,0x = Fonte A sem multiplicar ...... 48 colunas em 80 mm
+ *   1,5x = Fonte B multiplicada por 2 ... 32 colunas  (64 / 2 = 32 = 48/1,5)
+ *   2,0x = Fonte A multiplicada por 2 ... 24 colunas
+ *   3,0x = Fonte A multiplicada por 3 ... 16 colunas
+ *
+ * 2,5x NÃO existe nesta escada e não adianta pedir: a única combinação
+ * entre 2 e 3 é Fonte B x3, que dá 2,25x — perto demais de 2 para valer um
+ * degrau a mais na tela. Fica 1,5 / 2 / 3, que é o que o lojista consegue
+ * distinguir no papel.
+ *
+ * Se a impressora ignorar a troca de fonte (acontece em modelo muito antigo,
+ * o mesmo que pede o perfil "legacy"), o 1,5x sai como 2x: maior do que foi
+ * pedido, nunca ilegível.
  */
-export type Tamanho = 1 | 2 | 3 | 4;
+export type Tamanho = 1 | 1.5 | 2 | 3;
 
-export const TAMANHOS: Tamanho[] = [1, 2, 3, 4];
+export const TAMANHOS: Tamanho[] = [1, 1.5, 2, 3];
+
+/**
+ * Como cada degrau vira comando de impressora.
+ *
+ * Fonte A/B é o ESC M; o multiplicador é o GS ! Quem escreve os bytes é o
+ * Assistente — esta tabela existe para a regra morar num lugar só e a
+ * prévia da tela não divergir do papel.
+ */
+export const ESCPOS_DO_TAMANHO: Record<string, { fonte: "A" | "B"; multiplicador: 1 | 2 | 3 }> = {
+  "1": { fonte: "A", multiplicador: 1 },
+  "1.5": { fonte: "B", multiplicador: 2 },
+  "2": { fonte: "A", multiplicador: 2 },
+  "3": { fonte: "A", multiplicador: 3 },
+};
+
+/** Encosta no degrau mais próximo da escada. Valor de fora vira 1. */
+export function tamanhoValido(t: unknown): Tamanho {
+  const n = Number(t);
+  if (!Number.isFinite(n) || n <= 1) return 1;
+  return TAMANHOS.reduce((melhor, cand) =>
+    Math.abs(cand - n) < Math.abs(melhor - n) ? cand : melhor, 1 as Tamanho);
+}
 
 /** Quantas letras cabem na linha neste tamanho. Papel e prévia usam esta. */
 export function larguraDoTamanho(colunas: number, tamanho?: Tamanho | number): number {
-  const n = Math.min(4, Math.max(1, Math.floor(Number(tamanho) || 1)));
-  return Math.max(4, Math.floor(colunas / n));
+  return Math.max(4, Math.floor(colunas / tamanhoValido(tamanho)));
 }
 
 /** Cada peça que pode entrar na comanda. */
@@ -76,7 +113,7 @@ export type Bloco = {
   /** Só para `textoLivre`: aceita {cliente}, {endereco}, {total}… */
   texto?: string;
   negrito?: boolean;
-  /** 1 = normal, 2 = dobro, 3, 4. Ausente = 1. */
+  /** Um degrau de TAMANHOS: 1, 1.5, 2 ou 3. Ausente = 1. */
   tamanho?: Tamanho;
   alinhamento?: Alinhamento;
 };
@@ -204,9 +241,9 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
       .map((x): Bloco => ({
         ...x,
         ligado: x.ligado !== false,
-        // Tamanho fora da faixa (modelo de versão futura, edição na mão)
-        // vira 1 em vez de virar uma linha de tarja preta no papel.
-        tamanho: x.tamanho ? (Math.min(4, Math.max(1, Math.floor(Number(x.tamanho) || 1))) as Tamanho) : undefined,
+        // Tamanho fora da escada (modelo de versão futura, edição na mão)
+        // encosta no degrau mais próximo em vez de virar tarja preta.
+        tamanho: x.tamanho ? tamanhoValido(x.tamanho) : undefined,
       }));
     // Os itens são a razão de a comanda existir: se sumirem do modelo salvo
     // (edição manual, versão antiga), voltam para o fim em vez de a cozinha
@@ -306,7 +343,9 @@ export function montarComanda(
   const por = (texto: string, extra: Partial<LinhaDaComanda> = {}) => saida.push({ texto, ...extra });
   const titulo = (t?: string) => {
     if (!t) return;
-    por(t.toUpperCase(), { alinhamento: "centro", tamanho: 2 });
+    // 1,5x e não 2x: título de seção em corpo dobrado ocupa meia linha de
+    // bobina para dizer "CLIENTE", e some a informação em volta.
+    por(t.toUpperCase(), { alinhamento: "centro", tamanho: 1.5 });
   };
 
   for (const bloco of modelo) {
@@ -370,7 +409,7 @@ export function montarComanda(
         if (pedido.subtotal != null) por(linhaComValor("Subtotal:", dinheiro(pedido.subtotal), colunas));
         if (pedido.desconto) por(linhaComValor("Desconto:", `-${dinheiro(pedido.desconto)}`, colunas));
         if (pedido.taxaEntrega != null) por(linhaComValor("Taxa de entrega:", dinheiro(pedido.taxaEntrega), colunas));
-        por(linhaComValor("TOTAL:", dinheiro(pedido.total), larguraDoTamanho(colunas, 2)), { negrito: true, tamanho: 2 });
+        por(linhaComValor("TOTAL:", dinheiro(pedido.total), larguraDoTamanho(colunas, 1.5)), { negrito: true, tamanho: 1.5 });
         break;
 
       case "pagamento":
