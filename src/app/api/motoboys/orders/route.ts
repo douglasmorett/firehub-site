@@ -5,6 +5,7 @@ import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { cobrancaNaEntrega } from "@/lib/pagamento-na-entrega";
 import { ehPedido99Food } from "@/lib/food99-status";
+import { jaSaiuNoParceiro } from "@/lib/codigo-de-entrega";
 
 export async function GET(req: NextRequest) {
   try {
@@ -194,8 +195,10 @@ export async function GET(req: NextRequest) {
  *
  * ── Entregar não é só mudar status ──────────────────────────────────────────
  *
- * A rota do painel avisa o parceiro (iFood conclude, Jotajá delivered, 99Food
+ * A rota do painel avisa o parceiro (iFood dispatch, Jotajá delivered, 99Food
  * delivered), dispara o WhatsApp do cliente e conta a venda no faturamento.
+ * Quando o parceiro pede o código do cliente, é a conferência dele que fecha o
+ * pedido lá (iFood CONCLUDED, 99Food 600).
  * Dar baixa por aqui sem esses efeitos deixaria o pedido "entregue" no FireHub
  * e aberto no parceiro — no 99Food, pedido aberto é cancelado por eles. Então
  * os mesmos efeitos rodam aqui, e nenhum deles pode derrubar a baixa em si:
@@ -451,9 +454,17 @@ export async function PATCH(req: NextRequest) {
     // Então só UMA resposta bloqueia: o parceiro dizer, com todas as letras,
     // que o código está ERRADO. Todo o resto (403, 401, 5xx, timeout, loja sem
     // credencial) grava o diagnóstico em ifoodDropCodeInfo, conclui a entrega e
-    // devolve um aviso para a tela do entregador. O 403 fica registrado pedido
-    // a pedido — é assim que se descobre se falta escopo do módulo Logistics
-    // na credencial da loja, em vez de adivinhar.
+    // devolve um aviso para a tela do entregador.
+    //
+    // ── O 403 ERA O ENDPOINT, NÃO A LOJA (12/09/2026, noite) ────────────────
+    //
+    // O registro acima fez o que devia: as três entregas da Frangoso - Trindade
+    // gravaram 403 "User is forbidden to access this resource" em TODAS as
+    // credenciais. A conferência ia para o verifyDeliveryCode do módulo
+    // Logistics, que o FireHub ainda não homologou. O de entrega própria é o do
+    // módulo Order (ver conferirCodigoDeEntrega em lib/ifood-pedido.ts) — e é a
+    // conferência aceita que conclui o pedido no iFood. A lojista via o motoboy
+    // digitar o código e o pedido seguir aberto no iFood.
     const exigeCodigo =
       Boolean((order as any).ifoodDropCodeRequired) &&
       Boolean((order as any).ifoodOrderId) &&
@@ -461,6 +472,8 @@ export async function PATCH(req: NextRequest) {
     const eh99Propria = ehPedido99Food(order as any) && (order as any).deliveryBy === "MERCHANT";
     let codigoConferido = false;
     let codigoConferido99 = false;
+    /** O despacho no iFood já saiu nesta baixa, antes de conferir o código. */
+    let despachouIfoodAgora = false;
     /** Vira aviso na tela do entregador quando a conferência não aconteceu. */
     let avisoCodigo: string | null = null;
     /** O que gravar no pedido sobre a tentativa (diagnóstico e auditoria). */
@@ -507,33 +520,34 @@ export async function PATCH(req: NextRequest) {
             console.warn(`[Motoboy Entrega] 99Food verifyDeliveryCode ${order.id}: ${r.errno} ${r.errmsg} — entrega concluída mesmo assim`);
           }
         } else try {
-          const { contextoDoPedido } = await import("@/lib/ifood-token");
-          const { validarCodigoEntrega } = await import("@/lib/ifood-logistics");
-          const ctx = await contextoDoPedido(order as any);
-          const r = await validarCodigoEntrega(ctx, String((order as any).ifoodOrderId), digitado);
-          const codigoErrado = r.status === 422 || (r.ok && r.data?.success === false);
+          const { conferirCodigoDeEntrega, despacharNoIfood } = await import("@/lib/ifood-pedido");
+          const rotulo = "Motoboy Entrega → iFood";
+          // Pedido que não passou por SAIU_ENTREGA (o puxado pelo QR, ou a loja
+          // que não despachou) ainda está na loja para o iFood. Despacha antes:
+          // o guia do módulo Order põe o despacho antes da confirmação.
+          if (order.deliveryType === "DELIVERY" && !jaSaiuNoParceiro(order.status)) {
+            await despacharNoIfood(order as any, rotulo);
+            despachouIfoodAgora = true;
+          }
+          const r = await conferirCodigoDeEntrega(order as any, digitado, rotulo);
           infoCodigo = {
-            canal: "iFood", digitado, status: r.status, origem: r.origem ?? null,
+            canal: "iFood", endpoint: "order", digitado, status: r.status, origem: r.origem ?? null,
             resposta: String(r.texto || "").slice(0, 300),
-            resultado: r.conferido ? "conferido" : codigoErrado ? "errado" : "indisponivel",
-            motoboyId: String(motoboyId),
+            resultado: r.resultado, motoboyId: String(motoboyId),
           };
-          if (r.conferido) {
+          if (r.resultado === "conferido") {
             codigoConferido = true;
             console.log(`[Motoboy Entrega] 🔐 código conferido no iFood para ${order.id}`);
-          } else if (codigoErrado) {
+          } else if (r.resultado === "errado") {
             return NextResponse.json(
               { error: "Código não confere. Confira com o cliente e digite de novo.", codigoIncorreto: true },
               { status: 422 },
             );
           } else {
-            // 403 é o caso do print de 12/09: a credencial da loja responde,
-            // mas o módulo Logistics recusa a chamada. Nada disso é problema do
-            // entregador — a entrega segue.
             console.warn(`[Motoboy Entrega] verifyDeliveryCode ${order.id}: ${r.status} ${String(r.texto || "").slice(0, 200)} — entrega concluída mesmo assim`);
             avisoCodigo =
               r.status === 403
-                ? "Entrega confirmada. O iFood não aceita a conferência do código nesta loja — avise o suporte do FireHub."
+                ? "Entrega confirmada. O iFood recusou a conferência do código nesta loja — avise o suporte do FireHub."
                 : `Entrega confirmada. Não consegui conferir o código com o iFood agora (${r.status || "sem resposta"}).`;
           }
         } catch (e: any) {
@@ -592,16 +606,24 @@ export async function PATCH(req: NextRequest) {
     // O entregador está na porta do cliente com o celular na mão: a resposta
     // não espera parceiro nenhum. Cada efeito falha sozinho e vira log.
     (async () => {
-      // iFood: conclude fecha o pedido (dispatch antes, se for entrega).
-      // Com a credencial do dono do pedido — o app do motoboy não tem sessão
-      // de lojista, e o token central só alcança a Hakim.
-      if ((order as any).ifoodOrderId) {
-        const { acaoNoPedidoIfood } = await import("@/lib/ifood-pedido");
-        const rotulo = "Motoboy Entrega → iFood";
-        if (order.deliveryType === "DELIVERY") {
-          await acaoNoPedidoIfood(order, "dispatch", { rotulo });
+      // iFood: o pedido de entrega própria fecha lá pela conferência do código
+      // (feita acima) ou sozinho, 4h depois ("16. Conclusão automática" do
+      // guia do módulo Order). O `conclude` que era chamado aqui não existe na
+      // lista de endpoints do módulo — o que resta a fazer é garantir que o
+      // iFood saiba que o pedido saiu. Com a credencial do dono do pedido: o
+      // app do motoboy não tem sessão de lojista.
+      if ((order as any).ifoodOrderId && order.deliveryType === "DELIVERY" && !codigoConferido && !despachouIfoodAgora) {
+        try {
+          const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
+          const rotulo = "Motoboy Entrega → iFood";
+          if (jaSaiuNoParceiro(order.status)) {
+            await acaoNoPedidoIfood(order, "dispatch", { rotulo });
+          } else {
+            await despacharNoIfood(order as any, rotulo);
+          }
+        } catch (e: any) {
+          console.warn("[Motoboy Entrega → iFood] erro:", e?.message);
         }
-        await acaoNoPedidoIfood(order, "conclude", { rotulo });
       }
 
       // 99Food e Jotajá dividem o campo openDeliveryOrderId; o canal separa.

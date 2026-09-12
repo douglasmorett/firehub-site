@@ -25,6 +25,7 @@
  */
 import { chamarComContexto, type RespostaIfood } from "./ifood-http";
 import { contextoDoPedido, type OrigemToken } from "./ifood-token";
+import { lerRespostaCodigoIfood, type ResultadoCodigo } from "./codigo-de-entrega";
 
 const ORDER = "/order/v1.0/orders";
 
@@ -96,6 +97,50 @@ export async function acaoNoPedidoIfood(
     },
     opts.rotulo ?? "iFood Sync",
   );
+}
+
+/**
+ * Confere o código de entrega que o cliente dita — pelo módulo ORDER.
+ *
+ * ── Por que não o do Logistics ──────────────────────────────────────────────
+ *
+ * O iFood tem dois `verifyDeliveryCode`, com o mesmo corpo `{code}`:
+ *
+ *   /order/v1.0/orders/{id}/verifyDeliveryCode       módulo Order
+ *   /logistics/v1.0/orders/{id}/verifyDeliveryCode   módulo Logistics
+ *
+ * O app do motoboy chamava o do Logistics (lib/ifood-logistics.ts), que é o
+ * módulo dos operadores logísticos e ainda está em homologação no FireHub
+ * (ticket 31576848). Sem ele liberado, TODA chamada volta 403 "User is
+ * forbidden to access this resource", com qualquer credencial: em 12/09/2026
+ * a Frangoso - Trindade teve as três entregas da noite conferidas pelo motoboy
+ * (códigos gravados em ifoodDropCodeInfo) e nenhuma concluída no iFood.
+ *
+ * O guia do módulo Order, "13. Confirmar entrega", manda a entrega própria
+ * usar o do Order — módulo que o app já tem homologado — e diz que "após
+ * validação, sistema marca automaticamente como CONCLUDED". É isso, e não um
+ * `conclude` (que a lista de endpoints do módulo Order não tem), que fecha o
+ * pedido lá.
+ *
+ * Não lança: o motoboy está na porta do cliente, e falha de rede ou de
+ * credencial vira `resultado: "indisponivel"` com o motivo junto.
+ */
+export async function conferirCodigoDeEntrega(
+  pedido: PedidoIfood,
+  codigo: string,
+  rotulo = "iFood Código de entrega",
+): Promise<RespostaPedido & { resultado: ResultadoCodigo }> {
+  const code = String(codigo ?? "").replace(/\D/g, "");
+  if (!pedido.ifoodOrderId) return { ...falha("pedido sem ifoodOrderId"), resultado: "indisponivel" };
+  if (!code) return { ...falha("código vazio"), resultado: "indisponivel" };
+
+  const r = await chamarPeloPedido(
+    pedido,
+    `${ORDER}/${pedido.ifoodOrderId}/verifyDeliveryCode`,
+    { method: "POST", body: JSON.stringify({ code }) },
+    rotulo,
+  );
+  return { ...r, resultado: lerRespostaCodigoIfood(r) };
 }
 
 /**
