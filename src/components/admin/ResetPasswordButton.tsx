@@ -14,14 +14,17 @@ export default function ResetPasswordButton({ userId, storeName, email }: { user
   const [confirmando, setConfirmando] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feito, setFeito] = useState<string | null>(null);
+  const [palavra, setPalavra] = useState("");
+  const confirmado = palavra.trim().toLowerCase() === "redefinir";
 
   const redefinir = async () => {
+    if (!confirmado) return;
     setLoading(true);
     try {
       const res = await fetch("/api/admin/users/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, confirmacao: palavra }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
@@ -48,16 +51,24 @@ export default function ResetPasswordButton({ userId, storeName, email }: { user
   if (confirmando) {
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FFFBEB", border: "1px solid #FDE68A", padding: "4px 8px", borderRadius: 6, fontSize: "0.75rem", color: "#92400E", fontWeight: 700, whiteSpace: "nowrap" }}>
-        Redefinir a senha de <b>{storeName}</b>{email ? ` (${email})` : ""} para <b>123456</b>?
+        Redefinir a senha de <b>{storeName}</b>{email ? ` (${email})` : ""} para <b>123456</b>? Digite <b>redefinir</b>:
+        <input
+          autoFocus
+          value={palavra}
+          onChange={(e) => setPalavra(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") redefinir(); }}
+          placeholder="redefinir"
+          style={{ width: 90, padding: "3px 6px", borderRadius: 5, border: "1px solid #FCD34D", fontSize: "0.72rem" }}
+        />
         <button
           onClick={redefinir}
-          disabled={loading}
-          style={{ background: "#D97706", color: "#fff", border: "none", padding: "3px 8px", borderRadius: 5, fontWeight: 800, cursor: "pointer", fontSize: "0.72rem" }}
+          disabled={loading || !confirmado}
+          style={{ background: confirmado ? "#D97706" : "#E5E7EB", color: confirmado ? "#fff" : "#9CA3AF", border: "none", padding: "3px 8px", borderRadius: 5, fontWeight: 800, cursor: confirmado ? "pointer" : "not-allowed", fontSize: "0.72rem" }}
         >
-          {loading ? "Redefinindo..." : "Sim, redefinir"}
+          {loading ? "Redefinindo..." : "Confirmar"}
         </button>
         <button
-          onClick={() => setConfirmando(false)}
+          onClick={() => { setConfirmando(false); setPalavra(""); }}
           disabled={loading}
           style={{ background: "#fff", color: "#64748B", border: "1px solid #CBD5E1", padding: "3px 8px", borderRadius: 5, fontWeight: 700, cursor: "pointer", fontSize: "0.72rem" }}
         >

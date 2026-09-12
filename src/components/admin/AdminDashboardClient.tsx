@@ -46,6 +46,13 @@ export default function AdminDashboardClient({
   const [customDays, setCustomDays] = useState<string>("15");
   const [granting, setGranting] = useState(false);
 
+  // Modal de redefinir senha (volta para a senha padrão de suporte)
+  const [resetModalUser, setResetModalUser] = useState<Lojista | null>(null);
+  const [resetPalavra, setResetPalavra] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetFeito, setResetFeito] = useState<string | null>(null);
+  const resetConfirmado = resetPalavra.trim().toLowerCase() === "redefinir";
+
   // Impersonação
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
 
@@ -93,6 +100,38 @@ export default function AdminDashboardClient({
     } catch (e) {
       alert("Erro ao impersonar conta. Tente novamente.");
       setImpersonatingId(null);
+    }
+  };
+
+  const abrirReset = (l: Lojista) => {
+    setResetPalavra("");
+    setResetFeito(null);
+    setResetModalUser(l);
+  };
+
+  const fecharReset = () => {
+    if (resetting) return;
+    setResetModalUser(null);
+    setResetPalavra("");
+    setResetFeito(null);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetModalUser || !resetConfirmado) return;
+    setResetting(true);
+    try {
+      const res = await fetch("/api/admin/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: resetModalUser.id, confirmacao: resetPalavra }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) setResetFeito(data.senha || "123456");
+      else alert(data.error || "Não foi possível redefinir a senha.");
+    } catch {
+      alert("Erro de conexão ao redefinir a senha.");
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -167,6 +206,8 @@ export default function AdminDashboardClient({
         .fha-btn-impersonate:hover { background: rgba(37,99,235,0.25); color: #93C5FD; }
         .fha-btn-grant { background: rgba(16,185,129,0.15); color: #34D399; border: 1px solid rgba(16,185,129,0.3); }
         .fha-btn-grant:hover { background: rgba(16,185,129,0.25); color: #6EE7B7; }
+        .fha-btn-reset { background: rgba(245,158,11,0.12); color: #FBBF24; border: 1px solid rgba(245,158,11,0.3); }
+        .fha-btn-reset:hover { background: rgba(245,158,11,0.22); color: #FCD34D; }
       `}</style>
 
       {/* ── SIDEBAR ── */}
@@ -356,6 +397,13 @@ export default function AdminDashboardClient({
                               🎁 +Dias
                             </button>
                             <button
+                              onClick={() => abrirReset(l)}
+                              className="fha-btn-action fha-btn-reset"
+                              title="Voltar a senha da conta para 123456"
+                            >
+                              🔒 Senha
+                            </button>
+                            <button
                               onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
                               className="fha-btn-action"
                               style={{ background: expandedId === l.id ? "rgba(139,92,246,0.25)" : "rgba(100,116,139,0.15)", color: expandedId === l.id ? "#A78BFA" : "#94A3B8", border: `1px solid ${expandedId === l.id ? "rgba(139,92,246,0.4)" : "#334155"}` }}
@@ -541,6 +589,13 @@ export default function AdminDashboardClient({
                               title="Liberar dias de benefício"
                             >
                               🎁 Liberar Dias
+                            </button>
+                            <button
+                              onClick={() => abrirReset(l)}
+                              className="fha-btn-action fha-btn-reset"
+                              title="Voltar a senha da conta para 123456"
+                            >
+                              🔒 Redefinir Senha
                             </button>
                             <button
                               onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
@@ -781,6 +836,97 @@ export default function AdminDashboardClient({
                 Cancelar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL REDEFINIR SENHA ── */}
+      {resetModalUser && (
+        <div
+          onClick={fecharReset}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#1E293B", border: "1px solid #334155", borderRadius: 16,
+              width: "100%", maxWidth: 440, padding: 24, boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ color: "#F1F5F9", margin: 0, fontSize: "1.1rem", fontWeight: 800 }}>🔒 Redefinir senha</h3>
+              <button
+                onClick={fecharReset}
+                style={{ background: "none", border: "none", color: "#64748B", fontSize: "1.2rem", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {resetFeito ? (
+              <>
+                <div style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 10, padding: "14px 16px", marginBottom: 20 }}>
+                  <div style={{ color: "#34D399", fontWeight: 800, fontSize: "0.95rem" }}>✅ Senha redefinida</div>
+                  <div style={{ color: "#CBD5E1", fontSize: "0.85rem", marginTop: 6 }}>
+                    <strong>{resetModalUser.storeName || resetModalUser.name}</strong> entra com<br />
+                    login <strong>{resetModalUser.email}</strong> e senha <strong style={{ color: "#FCD34D" }}>{resetFeito}</strong>.
+                  </div>
+                  <div style={{ color: "#94A3B8", fontSize: "0.78rem", marginTop: 8 }}>Peça para o lojista trocar a senha assim que entrar.</div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="button" onClick={fecharReset} className="fha-btn-action" style={{ padding: "8px 16px", fontSize: "0.85rem" }}>
+                    Fechar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ color: "#94A3B8", fontSize: "0.85rem", margin: "0 0 16px" }}>
+                  A senha de <strong style={{ color: "#F1F5F9" }}>{resetModalUser.storeName || resetModalUser.name}</strong> ({resetModalUser.email}) vai
+                  voltar para <strong style={{ color: "#FCD34D" }}>123456</strong>. A senha atual deixa de funcionar na hora.
+                </p>
+
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#CBD5E1", marginBottom: 8 }}>
+                  Para confirmar, digite <span style={{ color: "#FCD34D" }}>redefinir</span>:
+                </label>
+                <input
+                  autoFocus
+                  className="fha-input"
+                  placeholder="redefinir"
+                  value={resetPalavra}
+                  onChange={e => setResetPalavra(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleResetPassword(); }}
+                  style={{ width: "100%", marginBottom: 20 }}
+                />
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={fecharReset}
+                    disabled={resetting}
+                    style={{ background: "none", border: "none", color: "#64748B", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    disabled={!resetConfirmado || resetting}
+                    style={{
+                      background: resetConfirmado ? "linear-gradient(135deg, #F59E0B, #D97706)" : "#334155",
+                      color: resetConfirmado ? "#fff" : "#64748B",
+                      border: "none", padding: "10px 18px", borderRadius: 10, fontWeight: 800,
+                      cursor: resetConfirmado && !resetting ? "pointer" : "not-allowed", fontSize: "0.85rem",
+                    }}
+                  >
+                    {resetting ? "Redefinindo..." : "Confirmar"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 /**
- * POST /api/admin/users/reset-password  { userId }
+ * POST /api/admin/users/reset-password  { userId, confirmacao: "redefinir" }
  *
  * Redefine a senha de uma conta de loja para a senha padrão de suporte
  * (SENHA_PADRAO) — só ADMIN. O lojista troca depois, se quiser.
@@ -31,6 +31,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const userId = String(body?.userId || "").trim();
   if (!userId) return NextResponse.json({ error: "userId obrigatório" }, { status: 400 });
+
+  // A tela pede para digitar "redefinir". Conferir aqui também impede que um
+  // POST solto (script, clique duplo, aba antiga) derrube a senha de uma loja.
+  if (String(body?.confirmacao || "").trim().toLowerCase() !== "redefinir") {
+    return NextResponse.json({ error: 'Digite "redefinir" para confirmar.' }, { status: 400 });
+  }
 
   const alvo = await prisma.user.findUnique({
     where: { id: userId },
