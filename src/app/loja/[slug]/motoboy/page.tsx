@@ -550,8 +550,17 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         // reverter uma baixa errada; trava eterna esconderia a reversão).
         baixasLocaisRef.current.set(orderId, Date.now());
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "ENTREGUE" } : o));
-        setToastMsg(data.jaEntregue ? "✅ Este pedido já estava confirmado." : "✅ Entrega confirmada com sucesso!");
-        setTimeout(() => setToastMsg(null), 3000);
+        // Conferência que não aconteceu não é falha da entrega: a baixa
+        // está feita. O aviso fica mais tempo na tela porque é informação
+        // nova para o entregador, não um "ok" de rotina.
+        setToastMsg(
+          data.avisoCodigo
+            ? `⚠️ ${data.avisoCodigo}`
+            : data.jaEntregue
+            ? "✅ Este pedido já estava confirmado."
+            : "✅ Entrega confirmada com sucesso!",
+        );
+        setTimeout(() => setToastMsg(null), data.avisoCodigo ? 7000 : 3000);
       } else if (data.precisaCodigo) {
         // O servidor sabe que este pedido exige código (a lista do app pode
         // estar defasada): abre o teclado em vez de mostrar erro.
@@ -1463,7 +1472,14 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         <div style={{
           position: "fixed", bottom: "20px", left: "50%", transform: "translateX(-50%)",
           // Erro em vermelho: o toast verde para tudo escondia falha de entrega.
-          background: toastMsg.startsWith("⚠️") ? "#DC2626" : "#16A34A",
+          // Três estados, três cores: erro (vermelho), aviso com a entrega
+          // feita (âmbar) e sucesso (verde). Antes o aviso saía vermelho e o
+          // entregador achava que a entrega não tinha sido registrada.
+          background: toastMsg.startsWith("⚠️ Entrega confirmada")
+            ? "#D97706"
+            : toastMsg.startsWith("⚠️")
+            ? "#DC2626"
+            : "#16A34A",
           color: "#fff", padding: "12px 24px", borderRadius: "30px",
           fontWeight: 800, fontSize: "0.9rem", boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
           zIndex: 99999, maxWidth: "92vw", textAlign: "center"

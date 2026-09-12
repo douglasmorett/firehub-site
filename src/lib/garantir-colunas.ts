@@ -604,6 +604,8 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreName" TEXT`,
   // Ponto exato do endereço que o iFood manda no pedido (lib/ifood-coordenadas.ts).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "customerLatLng" JSONB`,
+  // O resultado da conferência do código de entrega, pedido a pedido.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodDropCodeInfo" JSONB`,
   // Configuração do app dos entregadores (lib/app-motoboy-config.ts).
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "appMotoboyConfig" JSONB`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "ifoodStoreMerchant" TEXT`,

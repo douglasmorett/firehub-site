@@ -730,6 +730,11 @@ model CustomerOrder {
   ifoodDriverRequestedAt DateTime?          // Quando o motoboy foi solicitado
   ifoodDeliveryEta       DateTime?          // Previsão de entrega
   ifoodDropCodeRequired  Boolean  @default(false) // Pedido exige código de entrega (evento DELIVERY_DROP_CODE_REQUESTED)
+  /// O que aconteceu quando o entregador digitou o código de entrega:
+  /// { canal, digitado, resultado: "conferido"|"errado"|"indisponivel",
+  ///   status, resposta, motoboyId, quando }. É o que prova se a conferência
+  /// com o parceiro funcionou — e, quando não funcionou, por quê.
+  ifoodDropCodeInfo      Json?
   ifoodDropCodeAt        DateTime?          // Quando o evento do código chegou
   // === OPEN DELIVERY / JOTAJA ===
   openDeliveryOrderId     String?   @unique   // ID do pedido no Open Delivery (idempotência)
