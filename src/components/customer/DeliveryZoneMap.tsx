@@ -37,6 +37,15 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const [ifoodSync, setIfoodSync] = useState(initialIfoodSyncDeliveryTime ?? false);
   const [currentZoneType, setCurrentZoneType] = useState<string>(zoneType || "KM");
 
+  /**
+   * Cobrança por DISTÂNCIA — as faixas em km. Vale para os dois jeitos de
+   * medir: "KM"/"RADIUS" (linha reta, o círculo do mapa) e "ROTA" (o caminho
+   * que a moto faz pelas ruas). As faixas cadastradas são as mesmas; muda só o
+   * número que entra na comparação.
+   */
+  const porDistancia = currentZoneType === "KM" || currentZoneType === "RADIUS" || currentZoneType === "ROTA";
+  const porRota = currentZoneType === "ROTA";
+
   // State for Radius (KM) mode
   const [zones, setZones] = useState<Zone[]>(
     (zoneType === "KM" || zoneType === "RADIUS") && initialZones?.length
@@ -454,22 +463,22 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "1rem" }}>
         {/* TAB 1: POR RAIO */}
         <div
-          onClick={() => setCurrentZoneType("KM")}
+          onClick={() => { if (!porDistancia) setCurrentZoneType("KM"); }}
           style={{
             padding: "12px 14px",
             borderRadius: "14px",
-            border: `2px solid ${currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#DC2626" : "#E2E8F0"}`,
-            background: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#FEF2F2" : "#FFFFFF",
+            border: `2px solid ${porDistancia ? "#DC2626" : "#E2E8F0"}`,
+            background: porDistancia ? "#FEF2F2" : "#FFFFFF",
             cursor: "pointer",
             display: "flex",
             flexDirection: "column",
             gap: "6px",
             transition: "all 0.2s ease",
-            boxShadow: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "0 4px 14px rgba(220, 38, 38, 0.12)" : "none"
+            boxShadow: porDistancia ? "0 4px 14px rgba(220, 38, 38, 0.12)" : "none"
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontWeight: 800, fontSize: "0.92rem", color: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#991B1B" : "#334155" }}>
+            <span style={{ fontWeight: 800, fontSize: "0.92rem", color: porDistancia ? "#991B1B" : "#334155" }}>
               📍 Por Raio (Linha Reta)
             </span>
             <span
@@ -478,17 +487,17 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 fontWeight: 800,
                 padding: "3px 8px",
                 borderRadius: "20px",
-                background: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#16A34A" : "#F1F5F9",
-                color: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#FFFFFF" : "#64748B",
+                background: porDistancia ? "#16A34A" : "#F1F5F9",
+                color: porDistancia ? "#FFFFFF" : "#64748B",
                 display: "flex",
                 alignItems: "center",
                 gap: "4px"
               }}
             >
-              {currentZoneType === "KM" || currentZoneType === "RADIUS" ? "🟢 ATIVO NA LOJA" : "⚪ Inativo"}
+              {porDistancia ? "🟢 ATIVO NA LOJA" : "⚪ Inativo"}
             </span>
           </div>
-          <p style={{ margin: 0, fontSize: "0.74rem", color: currentZoneType === "KM" || currentZoneType === "RADIUS" ? "#B91C1C" : "#64748B", lineHeight: 1.3 }}>
+          <p style={{ margin: 0, fontSize: "0.74rem", color: porDistancia ? "#B91C1C" : "#64748B", lineHeight: 1.3 }}>
             Calcula a taxa e validação pelo mapa em KM a partir do raio da sua loja.
           </p>
         </div>
@@ -724,7 +733,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           </div>
 
           <h4 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "4px" }}>
-            {currentZoneType === "NEIGHBORHOOD" ? "Bairros Atendidos" : "Raios de Entrega (KM)"}
+            {currentZoneType === "NEIGHBORHOOD" ? "Bairros Atendidos" : porRota ? "Faixas de Distância (pelas ruas)" : "Raios de Entrega (KM)"}
           </h4>
           <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "12px" }}>
             {currentZoneType === "NEIGHBORHOOD"
@@ -733,7 +742,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           </p>
 
           {/* Mode 1: KM (Por Raio) */}
-          {(currentZoneType === "KM" || currentZoneType === "RADIUS") && (
+          {porDistancia && (
             <>
               {/* Adjust all quickly */}
               <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px 12px", marginBottom: "12px" }}>
@@ -744,6 +753,50 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                   <button onClick={() => setZones(p => p.map(z => ({ ...z, fee: Math.max(0, z.fee - 1) })))} style={adjBtn}>– R$1</button>
                   <button onClick={() => setZones(p => p.map(z => ({ ...z, fee: z.fee + 1 })))} style={adjBtn}>+ R$1</button>
                 </div>
+              </div>
+
+              {/* ── COMO A DISTÂNCIA É MEDIDA ──────────────────────────────
+                  As faixas abaixo são as mesmas nos dois casos. O que muda é o
+                  número comparado com elas — e a diferença é grande: medido em
+                  Rio das Ostras, o Costazul fica a 1,17 km da loja em linha
+                  reta e 1,81 km de moto, 55% a mais. Quem está do outro lado
+                  de um rio, de uma linha de trem ou de um morro paga (e espera)
+                  como se estivesse do lado.
+
+                  O raio continua o padrão: é o círculo desenhado no mapa e é o
+                  que toda loja cadastrada até aqui usa. */}
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Como medir a distância</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  {([
+                    { tipo: "KM", titulo: "📐 Em linha reta", ajuda: "O círculo no mapa. Simples de explicar ao cliente." },
+                    { tipo: "ROTA", titulo: "🛣️ Pelas ruas", ajuda: "O caminho que a moto faz de verdade — como o iFood cobra." },
+                  ]).map((op) => {
+                    const ativo = op.tipo === "ROTA" ? porRota : !porRota;
+                    return (
+                      <button
+                        key={op.tipo}
+                        type="button"
+                        onClick={() => setCurrentZoneType(op.tipo)}
+                        style={{
+                          textAlign: "left", padding: "10px 12px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
+                          border: `1.5px solid ${ativo ? "#DC2626" : "#E2E8F0"}`,
+                          background: ativo ? "#FEF2F2" : "#fff",
+                        }}
+                      >
+                        <span style={{ display: "block", fontWeight: 800, fontSize: "0.84rem", color: ativo ? "#991B1B" : "#334155" }}>{op.titulo}</span>
+                        <span style={{ display: "block", fontSize: "0.72rem", color: ativo ? "#B91C1C" : "#64748B", marginTop: 2, lineHeight: 1.35 }}>{op.ajuda}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {porRota && (
+                  <p style={{ fontSize: "0.73rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", margin: "8px 0 0", lineHeight: 1.45 }}>
+                    O círculo no mapa continua sendo desenhado em linha reta — ele é só ilustração da área.
+                    A cobrança usa o caminho pelas ruas, que é sempre igual ou maior. Se o cálculo de rota
+                    não responder na hora do pedido, vale a linha reta: nenhum pedido deixa de entrar por causa disso.
+                  </p>
+                )}
               </div>
 
               {/* ── O QUE O CLIENTE PAGA E O QUE O ENTREGADOR RECEBE ──────

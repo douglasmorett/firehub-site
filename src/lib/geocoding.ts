@@ -1,3 +1,5 @@
+import { distanciaPorRotaKm, medicaoDaLoja } from "@/lib/distancia-por-rota";
+
 // Calcula a distância exata em linha reta (KM) usando a fórmula Haversine
 // Alinhado 100% com os círculos de raio desenhados no mapa Leaflet de configurações da loja
 export function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -31,6 +33,10 @@ export type DeliveryZoneCheckResult = {
    * estruturada (número não confere); "bairro" = só o centro do bairro (nível 4).
    */
   precisao?: "endereco" | "rua" | "bairro";
+  /** A distância veio das RUAS (roteamento), não da linha reta. */
+  medidaPorRota?: boolean;
+  /** A linha reta, sempre — serve para a tela explicar a diferença. */
+  distanciaEmLinhaRetaKm?: number;
 };
 
 // Geocodifica um endereço via OpenStreetMap Nominatim API com priorização geográfica (viewbox)
@@ -283,8 +289,31 @@ export async function verifyStoreDeliveryAddress(
     customerLng = foundGeo.lng;
   }
 
-  // 3. Calcular Distância em Linha Reta / Raio Geométrico (idêntico ao círculo desenhado no mapa da loja)
-  const distanceKm = haversineDistanceKm(storeCenter.lat, storeCenter.lng, customerLat, customerLng);
+  // ── 3. A DISTÂNCIA: EM LINHA RETA OU PELAS RUAS ──────────────────────
+  //
+  // O raio é o padrão e é o círculo desenhado no mapa da loja. Mas ele
+  // castiga quem está do outro lado de um rio, de uma linha de trem ou de um
+  // morro: medido em Rio das Ostras, o Costazul fica a 1,17 km em linha reta
+  // e 1,81 km de moto — 55% a mais. A loja que escolhe "por rota" passa a
+  // cobrar pelo caminho que a moto faz.
+  //
+  // As faixas cadastradas continuam as mesmas: muda só o número que entra na
+  // comparação. E se o roteamento não responder, volta para a linha reta —
+  // pedido sair com a taxa do raio é muito melhor que pedido não sair.
+  const emLinhaReta = haversineDistanceKm(storeCenter.lat, storeCenter.lng, customerLat, customerLng);
+  let distanceKm = emLinhaReta;
+  let medidaPorRota = false;
+  if (medicaoDaLoja(deliveryZoneType) === "ROTA") {
+    const porRua = await distanciaPorRotaKm(
+      { lat: storeCenter.lat, lng: storeCenter.lng },
+      { lat: customerLat, lng: customerLng },
+    );
+    // Rota menor que a linha reta é impossível — se vier, é resposta ruim.
+    if (porRua != null && porRua >= emLinhaReta - 0.05) {
+      distanceKm = porRua;
+      medidaPorRota = true;
+    }
+  }
 
   // 4. Tolerância de 50 metros para arredondamento
   const isWithinRadius = distanceKm <= (maxRadiusKm + 0.05);
@@ -311,5 +340,7 @@ export async function verifyStoreDeliveryAddress(
     deliveryFee,
     estimatedTimeMin,
     precisao,
+    medidaPorRota,
+    distanciaEmLinhaRetaKm: emLinhaReta,
   };
 }

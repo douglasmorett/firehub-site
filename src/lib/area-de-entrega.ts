@@ -86,6 +86,11 @@ export function modoDaArea(loja: LojaParaEntrega): ModoDaArea {
   const temBairro = lista.some((z) => z && z.name && !(kmDaFaixa(z) > 0));
   const temKm = lista.some((z) => kmDaFaixa(z) > 0);
   if (tipo === "NEIGHBORHOOD") return temBairro ? "BAIRRO" : "SEM_AREA";
+  // "ROTA" é o mesmo cadastro do raio — faixas em km — medido pelas ruas em
+  // vez de em linha reta (lib/distancia-por-rota.ts). Para a regra de área é
+  // o modo KM, e tem que ser: tratar como tipo desconhecido faria a loja que
+  // escolheu rota cair em SEM_AREA e passar a entregar em qualquer lugar.
+  if (tipo === "ROTA") return temKm ? "KM" : "SEM_AREA";
   if (temKm) return "KM";
   if (temBairro) return "BAIRRO"; // cadastro antigo sem tipo
   return "SEM_AREA";
