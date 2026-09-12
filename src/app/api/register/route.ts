@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { slugDoNome } from "@/lib/slug-da-loja";
 import { fusoPorEndereco } from "@/lib/fuso-por-endereco";
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
@@ -77,14 +78,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Gerar slug único a partir do nome do restaurante
+    // Gerar slug único a partir do nome do restaurante.
+    // A regra mora em lib/slug-da-loja.ts porque agora ela roda em DOIS
+    // momentos: aqui, no cadastro, e na tela de configurações quando a loja
+    // corrige o nome. Duas cópias divergiriam e o link mudaria de formato no
+    // meio da vida da loja.
     const storeNameFinal = storeName || name;
-    const baseSlug = storeNameFinal
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
+    const baseSlug = slugDoNome(storeNameFinal);
 
     let slug = baseSlug;
     let attempt = 0;

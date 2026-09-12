@@ -16,6 +16,11 @@ model User {
   city            String?
   cpfCnpj         String?
   slug            String?         @unique
+  /// Os endereços que o cardápio desta loja já teve. Trocar o nome troca o
+  /// slug, e o antigo fica aqui para /loja/<slug> redirecionar — QR impresso
+  /// em comanda e link no Instagram não podem morrer numa troca de nome.
+  /// Ver lib/slug-da-loja.ts. A COLUNA nasce em garantir-colunas.ts.
+  slugsAntigos    Json?
   storeName       String?
   storePhone      String?
   storeAddress    String?

@@ -1,4 +1,5 @@
 "use client";
+import { nomeDaLojaPeloCnpj } from "@/lib/slug-da-loja";
 import { useState, useEffect } from "react";
 
 const API = "";
@@ -132,7 +133,13 @@ export default function CadastroPage() {
     setLoading(true);
     setError("");
     try {
-      const storeName = cnpjData?.nome_fantasia || cnpjData?.razao_social || empresa;
+      // A ORDEM ERA O CONTRÁRIO e criava o pior resultado possível: num MEI o
+      // nome fantasia costuma vir vazio e a razão social é o NÚMERO DO CNPJ
+      // seguido do nome da pessoa. A loja nascia chamada
+      // "65.584.171 LUCAS PIMENTA MARINHO MACHADO", e o cardápio dela também.
+      // O que a pessoa digitou vence: ela acabou de escrever o nome do negócio
+      // dela numa caixa que pergunta exatamente isso.
+      const storeName = nomeDaLojaPeloCnpj(cnpjData, empresa);
       let refCode = null;
       if (typeof window !== "undefined") {
         const urlParams = new URLSearchParams(window.location.search);
@@ -278,10 +285,20 @@ export default function CadastroPage() {
                 </p>
                 {error && <div className="err">{error}</div>}
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <input className="inp" placeholder="Seu nome*" value={nome} autoFocus onChange={e => setNome(e.target.value)} />
+                  <input className="inp" placeholder="Seu nome completo*" value={nome} autoFocus onChange={e => setNome(e.target.value)} />
                   <input className="inp" placeholder="WhatsApp Pessoal para Contato*" type="tel" inputMode="numeric"
                     value={whatsapp} onChange={e => setWhatsapp(fmtPhone(e.target.value))} />
-                  <input className="inp" placeholder="Nome da sua empresa*" value={empresa} onChange={e => setEmpresa(e.target.value)} />
+                  {/* ── ESTE CAMPO VIRA O NOME DO CARDÁPIO ────────────────────
+                      Muita gente digitava o próprio nome aqui — o campo dizia
+                      "Nome da sua empresa" logo abaixo de "Seu nome", e nada na
+                      tela avisava que ESTE é o que o cliente vê. Agora diz o que
+                      ele faz, com exemplo. */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <input className="inp" placeholder="Nome do seu restaurante*" value={empresa} onChange={e => setEmpresa(e.target.value)} />
+                    <span style={{ fontSize: "0.74rem", color: "#94A3B8", lineHeight: 1.4, paddingLeft: 2 }}>
+                      É o nome que o cliente vê no cardápio — {empresa.trim() ? <b>{empresa.trim()}</b> : "ex.: Frangoso Trindade"}, não o seu nome pessoal.
+                    </span>
+                  </div>
                   <input className="inp" placeholder="Email*" type="email" value={email} onChange={e => setEmail(e.target.value)} />
 
                   <div>

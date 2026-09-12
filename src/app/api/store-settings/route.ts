@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { slugAposRenomear } from "@/lib/slug-da-loja";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { fusoPorEndereco } from "@/lib/fuso-por-endereco";
@@ -53,6 +54,36 @@ export async function PUT(req: Request) {
     "repasseConfig",     // Configurações de Repasse Automático (Brendi Flow)
   ]) {
     if (body[key] !== undefined) data[key] = body[key];
+  }
+
+  // ── TROCAR O NOME DA LOJA TROCA O LINK DO CARDÁPIO ───────────────────
+  //
+  // O slug nascia no cadastro e ficava congelado. Quem errava o nome ali — e
+  // muita gente erra, porque a consulta de CNPJ de MEI devolve a RAZÃO SOCIAL
+  // (o número do CNPJ mais o nome da pessoa) — ficava com o link errado para
+  // sempre, sem jeito de consertar sozinho.
+  //
+  // O anterior vai para `slugsAntigos` e a página do cardápio redireciona:
+  // QR já impresso em comanda e link no Instagram continuam funcionando.
+  if (data.storeName !== undefined && String(data.storeName || "").trim()) {
+    const troca = slugAposRenomear(
+      data.storeName,
+      (currentUser as any)?.slug,
+      (currentUser as any)?.slugsAntigos,
+    );
+    if (troca) {
+      // Slug é único no banco: se outra loja já ocupa esse endereço, mantém o
+      // atual em vez de derrubar o salvamento inteiro. O nome muda, o link
+      // não — e isso é melhor que a loja não conseguir salvar nada.
+      const ocupado = await prisma.user.findFirst({
+        where: { slug: troca.slug, NOT: { id: currentUser.id } },
+        select: { id: true },
+      }).catch(() => null);
+      if (!ocupado) {
+        data.slug = troca.slug;
+        data.slugsAntigos = troca.slugsAntigos;
+      }
+    }
   }
 
   // ── `deliveryConfig` É MESCLADO, NUNCA SUBSTITUÍDO ───────────────────

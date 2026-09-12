@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { orderByCardapio } from "@/lib/menu-order";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { slugAtualDeUmAntigo } from "@/lib/slug-da-loja";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 
@@ -66,7 +67,18 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
     }
   });
 
-  if (!franchisee) notFound();
+  // ── O ENDEREÇO ANTIGO CONTINUA LEVANDO À LOJA ───────────────────────
+  //
+  // Trocar o nome da loja troca o link do cardápio. Sem isto, o QR já
+  // impresso em centenas de comandas, o link no perfil do Instagram e o
+  // print salvo no WhatsApp do cliente morreriam todos na hora em que o
+  // lojista corrigisse o nome — que é justamente o que a gente quer que ele
+  // faça.
+  if (!franchisee) {
+    const atual = await slugAtualDeUmAntigo(prisma as any, slug);
+    if (atual) redirect(`/loja/${atual}`);
+    notFound();
+  }
 
   const showReviews = (franchisee as any).showReviewsOnMenu !== false;
 

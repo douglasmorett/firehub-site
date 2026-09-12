@@ -177,6 +177,14 @@ const INSTRUCOES_BRENDI = [
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiClientSecret" TEXT`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiMerchantId" TEXT`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "brendiConnected" BOOLEAN DEFAULT false`,
+  // ── OS ENDEREÇOS QUE O CARDÁPIO JÁ TEVE ───────────────────────────────────
+  //
+  // Mudar o nome da loja passou a mudar o link do cardápio (a loja errava o
+  // nome no cadastro e ficava presa a ele). Sem guardar o anterior, a troca
+  // mataria QR já impresso em comanda, link no perfil do Instagram e print
+  // salvo no WhatsApp do cliente. A página do cardápio consulta esta lista e
+  // redireciona — o endereço velho continua levando ao lugar certo.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "slugsAntigos" JSONB`,
   `CREATE INDEX IF NOT EXISTS "User_brendiMerchantId_idx" ON "User"("brendiMerchantId")`,
   // ── QUAIS AVISOS ESTE PEDIDO ESPERA DE VOLTA ──────────────────────────────
   //

@@ -89,6 +89,12 @@ export async function POST(req: NextRequest) {
       where: {
         OR: [
           { slug: cleanSlug },
+          // O ENDEREÇO ANTIGO CONTINUA VALENDO. Trocar o nome da loja troca o
+          // slug, e o QR "puxar pedido" já impresso em centenas de comandas
+          // aponta para /loja/<slug antigo>/motoboy. Sem isto, corrigir o nome
+          // da loja deixaria o entregador sem conseguir entrar pelo papel que
+          // está na mão dele. Ver lib/slug-da-loja.ts.
+          { slugsAntigos: { array_contains: cleanSlug } },
           { name: { contains: cleanSlug, mode: "insensitive" } },
           { name: { contains: slugName, mode: "insensitive" } },
         ]

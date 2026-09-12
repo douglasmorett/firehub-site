@@ -1,5 +1,6 @@
 "use client";
 import DeliveryZoneMap from "@/components/customer/DeliveryZoneMap";
+import { slugDoNome } from "@/lib/slug-da-loja";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Banknote, Smartphone, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Ticket, Calendar, Clock, AlertTriangle, ShieldCheck, Truck } from "lucide-react";
@@ -425,7 +426,33 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
       {show("info") && <div className="card mb-4">
         <h3 className="font-bold mb-4">📋 Informações da Loja</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-          <div className="input-group"><label>Nome da Loja</label><input className="input-field" value={storeName} onChange={e => { setStoreName(e.target.value); setDirtyInfo(true); }} /></div>
+          {/* ── O NOME MANDA NO LINK DO CARDÁPIO ────────────────────────────
+              O endereço nascia no cadastro e ficava congelado: quem errava o
+              nome ali ficava com o link errado para sempre. Agora ele
+              acompanha, e a tela mostra como vai ficar ANTES de salvar — sem
+              isso o lojista trocaria o nome sem saber que o link mudou junto.
+              O endereço antigo continua funcionando, e está escrito. */}
+          <div className="input-group">
+            <label>Nome da Loja</label>
+            <input className="input-field" value={storeName} onChange={e => { setStoreName(e.target.value); setDirtyInfo(true); }} />
+            {(() => {
+              const novo = slugDoNome(storeName);
+              const atual = String((user as any).slug || "");
+              if (!novo) return null;
+              const mudou = novo !== atual;
+              return (
+                <p style={{ fontSize: "0.76rem", color: mudou ? "#B45309" : "#94A3B8", margin: "6px 0 0", lineHeight: 1.5 }}>
+                  {mudou ? "⚠️ Ao salvar, o link do cardápio passa a ser " : "Link do cardápio: "}
+                  <b style={{ fontFamily: "ui-monospace, Consolas, monospace" }}>firehubfood.com.br/loja/{novo}</b>
+                  {mudou && atual ? (
+                    <>
+                      {" "}— o endereço antigo (<code>{atual}</code>) continua funcionando, então QR já impresso e link no Instagram não quebram.
+                    </>
+                  ) : null}
+                </p>
+              );
+            })()}
+          </div>
           <div className="input-group"><label>Telefone / WhatsApp da Loja</label><input className="input-field" value={storePhone} onChange={e => { setStorePhone(e.target.value); setDirtyInfo(true); }} /></div>
           <div className="input-group">
             <label>WhatsApp do Proprietário (Notificações do Robô) <Smartphone size={14} style={{display:'inline', marginBottom:-2}} /></label>
