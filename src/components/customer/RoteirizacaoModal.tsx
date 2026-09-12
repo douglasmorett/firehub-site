@@ -278,6 +278,8 @@ export default function RoteirizacaoModal({
   const [leafletLoaded, setLeafletLoaded] = useState(false);
   const [geocodedMap, setGeocodedMap] = useState<Record<string, { lat: number; lng: number }>>({});
   const [geocodingLoading, setGeocodingLoading] = useState(false);
+  /** Força o redesenho do mapa para o pino verde sumir na hora certa. */
+  const [tiqueDoMapa, setTiqueDoMapa] = useState(0);
 
   // Default Store Center (Rio das Ostras / Store Coordinates)
   const defaultCenter = useMemo(() => {
@@ -480,7 +482,20 @@ export default function RoteirizacaoModal({
     return orders.filter((o: any) => {
       const statusUpper = String(o.status || "").toUpperCase().trim();
       if (statusUpper.includes("CANCEL")) return false;
-      if (statusUpper === "ENTREGUE" || statusUpper === "ENCERRADO" || statusUpper === "FINISHED") return false;
+
+      // ── ENTREGUE FICA VERDE POR 10 SEGUNDOS, DEPOIS SOME ────────────────
+      //
+      // Especificação do lojista, com as palavras dele (11/09/2026 21:21):
+      // "Vermelho tá na cozinha, roxo tá pronto, azul tá em entrega, verde
+      // quando foi entregue — some depois de 10 segundos". O sumiço imediato
+      // tirava da tela justamente a confirmação que a loja procura: ela dá a
+      // baixa e quer VER que aquele ponto fechou, antes de ele desaparecer.
+      if (statusUpper === "ENTREGUE" || statusUpper === "ENCERRADO" || statusUpper === "FINISHED") {
+        const quando = (o as any).deliveredAt || (o as any).updatedAt || (o as any).completedAt;
+        const desde = quando ? Date.now() - new Date(quando).getTime() : Infinity;
+        if (!(desde >= 0 && desde < 10_000)) return false;
+        (o as any).__recemEntregue = true;
+      }
 
       const isAlreadyDispatched =
         statusUpper === "SAIU_ENTREGA" ||
@@ -1104,8 +1119,9 @@ export default function RoteirizacaoModal({
         statusPino === "PRONTO" || statusPino === "PRONTO_ENTREGA" || statusPino === "PREPARADO" ||
         (order as any).kdsStage === "READY" || (order as any).kdsStage === "FINISHED";
       const jaDespachado = Boolean((order as any).__jaDespachado);
+      const recemEntregue = Boolean((order as any).__recemEntregue);
 
-      let bgColor = jaDespachado ? "#2563EB" : prontoNaCozinha ? "#7C3AED" : "#EF4444";
+      let bgColor = recemEntregue ? "#16A34A" : jaDespachado ? "#2563EB" : prontoNaCozinha ? "#7C3AED" : "#EF4444";
       let labelText = getOrderDisplayNumber(order);
       let borderColor = "#ffffff";
       let scaleCss = "scale(1)";
@@ -1328,7 +1344,18 @@ export default function RoteirizacaoModal({
         }
       });
     }
-  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity]);
+  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa]);
+
+  // O pino verde do recém-entregue precisa SUMIR sozinho ao completar os 10 s.
+  // Sem um tique, ele só sairia no próximo evento que redesenhasse o mapa — e
+  // ficaria lá parado, dizendo que a entrega acabou de acontecer.
+  useEffect(() => {
+    if (!isOpen) return;
+    const temRecente = deliveryOrders.some((o: any) => o.__recemEntregue);
+    if (!temRecente) return;
+    const t = setTimeout(() => setTiqueDoMapa((n) => n + 1), 2500);
+    return () => clearTimeout(t);
+  }, [isOpen, deliveryOrders, tiqueDoMapa]);
 
   // Toggle order selection for forming a route
   const toggleOrderSelection = (id: string) => {
