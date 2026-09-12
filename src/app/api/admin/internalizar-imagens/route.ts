@@ -31,7 +31,11 @@ export const maxDuration = 300; // 54 fotos a ~1s cada cabem com folga
  * De onde um cardápio importado pode ter ficado dependendo. Cada importação
  * nova (MenuDino, iFood...) entra aqui, e o cron cuida do resto.
  */
-const ORIGENS_DE_FORA = ["menudino", "static-images.ifood.com.br"];
+// `firebasestorage.googleapis.com` entrou em 12/09/2026, com a cópia do
+// cardápio do Frangoso vindo da Brendi: as 61 fotos apontavam para o Storage
+// DELES, com token de leitura que eles podem revogar a qualquer momento. Foto
+// de cardápio hospedada no concorrente é cardápio que some sem aviso.
+const ORIGENS_DE_FORA = ["menudino", "static-images.ifood.com.br", "firebasestorage.googleapis.com"];
 
 export async function POST(req: NextRequest) {
   return internalizar(req);
