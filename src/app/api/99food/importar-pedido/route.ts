@@ -3,7 +3,6 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { detalheDoPedido } from "@/lib/food99-api";
-import { tokenDaLoja } from "@/lib/food99-status";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 
@@ -56,25 +55,25 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // `tokenDaLoja` tenta o nosso id E o `food99AppId` — a página de autorização
-  // IGNORA o app_shop_id que mandamos, então o vínculo pode ter nascido com um
-  // id escolhido pelo 99Food. Perguntar só pelo nosso id fazia esta rota
-  // responder "Loja não está autorizada" justamente nas lojas conectadas por
-  // adoção de vínculo, que são as que mais precisam dela: o resgate manual
-  // existe exatamente para o pedido que o webhook não entregou.
-  const authToken = await tokenDaLoja(lojaId);
-  if (!authToken) {
-    return NextResponse.json(
-      { error: "Loja não está autorizada no 99Food. Conecte a integração primeiro." },
-      { status: 409 }
-    );
-  }
-
-  const r = await detalheDoPedido(authToken, orderId);
-  if (r.errno !== 0 || !r.data) {
+  // Tenta TODOS os tokens da conta, um por loja do 99Food.
+  //
+  // Antes era só `tokenDaLoja(lojaId)`, que resolve para a PRIMEIRA loja da
+  // conta — então, numa conta com três lojas, o resgate manual falhava
+  // justamente nos pedidos da segunda e da terceira, que são os que mais
+  // precisam dele (foi assim que os pedidos da Salz sumiram em 12/09/2026).
+  const { buscarPedido99 } = await import("@/lib/food99-status");
+  const achado = await buscarPedido99(lojaId, orderId);
+  if (!achado.ok) {
+    if (achado.errno === -2) {
+      return NextResponse.json(
+        { error: "Nenhuma loja desta conta está autorizada no 99Food. Conecte a integração primeiro." },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
       {
-        error: `O 99Food não devolveu o pedido: ${r.errno} ${r.errmsg}`,
+        error: `O 99Food não devolveu o pedido: ${achado.errno} ${achado.errmsg}`,
+        tokensTentados: achado.tentativas,
         dica:
           "O ID tem que ser o do pedido (19 dígitos), não o número curto que aparece na " +
           "comanda — esse é o order_index, e o endpoint de detalhe não aceita.",
@@ -83,7 +82,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const p = traduzirPedido99Food(r.data);
+  const p = traduzirPedido99Food(achado.data);
 
   // ── Conferir a tradução sem gravar nada ───────────────────────────────────
   //
@@ -102,7 +101,7 @@ export async function POST(req: NextRequest) {
       traduzido: p,
       // O cru serve para achar campo que o tradutor ignorou: se algo importante
       // aparece aqui e não em `traduzido`, é o tradutor que está incompleto.
-      cruDoNoveNove: r.data,
+      cruDoNoveNove: achado.data,
     });
   }
 

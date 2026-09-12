@@ -185,6 +185,63 @@ export async function conferirCodigoEntrega99(
   return { conferido: false, ...ultimo };
 }
 
+/**
+ * O token da loja de onde o pedido VEIO — não o da conta.
+ *
+ * ── O pedido da 2ª e da 3ª loja nunca entrava ──────────────────────────────
+ *
+ * O `auth_token` do 99Food é por LOJA (`app_shop_id`), e a conta com várias
+ * lojas tem um `app_shop_id` por linha da `Food99Store`: o da primeira é o
+ * próprio id da conta, e as seguintes ganham sufixo (`-2`, `-3`). O webhook
+ * buscava o pedido com `tokenDaLoja(franchisee.id)` — que resolve SEMPRE para
+ * a primeira loja. Para as outras, o `order/detail` recusava, o lote inteiro
+ * caía em 500, o 99Food reenviava e caía no mesmo erro. Para sempre.
+ *
+ * Medido em 12/09/2026 na conta do Lucas Pimenta: 8 pedidos entraram, todos com
+ * `food99AppShopId` da primeira loja (Frangoso). Nenhum da Braseou nem da Salz
+ * — a loja reclamando "tem pedido da 99 que não está integrando" enquanto o
+ * painel mostrava as três lojas verdes.
+ *
+ * Aqui o `app_shop_id` do evento manda; se ele não resolver (ou não vier),
+ * ainda tentamos os tokens da conta, na ordem, antes de desistir.
+ */
+export async function tokensParaOPedido(
+  franchiseeId: string,
+  appShopIdDoEvento?: string | null,
+): Promise<string[]> {
+  const tokens: string[] = [];
+  const juntar = (t: string | null | undefined) => {
+    if (t && !tokens.includes(t)) tokens.push(t);
+  };
+  if (appShopIdDoEvento) {
+    const t = await tokenDeUmId(String(appShopIdDoEvento)).catch(() => null);
+    juntar(t?.auth_token);
+  }
+  for (const outro of await tokensDaConta(franchiseeId)) juntar(outro);
+  return tokens;
+}
+
+/**
+ * Busca o pedido no 99Food tentando os tokens certos, em ordem. Devolve o
+ * primeiro que a API aceitar — e, se nenhum aceitar, o último erro, para quem
+ * chamou registrar o motivo de verdade em vez de "sem token".
+ */
+export async function buscarPedido99(
+  franchiseeId: string,
+  orderId: string,
+  appShopIdDoEvento?: string | null,
+): Promise<{ ok: true; data: any; token: string } | { ok: false; errno: number; errmsg: string; tentativas: number }> {
+  const tokens = await tokensParaOPedido(franchiseeId, appShopIdDoEvento);
+  if (tokens.length === 0) return { ok: false, errno: -2, errmsg: "nenhuma loja desta conta tem auth_token válido", tentativas: 0 };
+  let ultimo = { errno: -1, errmsg: "sem resposta" };
+  for (const t of tokens) {
+    const r = await detalheDoPedido(t, String(orderId));
+    if (r.errno === 0 && r.data) return { ok: true, data: r.data, token: t };
+    ultimo = { errno: r.errno, errmsg: r.errmsg };
+  }
+  return { ok: false, errno: ultimo.errno, errmsg: ultimo.errmsg, tentativas: tokens.length };
+}
+
 export async function tokensDaConta(lojaId: string): Promise<string[]> {
   const tokens: string[] = [];
   const juntar = (t: string | null) => {

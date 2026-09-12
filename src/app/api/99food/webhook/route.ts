@@ -4,7 +4,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { registrar99Food } from "@/lib/webhook-99food-log";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
-import { aplicarPedidoAlterado99, sincronizar99Food, tokenDaLoja } from "@/lib/food99-status";
+import { aplicarPedidoAlterado99, sincronizar99Food } from "@/lib/food99-status";
 import { donoDoAppShopId, donoDoShopId } from "@/lib/food99-lojas";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
@@ -272,6 +272,12 @@ export async function POST(req: NextRequest) {
     //   passou do limite  → ACK agora e o trabalho segue no container. A
     //                       gravação é idempotente por openDeliveryOrderId,
     //                       então um reenvio que cruze com ela não duplica.
+    // Evento que falhou por motivo que o reenvio PODE resolver (API do 99Food
+    // fora do ar, token vencendo). Quando há algum, a resposta é 500 no fim:
+    // é o reenvio deles a única chance de o pedido ainda entrar. Falha que o
+    // reenvio não resolve (nenhuma loja da conta com token) não entra aqui —
+    // ficar em 500 eterno só esconde o problema real da loja.
+    const paraReenviar: string[] = [];
     const trabalho = (async () => {
     for (const event of events) {
       // ── O formato REAL, lido do log do portal deles em 26/08/2026 ─────────
@@ -485,33 +491,40 @@ export async function POST(req: NextRequest) {
       // frente e a gravação termina em segundo plano.
       let pedido = traduzido;
       if (isNewOrder && !pedido) {
-        const token = await tokenDaLoja(franchisee.id);
-        if (!token) {
+        // ── O TOKEN É DA LOJA DO EVENTO, NÃO DA CONTA ──────────────────────
+        //
+        // `tokenDaLoja(franchisee.id)` resolve sempre para a PRIMEIRA loja da
+        // conta. Numa conta com três lojas no 99Food, o pedido da segunda e da
+        // terceira era buscado com o token da primeira, o order/detail
+        // recusava, o lote caía em 500 e o 99Food reenviava para sempre: o
+        // pedido nunca entrava. Era o caso das lojas do Lucas Pimenta em
+        // 12/09/2026 — Frangoso entregando, Braseou e Salz mudas.
+        //
+        // E o `throw` derrubava o lote INTEIRO: um evento da Salz levava junto
+        // o pedido do Frangoso que viesse no mesmo lote.
+        const { buscarPedido99 } = await import("@/lib/food99-status");
+        const achado = await buscarPedido99(franchisee.id, String(orderId), appShopId ? String(appShopId) : null);
+        if (!achado.ok) {
+          const ondeVeio = appShopId ? String(appShopId) : "não veio no evento";
           registrar99Food({
             tipo: eventType || "(pedido novo)",
             reconhecido: true,
             pedidoCriado: false,
-            motivo: `sem auth_token para a loja ${franchisee.id} — não deu para buscar o pedido ${orderId} em order/detail`,
+            motivo:
+              achado.errno === -2
+                ? `nenhuma loja da conta ${franchisee.id} tem auth_token — pedido ${orderId} não pôde ser buscado (app_shop_id do evento: ${ondeVeio})`
+                : `order/detail recusou o pedido ${orderId} em ${achado.tentativas} token(s): ${achado.errno} ${achado.errmsg} (app_shop_id do evento: ${ondeVeio})`,
             payload: event,
           });
-          console.error(`[99Food Webhook] Sem token da loja ${franchisee.id} — pedido ${orderId} não pôde ser buscado`);
+          console.error(
+            `[99Food Webhook] pedido ${orderId} não buscado (app_shop_id ${ondeVeio}, conta ${franchisee.id}): ${achado.errno} ${achado.errmsg}`,
+          );
+          // Sem token nenhum na conta, reenviar não muda nada — o que falta é
+          // a loja reconectar. Com erro da API deles, vale pedir o reenvio.
+          if (achado.errno !== -2) paraReenviar.push(String(orderId));
           continue;
         }
-
-        const detalhe = await detalheDoPedido(token, String(orderId));
-        if (detalhe.errno !== 0 || !detalhe.data) {
-          registrar99Food({
-            tipo: eventType || "(pedido novo)",
-            reconhecido: true,
-            pedidoCriado: false,
-            motivo: `order/detail recusou o pedido ${orderId}: ${detalhe.errno} ${detalhe.errmsg}`,
-            payload: event,
-          });
-          // Erro NOSSO/deles ao buscar: deixa o lote falhar para o 99Food
-          // reenviar. É a única chance de o pedido ainda entrar.
-          throw new Error(`order/detail ${orderId}: ${detalhe.errno} ${detalhe.errmsg}`);
-        }
-        pedido = traduzirPedido99Food(detalhe.data);
+        pedido = traduzirPedido99Food(achado.data);
       }
 
       if (isNewOrder && pedido) {
@@ -742,6 +755,13 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[99Food Webhook] ${events.length} evento(s): ${created} pedido(s) criado(s), ${updated} atualizado(s)`);
+    if (paraReenviar.length > 0) {
+      // Os pedidos que deram certo já estão gravados (e a gravação é
+      // idempotente por openDeliveryOrderId), então o reenvio do lote só
+      // reprocessa o que faltou.
+      console.warn(`[99Food Webhook] pedindo reenvio de ${paraReenviar.length}: ${paraReenviar.join(", ")}`);
+      return NextResponse.json({ errno: 1, errmsg: `falha ao buscar ${paraReenviar.length} pedido(s)` }, { status: 500 });
+    }
     return NextResponse.json(ACK);
   } catch (err: any) {
     // Falha NOSSA (banco fora, bug no parser). Aqui NÃO se manda ACK de
