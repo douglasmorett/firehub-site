@@ -450,8 +450,32 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   /** Card cancelado fora da coluna Cancelado (coluna oculta): ganha a faixa vermelha. */
   destacarCancelado = false,
 }: any) {
-  /** Resumo que abre ao passar o mouse no número do pedido. */
+  /**
+   * Resumo que abre ao passar o mouse no número do pedido.
+   *
+   * Só depois de 3 segundos com a seta PARADA em cima. Abrindo na hora, a
+   * caixinha pulava na frente do cartão de baixo toda vez que o mouse
+   * cruzava o número a caminho do checkbox ou de um botão — atrapalhava
+   * justamente quem queria só selecionar o pedido (dono, 12/09/2026).
+   *
+   * "Parada" com folga de 8 px: tremor de mão não reinicia a contagem, mas
+   * quem está de passagem reinicia e nunca chega aos 3 segundos.
+   */
   const [mostrarResumo, setMostrarResumo] = useState(false);
+  const relogioDoResumo = useRef<any>(null);
+  const ondeASetaEstava = useRef({ x: 0, y: 0 });
+
+  const cancelarResumo = () => {
+    if (relogioDoResumo.current) clearTimeout(relogioDoResumo.current);
+    relogioDoResumo.current = null;
+  };
+  const contarTresSegundos = () => {
+    cancelarResumo();
+    relogioDoResumo.current = setTimeout(() => setMostrarResumo(true), 3000);
+  };
+  // O cartão sai da tela a cada mudança de status. Sem isto o relógio
+  // continuaria correndo para um componente que já não existe.
+  useEffect(() => cancelarResumo, []);
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.NOVO;
   const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
   const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
@@ -591,8 +615,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               era preciso abrir o cartão para ver os itens, e o horário-limite
               não aparecia em lugar nenhum: só o cronômetro contando.
 
-              Passa o mouse no número e sai o resumo. Some ao tirar o mouse, e
-              não atrapalha o toque no celular (só o mouse dispara). */}
+              Deixa a seta parada 3 segundos no número e sai o resumo. Some ao
+              tirar o mouse, e não atrapalha o toque no celular (só o mouse
+              dispara). */}
           <div
             style={{
               fontWeight: 800,
@@ -607,8 +632,18 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               position: "relative",
               cursor: "help",
             }}
-            onMouseEnter={() => setMostrarResumo(true)}
-            onMouseLeave={() => setMostrarResumo(false)}
+            onMouseEnter={(e: any) => {
+              ondeASetaEstava.current = { x: e.clientX, y: e.clientY };
+              contarTresSegundos();
+            }}
+            onMouseMove={(e: any) => {
+              if (mostrarResumo) return; // já aberto: mexer o mouse não fecha
+              const antes = ondeASetaEstava.current;
+              if (Math.abs(e.clientX - antes.x) < 8 && Math.abs(e.clientY - antes.y) < 8) return;
+              ondeASetaEstava.current = { x: e.clientX, y: e.clientY };
+              contarTresSegundos();
+            }}
+            onMouseLeave={() => { cancelarResumo(); setMostrarResumo(false); }}
           >
             #{seqNum} — {order.customerName}
             {mostrarResumo && (
