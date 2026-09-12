@@ -44,6 +44,38 @@ export async function GET(req: Request) {
 
   // Buscar motoboys do franqueado
   const motoboyFilter = motoboyId ? { id: motoboyId } : {};
+  // ── O REPASSE POR FAIXA DE DISTÂNCIA ─────────────────────────────────────
+  //
+  // A loja pode pagar ao entregador um valor diferente do que cobra do
+  // cliente (tela de Entrega, coluna "Motoboy"). Quando ela separa os dois, é
+  // esse valor que vale no acerto — e ele é por FAIXA, então depende da
+  // distância daquela entrega.
+  const donoDaLoja = await prisma.user.findUnique({
+    where: { id: targetFranchiseeId },
+    select: { deliveryZones: true, deliveryZoneType: true },
+  }).catch(() => null);
+
+  const faixas: { km: number; motoboyFee: number }[] = (() => {
+    const z = donoDaLoja?.deliveryZones;
+    const lista = Array.isArray(z) ? z : [];
+    return lista
+      .map((x: any) => ({ km: Number(x?.km ?? x?.radius ?? x?.maxKm ?? 0), motoboyFee: Number(x?.motoboyFee) }))
+      .filter((x) => x.km > 0 && Number.isFinite(x.motoboyFee) && x.motoboyFee >= 0)
+      .sort((a, b) => a.km - b.km);
+  })();
+
+  /** O repasse da faixa que cobre esta distância. A primeira que alcança. */
+  const repasseDaFaixa = (km?: number | null): number | null => {
+    if (!faixas.length) return null;
+    const d = Number(km || 0);
+    if (!(d > 0)) return null;
+    const faixa = faixas.find((f) => d <= f.km);
+    // Além da última faixa, vale a última — é o que a loja cadastrou como
+    // limite, e devolver nulo faria a entrega mais longa cair na taxa do
+    // cliente enquanto as outras usam o repasse.
+    return faixa ? faixa.motoboyFee : faixas[faixas.length - 1].motoboyFee;
+  };
+
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId, ...motoboyFilter },
     orderBy: { name: "asc" },
@@ -196,16 +228,24 @@ export async function GET(req: Request) {
     // Sem valor por entrega configurado, o relatório cai na taxa do cliente —
     // que é o comportamento antigo, mantido para não zerar o acerto de quem
     // nunca configurou. A tela avisa que é isso que está acontecendo.
-    const usandoTaxaDoCliente = (ehPorEntrega || !mb.paymentType) && perDeliveryRate <= 0;
+    // Só avisa quando REALMENTE caiu na taxa do cliente: com repasse por faixa
+    // cadastrado, a conta já é a certa e o aviso seria ruído.
+    const usandoTaxaDoCliente = (ehPorEntrega || !mb.paymentType) && perDeliveryRate <= 0 && faixas.length === 0;
 
+    // A ordem importa e é esta, da mais específica para a mais genérica:
+    //   1. o que ficou gravado NO PEDIDO (motoboyFee) — é história, não regra
+    //   2. o acerto individual deste entregador (por entrega / por km)
+    //   3. o repasse da FAIXA de distância que a loja cadastrou
+    //   4. a taxa que o cliente pagou — último recurso, com aviso na tela
     const ganhoDoPedido = (o: { deliveryFee?: number | null; motoboyFee?: number | null; deliveryDistance?: number | null }) => {
-      switch (mb.paymentType) {
-        case "DAILY_RATE": return 0;
-        case "PER_KM": return (o.deliveryDistance || 0) * perKmRate;
-        default:
-          if (perDeliveryRate > 0) return perDeliveryRate;
-          return Number(o.deliveryFee || o.motoboyFee || 0);
-      }
+      if (mb.paymentType === "DAILY_RATE") return 0;
+      const gravado = Number(o.motoboyFee || 0);
+      if (gravado > 0) return gravado;
+      if (mb.paymentType === "PER_KM") return (o.deliveryDistance || 0) * perKmRate;
+      if (perDeliveryRate > 0) return perDeliveryRate;
+      const daFaixa = repasseDaFaixa(o.deliveryDistance);
+      if (daFaixa != null) return daFaixa;
+      return Number(o.deliveryFee || 0);
     };
 
     const dailyTotal = (mb.paymentType === "PER_DELIVERY" || mb.paymentType === "PER_KM") ? 0 : uniqueDays * dailyRate;

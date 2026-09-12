@@ -4,7 +4,17 @@ import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from
 
 const ZONE_COLORS = ["#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
 
-type Zone = { km: number; time: number; fee: number };
+/**
+ * `fee` é o que o CLIENTE paga. `motoboyFee` é o que a LOJA repassa ao
+ * entregador naquela faixa — os dois quase nunca são o mesmo número, e até
+ * aqui só existia o primeiro. O relatório de entregas então caía na taxa do
+ * cliente, que em pedido de iFood e 99Food é dinheiro do marketplace: o
+ * Lucas via "Taxa: R$ 6,94" numa entrega que ele paga R$ 2,00 (12/09/2026).
+ *
+ * Ausente = a loja não separou os dois, e vale o acerto cadastrado no próprio
+ * entregador.
+ */
+type Zone = { km: number; time: number; fee: number; motoboyFee?: number };
 
 interface Props {
   initialAddress: string;
@@ -57,6 +67,17 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           { maxKm: 5, time: 45, fee: 9 },
           { maxKm: 10, time: 60, fee: 14 },
         ]
+  );
+
+  /**
+   * A loja separa o que cobra do cliente do que paga ao entregador?
+   *
+   * Nasce ligado quando ALGUMA faixa ja tem repasse gravado — assim quem ja
+   * configurou volta na tela e ve os proprios numeros, em vez de uma coluna
+   * sumida e o valor aparentemente perdido.
+   */
+  const [repasseSeparado, setRepasseSeparado] = useState<boolean>(
+    () => (initialZones || []).some((z: any) => z && z.motoboyFee != null && z.motoboyFee !== ""),
   );
 
   const [hoveredZoneIndex, setHoveredZoneIndex] = useState<number | null>(null);
@@ -725,9 +746,33 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 </div>
               </div>
 
+              {/* ── O QUE O CLIENTE PAGA E O QUE O ENTREGADOR RECEBE ──────
+                  São dois números diferentes na maioria das lojas, e o segundo
+                  não existia: o relatório de entregas caía na taxa do cliente,
+                  que em pedido de iFood e 99Food é dinheiro do marketplace. */}
+              <label style={{ display: "flex", gap: 9, alignItems: "flex-start", marginBottom: 12, cursor: "pointer", background: repasseSeparado ? "#FFF7ED" : "#F8FAFC", border: `1.5px solid ${repasseSeparado ? "#FED7AA" : "#E2E8F0"}`, borderRadius: 10, padding: "10px 12px" }}>
+                <input
+                  type="checkbox"
+                  checked={repasseSeparado}
+                  onChange={(e) => {
+                    const ligado = e.target.checked;
+                    setRepasseSeparado(ligado);
+                    // Ligando, cada faixa nasce repassando o mesmo que cobra —
+                    // assim nada muda de valor até a loja mexer de propósito.
+                    if (ligado) setZones(p => p.map(z => ({ ...z, motoboyFee: z.motoboyFee ?? z.fee })));
+                    else setZones(p => p.map(({ motoboyFee, ...z }) => z));
+                  }}
+                  style={{ marginTop: 2, width: 16, height: 16, accentColor: "#C2410C", cursor: "pointer", flexShrink: 0 }}
+                />
+                <span style={{ fontSize: "0.8rem", color: "#334155", lineHeight: 1.45 }}>
+                  <b>Pagar o entregador um valor diferente da taxa cobrada do cliente.</b>{" "}
+                  <span style={{ color: "#64748B" }}>Use quando a loja fica com parte da entrega. O relatório de entregas passa a usar este valor.</span>
+                </span>
+              </label>
+
               {/* Table header */}
-              <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr 32px", gap: "6px", fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", padding: "0 4px", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                <span>Raio</span><span>Tempo (min)</span><span>Taxa (R$)</span><span></span>
+              <div style={{ display: "grid", gridTemplateColumns: repasseSeparado ? "60px 1fr 1fr 1fr 32px" : "60px 1fr 1fr 32px", gap: "6px", fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", padding: "0 4px", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                <span>Raio</span><span>Tempo (min)</span><span>Cliente (R$)</span>{repasseSeparado && <span style={{ color: "#C2410C" }}>Motoboy (R$)</span>}<span></span>
               </div>
 
               {zones.sort((a, b) => a.km - b.km).map((zone, i) => (
@@ -736,7 +781,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                   onMouseEnter={() => setHoveredZoneIndex(i)}
                   onMouseLeave={() => setHoveredZoneIndex(null)}
                   style={{
-                    display: "grid", gridTemplateColumns: "60px 1fr 1fr 32px", gap: "6px", alignItems: "center", marginBottom: "8px",
+                    display: "grid", gridTemplateColumns: repasseSeparado ? "60px 1fr 1fr 1fr 32px" : "60px 1fr 1fr 32px", gap: "6px", alignItems: "center", marginBottom: "8px",
                     padding: "4px 6px", borderRadius: "8px", transition: "all 0.15s ease",
                     background: hoveredZoneIndex === i ? "#FEF2F2" : "transparent",
                     boxShadow: hoveredZoneIndex === i ? "0 0 0 1.5px #FCA5A5" : "none"
@@ -754,6 +799,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                   <input type="number" min="0" step="0.5" value={zone.fee}
                     onChange={e => updateZone(i, "fee", parseFloat(e.target.value) || 0)}
                     style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem", textAlign: "center", outline: "none" }} />
+                  {repasseSeparado && (
+                    <input type="number" min="0" step="0.5" value={zone.motoboyFee ?? zone.fee}
+                      title="Quanto a loja paga ao entregador nesta faixa"
+                      onChange={e => updateZone(i, "motoboyFee" as any, parseFloat(e.target.value) || 0)}
+                      style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", borderRadius: "6px", border: "1.5px solid #FED7AA", background: "#FFF7ED", color: "#9A3412", fontWeight: 700, fontSize: "0.82rem", textAlign: "center", outline: "none" }} />
+                  )}
                   <button onClick={() => removeZone(i)}
                     style={{ width: "28px", height: "28px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <Trash2 size={13} />
