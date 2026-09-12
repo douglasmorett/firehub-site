@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { areasDeRisco as lerAreasDeRisco, type AreaDeRisco } from "@/lib/area-de-risco";
 import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from "lucide-react";
 
 const ZONE_COLORS = ["#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
@@ -22,10 +23,12 @@ interface Props {
   initialZones: Zone[];
   zoneType: string;
   initialIfoodSyncDeliveryTime?: boolean;
-  onSave: (data: { storeLatLng: { lat: number; lng: number }; deliveryZones: Zone[]; deliveryZoneType: string; storeAddress: string; ifoodSyncDeliveryTime?: boolean }) => Promise<void>;
+  /** As áreas de risco já gravadas (User.deliveryConfig.areasDeRisco). */
+  initialAreasDeRisco?: unknown;
+  onSave: (data: { storeLatLng: { lat: number; lng: number }; deliveryZones: Zone[]; deliveryZoneType: string; storeAddress: string; ifoodSyncDeliveryTime?: boolean; areasDeRisco?: AreaDeRisco[] }) => Promise<void>;
 }
 
-export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialIfoodSyncDeliveryTime, onSave }: Props) {
+export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialIfoodSyncDeliveryTime, initialAreasDeRisco, onSave }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -45,6 +48,22 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
    */
   const porDistancia = currentZoneType === "KM" || currentZoneType === "RADIUS" || currentZoneType === "ROTA";
   const porRota = currentZoneType === "ROTA";
+
+  /**
+   * Onde a loja NÃO entrega, por mais perto que seja.
+   *
+   * Raio e bairro não sabem dizer "aqui não": a rua do outro lado da avenida
+   * está a 900 m e cai dentro do raio de 3 km. Sem isto, a loja descobre na
+   * hora de despachar, com a comida pronta, e liga para cancelar.
+   */
+  const [areasDeRisco, setAreasDeRisco] = useState<AreaDeRisco[]>(() => lerAreasDeRisco(initialAreasDeRisco));
+  /** Pontos sendo clicados agora. `null` = não está desenhando. */
+  const [desenhando, setDesenhando] = useState<[number, number][] | null>(null);
+  // O clique do mapa é registrado uma vez só, no início; ele lê estes refs
+  // para saber o que fazer AGORA, em vez de capturar o estado de então.
+  const desenhandoRef = useRef<[number, number][] | null>(null);
+  useEffect(() => { desenhandoRef.current = desenhando; }, [desenhando]);
+  const riscoRef = useRef<any[]>([]);
 
   // State for Radius (KM) mode
   const [zones, setZones] = useState<Zone[]>(
@@ -176,6 +195,13 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       }
 
       map.on("click", (e: any) => {
+        // Desenhando área de risco, o clique é vértice — e nunca mexe no
+        // endereço da loja, que é a outra coisa que o clique faz aqui.
+        if (desenhandoRef.current) {
+          const p: [number, number] = [e.latlng.lat, e.latlng.lng];
+          setDesenhando((atual) => [...(atual || []), p]);
+          return;
+        }
         if (!editingAddressRef.current) return;
         const pos = e.latlng;
         if (markerRef.current) {
@@ -283,6 +309,41 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   useEffect(() => {
     drawCircles();
   }, [drawCircles]);
+
+  // Os polígonos de exclusão, em vermelho tracejado — a única coisa vermelha
+  // hachurada no mapa, para não se confundir com as faixas de entrega.
+  useEffect(() => {
+    const ref = leafletMapRef.current;
+    if (!ref) return;
+    const { map, L } = ref;
+    riscoRef.current.forEach((c) => map.removeLayer(c));
+    riscoRef.current = [];
+
+    for (const area of areasDeRisco) {
+      const poligono = L.polygon(area.pontos, {
+        color: area.ativa === false ? "#94A3B8" : "#DC2626",
+        weight: 2,
+        dashArray: "6 5",
+        fillColor: area.ativa === false ? "#94A3B8" : "#DC2626",
+        fillOpacity: area.ativa === false ? 0.08 : 0.2,
+      }).addTo(map);
+      poligono.bindTooltip(`🚫 ${area.nome}${area.ativa === false ? " (desligada)" : ""}`, { sticky: true });
+      riscoRef.current.push(poligono);
+    }
+
+    // O que está sendo desenhado agora: os vértices já clicados e a linha
+    // entre eles, para a loja ver o contorno enquanto clica.
+    if (desenhando && desenhando.length > 0) {
+      for (const p of desenhando) {
+        const bolinha = L.circleMarker(p, { radius: 5, color: "#DC2626", fillColor: "#fff", fillOpacity: 1, weight: 2 }).addTo(map);
+        riscoRef.current.push(bolinha);
+      }
+      if (desenhando.length >= 2) {
+        const linha = L.polyline(desenhando, { color: "#DC2626", weight: 2, dashArray: "6 5" }).addTo(map);
+        riscoRef.current.push(linha);
+      }
+    }
+  }, [areasDeRisco, desenhando, leafletLoaded]);
 
   // Autocomplete live search as user types
   const handleAddressChange = (val: string) => {
@@ -433,7 +494,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     setSaving(true);
     const activeZones = currentZoneType === "NEIGHBORHOOD" ? neighborhoodZones : zones;
     try {
-      await onSave({ storeLatLng: latLng, deliveryZones: activeZones, deliveryZoneType: currentZoneType, storeAddress: address, ifoodSyncDeliveryTime: ifoodSync });
+      await onSave({ storeLatLng: latLng, deliveryZones: activeZones, deliveryZoneType: currentZoneType, storeAddress: address, ifoodSyncDeliveryTime: ifoodSync, areasDeRisco });
       const syncMinutes = (window as any).__ifoodSyncOk;
       if (syncMinutes) {
         setMsg(`✅ Salvo! iFood sincronizado: ${syncMinutes} min de preparo.`);
@@ -924,6 +985,92 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               </button>
             </>
           )}
+
+          {/* ── ÁREAS DE RISCO ────────────────────────────────────────────
+              Vale para os dois modos: raio, rota ou bairro. É a única regra
+              que recusa um endereço mesmo estando dentro da área de entrega —
+              e tem que ser assim, senão a loja desenha a área e continua
+              recebendo o pedido. */}
+          <div style={{ marginTop: "18px", paddingTop: "16px", borderTop: "1.5px solid #E2E8F0" }}>
+            <h4 style={{ fontWeight: 800, fontSize: "1rem", margin: "0 0 4px" }}>🚫 Onde você não entrega</h4>
+            <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 12px", lineHeight: 1.45 }}>
+              Desenhe no mapa as áreas que a loja não atende. Endereço que cair dentro é recusado
+              <b> antes de o cliente pagar</b>, mesmo estando perto e dentro do raio.
+            </p>
+
+            {desenhando ? (
+              <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                <p style={{ margin: 0, fontSize: "0.84rem", fontWeight: 800, color: "#991B1B" }}>
+                  Clique no mapa para marcar os cantos da área
+                </p>
+                <p style={{ margin: "3px 0 10px", fontSize: "0.76rem", color: "#B91C1C" }}>
+                  {desenhando.length} {desenhando.length === 1 ? "ponto marcado" : "pontos marcados"} — são necessários pelo menos 3.
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    disabled={desenhando.length < 3}
+                    onClick={() => {
+                      const nome = (prompt("Nome desta área (ex.: Morro do Cemitério, Rua sem saída):", "Área de risco") || "").trim();
+                      if (!nome) return;
+                      setAreasDeRisco((atual) => [...atual, { nome, pontos: desenhando, ativa: true }]);
+                      setDesenhando(null);
+                    }}
+                    style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: desenhando.length < 3 ? "#FCA5A5" : "#DC2626", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: desenhando.length < 3 ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+                  >
+                    ✓ Fechar área
+                  </button>
+                  <button type="button" onClick={() => setDesenhando(desenhando.slice(0, -1))} disabled={desenhando.length === 0}
+                    style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #FCA5A5", background: "#fff", color: "#B91C1C", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}>
+                    ↶ Desfazer ponto
+                  </button>
+                  <button type="button" onClick={() => setDesenhando(null)}
+                    style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDesenhando([])}
+                style={{ width: "100%", padding: "9px", borderRadius: 9, border: "1.5px dashed #FCA5A5", background: "#FEF2F2", color: "#B91C1C", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}
+              >
+                + Desenhar área de risco no mapa
+              </button>
+            )}
+
+            {areasDeRisco.length === 0 && !desenhando && (
+              <p style={{ fontSize: "0.76rem", color: "#94A3B8", margin: 0, textAlign: "center" }}>
+                Nenhuma área cadastrada — a loja atende toda a área de entrega.
+              </p>
+            )}
+
+            {areasDeRisco.map((area, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderRadius: 9, border: "1px solid #E2E8F0", marginBottom: 6, background: area.ativa === false ? "#F8FAFC" : "#fff" }}>
+                <input
+                  type="checkbox"
+                  checked={area.ativa !== false}
+                  title={area.ativa === false ? "Voltar a recusar esta área" : "Parar de recusar, sem apagar o desenho"}
+                  onChange={(e) => setAreasDeRisco((atual) => atual.map((a, j) => (j === i ? { ...a, ativa: e.target.checked } : a)))}
+                  style={{ width: 16, height: 16, accentColor: "#DC2626", cursor: "pointer", flexShrink: 0 }}
+                />
+                <input
+                  value={area.nome}
+                  onChange={(e) => setAreasDeRisco((atual) => atual.map((a, j) => (j === i ? { ...a, nome: e.target.value } : a)))}
+                  style={{ flex: 1, minWidth: 0, padding: "5px 8px", borderRadius: 7, border: "1px solid #E2E8F0", fontSize: "0.82rem", fontWeight: 700, fontFamily: "inherit", color: area.ativa === false ? "#94A3B8" : "#0F172A" }}
+                />
+                <span style={{ fontSize: "0.72rem", color: "#94A3B8", whiteSpace: "nowrap" }}>{area.pontos.length} pontos</span>
+                <button type="button" title="Apagar esta área"
+                  onClick={() => { if (confirm(`Apagar a área "${area.nome}"?`)) setAreasDeRisco((atual) => atual.filter((_, j) => j !== i)); }}
+                  style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+
 
           <button onClick={handleSave} disabled={saving || !latLng}
             style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "none",

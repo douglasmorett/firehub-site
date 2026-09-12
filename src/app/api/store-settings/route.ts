@@ -51,9 +51,48 @@ export async function PUT(req: Request) {
     "city",              // Cidade / Estado (ex: Rio de Janeiro - RJ)
     "storeTimezone",     // Fuso Horário (ex: America/Sao_Paulo)
     "repasseConfig",     // Configurações de Repasse Automático (Brendi Flow)
-    "deliveryConfig",    // Configurações de Entrega / Frete Grátis
   ]) {
     if (body[key] !== undefined) data[key] = body[key];
+  }
+
+  // ── `deliveryConfig` É MESCLADO, NUNCA SUBSTITUÍDO ───────────────────
+  //
+  // Ele guarda coisas de telas DIFERENTES: frete grátis e pedido mínimo vêm
+  // da aba de Informações; as áreas de risco vêm do mapa de entrega. Cada
+  // tela manda só o que conhece, e substituir o objeto fazia a última a
+  // salvar apagar o que a outra tinha acabado de gravar — a loja desenhava a
+  // área de risco, ia salvar o pedido mínimo e as áreas sumiam sem aviso.
+  if (body.deliveryConfig !== undefined && body.deliveryConfig !== null) {
+    const atual = (currentUser as any)?.deliveryConfig;
+    const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
+    const novo = typeof body.deliveryConfig === "object" && !Array.isArray(body.deliveryConfig) ? body.deliveryConfig : {};
+    data.deliveryConfig = { ...base, ...novo };
+  }
+
+  // ── ÁREAS DE RISCO ENTRAM SEM APAGAR O RESTO ─────────────────────────
+  //
+  // Elas moram dentro do `deliveryConfig`, que tambem guarda frete gratis e
+  // outras coisas. A tela de entrega nao conhece esses outros campos, entao
+  // ela manda so `areasDeRisco` e a mesclagem acontece AQUI — mandar o
+  // deliveryConfig inteiro de la apagaria o frete gratis da loja.
+  if (body.areasDeRisco !== undefined) {
+    const atual = (currentUser as any)?.deliveryConfig;
+    const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
+    const limpas = (Array.isArray(body.areasDeRisco) ? body.areasDeRisco : [])
+      .map((a: any) => ({
+        nome: String(a?.nome || "Área de risco").slice(0, 80),
+        ativa: a?.ativa !== false,
+        pontos: (Array.isArray(a?.pontos) ? a.pontos : [])
+          .map((p: any) => [Number(p?.[0] ?? p?.lat), Number(p?.[1] ?? p?.lng)])
+          .filter((p: number[]) => Number.isFinite(p[0]) && Number.isFinite(p[1]))
+          .slice(0, 200),
+      }))
+      .filter((a: any) => a.pontos.length >= 3)
+      .slice(0, 50);
+    // Sobre o que ja tiver sido mesclado acima, nao sobre o do banco: as duas
+    // coisas podem vir no MESMO salvar.
+    const jaMontado = data.deliveryConfig && typeof data.deliveryConfig === "object" ? data.deliveryConfig : base;
+    data.deliveryConfig = { ...jaMontado, areasDeRisco: limpas };
   }
 
   // O fuso segue o ENDEREÇO. Se cidade, endereço ou o próprio fuso vieram no

@@ -28,6 +28,7 @@
  * (taxa padrão), porque bloquear venda de quem nunca configurou seria pior.
  */
 import { verifyStoreDeliveryAddress } from "@/lib/geocoding";
+import { areaDeRiscoDoPonto } from "@/lib/area-de-risco";
 
 export type LojaParaEntrega = {
   storeAddress?: string | null;
@@ -56,6 +57,8 @@ export type VeredictoDeEntrega = {
   enderecoNoMapa?: string;
   /** true quando a distância veio do CENTRO do bairro, não do endereço exato. */
   aproximado?: boolean;
+  /** O nome da área de risco que recusou, quando foi esse o motivo. */
+  areaDeRisco?: string;
   /** Para log e para a nota do pedido. */
   motivo: string;
 };
@@ -168,6 +171,24 @@ export async function avaliarEntrega(
   const modo = modoDaArea(loja);
   const endereco = String(pedido.endereco || "").trim();
 
+  // ── ÁREA DE RISCO VENCE TUDO ─────────────────────────────────────────
+  //
+  // Checada ANTES do modo, e de propósito: raio e bairro não sabem dizer
+  // "aqui não". A rua do outro lado da avenida está a 900 m e cai dentro do
+  // raio de 3 km; o bairro inteiro está cadastrado mas há três ruas onde o
+  // entregador não sobe. Se a exclusão fosse checada depois, a loja
+  // desenharia a área e continuaria recebendo o pedido.
+  //
+  // Sem coordenada não se recusa ninguém: endereço que o mapa não achou não
+  // pode virar pedido negado.
+  const riscoDireto = areaDeRiscoDoPonto(pedido.coords ?? null, loja.deliveryConfig);
+  if (riscoDireto) {
+    return {
+      modo, resultado: "FORA", taxa: null, tempoMin: null, areaDeRisco: riscoDireto,
+      motivo: `endereço dentro da área que a loja não atende (${riscoDireto})`,
+    };
+  }
+
   if (modo === "SEM_AREA") {
     const taxa = taxaFixaDaLoja(loja);
     return { modo, resultado: "ATENDE", taxa, tempoMin: null, motivo: "loja sem área de entrega cadastrada — sem regra para aplicar" };
@@ -217,6 +238,20 @@ export async function avaliarEntrega(
   if (!check.addressFound || check.distanceKm == null) {
     return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: check.maxRadiusKm ?? raioMaximoKm(loja) ?? undefined, motivo: check.reason || "endereço não localizado no mapa" };
   }
+  // Segunda chance para a área de risco: no modo KM o endereço só ganha
+  // coordenada AQUI, depois do mapa responder. Sem esta checagem, o pedido
+  // digitado sem lat/lng (site, robô, balcão) passaria pela exclusão.
+  if (!coords && check.clienteLat != null && check.clienteLng != null) {
+    const risco = areaDeRiscoDoPonto({ lat: check.clienteLat, lng: check.clienteLng }, loja.deliveryConfig);
+    if (risco) {
+      return {
+        modo, resultado: "FORA", taxa: null, tempoMin: null, areaDeRisco: risco,
+        distanciaKm: check.distanceKm, enderecoNoMapa: check.matchedAddress,
+        motivo: `endereço dentro da área que a loja não atende (${risco})`,
+      };
+    }
+  }
+
   if (check.distanceKm > DISTANCIA_ABSURDA_KM) {
     // Rua Juriti "a 552 km" em 25/08: o pedido foi entregue normalmente — o
     // mapa achou uma rua homônima em outro estado. Isso não é "fora", é
@@ -245,6 +280,9 @@ export function descreverVeredicto(v: VeredictoDeEntrega): string {
     return "sem área cadastrada";
   }
   if (v.resultado === "FORA") {
+    // A área de risco tem motivo próprio: "fora do raio" seria mentira para um
+    // endereço a 900 m, e quem lê o log ia procurar erro no cálculo.
+    if (v.areaDeRisco) return `área não atendida pela loja (${v.areaDeRisco})`;
     return v.modo === "BAIRRO" ? "bairro não atendido" : `${v.distanciaKm} km, fora do raio de ${v.raioMaxKm} km`;
   }
   return `endereço não localizado no mapa (${v.motivo})`;

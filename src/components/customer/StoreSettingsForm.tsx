@@ -1029,6 +1029,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           initialZones={(user.deliveryZones as any) || []}
           zoneType={user.deliveryZoneType || "KM"}
           initialIfoodSyncDeliveryTime={(user as any).ifoodSyncDeliveryTime ?? false}
+          initialAreasDeRisco={((user as any).deliveryConfig as any)?.areasDeRisco || []}
           onSave={async (data) => {
             const res = await fetch("/api/store-settings", {
               method: "PUT",
@@ -1047,6 +1048,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 deliveryZones: data.deliveryZones,
                 deliveryZoneType: data.deliveryZoneType,
                 ifoodSyncDeliveryTime: data.ifoodSyncDeliveryTime,
+                // As áreas de risco moram dentro do deliveryConfig, junto do
+                // resto da configuração de entrega. Mandado como campo próprio
+                // para a rota mesclar sem apagar o que já está lá.
+                areasDeRisco: data.areasDeRisco || [],
               }),
             });
             const result = await res.json();

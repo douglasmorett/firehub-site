@@ -37,6 +37,9 @@ export type DeliveryZoneCheckResult = {
   medidaPorRota?: boolean;
   /** A linha reta, sempre — serve para a tela explicar a diferença. */
   distanciaEmLinhaRetaKm?: number;
+  /** Onde o mapa colocou o cliente. É o que a área de risco consulta. */
+  clienteLat?: number;
+  clienteLng?: number;
 };
 
 // Geocodifica um endereço via OpenStreetMap Nominatim API com priorização geográfica (viewbox)
@@ -342,5 +345,7 @@ export async function verifyStoreDeliveryAddress(
     precisao,
     medidaPorRota,
     distanciaEmLinhaRetaKm: emLinhaReta,
+    clienteLat: customerLat,
+    clienteLng: customerLng,
   };
 }
