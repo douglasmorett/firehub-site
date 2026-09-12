@@ -1874,7 +1874,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     // histórico) não chegou agora, só apareceu agora.
                     const esperaAceite = o.status === "NOVO";
                     const jaFinalizado = o.status === "ENTREGUE" || o.status === "FINALIZADO" || o.status === "ENCERRADO";
-                    if (!esperaAceite && !jaFinalizado && o.status !== "CRIANDO_IA") {
+                    // ── SÓ TOCA PARA PEDIDO QUE CHEGOU AGORA ────────────────
+                    //
+                    // "Novo para este detector" quer dizer "id que não estava na
+                    // lista anterior" — e a lista muda inteira quando o lojista
+                    // troca o período do filtro. Sem esta guarda, escolher outro
+                    // dia dispararia um bipe por pedido, em rajada. A idade do
+                    // pedido é o que separa "acabou de entrar" de "apareceu na
+                    // tela agora porque você mudou o filtro".
+                    const idadeMin = (Date.now() - new Date(o.createdAt).getTime()) / 60000;
+                    const chegouAgora = idadeMin >= 0 && idadeMin < 15;
+                    if (chegouAgora && !esperaAceite && !jaFinalizado && o.status !== "CRIANDO_IA") {
                       const canal = nomeDoCanal(o);
                       console.log(`[Pedido novo] 🛎️ ${canal} #${o.dailyOrderNumber ?? ""} — tocando chegada`);
                       tocarChegadaDePedido();
