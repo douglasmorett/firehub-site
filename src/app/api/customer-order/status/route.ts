@@ -243,12 +243,21 @@ export async function PUT(req: Request) {
       updateData.cancelledBy = "LOJA";
       if (cancelReason) updateData.cancelReason = cancelReason;
     }
+    // O entregador só é buscado quando o 99Food vai perguntar por ele.
+    let entregadorDoPedido: { nome: string; telefone?: string | null; id?: string | null } | null = null;
+    if (status === "SAIU_ENTREGA" && (order as any).motoboyId) {
+      const mb = await prisma.motoboy
+        .findUnique({ where: { id: (order as any).motoboyId }, select: { id: true, name: true, phone: true } })
+        .catch(() => null);
+      if (mb) entregadorDoPedido = { nome: mb.name, telefone: mb.phone, id: mb.id };
+    }
     const r = await sincronizar99Food(
       {
         openDeliveryOrderId: order.openDeliveryOrderId!,
         franchiseeId: order.franchiseeId,
         status: order.status,
         deliveryBy: order.deliveryBy,
+        entregador: entregadorDoPedido,
       },
       status,
       { motivo: cancelReason, reasonId: cancellationCode ? Number(cancellationCode) : undefined }

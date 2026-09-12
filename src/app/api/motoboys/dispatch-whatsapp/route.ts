@@ -73,19 +73,26 @@ export async function POST(req: NextRequest) {
               // O canal decide o parceiro: o id do 99Food mora no mesmo campo
               // do JotaJá, e sem isto o dispatch ia sempre para o JotaJá.
               openDeliveryChannel: true, source: true, deliveryBy: true,
+              // O 99Food quer saber QUEM está levando (courier_info do
+              // selfdelivery/dispatch), então o motoboy vem junto.
+              motoboyId: true,
+              motoboy: { select: { id: true, name: true, phone: true } },
             },
           });
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
           for (const ord of orders) {
             if (ehPedido99Food(ord)) {
-              // O 99Food não tem "dispatch": o aviso que existe é o `ready`, e
-              // é ele que solta o pedido do lado deles.
+              // O 99Food TEM dispatch para entrega própria
+              // (/v1/order/selfdelivery/dispatch, doc de 2026), e ele quer
+              // saber quem está levando. Sem essa chamada o pedido ficava
+              // "pronto" no painel deles até aparecer entregue do nada.
               await sincronizar99Food(
                 {
                   openDeliveryOrderId: ord.openDeliveryOrderId!,
                   franchiseeId: ord.franchiseeId,
                   status: ord.status,
                   deliveryBy: ord.deliveryBy,
+                  entregador: ord.motoboy ? { nome: ord.motoboy.name, telefone: ord.motoboy.phone, id: ord.motoboy.id } : null,
                 },
                 "SAIU_ENTREGA"
               ).catch((err: any) =>

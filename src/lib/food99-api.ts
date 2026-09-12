@@ -393,6 +393,80 @@ export async function verificarCodigoEntrega(authToken: string, orderId: string,
   });
 }
 
+/** Como o 99Food numera os tipos de veículo (doc de 2026). */
+export const VEICULOS_99 = { PE: 100, ELETRICA: 101, MOTO: 102, BICICLETA: 103, CARRO: 104, MOTO125: 105 } as const;
+
+export interface EntregadorDaLoja {
+  nome: string;
+  telefone?: string | null;
+  id?: string | null;
+  /** Ver VEICULOS_99. Sem isto, o 99 assume o padrão dele. */
+  veiculo?: number;
+}
+
+/**
+ * Avisa o 99Food que o pedido SAIU para entrega com o entregador da loja.
+ *
+ * ── O passo que faltava ────────────────────────────────────────────────────
+ *
+ * O FireHub mandava `ready` no PRONTO e `ready` de novo no SAIU_ENTREGA — a
+ * mesma chamada para dois momentos diferentes. Para o 99Food, o pedido nunca
+ * saía: ficava "pronto" até virar "entregue" do nada. O lojista via isso como
+ * "dei pronto e ele já despachou" e "despachei para o motoboy e não coletou na
+ * 99" (Lucas Pimenta, 11/09/2026, 22:27 e 23:59).
+ *
+ * `courier_info` é obrigatório e quer nome e sobrenome separados; `limit_time`
+ * quer os dois horários em segundos (não milissegundos).
+ */
+export async function despacharEntregaPropria(
+  authToken: string,
+  orderId: string,
+  entregador: EntregadorDaLoja,
+  minutosAteEntregar = 40,
+): Promise<RespostaFood99> {
+  const nome = (entregador.nome || "Entregador da loja").trim();
+  const partes = nome.split(/\s+/);
+  const telefone = String(entregador.telefone || "").replace(/\D/g, "");
+  // O 99 quer o DDI separado do número. O que chega do cadastro costuma vir
+  // com 55 na frente (WhatsApp) ou sem nada (só DDD + número).
+  const semDdi = telefone.startsWith("55") && telefone.length > 11 ? telefone.slice(2) : telefone;
+  const agora = Math.floor(Date.now() / 1000);
+  return chamar("/v1/order/selfdelivery/dispatch", {
+    metodo: "POST",
+    corpo: {
+      auth_token: authToken,
+      order_id: String(orderId),
+      courier_info: {
+        ...(entregador.id ? { courier_id: String(entregador.id) } : {}),
+        courier_name: nome,
+        courier_first_name: partes[0] || nome,
+        courier_last_name: partes.length > 1 ? partes.slice(1).join(" ") : partes[0] || nome,
+        courier_phone_code: "+55",
+        courier_phone: semDdi || "0",
+      },
+      ...(entregador.veiculo ? { vehicle: { vehicle_type: entregador.veiculo } } : {}),
+      limit_time: {
+        pickup_time: agora,
+        delivery_time: agora + Math.max(5, minutosAteEntregar) * 60,
+      },
+    },
+    idsCrus: ["order_id"],
+  });
+}
+
+/**
+ * Conclui o pedido de ENTREGA PRÓPRIA. Endpoint novo (2026), irmão do dispatch.
+ * O antigo `/v1/order/order/delivered` continua existindo e é o que a loja usa
+ * hoje; este é o par correto de quem despachou por `selfdelivery/dispatch`.
+ */
+export async function entregaPropriaConcluida(authToken: string, orderId: string): Promise<RespostaFood99> {
+  return chamar("/v1/order/selfdelivery/delivered", {
+    metodo: "POST",
+    corpo: { auth_token: authToken, order_id: String(orderId) },
+    idsCrus: ["order_id"],
+  });
+}
+
 export async function detalheDoPedido(authToken: string, orderId: string): Promise<RespostaFood99> {
   return chamar("/v1/order/order/detail", {
     query: { auth_token: authToken, order_id: orderId },

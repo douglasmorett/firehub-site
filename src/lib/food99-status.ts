@@ -8,6 +8,8 @@ import {
   pedidoEntregue,
   detalheDoPedido,
   verificarCodigoEntrega,
+  despacharEntregaPropria,
+  entregaPropriaConcluida,
 } from "@/lib/food99-api";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
 
@@ -302,6 +304,10 @@ export async function sincronizar99Food(
     franchiseeId: string;
     status: string;
     deliveryBy?: string | null;
+    /** Quem vai levar, quando a entrega é da loja: vai no dispatch do 99Food. */
+    entregador?: { nome: string; telefone?: string | null; id?: string | null } | null;
+    /** Minutos previstos até a entrega, para o limit_time do 99Food. */
+    minutosAteEntregar?: number | null;
   },
   novoStatus: string,
   opts: { motivo?: string; reasonId?: number; limiteMs?: number } = {}
@@ -390,7 +396,26 @@ export async function sincronizar99Food(
     if (!JA_CONFIRMOU.includes(pedido.status)) {
       await executar("confirm (antes do ready)", (t: string) => confirmarPedido(t, orderId));
     }
-    await executar("ready", (t: string) => pedidoPronto(t, orderId));
+    if (!JA_PASSOU_PELO_READY.includes(pedido.status)) {
+      await executar("ready", (t: string) => pedidoPronto(t, orderId));
+    }
+  }
+
+  // ── SAIU PARA ENTREGA É OUTRA COISA ALÉM DE "PRONTO" ────────────────────
+  //
+  // PRONTO e SAIU_ENTREGA mandavam a MESMA chamada (`ready`). Para o 99Food o
+  // pedido nunca saía da loja: ficava pronto até aparecer entregue. O lojista
+  // via os dois lados disso — "dei pronto e já despachou" e "mandei para o
+  // motoboy e não coletou na 99" (Lucas Pimenta, 11/09/2026).
+  //
+  // Só vale para entrega da LOJA. No pedido que o 99 entrega, quem despacha é
+  // o entregador deles, e mandar dispatch ali seria mentir sobre quem está com
+  // a comida.
+  if (novoStatus === "SAIU_ENTREGA" && pedido.deliveryBy === "MERCHANT") {
+    const entregador = pedido.entregador || { nome: "Entregador da loja", telefone: null, id: null };
+    await executar("dispatch (entrega própria)", (t: string) =>
+      despacharEntregaPropria(t, orderId, entregador, pedido.minutosAteEntregar || 40),
+    );
   }
 
   if (novoStatus === "ENTREGUE") {

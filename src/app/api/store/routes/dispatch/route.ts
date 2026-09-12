@@ -82,6 +82,9 @@ export async function POST(req: NextRequest) {
               franchiseeId: ord.franchiseeId,
               status: ord.status,
               deliveryBy: ord.deliveryBy,
+              // A rota inteira sai com o mesmo motoboy — é ele que o 99Food
+              // mostra ao cliente no acompanhamento.
+              entregador: motoboy ? { nome: motoboy.name, telefone: motoboy.phone, id: motoboy.id } : null,
             },
             "SAIU_ENTREGA"
           ).catch((err: any) =>
