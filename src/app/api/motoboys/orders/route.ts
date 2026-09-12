@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
+import { cobrancaNaEntrega } from "@/lib/pagamento-na-entrega";
 import { ehPedido99Food } from "@/lib/food99-status";
 
 export async function GET(req: NextRequest) {
@@ -144,11 +145,22 @@ export async function GET(req: NextRequest) {
         appConfig.pedirCodigo99Food &&
         ehPedido99Food({ source: o.source, openDeliveryChannel, openDeliveryOrderId }) &&
         deliveryBy === "MERCHANT";
+      // ── QUANTO RECEBER NA PORTA ──────────────────────────────────────
+      //
+      // Decidido AQUI, no servidor, e não no celular: a regra de "está pago
+      // ou não" é leitura de texto livre (lib/pagamento-na-entrega.ts) e
+      // precisa ser a mesma da comanda. Espalhar essa leitura pelas telas é
+      // como o selo do canal acabou dizendo "Online" para pedido do 99Food.
+      //
+      // Sai `null` quando a loja desligou o aviso ou o pedido já está pago —
+      // assim o app não precisa saber a regra, só olhar se veio algo.
+      const cobranca = appConfig.cobrarNaEntrega ? cobrancaNaEntrega(o as any) : null;
       return {
         ...o,
         routeSequence: sequencias[o.id] ?? null,
         pedeCodigoEntrega: pedeIfood || pede99,
         canalDoCodigo: pedeIfood ? "iFood" : pede99 ? "99Food" : null,
+        cobrarNaEntrega: cobranca && cobranca.cobrar ? cobranca : null,
       };
     });
 

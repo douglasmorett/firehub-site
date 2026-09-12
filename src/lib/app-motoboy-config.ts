@@ -12,6 +12,11 @@
  *   entregador digita os 4 dígitos do cliente e o iFood confere. Nunca pede
  *   em pedido que o iFood não pediu — por isso ligado não incomoda ninguém, e
  *   é o que evita o cancelamento por "entrega não confirmada".
+ * - `cobrarNaEntrega`: pedido que NÃO está pago online abre um aviso com o
+ *   valor a receber e o troco a levar antes da baixa. O cartão do pedido já
+ *   mostrava isso, mas na hora de fechar o entregador toca no botão e vai
+ *   embora — e a loja só descobre no fechamento do caixa. Quem só trabalha
+ *   com pedido pago online nunca vê este aviso, então nasce ligado.
  * - `pedirCodigo99Food`: no 99Food NÃO há aviso por pedido — o guia oficial
  *   trata o código de 4 dígitos como parte de TODA entrega feita pela loja
  *   ("caso o procedimento não seja seguido, eventuais prejuízos serão de
@@ -20,12 +25,14 @@
  */
 export type AppMotoboyConfig = {
   lembrarBebidas: boolean;
+  cobrarNaEntrega: boolean;
   pedirCodigoEntrega: boolean;
   pedirCodigo99Food: boolean;
 };
 
 export const APP_MOTOBOY_PADRAO: AppMotoboyConfig = {
   lembrarBebidas: true,
+  cobrarNaEntrega: true,
   pedirCodigoEntrega: true,
   pedirCodigo99Food: true,
 };
@@ -35,6 +42,7 @@ export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
   if (bruto && typeof bruto === "object" && !Array.isArray(bruto)) {
     const o = bruto as Record<string, unknown>;
     if (typeof o.lembrarBebidas === "boolean") cfg.lembrarBebidas = o.lembrarBebidas;
+    if (typeof o.cobrarNaEntrega === "boolean") cfg.cobrarNaEntrega = o.cobrarNaEntrega;
     if (typeof o.pedirCodigoEntrega === "boolean") cfg.pedirCodigoEntrega = o.pedirCodigoEntrega;
     if (typeof o.pedirCodigo99Food === "boolean") cfg.pedirCodigo99Food = o.pedirCodigo99Food;
   }

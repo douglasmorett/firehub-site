@@ -423,6 +423,41 @@ const DashboardColumn = memo(function DashboardColumn({
   );
 });
 
+/**
+ * A QUE DIA este pedido pertence.
+ *
+ * ── O defeito que isto conserta ────────────────────────────────────────────
+ *
+ * A regra antiga era `scheduledDatetime ? scheduledDatetime : createdAt`. O
+ * problema é que `scheduledDatetime` quase nunca é um agendamento: o iFood e o
+ * 99Food gravam ali a PREVISÃO DE ENTREGA, que costuma ser uma hora depois da
+ * criação. Pedido que entra às 23:22 ganha previsão para 00:20 — e passa a
+ * pertencer ao dia seguinte.
+ *
+ * Duas consequências, as duas vistas em 12/09/2026 na Hakim Centro:
+ *
+ *   1. O quadro amanhecia com pedidos da noite anterior parados na coluna
+ *      Finalizado. Já entregues, já fechados, ocupando a tela do dia novo.
+ *   2. O Resumo de vendas contava aquele dinheiro no dia errado. Toda venda
+ *      entre 23:00 e a meia-noite migrava para o dia seguinte.
+ *
+ * ── A regra ────────────────────────────────────────────────────────────────
+ *
+ * Vale `createdAt`, sempre — a não ser que exista um agendamento DE VERDADE.
+ * "De verdade" é o mesmo corte que a lista de Agendamentos já usava: mais de
+ * 3 horas depois da criação. Previsão de entrega não chega perto disso;
+ * agendamento de cliente ("quero amanhã às 20h") passa longe.
+ */
+const AGENDAMENTO_DE_VERDADE_MS = 3 * 60 * 60 * 1000;
+
+function dataDoPedido(o: any): Date {
+  const criado = new Date(o.createdAt);
+  if (!o.scheduledDatetime) return criado;
+  const agendado = new Date(o.scheduledDatetime);
+  if (!Number.isFinite(agendado.getTime())) return criado;
+  return agendado.getTime() - criado.getTime() > AGENDAMENTO_DE_VERDADE_MS ? agendado : criado;
+}
+
 const DashboardOrderCard = memo(function DashboardOrderCard({
   order,
   expanded,
@@ -2636,21 +2671,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     if (o.status === "ENCERRADO") return false;
     if (!matchesChannelFilter(o)) return false;
     
-    // Pedidos de integrações (iFood/Jotajá) que estão EM ANDAMENTO ignoram filtro de data,
-    // garantindo que pedidos ativos fiquem sempre visíveis.
-    // Pedidos ENTREGUE, CANCELADOS e ENCERRADOS respeitam o filtro de data.
+    // ── O QUE ATRAVESSA A MEIA-NOITE ───────────────────────────────────
+    //
+    // Pedido AINDA EM ABERTO continua na tela quando o dia vira: ele não
+    // acabou, e some da vista seria pior do que ocupar espaço. Pedido
+    // FINALIZADO obedece o filtro de data e vai embora com o dia dele.
+    //
+    // Antes isso valia só para pedido de integração — um pedido do próprio
+    // site em preparo às 23:50 sumia do quadro à meia-noite, com a comida
+    // ainda na chapa. A regra agora é o ESTADO do pedido, não de onde veio.
     const activeStatuses = ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"];
     const isInProgress = activeStatuses.includes(o.status);
-    const isIntegration = !!(o.ifoodOrderId || o.openDeliveryOrderId);
-    
-    if (isInProgress && isIntegration) {
-      // Pedidos em andamento de integração: visíveis se recentes, mas oculta se criados há mais de 12h e antes do período
-      const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
-      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
-      if (refDate < twelveHoursAgo && refDate < fromDate) return false;
+    const refDate = dataDoPedido(o);
+
+    if (isInProgress) {
+      // Trava de 12 h: pedido esquecido em aberto não fica na tela para
+      // sempre, empurrando o quadro do dia para baixo.
+      const dozeHorasAtras = new Date(Date.now() - 12 * 60 * 60 * 1000);
+      if (refDate < dozeHorasAtras && refDate < fromDate) return false;
     } else {
-      // Pedidos finalizados (ENTREGUE), cancelados e pedidos manuais: filtro de data
-      const refDate = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt);
       if (refDate < fromDate || refDate > toDate) return false;
     }
     
@@ -2799,7 +2838,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, [preparo.length]);
 
   // Resumo de vendas
-  const allInRange = orders.filter(o => { const d = o.scheduledDatetime ? new Date(o.scheduledDatetime) : new Date(o.createdAt); return d >= fromDate && d <= toDate; });
+  // MESMA regra do quadro: a venda pertence ao dia em que o pedido entrou.
+  // Com a previsão de entrega no lugar da criação, todo pedido das últimas
+  // horas da noite migrava o faturamento dele para o dia seguinte.
+  const allInRange = orders.filter(o => { const d = dataDoPedido(o); return d >= fromDate && d <= toDate; });
   const resumo = {
     pendentes: allInRange.filter(o => o.status === "AGUARDANDO_PAGAMENTO"),
     novos: allInRange.filter(o => o.status === "NOVO"),
@@ -5386,6 +5428,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   chave: "lembrarBebidas" as const,
                   rotulo: "🥤 Lembrar o motoboy das bebidas",
                   ajuda: "Pergunta \"você entregou a bebida?\" antes de dar baixa em pedido com bebida.",
+                },
+                {
+                  chave: "cobrarNaEntrega" as const,
+                  rotulo: "💵 Lembrar de receber o pagamento na entrega",
+                  ajuda: "Só nos pedidos que não estão pagos online. Antes de dar baixa, o app mostra quanto receber, a forma de pagamento e quanto de troco levar.",
                 },
                 {
                   chave: "pedirCodigoEntrega" as const,

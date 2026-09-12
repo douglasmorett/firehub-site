@@ -521,7 +521,21 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   /** Palavras de bebida personalizadas da loja — vêm junto com os pedidos. */
   const [bevKeywords, setBevKeywords] = useState<string>("");
   /** O que o dono ligou no painel (App Motoboys → configurações). */
-  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; pedirCodigoEntrega: boolean; pedirCodigo99Food: boolean }>({ lembrarBebidas: true, pedirCodigoEntrega: true, pedirCodigo99Food: true });
+  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; cobrarNaEntrega: boolean; pedirCodigoEntrega: boolean; pedirCodigo99Food: boolean }>({ lembrarBebidas: true, cobrarNaEntrega: true, pedirCodigoEntrega: true, pedirCodigo99Food: true });
+
+  /**
+   * Pedido que ainda tem dinheiro para receber na porta.
+   *
+   * O cartão do pedido já mostrava a forma de pagamento e o troco — mas na
+   * hora de fechar o entregador toca no botão verde e vai embora. A loja só
+   * descobre no fechamento do caixa, sem saber de qual entrega foi.
+   *
+   * Quem decide se cobra é o SERVIDOR (lib/pagamento-na-entrega.ts, a mesma
+   * leitura que imprime "COBRAR NA ENTREGA" na comanda): aqui só se olha se
+   * o campo veio. Pedido pago online e loja que desligou o aviso chegam com
+   * ele nulo e este passo nem existe.
+   */
+  const [cobrancaModalOrder, setCobrancaModalOrder] = useState<any | null>(null);
 
   // Código de entrega do iFood: o cliente dita 4 dígitos, o servidor confere
   // com o iFood e só então dá a baixa.
@@ -541,11 +555,25 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   };
 
   /**
-   * Depois das bebidas: pedido do iFood que exige o código do cliente abre o
+   * Depois das bebidas: se tem dinheiro a receber, lembra ANTES de qualquer
+   * outra coisa. O código do parceiro vem depois porque ele é a confirmação
+   * final — uma vez conferido, o pedido está fechado no iFood/99 e o
+   * entregador já saiu da tela.
+   */
+  const prosseguirEntrega = (order: any) => {
+    if (order?.cobrarNaEntrega) {
+      setCobrancaModalOrder(order);
+      return;
+    }
+    pedirCodigoOuBaixar(order);
+  };
+
+  /**
+   * Fim da fila: pedido do iFood/99Food que exige o código do cliente abre o
    * teclado do código (`pedeCodigoEntrega` vem do servidor, já com a regra da
    * loja aplicada); os outros dão baixa direto.
    */
-  const prosseguirEntrega = (order: any) => {
+  const pedirCodigoOuBaixar = (order: any) => {
     if (order?.pedeCodigoEntrega) {
       setCodigoDigitado("");
       setCodigoErro("");
@@ -1025,6 +1053,12 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               : null;
 
             const changeAmount = (order as any).changeAmount;
+            /* Quanto receber na porta, já decidido no servidor
+               (lib/pagamento-na-entrega.ts). Nulo = pedido pago online, ou a
+               loja desligou o aviso. */
+            const cobranca = (order as any).cobrarNaEntrega as
+              | { metodo: string; valor: number; trocoPara?: number; levarDeTroco?: number }
+              | null | undefined;
             const rawNotes = order.notes || "";
             const cleanNotes = rawNotes
               .replace(/Pedido iFood #[A-Za-z0-9_-]+/gi, "")
@@ -1085,18 +1119,45 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                     </p>
                   </div>
 
-                  {/* Payment & Change Info */}
-                  <div style={{ background: "#F8FAFC", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E2E8F0", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  {/* ── PAGAMENTO E TROCO ──────────────────────────────────
+                      Pedido a receber ganha borda verde e o valor em destaque:
+                      o entregador olha o cartão de relance na moto, e "pago
+                      online" e "receber R$ 87,00" precisam ser distinguíveis
+                      sem leitura.
+
+                      O TROCO é a conta que mais deu problema. `changeAmount` é
+                      a NOTA que o cliente vai entregar, e o cartão dizia "Levar
+                      Troco para R$ 50,00" — o entregador tinha que subtrair de
+                      cabeça, na porta, para saber quanto separar. Agora sai
+                      calculado, com a nota entre parênteses para conferência. */}
+                  <div style={{
+                    background: cobranca ? "#F0FDF4" : "#F8FAFC",
+                    padding: "8px 12px", borderRadius: "10px",
+                    border: `1px solid ${cobranca ? "#86EFAC" : "#E2E8F0"}`,
+                    display: "flex", flexDirection: "column", gap: "4px",
+                  }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", fontWeight: 800, color: "#334155" }}>
                       <DollarSign size={16} color="#16A34A" />
-                      <span>Pagamento: <b style={{ color: "#0F172A" }}>{order.paymentMethod || "Na entrega"}</b> — R$ {Number(order.totalAmount || 0).toFixed(2).replace(".", ",")}</span>
+                      {cobranca ? (
+                        <span>Receber <b style={{ color: "#14532D", fontSize: "1rem" }}>R$ {Number(cobranca.valor || 0).toFixed(2).replace(".", ",")}</b> em <b style={{ color: "#14532D" }}>{cobranca.metodo}</b></span>
+                      ) : (
+                        <span>Pagamento: <b style={{ color: "#0F172A" }}>{order.paymentMethod || "Na entrega"}</b> — R$ {Number(order.totalAmount || 0).toFixed(2).replace(".", ",")}</span>
+                      )}
                     </div>
 
-                    {(changeAmount || cleanNotes.toLowerCase().includes("troco")) && (
+                    {cobranca && cobranca.trocoPara ? (
+                      <div style={{ background: "#FEF3C7", color: "#92400E", padding: "5px 9px", borderRadius: "6px", fontSize: "0.82rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4, width: "fit-content" }}>
+                        💵 Levar R$ {Number(cobranca.levarDeTroco || 0).toFixed(2).replace(".", ",")} de troco
+                        <span style={{ fontWeight: 700, opacity: 0.85 }}>(cliente paga com R$ {Number(cobranca.trocoPara).toFixed(2).replace(".", ",")})</span>
+                      </div>
+                    ) : (changeAmount || cleanNotes.toLowerCase().includes("troco")) ? (
+                      // Sem `cobranca` (Assistente do servidor antigo, ou aviso
+                      // desligado) o cartão volta ao que sempre mostrou, em vez
+                      // de esconder a informação do troco.
                       <div style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 8px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4, width: "fit-content" }}>
                         💵 {changeAmount ? `Levar Troco para R$ ${Number(changeAmount).toFixed(2).replace(".", ",")}` : `Atenção: ${cleanNotes}`}
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Notes / Reference Point */}
@@ -1446,6 +1507,98 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 }}
               >
                 <CheckCircle2 size={18} /> Sim, entreguei
+              </button>
+            </div>
+
+            <p style={{ fontSize: "0.74rem", color: "#94A3B8", margin: "10px 0 0" }}>
+              "Ainda não" mantém o pedido pendente — nada é finalizado.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── RECEBER O PAGAMENTO NA PORTA ────────────────────────────────
+          O valor em corpo grande porque é lido de relance, em pé, com o saco
+          na mão e o cliente esperando. O troco a levar sai destacado à parte:
+          é a conta que o entregador erra, porque `changeAmount` é a NOTA que
+          o cliente vai dar, não o troco. */}
+      {cobrancaModalOrder && (
+        <div
+          onClick={() => setCobrancaModalOrder(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", zIndex: 10000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#FFFFFF", borderRadius: "18px", padding: "1.5rem 1.25rem",
+              width: "100%", maxWidth: 400, textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div style={{ fontSize: "2.4rem", lineHeight: 1 }}>💵</div>
+            <h3 style={{ margin: "8px 0 2px", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A" }}>
+              Receba antes de finalizar
+            </h3>
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "#64748B" }}>
+              Pedido #{cobrancaModalOrder.dailyOrderNumber || cobrancaModalOrder.orderSeqNumber || ""} · {cobrancaModalOrder.customerName}
+            </p>
+
+            <div style={{
+              background: "#F0FDF4", border: "2px solid #86EFAC", borderRadius: 14,
+              padding: "14px 12px", margin: "14px 0",
+            }}>
+              <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#15803D", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {cobrancaModalOrder.cobrarNaEntrega.metodo}
+              </div>
+              <div style={{ fontSize: "2.1rem", fontWeight: 900, color: "#14532D", lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>
+                R$ {Number(cobrancaModalOrder.cobrarNaEntrega.valor || 0).toFixed(2).replace(".", ",")}
+              </div>
+            </div>
+
+            {cobrancaModalOrder.cobrarNaEntrega.trocoPara ? (
+              <div style={{
+                background: "#FFFBEB", border: "2px solid #FDE68A", borderRadius: 14,
+                padding: "12px", marginBottom: 14, textAlign: "left",
+              }}>
+                <div style={{ fontSize: "0.8rem", color: "#92400E", fontWeight: 700 }}>
+                  O cliente vai pagar com R$ {Number(cobrancaModalOrder.cobrarNaEntrega.trocoPara).toFixed(2).replace(".", ",")}
+                </div>
+                <div style={{ fontSize: "1.15rem", color: "#78350F", fontWeight: 900, marginTop: 2 }}>
+                  Devolva R$ {Number(cobrancaModalOrder.cobrarNaEntrega.levarDeTroco || 0).toFixed(2).replace(".", ",")} de troco
+                </div>
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              {/* Fecha SEM dar baixa: o pedido continua pendente para o
+                  entregador resolver o pagamento e confirmar depois. */}
+              <button
+                type="button"
+                onClick={() => setCobrancaModalOrder(null)}
+                style={{
+                  flex: 1, padding: "12px", background: "#FEF2F2", color: "#B91C1C",
+                  border: "1.5px solid #FCA5A5", borderRadius: "12px", fontWeight: 800, cursor: "pointer", fontSize: "0.9rem",
+                }}
+              >
+                ✋ Ainda não
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const alvo = cobrancaModalOrder;
+                  setCobrancaModalOrder(null);
+                  pedirCodigoOuBaixar(alvo);
+                }}
+                style={{
+                  flex: 1.5, padding: "12px", background: "#16A34A", color: "#FFFFFF",
+                  border: "none", borderRadius: "12px", fontWeight: 900, cursor: "pointer",
+                  fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 6, boxShadow: "0 4px 14px rgba(22,163,74,0.4)",
+                }}
+              >
+                <CheckCircle2 size={18} /> Recebi
               </button>
             </div>
 
