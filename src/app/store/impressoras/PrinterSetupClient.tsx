@@ -789,33 +789,41 @@ export default function PrinterSetupClient({
             {/* Largura da Bobina / Papel */}
             <div style={{ marginBottom: "1rem" }}>
               <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>LARGURA DA BOBINA (PAPEL)</label>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => updatePrinter(printer.id, { paperWidth: "80mm" })}
-                  style={{
-                    flex: 1, padding: "8px 12px", borderRadius: 10,
-                    border: `1.5px solid ${(!printer.paperWidth || printer.paperWidth === "80mm") ? "#C62828" : "#E2E8F0"}`,
-                    background: (!printer.paperWidth || printer.paperWidth === "80mm") ? "#C6282810" : "#fff",
-                    color: (!printer.paperWidth || printer.paperWidth === "80mm") ? "#C62828" : "#64748B",
-                    fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s"
-                  }}
-                >
-                  📄 POS 80 (80mm / 48 colunas)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updatePrinter(printer.id, { paperWidth: "58mm" })}
-                  style={{
-                    flex: 1, padding: "8px 12px", borderRadius: 10,
-                    border: `1.5px solid ${printer.paperWidth === "58mm" ? "#C62828" : "#E2E8F0"}`,
-                    background: printer.paperWidth === "58mm" ? "#C6282810" : "#fff",
-                    color: printer.paperWidth === "58mm" ? "#C62828" : "#64748B",
-                    fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s"
-                  }}
-                >
-                  🧾 POS 58 (58mm / 32 colunas)
-                </button>
+              {/* ── TRÊS BOTÕES, NÃO DOIS ──────────────────────────────────
+                  A Bematech usa bobina de 80 mm mas escreve 42 colunas, não 48:
+                  com o preset de 80 mm toda linha de item passava do fim do
+                  papel e quebrava sozinha no meio do nome. Dava para consertar
+                  digitando 42 no campo de colunas reais aqui embaixo — e era
+                  exatamente o que a gente vinha fazendo na mão em cada cliente
+                  novo com Bematech (dono, 12/09/2026). Virou botão.
+
+                  Cada botão grava os DOIS campos, então o preset é sempre o que
+                  está no papel; quem tem uma impressora fora dos três ajusta no
+                  campo de colunas reais, que continua mandando. */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {([
+                  { rotulo: "📄 POS 80 (80mm / 48 colunas)", papel: "80mm" as const, colunas: undefined,
+                    ativo: (!printer.paperWidth || printer.paperWidth === "80mm") && printer.columns !== 42 },
+                  { rotulo: "🖨️ Bematech (80mm / 42 colunas)", papel: "80mm" as const, colunas: 42,
+                    ativo: (!printer.paperWidth || printer.paperWidth === "80mm") && printer.columns === 42 },
+                  { rotulo: "🧾 POS 58 (58mm / 32 colunas)", papel: "58mm" as const, colunas: undefined,
+                    ativo: printer.paperWidth === "58mm" },
+                ]).map((op) => (
+                  <button
+                    key={op.rotulo}
+                    type="button"
+                    onClick={() => updatePrinter(printer.id, { paperWidth: op.papel, columns: op.colunas })}
+                    style={{
+                      flex: "1 1 170px", minWidth: 150, padding: "8px 12px", borderRadius: 10,
+                      border: `1.5px solid ${op.ativo ? "#C62828" : "#E2E8F0"}`,
+                      background: op.ativo ? "#C6282810" : "#fff",
+                      color: op.ativo ? "#C62828" : "#64748B",
+                      fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s"
+                    }}
+                  >
+                    {op.rotulo}
+                  </button>
+                ))}
               </div>
 
               {/* Calibração fina — só é necessária quando a impressora não obedece o padrão */}
@@ -833,6 +841,7 @@ export default function PrinterSetupClient({
                   min={24}
                   max={64}
                   placeholder={printer.paperWidth === "58mm" ? "32" : "48"}
+                  title="Quantas letras cabem numa linha desta impressora. Vale mais que o botão acima."
                   value={printer.columns ?? ""}
                   onChange={e => {
                     const v = Number(e.target.value);
@@ -843,7 +852,7 @@ export default function PrinterSetupClient({
                   style={{ width: 88, padding: "7px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, fontFamily: "inherit" }}
                 />
                 <span style={{ fontSize: "0.72rem", color: "#64748B" }}>
-                  colunas reais (deixe vazio para o padrão)
+                  colunas reais — manda mais que o botão acima (vazio = usa o botão)
                 </span>
               </div>
             </div>
