@@ -24,6 +24,7 @@ export type ChaveDeCanal =
   | "IFOOD"
   | "99FOOD"
   | "BRENDI"
+  | "WABIZ"
   | "JOTAJA"
   | "WHATSAPP_IA"
   | "PDV"
@@ -53,6 +54,9 @@ const CORES: Record<ChaveDeCanal, { nome: string; emoji: string; fundo: string; 
   // atendente distinguir num relance do verde do site, que é o que ele via.
   "99FOOD":    { nome: "99Food",  emoji: "🟡", fundo: "#FEF08A", texto: "#854D0E", marketplace: true },
   BRENDI:      { nome: "Brendi",  emoji: "🟣", fundo: "#EDE9FE", texto: "#6D28D9", marketplace: true },
+  // Verde-limão da marca Wabiz, escuro o bastante para não se confundir com o
+  // verde do site próprio.
+  WABIZ:       { nome: "Wabiz",   emoji: "🟢", fundo: "#ECFCCB", texto: "#3F6212", marketplace: true },
   JOTAJA:      { nome: "Jotajá",  emoji: "🔵", fundo: "#DBEAFE", texto: "#1D4ED8", marketplace: true },
   WHATSAPP_IA: { nome: "IA Whats", emoji: "🤖", fundo: "#F3E8FF", texto: "#7C3AED", marketplace: false },
   PDV:         { nome: "PDV",     emoji: "🧾", fundo: "#E0E7FF", texto: "#4338CA", marketplace: false },
@@ -83,6 +87,7 @@ export function chaveDoCanal(pedido: PedidoParaCanal | null | undefined): ChaveD
   if (src === "IFOOD" || pedido.ifoodOrderId || pedido.ifoodReference) return "IFOOD";
   if (src === "99FOOD" || od === "99FOOD" || od.includes("99")) return "99FOOD";
   if (src === "BRENDI" || od === "BRENDI") return "BRENDI";
+  if (src === "WABIZ" || od === "WABIZ") return "WABIZ";
   if (src === "JOTAJA" || od === "JOTAJA") return "JOTAJA";
   // OPEN_DELIVERY é o rótulo genérico antigo: o canal fino vem no
   // openDeliveryChannel, e sem ele o resto do Open Delivery era o JotaJá.

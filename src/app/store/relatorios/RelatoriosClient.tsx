@@ -84,6 +84,7 @@ const PLATAFORMAS: Record<string, { label: string; cor: string }> = {
   "99FOOD":    { label: "99Food",          cor: "#EAB308" },
   JOTAJA:      { label: "Jotajá",          cor: "#7C3AED" },
   BRENDI:      { label: "Brendi",          cor: "#0EA5E9" },
+  WABIZ:       { label: "Wabiz",           cor: "#65A30D" },
   TOTEM:       { label: "Totem",           cor: "#F97316" },
   PDV:         { label: "PDV",             cor: "#FF8A00" },
   PRESENCIAL:  { label: "Balcão",          cor: "#64748B" },

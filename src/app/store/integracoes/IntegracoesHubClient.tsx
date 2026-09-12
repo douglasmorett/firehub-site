@@ -40,7 +40,7 @@ export default function IntegracoesHubClient({
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
-  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | "brendi" | null>(null);
+  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | "brendi" | "wabiz" | null>(null);
 
   // Meta Pixel state
   const [pixelId, setPixelId] = useState(initialFacebookPixelId || "");
@@ -162,6 +162,14 @@ export default function IntegracoesHubClient({
   const [brConnected, setBrConnected] = useState(!!initialBrendiConnected);
   const [brHasSecret, setBrHasSecret] = useState(!!brendiHasSecret);
   const [brSaving, setBrSaving] = useState(false);
+
+  // Wabiz — usuário e senha da API que o suporte deles entrega para a loja.
+  // O estado vem só do GET no mount; a senha nunca volta do servidor.
+  const [wbUsername, setWbUsername] = useState("");
+  const [wbPassword, setWbPassword] = useState("");
+  const [wbHasPassword, setWbHasPassword] = useState(false);
+  const [wbConnected, setWbConnected] = useState(false);
+  const [wbSaving, setWbSaving] = useState(false);
 
   // 99Food state — autoatendimento: quem responde se está conectado é o 99Food,
   // não um formulário salvo. `food99Connected` vem de /api/99food/conectar.
@@ -289,6 +297,18 @@ export default function IntegracoesHubClient({
       })
       .catch(() => {});
 
+    fetch("/api/store/integracoes/wabiz")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok) {
+          setWbUsername(data.username || "");
+          setWbPassword("");
+          setWbHasPassword(!!data.hasPassword);
+          setWbConnected(!!data.connected);
+        }
+      })
+      .catch(() => {});
+
     // Estado real da conexão 99Food — perguntado ao 99Food, não ao nosso banco.
     // A rota antiga (/api/store/integracoes/99food) devolvia `connected` do
     // formulário salvo, e era isso que pintava "🟢 Conectado & Ativo" numa loja
@@ -377,6 +397,52 @@ export default function IntegracoesHubClient({
       showToast("⚠️ Erro de conexão ao salvar Brendi", "#EF4444");
     } finally {
       setBrSaving(false);
+    }
+  };
+
+  const handleSaveWabiz = async () => {
+    setWbSaving(true);
+    try {
+      const res = await fetch("/api/store/integracoes/wabiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: wbUsername, password: wbPassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        // Verde só quando a Wabiz aceitou o login de verdade.
+        setWbConnected(!!data.autenticou);
+        setWbHasPassword(true);
+        setWbPassword("");
+        showToast(data.autenticou ? "✅ Wabiz conectada!" : `⚠️ ${data.message}`, data.autenticou ? "#10B981" : "#F59E0B");
+        if (data.autenticou) setOpenModal(null);
+      } else {
+        showToast(`⚠️ ${data.error || "Erro ao salvar Wabiz"}`, "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro de conexão ao salvar Wabiz", "#EF4444");
+    } finally {
+      setWbSaving(false);
+    }
+  };
+
+  const handleDisconnectWabiz = async () => {
+    if (!confirm("Desconectar a Wabiz? Os pedidos do app deixam de entrar no FireHub.")) return;
+    setWbSaving(true);
+    try {
+      const res = await fetch("/api/store/integracoes/wabiz", { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setWbConnected(false);
+        showToast("Wabiz desconectada.", "#64748B");
+        setOpenModal(null);
+      } else {
+        showToast(`⚠️ ${data.error || "Erro ao desconectar"}`, "#EF4444");
+      }
+    } catch {
+      showToast("⚠️ Erro de conexão ao desconectar Wabiz", "#EF4444");
+    } finally {
+      setWbSaving(false);
     }
   };
 
@@ -1115,6 +1181,16 @@ export default function IntegracoesHubClient({
       gradient: "linear-gradient(135deg, #8B5CF6, #6D28D9)",
       badge: brConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Pedidos do cardápio e da IA da Brendi caem direto no FireHub via Open Delivery, com status sincronizado.",
+    },
+    {
+      id: "wabiz" as const,
+      category: "channels",
+      title: "Wabiz",
+      subtitle: "App de delivery com a marca da sua loja",
+      icon: "📱",
+      gradient: "linear-gradient(135deg, #84CC16, #4D7C0F)",
+      badge: wbConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Pedidos do seu app Wabiz entram no FireHub sozinhos a cada 30 segundos, e o cliente acompanha o status no app.",
     },
   ];
 
@@ -2553,6 +2629,86 @@ export default function IntegracoesHubClient({
                     style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #8B5CF6, #6D28D9)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(139,92,246,0.3)", opacity: brSaving ? 0.7 : 1 }}
                   >
                     <Save size={16} /> {brSaving ? "Salvando..." : "Salvar e Ativar Brendi"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 📱 MODAL: WABIZ */}
+            {openModal === "wabiz" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #84CC16, #4D7C0F)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>
+                    📱
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Wabiz</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>App de delivery com a marca da sua loja</span>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
+                  Peça ao <strong>suporte da Wabiz</strong> o usuário e a senha <strong>da API</strong> da sua loja e cole abaixo.
+                  Assim que a Wabiz aceitar o login, os pedidos do app entram no FireHub sozinhos.
+                </p>
+
+                <div style={{ background: "#F7FEE7", border: "1px solid #D9F99D", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#3F6212", lineHeight: 1.5, marginBottom: "20px" }}>
+                  Os itens entram com o <strong>nome, os adicionais e o preço</strong> que estão no seu app Wabiz, e o FireHub
+                  busca pedidos novos a cada 30 segundos. Cada mudança de status aqui avisa o cliente no app.
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <Key size={14} color="#65A30D" /> Usuário da API (Wabiz)
+                    </label>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      placeholder="ex.: app123@integracao.com.br"
+                      value={wbUsername}
+                      onChange={e => setWbUsername(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                      <ShieldCheck size={14} color="#65A30D" /> Senha da API (Wabiz)
+                    </label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder={wbHasPassword ? "•••••••• já configurada — deixe em branco para manter" : "Cole aqui a senha da API"}
+                      value={wbPassword}
+                      onChange={e => setWbPassword(e.target.value)}
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  {wbConnected && (
+                    <button
+                      onClick={handleDisconnectWabiz}
+                      disabled={wbSaving}
+                      style={{ marginRight: "auto", padding: "10px 18px", borderRadius: "10px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#B91C1C", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                    >
+                      Desconectar
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSaveWabiz}
+                    disabled={wbSaving}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #84CC16, #4D7C0F)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(101,163,13,0.3)", opacity: wbSaving ? 0.7 : 1 }}
+                  >
+                    <Save size={16} /> {wbSaving ? "Conectando..." : "Salvar e Conectar Wabiz"}
                   </button>
                 </div>
               </div>

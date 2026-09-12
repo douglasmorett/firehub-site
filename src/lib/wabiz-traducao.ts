@@ -1,0 +1,256 @@
+/**
+ * lib/wabiz-traducao.ts — pedido da Wabiz → dados do CustomerOrder, sem banco.
+ *
+ * Separado de processWabizOrder para ser testado com os exemplos da doc:
+ *   npx tsx scripts/teste-traducao-wabiz.ts
+ */
+import { dataHoraDaLoja } from "@/lib/fuso";
+import { isBeverageName } from "@/lib/beverage";
+import type { WabizPedido, WabizParte, WabizPagamento } from "@/lib/wabiz-api";
+
+export const dinheiro = (v: unknown) => Math.round((Number(v) || 0) * 100) / 100;
+export const texto = (v: unknown) => (v == null ? "" : String(v).trim());
+
+/**
+ * "2026-09-12 19:30:00" no relógio da loja → instante real.
+ * O offset é medido no próprio fuso, então horário de verão não engana.
+ */
+export function horaLocalParaInstante(valor: string | null | undefined, timeZone: string): Date | null {
+  const m = texto(valor).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const [, a, mes, d, h, min, s] = m;
+  const comoUtc = Date.UTC(+a, +mes - 1, +d, +h, +min, +(s || 0));
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(comoUtc));
+  const p = (t: string) => Number(partes.find((x) => x.type === t)?.value || 0);
+  const vistoNoFuso = Date.UTC(p("year"), p("month") - 1, p("day"), p("hour"), p("minute"), p("second"));
+  return new Date(comoUtc - (vistoNoFuso - comoUtc));
+}
+
+/** Nome da forma de pagamento + se já chegou pago. Tipos da doc: 1 Dinheiro … 7 Pix. */
+export function traduzirPagamento(pag: WabizPagamento | null | undefined, total: number) {
+  const tipo = Number(pag?.type) || 0;
+  const nomeDaWabiz = texto(pag?.name);
+  const base =
+    tipo === 1 ? "Dinheiro"
+    : tipo === 2 ? "Cheque"
+    : tipo === 3 ? `Cartão${texto(pag?.cardFlag) ? ` ${texto(pag?.cardFlag)}` : ""}`
+    : tipo === 4 ? "Pagamento Online (Wabiz)"
+    : tipo === 5 ? "Boleto"
+    : tipo === 6 ? "Transferência Bancária"
+    : tipo === 7 ? "Pix"
+    : nomeDaWabiz || "A combinar";
+
+  // Só o pagamento online (4) chega pago. Pix (7) e transferência (6) na Wabiz
+  // são combinados com a loja — sem confirmação na API, cobrar é o seguro:
+  // comanda "Pago" em pedido que ninguém pagou é prejuízo; o contrário é uma
+  // pergunta do motoboy.
+  const pago = tipo === 4;
+
+  // `value` é quanto o cliente vai entregar; troco só faz sentido em dinheiro.
+  const valor = dinheiro(pag?.value);
+  const changeAmount = tipo === 1 && valor > total + 0.009 ? valor : null;
+
+  return {
+    paymentMethod: `${base} (${pago ? "Pago Online" : "Cobrar na Entrega"})`,
+    changeAmount,
+  };
+}
+
+/** Borda, adicionais e "outros" (tipo de massa) de UMA parte, em texto e em lista. */
+function opcoesDaParte(parte: WabizParte) {
+  const c = parte.customization;
+  const nomes: string[] = [];
+  const lista: Array<{ id: string; name: string; quantity: number; price: number }> = [];
+  const juntar = (rotulo: string | null, ops: Array<{ externalCode?: string | null; name?: string | null; price?: number | null }> | null | undefined) => {
+    for (const o of ops || []) {
+      const nome = texto(o?.name);
+      if (!nome) continue;
+      const exibido = rotulo ? `${rotulo} ${nome}` : nome;
+      nomes.push(exibido);
+      lista.push({ id: texto(o?.externalCode) || nome, name: exibido, quantity: 1, price: dinheiro(o?.price) });
+    }
+  };
+  if (c?.edge) juntar("Borda", c.edge.options);
+  for (const g of c?.others || []) juntar(null, g?.options);
+  for (const g of c?.additionals || []) juntar(null, g?.options);
+  return { nomes, lista };
+}
+
+/**
+ * A tradução pura: pedido da Wabiz → dados do CustomerOrder, sem tocar no banco.
+ * Separada para ser testável com os exemplos da doc (scripts/teste-traducao-wabiz.ts).
+ */
+export function traduzirPedidoWabiz(
+  pedido: WabizPedido,
+  ctx: { lojaId: string; fuso: string; autoAcceptOrders: boolean }
+) {
+  const internalKey = texto(pedido?.internalKey);
+  const orderNumber = texto(pedido?.orderNumber);
+  const franchiseeId = ctx.lojaId;
+  const fuso = ctx.fuso;
+  const loja = { id: ctx.lojaId, autoAcceptOrders: ctx.autoAcceptOrders };
+  const servico = pedido.service || {};
+  const tipoServico = texto(servico.type);
+  const tipo = tipoServico.toLowerCase();
+
+  // ── Itens ────────────────────────────────────────────────────────────────
+  const notasDeItem: string[] = [];
+  const items: any[] = [];
+  for (const grupo of pedido.items || []) {
+    for (const prod of grupo?.products || []) {
+      const partes = (prod?.parts || []).filter(Boolean);
+      const qtd = Math.max(1, Number(prod?.qty) || 1);
+      const frac = partes.length;
+
+      const nomesDasPartes = partes.map((p) => texto(p.name) || "Item");
+      const nomeBase = frac > 1 ? nomesDasPartes.map((n) => `1/${frac} ${n}`).join(" + ") : nomesDasPartes[0] || texto(grupo?.groupName) || "Item";
+      const unidade = texto(prod?.unity);
+      const nomeComTamanho = unidade && unidade.toLowerCase() !== "un" ? `${nomeBase} (${unidade})` : nomeBase;
+
+      const opcoes: string[] = [];
+      const selecoes: Array<{ id: string; name: string; quantity: number; price: number }> = [];
+      partes.forEach((p, i) => {
+        const o = opcoesDaParte(p);
+        // Meio-a-meio: diz de qual metade é a borda/adicional, senão a cozinha erra.
+        const prefixo = frac > 1 ? `${nomesDasPartes[i]}: ` : "";
+        opcoes.push(...o.nomes.map((n) => prefixo + n));
+        selecoes.push(...o.lista.map((s) => ({ ...s, name: prefixo + s.name })));
+        if (texto(p.obs)) notasDeItem.push(`${frac > 1 ? nomesDasPartes[i] : nomeComTamanho}: ${texto(p.obs)}`);
+      });
+
+      const nomeCompleto = [nomeComTamanho, ...opcoes].join(" | ");
+      const precoUnit = dinheiro(prod?.price ?? partes.reduce((s, p) => s + (Number(p.price) || 0), 0));
+
+      // Código do produto no espelho: o externalCode da Wabiz é o código "do
+      // sistema local" e pode repetir entre lojas ("111"), então o id carrega a
+      // loja. Sem código, cai no nome — o espelho continua um por produto.
+      const codigo =
+        partes.map((p) => texto(p.externalCode)).filter(Boolean).join("+") ||
+        nomeComTamanho.toLowerCase().normalize("NFD").replace(/[^\w]+/g, "-").slice(0, 60);
+      const idEspelho = `wabiz-${franchiseeId}-${codigo}`;
+
+      items.push({
+        price: precoUnit,
+        quantity: qtd,
+        productName: nomeCompleto,
+        comboSelections: selecoes.length > 0 ? JSON.stringify(selecoes) : null,
+        menuProduct: {
+          connectOrCreate: {
+            where: { id: idEspelho },
+            create: {
+              id: idEspelho,
+              franchiseeId: loja.id,
+              name: nomeComTamanho,
+              description: "",
+              price: precoUnit,
+              category: texto(grupo?.groupName) || "Wabiz",
+              isBeverage: isBeverageName(nomeComTamanho) || isBeverageName(texto(grupo?.groupName)),
+              active: false,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  // ── Entrega / retirada ───────────────────────────────────────────────────
+  const entrega = servico.delivery;
+  const interna = servico.internalDelivery;
+  const ehEntrega = !!entrega || tipo.includes("delivery") && !tipo.includes("internal");
+  const ehEntregaInterna = !!interna || tipo.includes("internal");
+  const deliveryType = ehEntrega || ehEntregaInterna ? "DELIVERY" : "RETIRADA";
+
+  const customerAddress = (() => {
+    if (entrega) {
+      const rua = [texto(entrega.address), texto(entrega.number)].filter(Boolean).join(", ");
+      const partes = [
+        rua + (texto(entrega.compl) ? ` - ${texto(entrega.compl)}` : ""),
+        texto(entrega.region),
+        [texto(entrega.city), texto(entrega.state)].filter(Boolean).join("/"),
+        texto(entrega.postalCode) ? `CEP ${texto(entrega.postalCode)}` : "",
+      ].filter(Boolean);
+      return partes.join(" - ");
+    }
+    if (interna) return texto(interna.info);
+    return "";
+  })();
+
+  const deliveryFee = dinheiro(entrega?.tax);
+  const total = dinheiro(pedido.total);
+  const desconto = dinheiro(pedido.discounts);
+
+  const pagamento = entrega?.payment || interna?.payment || servico.payment || null;
+  const { paymentMethod, changeAmount } = traduzirPagamento(pagamento, total);
+
+  // ── Prazo ────────────────────────────────────────────────────────────────
+  const criadoEm = horaLocalParaInstante(pedido.dateTime, fuso) || new Date();
+  const agendadoPara = horaLocalParaInstante(servico.scheduleDatetime || servico.datetime, fuso);
+  const scheduledDatetime =
+    agendadoPara ?? new Date(criadoEm.getTime() + (deliveryType === "DELIVERY" ? 50 : 40) * 60_000);
+
+  // ── Cliente e observações ────────────────────────────────────────────────
+  const cliente = pedido.customer || {};
+  const customerName = texto(cliente.name) || "Cliente Wabiz";
+  const customerPhone = `${texto(cliente.phoneCode)}${texto(cliente.phoneNumber)}`.replace(/\D/g, "");
+
+  const rotuloServico: Record<string, string> = {
+    table: `🍽️ MESA ${texto(servico.tableCode)}${texto(servico.tablePassword) ? ` (senha ${texto(servico.tablePassword)})` : ""}`,
+    schedule: "📅 Reserva de horário no salão",
+    internaldelivery: "🏢 Entrega local",
+    internal_delivery: "🏢 Entrega local",
+  };
+
+  const notes = [
+    `Pedido Wabiz #${orderNumber}`,
+    rotuloServico[tipo] || null,
+    agendadoPara ? `📅 AGENDADO para ${dataHoraDaLoja(agendadoPara, fuso)}` : null,
+    texto(entrega?.referencePoint) ? `📍 Referência: ${texto(entrega?.referencePoint)}` : null,
+    desconto > 0 ? `🏷️ Desconto: -R$${desconto.toFixed(2)}` : null,
+    texto(pedido.obs) ? `📝 OBS: ${texto(pedido.obs)}` : null,
+    ...notasDeItem.map((n) => `📝 ${n}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  // Aceite automático da loja decide o status no FireHub. Na Wabiz o pedido é
+  // confirmado de qualquer forma quando grava — é o "recebi" deles, que tira o
+  // pedido da fila e acalma o cliente.
+  const status = loja.autoAcceptOrders ? "ACEITO" : "NOVO";
+
+  const dados: any = {
+    franchiseeId: loja.id,
+    kdsStage: "PRODUCTION",
+    kdsProductionAt: new Date(),
+    openDeliveryOrderId: internalKey,
+    openDeliveryReference: orderNumber,
+    openDeliveryChannel: "WABIZ",
+    source: "WABIZ",
+    scheduledDatetime,
+    changeAmount,
+    customerCpfCnpj: texto(cliente.document) || null,
+    deliveryBy: "MERCHANT",
+    discountTotal: desconto > 0 ? desconto : null,
+    customerName,
+    customerPhone,
+    customerAddress,
+    deliveryType,
+    paymentMethod,
+    totalAmount: total,
+    deliveryFee,
+    status,
+    notes: notes || undefined,
+    createdAt: new Date(),
+    items: { create: items },
+  };
+  return { dados, items };
+}
+

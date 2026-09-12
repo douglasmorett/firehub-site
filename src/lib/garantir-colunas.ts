@@ -237,6 +237,38 @@ export async function garantirColunasBrendi(): Promise<void> {
 }
 
 /**
+ * ── Colunas da integração Wabiz (Believery) ─────────────────────────────────
+ *
+ * Mesma regra das colunas da Brendi: aditivas, anuláveis, idempotentes, e fora
+ * do schema.prisma (acesso por SQL cru em wabiz-api.ts). A Wabiz autentica com
+ * usuário e senha DA LOJA — são esses dois campos, mais o interruptor.
+ */
+const INSTRUCOES_WABIZ = [
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "wabizUsername" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "wabizPassword" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "wabizConnected" BOOLEAN DEFAULT false`,
+];
+
+let wabizColunasOk = false;
+
+export async function garantirColunasWabiz(): Promise<void> {
+  if (wabizColunasOk) return;
+  if (!/^postgres/i.test(process.env.DATABASE_URL || "")) {
+    wabizColunasOk = true;
+    return;
+  }
+  try {
+    for (const sql of INSTRUCOES_WABIZ) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    wabizColunasOk = true;
+    console.log("[Boot] ✅ Colunas da integração Wabiz garantidas no banco.");
+  } catch (err: any) {
+    console.error(`[Boot] 🛑 Garantia de colunas Wabiz falhou: ${err?.message}`);
+  }
+}
+
+/**
  * ── Estrutura de LOTE (etiqueta de validade + QR que dá baixa no estoque) ───
  *
  * O lote é a peça que liga dois mundos que hoje não se tocam: `KitchenItem`

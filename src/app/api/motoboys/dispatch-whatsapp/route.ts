@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
             id: true, openDeliveryOrderId: true, ifoodOrderId: true, ifoodStoreMerchant: true,
             status: true, franchiseeId: true,
             openDeliveryChannel: true, source: true, deliveryBy: true,
+            openDeliveryReference: true, deliveryType: true,
             motoboyId: true,
             motoboy: { select: { id: true, name: true, phone: true } },
           },
@@ -88,8 +89,24 @@ export async function POST(req: NextRequest) {
         (async () => {
           const orders = pedidosAntesDoDespacho;
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
+          const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
+          const { ehPedidoBrendi } = await import("@/lib/brendi-status");
           for (const ord of orders) {
-            if (ehPedido99Food(ord)) {
+            if (ehPedidoWabiz(ord)) {
+              await sincronizarWabiz(
+                {
+                  openDeliveryOrderId: ord.openDeliveryOrderId!,
+                  openDeliveryReference: ord.openDeliveryReference,
+                  franchiseeId: ord.franchiseeId,
+                  deliveryType: ord.deliveryType,
+                },
+                "SAIU_ENTREGA"
+              ).catch((err: any) =>
+                console.warn(`[Motoboy Dispatch → Wabiz] Erro sync ${ord.openDeliveryOrderId}:`, err?.message)
+              );
+            } else if (ehPedidoBrendi(ord)) {
+              // Não é do JotaJá; a Brendi não é despachada por aqui.
+            } else if (ehPedido99Food(ord)) {
               // O 99Food TEM dispatch para entrega própria
               // (/v1/order/selfdelivery/dispatch, doc de 2026), e ele quer
               // saber quem está levando. Sem essa chamada o pedido ficava

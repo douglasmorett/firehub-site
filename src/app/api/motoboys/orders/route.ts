@@ -630,7 +630,21 @@ export async function PATCH(req: NextRequest) {
       if ((order as any).openDeliveryOrderId) {
         try {
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
-          if (ehPedido99Food(order as any) && codigoConferido99) {
+          const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
+          const { ehPedidoBrendi } = await import("@/lib/brendi-status");
+          if (ehPedidoWabiz(order as any)) {
+            await sincronizarWabiz(
+              {
+                openDeliveryOrderId: (order as any).openDeliveryOrderId,
+                openDeliveryReference: (order as any).openDeliveryReference,
+                franchiseeId: order.franchiseeId,
+                deliveryType: (order as any).deliveryType,
+              },
+              "ENTREGUE"
+            );
+          } else if (ehPedidoBrendi(order as any)) {
+            // Não é do JotaJá: a Brendi não recebe `delivered` por aqui.
+          } else if (ehPedido99Food(order as any) && codigoConferido99) {
             // O verifyDeliveryCode já concluiu o pedido lá (status 600); o
             // `delivered` em cima disso seria recusa à toa no log.
             console.log(`[Motoboy Entrega → 99Food] ${(order as any).openDeliveryOrderId} concluído pelo código de entrega`);

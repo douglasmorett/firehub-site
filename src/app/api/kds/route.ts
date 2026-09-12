@@ -195,7 +195,7 @@ export async function PUT(req: NextRequest) {
     select: {
       id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true,
       ifoodOrderId: true, ifoodStoreMerchant: true, openDeliveryOrderId: true,
-      openDeliveryChannel: true, source: true, deliveryBy: true,
+      openDeliveryChannel: true, source: true, deliveryBy: true, openDeliveryReference: true,
     },
   });
 
@@ -268,8 +268,23 @@ export async function PUT(req: NextRequest) {
       // a chamada é de cada um. Mandar pedido do 99Food para a API do JotaJá
       // era avisar o parceiro errado e deixar o entregador do 99 sem chamado.
       const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
+      const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
+      const { ehPedidoBrendi } = await import("@/lib/brendi-status");
 
-      if (ehPedido99Food(order)) {
+      if (ehPedidoWabiz(order)) {
+        await sincronizarWabiz(
+          {
+            openDeliveryOrderId: order.openDeliveryOrderId!,
+            openDeliveryReference: order.openDeliveryReference,
+            franchiseeId: order.franchiseeId,
+            deliveryType: order.deliveryType,
+          },
+          "PRONTO"
+        ).catch((e) => console.warn("[KDS Wabiz Sync Error]:", e?.message));
+      } else if (ehPedidoBrendi(order)) {
+        // A Brendi é sincronizada pela rota de status; aqui só não pode cair
+        // no ramo do JotaJá abaixo.
+      } else if (ehPedido99Food(order)) {
         await sincronizar99Food(
           {
             openDeliveryOrderId: order.openDeliveryOrderId!,

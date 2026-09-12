@@ -81,7 +81,23 @@ export async function POST(req: NextRequest) {
     // 2.5 Sync com plataformas externas (Jotajá + iFood) — assíncrono, não bloqueia resposta
     (async () => {
       const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
+      const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
+      const { ehPedidoBrendi } = await import("@/lib/brendi-status");
       for (const ord of route.orders) {
+        // ── Sync Wabiz ──
+        if (ehPedidoWabiz(ord)) {
+          await sincronizarWabiz(
+            {
+              openDeliveryOrderId: ord.openDeliveryOrderId!,
+              openDeliveryReference: ord.openDeliveryReference,
+              franchiseeId: ord.franchiseeId,
+              deliveryType: ord.deliveryType,
+            },
+            "SAIU_ENTREGA"
+          ).catch((err: any) =>
+            console.warn(`[Route Dispatch → Wabiz] Erro sync ${ord.openDeliveryOrderId}:`, err?.message)
+          );
+        }
         // ── Sync 99Food ──
         // Mesmo campo (`openDeliveryOrderId`), parceiro diferente. Sem esta
         // separação, despachar a rota mandava o pedido do 99Food para a API do
@@ -103,7 +119,7 @@ export async function POST(req: NextRequest) {
           );
         }
         // ── Sync Jotajá (Open Delivery) ──
-        if (ord.openDeliveryOrderId && !ehPedido99Food(ord)) {
+        if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord)) {
           try {
             const { jotajaMutate } = await import("@/lib/jotaja-api");
             const odId = ord.openDeliveryOrderId;

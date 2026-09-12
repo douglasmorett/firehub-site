@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { trackSaleForBilling } from "@/lib/billing";
 import { ehPedido99Food, sincronizar99Food } from "@/lib/food99-status";
 import { ehPedidoBrendi, sincronizarBrendi } from "@/lib/brendi-status";
+import { ehPedidoWabiz, sincronizarWabiz } from "@/lib/wabiz-status";
 
 // Status que contam como venda confirmada para fins de faturamento
 // Disparado apenas em ENTREGUE para evitar contagem duplicada
@@ -296,11 +297,35 @@ export async function PUT(req: Request) {
     }
   }
 
+  // ── Sync with Wabiz ─────────────────────────────────────────────────────
+  // Também grava o id no `openDeliveryOrderId` (o internalKey deles), então
+  // entra na mesma exclusão do ramo JotaJá abaixo. O número do pedido na Wabiz
+  // mora em `openDeliveryReference` — o status deles exige os dois.
+  if (ehPedidoWabiz(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarWabiz(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        openDeliveryReference: (order as any).openDeliveryReference,
+        franchiseeId: order.franchiseeId,
+        deliveryType: (order as any).deliveryType,
+      },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[Wabiz Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+    }
+  }
+
   // ── Sync with Jotajá (Open Delivery) ──
   // Decisão por CANAL: o JotaJá é o "resto" do Open Delivery só depois de
-  // excluir 99Food E Brendi — presença de openDeliveryOrderId não diz de quem
-  // o pedido é.
-  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order)) {
+  // excluir 99Food, Brendi e Wabiz — presença de openDeliveryOrderId não diz
+  // de quem o pedido é.
+  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order) && !ehPedidoWabiz(order)) {
     const syncErrors: string[] = [];
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");

@@ -13,6 +13,7 @@ export async function register() {
     garantirColunasDePreco,
     garantirColunasDoSchema,
     garantirColunasBrendi,
+    garantirColunasWabiz,
     garantirEstruturaDeLotes,
     garantirEstruturaDeCaixa,
     garantirEstruturaDeMesa,
@@ -27,6 +28,8 @@ export async function register() {
   // Colunas brendi* no banco ANTES de qualquer rota da integração rodar —
   // elas ainda não estão no schema.prisma, então o boot é quem garante a ordem.
   await garantirColunasBrendi();
+  // Mesma regra para as colunas wabiz* (usuário/senha da loja na Wabiz).
+  await garantirColunasWabiz();
   // Tabela StockLot e as colunas de rastreio ANTES de o schema.prisma que as
   // declara ser consultado — é a ordem que impede o 500 de "campo no schema,
   // coluna ausente". Se falhar, `temEstruturaDeLotes()` desliga só o recurso

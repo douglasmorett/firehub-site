@@ -1303,6 +1303,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     "99food": boolean;
     jotaja: boolean;
     brendi: boolean;
+    wabiz: boolean;
     retirada: boolean;
     site: boolean;
   }>({
@@ -1310,11 +1311,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     "99food": true,
     jotaja: true,
     brendi: true,
+    wabiz: true,
     retirada: true,
     site: true,
   });
 
-  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "brendi" | "retirada" | "site") => {
+  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "brendi" | "wabiz" | "retirada" | "site") => {
     setSelectedChannels(prev => ({
       ...prev,
       [ch]: !prev[ch]
@@ -2669,17 +2671,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const isIfood = o.source === "IFOOD" || Boolean(o.ifoodOrderId) || Boolean(o.ifoodReference);
     const is99Food = o.source === "99FOOD" || o.openDeliveryChannel === "99FOOD" || (o.source === "OPEN_DELIVERY" && String(o.openDeliveryChannel).includes("99"));
     const isBrendi = o.source === "BRENDI" || o.openDeliveryChannel === "BRENDI";
+    const isWabiz = o.source === "WABIZ" || o.openDeliveryChannel === "WABIZ";
     // O JotaJá era o "resto" do Open Delivery (todo pedido com
     // openDeliveryOrderId que não fosse 99Food) — com a Brendi gravando o id
     // dela no MESMO campo, o pedido dela cairia aqui e o filtro Brendi do
     // usuário não teria efeito nenhum. Canal decide; presença de campo não.
-    const isJotaja = !isBrendi && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
+    const isJotaja = !isBrendi && !isWabiz && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
     const isRetirada = o.deliveryType === "PICKUP" || o.deliveryType === "TAKEOUT" || o.deliveryType === "BALCAO" || o.source === "PDV" || Boolean(o.tableNumber);
-    const isSite = !isIfood && !is99Food && !isBrendi && !isJotaja && !isRetirada;
+    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isJotaja && !isRetirada;
 
     if (isIfood && selectedChannels.ifood) return true;
     if (is99Food && selectedChannels["99food"]) return true;
     if (isBrendi && selectedChannels.brendi) return true;
+    if (isWabiz && selectedChannels.wabiz) return true;
     if (isJotaja && selectedChannels.jotaja) return true;
     if (isRetirada && selectedChannels.retirada) return true;
     if (isSite && selectedChannels.site) return true;
@@ -4520,6 +4524,35 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <span style={{ fontSize: "0.82rem" }}>💬</span>
                   <span>Brendi</span>
                 </button>
+
+                {/* Wabiz — só aparece para a loja que tem pedido de lá, para
+                    não encher a barra de quem nunca vai usar. */}
+                {orders.some((o: any) => o.source === "WABIZ" || o.openDeliveryChannel === "WABIZ") && (
+                  <button
+                    type="button"
+                    onClick={() => toggleChannel("wabiz")}
+                    title={selectedChannels.wabiz ? "Wabiz: Ativo (Clique para filtrar)" : "Wabiz: Oculto (Clique para exibir)"}
+                    style={{
+                      height: "26px",
+                      padding: "2px 7px",
+                      borderRadius: "6px",
+                      border: selectedChannels.wabiz ? "1.5px solid #65A30D" : "1.5px solid #CBD5E1",
+                      background: selectedChannels.wabiz ? "#F7FEE7" : "#F1F5F9",
+                      color: selectedChannels.wabiz ? "#3F6212" : "#64748B",
+                      filter: selectedChannels.wabiz ? "none" : "grayscale(100%) opacity(0.35)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "3px",
+                      fontSize: "0.72rem",
+                      fontWeight: 800,
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <span style={{ fontSize: "0.82rem" }}>📱</span>
+                    <span>Wabiz</span>
+                  </button>
+                )}
 
                 {/* Retirada / Balcão */}
                 <button

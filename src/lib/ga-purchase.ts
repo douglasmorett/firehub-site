@@ -29,7 +29,7 @@ import { enviarCompraParaGa4 } from "@/lib/ga4-mp";
 
 /** Origens que NÃO são conversão do cardápio da loja. */
 const ORIGENS_FORA = new Set([
-  "IFOOD", "99FOOD", "FOOD99", "JOTAJA", "JOTAJÁ", "BRENDI",
+  "IFOOD", "99FOOD", "FOOD99", "JOTAJA", "JOTAJÁ", "BRENDI", "WABIZ",
   "PRESENCIAL", "PDV", "MESA", "TOTEM",
 ]);
 

@@ -239,7 +239,7 @@ export function cuponsComCampanha(storeCoupons: unknown, storeLoyalty: unknown):
  * pedido: marketplace (é justamente de onde o cliente está vindo) e salão
  * (quem comeu na mesa nunca pediu pelo site).
  */
-export const FONTES_QUE_NAO_SAO_SITE = ["IFOOD", "99FOOD", "JOTAJA", "BRENDI", "PRESENCIAL", "PDV", "BALCAO", "MESA", "TOTEM"];
+export const FONTES_QUE_NAO_SAO_SITE = ["IFOOD", "99FOOD", "JOTAJA", "BRENDI", "WABIZ", "PRESENCIAL", "PDV", "BALCAO", "MESA", "TOTEM"];
 
 /** Só os dígitos do telefone, sem o 55 do país — para comparar com o que está gravado. */
 export function digitosDoTelefone(telefone: unknown): string {

@@ -44,7 +44,7 @@ export const CATEGORIAS_DE_INTEGRACAO = ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE",
  * KDS e na impressão), mas também não são cardápio. O id é o que não mente:
  * quem cria espelho sempre carimba um prefixo próprio.
  */
-export const PREFIXOS_DE_ESPELHO = ["ifood-", "jotaja-", "brendi-", "99food_", "restored-prod-"];
+export const PREFIXOS_DE_ESPELHO = ["ifood-", "jotaja-", "brendi-", "wabiz-", "99food_", "restored-prod-"];
 
 /**
  * Trecho de `where` do Prisma que remove o espelho das integrações.

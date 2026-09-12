@@ -60,7 +60,7 @@ type Carimbos = {
 };
 
 const ORIGEM: Record<string, string> = {
-  IFOOD: "iFood", "99FOOD": "99Food", JOTAJA: "JotaJá", BRENDI: "Brendi",
+  IFOOD: "iFood", "99FOOD": "99Food", JOTAJA: "JotaJá", BRENDI: "Brendi", WABIZ: "Wabiz",
   WHATSAPP: "WhatsApp", CHATBOT: "WhatsApp", PRESENCIAL: "balcão", MESA: "mesa", TOTEM: "totem",
 };
 

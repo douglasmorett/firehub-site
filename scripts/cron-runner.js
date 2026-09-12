@@ -33,6 +33,14 @@ const jobs = [
     intervalMs: 60_000, // 1 minuto
   },
   {
+    // Wabiz (app com a marca do restaurante) só tem polling: sem webhook, o
+    // pedido espera em orders/pending. A doc deles pede consulta a cada 30s.
+    // Sem loja com wabizConnected=true a rota responde vazio — custo zero.
+    name: 'wabiz-poll',
+    path: '/api/cron/wabiz-poll',
+    intervalMs: 30_000, // 30 segundos
+  },
+  {
     // Mantem a loja ABERTA no 99Food sem ninguem abrir o gestor deles.
     //
     // O lojista fechava o app do 99Food e a loja ficava offline la. O swagger
