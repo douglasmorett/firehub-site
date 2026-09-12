@@ -398,6 +398,24 @@ export async function PUT(req: Request) {
       } else {
         sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
       }
+    } else if (status === "ACEITO" || status === "PREPARANDO") {
+      // ── O AVISO DA COZINHA, UMA VEZ SÓ ────────────────────────────────
+      //
+      // Entre o "Pedido Recebido" e o "Saiu para Entrega" havia meia hora de
+      // silêncio — justamente a janela em que o cliente liga para a loja
+      // perguntando se o pedido caiu. E a mensagem do recebido promete "te
+      // avisaremos sobre cada atualização por aqui".
+      //
+      // Mas ACEITO e PREPARANDO são DOIS passos do mesmo lugar (a coluna "Em
+      // Produção" do quadro), e a loja passa pelos dois. Disparar em cada um
+      // mandaria a mesma mensagem duas vezes para o cliente — e mensagem
+      // repetida da mesma instância é o que o antispam do WhatsApp procura.
+      //
+      // Só na PRIMEIRA entrada em produção: quando o pedido ainda estava em
+      // NOVO ou aguardando pagamento. Voltar para trás e avançar de novo
+      // (correção do operador) também não reenvia.
+      const vinhaDeNovo = order.status === "NOVO" || order.status === "AGUARDANDO_PAGAMENTO";
+      if (vinhaDeNovo) sendOrderNotification(orderId, "EM_PREPARO").catch(() => {});
     } else if (status === "PRONTO") {
       sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
     } else if (status === "ENTREGUE") {

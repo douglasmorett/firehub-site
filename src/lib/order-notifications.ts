@@ -2,8 +2,15 @@ import { prisma } from "@/lib/prisma";
 import { STATUS_CANCELADOS } from "./status-pedido";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { inicioDoExpedienteDaLoja } from "./fuso";
+import { telefoneDeVerdade, paraEnvioWhatsApp } from "./telefone";
 
-export type OrderNotificationType = "CREATED" | "SAIU_ENTREGA" | "PRONTO_RETIRADA" | "CANCELADO" | "ENTREGUE";
+/**
+ * `EM_PREPARO` é novo. A promessa feita ao cliente no "Pedido Recebido" é
+ * "te avisaremos sobre cada atualização por aqui", e entre o recebido e o
+ * saiu-para-entrega havia um silêncio de meia hora — justamente a janela em
+ * que o cliente liga para a loja perguntando se o pedido caiu.
+ */
+export type OrderNotificationType = "CREATED" | "EM_PREPARO" | "SAIU_ENTREGA" | "PRONTO_RETIRADA" | "CANCELADO" | "ENTREGUE";
 
 /**
  * Envia notificação automática do status do pedido para o cliente via WhatsApp (Evolution API).
@@ -40,11 +47,15 @@ export async function sendOrderNotification(
       return;
     }
 
-    // Sanitiza o telefone do cliente
-    const phoneClean = order.customerPhone.replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "");
-    if (!phoneClean || phoneClean.startsWith("0800") || phoneClean.length < 10) {
-      return;
-    }
+    // ── SÓ NÚMERO DE CLIENTE DE VERDADE ───────────────────────────────
+    //
+    // A verificação era feita aqui à mão e deixava passar o carimbo
+    // "00000000000" que a venda de balcão e a mesa gravam quando o cliente
+    // não dá o telefone: 11 dígitos, não começa com 0800, passava. Agora é
+    // lib/telefone.ts, a mesma regra da campanha de recuperação.
+    if (!telefoneDeVerdade(order.customerPhone)) return;
+    const phoneClean = paraEnvioWhatsApp(order.customerPhone).replace(/\D/g, "");
+    if (!phoneClean) return;
 
     // Determinar o número sequencial/referência idêntico ao exibido no painel da loja
     //
@@ -93,6 +104,14 @@ ${itemsSummary}
 🛵 *Modalidade:* ${order.deliveryType === "DELIVERY" ? "Entrega no Endereço" : "Retirada no Local"}
 
 Seu pedido já está em processamento. Te avisaremos sobre cada atualização por aqui! 😊`;
+        break;
+
+      case "EM_PREPARO":
+        message = `👨‍🍳 *Seu pedido entrou na cozinha!*
+
+Olá, *${order.customerName}*! O seu pedido *#${shortId}* em *${storeName}* já está sendo preparado.
+
+${order.deliveryType === "DELIVERY" ? "Assim que sair para entrega, a gente te avisa por aqui. 🛵" : "Te avisamos aqui assim que estiver pronto para retirada. 🛍️"}`;
         break;
 
       case "SAIU_ENTREGA":

@@ -89,3 +89,50 @@ export function mesmoTelefone(a: string | null | undefined, b: string | null | u
   const cb = telefoneCanonico(b);
   return ca !== "" && ca === cb;
 }
+
+/**
+ * Dá para MANDAR MENSAGEM para este número?
+ *
+ * ── Por que a pergunta precisa de função própria ────────────────────────────
+ *
+ * "Tem 11 dígitos" não basta. O FireHub grava telefones-carimbo quando o campo
+ * é obrigatório no banco mas o cliente não deu o número:
+ *
+ *   - venda de balcão e mesa nascem com "00000000000" (11 dígitos: passa em
+ *     qualquer verificação de tamanho);
+ *   - o iFood manda o 0800 dele com um ramal ("0800 705 1020 ID: 32511427");
+ *   - o 99Food manda o próprio 0800 com ramal.
+ *
+ * Esses números entravam na campanha de recuperação de 7/15/30 dias como se
+ * fossem clientes. Cada disparo desses é mensagem perdida e, pior, é a
+ * instância de WhatsApp da loja batendo repetidamente num número inválido —
+ * exatamente o padrão que o antispam do WhatsApp procura.
+ *
+ * Uma função só, para a campanha, a notificação de pedido e a próxima tela que
+ * precisar disso não divergirem.
+ */
+export function telefoneDeVerdade(bruto: string | null | undefined): boolean {
+  // O RAMAL SAI ANTES DE CONTAR OS DÍGITOS.
+  //
+  // O 99Food manda "+55 21995358507 (ramal 81513893)" — número de cliente REAL
+  // com o ramal deles pendurado. Contando os dígitos do texto inteiro dá 21, e
+  // o número seria descartado como inválido: o cliente perderia a notificação
+  // do pedido dele por causa de um parêntese. O 0800 do iFood ("0800 705 1020
+  // ID: 32511427") continua recusado — pela regra de 0800, logo abaixo.
+  const cru = String(bruto || "")
+    .replace(/\(\s*ramal[^)]*\)/gi, " ")
+    .replace(/\bramal\s*:?\s*\d+/gi, " ")
+    .replace(/\bID\s*:?\s*\d+/gi, " ")
+    .trim();
+  const d = cru.replace(/\D/g, "");
+  if (d.length < 10) return false;
+  // 0800, 0300, 0500: linhas de atendimento, nunca WhatsApp de cliente.
+  if (/^0[3358]00/.test(d)) return false;
+  const nac = nacional(cru);
+  if (nac.length !== 10 && nac.length !== 11) return false;
+  // Carimbo: tudo zero, tudo o mesmo dígito, ou DDD inválido.
+  if (/^(\d)\1+$/.test(nac)) return false;
+  const ddd = Number(nac.slice(0, 2));
+  if (!(ddd >= 11 && ddd <= 99)) return false;
+  return true;
+}

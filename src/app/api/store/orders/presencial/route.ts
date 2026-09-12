@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { telefoneDeVerdade } from "@/lib/telefone";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export async function POST(req: Request) {
@@ -70,6 +71,9 @@ export async function POST(req: Request) {
       franchiseeId: targetFranchiseeId,
       dailyOrderNumber,
       customerName: customerName || (employeeName ? `Func. ${employeeName}` : "Balcão"),
+      // O carimbo continua para o banco (a coluna é obrigatória), mas quem
+      // decide se dá para mandar mensagem é lib/telefone.ts — e ele recusa
+      // este número. Ver a notificação no fim desta rota.
       customerPhone: customerPhone || "00000000000",
       customerAddress: customerAddress || "",
       deliveryType: deliveryType || "RETIRADA",
@@ -122,6 +126,23 @@ export async function POST(req: Request) {
     }
   } catch (printErr) {
     console.error("[Presencial] Erro ao enfileirar impressão automática:", printErr);
+  }
+
+  // ── O CLIENTE DO BALCÃO TAMBÉM RECEBE AS MENSAGENS ────────────────────
+  //
+  // O campo de telefone no balcão é opcional e existia só para a busca e
+  // para a campanha de recuperação: quem dava o número não recebia nada — nem
+  // "pedido recebido", nem "em preparo", nem "pronto". O atendente pedia o
+  // telefone e o cliente não via retorno nenhum, o que é a melhor forma de
+  // ensinar a equipe a parar de pedir.
+  //
+  // Só quando o número é de verdade: `telefoneDeVerdade` recusa o carimbo
+  // "00000000000" que esta rota grava quando o campo vem vazio. E não bloqueia
+  // a resposta — venda de balcão não pode esperar WhatsApp.
+  if (telefoneDeVerdade(customerPhone)) {
+    import("@/lib/order-notifications")
+      .then(({ sendOrderNotification }) => sendOrderNotification(order.id, "CREATED"))
+      .catch((err) => console.warn("[Presencial] notificação CREATED:", err?.message || err));
   }
 
   return NextResponse.json({ success: true, orderId: order.id });

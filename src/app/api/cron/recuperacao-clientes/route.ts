@@ -4,6 +4,7 @@ import { FUSO_PADRAO, dataDaLoja, horaDaLoja } from "@/lib/fuso";
 import { Prisma } from "@prisma/client";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
+import { telefoneDeVerdade, paraEnvioWhatsApp } from "@/lib/telefone";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -180,7 +181,12 @@ export async function GET(req: NextRequest) {
         let enviadosDoMarco = 0;
         for (const telefone of alvos) {
           if (enviadosDaLoja >= TETO_POR_LOJA) break;
-          const digitos = String(telefone).replace(/\D/g, "");
+          // "00000000000" (carimbo do balcão e da mesa) tem 11 dígitos e
+          // passava neste tamanho: a campanha disparava para um número que
+          // não existe, toda semana, pela instância de WhatsApp da loja —
+          // que é o padrão que o antispam procura.
+          if (!telefoneDeVerdade(telefone)) continue;
+          const digitos = paraEnvioWhatsApp(telefone).replace(/\D/g, "");
           if (digitos.length < 10) continue;
 
           try {
