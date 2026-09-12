@@ -331,7 +331,9 @@ export default function StoreTopNav({
   // pedido pago online, que e somado logo acima. Somar a linha de cupons de
   // novo criava sobra falsa do tamanho dos cupons do dia (R$ 528,11 no turno
   // de 27/08 da Hakim Centro). A linha continua na tabela como informacao.
-  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0);
+  // O online do 99Food entra no total pelo mesmo motivo do iFood: e dinheiro
+  // do turno que a loja nao conta na gaveta, mas confere no extrato.
+  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0) + (expected.food99Online || 0);
 
   // ── CAMPO EM BRANCO NÃO É ZERO CONTADO ──────────────────────────
   //
@@ -383,6 +385,8 @@ export default function StoreTopNav({
         // exatamente do tamanho das vendas online do dia.
         closingIfoodOnline: expected.ifoodOnline || 0,
         closingIfoodCoupons: expected.ifoodCoupons || 0,
+        closingFood99Online: expected.food99Online || 0,
+        closingFood99Coupons: expected.food99Coupons || 0,
         difference: diff,
       }),
     });
@@ -988,6 +992,39 @@ export default function StoreTopNav({
                         <td style={{ padding:"8px 10px", fontWeight:600, color:"#EA580C" }}>🔴 iFood (Cupons)</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", color:"#EA580C", fontWeight:700 }}>{fmt(expected.ifoodCoupons)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#9A3412" }}>—</td>
+                      </tr>
+                    )}
+
+                    {/* ── 99FOOD EM LINHA PRÓPRIA ───────────────────────────
+                        O dinheiro pago online no 99Food somava dentro da linha
+                        do iFood: o lojista conferia um número contra o extrato
+                        do iFood e ele nunca batia, porque metade era do 99.
+
+                        E o cupom do 99 não aparecia em lugar nenhum — eles não
+                        mandam campo como o `discountIfood`. O número sai da
+                        conta das promoções, onde cada uma diz quanto a LOJA
+                        bancou (lib/cupom-do-parceiro.ts). */}
+                    {(expected.food99Online || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#A16207" }}>🟡 99Food (Pago Online)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#A16207", fontWeight:700 }}>{fmt(expected.food99Online)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#FEF08A", border:"1.5px solid #FDE047", fontSize:"0.78rem", textAlign:"center", color:"#854D0E", fontWeight:700 }}>
+                            🔒 {fmt(expected.food99Online)}
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                    {(expected.food99Coupons || 0) > 0 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#A16207" }}>
+                          🟡 99Food (Cupons do 99)
+                          <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#A16207", opacity:0.8 }}>
+                            Desconto que o 99Food bancou — não passou pela loja
+                          </span>
+                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#A16207", fontWeight:700 }}>{fmt(expected.food99Coupons)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#854D0E" }}>—</td>
                       </tr>
                     )}
                     {/* Pedidos que ninguém pagou (totem abandonado, cartão

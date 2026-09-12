@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { cupomBancadoPelo99, ehDo99Food } from "@/lib/cupom-do-parceiro";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
@@ -27,7 +28,11 @@ async function calcularEsperadoDoTurno(
   openSession: { id: string; openedAt: Date; openingAmount: number }
 ) {
   // Se tem sessão aberta, calcular os valores esperados com base em TODOS os pedidos do período
-  let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 };
+  // `food99Online` e `food99Coupons` sao novos. Ficavam os dois dentro das
+  // linhas do iFood — o dinheiro pago online no 99Food somava em
+  // `ifoodOnline`, e o cupom bancado pelo 99 nao aparecia em lugar nenhum,
+  // porque o 99Food nao manda campo equivalente ao `discountIfood`.
+  let expected = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, food99Online: 0, food99Coupons: 0, total: 0 };
   // -- VENDA QUE NUNCA VIRA CEDULA ---------------------------------------
   //
   // O `else` do fim da cascata mandava para DINHEIRO tudo que nao casasse com
@@ -64,7 +69,7 @@ async function calcularEsperadoDoTurno(
         status: { notIn: ["CANCELADO", "CRIANDO_IA"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true },
+      select: { status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true, openDeliveryChannel: true, discountDetails: true },
     });
 
     // Uma parte de pagamento (do balcão dividido ou da baixa da mesa) na sua
@@ -214,7 +219,13 @@ async function calcularEsperadoDoTurno(
       // acertado depois -- nunca passa pela gaveta no fechamento do dia.
       const ehFiado = pm.includes("funcion") || pm.includes("fiado");
 
-      if (src === "IFOOD" && isOnlinePayment) {
+      if (ehDo99Food(o as any) && isOnlinePayment) {
+        // Linha propria: o lojista confere o repasse do 99Food contra o extrato
+        // DELES, nao contra o do iFood. Somados, os dois numeros nao conferem
+        // com nenhum dos dois extratos.
+        expected.food99Online += valRepasse;
+        expected.total += valRepasse;
+      } else if (src === "IFOOD" && isOnlinePayment) {
         expected.ifoodOnline += valRepasse;
         expected.total += valRepasse;
       } else if (isOnlinePayment && !ehVendaDeSalao) {
@@ -260,10 +271,18 @@ async function calcularEsperadoDoTurno(
         foraDaConferencia.naoIdentificadoQtd += 1;
       }
 
-      // Somar desconto custeado pelo iFood (cupons iFood) — apenas informativo
+      // Desconto custeado pela PLATAFORMA — informativo, nunca entra na gaveta.
+      //
+      // O iFood manda em campo proprio. O 99Food nao manda nada equivalente: o
+      // que ele manda e a lista de promocoes com `shop_subside_price`, quanto
+      // daquele desconto saiu do bolso da LOJA. O resto e dinheiro deles.
+      // O dado ja estava gravado desde sempre em discountDetails.promocoes —
+      // so nunca tinha sido lido (lib/cupom-do-parceiro.ts).
       if (o.discountIfood && o.discountIfood > 0) {
         expected.ifoodCoupons += o.discountIfood;
       }
+      const do99 = cupomBancadoPelo99(o as any);
+      if (do99 > 0) expected.food99Coupons += do99;
     }
     // -- O TROCO DE ABERTURA CONTA NOS DOIS LUGARES ------------------------
     // Ele entrava so em `expected.cash`, e nunca em `expected.total` -- que e
@@ -371,7 +390,7 @@ export async function GET() {
   const dados = openSession
     ? await calcularEsperadoDoTurno(user.targetId, openSession)
     : {
-        expected: { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, total: 0 },
+        expected: { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, food99Online: 0, food99Coupons: 0, total: 0 },
         foraDaConferencia: { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 },
         pendentesValor: 0, pendentesQuantidade: 0, movimentacaoEntradas: 0, movimentacaoSaidas: 0,
       };
@@ -577,6 +596,7 @@ export async function PUT(req: Request) {
   const body = await req.json();
   const { closingCash, closingDebit, closingCredit, closingPix, closingVoucher,
     closingIfoodOnline, closingIfoodCoupons,
+    closingFood99Online, closingFood99Coupons,
     expectedCash, expectedDebit, expectedCredit, expectedPix, expectedVoucher, expectedTotal,
     justification } = body;
 
@@ -595,9 +615,15 @@ export async function PUT(req: Request) {
   // GET). Soma-lo de novo aqui criava sobra falsa do tamanho dos cupons do dia
   // -- R$ 528,11 no turno de 27/08. A linha continua na tela como informacao;
   // ela so nao pode entrar na conta duas vezes.
+  //
+  // `closingFood99Online` entra pelo MESMO motivo do iFood, e esquecer isto
+  // reproduziria o bug inteiro: o `expectedTotal` ja soma o online do 99Food,
+  // entao deixa-lo de fora do conferido acusaria falta do tamanho exato do
+  // que o 99 pagou no dia. `closingFood99Coupons` fica de fora pela mesma
+  // razao dos cupons do iFood: o cupom ja esta DENTRO do valor do pedido.
   const totalInformed = (closingCash || 0) + (closingDebit || 0) + (closingCredit || 0) +
     (closingPix || 0) + (closingVoucher || 0) +
-    (closingIfoodOnline || 0);
+    (closingIfoodOnline || 0) + (closingFood99Online || 0);
   const difference = totalInformed - (expectedTotal || 0);
 
   const openSession = await prisma.cashSession.findFirst({
