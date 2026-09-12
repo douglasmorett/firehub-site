@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
 import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loader2, X } from "lucide-react";
+import { contaDoPedido, emReais as emReaisConta } from "@/lib/conta-do-pedido";
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
@@ -324,18 +325,34 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         <span style={{ fontWeight: 700, textDecoration: calcMode === "fee_only" ? "line-through" : "none" }}>{fmt(r.stats.dailyTotal)}</span>
                       </div>
                     )}
-                    {r.stats.perDeliveryTotal > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
+                    {/* ── A LINHA DAS TAXAS ─────────────────────────────────
+                        Ela lia `perDeliveryTotal` e `perKmTotal`, que a API
+                        nunca devolveu: o campo chama `feeTotal`. Resultado —
+                        R$ 18,00 apareciam dentro do TOTAL sem nenhuma linha
+                        explicando de onde vinham, e a composição não fechava
+                        com o total logo abaixo dela. */}
+                    {r.stats.feeTotal > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", gap: 10 }}>
                         <span>
-                          {r.motoboy.paymentType === "DAILY_PLUS_FEE" ? `Taxa dos Pedidos (${r.stats.totalDeliveries} entregas)` : `Por entrega: ${fmt(r.motoboy.perDeliveryRate || 0)} × ${r.stats.totalDeliveries}`}
+                          {r.motoboy.paymentType === "PER_KM"
+                            ? `Por km: ${fmt(r.motoboy.perKmRate || 0)} × ${r.stats.totalDistance} km`
+                            : r.motoboy.usandoTaxaDoCliente
+                              ? `Taxa de entrega dos pedidos (${r.stats.totalDeliveries})`
+                              : `Por entrega: ${fmt(r.motoboy.perDeliveryRate || 0)} × ${r.stats.totalDeliveries} entregas`}
                         </span>
-                        <span style={{ fontWeight: 700 }}>{fmt(r.stats.perDeliveryTotal)}</span>
+                        <span style={{ fontWeight: 700 }}>{fmt(r.stats.feeTotal)}</span>
                       </div>
                     )}
-                    {r.stats.perKmTotal > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
-                        <span>Por KM: {fmt(r.motoboy.perKmRate || 0)} × {r.stats.totalDistance} km</span>
-                        <span style={{ fontWeight: 700 }}>{fmt(r.stats.perKmTotal)}</span>
+
+                    {/* Sem valor por entrega cadastrado, a conta cai na taxa
+                        que o CLIENTE pagou ao marketplace — que no 99Food já
+                        vem descontada pelo cupom deles. Precisa estar escrito,
+                        senão o lojista confere com um número que não é dele. */}
+                    {r.motoboy.usandoTaxaDoCliente && r.stats.feeTotal > 0 && (
+                      <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", fontSize: "0.74rem", color: "#92400E", lineHeight: 1.45 }}>
+                        ⚠️ Este entregador não tem <b>valor por entrega</b> cadastrado, então está sendo usada a
+                        taxa que o cliente pagou. Em pedido de iFood e 99Food essa taxa é do marketplace, não sua —
+                        cadastre o valor por entrega em Motoboys para o acerto ficar certo.
                       </div>
                     )}
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>
@@ -382,7 +399,16 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                               )}
                             </span>
                             {o.deliveryDistance ? <span style={{ color: "#3B82F6", fontWeight: 600 }}>{o.deliveryDistance} km</span> : <span />}
-                            <span style={{ fontWeight: 700, color: "#16A34A" }}>Taxa: {fmt(o.deliveryFee || o.motoboyFee || 0)}</span>
+                            {/* O que o MOTOBOY ganha nesta entrega, pela mesma
+                                conta que soma o total — não a taxa que o
+                                cliente pagou ao marketplace. */}
+                            <span
+                              title={r.motoboy.usandoTaxaDoCliente ? "Taxa que o cliente pagou — sem valor por entrega cadastrado" : "O que este entregador recebe por esta entrega"}
+                              style={{ fontWeight: 700, color: r.motoboy.usandoTaxaDoCliente ? "#B45309" : "#16A34A" }}
+                            >
+                              {r.motoboy.usandoTaxaDoCliente ? "Taxa do cliente: " : "Motoboy: "}
+                              {fmt(o.ganhoDoMotoboy ?? o.deliveryFee ?? 0)}
+                            </span>
                             <button
                               onClick={() => setSelectedOrderModal(o)}
                               style={{ padding: "4px 8px", background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", borderRadius: 6, fontWeight: 700, fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
@@ -440,16 +466,10 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
               )}
             </div>
 
-            {/* Resumo do Pagamento */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-              <div style={{ background: "#F1F5F9", borderRadius: 10, padding: "10px 12px" }}>
-                <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 700 }}>FORMA DE PGTO</span>
-                <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A", marginTop: 2 }}>{selectedOrderModal.paymentMethod}</div>
-              </div>
-              <div style={{ background: "#F1F5F9", borderRadius: 10, padding: "10px 12px" }}>
-                <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 700 }}>VALOR TOTAL</span>
-                <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#16A34A", marginTop: 2 }}>{fmt(selectedOrderModal.totalAmount)}</div>
-              </div>
+            {/* Forma de pagamento */}
+            <div style={{ background: "#F1F5F9", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+              <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 700 }}>FORMA DE PGTO</span>
+              <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A", marginTop: 2 }}>{selectedOrderModal.paymentMethod}</div>
             </div>
 
             {/* Destaque de Troco / Prestação de Contas em Dinheiro */}
@@ -483,6 +503,46 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                 </div>
               </div>
             )}
+
+            {/* ── A CONTA DO PEDIDO ─────────────────────────────────────────
+                Antes esta janela mostrava so "VALOR TOTAL" e a lista de itens —
+                e no #266009 do Lucas o item era R$ 59,99 com total R$ 48,52,
+                sem uma linha dizendo para onde foram os R$ 11,47. Quem confere
+                a entrega com o motoboy precisa ver o desconto e a taxa.
+
+                A conta vem de lib/conta-do-pedido.ts, a mesma regra do papel:
+                o desconto exibido e o que faz a soma bater com o que o cliente
+                pagou. */}
+            {(() => {
+              const conta = contaDoPedido(selectedOrderModal);
+              const linha = (rotulo: string, valor: number, forte = false) => (
+                <div key={rotulo} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: forte ? "0.95rem" : "0.84rem", fontWeight: forte ? 900 : 600, color: forte ? "#0F172A" : "#475569", padding: forte ? "6px 0 0" : "2px 0", borderTop: forte ? "2px solid #CBD5E1" : "none", marginTop: forte ? 4 : 0 }}>
+                  <span>{rotulo}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: forte ? "#16A34A" : valor < 0 ? "#B91C1C" : "#0F172A" }}>{emReaisConta(valor)}</span>
+                </div>
+              );
+              return (
+                <div style={{ background: "#FFFDF8", border: "1.5px solid #E2E8F0", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                  <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: 8 }}>🧾 Conta do pedido</div>
+                  {linha("Subtotal dos itens", conta.subtotal)}
+                  {conta.ajustes.map((a) => linha(a.rotulo, a.valor))}
+                  {linha("Taxa de entrega (cliente)", conta.taxaEntrega)}
+                  {linha("Total do pedido", conta.total, true)}
+                  {selectedOrderModal.ganhoDoMotoboy != null && (
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: "0.84rem", fontWeight: 800, color: "#C2410C", background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 8, padding: "7px 10px", marginTop: 10 }}>
+                      <span>🛵 O entregador recebe por esta entrega</span>
+                      <span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(selectedOrderModal.ganhoDoMotoboy)}</span>
+                    </div>
+                  )}
+                  {conta.taxaEntrega > 0 && (selectedOrderModal.source === "99FOOD" || selectedOrderModal.source === "IFOOD") && (
+                    <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "8px 0 0", lineHeight: 1.45 }}>
+                      A taxa de entrega acima e a que o CLIENTE pagou ao {selectedOrderModal.source === "99FOOD" ? "99Food" : "iFood"} —
+                      ja descontada de cupom deles quando houve. Ela nao e o que voce paga ao entregador.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {selectedOrderModal.notes && (
               <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: "0.8rem", color: "#92400E" }}>

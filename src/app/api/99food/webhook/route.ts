@@ -555,9 +555,13 @@ export async function POST(req: NextRequest) {
                 deliveryFee: p.taxaEntrega,
                 // Desconto do 99Food (cupom, promoção, entrega) registrado ao
                 // lado do total: a mensalidade é sobre o bruto do pedido.
-                ...(p.descontos.total > 0
-                  ? { discountTotal: p.descontos.total, discountDetails: p.descontos as any }
-                  : {}),
+                //
+                // `precoCru` vai junto SEMPRE, mesmo sem desconto: é o objeto
+                // `price` como o 99Food mandou. Em 12/09/2026 os valores de 12
+                // pedidos em 12 não fechavam e não havia como conferir o que
+                // eles enviaram — o evento era traduzido e descartado.
+                discountDetails: { ...p.descontos, precoCru: p.precoCru } as any,
+                ...(p.descontos.total > 0 ? { discountTotal: p.descontos.total } : {}),
                 notes: p.observacoes,
                 source: "99FOOD",
                 openDeliveryOrderId: orderId,

@@ -64,6 +64,10 @@ export async function GET(req: Request) {
       totalAmount: true,
       deliveryFee: true,
       motoboyFee: true,
+      discountTotal: true,
+      discountIfood: true,
+      discountMerchant: true,
+      source: true,
       deliveryDistance: true,
       customerName: true,
       customerPhone: true,
@@ -175,39 +179,37 @@ export async function GET(req: Request) {
     const perDeliveryRate = mb.perDeliveryRate || 0;
     const perKmRate = mb.perKmRate || 0;
 
-    let feeTotal = 0;
-    let dailyTotal = 0;
+    // ── QUANTO ESTE PEDIDO RENDE PARA O MOTOBOY ──────────────────────────
+    //
+    // Uma função só, e o total é a SOMA dela pedido a pedido. Antes o total
+    // era calculado aqui (entregas × valor) e a lista detalhada mostrava
+    // `deliveryFee` — a taxa que o CLIENTE pagou ao marketplace. Os dois
+    // números não tinham relação, e o lojista via "Taxa: R$ 6,94" numa
+    // entrega que ele paga R$ 2,00 (reclamação do Lucas, 12/09/2026).
+    //
+    // Pior no 99Food: lá o `deliveryFee` é o que sobrou para o cliente pagar
+    // DEPOIS do desconto que o 99 bancou. O pedido #266009 tinha taxa de
+    // R$ 12,00 com R$ 11,00 abatidos pelo 99Food, e o relatório mostrava
+    // "Taxa: R$ 1,00" — um valor que não existe em lugar nenhum do acerto
+    // entre a loja e o entregador.
+    const ehPorEntrega = mb.paymentType === "PER_DELIVERY" || mb.paymentType === "BOTH" || mb.paymentType === "DAILY_PLUS_FEE";
+    // Sem valor por entrega configurado, o relatório cai na taxa do cliente —
+    // que é o comportamento antigo, mantido para não zerar o acerto de quem
+    // nunca configurou. A tela avisa que é isso que está acontecendo.
+    const usandoTaxaDoCliente = (ehPorEntrega || !mb.paymentType) && perDeliveryRate <= 0;
 
-    switch (mb.paymentType) {
-      case "DAILY_RATE":
-        dailyTotal = uniqueDays * dailyRate;
-        feeTotal = 0;
-        break;
+    const ganhoDoPedido = (o: { deliveryFee?: number | null; motoboyFee?: number | null; deliveryDistance?: number | null }) => {
+      switch (mb.paymentType) {
+        case "DAILY_RATE": return 0;
+        case "PER_KM": return (o.deliveryDistance || 0) * perKmRate;
+        default:
+          if (perDeliveryRate > 0) return perDeliveryRate;
+          return Number(o.deliveryFee || o.motoboyFee || 0);
+      }
+    };
 
-      case "PER_DELIVERY":
-        feeTotal = perDeliveryRate > 0
-          ? totalDeliveries * perDeliveryRate
-          : deliveryFeeSum;
-        dailyTotal = 0;
-        break;
-
-      case "BOTH":
-      case "DAILY_PLUS_FEE":
-        dailyTotal = uniqueDays * dailyRate;
-        feeTotal = perDeliveryRate > 0
-          ? totalDeliveries * perDeliveryRate
-          : deliveryFeeSum;
-        break;
-
-      case "PER_KM":
-        feeTotal = totalDistance * perKmRate;
-        dailyTotal = 0;
-        break;
-
-      default:
-        feeTotal = deliveryFeeSum;
-        dailyTotal = 0;
-    }
+    const dailyTotal = (mb.paymentType === "PER_DELIVERY" || mb.paymentType === "PER_KM") ? 0 : uniqueDays * dailyRate;
+    const feeTotal = Math.round(orders.reduce((s, o) => s + ganhoDoPedido(o), 0) * 100) / 100;
 
     const totalWithDaily = dailyTotal + feeTotal;
     const totalFeeOnly = feeTotal;
@@ -221,6 +223,9 @@ export async function GET(req: Request) {
         perDeliveryRate,
         perKmRate,
         active: mb.active,
+        // A tela precisa dizer ao lojista QUE CONTA foi feita — e avisar
+        // quando caiu na taxa do cliente por falta de configuração.
+        usandoTaxaDoCliente,
       },
       stats: {
         totalDeliveries,
@@ -273,6 +278,11 @@ export async function GET(req: Request) {
           id: o.id,
           createdAt: o.createdAt,
           date: o.createdAt,
+          // O que ESTE pedido rende para o motoboy, pela mesma função que
+          // soma o total. É o que faz a lista detalhada bater com o valor a
+          // pagar — antes ela mostrava a taxa que o cliente pagou ao
+          // marketplace, que não tem relação com o acerto da loja.
+          ganhoDoMotoboy: Math.round(ganhoDoPedido(o) * 100) / 100,
           totalAmount: o.totalAmount,
           changeAmount: o.changeAmount,
           changeFor,
@@ -280,6 +290,12 @@ export async function GET(req: Request) {
           cashToDeliver,
           deliveryFee: o.deliveryFee,
           motoboyFee: o.motoboyFee,
+          // Para o "Ver Pedido" mostrar a conta fechando, com o desconto e a
+          // taxa — que e o que o lojista confere com o entregador.
+          discountTotal: o.discountTotal,
+          discountIfood: (o as any).discountIfood,
+          discountMerchant: (o as any).discountMerchant,
+          source: o.source,
           deliveryDistance: o.deliveryDistance,
           customerName: o.customerName,
           customerPhone: o.customerPhone,

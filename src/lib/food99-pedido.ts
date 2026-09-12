@@ -187,6 +187,18 @@ export interface PedidoTraduzido {
    * gravado, não só subtraído.
    */
   descontos: { total: number; itens: number; entrega: number; cupom: number; promocoes: unknown[] };
+  /**
+   * O objeto `price` do 99Food, como veio.
+   *
+   * Guardado porque em 12/09/2026 os valores de 12 pedidos em 12 não
+   * fechavam (item 59,99 - desconto 25,00 + taxa 1,00, total 48,52) e não
+   * havia como conferir o que eles mandaram: o evento era lido, traduzido e
+   * jogado fora. Sem isto, toda dúvida sobre valor do 99Food vira
+   * arqueologia por aritmética.
+   *
+   * São poucos campos numéricos — cabe de sobra no Json que já existe.
+   */
+  precoCru: Record<string, unknown> | null;
   observacoes: string;
   itens: ItemTraduzido[];
 }
@@ -249,6 +261,7 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     total: centavosParaReais(totalCentavos),
     taxaEntrega: centavosParaReais(preco.delivery_price),
     descontos,
+    precoCru: preco && typeof preco === "object" ? (preco as Record<string, unknown>) : null,
     observacoes: String(o.remark ?? "").trim(),
     itens: Array.isArray(o.order_items) ? o.order_items.map(traduzirItem) : [],
   };

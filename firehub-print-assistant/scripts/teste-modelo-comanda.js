@@ -216,5 +216,40 @@ conferir("o desconto continua", semTaxa.includes("Desconto"));
 const totalDe = (t) => (t.split("\n").find((l) => l.includes("Total:")) || "").trim();
 conferir(`o TOTAL nao muda (${totalDe(semTaxa)})`, totalDe(comTaxa) === totalDe(semTaxa) && totalDe(semTaxa).includes("27,87"));
 
+console.log("\n12) O cupom fecha a conta — numeros reais do 99Food (ref 266009)");
+// Medido no banco em 12/09/2026: item 59,99 / desconto 25,00 / taxa 1,00 e
+// total 48,52 vindo do parceiro. 59,99 - 25,00 + 1,00 da 35,99, e o lojista
+// somava de cabeca e via que nao fechava.
+const pedido99 = {
+  id: "ped_99", dailyOrderNumber: "20", customerName: "Vitoria Rodrigues",
+  customerAddress: "R. Prof. Firmino Cardoso, 5 - Coelho",
+  deliveryType: "DELIVERY", paymentMethod: "Pago Online (99Food)",
+  source: "99FOOD", openDeliveryReference: "266009",
+  items: [{ name: "Box de Frango M + Molho", qty: 1, price: 59.99 }],
+  totalAmount: 48.52, deliveryFee: 1.00, discountTotal: 25.00,
+  createdAt: "2026-09-11T23:33:00-03:00",
+};
+const cupom99 = legivel(buildEscPos(pedido99, "Loja do Lucas", 48, "safe"));
+const valorDe = (rotulo, txt) => {
+  const l = txt.split("\n").find((x) => x.includes(rotulo));
+  if (!l) return null;
+  const m = l.match(/-?R\$\s*([\d.]+,\d{2})/);
+  return m ? Number(m[1].replace(/\./g, "").replace(",", ".")) * (l.includes("-R$") ? -1 : 1) : null;
+};
+const sub = valorDe("Subtotal:", cupom99);
+const desc = valorDe("Desconto (Cupom - Loja):", cupom99) || 0;
+const outros = valorDe("Desconto:", cupom99);
+const taxa = valorDe("Taxa de Entrega:", cupom99);
+const tot = valorDe("Total:", cupom99);
+conferir("imprimiu a linha que fecha a conta", outros !== null);
+const soma = Math.round(((sub || 0) + (desc || 0) + (outros || 0) + (taxa || 0)) * 100) / 100;
+conferir(`o papel fecha: ${sub} ${desc} ${outros} +${taxa} = ${soma} (total ${tot})`, soma === tot);
+conferir("o TOTAL continua sendo o do parceiro", tot === 48.52);
+
+// Pedido que ja fechava nao ganha linha nenhuma a mais.
+const certinho = legivel(buildEscPos(
+  { ...pedido99, totalAmount: 35.99 }, "Loja do Lucas", 48, "safe"));
+conferir("pedido que ja fechava mantem a quebra por origem", certinho.includes("Desconto (Cupom - Loja):"));
+
 console.log(falhas === 0 ? "\nTUDO OK\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

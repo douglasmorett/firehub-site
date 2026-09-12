@@ -1363,22 +1363,51 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const subtotal = order.items?.reduce((sum, it) => sum + (getItemEffectivePrice(it, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
   res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
 
-  if (order.discountIfood && Number(order.discountIfood) > 0) {
-    res += rightAlign("Desconto (iFood):", "-R$ " + Number(order.discountIfood).toFixed(2).replace(".", ","));
-  }
-  if (order.discountMerchant && Number(order.discountMerchant) > 0) {
-    res += rightAlign("Desconto (Cupom - Loja):", "-R$ " + Number(order.discountMerchant).toFixed(2).replace(".", ","));
-  } else if (!order.discountIfood && order.discountTotal && Number(order.discountTotal) > 0) {
-    res += rightAlign("Desconto (Cupom - Loja):", "-R$ " + Number(order.discountTotal).toFixed(2).replace(".", ","));
-  }
-
   const dFee = typeof order.deliveryFee === "number" ? order.deliveryFee : 0;
   const dFeeLabel = order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:";
+  const dinheiro = (v) => "R$ " + Number(v).toFixed(2).replace(".", ",");
+
+  // ── O DESCONTO IMPRESSO E O QUE REALMENTE SAIU DA CONTA ──────────────
+  //
+  // O TOTAL nao e somado aqui: vem do parceiro (`totalAmount`), unica fonte
+  // confiavel do que o cliente pagou. Ja as linhas de desconto sao montadas de
+  // campos separados, e no 99Food elas nao correspondem ao que foi abatido:
+  // medido em 12/09/2026, 12 de 12 pedidos imprimiam "59,99 - 25,00 + 1,00" e
+  // Total 48,52. A diferenca e o desconto que o PARCEIRO bancou — ele aparece
+  // em `discountTotal` mas nunca saiu do bolso da loja nem do cliente.
+  //
+  // O lojista soma de cabeca, ve que nao fecha, e para de confiar no papel
+  // inteiro — inclusive na parte certa. Entao o desconto impresso passa a ser
+  // o que a conta exige: subtotal + taxa - total. As linhas separadas
+  // (iFood/loja) so saem quando elas mesmas fecham; senao sai uma linha so,
+  // com o numero que corresponde ao que o cliente pagou.
+  const totalCobrado = Number(order.totalAmount || 0);
+  const descontoQueFecha = Math.round((Number(subtotal) + Number(dFee) - totalCobrado) * 100) / 100;
+
+  const partes = [];
+  if (order.discountIfood && Number(order.discountIfood) > 0) partes.push(["Desconto (iFood):", Number(order.discountIfood)]);
+  if (order.discountMerchant && Number(order.discountMerchant) > 0) partes.push(["Desconto (Cupom - Loja):", Number(order.discountMerchant)]);
+  else if (!order.discountIfood && order.discountTotal && Number(order.discountTotal) > 0) partes.push(["Desconto (Cupom - Loja):", Number(order.discountTotal)]);
+  const somaDasPartes = Math.round(partes.reduce((s, p) => s + p[1], 0) * 100) / 100;
+
+  if (ehConta) {
+    // Conta da mesa nao tem taxa nem total do parceiro para conferir contra.
+    for (const [rotulo, valor] of partes) res += rightAlign(rotulo, "-" + dinheiro(valor));
+  } else if (Math.abs(somaDasPartes - descontoQueFecha) < 0.01) {
+    for (const [rotulo, valor] of partes) res += rightAlign(rotulo, "-" + dinheiro(valor));
+  } else if (descontoQueFecha > 0.005) {
+    res += rightAlign("Desconto:", "-" + dinheiro(descontoQueFecha));
+  } else if (descontoQueFecha < -0.005) {
+    // Total maior que subtotal + taxa: taxa de servico ou embalagem do
+    // parceiro, que nao chega em campo proprio.
+    res += rightAlign("Outros valores do pedido:", dinheiro(Math.abs(descontoQueFecha)));
+  }
+
   // A loja pode pedir para esta LINHA nao sair (modelo da comanda, bloco
   // "Valores e total"). O TOTAL nao muda: ele vem de order.totalAmount, que ja
   // inclui a taxa — some a linha, nao o dinheiro.
   marcas.taxaEntrega = res.length;
-  if (!ehConta) res += rightAlign(dFeeLabel, "R$ " + Number(dFee).toFixed(2).replace(".", ","));
+  if (!ehConta) res += rightAlign(dFeeLabel, dinheiro(dFee));
   marcas.fimTaxaEntrega = res.length;
 
   // TOTAL BOX — destaque limpo
