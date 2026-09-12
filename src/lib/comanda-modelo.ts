@@ -9,18 +9,30 @@
  * atualizar o programa em todas as lojas. O lojista que vinha da Saipos
  * estranhava na hora: lá ele abre a comanda na tela e mexe.
  *
- * Aqui o modelo é DADO, não código: uma lista de blocos guardada em
- * `User.comandaModelo`. O painel monta a comanda a partir dele e manda pronta;
- * o Assistente só converte em comandos de impressora. Assistente antigo ignora
- * o campo que não conhece e segue com o layout embutido, então nenhuma loja
- * fica sem imprimir enquanto não atualiza.
+ * Aqui o modelo é DADO, não código: uma lista de blocos guardada dentro de
+ * `User.printerConfig.comandaModelo`. O painel manda a lista em `order.blocos`
+ * e o Assistente cola as seções nessa ordem.
  *
- * ── A régua ─────────────────────────────────────────────────────────────────
+ * ── O que o painel manda e o que o Assistente monta ─────────────────────────
  *
- * Bobina de 80 mm imprime 48 colunas; a de 58 mm, 32. Todo o cálculo de quebra
- * e alinhamento é feito nessas colunas, e é isso que permite mostrar na tela a
- * comanda EXATAMENTE como ela vai sair — a prévia usa a mesma função que o
- * papel.
+ * O painel NÃO manda a comanda pronta. Manda a ORDEM. O conteúdo de cada seção
+ * continua saindo do mesmo código que já roda nas lojas hoje — preço efetivo
+ * com desconto rateado, combo, tarja de bebida, rateio de mesa, aviso de
+ * entrega parceira. Reimplementar isso aqui criaria uma segunda verdade que
+ * divergiria da primeira na primeira mudança.
+ *
+ * A consequência disso está nos tipos: só os blocos LEVES (número, canal,
+ * loja, data, texto livre) aceitam tamanho e alinhamento. Mudar o corpo de
+ * fonte de uma seção já quebrada na largura da bobina faria a IMPRESSORA
+ * quebrar a linha onde ela quisesse — foi assim que endereço já saiu como
+ * "Rua Ma / cae".
+ *
+ * ── Compatibilidade ─────────────────────────────────────────────────────────
+ *
+ * Loja sem modelo salvo não manda `blocos` e nada muda, em lugar nenhum.
+ * Assistente antigo ignora o campo que não conhece e imprime o layout
+ * embutido. Os dois casos estão medidos em
+ * firehub-print-assistant/scripts/teste-modelo-comanda.js.
  */
 
 export type Alinhamento = "esquerda" | "centro" | "direita";
@@ -32,8 +44,8 @@ export type Alinhamento = "esquerda" | "centro" | "direita";
  *
  * A impressora térmica não tem fonte com tamanho em pontos: ela repete a
  * mesma matriz de pontos N vezes, e N é NÚMERO INTEIRO. Só com isso, o
- * degrau depois do normal já é o dobro — que é grande demais para título de
- * seção e come bobina à toa.
+ * degrau depois do normal já é o dobro — grande demais para título de seção
+ * e come bobina à toa.
  *
  * A saída é que a impressora tem DUAS fontes embutidas: a Fonte A, de 12
  * pontos de largura (48 colunas em 80 mm), e a Fonte B, de 9 (64 colunas).
@@ -47,8 +59,7 @@ export type Alinhamento = "esquerda" | "centro" | "direita";
  *
  * 2,5x NÃO existe nesta escada e não adianta pedir: a única combinação
  * entre 2 e 3 é Fonte B x3, que dá 2,25x — perto demais de 2 para valer um
- * degrau a mais na tela. Fica 1,5 / 2 / 3, que é o que o lojista consegue
- * distinguir no papel.
+ * degrau a mais na tela.
  *
  * Se a impressora ignorar a troca de fonte (acontece em modelo muito antigo,
  * o mesmo que pede o perfil "legacy"), o 1,5x sai como 2x: maior do que foi
@@ -57,20 +68,6 @@ export type Alinhamento = "esquerda" | "centro" | "direita";
 export type Tamanho = 1 | 1.5 | 2 | 3;
 
 export const TAMANHOS: Tamanho[] = [1, 1.5, 2, 3];
-
-/**
- * Como cada degrau vira comando de impressora.
- *
- * Fonte A/B é o ESC M; o multiplicador é o GS ! Quem escreve os bytes é o
- * Assistente — esta tabela existe para a regra morar num lugar só e a
- * prévia da tela não divergir do papel.
- */
-export const ESCPOS_DO_TAMANHO: Record<string, { fonte: "A" | "B"; multiplicador: 1 | 2 | 3 }> = {
-  "1": { fonte: "A", multiplicador: 1 },
-  "1.5": { fonte: "B", multiplicador: 2 },
-  "2": { fonte: "A", multiplicador: 2 },
-  "3": { fonte: "A", multiplicador: 3 },
-};
 
 /** Encosta no degrau mais próximo da escada. Valor de fora vira 1. */
 export function tamanhoValido(t: unknown): Tamanho {
@@ -85,19 +82,25 @@ export function larguraDoTamanho(colunas: number, tamanho?: Tamanho | number): n
   return Math.max(4, Math.floor(colunas / tamanhoValido(tamanho)));
 }
 
-/** Cada peça que pode entrar na comanda. */
+/**
+ * Cada peça que pode entrar na comanda.
+ *
+ * Esta lista é um CONTRATO com o Assistente: todo tipo daqui tem um `case`
+ * em `aplicarModelo()` dentro de firehub-print-assistant/server.js. Tipo novo
+ * que o Assistente não conheça simplesmente não imprime nada — some do papel
+ * sem erro nenhum, que é a pior forma de descobrir.
+ */
 export type TipoDeBloco =
   | "numeroPedido"
   | "canal"
   | "loja"
   | "dataHora"
+  | "avisoEntrega"
   | "cliente"
   | "entrega"
   | "itens"
-  | "observacao"
   | "totais"
   | "pagamento"
-  | "codigoEntrega"
   | "qrMotoboy"
   | "qrCliente"
   | "textoLivre"
@@ -126,41 +129,60 @@ export type ModeloDeComanda = {
   completo: Bloco[];
 };
 
+/**
+ * Blocos que a loja não pode tirar do papel.
+ *
+ * `itens` porque comanda sem o pedido é papel jogado fora. `avisoEntrega`
+ * porque é o aviso de que o pedido JÁ tem motoboy do parceiro a caminho, mais
+ * o código de coleta — sem ele a loja manda o próprio motoboy num pedido que
+ * não é dela para entregar, e paga a corrida duas vezes.
+ */
+export const BLOCOS_OBRIGATORIOS: TipoDeBloco[] = ["itens", "avisoEntrega"];
+
+/** Blocos cujo conteúdo o Assistente monta: aceitam título, nunca formato. */
+export const BLOCOS_DE_SECAO: TipoDeBloco[] = [
+  "avisoEntrega", "cliente", "entrega", "itens", "totais", "pagamento", "qrMotoboy", "qrCliente",
+];
+
+/** Blocos que aceitam negrito, tamanho e alinhamento. */
+export function aceitaFormato(tipo: TipoDeBloco): boolean {
+  return !BLOCOS_DE_SECAO.includes(tipo) && tipo !== "separador" && tipo !== "espaco";
+}
+
+/** Blocos que têm um título editável em cima. */
+export function aceitaTitulo(tipo: TipoDeBloco): boolean {
+  return tipo === "cliente" || tipo === "entrega" || tipo === "itens";
+}
+
 /** Os campos que o lojista pode usar dentro de um bloco de texto livre. */
-export const CAMPOS_DISPONIVEIS: { chave: string; rotulo: string; exemplo: string }[] = [
-  { chave: "numero", rotulo: "Número do pedido", exemplo: "79" },
-  { chave: "canal", rotulo: "Canal (iFood, 99Food…)", exemplo: "iFood" },
-  { chave: "codigoCanal", rotulo: "Número no canal", exemplo: "#3523" },
-  { chave: "loja", rotulo: "Nome da loja", exemplo: "Salz Burgueria" },
-  { chave: "cliente", rotulo: "Nome do cliente", exemplo: "Larissa Moreira" },
-  { chave: "telefone", rotulo: "Telefone do cliente", exemplo: "0800 705 1020" },
-  { chave: "endereco", rotulo: "Endereço de entrega", exemplo: "Rua Dez, 59 - Costazul" },
-  { chave: "bairro", rotulo: "Bairro", exemplo: "Costazul" },
-  { chave: "data", rotulo: "Data", exemplo: "12/09/2026" },
-  { chave: "hora", rotulo: "Hora", exemplo: "23:22" },
-  { chave: "prazo", rotulo: "Entregar até", exemplo: "00:07" },
-  { chave: "total", rotulo: "Total do pedido", exemplo: "R$ 27,87" },
-  { chave: "taxaEntrega", rotulo: "Taxa de entrega", exemplo: "R$ 5,00" },
-  { chave: "pagamento", rotulo: "Forma de pagamento", exemplo: "Crédito (Pago Online)" },
-  { chave: "troco", rotulo: "Troco a levar", exemplo: "R$ 12,00" },
-  { chave: "entregador", rotulo: "Entregador", exemplo: "Jefim Bahia" },
-  { chave: "localizador", rotulo: "Localizador (99Food)", exemplo: "55301287" },
-  { chave: "codigoEntrega", rotulo: "Código de entrega", exemplo: "1138" },
+export const CAMPOS_DISPONIVEIS: { chave: string; rotulo: string }[] = [
+  { chave: "numero", rotulo: "Número do pedido" },
+  { chave: "canal", rotulo: "Canal (iFood, 99Food…)" },
+  { chave: "codigoCanal", rotulo: "Número no canal" },
+  { chave: "loja", rotulo: "Nome da loja" },
+  { chave: "cliente", rotulo: "Nome do cliente" },
+  { chave: "telefone", rotulo: "Telefone" },
+  { chave: "endereco", rotulo: "Endereço de entrega" },
+  { chave: "data", rotulo: "Data" },
+  { chave: "hora", rotulo: "Hora" },
+  { chave: "total", rotulo: "Total do pedido" },
+  { chave: "taxaEntrega", rotulo: "Taxa de entrega" },
+  { chave: "pagamento", rotulo: "Forma de pagamento" },
+  { chave: "entregador", rotulo: "Entregador" },
 ];
 
 /** Como cada bloco se chama na tela de edição. */
 export const NOME_DO_BLOCO: Record<TipoDeBloco, string> = {
   numeroPedido: "Número do pedido",
-  canal: "Canal e número no parceiro",
+  canal: "Marca ou marketplace",
   loja: "Nome da loja",
-  dataHora: "Data e hora",
+  dataHora: "Data, hora e nº no parceiro",
+  avisoEntrega: "Aviso de entrega parceira",
   cliente: "Dados do cliente",
   entrega: "Endereço de entrega",
   itens: "Itens do pedido",
-  observacao: "Observação do pedido",
   totais: "Valores e total",
   pagamento: "Forma de pagamento",
-  codigoEntrega: "Código de entrega e localizador",
   qrMotoboy: "QR do entregador",
   qrCliente: "QR do cupom do cliente",
   textoLivre: "Texto livre",
@@ -171,19 +193,18 @@ export const NOME_DO_BLOCO: Record<TipoDeBloco, string> = {
 /** O que o bloco faz, em uma linha, para quem nunca viu esta tela. */
 export const AJUDA_DO_BLOCO: Record<TipoDeBloco, string> = {
   numeroPedido: "O número grande no topo, que a cozinha lê de longe.",
-  canal: "De onde veio o pedido e o número dele lá (iFood #3523).",
+  canal: "A marca, quando você tem mais de uma no iFood — senão o nome do marketplace. Pedido do seu site não imprime nada aqui.",
   loja: "Útil para quem imprime pedidos de mais de uma loja na mesma impressora.",
-  dataHora: "Quando o pedido entrou.",
+  dataHora: "Quando o pedido entrou e o número dele no parceiro.",
+  avisoEntrega: "\"MOTOBOY IFOOD — NÃO USAR MOTOBOY DA LOJA\" e o código de coleta. Não pode ser desligado.",
   cliente: "Nome e telefone.",
-  entrega: "Endereço completo, complemento e ponto de referência.",
-  itens: "A lista do que foi pedido, com complementos e observações. Não pode ser desligada.",
-  observacao: "O recado que o cliente escreveu para a cozinha.",
+  entrega: "Endereço completo e a observação que o cliente escreveu.",
+  itens: "A lista do que foi pedido, com combos e observações. Não pode ser desligada.",
   totais: "Subtotal, descontos, taxa de entrega e total.",
-  pagamento: "Como o cliente paga e se já está pago. Inclui o troco a levar.",
-  codigoEntrega: "Os códigos que o entregador precisa na porta do cliente.",
-  qrMotoboy: "O código que o entregador escaneia para puxar o pedido no app.",
+  pagamento: "Como o cliente paga, se já está pago e quanto de troco levar.",
+  qrMotoboy: "O código que o ENTREGADOR escaneia para puxar o pedido no app.",
   qrCliente: "O cupom da campanha de trazer o cliente do iFood/99 para o seu site.",
-  textoLivre: "O que você quiser escrever. Use os campos entre chaves para trazer dados do pedido.",
+  textoLivre: "O que você quiser escrever. Clique num campo para trazer dado do pedido.",
   separador: "Uma linha de tracinhos para separar seções.",
   espaco: "Um espaço em branco.",
 };
@@ -192,37 +213,35 @@ const b = (tipo: TipoDeBloco, extra: Partial<Bloco> = {}): Bloco => ({ tipo, lig
 
 /**
  * O modelo que toda loja começa usando — a comanda que o FireHub já imprime
- * hoje, peça por peça. Quem nunca abrir a tela de edição não vê diferença
- * nenhuma no papel, que é a única forma segura de introduzir isto.
+ * hoje, seção por seção, na mesma ordem. Quem nunca abrir a tela de edição não
+ * vê diferença nenhuma no papel, que é a única forma segura de introduzir isto.
  */
 export function modeloPadrao(): ModeloDeComanda {
   return {
     versao: 1,
     cozinha: [
       b("numeroPedido", { tamanho: 2, negrito: true, alinhamento: "centro" }),
-      b("canal", { alinhamento: "centro" }),
+      b("canal", { tamanho: 2, negrito: true, alinhamento: "centro" }),
+      b("avisoEntrega"),
       b("separador"),
+      b("loja"),
       b("dataHora"),
       b("cliente", { titulo: "CLIENTE" }),
       b("entrega", { titulo: "ENTREGA" }),
       b("itens", { titulo: "RESUMO DO PEDIDO" }),
-      b("observacao"),
-      b("espaco"),
-      b("textoLivre", { texto: "-- COMANDA DA COZINHA --", alinhamento: "centro" }),
     ],
     completo: [
       b("numeroPedido", { tamanho: 2, negrito: true, alinhamento: "centro" }),
-      b("canal", { alinhamento: "centro" }),
-      b("loja", { alinhamento: "centro" }),
+      b("canal", { tamanho: 2, negrito: true, alinhamento: "centro" }),
+      b("avisoEntrega"),
       b("separador"),
+      b("loja"),
       b("dataHora"),
       b("cliente", { titulo: "CLIENTE" }),
       b("entrega", { titulo: "ENTREGA" }),
       b("itens", { titulo: "RESUMO DO PEDIDO" }),
-      b("observacao"),
       b("totais"),
-      b("pagamento", { negrito: true }),
-      b("codigoEntrega"),
+      b("pagamento"),
       b("qrMotoboy"),
       b("qrCliente"),
     ],
@@ -240,15 +259,19 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
       .filter((x): x is Bloco => !!x && typeof x === "object" && typeof (x as Bloco).tipo === "string" && (x as Bloco).tipo in NOME_DO_BLOCO)
       .map((x): Bloco => ({
         ...x,
-        ligado: x.ligado !== false,
+        ligado: BLOCOS_OBRIGATORIOS.includes(x.tipo) ? true : x.ligado !== false,
         // Tamanho fora da escada (modelo de versão futura, edição na mão)
         // encosta no degrau mais próximo em vez de virar tarja preta.
         tamanho: x.tamanho ? tamanhoValido(x.tamanho) : undefined,
       }));
-    // Os itens são a razão de a comanda existir: se sumirem do modelo salvo
-    // (edição manual, versão antiga), voltam para o fim em vez de a cozinha
-    // receber um papel sem o pedido.
-    if (!limpos.some((x) => x.tipo === "itens")) limpos.push(b("itens", { titulo: "RESUMO DO PEDIDO" }));
+    // Bloco obrigatório que sumiu do modelo salvo volta para o fim. Some por
+    // edição manual, por versão antiga, ou por um bug meu — e em qualquer um
+    // desses casos a loja não pode descobrir na hora do pedido.
+    for (const obrigatorio of BLOCOS_OBRIGATORIOS) {
+      if (!limpos.some((x) => x.tipo === obrigatorio)) {
+        limpos.push(b(obrigatorio, obrigatorio === "itens" ? { titulo: "RESUMO DO PEDIDO" } : {}));
+      }
+    }
     return limpos;
   };
   return {
@@ -258,7 +281,53 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
   };
 }
 
-// ── Montagem ────────────────────────────────────────────────────────────────
+/**
+ * A lista que vai no `order.blocos`, enxuta.
+ *
+ * Bloco desligado nem é mandado, e campo vazio sai do JSON: o payload que
+ * atravessa a rede fica do tamanho do que a loja realmente configurou.
+ */
+export function blocosParaOAssistente(lista: Bloco[]): Bloco[] {
+  return lista
+    .filter((x) => x.ligado !== false)
+    .map((x) => {
+      const saida: Bloco = { tipo: x.tipo, ligado: true };
+      if (x.titulo != null) saida.titulo = x.titulo;
+      if (x.texto) saida.texto = x.texto;
+      if (x.negrito) saida.negrito = true;
+      if (x.tamanho && x.tamanho !== 1) saida.tamanho = x.tamanho;
+      if (x.alinhamento && x.alinhamento !== "esquerda") saida.alinhamento = x.alinhamento;
+      return saida;
+    });
+}
+
+/**
+ * O modelo está mexido, ou a loja nunca abriu a tela?
+ *
+ * Quem nunca abriu não deve mandar `blocos` nenhum: assim o Assistente (novo
+ * ou velho) imprime o layout embutido e não há como o modelo introduzir
+ * diferença onde ninguém pediu diferença.
+ */
+export function modeloFoiPersonalizado(bruto: unknown): boolean {
+  return !!bruto && typeof bruto === "object" && Array.isArray((bruto as ModeloDeComanda).completo);
+}
+
+/**
+ * Os blocos prontos para o `order.blocos`, ou `undefined` quando a loja não
+ * personalizou. As duas rotas de impressão (navegador e fila da nuvem) passam
+ * por aqui para não divergirem uma da outra.
+ */
+export function blocosDoPedido(
+  printerConfig: unknown,
+  opcoes: { semValores?: boolean } = {},
+): Bloco[] | undefined {
+  const bruto = (printerConfig as { comandaModelo?: unknown } | null)?.comandaModelo;
+  if (!modeloFoiPersonalizado(bruto)) return undefined;
+  const modelo = lerModelo(bruto);
+  return blocosParaOAssistente(opcoes.semValores ? modelo.cozinha : modelo.completo);
+}
+
+// ── Prévia ──────────────────────────────────────────────────────────────────
 
 /** Uma linha pronta para o papel: texto já quebrado na largura certa. */
 export type LinhaDaComanda = {
@@ -266,7 +335,7 @@ export type LinhaDaComanda = {
   negrito?: boolean;
   tamanho?: Tamanho;
   alinhamento?: Alinhamento;
-  /** Marca a linha como QR: o Assistente imprime o código, não o texto. */
+  /** Marca a linha como QR: o papel mostra o código, não o texto. */
   qr?: string;
 };
 
@@ -278,10 +347,8 @@ export type PedidoParaComanda = {
   cliente?: string | null;
   telefone?: string | null;
   endereco?: string | null;
-  bairro?: string | null;
   data?: string | null;
   hora?: string | null;
-  prazo?: string | null;
   total?: number | null;
   subtotal?: number | null;
   taxaEntrega?: number | null;
@@ -289,49 +356,45 @@ export type PedidoParaComanda = {
   pagamento?: string | null;
   troco?: number | null;
   entregador?: string | null;
-  localizador?: string | null;
-  codigoEntrega?: string | null;
   observacao?: string | null;
-  /** Campanha "trazer o cliente do marketplace para o site da loja". */
-  campanha?: { valor?: string | null; cupom?: string | null; url?: string | null } | null;
+  /** Entrega do parceiro: o aviso de não mandar motoboy da loja. */
+  entregaParceira?: { parceiro: string; codigoDeColeta?: string | null } | null;
   itens?: { quantidade: number; nome: string; preco?: number | null; observacao?: string | null; complementos?: string[] }[];
   qrMotoboy?: string | null;
+  /** Campanha "trazer o cliente do marketplace para o site da loja". */
+  campanha?: { valor?: string | null; cupom?: string | null; url?: string | null } | null;
 };
 
 const dinheiro = (v?: number | null) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
 
 /** Substitui {campo} pelo valor do pedido. Campo desconhecido sai vazio. */
 export function preencherCampos(texto: string, p: PedidoParaComanda): string {
-  return String(texto || "").replace(/\{(\w+)\}/g, (_, campo: string) => {
-    switch (campo) {
-      case "numero": return String(p.numero ?? "");
-      case "canal": return p.canal || "";
-      case "codigoCanal": return p.codigoCanal || "";
-      case "loja": return p.loja || "";
-      case "cliente": return p.cliente || "";
-      case "telefone": return p.telefone || "";
-      case "endereco": return p.endereco || "";
-      case "bairro": return p.bairro || "";
-      case "data": return p.data || "";
-      case "hora": return p.hora || "";
-      case "prazo": return p.prazo || "";
-      case "total": return dinheiro(p.total);
-      case "taxaEntrega": return dinheiro(p.taxaEntrega);
-      case "pagamento": return p.pagamento || "";
-      case "troco": return p.troco ? dinheiro(p.troco) : "";
-      case "entregador": return p.entregador || "";
-      case "localizador": return p.localizador || "";
-      case "codigoEntrega": return p.codigoEntrega || "";
-      default: return "";
-    }
-  });
+  const campos: Record<string, string> = {
+    numero: String(p.numero ?? ""),
+    canal: p.canal || "",
+    codigoCanal: p.codigoCanal || "",
+    loja: p.loja || "",
+    cliente: p.cliente || "",
+    telefone: p.telefone || "",
+    endereco: p.endereco || "",
+    data: p.data || "",
+    hora: p.hora || "",
+    total: dinheiro(p.total),
+    taxaEntrega: dinheiro(p.taxaEntrega),
+    pagamento: p.pagamento || "",
+    entregador: p.entregador || "",
+  };
+  return String(texto || "").replace(/\{(\w+)\}/g, (_, campo: string) => campos[campo] ?? "");
 }
 
 /**
- * O modelo + o pedido viram a lista de linhas que vai para o papel.
+ * O modelo + o pedido viram a lista de linhas da PRÉVIA.
  *
- * Bloco sem conteúdo não vira linha nenhuma: pedido de retirada não tem
- * endereço, e uma seção "ENTREGA" vazia só gasta bobina e confunde.
+ * Atenção ao que isto é e ao que não é: o papel de verdade sai do Assistente,
+ * com o preço efetivo já rateado, a tarja de bebida e o rateio de mesa. Aqui
+ * o objetivo é a loja ver a ORDEM, a LARGURA e o TAMANHO das letras exatamente
+ * como vão sair — que é o que ela está editando nesta tela. Por isso a prévia
+ * roda sobre um pedido de exemplo, e não sobre um pedido real.
  */
 export function montarComanda(
   modelo: Bloco[],
@@ -341,11 +404,9 @@ export function montarComanda(
   const { colunas, comValores } = opcoes;
   const saida: LinhaDaComanda[] = [];
   const por = (texto: string, extra: Partial<LinhaDaComanda> = {}) => saida.push({ texto, ...extra });
-  const titulo = (t?: string) => {
-    if (!t) return;
-    // 1,5x e não 2x: título de seção em corpo dobrado ocupa meia linha de
-    // bobina para dizer "CLIENTE", e some a informação em volta.
-    por(t.toUpperCase(), { alinhamento: "centro", tamanho: 1.5 });
+  const titulo = (bloco: Bloco, padrao: string) => {
+    const t = String(bloco.titulo == null ? padrao : bloco.titulo).trim();
+    if (t) por(t.toUpperCase(), { alinhamento: "centro", tamanho: bloco.tamanho || 1.5 });
   };
 
   for (const bloco of modelo) {
@@ -358,89 +419,89 @@ export function montarComanda(
 
     switch (bloco.tipo) {
       case "numeroPedido":
-        if (pedido.numero != null && pedido.numero !== "") por(`PEDIDO #${pedido.numero}`, formato);
+        if (pedido.numero != null && pedido.numero !== "") {
+          por(`(${pedido.numero}) DELIVERY ${pedido.codigoCanal || ""}`.trim(), formato);
+        }
         break;
 
       case "canal":
-        if (pedido.canal) por(pedido.codigoCanal ? `${pedido.canal} ${pedido.codigoCanal}` : pedido.canal, formato);
+        if (pedido.canal) por(pedido.canal.toUpperCase(), formato);
         break;
 
       case "loja":
-        if (pedido.loja) por(pedido.loja.toUpperCase(), formato);
+        if (pedido.loja) por(`Estabelecimento: ${pedido.loja.toUpperCase()}`, formato);
         break;
 
       case "dataHora":
+        if (pedido.codigoCanal) por(`N. do Pedido: ${String(pedido.codigoCanal).replace("#", "")}`, formato);
         if (pedido.data || pedido.hora) por(`Data: ${pedido.data || ""} ${pedido.hora || ""}`.trim(), formato);
-        if (pedido.prazo) por(`Entregar ate: ${pedido.prazo}`, { ...formato, negrito: true });
         break;
+
+      case "avisoEntrega": {
+        const e = pedido.entregaParceira;
+        if (!e) break;
+        por(`*** MOTOBOY ${e.parceiro.toUpperCase()} (ENTREGA PARCEIRA) ***`, { alinhamento: "centro", tamanho: 2 });
+        por("NAO USAR MOTOBOY DA LOJA!", { alinhamento: "centro", tamanho: 2 });
+        if (e.codigoDeColeta) por(`CODIGO DE COLETA: #${e.codigoDeColeta}`, { alinhamento: "centro", tamanho: 2 });
+        break;
+      }
 
       case "cliente":
         if (!pedido.cliente && !pedido.telefone) break;
-        titulo(bloco.titulo);
-        if (pedido.cliente) por(`Nome: ${pedido.cliente}`, formato);
-        if (pedido.telefone) por(`Telefone: ${pedido.telefone}`, formato);
+        titulo(bloco, "CLIENTE");
+        if (pedido.cliente) por(`Nome: ${pedido.cliente}`);
+        if (pedido.telefone) por(`Telefone: ${pedido.telefone}`);
+        por("Qtd Pedidos: 1");
         break;
 
       case "entrega":
         if (!pedido.endereco) break;
-        titulo(bloco.titulo);
-        por(`Endereco: ${pedido.endereco}`, formato);
-        if (pedido.entregador) por(`Entregador: ${pedido.entregador}`, formato);
+        titulo(bloco, "ENTREGA");
+        por(`Endereco: ${pedido.endereco}`);
+        if (pedido.observacao) por(`Obs: ${pedido.observacao}`);
         break;
 
       case "itens": {
-        titulo(bloco.titulo);
+        titulo(bloco, "RESUMO DO PEDIDO");
         for (const item of pedido.itens || []) {
           const valor = comValores && item.preco != null ? dinheiro(item.preco) : "";
-          por(linhaComValor(`${item.quantidade}x ${item.nome}`, valor, colunas), { negrito: bloco.negrito });
+          por(linhaComValor(`${item.quantidade}x ${item.nome}`, valor, colunas));
           for (const c of item.complementos || []) por(`  - ${c}`);
           if (item.observacao) por(`  Obs: ${item.observacao}`);
+          por("_".repeat(colunas));
         }
         break;
       }
 
-      case "observacao":
-        if (pedido.observacao) por(`Obs: ${pedido.observacao}`, { ...formato, negrito: true });
-        break;
-
       case "totais":
         if (!comValores) break;
-        por("-".repeat(colunas));
         if (pedido.subtotal != null) por(linhaComValor("Subtotal:", dinheiro(pedido.subtotal), colunas));
-        if (pedido.desconto) por(linhaComValor("Desconto:", `-${dinheiro(pedido.desconto)}`, colunas));
-        if (pedido.taxaEntrega != null) por(linhaComValor("Taxa de entrega:", dinheiro(pedido.taxaEntrega), colunas));
-        por(linhaComValor("TOTAL:", dinheiro(pedido.total), larguraDoTamanho(colunas, 1.5)), { negrito: true, tamanho: 1.5 });
+        if (pedido.desconto) por(linhaComValor("Desconto (Cupom - Loja):", `-${dinheiro(pedido.desconto)}`, colunas));
+        if (pedido.taxaEntrega != null) por(linhaComValor("Taxa de Entrega:", dinheiro(pedido.taxaEntrega), colunas));
+        por("_".repeat(colunas));
+        por(linhaComValor("Total:", dinheiro(pedido.total), larguraDoTamanho(colunas, 2)), { negrito: true, tamanho: 2 });
+        por("_".repeat(colunas));
         break;
 
       case "pagamento":
         if (!comValores || !pedido.pagamento) break;
-        por(`Forma de pagamento: ${pedido.pagamento}`, formato);
-        if (pedido.troco) por(`Levar ${dinheiro(pedido.troco)} de troco`, { ...formato, negrito: true, tamanho: 2 });
+        por(`Forma de pagamento: ${pedido.pagamento}`);
+        if (pedido.troco) por(`Levar ${dinheiro(pedido.troco)} de troco`, { negrito: true, tamanho: 2 });
         break;
 
-      case "codigoEntrega":
-        if (pedido.localizador) por(`Localizador: ${pedido.localizador}`, formato);
-        if (pedido.codigoEntrega) por(`Codigo de entrega: ${pedido.codigoEntrega}`, { ...formato, negrito: true });
-        break;
-
-      // ── OS DOIS QR NÃO PODEM SE PARECER ────────────────────────────
+      // ── OS DOIS QR NÃO PODEM SE PARECER ─────────────────────────────────
       //
       // Na mesma folha podem sair dois códigos: o que o ENTREGADOR lê para
       // puxar o pedido no app, e o cupom de desconto que o CLIENTE leva. Sem
-      // rótulo (era o caso do QR do entregador até aqui) são dois quadrados
-      // pretos iguais, e o cliente aponta a câmera no errado achando que é o
-      // desconto dele — não vaza nada, o QR do entregador só carrega o número
-      // do pedido e quem autoriza é a sessão do motoboy, mas o cliente fica
-      // com a sensação de que o cupom não funcionou.
-      //
-      // Por isso o rótulo e o separador nascem DENTRO do bloco: não é opção
-      // que a loja possa desligar sem querer e voltar a ter dois quadrados
-      // anônimos lado a lado.
+      // rótulo são dois quadrados pretos iguais, e o cliente aponta a câmera no
+      // errado achando que é o desconto dele — não vaza nada, o QR do
+      // entregador só carrega o número do pedido e quem autoriza é a sessão do
+      // motoboy, mas o cliente fica com a sensação de que o cupom não funcionou.
       case "qrMotoboy":
         if (!pedido.qrMotoboy) break;
         por("-".repeat(colunas));
-        por(bloco.titulo || "ENTREGADOR: PUXAR PEDIDO", { alinhamento: "centro", negrito: true });
-        por("", { qr: pedido.qrMotoboy, alinhamento: "centro" });
+        por("ENTREGADOR: PUXAR PEDIDO", { alinhamento: "centro", negrito: true });
+        por("", { qr: pedido.qrMotoboy });
         por("(uso da loja - leia pelo app do entregador)", { alinhamento: "centro" });
         break;
 
@@ -448,14 +509,13 @@ export function montarComanda(
         const c = pedido.campanha;
         if (!c || !c.url) break;
         por("");
-        // Barra de "=" de propósito: a folha inteira usa "-", então esta
-        // faixa é a única coisa com essa cara e separa o que é do cliente.
+        // Barra de "=" de propósito: a folha inteira usa "-", então esta faixa
+        // é a única coisa com essa cara e separa o que é do cliente.
         por("=".repeat(colunas));
-        por(bloco.titulo || "SEU DESCONTO NO PROXIMO PEDIDO", { alinhamento: "centro", negrito: true });
         if (c.valor) por(String(c.valor), { alinhamento: "centro", negrito: true, tamanho: 2 });
-        por("", { qr: c.url, alinhamento: "centro" });
-        por("Aponte a camera do seu celular aqui", { alinhamento: "centro" });
-        if (c.cupom) por(`Cupom: ${c.cupom}`, { alinhamento: "centro", negrito: true });
+        por("", { qr: c.url });
+        por("Escaneie e faca seu proximo pedido", { alinhamento: "centro", negrito: true });
+        if (c.cupom) por(`ou use o cupom ${c.cupom.toUpperCase()}`, { alinhamento: "centro" });
         por("=".repeat(colunas));
         break;
       }
@@ -490,13 +550,12 @@ function linhaComValor(esquerda: string, direita: string, colunas: number): stri
 /**
  * A comanda como TEXTO, do jeito que sai no papel — é o que a tela de edição
  * mostra. Usa a mesma quebra de linha e o mesmo alinhamento do papel, então a
- * prévia não é uma aproximação: é a comanda.
+ * prévia não é aproximação de largura: é a largura.
  */
 export function previaEmTexto(linhas: LinhaDaComanda[], colunas: number): string {
   const out: string[] = [];
   for (const l of linhas) {
-    if (l.qr) { out.push(centralizar("[ QR do entregador ]", colunas)); continue; }
-    // Letra ampliada ocupa o lugar de N letras: cabe colunas/N por linha.
+    if (l.qr) { out.push(centralizar("[ QR ]", colunas)); continue; }
     const largura = larguraDoTamanho(colunas, l.tamanho);
     const partes = quebrar(l.texto, largura);
     if (partes.length === 0) { out.push(""); continue; }
@@ -555,10 +614,8 @@ export function pedidoDeExemplo(nomeDaLoja = "Sua Loja"): PedidoParaComanda {
     cliente: "Larissa Moreira",
     telefone: "(22) 99999-1020",
     endereco: "Rua Dez, 59 - Costazul - Rio das Ostras",
-    bairro: "Costazul",
     data: "12/09/2026",
     hora: "23:22",
-    prazo: "00:07",
     subtotal: 34.88,
     desconto: 12.99,
     taxaEntrega: 6.0,
@@ -566,9 +623,8 @@ export function pedidoDeExemplo(nomeDaLoja = "Sua Loja"): PedidoParaComanda {
     pagamento: "Credito (Pago Online)",
     troco: 0,
     entregador: "Jefim Bahia",
-    localizador: "55301287",
-    codigoEntrega: "1138",
     observacao: "Sem cebola, por favor",
+    entregaParceira: null,
     itens: [
       { quantidade: 1, nome: "Esfirra Duo", preco: 7.98 },
       { quantidade: 1, nome: "3 Esfirras Doces", preco: 26.9, complementos: ["3x Chocolate Branco"], observacao: "caprichar no recheio" },

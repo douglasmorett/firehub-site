@@ -4,6 +4,7 @@ import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
+import { blocosDoPedido, type Bloco } from "./comanda-modelo";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -95,7 +96,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.10";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.11";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 
@@ -245,7 +246,9 @@ async function printToDevice(
   /** ESTA impressora imprime o QR do motoboy? Decidido por impressora, la no printOrder. */
   qrPuxar = true,
   /** O bloco da campanha "converter" para ESTA impressora (ausente = nao sai). */
-  campanha?: BlocoDaCampanha
+  campanha?: BlocoDaCampanha,
+  /** O modelo de comanda da loja. Ausente = layout embutido no Assistente. */
+  blocos?: Bloco[]
 ): Promise<{ ok: boolean; aguardando: boolean }> {
   const nao = { ok: false, aguardando: false };
   try {
@@ -326,6 +329,14 @@ async function printToDevice(
           // comanda do iFood/99Food. Decidido no printOrder, por impressora
           // (lib/campanha-converter.ts). Assistente antigo ignora o campo.
           ...(campanha ? { campanha } : {}),
+          // ── MODELO DA COMANDA (lib/comanda-modelo.ts) ───────────────────
+          // A ORDEM das seções que a loja montou na tela. O conteúdo de cada
+          // uma continua sendo montado pelo Assistente, com o mesmo código de
+          // sempre — aqui vai só a ordem, o que aparece e o tamanho do que é
+          // texto solto. Loja que nunca abriu a tela não manda nada e o
+          // Assistente imprime o layout embutido; Assistente antigo ignora o
+          // campo e faz a mesma coisa.
+          ...(blocos && blocos.length ? { blocos } : {}),
           // Quem entrega, decidido AQUI. O payload não mandava `deliveryBy`:
           // no Assistente o campo chegava vazio e sobrava o código de coleta
           // para decidir, então todo pedido do iFood com código saía com
@@ -410,6 +421,10 @@ export async function printOrder(
   // Categoria nunca soube de onde o pedido veio: a impressora do balcao
   // cuspia a comanda do iFood no meio do salao, e nao havia como dizer
   // "esta aqui e so para o delivery".
+  // O modelo da loja, resolvido UMA vez para todas as impressoras deste
+  // pedido: a comanda da cozinha (semValores) tem a própria lista de blocos.
+  const blocos = blocosDoPedido(printerConfig, { semValores });
+
   const modulo = moduloDoPedido((order as any).source);
   const doModulo = printersToUse.filter(p => impressoraAtendeModulo(p.modulos, modulo));
 
@@ -501,7 +516,8 @@ export async function printOrder(
       semValores,
       printer.somenteBebidas === true,
       qrLigadoNaImpressora(printer, printerConfig as any),
-      campanha
+      campanha,
+      blocos
     );
     if (result.ok) printed++;
     if (result.aguardando) aguardando = true;
@@ -559,7 +575,12 @@ export async function printTestReceipt(
     escposProfile,
     false,
     false,
-    qrLigadoNaImpressora(entrada, printerConfig as any)
+    qrLigadoNaImpressora(entrada, printerConfig as any),
+    undefined,
+    // O teste tem que sair com o MODELO da loja, senão o lojista aperta
+    // "Imprimir teste" para conferir o que acabou de montar e recebe o
+    // layout de fábrica — e conclui que a tela não funciona.
+    blocosDoPedido(printerConfig)
   ).then(r => r.ok);
 }
 

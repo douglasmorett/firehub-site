@@ -7,6 +7,8 @@ import {
   impressoraAtendeModulo,
   type ModuloDePedido,
 } from "@/lib/modulo-do-pedido";
+import ComandaModeloEditor from "./ComandaModeloEditor";
+import type { ModeloDeComanda } from "@/lib/comanda-modelo";
 import {
   contaSaiNestaImpressora,
   impressorasDaContaDaMesa,
@@ -20,6 +22,10 @@ type PrinterConfig = {
   customBeverageKeywords?: string;
   defaultPaperWidth?: "58mm" | "80mm"; // herdado por impressora detectada sozinha
   printers: PrinterEntry[];
+  // O modelo da comanda (lib/comanda-modelo.ts). AUSENTE de propósito em
+  // loja que nunca abriu a tela: enquanto este campo não existe, o Assistente
+  // imprime o layout embutido dele e nada muda no papel.
+  comandaModelo?: ModeloDeComanda;
 };
 
 type PrinterEntry = {
@@ -641,6 +647,23 @@ export default function PrinterSetupClient({
             </div>
           )}
         </div>
+
+        {/* ─── O MODELO DA COMANDA ───────────────────────────────────────
+            A loja que vem de outro sistema espera abrir a comanda e mexer.
+            Aqui ela mexe — e o papel da direita mostra a largura de verdade,
+            em vez de descobrir imprimindo. Enquanto ela não mexer, o campo
+            nem existe no printerConfig e a impressão segue igual. */}
+        <ComandaModeloEditor
+          modelo={config.comandaModelo}
+          nomeDaLoja={storeName || "Sua Loja"}
+          versaoInstalada={versaoInstalada || undefined}
+          versaoMinima="1.2.11"
+          colunasDaLoja={
+            config.printers.find(p => p.name)?.columns
+            ?? (config.printers.find(p => p.name)?.paperWidth === "58mm" ? 32 : 48)
+          }
+          onChange={(comandaModelo) => setConfig(c => ({ ...c, comandaModelo }))}
+        />
 
         {/* ─── O QUE IMPRIME ONDE ────────────────────────────────────────
             A loja pensa em dois mundos e eles têm impressoras diferentes. Antes,

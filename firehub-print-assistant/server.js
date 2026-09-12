@@ -819,6 +819,187 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
   let res = PREAMBLE[profile] || PREAMBLE.safe;
 
+  /* ── MODELO DA COMANDA: onde cada secao comeca e acaba ────────────────
+
+     A loja pode escolher a ORDEM das secoes, quais aparecem e o tamanho
+     dos titulos (src/lib/comanda-modelo.ts no site monta a lista e manda
+     em `order.blocos`). O CONTEUDO de cada secao continua sendo montado
+     pelo mesmo codigo de sempre, algumas linhas abaixo — o que muda e so
+     a ordem em que ele e colado no fim.
+
+     Por isso aqui so se anota a POSICAO: `marcas.x = res.length` antes de
+     cada secao. No fim, `res.slice(marcas.a, marcas.b)` devolve a secao ja
+     pronta, byte a byte igual a de hoje. Nada de reimplementar preco
+     efetivo, combo, tarja de bebida nem rateio de mesa num segundo lugar
+     que ia divergir do primeiro na primeira mudanca.
+
+     Pedido sem `order.blocos` (loja que nunca abriu a tela, ou versao
+     antiga do site) nao entra nesse caminho: as marcas ficam anotadas e
+     ninguem as le. */
+  const marcas = {};
+  marcas.corpo = res.length;
+
+  /**
+   * Cola as secoes na ordem que a loja escolheu.
+   *
+   * Devolve o cupom inteiro (preambulo + corpo remontado). Sem `order.blocos`
+   * devolve `res` como esta — que e o caminho de toda loja que nunca abriu a
+   * tela de modelo, e de todo pedido vindo de uma versao do site que ainda nao
+   * manda o campo.
+   *
+   * As secoes pesadas (itens, totais, pagamento, QRs, aviso de entrega
+   * parceira) vem FATIADAS de `res`: os bytes sao exatamente os que o codigo
+   * de sempre produziu logo acima. As leves (numero, canal, loja, data, texto
+   * livre) sao remontadas aqui, e so essas aceitam tamanho e alinhamento —
+   * mudar o corpo de fonte de uma secao ja quebrada em `columns` faria a
+   * IMPRESSORA quebrar a linha onde ela quisesse.
+   */
+  function aplicarModelo() {
+    const blocos = Array.isArray(order.blocos) ? order.blocos : null;
+    if (!blocos || !blocos.length) return res;
+
+    const fatia = (de, ate) => {
+      const a = marcas[de];
+      if (a == null) return "";
+      const b = marcas[ate] == null ? res.length : marcas[ate];
+      return b > a ? res.slice(a, b) : "";
+    };
+
+    // Fonte A ocupa 12 pontos de largura, Fonte B ocupa 9. O multiplicador do
+    // GS ! e INTEIRO, entao 1,5x nao sai dele: sai da Fonte B dobrada, que da
+    // 64/2 = 32 colunas em 80 mm — exatamente 48/1,5. No perfil "legacy" a
+    // troca de fonte nao e tentada e o 1,5x sai como 2x: maior do que foi
+    // pedido, nunca ilegivel.
+    const formatoDe = (t) => {
+      const n = Number(t) || 1;
+      const fonteB = n > 1 && n < 2 && profile !== "legacy";
+      const mult = n >= 3 ? 0x22 : n >= 1.5 ? 0x11 : 0x00;
+      return ESC + "M" + String.fromCharCode(fonteB ? 1 : 0) + GS + "!" + String.fromCharCode(mult);
+    };
+    const RESET = ESC + "M" + String.fromCharCode(0) + GS + "!" + String.fromCharCode(0) + LEFT;
+    const larguraDe = (t) => {
+      const n = Number(t) || 1;
+      return Math.max(4, Math.floor(columns / (n < 1 ? 1 : n)));
+    };
+
+    // Alinhamento no CODIGO, nunca no ESC a: o ESC a centraliza sobre a largura
+    // FISICA da impressora enquanto o resto do cupom e montado sobre
+    // `columns`. Misturar as duas referencias ja desalinhou cabecalho e corpo
+    // no mesmo papel.
+    const linha = (texto, f) => {
+      const w = larguraDe(f.tamanho);
+      const partes = wrap(texto, w);
+      if (!partes.length) return LF;
+      let s = formatoDe(f.tamanho) + (f.negrito ? BOLD_ON : "");
+      for (const p of partes) {
+        const sobra = Math.max(0, w - p.length);
+        s += (f.alinhamento === "centro" ? " ".repeat(Math.floor(sobra / 2)) + p
+            : f.alinhamento === "direita" ? " ".repeat(sobra) + p
+            : p) + LF;
+      }
+      return s + (f.negrito ? BOLD_OFF : "") + RESET;
+    };
+
+    // Secao sem conteudo nao ganha titulo: pedido de retirada nao tem endereco,
+    // e um "ENTREGA" sozinho so gasta bobina e confunde quem monta o saco.
+    const comTitulo = (corpo, padrao, bl) => {
+      if (!corpo) return "";
+      const t = String(bl.titulo == null ? padrao : bl.titulo).trim();
+      const cabeca = t ? linha(t.toUpperCase(), { alinhamento: "centro", tamanho: bl.tamanho || 1.5 }) : "";
+      return LF + cabeca + RESET + corpo;
+    };
+
+    const campos = {
+      numero: String(seqNumStr || ""),
+      canal: srcStr || "",
+      codigoCanal: refTag || "",
+      loja: cleanAscii(lojaOrigem || storeName || ""),
+      cliente: cleanAscii(order.customerName || ""),
+      telefone: String(order.customerPhone || ""),
+      endereco: cleanAscii(order.customerAddress || ""),
+      data: dateStr || "",
+      hora: timeStr || "",
+      total: "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ","),
+      taxaEntrega: "R$ " + Number(order.deliveryFee || 0).toFixed(2).replace(".", ","),
+      pagamento: cleanAscii(order.paymentMethod || ""),
+      entregador: cleanAscii(order.motoboyName || order.entregador || ""),
+    };
+    const preencher = (t) => String(t || "").replace(/\{(\w+)\}/g, (_, c) => campos[c] || "");
+
+    let out = "";
+    for (const bl of blocos) {
+      if (!bl || bl.ligado === false) continue;
+      const f = { negrito: bl.negrito, tamanho: bl.tamanho, alinhamento: bl.alinhamento };
+      switch (bl.tipo) {
+        case "numeroPedido":
+          if (headerLine) out += linha(headerLine, f);
+          break;
+        // A MARCA quando a conta tem varias no mesmo painel (Ragnar Pizza x
+        // Ragnar Burguer); senao o nome do marketplace, e so dele. Pedido do
+        // proprio site nao ganha linha nenhuma aqui: "SITE" em corpo dobrado
+        // no topo do papel e ruido em toda comanda da loja que so vende pelo
+        // site — que e a maioria.
+        case "canal": {
+          const MARKETPLACES = ["IFOOD", "99FOOD", "JOTAJA", "BRENDI", "WABIZ"];
+          const c = cleanAscii(lojaOrigem || (MARKETPLACES.includes(srcStr) ? srcStr : ""));
+          if (c) out += linha(c.toUpperCase(), f);
+          break;
+        }
+        case "loja":
+          out += linha("Estabelecimento: " + cleanAscii(storeName || "FIREHUB").toUpperCase(), f);
+          break;
+        case "dataHora":
+          if (orderRef) out += linha("N. do Pedido: " + cleanAscii(orderRef), f);
+          if (dateStr) out += linha("Data: " + dateStr + " " + timeStr, f);
+          break;
+        // Nao desligavel no site: e o aviso de que o pedido tem motoboy do
+        // parceiro e o codigo de coleta. Some daqui e a loja manda o proprio
+        // motoboy num pedido que ja tem entregador a caminho.
+        case "avisoEntrega":
+          out += fatia("avisoEntrega", "fimAvisoEntrega");
+          break;
+        case "cliente":
+          out += comTitulo(fatia("cliente", "fimCliente"), "CLIENTE", bl);
+          break;
+        case "entrega":
+          out += comTitulo(fatia("entrega", "fimEntrega"), "ENTREGA", bl);
+          break;
+        case "itens":
+          out += comTitulo(fatia("itens", "fimItens"), ehConta ? "CONTA DA MESA" : "RESUMO DO PEDIDO", bl);
+          break;
+        case "totais":
+          out += RESET + fatia("totais", "fimTotais");
+          break;
+        case "pagamento":
+          out += RESET + fatia("pagamento", "fimPagamento");
+          break;
+        case "qrMotoboy":
+          out += RESET + fatia("qrMotoboy", "fimQrMotoboy");
+          break;
+        case "qrCliente":
+          out += RESET + fatia("qrCliente", "fimQrCliente");
+          break;
+        case "textoLivre": {
+          const t = preencher(bl.texto).trim();
+          if (t) out += linha(t, f);
+          break;
+        }
+        case "separador":
+          out += RESET + divider;
+          break;
+        case "espaco":
+          out += LF;
+          break;
+      }
+    }
+
+    // Bloco nenhum produziu byte (modelo salvo so com secoes que este pedido
+    // nao tem): melhor o cupom de sempre do que um papel em branco.
+    if (!out.trim()) return res;
+    return res.slice(0, marcas.corpo) + RESET + out;
+  }
+
+
   // 1. TOP HEADER (Número + Tipo + Tag) — Usando DOUBLE_HEIGHT para não quebrar linha
   // Conta da mesa (src/lib/conta-da-mesa.ts no site): nao e pedido. Nada de
   // numero de pedido, "Qtd Pedidos", taxa de entrega nem etiqueta de bebida —
@@ -892,6 +1073,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (lojaOrigem) {
     res += DOUBLE_HEIGHT + BOLD_ON + centerLine(cleanAscii(lojaOrigem).toUpperCase()) + BOLD_OFF + DOUBLE_OFF;
   }
+  marcas.avisoEntrega = res.length;
   if (isPartnerDriver) {
     res += DOUBLE_HEIGHT + centerLine(`*** MOTOBOY ${partnerLabel} (ENTREGA PARCEIRA) ***`)
          + centerLine("NAO USAR MOTOBOY DA LOJA!") + DOUBLE_OFF;
@@ -899,7 +1081,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       res += DOUBLE_HEIGHT + centerLine(`CODIGO DE COLETA: #${pCode}`) + DOUBLE_OFF;
     }
   }
+  marcas.fimAvisoEntrega = res.length;
   res += LEFT + divider;
+  marcas.loja = res.length;
   res += wrapLines("Estabelecimento: " + cleanAscii(storeName || "FIREHUB").toUpperCase(), 2);
   if (orderRef) {
     res += "N. do Pedido: " + cleanAscii(orderRef) + LF;
@@ -907,9 +1091,12 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
   const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
   if (dateStr) res += "Data: " + dateStr + " " + timeStr + LF;
+  marcas.fimCabecalho = res.length;
 
   // 2. CLIENTE SECTION
+  marcas.tituloCliente = res.length;
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
+  marcas.cliente = res.length;
   if (order.customerName) res += wrapLines("Nome: " + cleanAscii(order.customerName), 2);
   // Pedido de mesa nasce com telefone "00000000000" (campo obrigatorio no
   // banco): imprimir isso e ruido no papel.
@@ -919,8 +1106,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (!ehConta) res += "Qtd Pedidos: 1" + LF;
 
   // 3. ENTREGA SECTION
+  marcas.fimCliente = res.length;
+  marcas.tituloEntrega = res.length;
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
     res += LF + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LF;
+    marcas.entrega = res.length;
     res += wrapLines("Endereco: " + cleanAscii(order.customerAddress), 2);
     if (order.notes) {
       const cleanObs = cleanAscii(order.notes)
@@ -1063,7 +1253,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const semValores = order?.semValores === true;
 
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
+  marcas.fimEntrega = res.length;
+  marcas.tituloItens = res.length;
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle(ehConta ? "CONTA DA MESA" : "RESUMO DO PEDIDO") + DOUBLE_OFF + LF;
+  marcas.itens = res.length;
 
   if (somenteBebidas) {
     res += LF + INVERSE_ON + banner("!! SO BEBIDAS DESTE PEDIDO !!", "!! SO BEBIDAS !!") + INVERSE_OFF + LF;
@@ -1127,6 +1320,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   }
 
   // 5. TOTALS
+  marcas.fimItens = res.length;
+  marcas.totais = res.length;
   // Comanda so de bebida tambem para aqui: ela mostra um pedaco do pedido, e
   // um total embaixo de um pedaco seria um numero que nao corresponde a nada.
   if (somenteBebidas) {
@@ -1138,6 +1333,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // Na comanda da cozinha o papel acaba aqui: nada de subtotal, taxa, total,
   // forma de pagamento nem "COBRAR DO CLIENTE".
   if (semValores) {
+    // A via da cozinha tem modelo proprio (o site manda a lista certa em
+    // `order.blocos`), e ela acaba aqui: nada de valores no papel.
+    marcas.fimItens = marcas.fimItens == null ? res.length : marcas.fimItens;
+    res = aplicarModelo();
     res += LF + centerLine("-- COMANDA DA COZINHA --") + LF;
     res += centerLine("(sem valores)") + LF;
     res += LEFT + FEED + CUT;
@@ -1167,6 +1366,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   res += DOUBLE_HEIGHT + BOLD_ON + makeBoxLine("Total:", totalValStr) + BOLD_OFF + DOUBLE_OFF;
   res += boxBorder;
 
+  marcas.fimTotais = res.length;
+  marcas.pagamento = res.length;
   // 6. PAYMENT METHOD & SAFETY NOTE
   // ── CONTA DA MESA ────────────────────────────────────────────────────
   //
@@ -1225,6 +1426,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     res += DOUBLE_HEIGHT + BOLD_ON + wrapLines((ehMesa ? "!! TOTAL A PAGAR: " : "!! COBRAR DO CLIENTE NA ENTREGA: ") + totalValStr + " !!", 2) + BOLD_OFF + DOUBLE_OFF;
   }
 
+  marcas.fimPagamento = res.length;
+  marcas.qrMotoboy = res.length;
   // ── QR "PUXAR PEDIDO" ──────────────────────────────────────────────────
   //
   // So sai quando o servidor mandou `qrPuxarUrl` — ele ja decidiu tudo la
@@ -1249,6 +1452,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     res += LEFT;
   }
 
+  marcas.fimQrMotoboy = res.length;
+  marcas.qrCliente = res.length;
   // ── CAMPANHA "CONVERTER PARA SITE PROPRIO" ────────────────────────────
   //
   // O bloco "VOCE GANHOU R$ X" + QR com cupom que vai grampeado no saco do
@@ -1303,6 +1508,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     res += LEFT + divider;
   }
 
+  marcas.fimQrCliente = res.length;
+
+  res = aplicarModelo();
   res += LF + centerLine("Obrigado pela preferencia!") + LEFT + FEED + CUT;
   return Buffer.from(res, "binary");
 }

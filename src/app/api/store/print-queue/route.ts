@@ -8,6 +8,7 @@ import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 import { comboParaImpressao } from "@/lib/parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
+import { blocosDoPedido } from "@/lib/comanda-modelo";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -150,6 +151,17 @@ export async function GET(req: NextRequest) {
       });
     }
     const pc: any = (owner?.printerConfig as any) || null;
+
+    // ── MODELO DA COMANDA (lib/comanda-modelo.ts) ─────────────────────────
+    //
+    // Esta fila é o trilho de quando o painel NÃO está aberto num navegador.
+    // Se o modelo da loja só valesse pelo navegador, a mesma loja imprimiria
+    // de dois jeitos dependendo de a tela estar aberta — que é exatamente a
+    // classe de bug que já custou noite aqui.
+    //
+    // Só a via completa: a comanda da cozinha (sem valores) é decidida por
+    // impressora no navegador e não existe neste trilho.
+    const blocosDaComanda = blocosDoPedido(pc);
 
     // ── O ATRASO: o que chegou enquanto o Assistente estava desligado ──────
     //
@@ -303,7 +315,13 @@ export async function GET(req: NextRequest) {
       // Aqui o servidor decide (lib/entrega-parceira.ts) e o código de coleta
       // só viaja quando a entrega é mesmo do parceiro. Assim a regra antiga,
       // instalada nas lojas hoje, não tem mais como concluir errado.
-      order: { ...order, ...camposDeEntregaParaImpressao(order), ...(qrEmTodas ? qr : {}), ...campanhaSemDestino },
+      order: {
+        ...order,
+        ...camposDeEntregaParaImpressao(order),
+        ...(qrEmTodas ? qr : {}),
+        ...campanhaSemDestino,
+        ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
+      },
       storeName: (order as any).franchisee?.storeName || (order as any).franchisee?.name || "FIREHUB",
       // Escalar compativel com o assistente ja instalado. Vale para instalacao
       // de UMA impressora; com varias, quem resolve e o printerConfig abaixo.
@@ -394,7 +412,11 @@ export async function GET(req: NextRequest) {
       const destinos = destinosDoPedido(printers, order);
       return {
         id: "job_" + pedida.id,
-        order: { ...order, ...camposDeEntregaParaImpressao(order) },
+        order: {
+          ...order,
+          ...camposDeEntregaParaImpressao(order),
+          ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
+        },
         storeName: order.storeName || owner?.storeName || owner?.name || "FIREHUB",
         paperWidth: order.paperWidth || printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",
         columns: printers[0]?.columns,
