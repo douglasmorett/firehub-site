@@ -1041,17 +1041,22 @@ export default function RoteirizacaoModal({
         updateWhenIdle: true,
       });
 
-      // ── As imagens do mapa vêm de uma CDN, não do servidor do OSM ───────
+      // ── AS IMAGENS DO MAPA VOLTARAM PARA O OPENSTREETMAP ────────────────
       //
-      // `tile.openstreetmap.org` é servido por doação e a política de uso deles
-      // pede que aplicativos NÃO o usem como fonte primária: em rede
-      // compartilhada (o Wi-Fi da loja, com o IP de todo o prédio) as imagens
-      // engasgam ou param. A CARTO serve o mesmo mapa do OpenStreetMap por CDN,
-      // com a atribuição exigida abaixo.
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-        // A CARTO exige o crédito dela junto com o do OpenStreetMap.
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: "abcd",
+      // Em 12/09/2026 troquei estas imagens para a CDN da CARTO, achando que
+      // resolveria o engasgo em rede compartilhada. A CARTO passou a exigir
+      // chave de API nesses mapas: o lojista abriu a roteirização e o mapa
+      // inteiro veio coberto de "API KEY REQUIRED" escrito em diagonal, sem
+      // ruas legíveis. Pior que o problema que eu queria resolver.
+      //
+      // O OpenStreetMap não pede chave e é o que a loja já usava. O peso que
+      // a troca queria aliviar não estava aqui: o que travava a roteirização
+      // no Wi-Fi era a BUSCA de endereço, e essa já saiu do navegador (ver
+      // lib/geocodificacao-servidor.ts). Trocar o provedor de imagem de novo
+      // só com um que funcione sem chave e testado na tela.
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; OpenStreetMap contributors',
+        subdomains: "abc",
         maxZoom: 19,
         keepBuffer: 5,
       }).addTo(map);
