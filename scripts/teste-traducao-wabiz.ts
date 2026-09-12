@@ -56,6 +56,11 @@ const encomenda: any = {
 const maquininha: any = { ...delivery, service: { ...delivery.service, delivery: { ...delivery.service.delivery, payment: { type: 3, name: "Cartão (trazer maquininha)", value: 62, externalCode: "MAS", cardFlag: "Visa" } } } };
 const online: any = { ...delivery, service: { ...delivery.service, delivery: { ...delivery.service.delivery, payment: { type: 4, name: "Pagamento Online", value: 62, externalCode: "ONL" } } } };
 
+// Pedido REAL nº 1 da sandbox (unidade 110), 12/09/2026, copiado de orders/pending.
+// Diferenças para a doc: borda em `others` ("Bordas"), `groupExternalCode`,
+// `acceptPartition`, `priceRules` preenchido e `unity: "un"` numa pizza.
+const real1: any = {"orderNumber":1,"status":1,"internalKey":"743615e4-05a4-c278-de7e-433da1835c62","dateTime":"2026-09-12 20:25:54","obs":"PEDIDO DE TESTE DA INTEGRACAO FIREHUB - nao produzir","customer":{"name":"Teste FireHub","email":null,"phoneCode":"11","phoneNumber":"987654321","document":null},"items":[{"groupName":"Pizzas Grande","groupExternalCode":"35265889","subGroupName":"Pizzas Tradicionais","sugGroupExternalCode":null,"products":[{"pos":1,"qty":1,"price":68.9,"unity":"un","parts":[{"name":"Calabresa","price":56.9,"externalCode":"35265889.23734216","customization":{"additionals":[],"edge":{},"others":[{"name":"Bordas","options":[{"externalCode":"35265889.23734132","name":"Catupiry Original","acceptPartition":false,"price":12.0}]}]},"obs":"TESTE FIREHUB - sem cebola"}]}]}],"service":{"type":"delivery","delivery":{"address":"Rua Barão de Jundiaí","number":"100","compl":"Apto 12 - TESTE FIRE","region":"Centro","postalCode":"13201010","city":"Jundiaí","state":"SP","tax":5,"referencePoint":"Pedido de teste da integração","payment":{"type":1,"name":"Dinheiro","value":100,"externalCode":"1"}}},"priceRules":{"partitionPriceMode":"highest","extrasPriceMode":"proportionalToFinal"},"total":73.9,"discounts":0};
+
 let falhas = 0;
 function confere(rotulo: string, obtido: unknown, esperado: unknown) {
   const ok = JSON.stringify(obtido) === JSON.stringify(esperado);
@@ -103,6 +108,25 @@ function confere(rotulo: string, obtido: unknown, esperado: unknown) {
   confere("encomenda: horário agendado no fuso da loja (12h SP = 15h UTC)", dados.scheduledDatetime.toISOString(), "2018-03-20T15:00:00.000Z");
   confere("encomenda: nota de agendamento", dados.notes.includes("AGENDADO"), true);
   confere("encomenda: dinheiro para 50 em total 34 → troco", dados.changeAmount, 50);
+}
+
+{
+  const { dados, items } = traduzirPedidoWabiz(real1, ctx);
+  confere("real nº1: borda que vem em `others` sai com rótulo", items.map((i: any) => [i.productName, i.quantity, i.price]), [["Calabresa | Borda Catupiry Original", 1, 68.9]]);
+  confere("real nº1: item + taxa = total", items[0].price + dados.deliveryFee, 73.9);
+  confere("real nº1: troco, telefone e referência", [dados.changeAmount, dados.customerPhone, dados.notes.includes("Referência: Pedido de teste")], [100, "11987654321", true]);
+  confere("real nº1: hora local SP → UTC", traduzirPedidoWabiz({ ...real1, service: { type: "scheduleOrder_pickup", scheduleDatetime: "2026-09-12 20:25:54" } }, ctx).dados.scheduledDatetime.toISOString(), "2026-09-12T23:25:54.000Z");
+}
+
+{
+  // Pedido REAL nº 2: meio-a-meio com uma metade SEM código, 2 Cocas com código null, débito.
+  const real2: any = {"orderNumber":2,"status":1,"internalKey":"916e6fd1-6071-5dd0-6d16-3aead462f8bb","dateTime":"2026-09-12 20:34:04","obs":"TESTE 2 FIREHUB - sera cancelado","customer":{"name":"Teste FireHub","email":null,"phoneCode":"11","phoneNumber":"987654321","document":null},"items":[{"groupName":"Pizzas Grande","groupExternalCode":"35265889","subGroupName":"Pizzas Tradicionais","sugGroupExternalCode":null,"products":[{"pos":1,"qty":1,"price":73.9,"unity":"un","parts":[{"name":"Portuguesa","price":57.9,"externalCode":"35265889.23734253","customization":{"additionals":[{"name":"Adicionais","options":[{"externalCode":"35265889.23734120","name":"Bacon","acceptPartition":true,"price":8.0}]}],"edge":{},"others":[]},"obs":null},{"name":"Muçarela","price":54.9,"externalCode":"","customization":{"additionals":[],"edge":{},"others":[{"name":"Bordas","options":[{"externalCode":"35265889.23734147","name":"Cheddar","acceptPartition":false,"price":12.0}]}]},"obs":"metade muçarela bem assada"}]}]},{"groupName":"Bebidas","groupExternalCode":null,"subGroupName":"Refrigerantes","sugGroupExternalCode":null,"products":[{"pos":1,"qty":2,"price":14.5,"unity":"un","parts":[{"name":"Coca Cola 2l","price":14.5,"externalCode":null,"customization":null,"obs":null}]}]}],"service":{"type":"delivery","delivery":{"address":"Rua Barão de Jundiaí","number":"100","compl":"Apto 12 - TESTE FIRE","region":"Centro","postalCode":"13201010","city":"Jundiaí","state":"SP","tax":5,"referencePoint":"Pedido de teste da integração","payment":{"type":3,"name":"Cartão (trazer maquininha)","value":107.9,"externalCode":"3","cardFlag":"Débito"}}},"priceRules":{"partitionPriceMode":"highest","extrasPriceMode":"proportionalToFinal"},"total":107.9,"discounts":0};
+  const { dados, items } = traduzirPedidoWabiz(real2, ctx);
+  confere("real nº2: nomes", items.map((i: any) => [i.productName, i.quantity, i.price]), [["1/2 Portuguesa + 1/2 Muçarela | Portuguesa: Bacon | Muçarela: Borda Cheddar", 1, 73.9], ["Coca Cola 2l", 2, 14.5]]);
+  confere("real nº2: itens + taxa = total", items.reduce((s: number, i: any) => s + i.price * i.quantity, 0) + dados.deliveryFee, 107.9);
+  confere("real nº2: espelho do meio-a-meio NÃO é o da Portuguesa inteira", items[0].menuProduct.connectOrCreate.where.id, "wabiz-loja-teste-35265889.23734253+mucarela");
+  confere("real nº2: débito na maquininha, sem troco", [dados.paymentMethod, dados.changeAmount], ["Cartão Débito (Cobrar na Entrega)", null]);
+  confere("real nº2: Coca sem código vira espelho pelo nome e é bebida", [items[1].menuProduct.connectOrCreate.where.id, items[1].menuProduct.connectOrCreate.create.isBeverage], ["wabiz-loja-teste-coca-cola-2l", true]);
 }
 
 confere("maquininha: cobra na entrega com bandeira", traduzirPedidoWabiz(maquininha, ctx).dados.paymentMethod, "Cartão Visa (Cobrar na Entrega)");

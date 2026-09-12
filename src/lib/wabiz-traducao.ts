@@ -80,7 +80,10 @@ function opcoesDaParte(parte: WabizParte) {
     }
   };
   if (c?.edge) juntar("Borda", c.edge.options);
-  for (const g of c?.others || []) juntar(null, g?.options);
+  // No pedido real da sandbox (12/09/2026) a borda NÃO veio em `edge`, como a
+  // doc mostra: veio em `others` com o grupo chamado "Bordas". Sem o rótulo a
+  // comanda dizia só "Catupiry Original", que a cozinha lê como recheio.
+  for (const g of c?.others || []) juntar(/borda/i.test(texto(g?.name)) ? "Borda" : null, g?.options);
   for (const g of c?.additionals || []) juntar(null, g?.options);
   return { nomes, lista };
 }
@@ -133,9 +136,16 @@ export function traduzirPedidoWabiz(
       // Código do produto no espelho: o externalCode da Wabiz é o código "do
       // sistema local" e pode repetir entre lojas ("111"), então o id carrega a
       // loja. Sem código, cai no nome — o espelho continua um por produto.
-      const codigo =
-        partes.map((p) => texto(p.externalCode)).filter(Boolean).join("+") ||
-        nomeComTamanho.toLowerCase().normalize("NFD").replace(/[^\w]+/g, "-").slice(0, 60);
+      //
+      // Cada parte entra no id — com o código dela ou, sem código, o nome. No
+      // pedido real nº 2 a metade Muçarela veio com `externalCode: ""`; filtrar
+      // as vazias deixava o meio-a-meio com o id da Portuguesa inteira, e o
+      // espelho de um virava o do outro.
+      const slug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "");
+      const codigo = partes
+        .map((p, i) => texto(p.externalCode) || slug(nomesDasPartes[i]))
+        .join("+")
+        .slice(0, 120) || slug(nomeComTamanho).slice(0, 60);
       const idEspelho = `wabiz-${franchiseeId}-${codigo}`;
 
       items.push({
