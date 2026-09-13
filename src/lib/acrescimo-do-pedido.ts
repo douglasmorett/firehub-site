@@ -101,6 +101,84 @@ export function mensagemAcrescimoExpirado(e: { numero?: string | number | null }
 }
 
 /**
+ * O trecho da regra 28 do prompt sobre acréscimo, para o pedido do cliente que
+ * ainda não saiu da loja.
+ *
+ * Pedido nosso: o robô pergunta, confere o cardápio, diz que vai conferir com a
+ * cozinha e emite [[ACRESCIMO_PEDIDO]] — nunca PEDIDO_IA, que abriria outro
+ * pedido (foi o que aconteceu com a Gabi). Pedido de app: explica que não dá,
+ * oferece pedido novo e chamar a cozinha, e nunca emite o marcador.
+ */
+export function blocoDoPromptDeAcrescimo(e: {
+  numero?: number | string | null;
+  canalNome: string;
+  statusLegivel: string;
+  aceitaAcrescimo: boolean;
+  /** Linhas de acrescimosDoPedidoParaOPrompt (vazio quando nada foi pedido). */
+  historico?: string | null;
+}): string {
+  const numero = String(e.numero ?? "").replace(/\D/g, "");
+  const rotulo = numero ? `#${numero}` : "deste cliente";
+
+  if (!e.aceitaAcrescimo) {
+    return [
+      `    - ACRÉSCIMO: o pedido ${rotulo} deste cliente foi feito pelo ${e.canalNome} e está "${e.statusLegivel}".`,
+      `      NÃO É POSSÍVEL incluir itens em pedido feito por aplicativo — só em pedido do nosso site ou daqui do WhatsApp.`,
+      `      Se o cliente quiser acrescentar algo: explique isso com carinho, diga que ele pode fazer um NOVO pedido (você anota aqui mesmo)`,
+      `      e ofereça chamar a cozinha para ver se consegue ajudar. Só se ele QUISER falar com a cozinha, termine a resposta com [[CHAMAR_ATENDENTE]].`,
+      `      NUNCA emita [[ACRESCIMO_PEDIDO]] para este pedido.`,
+    ].join("\n");
+  }
+
+  const marcador =
+    `[[ACRESCIMO_PEDIDO: {"pedido": ${numero || '""'}, "items": [{"name": "Nome exato do cardápio", "quantity": 1, "options": []}]}]]`;
+  const historico = String(e.historico || "").trim();
+  return [
+    `    - ACRÉSCIMO NO PEDIDO ${rotulo} (${e.canalNome}), QUE AINDA NÃO SAIU DA LOJA ("${e.statusLegivel}"):`,
+    `      a) Se o cliente quiser ACRESCENTAR itens a esse pedido (e não fazer um pedido separado), pergunte o que ele quer acrescentar e confirme cada item com o NOME e o PREÇO do cardápio.`,
+    `      b) Explique que você vai CONFERIR COM A COZINHA se ainda dá tempo de incluir, e que avisa por aqui assim que responderem.`,
+    `      c) Quando ele confirmar a lista, termine a resposta com este marcador, com a lista COMPLETA do que ele quer acrescentar e os nomes EXATOS do cardápio:`,
+    `         ${marcador}`,
+    `      d) É PROIBIDO dizer que o item JÁ FOI incluído ou que o pedido JÁ FOI alterado: quem decide é a cozinha.`,
+    `      e) NUNCA use PEDIDO_IA para acréscimo — PEDIDO_IA abre OUTRO pedido.`,
+    `      f) Se o cliente preferir um pedido separado, siga o fluxo normal de pedido novo.`,
+    ...(historico
+      ? [
+          `      g) Acréscimos já pedidos neste pedido:`,
+          historico,
+          `         AGUARDANDO: diga que a cozinha ainda está conferindo. RECUSADO ou NÃO DEU TEMPO: ofereça anotar os itens num pedido novo. ACEITO: confirme que já está no pedido.`,
+        ]
+      : []),
+  ].join("\n");
+}
+
+/**
+ * A IA prometeu cozinha sem ter pedido gravado? (trava do "contrato honesto"
+ * em chatbot-ai.ts, que troca a resposta e chama um atendente)
+ *
+ * Sem pedido na cozinha, vale a regra de sempre — inclusive "já está na
+ * cozinha", que era a mentira de 29/08/2026. COM pedido na cozinha essa frase é
+ * verdade e aparece em toda conversa de acréscimo ("seu pedido #48 já está na
+ * cozinha, o que você quer acrescentar?"): a trava trocaria a resposta por
+ * "tive um probleminha técnico" e chamaria atendente à toa. Ali só conta a
+ * promessa de pedido NOVO — confirmado/registrado, enviado para a cozinha — e
+ * nem ela quando a frase fala do próprio pedido que já existe (cita o número).
+ */
+const PROMESSA_COMPLETA =
+  /pedido\s+(?:foi\s+)?(?:confirmado|registrado|anotado|fechado)|(?:enviado|foi|está|esta|já\s+est[áa])\s+(?:para|pra|na)\s+(?:a\s+)?(?:nossa\s+)?cozinha/i;
+const PROMESSA_DE_PEDIDO_NOVO =
+  /pedido\s+(?:foi\s+)?(?:confirmado|registrado|anotado|fechado)|(?:enviado|foi)\s+(?:para|pra)\s+(?:a\s+)?(?:nossa\s+)?cozinha/i;
+
+export function prometeuCozinha(texto: string, pedidoNaCozinha?: { numero?: number | string | null } | null): boolean {
+  const t = String(texto || "");
+  if (!pedidoNaCozinha) return PROMESSA_COMPLETA.test(t);
+  if (!PROMESSA_DE_PEDIDO_NOVO.test(t)) return false;
+  const n = String(pedidoNaCozinha.numero ?? "").replace(/\D/g, "");
+  if (n && new RegExp(`(?:#|n[ºo°]\\.?\\s*|pedido\\s+)${n}(?!\\d)`, "i").test(t)) return false;
+  return true;
+}
+
+/**
  * Pedido pago antes (online): a diferença não entra no que já foi cobrado e
  * precisa ser recebida na entrega. A prova é a confirmação do pagamento
  * (`paymentPaidAt`, `pagarmeStatus = paid`); o texto "(Pago Online)" da forma

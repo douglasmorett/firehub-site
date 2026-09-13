@@ -12,6 +12,7 @@ import AvisoCaixaAberto24h from "@/components/customer/AvisoCaixaAberto24h";
 import AvisoImpressaoParada from "@/components/customer/AvisoImpressaoParada";
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
+import AvisoAcrescimoPedido from "@/components/customer/AvisoAcrescimoPedido";
 
 export const dynamic = "force-dynamic";
 
@@ -238,6 +239,8 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         </main>
 
         <HumanSupportFloatingWidget />
+        {/* "O cliente quer acrescentar itens — ainda dá tempo?" (robô do WhatsApp) */}
+        <AvisoAcrescimoPedido />
       </div>
     </CartProvider>
   );

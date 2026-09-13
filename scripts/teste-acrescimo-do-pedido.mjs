@@ -15,6 +15,7 @@ const js = ts.transpileModule(readFileSync("src/lib/acrescimo-do-pedido.ts", "ut
 const {
   podeAcrescentar, subtotalDoAcrescimo, listaDosItens, reais,
   mensagemAcrescimoAceito, mensagemAcrescimoRecusado, mensagemAcrescimoExpirado, pedidoJaPago,
+  blocoDoPromptDeAcrescimo, prometeuCozinha,
 } = await import("data:text/javascript," + encodeURIComponent(js));
 
 let falhas = 0;
@@ -80,6 +81,44 @@ conferir("\"iFood App (Pago Online)\"", pedidoJaPago({ paymentMethod: "iFood App
 conferir("\"Crédito (Cobrar na Entrega)\" não é pago", !pedidoJaPago({ paymentMethod: "Crédito (Cobrar na Entrega)" }));
 conferir("\"Cartão de Débito\" não é pago", !pedidoJaPago({ paymentMethod: "Cartão de Débito" }));
 conferir("\"Dinheiro\" não é pago", !pedidoJaPago({ paymentMethod: "Dinheiro" }));
+
+console.log("\n5) O que o robô lê na regra 28");
+const nosso = blocoDoPromptDeAcrescimo({ numero: 48, canalNome: "Online", statusLegivel: "Em Preparação na Cozinha 🔥", aceitaAcrescimo: true });
+const exemplo = (nosso.match(/\[\[ACRESCIMO_PEDIDO: (\{.*\})\]\]/) || [])[1];
+let exemploOk = null;
+try { exemploOk = JSON.parse(exemplo); } catch {}
+conferir("pedido nosso: o exemplo do marcador é JSON válido com o número", exemploOk?.pedido === 48 && Array.isArray(exemploOk?.items), exemplo);
+conferir("pedido nosso: manda conferir com a cozinha", nosso.includes("CONFERIR COM A COZINHA"));
+conferir("pedido nosso: proíbe dizer que já incluiu", nosso.includes("PROIBIDO dizer que o item JÁ FOI incluído"));
+conferir("pedido nosso: nunca PEDIDO_IA para acréscimo", nosso.includes("NUNCA use PEDIDO_IA"));
+conferir("pedido nosso: sem histórico não há item g)", !nosso.includes("g) "));
+const semNumeroNosso = blocoDoPromptDeAcrescimo({ numero: null, canalNome: "IA Whats", statusLegivel: "Novo", aceitaAcrescimo: true });
+const exemploSemNumero = (semNumeroNosso.match(/\[\[ACRESCIMO_PEDIDO: (\{.*\})\]\]/) || [])[1];
+let semNumeroOk = null;
+try { semNumeroOk = JSON.parse(exemploSemNumero); } catch {}
+conferir("pedido sem número: exemplo continua JSON válido", semNumeroOk !== null && semNumeroOk.pedido === "", exemploSemNumero);
+const comHistorico = blocoDoPromptDeAcrescimo({
+  numero: 48, canalNome: "Online", statusLegivel: "Em Preparação na Cozinha 🔥", aceitaAcrescimo: true,
+  historico: "  - Acréscimo pedido às 21:05: 1x Coca-Cola 2L (R$ 12,00) → RECUSADO pela cozinha — motivo: já saiu",
+});
+conferir("histórico entra no item g) com a orientação", comHistorico.includes("g) Acréscimos já pedidos") && comHistorico.includes("RECUSADO pela cozinha — motivo: já saiu"));
+const app = blocoDoPromptDeAcrescimo({ numero: 221, canalNome: "iFood", statusLegivel: "Em Preparação na Cozinha 🔥", aceitaAcrescimo: false });
+conferir("app: diz que não é possível", app.includes("NÃO É POSSÍVEL incluir itens"));
+conferir("app: oferece chamar a cozinha pelo atendente", app.includes("[[CHAMAR_ATENDENTE]]"));
+conferir("app: não traz exemplo de marcador para copiar", !/\[\[ACRESCIMO_PEDIDO: \{/.test(app));
+conferir("app: cita o canal", app.includes("feito pelo iFood"));
+
+console.log("\n6) Trava da promessa sem pedido gravado");
+const p48 = { numero: 48 };
+conferir("sem pedido na cozinha: \"já está na cozinha\" continua sendo promessa", prometeuCozinha("Pronto, já está na cozinha!", null));
+conferir("sem pedido na cozinha: \"pedido confirmado\" é promessa", prometeuCozinha("Pedido confirmado! 🎉", null));
+conferir("com #48: \"seu pedido #48 já está na cozinha\" NÃO é promessa", !prometeuCozinha("Seu pedido #48 já está na cozinha! O que você quer acrescentar?", p48));
+conferir("com #48: \"já está na cozinha\" sem número NÃO é promessa", !prometeuCozinha("Seu pedido já está na cozinha 🔥", p48));
+conferir("com #48: \"vou conferir com a cozinha\" NÃO é promessa", !prometeuCozinha("Vou conferir com a cozinha se ainda dá tempo!", p48));
+conferir("com #48: \"pedido #48 foi confirmado\" fala do pedido que existe", !prometeuCozinha("Seu pedido #48 foi confirmado e está sendo preparado.", p48));
+conferir("com #48: \"pedido nº 48 foi registrado\"", !prometeuCozinha("O pedido nº 48 foi registrado às 20:57.", p48));
+conferir("com #48: \"Pedido confirmado! Enviado para a cozinha\" sem número É promessa de pedido novo", prometeuCozinha("Pedido confirmado! Enviado para a cozinha 🎉", p48));
+conferir("com #48: citar o #480 não é citar o #48", prometeuCozinha("Pedido confirmado! O #480 foi para a cozinha.", p48));
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)\n` : "\n✅ tudo certo\n");
 process.exit(falhas ? 1 : 0);

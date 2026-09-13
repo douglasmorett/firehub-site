@@ -245,8 +245,11 @@ async function avisarCliente(franchiseeId: string, remoteJid: string | null | un
   if (!destino) return false;
   try {
     const { sendEvolutionMessage } = await import("@/lib/whatsapp-evolution");
-    await sendEvolutionMessage(franchiseeId, destino, texto);
-    return true;
+    // O envio devolve `false` quando o gateway recusa, sem lançar: é esse
+    // retorno que diz se o cliente ficou sabendo — a tela mostra quando não.
+    const foi = await sendEvolutionMessage(franchiseeId, destino, texto);
+    if (!foi) console.warn(`[Acréscimo] WhatsApp para o cliente não saiu (gateway recusou).`);
+    return foi === true;
   } catch (err: any) {
     console.warn(`[Acréscimo] WhatsApp para o cliente falhou: ${err?.message || err}`);
     return false;

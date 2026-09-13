@@ -16,6 +16,15 @@ import { inicioDoExpedienteDaLoja } from "./fuso";
 import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
 import { casarItensComCardapio } from "./itens-do-robo";
 import { extrairJsonDoMarcador, removerMarcador } from "./marcador-json";
+import { chaveDoCanal, nomeDoCanal } from "./canal-do-pedido";
+import {
+  STATUS_QUE_ACEITAM_ACRESCIMO,
+  podeAcrescentar,
+  blocoDoPromptDeAcrescimo,
+  prometeuCozinha as prometeuCozinhaSemLastro,
+  listaDosItens,
+} from "./acrescimo-do-pedido";
+import { registrarAcrescimo, acrescimosDoPedidoParaOPrompt } from "./acrescimo-servidor";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -696,6 +705,38 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     }).join("\n");
   }
 
+  // ── ACRÉSCIMO NO PEDIDO QUE AINDA NÃO SAIU DA LOJA ────────────────────────
+  //
+  // A Gabi (Hakim Centro, 12/09/2026) tinha o #48 do site em preparo e voltou
+  // aqui querendo mais coisa: sem esta instrução o robô abria um pedido NOVO.
+  // Agora ele sabe que o pedido existe, de que canal é e se cabe acréscimo
+  // (lib/acrescimo-do-pedido.ts). O pedido de acréscimo vai para a tela da
+  // loja, que responde se ainda dá tempo (lib/acrescimo-servidor.ts).
+  const pedidoNaCozinha: any =
+    (Array.isArray(recentOrders) ? recentOrders : []).find((o: any) =>
+      (STATUS_QUE_ACEITAM_ACRESCIMO as readonly string[]).includes(String(o.status || "").toUpperCase())
+    ) || null;
+  let blocoDeAcrescimo = "";
+  // Loja com o módulo de pedidos pela IA desligado não recebe pedido pelo
+  // robô — e acréscimo é pedido: fica de fora pela mesma chave.
+  if (pedidoNaCozinha && aiOrderingEnabled) {
+    const aceitaAcrescimo = podeAcrescentar({ status: pedidoNaCozinha.status, canal: chaveDoCanal(pedidoNaCozinha) }).pode;
+    const statusLegivelNaCozinha: Record<string, string> = {
+      NOVO: "Novo (aguardando a cozinha aceitar)",
+      PRONTO: "Pronto na cozinha, ainda na loja",
+    };
+    blocoDeAcrescimo = blocoDoPromptDeAcrescimo({
+      // Pedido de app o cliente conhece pelo número do app; o nosso, pelo do dia.
+      numero: aceitaAcrescimo
+        ? pedidoNaCozinha.dailyOrderNumber
+        : pedidoNaCozinha.ifoodReference || pedidoNaCozinha.openDeliveryReference || pedidoNaCozinha.dailyOrderNumber,
+      canalNome: nomeDoCanal(pedidoNaCozinha),
+      statusLegivel: statusLegivelNaCozinha[pedidoNaCozinha.status] || "Em Preparação na Cozinha 🔥",
+      aceitaAcrescimo,
+      historico: aceitaAcrescimo ? await acrescimosDoPedidoParaOPrompt(pedidoNaCozinha.id) : "",
+    });
+  }
+
   // Tratar cupons válidos cadastrados no banco de dados e configuração instantânea do WhatsApp
   const instantCouponEnabled = chatbotConfig.instantCouponEnabled === true;
   const instantCouponCode = (chatbotConfig.instantCouponCode || "").trim();
@@ -1052,8 +1093,8 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       exista no sistema. O que você não faz é FINGIR que anotou um pedido novo.` }
 28. REGRA CRÍTICA PARA SEGUNDO PEDIDO / MUDANÇA DE PEDIDO DA MESMA PESSOA:
     - Esta regra se aplica APENAS se o cliente JÁ tiver um pedido que JÁ ESTÁ NA COZINHA OU EM ENTREGA (status "Em Preparação", "Aceito", "Saiu para Entrega") cadastrado no campo "PEDIDOS RECENTES DO CLIENTE".
-    - Se o cliente mandar uma nova mensagem solicitando itens DO ZERO enquanto já tem um pedido em preparação na cozinha, informe com gentileza que o pedido anterior já está em preparo e pergunte se ele quer fazer um SEGUNDO pedido separado.
-    - ATENÇÃO SUPREMA: NUNCA acione esta regra nem pergunte sobre "pedido novo vs pedido anterior" durante o atendimento de um pedido que está sendo montado ou alterado nesta conversa! Se o cliente está informando itens, endereço, pagamento, fazendo alterações ou confirmando ("Certo!", "Sim!"), MANTENHA O FLUXO NORMAL DO PEDIDO ATUAL E FINALIZE SEM PERGUNTAR SOBRE PEDIDO NOVO OU ANTIGO!
+    - Se o cliente mandar uma nova mensagem solicitando itens DO ZERO enquanto já tem um pedido em preparação na cozinha, informe com gentileza que o pedido anterior já está em preparo e pergunte se ele quer ${blocoDeAcrescimo ? "ACRESCENTAR esses itens ao pedido que está na cozinha (veja ACRÉSCIMO abaixo) ou fazer um SEGUNDO pedido separado" : "fazer um SEGUNDO pedido separado"}.
+    - ATENÇÃO SUPREMA: NUNCA acione esta regra nem pergunte sobre "pedido novo vs pedido anterior" durante o atendimento de um pedido que está sendo montado ou alterado nesta conversa! Se o cliente está informando itens, endereço, pagamento, fazendo alterações ou confirmando ("Certo!", "Sim!"), MANTENHA O FLUXO NORMAL DO PEDIDO ATUAL E FINALIZE SEM PERGUNTAR SOBRE PEDIDO NOVO OU ANTIGO!${blocoDeAcrescimo ? `\n${blocoDeAcrescimo}` : ""}
 29. REGRA ABSOLUTA DE ERRO DE IA, RECALCULO DE PREÇO E PROIBIÇÃO DE DAR DESCONTOS CUSTOMIZADOS:
     - A IA É ABSOLUTAMENTE PROIBIDA DE DAR DESCONTOS CUSTOMIZADOS OU DIZER "A GENTE VAI HONRAR O VALOR QUE TE PASSEI PRIMEIRO"!
     - Se o cliente pedir para pagar um valor mais barato porque a IA errou o cálculo inicialmente ou recalculou o valor correto depois:
@@ -1399,9 +1440,60 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           }
         }
 
+        // ── ACRÉSCIMO NO PEDIDO QUE ESTÁ NA COZINHA ─────────────────────────
+        //
+        // Mesmo contrato do pedido: o que o cliente lê sobre o acréscimo tem
+        // lastro no banco. Registrado, a resposta ganha a lista com o preço do
+        // cardápio; não registrado (o pedido já saiu, é de app, item que não
+        // existe), a resposta é TROCADA pela frase honesta do motivo.
+        let acrescimoTratado = false;
+        if (acrescimoExtraido.json && aiOrderingEnabled) {
+          acrescimoTratado = true;
+          let payloadDoAcrescimo: any = null;
+          try { payloadDoAcrescimo = JSON.parse(acrescimoExtraido.json); } catch { /* tratado abaixo */ }
+          const telefoneDoAcrescimo =
+            clientPhoneDigits && clientPhoneDigits.length >= 10
+              ? clientPhoneDigits
+              : String(payloadDoAcrescimo?.customerPhone || payloadDoAcrescimo?.phone || "").replace(/\D/g, "");
+          const resultadoDoAcrescimo = payloadDoAcrescimo
+            ? await registrarAcrescimo({
+                franchiseeId: targetFranchiseeId,
+                telefone: telefoneDoAcrescimo,
+                remoteJid: remoteJid || null,
+                payload: payloadDoAcrescimo,
+                storeProducts: products,
+                timezone: user.storeTimezone,
+              })
+            : {
+                registrado: false as const,
+                motivo: "JSON do ACRESCIMO_PEDIDO sem conserto",
+                mensagemParaOCliente: "Não consegui entender a lista do que você quer acrescentar 🤔 Me manda de novo, item por item?",
+                chamarAtendente: false,
+              };
+          if (resultadoDoAcrescimo.registrado) {
+            cleanText =
+              `${cleanText}\n\n🕐 Pedido de acréscimo enviado para a cozinha conferir` +
+              `${resultadoDoAcrescimo.numero ? ` (pedido #${resultadoDoAcrescimo.numero})` : ""}: ${listaDosItens(resultadoDoAcrescimo.itens)}. ` +
+              `Te aviso aqui assim que responderem!`;
+            console.log(
+              `[Chatbot AI] 🕐 Acréscimo ${resultadoDoAcrescimo.acrescimoId} levado à cozinha: ` +
+                `${resultadoDoAcrescimo.itens.length} item(ns), R$ ${resultadoDoAcrescimo.subtotal.toFixed(2)}.`
+            );
+          } else {
+            console.warn(`[Chatbot AI] ✋ Acréscimo não registrado. Loja=${targetFranchiseeId} motivo="${resultadoDoAcrescimo.motivo}".`);
+            cleanText = resultadoDoAcrescimo.chamarAtendente
+              ? `${resultadoDoAcrescimo.mensagemParaOCliente}\n[[CHAMAR_ATENDENTE]]`
+              : resultadoDoAcrescimo.mensagemParaOCliente;
+          }
+        }
+
         // A IA prometeu cozinha? (padrões estritos — "posso confirmar?" não conta)
+        // Com pedido na cozinha, "já está na cozinha" é verdade, não promessa;
+        // e a resposta do acréscimo já foi conferida acima. A regra fina mora em
+        // lib/acrescimo-do-pedido.ts (prometeuCozinha).
         const prometeuCozinha =
-          /pedido\s+(?:foi\s+)?(?:confirmado|registrado|anotado|fechado)|(?:enviado|foi|está|esta|já\s+est[áa])\s+(?:para|pra|na)\s+(?:a\s+)?(?:nossa\s+)?cozinha/i.test(cleanText);
+          !acrescimoTratado &&
+          prometeuCozinhaSemLastro(cleanText, pedidoNaCozinha ? { numero: pedidoNaCozinha.dailyOrderNumber } : null);
 
         const gravouFinalizado = resultadoDoSync?.gravado === true && resultadoDoSync.finalizado;
 
@@ -1669,7 +1761,12 @@ async function syncAiOrderToDatabase({
       franchiseeId,
       OR: [
         { status: "CRIANDO_IA" },
-        { createdAt: { gte: twentyMinutesAgo }, status: "NOVO" },
+        // 3) NOVO só se for do próprio robô. Sem o `source`, o pedido do SITE
+        //    feito há menos de 20 minutos pelo mesmo telefone era tratado como
+        //    rascunho e REESCRITO pelo PEDIDO_IA — itens apagados e trocados
+        //    pelos da conversa. É exatamente o cliente que volta ao WhatsApp
+        //    para acrescentar algo no pedido do site (Gabi, #48, 12/09/2026).
+        { createdAt: { gte: twentyMinutesAgo }, status: "NOVO", source: "WHATSAPP_IA" },
       ],
     },
     include: { items: true },
