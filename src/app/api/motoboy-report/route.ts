@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { canalDoPedido } from "@/lib/canal-do-pedido";
+import { lerRegraDeRepasse, repasseDaZona, repasseDoPedido } from "@/lib/repasse-do-entregador";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -52,29 +54,29 @@ export async function GET(req: Request) {
   // distância daquela entrega.
   const donoDaLoja = await prisma.user.findUnique({
     where: { id: targetFranchiseeId },
-    select: { deliveryZones: true, deliveryZoneType: true },
+    select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true },
   }).catch(() => null);
+  const regraDeRepasse = lerRegraDeRepasse(donoDaLoja?.deliveryConfig);
 
-  const faixas: { km: number; motoboyFee: number }[] = (() => {
-    const z = donoDaLoja?.deliveryZones;
-    const lista = Array.isArray(z) ? z : [];
-    return lista
-      .map((x: any) => ({ km: Number(x?.km ?? x?.radius ?? x?.maxKm ?? 0), motoboyFee: Number(x?.motoboyFee) }))
-      .filter((x) => x.km > 0 && Number.isFinite(x.motoboyFee) && x.motoboyFee >= 0)
-      .sort((a, b) => a.km - b.km);
-  })();
+  // Quantas faixas têm repasse cadastrado — só para o aviso da tela saber se
+  // a loja configurou alguma coisa. A conta em si é da lib.
+  const faixasComRepasse = (Array.isArray(donoDaLoja?.deliveryZones) ? donoDaLoja!.deliveryZones as any[] : [])
+    .filter((z: any) => repasseDaZona(z) != null).length;
 
-  /** O repasse da faixa que cobre esta distância. A primeira que alcança. */
-  const repasseDaFaixa = (km?: number | null): number | null => {
-    if (!faixas.length) return null;
-    const d = Number(km || 0);
-    if (!(d > 0)) return null;
-    const faixa = faixas.find((f) => d <= f.km);
-    // Além da última faixa, vale a última — é o que a loja cadastrou como
-    // limite, e devolver nulo faria a entrega mais longa cair na taxa do
-    // cliente enquanto as outras usam o repasse.
-    return faixa ? faixa.motoboyFee : faixas[faixas.length - 1].motoboyFee;
-  };
+  /**
+   * O que a loja paga por ESTE pedido, pela regra dela.
+   *
+   * Pedido de app entra aqui com `ehMarketplace`: é o que faz a escolha
+   * "pagar o valor que veio do app" valer sem tocar na tabela de faixas.
+   */
+  const repasseDaRegra = (o: { deliveryFee?: number | null; deliveryDistance?: number | null; source?: string | null; [k: string]: any }): number | null =>
+    repasseDoPedido({
+      regra: regraDeRepasse,
+      zonas: donoDaLoja?.deliveryZones,
+      km: o.deliveryDistance,
+      taxaDaEntrega: o.deliveryFee,
+      ehMarketplace: canalDoPedido(o).ehMarketplace,
+    });
 
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId, ...motoboyFilter },
@@ -113,6 +115,12 @@ export async function GET(req: Request) {
       dailyOrderNumber: true,
       ifoodReference: true,
       openDeliveryReference: true,
+      // O canal sai de lib/canal-do-pedido.ts e precisa destes: sem eles todo
+      // pedido parece do site, e a regra do app nunca se aplicaria.
+      ifoodOrderId: true,
+      openDeliveryChannel: true,
+      openDeliveryOrderId: true,
+      tableSessionId: true,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -230,21 +238,22 @@ export async function GET(req: Request) {
     // nunca configurou. A tela avisa que é isso que está acontecendo.
     // Só avisa quando REALMENTE caiu na taxa do cliente: com repasse por faixa
     // cadastrado, a conta já é a certa e o aviso seria ruído.
-    const usandoTaxaDoCliente = (ehPorEntrega || !mb.paymentType) && perDeliveryRate <= 0 && faixas.length === 0;
+    const usandoTaxaDoCliente = (ehPorEntrega || !mb.paymentType) && perDeliveryRate <= 0 && faixasComRepasse === 0 && !regraDeRepasse.separado;
 
     // A ordem importa e é esta, da mais específica para a mais genérica:
     //   1. o que ficou gravado NO PEDIDO (motoboyFee) — é história, não regra
     //   2. o acerto individual deste entregador (por entrega / por km)
-    //   3. o repasse da FAIXA de distância que a loja cadastrou
+    //   3. a REGRA da loja: a faixa/bairro cadastrado, ou — em pedido de app —
+    //      o valor que veio do app, se foi isso que a loja escolheu
     //   4. a taxa que o cliente pagou — último recurso, com aviso na tela
-    const ganhoDoPedido = (o: { deliveryFee?: number | null; motoboyFee?: number | null; deliveryDistance?: number | null }) => {
+    const ganhoDoPedido = (o: { deliveryFee?: number | null; motoboyFee?: number | null; deliveryDistance?: number | null; source?: string | null; [k: string]: any }) => {
       if (mb.paymentType === "DAILY_RATE") return 0;
       const gravado = Number(o.motoboyFee || 0);
       if (gravado > 0) return gravado;
       if (mb.paymentType === "PER_KM") return (o.deliveryDistance || 0) * perKmRate;
       if (perDeliveryRate > 0) return perDeliveryRate;
-      const daFaixa = repasseDaFaixa(o.deliveryDistance);
-      if (daFaixa != null) return daFaixa;
+      const daRegra = repasseDaRegra(o);
+      if (daRegra != null) return daRegra;
       return Number(o.deliveryFee || 0);
     };
 

@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import {
+  calcularProgresso,
+  chamadaDaTrilha,
+  lerTrilha,
+  premiosPendentes,
+  trilhaValida,
+} from "@/lib/trilha-premiada";
 
 // POST: Login or Register
 export async function POST(req: Request) {
@@ -187,5 +194,64 @@ export async function GET(req: Request) {
   });
 
   // `customer: null` de propósito: os dados pessoais só saem pelo login.
-  return NextResponse.json({ orders, customer: null });
+  return NextResponse.json({ orders, customer: null, trilha: await trilhaDoCliente(franchiseeId, cleanPhone) });
+}
+
+/**
+ * Onde este telefone está na Trilha Premiada desta loja.
+ *
+ * Vai junto da consulta de pedidos que o cardápio já faz — uma ida ao servidor
+ * em vez de duas. O cálculo é aqui e não no navegador porque a regra do ciclo
+ * (lib/trilha-premiada.ts) decide prêmio: no cliente, ela seria editável com o
+ * inspetor aberto.
+ *
+ * Devolve só contagem e prêmio: nada de nome, endereço ou histórico. A rota é
+ * pública por telefone (como a consulta de pedidos), e o que sai daqui não
+ * identifica ninguém.
+ */
+async function trilhaDoCliente(franchiseeId: string, cleanPhone: string) {
+  try {
+    const loja = await prisma.user.findUnique({
+      where: { id: franchiseeId },
+      select: { storeLoyalty: true },
+    });
+    const trilha = lerTrilha(loja?.storeLoyalty);
+    if (!trilhaValida(trilha)) return null;
+
+    // Fundo suficiente para reconstruir os ciclos sem varrer a vida inteira do
+    // cliente: 120 pedidos cobrem anos de qualquer trilha configurável.
+    const pedidos = await prisma.customerOrder.findMany({
+      where: {
+        franchiseeId,
+        OR: [{ customerPhone: { contains: cleanPhone.slice(-8) } }, { customerPhone: cleanPhone }],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 120,
+      // O canal sai de lib/canal-do-pedido.ts, que precisa destes campos: sem
+      // eles todo pedido viraria SITE e o filtro de canais da trilha não teria
+      // o que filtrar.
+      select: {
+        id: true, createdAt: true, status: true, source: true, trilhaPremio: true,
+        ifoodOrderId: true, openDeliveryChannel: true, openDeliveryOrderId: true,
+        tableSessionId: true,
+      },
+    });
+
+    const progresso = calcularProgresso(trilha, pedidos);
+    const pendentes = premiosPendentes(trilha, pedidos);
+    return {
+      passos: progresso.passos,
+      faltam: progresso.faltam,
+      proxima: progresso.proxima,
+      conquistadas: progresso.conquistadas,
+      completou: progresso.completou,
+      cicloExpiraEm: progresso.cicloExpiraEm,
+      chamada: chamadaDaTrilha(progresso),
+      premio: pendentes[0] || null,
+      premiosNaFila: pendentes.length,
+    };
+  } catch {
+    // A trilha nunca pode derrubar a consulta de pedidos do cliente.
+    return null;
+  }
 }

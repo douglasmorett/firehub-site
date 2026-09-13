@@ -611,6 +611,23 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
         ? "0 0 16px rgba(245, 158, 11, 0.45), 0 2px 8px rgba(245, 158, 11, 0.2)"
         : "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)";
 
+  // Quem ganha o seletor de motoboy na barra de ações do card.
+  //
+  // TAKEOUT saiu da lista de quem recebe motoboy e entrou na de exclusões, ao
+  // lado de RETIRADA/BALCAO/MESA — que é o que ele sempre foi. Todo canal
+  // normaliza TAKEOUT para "RETIRADA" ao gravar; o único que grava "TAKEOUT"
+  // cru é o totem, então esta cláusula na prática só disparava para pedido de
+  // balcão: dava para despachar com entregador um cliente que estava de pé na
+  // loja esperando a senha. E atribuir motoboy dispara WhatsApp com "Endereço
+  // não informado" e, pelo paymentMethod "Cartão (Maquininha)", ainda manda o
+  // entregador levar maquininha para um pedido já pago no totem — cobrança em
+  // dobro. O resto do arquivo já tratava TAKEOUT como retirada (faixa "🏪
+  // Retirada no local", botão de rota, filtro de canal); só esta linha divergia.
+  const recebeMotoboy =
+    (order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || !order.deliveryType || order.source === "IFOOD" || order.source === "99FOOD") &&
+    order.deliveryType !== "RETIRADA" && order.deliveryType !== "TAKEOUT" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA";
+  const puxouPeloApp = Boolean((order as any).motoboyPuxadoEm && order.motoboyId);
+
   return (
     <div
       draggable={canDrag}
@@ -633,7 +650,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
     >
       <div style={{ padding: "0.6rem 0.75rem" }}>
         {/* Header Row com Checkbox, Drag Handle, Nome e Badge do Canal */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", marginBottom: "4px" }}>
+        {/* A linha QUEBRA quando os dois não cabem. Sem isso, o nome do cliente
+            (que tem 120px de largura mínima) empurrava o selo do canal para
+            fora e era desenhado POR CIMA dele — "#1 — July Wong" tapando
+            "99Food #7859". Encolher fonte não resolve: em coluna estreita o
+            problema volta. Quebrando, o selo desce uma linha e os dois ficam
+            legíveis em qualquer largura. */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", marginBottom: "4px", flexWrap: "wrap" }}>
           <input
             type="checkbox"
             checked={selectedOrderIds?.has(order.id) || false}
@@ -663,8 +686,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               color: "#0F172A",
               flex: 1,
               minWidth: "120px",
-              wordBreak: "keep-all",
-              overflowWrap: "normal",
+              // O nome QUEBRA em vez de transbordar. Com keep-all + overflowWrap
+              // normal, "#1 — July Wong" não cabia na coluna estreita e era
+              // PINTADO por cima do selo do canal ("99Food #7859") — texto de um
+              // elemento em cima do outro, em qualquer tamanho de tela.
+              wordBreak: "normal",
+              overflowWrap: "break-word",
               lineHeight: "1.25",
               letterSpacing: "-0.2px",
               position: "relative",
@@ -743,7 +770,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               Cedendo espaço (`flexShrink: 1`) com teto de 48%, o nome quebra
               em duas linhas dentro do cartão — e o nome do cliente, ao lado,
               mantém os 120 px mínimos dele. */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 1, minWidth: 0, maxWidth: "48%", marginTop: "1px" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 1, minWidth: 0, maxWidth: "100%", marginLeft: "auto", marginTop: "1px" }}>
             {/* Brendi ganha roxo (violeta #EDE9FE/#6D28D9) — tom diferente do
                 lilás da IA (#F3E8FF/#7C3AED) de propósito: os dois convivem na
                 mesma tela e o atendente distingue o canal pela cor.
@@ -817,12 +844,29 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             <span style={{ whiteSpace: "nowrap", minWidth: "fit-content", flex: "1 1 auto", fontWeight: 500 }}>
               📞 {order.customerPhone || "—"}
             </span>
-            <span style={{ flexShrink: 0, fontSize: "0.74rem", fontWeight: 600, color: "#475569" }}>
-              🕒 {new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-              <span style={{ margin: "0 4px", color: "#CBD5E1" }}>|</span>
-              <span style={{ fontWeight: isLate || isUrgent ? 800 : 700, color: timerColor }}>
-                {timerLabel}
+          </div>
+
+          {/* Os horários escritos por extenso. Antes era "🕒 19:06 | 68min
+              restantes" e o atendente não sabia se 19:06 era a hora que o
+              pedido chegou ou a hora que tinha que sair — nem a que horas a
+              comida tinha que estar na porta do cliente (pedido do lojista,
+              13/09/2026). Agora: "Chegou 19:06" e "Entregar até 19:51" (ou
+              "Retirar até", no balcão), e o cronômetro embaixo. */}
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 6px", fontSize: "0.74rem", marginBottom: "4px" }}>
+            <span style={{ padding: "1px 7px", borderRadius: 6, background: "#F1F5F9", color: "#334155", fontWeight: 600, whiteSpace: "nowrap" }}>
+              📥 Chegou <b style={{ fontWeight: 800 }}>{new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>
+            </span>
+            {deadline && !isFinished && (
+              <span style={{
+                padding: "1px 7px", borderRadius: 6, fontWeight: 600, whiteSpace: "nowrap",
+                background: isLate ? "#FEE2E2" : isUrgent ? "#FEF3C7" : "#EFF6FF",
+                color: isLate ? "#B91C1C" : isUrgent ? "#B45309" : "#1D4ED8",
+              }}>
+                🏁 {isTakeoutOrder ? "Retirar até" : "Entregar até"} <b style={{ fontWeight: 800 }}>{deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>
               </span>
+            )}
+            <span style={{ fontWeight: isLate || isUrgent ? 800 : 700, color: timerColor, whiteSpace: "nowrap" }}>
+              {isFinished ? `há ${timerLabel}` : timerLabel}
             </span>
           </div>
 
@@ -1027,14 +1071,27 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           })()}
         </div>
 
-        {/* Action Bar (Botões + Motoboy Dropdown Inline + WhatsApp + Print + Receipt) */}
-        <div style={{
+        {/* Action Bar (Botão de status + WhatsApp + Print + Receipt; Motoboy na linha de baixo)
+
+            O ícone do WhatsApp ficava POR CIMA do seletor de motoboy (13/09/2026)
+            sempre que a coluna estreitava — ao abrir mais uma coluna no quadro.
+            O status e o seletor moravam num mesmo grupo à esquerda, com
+            `flex: 1 1 140px` + `minWidth: 0`: o grupo podia encolher até 140px,
+            mas o seletor não encolhe abaixo do próprio texto (fit-content). Num
+            card de 320px com 4 ícones sobravam ~155px para um seletor de ~180px,
+            e ele escorria para debaixo dos ícones. Com 3 ícones (iFood, sem
+            WhatsApp) cabia — por isso só alguns cards.
+
+            Agora status e ícones dividem a linha de cima e o motoboy vai inteiro
+            para a de baixo. Card largo volta a ser uma linha só: ver
+            `.pedido-acoes` no <style> do fim do arquivo. */}
+        <div className="pedido-acoes" style={{
           display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap",
           marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #E2E8F0",
           gap: "6px"
         }}>
-          {/* Left: Status action button + motoboy select */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: "1 1 140px", minWidth: 0, flexWrap: "wrap" }}>
+          {/* Left: Status action button (sem minWidth: 0 — não encolhe abaixo do botão) */}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", maxWidth: "100%" }}>
             {/* O pedido de "Pagar no caixa" morria aqui: ele existia no banco,
                 o cliente entregava o dinheiro no balcão e não havia botão
                 nenhum em tela nenhuma que carimbasse o pagamento. Este é o
@@ -1080,21 +1137,71 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             {order.status === "ENCERRADO" && (
               <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
             )}
+          </div>
 
-            {/* Motoboy select / Partner Motoboy Badge */}
-            {/* TAKEOUT saiu da lista de quem recebe motoboy e entrou na de
-                exclusões, ao lado de RETIRADA/BALCAO/MESA — que é o que ele
-                sempre foi. Todo canal normaliza TAKEOUT para "RETIRADA" ao
-                gravar; o único que grava "TAKEOUT" cru é o totem, então esta
-                cláusula na prática só disparava para pedido de balcão: dava para
-                despachar com entregador um cliente que estava de pé na loja
-                esperando a senha. E atribuir motoboy dispara WhatsApp com
-                "Endereço não informado" e, pelo paymentMethod "Cartão
-                (Maquininha)", ainda manda o entregador levar maquininha para um
-                pedido já pago no totem — cobrança em dobro. O resto do arquivo
-                já tratava TAKEOUT como retirada (faixa "🏪 Retirada no local",
-                botão de rota, filtro de canal); só esta linha divergia. */}
-            {(order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || !order.deliveryType || order.source === "IFOOD" || order.source === "99FOOD") && order.deliveryType !== "RETIRADA" && order.deliveryType !== "TAKEOUT" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (() => {
+          {/* Right: Icon buttons (marginLeft auto: se descerem de linha, continuam à direita) */}
+          <div className="pedido-acoes-icones" style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, flexWrap: "wrap", maxWidth: "100%", marginLeft: "auto" }}>
+            {/* WhatsApp */}
+            {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (() => {
+              const rawDigits = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "");
+              const waPhone = rawDigits.startsWith("55") ? rawDigits : `55${rawDigits}`;
+              return (
+                <a
+                  href={`https://wa.me/${waPhone}`}
+                  target="_blank" rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  title="WhatsApp do Cliente"
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
+                >
+                  <MessageCircle size={15} />
+                </a>
+              );
+            })()}
+
+            {/* Print */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                onOpenPrintModal && onOpenPrintModal(order.id);
+              }}
+              title="Imprimir"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#3B82F6", color: "#fff", border: "none", cursor: "pointer" }}
+            >
+              <Printer size={15} />
+            </button>
+
+            {/* View Receipt Modal */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                onOpenReceiptModal && onOpenReceiptModal(order.id);
+              }}
+              title="Ver pedido"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#6366F1", color: "#fff", border: "none", cursor: "pointer" }}
+            >
+              <FileText size={15} />
+            </button>
+
+            {/* Delivery Info & Route Map Modal Button */}
+            {order.deliveryType !== "TAKEOUT" && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  onOpenDeliveryModal && onOpenDeliveryModal(order);
+                }}
+                title="Informações da Entrega e Rota no Mapa"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#8B5CF6", color: "#fff", border: "none", cursor: "pointer", fontSize: "0.9rem" }}
+              >
+                🛵
+              </button>
+            )}
+          </div>
+
+          {/* Motoboy select / Partner Motoboy Badge — grupo próprio. O `flex` e o
+              `order` dele ficam no <style> (.pedido-acoes-motoboy): linha inteira
+              embaixo no card estreito, no meio da linha no card largo. */}
+          {(recebeMotoboy || puxouPeloApp) && <div className="pedido-acoes-motoboy" style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", maxWidth: "100%" }}>
+            {recebeMotoboy && (() => {
               const pInfo = getPartnerDeliveryInfo(order);
               return pInfo.isPartner ? (
                 <select
@@ -1171,7 +1278,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             {/* "puxou 19:42": o ENTREGADOR pegou este pedido pelo app (QR ou
                 número) — em oposição a "a loja atribuiu". É a testemunha
                 quando dois entregadores discutem quem levou. */}
-            {(order as any).motoboyPuxadoEm && order.motoboyId && (
+            {puxouPeloApp && (
               <span
                 title="O entregador puxou este pedido pelo app"
                 style={{
@@ -1183,65 +1290,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 🛵 puxou {new Date((order as any).motoboyPuxadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
-          </div>
-
-          {/* Right: Icon buttons */}
-          <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0, flexWrap: "wrap", maxWidth: "100%" }}>
-            {/* WhatsApp */}
-            {order.customerPhone && order.source !== "IFOOD" && !order.customerPhone.startsWith("0800") && (() => {
-              const rawDigits = (order.customerPhone || "").replace(/\s*ID:\s*\d+/i, "").replace(/\D/g, "");
-              const waPhone = rawDigits.startsWith("55") ? rawDigits : `55${rawDigits}`;
-              return (
-                <a
-                  href={`https://wa.me/${waPhone}`}
-                  target="_blank" rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  title="WhatsApp do Cliente"
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
-                >
-                  <MessageCircle size={15} />
-                </a>
-              );
-            })()}
-
-            {/* Print */}
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                onOpenPrintModal && onOpenPrintModal(order.id);
-              }}
-              title="Imprimir"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#3B82F6", color: "#fff", border: "none", cursor: "pointer" }}
-            >
-              <Printer size={15} />
-            </button>
-
-            {/* View Receipt Modal */}
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                onOpenReceiptModal && onOpenReceiptModal(order.id);
-              }}
-              title="Ver pedido"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#6366F1", color: "#fff", border: "none", cursor: "pointer" }}
-            >
-              <FileText size={15} />
-            </button>
-
-            {/* Delivery Info & Route Map Modal Button */}
-            {order.deliveryType !== "TAKEOUT" && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  onOpenDeliveryModal && onOpenDeliveryModal(order);
-                }}
-                title="Informações da Entrega e Rota no Mapa"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#8B5CF6", color: "#fff", border: "none", cursor: "pointer", fontSize: "0.9rem" }}
-              >
-                🛵
-              </button>
-            )}
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -4607,9 +4656,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <span style={{ fontSize: "0.82rem" }}>🌐</span>
                   <span>Site</span>
                 </button>
+
               </div>
             </div>
             )}
+
+            {/* ── O QUE APARECE NESTA BARRA ────────────────────────────────
+                Ao lado do filtro de pedidos, e FORA dele de propósito: é a
+                própria engrenagem que esconde o filtro, e dentro dele ela
+                sumiria junto — armadilha sem saída. No fim da fila de
+                atalhos, com a fila cheia, ela descia sozinha para uma linha
+                só dela. */}
+            <button
+              type="button"
+              onClick={() => setShowBarraConfig(true)}
+              style={{
+                alignSelf: "flex-end", height: "30px", padding: "0 9px", borderRadius: "8px",
+                border: "1.5px solid #CBD5E1", background: "#F8FAFC", color: "#475569",
+                cursor: "pointer", display: "flex", alignItems: "center", fontFamily: "inherit",
+              }}
+              title="Escolher o que aparece nesta barra"
+            >
+              <Settings size={15} />
+            </button>
 
             {/* Sem relógio nesta barra. A régua de clima saiu antes; o relógio
                 saiu em 06/09/2026 a pedido do dono: o painel recarrega a cada
@@ -4880,7 +4949,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {/* Módulo de Roteirização */}
             {naBarra("botaoRoteirizacao") && (
             <button
-              onClick={() => setShowRoteirizacaoModal(true)}
+              // Abre em NOVA ABA (/store/roteirizacao, a mesma tela em página
+              // própria): o modal cobria o painel e o atendente perdia de vista
+              // os pedidos chegando. Se o navegador bloquear a aba, cai no modal.
+              onClick={() => {
+                const aba = window.open("/store/roteirizacao", "_blank");
+                if (!aba) setShowRoteirizacaoModal(true);
+              }}
               style={{
                 padding: "5px 12px", border: "1.5px solid #2563EB", borderRadius: "8px",
                 fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
@@ -4911,21 +4986,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </button>
             )}
 
-            {/* A engrenagem NUNCA é escondida: é por ela que o lojista traz de
-                volta o que escondeu. Um botão de configuração que some com a
-                própria configuração é uma armadilha sem saída. */}
-            <button
-              onClick={() => setShowBarraConfig(true)}
-              style={{
-                padding: "5px 10px", border: "1.5px solid #CBD5E1", borderRadius: "8px",
-                fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
-                display: "flex", alignItems: "center", gap: "5px",
-                background: "#F8FAFC", color: "#475569",
-              }}
-              title="Escolher o que aparece nesta barra"
-            >
-              <Settings size={14} />
-            </button>
           </div>
 
         </div>
@@ -5626,6 +5686,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           .status-pill-btn {
             padding: 5px 9px !important;
             font-size: 0.72rem !important;
+          }
+        }
+
+        /* Barra de ações do card de pedido (DashboardOrderCard).
+           Padrão: status + ícones na linha de cima, motoboy numa linha inteira
+           embaixo. O que decide é a largura do CARD, não a da tela — a coluna
+           estreita quando se abre mais uma —, por isso @container e não @media.
+           Com 420px de barra cabe tudo numa linha e o motoboy volta para o meio,
+           como era: flex-basis 0 faz o grupo entrar na linha pela largura
+           mínima (o texto do seletor, que não encolhe) e ficar com a sobra. Se
+           ainda assim não couber, quem desce de linha são os ícones — nada vai
+           por cima de nada. Sem suporte a @container fica no padrão. */
+        .pedido-acoes {
+          container: pedido-acoes / inline-size;
+        }
+        .pedido-acoes-motoboy {
+          flex: 1 1 100%;
+        }
+        @container pedido-acoes (min-width: 420px) {
+          .pedido-acoes-motoboy {
+            flex: 1 1 0;
+            order: 1;
+          }
+          .pedido-acoes-icones {
+            order: 2;
           }
         }
 

@@ -12,12 +12,21 @@ import {
   versaoAtende,
   type CampanhaConverterConfig,
 } from "@/lib/campanha-converter";
+import {
+  TRILHA_PADRAO,
+  lerTrilha,
+  problemasDaTrilha,
+  type TrilhaPremiada,
+} from "@/lib/trilha-premiada";
+import TrilhaPremiadaEditor from "@/components/trilha/TrilhaPremiadaEditor";
 
 export type LoyaltyConfig = {
   active: boolean;
   // Campanha "Converter para site próprio": prêmio + QR no fim da comanda do
   // iFood/99Food (lib/campanha-converter.ts).
   converter: CampanhaConverterConfig;
+  // Trilha Premiada: prêmio por frequência de pedidos (lib/trilha-premiada.ts).
+  trilha: TrilhaPremiada;
   // Program 1: Cashback
   cashbackActive: boolean;
   rate: number;
@@ -52,6 +61,7 @@ export type LoyaltyConfig = {
 const DEFAULT_LOYALTY: LoyaltyConfig = {
   active: true,
   converter: CAMPANHA_PADRAO,
+  trilha: TRILHA_PADRAO,
   cashbackActive: true,
   rate: 5,
   minOrderValue: 20,
@@ -97,8 +107,9 @@ export default function LoyaltyConfigForm({
     // O que está salvo pode ser parcial (campo novo, string onde era número):
     // normaliza uma vez, na entrada.
     converter: lerCampanha(initialConfig),
+    trilha: lerTrilha(initialConfig),
   });
-  const [activeTab, setActiveTab] = useState<"converter" | "cashback" | "stamps" | "referral" | "birthday" | "vip">("converter");
+  const [activeTab, setActiveTab] = useState<"trilha" | "converter" | "cashback" | "stamps" | "referral" | "birthday" | "vip">("trilha");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -183,6 +194,11 @@ export default function LoyaltyConfigForm({
       setErroConv("Escolha a impressora do prêmio antes de salvar.");
       return;
     }
+    const faltaNaTrilha = config.trilha.ativa ? problemasDaTrilha(config.trilha) : [];
+    if (faltaNaTrilha.length) {
+      setActiveTab("trilha");
+      return;
+    }
     setSaving(true);
     await onSave(config);
     setSaving(false);
@@ -229,6 +245,7 @@ export default function LoyaltyConfigForm({
       {/* Navegação por Sub-Programas (Abas) */}
       <div style={{ display: "flex", flexWrap: "wrap", background: "#F8FAFC", borderBottom: "1.5px solid #E2E8F0", padding: "6px 12px", gap: "6px" }}>
         {[
+          { key: "trilha", label: "🥾 Trilha Premiada", badge: config.trilha.ativa ? "Ativo" : "Novo", badgeRoxo: !config.trilha.ativa },
           { key: "converter", label: "🧾 Converter iFood/99 → Site", badge: config.converter.active ? "Ativo" : "Novo", badgeRoxo: !config.converter.active },
           { key: "cashback", label: "💸 Cashback Automático", badge: config.cashbackActive ? "Ativo" : null },
           { key: "stamps", label: "🎫 Cartão de Carimbos", badge: config.stampsActive ? "Ativo" : null },
@@ -267,6 +284,14 @@ export default function LoyaltyConfigForm({
 
       {/* CONTEÚDO DAS ABAS */}
       <div style={{ padding: "1.5rem" }}>
+        {/* TRILHA PREMIADA — prêmio por frequência de pedidos */}
+        {activeTab === "trilha" && (
+          <TrilhaPremiadaEditor
+            trilha={config.trilha}
+            onChange={(t) => setConfig(prev => ({ ...prev, trilha: t }))}
+          />
+        )}
+
         {/* TAB 0: CONVERTER IFOOD/99 → SITE PRÓPRIO */}
         {activeTab === "converter" && (
           <div>

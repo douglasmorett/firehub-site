@@ -38,6 +38,8 @@ import { isStoreOpen } from "@/lib/store-hours";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
 import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
+import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/TrilhaDoCliente";
+import { lerTrilha, nomeDoPremio } from "@/lib/trilha-premiada";
 import "./store.css";
 
 type MenuProduct = {
@@ -217,6 +219,14 @@ export default function CustomerStorePage({
 
   // Customer login
   const [customer, setCustomer] = useState<any>(null);
+  // Onde este cliente está na Trilha Premiada. Vem calculado do servidor
+  // junto da consulta de pedidos (lib/trilha-premiada.ts decide prêmio: no
+  // navegador a regra seria editável com o inspetor aberto).
+  const [trilhaProgresso, setTrilhaProgresso] = useState<ProgressoDoCliente | null>(null);
+  // "Guardar para a próxima": 20% de desconto numa sacola de R$ 25 é jogar
+  // fora um prêmio que valeria bem mais num pedido maior. Quem decide é o
+  // cliente, e o servidor respeita (dispensarPremioDaTrilha no pedido).
+  const [guardarPremioDaTrilha, setGuardarPremioDaTrilha] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authPhone, setAuthPhone] = useState("");
@@ -443,6 +453,17 @@ export default function CustomerStorePage({
   const cashbackMinOrder = Number(loyalty.minOrderValue || 0);
   const cashbackMaxRedeemPercent = Number(loyalty.maxRedeemPercent || 50);
 
+  // Trilha Premiada: a configuração vem do storeLoyalty da loja; o progresso
+  // deste cliente vem do servidor em trilhaProgresso.
+  const trilha = useMemo(() => lerTrilha(loyalty), [loyalty]);
+  const fotoDoProdutoDaTrilha = useMemo(() => {
+    const porId = new Map<string, string>();
+    for (const p of menuProducts || []) if (p?.id && p?.imageUrl) porId.set(String(p.id), String(p.imageUrl));
+    return (id?: string) => (id ? porId.get(id) : undefined);
+  }, [menuProducts]);
+  const premioPendente = trilha.ativa ? trilhaProgresso?.premio || null : null;
+  const premioDaTrilha = guardarPremioDaTrilha ? null : premioPendente;
+
   // Módulos adicionais
   const isStampsActive = Boolean(loyalty.stampsActive);
   const stampGoal = Number(loyalty.stampGoal || 10);
@@ -549,7 +570,18 @@ export default function CustomerStorePage({
   const remainingForFreeShipping = freeShippingThreshold ? Math.max(0, freeShippingThreshold - cartTotal) : 0;
   const freeShippingProgress = freeShippingThreshold ? Math.min(100, (cartTotal / freeShippingThreshold) * 100) : 0;
 
-  const isFreeShippingEffective = Boolean(isFreeShippingByMin || couponApplied?.isFreeShipping);
+  // ── PRÊMIO DA TRILHA NA CONTA ──────────────────────────────────────────
+  //
+  // Espelho de exibição: quem aplica de verdade é o servidor, em
+  // /api/customer-order (lib/premio-no-pedido.ts). Aqui é só para o cliente
+  // ver o desconto ANTES de fechar — total que muda depois de confirmar,
+  // mesmo para menos, é total em que ninguém confia.
+  const premioZeraFrete = premioDaTrilha?.tipo === "frete" && deliveryType === "DELIVERY";
+  const descontoDaTrilha = premioDaTrilha?.tipo === "desconto"
+    ? cartTotal * ((premioDaTrilha.valor || 10) / 100)
+    : 0;
+
+  const isFreeShippingEffective = Boolean(isFreeShippingByMin || couponApplied?.isFreeShipping || premioZeraFrete);
   const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null)
     ? deliveryFee
     : 0;
@@ -562,7 +594,7 @@ export default function CustomerStorePage({
           ? cartTotal * (Number((couponApplied as any).pct) / 100)
           : couponApplied.discount)
     : 0;
-  const itemsTotal = Math.max(0, cartTotal - discount - cashbackDiscountApplied);
+  const itemsTotal = Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha);
   const finalTotal = itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
@@ -752,13 +784,20 @@ export default function CustomerStorePage({
   // Cliente identificado já chega com o histórico carregado: sem isto o botão
   // "Pedir de novo" da sacola só apareceria depois de ele abrir Pedidos e
   // buscar na mão — que é justamente o trabalho que o botão deveria poupar.
+  // O telefone DIGITADO no checkout também vale, não só o do login: é assim
+  // que o cliente que pede sem criar conta descobre que tem prêmio da trilha
+  // esperando — e é a maioria. O ref evita repetir a consulta a cada tecla.
+  const telefoneJaConsultado = useRef("");
   useEffect(() => {
-    const tel = customer?.phone || customerPhone;
-    if (!tel || myOrdersList.length > 0 || myOrdersLoading) return;
-    if (String(tel).replace(/\D/g, "").length < 8) return;
-    fetchMyOrders(tel);
+    const tel = String(customer?.phone || customerPhone || "").replace(/\D/g, "");
+    if (tel.length < 10 || tel === telefoneJaConsultado.current || myOrdersLoading) return;
+    const t = setTimeout(() => {
+      telefoneJaConsultado.current = tel;
+      fetchMyOrders(tel);
+    }, 600);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer?.phone]);
+  }, [customer?.phone, customerPhone]);
 
   const isManualScrollRef = useRef(false);
 
@@ -830,6 +869,7 @@ export default function CustomerStorePage({
       if (res.ok) {
         const d = await res.json();
         setMyOrdersList(d.orders || []);
+        setTrilhaProgresso(d.trilha || null);
       }
     } catch {
       // ignore
@@ -1330,6 +1370,7 @@ export default function CustomerStorePage({
           deliveryFee: effectiveDeliveryFee,
           couponCode: couponApplied?.code || null,
           cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
+          dispensarPremioDaTrilha: guardarPremioDaTrilha,
           items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
           // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
@@ -1901,6 +1942,8 @@ export default function CustomerStorePage({
                       "Grátis 🎉"
                     ) : couponApplied?.isFreeShipping ? (
                       "Grátis (Cupom) 🎉"
+                    ) : premioZeraFrete ? (
+                      "Grátis (Prêmio da trilha) 🎉"
                     ) : deliveryCalculating ? (
                       "Calculando..."
                     ) : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? (
@@ -1916,6 +1959,27 @@ export default function CustomerStorePage({
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A" }}>
                     <span>Desconto</span>
                     <span style={{ fontWeight: 700 }}>- R$ {discount.toFixed(2).replace(".", ",")}</span>
+                  </div>
+                )}
+                {premioPendente && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, color: guardarPremioDaTrilha ? "#94A3B8" : "#15803D", fontWeight: 700 }}>
+                    <span>
+                      🥾 Prêmio da trilha
+                      <button
+                        type="button"
+                        onClick={() => setGuardarPremioDaTrilha(v => !v)}
+                        style={{ display: "block", marginTop: 2, background: "none", border: "none", padding: 0, fontSize: "0.7rem", fontWeight: 700, color: "#7C3AED", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}
+                      >
+                        {guardarPremioDaTrilha ? "usar neste pedido" : "guardar para a próxima"}
+                      </button>
+                    </span>
+                    <span>
+                      {guardarPremioDaTrilha
+                        ? "guardado"
+                        : descontoDaTrilha > 0
+                          ? `- R$ ${descontoDaTrilha.toFixed(2).replace(".", ",")}`
+                          : nomeDoPremio(premioPendente)}
+                    </span>
                   </div>
                 )}
                 {cashbackDiscountApplied > 0 && (
@@ -2378,6 +2442,8 @@ export default function CustomerStorePage({
                     "Grátis 🎉"
                   ) : couponApplied?.isFreeShipping ? (
                     "Grátis (Cupom) 🎉"
+                  ) : premioZeraFrete ? (
+                    "Grátis (Prêmio da trilha) 🎉"
                   ) : deliveryCalculating ? (
                     "Calculando..."
                   ) : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? (
@@ -2399,6 +2465,16 @@ export default function CustomerStorePage({
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A", fontWeight: 700 }}>
                   <span>Desconto (Cupom):</span>
                   <span>- R$ {discount.toFixed(2).replace(".", ",")}</span>
+                </div>
+              )}
+              {premioDaTrilha && (premioDaTrilha.tipo !== "frete" || premioZeraFrete) && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#15803D", fontWeight: 700 }}>
+                  <span>🥾 Prêmio da trilha:</span>
+                  <span>
+                    {descontoDaTrilha > 0
+                      ? `- R$ ${descontoDaTrilha.toFixed(2).replace(".", ",")}`
+                      : nomeDoPremio(premioDaTrilha)}
+                  </span>
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0F172A", fontSize: "0.92rem", marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #CBD5E1" }}>
@@ -2820,6 +2896,13 @@ export default function CustomerStorePage({
       {/* CONTENT */}
       <div className="store-content">
         <div className="store-products">
+
+          {/* TRILHA PREMIADA — quanto falta para o próximo prêmio */}
+          <TrilhaDoCliente
+            trilha={trilha}
+            progresso={trilhaProgresso}
+            fotoDoProduto={fotoDoProdutoDaTrilha}
+          />
 
           {/* ===== VITRINE DE DESTAQUES (Apenas produtos marcados como Destaque) ===== */}
           {selectedCategory === "Todos" && !searchTerm && highlightProducts.length > 0 && (

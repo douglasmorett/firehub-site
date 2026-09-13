@@ -3,6 +3,10 @@ import { useState, useEffect, useMemo } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
 import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
+import {
+  MOTIVOS_COMUNS, SEM_DESCONTO, notaDoDesconto, problemaDoDesconto, valorDoDesconto,
+  type DescontoManual,
+} from "@/lib/desconto-manual";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -180,13 +184,23 @@ export default function VendaPresencialPage() {
     return activeBrands.reduce((s: number, b: any) => s + b.rate, 0) / activeBrands.length;
   }, [paymentConfig]);
 
+  // Desconto na mão: "faz 10% pra mim" e "tira 5 reais" são as duas
+  // conversas do balcão; o motivo é o que explica o furo no fechamento.
+  const [desconto, setDesconto] = useState<DescontoManual>(SEM_DESCONTO);
+  const [mostrarDesconto, setMostrarDesconto] = useState(false);
+
   const isVoucher = paymentMethod === "Voucher/Vale";
   const subtotal = cart.reduce((s, i) => s + (i.unitPrice ?? i.product.price) * i.qty, 0);
   const voucherFee = isVoucher ? subtotal * (voucherRate / 100) : 0;
-  const total = subtotal + voucherFee;
+  // O desconto incide sobre os ITENS, antes da taxa do voucher: a taxa é o
+  // custo da maquininha sobre o que foi cobrado, não sobre o que foi abatido.
+  const descontoEmReais = valorDoDesconto(desconto, subtotal);
+  const total = Math.max(0, subtotal - descontoEmReais + voucherFee);
   const somaPartes = Math.round(partes.reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
   const faltaDividir = Math.round((total - somaPartes) * 100) / 100;
   const parteDinheiro = Math.round(partes.filter(p => p.metodo === "Dinheiro").reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
+  const limparDesconto = () => { setDesconto(SEM_DESCONTO); setMostrarDesconto(false); };
+
   const ligarDivisao = (ligar: boolean) => {
     setDividir(ligar);
     if (ligar) {
@@ -283,8 +297,13 @@ export default function VendaPresencialPage() {
       change: !dividir && paymentMethod === "Dinheiro" && change ? Number(change) : null,
       employeeId: selectedEmployeeId || null,
       employeeName: selectedEmployeeName || null,
-      notes: `${notes || ""}${trocoDividido}`.trim(),
+      // O motivo do desconto vai na observação: sai impresso na comanda e
+      // fica no histórico do pedido, sem coluna nova.
+      notes: `${notes || ""}${trocoDividido} ${notaDoDesconto(desconto, subtotal)}`.trim(),
       totalAmount: total,
+      // Registrado, não só abatido: a mensalidade é sobre o bruto do pedido
+      // (lib/billing.ts) e sem isto a base de cobrança encolheria junto.
+      ...(descontoEmReais > 0 ? { discountTotal: descontoEmReais, discountMerchant: descontoEmReais } : {}),
       deliveryFee: 0,
       items: cart.map(i => ({
         menuProductId: i.product.id,
@@ -642,12 +661,88 @@ export default function VendaPresencialPage() {
           <input placeholder="Observações do pedido (opcional)..." value={notes} onChange={e => setNotes(e.target.value)}
             style={{ width: "100%", marginBottom: 6, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem", outline: "none", fontFamily: "inherit" }} />
 
+          {/* ── DESCONTO NA MÃO ──────────────────────────────────────────
+              Porcentagem ou valor, com motivo. Sem motivo, o desconto vira
+              furo de caixa que ninguém explica no fim do mês. */}
+          {cart.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              {!mostrarDesconto && descontoEmReais === 0 ? (
+                <button type="button" onClick={() => setMostrarDesconto(true)}
+                  style={{ width: "100%", padding: "7px", borderRadius: 9, border: "1.5px dashed #CBD5E1", background: "#F8FAFC", color: "#475569", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}>
+                  🏷️ Dar desconto
+                </button>
+              ) : (
+                <div style={{ border: "1.5px solid #FED7AA", background: "#FFFBF5", borderRadius: 11, padding: "9px 10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+                    <b style={{ fontSize: "0.8rem", color: "#9A3412" }}>🏷️ Desconto</b>
+                    <button type="button" onClick={limparDesconto}
+                      style={{ marginLeft: "auto", background: "none", border: "none", color: "#94A3B8", fontSize: "0.74rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+                      remover
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, marginBottom: 7 }}>
+                    {([
+                      { t: "percent" as const, r: "%" },
+                      { t: "valor" as const, r: "R$" },
+                    ]).map((op) => (
+                      <button key={op.t} type="button" onClick={() => setDesconto(d => ({ ...d, tipo: op.t }))}
+                        style={{
+                          padding: "7px 14px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
+                          border: desconto.tipo === op.t ? "2px solid #C2410C" : "1.5px solid #E2E8F0",
+                          background: desconto.tipo === op.t ? "#FFF7ED" : "#fff",
+                          color: desconto.tipo === op.t ? "#9A3412" : "#64748B",
+                          fontWeight: 800, fontSize: "0.84rem",
+                        }}>
+                        {op.r}
+                      </button>
+                    ))}
+                    <input
+                      type="number" min="0" step="0.5" inputMode="decimal"
+                      placeholder={desconto.tipo === "percent" ? "10" : "5,00"}
+                      value={desconto.valor === 0 ? "" : desconto.valor}
+                      onChange={e => setDesconto(d => ({ ...d, valor: parseFloat(e.target.value) || 0 }))}
+                      style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 9, border: "1.5px solid #FED7AA", background: "#fff", fontSize: "0.9rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }}
+                    />
+                  </div>
+
+                  <input
+                    placeholder="Por que o desconto? (aparece na comanda)"
+                    value={desconto.motivo || ""}
+                    onChange={e => setDesconto(d => ({ ...d, motivo: e.target.value.slice(0, 60) }))}
+                    style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 9, border: "1.5px solid #E2E8F0", fontSize: "0.8rem", outline: "none", fontFamily: "inherit", marginBottom: 6 }}
+                  />
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {MOTIVOS_COMUNS.map(m => (
+                      <button key={m} type="button" onClick={() => setDesconto(d => ({ ...d, motivo: m }))}
+                        style={{ padding: "4px 9px", borderRadius: 999, border: "1px solid #E2E8F0", background: desconto.motivo === m ? "#FFF7ED" : "#fff", color: desconto.motivo === m ? "#9A3412" : "#64748B", fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+
+                  {problemaDoDesconto(desconto, subtotal) && desconto.valor > 0 && (
+                    <p style={{ margin: "7px 0 0", fontSize: "0.74rem", color: "#B91C1C", fontWeight: 700 }}>
+                      {problemaDoDesconto(desconto, subtotal)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Total */}
           {cart.length > 0 && (
             <div style={{ marginBottom: 6 }}>
-              {isVoucher && voucherRate > 0 && (
+              {(isVoucher && voucherRate > 0) || descontoEmReais > 0 ? (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "#64748B", marginBottom: 2 }}>
                   <span>Subtotal</span><span>{fmt(subtotal)}</span>
+                </div>
+              ) : null}
+              {descontoEmReais > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#C2410C", fontWeight: 800, marginBottom: 2 }}>
+                  <span>Desconto{desconto.motivo ? ` (${desconto.motivo})` : ""}</span>
+                  <span>- {fmt(descontoEmReais)}</span>
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "1.05rem" }}>

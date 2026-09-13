@@ -79,6 +79,9 @@ export async function GET() {
       // motoboy lê o pedido SEM select, então a coluna ausente derrubaria
       // TODA consulta de CustomerOrder: painel, KDS e baixa juntos.
       ["CustomerOrder", "ifoodDropCodeInfo"],
+      // O prêmio da Trilha Premiada que o pedido resgatou. Sem a coluna, o
+      // checkout que aplica o prêmio quebra na gravação — e o pedido some.
+      ["CustomerOrder", "trilhaPremio"],
       ["CustomerOrder", "posOrderId"], ["CustomerOrder", "posTerminalId"],
       ["CustomerOrder", "posStatus"], ["CustomerOrder", "posDadosTransacao"],
       ["CustomerOrder", "posTentativas"], ["CustomerOrder", "tableSessionId"],

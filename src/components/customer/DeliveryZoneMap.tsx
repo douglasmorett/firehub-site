@@ -1,9 +1,33 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { areasDeRisco as lerAreasDeRisco, type AreaDeRisco } from "@/lib/area-de-risco";
+import { explicarRegraDoApp, lerRegraDeRepasse, type OrigemDoRepasseNoApp } from "@/lib/repasse-do-entregador";
 import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from "lucide-react";
 
 const ZONE_COLORS = ["#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
+
+/**
+ * Como a loja cobra a entrega. Três métodos, e cada um se explica em uma
+ * linha — a loja escolhe um e é ele que vale para todo pedido.
+ *
+ * O "km percorrido" já existia no código (tipo ROTA), mas escondido num
+ * sub-seletor dentro do modo raio: quem procurava não achava, e quem não
+ * procurava nem sabia que existia.
+ */
+const METODOS_DE_COBRANCA: { chave: string; emoji: string; nome: string; ajuda: string; recomendado?: boolean }[] = [
+  {
+    chave: "KM", emoji: "📍", nome: "Por raio (linha reta)", recomendado: true,
+    ajuda: "A distância em linha reta da loja até o cliente — é o círculo desenhado no mapa. Simples de explicar e o que quase toda loja usa.",
+  },
+  {
+    chave: "ROTA", emoji: "🛣️", nome: "Por km percorrido",
+    ajuda: "O caminho que a moto faz de verdade pelas ruas. Mais justo onde tem rio, linha de trem ou morro no meio: quem está do outro lado paga pelo trajeto real.",
+  },
+  {
+    chave: "NEIGHBORHOOD", emoji: "🏙️", nome: "Por bairro",
+    ajuda: "Você cadastra cada bairro que atende e o valor de cada um. O cliente escolhe o bairro na lista, sem depender do mapa.",
+  },
+];
 
 /**
  * `fee` é o que o CLIENTE paga. `motoboyFee` é o que a LOJA repassa ao
@@ -25,10 +49,12 @@ interface Props {
   initialIfoodSyncDeliveryTime?: boolean;
   /** As áreas de risco já gravadas (User.deliveryConfig.areasDeRisco). */
   initialAreasDeRisco?: unknown;
-  onSave: (data: { storeLatLng: { lat: number; lng: number }; deliveryZones: Zone[]; deliveryZoneType: string; storeAddress: string; ifoodSyncDeliveryTime?: boolean; areasDeRisco?: AreaDeRisco[] }) => Promise<void>;
+  /** `User.deliveryConfig` inteiro — daqui sai a regra de repasse já gravada. */
+  initialDeliveryConfig?: unknown;
+  onSave: (data: { storeLatLng: { lat: number; lng: number }; deliveryZones: Zone[]; deliveryZoneType: string; storeAddress: string; ifoodSyncDeliveryTime?: boolean; areasDeRisco?: AreaDeRisco[]; repasseDoEntregador?: { separado: boolean; marketplace: OrigemDoRepasseNoApp } }) => Promise<void>;
 }
 
-export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialIfoodSyncDeliveryTime, initialAreasDeRisco, onSave }: Props) {
+export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialIfoodSyncDeliveryTime, initialAreasDeRisco, initialDeliveryConfig, onSave }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -48,6 +74,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
    */
   const porDistancia = currentZoneType === "KM" || currentZoneType === "RADIUS" || currentZoneType === "ROTA";
   const porRota = currentZoneType === "ROTA";
+  /** O método marcado na lista. RADIUS é o nome antigo do raio. */
+  const metodoAtivo = currentZoneType === "NEIGHBORHOOD" ? "NEIGHBORHOOD" : currentZoneType === "ROTA" ? "ROTA" : "KM";
 
   /**
    * Onde a loja NÃO entrega, por mais perto que seja.
@@ -104,6 +132,18 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
    * configurou volta na tela e ve os proprios numeros, em vez de uma coluna
    * sumida e o valor aparentemente perdido.
    */
+  /**
+   * Em pedido de app, o entregador recebe o que veio do app ou o da tabela?
+   *
+   * Nasce do que já está gravado; o padrão é TABELA porque a taxa que o
+   * iFood mostra é dinheiro do marketplace, não o que a loja paga — foi
+   * exatamente essa confusão que pôs R$ 6,94 no acerto de uma entrega de
+   * R$ 2,00 (12/09/2026).
+   */
+  const [repasseNoApp, setRepasseNoApp] = useState<OrigemDoRepasseNoApp>(
+    () => lerRegraDeRepasse(initialDeliveryConfig).marketplace,
+  );
+
   const [repasseSeparado, setRepasseSeparado] = useState<boolean>(
     () => (initialZones || []).some((z: any) => z && z.motoboyFee != null && z.motoboyFee !== ""),
   );
@@ -486,15 +526,44 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     setZones(prev => prev.map((z, idx) => idx === i ? { ...z, [key]: val } : z));
   };
 
+  /** Rótulo em cima do campo: é o que evita cabeçalho de coluna espremido. */
+  // `maxWidth` para o campo que sobra na quebra de linha não esticar sozinho
+  // até a largura toda — ficava um "Motoboy recebe" gigante embaixo de três
+  // campos pequenos.
+  const campoDaFaixa: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 3, flex: "1 1 92px", minWidth: 84, maxWidth: 150 };
+  // O rótulo QUEBRA em vez de não quebrar: com `nowrap`, "🛵 Motoboy recebe"
+  // era mais largo que o campo e vazava para fora do cartão.
+  const rotuloDoCampo: React.CSSProperties = { fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", lineHeight: 1.25 };
+  const caixaDoCampo: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: "0.84rem", textAlign: "center", outline: "none", fontFamily: "inherit" };
+
+  const dinheiro = (v: number) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+
+  /** Cliente x motoboy por faixa/bairro, na modalidade que está ligada. */
+  const resumoDoRepasse = (currentZoneType === "NEIGHBORHOOD" ? neighborhoodZones : zones)
+    .filter((z: any) => z && (z.name || z.km))
+    .map((z: any) => ({
+      rotulo: currentZoneType === "NEIGHBORHOOD" ? String(z.name || "Bairro") : `até ${z.km} km`,
+      cliente: Number(z.fee) || 0,
+      motoboy: Number(z.motoboyFee ?? z.fee) || 0,
+    }))
+    .slice(0, 12);
+
   const handleSave = async () => {
     if (!latLng) {
       setMsg("⚠️ Selecione a localização da sua loja no mapa primeiro.");
       return;
     }
     setSaving(true);
-    const activeZones = currentZoneType === "NEIGHBORHOOD" ? neighborhoodZones : zones;
+    // Com o repasse ligado, toda faixa/bairro sai daqui COM o valor do
+    // entregador — inclusive as que a loja não tocou. A tela mostrava o valor
+    // da taxa no campo (motoboyFee ?? fee) e salvava sem ele: o cadastro dizia
+    // "separado" e o relatório não achava número nenhum para usar.
+    const zonasAtivas = currentZoneType === "NEIGHBORHOOD" ? neighborhoodZones : zones;
+    const activeZones = repasseSeparado
+      ? zonasAtivas.map((z: any) => ({ ...z, motoboyFee: Number(z.motoboyFee ?? z.fee) || 0 }))
+      : zonasAtivas;
     try {
-      await onSave({ storeLatLng: latLng, deliveryZones: activeZones, deliveryZoneType: currentZoneType, storeAddress: address, ifoodSyncDeliveryTime: ifoodSync, areasDeRisco });
+      await onSave({ storeLatLng: latLng, deliveryZones: activeZones, deliveryZoneType: currentZoneType, storeAddress: address, ifoodSyncDeliveryTime: ifoodSync, areasDeRisco, repasseDoEntregador: { separado: repasseSeparado, marketplace: repasseNoApp } });
       const syncMinutes = (window as any).__ifoodSyncOk;
       if (syncMinutes) {
         setMsg(`✅ Salvo! iFood sincronizado: ${syncMinutes} min de preparo.`);
@@ -519,91 +588,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       <p style={{ color: "#64748B", fontSize: "0.88rem", marginBottom: "0.8rem" }}>
         Defina onde fica sua loja no mapa e escolha a regra de cobrança da entrega.
       </p>
-
-      {/* 2-Mode Selector Tabs com Botão e Indicador Ativo/Inativo */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "1rem" }}>
-        {/* TAB 1: POR RAIO */}
-        <div
-          onClick={() => { if (!porDistancia) setCurrentZoneType("KM"); }}
-          style={{
-            padding: "12px 14px",
-            borderRadius: "14px",
-            border: `2px solid ${porDistancia ? "#DC2626" : "#E2E8F0"}`,
-            background: porDistancia ? "#FEF2F2" : "#FFFFFF",
-            cursor: "pointer",
-            display: "flex",
-            flexDirection: "column",
-            gap: "6px",
-            transition: "all 0.2s ease",
-            boxShadow: porDistancia ? "0 4px 14px rgba(220, 38, 38, 0.12)" : "none"
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontWeight: 800, fontSize: "0.92rem", color: porDistancia ? "#991B1B" : "#334155" }}>
-              📍 Por Raio (Linha Reta)
-            </span>
-            <span
-              style={{
-                fontSize: "0.72rem",
-                fontWeight: 800,
-                padding: "3px 8px",
-                borderRadius: "20px",
-                background: porDistancia ? "#16A34A" : "#F1F5F9",
-                color: porDistancia ? "#FFFFFF" : "#64748B",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px"
-              }}
-            >
-              {porDistancia ? "🟢 ATIVO NA LOJA" : "⚪ Inativo"}
-            </span>
-          </div>
-          <p style={{ margin: 0, fontSize: "0.74rem", color: porDistancia ? "#B91C1C" : "#64748B", lineHeight: 1.3 }}>
-            Calcula a taxa e validação pelo mapa em KM a partir do raio da sua loja.
-          </p>
-        </div>
-
-        {/* TAB 2: POR BAIRRO */}
-        <div
-          onClick={() => setCurrentZoneType("NEIGHBORHOOD")}
-          style={{
-            padding: "12px 14px",
-            borderRadius: "14px",
-            border: `2px solid ${currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#E2E8F0"}`,
-            background: currentZoneType === "NEIGHBORHOOD" ? "#F5F3FF" : "#FFFFFF",
-            cursor: "pointer",
-            display: "flex",
-            flexDirection: "column",
-            gap: "6px",
-            transition: "all 0.2s ease",
-            boxShadow: currentZoneType === "NEIGHBORHOOD" ? "0 4px 14px rgba(124, 58, 237, 0.12)" : "none"
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontWeight: 800, fontSize: "0.92rem", color: currentZoneType === "NEIGHBORHOOD" ? "#5B21B6" : "#334155" }}>
-              🏙️ Por Bairro
-            </span>
-            <span
-              style={{
-                fontSize: "0.72rem",
-                fontWeight: 800,
-                padding: "3px 8px",
-                borderRadius: "20px",
-                background: currentZoneType === "NEIGHBORHOOD" ? "#16A34A" : "#F1F5F9",
-                color: currentZoneType === "NEIGHBORHOOD" ? "#FFFFFF" : "#64748B",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px"
-              }}
-            >
-              {currentZoneType === "NEIGHBORHOOD" ? "🟢 ATIVO NA LOJA" : "⚪ Inativo"}
-            </span>
-          </div>
-          <p style={{ margin: 0, fontSize: "0.74rem", color: currentZoneType === "NEIGHBORHOOD" ? "#6D28D9" : "#64748B", lineHeight: 1.3 }}>
-            O cliente seleciona os bairros pré-cadastrados com taxas fixas definidas por você.
-          </p>
-        </div>
-      </div>
 
       {msg && (
         <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "1rem",
@@ -674,12 +658,13 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         </button>
       </div>
 
-      {/* Map + Controls side by side */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: "1rem", alignItems: "start" }}>
-
-        {/* MAP */}
-        <div style={{ position: "relative", borderRadius: "16px", overflow: "hidden", border: "2px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
-          <div ref={mapRef} style={{ width: "100%", height: "420px" }} />
+      {/* ── MAPA ABERTO COM O PAINEL FLUTUANDO ───────────────────────────
+          O desenho que o lojista já conhece do iFood. O mapa espremido numa
+          coluna de 420px não mostrava a área de entrega inteira, que é
+          justamente o que esta tela existe para mostrar. */}
+      <div className="fh-entrega-area">
+        <div className="fh-entrega-mapa">
+          <div ref={mapRef} style={{ width: "100%", height: "100%" }} />
 
           {/* Confirm button & address preview overlay */}
           {latLng && !confirmed && (
@@ -715,8 +700,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             </div>
           )}
 
+          {/* Os dois selos ficam juntos à ESQUERDA: com o painel flutuando à
+              direita, o "Editar Endereço" ia parar atrás dele. */}
           {confirmed && (
-            <div style={{ position: "absolute", top: "12px", left: "12px", right: "12px", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+            <div style={{ position: "absolute", top: "12px", left: "12px", zIndex: 1000, display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <div style={{ background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.8rem", fontWeight: 700, color: "#16a34a", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
                 <Check size={14} /> Localização confirmada
               </div>
@@ -746,61 +733,180 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           )}
         </div>
 
-        {/* ZONES CONTROL PANEL */}
-        <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "20px" }}>
-          
-          {/* Banner de Modo Ativo com Switch Exclusivo */}
-          <div
-            style={{
-              padding: "10px 12px",
-              borderRadius: "12px",
-              marginBottom: "14px",
-              background: currentZoneType === "NEIGHBORHOOD" ? "#F5F3FF" : "#FEF2F2",
-              border: `1.5px solid ${currentZoneType === "NEIGHBORHOOD" ? "#DDD6FE" : "#FECACA"}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "8px"
-            }}
-          >
+        {/* ── PAINEL FLUTUANTE ──────────────────────────────────────────
+            Cabeçalho com o Salvar sempre à vista, corpo rolando por dentro e
+            rodapé com a ação principal — o padrão que o iFood usa e que a
+            Brendi copiou, e que é o que o lojista espera encontrar. */}
+        <aside className="fh-entrega-painel">
+          <div className="fh-painel-topo">
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.82rem", fontWeight: 800, color: currentZoneType === "NEIGHBORHOOD" ? "#5B21B6" : "#991B1B" }}>
-                <span>{currentZoneType === "NEIGHBORHOOD" ? "🏙️ Modo Bairro ATIVO" : "📍 Modo Raio ATIVO"}</span>
-              </div>
-              <div style={{ fontSize: "0.70rem", color: currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#DC2626", marginTop: "2px" }}>
-                {currentZoneType === "NEIGHBORHOOD"
-                  ? "Clientes selecionarão bairros cadastrados. Modo Raio desativado."
-                  : "Frete calculado por distância em KM. Modo Bairro desativado."}
-              </div>
+              <b>Configurar entrega</b>
+              <span>{metodoAtivo === "NEIGHBORHOOD" ? "Cobrança por bairro" : porRota ? "Cobrança por km percorrido" : "Cobrança por raio"}</span>
             </div>
-            <button
-              type="button"
-              onClick={() => setCurrentZoneType(currentZoneType === "NEIGHBORHOOD" ? "KM" : "NEIGHBORHOOD")}
-              style={{
-                padding: "6px 10px",
-                borderRadius: "8px",
-                border: "1px solid #CBD5E1",
-                background: "#FFFFFF",
-                fontSize: "0.72rem",
-                fontWeight: 700,
-                color: "#1E293B",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.05)"
-              }}
-            >
-              🔄 {currentZoneType === "NEIGHBORHOOD" ? "Ativar Modo Raio" : "Ativar Modo Bairro"}
+            {/* Compacto e sempre à vista, no canto do cabeçalho: o que o
+                lojista procura quando termina de mexer. O texto longo do botão
+                antigo ("Salvar Configurações (Modo Raio)") quebrava em três
+                linhas aqui — o modo já está escrito logo ao lado. */}
+            <button onClick={handleSave} disabled={saving || !latLng}
+              title={latLng ? "Salvar a configuração de entrega" : "Escolha o local da loja no mapa primeiro"}
+              style={{ padding: "9px 15px", borderRadius: 10, border: "none", whiteSpace: "nowrap", flexShrink: 0,
+                background: !latLng ? "#E2E8F0" : currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#16A34A",
+                color: !latLng ? "#94A3B8" : "#fff",
+                fontWeight: 800, fontSize: "0.86rem", cursor: !latLng ? "not-allowed" : "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: 6,
+                boxShadow: !latLng ? "none" : "0 3px 12px rgba(22,163,74,0.28)" }}>
+              {saving ? <Loader2 size={15} /> : <Check size={15} />}
+              {saving ? "Salvando..." : "Salvar"}
             </button>
           </div>
 
-          <h4 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "4px" }}>
-            {currentZoneType === "NEIGHBORHOOD" ? "Bairros Atendidos" : porRota ? "Faixas de Distância (pelas ruas)" : "Raios de Entrega (KM)"}
-          </h4>
-          <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "12px" }}>
-            {currentZoneType === "NEIGHBORHOOD"
-              ? "Cadastre os bairros que sua loja atende e o valor do frete para cada um."
-              : "Configure os limites de raio (KM), tempo estimado e taxa por faixa."}
+          <div className="fh-painel-corpo">
+        {/* ── MÉTODO DE COBRANÇA ──────────────────────────────────────────
+            Três métodos, cada um com uma linha dizendo o que é. Antes eram dois
+            cartões grandes e o "km percorrido" estava escondido num sub-seletor
+            dentro do modo raio — quem procurava por ele não achava, e quem não
+            procurava nem sabia que existia. */}
+        <div style={{ marginBottom: "1rem" }}>
+          <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            Método de cobrança
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {METODOS_DE_COBRANCA.map((m) => {
+              const ativo = metodoAtivo === m.chave;
+              return (
+                <button
+                  key={m.chave}
+                  type="button"
+                  onClick={() => setCurrentZoneType(m.chave)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, width: "100%", textAlign: "left",
+                    padding: "11px 13px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
+                    border: `2px solid ${ativo ? "#DC2626" : "#E2E8F0"}`,
+                    background: ativo ? "#FEF2F2" : "#FFFFFF",
+                    boxShadow: ativo ? "0 3px 12px rgba(220,38,38,0.10)" : "none",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "1.1rem", lineHeight: 1.2, flexShrink: 0 }}>{m.emoji}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <b style={{ fontSize: "0.88rem", color: ativo ? "#991B1B" : "#1E293B" }}>{m.nome}</b>
+                      {m.recomendado && (
+                        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#15803D", background: "#DCFCE7", borderRadius: 999, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                          Recomendado
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ display: "block", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45, marginTop: 3 }}>
+                      {m.ajuda}
+                    </span>
+                  </span>
+                  {ativo && <Check size={16} style={{ color: "#DC2626", flexShrink: 0, marginTop: 3 }} />}
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: "0.72rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
+            Faixa de distância e lista de bairros são cadastros diferentes: ao trocar entre eles, os valores
+            não são transferidos — confira a tabela antes de salvar.
           </p>
+        </div>
+          
+          {/* O título repete o método escolhido: quem rolou a tela até aqui
+              precisa saber qual cadastro está editando. */}
+          <h4 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "4px" }}>
+            {metodoAtivo === "NEIGHBORHOOD"
+              ? `Bairros atendidos (${neighborhoodZones.length})`
+              : `${porRota ? "Faixas por km percorrido" : "Faixas por raio"} (${zones.length})`}
+          </h4>
+          <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "12px", lineHeight: 1.45 }}>
+            {metodoAtivo === "NEIGHBORHOOD"
+              ? "Cada bairro que sua loja atende, com o tempo e o valor da entrega."
+              : porRota
+                ? "O pedido cai na primeira faixa que alcança o trajeto pelas ruas."
+                : "O pedido cai na primeira faixa que alcança a distância em linha reta."}
+          </p>
+
+          {/* ── PAGAMENTO DO ENTREGADOR ───────────────────────────────────
+              Fica ANTES das tabelas, e não dentro de uma delas, porque vale
+              para as duas modalidades: a loja que cobra por bairro paga
+              entregador igual à que cobra por raio. Enquanto esta caixa
+              esteve dentro do bloco de raio, quem cobrava por bairro não
+              tinha onde informar o repasse — e o acerto caía na taxa do
+              cliente, que em pedido de app é dinheiro do marketplace. */}
+          <div style={{ border: `1.5px solid ${repasseSeparado ? "#FED7AA" : "#E2E8F0"}`, background: repasseSeparado ? "#FFFBF5" : "#F8FAFC", borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+              <span style={{ fontSize: "1rem" }}>🛵</span>
+              <b style={{ fontSize: "0.9rem", color: "#0F172A" }}>Pagamento do entregador</b>
+            </div>
+            <p style={{ margin: "0 0 10px", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.5 }}>
+              O que você <b>cobra do cliente</b> e o que você <b>paga ao entregador</b> são dois valores
+              diferentes na maioria das lojas. Informe os dois e o relatório de entregas fecha certo.
+            </p>
+
+            <label style={{ display: "flex", gap: 9, alignItems: "flex-start", cursor: "pointer", background: "#fff", border: `1.5px solid ${repasseSeparado ? "#FDBA74" : "#E2E8F0"}`, borderRadius: 10, padding: "10px 12px" }}>
+              <input
+                type="checkbox"
+                checked={repasseSeparado}
+                onChange={(e) => {
+                  const ligado = e.target.checked;
+                  setRepasseSeparado(ligado);
+                  // Ligando, cada faixa nasce repassando o mesmo que cobra —
+                  // assim nada muda de valor até a loja mexer de propósito.
+                  if (ligado) {
+                    setZones(p => p.map(z => ({ ...z, motoboyFee: z.motoboyFee ?? z.fee })));
+                    setNeighborhoodZones(p => p.map(z => ({ ...z, motoboyFee: (z as any).motoboyFee ?? z.fee })));
+                  } else {
+                    setZones(p => p.map(({ motoboyFee, ...z }) => z));
+                    setNeighborhoodZones(p => p.map(({ motoboyFee, ...z }: any) => z));
+                  }
+                }}
+                style={{ marginTop: 2, width: 16, height: 16, accentColor: "#C2410C", cursor: "pointer", flexShrink: 0 }}
+              />
+              <span style={{ fontSize: "0.8rem", color: "#334155", lineHeight: 1.45 }}>
+                <b>Lançar preço diferente para o cliente e para o motoboy.</b>{" "}
+                <span style={{ color: "#64748B" }}>
+                  Abre o campo <b>🛵 Motoboy recebe</b> em cada {metodoAtivo === "NEIGHBORHOOD" ? "bairro" : "faixa"} aqui
+                  embaixo, e mostra quanto sobra para a loja. Use quando você fica com parte da entrega.
+                </span>
+              </span>
+            </label>
+
+            {/* ── PEDIDO DE APP: DE ONDE SAI O VALOR DO ENTREGADOR ────────
+                A dúvida real do lojista, e os dois modelos que existem: quem
+                repassa a entrega do iFood inteira ao motoboy, e quem paga
+                sempre o mesmo, independente do que o app pagou. */}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#334155", marginBottom: 7 }}>
+                Nos pedidos de <b>iFood, 99Food</b> e outros apps, o entregador recebe:
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8 }}>
+                {[
+                  { v: "TABELA" as const, t: "O valor da minha tabela", d: "O que você cadastrou aqui embaixo para aquela distância ou bairro." },
+                  { v: "APP" as const, t: "O valor que veio do app", d: "A taxa de entrega que o iFood/99 pagou naquele pedido." },
+                ].map((op) => (
+                  <button
+                    key={op.v}
+                    type="button"
+                    onClick={() => setRepasseNoApp(op.v)}
+                    style={{
+                      textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+                      border: `2px solid ${repasseNoApp === op.v ? "#C2410C" : "#E2E8F0"}`,
+                      background: repasseNoApp === op.v ? "#FFF7ED" : "#fff", fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8rem", fontWeight: 800, color: repasseNoApp === op.v ? "#9A3412" : "#334155" }}>
+                      <span>{repasseNoApp === op.v ? "●" : "○"}</span>{op.t}
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 3, lineHeight: 1.4 }}>{op.d}</div>
+                  </button>
+                ))}
+              </div>
+              <p style={{ margin: "8px 0 0", fontSize: "0.73rem", lineHeight: 1.45, color: repasseNoApp === "APP" ? "#334155" : "#92400E", background: repasseNoApp === "APP" ? "#F8FAFC" : "#FFFBEB", border: `1px solid ${repasseNoApp === "APP" ? "#E2E8F0" : "#FDE68A"}`, borderRadius: 8, padding: "7px 10px" }}>
+                {explicarRegraDoApp({ separado: repasseSeparado, marketplace: repasseNoApp })}
+              </p>
+            </div>
+          </div>
 
           {/* Mode 1: KM (Por Raio) */}
           {porDistancia && (
@@ -816,173 +922,151 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 </div>
               </div>
 
-              {/* ── COMO A DISTÂNCIA É MEDIDA ──────────────────────────────
-                  As faixas abaixo são as mesmas nos dois casos. O que muda é o
-                  número comparado com elas — e a diferença é grande: medido em
-                  Rio das Ostras, o Costazul fica a 1,17 km da loja em linha
-                  reta e 1,81 km de moto, 55% a mais. Quem está do outro lado
-                  de um rio, de uma linha de trem ou de um morro paga (e espera)
-                  como se estivesse do lado.
-
-                  O raio continua o padrão: é o círculo desenhado no mapa e é o
-                  que toda loja cadastrada até aqui usa. */}
-              <div style={{ marginBottom: "12px" }}>
-                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Como medir a distância</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                  {([
-                    { tipo: "KM", titulo: "📐 Em linha reta", ajuda: "O círculo no mapa. Simples de explicar ao cliente." },
-                    { tipo: "ROTA", titulo: "🛣️ Pelas ruas", ajuda: "O caminho que a moto faz de verdade — como o iFood cobra." },
-                  ]).map((op) => {
-                    const ativo = op.tipo === "ROTA" ? porRota : !porRota;
-                    return (
+              {/* ── AS FAIXAS, UMA POR CARTÃO ──────────────────────────────
+                  Cada campo leva o próprio rótulo em cima. A tabela de antes
+                  tinha um cabeçalho de colunas de 60px, e "TEMPO(M)",
+                  "CLIENTE(R$)" e "MOTOBOY(R$)" se sobrepunham — rótulo de
+                  coluna não cabe em coluna estreita. */}
+              {zones.sort((a, b) => a.km - b.km).map((zone, i) => {
+                const repasse = Number(zone.motoboyFee ?? zone.fee) || 0;
+                const sobra = Math.round(((Number(zone.fee) || 0) - repasse) * 100) / 100;
+                return (
+                  <div
+                    key={i}
+                    onMouseEnter={() => setHoveredZoneIndex(i)}
+                    onMouseLeave={() => setHoveredZoneIndex(null)}
+                    style={{
+                      border: `1.5px solid ${hoveredZoneIndex === i ? "#FCA5A5" : "#E2E8F0"}`,
+                      background: hoveredZoneIndex === i ? "#FEF2F2" : "#FFFFFF",
+                      borderRadius: 12, padding: "10px 12px", marginBottom: 8, transition: "all .15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: "50%", background: ZONE_COLORS[i % ZONE_COLORS.length], flexShrink: 0 }} />
+                      <b style={{ fontSize: "0.84rem", color: "#0F172A" }}>
+                        {i === 0 ? "Até" : `De ${zones[i - 1].km} a`} {zone.km} km
+                      </b>
                       <button
-                        key={op.tipo}
-                        type="button"
-                        onClick={() => setCurrentZoneType(op.tipo)}
-                        style={{
-                          textAlign: "left", padding: "10px 12px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
-                          border: `1.5px solid ${ativo ? "#DC2626" : "#E2E8F0"}`,
-                          background: ativo ? "#FEF2F2" : "#fff",
-                        }}
+                        onClick={() => removeZone(i)}
+                        title="Remover esta faixa"
+                        style={{ marginLeft: "auto", width: 28, height: 28, borderRadius: 7, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                       >
-                        <span style={{ display: "block", fontWeight: 800, fontSize: "0.84rem", color: ativo ? "#991B1B" : "#334155" }}>{op.titulo}</span>
-                        <span style={{ display: "block", fontSize: "0.72rem", color: ativo ? "#B91C1C" : "#64748B", marginTop: 2, lineHeight: 1.35 }}>{op.ajuda}</span>
+                        <Trash2 size={13} />
                       </button>
-                    );
-                  })}
-                </div>
-                {porRota && (
-                  <p style={{ fontSize: "0.73rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", margin: "8px 0 0", lineHeight: 1.45 }}>
-                    O círculo no mapa continua sendo desenhado em linha reta — ele é só ilustração da área.
-                    A cobrança usa o caminho pelas ruas, que é sempre igual ou maior. Se o cálculo de rota
-                    não responder na hora do pedido, vale a linha reta: nenhum pedido deixa de entrar por causa disso.
-                  </p>
-                )}
-              </div>
+                    </div>
 
-              {/* ── O QUE O CLIENTE PAGA E O QUE O ENTREGADOR RECEBE ──────
-                  São dois números diferentes na maioria das lojas, e o segundo
-                  não existia: o relatório de entregas caía na taxa do cliente,
-                  que em pedido de iFood e 99Food é dinheiro do marketplace. */}
-              <label style={{ display: "flex", gap: 9, alignItems: "flex-start", marginBottom: 12, cursor: "pointer", background: repasseSeparado ? "#FFF7ED" : "#F8FAFC", border: `1.5px solid ${repasseSeparado ? "#FED7AA" : "#E2E8F0"}`, borderRadius: 10, padding: "10px 12px" }}>
-                <input
-                  type="checkbox"
-                  checked={repasseSeparado}
-                  onChange={(e) => {
-                    const ligado = e.target.checked;
-                    setRepasseSeparado(ligado);
-                    // Ligando, cada faixa nasce repassando o mesmo que cobra —
-                    // assim nada muda de valor até a loja mexer de propósito.
-                    if (ligado) setZones(p => p.map(z => ({ ...z, motoboyFee: z.motoboyFee ?? z.fee })));
-                    else setZones(p => p.map(({ motoboyFee, ...z }) => z));
-                  }}
-                  style={{ marginTop: 2, width: 16, height: 16, accentColor: "#C2410C", cursor: "pointer", flexShrink: 0 }}
-                />
-                <span style={{ fontSize: "0.8rem", color: "#334155", lineHeight: 1.45 }}>
-                  <b>Pagar o entregador um valor diferente da taxa cobrada do cliente.</b>{" "}
-                  <span style={{ color: "#64748B" }}>Use quando a loja fica com parte da entrega. O relatório de entregas passa a usar este valor.</span>
-                </span>
-              </label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <label style={campoDaFaixa}>
+                        <span style={rotuloDoCampo}>Até quantos km</span>
+                        <input type="number" min="0.5" step="0.5" value={zone.km}
+                          onChange={e => updateZone(i, "km", parseFloat(e.target.value) || 0)}
+                          style={caixaDoCampo} />
+                      </label>
+                      <label style={campoDaFaixa}>
+                        <span style={rotuloDoCampo}>Tempo (min)</span>
+                        <input type="number" min="1" value={zone.time}
+                          onChange={e => updateZone(i, "time", parseInt(e.target.value) || 0)}
+                          style={caixaDoCampo} />
+                      </label>
+                      <label style={campoDaFaixa}>
+                        <span style={rotuloDoCampo}>👤 Cliente paga</span>
+                        <input type="number" min="0" step="0.5" value={zone.fee}
+                          onChange={e => updateZone(i, "fee", parseFloat(e.target.value) || 0)}
+                          style={caixaDoCampo} />
+                      </label>
+                      {repasseSeparado && (
+                        <label style={campoDaFaixa}>
+                          <span style={{ ...rotuloDoCampo, color: "#C2410C" }}>🛵 Motoboy recebe</span>
+                          <input type="number" min="0" step="0.5" value={zone.motoboyFee ?? zone.fee}
+                            onChange={e => updateZone(i, "motoboyFee" as any, parseFloat(e.target.value) || 0)}
+                            style={{ ...caixaDoCampo, border: "1.5px solid #FED7AA", background: "#FFF7ED", color: "#9A3412", fontWeight: 700 }} />
+                        </label>
+                      )}
+                    </div>
 
-              {/* Table header */}
-              <div style={{ display: "grid", gridTemplateColumns: repasseSeparado ? "60px 1fr 1fr 1fr 32px" : "60px 1fr 1fr 32px", gap: "6px", fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", padding: "0 4px", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                <span>Raio</span><span>Tempo (min)</span><span>Cliente (R$)</span>{repasseSeparado && <span style={{ color: "#C2410C" }}>Motoboy (R$)</span>}<span></span>
-              </div>
-
-              {zones.sort((a, b) => a.km - b.km).map((zone, i) => (
-                <div
-                  key={i}
-                  onMouseEnter={() => setHoveredZoneIndex(i)}
-                  onMouseLeave={() => setHoveredZoneIndex(null)}
-                  style={{
-                    display: "grid", gridTemplateColumns: repasseSeparado ? "60px 1fr 1fr 1fr 32px" : "60px 1fr 1fr 32px", gap: "6px", alignItems: "center", marginBottom: "8px",
-                    padding: "4px 6px", borderRadius: "8px", transition: "all 0.15s ease",
-                    background: hoveredZoneIndex === i ? "#FEF2F2" : "transparent",
-                    boxShadow: hoveredZoneIndex === i ? "0 0 0 1.5px #FCA5A5" : "none"
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: ZONE_COLORS[i % ZONE_COLORS.length], flexShrink: 0 }} />
-                    <input type="number" min="0.5" step="0.5" value={zone.km}
-                      onChange={e => updateZone(i, "km", parseFloat(e.target.value) || 0)}
-                      style={{ width: "42px", padding: "6px 4px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem", textAlign: "center", outline: "none" }} />
+                    {repasseSeparado && (
+                      <div style={{ marginTop: 8, fontSize: "0.73rem", fontWeight: 700, color: sobra < 0 ? "#B91C1C" : "#166534" }}>
+                        {sobra < 0
+                          ? `Você paga ${dinheiro(Math.abs(sobra))} do próprio bolso nesta faixa`
+                          : `Sobra ${dinheiro(sobra)} para a loja nesta faixa`}
+                      </div>
+                    )}
                   </div>
-                  <input type="number" min="1" value={zone.time}
-                    onChange={e => updateZone(i, "time", parseInt(e.target.value) || 0)}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem", textAlign: "center", outline: "none" }} />
-                  <input type="number" min="0" step="0.5" value={zone.fee}
-                    onChange={e => updateZone(i, "fee", parseFloat(e.target.value) || 0)}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem", textAlign: "center", outline: "none" }} />
-                  {repasseSeparado && (
-                    <input type="number" min="0" step="0.5" value={zone.motoboyFee ?? zone.fee}
-                      title="Quanto a loja paga ao entregador nesta faixa"
-                      onChange={e => updateZone(i, "motoboyFee" as any, parseFloat(e.target.value) || 0)}
-                      style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", borderRadius: "6px", border: "1.5px solid #FED7AA", background: "#FFF7ED", color: "#9A3412", fontWeight: 700, fontSize: "0.82rem", textAlign: "center", outline: "none" }} />
-                  )}
-                  <button onClick={() => removeZone(i)}
-                    style={{ width: "28px", height: "28px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
 
-              <button onClick={addZone}
-                style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1.5px dashed #CBD5E1", background: "#F8FAFC", color: "#64748B", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "16px", fontFamily: "inherit" }}>
-                <Plus size={14} /> Adicionar Faixa de KM
-              </button>
             </>
           )}
 
           {/* Mode 2: NEIGHBORHOOD (Por Bairro) */}
           {currentZoneType === "NEIGHBORHOOD" && (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 65px 65px 28px", gap: "6px", fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", padding: "0 4px", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                <span>Bairro</span><span>Tempo(m)</span><span>Taxa(R$)</span><span></span>
-              </div>
-              {neighborhoodZones.map((zone, i) => (
-                <div
-                  key={i}
-                  onMouseEnter={() => setHoveredZoneIndex(i)}
-                  onMouseLeave={() => setHoveredZoneIndex(null)}
-                  style={{
-                    display: "grid", gridTemplateColumns: "1fr 65px 65px 28px", gap: "6px", alignItems: "center", marginBottom: "8px",
-                    padding: "4px 6px", borderRadius: "8px", transition: "all 0.15s ease",
-                    background: hoveredZoneIndex === i ? "#FEF2F2" : "transparent",
-                    boxShadow: hoveredZoneIndex === i ? "0 0 0 1.5px #FCA5A5" : "none"
-                  }}
-                >
-                  <input
-                    type="text"
-                    value={zone.name}
-                    onChange={e => setNeighborhoodZones(prev => prev.map((z, idx) => idx === i ? { ...z, name: e.target.value } : z))}
-                    placeholder="Nome do Bairro"
-                    style={{ width: "100%", boxSizing: "border-box", padding: "6px 8px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem", outline: "none" }}
-                  />
-                  <input
-                    type="number"
-                    min="1"
-                    value={zone.time}
-                    onChange={e => setNeighborhoodZones(prev => prev.map((z, idx) => idx === i ? { ...z, time: parseInt(e.target.value) || 0 } : z))}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem", textAlign: "center", outline: "none" }}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={zone.fee}
-                    onChange={e => setNeighborhoodZones(prev => prev.map((z, idx) => idx === i ? { ...z, fee: parseFloat(e.target.value) || 0 } : z))}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "6px 4px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem", textAlign: "center", outline: "none" }}
-                  />
-                  <button onClick={() => setNeighborhoodZones(prev => prev.filter((_, idx) => idx !== i))}
-                    style={{ width: "28px", height: "28px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-              <button onClick={() => setNeighborhoodZones(prev => [...prev, { name: "", time: 40, fee: 7 }])}
-                style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1.5px dashed #CBD5E1", background: "#F8FAFC", color: "#64748B", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "16px", fontFamily: "inherit" }}>
-                <Plus size={14} /> Adicionar Bairro
-              </button>
+              {neighborhoodZones.map((zone, i) => {
+                const repasse = Number(zone.motoboyFee ?? zone.fee) || 0;
+                const sobra = Math.round(((Number(zone.fee) || 0) - repasse) * 100) / 100;
+                const mudar = (patch: any) => setNeighborhoodZones(prev => prev.map((z, idx) => idx === i ? { ...z, ...patch } : z));
+                return (
+                  <div
+                    key={i}
+                    onMouseEnter={() => setHoveredZoneIndex(i)}
+                    onMouseLeave={() => setHoveredZoneIndex(null)}
+                    style={{
+                      border: `1.5px solid ${hoveredZoneIndex === i ? "#DDD6FE" : "#E2E8F0"}`,
+                      background: hoveredZoneIndex === i ? "#F5F3FF" : "#FFFFFF",
+                      borderRadius: 12, padding: "10px 12px", marginBottom: 8, transition: "all .15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
+                      <input
+                        type="text"
+                        value={zone.name}
+                        onChange={e => mudar({ name: e.target.value })}
+                        placeholder="Nome do bairro"
+                        style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: "0.86rem", fontWeight: 700, color: "#0F172A", outline: "none" }}
+                      />
+                      <button
+                        onClick={() => setNeighborhoodZones(prev => prev.filter((_, idx) => idx !== i))}
+                        title="Remover este bairro"
+                        style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <label style={campoDaFaixa}>
+                        <span style={rotuloDoCampo}>Tempo (min)</span>
+                        <input type="number" min="1" value={zone.time}
+                          onChange={e => mudar({ time: parseInt(e.target.value) || 0 })}
+                          style={caixaDoCampo} />
+                      </label>
+                      <label style={campoDaFaixa}>
+                        <span style={rotuloDoCampo}>👤 Cliente paga</span>
+                        <input type="number" min="0" step="0.5" value={zone.fee}
+                          onChange={e => mudar({ fee: parseFloat(e.target.value) || 0 })}
+                          style={caixaDoCampo} />
+                      </label>
+                      {repasseSeparado && (
+                        <label style={campoDaFaixa}>
+                          <span style={{ ...rotuloDoCampo, color: "#C2410C" }}>🛵 Motoboy recebe</span>
+                          <input type="number" min="0" step="0.5" value={zone.motoboyFee ?? zone.fee}
+                            onChange={e => mudar({ motoboyFee: parseFloat(e.target.value) || 0 })}
+                            style={{ ...caixaDoCampo, border: "1.5px solid #FED7AA", background: "#FFF7ED", color: "#9A3412", fontWeight: 700 }} />
+                        </label>
+                      )}
+                    </div>
+
+                    {repasseSeparado && (
+                      <div style={{ marginTop: 8, fontSize: "0.73rem", fontWeight: 700, color: sobra < 0 ? "#B91C1C" : "#166534" }}>
+                        {sobra < 0
+                          ? `Você paga ${dinheiro(Math.abs(sobra))} do próprio bolso neste bairro`
+                          : `Sobra ${dinheiro(sobra)} para a loja neste bairro`}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
             </>
           )}
 
@@ -1072,26 +1156,81 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
 
 
-          <button onClick={handleSave} disabled={saving || !latLng}
-            style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "none",
-              background: !latLng ? "#E2E8F0" : currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#DC2626",
-              color: !latLng ? "#94A3B8" : "#fff",
-              fontWeight: 800, fontSize: "0.95rem", cursor: !latLng ? "not-allowed" : "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-              boxShadow: !latLng ? "none" : currentZoneType === "NEIGHBORHOOD" ? "0 4px 14px rgba(124, 58, 237, 0.3)" : "0 4px 14px rgba(220, 38, 38, 0.3)" }}>
-            {saving ? <Loader2 size={16} /> : <Check size={16} />}
-            {saving ? "Salvando..." : latLng ? (currentZoneType === "NEIGHBORHOOD" ? "Salvar Configurações (Modo Bairro)" : "Salvar Configurações (Modo Raio)") : "Selecione o local no mapa primeiro"}
-          </button>
+          </div>
 
-          {latLng && (
-            <div style={{ marginTop: "12px", padding: "8px 12px", background: "#F0FDF4", borderRadius: "8px", fontSize: "0.72rem", color: "#15803D" }}>
-              <strong>📍 Coordenadas:</strong> {latLng.lat.toFixed(5)}, {latLng.lng.toFixed(5)}<br />
-              <span style={{ color: "#64748B" }}>Usado para clima e raio de entrega automaticamente.</span>
-            </div>
-          )}
-        </div>
+          <div className="fh-painel-rodape">
+            {!latLng && (
+              <p style={{ margin: "0 0 8px", fontSize: "0.74rem", color: "#B91C1C", lineHeight: 1.4 }}>
+                Escolha o local da loja no mapa (busque o endereço acima) para poder salvar.
+              </p>
+            )}
+            {metodoAtivo === "NEIGHBORHOOD" ? (
+              <button onClick={() => setNeighborhoodZones(prev => [...prev, { name: "", time: 40, fee: 7 }])} className="fh-add-principal">
+                <Plus size={15} /> Adicionar bairro
+              </button>
+            ) : (
+              <button onClick={addZone} className="fh-add-principal">
+                <Plus size={15} /> Adicionar faixa
+              </button>
+            )}
+          </div>
+        </aside>
       </div>
       <style jsx global>{`
+        /* ── MAPA ABERTO COM PAINEL FLUTUANTE ─────────────────────────────
+           O mapa ocupa a área toda e o painel flutua por cima, à direita. No
+           celular o painel desce para baixo do mapa: painel flutuante em tela
+           estreita cobriria o mapa inteiro, que é o que a tela existe para
+           mostrar. */
+        .fh-entrega-area {
+          position: relative;
+          border-radius: 16px;
+          overflow: hidden;
+          border: 2px solid #E2E8F0;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        .fh-entrega-mapa { width: 100%; height: min(78vh, 880px); min-height: 580px; }
+        .fh-entrega-painel {
+          position: absolute;
+          top: 14px; right: 14px; bottom: 14px;
+          width: 402px;
+          display: flex;
+          flex-direction: column;
+          background: #fff;
+          border-radius: 14px;
+          box-shadow: 0 12px 44px rgba(15,23,42,0.24);
+          overflow: hidden;
+          /* Acima dos controles do Leaflet, que ficam em 1000. */
+          z-index: 1100;
+        }
+        .fh-painel-topo {
+          display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          padding: 12px 14px; border-bottom: 1px solid #F1F5F9; background: #fff; flex-shrink: 0;
+        }
+        .fh-painel-topo b { display: block; font-size: 0.95rem; font-weight: 800; color: #0F172A; }
+        .fh-painel-topo span { display: block; font-size: 0.74rem; color: #64748B; margin-top: 1px; }
+        .fh-painel-corpo { flex: 1; overflow-y: auto; padding: 14px; }
+        .fh-painel-rodape { padding: 10px 14px 12px; border-top: 1px solid #F1F5F9; background: #fff; flex-shrink: 0; }
+        .fh-add-principal {
+          width: 100%; padding: 11px; border-radius: 10px; border: none; cursor: pointer;
+          background: #DC2626; color: #fff; font-weight: 800; font-size: 0.88rem;
+          display: flex; align-items: center; justify-content: center; gap: 7px;
+          font-family: inherit; box-shadow: 0 4px 14px rgba(220,38,38,0.28);
+        }
+        .fh-add-principal:hover { background: #B91C1C; }
+        @media (max-width: 1080px) {
+          .fh-entrega-area { border: none; box-shadow: none; border-radius: 0; overflow: visible; }
+          .fh-entrega-mapa {
+            height: 340px; min-height: 0; border-radius: 14px; overflow: hidden;
+            border: 2px solid #E2E8F0; box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+          }
+          .fh-entrega-painel {
+            position: static; width: auto; margin-top: 12px;
+            border: 1.5px solid #E2E8F0; box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+          }
+          .fh-painel-corpo { overflow-y: visible; }
+        }
+
         .custom-map-tooltip {
           background: rgba(15, 23, 42, 0.9) !important;
           border: 1px solid rgba(255, 255, 255, 0.25) !important;

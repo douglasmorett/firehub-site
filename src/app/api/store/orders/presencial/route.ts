@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const data = await req.json();
-  const { customerName, customerPhone, customerAddress, deliveryType, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change } = data;
+  const { customerName, customerPhone, customerAddress, deliveryType, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change, discountTotal, discountMerchant } = data;
   let paymentMethod: string = data.paymentMethod;
 
   // ── PAGAMENTO DIVIDIDO ──────────────────────────────────────────────────
@@ -84,6 +84,18 @@ export async function POST(req: Request) {
       employeeName: employeeName || null,
       notes: notes || "",
       totalAmount: totalAmount || 0,
+      // ── DESCONTO DADO NO BALCÃO/MESA ─────────────────────────────────
+      //
+      // Fica REGISTRADO, não só abatido do total: a mensalidade é sobre o
+      // bruto do pedido (lib/billing.ts, faturamentoBruto = totalAmount +
+      // discountTotal) e, sem gravar, o desconto sumia do total e encolhia a
+      // base de cobrança junto. O motivo vai na observação, que sai impressa.
+      ...(Number(discountTotal) > 0
+        ? {
+            discountTotal: Math.round(Number(discountTotal) * 100) / 100,
+            discountMerchant: Math.round(Number(discountMerchant ?? discountTotal) * 100) / 100,
+          }
+        : {}),
       deliveryFee: deliveryFee || 0,
       status: "ACEITO",
       source: "PRESENCIAL",

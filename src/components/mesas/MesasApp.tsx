@@ -9,6 +9,10 @@ import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
 import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
+import {
+  MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
+  type DescontoManual,
+} from "@/lib/desconto-manual";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface TableItem {
@@ -376,6 +380,10 @@ export default function MesasApp({
   const taxaSalvaRef = useRef(10);
   const [useServiceFee, setUseServiceFee] = useState(true);
   const [waiterTip, setWaiterTip] = useState(0);
+  // Desconto da mesa: porcentagem ou valor, com motivo. O motivo é o que
+  // explica o furo no fechamento do caixa no fim do dia.
+  const [desconto, setDesconto] = useState<DescontoManual>(SEM_DESCONTO);
+  const [mostrarDesconto, setMostrarDesconto] = useState(false);
 
   // New table
   const [newTableNumber, setNewTableNumber] = useState("");
@@ -607,7 +615,7 @@ export default function MesasApp({
       // A taxa e a gorjeta vão na primeira busca também: sem elas o modal
       // abriria mostrando um total sem taxa e se corrigiria meio segundo
       // depois — tempo suficiente para o garçom ler o número errado em voz alta.
-      const res = await chamar(`/api/store/table-sessions/${sessionId}/conta?taxa=${taxa}&gorjeta=${gorjeta}`);
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/conta?taxa=${taxa}&gorjeta=${gorjeta}${paramsDoDesconto()}`);
       if (res.ok) setConta(await res.json());
     } catch { /* o modal mostra o total simples se a conta não vier */ } finally {
       setCarregandoConta(false);
@@ -916,7 +924,9 @@ export default function MesasApp({
           // junto só cobre a mesa liberada sem consumo nenhum.
           paymentMethods: pagamentosDaMesa,
           serviceFeePercent: useServiceFee ? serviceFee : 0,
-          waiterTip
+          waiterTip,
+          // O servidor recalcula do tipo e do valor — nunca aceita o número pronto.
+          desconto: descontoDaMesa > 0 ? desconto : null
         }),
       });
       if (res.ok) {
@@ -1203,13 +1213,24 @@ export default function MesasApp({
     .filter((o) => o.status !== "CANCELADO" && o.status !== "CANCELED" && o.status !== "CANCELLED")
     .reduce((s, o) => s + o.totalAmount, 0) || selectedTable?.openSession?.totalAmount || 0;
 
+  /** O desconto na querystring da conta por pessoa — a mesma regra do servidor. */
+  const paramsDoDesconto = () =>
+    Number(desconto.valor) > 0
+      ? `&descontoTipo=${desconto.tipo}&descontoValor=${desconto.valor}&descontoMotivo=${encodeURIComponent(desconto.motivo || "")}`
+      : "";
+
   // ─── Fechamento ───────────────────────────────────────────────────────────
   // O consumo vem da conta do servidor quando ela já chegou. É o mesmo número
   // que o fechamento vai usar para validar — inclusive descontando pedidos
   // cancelados, que o total da comanda ainda soma.
   const consumoFechamento = conta?.consumo ?? sessionTotal;
-  const taxaFechamento = useServiceFee ? consumoFechamento * serviceFee / 100 : 0;
-  const totalFechamento = consumoFechamento + taxaFechamento + (Number(waiterTip) || 0);
+  // Desconto dado na mesa. Sai do consumo ANTES da taxa de serviço, que é
+  // sobre o que a mesa realmente paga pelos itens. O servidor recalcula do
+  // tipo e do valor no fechamento — aqui é só o espelho para o garçom ver.
+  const descontoDaMesa = valorDoDesconto(desconto, consumoFechamento);
+  const consumoCobrado = Math.max(0, consumoFechamento - descontoDaMesa);
+  const taxaFechamento = useServiceFee ? consumoCobrado * serviceFee / 100 : 0;
+  const totalFechamento = consumoCobrado + taxaFechamento + (Number(waiterTip) || 0);
 
   // O placar sai do que está GRAVADO, não do que está digitado na tela. É a
   // mesma lista que o servidor confere no fechamento, então a tela nunca
@@ -1239,7 +1260,7 @@ export default function MesasApp({
     if (!showCloseModal || !sessionId) return;
     const t = setTimeout(() => {
       const taxa = useServiceFee ? serviceFee : 0;
-      chamar(`/api/store/table-sessions/${sessionId}/conta?taxa=${taxa}&gorjeta=${Number(waiterTip) || 0}`)
+      chamar(`/api/store/table-sessions/${sessionId}/conta?taxa=${taxa}&gorjeta=${Number(waiterTip) || 0}${paramsDoDesconto()}`)
         .then(r => (r.ok ? r.json() : null))
         .then(d => { if (d) setConta(d); })
         .catch(() => { /* mantém a conta anterior */ });
@@ -2432,6 +2453,70 @@ export default function MesasApp({
                   <span>Consumo</span>
                   <span style={{ fontWeight: 700 }}>{fmt(consumoFechamento)}</span>
                 </div>
+
+                {/* ── DESCONTO DA MESA ──────────────────────────────────
+                    Porcentagem ou valor, com motivo. Entra antes da taxa de
+                    serviço e é rateado entre as pessoas na proporção do que
+                    cada uma consumiu — é assim que a mesa entende "10% pra
+                    gente". Sem motivo, vira furo de caixa sem explicação. */}
+                {!mostrarDesconto && descontoDaMesa === 0 ? (
+                  <button type="button" onClick={() => setMostrarDesconto(true)}
+                    style={{ width: "100%", padding: "7px", borderRadius: 9, border: "1.5px dashed #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 8 }}>
+                    🏷️ Dar desconto
+                  </button>
+                ) : (
+                  <div style={{ border: "1.5px solid #FED7AA", background: "#FFFBF5", borderRadius: 11, padding: "9px 10px", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+                      <b style={{ fontSize: 13, color: "#9A3412" }}>🏷️ Desconto</b>
+                      <button type="button" onClick={() => { setDesconto(SEM_DESCONTO); setMostrarDesconto(false); }}
+                        style={{ marginLeft: "auto", background: "none", border: "none", color: "#94A3B8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+                        remover
+                      </button>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 7 }}>
+                      {([{ t: "percent" as const, r: "%" }, { t: "valor" as const, r: "R$" }]).map(op => (
+                        <button key={op.t} type="button" onClick={() => setDesconto(d => ({ ...d, tipo: op.t }))}
+                          style={{
+                            padding: "7px 14px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
+                            border: desconto.tipo === op.t ? "2px solid #C2410C" : "1.5px solid #E2E8F0",
+                            background: desconto.tipo === op.t ? "#FFF7ED" : "#fff",
+                            color: desconto.tipo === op.t ? "#9A3412" : "#64748B", fontWeight: 800, fontSize: 14,
+                          }}>
+                          {op.r}
+                        </button>
+                      ))}
+                      <input type="number" min="0" step="0.5" inputMode="decimal"
+                        placeholder={desconto.tipo === "percent" ? "10" : "5,00"}
+                        value={desconto.valor === 0 ? "" : desconto.valor}
+                        onChange={e => setDesconto(d => ({ ...d, valor: parseFloat(e.target.value) || 0 }))}
+                        style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 9, border: "1.5px solid #FED7AA", background: "#fff", fontSize: 15, fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }} />
+                    </div>
+                    <input placeholder="Por que o desconto? (sai na conta)"
+                      value={desconto.motivo || ""}
+                      onChange={e => setDesconto(d => ({ ...d, motivo: e.target.value.slice(0, 60) }))}
+                      style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 9, border: "1.5px solid #E2E8F0", fontSize: 13, outline: "none", fontFamily: "inherit", marginBottom: 6 }} />
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                      {MOTIVOS_COMUNS.map(m => (
+                        <button key={m} type="button" onClick={() => setDesconto(d => ({ ...d, motivo: m }))}
+                          style={{ padding: "4px 9px", borderRadius: 999, border: "1px solid #E2E8F0", background: desconto.motivo === m ? "#FFF7ED" : "#fff", color: desconto.motivo === m ? "#9A3412" : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    {desconto.valor > 0 && problemaDoDesconto(desconto, consumoFechamento) && (
+                      <p style={{ margin: "7px 0 0", fontSize: 12, color: "#B91C1C", fontWeight: 700 }}>
+                        {problemaDoDesconto(desconto, consumoFechamento)}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {descontoDaMesa > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 8, color: "#C2410C", fontWeight: 800 }}>
+                    <span>Desconto{desconto.motivo ? ` (${desconto.motivo})` : ""}</span>
+                    <span>- {fmt(descontoDaMesa)}</span>
+                  </div>
+                )}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, marginBottom: 8, cursor: "pointer" }}>
                   <input type="checkbox" checked={useServiceFee} onChange={e => setUseServiceFee(e.target.checked)} style={{ accentColor: "#7C3AED", width: 18, height: 18 }} />
                   Taxa de serviço

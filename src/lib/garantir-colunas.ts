@@ -43,6 +43,8 @@ const INSTRUCOES = [
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceSalao" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceDelivery" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceTotem" DOUBLE PRECISION`,
+  // Trilha Premiada: o prêmio que o pedido resgatou (lib/trilha-premiada.ts).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "trilhaPremio" JSONB`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -54,6 +56,7 @@ const ESPERADAS = [
   "ComboGroupItem.additionalPriceSalao",
   "ComboGroupItem.additionalPriceDelivery",
   "ComboGroupItem.additionalPriceTotem",
+  "CustomerOrder.trilhaPremio",
 ];
 
 /**
@@ -122,12 +125,18 @@ export async function garantirColunasDePreco(): Promise<void> {
         console.log(`[Boot] ${carimbados} complemento(s) antigo(s) carimbados com apenasEmCombo.`);
       }
 
+      // A lista de tabelas/colunas daqui tem que acompanhar ESPERADAS. Quando
+      // `CustomerOrder.trilhaPremio` entrou lá e não aqui, a consulta nunca
+      // olhava para a tabela dela: o boot gritava "coluna ausente mesmo após o
+      // ALTER" a cada partida, com a coluna existindo. Alarme que grita à toa é
+      // alarme que ninguém lê no dia em que a coluna faltar de verdade.
       const rows = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
-        WHERE table_name IN ('MenuProduct', 'ComboGroupItem')
+        WHERE table_name IN ('MenuProduct', 'ComboGroupItem', 'CustomerOrder')
           AND column_name IN (
             'priceSalao', 'priceDelivery', 'priceTotem', 'apenasEmCombo',
-            'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem'
+            'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem',
+            'trilhaPremio'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));
