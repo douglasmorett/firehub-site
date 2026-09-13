@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { telefoneDeVerdade } from "@/lib/telefone";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { validarDesconto, detalheDoDesconto } from "@/lib/desconto-manual";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -38,6 +39,24 @@ export async function POST(req: Request) {
   }
 
   if (!items || items.length === 0) return NextResponse.json({ error: "Nenhum item informado" }, { status: 400 });
+
+  // ── DESCONTO DA LOJA, COM MOTIVO ────────────────────────────────────────
+  //
+  // O valor é refeito aqui sobre o subtotal dos itens (não sobre o total que a
+  // tela mandou, que já vem descontado e pode ter taxa de vale): 10% é 10% do
+  // que foi pedido. Sem motivo não grava — desconto sem explicação é dinheiro
+  // que some do caixa. Vai para os campos que o resto já sabe ler:
+  // `discountTotal` + `discountMerchant` (a loja banca: o caixa não soma de
+  // volta) e `discountDetails`, cujo `description` o painel mostra no pedido.
+  const subtotalDosItens =
+    Math.round((items as any[]).reduce((s, i) => s + (Number(i?.price) || 0) * (Number(i?.quantity) || 0), 0) * 100) / 100;
+  const desconto = validarDesconto({
+    base: subtotalDosItens,
+    tipo: data.discount?.tipo,
+    valor: data.discount?.valor,
+    motivo: data.discount?.motivo,
+  });
+  if (!desconto.ok) return NextResponse.json({ error: desconto.erro }, { status: 400 });
 
   const dbUser = await prisma.user.findUnique({ where: { email: session.user.email! }, select: { id: true, ownerId: true } });
   if (!dbUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -85,6 +104,23 @@ export async function POST(req: Request) {
       notes: notes || "",
       totalAmount: totalAmount || 0,
       deliveryFee: deliveryFee || 0,
+      ...(desconto.semDesconto
+        ? {}
+        : {
+            discountTotal: desconto.valor,
+            discountMerchant: desconto.valor,
+            discountDetails: [
+              detalheDoDesconto({
+                alvo: "PEDIDO",
+                tipo: desconto.tipo,
+                informado: desconto.informado,
+                valor: desconto.valor,
+                motivo: desconto.motivo,
+                // Nome, nunca o e-mail (login do painel), como em lib/garcom-auth.ts.
+                por: (session.user.name || "").trim() || "painel",
+              }),
+            ] as any,
+          }),
       status: "ACEITO",
       source: "PRESENCIAL",
       items: {

@@ -752,6 +752,16 @@ const INSTRUCOES_MESA = [
   `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "closedByKind" TEXT`,
   `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "closedByName" TEXT`,
 
+  // Desconto da loja na mesa, com motivo (lib/desconto-manual.ts). A conta, o
+  // cupom e o fechamento leem a sessão inteira: sem as colunas, abrir a conta
+  // de qualquer mesa daria 500.
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "discountType" TEXT`,
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "discountValue" DOUBLE PRECISION`,
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "discountReason" TEXT`,
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "discountBy" TEXT`,
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "discountAt" TIMESTAMP(3)`,
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "discountTotal" DOUBLE PRECISION`,
+
   // Impressão que não nasce de pedido — hoje, a conta da mesa.
   `CREATE TABLE IF NOT EXISTS "PrintRequest" (
      "id" TEXT NOT NULL,

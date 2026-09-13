@@ -22,6 +22,7 @@
  */
 
 import { parseComboSelections } from "./parse-combo";
+import { valorDoDesconto, rotuloDoDesconto, type TipoDeDesconto } from "./desconto-manual";
 
 const emCentavos = (v: number) => Math.round((Number(v) || 0) * 100);
 const emReais = (c: number) => Math.round(c) / 100;
@@ -65,6 +66,19 @@ export type MesaParaConta = {
   table: { number: number; label: string | null };
   orders: PedidoDaMesaParaConta[];
   waiterTip: number | null;
+  /** Desconto da loja na mesa (rota desconto). Ausente = sem desconto. */
+  discountType?: string | null;
+  discountValue?: number | null;
+  discountReason?: string | null;
+};
+
+/** O desconto da mesa como a conta mostra. `valor` é o que sai, em reais. */
+export type DescontoDaConta = {
+  tipo: TipoDeDesconto | null;
+  informado: number;
+  valor: number;
+  motivo: string | null;
+  rotulo: string | null;
 };
 
 export type PessoaDaMesa = { id: string; name: string };
@@ -76,6 +90,8 @@ export type ContaDaMesa = {
   consumo: number;
   taxaServico: { percentual: number; valor: number };
   gorjeta: number;
+  /** Desconto da loja. Sai DEPOIS da taxa: a taxa de serviço é sobre o consumo. */
+  desconto: DescontoDaConta;
   total: number;
   itensDaMesa: { valor: number; itens: LinhaDaConta[] };
   pessoas: {
@@ -84,6 +100,8 @@ export type ContaDaMesa = {
     consumo: number;
     parteDaMesa: number;
     taxaEGorjeta: number;
+    /** A parte desta pessoa no desconto da mesa, na proporção do que consumiu. */
+    desconto: number;
     aPagar: number;
     itens: LinhaDaConta[];
   }[];
@@ -156,19 +174,48 @@ export function calcularContaDaMesa(
   const taxaCentavos = taxaPct > 0 ? Math.round((consumoTotal * taxaPct) / 100) : 0;
   const gorjetaCentavos =
     gorjetaReais !== null ? Math.max(0, emCentavos(gorjetaReais)) : emCentavos(mesa.waiterTip || 0);
-  const totalCentavos = consumoTotal + taxaCentavos + gorjetaCentavos;
+
+  // ── DESCONTO DA LOJA ────────────────────────────────────────────────────
+  // Sobre o CONSUMO, e depois da taxa: a taxa de serviço (e a comissão do
+  // garçom, que sai dela) continua sobre o que foi consumido — o desconto é
+  // cortesia da casa, não do garçom. Percentual é recalculado aqui a cada
+  // conta, então acompanha o pedido que chegar depois de dado o desconto.
+  const tipoDoDesconto: TipoDeDesconto | null =
+    mesa.discountType === "PERCENTUAL" ? "PERCENTUAL" : mesa.discountType === "VALOR" ? "VALOR" : null;
+  const informadoDoDesconto = Number(mesa.discountValue) || 0;
+  const descontoCentavos =
+    tipoDoDesconto && informadoDoDesconto > 0
+      ? emCentavos(valorDoDesconto({ base: emReais(consumoTotal), tipo: tipoDoDesconto, valor: informadoDoDesconto }))
+      : 0;
+  const motivoDoDesconto = descontoCentavos > 0 ? String(mesa.discountReason || "").trim() || null : null;
+
+  const totalCentavos = consumoTotal + taxaCentavos + gorjetaCentavos - descontoCentavos;
 
   // Rateio do que é da mesa e dos acréscimos
   const quantas = pessoas.length;
+  // Parte igual do que é da mesa
+  const parteDaMesaCentavos = quantas > 0 ? Math.floor(daMesaCentavos / quantas) : 0;
+  // O desconto é rateado sobre o que cada um consumiu INCLUINDO a parte dele no
+  // que é da mesa. Proporcional só ao consumo próprio, o desconto da porção
+  // dividida sobrava inteiro para a primeira pessoa — com 100% de desconto, ela
+  // ficava devendo um valor negativo (medido no teste da conta).
+  const somaDoConsumoDasPessoas = pessoas.reduce(
+    (s, p) => s + (porPessoa.get(p.id)?.centavos || 0) + parteDaMesaCentavos,
+    0
+  );
   const divisao = pessoas.map((p) => {
     const dados = porPessoa.get(p.id)!;
-
-    // Parte igual do que é da mesa
-    const parteDaMesa = quantas > 0 ? Math.floor(daMesaCentavos / quantas) : 0;
+    const parteDaMesa = parteDaMesaCentavos;
 
     // Taxa e gorjeta proporcionais ao consumo próprio
     const base = consumoTotal > 0 ? dados.centavos / consumoTotal : 0;
     const parteExtra = Math.floor((taxaCentavos + gorjetaCentavos) * base);
+
+    const consumoDaPessoa = dados.centavos + parteDaMesa;
+    const parteDoDesconto =
+      somaDoConsumoDasPessoas > 0
+        ? Math.min(consumoDaPessoa, Math.floor((descontoCentavos * consumoDaPessoa) / somaDoConsumoDasPessoas))
+        : 0;
 
     return {
       id: p.id,
@@ -176,22 +223,43 @@ export function calcularContaDaMesa(
       consumo: emReais(dados.centavos),
       parteDaMesa: emReais(parteDaMesa),
       taxaEGorjeta: emReais(parteExtra),
-      totalCentavos: dados.centavos + parteDaMesa + parteExtra,
+      descontoCentavos: parteDoDesconto,
+      totalCentavos: dados.centavos + parteDaMesa + parteExtra - parteDoDesconto,
       itens: dados.itens,
     };
   });
 
   // O que sobrou do arredondamento vai para a primeira pessoa, senão a soma das
-  // partes nunca fecha com o total e a mesa não fecha.
+  // partes nunca fecha com o total e a mesa não fecha. Sem desconto a sobra é
+  // sempre positiva (tudo acima é arredondado para baixo). Com desconto ela
+  // pode ser negativa em centavos: aí sai de quem ainda tem valor a pagar, e
+  // entra no desconto dessa pessoa — ninguém fica com conta negativa.
   const somaDasPartes = divisao.reduce((s, d) => s + d.totalCentavos, 0);
-  const sobra = totalCentavos - somaDasPartes;
-  if (divisao.length > 0 && sobra !== 0) divisao[0].totalCentavos += sobra;
+  let sobra = totalCentavos - somaDasPartes;
+  if (divisao.length > 0 && sobra > 0) divisao[0].totalCentavos += sobra;
+  for (const d of divisao) {
+    if (sobra >= 0) break;
+    const tira = Math.min(Math.max(0, d.totalCentavos), -sobra);
+    d.totalCentavos -= tira;
+    d.descontoCentavos += tira;
+    sobra += tira;
+  }
 
   return {
     mesa: { numero: mesa.table.number, nome: mesa.table.label },
     consumo: emReais(consumoTotal),
     taxaServico: { percentual: taxaPct, valor: emReais(taxaCentavos) },
     gorjeta: emReais(gorjetaCentavos),
+    desconto: {
+      tipo: descontoCentavos > 0 ? tipoDoDesconto : null,
+      informado: descontoCentavos > 0 ? informadoDoDesconto : 0,
+      valor: emReais(descontoCentavos),
+      motivo: motivoDoDesconto,
+      rotulo:
+        descontoCentavos > 0 && tipoDoDesconto
+          ? rotuloDoDesconto({ tipo: tipoDoDesconto, informado: informadoDoDesconto, motivo: motivoDoDesconto || "sem motivo" })
+          : null,
+    },
     total: emReais(totalCentavos),
     itensDaMesa: { valor: emReais(daMesaCentavos), itens: itensDaMesa },
     pessoas: divisao.map((d) => ({
@@ -200,6 +268,7 @@ export function calcularContaDaMesa(
       consumo: d.consumo,
       parteDaMesa: d.parteDaMesa,
       taxaEGorjeta: d.taxaEGorjeta,
+      desconto: emReais(d.descontoCentavos),
       aPagar: emReais(d.totalCentavos),
       itens: d.itens,
     })),
@@ -269,6 +338,12 @@ export function montarCupomDaConta(
   }
   if (conta.gorjeta > 0) {
     items.push({ name: "Gorjeta", qty: 1, price: conta.gorjeta });
+  }
+  // O desconto é LINHA negativa pelo mesmo motivo da taxa: o cupom soma as
+  // linhas para o subtotal, e assim subtotal e total continuam batendo — com o
+  // motivo escrito no papel que o cliente confere.
+  if (conta.desconto.valor > 0) {
+    items.push({ name: (conta.desconto.rotulo || "Desconto").slice(0, 48), qty: 1, price: -conta.desconto.valor });
   }
 
   // O cupom soma unitário × quantidade para montar o subtotal e imprime

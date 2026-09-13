@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
+import { valorDoDesconto, ratearDesconto, detalheDoDesconto, type TipoDeDesconto } from "@/lib/desconto-manual";
 
 export async function POST(
   req: NextRequest,
@@ -50,7 +51,19 @@ export async function POST(
     }
     const serviceFee = taxaPct ? (subtotal * taxaPct) / 100 : 0;
     const tipAmount = gorjeta;
-    const totalAmount = subtotal + serviceFee + tipAmount;
+
+    // ── DESCONTO DA LOJA ──────────────────────────────────────────────────
+    // A mesma conta de lib/conta-da-mesa.ts: sobre o consumo, depois da taxa
+    // (a comissão do garçom sai da taxa cheia). O percentual é recalculado
+    // agora, com os pedidos que a mesa tem na hora de fechar.
+    const tipoDoDesconto: TipoDeDesconto | null =
+      tableSession.discountType === "PERCENTUAL" ? "PERCENTUAL" : tableSession.discountType === "VALOR" ? "VALOR" : null;
+    const descontoDaMesa =
+      tipoDoDesconto && (Number(tableSession.discountValue) || 0) > 0
+        ? valorDoDesconto({ base: subtotal, tipo: tipoDoDesconto, valor: Number(tableSession.discountValue) })
+        : 0;
+
+    const totalAmount = subtotal + serviceFee + tipAmount - descontoDaMesa;
 
     // ── A SOMA DOS PAGAMENTOS TEM QUE FECHAR COM A CONTA ──────────────────
     // O comentário antigo dizia "Validate payment methods total", mas nada era
@@ -111,6 +124,44 @@ export async function POST(
         });
       }
 
+      // 1b. O desconto da mesa desce para os pedidos. Relatório, DRE e
+      // faturamento somam `totalAmount` dos pedidos: se ele ficasse só na
+      // sessão, a loja teria recebido R$ 180 e o relatório diria R$ 200.
+      // `discountMerchant` = a loja bancou (o caixa não soma de volta), e o
+      // motivo vai em `discountDetails`, que o painel mostra no pedido.
+      if (descontoDaMesa > 0 && tipoDoDesconto) {
+        const partes = ratearDesconto(
+          pedidosValidos.map((o) => ({ id: o.id, totalAmount: Number(o.totalAmount) || 0 })),
+          descontoDaMesa
+        );
+        for (const parte of partes) {
+          if (parte.desconto <= 0) continue;
+          const pedido = pedidosValidos.find((o) => o.id === parte.id)!;
+          const detalhesAnteriores = Array.isArray(pedido.discountDetails) ? (pedido.discountDetails as any[]) : [];
+          await tx.customerOrder.update({
+            where: { id: parte.id },
+            data: {
+              totalAmount: parte.novoTotal,
+              discountTotal: Math.round(((Number(pedido.discountTotal) || 0) + parte.desconto) * 100) / 100,
+              discountMerchant: Math.round(((Number(pedido.discountMerchant) || 0) + parte.desconto) * 100) / 100,
+              discountDetails: [
+                ...detalhesAnteriores,
+                detalheDoDesconto({
+                  alvo: "MESA",
+                  tipo: tipoDoDesconto,
+                  informado: Number(tableSession.discountValue) || 0,
+                  valor: parte.desconto,
+                  motivo: tableSession.discountReason || "sem motivo",
+                  por: tableSession.discountBy,
+                  // Quando a loja deu o desconto, não a hora em que a mesa fechou.
+                  em: tableSession.discountAt ?? undefined,
+                }),
+              ] as any,
+            },
+          });
+        }
+      }
+
       // Calculate waiter commission if linked
       let waiterCommission = 0;
       if (tableSession.waiterId) {
@@ -128,6 +179,7 @@ export async function POST(
           closedByName: rotuloDoOperador(operador),
           totalPaid,
           serviceFee,
+          discountTotal: descontoDaMesa > 0 ? descontoDaMesa : null,
           waiterTip: tipAmount > 0 ? tipAmount : undefined,
           waiterCommission: waiterCommission > 0 ? waiterCommission : undefined,
           paymentMethods: pagamentosEfetivos.length > 0 ? (pagamentosEfetivos as any) : undefined

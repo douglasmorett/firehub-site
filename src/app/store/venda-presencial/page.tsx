@@ -3,8 +3,11 @@ import { useState, useEffect, useMemo } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
 import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
+import { validarDesconto, valorDoDesconto, lerNumero, type TipoDeDesconto } from "@/lib/desconto-manual";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
+/** Atalhos do motivo — o campo continua livre. */
+const MOTIVOS_DE_DESCONTO = ["Cliente fiel", "Pedido atrasou", "Cortesia da casa", "Item com problema"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 
 type CartItem = { product: any; qty: number; unitPrice?: number; notes?: string; comboSelections?: { name: string; quantity: number }[] };
@@ -46,6 +49,12 @@ export default function VendaPresencialPage() {
   const [dividir, setDividir] = useState(false);
   const [partes, setPartes] = useState<{ metodo: string; valor: string }[]>([]);
   const valorDaParte = (p: { valor: string }) => Math.round((parseFloat(String(p.valor).replace(",", ".")) || 0) * 100) / 100;
+  // Desconto que a loja dá na hora, em R$ ou %, com o motivo escrito — sem
+  // motivo o pedido não fecha (regra em lib/desconto-manual.ts).
+  const [descontoAberto, setDescontoAberto] = useState(false);
+  const [descontoTipo, setDescontoTipo] = useState<TipoDeDesconto>("VALOR");
+  const [descontoValor, setDescontoValor] = useState("");
+  const [descontoMotivo, setDescontoMotivo] = useState("");
   const [comboProduct, setComboProduct] = useState<any>(null);
   const [employeeAccountEnabled, setEmployeeAccountEnabled] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -182,8 +191,21 @@ export default function VendaPresencialPage() {
 
   const isVoucher = paymentMethod === "Voucher/Vale";
   const subtotal = cart.reduce((s, i) => s + (i.unitPrice ?? i.product.price) * i.qty, 0);
-  const voucherFee = isVoucher ? subtotal * (voucherRate / 100) : 0;
-  const total = subtotal + voucherFee;
+  // O desconto sai antes da taxa do vale: a operadora cobra sobre o que o
+  // cliente paga, e é esse valor que vai para o caixa.
+  const descontoConferido = descontoAberto
+    ? validarDesconto({ base: subtotal, tipo: descontoTipo, valor: descontoValor, motivo: descontoMotivo })
+    : ({ ok: true, semDesconto: true } as const);
+  const valorDesconto = descontoAberto ? valorDoDesconto({ base: subtotal, tipo: descontoTipo, valor: lerNumero(descontoValor) }) : 0;
+  const subtotalComDesconto = Math.round((subtotal - valorDesconto) * 100) / 100;
+  const voucherFee = isVoucher ? subtotalComDesconto * (voucherRate / 100) : 0;
+  const total = subtotalComDesconto + voucherFee;
+  const fecharDesconto = () => {
+    setDescontoAberto(false);
+    setDescontoTipo("VALOR");
+    setDescontoValor("");
+    setDescontoMotivo("");
+  };
   const somaPartes = Math.round(partes.reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
   const faltaDividir = Math.round((total - somaPartes) * 100) / 100;
   const parteDinheiro = Math.round(partes.filter(p => p.metodo === "Dinheiro").reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
@@ -251,6 +273,9 @@ export default function VendaPresencialPage() {
     if (paymentMethod === "Conta Funcionário" && !selectedEmployeeId) {
       return setMsg("❌ Selecione o funcionário responsável pela conta.");
     }
+    if (descontoAberto && !descontoConferido.ok) {
+      return setMsg("❌ " + descontoConferido.erro);
+    }
 
     if (dividir) {
       const validas = partes.filter(p => valorDaParte(p) > 0);
@@ -286,6 +311,10 @@ export default function VendaPresencialPage() {
       notes: `${notes || ""}${trocoDividido}`.trim(),
       totalAmount: total,
       deliveryFee: 0,
+      // O servidor recalcula o valor pelo subtotal dos itens e confere o motivo.
+      ...(descontoAberto && descontoConferido.ok && !descontoConferido.semDesconto
+        ? { discount: { tipo: descontoConferido.tipo, valor: descontoConferido.informado, motivo: descontoConferido.motivo } }
+        : {}),
       items: cart.map(i => ({
         menuProductId: i.product.id,
         quantity: i.qty,
@@ -303,6 +332,7 @@ export default function VendaPresencialPage() {
       setMsg("✅ Pedido registrado!");
       setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange("");
       if (dividir) ligarDivisao(false);
+      fecharDesconto();
     } else {
       const err = await res.json();
       setMsg("❌ " + (err.error || "Erro ao registrar pedido."));
@@ -642,12 +672,63 @@ export default function VendaPresencialPage() {
           <input placeholder="Observações do pedido (opcional)..." value={notes} onChange={e => setNotes(e.target.value)}
             style={{ width: "100%", marginBottom: 6, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem", outline: "none", fontFamily: "inherit" }} />
 
+          {/* Desconto da loja, com motivo obrigatório */}
+          {cart.length > 0 && !descontoAberto && (
+            <button type="button" onClick={() => setDescontoAberto(true)}
+              style={{ width: "100%", marginBottom: 6, padding: "6px 10px", borderRadius: 8, border: "1.5px dashed #86EFAC", background: "#fff", color: "#166534", fontSize: "0.8rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+              🏷️ Dar desconto
+            </button>
+          )}
+          {cart.length > 0 && descontoAberto && (
+            <div style={{ marginBottom: 6, background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 8, padding: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "#166534" }}>🏷️ Desconto</span>
+                <button type="button" onClick={fecharDesconto}
+                  style={{ padding: "2px 8px", borderRadius: 6, border: "none", background: "transparent", color: "#64748B", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}>
+                  tirar desconto
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                <div role="group" aria-label="Tipo de desconto" style={{ display: "flex", border: "1px solid #86EFAC", borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
+                  {(["VALOR", "PERCENTUAL"] as const).map(t => (
+                    <button key={t} type="button" onClick={() => setDescontoTipo(t)} aria-pressed={descontoTipo === t}
+                      style={{ padding: "5px 12px", border: "none", background: descontoTipo === t ? "#16A34A" : "#fff", color: descontoTipo === t ? "#fff" : "#166534", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}>
+                      {t === "VALOR" ? "R$" : "%"}
+                    </button>
+                  ))}
+                </div>
+                <input type="number" inputMode="decimal" step="0.01" min="0" aria-label="Valor do desconto"
+                  placeholder={descontoTipo === "VALOR" ? "0,00" : "10"} value={descontoValor} onChange={e => setDescontoValor(e.target.value)}
+                  style={{ flex: 1, minWidth: 0, padding: "5px 8px", borderRadius: 6, border: "1px solid #86EFAC", fontSize: "0.85rem", fontWeight: 700, fontFamily: "inherit" }} />
+              </div>
+              <input aria-label="Motivo do desconto" placeholder="Motivo do desconto (obrigatório)" maxLength={200}
+                value={descontoMotivo} onChange={e => setDescontoMotivo(e.target.value)}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #86EFAC", fontSize: "0.82rem", fontFamily: "inherit", boxSizing: "border-box" }} />
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                {MOTIVOS_DE_DESCONTO.map(m => (
+                  <button key={m} type="button" onClick={() => setDescontoMotivo(m)}
+                    style={{ padding: "3px 8px", borderRadius: 999, border: `1px solid ${descontoMotivo === m ? "#16A34A" : "#BBF7D0"}`, background: descontoMotivo === m ? "#DCFCE7" : "#fff", color: "#166534", fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {lerNumero(descontoValor) !== 0 && !descontoConferido.ok && (
+                <div role="alert" style={{ marginTop: 6, fontSize: "0.74rem", color: "#B91C1C", fontWeight: 700 }}>{descontoConferido.erro}</div>
+              )}
+            </div>
+          )}
+
           {/* Total */}
           {cart.length > 0 && (
             <div style={{ marginBottom: 6 }}>
-              {isVoucher && voucherRate > 0 && (
+              {(valorDesconto > 0 || (isVoucher && voucherRate > 0)) && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "#64748B", marginBottom: 2 }}>
                   <span>Subtotal</span><span>{fmt(subtotal)}</span>
+                </div>
+              )}
+              {valorDesconto > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "#15803D", fontWeight: 700, marginBottom: 2 }}>
+                  <span>Desconto{descontoTipo === "PERCENTUAL" ? ` ${lerNumero(descontoValor)}%` : ""}</span><span>− {fmt(valorDesconto)}</span>
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "1.05rem" }}>

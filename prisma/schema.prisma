@@ -879,6 +879,16 @@ model TableSession {
   /// módulo aberto ao garçom, o fechamento precisa ter dono.
   closedByKind    String?
   closedByName    String?
+  /// Desconto da loja na mesa, com motivo (lib/desconto-manual.ts). VALOR em
+  /// reais ou PERCENTUAL do consumo — o percentual acompanha pedido que chega
+  /// depois. Colunas garantidas no boot (garantir-colunas.ts, mesa).
+  discountType    String?
+  discountValue   Float?
+  discountReason  String?
+  discountBy      String?
+  discountAt      DateTime?
+  /// Quanto o desconto valeu no fechamento, em reais — espalhado nos pedidos.
+  discountTotal   Float?
   orders          CustomerOrder[]
   guests          TableGuest[]
   createdAt       DateTime        @default(now())
