@@ -63,6 +63,9 @@
     .radio { display: flex; align-items: flex-start; gap: 8px; font-size: .72rem; font-weight: 700; padding: 6px 0; cursor: pointer; line-height: 1.3; }
     .radio input[type=radio] { accent-color: #FF5722; margin-top: 2px; }
     .radio .mini { width: 44px; background: #1E293B; border: 1px solid #475569; color: #fff; border-radius: 6px; font-size: .74rem; text-align: center; padding: 2px 4px; font-weight: 800; }
+    .suporte { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: .65rem; padding: 8px 10px; border-radius: 10px; background: rgba(34,197,94,.12); border: 1px solid #22C55E; color: #BBF7D0; font-size: .72rem; text-decoration: none; }
+    .suporte:hover { background: rgba(34,197,94,.22); }
+    .suporte b { color: #4ADE80; }
     .btn-add { width: 100%; padding: 6px; border: 1px dashed #3B82F6; background: rgba(59,130,246,.1); color: #60A5FA; font-size: .7rem; font-weight: 800; border-radius: 8px; cursor: pointer; }
   </style>
 </head>
@@ -210,6 +213,13 @@
       <button class="link" id="btnSair" style="color:#EF4444">Sair</button>
     </div>
   </div>
+
+  <!-- SUPORTE: fora das telas de login e principal, para aparecer nas duas —
+       quem mais precisa de ajuda é quem ainda não conseguiu entrar. -->
+  <a class="suporte" href="https://wa.me/5522981118514?text=Ol%C3%A1!%20Preciso%20de%20ajuda%20com%20a%20extens%C3%A3o%20FireHub%20Prazos." target="_blank" rel="noopener">
+    <span>💬</span>
+    <span><b>Precisa de ajuda?</b> Chame nosso suporte no WhatsApp</span>
+  </a>
 
   <script src="popup.js"></script>
 </body>

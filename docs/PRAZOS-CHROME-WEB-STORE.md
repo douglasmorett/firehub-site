@@ -218,10 +218,14 @@ enviado continua certo quando a ficha for aprovada.
 
 ## Quando aprovar
 
-0. **Subir a v0.2.1** (`build/chrome-store-prazos/firehub-prazos-v0.2.1.zip`) como atualização normal: ela
-   traz o `ativar.js` que grava `data-fh-prazos` no `<html>` (a v0.2.0 em análise só faz o postMessage,
-   que se perde se chegar antes do listener da página) e os ícones em 16/48/128. O botão de upload fica
-   travado enquanto o status é "Revisão pendente" — por isso não foi trocado antes.
+> **v0.2.0 aprovada e publicada (não listada)** — conferido no painel em 12/09/2026.
+> **v0.2.2 enviada para análise em 12/09/2026**, com publicação automática ao aprovar. Ela junta a
+> 0.2.1 (o `ativar.js` que grava `data-fh-prazos` no `<html>`, porque o postMessage da 0.2.0 se perde
+> se chegar antes do listener da página, e os ícones em 16/48/128) com o botão "Precisa de ajuda?
+> Chame nosso suporte no WhatsApp" no popup, visível no login e na tela principal
+> (wa.me/5522981118514, o mesmo número das páginas do Prazos). Até ela ser aprovada, quem instala
+> recebe a 0.2.0 e pode ver "Falta instalar a extensão" com a extensão já ativada.
+
 1. Em `src/app/prazos/instalar/page.tsx`, apagar o `<details>` do arquivo — fica só o botão da loja.
 2. Conferir que `chromewebstore.google.com/detail/pkkcnkbkacfiojiapodplkbkmdhhnjag` abre e instala.
 3. Fazer uma compra real de R$ 1 e seguir os dois botões do e-mail até a extensão entrar sozinha.
