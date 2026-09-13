@@ -682,6 +682,11 @@ model CustomerOrder {
   pagarmePixExpiry DateTime?           // Expiração do PIX
   pagarmeMethod    String?             // pix | credit_card | debit_card | voucher
   paymentPaidAt    DateTime?           // Confirmação de pagamento
+  /// O prêmio da Trilha Premiada que ESTE pedido resgatou (lib/trilha-premiada.ts).
+  /// História, não estado: guarda qual parada, o que foi dado e quanto custou
+  /// à loja, para o relatório e para a conferência com o cliente depois. Quem
+  /// conta os passos são os pedidos; aqui só fica o que saiu da loja.
+  trilhaPremio     Json?
   cashbackEarned   Float?              // Cashback gerado neste pedido (R$)
   cashbackUsed     Float?              // Cashback resgatado neste pedido (R$)
   // === GATEWAY UNIFICADO (Mercado Pago / Celcoin) ===

@@ -11,6 +11,8 @@ import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, descreverVeredicto, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { Prisma } from "@prisma/client";
 import { cuponsComCampanha, ORIGEM_CUPOM_CAMPANHA, FONTES_QUE_NAO_SAO_SITE, digitosDoTelefone } from "@/lib/campanha-converter";
+import { premioDoCliente } from "@/lib/premio-no-pedido";
+import { efeitoDoPremio } from "@/lib/trilha-premiada";
 
 /**
  * Este telefone já fez pedido PELO SITE nesta loja? É a regra do "só no
@@ -372,6 +374,56 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── PRÊMIO DA TRILHA PREMIADA ────────────────────────────────────────
+    //
+    // Quem decide qual prêmio está valendo é o servidor, relendo os pedidos
+    // deste telefone (lib/premio-no-pedido.ts). O corpo da requisição só
+    // consegue DISPENSAR o prêmio, nunca criar um: esta rota é pública, e um
+    // prêmio que viesse do navegador seria um desconto digitado pelo cliente.
+    //
+    // O prêmio que não cabe no pedido (frete grátis numa retirada, produto que
+    // saiu do cardápio) não é consumido: continua esperando o próximo pedido.
+    let resgateDaTrilha: any = null;
+    if (body.dispensarPremioDaTrilha !== true) {
+      try {
+        const parada = await premioDoCliente(franchisee.id, franchisee.storeLoyalty, customerPhone);
+        if (parada) {
+          const produtoDoPremio = parada.tipo === "produto" && parada.produtoId
+            ? await prisma.menuProduct.findFirst({
+                where: { id: parada.produtoId, franchiseeId: franchisee.id },
+                select: { id: true, name: true, price: true, active: true },
+              })
+            : null;
+          const efeito = efeitoDoPremio(parada, {
+            subtotal: totalAmount,
+            taxa: fee,
+            // Mesmo padrão do `create` abaixo: sem deliveryType, é entrega.
+            entrega: (deliveryType || "DELIVERY") === "DELIVERY",
+            produto: produtoDoPremio,
+          });
+          if (efeito) {
+            if (efeito.zeraTaxa) fee = 0;
+            discount += efeito.descontoExtra;
+            if (efeito.produtoGratis) {
+              // Entra como ITEM do pedido com preço zero: a cozinha imprime e
+              // prepara o brinde, e o subtotal não se mexe.
+              orderItems.push({
+                menuProductId: efeito.produtoGratis.id,
+                quantity: 1,
+                price: 0,
+                notes: "Prêmio da Trilha Premiada",
+                comboSelections: null,
+              });
+            }
+            resgateDaTrilha = efeito.resgate;
+          }
+        }
+      } catch (e) {
+        // Prêmio é bônus: nunca pode impedir o pedido de entrar.
+        console.error("[customer-order] trilha premiada:", e);
+      }
+    }
+
     // Arredonda para centavos ANTES de gravar. Em JS 29.9*3 = 89.69999999999999,
     // e era esse número que ia para o banco (`totalAmount Float`) e daí cru como
     // `transaction_amount` para o gateway — que recusa moeda com mais de 2 casas.
@@ -386,6 +438,11 @@ export async function POST(req: Request) {
     }
     if (freeShippingNote) {
       orderNotes = `${orderNotes} ${freeShippingNote}`.trim();
+    }
+    if (resgateDaTrilha) {
+      // Sai na comanda: quem monta o pedido precisa ver o brinde, e o motoboy
+      // precisa saber por que a entrega está zerada.
+      orderNotes = `[Trilha Premiada: ${resgateDaTrilha.descricao}] ${orderNotes}`.trim();
     }
     if (notaDaArea) {
       orderNotes = `${orderNotes}${notaDaArea}`.trim();
@@ -425,6 +482,7 @@ export async function POST(req: Request) {
         // sobre o bruto do pedido (lib/billing.ts, faturamentoBruto), e sem
         // isto o desconto sumia do total e a base de cobrança encolhia junto.
         ...(discount > 0 ? { discountTotal: centavos(discount), discountMerchant: centavos(discount) } : {}),
+        ...(resgateDaTrilha ? { trilhaPremio: resgateDaTrilha } : {}),
         status: initialStatus,
         kdsStage: initialKdsStage,
         kdsProductionAt: initialKdsProductionAt,

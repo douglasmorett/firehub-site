@@ -43,6 +43,8 @@ const INSTRUCOES = [
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceSalao" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceDelivery" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceTotem" DOUBLE PRECISION`,
+  // Trilha Premiada: o prêmio que o pedido resgatou (lib/trilha-premiada.ts).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "trilhaPremio" JSONB`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -54,6 +56,7 @@ const ESPERADAS = [
   "ComboGroupItem.additionalPriceSalao",
   "ComboGroupItem.additionalPriceDelivery",
   "ComboGroupItem.additionalPriceTotem",
+  "CustomerOrder.trilhaPremio",
 ];
 
 /**
