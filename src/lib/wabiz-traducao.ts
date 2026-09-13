@@ -65,18 +65,49 @@ export function traduzirPagamento(pag: WabizPagamento | null | undefined, total:
   };
 }
 
-/** Borda, adicionais e "outros" (tipo de massa) de UMA parte, em texto e em lista. */
-function opcoesDaParte(parte: WabizParte) {
+type OpcaoDaParte = {
+  id: string;
+  /** Como sai na comanda, sem quantidade: "Borda Cheddar", "Esfiha Carne". */
+  nome: string;
+  quantidade: number;
+  preco: number;
+  /**
+   * A opção pertence à METADE (bacon só na metade Portuguesa) ou à pizza
+   * inteira (a borda, a Coca grátis do combo)? A Wabiz diz em `acceptPartition`.
+   * Sem o campo — os exemplos antigos da doc — vale "da metade", que era o
+   * comportamento anterior.
+   */
+  daMetade: boolean;
+};
+
+/** Borda, adicionais e "outros" (sabores do combo, bebida grátis) de UMA parte. */
+function opcoesDaParte(parte: WabizParte): OpcaoDaParte[] {
   const c = parte.customization;
-  const nomes: string[] = [];
-  const lista: Array<{ id: string; name: string; quantity: number; price: number }> = [];
-  const juntar = (rotulo: string | null, ops: Array<{ externalCode?: string | null; name?: string | null; price?: number | null }> | null | undefined) => {
+  const saida: OpcaoDaParte[] = [];
+  const juntar = (
+    rotulo: string | null,
+    ops: Array<{ externalCode?: string | null; name?: string | null; price?: number | null; acceptPartition?: boolean }> | null | undefined
+  ) => {
     for (const o of ops || []) {
       const nome = texto(o?.name);
       if (!nome) continue;
       const exibido = rotulo ? `${rotulo} ${nome}` : nome;
-      nomes.push(exibido);
-      lista.push({ id: texto(o?.externalCode) || nome, name: exibido, quantity: 1, price: dinheiro(o?.price) });
+      // ── Sabor repetido vem REPETIDO, sem quantidade ──────────────────────
+      // Medido no pedido real nº 4 (Combo 3 e "6 Esfihas"): 3 Esfihas Muçarela
+      // chegam como três opções iguais. Sem agrupar, a comanda listava o mesmo
+      // sabor três vezes e a cozinha tinha de contar.
+      const igual = saida.find((s) => s.nome === exibido);
+      if (igual) {
+        igual.quantidade += 1;
+        continue;
+      }
+      saida.push({
+        id: texto(o?.externalCode) || nome,
+        nome: exibido,
+        quantidade: 1,
+        preco: dinheiro(o?.price),
+        daMetade: o?.acceptPartition !== false,
+      });
     }
   };
   if (c?.edge) juntar("Borda", c.edge.options);
@@ -85,8 +116,10 @@ function opcoesDaParte(parte: WabizParte) {
   // comanda dizia só "Catupiry Original", que a cozinha lê como recheio.
   for (const g of c?.others || []) juntar(/borda/i.test(texto(g?.name)) ? "Borda" : null, g?.options);
   for (const g of c?.additionals || []) juntar(null, g?.options);
-  return { nomes, lista };
+  return saida;
 }
+
+const comQuantidade = (o: OpcaoDaParte) => (o.quantidade > 1 ? `${o.quantidade}x ${o.nome}` : o.nome);
 
 /**
  * A tradução pura: pedido da Wabiz → dados do CustomerOrder, sem tocar no banco.
@@ -122,11 +155,15 @@ export function traduzirPedidoWabiz(
       const opcoes: string[] = [];
       const selecoes: Array<{ id: string; name: string; quantity: number; price: number }> = [];
       partes.forEach((p, i) => {
-        const o = opcoesDaParte(p);
-        // Meio-a-meio: diz de qual metade é a borda/adicional, senão a cozinha erra.
-        const prefixo = frac > 1 ? `${nomesDasPartes[i]}: ` : "";
-        opcoes.push(...o.nomes.map((n) => prefixo + n));
-        selecoes.push(...o.lista.map((s) => ({ ...s, name: prefixo + s.name })));
+        for (const o of opcoesDaParte(p)) {
+          // Meio-a-meio: diz de qual metade é o adicional, senão a cozinha erra.
+          // Borda e bebida grátis são da pizza inteira (acceptPartition false):
+          // "Caipira: Coca Cola Zero" — como saía no pedido real nº 5 — mandava
+          // procurar uma Coca na metade da pizza.
+          const prefixo = frac > 1 && o.daMetade ? `${nomesDasPartes[i]}: ` : "";
+          opcoes.push(prefixo + comQuantidade(o));
+          selecoes.push({ id: o.id, name: prefixo + o.nome, quantity: o.quantidade, price: o.preco });
+        }
         if (texto(p.obs)) notasDeItem.push(`${frac > 1 ? nomesDasPartes[i] : nomeComTamanho}: ${texto(p.obs)}`);
       });
 
