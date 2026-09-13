@@ -589,58 +589,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         Defina onde fica sua loja no mapa e escolha a regra de cobrança da entrega.
       </p>
 
-      {/* ── MÉTODO DE COBRANÇA ──────────────────────────────────────────
-          Três métodos, cada um com uma linha dizendo o que é. Antes eram dois
-          cartões grandes e o "km percorrido" estava escondido num sub-seletor
-          dentro do modo raio — quem procurava por ele não achava, e quem não
-          procurava nem sabia que existia. */}
-      <div style={{ marginBottom: "1rem" }}>
-        <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-          Método de cobrança
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {METODOS_DE_COBRANCA.map((m) => {
-            const ativo = metodoAtivo === m.chave;
-            return (
-              <button
-                key={m.chave}
-                type="button"
-                onClick={() => setCurrentZoneType(m.chave)}
-                style={{
-                  display: "flex", alignItems: "flex-start", gap: 10, width: "100%", textAlign: "left",
-                  padding: "11px 13px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
-                  border: `2px solid ${ativo ? "#DC2626" : "#E2E8F0"}`,
-                  background: ativo ? "#FEF2F2" : "#FFFFFF",
-                  boxShadow: ativo ? "0 3px 12px rgba(220,38,38,0.10)" : "none",
-                  transition: "all .15s ease",
-                }}
-              >
-                <span style={{ fontSize: "1.1rem", lineHeight: 1.2, flexShrink: 0 }}>{m.emoji}</span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <b style={{ fontSize: "0.88rem", color: ativo ? "#991B1B" : "#1E293B" }}>{m.nome}</b>
-                    {m.recomendado && (
-                      <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#15803D", background: "#DCFCE7", borderRadius: 999, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                        Recomendado
-                      </span>
-                    )}
-                  </span>
-                  <span style={{ display: "block", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45, marginTop: 3 }}>
-                    {m.ajuda}
-                  </span>
-                </span>
-                {ativo && <Check size={16} style={{ color: "#DC2626", flexShrink: 0, marginTop: 3 }} />}
-              </button>
-            );
-          })}
-        </div>
-        <p style={{ margin: "8px 0 0", fontSize: "0.72rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
-          Faixa de distância e lista de bairros são cadastros diferentes: ao trocar entre eles, os valores
-          não são transferidos — confira a tabela antes de salvar.
-        </p>
-      </div>
-
-
       {msg && (
         <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "1rem",
           background: msg.startsWith("✅") ? "#f0fdf4" : msg.startsWith("⚠") ? "#fffbeb" : "#fef2f2",
@@ -710,12 +658,13 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         </button>
       </div>
 
-      {/* Map + Controls side by side */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: "1rem", alignItems: "start" }}>
-
-        {/* MAP */}
-        <div style={{ position: "relative", borderRadius: "16px", overflow: "hidden", border: "2px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
-          <div ref={mapRef} style={{ width: "100%", height: "420px" }} />
+      {/* ── MAPA ABERTO COM O PAINEL FLUTUANDO ───────────────────────────
+          O desenho que o lojista já conhece do iFood. O mapa espremido numa
+          coluna de 420px não mostrava a área de entrega inteira, que é
+          justamente o que esta tela existe para mostrar. */}
+      <div className="fh-entrega-area">
+        <div className="fh-entrega-mapa">
+          <div ref={mapRef} style={{ width: "100%", height: "100%" }} />
 
           {/* Confirm button & address preview overlay */}
           {latLng && !confirmed && (
@@ -751,8 +700,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             </div>
           )}
 
+          {/* Os dois selos ficam juntos à ESQUERDA: com o painel flutuando à
+              direita, o "Editar Endereço" ia parar atrás dele. */}
           {confirmed && (
-            <div style={{ position: "absolute", top: "12px", left: "12px", right: "12px", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+            <div style={{ position: "absolute", top: "12px", left: "12px", zIndex: 1000, display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <div style={{ background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.8rem", fontWeight: 700, color: "#16a34a", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
                 <Check size={14} /> Localização confirmada
               </div>
@@ -782,8 +733,84 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           )}
         </div>
 
-        {/* ZONES CONTROL PANEL */}
-        <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "20px" }}>
+        {/* ── PAINEL FLUTUANTE ──────────────────────────────────────────
+            Cabeçalho com o Salvar sempre à vista, corpo rolando por dentro e
+            rodapé com a ação principal — o padrão que o iFood usa e que a
+            Brendi copiou, e que é o que o lojista espera encontrar. */}
+        <aside className="fh-entrega-painel">
+          <div className="fh-painel-topo">
+            <div>
+              <b>Configurar entrega</b>
+              <span>{metodoAtivo === "NEIGHBORHOOD" ? "Cobrança por bairro" : porRota ? "Cobrança por km percorrido" : "Cobrança por raio"}</span>
+            </div>
+            {/* Compacto e sempre à vista, no canto do cabeçalho: o que o
+                lojista procura quando termina de mexer. O texto longo do botão
+                antigo ("Salvar Configurações (Modo Raio)") quebrava em três
+                linhas aqui — o modo já está escrito logo ao lado. */}
+            <button onClick={handleSave} disabled={saving || !latLng}
+              title={latLng ? "Salvar a configuração de entrega" : "Escolha o local da loja no mapa primeiro"}
+              style={{ padding: "9px 15px", borderRadius: 10, border: "none", whiteSpace: "nowrap", flexShrink: 0,
+                background: !latLng ? "#E2E8F0" : currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#16A34A",
+                color: !latLng ? "#94A3B8" : "#fff",
+                fontWeight: 800, fontSize: "0.86rem", cursor: !latLng ? "not-allowed" : "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: 6,
+                boxShadow: !latLng ? "none" : "0 3px 12px rgba(22,163,74,0.28)" }}>
+              {saving ? <Loader2 size={15} /> : <Check size={15} />}
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
+
+          <div className="fh-painel-corpo">
+        {/* ── MÉTODO DE COBRANÇA ──────────────────────────────────────────
+            Três métodos, cada um com uma linha dizendo o que é. Antes eram dois
+            cartões grandes e o "km percorrido" estava escondido num sub-seletor
+            dentro do modo raio — quem procurava por ele não achava, e quem não
+            procurava nem sabia que existia. */}
+        <div style={{ marginBottom: "1rem" }}>
+          <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            Método de cobrança
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {METODOS_DE_COBRANCA.map((m) => {
+              const ativo = metodoAtivo === m.chave;
+              return (
+                <button
+                  key={m.chave}
+                  type="button"
+                  onClick={() => setCurrentZoneType(m.chave)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, width: "100%", textAlign: "left",
+                    padding: "11px 13px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
+                    border: `2px solid ${ativo ? "#DC2626" : "#E2E8F0"}`,
+                    background: ativo ? "#FEF2F2" : "#FFFFFF",
+                    boxShadow: ativo ? "0 3px 12px rgba(220,38,38,0.10)" : "none",
+                    transition: "all .15s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "1.1rem", lineHeight: 1.2, flexShrink: 0 }}>{m.emoji}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <b style={{ fontSize: "0.88rem", color: ativo ? "#991B1B" : "#1E293B" }}>{m.nome}</b>
+                      {m.recomendado && (
+                        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#15803D", background: "#DCFCE7", borderRadius: 999, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                          Recomendado
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ display: "block", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45, marginTop: 3 }}>
+                      {m.ajuda}
+                    </span>
+                  </span>
+                  {ativo && <Check size={16} style={{ color: "#DC2626", flexShrink: 0, marginTop: 3 }} />}
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: "0.72rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
+            Faixa de distância e lista de bairros são cadastros diferentes: ao trocar entre eles, os valores
+            não são transferidos — confira a tabela antes de salvar.
+          </p>
+        </div>
           
           {/* O título repete o método escolhido: quem rolou a tela até aqui
               precisa saber qual cadastro está editando. */}
@@ -968,10 +995,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 );
               })}
 
-              <button onClick={addZone}
-                style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1.5px dashed #CBD5E1", background: "#F8FAFC", color: "#64748B", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "16px", fontFamily: "inherit" }}>
-                <Plus size={14} /> Adicionar Faixa de KM
-              </button>
             </>
           )}
 
@@ -1044,10 +1067,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 );
               })}
 
-              <button onClick={() => setNeighborhoodZones(prev => [...prev, { name: "", time: 40, fee: 7 }])}
-                style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1.5px dashed #CBD5E1", background: "#F8FAFC", color: "#64748B", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "16px", fontFamily: "inherit" }}>
-                <Plus size={14} /> Adicionar Bairro
-              </button>
             </>
           )}
 
@@ -1137,26 +1156,81 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
 
 
-          <button onClick={handleSave} disabled={saving || !latLng}
-            style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "none",
-              background: !latLng ? "#E2E8F0" : currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#DC2626",
-              color: !latLng ? "#94A3B8" : "#fff",
-              fontWeight: 800, fontSize: "0.95rem", cursor: !latLng ? "not-allowed" : "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-              boxShadow: !latLng ? "none" : currentZoneType === "NEIGHBORHOOD" ? "0 4px 14px rgba(124, 58, 237, 0.3)" : "0 4px 14px rgba(220, 38, 38, 0.3)" }}>
-            {saving ? <Loader2 size={16} /> : <Check size={16} />}
-            {saving ? "Salvando..." : latLng ? (currentZoneType === "NEIGHBORHOOD" ? "Salvar Configurações (Modo Bairro)" : "Salvar Configurações (Modo Raio)") : "Selecione o local no mapa primeiro"}
-          </button>
+          </div>
 
-          {latLng && (
-            <div style={{ marginTop: "12px", padding: "8px 12px", background: "#F0FDF4", borderRadius: "8px", fontSize: "0.72rem", color: "#15803D" }}>
-              <strong>📍 Coordenadas:</strong> {latLng.lat.toFixed(5)}, {latLng.lng.toFixed(5)}<br />
-              <span style={{ color: "#64748B" }}>Usado para clima e raio de entrega automaticamente.</span>
-            </div>
-          )}
-        </div>
+          <div className="fh-painel-rodape">
+            {!latLng && (
+              <p style={{ margin: "0 0 8px", fontSize: "0.74rem", color: "#B91C1C", lineHeight: 1.4 }}>
+                Escolha o local da loja no mapa (busque o endereço acima) para poder salvar.
+              </p>
+            )}
+            {metodoAtivo === "NEIGHBORHOOD" ? (
+              <button onClick={() => setNeighborhoodZones(prev => [...prev, { name: "", time: 40, fee: 7 }])} className="fh-add-principal">
+                <Plus size={15} /> Adicionar bairro
+              </button>
+            ) : (
+              <button onClick={addZone} className="fh-add-principal">
+                <Plus size={15} /> Adicionar faixa
+              </button>
+            )}
+          </div>
+        </aside>
       </div>
       <style jsx global>{`
+        /* ── MAPA ABERTO COM PAINEL FLUTUANTE ─────────────────────────────
+           O mapa ocupa a área toda e o painel flutua por cima, à direita. No
+           celular o painel desce para baixo do mapa: painel flutuante em tela
+           estreita cobriria o mapa inteiro, que é o que a tela existe para
+           mostrar. */
+        .fh-entrega-area {
+          position: relative;
+          border-radius: 16px;
+          overflow: hidden;
+          border: 2px solid #E2E8F0;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        .fh-entrega-mapa { width: 100%; height: min(78vh, 880px); min-height: 580px; }
+        .fh-entrega-painel {
+          position: absolute;
+          top: 14px; right: 14px; bottom: 14px;
+          width: 402px;
+          display: flex;
+          flex-direction: column;
+          background: #fff;
+          border-radius: 14px;
+          box-shadow: 0 12px 44px rgba(15,23,42,0.24);
+          overflow: hidden;
+          /* Acima dos controles do Leaflet, que ficam em 1000. */
+          z-index: 1100;
+        }
+        .fh-painel-topo {
+          display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          padding: 12px 14px; border-bottom: 1px solid #F1F5F9; background: #fff; flex-shrink: 0;
+        }
+        .fh-painel-topo b { display: block; font-size: 0.95rem; font-weight: 800; color: #0F172A; }
+        .fh-painel-topo span { display: block; font-size: 0.74rem; color: #64748B; margin-top: 1px; }
+        .fh-painel-corpo { flex: 1; overflow-y: auto; padding: 14px; }
+        .fh-painel-rodape { padding: 10px 14px 12px; border-top: 1px solid #F1F5F9; background: #fff; flex-shrink: 0; }
+        .fh-add-principal {
+          width: 100%; padding: 11px; border-radius: 10px; border: none; cursor: pointer;
+          background: #DC2626; color: #fff; font-weight: 800; font-size: 0.88rem;
+          display: flex; align-items: center; justify-content: center; gap: 7px;
+          font-family: inherit; box-shadow: 0 4px 14px rgba(220,38,38,0.28);
+        }
+        .fh-add-principal:hover { background: #B91C1C; }
+        @media (max-width: 1080px) {
+          .fh-entrega-area { border: none; box-shadow: none; border-radius: 0; overflow: visible; }
+          .fh-entrega-mapa {
+            height: 340px; min-height: 0; border-radius: 14px; overflow: hidden;
+            border: 2px solid #E2E8F0; box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+          }
+          .fh-entrega-painel {
+            position: static; width: auto; margin-top: 12px;
+            border: 1.5px solid #E2E8F0; box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+          }
+          .fh-painel-corpo { overflow-y: visible; }
+        }
+
         .custom-map-tooltip {
           background: rgba(15, 23, 42, 0.9) !important;
           border: 1px solid rgba(255, 255, 255, 0.25) !important;
