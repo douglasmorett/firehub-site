@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { CartProvider } from "@/components/CartProvider";
 import StoreTopNav from "@/components/customer/StoreTopNav";
+import StoreSidebar from "@/components/customer/StoreSidebar";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
@@ -31,7 +32,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   try {
     user = await prisma.user.findUnique({
       where: { email: session.user?.email || "" },
-      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true },
+      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true, storeLogo: true },
     });
     console.log("[StoreLayout] Session Email:", session.user?.email, "| User Email from DB:", user?.email);
   } catch (err) {
@@ -43,7 +44,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     try {
       const owner = await prisma.user.findUnique({
         where: { id: user.ownerId },
-        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true },
+        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true, storeLogo: true },
       });
       if (owner) storeOwner = owner;
     } catch (e) {}
@@ -114,7 +115,22 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   return (
     <CartProvider>
       <GlobalPrintListener />
-      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#F5F5F5" }}>
+      {/* ── BARRA LATERAL + CONTEÚDO ─────────────────────────────────────
+          O menu era uma barra horizontal com 16 itens que encolhiam a fonte
+          até 0,58rem para caber. Em pé, cada item tem a largura inteira e o
+          conteúdo ganha a tela — que é o que o dono pediu ao comparar com o
+          iFood. */}
+      <div style={{ minHeight: "100vh", display: "flex", backgroundColor: "#F5F5F5" }}>
+        <StoreSidebar
+          nomeDaLoja={storeOwner?.storeName || user?.storeName || session.user?.name || "Minha loja"}
+          logo={storeOwner?.storeLogo || user?.storeLogo || null}
+          cidade={(session.user as any)?.city || storeOwner?.city || user?.city || ""}
+          slug={storeOwner?.slug || user?.slug}
+          mostrarAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
+          mostrarCompras={storeOwner?.isFranqueadoHakim === true}
+          isAdmin={isAdmin}
+        />
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         {/* Só aparece quando a sessão nasceu do "Acessar" do admin. Fica ANTES
             da barra da loja porque o ponto é ser a primeira coisa que se vê:
             sem aviso, é questão de tempo até alguém do suporte fechar um caixa
@@ -131,6 +147,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           initialStoreOpen={storeOwner?.storeOpen ?? true}
           initialCashOpen={storeOwner?.cashOpen ?? false}
           showAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
+          semNavegacao
         />
 
         {/* ── AVISOS DA OPERAÇÃO ────────────────────────────────────────
@@ -233,11 +250,12 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           </div>
         )}
 
-        <main style={{ flex: 1 }}>
+        <main style={{ flex: 1, minWidth: 0 }}>
           {children}
         </main>
 
         <HumanSupportFloatingWidget />
+        </div>
       </div>
     </CartProvider>
   );

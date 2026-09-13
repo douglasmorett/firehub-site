@@ -633,7 +633,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
     >
       <div style={{ padding: "0.6rem 0.75rem" }}>
         {/* Header Row com Checkbox, Drag Handle, Nome e Badge do Canal */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", marginBottom: "4px" }}>
+        {/* A linha QUEBRA quando os dois não cabem. Sem isso, o nome do cliente
+            (que tem 120px de largura mínima) empurrava o selo do canal para
+            fora e era desenhado POR CIMA dele — "#1 — July Wong" tapando
+            "99Food #7859". Encolher fonte não resolve: em coluna estreita o
+            problema volta. Quebrando, o selo desce uma linha e os dois ficam
+            legíveis em qualquer largura. */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", marginBottom: "4px", flexWrap: "wrap" }}>
           <input
             type="checkbox"
             checked={selectedOrderIds?.has(order.id) || false}
@@ -663,8 +669,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               color: "#0F172A",
               flex: 1,
               minWidth: "120px",
-              wordBreak: "keep-all",
-              overflowWrap: "normal",
+              // O nome QUEBRA em vez de transbordar. Com keep-all + overflowWrap
+              // normal, "#1 — July Wong" não cabia na coluna estreita e era
+              // PINTADO por cima do selo do canal ("99Food #7859") — texto de um
+              // elemento em cima do outro, em qualquer tamanho de tela.
+              wordBreak: "normal",
+              overflowWrap: "break-word",
               lineHeight: "1.25",
               letterSpacing: "-0.2px",
               position: "relative",
@@ -743,7 +753,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               Cedendo espaço (`flexShrink: 1`) com teto de 48%, o nome quebra
               em duas linhas dentro do cartão — e o nome do cliente, ao lado,
               mantém os 120 px mínimos dele. */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 1, minWidth: 0, maxWidth: "48%", marginTop: "1px" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 1, minWidth: 0, maxWidth: "100%", marginLeft: "auto", marginTop: "1px" }}>
             {/* Brendi ganha roxo (violeta #EDE9FE/#6D28D9) — tom diferente do
                 lilás da IA (#F3E8FF/#7C3AED) de propósito: os dois convivem na
                 mesma tela e o atendente distingue o canal pela cor.
@@ -4607,9 +4617,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   <span style={{ fontSize: "0.82rem" }}>🌐</span>
                   <span>Site</span>
                 </button>
+
               </div>
             </div>
             )}
+
+            {/* ── O QUE APARECE NESTA BARRA ────────────────────────────────
+                Ao lado do filtro de pedidos, e FORA dele de propósito: é a
+                própria engrenagem que esconde o filtro, e dentro dele ela
+                sumiria junto — armadilha sem saída. No fim da fila de
+                atalhos, com a fila cheia, ela descia sozinha para uma linha
+                só dela. */}
+            <button
+              type="button"
+              onClick={() => setShowBarraConfig(true)}
+              style={{
+                alignSelf: "flex-end", height: "30px", padding: "0 9px", borderRadius: "8px",
+                border: "1.5px solid #CBD5E1", background: "#F8FAFC", color: "#475569",
+                cursor: "pointer", display: "flex", alignItems: "center", fontFamily: "inherit",
+              }}
+              title="Escolher o que aparece nesta barra"
+            >
+              <Settings size={15} />
+            </button>
 
             {/* Sem relógio nesta barra. A régua de clima saiu antes; o relógio
                 saiu em 06/09/2026 a pedido do dono: o painel recarrega a cada
@@ -4911,21 +4941,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </button>
             )}
 
-            {/* A engrenagem NUNCA é escondida: é por ela que o lojista traz de
-                volta o que escondeu. Um botão de configuração que some com a
-                própria configuração é uma armadilha sem saída. */}
-            <button
-              onClick={() => setShowBarraConfig(true)}
-              style={{
-                padding: "5px 10px", border: "1.5px solid #CBD5E1", borderRadius: "8px",
-                fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
-                display: "flex", alignItems: "center", gap: "5px",
-                background: "#F8FAFC", color: "#475569",
-              }}
-              title="Escolher o que aparece nesta barra"
-            >
-              <Settings size={14} />
-            </button>
           </div>
 
         </div>

@@ -13,7 +13,15 @@ interface StoreInfo {
   ifoodConnected: boolean;
 }
 
-export default function StoreSelector() {
+/**
+ * `variante`:
+ *  - "barra"   → o botão translúcido da faixa vermelha do topo (o de sempre)
+ *  - "lateral" → largura inteira e fundo escuro, para a barra lateral
+ *
+ * A lista que abre é a MESMA nos dois: trocar de loja é a mesma operação,
+ * e duplicar o componente era duplicar a regra de troca junto.
+ */
+export default function StoreSelector({ variante = "barra" }: { variante?: "barra" | "lateral" } = {}) {
   const [stores, setStores] = useState<StoreInfo[]>([]);
   const [activeStoreId, setActiveStoreId] = useState<string>("");
   const [open, setOpen] = useState(false);
@@ -69,22 +77,33 @@ export default function StoreSelector() {
     <div ref={ref} style={{ position: "relative" }}>
       <button
         onClick={() => setOpen(v => !v)}
-        style={{
-          display: "inline-flex", alignItems: "center", gap: 6,
-          padding: "5px 12px", borderRadius: 10,
-          background: "rgba(255,255,255,0.18)", border: "1.5px solid rgba(255,255,255,0.3)",
-          color: "#fff", fontWeight: 700, fontSize: "0.78rem",
-          cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-        }}
+        style={
+          variante === "lateral"
+            ? {
+                display: "flex", alignItems: "center", gap: 8, width: "100%",
+                padding: "8px 10px", borderRadius: 10, textAlign: "left",
+                background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.14)",
+                color: "#E2E8F0", fontWeight: 700, fontSize: "0.78rem",
+                cursor: "pointer", fontFamily: "inherit",
+              }
+            : {
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "5px 12px", borderRadius: 10,
+                background: "rgba(255,255,255,0.18)", border: "1.5px solid rgba(255,255,255,0.3)",
+                color: "#fff", fontWeight: 700, fontSize: "0.78rem",
+                cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+              }
+        }
       >
-        <StoreIcon size={13} />
-        {activeName}
-        <ChevronDown size={12} style={{ opacity: 0.7 }} />
+        <StoreIcon size={13} style={{ flexShrink: 0 }} />
+        <span style={{ flex: variante === "lateral" ? 1 : undefined, minWidth: 0, lineHeight: 1.3 }}>{activeName}</span>
+        <ChevronDown size={12} style={{ opacity: 0.7, flexShrink: 0 }} />
       </button>
 
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 8px)", left: 0,
+          ...(variante === "lateral" ? { minWidth: 250, width: "max-content" } : {}),
           background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14,
           boxShadow: "0 8px 32px rgba(0,0,0,0.18)", minWidth: 260, zIndex: 600,
           overflow: "hidden",

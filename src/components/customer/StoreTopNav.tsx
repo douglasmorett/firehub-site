@@ -68,10 +68,13 @@ export default function StoreTopNav({
   userName, userCity, userSlug, showCompras, isAdmin = false,
   initialStoreOpen = true, initialCashOpen = false,
   showAntecipacao = false,
+  semNavegacao = false,
 }: {
   userName: string; userCity: string; userSlug?: string | null;
   showCompras: boolean; isAdmin?: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
   showAntecipacao?: boolean;
+  /** A navegação virou barra lateral (StoreSidebar); aqui fica só o status. */
+  semNavegacao?: boolean;
 }) {
   const pathname = usePathname();
   const baseItems = [...NAV_ITEMS];
@@ -1184,7 +1187,9 @@ export default function StoreTopNav({
           )}
 
           {/* ── SELETOR MULTI-LOJAS ── */}
-          <StoreSelector />          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
+          {/* O seletor de lojas mora na barra lateral (StoreSidebar). Aqui
+              ele só aparece quando a navegação é a antiga, horizontal. */}
+          {!semNavegacao && <StoreSelector />}          <div style={{ display:"flex", gap:5, alignItems:"center" }}>
             <TogglePill
               label="Caixa" isOn={cashOpen}
               // Caixa aberto abre o MENU, não o encerramento direto: era o
@@ -1272,8 +1277,8 @@ export default function StoreTopNav({
       </div>
 
 
-      {/* ── NAV (esconde no módulo de compras IceBox) ──── */}
-      {!isCompras && (
+      {/* ── NAV (esconde no módulo de compras IceBox e quando o menu é lateral) ──── */}
+      {!isCompras && !semNavegacao && (
       <nav style={{ background:"#fff", borderBottom:"2px solid #E2E8F0", padding:"0 0.35rem", position:"sticky", top:0, zIndex:50, boxShadow:"0 2px 8px rgba(0,0,0,0.06)" }}>
         {/* ── TUDO NA TELA, SEMPRE ──────────────────────────────────────────
             Era `overflowX: auto` com a barra de rolagem ESCONDIDA
