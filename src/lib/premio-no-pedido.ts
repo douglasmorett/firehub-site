@@ -36,7 +36,14 @@ export async function premioDoCliente(
     },
     orderBy: { createdAt: "desc" },
     take: 120,
-    select: { id: true, createdAt: true, status: true, source: true, trilhaPremio: true },
+    // O canal sai de lib/canal-do-pedido.ts, que precisa destes campos: sem
+    // eles todo pedido viraria SITE e o filtro de canais da trilha não teria
+    // o que filtrar.
+    select: {
+      id: true, createdAt: true, status: true, source: true, trilhaPremio: true,
+      ifoodOrderId: true, openDeliveryChannel: true, openDeliveryOrderId: true,
+      tableSessionId: true,
+    },
   });
 
   return premioDaVez(trilha, pedidos);

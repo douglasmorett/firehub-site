@@ -15,11 +15,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CANAIS_DA_TRILHA,
   MAX_PARADAS,
   avisosDaTrilha,
   nomeDoPremio,
   problemasDaTrilha,
   regrasDaTrilha,
+  type CanaisDaTrilha,
   type ParadaDaTrilha,
   type TipoDePremio,
   type TrilhaPremiada,
@@ -242,6 +244,44 @@ export default function TrilhaPremiadaEditor({
         </div>
       </div>
 
+      {/* ── QUAIS PEDIDOS CONTAM ────────────────────────────────────────── */}
+      <div className="fh-caixa">
+        <header>
+          <b>Quais pedidos contam um passo</b>
+          <span>
+            Marque de onde os pedidos do seu cliente andam na trilha. Desmarcou, aquele canal para de
+            contar — e a regra que o cliente lê muda junto.
+          </span>
+        </header>
+        <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
+          <div className="fh-canal fixo">
+            <span className="marca">✓</span>
+            <span>
+              <b>🟢 Site da loja</b>
+              <span>Sempre conta — é aqui que o cliente usa o prêmio, mesmo pedindo para retirada.</span>
+            </span>
+          </div>
+          {CANAIS_DA_TRILHA.map((c) => {
+            const ligado = trilha.canais[c.chave] === true;
+            return (
+              <button
+                key={c.chave}
+                type="button"
+                className={`fh-canal${ligado ? " ligado" : ""}`}
+                aria-pressed={ligado}
+                onClick={() => mudar({ canais: { ...trilha.canais, [c.chave]: !ligado } as CanaisDaTrilha })}
+              >
+                <span className="marca">{ligado ? "✓" : ""}</span>
+                <span>
+                  <b>{c.nome}</b>
+                  <span>{c.ajuda}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ── O QUE O CLIENTE LÊ ──────────────────────────────────────────── */}
       <div className="fh-caixa">
         <header>
@@ -413,6 +453,18 @@ const ESTILO = `
   font-size:.8rem;font-weight:700;color:#475569;cursor:pointer;font-family:inherit}
 .fh-prazo[aria-pressed="true"]{border-color:#6D28D9;background:#F5F3FF;color:#6D28D9}
 
+.fh-canal{display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border:1.5px solid #E2E8F0;
+  border-radius:12px;background:#fff;cursor:pointer;text-align:left;font-family:inherit;width:100%}
+.fh-canal:hover{border-color:#A78BFA}
+.fh-canal.ligado{border-color:#86EFAC;background:#F0FDF4}
+.fh-canal.fixo{cursor:default;border-color:#E2E8F0;background:#F8FAFC}
+.fh-canal .marca{width:20px;height:20px;border-radius:6px;border:1.5px solid #CBD5E1;background:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:.74rem;font-weight:900;color:#15803D;
+  flex-shrink:0;margin-top:1px}
+.fh-canal.ligado .marca,.fh-canal.fixo .marca{border-color:#16A34A;background:#DCFCE7}
+.fh-canal>span:last-child{display:flex;flex-direction:column;min-width:0}
+.fh-canal b{font-size:.82rem;font-weight:800;color:#0F172A}
+.fh-canal>span:last-child>span{font-size:.72rem;color:#64748B;line-height:1.4;margin-top:1px}
 .fh-alerta{border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:.78rem;line-height:1.5}
 .fh-alerta ul{margin:4px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
 .fh-alerta.erro{background:#FEF2F2;border:1.5px solid #FECACA;color:#B91C1C}

@@ -7,9 +7,15 @@
 import { readFileSync } from "fs";
 import ts from "typescript";
 
-const js = ts.transpileModule(readFileSync("src/lib/trilha-premiada.ts", "utf8"), {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-}).outputText;
+const paraJs = (arquivo) =>
+  ts.transpileModule(readFileSync(arquivo, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+
+// A trilha usa `chaveDoCanal` (lib/canal-do-pedido.ts) — a fonte única de canal
+// do painel. Sem resolvedor de módulo aqui, a dependência entra como data: URL.
+const canal = "data:text/javascript," + encodeURIComponent(paraJs("src/lib/canal-do-pedido.ts"));
+const js = paraJs("src/lib/trilha-premiada.ts").replace('from "./canal-do-pedido"', `from "${canal}"`);
 const M = await import("data:text/javascript," + encodeURIComponent(js));
 const {
   lerTrilha, calcularProgresso, trilhaValida, chamadaDaTrilha, regrasDaTrilha, nomeDoPremio,
@@ -228,6 +234,51 @@ conferir("produto desativado fica guardado, não quebra o pedido",
   efeitoDoPremio({ pedidos: 10, tipo: "produto", produtoId: "p9" }, { ...entrega, produto: { ...acai, active: false } }) === null);
 conferir("produto apagado do cardápio também",
   efeitoDoPremio({ pedidos: 10, tipo: "produto", produtoId: "p9" }, { ...entrega, produto: null }) === null);
+
+console.log("\n15) Quem decide quais canais contam é a loja");
+const canaisDe = (extra) => lerTrilha({ trilha: { ativa: true, janelaDias: 30, paradas: TRILHA.paradas, canais: extra } });
+
+conferir("balcão já vem marcado", lerTrilha({ trilha: { ativa: true, paradas: TRILHA.paradas } }).canais.balcao === true);
+conferir("marketplace já vem desmarcado", lerTrilha({ trilha: { ativa: true, paradas: TRILHA.paradas } }).canais.marketplace === false);
+conferir("trilha antiga, sem canais, herda o padrão",
+  JSON.stringify(lerTrilha({ trilha: { ativa: true, paradas: TRILHA.paradas } }).canais) === JSON.stringify(M.CANAIS_PADRAO));
+conferir("marcar um canal não mexe nos outros",
+  canaisDe({ marketplace: true }).canais.balcao === true && canaisDe({ marketplace: true }).canais.marketplace === true);
+
+const variados = [
+  { id: "s", createdAt: dia(1), status: "ENTREGUE", source: "ONLINE" },
+  { id: "b", createdAt: dia(2), status: "ENTREGUE", source: "PRESENCIAL" },
+  { id: "m", createdAt: dia(3), status: "ENTREGUE", source: "PRESENCIAL", tableSessionId: "sess1" },
+  { id: "t", createdAt: dia(4), status: "ENTREGUE", source: "TOTEM" },
+  { id: "w", createdAt: dia(5), status: "ENTREGUE", source: "WHATSAPP_IA" },
+  { id: "i", createdAt: dia(6), status: "ENTREGUE", source: "IFOOD" },
+];
+conferir("com o padrão: 5 passos (tudo menos o iFood)",
+  calcularProgresso(canaisDe({}), variados, dia(7)).passos === 5,
+  `deu ${calcularProgresso(canaisDe({}), variados, dia(7)).passos}`);
+conferir("desmarcando o balcão, cai para 4",
+  calcularProgresso(canaisDe({ balcao: false }), variados, dia(7)).passos === 4);
+conferir("mesa sai pelo tableSessionId, não pelo source",
+  calcularProgresso(canaisDe({ mesa: false }), variados, dia(7)).passos === 5 - 1);
+conferir("marcando o marketplace, o iFood entra",
+  calcularProgresso(canaisDe({ marketplace: true }), variados, dia(7)).passos === 6);
+conferir("com tudo desmarcado, só o site conta",
+  calcularProgresso(canaisDe({ balcao: false, mesa: false, totem: false, whatsapp: false, marketplace: false }), variados, dia(7)).passos === 1);
+conferir("canal desconhecido nunca vira passo",
+  calcularProgresso(canaisDe({ marketplace: true }), [{ id: "x", createdAt: dia(1), status: "ENTREGUE", source: "CANAL_QUE_NAO_EXISTE" }], dia(2)).passos === 0);
+
+console.log("\n16) O texto acompanha o que foi marcado");
+conferir("padrão cita balcão e exclui o iFood",
+  /no balcão/.test(M.ondeContaOPasso(canaisDe({}))) && /não anda na trilha/.test(M.ondeContaOPasso(canaisDe({}))));
+conferir("balcão desmarcado some da frase", !/no balcão/.test(M.ondeContaOPasso(canaisDe({ balcao: false }))));
+conferir("marketplace marcado entra na frase e some o aviso",
+  /outros apps/.test(M.ondeContaOPasso(canaisDe({ marketplace: true })))
+  && !/não anda na trilha/.test(M.ondeContaOPasso(canaisDe({ marketplace: true }))));
+conferir("só o site: frase no singular, sem lista",
+  M.ondeContaOPasso(canaisDe({ balcao: false, mesa: false, totem: false, whatsapp: false })) ===
+  "Contam os pedidos feitos pelo site. Pedido por iFood ou 99Food não anda na trilha.");
+conferir("a regra manda pedir pelo site, mesmo na retirada",
+  regrasDaTrilha(TRILHA).some((r) => /pelo site da loja — mesmo escolhendo retirada/.test(r)));
 
 console.log(falhas === 0 ? "\nTUDO OK\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

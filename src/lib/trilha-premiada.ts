@@ -25,6 +25,8 @@
  * decorre disso.
  */
 
+import { chaveDoCanal } from "./canal-do-pedido";
+
 export type TipoDePremio = "produto" | "frete" | "desconto";
 
 export type ParadaDaTrilha = {
@@ -39,14 +41,57 @@ export type ParadaDaTrilha = {
   valor?: number;
 };
 
+/**
+ * Quais canais de venda andam na trilha. Quem decide é a LOJA.
+ *
+ * O site não está aqui porque não é escolha: é onde o prêmio é resgatado, então
+ * conta sempre. Os outros a loja marca e desmarca — balcão, mesa, totem e
+ * WhatsApp já nascem valendo, porque são venda da própria casa.
+ *
+ * Marketplace nasce DESMARCADO, e por dois motivos que a tela explica: a loja
+ * já paga comissão ali, e o prêmio não pode ser resgatado naquela tela — quem
+ * só pede pelo iFood acumularia passos sem nunca ver o prêmio.
+ */
+export type CanaisDaTrilha = {
+  whatsapp: boolean;
+  balcao: boolean;
+  mesa: boolean;
+  totem: boolean;
+  marketplace: boolean;
+};
+
+export const CANAIS_PADRAO: CanaisDaTrilha = {
+  whatsapp: true,
+  balcao: true,
+  mesa: true,
+  totem: true,
+  marketplace: false,
+};
+
+/** Os canais na ordem em que a tela mostra, com o texto que o lojista lê. */
+export const CANAIS_DA_TRILHA: { chave: keyof CanaisDaTrilha; nome: string; ajuda: string }[] = [
+  { chave: "balcao", nome: "🧾 Balcão / PDV", ajuda: "Venda no caixa, com o telefone do cliente no pedido." },
+  { chave: "mesa", nome: "🍽️ Mesa", ajuda: "Consumo no salão lançado pela comanda da mesa." },
+  { chave: "totem", nome: "🖥️ Totem", ajuda: "Autoatendimento na loja." },
+  { chave: "whatsapp", nome: "🤖 WhatsApp", ajuda: "Pedido fechado pelo robô de atendimento." },
+  {
+    chave: "marketplace",
+    nome: "🔴 iFood, 99Food e outros apps",
+    ajuda: "Você já paga comissão nesses pedidos, e o prêmio só pode ser usado num pedido pelo seu site.",
+  },
+];
+
 export type TrilhaPremiada = {
   ativa: boolean;
   /** Dias para percorrer, contados do primeiro pedido. 0 = sem prazo. */
   janelaDias: number;
   paradas: ParadaDaTrilha[];
+  canais: CanaisDaTrilha;
 };
 
-export const TRILHA_PADRAO: TrilhaPremiada = { ativa: false, janelaDias: 30, paradas: [] };
+export const TRILHA_PADRAO: TrilhaPremiada = {
+  ativa: false, janelaDias: 30, paradas: [], canais: CANAIS_PADRAO,
+};
 
 /** Acima disto a trilha fica longa demais para o cliente enxergar o fim. */
 export const PEDIDOS_DEMAIS = 15;
@@ -77,10 +122,19 @@ export function lerTrilha(storeLoyalty: unknown): TrilhaPremiada {
     .sort((a, b) => a.pedidos - b.pedidos)
     .slice(0, MAX_PARADAS);
 
+  // Canal ausente herda o padrão — é o que faz a loja que já tinha trilha
+  // continuar contando o balcão depois desta versão, sem ter de reconfigurar.
+  const brutoCanais = (bruto.canais || {}) as Partial<CanaisDaTrilha>;
+  const canais = { ...CANAIS_PADRAO } as CanaisDaTrilha;
+  for (const chave of Object.keys(CANAIS_PADRAO) as (keyof CanaisDaTrilha)[]) {
+    if (typeof brutoCanais[chave] === "boolean") canais[chave] = brutoCanais[chave] as boolean;
+  }
+
   return {
     ativa: bruto.ativa === true && paradas.length > 0,
     janelaDias: Number.isFinite(janela) && janela >= 0 ? Math.floor(janela) : 30,
     paradas,
+    canais,
   };
 }
 
@@ -162,19 +216,38 @@ const STATUS_QUE_NAO_CONTA = new Set([
 ]);
 
 /**
- * Pedido de marketplace NÃO anda na trilha.
+ * Qual chave de configuração este pedido usa — `null` = não anda na trilha.
  *
- * Dois motivos, nesta ordem: a loja já paga comissão ali (contar seria pagar o
- * prêmio em cima da comissão), e o prêmio não tem como ser resgatado lá — o
- * cliente veria "você ganhou" numa tela onde não dá para usar. Balcão, mesa,
- * totem e WhatsApp contam: é venda da própria loja, e o resgate acontece no
- * pedido seguinte pelo site ou pelo robô.
+ * Quem diz de onde veio o pedido é `lib/canal-do-pedido.ts`, a fonte única do
+ * painel inteiro. Manter uma segunda lista de `source` aqui era exatamente o
+ * erro que aquela lib nasceu para acabar: canal novo entraria lá e continuaria
+ * desconhecido aqui.
+ *
+ * Duas correções em cima dela:
+ * - MESA vem pelo `tableSessionId`, porque `CustomerOrder` não tem coluna de
+ *   número de mesa (as telas montam isso da sessão) e o lançamento de mesa
+ *   grava `source: "PRESENCIAL"`, igual ao balcão.
+ * - DESCONHECIDO não conta. Canal que o sistema não reconhece não pode virar
+ *   passo em silêncio — prêmio dado por engano não se desfaz.
  */
-const FONTES_DE_MARKETPLACE = new Set(["IFOOD", "99FOOD", "JOTAJA", "BRENDI", "WABIZ"]);
+export function canalDaTrilha(p: PedidoDaTrilha): keyof CanaisDaTrilha | "site" | null {
+  if ((p as any).tableSessionId) return "mesa";
+  const chave = chaveDoCanal(p as any);
+  if (chave === "SITE") return "site";
+  if (chave === "WHATSAPP_IA") return "whatsapp";
+  if (chave === "PDV") return "balcao";
+  if (chave === "TOTEM") return "totem";
+  if (chave === "MESA") return "mesa";
+  if (chave === "DESCONHECIDO") return null;
+  return "marketplace";
+}
 
-export function pedidoConta(p: PedidoDaTrilha): boolean {
+export function pedidoConta(p: PedidoDaTrilha, canais: CanaisDaTrilha = CANAIS_PADRAO): boolean {
   if (STATUS_QUE_NAO_CONTA.has(String(p.status || "").toUpperCase().trim())) return false;
-  return !FONTES_DE_MARKETPLACE.has(String(p.source || "ONLINE").toUpperCase().trim());
+  const canal = canalDaTrilha(p);
+  if (canal === null) return false;
+  // O site conta sempre: é onde o prêmio é resgatado.
+  return canal === "site" || canais[canal] === true;
 }
 
 export type ProgressoNaTrilha = {
@@ -209,9 +282,9 @@ const DIA = 24 * 60 * 60 * 1000;
  * `pedidos` pode vir em qualquer ordem; a função ordena.
  */
 /** Os pedidos que andam na trilha, em ordem e com a data já resolvida. */
-function pedidosEmOrdem(pedidos: PedidoDaTrilha[]) {
+function pedidosEmOrdem(pedidos: PedidoDaTrilha[], canais: CanaisDaTrilha) {
   return (pedidos || [])
-    .filter(pedidoConta)
+    .filter((p) => pedidoConta(p, canais))
     .map((p) => ({ ...p, quando: new Date(p.createdAt) }))
     .filter((p) => Number.isFinite(p.quando.getTime()))
     .sort((a, b) => a.quando.getTime() - b.quando.getTime());
@@ -255,7 +328,7 @@ export function calcularProgresso(
   };
   if (!trilhaValida(trilha)) return { ...vazio, proxima: null, faltam: 0 };
 
-  const validos = pedidosEmOrdem(pedidos);
+  const validos = pedidosEmOrdem(pedidos, trilha.canais);
   if (validos.length === 0) return vazio;
 
   const tamanho = tamanhoDaTrilha(trilha);
@@ -339,7 +412,7 @@ export function lerResgate(bruto: unknown): ResgateDaTrilha | null {
  */
 export function premiosPendentes(trilha: TrilhaPremiada, pedidos: PedidoDaTrilha[]): ParadaDaTrilha[] {
   if (!trilhaValida(trilha)) return [];
-  const validos = pedidosEmOrdem(pedidos);
+  const validos = pedidosEmOrdem(pedidos, trilha.canais);
   if (!validos.length) return [];
 
   const ganhos = new Map<number, number>();
@@ -489,6 +562,27 @@ export function chamadaDaTrilha(p: ProgressoNaTrilha): string {
 }
 
 /**
+ * A frase de "onde o pedido conta", montada do que a loja marcou.
+ *
+ * Escrita a partir da configuração e não à mão: a loja desmarcar o balcão e o
+ * texto continuar prometendo o balcão é exatamente a reclamação que este
+ * programa inteiro tenta evitar.
+ */
+export function ondeContaOPasso(t: TrilhaPremiada): string {
+  const nomes: string[] = ["pelo site"];
+  if (t.canais.whatsapp) nomes.push("pelo WhatsApp");
+  if (t.canais.balcao) nomes.push("no balcão");
+  if (t.canais.mesa) nomes.push("na mesa");
+  if (t.canais.totem) nomes.push("no totem");
+  if (t.canais.marketplace) nomes.push("pelo iFood, 99Food e outros apps");
+  const lista = nomes.length === 1
+    ? nomes[0]
+    : `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+  const fora = !t.canais.marketplace ? " Pedido por iFood ou 99Food não anda na trilha." : "";
+  return `Contam os pedidos feitos ${lista}.${fora}`;
+}
+
+/**
  * As regras, geradas do que a loja configurou.
  *
  * Escrever isto à mão foi descartado de propósito: a loja muda o prazo e o
@@ -507,10 +601,10 @@ export function regrasDaTrilha(t: TrilhaPremiada): string[] {
       ? `Você tem ${t.janelaDias} dias a partir do primeiro pedido para percorrer a trilha. Passou o prazo, a contagem volta ao começo — e o que você já ganhou continua seu.`
       : "A trilha não expira: você percorre no seu tempo.",
   );
-  r.push("O prêmio entra sozinho no seu pedido seguinte pelo site da loja, e vale por um pedido só.");
+  r.push("Para usar o prêmio, faça seu pedido pelo site da loja — mesmo escolhendo retirada. Ele entra sozinho, e vale por um pedido só.");
   r.push("É um prêmio por pedido: se você juntar mais de um, eles entram na ordem em que foram ganhos.");
   r.push("Pedido cancelado ou não entregue não conta.");
-  r.push("Valem os pedidos feitos direto com a loja — pelo site, pelo WhatsApp, no balcão ou na mesa. Pedido por iFood ou 99Food não anda na trilha.");
+  r.push(ondeContaOPasso(t));
   r.push("Ao chegar na bandeira, a trilha recomeça e você pode percorrer de novo.");
   r.push("A loja pode mudar ou encerrar a trilha a qualquer momento; o prêmio já ganho continua valendo.");
   return r;
