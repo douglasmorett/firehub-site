@@ -9,6 +9,7 @@ import { comboParaImpressao } from "@/lib/parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
 import { blocosDoPedido } from "@/lib/comanda-modelo";
+import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -183,14 +184,21 @@ export async function GET(req: NextRequest) {
       console.log(`[PrintQueue] loja ${franchiseeId}: Assistente voltou depois de ${Math.round((Date.now() - ultimaConsulta!) / 60_000)} min; entregando o atraso desde ${inicioDoAtraso.toISOString()}.`);
     }
 
+    // ── CANCELADO NÃO GANHA COMANDA ──────────────────────────────────────
+    //
+    // O atraso já pulava o cancelado; a janela normal de 2 h, não. Em
+    // 12/09/2026 o robô da Hakim Centro montava o pedido da Gabi (rascunho,
+    // CRIANDO_IA), ela desistiu, o rascunho virou CANCELADO — e saiu do filtro
+    // como se fosse pedido novo: o Assistente imprimiu a comanda de um pedido
+    // que nunca existiu. Pedido já impresso não volta por causa do printedAt;
+    // o que foi cancelado antes de imprimir não precisa de papel. O ouvinte do
+    // navegador (GlobalPrintListener) já tratava cancelado como finalizado.
     const where: any = {
-      status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
+      status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO", ...STATUS_CANCELADOS] },
       franchiseeId,
       OR: [
         { createdAt: { gt: sinceDate } },
-        ...(inicioDoAtraso
-          ? [{ createdAt: { gt: inicioDoAtraso }, status: { notIn: ["CANCELADO", "CANCELED"] } }]
-          : []),
+        ...(inicioDoAtraso ? [{ createdAt: { gt: inicioDoAtraso } }] : []),
       ],
     };
 
