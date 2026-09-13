@@ -1,6 +1,8 @@
 # Módulo de mesa no celular e no tablet
 
-Branch: `feat/mesa-celular-tablet` (base `a6abb763`, 13/09/2026). **Não está no master** — push no master dispara deploy no Coolify.
+Branch: `feat/mesa-celular-tablet` (13/09/2026, já com o master `df5b8049` mesclado). **Não está no master** — push no master dispara deploy no Coolify.
+
+As fotos e medidas abaixo foram tiradas no master `a6abb763`, antes do desconto na mesa (`85ef5c3f`). O plano cita linhas do master `df5b8049`.
 
 ## A reclamação
 
@@ -25,6 +27,10 @@ Fotos nesta pasta (`mesa-ux-*.png`).
 O diagnóstico completo dos agentes (66 problemas, 20 graves, e 20 padrões de apps de garçom com fonte) está em
 [diagnostico-dos-agentes.md](diagnostico-dos-agentes.md).
 
+**O plano recomendado** (telas, navegação, rascunhos de celular e tablet, 22 consertos rápidos, fases 0 a 4 e as perguntas
+que só o Douglas responde) está em [plano-recomendado.md](plano-recomendado.md). Um crítico conferiu 25 afirmações dele
+contra o código; as 2 que não conferiam foram tiradas.
+
 ## Direção
 
 1. **Mesa em tela cheia no toque** (celular e tablet): tocar numa mesa ocupada abre a mesa inteira, com os pedidos
@@ -45,12 +51,16 @@ Feito e testado:
 - [x] `src/lib/rascunho-da-mesa.ts`: guarda e restaura o carrinho por sessão da mesa (12h de validade, preço atual para item simples, item fora do cardápio e pessoa que saiu são avisados).
 - [x] `node scripts/teste-voltar-e-rascunho-da-mesa.mjs`: 30 casos passando.
 
-Falta:
+Falta (na ordem do plano):
 
-- [ ] Ligar o hook e o rascunho em `src/components/mesas/MesasApp.tsx`.
-- [ ] Tela cheia da mesa (toque) e cardápio com carrinho no rodapé.
-- [ ] Consertos da lista acima.
+- [ ] Responder as perguntas do fim de `plano-recomendado.md` (principalmente: qual taxa vale na conta, se o garçom pode desligar a taxa e cancelar pedido, aparelhos do cliente).
+- [ ] Fase 0: consertos que o cliente sente já e os defeitos de dinheiro, sem mudar o desenho.
+- [ ] Fase 1: mesa em tela cheia no toque, ligando `useVoltarDoCelular` no `MesasApp.tsx`.
+- [ ] Fase 2: cardápio em tela cheia, folha de conferir e enviar, ligando `rascunho-da-mesa`.
+- [ ] Fases 3 e 4: segurança entre aparelhos; mapa e fechamento.
 - [ ] Testar de ponta a ponta no celular e no tablet (roteiro abaixo) e revisar as regras de dinheiro (dono do item, conta = fechamento).
+
+**Atenção — desconto:** o master já tem desconto na mesa e no balcão (`85ef5c3f`, outra sessão), com decisões diferentes da branch `feat/desconto-balcao-mesa` (lá a taxa de serviço é sobre o consumo cheio e o desconto fica gravado na sessão da mesa). Não mesclar aquela branch sem decidir qual vale.
 
 ## Como reproduzir as fotos
 
