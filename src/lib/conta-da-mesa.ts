@@ -22,6 +22,7 @@
  */
 
 import { parseComboSelections } from "./parse-combo";
+import { valorDoDesconto, type DescontoManual } from "./desconto-manual";
 
 const emCentavos = (v: number) => Math.round((Number(v) || 0) * 100);
 const emReais = (c: number) => Math.round(c) / 100;
@@ -74,6 +75,8 @@ export type LinhaDaConta = { nome: string; quantidade: number; valor: number };
 export type ContaDaMesa = {
   mesa: { numero: number; nome: string | null };
   consumo: number;
+  /** Desconto dado na mesa, já em reais. Zero quando não houve. */
+  desconto: { valor: number; motivo: string };
   taxaServico: { percentual: number; valor: number };
   gorjeta: number;
   total: number;
@@ -100,7 +103,9 @@ export function calcularContaDaMesa(
   mesa: MesaParaConta,
   pessoas: PessoaDaMesa[],
   taxaPct: number,
-  gorjetaReais: number | null
+  gorjetaReais: number | null,
+  /** Desconto da mesa. A taxa de serviço incide sobre o consumo JÁ descontado. */
+  desconto?: DescontoManual | null,
 ): ContaDaMesa {
   const porPessoa = new Map<string, { nome: string; centavos: number; itens: LinhaDaConta[] }>();
   pessoas.forEach((p) => porPessoa.set(p.id, { nome: p.name, centavos: 0, itens: [] }));
@@ -153,10 +158,15 @@ export function calcularContaDaMesa(
 
   const consumoTotal = [...porPessoa.values()].reduce((s, p) => s + p.centavos, 0) + daMesaCentavos;
 
-  const taxaCentavos = taxaPct > 0 ? Math.round((consumoTotal * taxaPct) / 100) : 0;
+  // O desconto sai do consumo ANTES da taxa: a taxa de serviço é sobre o que
+  // a mesa realmente vai pagar pelos itens, não sobre o que foi abatido.
+  const descontoCentavos = emCentavos(valorDoDesconto(desconto, emReais(consumoTotal)));
+  const consumoCobrado = Math.max(0, consumoTotal - descontoCentavos);
+
+  const taxaCentavos = taxaPct > 0 ? Math.round((consumoCobrado * taxaPct) / 100) : 0;
   const gorjetaCentavos =
     gorjetaReais !== null ? Math.max(0, emCentavos(gorjetaReais)) : emCentavos(mesa.waiterTip || 0);
-  const totalCentavos = consumoTotal + taxaCentavos + gorjetaCentavos;
+  const totalCentavos = consumoCobrado + taxaCentavos + gorjetaCentavos;
 
   // Rateio do que é da mesa e dos acréscimos
   const quantas = pessoas.length;
@@ -166,9 +176,12 @@ export function calcularContaDaMesa(
     // Parte igual do que é da mesa
     const parteDaMesa = quantas > 0 ? Math.floor(daMesaCentavos / quantas) : 0;
 
-    // Taxa e gorjeta proporcionais ao consumo próprio
+    // Taxa, gorjeta e DESCONTO proporcionais ao consumo próprio: quem comeu
+    // mais paga mais taxa e ganha mais desconto, que é como a mesa entende
+    // "10% pra gente".
     const base = consumoTotal > 0 ? dados.centavos / consumoTotal : 0;
     const parteExtra = Math.floor((taxaCentavos + gorjetaCentavos) * base);
+    const parteDoDesconto = Math.floor(descontoCentavos * base);
 
     return {
       id: p.id,
@@ -176,7 +189,7 @@ export function calcularContaDaMesa(
       consumo: emReais(dados.centavos),
       parteDaMesa: emReais(parteDaMesa),
       taxaEGorjeta: emReais(parteExtra),
-      totalCentavos: dados.centavos + parteDaMesa + parteExtra,
+      totalCentavos: dados.centavos + parteDaMesa + parteExtra - parteDoDesconto,
       itens: dados.itens,
     };
   });
@@ -190,6 +203,7 @@ export function calcularContaDaMesa(
   return {
     mesa: { numero: mesa.table.number, nome: mesa.table.label },
     consumo: emReais(consumoTotal),
+    desconto: { valor: emReais(descontoCentavos), motivo: String(desconto?.motivo || "") },
     taxaServico: { percentual: taxaPct, valor: emReais(taxaCentavos) },
     gorjeta: emReais(gorjetaCentavos),
     total: emReais(totalCentavos),

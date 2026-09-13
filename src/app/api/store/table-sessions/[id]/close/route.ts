@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { valorDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
@@ -17,7 +18,7 @@ export async function POST(
     if (!id) return NextResponse.json({ error: "Session ID is required" }, { status: 400 });
 
     const data = await req.json();
-    const { paymentMethods, serviceFeePercent, waiterTip } = data;
+    const { paymentMethods, serviceFeePercent, waiterTip, desconto } = data;
 
     const tableSession = await prisma.tableSession.findUnique({
       where: { id },
@@ -38,6 +39,18 @@ export async function POST(
     // Pedido cancelado não entra na conta. A tela de conta por pessoa já os
     // ignora; se aqui somasse, o garçom veria um total na tela, pagaria esse
     // valor e o fechamento recusaria por "faltar" dinheiro que ninguém deve.
+    /** O desconto como veio no corpo, sem confiar em número pronto. */
+    const lerDesconto = (bruto: any): DescontoManual | null => {
+      if (!bruto || typeof bruto !== "object") return null;
+      const valor = Number(bruto.valor);
+      if (!Number.isFinite(valor) || valor <= 0) return null;
+      return {
+        tipo: bruto.tipo === "valor" ? "valor" : "percent",
+        valor,
+        motivo: String(bruto.motivo || "").slice(0, 60),
+      };
+    };
+
     const pedidosValidos = tableSession.orders.filter((o) => o.status !== "CANCELADO");
     const subtotal = pedidosValidos.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
     // Taxa e gorjeta nunca negativas nem fora da faixa: com taxa de -100% a
@@ -48,9 +61,19 @@ export async function POST(
     if (!Number.isFinite(taxaPct) || taxaPct < 0 || taxaPct > 100 || !Number.isFinite(gorjeta) || gorjeta < 0) {
       return NextResponse.json({ error: "Taxa de serviço ou gorjeta inválida" }, { status: 400 });
     }
-    const serviceFee = taxaPct ? (subtotal * taxaPct) / 100 : 0;
     const tipAmount = gorjeta;
-    const totalAmount = subtotal + serviceFee + tipAmount;
+
+    // ── DESCONTO DADO NA MESA ─────────────────────────────────────────
+    //
+    // Recalculado AQUI a partir do tipo e do valor, nunca aceito pronto: o
+    // fechamento confere se os pagamentos cobrem a conta, e um desconto
+    // vindo pronto do navegador seria a própria conta sendo digitada por
+    // quem paga. Incide sobre o CONSUMO, antes da taxa de serviço — a taxa
+    // é sobre o que foi efetivamente cobrado.
+    const descontoEmReais = valorDoDesconto(lerDesconto(desconto), subtotal);
+    const consumoCobrado = Math.max(0, subtotal - descontoEmReais);
+    const serviceFee = taxaPct ? (consumoCobrado * taxaPct) / 100 : 0;
+    const totalAmount = consumoCobrado + serviceFee + tipAmount;
 
     // ── A SOMA DOS PAGAMENTOS TEM QUE FECHAR COM A CONTA ──────────────────
     // O comentário antigo dizia "Validate payment methods total", mas nada era

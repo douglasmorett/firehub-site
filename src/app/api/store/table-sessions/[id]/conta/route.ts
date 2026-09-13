@@ -70,5 +70,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const gorjeta =
     gorjetaParam !== null && gorjetaParam !== "" ? Math.max(0, Number(gorjetaParam) || 0) : null;
 
-  return NextResponse.json(calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta));
+  // O desconto vem por querystring para a conta por pessoa bater com o
+  // fechamento: sem ele aqui, a tela dividiria o valor CHEIO e o servidor
+  // recusaria o fechamento por sobra.
+  const tipoDesconto = req.nextUrl.searchParams.get("descontoTipo") === "valor" ? "valor" : "percent";
+  const valorDesconto = Number(req.nextUrl.searchParams.get("descontoValor")) || 0;
+  const desconto = valorDesconto > 0
+    ? { tipo: tipoDesconto as "percent" | "valor", valor: valorDesconto, motivo: req.nextUrl.searchParams.get("descontoMotivo") || "" }
+    : null;
+
+  return NextResponse.json(calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta, desconto));
 }
