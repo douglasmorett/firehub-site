@@ -13,6 +13,7 @@ import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-inter
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { inicioDoExpedienteDaLoja } from "./fuso";
+import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -1916,16 +1917,19 @@ async function syncAiOrderToDatabase({
     return { gravado: false, motivo: `nenhum item do pedido existe no cardápio (${pedidos || "sem itens"})` };
   }
 
-  // ── RETIRADA NÃO É ENTREGA ────────────────────────────────────────────────
+  // ── RETIRADA NÃO É ENTREGA — E ENTREGA NÃO É RETIRADA ─────────────────────
   //
-  // Aqui era `deliveryType: "DELIVERY"` fixo. Pedido de balcão entrava no painel
-  // como entrega, aparecia na fila do motoboy e pedia endereço que não existe.
-  // O sinal vem do que a IA anotou: sem endereço e sem frete é retirada.
-  const textoDeEntrega = `${payload.address || ""} ${payload.deliveryType || payload.orderType || ""}`.toLowerCase();
-  const ehRetirada =
-    /retirad|balc[ãa]o|buscar|takeout|pickup/.test(textoDeEntrega) ||
-    (!payload.address && deliveryFee === 0);
-  const deliveryType = ehRetirada ? "RETIRADA" : "DELIVERY";
+  // Aqui era `deliveryType: "DELIVERY"` fixo: pedido de balcão entrava como
+  // entrega e aparecia na fila do motoboy. Depois virou o contrário: o rascunho
+  // nascia RETIRADA na primeira mensagem, antes do endereço, e nunca mudava.
+  // A regra e os casos reais estão em lib/tipo-do-pedido-do-robo.ts; o tipo é
+  // regravado a cada atualização do rascunho, logo abaixo.
+  const { tipo: deliveryType, endereco: enderecoDoPedido } = tipoDoPedidoDoRobo({
+    enderecoDoPayload: payload.address,
+    enderecoDoRascunho: existingDraft?.customerAddress,
+    tipoInformado: payload.deliveryType || payload.orderType,
+    frete: deliveryFee,
+  });
 
   // ── A LOJA ENTREGA NESTE ENDEREÇO? ────────────────────────────────────────
   //
@@ -1937,7 +1941,7 @@ async function syncAiOrderToDatabase({
   // com a que o modelo escreveu. Rascunho passa: o cliente ainda está montando.
   let vereditoDaArea: VeredictoDeEntrega | null = null;
   if (isFinal && deliveryType === "DELIVERY" && loja && modoDaArea(loja) !== "SEM_AREA") {
-    vereditoDaArea = await avaliarEntrega(loja, { endereco: payload.address, bairro: payload.neighborhood || payload.bairro || null });
+    vereditoDaArea = await avaliarEntrega(loja, { endereco: enderecoDoPedido, bairro: payload.neighborhood || payload.bairro || null });
     const primeiroNome = String(customerName || "").trim().split(" ")[0];
     const saudacao = primeiroNome && primeiroNome !== "Cliente" ? `Poxa, ${primeiroNome}!` : "Poxa!";
     const retirada = aceitaRetirada
@@ -2050,6 +2054,9 @@ async function syncAiOrderToDatabase({
         customerAddress: payload.address || existingDraft.customerAddress,
         paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
         deliveryFee: deliveryFee,
+        // Sem isto o rascunho ficava com o tipo da PRIMEIRA mensagem, gravado
+        // antes de o cliente dar o endereço (lib/tipo-do-pedido-do-robo.ts).
+        deliveryType,
         totalAmount: totalOrderAmount,
         status: finalStatus,
         notes: notesText,
