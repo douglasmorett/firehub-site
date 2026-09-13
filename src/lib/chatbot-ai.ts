@@ -14,6 +14,8 @@ import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { inicioDoExpedienteDaLoja } from "./fuso";
 import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
+import { casarItensComCardapio } from "./itens-do-robo";
+import { extrairJsonDoMarcador, removerMarcador } from "./marcador-json";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -258,6 +260,14 @@ export async function processChatbotAI(
         customerPhone: true,
         createdAt: true,
         deliveryType: true,
+        // O número que o painel e a comanda mostram ("#48"). Sem ele o robô via
+        // o fim do id ("#K6D7") e não conseguia falar do mesmo pedido que o
+        // cliente e a loja.
+        dailyOrderNumber: true,
+        // O canal do pedido (lib/canal-do-pedido.ts): decide se cabe acréscimo.
+        source: true,
+        ifoodOrderId: true,
+        openDeliveryOrderId: true,
         ifoodReference: true,
         openDeliveryReference: true,
         openDeliveryChannel: true,
@@ -1284,63 +1294,18 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         // muda de forma). Extrair do texto original elimina essa classe
         // inteira de corrupção. A remoção da tag do texto visível continua
         // sendo feita no cleanText, logo abaixo.
-        let rawJsonPayload = "";
-        {
-          const m = textoOriginalDoModelo.match(/\[\[\s*PEDIDO_IA\b/i);
-          if (m && m.index !== undefined) {
-            const aposMarcador = textoOriginalDoModelo.substring(m.index);
-            const jsonStart = aposMarcador.indexOf("{");
-            if (jsonStart !== -1) {
-              // Balancear chaves/colchetes de verdade, respeitando strings.
-              // O `lastIndexOf("}")` antigo pegava qualquer `}` posterior do
-              // texto quando o `]]` faltava, e o "reparo" fixo `+"}]}]}"` só
-              // fechava um formato específico de truncamento.
-              let fim = -1;
-              const pilha: string[] = [];
-              let emString = false;
-              let escapado = false;
-              for (let i = jsonStart; i < aposMarcador.length; i++) {
-                const ch = aposMarcador[i];
-                if (escapado) { escapado = false; continue; }
-                if (ch === "\\") { escapado = true; continue; }
-                if (ch === '"') { emString = !emString; continue; }
-                if (emString) continue;
-                if (ch === "{") pilha.push("}");
-                else if (ch === "[") pilha.push("]");
-                else if (ch === "}" || ch === "]") {
-                  pilha.pop();
-                  if (pilha.length === 0) { fim = i; break; }
-                }
-              }
-              if (fim !== -1) {
-                rawJsonPayload = aposMarcador.substring(jsonStart, fim + 1);
-              } else {
-                // Resposta truncada no meio do JSON: descarta o rabo
-                // incompleto (vírgula ou par sem valor) e fecha o que a pilha
-                // diz que ficou aberto — na ordem certa.
-                let parcial = aposMarcador
-                  .substring(jsonStart)
-                  .replace(/,\s*"[^"]*"?\s*:?\s*"?[^"{}\[\]]*$/, "")
-                  .replace(/,\s*$/, "");
-                if (emString) parcial += '"';
-                rawJsonPayload = parcial + pilha.reverse().join("");
-                console.warn(`[Chatbot AI] ⚠️ Tag PEDIDO_IA truncada pela resposta do modelo; JSON reparado por balanceamento (${pilha.length} fechamento(s)).`);
-              }
-            }
-          }
+        const pedidoExtraido = extrairJsonDoMarcador(textoOriginalDoModelo, "PEDIDO_IA");
+        const rawJsonPayload = pedidoExtraido.json;
+        if (pedidoExtraido.truncado) {
+          console.warn(`[Chatbot AI] ⚠️ Tag PEDIDO_IA truncada pela resposta do modelo; JSON reparado por balanceamento (${pedidoExtraido.fechamentos} fechamento(s)).`);
         }
+        // O pedido de acréscimo num pedido que está na cozinha vem no mesmo
+        // formato de marcador (regra 28 do prompt; lib/acrescimo-servidor.ts).
+        const acrescimoExtraido = extrairJsonDoMarcador(textoOriginalDoModelo, "ACRESCIMO_PEDIDO");
 
-        // Remoção da tag do texto visível: do "[[PEDIDO_IA" até o "]]" que o
-        // fecha; sem "]]" (truncada), até o fim — não há texto legítimo depois
-        // de um JSON que nem terminou.
-        const inicioPedido = cleanText.search(/\[\[\s*PEDIDO_IA\b/i);
-        if (inicioPedido !== -1) {
-          const fechamento = cleanText.indexOf("]]", inicioPedido);
-          cleanText = (
-            cleanText.substring(0, inicioPedido) +
-            (fechamento !== -1 ? cleanText.substring(fechamento + 2) : "")
-          ).trim();
-        }
+        // As tags saem do texto que o cliente lê: do "[[" até o "]]" que fecha;
+        // truncada, até o fim (lib/marcador-json.ts).
+        cleanText = removerMarcador(removerMarcador(cleanText, "PEDIDO_IA"), "ACRESCIMO_PEDIDO");
 
         // Rede de segurança: qualquer [[...]] que não seja um marcador conhecido
         // do webhook é lixo do modelo e não pode chegar ao cliente.
@@ -1771,113 +1736,10 @@ async function syncAiOrderToDatabase({
     return { gravado: false, motivo: "payload parece comprovante de Jotajá/iFood (regra 20)" };
   }
 
-  /** Normaliza para comparar nome: sem acento, sem pontuação, espaço único. */
-  const chaveDeNome = (s: string) =>
-    String(s || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-
-  const orderItemsData = (payload.items || [])
-    .map((it: any) => {
-      const pedido = chaveDeNome(it.name);
-      if (!pedido) return null;
-
-      // ── COMO O PRODUTO É RECONHECIDO ────────────────────────────────────
-      //
-      // Antes era substring nos DOIS sentidos: bastava um nome conter o outro.
-      // Com isso "Pastel de Carne" casava com "Pastel de Carne com Catupiry" —
-      // e o pedido saía com o item errado, no preço errado. Pior: a ordem do
-      // cardápio decidia quem ganhava, então o mesmo pedido dava resultado
-      // diferente conforme o cadastro da loja.
-      //
-      // Agora: nome exato; senão, o candidato que CONTÉM o pedido inteiro —
-      // e apenas se houver um único candidato. Dois ou mais é ambiguidade real
-      // ("pastel" com vinte sabores), e aí não se adivinha: o item é recusado
-      // e a loja confere na tela em vez de mandar a coisa errada para a cozinha.
-      const exato = storeProducts.filter((sp) => chaveDeNome(sp.name) === pedido);
-      let candidatos = exato;
-      if (candidatos.length === 0) {
-        candidatos = storeProducts.filter((sp) => {
-          const nome = chaveDeNome(sp.name);
-          return nome.startsWith(pedido + " ") || nome.includes(" " + pedido + " ") || nome.endsWith(" " + pedido);
-        });
-      }
-      const matchedProduct = candidatos.length === 1 ? candidatos[0] : exato[0];
-
-      // GUILHOTINA ANTI-ALUCINAÇÃO: produto que não existe (ou nome ambíguo)
-      // não entra no pedido.
-      if (!matchedProduct) {
-        console.warn(
-          `[Chatbot AI] item "${it.name}" descartado: ${candidatos.length === 0 ? "não existe no cardápio" : candidatos.length + " produtos com esse nome (ambíguo)"}.`
-        );
-        return null;
-      }
-
-      // ── PREÇO: NUNCA O QUE A IA ESCREVEU ────────────────────────────────
-      //
-      // O valor sai sempre do cadastro. Mas "o preço do cadastro" não é só
-      // `price`: em produto cujo valor mora nas opções (o "Nugget" da Hakim tem
-      // base R$ 0,00 e custa 9,90 / 19,90 / 39,80 conforme a escolha), a base é
-      // zero — e em 01/08/2026 saiu um Nugget lançado por R$ 0,00.
-      //
-      // A correção anterior cobrava o MÍNIMO do produto, o que parou o R$ 0,00
-      // mas criou outro rombo: cliente que escolhia a opção cara pagava o preço
-      // da barata. Agora as escolhas que a IA anotou são casadas com os itens
-      // dos grupos e somadas de verdade; o mínimo continua como piso, para o
-      // caso de a IA não ter registrado escolha nenhuma.
-      const escolhas: string[] = Array.isArray(it.options)
-        ? it.options.map((o: any) => (typeof o === "string" ? o : o?.name)).filter(Boolean)
-        : [];
-
-      let somaDasOpcoes = 0;
-      const naoCasadas: string[] = [];
-      for (const escolha of escolhas) {
-        const chave = chaveDeNome(escolha);
-        if (!chave) continue;
-        let achou = false;
-        for (const grupo of (matchedProduct as any).comboGroups || []) {
-          const item = (grupo.items || []).find(
-            (gi: any) => chaveDeNome(gi?.menuProduct?.name) === chave
-          );
-          if (item) {
-            somaDasOpcoes += Number(item.additionalPrice) || 0;
-            achou = true;
-            break;
-          }
-        }
-        if (!achou) naoCasadas.push(escolha);
-      }
-      if (naoCasadas.length > 0) {
-        console.warn(
-          `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${naoCasadas.join(", ")} — não cobradas.`
-        );
-      }
-
-      const precoMinimo = precoMinimoDoProduto(matchedProduct as any);
-      const comEscolhas = (Number(matchedProduct.price) || 0) + somaDasOpcoes;
-      const realPrice = Math.round(Math.max(comEscolhas, precoMinimo) * 100) / 100;
-
-      if (realPrice !== (Number(matchedProduct.price) || 0)) {
-        console.warn(
-          `[Chatbot AI] "${matchedProduct.name}": base R$ ${matchedProduct.price}, opções R$ ${somaDasOpcoes.toFixed(2)}, mínimo R$ ${precoMinimo.toFixed(2)} — lançado por R$ ${realPrice.toFixed(2)}.`
-        );
-      }
-
-      // Quantidade também é da casa, não da IA: teto para o modelo não lançar
-      // 9999 unidades por engano de leitura.
-      const quantity = Math.min(200, Math.max(1, parseInt(it.quantity) || 1));
-
-      return {
-        menuProductId: matchedProduct.id,
-        name: escolhas.length > 0 ? `${matchedProduct.name} (${escolhas.join(", ")})` : matchedProduct.name,
-        quantity,
-        price: realPrice,
-      };
-    })
-    .filter(Boolean); // Remove os nulls (itens alucinados)
+  // O reconhecimento dos itens (nome exato, ambiguidade, preço com as opções,
+  // teto de quantidade) mora em lib/itens-do-robo.ts: o acréscimo em pedido que
+  // está na cozinha cobra pela mesma regra.
+  const orderItemsData = casarItensComCardapio(payload.items || [], storeProducts);
 
   const centavos = (n: number) => Math.round(n * 100) / 100;
   const totalItemsSum = centavos(

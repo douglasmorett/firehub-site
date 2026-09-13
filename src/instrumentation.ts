@@ -18,6 +18,7 @@ export async function register() {
     garantirEstruturaDeCaixa,
     garantirEstruturaDeMesa,
     garantirEstruturaDePrazos,
+    garantirEstruturaDeAcrescimo,
   } = await import("./lib/garantir-colunas");
   await garantirColunasDePreco();
   // As colunas que o schema.prisma declara e que nunca ganharam DDL — 39 no
@@ -47,4 +48,7 @@ export async function register() {
   // Conta da extensão FireHub Prazos (produto vendido fora do FireHub). Tabela
   // própria, sem relação com User: se faltar, só o login da extensão falha.
   await garantirEstruturaDePrazos();
+  // Pedido de acréscimo que o robô leva à cozinha. Tabela própria; se faltar,
+  // só o acréscimo pelo WhatsApp deixa de funcionar.
+  await garantirEstruturaDeAcrescimo();
 }

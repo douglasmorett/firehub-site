@@ -865,6 +865,57 @@ export async function garantirEstruturaDePrazos(): Promise<void> {
   }
 }
 
+/**
+ * ── Acréscimo em pedido que está na cozinha ────────────────────────────────
+ *
+ * Mesma categoria das garantias acima: `CREATE TABLE/INDEX IF NOT EXISTS`,
+ * aditivo e repetível. Sem a tabela só o acréscimo pelo robô deixa de
+ * funcionar (o robô responde que não conseguiu levar à cozinha e chama um
+ * atendente) — pedido, impressão e painel seguem inteiros.
+ */
+const INSTRUCOES_ACRESCIMO = [
+  `CREATE TABLE IF NOT EXISTS "PedidoAcrescimo" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "orderId" TEXT NOT NULL,
+     "status" TEXT NOT NULL DEFAULT 'PENDENTE',
+     "itens" JSONB NOT NULL,
+     "subtotal" DOUBLE PRECISION NOT NULL,
+     "remoteJid" TEXT,
+     "motivo" TEXT,
+     "respondidoPor" TEXT,
+     "respondidoEm" TIMESTAMP(3),
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "PedidoAcrescimo_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE INDEX IF NOT EXISTS "PedidoAcrescimo_franchiseeId_status_idx" ON "PedidoAcrescimo"("franchiseeId", "status")`,
+  `CREATE INDEX IF NOT EXISTS "PedidoAcrescimo_orderId_idx" ON "PedidoAcrescimo"("orderId")`,
+];
+
+let acrescimoOk = false;
+
+export async function garantirEstruturaDeAcrescimo(): Promise<void> {
+  if (acrescimoOk) return;
+
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia da tabela de acréscimo.");
+    acrescimoOk = true;
+    return;
+  }
+
+  try {
+    for (const sql of INSTRUCOES_ACRESCIMO) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    acrescimoOk = true;
+    console.log("[Boot] ✅ Tabela PedidoAcrescimo garantida.");
+  } catch (err: any) {
+    console.error(`[Boot] 🛑 Tabela PedidoAcrescimo falhou: ${err?.message}`);
+  }
+}
+
 let mesaOk = false;
 
 export async function garantirEstruturaDeMesa(): Promise<void> {

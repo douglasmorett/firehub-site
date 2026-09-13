@@ -1212,6 +1212,31 @@ model PrintRequest {
   @@index([franchiseeId, createdAt])
 }
 
+/// Cliente com pedido na cozinha pediu, pelo robô do WhatsApp, para acrescentar
+/// itens. A loja responde "dá tempo?" na tela (lib/acrescimo-servidor.ts).
+/// Tabela criada no boot por garantirEstruturaDeAcrescimo (garantir-colunas.ts).
+model PedidoAcrescimo {
+  id            String    @id @default(cuid())
+  franchiseeId  String
+  orderId       String
+  /// PENDENTE | ACEITO | RECUSADO | EXPIRADO (o pedido saiu antes da resposta)
+  status        String    @default("PENDENTE")
+  /// [{ menuProductId, name, quantity, price }] — preço do cardápio, não da IA
+  itens         Json
+  subtotal      Float
+  /// Para onde a resposta da loja volta no WhatsApp (JID do cliente).
+  remoteJid     String?
+  /// O porquê do "não", escrito pela loja.
+  motivo        String?
+  respondidoPor String?
+  respondidoEm  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
+
+  @@index([franchiseeId, status])
+  @@index([orderId])
+}
+
 // ========== FIREHUB PRAZOS (extensão vendida fora do FireHub) ==========
 /// Conta da extensão "FireHub Prazos". NÃO é loja FireHub: é um cliente que só
 /// usa a extensão para ajustar o prazo no Portal do Parceiro pela carga da
