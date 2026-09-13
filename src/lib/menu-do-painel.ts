@@ -25,6 +25,11 @@ export type ItemDoMenu = {
   destaque?: boolean;
   /** Só aparece quando a loja tem o benefício ligado. */
   somenteCom?: "antecipacao" | "compras";
+  /**
+   * As telas de dentro. Abrem no próprio menu, para o lojista escolher
+   * "Entrega" sem passar pela tela de cartões de Minha Loja.
+   */
+  filhos?: { href: string; label: string }[];
 };
 
 export type GrupoDoMenu = { titulo: string; itens: ItemDoMenu[] };
@@ -75,7 +80,24 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
   {
     titulo: "Configurações",
     itens: [
-      { href: "/store/minha-loja", label: "Minha loja", icone: "Store" },
+      {
+        href: "/store/minha-loja", label: "Minha loja", icone: "Store",
+        // Os mesmos endereços que a própria tela já entende pelo # da URL
+        // (HASH_TO_SECTION em MinhaLojaClient) — o menu não inventou rota
+        // nova, só encurtou o caminho.
+        filhos: [
+          { href: "/store/cardapio", label: "Cardápio & produtos" },
+          { href: "/store/minha-loja#info", label: "Informações da loja" },
+          { href: "/store/minha-loja#horarios", label: "Horários" },
+          { href: "/store/minha-loja#entrega", label: "Entrega" },
+          { href: "/store/minha-loja#pagamento", label: "Pagamento" },
+          { href: "/store/minha-loja#cupons", label: "Cupons" },
+          { href: "/store/minha-loja#fidelidade", label: "Fidelidade & trilha" },
+          { href: "/store/minha-loja#avaliacoes", label: "Avaliações" },
+          { href: "/store/minha-loja#equipe", label: "Equipe & permissões" },
+          { href: "/store/minha-loja#conta", label: "Minha conta" },
+        ],
+      },
       { href: "/store/impressoras", label: "Impressoras", icone: "Printer" },
       { href: "/store/integracoes", label: "Integrações", icone: "Puzzle" },
     ],

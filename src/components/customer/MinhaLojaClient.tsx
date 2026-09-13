@@ -137,12 +137,19 @@ const HASH_TO_SECTION: Record<string, Section> = {
 export default function MinhaLojaClient({ user }: { user: any }) {
   const [section, setSection] = useState<Section>("menu");
 
-  // Lê o hash da URL ao montar e navega direto para a seção correspondente
+  // Lê o hash da URL ao montar E a cada troca. O `hashchange` é o que faz o
+  // menu lateral funcionar: já estando nesta página, clicar em "Entrega"
+  // muda só o # — a página não remonta, e sem este ouvinte a seção ficava
+  // parada na que estava aberta.
   useEffect(() => {
-    const hash = window.location.hash.replace("#", "").toLowerCase();
-    if (hash && HASH_TO_SECTION[hash]) {
-      setSection(HASH_TO_SECTION[hash]);
-    }
+    const irParaOHash = () => {
+      const hash = window.location.hash.replace("#", "").toLowerCase();
+      if (hash && HASH_TO_SECTION[hash]) setSection(HASH_TO_SECTION[hash]);
+      else if (!hash) setSection("menu");
+    };
+    irParaOHash();
+    window.addEventListener("hashchange", irParaOHash);
+    return () => window.removeEventListener("hashchange", irParaOHash);
   }, []);
 
   async function saveLoyalty(config: any) {

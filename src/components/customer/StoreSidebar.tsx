@@ -19,7 +19,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  BarChart2, Bike, BookOpen, Bot, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList,
+  BarChart2, Bike, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
   Home, LineChart, MapPin, Menu, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
   Send, ShoppingBag, Store, TabletSmartphone, Tag, Truck, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
@@ -57,6 +57,8 @@ export default function StoreSidebar({
   const [recolhida, setRecolhida] = useState(false);
   const [aberta, setAberta] = useState(false); // gaveta do celular
   const [logoFalhou, setLogoFalhou] = useState(false);
+  /** Itens com sub-telas abertos agora (pelo href do pai). */
+  const [abertos, setAbertos] = useState<Record<string, boolean>>({});
   const [logoAtual, setLogoAtual] = useState<string | null>(logo || null);
   const [enviandoLogo, setEnviandoLogo] = useState(false);
   const campoDeArquivo = useRef<HTMLInputElement>(null);
@@ -122,6 +124,17 @@ export default function StoreSidebar({
   // navegação própria. A barra lateral herda a mesma regra da barra antiga.
   const ehCompras = pathname?.startsWith("/store/compras") || pathname?.startsWith("/store/orders");
   if (ehCompras) return null;
+
+  // O caminho COM o # — é o que distingue "Entrega" de "Pagamento", que são
+  // a mesma rota. `usePathname` não enxerga hash, então vem do próprio
+  // navegador e é atualizado no `hashchange`.
+  const [cru, setCru] = useState("");
+  useEffect(() => {
+    const ler = () => setCru(window.location.pathname + window.location.hash);
+    ler();
+    window.addEventListener("hashchange", ler);
+    return () => window.removeEventListener("hashchange", ler);
+  }, [pathname]);
 
   const ehAtivo = (item: ItemDoMenu) => {
     const p = String(pathname || "");
@@ -206,22 +219,58 @@ export default function StoreSidebar({
               {grupo.itens.map((item) => {
                 const Icone = ICONES[item.icone] || Home;
                 const ativo = ehAtivo(item);
+                // Abre sozinho quando já se está na tela dele: quem entrou em
+                // Minha Loja vê na hora o que tem dentro.
+                const temFilhos = !recolhida && !!item.filhos?.length;
+                const aberto = temFilhos && (abertos[item.href] ?? ativo);
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`fh-menu-item${ativo ? " ativo" : ""}`}
-                    title={recolhida ? item.label : undefined}
-                  >
-                    <Icone size={17} className="fh-menu-icone" />
-                    {!recolhida && (
-                      <>
-                        <span className="fh-menu-label">{item.label}</span>
-                        {item.destaque && <span className="fh-menu-ponto" />}
-                        {item.selo && <span className={`fh-menu-selo${item.selo === "EM TESTES" ? " teste" : ""}`}>{item.selo}</span>}
-                      </>
+                  <div key={item.href}>
+                    <div className={`fh-menu-linha${ativo ? " ativo" : ""}`}>
+                      <Link
+                        href={item.href}
+                        className={`fh-menu-item${ativo ? " ativo" : ""}${temFilhos ? " com-filhos" : ""}`}
+                        title={recolhida ? item.label : undefined}
+                      >
+                        <Icone size={17} className="fh-menu-icone" />
+                        {!recolhida && (
+                          <>
+                            <span className="fh-menu-label">{item.label}</span>
+                            {item.destaque && <span className="fh-menu-ponto" />}
+                            {item.selo && <span className={`fh-menu-selo${item.selo === "EM TESTES" ? " teste" : ""}`}>{item.selo}</span>}
+                          </>
+                        )}
+                      </Link>
+                      {temFilhos && (
+                        <button
+                          type="button"
+                          className={`fh-menu-abrir${aberto ? " aberto" : ""}`}
+                          onClick={() => setAbertos((a) => ({ ...a, [item.href]: !aberto }))}
+                          title={aberto ? "Fechar" : "Ver o que tem dentro"}
+                          aria-expanded={aberto}
+                        >
+                          <ChevronDown size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    {temFilhos && aberto && (
+                      <div className="fh-menu-filhos">
+                        {/* <a> de verdade, não <Link>: a tela de Minha Loja
+                            escolhe a seção pelo # da URL, e o Link do Next troca
+                            o hash por pushState — que NÃO dispara hashchange. O
+                            endereço mudava e a tela ficava na seção anterior. */}
+                        {item.filhos!.map((f) => (
+                          <a
+                            key={f.href}
+                            href={f.href}
+                            className={`fh-menu-filho${cru === f.href ? " ativo" : ""}`}
+                          >
+                            {f.label}
+                          </a>
+                        ))}
+                      </div>
                     )}
-                  </Link>
+                  </div>
                 );
               })}
             </div>
@@ -303,6 +352,22 @@ const ESTILO = `
    "Checklist e ponto" saía como "Checklist e p..." ao lado do selo
    FIRECHECK — menu que esconde o próprio nome não é menu. */
 .fh-menu-label{ flex:1; min-width:0; white-space:normal; line-height:1.3; }
+.fh-menu-linha{ display:flex; align-items:stretch; gap:2px; }
+.fh-menu-linha .fh-menu-item{ flex:1; min-width:0; }
+.fh-menu-abrir{ width:28px; border:none; background:none; color:#64748B; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; border-radius:8px; flex-shrink:0;
+  transition:transform .15s ease, color .15s ease; font-family:inherit; }
+.fh-menu-abrir:hover{ color:#fff; background:rgba(255,255,255,.07); }
+.fh-menu-abrir.aberto{ transform:rotate(180deg); color:#CBD5E1; }
+.fh-menu-linha.ativo .fh-menu-abrir{ color:#fff; }
+/* Os filhos ficam recuados e presos por uma linha vertical: quem olha sabe
+   que são as telas de dentro, não itens novos do menu. */
+.fh-menu-filhos{ display:flex; flex-direction:column; margin:2px 0 6px 22px;
+  padding-left:10px; border-left:1px solid #2A3441; }
+.fh-menu-filho{ padding:6px 9px; border-radius:7px; color:#94A3B8; text-decoration:none;
+  font-size:.755rem; font-weight:600; line-height:1.3; }
+.fh-menu-filho:hover{ color:#fff; background:rgba(255,255,255,.06); }
+.fh-menu-filho.ativo{ color:#fff; background:rgba(198,40,40,.35); font-weight:800; }
 .fh-menu-ponto{ width:7px; height:7px; border-radius:50%; background:#EF4444; flex-shrink:0; }
 .fh-menu-item.ativo .fh-menu-ponto{ background:#fff; }
 .fh-menu-selo{
