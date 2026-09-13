@@ -9,6 +9,7 @@ import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, descreverVeredicto, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
 import { Prisma } from "@prisma/client";
 import { cuponsComCampanha, ORIGEM_CUPOM_CAMPANHA, FONTES_QUE_NAO_SAO_SITE, digitosDoTelefone } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
@@ -449,6 +450,25 @@ export async function POST(req: Request) {
     }
     const finalNotes = orderNotes || null;
 
+    // Só quando a loja separou os dois valores (tela de Entrega). Sem isso o
+    // campo fica nulo e o relatório usa o acerto do próprio entregador.
+    const repasseDoEntregador = (() => {
+      if (deliveryType === "PICKUP") return null;
+      const regra = lerRegraDeRepasse(franchisee.deliveryConfig);
+      if (!regra.separado) return null;
+      const doVeredicto = veredictoDaArea?.taxaDoEntregador;
+      if (doVeredicto != null) return Math.round(Number(doVeredicto) * 100) / 100;
+      // Endereço que o mapa não resolveu: ainda dá para achar a faixa quando a
+      // distância veio junto do pedido.
+      return repasseDoPedido({
+        regra,
+        zonas: franchisee.deliveryZones,
+        km: veredictoDaArea?.distanciaKm ?? null,
+        bairro: veredictoDaArea?.bairro ?? null,
+        taxaDaEntrega: fee,
+      });
+    })();
+
     const pmUpper = (paymentMethod || "").toUpperCase().trim();
     const isOnlinePayment = pmUpper.includes("ONLINE") || pmUpper === "PIX" || pmUpper === "PIX_ONLINE" || pmUpper === "CREDITO_ONLINE" || pmUpper === "DEBITO_ONLINE";
 
@@ -483,6 +503,14 @@ export async function POST(req: Request) {
         // isto o desconto sumia do total e a base de cobrança encolhia junto.
         ...(discount > 0 ? { discountTotal: centavos(discount), discountMerchant: centavos(discount) } : {}),
         ...(resgateDaTrilha ? { trilhaPremio: resgateDaTrilha } : {}),
+        // ── O QUE A LOJA PAGA AO ENTREGADOR ─────────────────────────────
+        //
+        // Gravado na VENDA, não calculado no relatório: a loja reajusta a
+        // tabela de entrega e o acerto do mês passado continuaria batendo com
+        // o que ela realmente pagou. A regra é uma só, em
+        // lib/repasse-do-entregador.ts, e a faixa/bairro que decidiu a taxa do
+        // cliente é a mesma que decide esta (lib/area-de-entrega.ts).
+        ...(repasseDoEntregador != null ? { motoboyFee: repasseDoEntregador } : {}),
         status: initialStatus,
         kdsStage: initialKdsStage,
         kdsProductionAt: initialKdsProductionAt,

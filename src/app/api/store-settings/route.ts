@@ -126,6 +126,27 @@ export async function PUT(req: Request) {
     data.deliveryConfig = { ...jaMontado, areasDeRisco: limpas };
   }
 
+  // ── PAGAMENTO DO ENTREGADOR ──────────────────────────────────────────
+  //
+  // `separado` diz que a loja informa os dois valores (cliente e motoboy) por
+  // faixa/bairro; `marketplace` diz, em pedido de app, se o entregador recebe
+  // o que veio do app ou o da tabela da loja. Mesma mesclagem das áreas de
+  // risco, e pelo mesmo motivo: a tela de entrega não conhece os outros
+  // campos do deliveryConfig e não pode apagá-los.
+  if (body.repasseDoEntregador !== undefined && body.repasseDoEntregador !== null) {
+    const atual = (currentUser as any)?.deliveryConfig;
+    const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
+    const jaMontado = data.deliveryConfig && typeof data.deliveryConfig === "object" ? data.deliveryConfig : base;
+    const r = body.repasseDoEntregador as any;
+    data.deliveryConfig = {
+      ...jaMontado,
+      repasseDoEntregador: {
+        separado: r?.separado === true,
+        marketplace: r?.marketplace === "APP" ? "APP" : "TABELA",
+      },
+    };
+  }
+
   // O fuso segue o ENDEREÇO. Se cidade, endereço ou o próprio fuso vieram no
   // corpo, deriva de novo: quando o cadastro diz o estado, é ele que vale, e o
   // seletor só decide quando o endereço não diz nada. Uma loja de Manaus com

@@ -29,6 +29,7 @@
  */
 import { verifyStoreDeliveryAddress } from "@/lib/geocoding";
 import { areaDeRiscoDoPonto } from "@/lib/area-de-risco";
+import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
 
 export type LojaParaEntrega = {
   storeAddress?: string | null;
@@ -48,6 +49,15 @@ export type VeredictoDeEntrega = {
   resultado: "ATENDE" | "FORA" | "DESCONHECIDO";
   /** Taxa da faixa/bairro. null quando não há como saber (SEM_AREA sem taxa fixa, ou DESCONHECIDO). */
   taxa: number | null;
+  /**
+   * Quanto a LOJA paga ao entregador nesta mesma faixa/bairro.
+   *
+   * Sai daqui e não de outra função porque é a MESMA zona que decide os dois:
+   * calcular o repasse noutro lugar seria casar o endereço duas vezes, com
+   * duas implementações que divergem na primeira mudança de cadastro.
+   * `null` = a loja não separou os dois valores (lib/repasse-do-entregador.ts).
+   */
+  taxaDoEntregador?: number | null;
   tempoMin: number | null;
   distanciaKm?: number;
   raioMaxKm?: number;
@@ -201,7 +211,11 @@ export async function avaliarEntrega(
       bairroCadastrado(pedido.partes?.neighborhood, lista) ||
       bairroCadastrado(endereco, lista);
     if (achado) {
-      return { modo, resultado: "ATENDE", taxa: achado.fee, tempoMin: achado.time, bairro: achado.name, motivo: `bairro cadastrado: ${achado.name}` };
+      return {
+        modo, resultado: "ATENDE", taxa: achado.fee, tempoMin: achado.time, bairro: achado.name,
+        taxaDoEntregador: repasseDoBairro(zonas(loja), achado.name),
+        motivo: `bairro cadastrado: ${achado.name}`,
+      };
     }
     if (!pedido.bairro && !pedido.partes?.neighborhood && !endereco) {
       return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, motivo: "sem bairro informado" };
@@ -267,7 +281,11 @@ export async function avaliarEntrega(
     aproximado: check.precisao === "bairro",
   };
   if (check.isWithinRadius) {
-    return { ...base, resultado: "ATENDE", taxa: check.deliveryFee ?? null, tempoMin: check.estimatedTimeMin ?? null, motivo: `${check.distanceKm} km ≤ ${check.maxRadiusKm} km${check.precisao === "bairro" ? " (pelo centro do bairro)" : ""}` };
+    return {
+      ...base, resultado: "ATENDE", taxa: check.deliveryFee ?? null, tempoMin: check.estimatedTimeMin ?? null,
+      taxaDoEntregador: repasseDaFaixaKm(zonas(loja), check.distanceKm),
+      motivo: `${check.distanceKm} km ≤ ${check.maxRadiusKm} km${check.precisao === "bairro" ? " (pelo centro do bairro)" : ""}`,
+    };
   }
   return { ...base, resultado: "FORA", taxa: null, tempoMin: null, motivo: `${check.distanceKm} km > raio de ${check.maxRadiusKm} km` };
 }
