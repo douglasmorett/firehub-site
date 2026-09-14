@@ -149,11 +149,16 @@ Se tiver qualquer dúvida, basta nos responder por aqui.`;
         const storeSlug = rawSlug && rawSlug !== "minha-loja" ? rawSlug : "loja";
         const baseUrl = process.env.NEXTAUTH_URL || "https://firehubfood.com.br";
         const reviewUrl = `${baseUrl.replace(/\/$/, "")}/loja/${storeSlug}/avaliar/${order.id}`;
-        message = `🥳 *Pedido Entregue com Sucesso!*
+        // Em pedido de RETIRADA ninguém entregou nada: o cliente veio buscar.
+        // "Foi entregue 🛵" num pedido de balcão faz o cliente achar que houve
+        // entrega — e, quando ele ainda não passou na loja, que alguém pegou o
+        // pedido dele.
+        const ehRetirada = order.deliveryType !== "DELIVERY";
+        message = `${ehRetirada ? "🥳 *Pedido Retirado!*" : "🥳 *Pedido Entregue com Sucesso!*"}
 
-Olá, *${order.customerName}*! O seu pedido *#${shortId}* de *${storeName}* foi entregue! 🛵
+Olá, *${order.customerName}*! O seu pedido *#${shortId}* de *${storeName}* ${ehRetirada ? "foi retirado! 🛍️" : "foi entregue! 🛵"}
 
-Sua opinião é muito importante para nós! Poderia avaliar a refeição e a entrega em 5 segundos?
+Sua opinião é muito importante para nós! Poderia avaliar ${ehRetirada ? "a refeição" : "a refeição e a entrega"} em 5 segundos?
 👉 ${reviewUrl}
 
 Muito obrigado e bom apetite! ⭐😋`;

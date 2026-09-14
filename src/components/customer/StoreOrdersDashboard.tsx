@@ -489,32 +489,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   /** As lojas da conta, para dizer de qual marca é este pedido. */
   lojasDeOrigem,
 }: any) {
-  /**
-   * Resumo que abre ao passar o mouse no número do pedido.
-   *
-   * Só depois de 3 segundos com a seta PARADA em cima. Abrindo na hora, a
-   * caixinha pulava na frente do cartão de baixo toda vez que o mouse
-   * cruzava o número a caminho do checkbox ou de um botão — atrapalhava
-   * justamente quem queria só selecionar o pedido (dono, 12/09/2026).
-   *
-   * "Parada" com folga de 8 px: tremor de mão não reinicia a contagem, mas
-   * quem está de passagem reinicia e nunca chega aos 3 segundos.
-   */
-  const [mostrarResumo, setMostrarResumo] = useState(false);
-  const relogioDoResumo = useRef<any>(null);
-  const ondeASetaEstava = useRef({ x: 0, y: 0 });
-
-  const cancelarResumo = () => {
-    if (relogioDoResumo.current) clearTimeout(relogioDoResumo.current);
-    relogioDoResumo.current = null;
-  };
-  const contarTresSegundos = () => {
-    cancelarResumo();
-    relogioDoResumo.current = setTimeout(() => setMostrarResumo(true), 3000);
-  };
-  // O cartão sai da tela a cada mudança de status. Sem isto o relógio
-  // continuaria correndo para um componente que já não existe.
-  useEffect(() => cancelarResumo, []);
+  // O resumo que abria ao passar o mouse no número do pedido mudou de tela:
+  // aqui ele não servia (o dono, 13/09/2026), e a informação foi para o MAPA da
+  // roteirização — onde se monta rota e é preciso saber o que é cada pino sem
+  // clicar em todos (RoteirizacaoModal, popupDoPedido no mouseover).
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.NOVO;
   const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
   const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
@@ -696,69 +674,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               lineHeight: "1.25",
               letterSpacing: "-0.2px",
               position: "relative",
-              cursor: "help",
             }}
-            onMouseEnter={(e: any) => {
-              ondeASetaEstava.current = { x: e.clientX, y: e.clientY };
-              contarTresSegundos();
-            }}
-            onMouseMove={(e: any) => {
-              if (mostrarResumo) return; // já aberto: mexer o mouse não fecha
-              const antes = ondeASetaEstava.current;
-              if (Math.abs(e.clientX - antes.x) < 8 && Math.abs(e.clientY - antes.y) < 8) return;
-              ondeASetaEstava.current = { x: e.clientX, y: e.clientY };
-              contarTresSegundos();
-            }}
-            onMouseLeave={() => { cancelarResumo(); setMostrarResumo(false); }}
           >
             #{seqNum} — {order.customerName}
-            {mostrarResumo && (
-              <div
-                onMouseEnter={(e) => e.stopPropagation()}
-                style={{
-                  position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 9999,
-                  width: 310, maxWidth: "88vw", background: "#0F172A", color: "#F8FAFC",
-                  borderRadius: 10, padding: "10px 12px", boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
-                  fontSize: "0.76rem", fontWeight: 500, lineHeight: 1.45, letterSpacing: 0,
-                  whiteSpace: "normal", pointerEvents: "none",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontWeight: 800, color: canalDoPedido(order).texto === "#15803D" ? "#86EFAC" : "#FDE68A" }}>
-                    {rotuloDoCanal(order)}
-                  </span>
-                  <span style={{ fontWeight: 800 }}>R$ {Number(order.totalAmount || 0).toFixed(2)}</span>
-                </div>
-                {order.customerPhone && <div>📞 {order.customerPhone}</div>}
-                {(order.customerAddress || order.address) && (
-                  <div style={{ color: "#CBD5E1", marginTop: 2 }}>📍 {String(order.customerAddress || order.address).slice(0, 120)}</div>
-                )}
-                {/* O horário que a comida TEM que estar na porta do cliente — a
-                    informação que o lojista pediu e que não existia na tela. */}
-                {deadline && (
-                  <div style={{ marginTop: 4, fontWeight: 700, color: remainingMs !== null && remainingMs < 0 ? "#FCA5A5" : "#FDE68A" }}>
-                    ⏰ Entregar até {deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                    {remainingMs !== null && (remainingMs < 0
-                      ? ` · atrasado ${Math.floor(Math.abs(remainingMs) / 60000)} min`
-                      : ` · faltam ${Math.floor(remainingMs / 60000)} min`)}
-                  </div>
-                )}
-                {order.paymentMethod && <div style={{ marginTop: 2, color: "#CBD5E1" }}>💳 {order.paymentMethod}</div>}
-                {Array.isArray(order.items) && order.items.length > 0 && (
-                  <div style={{ marginTop: 6, borderTop: "1px solid #334155", paddingTop: 5 }}>
-                    {order.items.slice(0, 7).map((it: any, i: number) => (
-                      <div key={i} style={{ color: "#E2E8F0" }}>
-                        {it.quantity ?? 1}× {nomeDoItem(it)}
-                      </div>
-                    ))}
-                    {order.items.length > 7 && (
-                      <div style={{ color: "#94A3B8" }}>+ {order.items.length - 7} item(ns)</div>
-                    )}
-                  </div>
-                )}
-                {order.notes && <div style={{ marginTop: 5, color: "#FDE68A" }}>📝 {String(order.notes).slice(0, 140)}</div>}
-              </div>
-            )}
           </div>
           {/* Coluna, não linha: o selo do canal em cima e o da loja iFood
               embaixo. Lado a lado, os dois juntos não cabiam na largura da
@@ -1115,8 +1033,15 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType === "DELIVERY" && (
               <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🛵 Saiu</button>
             )}
+            {/* ── RETIRADA: 'Pronto' É PRONTO, NÃO ENTREGUE ──────────────────
+                Este botão mandava o status ENTREGUE direto — e o robô avisava
+                o cliente "Pedido Entregue com Sucesso! foi entregue 🛵" com o
+                pedido ainda em cima do balcão, esperando ele. Mandando PRONTO,
+                o cliente recebe "está pronto para retirar" e o pedido continua
+                caindo em Finalizado no quadro (retirada + PRONTO já entra lá),
+                então nada muda para a loja. */}
             {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType !== "DELIVERY" && (
-              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Pronto</button>
+              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "PRONTO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Pronto</button>
             )}
             {order.status === "SAIU_ENTREGA" && (
               <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>📦 Entregue</button>
@@ -2755,7 +2680,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // site em preparo às 23:50 sumia do quadro à meia-noite, com a comida
     // ainda na chapa. A regra agora é o ESTADO do pedido, não de onde veio.
     const activeStatuses = ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"];
-    const isInProgress = activeStatuses.includes(o.status);
+    // RETIRADA em PRONTO já é fim de linha para o quadro: o pedido está em cima
+    // do balcão e o card cai na coluna Finalizado. Tratá-lo como "em aberto"
+    // faria ele atravessar a meia-noite e reaparecer no dia seguinte — o que o
+    // dono já pediu para não acontecer com pedido finalizado.
+    const prontoDeRetirada = o.status === "PRONTO" && o.deliveryType !== "DELIVERY";
+    const isInProgress = activeStatuses.includes(o.status) && !prontoDeRetirada;
     const refDate = dataDoPedido(o);
 
     if (isInProgress) {
