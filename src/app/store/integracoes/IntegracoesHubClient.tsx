@@ -2006,34 +2006,54 @@ export default function IntegracoesHubClient({
                           border: `1.5px solid ${venceu ? "#FCA5A5" : "#FED7AA"}`,
                         }}>
                           <div style={{ fontSize: "0.78rem", fontWeight: 800, color: venceu ? "#B91C1C" : "#9A3412", marginBottom: 6 }}>
-                            {venceu ? "⏰ Este código expirou" : `⏱️ Código válido por mais ${mm}:${String(ss).padStart(2, "0")}`}
+                            {venceu ? "⏰ O prazo para autorizar expirou" : `⏱️ Você tem mais ${mm}:${String(ss).padStart(2, "0")} para autorizar no iFood`}
                           </div>
+                          {/* ── Por que o código de ativação NÃO aparece grande aqui ──────────
+                            *
+                            * São DOIS códigos diferentes, e é aí que o lojista se perde:
+                            *
+                            *   1. userCode  (ex.: JHXZ-KCTW) — o que ESTE passo gera. Serve
+                            *      para o iFood saber qual app está pedindo acesso.
+                            *   2. authorizationCode (ex.: HSXD-CWHG) — o que o iFood devolve
+                            *      DEPOIS de autorizar, e o único que se cola no passo 2.
+                            *
+                            * O userCode já vai preenchido na URL que abrimos
+                            * (verificationUrlComplete) e ainda é copiado para a área de
+                            * transferência: o lojista nunca precisa lê-lo. Mostrá-lo em
+                            * corpo 1.6rem com "Digite este código" fazia ele chegar no iFood,
+                            * ver um código DIFERENTE na tela e concluir que o nosso era falso
+                            * — foi a queixa da Delicias de Casa em 14/09/2026.
+                            *
+                            * Agora ele fica como letra miúda, só para o caso de o navegador
+                            * ter bloqueado a aba. O código em destaque passa a ser um só: o
+                            * que o lojista cola.
+                            */}
                           {!venceu && (
                             <>
-                              <div style={{
-                                fontSize: "1.6rem", fontWeight: 900, letterSpacing: "0.18em",
-                                color: "#0F172A", textAlign: "center", padding: "6px 0", fontFamily: "monospace",
-                              }}>
-                                {userCodeData.userCode}
+                              <div style={{ fontSize: "0.78rem", color: "#7C2D12", lineHeight: 1.6 }}>
+                                A página do iFood abriu numa aba nova <b>já com o código preenchido</b> —
+                                é só autorizar por lá. O iFood então mostra um <b>código de autorização</b>
+                                (outro código, tipo <code>HSXD-CWHG</code>): <b>é esse</b> que você cola
+                                no passo 2, aqui embaixo.
                               </div>
-                              <div style={{ fontSize: "0.74rem", color: "#7C2D12", lineHeight: 1.5 }}>
-                                Digite este código em <b>portal.ifood.com.br/apps/code</b>. Ele já foi copiado
-                                e a página do iFood abriu numa aba nova.
-                              </div>
-                              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                                <button
-                                  type="button"
-                                  onClick={() => { try { navigator.clipboard.writeText(userCodeData.userCode); showToast("📋 Código copiado", "#10B981"); } catch {} }}
-                                  style={{ flex: 1, padding: "8px", borderRadius: 8, border: "1.5px solid #FDBA74", background: "#fff", color: "#9A3412", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
-                                >
-                                  📋 Copiar código
-                                </button>
+                              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                                 <button
                                   type="button"
                                   onClick={() => window.open(userCodeData.verificationUrl, "_blank")}
                                   style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "#EA580C", color: "#fff", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
                                 >
-                                  Abrir o iFood ↗
+                                  Abrir o iFood de novo ↗
+                                </button>
+                              </div>
+                              <div style={{ fontSize: "0.7rem", color: "#9A3412", marginTop: 8, lineHeight: 1.5 }}>
+                                Não abriu? Entre em <b>portal.ifood.com.br/apps/code</b> e digite{" "}
+                                <code style={{ fontWeight: 800, letterSpacing: "0.06em" }}>{userCodeData.userCode}</code>{" "}
+                                <button
+                                  type="button"
+                                  onClick={() => { try { navigator.clipboard.writeText(userCodeData.userCode); showToast("📋 Código copiado", "#10B981"); } catch {} }}
+                                  style={{ border: "none", background: "none", color: "#9A3412", fontWeight: 800, fontSize: "0.7rem", cursor: "pointer", textDecoration: "underline", padding: 0, fontFamily: "inherit" }}
+                                >
+                                  copiar
                                 </button>
                               </div>
                             </>
@@ -2133,7 +2153,10 @@ export default function IntegracoesHubClient({
                     🔑 2. Cole o Código de Autorização OU Merchant ID do iFood:
                   </div>
                   <div style={{ fontSize: "0.75rem", color: "#15803D", marginBottom: 10 }}>
-                    Cole o código gerado na janela <strong>"Aplicativo Autorizado"</strong> ou o <strong>Merchant UUID</strong> da sua loja no iFood (ex: <code>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>).
+                    Cole aqui o código que <strong>o iFood mostrou</strong> na janela
+                    "Integração autorizada" (ex: <code>HSXD-CWHG</code>) — não o do passo 1.
+                    O <strong>Merchant UUID</strong> da sua loja também serve
+                    (ex: <code>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>).
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input
