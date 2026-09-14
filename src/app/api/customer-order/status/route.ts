@@ -361,6 +361,21 @@ export async function PUT(req: Request) {
         await jotajaCall(`/v1/orders/${odId}/startPreparation`, "startPreparation");
       }
 
+      // PRONTO não tinha ramo aqui. O iFood recebia readyToPickup, o 99Food,
+      // a Brendi e a Wabiz recebiam o PRONTO pelos blocos acima, e só o
+      // JotaJá ficava sem aviso: o entregador parceiro dele não era chamado
+      // no Pronto, só no Saiu para Entrega — meia hora depois, com a comida
+      // esfriando no balcão. O KDS já fazia esta chamada; o painel não.
+      if (status === "PRONTO") {
+        // startPreparation antes, pela mesma razão do dispatch: o Open
+        // Delivery recusa readyToPickup em pedido que ainda não entrou em
+        // preparo.
+        if (order.status === "ACEITO" || order.status === "NOVO") {
+          await jotajaCall(`/v1/orders/${odId}/startPreparation`, "startPreparation (pre-ready)");
+        }
+        await jotajaCall(`/v1/orders/${odId}/readyToPickup`, "readyToPickup");
+      }
+
       if (status === "SAIU_ENTREGA") {
         // Garantir startPreparation antes do dispatch (igual iFood)
         if (order.status === "ACEITO" || order.status === "NOVO") {

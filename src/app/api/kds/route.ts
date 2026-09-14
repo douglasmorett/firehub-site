@@ -269,7 +269,7 @@ export async function PUT(req: NextRequest) {
       // era avisar o parceiro errado e deixar o entregador do 99 sem chamado.
       const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
       const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
-      const { ehPedidoBrendi } = await import("@/lib/brendi-status");
+      const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
 
       if (ehPedidoWabiz(order)) {
         await sincronizarWabiz(
@@ -282,8 +282,24 @@ export async function PUT(req: NextRequest) {
           "PRONTO"
         ).catch((e) => console.warn("[KDS Wabiz Sync Error]:", e?.message));
       } else if (ehPedidoBrendi(order)) {
-        // A Brendi é sincronizada pela rota de status; aqui só não pode cair
-        // no ramo do JotaJá abaixo.
+        // ESTE RAMO ERA VAZIO, com um comentário dizendo que a rota de status
+        // cuidava da Brendi. Não cuidava: o KDS escreve o pedido direto no
+        // banco (o update logo acima) e nunca passa por /api/customer-order/
+        // status. Resultado: marcar Pronto na cozinha avisava iFood, 99Food,
+        // Wabiz e JotaJá — e a Brendi não ficava sabendo, então o entregador
+        // parceiro só era chamado quando alguém repetia o Pronto pelo painel.
+        await sincronizarBrendi(
+          {
+            // O resgate manual grava o id com sufixo `_recovered`; a API da
+            // Brendi só conhece o UUID limpo (mesma normalização da rota de
+            // status).
+            openDeliveryOrderId: order.openDeliveryOrderId!.replace(/_recovered$/, ""),
+            franchiseeId: order.franchiseeId,
+            status: order.status,
+            deliveryBy: order.deliveryBy,
+          },
+          "PRONTO"
+        ).catch((e) => console.warn("[KDS Brendi Sync Error]:", e?.message));
       } else if (ehPedido99Food(order)) {
         await sincronizar99Food(
           {

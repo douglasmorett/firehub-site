@@ -6,7 +6,11 @@ import { sendOrderNotification } from "@/lib/order-notifications";
 
 export const dynamic = "force-dynamic";
 
-const VALID_STATUSES = ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO", "CANCELED"];
+// PRONTO faltava nesta lista: quem integra pela API pública (PDV, KDS de
+// terceiro) levava 400 ao marcar o pedido como pronto e era obrigado a pular
+// direto para "saiu para entrega" — que dispara o dispatch no parceiro e
+// registra a saída de um pedido que ainda está no balcão.
+const VALID_STATUSES = ["NOVO", "ACEITO", "PREPARANDO", "EM_PREPARO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO", "CANCELED"];
 
 export async function PATCH(
   req: NextRequest,
@@ -47,8 +51,15 @@ export async function PATCH(
     },
   });
 
-  // Notificar cliente via WhatsApp se o status for SAIU_ENTREGA ou ENTREGUE
-  if (["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"].includes(targetStatus)) {
+  // Notificar cliente via WhatsApp. PRONTO nao e um evento de notificacao: ele
+  // vira o aviso de retirada, que so faz sentido em pedido que o cliente vem
+  // buscar. Em pedido de entrega o cliente nao tem o que fazer com um "pronto":
+  // o aviso dele e o SAIU_ENTREGA, logo abaixo.
+  if (targetStatus === "PRONTO") {
+    if (existingOrder.deliveryType !== "DELIVERY") {
+      sendOrderNotification(updatedOrder.id, "PRONTO_RETIRADA").catch(() => {});
+    }
+  } else if (["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"].includes(targetStatus)) {
     sendOrderNotification(updatedOrder.id, targetStatus as any).catch(() => {});
   }
 
