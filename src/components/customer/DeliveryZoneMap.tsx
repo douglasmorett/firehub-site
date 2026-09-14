@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { areasDeRisco as lerAreasDeRisco, type AreaDeRisco } from "@/lib/area-de-risco";
-import { explicarRegraDoApp, lerRegraDeRepasse, type OrigemDoRepasseNoApp } from "@/lib/repasse-do-entregador";
 import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from "lucide-react";
 
 const ZONE_COLORS = ["#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
@@ -51,7 +50,7 @@ interface Props {
   initialAreasDeRisco?: unknown;
   /** `User.deliveryConfig` inteiro — daqui sai a regra de repasse já gravada. */
   initialDeliveryConfig?: unknown;
-  onSave: (data: { storeLatLng: { lat: number; lng: number }; deliveryZones: Zone[]; deliveryZoneType: string; storeAddress: string; ifoodSyncDeliveryTime?: boolean; areasDeRisco?: AreaDeRisco[]; repasseDoEntregador?: { separado: boolean; marketplace: OrigemDoRepasseNoApp } }) => Promise<void>;
+  onSave: (data: { storeLatLng: { lat: number; lng: number }; deliveryZones: Zone[]; deliveryZoneType: string; storeAddress: string; ifoodSyncDeliveryTime?: boolean; areasDeRisco?: AreaDeRisco[] }) => Promise<void>;
 }
 
 export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialIfoodSyncDeliveryTime, initialAreasDeRisco, initialDeliveryConfig, onSave }: Props) {
@@ -59,6 +58,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const circlesRef = useRef<any[]>([]);
+  const observadorDoTamanho = useRef<ResizeObserver | null>(null);
   const editingAddressRef = useRef(!initialLatLng);
 
   const [address, setAddress] = useState(initialAddress || "");
@@ -132,22 +132,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
    * configurou volta na tela e ve os proprios numeros, em vez de uma coluna
    * sumida e o valor aparentemente perdido.
    */
-  /**
-   * Em pedido de app, o entregador recebe o que veio do app ou o da tabela?
-   *
-   * Nasce do que já está gravado; o padrão é TABELA porque a taxa que o
-   * iFood mostra é dinheiro do marketplace, não o que a loja paga — foi
-   * exatamente essa confusão que pôs R$ 6,94 no acerto de uma entrega de
-   * R$ 2,00 (12/09/2026).
-   */
-  const [repasseNoApp, setRepasseNoApp] = useState<OrigemDoRepasseNoApp>(
-    () => lerRegraDeRepasse(initialDeliveryConfig).marketplace,
-  );
-
-  const [repasseSeparado, setRepasseSeparado] = useState<boolean>(
-    () => (initialZones || []).some((z: any) => z && z.motoboyFee != null && z.motoboyFee !== ""),
-  );
-
   const [hoveredZoneIndex, setHoveredZoneIndex] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -259,7 +243,29 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
       leafletMapRef.current = { map, L };
       drawCircles();
+
+      // ── O MAPA TEM QUE RECONHECER A LARGURA QUE TEM ──────────────────
+      //
+      // O Leaflet mede o container UMA vez, na criação, e depois só escuta
+      // `window.resize`. Aqui o container muda de largura sem a janela mudar:
+      // recolher o menu lateral, abrir a seção de entrega dentro de Minha
+      // Loja, o CSS chegar depois do primeiro quadro. Em todos esses casos os
+      // tiles ficavam desenhados na largura ANTIGA — o mapa aparecia como uma
+      // faixa estreita com cinza à direita, que é o "mapa espremido" que o
+      // dono viu duas vezes.
+      const recalcular = () => { try { map.invalidateSize(); } catch {} };
+      recalcular();
+      // Um quadro depois, para o caso de o CSS do Leaflet ter chegado agora.
+      requestAnimationFrame(recalcular);
+      const observador = new ResizeObserver(recalcular);
+      if (mapRef.current) observador.observe(mapRef.current);
+      observadorDoTamanho.current = observador;
     });
+
+    return () => {
+      observadorDoTamanho.current?.disconnect();
+      observadorDoTamanho.current = null;
+    };
   }, [leafletLoaded]);
 
 
@@ -554,16 +560,13 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       return;
     }
     setSaving(true);
-    // Com o repasse ligado, toda faixa/bairro sai daqui COM o valor do
-    // entregador — inclusive as que a loja não tocou. A tela mostrava o valor
-    // da taxa no campo (motoboyFee ?? fee) e salvava sem ele: o cadastro dizia
-    // "separado" e o relatório não achava número nenhum para usar.
-    const zonasAtivas = currentZoneType === "NEIGHBORHOOD" ? neighborhoodZones : zones;
-    const activeZones = repasseSeparado
-      ? zonasAtivas.map((z: any) => ({ ...z, motoboyFee: Number(z.motoboyFee ?? z.fee) || 0 }))
-      : zonasAtivas;
+    // O pagamento do entregador saiu desta tela e mora na aba Motoboys. O
+    // `motoboyFee` que já estiver gravado em cada zona CONTINUA sendo salvo
+    // junto (as zonas vão inteiras): apagá-lo aqui zeraria o repasse de quem
+    // configurou antes da mudança, e o relatório voltaria à taxa do cliente.
+    const activeZones = currentZoneType === "NEIGHBORHOOD" ? neighborhoodZones : zones;
     try {
-      await onSave({ storeLatLng: latLng, deliveryZones: activeZones, deliveryZoneType: currentZoneType, storeAddress: address, ifoodSyncDeliveryTime: ifoodSync, areasDeRisco, repasseDoEntregador: { separado: repasseSeparado, marketplace: repasseNoApp } });
+      await onSave({ storeLatLng: latLng, deliveryZones: activeZones, deliveryZoneType: currentZoneType, storeAddress: address, ifoodSyncDeliveryTime: ifoodSync, areasDeRisco });
       const syncMinutes = (window as any).__ifoodSyncOk;
       if (syncMinutes) {
         setMsg(`✅ Salvo! iFood sincronizado: ${syncMinutes} min de preparo.`);
@@ -827,87 +830,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 : "O pedido cai na primeira faixa que alcança a distância em linha reta."}
           </p>
 
-          {/* ── PAGAMENTO DO ENTREGADOR ───────────────────────────────────
-              Fica ANTES das tabelas, e não dentro de uma delas, porque vale
-              para as duas modalidades: a loja que cobra por bairro paga
-              entregador igual à que cobra por raio. Enquanto esta caixa
-              esteve dentro do bloco de raio, quem cobrava por bairro não
-              tinha onde informar o repasse — e o acerto caía na taxa do
-              cliente, que em pedido de app é dinheiro do marketplace. */}
-          <div style={{ border: `1.5px solid ${repasseSeparado ? "#FED7AA" : "#E2E8F0"}`, background: repasseSeparado ? "#FFFBF5" : "#F8FAFC", borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-              <span style={{ fontSize: "1rem" }}>🛵</span>
-              <b style={{ fontSize: "0.9rem", color: "#0F172A" }}>Pagamento do entregador</b>
-            </div>
-            <p style={{ margin: "0 0 10px", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.5 }}>
-              O que você <b>cobra do cliente</b> e o que você <b>paga ao entregador</b> são dois valores
-              diferentes na maioria das lojas. Informe os dois e o relatório de entregas fecha certo.
-            </p>
-
-            <label style={{ display: "flex", gap: 9, alignItems: "flex-start", cursor: "pointer", background: "#fff", border: `1.5px solid ${repasseSeparado ? "#FDBA74" : "#E2E8F0"}`, borderRadius: 10, padding: "10px 12px" }}>
-              <input
-                type="checkbox"
-                checked={repasseSeparado}
-                onChange={(e) => {
-                  const ligado = e.target.checked;
-                  setRepasseSeparado(ligado);
-                  // Ligando, cada faixa nasce repassando o mesmo que cobra —
-                  // assim nada muda de valor até a loja mexer de propósito.
-                  if (ligado) {
-                    setZones(p => p.map(z => ({ ...z, motoboyFee: z.motoboyFee ?? z.fee })));
-                    setNeighborhoodZones(p => p.map(z => ({ ...z, motoboyFee: (z as any).motoboyFee ?? z.fee })));
-                  } else {
-                    setZones(p => p.map(({ motoboyFee, ...z }) => z));
-                    setNeighborhoodZones(p => p.map(({ motoboyFee, ...z }: any) => z));
-                  }
-                }}
-                style={{ marginTop: 2, width: 16, height: 16, accentColor: "#C2410C", cursor: "pointer", flexShrink: 0 }}
-              />
-              <span style={{ fontSize: "0.8rem", color: "#334155", lineHeight: 1.45 }}>
-                <b>Lançar preço diferente para o cliente e para o motoboy.</b>{" "}
-                <span style={{ color: "#64748B" }}>
-                  Abre o campo <b>🛵 Motoboy recebe</b> em cada {metodoAtivo === "NEIGHBORHOOD" ? "bairro" : "faixa"} aqui
-                  embaixo, e mostra quanto sobra para a loja. Use quando você fica com parte da entrega.
-                </span>
-              </span>
-            </label>
-
-            {/* ── PEDIDO DE APP: DE ONDE SAI O VALOR DO ENTREGADOR ────────
-                A dúvida real do lojista, e os dois modelos que existem: quem
-                repassa a entrega do iFood inteira ao motoboy, e quem paga
-                sempre o mesmo, independente do que o app pagou. */}
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#334155", marginBottom: 7 }}>
-                Nos pedidos de <b>iFood, 99Food</b> e outros apps, o entregador recebe:
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8 }}>
-                {[
-                  { v: "TABELA" as const, t: "O valor da minha tabela", d: "O que você cadastrou aqui embaixo para aquela distância ou bairro." },
-                  { v: "APP" as const, t: "O valor que veio do app", d: "A taxa de entrega que o iFood/99 pagou naquele pedido." },
-                ].map((op) => (
-                  <button
-                    key={op.v}
-                    type="button"
-                    onClick={() => setRepasseNoApp(op.v)}
-                    style={{
-                      textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
-                      border: `2px solid ${repasseNoApp === op.v ? "#C2410C" : "#E2E8F0"}`,
-                      background: repasseNoApp === op.v ? "#FFF7ED" : "#fff", fontFamily: "inherit",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8rem", fontWeight: 800, color: repasseNoApp === op.v ? "#9A3412" : "#334155" }}>
-                      <span>{repasseNoApp === op.v ? "●" : "○"}</span>{op.t}
-                    </div>
-                    <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 3, lineHeight: 1.4 }}>{op.d}</div>
-                  </button>
-                ))}
-              </div>
-              <p style={{ margin: "8px 0 0", fontSize: "0.73rem", lineHeight: 1.45, color: repasseNoApp === "APP" ? "#334155" : "#92400E", background: repasseNoApp === "APP" ? "#F8FAFC" : "#FFFBEB", border: `1px solid ${repasseNoApp === "APP" ? "#E2E8F0" : "#FDE68A"}`, borderRadius: 8, padding: "7px 10px" }}>
-                {explicarRegraDoApp({ separado: repasseSeparado, marketplace: repasseNoApp })}
-              </p>
-            </div>
-          </div>
-
           {/* Mode 1: KM (Por Raio) */}
           {porDistancia && (
             <>
@@ -974,23 +896,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                           onChange={e => updateZone(i, "fee", parseFloat(e.target.value) || 0)}
                           style={caixaDoCampo} />
                       </label>
-                      {repasseSeparado && (
-                        <label style={campoDaFaixa}>
-                          <span style={{ ...rotuloDoCampo, color: "#C2410C" }}>🛵 Motoboy recebe</span>
-                          <input type="number" min="0" step="0.5" value={zone.motoboyFee ?? zone.fee}
-                            onChange={e => updateZone(i, "motoboyFee" as any, parseFloat(e.target.value) || 0)}
-                            style={{ ...caixaDoCampo, border: "1.5px solid #FED7AA", background: "#FFF7ED", color: "#9A3412", fontWeight: 700 }} />
-                        </label>
-                      )}
                     </div>
 
-                    {repasseSeparado && (
-                      <div style={{ marginTop: 8, fontSize: "0.73rem", fontWeight: 700, color: sobra < 0 ? "#B91C1C" : "#166534" }}>
-                        {sobra < 0
-                          ? `Você paga ${dinheiro(Math.abs(sobra))} do próprio bolso nesta faixa`
-                          : `Sobra ${dinheiro(sobra)} para a loja nesta faixa`}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -1046,23 +953,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                           onChange={e => mudar({ fee: parseFloat(e.target.value) || 0 })}
                           style={caixaDoCampo} />
                       </label>
-                      {repasseSeparado && (
-                        <label style={campoDaFaixa}>
-                          <span style={{ ...rotuloDoCampo, color: "#C2410C" }}>🛵 Motoboy recebe</span>
-                          <input type="number" min="0" step="0.5" value={zone.motoboyFee ?? zone.fee}
-                            onChange={e => mudar({ motoboyFee: parseFloat(e.target.value) || 0 })}
-                            style={{ ...caixaDoCampo, border: "1.5px solid #FED7AA", background: "#FFF7ED", color: "#9A3412", fontWeight: 700 }} />
-                        </label>
-                      )}
                     </div>
 
-                    {repasseSeparado && (
-                      <div style={{ marginTop: 8, fontSize: "0.73rem", fontWeight: 700, color: sobra < 0 ? "#B91C1C" : "#166534" }}>
-                        {sobra < 0
-                          ? `Você paga ${dinheiro(Math.abs(sobra))} do próprio bolso neste bairro`
-                          : `Sobra ${dinheiro(sobra)} para a loja neste bairro`}
-                      </div>
-                    )}
                   </div>
                 );
               })}

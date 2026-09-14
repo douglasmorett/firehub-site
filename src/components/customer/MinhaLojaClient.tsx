@@ -280,8 +280,12 @@ export default function MinhaLojaClient({ user }: { user: any }) {
   }
 
   // ── Demais seções — usa StoreSettingsForm com aba pré-selecionada ─────────────
+  // A ENTREGA é a exceção da largura: ela é um MAPA, e mapa espremido em 900px
+  // não mostra a área de entrega — que é a única coisa que a tela existe para
+  // mostrar. As outras seções continuam em coluna de leitura.
+  const secaoDeMapa = section === "delivery";
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "1.5rem 1rem" }}>
+    <div style={{ maxWidth: secaoDeMapa ? "none" : 900, margin: "0 auto", padding: secaoDeMapa ? "1rem 0.9rem" : "1.5rem 1rem" }}>
       <BackBtn onClick={() => setSection("menu")} title={SECTIONS.find(s => s.id === section)?.title || ""} />
       <StoreSettingsForm
         user={user}

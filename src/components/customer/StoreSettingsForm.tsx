@@ -365,7 +365,9 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   );
 
   return (
-    <div style={{ maxWidth: "700px" }}>
+    // 700px é a coluna de leitura dos formulários. O mapa da entrega não cabe
+    // nela: ali a largura é a informação.
+    <div style={{ maxWidth: tab === "delivery" ? "100%" : "700px" }}>
       {/* LINK DA LOJA PREMIUM */}
       {show("info") && <div style={{ 
         background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", 
@@ -1057,7 +1059,6 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           zoneType={user.deliveryZoneType || "KM"}
           initialIfoodSyncDeliveryTime={(user as any).ifoodSyncDeliveryTime ?? false}
           initialAreasDeRisco={((user as any).deliveryConfig as any)?.areasDeRisco || []}
-          initialDeliveryConfig={(user as any).deliveryConfig}
           onSave={async (data) => {
             const res = await fetch("/api/store-settings", {
               method: "PUT",
@@ -1080,9 +1081,6 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 // resto da configuração de entrega. Mandado como campo próprio
                 // para a rota mesclar sem apagar o que já está lá.
                 areasDeRisco: data.areasDeRisco || [],
-                // Mesma ideia das áreas de risco: campo próprio para a rota
-                // mesclar dentro do deliveryConfig sem apagar o resto.
-                repasseDoEntregador: data.repasseDoEntregador,
               }),
             });
             const result = await res.json();

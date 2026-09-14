@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { lerRegraDeRepasse, repasseDaZona, repasseDoPedido } from "@/lib/repasse-do-entregador";
+import { lerFaixasDoMotoboy, valorDaFaixa } from "@/lib/faixas-do-motoboy";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -233,12 +234,15 @@ export async function GET(req: Request) {
     // "Taxa: R$ 1,00" — um valor que não existe em lugar nenhum do acerto
     // entre a loja e o entregador.
     const ehPorEntrega = mb.paymentType === "PER_DELIVERY" || mb.paymentType === "BOTH" || mb.paymentType === "DAILY_PLUS_FEE";
+    // As faixas de km DESTE entregador — o acerto mais específico que existe,
+    // porque é o combinado com ele, não a regra geral da loja.
+    const faixasDele = lerFaixasDoMotoboy((mb as any).faixasDeKm);
     // Sem valor por entrega configurado, o relatório cai na taxa do cliente —
     // que é o comportamento antigo, mantido para não zerar o acerto de quem
     // nunca configurou. A tela avisa que é isso que está acontecendo.
     // Só avisa quando REALMENTE caiu na taxa do cliente: com repasse por faixa
     // cadastrado, a conta já é a certa e o aviso seria ruído.
-    const usandoTaxaDoCliente = (ehPorEntrega || !mb.paymentType) && perDeliveryRate <= 0 && faixasComRepasse === 0 && !regraDeRepasse.separado;
+    const usandoTaxaDoCliente = (ehPorEntrega || !mb.paymentType) && perDeliveryRate <= 0 && faixasComRepasse === 0 && !regraDeRepasse.separado && faixasDele.length === 0;
 
     // A ordem importa e é esta, da mais específica para a mais genérica:
     //   1. o que ficou gravado NO PEDIDO (motoboyFee) — é história, não regra
@@ -250,6 +254,10 @@ export async function GET(req: Request) {
       if (mb.paymentType === "DAILY_RATE") return 0;
       const gravado = Number(o.motoboyFee || 0);
       if (gravado > 0) return gravado;
+      // Faixa do entregador vem ANTES do valor por km e do valor por entrega:
+      // quem cadastrou faixa quis faixa, e ela é o combinado individual dele.
+      const daFaixaDele = valorDaFaixa(faixasDele, o.deliveryDistance);
+      if (daFaixaDele != null) return daFaixaDele;
       if (mb.paymentType === "PER_KM") return (o.deliveryDistance || 0) * perKmRate;
       if (perDeliveryRate > 0) return perDeliveryRate;
       const daRegra = repasseDaRegra(o);
@@ -271,6 +279,7 @@ export async function GET(req: Request) {
         dailyRate,
         perDeliveryRate,
         perKmRate,
+        faixasDeKm: faixasDele,
         active: mb.active,
         // A tela precisa dizer ao lojista QUE CONTA foi feita — e avisar
         // quando caiu na taxa do cliente por falta de configuração.

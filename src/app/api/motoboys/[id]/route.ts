@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { lerFaixasDoMotoboy } from "@/lib/faixas-do-motoboy";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -21,7 +22,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!existing) return NextResponse.json({ error: "Motoboy não encontrado" }, { status: 404 });
 
   const body = await req.json();
-  const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, notes, active } = body;
+  const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, faixasDeKm, notes, active } = body;
 
   const motoboy = await prisma.motoboy.update({
     where: { id },
@@ -37,6 +38,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       ...(dailyRate !== undefined && { dailyRate: dailyRate ? Number(dailyRate) : null }),
       ...(perDeliveryRate !== undefined && { perDeliveryRate: perDeliveryRate ? Number(perDeliveryRate) : null }),
       ...(perKmRate !== undefined && { perKmRate: perKmRate ? Number(perKmRate) : null }),
+      // Só mexe quando a tela mandou o campo — atualização por presença, como
+      // o resto desta rota.
+      ...(faixasDeKm !== undefined && { faixasDeKm: lerFaixasDoMotoboy(faixasDeKm) }),
       ...(notes !== undefined && { notes: notes?.trim() || null }),
       ...(active !== undefined && { active }),
     },

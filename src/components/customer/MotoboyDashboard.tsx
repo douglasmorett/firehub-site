@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
 import MotoboyManager from "./MotoboyManager";
+import RegraDoPagamentoDoApp from "./RegraDoPagamentoDoApp";
 import MotoboyReport from "./MotoboyReport";
 
-export default function MotoboyDashboard({ initialMotoboys, storeTimezone }: { initialMotoboys: any[], storeTimezone?: string }) {
+export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliveryConfig }: { initialMotoboys: any[], storeTimezone?: string, deliveryConfig?: unknown }) {
   const [tab, setTab] = useState<"cadastro" | "relatorio">("cadastro");
   const [motoboys, setMotoboys] = useState(initialMotoboys);
 
@@ -27,7 +28,12 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone }: { i
       </div>
 
       {tab === "cadastro" && (
-        <MotoboyManager initialMotoboys={motoboys} />
+        <>
+          {/* Decisão da LOJA, não de um entregador: o mesmo pedido de app não
+              pode valer um número para um e outro para outro. */}
+          <RegraDoPagamentoDoApp deliveryConfig={deliveryConfig} />
+          <MotoboyManager initialMotoboys={motoboys} />
+        </>
       )}
       {tab === "relatorio" && (
         <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} />

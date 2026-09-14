@@ -1,12 +1,16 @@
 "use client";
 import { useState } from "react";
 import { Plus, Edit2, Trash2, Bike, Check, X, Phone, DollarSign, Search } from "lucide-react";
+import {
+  explicarFaixas, lerFaixasDoMotoboy, problemasDasFaixas, type FaixaDoMotoboy,
+} from "@/lib/faixas-do-motoboy";
 
 type Motoboy = {
   // password só existe na ida (definir/redefinir). A API não devolve mais o
   // valor — devolve senhaPadrao, dizendo se o entregador ainda não trocou.
   id: string; name: string; phone?: string; password?: string; senhaPadrao?: boolean; active: boolean;
   paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; notes?: string;
+  faixasDeKm?: FaixaDoMotoboy[];
   todayDeliveryCount?: number; todayDeliveryFees?: number; todayDailyRate?: number; todayTotalEarnings?: number;
 };
 
@@ -15,10 +19,13 @@ const PAYMENT_TYPES = [
   { value: "DAILY_RATE", label: "Diária Fixa" },
   { value: "BOTH", label: "Diária + Por Entrega" },
   { value: "DAILY_PLUS_FEE", label: "Diária + Taxa do Pedido" },
-  { value: "PER_KM", label: "Por KM Percorrido" },
+  { value: "PER_KM", label: "Por KM Percorrido (R$ por km rodado)" },
+  // O acerto que a loja realmente faz: "até 2 km R$ 5, até 4 km R$ 7". Antes
+  // só existia R$/km, e o lojista tinha de converter a tabela de cabeça.
+  { value: "FAIXA_KM", label: "Por faixa de distância (até X km, R$ Y)" },
 ];
 
-const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, notes: "" });
+const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, faixasDeKm: [], notes: "" });
 
 export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: Motoboy[] }) {
   const [motoboys, setMotoboys] = useState<Motoboy[]>(initialMotoboys);
@@ -112,6 +119,74 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             </div>
           )}
         </div>
+        {/* ── FAIXAS DE DISTÂNCIA ──────────────────────────────────────
+            Uma linha por faixa: 'até X km' → 'R$ Y por entrega'. É o acerto
+            que a loja faz de verdade; R$/km obrigava a converter de cabeça e
+            dava um número diferente a cada corrida. */}
+        {(editing.paymentType === "FAIXA_KM" || (editing.faixasDeKm?.length || 0) > 0) && (() => {
+          const faixas = editing.faixasDeKm || [];
+          const mudarFaixa = (i: number, campo: "ate" | "valor", v: number) =>
+            setEditing(p => ({ ...p, faixasDeKm: (p?.faixasDeKm || []).map((f, k) => k === i ? { ...f, [campo]: v } : f) }));
+          const remover = (i: number) =>
+            setEditing(p => ({ ...p, faixasDeKm: (p?.faixasDeKm || []).filter((_, k) => k !== i) }));
+          const adicionar = () => setEditing(p => {
+            const atuais = p?.faixasDeKm || [];
+            const ultima = atuais.length ? atuais[atuais.length - 1] : null;
+            return { ...p, faixasDeKm: [...atuais, { ate: ultima ? ultima.ate + 2 : 2, valor: ultima ? ultima.valor : 5 }] };
+          });
+          const problemas = problemasDasFaixas(faixas);
+          return (
+            <div style={{ margin: "0 0 12px", padding: "12px 14px", background: "#FFFBF5", borderRadius: 12, border: "1.5px solid #FED7AA" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+                <b style={{ fontSize: "0.88rem", color: "#9A3412" }}>🛵 Quanto pagar por faixa de distância</b>
+              </div>
+              <p style={{ margin: "0 0 10px", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.5 }}>
+                Uma linha por faixa. O pedido cai na <b>primeira faixa que alcança</b> a distância da entrega;
+                acima da última, vale a última.
+              </p>
+
+              {faixas.length === 0 && (
+                <p style={{ margin: "0 0 10px", fontSize: "0.78rem", color: "#92400E" }}>
+                  Nenhuma faixa ainda — adicione a primeira abaixo.
+                </p>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {faixas.map((f, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap" }}>até</span>
+                    <input type="number" min="0.5" step="0.5" value={f.ate || ""}
+                      onChange={e => mudarFaixa(i, "ate", parseFloat(e.target.value) || 0)}
+                      style={{ width: 72, padding: "7px 8px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }} />
+                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#64748B", whiteSpace: "nowrap" }}>km  →  o entregador recebe R$</span>
+                    <input type="number" min="0" step="0.5" value={f.valor ?? ""}
+                      onChange={e => mudarFaixa(i, "valor", parseFloat(e.target.value) || 0)}
+                      style={{ width: 86, padding: "7px 8px", borderRadius: 8, border: "1.5px solid #FED7AA", background: "#fff", color: "#9A3412", fontSize: "0.88rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }} />
+                    <button type="button" onClick={() => remover(i)} title="Remover esta faixa"
+                      style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", marginLeft: "auto" }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button type="button" onClick={adicionar}
+                style={{ width: "100%", marginTop: 9, padding: "9px", borderRadius: 10, border: "1.5px dashed #FDBA74", background: "#fff", color: "#C2410C", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <Plus size={14} /> Adicionar faixa de km
+              </button>
+
+              {faixas.length > 0 && problemas.length === 0 && (
+                <p style={{ margin: "9px 0 0", fontSize: "0.74rem", color: "#166534", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
+                  {explicarFaixas(lerFaixasDoMotoboy(faixas))}
+                </p>
+              )}
+              {problemas.map((x, i) => (
+                <p key={i} style={{ margin: "7px 0 0", fontSize: "0.76rem", color: "#B91C1C", fontWeight: 700 }}>{x}</p>
+              ))}
+            </div>
+          );
+        })()}
+
         {editing.paymentType === "DAILY_PLUS_FEE" && (
           <div style={{ margin: "0 0 12px", padding: "10px 14px", background: "#EFF6FF", borderRadius: 10, border: "1.5px solid #93C5FD", fontSize: "0.82rem", color: "#1D4ED8" }}>
             💡 <strong>Diária + Taxa:</strong> O motoboy recebe a diária fixa + o valor da taxa de entrega de cada pedido (iFood ou site). As taxas são somadas automaticamente.

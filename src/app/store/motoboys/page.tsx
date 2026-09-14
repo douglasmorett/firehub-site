@@ -15,6 +15,12 @@ export default async function MotoboysPage() {
 
   const targetFranchiseeId = (user as any).ownerId || user.id;
 
+  // A regra do pagamento em pedido de app é da LOJA — em conta de funcionário,
+  // vem do dono, não de quem está logado.
+  const dono = (user as any).ownerId
+    ? await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { deliveryConfig: true } }).catch(() => null)
+    : null;
+
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId },
     orderBy: [{ active: "desc" }, { name: "asc" }],
@@ -26,7 +32,7 @@ export default async function MotoboysPage() {
       <p className="text-muted" style={{ marginBottom: "1.5rem" }}>
         Cadastre seus entregadores, configure pagamentos e gere relatórios de comissão.
       </p>
-      <MotoboyDashboard initialMotoboys={motoboys} storeTimezone={user.storeTimezone || undefined} />
+      <MotoboyDashboard initialMotoboys={motoboys} storeTimezone={user.storeTimezone || undefined} deliveryConfig={(dono as any)?.deliveryConfig ?? (user as any).deliveryConfig} />
     </div>
   );
 }

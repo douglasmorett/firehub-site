@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { lerFaixasDoMotoboy } from "@/lib/faixas-do-motoboy";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
 
   const targetFranchiseeId = user.ownerId || user.id;
   const body = await req.json();
-  const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, notes } = body;
+  const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, faixasDeKm, notes } = body;
 
   if (!name?.trim()) {
     return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
@@ -101,6 +102,9 @@ export async function POST(req: Request) {
       dailyRate: dailyRate ? Number(dailyRate) : null,
       perDeliveryRate: perDeliveryRate ? Number(perDeliveryRate) : null,
       perKmRate: perKmRate ? Number(perKmRate) : null,
+      // Saneado na entrada: a tela manda o que o lojista digitou, e faixa com
+      // distância zero ou valor negativo não pode virar acerto de pagamento.
+      faixasDeKm: lerFaixasDoMotoboy(faixasDeKm),
       notes: notes?.trim() || null,
     },
   });
