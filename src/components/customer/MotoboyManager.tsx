@@ -1,9 +1,13 @@
 "use client";
-import { useState } from "react";
-import { Plus, Edit2, Trash2, Bike, Check, X, Phone, DollarSign, Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, Edit2, Trash2, Bike, Check, X, Phone, DollarSign, Search, Bookmark } from "lucide-react";
 import {
   explicarFaixas, lerFaixasDoMotoboy, problemasDasFaixas, type FaixaDoMotoboy,
 } from "@/lib/faixas-do-motoboy";
+import {
+  acertoSegueOModelo, aplicarModelo, explicarModelo, lerModelosDePagamento, modeloDoAcerto,
+  problemasDoModelo, type ModeloDePagamento,
+} from "@/lib/modelos-de-pagamento";
 
 type Motoboy = {
   // password só existe na ida (definir/redefinir). A API não devolve mais o
@@ -11,6 +15,8 @@ type Motoboy = {
   id: string; name: string; phone?: string; password?: string; senhaPadrao?: boolean; active: boolean;
   paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; notes?: string;
   faixasDeKm?: FaixaDoMotoboy[];
+  /** Id do modelo de onde este acerto foi copiado (lib/modelos-de-pagamento.ts). */
+  modeloDePagamento?: string | null;
   todayDeliveryCount?: number; todayDeliveryFees?: number; todayDailyRate?: number; todayTotalEarnings?: number;
 };
 
@@ -25,7 +31,7 @@ const PAYMENT_TYPES = [
   { value: "FAIXA_KM", label: "Por faixa de distância (até X km, R$ Y)" },
 ];
 
-const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, faixasDeKm: [], notes: "" });
+const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, faixasDeKm: [], modeloDePagamento: null, notes: "" });
 
 export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: Motoboy[] }) {
   const [motoboys, setMotoboys] = useState<Motoboy[]>(initialMotoboys);
@@ -34,6 +40,84 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+
+  // ── OS ACERTOS SALVOS ──────────────────────────────────────────────────
+  //
+  // A escada de km é a mesma para quase todo mundo: "até 1 km R$ 5, até 2 km
+  // R$ 6, até 3 km R$ 7". Como ela morava só dentro de cada entregador,
+  // cadastrar o segundo era redigitar a escada inteira — e um dígito diferente
+  // numa linha qualquer vira diferença no acerto do fim do dia, que ninguém
+  // encontra depois. Aqui o acerto ganha nome e é escolhido de novo.
+  const [modelos, setModelos] = useState<ModeloDePagamento[]>([]);
+  const [salvandoModelo, setSalvandoModelo] = useState(false);
+  useEffect(() => {
+    fetch("/api/store/modelos-pagamento")
+      .then((r) => (r.ok ? r.json() : { modelos: [] }))
+      .then((d) => setModelos(lerModelosDePagamento(d?.modelos)))
+      .catch(() => {});
+  }, []);
+
+  /**
+   * Escolheu um modelo: os valores dele são COPIADOS para o formulário.
+   *
+   * Copiados, e não apontados — mexer no modelo depois não pode mudar, calado,
+   * quanto dez pessoas recebem, nem valer para entregas que já aconteceram.
+   */
+  const usarModelo = (id: string) => {
+    const m = modelos.find((x) => x.id === id);
+    if (!m) { setEditing((p) => ({ ...p, modeloDePagamento: null })); return; }
+    const campos = aplicarModelo(m);
+    setEditing((p) => ({
+      ...p,
+      paymentType: campos.paymentType,
+      dailyRate: campos.dailyRate ?? undefined,
+      perDeliveryRate: campos.perDeliveryRate ?? undefined,
+      perKmRate: campos.perKmRate ?? undefined,
+      faixasDeKm: campos.faixasDeKm,
+      modeloDePagamento: campos.modeloDePagamento,
+    }));
+    setMsg(`✅ Acerto de "${m.nome}" aplicado aqui.`);
+  };
+
+  /** Salva o acerto que está no formulário como um modelo com nome. */
+  const salvarComoModelo = async () => {
+    const nome = (prompt("Nome deste acerto (é por ele que você vai escolher nos próximos entregadores):", "") || "").trim();
+    if (!nome) return;
+    const novo = modeloDoAcerto(nome, {
+      paymentType: editing?.paymentType,
+      dailyRate: editing?.dailyRate,
+      perDeliveryRate: editing?.perDeliveryRate,
+      perKmRate: editing?.perKmRate,
+      faixasDeKm: editing?.faixasDeKm,
+    });
+    const problemas = problemasDoModelo(novo, modelos);
+    if (problemas.length) { setMsg("❌ " + problemas.join(" ")); return; }
+    setSalvandoModelo(true);
+    try {
+      const lista = [...modelos, novo];
+      const res = await fetch("/api/store/modelos-pagamento", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelos: lista }),
+      });
+      if (!res.ok) throw new Error();
+      setModelos(lista);
+      setEditing((p) => ({ ...p, modeloDePagamento: novo.id }));
+      setMsg(`✅ Salvo como "${nome}". Nos próximos entregadores é só escolher.`);
+    } catch { setMsg("❌ Não deu para salvar o modelo."); } finally { setSalvandoModelo(false); }
+  };
+
+  /** Apaga um modelo. Quem já usa continua igual: os valores foram copiados. */
+  const apagarModelo = async (id: string) => {
+    const m = modelos.find((x) => x.id === id);
+    if (!m) return;
+    if (!confirm(`Apagar o modelo "${m.nome}"?\n\nQuem já usa continua recebendo igual — os valores ficaram gravados dentro de cada entregador.`)) return;
+    const lista = modelos.filter((x) => x.id !== id);
+    const res = await fetch("/api/store/modelos-pagamento", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelos: lista }),
+    });
+    if (res.ok) setModelos(lista);
+  };
 
   const filteredMotoboys = motoboys.filter(mb => 
     mb.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -92,6 +176,49 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Telefone</label>
             <input className="input-field" value={editing.phone || ""} onChange={e => setEditing(p => ({ ...p, phone: e.target.value }))} placeholder="(22) 99999-9999" />
           </div>
+        </div>
+        {/* ── ACERTO SALVO ──────────────────────────────────────────────
+            Fica ANTES do tipo de pagamento porque é o caminho curto: quem
+            já tem a tabela montada escolhe o nome e não olha mais para
+            baixo. Quem está montando a primeira ignora e segue. */}
+        <div style={{ marginBottom: 12, padding: "11px 13px", background: "#F5F3FF", border: "1.5px solid #DDD6FE", borderRadius: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7, flexWrap: "wrap" }}>
+            <Bookmark size={14} style={{ color: "#6D28D9" }} />
+            <b style={{ fontSize: "0.86rem", color: "#5B21B6" }}>Acerto salvo</b>
+            <span style={{ fontSize: "0.73rem", color: "#7C3AED" }}>
+              cadastre a tabela uma vez e reuse nos próximos
+            </span>
+          </div>
+          {modelos.length > 0 ? (
+            <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+              <select
+                className="input-field"
+                style={{ flex: "1 1 200px", minWidth: 0 }}
+                value={editing.modeloDePagamento || ""}
+                onChange={(e) => usarModelo(e.target.value)}
+              >
+                <option value="">Montar do zero…</option>
+                {modelos.map((m) => (
+                  <option key={m.id} value={m.id}>{m.nome} — {explicarModelo(m)}</option>
+                ))}
+              </select>
+              {editing.modeloDePagamento && (
+                <button
+                  type="button"
+                  onClick={() => apagarModelo(editing.modeloDePagamento!)}
+                  title="Apagar este modelo da lista da loja"
+                  style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.76rem", color: "#6D28D9", lineHeight: 1.5 }}>
+              Nenhum acerto salvo ainda. Monte o pagamento abaixo e toque em
+              <b> Salvar este acerto</b> — no próximo entregador ele aparece aqui para escolher.
+            </p>
+          )}
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Tipo de Pagamento</label>
@@ -199,6 +326,49 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             💡 <strong>Diária + Taxa:</strong> O motoboy recebe a diária fixa + o valor da taxa de entrega de cada pedido (iFood ou site). As taxas são somadas automaticamente.
           </div>
         )}
+
+        {/* ── SALVAR ESTE ACERTO ────────────────────────────────────────
+            Fica no FIM do bloco de pagamento, que é onde a pessoa acabou de
+            digitar a escada inteira — é ali que ela descobre que não vai
+            precisar digitar de novo. O botão some quando o acerto já veio de
+            um modelo e ninguém mexeu nele: não há o que salvar duas vezes. */}
+        {(() => {
+          const acerto = {
+            paymentType: editing.paymentType,
+            dailyRate: editing.dailyRate,
+            perDeliveryRate: editing.perDeliveryRate,
+            perKmRate: editing.perKmRate,
+            faixasDeKm: editing.faixasDeKm,
+          };
+          const daLista = modelos.find((m) => m.id === editing.modeloDePagamento);
+          const igualAoModelo = daLista ? acertoSegueOModelo(acerto, daLista) : false;
+          if (igualAoModelo) {
+            return (
+              <p style={{ margin: "0 0 12px", fontSize: "0.76rem", color: "#5B21B6", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 9, padding: "8px 11px" }}>
+                🔖 Este entregador está no acerto <b>{daLista!.nome}</b>.
+              </p>
+            );
+          }
+          return (
+            <div style={{ margin: "0 0 12px" }}>
+              {daLista && (
+                <p style={{ margin: "0 0 7px", fontSize: "0.76rem", color: "#B45309", fontWeight: 700 }}>
+                  ✏️ Você mudou os valores de <b>{daLista.nome}</b> — a mudança vale só para este
+                  entregador. Para valer para todos, salve como um acerto novo.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={salvarComoModelo}
+                disabled={salvandoModelo || problemasDoModelo(modeloDoAcerto("x", acerto)).some((s) => !/nome/i.test(s))}
+                title="Guarda este pagamento com um nome, para escolher nos próximos entregadores"
+                style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px dashed #C4B5FD", background: "#fff", color: "#6D28D9", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+              >
+                <Bookmark size={14} /> {salvandoModelo ? "Salvando…" : "Salvar este acerto para reusar"}
+              </button>
+            </div>
+          );
+        })()}
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
             🔑 {editingId ? "Redefinir senha do App Entregador" : "Senha de Acesso ao App Entregador"}

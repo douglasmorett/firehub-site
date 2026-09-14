@@ -196,6 +196,12 @@ model User {
   /// O que o dono configura para o app dos entregadores: { lembrarBebidas,
   /// pedirCodigoEntrega }. Ausente = tudo ligado. Ver lib/app-motoboy-config.ts.
   appMotoboyConfig Json?
+  /// Os acertos de entregador que a loja cadastrou UMA vez para reusar:
+  /// [{ id, nome, paymentType, dailyRate, perDeliveryRate, perKmRate,
+  ///   faixasDeKm }] — lib/modelos-de-pagamento.ts. Existe porque a escada
+  /// de km e a mesma para quase todo mundo, e redigitar por entregador era
+  /// onde nascia a diferenca de um digito no acerto do fim do dia.
+  modelosDePagamento Json?
   stockInvoices   StockInvoice[]
   menuCategories  MenuCategory[]
   routeSchedules  RouteSchedule[]
@@ -1159,6 +1165,12 @@ model Motoboy {
   /// "até 2 km R$ 5, até 4 km R$ 7". `perKmRate` continua para quem paga por
   /// km rodado de verdade.
   faixasDeKm       Json?
+  /// O id do modelo de pagamento de onde este acerto foi copiado
+  /// (lib/modelos-de-pagamento.ts). Os VALORES moram acima, copiados: o modelo
+  /// nao e ponteiro, senao mexer nele mudaria calado quanto dez pessoas
+  /// recebem. Isto aqui so serve para a tela dizer de onde veio e oferecer
+  /// reaplicar quando a loja mandar.
+  modeloDePagamento String?
   notes            String?
   franchisee       User            @relation(fields: [franchiseeId], references: [id])
   orders           CustomerOrder[]

@@ -86,7 +86,7 @@ export async function POST(req: Request) {
 
   const targetFranchiseeId = user.ownerId || user.id;
   const body = await req.json();
-  const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, faixasDeKm, notes } = body;
+  const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, faixasDeKm, notes, modeloDePagamento } = body;
 
   if (!name?.trim()) {
     return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
@@ -105,6 +105,8 @@ export async function POST(req: Request) {
       // Saneado na entrada: a tela manda o que o lojista digitou, e faixa com
       // distância zero ou valor negativo não pode virar acerto de pagamento.
       faixasDeKm: lerFaixasDoMotoboy(faixasDeKm),
+      // De qual modelo o acerto veio, quando veio de um (lib/modelos-de-pagamento.ts).
+      modeloDePagamento: modeloDePagamento?.trim() || null,
       notes: notes?.trim() || null,
     },
   });
