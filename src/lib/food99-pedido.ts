@@ -176,6 +176,14 @@ export interface PedidoTraduzido {
   shopId: string | null;
   appShopId: string | null;
   cliente: { nome: string; telefone: string; endereco: string };
+  /**
+   * O ponto que o 99Food mandou junto do endereço, quando manda.
+   *
+   * Vale mais que geocodificar o texto: é onde o cliente marcou no app. Sem
+   * ele, todo pedido do 99 caía na geocodificação e o pino ia para onde o
+   * mapa achasse — foi a reclamação do Frangoso em 13/09/2026.
+   */
+  coordenadas?: { lat: number; lng: number };
   pagamento: { texto: string; pagoOnline: boolean };
   entreguePor: "99FOOD" | "MERCHANT";
   total: number;
@@ -209,11 +217,31 @@ export interface PedidoTraduzido {
  * `order` é o objeto do pedido — pode chegar solto no evento ou dentro de
  * `event.order`; quem chama resolve isso antes.
  */
+import { chavesDoEndereco, coordenadasDoParceiro } from "./coordenadas-do-parceiro";
+
 export function traduzirPedido99Food(order: any): PedidoTraduzido {
   const o = order || {};
   const preco = o.price || {};
   const loja = o.shop || {};
   const endereco = o.receive_address || {};
+
+  // ── O PONTO DO CLIENTE, E O LOG DE QUANDO ELE NAO VEM ──────────────────
+  //
+  // O Frangoso reclamou em 13/09/2026 que as localizacoes do 99Food batiam
+  // erradas, e o banco confirmou: NENHUM pedido do 99 tinha coordenada — todos
+  // caiam na geocodificacao do texto, que erra bairro homonimo e rua repetida.
+  //
+  // O leitor tolerante procura os nomes conhecidos (lib/coordenadas-do-
+  // parceiro.ts). Se mesmo assim nao achar, o log abaixo lista as chaves que o
+  // endereco REALMENTE tem: sem isso, "o 99 nao manda coordenada" e um beco —
+  // ninguem sabe se o campo nao veio ou se veio com um nome que o leitor nao
+  // conhece. Com a lista no log, o proximo pedido de verdade fecha o assunto.
+  const coordenadas = coordenadasDoParceiro(endereco, o.delivery, o);
+  if (!coordenadas && Object.keys(endereco).length > 0) {
+    console.warn(
+      `[99Food] pedido ${o.order_id ?? "?"} sem coordenada; chaves do endereco: ${chavesDoEndereco(endereco)}`,
+    );
+  }
 
   // `real_pay_price` é o total do pedido depois de descontos e cupom — é o
   // número que a nota do 99Food chama de "Total do pedido". Os outros dois
@@ -256,6 +284,7 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
       telefone: telefoneDoCliente(endereco),
       endereco: enderecoDoCliente(endereco),
     },
+    coordenadas,
     pagamento: formaDePagamento99(o.pay_type),
     entreguePor: quemEntrega99(o.delivery_type),
     total: centavosParaReais(totalCentavos),

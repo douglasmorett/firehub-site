@@ -545,6 +545,10 @@ export async function POST(req: NextRequest) {
                 customerName: p.cliente.nome,
                 customerPhone: p.cliente.telefone,
                 customerAddress: p.cliente.endereco,
+                // O ponto do app do cliente, quando o 99Food manda. É o que
+                // faz a roteirização e o "motoboy mais perto" acertarem sem
+                // depender de geocodificar o texto do endereço.
+                ...(p.coordenadas ? { customerLatLng: p.coordenadas } : {}),
                 // O aceite automatico da loja vale para o 99Food tambem. Com ele
                 // ligado o pedido ja nasce ACEITO e e confirmado no 99Food logo
                 // abaixo; desligado, nasce NOVO e fica tocando no painel para o

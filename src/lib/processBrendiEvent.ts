@@ -20,6 +20,7 @@
  *      total zero ANTES de entrar em produção.
  */
 import { prisma } from "@/lib/prisma";
+import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { isBeverageName } from "@/lib/beverage";
@@ -896,6 +897,16 @@ export async function processBrendiEvent(
         return parts.join(" - ");
       })();
 
+      // O ponto que o cliente marcou no mapa do app da Brendi, quando vem.
+      // Vale mais que geocodificar o texto acima: o texto erra bairro
+      // homônimo e rua repetida em duas cidades. Ver
+      // lib/coordenadas-do-parceiro.ts.
+      const customerLatLng = coordenadasDoParceiro(
+        orderData.delivery?.deliveryAddress,
+        orderData.delivery,
+        orderData,
+      );
+
       const deliveryType = (() => {
         // `type` é o campo REAL da Brendi ("DELIVERY" / "TAKEOUT"), confirmado
         // nos dois pedidos de teste. Antes a decisão dependia de `orderType`
@@ -997,6 +1008,7 @@ export async function processBrendiEvent(
               customerName,
               customerPhone: phoneLocalizer ? `${phoneNumber} ID: ${phoneLocalizer}` : phoneNumber,
               customerAddress,
+              ...(customerLatLng ? { customerLatLng } : {}),
               deliveryType,
               paymentMethod: resolvedPaymentMethod,
               totalAmount: Math.round(total * 100) / 100,
@@ -1071,6 +1083,7 @@ export async function processBrendiEvent(
               customerName: `${customerName} (RECUPERADO)`,
               customerPhone: phoneLocalizer ? `${phoneNumber} ID: ${phoneLocalizer}` : phoneNumber,
               customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress || "",
+              ...(customerLatLng ? { customerLatLng } : {}),
               deliveryType: "DELIVERY",
               paymentMethod: resolvedPaymentMethod || "Verificar",
               totalAmount: total,

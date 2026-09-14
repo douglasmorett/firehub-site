@@ -5,6 +5,7 @@
  *   npx tsx scripts/teste-traducao-wabiz.ts
  */
 import { dataHoraDaLoja } from "@/lib/fuso";
+import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
 import { isBeverageName } from "@/lib/beverage";
 import type { WabizPedido, WabizParte, WabizPagamento } from "@/lib/wabiz-api";
 
@@ -289,6 +290,12 @@ export function traduzirPedidoWabiz(
     customerName,
     customerPhone,
     customerAddress,
+    // Idem Brendi e 99Food: o ponto do parceiro, quando vem.
+    // O contrato da Wabiz nao declara coordenada (wabiz-api.ts so tem texto:
+    // rua, numero, regiao, CEP), mas payload real costuma trazer campo que a
+    // doc nao lista. O leitor tolerante aceita se vier e ignora se nao vier:
+    // nao custa nada hoje e para de custar geocodificacao no dia em que vier.
+    customerLatLng: coordenadasDoParceiro(pedido?.service?.delivery, pedido),
     deliveryType,
     paymentMethod,
     totalAmount: total,
