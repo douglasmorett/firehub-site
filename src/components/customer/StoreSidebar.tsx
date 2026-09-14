@@ -20,12 +20,13 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   BarChart2, Bike, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
-  Home, LineChart, MapPin, Menu, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
+  Home, LineChart, LogOut, MapPin, Menu, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
   Send, ShoppingBag, Store, TabletSmartphone, Tag, Truck, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
 } from "lucide-react";
 import { menuDaLoja, type ItemDoMenu } from "@/lib/menu-do-painel";
 import StoreSelector from "./StoreSelector";
+import SairDaConta from "@/components/SairDaConta";
 
 const ICONES: Record<string, LucideIcon> = {
   BarChart2, Bike, BookOpen, Bot, CheckCircle2, ClipboardList, Home, LineChart, MapPin,
@@ -43,6 +44,7 @@ export default function StoreSidebar({
   mostrarAntecipacao = false,
   mostrarCompras = false,
   isAdmin = false,
+  caixaAberto = false,
 }: {
   nomeDaLoja: string;
   /** A logo que a loja cadastrou. Sem ela, vale a chama do FireHub. */
@@ -52,6 +54,13 @@ export default function StoreSidebar({
   mostrarAntecipacao?: boolean;
   mostrarCompras?: boolean;
   isAdmin?: boolean;
+  /**
+   * Só para o aviso do modal de saída ("o caixa continua aberto"). É o retrato
+   * do servidor, não o estado ao vivo da barra de cima — o layout é
+   * `force-dynamic`, então ele se refaz a cada troca de tela. Errar para menos
+   * aqui custa um aviso a menos; não errar o logout, que é o que o botão faz.
+   */
+  caixaAberto?: boolean;
 }) {
   const pathname = usePathname();
   const [recolhida, setRecolhida] = useState(false);
@@ -338,6 +347,34 @@ export default function StoreSidebar({
           )}
         </nav>
 
+        {/* ── Sair, colado no fim da barra ─────────────────────────────────
+            FORA do <nav>, que é quem rola: com 16 itens de menu, um botão
+            dentro da lista só aparece depois de rolar até o fim. Aqui ele fica
+            sempre à vista, no lugar onde se procura sair — embaixo.
+
+            `SairDaConta` é o mesmo da barra de cima e do painel do admin:
+            pergunta antes, avisa do caixa aberto e sai pelo `signOut()` do
+            NextAuth, com CSRF. Um segundo botão de logout escrito à mão aqui
+            seria o terceiro jeito de sair do sistema, cada um com um
+            comportamento. */}
+        <div className="fh-menu-rodape" title={enxuta ? "Sair da conta" : undefined}>
+          <SairDaConta
+            caixaAberto={caixaAberto}
+            nomeDaLoja={nomeDaLoja}
+            className="fh-menu-sair"
+            callbackUrl="/login"
+            /* `SairDaConta` aplica `font: inherit` INLINE, e inline vence
+               classe: sem repetir a fonte aqui, o botão saía no tamanho
+               herdado da página — maior e mais fino que os itens do menu, bem
+               do lado deles. O `...style` de lá é espalhado depois do
+               `font`, então estes dois ganham. */
+            style={{ fontSize: ".8rem", fontWeight: 600 }}
+          >
+            <LogOut size={17} className="fh-menu-icone" />
+            {!enxuta && <span className="fh-menu-label">Sair da conta</span>}
+          </SairDaConta>
+        </div>
+
         <button className="fh-menu-recolher" onClick={alternarRecolhida} title={enxuta ? "Expandir menu" : "Recolher menu"}>
           {enxuta ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
         </button>
@@ -380,6 +417,24 @@ const ESTILO = `
   color:#E2E8F0; font-size:.74rem; font-weight:700; text-decoration:none;
 }
 .fh-menu-cardapio:hover{ background:rgba(255,255,255,.12); }
+
+/* O rodapé não rola com a lista: quem tem flex:1 é a lista, então o que vem
+   depois dela encosta no fim da barra e fica sempre visível. */
+.fh-menu-rodape{
+  flex:0 0 auto; padding:8px; border-top:1px solid #1F2731; background:#12161C;
+  padding-bottom:calc(8px + env(safe-area-inset-bottom));
+}
+/* Mesma régua dos itens do menu — só a cor muda no hover, para dizer que esta
+   é a única que tira a pessoa de dentro do painel. */
+.fh-menu-sair{
+  display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px;
+  border-radius:9px; border:none; background:none; text-align:left;
+  color:#94A3B8; font-size:.8rem; font-weight:600; min-height:36px;
+  transition:background .12s ease, color .12s ease;
+}
+.fh-menu-sair:hover{ background:rgba(239,68,68,.14); color:#FCA5A5; }
+.fh-menu-sair:hover .fh-menu-icone{ color:#FCA5A5; }
+.fh-menu.recolhida .fh-menu-sair{ justify-content:center; padding:10px 0; }
 
 .fh-menu-lista{ flex:1; overflow-y:auto; padding:2px 8px 8px; }
 .fh-menu-lista::-webkit-scrollbar{ width:6px; }

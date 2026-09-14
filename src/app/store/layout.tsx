@@ -129,6 +129,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           mostrarAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
           mostrarCompras={storeOwner?.isFranqueadoHakim === true}
           isAdmin={isAdmin}
+          caixaAberto={storeOwner?.cashOpen ?? false}
         />
         {/* fh-conteudo: no celular o conteúdo começa ABAIXO da barra de
             aplicativo (a regra mora no CSS da StoreSidebar). Sem esta reserva,
