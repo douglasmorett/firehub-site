@@ -50,6 +50,9 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
   // encontra depois. Aqui o acerto ganha nome e é escolhido de novo.
   const [modelos, setModelos] = useState<ModeloDePagamento[]>([]);
   const [salvandoModelo, setSalvandoModelo] = useState(false);
+  /** O campo de nome aparece só quando a pessoa decide salvar. */
+  const [dandoNome, setDandoNome] = useState(false);
+  const [nomeDoAcerto, setNomeDoAcerto] = useState("");
   useEffect(() => {
     fetch("/api/store/modelos-pagamento")
       .then((r) => (r.ok ? r.json() : { modelos: [] }))
@@ -79,10 +82,17 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
     setMsg(`✅ Acerto de "${m.nome}" aplicado aqui.`);
   };
 
-  /** Salva o acerto que está no formulário como um modelo com nome. */
+  /**
+   * Salva o acerto do formulário como um modelo com nome.
+   *
+   * O nome vem de um campo NA TELA. Antes vinha de um `prompt()` do
+   * navegador — uma janelinha cinza, sem explicação, que alguns navegadores
+   * de celular simplesmente não mostram. Quem não viu a janela achou que o
+   * botão não funcionava.
+   */
   const salvarComoModelo = async () => {
-    const nome = (prompt("Nome deste acerto (é por ele que você vai escolher nos próximos entregadores):", "") || "").trim();
-    if (!nome) return;
+    const nome = nomeDoAcerto.trim();
+    if (!nome) { setMsg("❌ Dê um nome ao acerto antes de salvar."); return; }
     const novo = modeloDoAcerto(nome, {
       paymentType: editing?.paymentType,
       dailyRate: editing?.dailyRate,
@@ -102,8 +112,10 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
       if (!res.ok) throw new Error();
       setModelos(lista);
       setEditing((p) => ({ ...p, modeloDePagamento: novo.id }));
-      setMsg(`✅ Salvo como "${nome}". Nos próximos entregadores é só escolher.`);
-    } catch { setMsg("❌ Não deu para salvar o modelo."); } finally { setSalvandoModelo(false); }
+      setNomeDoAcerto("");
+      setDandoNome(false);
+      setMsg(`✅ Salvo como "${nome}". No próximo entregador é só escolher pelo nome.`);
+    } catch { setMsg("❌ Não deu para salvar o acerto."); } finally { setSalvandoModelo(false); }
   };
 
   /** Apaga um modelo. Quem já usa continua igual: os valores foram copiados. */
@@ -177,47 +189,73 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             <input className="input-field" value={editing.phone || ""} onChange={e => setEditing(p => ({ ...p, phone: e.target.value }))} placeholder="(22) 99999-9999" />
           </div>
         </div>
-        {/* ── ACERTO SALVO ──────────────────────────────────────────────
+        {/* ── ACERTOS SALVOS ────────────────────────────────────────────
+
+            Uma LISTA de botões, não um <select>: o lojista precisa ver a
+            tabela inteira ("até 1 km R$ 5 · até 2 km R$ 6") ao lado do nome
+            para saber qual escolher. Num select isso fica escondido até
+            abrir, e some de novo assim que ele escolhe.
+
             Fica ANTES do tipo de pagamento porque é o caminho curto: quem
-            já tem a tabela montada escolhe o nome e não olha mais para
+            já tem a tabela pronta escolhe o nome e não olha mais para
             baixo. Quem está montando a primeira ignora e segue. */}
-        <div style={{ marginBottom: 12, padding: "11px 13px", background: "#F5F3FF", border: "1.5px solid #DDD6FE", borderRadius: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7, flexWrap: "wrap" }}>
-            <Bookmark size={14} style={{ color: "#6D28D9" }} />
-            <b style={{ fontSize: "0.86rem", color: "#5B21B6" }}>Acerto salvo</b>
-            <span style={{ fontSize: "0.73rem", color: "#7C3AED" }}>
-              cadastre a tabela uma vez e reuse nos próximos
-            </span>
+        <div style={{ marginBottom: 14, padding: "12px 14px", background: "#F5F3FF", border: "1.5px solid #DDD6FE", borderRadius: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
+            <Bookmark size={15} style={{ color: "#6D28D9" }} />
+            <b style={{ fontSize: "0.9rem", color: "#5B21B6" }}>Acertos salvos</b>
           </div>
-          {modelos.length > 0 ? (
-            <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
-              <select
-                className="input-field"
-                style={{ flex: "1 1 200px", minWidth: 0 }}
-                value={editing.modeloDePagamento || ""}
-                onChange={(e) => usarModelo(e.target.value)}
-              >
-                <option value="">Montar do zero…</option>
-                {modelos.map((m) => (
-                  <option key={m.id} value={m.id}>{m.nome} — {explicarModelo(m)}</option>
-                ))}
-              </select>
+          <p style={{ margin: "0 0 10px", fontSize: "0.76rem", color: "#7C3AED", lineHeight: 1.5 }}>
+            {modelos.length > 0
+              ? "Toque no acerto que este entregador vai receber. Os valores entram preenchidos abaixo."
+              : "Você ainda não salvou nenhum. Monte o pagamento abaixo e toque em “Salvar este acerto” — aí ele aparece aqui, com nome, para os próximos entregadores."}
+          </p>
+
+          {modelos.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {modelos.map((m) => {
+                const escolhido = editing.modeloDePagamento === m.id;
+                return (
+                  <div key={m.id} style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => usarModelo(m.id)}
+                      style={{
+                        flex: 1, minWidth: 0, textAlign: "left", cursor: "pointer",
+                        padding: "10px 12px", borderRadius: 10, fontFamily: "inherit",
+                        border: escolhido ? "2px solid #7C3AED" : "1.5px solid #DDD6FE",
+                        background: escolhido ? "#EDE9FE" : "#fff",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: "0.88rem", fontWeight: 800, color: "#4C1D95" }}>{m.nome}</span>
+                        {escolhido && <span style={{ fontSize: "0.68rem", fontWeight: 900, color: "#fff", background: "#7C3AED", borderRadius: 999, padding: "2px 7px" }}>EM USO</span>}
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "#6D28D9", marginTop: 2, lineHeight: 1.4 }}>{explicarModelo(m)}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => apagarModelo(m.id)}
+                      title={`Apagar o acerto "${m.nome}" da lista`}
+                      style={{ width: 40, borderRadius: 10, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+
+              {/* Sair de um acerto salvo tem que ser tão fácil quanto entrar:
+                  sem isto, escolher errado obriga a recarregar a tela. */}
               {editing.modeloDePagamento && (
                 <button
                   type="button"
-                  onClick={() => apagarModelo(editing.modeloDePagamento!)}
-                  title="Apagar este modelo da lista da loja"
-                  style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                  onClick={() => usarModelo("")}
+                  style={{ alignSelf: "flex-start", background: "none", border: "none", color: "#6D28D9", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: "2px 0", fontFamily: "inherit" }}
                 >
-                  <Trash2 size={14} />
+                  Não usar acerto salvo (montar na mão)
                 </button>
               )}
             </div>
-          ) : (
-            <p style={{ margin: 0, fontSize: "0.76rem", color: "#6D28D9", lineHeight: 1.5 }}>
-              Nenhum acerto salvo ainda. Monte o pagamento abaixo e toque em
-              <b> Salvar este acerto</b> — no próximo entregador ele aparece aqui para escolher.
-            </p>
           )}
         </div>
         <div style={{ marginBottom: 12 }}>
@@ -342,6 +380,10 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
           };
           const daLista = modelos.find((m) => m.id === editing.modeloDePagamento);
           const igualAoModelo = daLista ? acertoSegueOModelo(acerto, daLista) : false;
+          // Botão apagado tem que DIZER o que falta. Antes ele só ficava
+          // cinza quando o acerto estava pela metade, e o lojista não tinha
+          // como saber que o problema era a faixa em branco lá em cima.
+          const faltaParaSalvar = problemasDoModelo(modeloDoAcerto("x", acerto)).filter((s) => !/nome/i.test(s))[0] || null;
           if (igualAoModelo) {
             return (
               <p style={{ margin: "0 0 12px", fontSize: "0.76rem", color: "#5B21B6", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 9, padding: "8px 11px" }}>
@@ -357,15 +399,80 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                   entregador. Para valer para todos, salve como um acerto novo.
                 </p>
               )}
-              <button
-                type="button"
-                onClick={salvarComoModelo}
-                disabled={salvandoModelo || problemasDoModelo(modeloDoAcerto("x", acerto)).some((s) => !/nome/i.test(s))}
-                title="Guarda este pagamento com um nome, para escolher nos próximos entregadores"
-                style={{ width: "100%", padding: "10px", borderRadius: 10, border: "1.5px dashed #C4B5FD", background: "#fff", color: "#6D28D9", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
-              >
-                <Bookmark size={14} /> {salvandoModelo ? "Salvando…" : "Salvar este acerto para reusar"}
-              </button>
+              {/* O nome é digitado AQUI. Antes vinha de um prompt() do
+                  navegador: janelinha cinza, sem explicação, que alguns
+                  navegadores de celular nem mostram — e quem não viu a janela
+                  concluiu que o botão não fazia nada. */}
+              {!dandoNome ? (
+                <>
+                <button
+                  type="button"
+                  onClick={() => setDandoNome(true)}
+                  disabled={faltaParaSalvar !== null}
+                  title={faltaParaSalvar || "Guarda este pagamento com um nome, para escolher nos próximos entregadores"}
+                  style={{
+                    width: "100%", padding: "11px", borderRadius: 10, fontFamily: "inherit",
+                    border: "1.5px dashed #C4B5FD", background: "#fff",
+                    color: faltaParaSalvar ? "#A1A1AA" : "#6D28D9", fontWeight: 800, fontSize: "0.84rem",
+                    cursor: faltaParaSalvar ? "not-allowed" : "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                  }}
+                >
+                  <Bookmark size={15} /> Salvar este acerto para usar em outros
+                </button>
+                  {/* Tooltip não existe no celular: o motivo tem que estar
+                      escrito embaixo do botão, não pendurado no title. */}
+                  {faltaParaSalvar && (
+                    <p style={{ margin: "6px 0 0", fontSize: "0.75rem", color: "#B45309", fontWeight: 700, textAlign: "center" }}>
+                      Para salvar, primeiro termine o pagamento acima: {faltaParaSalvar.toLowerCase()}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div style={{ padding: "12px 13px", borderRadius: 11, border: "1.5px solid #C4B5FD", background: "#F5F3FF" }}>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#4C1D95", marginBottom: 3 }}>
+                    Que nome dar a este acerto?
+                  </label>
+                  <p style={{ margin: "0 0 8px", fontSize: "0.74rem", color: "#6D28D9", lineHeight: 1.45 }}>
+                    É por ele que você vai escolher nos próximos entregadores.
+                  </p>
+                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                    <input
+                      autoFocus
+                      value={nomeDoAcerto}
+                      onChange={(e) => setNomeDoAcerto(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); salvarComoModelo(); } }}
+                      placeholder="Ex.: Tabela padrão"
+                      maxLength={40}
+                      style={{ flex: "1 1 160px", minWidth: 0, padding: "10px 11px", borderRadius: 9, border: "1.5px solid #C4B5FD", fontSize: "0.88rem", fontWeight: 700, outline: "none", fontFamily: "inherit" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={salvarComoModelo}
+                      disabled={salvandoModelo || !nomeDoAcerto.trim()}
+                      style={{ padding: "10px 18px", borderRadius: 9, border: "none", background: nomeDoAcerto.trim() ? "#7C3AED" : "#C4B5FD", color: "#fff", fontWeight: 800, fontSize: "0.84rem", cursor: nomeDoAcerto.trim() ? "pointer" : "not-allowed", fontFamily: "inherit" }}
+                    >
+                      {salvandoModelo ? "Salvando…" : "Salvar"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDandoNome(false); setNomeDoAcerto(""); }}
+                      style={{ padding: "10px 14px", borderRadius: 9, border: "1.5px solid #DDD6FE", background: "#fff", color: "#6D28D9", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                  {/* Sugestões: o lojista não precisa inventar um nome do zero. */}
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
+                    {["Tabela padrão", "Turno da noite", "Fim de semana", "Moto própria"].map((s) => (
+                      <button
+                        key={s} type="button" onClick={() => setNomeDoAcerto(s)}
+                        style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #DDD6FE", background: nomeDoAcerto === s ? "#7C3AED" : "#fff", color: nomeDoAcerto === s ? "#fff" : "#6D28D9", fontSize: "0.71rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                      >{s}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })()}
