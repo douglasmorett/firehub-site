@@ -45,6 +45,10 @@ const INSTRUCOES = [
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceTotem" DOUBLE PRECISION`,
   // Trilha Premiada: o prêmio que o pedido resgatou (lib/trilha-premiada.ts).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "trilhaPremio" JSONB`,
+  // Quanto a entrega custaria e por que não foi cobrada (lib/entrega-gratis.ts).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "entregaGratis" JSONB`,
+  // Faixas de km por entregador (lib/faixas-do-motoboy.ts).
+  `ALTER TABLE "Motoboy" ADD COLUMN IF NOT EXISTS "faixasDeKm" JSONB`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -57,6 +61,8 @@ const ESPERADAS = [
   "ComboGroupItem.additionalPriceDelivery",
   "ComboGroupItem.additionalPriceTotem",
   "CustomerOrder.trilhaPremio",
+  "CustomerOrder.entregaGratis",
+  "Motoboy.faixasDeKm",
 ];
 
 /**
@@ -132,11 +138,11 @@ export async function garantirColunasDePreco(): Promise<void> {
       // alarme que ninguém lê no dia em que a coluna faltar de verdade.
       const rows = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
-        WHERE table_name IN ('MenuProduct', 'ComboGroupItem', 'CustomerOrder')
+        WHERE table_name IN ('MenuProduct', 'ComboGroupItem', 'CustomerOrder', 'Motoboy')
           AND column_name IN (
             'priceSalao', 'priceDelivery', 'priceTotem', 'apenasEmCombo',
             'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem',
-            'trilhaPremio'
+            'trilhaPremio', 'entregaGratis', 'faixasDeKm'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));

@@ -1407,7 +1407,23 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // "Valores e total"). O TOTAL nao muda: ele vem de order.totalAmount, que ja
   // inclui a taxa — some a linha, nao o dinheiro.
   marcas.taxaEntrega = res.length;
-  if (!ehConta) res += rightAlign(dFeeLabel, dinheiro(dFee));
+  if (!ehConta) {
+    // ── ENTREGA ISENTADA: O VALOR CONTINUA NO PAPEL ────────────────────
+    //
+    // Isentar zera a taxa, e a comanda saia com 'Taxa de Entrega: R$ 0,00' —
+    // que nao diz nem quanto era nem por que nao foi cobrada. A loja precisa
+    // dos dois numeros para conferir com o motoboy, e o cliente precisa ver
+    // que ganhou alguma coisa. O servidor manda {valor, motivo} em
+    // order.entregaGratis (src/lib/entrega-gratis.ts).
+    var gratis = order.entregaGratis && Number(order.entregaGratis.valor) > 0 ? order.entregaGratis : null;
+    if (gratis) {
+      res += rightAlign(dFeeLabel, dinheiro(Number(gratis.valor)) + " GRATIS");
+      var motivoDaIsencao = String(gratis.motivo || "").trim();
+      if (motivoDaIsencao) res += "  " + motivoDaIsencao.slice(0, 40) + "\n";
+    } else {
+      res += rightAlign(dFeeLabel, dinheiro(dFee));
+    }
+  }
   marcas.fimTaxaEntrega = res.length;
 
   // TOTAL BOX — destaque limpo

@@ -10,6 +10,7 @@ import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, descreverVeredicto, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
+import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { Prisma } from "@prisma/client";
 import { cuponsComCampanha, ORIGEM_CUPOM_CAMPANHA, FONTES_QUE_NAO_SAO_SITE, digitosDoTelefone } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
@@ -328,10 +329,16 @@ export async function POST(req: Request) {
     }
     let fee = originalFee;
     let freeShippingNote = "";
+    // O que a entrega custaria e por que não foi cobrada. Guardado no pedido
+    // (lib/entrega-gratis.ts) porque `deliveryFee: 0` apaga a informação, e a
+    // nota passava a não ter linha de entrega nenhuma.
+    let entregaGratis: EntregaGratis | null = null;
 
     if (isFreeShippingMin) {
       fee = 0; // Isenta a taxa cobrada
-      freeShippingNote = ` [Frete Grátis (Pedido >= R$ ${Number(delivConfig.freeShippingMinValue).toFixed(2).replace('.', ',')}) — Taxa ref: R$ ${originalFee.toFixed(2).replace('.', ',')}]`;
+      const minimo = Number(delivConfig.freeShippingMinValue);
+      freeShippingNote = ` [Frete Grátis (Pedido >= R$ ${minimo.toFixed(2).replace('.', ',')}) — Taxa ref: R$ ${originalFee.toFixed(2).replace('.', ',')}]`;
+      if (originalFee > 0) entregaGratis = { valor: originalFee, motivo: porValorMinimo(minimo) };
     }
 
     // Aplicar cupom de desconto
@@ -360,6 +367,7 @@ export async function POST(req: Request) {
         } else {
           if (coupon.type === "free_shipping") {
             discount = fee;
+            if (fee > 0) entregaGratis = { valor: fee, motivo: `Cupom ${String(coupon.code || "").toUpperCase()}` };
             fee = 0;
           } else if (coupon.type === "fixed") {
             discount = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 0);
@@ -403,7 +411,10 @@ export async function POST(req: Request) {
             produto: produtoDoPremio,
           });
           if (efeito) {
-            if (efeito.zeraTaxa) fee = 0;
+            if (efeito.zeraTaxa) {
+              if (fee > 0) entregaGratis = { valor: fee, motivo: "Prêmio da Trilha Premiada" };
+              fee = 0;
+            }
             discount += efeito.descontoExtra;
             if (efeito.produtoGratis) {
               // Entra como ITEM do pedido com preço zero: a cozinha imprime e
@@ -503,6 +514,7 @@ export async function POST(req: Request) {
         // isto o desconto sumia do total e a base de cobrança encolhia junto.
         ...(discount > 0 ? { discountTotal: centavos(discount), discountMerchant: centavos(discount) } : {}),
         ...(resgateDaTrilha ? { trilhaPremio: resgateDaTrilha } : {}),
+        ...(entregaGratis ? { entregaGratis } : {}),
         // ── O QUE A LOJA PAGA AO ENTREGADOR ─────────────────────────────
         //
         // Gravado na VENDA, não calculado no relatório: a loja reajusta a

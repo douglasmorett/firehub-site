@@ -686,6 +686,10 @@ model CustomerOrder {
   /// História, não estado: guarda qual parada, o que foi dado e quanto custou
   /// à loja, para o relatório e para a conferência com o cliente depois. Quem
   /// conta os passos são os pedidos; aqui só fica o que saiu da loja.
+  /// A entrega que ficou grátis: { valor, motivo } (lib/entrega-gratis.ts).
+  /// `deliveryFee` vai a zero na isenção e a informação sumia da nota — o
+  /// pedido aparecia sem linha de entrega, como se a loja não entregasse.
+  entregaGratis    Json?
   trilhaPremio     Json?
   cashbackEarned   Float?              // Cashback gerado neste pedido (R$)
   cashbackUsed     Float?              // Cashback resgatado neste pedido (R$)
@@ -1149,6 +1153,12 @@ model Motoboy {
   dailyRate        Float?          // Diária fixa (R$/dia)
   perDeliveryRate  Float?          // Valor fixo por entrega (R$)
   perKmRate        Float?          // Valor por KM percorrido (R$)
+  /// Faixas de km deste entregador: [{ ate: 3, valor: 5 }, ...] — quanto a
+  /// loja paga por entrega DENTRO de cada distância (lib/faixas-do-motoboy.ts).
+  /// Existe porque ninguém paga entregador por regra de três: o acerto real é
+  /// "até 2 km R$ 5, até 4 km R$ 7". `perKmRate` continua para quem paga por
+  /// km rodado de verdade.
+  faixasDeKm       Json?
   notes            String?
   franchisee       User            @relation(fields: [franchiseeId], references: [id])
   orders           CustomerOrder[]

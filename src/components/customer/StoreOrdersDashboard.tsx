@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import { lerEntregaGratis } from "@/lib/entrega-gratis";
 import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
@@ -3509,12 +3510,37 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       <span>-R$ {Number(order.discountTotal).toFixed(2).replace('.', ',')}</span>
                     </div>
                   )}
-                  {isDelivery && (
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Taxa de Entrega:</span>
-                      <span>R$ {Number(order.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
-                    </div>
-                  )}
+                  {/* ── A ENTREGA APARECE MESMO QUANDO É GRÁTIS ──────────────
+                      Isentar zerava `deliveryFee` e a linha sumia da nota: o
+                      pedido saía com Subtotal e Total e nada de entrega, como
+                      se a loja não entregasse. O valor continua na tela, com o
+                      motivo ao lado — é o que a loja confere com o motoboy e o
+                      que mostra quanto a isenção custou. */}
+                  {/* A linha sai quando há dinheiro de entrega envolvido — inclusive
+                      o que foi isentado. Amarrada só ao deliveryType, ela sumia em
+                      pedido de app que não usa a string "DELIVERY". */}
+                  {(() => {
+                    const gratis = lerEntregaGratis((order as any).entregaGratis);
+                    if (!isDelivery && !gratis && !(Number(order.deliveryFee) > 0)) return null;
+                    return (
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <span>Taxa de Entrega:</span>
+                        {gratis ? (
+                          <span style={{ textAlign: "right" }}>
+                            <span style={{ textDecoration: "line-through", color: "#94A3B8" }}>
+                              R$ {gratis.valor.toFixed(2).replace('.', ',')}
+                            </span>{" "}
+                            <b style={{ color: "#16A34A" }}>GRÁTIS</b>
+                            <span style={{ display: "block", fontSize: "11px", color: "#64748B" }}>
+                              {gratis.motivo}
+                            </span>
+                          </span>
+                        ) : (
+                          <span>R$ {Number(order.deliveryFee || 0).toFixed(2).replace('.', ',')}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   
                   {/* Total Box */}
                   <div style={{ border: "1.5px solid #000", padding: "6px 10px", borderRadius: "4px", margin: "8px 0", display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "15px" }}>

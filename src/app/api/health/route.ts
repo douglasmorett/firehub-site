@@ -82,6 +82,8 @@ export async function GET() {
       // O prêmio da Trilha Premiada que o pedido resgatou. Sem a coluna, o
       // checkout que aplica o prêmio quebra na gravação — e o pedido some.
       ["CustomerOrder", "trilhaPremio"],
+      ["CustomerOrder", "entregaGratis"],
+      ["Motoboy", "faixasDeKm"],
       ["CustomerOrder", "posOrderId"], ["CustomerOrder", "posTerminalId"],
       ["CustomerOrder", "posStatus"], ["CustomerOrder", "posDadosTransacao"],
       ["CustomerOrder", "posTentativas"], ["CustomerOrder", "tableSessionId"],
