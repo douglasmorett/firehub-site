@@ -30,12 +30,35 @@ export async function PATCH(req: NextRequest) {
 
   const pedidoAlvo = await prisma.customerOrder.findUnique({
     where: { id: orderId },
-    select: { franchiseeId: true },
+    select: { franchiseeId: true, status: true, motoboyId: true },
   });
   if (!pedidoAlvo) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
   if (usuario.role !== "ADMIN" && pedidoAlvo.franchiseeId !== lojaDaSessao) {
     console.warn(`[assign-motoboy] 🚫 ${usuario.id} tentou mexer no pedido ${orderId} da loja ${pedidoAlvo.franchiseeId}.`);
     return NextResponse.json({ error: "Este pedido não é desta loja" }, { status: 403 });
+  }
+
+  // ── PEDIDO JÁ ENTREGUE NÃO TROCA DE ENTREGADOR ────────────────────────────
+  //
+  // Trocar o nome aqui é o que MOVE o pedido de um celular para o outro (o app
+  // lista por `motoboyId`), e é para isso que a tela existe: o entregador puxou
+  // o pedido errado, a loja corrige e ele sai do aparelho dele.
+  //
+  // Depois de ENTREGUE, porém, o pedido é história — e o relatório de entregas
+  // soma o repasse por `motoboyId`. Reatribuir ali pagaria a entrega a quem não
+  // a fez, e tiraria de quem fez. É a mesma trava que a troca de entregador da
+  // ROTA já tem (api/store/routes PATCH), que faltava só neste caminho.
+  const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
+  const jaFechou = [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS].includes(pedidoAlvo.status as any);
+  const trocandoDeFato = String(motoboyId || "") !== String(pedidoAlvo.motoboyId || "");
+  if (jaFechou && trocandoDeFato) {
+    return NextResponse.json(
+      {
+        error: "Este pedido já foi finalizado — o entregador não pode mais ser trocado, senão o acerto da entrega iria para quem não a fez.",
+        status: pedidoAlvo.status,
+      },
+      { status: 409 },
+    );
   }
 
   // O motoboy também tem que ser da loja: senão dava para "emprestar" o

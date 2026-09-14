@@ -288,7 +288,63 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "ID da rota não informado" }, { status: 400 });
     }
 
-    // Remove referência nos pedidos
+    // ── A rota é DESTA loja? ──────────────────────────────────────────────
+    // Não havia conferência nenhuma: qualquer sessão autenticada apagava a
+    // rota de qualquer loja pelo id, e junto desatribuía os pedidos dela.
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, ownerId: true },
+    });
+    if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    const validFranchiseeIds = await getValidFranchiseeIds(user.id);
+
+    const rota = await prisma.routeSchedule.findFirst({
+      where: { id: routeId, franchiseeId: { in: validFranchiseeIds } },
+      select: { id: true, motoboyId: true, status: true, dispatchedAt: true, routeNumber: true },
+    });
+    if (!rota) {
+      return NextResponse.json({ error: "Rota não encontrada" }, { status: 404 });
+    }
+
+    // ── Rota que já saiu não se apaga ─────────────────────────────────────
+    //
+    // Depois de despachada ela virou HISTÓRICO: o relatório de entregas soma o
+    // que cada motoboy levou por `motoboyId`, e apagar a rota desatribuiria os
+    // pedidos — apagando o acerto de quem já fez a entrega. Trocar o ENTREGADOR
+    // continua liberado pelo PATCH, que é a correção legítima de "despachei no
+    // nome errado" e move o pedido de um celular para o outro.
+    if (rota.status === "DISPATCHED" || rota.dispatchedAt) {
+      return NextResponse.json(
+        {
+          error: `A rota ${rota.routeNumber} já foi despachada e não pode mais ser excluída — ela é o histórico do acerto do entregador. Se saiu no nome errado, troque o entregador da rota.`,
+          podeTrocarEntregador: true,
+        },
+        { status: 409 },
+      );
+    }
+
+    // ── Tirar os pedidos do APP do entregador ─────────────────────────────
+    //
+    // Limpar só o `routeId` não bastava: o app do motoboy lista por
+    // `motoboyId` (api/motoboys/orders), então o pedido sumia do painel e
+    // continuava no celular dele — foi a queixa do Emanuel, da Delicias de
+    // Casa. Quem entrou no aparelho pela rota tem que sair com ela.
+    //
+    // Só desatribui de quem a ROTA pôs lá, e só pedido em aberto: entregue e
+    // cancelado são história, e reescrever o motoboy neles moveria o pagamento
+    // da entrega para quem não a fez.
+    const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
+    await prisma.customerOrder.updateMany({
+      where: {
+        routeId,
+        status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] },
+        ...(rota.motoboyId ? { motoboyId: rota.motoboyId } : {}),
+      },
+      data: { motoboyId: null, motoboyPuxadoEm: null },
+    });
+
+    // O resto dos pedidos da rota (entregues, cancelados, ou de outro
+    // entregador) perde só o vínculo com a rota.
     await prisma.customerOrder.updateMany({
       where: { routeId },
       data: { routeId: null, isRoutePriority: false },

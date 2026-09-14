@@ -1687,13 +1687,24 @@ export default function RoteirizacaoModal({
 
   // Delete Route (Remove do Banco de Dados)
   const handleDeleteRoute = async (routeId: string) => {
-    if (!confirm("Deseja realmente desfazer/excluir esta rota? OS pedidos voltarão para pendentes.")) return;
+    // O aviso diz o que REALMENTE acontece: o pedido sai do celular do
+    // entregador junto com a rota. Antes prometia só "voltam para pendentes",
+    // e o pedido continuava no app dele.
+    if (!confirm("Desfazer esta rota?\n\nOs pedidos voltam para pendentes e SAEM do aplicativo do entregador.")) return;
     try {
-      await fetch(`/api/store/routes?routeId=${encodeURIComponent(routeId)}`, { method: "DELETE" });
+      const res = await fetch(`/api/store/routes?routeId=${encodeURIComponent(routeId)}`, { method: "DELETE" });
+      if (!res.ok) {
+        // 409 = rota já despachada: não se apaga, mas dá para trocar o
+        // entregador. O servidor manda a frase pronta; a tela só mostra.
+        const d = await res.json().catch(() => ({}));
+        alert(d?.error || "Não consegui desfazer esta rota agora.");
+        return;
+      }
       await fetchStoreRoutes();
       if (onRefreshOrders) onRefreshOrders();
     } catch (e) {
       console.error("Erro ao deletar rota:", e);
+      alert("Não consegui desfazer esta rota agora. Tente de novo.");
     }
   };
 

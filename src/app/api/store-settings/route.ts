@@ -138,11 +138,18 @@ export async function PUT(req: Request) {
     const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
     const jaMontado = data.deliveryConfig && typeof data.deliveryConfig === "object" ? data.deliveryConfig : base;
     const r = body.repasseDoEntregador as any;
+    // "FIXO" = valor fixo por entrega de app (ver lib/repasse-do-entregador.ts).
+    // O valor é guardado mesmo quando a loja troca de modo, para ela não ter de
+    // digitar de novo se voltar atrás.
+    const marketplace = r?.marketplace === "APP" ? "APP" : r?.marketplace === "FIXO" ? "FIXO" : "TABELA";
+    const bruto = r?.valorFixoApp;
+    const n = bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
     data.deliveryConfig = {
       ...jaMontado,
       repasseDoEntregador: {
         separado: r?.separado === true,
-        marketplace: r?.marketplace === "APP" ? "APP" : "TABELA",
+        marketplace,
+        valorFixoApp: Number.isFinite(n as number) && (n as number) >= 0 ? Math.round((n as number) * 100) / 100 : null,
       },
     };
   }

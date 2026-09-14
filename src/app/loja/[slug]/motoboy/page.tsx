@@ -1018,8 +1018,18 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             const rawAddr = (order.customerAddress || order.address || "").trim();
             const addr = rawAddr || [order.street, order.number ? `nº ${order.number}` : "", order.neighborhood ? `Bairro: ${order.neighborhood}` : ""].filter(Boolean).join(", ") || "Endereço a confirmar";
 
-            const displayRef = (order as any).ifoodReference || (order as any).openDeliveryReference || order.displayId;
-            const num = displayRef ? displayRef : ((order as any).dailyOrderNumber || order.orderNumber || order.id.replace(/\D/g, "").slice(-2) || "#");
+            // ── O NÚMERO GRANDE É O DO PAINEL, SEMPRE ──────────────────────
+            //
+            // Vinha ao contrário: a referência do iFood/Open Delivery ganhava
+            // do número da loja, e o entregador via "#4522" num pedido que a
+            // loja chama de "#75". Loja e entregador falando números
+            // diferentes do MESMO pedido é rádio quebrado — a queixa veio da
+            // Delicias de Casa, num pedido 75 que chegou como número do iFood.
+            //
+            // A referência do app não some: vira etiqueta pequena ao lado,
+            // que é o que serve para casar a sacola no balcão do marketplace.
+            const num = (order as any).dailyOrderNumber || order.orderNumber || (order as any).ifoodReference || (order as any).openDeliveryReference || order.displayId || order.id.replace(/\D/g, "").slice(-2) || "#";
+            const refDaPlataforma = (order as any).ifoodReference || (order as any).openDeliveryReference || null;
             const cleanPhone = (order.customerPhone || "").replace(/\D/g, "");
             const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
 
@@ -1087,6 +1097,14 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                     <span style={{ fontWeight: 900, fontSize: "1.15rem", color: "#0F172A" }}>
                       Pedido #{num}
                     </span>
+                    {refDaPlataforma && String(refDaPlataforma) !== String(num) && (
+                      <span style={{
+                        background: "#F1F5F9", color: "#475569", fontSize: "0.68rem", fontWeight: 800,
+                        padding: "2px 7px", borderRadius: 6, border: "1px solid #E2E8F0", whiteSpace: "nowrap",
+                      }}>
+                        app {refDaPlataforma}
+                      </span>
+                    )}
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>

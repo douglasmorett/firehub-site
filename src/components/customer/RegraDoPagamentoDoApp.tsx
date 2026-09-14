@@ -20,14 +20,24 @@ import { explicarRegraDoApp, lerRegraDeRepasse, type OrigemDoRepasseNoApp } from
 export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConfig?: unknown }) {
   // O valor vem do servidor junto da página — /api/store-settings só tem PUT,
   // e inventar um GET só para ler uma chave seria rota nova para nada.
-  const [valor, setValor] = useState<OrigemDoRepasseNoApp>(() => lerRegraDeRepasse(deliveryConfig).marketplace);
+  const regraInicial = lerRegraDeRepasse(deliveryConfig);
+  const [valor, setValor] = useState<OrigemDoRepasseNoApp>(() => regraInicial.marketplace);
+  const [fixo, setFixo] = useState<string>(() =>
+    regraInicial.valorFixoApp == null ? "" : String(regraInicial.valorFixoApp).replace(".", ","),
+  );
   const carregando = false;
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
 
-  const escolher = async (novo: OrigemDoRepasseNoApp) => {
-    const anterior = valor;
-    setValor(novo);
+  /** "4,00" e "4.00" viram 4. Vazio vira nulo. */
+  const numeroDoCampo = (t: string): number | null => {
+    const limpo = t.replace(/\s/g, "").replace(",", ".");
+    if (!limpo) return null;
+    const n = Number(limpo);
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+  };
+
+  const gravar = async (modo: OrigemDoRepasseNoApp, textoDoFixo: string) => {
     setSalvando(true);
     setAviso("");
     try {
@@ -36,17 +46,34 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
         headers: { "Content-Type": "application/json" },
         // Campo próprio: a rota mescla dentro do deliveryConfig sem apagar o
         // frete grátis, o pedido mínimo nem as áreas de risco.
-        body: JSON.stringify({ repasseDoEntregador: { separado: true, marketplace: novo } }),
+        body: JSON.stringify({
+          repasseDoEntregador: {
+            separado: true,
+            marketplace: modo,
+            valorFixoApp: numeroDoCampo(textoDoFixo),
+          },
+        }),
       });
       if (!r.ok) throw new Error("salvar");
       setAviso("Salvo.");
       setTimeout(() => setAviso(""), 2200);
+      return true;
     } catch {
-      setValor(anterior);
       setAviso("Não consegui salvar agora. Tente de novo.");
+      return false;
     } finally {
       setSalvando(false);
     }
+  };
+
+  const escolher = async (novo: OrigemDoRepasseNoApp) => {
+    const anterior = valor;
+    setValor(novo);
+    // No FIXO sem valor ainda, não grava: espera a loja digitar quanto paga,
+    // senão o relatório passaria a devolver "não configurado" sem ela saber.
+    if (novo === "FIXO" && numeroDoCampo(fixo) == null) return;
+    const ok = await gravar(novo, fixo);
+    if (!ok) setValor(anterior);
   };
 
   const OPCOES: { v: OrigemDoRepasseNoApp; t: string; d: string }[] = [
@@ -59,6 +86,11 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
       v: "APP",
       t: "O valor que veio do app",
       d: "A taxa de entrega que o iFood/99 pagou naquele pedido vai inteira para o entregador.",
+    },
+    {
+      v: "FIXO",
+      t: "Um valor fixo, só para pedido de app",
+      d: "Sempre o mesmo por entrega de iFood/99, sem olhar a taxa nem a distância. No pedido do seu site continua valendo a taxa do próprio pedido.",
     },
   ];
 
@@ -94,6 +126,39 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
         ))}
       </div>
 
+      {valor === "FIXO" && (
+        <div style={{
+          marginTop: 10, padding: "11px 13px", borderRadius: 11,
+          background: "#fff", border: "2px solid #C2410C",
+          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        }}>
+          <label htmlFor="repasse-fixo-app" style={{ fontSize: "0.83rem", fontWeight: 800, color: "#9A3412" }}>
+            Quanto você paga por entrega de app?
+          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#64748B" }}>R$</span>
+            <input
+              id="repasse-fixo-app"
+              type="text"
+              inputMode="decimal"
+              placeholder="4,00"
+              value={fixo}
+              onChange={(e) => setFixo(e.target.value)}
+              onBlur={() => gravar("FIXO", fixo)}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{
+                width: 100, padding: "8px 11px", borderRadius: 9,
+                border: "1.5px solid #FDBA74", fontSize: "0.9rem", fontWeight: 800,
+                fontFamily: "monospace", outline: "none",
+              }}
+            />
+          </div>
+          <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>
+            Vale para iFood, 99Food e outros apps. Salva ao sair do campo.
+          </span>
+        </div>
+      )}
+
       <p style={{
         margin: "10px 0 0", fontSize: "0.76rem", lineHeight: 1.5,
         color: valor === "APP" ? "#334155" : "#92400E",
@@ -101,7 +166,7 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
         border: `1px solid ${valor === "APP" ? "#E2E8F0" : "#FDE68A"}`,
         borderRadius: 9, padding: "8px 11px",
       }}>
-        {explicarRegraDoApp({ separado: true, marketplace: valor })}
+        {explicarRegraDoApp({ separado: true, marketplace: valor, valorFixoApp: numeroDoCampo(fixo) })}
       </p>
     </div>
   );

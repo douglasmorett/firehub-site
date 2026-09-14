@@ -28,22 +28,46 @@
  * então o relatório aplica a regra na hora de fechar o acerto.
  */
 
-export type OrigemDoRepasseNoApp = "APP" | "TABELA";
+export type OrigemDoRepasseNoApp = "APP" | "TABELA" | "FIXO";
 
 export type RegraDeRepasse = {
   /** A loja informa separadamente o que paga ao entregador. */
   separado: boolean;
-  /** Em pedido de iFood/99Food: paga o que veio do app, ou o da sua tabela. */
+  /** Em pedido de iFood/99Food: paga o que veio do app, o da sua tabela, ou um valor fixo. */
   marketplace: OrigemDoRepasseNoApp;
+  /**
+   * O valor fixo por entrega de app, quando `marketplace === "FIXO"`.
+   *
+   * É o terceiro modelo real, e o mais comum entre quem tem entregador próprio:
+   * no pedido do site o motoboy leva a taxa que o cliente pagou (que varia por
+   * bairro), mas no pedido de app leva sempre o mesmo — a Delicias de Casa paga
+   * R$ 4,00 em toda entrega de iFood e 99Food, não importa o que o app cobrou
+   * do cliente nem a que distância foi.
+   *
+   * Zero é resposta VÁLIDA (loja em que o app manda o próprio entregador e o
+   * motoboy da casa não recebe nada). Nulo é "a loja não preencheu", e aí o
+   * repasse volta a ser o acerto individual do entregador.
+   */
+  valorFixoApp: number | null;
 };
 
-export const REPASSE_PADRAO: RegraDeRepasse = { separado: false, marketplace: "TABELA" };
+export const REPASSE_PADRAO: RegraDeRepasse = { separado: false, marketplace: "TABELA", valorFixoApp: null };
+
+/** Número >= 0 ou nulo. Texto vazio, NaN e negativo contam como "não preenchido". */
+function valorOuNulo(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+}
 
 export function lerRegraDeRepasse(deliveryConfig: unknown): RegraDeRepasse {
   const bruto = ((deliveryConfig as any)?.repasseDoEntregador ?? {}) as Partial<RegraDeRepasse>;
+  const marketplace: OrigemDoRepasseNoApp =
+    bruto.marketplace === "APP" ? "APP" : bruto.marketplace === "FIXO" ? "FIXO" : "TABELA";
   return {
     separado: bruto.separado === true,
-    marketplace: bruto.marketplace === "APP" ? "APP" : "TABELA",
+    marketplace,
+    valorFixoApp: valorOuNulo((bruto as any).valorFixoApp),
   };
 }
 
@@ -114,6 +138,15 @@ export function repasseDoPedido(args: {
     return t > 0 ? Math.round(t * 100) / 100 : null;
   }
 
+  // Valor fixo por entrega de app: não olha taxa, não olha bairro, não olha km.
+  // É o caso de quem paga o mesmo em toda entrega de marketplace. Vem ANTES do
+  // `separado` de propósito — a loja pode ter valor fixo no app sem ter tabela
+  // de repasse por bairro nenhuma, que é justamente a Delicias de Casa: no site
+  // o motoboy leva a taxa do pedido, no app leva R$ 4,00.
+  if (ehMarketplace && regra.marketplace === "FIXO") {
+    return regra.valorFixoApp;
+  }
+
   if (!regra.separado) return null;
 
   const doBairro = repasseDoBairro(zonas, bairro);
@@ -128,7 +161,13 @@ export function repasseDoPedido(args: {
  * explicação troca junto.
  */
 export function explicarRegraDoApp(regra: RegraDeRepasse): string {
-  return regra.marketplace === "APP"
-    ? "Nos pedidos de iFood, 99Food e outros apps, o entregador recebe a taxa de entrega que veio do app."
-    : "Nos pedidos de iFood, 99Food e outros apps, o entregador recebe o valor da sua tabela — a taxa que o app mostra é dinheiro do marketplace, não o que você paga.";
+  if (regra.marketplace === "APP") {
+    return "Nos pedidos de iFood, 99Food e outros apps, o entregador recebe a taxa de entrega que veio do app.";
+  }
+  if (regra.marketplace === "FIXO") {
+    return regra.valorFixoApp == null
+      ? "Falta preencher quanto você paga por entrega de app. Enquanto estiver vazio, vale o acerto individual de cada entregador."
+      : `Nos pedidos de iFood, 99Food e outros apps, o entregador recebe sempre ${regra.valorFixoApp.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} por entrega — não importa a taxa que o app cobrou do cliente nem a distância. Nos pedidos do seu site continua valendo a taxa do próprio pedido.`;
+  }
+  return "Nos pedidos de iFood, 99Food e outros apps, o entregador recebe o valor da sua tabela — a taxa que o app mostra é dinheiro do marketplace, não o que você paga.";
 }
