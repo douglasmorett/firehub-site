@@ -214,11 +214,30 @@ export async function PATCH(req: NextRequest) {
       },
     });
 
-    // Se informou motoboyId, atualiza nos pedidos da rota também
+    // ── TROCAR O ENTREGADOR DA ROTA ───────────────────────────────────
+    //
+    // O pedido tem que SAIR do app de quem estava com ele e aparecer no do
+    // novo — o app lista por `motoboyId` (api/motoboys/orders), e é essa única
+    // escrita que move o pedido de um celular para o outro. Sem ela, a rota
+    // trocava de nome no painel e o pedido continuava no aparelho do antigo.
+    //
+    // PEDIDO JÁ ENTREGUE OU CANCELADO NÃO É TOCADO. Ele é história: quem
+    // entregou entregou, e reescrever o motoboy ali moveria o PAGAMENTO da
+    // entrega para alguém que não a fez (o relatório soma por motoboyId).
     if (motoboyId !== undefined) {
+      const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
       await prisma.customerOrder.updateMany({
-        where: { routeId },
-        data: { motoboyId: motoboyId === null ? null : motoboyId },
+        where: {
+          routeId,
+          status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] },
+        },
+        data: {
+          motoboyId: motoboyId === null ? null : motoboyId,
+          // O carimbo de "puxou pelo QR" é de quem puxou. Mantido ao lado do
+          // nome novo, a tela juraria que o entregador novo puxou o pedido num
+          // horário em que ele nem sabia que ele existia.
+          motoboyPuxadoEm: null,
+        },
       });
     }
 
