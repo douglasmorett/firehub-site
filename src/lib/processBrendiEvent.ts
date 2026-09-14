@@ -57,6 +57,16 @@ export interface ProcessResult {
   orderId: string;
   message?: string;
   /**
+   * Evento DESCARTADO de propósito — pode ser ackado mesmo sem pedido no banco.
+   *
+   * A regra do ACK é "só depois de o pedido existir", e ela é certa: ackar um
+   * `skipped` que não gravou nada é perder a venda. Mas existe um caso em que
+   * NUNCA vai existir pedido e reenviar não muda nada — o pedido de iFood que a
+   * Brendi repassa para uma loja que já tem a integração direta do iFood. Sem
+   * esta bandeira ele voltaria no feed a cada minuto, para sempre.
+   */
+  ignoradoDeProposito?: boolean;
+  /**
    * Só para `action: "error"`: reenviar este evento tem chance de dar certo?
    *
    * Banco fora, rede até a Brendi, GET que falhou — sim, e é por isso que o
@@ -115,6 +125,38 @@ async function gravarSendFlags(orderId: string, orderData: any): Promise<void> {
     `;
   } catch (e: any) {
     console.warn(`[Brendi] flags de status não gravadas para ${orderId}: ${e?.message}`);
+  }
+}
+
+/**
+ * Este merchantId é de uma loja de iFood que o FireHub JÁ recebe direto?
+ *
+ * Devolve o NOME da loja iFood (para o log dizer qual é) ou null.
+ *
+ * Confere nos dois lugares onde o vínculo do iFood mora: a tabela multi-loja
+ * (`IfoodIntegration`, o caminho de hoje) e o campo antigo de loja única em
+ * `User` — uma conta ligada só pelo campo antigo também não pode duplicar.
+ */
+async function ehMerchantDeIfoodJaIntegrado(merchantId: string): Promise<string | null> {
+  try {
+    const daTabela = await prisma.ifoodIntegration.findFirst({
+      where: { merchantId, active: true, connected: true },
+      select: { label: true },
+    });
+    if (daTabela) return daTabela.label || "loja iFood";
+
+    const doCampoAntigo = await prisma.user.findFirst({
+      where: { ifoodMerchantId: merchantId, ifoodConnected: true },
+      select: { storeName: true, name: true },
+    });
+    if (doCampoAntigo) return doCampoAntigo.storeName || doCampoAntigo.name || "loja iFood";
+
+    return null;
+  } catch (e: any) {
+    // Sem conseguir perguntar, NÃO descarta: perder pedido é pior que duplicar,
+    // e a duplicata o lojista vê e resolve — a venda perdida, não.
+    console.warn(`[Brendi] não consegui conferir se ${merchantId} é iFood: ${e?.message}`);
+    return null;
   }
 }
 
@@ -409,6 +451,30 @@ export async function processBrendiEvent(
       // merchant.id não veio ou bate. Fallback SÓ com EXATAMENTE 1 loja
       // conectada; 2+ = recusa registrada — nunca adivinhar a dona.
       const eventMerchantId = orderData.merchant?.id ? String(orderData.merchant.id) : null;
+
+      // ── PEDIDO DE IFOOD REPASSADO PELA BRENDI NÃO ENTRA ───────────────────
+      //
+      // A Brendi é hub: no painel dela, o cartão do FireHub lista os merchantIds
+      // que o webhook pode mandar, e entre eles vêm os merchantIds de IFOOD da
+      // loja. No Frangoso os três são lojas que o FireHub JÁ recebe direto pela
+      // integração do iFood — deixar entrar por aqui também faria o mesmo pedido
+      // chegar DUAS VEZES na cozinha.
+      //
+      // E as duas chaves de idempotência não se cruzam: o pedido da Brendi grava
+      // `openDeliveryOrderId`, o do iFood grava `ifoodOrderId`. São dois
+      // registros distintos para o banco — nada os impediria.
+      //
+      // Descarte DEFINITIVO (`ignoradoDeProposito`): a loja não vai deixar de
+      // ter iFood direto, então reenviar isto todo minuto é só ruído.
+      if (eventMerchantId) {
+        const doIfood = await ehMerchantDeIfoodJaIntegrado(eventMerchantId);
+        if (doIfood) {
+          const msg = `pedido de iFood repassado pela Brendi (merchant ${eventMerchantId} = "${doIfood}") — já entra pela integração direta do iFood, ignorado para não duplicar`;
+          console.log(`[Brendi] ⏭️ ${orderId}: ${msg}`);
+          return { action: "skipped", orderId, message: msg, ignoradoDeProposito: true };
+        }
+      }
+
       let franchisee: LojaBrendi | null = null;
 
       // 1. Prioridade absoluta: a loja que possui exatamente o merchantId do pedido
