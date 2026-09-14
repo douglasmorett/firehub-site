@@ -147,11 +147,6 @@ export default function StoreSidebar({
 
   const grupos = menuDaLoja({ antecipacao: mostrarAntecipacao, compras: mostrarCompras });
 
-  // O módulo de compras (IceBox) sempre rodou sem o menu do painel — ele tem
-  // navegação própria. A barra lateral herda a mesma regra da barra antiga.
-  const ehCompras = pathname?.startsWith("/store/compras") || pathname?.startsWith("/store/orders");
-  if (ehCompras) return null;
-
   // O caminho COM o # — é o que distingue "Entrega" de "Pagamento", que são
   // a mesma rota. `usePathname` não enxerga hash, então vem do próprio
   // navegador e é atualizado no `hashchange`.
@@ -162,6 +157,17 @@ export default function StoreSidebar({
     window.addEventListener("hashchange", ler);
     return () => window.removeEventListener("hashchange", ler);
   }, [pathname]);
+
+  // O módulo de compras (IceBox) sempre rodou sem o menu do painel — ele tem
+  // navegação própria. A barra lateral herda a mesma regra da barra antiga.
+  //
+  // ESTE RETURN FICA DEPOIS DE TODOS OS HOOKS, e não pode subir. A barra vive
+  // no layout: ela não desmonta ao navegar. Com o return acima do `useState`
+  // abaixo, ir de /store/mesas para /store/orders renderizava dois hooks a
+  // menos na mesma instância — "Rendered fewer hooks than expected", tela
+  // branca do painel inteiro, socorrida só pelo error.tsx.
+  const ehCompras = pathname?.startsWith("/store/compras") || pathname?.startsWith("/store/orders");
+  if (ehCompras) return null;
 
   const ehAtivo = (item: ItemDoMenu) => {
     const p = String(pathname || "");
