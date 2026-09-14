@@ -26,6 +26,12 @@ export type ItemDoMenu = {
   /** Só aparece quando a loja tem o benefício ligado. */
   somenteCom?: "antecipacao" | "compras";
   /**
+   * Abre em outra guia. Vale para a tela que a loja usa AO LADO do painel,
+   * não no lugar dele: a roteirização fica aberta no mapa enquanto o
+   * atendente continua despachando pedidos na aba de origem.
+   */
+  novaAba?: boolean;
+  /**
    * As telas de dentro. Abrem no próprio menu, para o lojista escolher
    * "Entrega" sem passar pela tela de cartões de Minha Loja.
    */
@@ -43,7 +49,7 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       { href: "/store/kds", label: "KDS da cozinha", icone: "Monitor" },
       { href: "/store/mesas", label: "Mesas", icone: "UtensilsCrossed" },
       { href: "/store/venda-presencial", label: "Balcão", icone: "ShoppingBag" },
-      { href: "/store/roteirizacao", label: "Roteirização", icone: "MapPin" },
+      { href: "/store/roteirizacao", label: "Roteirização", icone: "MapPin", novaAba: true },
       { href: "/store/totem", label: "Totem", icone: "TabletSmartphone", selo: "EM TESTES" },
     ],
   },

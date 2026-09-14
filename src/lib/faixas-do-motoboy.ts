@@ -61,9 +61,13 @@ export function valorDaFaixa(faixas: FaixaDoMotoboy[], km: number | null | undef
 /** O que impede estas faixas de serem salvas, em português para a tela. */
 export function problemasDasFaixas(faixas: FaixaDoMotoboy[]): string[] {
   const p: string[] = [];
-  const semDistancia = faixas.filter((f) => !(Number(f.ate) > 0));
+  // Linha totalmente em branco é linha que a tela ofereceu e a pessoa ainda
+  // não preencheu — reclamar dela seria a tela acusar o próprio convite. Só
+  // a linha PELA METADE (valor sem distância) é erro de verdade.
+  const preenchidas = faixas.filter((f) => Number(f.ate) > 0 || Number(f.valor) > 0);
+  const semDistancia = preenchidas.filter((f) => !(Number(f.ate) > 0));
   if (semDistancia.length) p.push("Toda faixa precisa de uma distância maior que zero.");
-  const repetidas = faixas.map((f) => f.ate).filter((n, i, todas) => todas.indexOf(n) !== i);
+  const repetidas = preenchidas.map((f) => f.ate).filter((n, i, todas) => todas.indexOf(n) !== i);
   if (repetidas.length) {
     p.push(`Tem mais de uma faixa em ${Array.from(new Set(repetidas)).join(" km e em ")} km.`);
   }

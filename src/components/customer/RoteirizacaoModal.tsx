@@ -1263,6 +1263,17 @@ export default function RoteirizacaoModal({
         .addTo(map)
         .bindPopup(popupDoPedido(order, jaDespachado, prontoNaCozinha));
 
+      // ── O PEDIDO INTEIRO SÓ DE PASSAR O MOUSE ────────────────────────
+      //
+      // Quem monta rota precisa saber o que é cada pino — cliente, endereço,
+      // prazo, pagamento — sem abrir um por um. O conteúdo já era este; só
+      // exigia clique, e clique no pino também SELECIONA o pedido: para
+      // conferir, o lojista tinha de selecionar e desmarcar em seguida.
+      //
+      // O Leaflet mantém um popup aberto por vez, então passar para o pino
+      // vizinho troca o conteúdo sozinho, sem acumular caixas na tela.
+      orderMarker.on("mouseover", () => orderMarker.openPopup());
+
       orderMarker.on("click", () => {
         // ── PINO AZUL E VERDE SÃO INFORMATIVOS, NÃO SELECIONÁVEIS ────────
         //
@@ -1489,6 +1500,37 @@ export default function RoteirizacaoModal({
     } catch (err: any) {
       console.error("Erro ao criar rota no banco:", err);
       alert("Erro ao criar rota: " + (err?.message || err));
+    } finally {
+      setIsDispatching(false);
+    }
+  };
+
+  /**
+   * Trocar o entregador de uma rota JÁ DESPACHADA.
+   *
+   * Sem isto, escolher o motoboy era decisão de uma vez só: o entregador
+   * furava, passava mal, o pneu estourava — e a rota ficava travada no nome
+   * dele, com os pedidos amarrados junto. A troca vai para o PATCH, que
+   * atualiza a rota E todos os pedidos dela: se só a rota mudasse, o painel
+   * mostraria um entregador e o app do motoboy outro.
+   */
+  const trocarEntregadorDaRota = async (routeId: string, novoMotoboyId: string) => {
+    setIsDispatching(true);
+    try {
+      const res = await fetch("/api/store/routes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routeId, motoboyId: novoMotoboyId || null }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Não consegui trocar o entregador desta rota.");
+        return;
+      }
+      await fetchStoreRoutes();
+      if (onRefreshOrders) onRefreshOrders();
+    } catch (err: any) {
+      alert("Erro ao trocar o entregador: " + (err?.message || err));
     } finally {
       setIsDispatching(false);
     }
@@ -2014,7 +2056,36 @@ export default function RoteirizacaoModal({
 
                         <div style={{ fontSize: "0.8rem", color: "#475569", marginBottom: "0.75rem" }}>
                           <p style={{ margin: "0 0 4px 0", fontWeight: 700 }}>📦 {route.orders.length} {route.orders.length > 1 ? "Pedidos" : "Pedido"}: {route.orders.map(o => getOrderDisplayNumber(o)).join(", ")}</p>
-                          <p style={{ margin: "0 0 8px 0" }}>🛵 Entregador: <b>{route.motoboyName || "Aguardando Seleção"}</b></p>
+                          <p style={{ margin: "0 0 8px 0" }}>🛵 Entregador: <b>{route.motoboyName || "ainda não escolhido"}</b></p>
+
+                          {/* ── TROCAR O ENTREGADOR DE UMA ROTA JÁ DESPACHADA ──
+                              O plano muda depois do despacho: o entregador furou,
+                              passou mal, o pneu estourou. Sem isto, a rota ficava
+                              travada no nome dele — e os pedidos junto. */}
+                          {isDispatched && (
+                            <div style={{ marginTop: "6px", marginBottom: "8px" }}>
+                              <label style={{ display: "block", fontSize: "0.68rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>
+                                Trocar entregador
+                              </label>
+                              <select
+                                value={route.motoboyId || ""}
+                                disabled={isDispatching}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val && val !== route.motoboyId) trocarEntregadorDaRota(route.id, val);
+                                }}
+                                style={{
+                                  width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1",
+                                  fontSize: "0.8rem", fontWeight: 700, background: "#FFFFFF", fontFamily: "inherit",
+                                }}
+                              >
+                                <option value="">-- Sem entregador --</option>
+                                {motoboys.map(m => (
+                                  <option key={m.id} value={m.id}>🛵 {m.name} {m.phone ? `(${m.phone})` : ""}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
 
                           {/* Se ainda não foi despachada, permite selecionar motoboy na hora */}
                           {!isDispatched && (

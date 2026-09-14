@@ -95,7 +95,19 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Tipo de Pagamento</label>
-          <select className="input-field" value={editing.paymentType || "PER_DELIVERY"} onChange={e => setEditing(p => ({ ...p, paymentType: e.target.value }))}>
+          <select className="input-field" value={editing.paymentType || "PER_DELIVERY"} onChange={e => {
+            const tipo = e.target.value;
+            // Escolheu faixa e não tem nenhuma: a tela já abre com três linhas
+            // EM BRANCO. Quadro vazio com um botão 'adicionar' não ensina o
+            // formato; três linhas prontas para digitar, sim.
+            setEditing(p => ({
+              ...p,
+              paymentType: tipo,
+              faixasDeKm: tipo === "FAIXA_KM" && !(p?.faixasDeKm?.length)
+                ? [{ ate: 0, valor: 0 }, { ate: 0, valor: 0 }, { ate: 0, valor: 0 }]
+                : p?.faixasDeKm,
+            }));
+          }}>
             {PAYMENT_TYPES.map(pt => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
           </select>
         </div>
@@ -132,7 +144,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
           const adicionar = () => setEditing(p => {
             const atuais = p?.faixasDeKm || [];
             const ultima = atuais.length ? atuais[atuais.length - 1] : null;
-            return { ...p, faixasDeKm: [...atuais, { ate: ultima ? ultima.ate + 2 : 2, valor: ultima ? ultima.valor : 5 }] };
+            return { ...p, faixasDeKm: [...atuais, { ate: 0, valor: 0 }] };
           });
           const problemas = problemasDasFaixas(faixas);
           return (
@@ -145,21 +157,16 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                 acima da última, vale a última.
               </p>
 
-              {faixas.length === 0 && (
-                <p style={{ margin: "0 0 10px", fontSize: "0.78rem", color: "#92400E" }}>
-                  Nenhuma faixa ainda — adicione a primeira abaixo.
-                </p>
-              )}
 
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {faixas.map((f, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap" }}>até</span>
-                    <input type="number" min="0.5" step="0.5" value={f.ate || ""}
+                    <input type="number" min="0.5" step="0.5" placeholder="2" value={f.ate || ""}
                       onChange={e => mudarFaixa(i, "ate", parseFloat(e.target.value) || 0)}
                       style={{ width: 72, padding: "7px 8px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }} />
                     <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#64748B", whiteSpace: "nowrap" }}>km  →  o entregador recebe R$</span>
-                    <input type="number" min="0" step="0.5" value={f.valor ?? ""}
+                    <input type="number" min="0" step="0.5" placeholder="5,00" value={f.valor || ""}
                       onChange={e => mudarFaixa(i, "valor", parseFloat(e.target.value) || 0)}
                       style={{ width: 86, padding: "7px 8px", borderRadius: 8, border: "1.5px solid #FED7AA", background: "#fff", color: "#9A3412", fontSize: "0.88rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }} />
                     <button type="button" onClick={() => remover(i)} title="Remover esta faixa"
@@ -175,7 +182,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                 <Plus size={14} /> Adicionar faixa de km
               </button>
 
-              {faixas.length > 0 && problemas.length === 0 && (
+              {faixas.some(f => Number(f.ate) > 0) && problemas.length === 0 && (
                 <p style={{ margin: "9px 0 0", fontSize: "0.74rem", color: "#166534", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
                   {explicarFaixas(lerFaixasDoMotoboy(faixas))}
                 </p>

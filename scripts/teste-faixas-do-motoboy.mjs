@@ -60,5 +60,18 @@ conferir("descreve as faixas e o acima de",
   explicarFaixas(FAIXAS));
 conferir("sem faixa, sem frase", explicarFaixas([]) === "");
 
+console.log("\n5) Linha em branco que a própria tela ofereceu");
+const TRES_VAZIAS = [{ ate: 0, valor: 0 }, { ate: 0, valor: 0 }, { ate: 0, valor: 0 }];
+conferir("três linhas em branco não acusam erro", problemasDasFaixas(TRES_VAZIAS).length === 0);
+conferir("em branco não vira faixa gravada", lerFaixasDoMotoboy(TRES_VAZIAS).length === 0);
+conferir("valor sem distância continua sendo erro",
+  /distância maior que zero/.test(problemasDasFaixas([{ ate: 0, valor: 5 }])[0] || ""));
+conferir("uma preenchida e duas em branco passa",
+  problemasDasFaixas([{ ate: 2, valor: 5 }, { ate: 0, valor: 0 }, { ate: 0, valor: 0 }]).length === 0);
+conferir("e só a preenchida é gravada",
+  lerFaixasDoMotoboy([{ ate: 2, valor: 5 }, { ate: 0, valor: 0 }]).length === 1);
+conferir("duas em branco não contam como faixa repetida",
+  problemasDasFaixas([{ ate: 0, valor: 0 }, { ate: 0, valor: 0 }]).length === 0);
+
 console.log(falhas === 0 ? "\nTUDO OK\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

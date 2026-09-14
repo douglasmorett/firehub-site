@@ -226,8 +226,13 @@ export default function StoreSidebar({
                 return (
                   <div key={item.href}>
                     <div className={`fh-menu-linha${ativo ? " ativo" : ""}`}>
+                      {/* `novaAba` sai como <a> com target: o Link do Next
+                          navega na mesma guia e o lojista perdia a tela de
+                          pedidos de onde veio. */}
                       <Link
                         href={item.href}
+                        target={item.novaAba ? "_blank" : undefined}
+                        rel={item.novaAba ? "noopener noreferrer" : undefined}
                         className={`fh-menu-item${ativo ? " ativo" : ""}${temFilhos ? " com-filhos" : ""}`}
                         title={recolhida ? item.label : undefined}
                       >
@@ -383,8 +388,14 @@ const ESTILO = `
 /* Redondo e na BORDA da barra, como o do iFood e o da Brendi: é onde a
    pessoa já procura, e continua alcançável com a barra recolhida — no
    rodapé, ele sumia justamente quando a barra estava estreita. */
+/* DENTRO da barra, nunca pendurada para fora.
+
+   Em -14px ela invadia a coluna do conteúdo e ficava atrás da faixa
+   vermelha do topo — cortada em algumas telas e inteira em outras, porque
+   depende de onde a faixa começa em cada largura. Botão que aparece
+   diferente em cada PC é botão que o lojista não confia. */
 .fh-menu-recolher{
-  position:absolute; top:22px; right:-14px;
+  position:absolute; top:14px; right:10px;
   /* Largura E altura travadas nos dois sentidos: só width/height num filho
      de flex ainda estica, e a bolinha saía ovalada. */
   width:28px; min-width:28px; max-width:28px;
@@ -395,6 +406,11 @@ const ESTILO = `
   box-shadow:0 2px 10px rgba(0,0,0,.25); z-index:61; font-family:inherit;
 }
 .fh-menu-recolher:hover{ background:#C62828; border-color:#C62828; color:#fff; }
+/* No rail de 64px não cabe logo e seta lado a lado: a seta desce. */
+.fh-menu.recolhida .fh-menu-recolher{ top:60px; right:18px; }
+/* O nome da loja não passa por baixo da seta. */
+.fh-menu-topo{ padding-right:46px; }
+.fh-menu.recolhida .fh-menu-topo{ padding-right:12px; }
 
 .fh-menu-botao{
   display:none; position:fixed; left:10px; top:10px; z-index:70;

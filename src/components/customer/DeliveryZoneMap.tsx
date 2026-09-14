@@ -29,14 +29,13 @@ const METODOS_DE_COBRANCA: { chave: string; emoji: string; nome: string; ajuda: 
 ];
 
 /**
- * `fee` é o que o CLIENTE paga. `motoboyFee` é o que a LOJA repassa ao
- * entregador naquela faixa — os dois quase nunca são o mesmo número, e até
- * aqui só existia o primeiro. O relatório de entregas então caía na taxa do
- * cliente, que em pedido de iFood e 99Food é dinheiro do marketplace: o
- * Lucas via "Taxa: R$ 6,94" numa entrega que ele paga R$ 2,00 (12/09/2026).
+ * Esta tela cadastra UMA coisa: quanto o CLIENTE paga (`fee`).
  *
- * Ausente = a loja não separou os dois, e vale o acerto cadastrado no próprio
- * entregador.
+ * O que o entregador recebe é outro assunto e mora na aba Motoboys — lá em
+ * faixas de km por entregador (lib/faixas-do-motoboy.ts). `motoboyFee` segue
+ * no tipo porque zonas salvas antes da mudança têm o valor gravado, e a tela
+ * precisa devolvê-lo intacto ao salvar: apagá-lo zeraria o acerto de quem
+ * configurou pela tela antiga.
  */
 type Zone = { km: number; time: number; fee: number; motoboyFee?: number };
 
@@ -48,12 +47,10 @@ interface Props {
   initialIfoodSyncDeliveryTime?: boolean;
   /** As áreas de risco já gravadas (User.deliveryConfig.areasDeRisco). */
   initialAreasDeRisco?: unknown;
-  /** `User.deliveryConfig` inteiro — daqui sai a regra de repasse já gravada. */
-  initialDeliveryConfig?: unknown;
   onSave: (data: { storeLatLng: { lat: number; lng: number }; deliveryZones: Zone[]; deliveryZoneType: string; storeAddress: string; ifoodSyncDeliveryTime?: boolean; areasDeRisco?: AreaDeRisco[] }) => Promise<void>;
 }
 
-export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialIfoodSyncDeliveryTime, initialAreasDeRisco, initialDeliveryConfig, onSave }: Props) {
+export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialIfoodSyncDeliveryTime, initialAreasDeRisco, onSave }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -125,13 +122,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         ]
   );
 
-  /**
-   * A loja separa o que cobra do cliente do que paga ao entregador?
-   *
-   * Nasce ligado quando ALGUMA faixa ja tem repasse gravado — assim quem ja
-   * configurou volta na tela e ve os proprios numeros, em vez de uma coluna
-   * sumida e o valor aparentemente perdido.
-   */
   const [hoveredZoneIndex, setHoveredZoneIndex] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -534,11 +524,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
   /** Rótulo em cima do campo: é o que evita cabeçalho de coluna espremido. */
   // `maxWidth` para o campo que sobra na quebra de linha não esticar sozinho
-  // até a largura toda — ficava um "Motoboy recebe" gigante embaixo de três
-  // campos pequenos.
+  // até a largura toda, ficando gigante embaixo de campos pequenos.
   const campoDaFaixa: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 3, flex: "1 1 92px", minWidth: 84, maxWidth: 150 };
-  // O rótulo QUEBRA em vez de não quebrar: com `nowrap`, "🛵 Motoboy recebe"
-  // era mais largo que o campo e vazava para fora do cartão.
+  // O rótulo QUEBRA em vez de não quebrar: com `nowrap`, rótulo mais largo
+  // que o campo vazava para fora do cartão.
   const rotuloDoCampo: React.CSSProperties = { fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", lineHeight: 1.25 };
   const caixaDoCampo: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "7px 8px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: "0.84rem", textAlign: "center", outline: "none", fontFamily: "inherit" };
 
