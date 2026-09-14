@@ -130,7 +130,11 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           mostrarCompras={storeOwner?.isFranqueadoHakim === true}
           isAdmin={isAdmin}
         />
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        {/* fh-conteudo: no celular o conteúdo começa ABAIXO da barra de
+            aplicativo (a regra mora no CSS da StoreSidebar). Sem esta reserva,
+            o botão do menu — que é fixo — cobre o primeiro controle de cada
+            tela: foi ele que tapou o "← Pedidos" no módulo de mesa. */}
+        <div className="fh-conteudo" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         {/* Só aparece quando a sessão nasceu do "Acessar" do admin. Fica ANTES
             da barra da loja porque o ponto é ser a primeira coisa que se vê:
             sem aviso, é questão de tempo até alguém do suporte fechar um caixa

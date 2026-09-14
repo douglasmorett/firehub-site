@@ -170,12 +170,9 @@ const ESTILO_TABLET = `
     .mesa-comanda.aberta { max-height: 86vh; }
     .mesa-comanda-acao { display: inline-flex; }
     .mesa-produtos { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
-    .mesa-detalhe {
-      width: 100% !important;
-      border-left: none !important;
-      border-top: 2px solid #E2E8F0;
-      max-height: 46vh;
-    }
+    /* O painel da mesa virou gaveta de rodape (regra mais abaixo); o que
+       sobra aqui e so tirar a borda de coluna. */
+    .mesa-detalhe { border-left: none !important; }
   }
 
   /* Em tela larga a comanda já é uma coluna inteira: não há o que expandir,
@@ -201,6 +198,68 @@ const ESTILO_TABLET = `
 
   /* 44px é o alvo de toque recomendado. Num tablet de garçom, errar o botão
      significa lançar o item errado na comanda de um cliente. */
+  /* ── O SALÃO NO CELULAR ────────────────────────────────────────────────
+
+     O garçom trabalha com o aparelho na mão, em pé, com uma mão só. O mapa
+     de mesas era desenhado para monitor: dois cartões por linha de 120px de
+     altura, e o painel da mesa selecionada comendo 46vh da tela — sobravam
+     duas fileiras e meia de mesas visíveis. Num salão de 20 mesas, achar a
+     mesa 14 virava rolagem.
+
+     Aqui o cartão encolhe para caber três (ou quatro) por linha e o painel
+     da mesa sai do fluxo: vira gaveta de rodapé por cima do mapa, que é o
+     gesto que todo aplicativo de celular usa. O mapa fica inteiro atrás.
+
+     O dono autorizou cortar escrita NESTE módulo — "talvez devesse inclusive
+     cortar as escritas" — e é o que o cartão faz: com 96px de largura, "1
+     ped. · 193h 25min · +10%" não é informação, é ruído. O número da mesa, a
+     bolinha e o valor ficam; o resto o garçom lê ao tocar. */
+  @media (max-width: 900px) {
+    /* A barra de aplicativo do painel fica em cima; sem descontar a altura
+       dela o rodapé do mapa nasce fora da tela. Na rota do garçom não há
+       barra e a variável não existe: o 0px do fallback deixa tudo como era. */
+    .mesa-tela { height: calc(100dvh - var(--fh-barra-celular, 0px)) !important; }
+
+    .mesa-topo { padding: 8px 10px !important; gap: 8px; }
+    .mesa-topo h1 { font-size: 16px !important; }
+    .mesa-topo-marca { display: none !important; }
+    .mesa-topo-numeros { font-size: 11px !important; gap: 6px !important; }
+    .mesa-voltar-texto { display: none; }
+
+    .mesa-mapa { padding: 10px !important; gap: 8px !important;
+      grid-template-columns: repeat(auto-fill, minmax(94px, 1fr)) !important; }
+    .mesa-cartao { min-height: 92px !important; padding: 10px 6px !important; gap: 2px !important; }
+    .mesa-cartao-numero { font-size: 22px !important; }
+    .mesa-cartao-valor { font-size: 12.5px !important; }
+    /* A linha miúda do cartão sai: ilegível em 94px e recuperável num toque. */
+    .mesa-cartao-linha { display: none !important; }
+
+    /* ── A GAVETA DA MESA ────────────────────────────────────────────
+       Fora do fluxo: o mapa atrás continua inteiro e o garçom troca de mesa
+       sem o painel comer metade da tela. 82dvh e não 82vh porque a barra do
+       navegador some e volta — com vh, o botão Fechar Conta ficava atrás
+       dela justamente quando a mesa ia fechar. */
+    .mesa-detalhe {
+      position: fixed !important; left: 0; right: 0; bottom: 0;
+      width: auto !important; max-height: 82dvh !important;
+      border-top: none !important; border-radius: 18px 18px 0 0;
+      z-index: 900; box-shadow: 0 -12px 40px rgba(15,23,42,.28) !important;
+      padding-bottom: env(safe-area-inset-bottom);
+      animation: mesa-sobe .18s ease-out;
+    }
+    .mesa-cortina { display: block !important; }
+  }
+  @keyframes mesa-sobe { from { transform: translateY(14px); opacity: .7; } to { transform: none; opacity: 1; } }
+  /* Só existe no celular: em tela larga o painel é uma coluna, não uma gaveta. */
+  .mesa-cortina { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.38); z-index: 899; }
+
+  /* Quatro por linha no aparelho pequeno de verdade: um salão de 20 mesas
+     cabe em cinco fileiras, sem rolar. */
+  @media (max-width: 430px) {
+    .mesa-mapa { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)) !important; }
+    .mesa-cartao { min-height: 84px !important; }
+  }
+
   @media (pointer: coarse) {
     .mesa-lancar button, .mesa-detalhe button { min-height: 44px; }
     .mesa-lancar input, .mesa-lancar select { min-height: 44px; font-size: 16px; }
@@ -1648,7 +1707,7 @@ export default function MesasApp({
     }}>
       <style>{ESTILO_TABLET}</style>
       {/* ─── Header ─── */}
-      <header style={{
+      <header className="mesa-topo" style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "12px 20px", background: "#fff",
         borderBottom: "1px solid #E2E8F0", flexShrink: 0,
@@ -1656,19 +1715,21 @@ export default function MesasApp({
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {!ehGarcom && (
-            <button onClick={() => router.push("/store/pedidos-clientes")} style={{
+            <button onClick={() => router.push("/store/pedidos-clientes")}
+              title="Voltar para os pedidos" style={{
               background: "none", border: "1px solid #E2E8F0", borderRadius: 8,
-              padding: "5px 10px", cursor: "pointer", fontSize: 13, color: "#64748B",
-            }}>← Pedidos</button>
+              padding: "7px 10px", cursor: "pointer", fontSize: 13, color: "#64748B",
+              flexShrink: 0, fontFamily: "inherit",
+            }}>←<span className="mesa-voltar-texto"> Pedidos</span></button>
           )}
-          <div style={{
+          <div className="mesa-topo-marca" style={{
             width: 36, height: 36, borderRadius: 10, background: "#7C3AED",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 18, boxShadow: "0 2px 8px rgba(124,58,237,0.2)",
           }}>🍽️</div>
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 800, color: "#0F172A", margin: 0 }}>Mesas</h1>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
+            <div className="mesa-topo-numeros" style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
               <span style={{ color: "#16A34A", fontWeight: 700 }}>🟢 {freeTables.length} livres</span>
               <span style={{ color: "#DC2626", fontWeight: 700 }}>🔴 {occupiedTables.length} ocupadas</span>
               {totalConsumo > 0 && <span style={{ color: "#D97706", fontWeight: 700 }}>{fmt(totalConsumo)} em consumo</span>}
@@ -1706,7 +1767,7 @@ export default function MesasApp({
       {/* ─── Content ─── */}
       <div className="mesa-conteudo" style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* ─── Table Grid ─── */}
-        <div style={{
+        <div className="mesa-mapa" style={{
           flex: 1, overflowY: "auto", padding: 20,
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill, minmax(clamp(112px, 22vw, 145px), 1fr))",
@@ -1758,6 +1819,7 @@ export default function MesasApp({
                       setConfirmOpen(table);
                     }
                   }}
+                  className="mesa-cartao"
                   style={{
                     background: isSelected
                       ? "linear-gradient(135deg, #7C3AED, #6D28D9)"
@@ -1777,7 +1839,7 @@ export default function MesasApp({
                   }}
                 >
                   {/* Number */}
-                  <span style={{
+                  <span className="mesa-cartao-numero" style={{
                     fontSize: 26, fontWeight: 900, letterSpacing: "-0.5px",
                     color: isSelected ? "#fff" : occupied ? "#DC2626" : "#334155",
                   }}>
@@ -1789,13 +1851,13 @@ export default function MesasApp({
 
                   {occupied ? (
                     <>
-                      <span style={{
+                      <span className="mesa-cartao-valor" style={{
                         fontSize: 14, fontWeight: 800,
                         color: isSelected ? "#E9D5FF" : "#DC2626",
                       }}>
                         {fmt(table.openSession!.totalAmount)}
                       </span>
-                      <span style={{
+                      <span className="mesa-cartao-linha" style={{
                         fontSize: 10, color: isSelected ? "#C4B5FD" : "#9CA3AF",
                         fontWeight: 600,
                       }}>
@@ -1814,6 +1876,10 @@ export default function MesasApp({
 
         {/* ─── Side Panel ─── */}
         {selectedTable && selectedTable.openSession && (
+          <>
+          {/* A cortina so existe no celular (CSS): e o toque fora que fecha a
+              gaveta, que e como o garcom espera sair dela. */}
+          <div className="mesa-cortina" onClick={() => { setSelectedTable(null); setSessionDetail(null); }} />
           <div className="mesa-detalhe" style={{
             borderLeft: "1px solid #E2E8F0", background: "#fff",
             display: "flex", flexDirection: "column", flexShrink: 0,
@@ -2236,6 +2302,7 @@ export default function MesasApp({
               </div>
             </div>
           </div>
+          </>
         )}
       </div>
 

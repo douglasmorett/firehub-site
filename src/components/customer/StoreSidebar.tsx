@@ -106,6 +106,33 @@ export default function StoreSidebar({
     } catch {}
   }, []);
 
+  // ── CELULAR/TABLET EM PÉ: A BARRA É GAVETA ─────────────────────────────
+  //
+  // O mesmo corte de 900px do CSS, medido também em JS — porque quem esconde
+  // os rótulos do menu é o React (`!recolhida`), não o CSS. Sem isto, quem
+  // recolheu a barra no computador abria o celular e recebia uma gaveta de
+  // 252px com ícones centralizados e nenhum nome: a largura vinha da media
+  // query e os nomes continuavam escondidos pelo estado.
+  const [ehCelular, setEhCelular] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    const ler = () => setEhCelular(mq.matches);
+    ler();
+    mq.addEventListener("change", ler);
+    return () => mq.removeEventListener("change", ler);
+  }, []);
+  /** Recolhida só faz sentido na barra fixa; na gaveta ela é sempre inteira. */
+  const enxuta = recolhida && !ehCelular;
+
+  // Gaveta aberta trava o fundo. Sem isto o dedo rolava a página atrás da
+  // cortina e, ao fechar, a tela estava em outro lugar.
+  useEffect(() => {
+    if (!aberta) return;
+    const antes = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = antes; };
+  }, [aberta]);
+
   // Navegou: a gaveta fecha sozinha, senão o lojista escolhe uma tela e
   // continua olhando para o menu por cima dela.
   useEffect(() => { setAberta(false); }, [pathname]);
@@ -146,14 +173,27 @@ export default function StoreSidebar({
     <>
       <style>{ESTILO}</style>
 
-      {/* Botão da gaveta — só no celular, onde a barra não cabe em pé. */}
-      <button className="fh-menu-botao" onClick={() => setAberta(true)} aria-label="Abrir menu">
-        <Menu size={20} />
-      </button>
+      {/* ── BARRA DE APLICATIVO (só no celular e no tablet em pé) ────────
+
+          Era um botão solto, `position:fixed` no canto 10/10. Como flutuava
+          sobre o documento, pousava em cima do primeiro controle de cada
+          tela — no módulo de mesa tapava metade do botão "← Pedidos" — e a
+          cada rolagem ia parar em cima de outra coisa.
+
+          Agora é barra de largura inteira, fundo opaco, com o conteúdo
+          empurrado para baixo dela (.fh-conteudo, no layout). Nada passa por
+          trás do botão, e o lojista recupera o nome da loja no topo, que ele
+          perdeu quando o menu virou gaveta. */}
+      <div className="fh-menu-barra">
+        <button className="fh-menu-botao" onClick={() => setAberta(true)} aria-label="Abrir menu">
+          <Menu size={20} />
+        </button>
+        <span className="fh-menu-barra-nome">{nomeDaLoja || "Minha loja"}</span>
+      </div>
 
       {aberta && <div className="fh-menu-cortina" onClick={() => setAberta(false)} />}
 
-      <aside className={`fh-menu${recolhida ? " recolhida" : ""}${aberta ? " aberta" : ""}`}>
+      <aside className={`fh-menu${enxuta ? " recolhida" : ""}${aberta ? " aberta" : ""}`}>
         <div className="fh-menu-topo">
           {/* A logo é BOTÃO: clicou, escolhe o arquivo e ela troca na hora.
               Antes, mudar a logo era achar Minha Loja → Dados da loja → caixa
@@ -187,7 +227,7 @@ export default function StoreSidebar({
             style={{ display: "none" }}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) trocarLogo(f); }}
           />
-          {!recolhida && (
+          {!enxuta && (
             <Link href="/store" className="fh-menu-nome">
               <b>{nomeDaLoja || "Minha loja"}</b>
               {cidade && <span>{cidade}</span>}
@@ -200,13 +240,13 @@ export default function StoreSidebar({
 
         {/* Trocar de loja fica ao lado do nome da loja, não numa faixa
             separada lá em cima: quem tem mais de uma opera olhando para cá. */}
-        {!recolhida && (
+        {!enxuta && (
           <div style={{ padding: "0 12px 8px" }}>
             <StoreSelector variante="lateral" />
           </div>
         )}
 
-        {slug && !recolhida && (
+        {slug && !enxuta && (
           <a href={`/loja/${slug}`} target="_blank" rel="noopener noreferrer" className="fh-menu-cardapio">
             Ver meu cardápio
           </a>
@@ -215,13 +255,13 @@ export default function StoreSidebar({
         <nav className="fh-menu-lista">
           {grupos.map((grupo) => (
             <div key={grupo.titulo} className="fh-menu-grupo">
-              {!recolhida && <span className="fh-menu-grupo-titulo">{grupo.titulo}</span>}
+              {!enxuta && <span className="fh-menu-grupo-titulo">{grupo.titulo}</span>}
               {grupo.itens.map((item) => {
                 const Icone = ICONES[item.icone] || Home;
                 const ativo = ehAtivo(item);
                 // Abre sozinho quando já se está na tela dele: quem entrou em
                 // Minha Loja vê na hora o que tem dentro.
-                const temFilhos = !recolhida && !!item.filhos?.length;
+                const temFilhos = !enxuta && !!item.filhos?.length;
                 const aberto = temFilhos && (abertos[item.href] ?? ativo);
                 return (
                   <div key={item.href}>
@@ -234,10 +274,10 @@ export default function StoreSidebar({
                         target={item.novaAba ? "_blank" : undefined}
                         rel={item.novaAba ? "noopener noreferrer" : undefined}
                         className={`fh-menu-item${ativo ? " ativo" : ""}${temFilhos ? " com-filhos" : ""}`}
-                        title={recolhida ? item.label : undefined}
+                        title={enxuta ? item.label : undefined}
                       >
                         <Icone size={17} className="fh-menu-icone" />
-                        {!recolhida && (
+                        {!enxuta && (
                           <>
                             <span className="fh-menu-label">{item.label}</span>
                             {item.destaque && <span className="fh-menu-ponto" />}
@@ -283,17 +323,17 @@ export default function StoreSidebar({
 
           {isAdmin && (
             <div className="fh-menu-grupo">
-              {!recolhida && <span className="fh-menu-grupo-titulo">Admin</span>}
-              <Link href="/store/admin/lojistas" className={`fh-menu-item admin${pathname?.startsWith("/store/admin") ? " ativo" : ""}`} title={recolhida ? "Lojistas" : undefined}>
+              {!enxuta && <span className="fh-menu-grupo-titulo">Admin</span>}
+              <Link href="/store/admin/lojistas" className={`fh-menu-item admin${pathname?.startsWith("/store/admin") ? " ativo" : ""}`} title={enxuta ? "Lojistas" : undefined}>
                 <Store size={17} className="fh-menu-icone" />
-                {!recolhida && <span className="fh-menu-label">Lojistas</span>}
+                {!enxuta && <span className="fh-menu-label">Lojistas</span>}
               </Link>
             </div>
           )}
         </nav>
 
-        <button className="fh-menu-recolher" onClick={alternarRecolhida} title={recolhida ? "Expandir menu" : "Recolher menu"}>
-          {recolhida ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+        <button className="fh-menu-recolher" onClick={alternarRecolhida} title={enxuta ? "Expandir menu" : "Recolher menu"}>
+          {enxuta ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
         </button>
       </aside>
     </>
@@ -301,6 +341,7 @@ export default function StoreSidebar({
 }
 
 const ESTILO = `
+:root{ --fh-barra-celular:50px; }
 .fh-menu{
   width:248px; flex-shrink:0; background:#12161C; color:#CBD5E1;
   display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
@@ -412,24 +453,45 @@ const ESTILO = `
 .fh-menu-topo{ padding-right:46px; }
 .fh-menu.recolhida .fh-menu-topo{ padding-right:12px; }
 
-.fh-menu-botao{
-  display:none; position:fixed; left:10px; top:10px; z-index:70;
-  width:40px; height:40px; border-radius:10px; border:none; cursor:pointer;
-  background:#12161C; color:#fff; align-items:center; justify-content:center;
-  box-shadow:0 4px 14px rgba(0,0,0,.28);
+/* A barra de aplicativo do celular. Largura inteira e fundo opaco: o botao
+   do menu tem casa propria e nunca mais pousa em cima do conteudo. */
+.fh-menu-barra{
+  display:none; position:fixed; left:0; right:0; top:0; z-index:70;
+  height:var(--fh-barra-celular); align-items:center; gap:8px; padding:0 6px;
+  background:#12161C; box-shadow:0 2px 10px rgba(0,0,0,.22);
+  padding-top:env(safe-area-inset-top);
+  box-sizing:content-box;
 }
+.fh-menu-barra-nome{
+  color:#F8FAFC; font-weight:800; font-size:.92rem; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.fh-menu-botao{
+  display:none; width:42px; height:42px; border-radius:10px; border:none; cursor:pointer;
+  background:transparent; color:#fff; align-items:center; justify-content:center;
+  flex-shrink:0; padding:0;
+}
+.fh-menu-botao:active{ background:rgba(255,255,255,.12); }
 .fh-menu-cortina{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:59; }
 
 @media (max-width: 900px){
   .fh-menu{
-    position:fixed; left:0; top:0; bottom:0; height:100dvh; width:252px;
+    position:fixed; left:0; top:0; bottom:0; height:100dvh; width:min(300px, 84vw);
     transform:translateX(-100%); transition:transform .2s ease;
   }
   .fh-menu.aberta{ transform:translateX(0); }
-  .fh-menu.recolhida{ width:252px; }
-  .fh-menu-fechar{ display:block; }
+  .fh-menu.recolhida{ width:min(300px, 84vw); }
+  .fh-menu-fechar{ display:block; padding:8px; }
   .fh-menu-recolher{ display:none; }
+  .fh-menu-barra{ display:flex; }
   .fh-menu-botao{ display:flex; }
   .fh-menu-cortina{ display:block; }
+  /* Alvo de dedo: 44px e o minimo para quem opera em pe, no salao. */
+  .fh-menu-item{ min-height:44px; font-size:.86rem; }
+  .fh-menu-filho{ min-height:40px; display:flex; align-items:center; font-size:.8rem; }
+  .fh-menu-abrir{ width:44px; }
+  .fh-menu-topo{ padding-right:12px; }
+  /* O conteudo do painel comeca abaixo da barra de aplicativo. */
+  .fh-conteudo{ padding-top:calc(var(--fh-barra-celular) + env(safe-area-inset-top)); }
 }
 `;
