@@ -162,7 +162,47 @@ export function safeParseCombo(raw: any): any[] {
  * A quantidade NÃO é multiplicada pela do item pai: é assim que o array do
  * iFood sempre chegou ao Assistente, e é ele quem imprime "2x" do lado.
  */
-export function comboParaImpressao(raw: any): ComboItem[] | null {
+export function comboParaImpressao(raw: any, produto?: unknown): ComboItem[] | null {
   const lista = parseComboSelections(raw, 1);
-  return lista.length > 0 ? lista : null;
+  if (lista.length === 0) return null;
+  return produto ? comPrecoDoAdicional(lista, raw, produto) : lista;
+}
+
+/**
+ * Preenche o `price` de cada adicional com o que ELE custou no pedido.
+ *
+ * Por que precisa disto: o combo do cardápio online é gravado como
+ * `{ grupoId: { nome: qtd } }` — só nome e quantidade. O preço mora no
+ * `ComboGroupItem.additionalPrice` do cardápio, e é de lá que o total do pedido
+ * sai (por isso o total sempre bateu). Só que a notinha imprimia o nome do
+ * adicional e mais nada: o cliente pagava R$ 3,00 pelo bacon e a comanda não
+ * dizia por que o item custou mais — foi a queixa da Delicias de Casa.
+ *
+ * Resolve pela MESMA função que calcula o total (`adicionaisDetalhados`), para
+ * o detalhe impresso não poder divergir da soma.
+ *
+ * Adicional que veio do PDV ou do iFood já traz `price`: esse é respeitado, e
+ * nada aqui o sobrescreve.
+ */
+function comPrecoDoAdicional(lista: ComboItem[], raw: any, produto: any): ComboItem[] {
+  let detalhado: { nome: string; qtd: number; precoUnitario: number }[] = [];
+  try {
+    // Import estático causaria ciclo (preco-combo não conhece parse-combo, mas
+    // quem consome os dois, sim); require tardio mantém a dependência num sentido só.
+    const { adicionaisDetalhados } = require("./preco-combo") as typeof import("./preco-combo");
+    detalhado = adicionaisDetalhados(produto, raw);
+  } catch {
+    return lista;
+  }
+  if (!detalhado.length) return lista;
+
+  const chave = (s: string) => s.trim().toLowerCase();
+  const preco = new Map<string, number>();
+  for (const d of detalhado) preco.set(chave(d.nome), d.precoUnitario);
+
+  return lista.map((i) => {
+    if (i.price !== undefined) return i;
+    const p = preco.get(chave(i.name));
+    return p !== undefined && p > 0 ? { ...i, price: p } : i;
+  });
 }

@@ -123,16 +123,37 @@ export function somaDosAdicionais(
   const grupos = produto.comboGroups || [];
   if (grupos.length === 0) return 0;
 
-  const escolhido = normalizarEscolhas(escolhas);
-  if (escolhido.length === 0) return 0;
+  let total = 0;
+  for (const a of adicionaisDetalhados(produto, escolhas)) total += a.precoUnitario * a.qtd;
+  return arredondar(total);
+}
 
-  // Dois mapas: o preciso, por (grupo, nome), e o de fallback por nome — usado
-  // só quando a escolha veio sem grupo (formato do PDV).
-  //
-  // Casar por grupo é o que mantém o servidor igual ao ComboModal, que soma
-  // `selections[group.id]`. Com um mapa só por nome, "Esfirra de Carne" grátis
-  // num grupo e a R$ 3,98 em outro viravam o mesmo preço nos dois lugares — e a
-  // conta do servidor passava a divergir da que o cliente viu na tela.
+/**
+ * Cada adicional escolhido, com o preço unitário que ELE custou neste pedido.
+ *
+ * É a mesma resolução que `somaDosAdicionais` faz para chegar ao total — e por
+ * isso mora aqui, numa função só: a notinha precisa mostrar "+R$ 3,00" ao lado
+ * da opção, e um segundo cálculo escrito em outro lugar é a receita para o
+ * detalhe não bater com o total que já está certo.
+ *
+ * Dois mapas: o preciso, por (grupo, nome), e o de fallback por nome — usado
+ * só quando a escolha veio sem grupo (formato do PDV).
+ *
+ * Casar por grupo é o que mantém o servidor igual ao ComboModal, que soma
+ * `selections[group.id]`. Com um mapa só por nome, "Esfirra de Carne" grátis
+ * num grupo e a R$ 3,98 em outro viravam o mesmo preço nos dois lugares — e a
+ * conta do servidor passava a divergir da que o cliente viu na tela.
+ */
+export function adicionaisDetalhados(
+  produto: ProdutoComCombo,
+  escolhas: EscolhasDoCombo
+): { grupoId?: string; nome: string; qtd: number; precoUnitario: number }[] {
+  const grupos = produto?.comboGroups || [];
+  if (grupos.length === 0) return [];
+
+  const escolhido = normalizarEscolhas(escolhas);
+  if (escolhido.length === 0) return [];
+
   const porGrupoENome = new Map<string, number>();
   const porNome = new Map<string, number>();
   for (const g of grupos) {
@@ -148,13 +169,11 @@ export function somaDosAdicionais(
     }
   }
 
-  let total = 0;
-  for (const { grupoId, nome, qtd } of escolhido) {
+  return escolhido.map(({ grupoId, nome, qtd }) => {
     const doGrupo = grupoId ? porGrupoENome.get(`${grupoId}::${nome}`) : undefined;
     const add = doGrupo ?? porNome.get(nome) ?? 0;
-    total += (Number.isFinite(add) ? add : 0) * qtd;
-  }
-  return arredondar(total);
+    return { grupoId, nome, qtd, precoUnitario: Number.isFinite(add) ? add : 0 };
+  });
 }
 
 /** Preço unitário final: base + adicionais escolhidos. É o valor a cobrar. */

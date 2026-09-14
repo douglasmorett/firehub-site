@@ -1319,7 +1319,30 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           selName = selName.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
           const isSelBev = !ehConta && isBeverageName(selName);
           const selBevTag = isSelBev ? "  <=== BEBIDA" : "";
-          res += marcarBebida(makeBoxText(`  - ${qPrefix}${selName}${selBevTag}`), isSelBev);
+
+          // ── O QUE O ADICIONAL CUSTOU, NA LINHA DELE ────────────────────
+          //
+          // A notinha imprimia so o NOME do adicional. O cliente pagava R$ 3,00
+          // pelo bacon, o Total batia certo, e o papel nao dizia de onde vinha a
+          // diferenca — a loja nao tinha como conferir item a item, nem
+          // responder ao cliente que perguntasse. Queixa da Delicias de Casa.
+          //
+          // Valor da LINHA (unitario x quantidade): e o que ele pagou por
+          // aquele adicional. O "2x" ja aparece antes do nome.
+          //
+          // Na via da COZINHA (semValores) nada disto sai: la o papel nunca
+          // leva valor nenhum, e e proposital.
+          const addUnit = Number(sel.price ?? sel.unitPrice ?? sel.addition ?? 0);
+          const addTotal = Number.isFinite(addUnit) ? addUnit * totalQty : 0;
+          const addStr = !semValores && addTotal > 0
+            ? "+R$ " + addTotal.toFixed(2).replace(".", ",")
+            : "";
+
+          const rotulo = `  - ${qPrefix}${selName}${selBevTag}`;
+          res += marcarBebida(
+            addStr ? makeBoxLine(rotulo, addStr) : makeBoxText(rotulo),
+            isSelBev
+          );
         });
       }
 

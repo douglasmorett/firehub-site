@@ -220,7 +220,31 @@ export async function GET(req: NextRequest) {
           },
           items: {
             include: {
-              menuProduct: true,
+              menuProduct: {
+                // `comboGroups` entra SÓ com os campos que resolvem o preço do
+                // adicional (ver comboParaImpressao): id do grupo, o quanto a
+                // opção soma e o nome dela. É o que faz a notinha imprimir
+                // "+R$ 3,00" ao lado do bacon em vez do nome pelado.
+                //
+                // Enxuto de propósito: esta consulta é a da fila que o
+                // Assistente bate a cada 3 s, e `include` largo aqui já custou
+                // 14 MB de payload uma vez (ver cardapio-da-loja.ts). Só entra
+                // quando há pedido para imprimir — na maioria dos polls a lista
+                // volta vazia e nada disto é carregado.
+                include: {
+                  comboGroups: {
+                    select: {
+                      id: true,
+                      items: {
+                        select: {
+                          additionalPrice: true,
+                          menuProduct: { select: { name: true } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             }
           }
         }
@@ -278,7 +302,9 @@ export async function GET(req: NextRequest) {
         ...pedidoDoBanco,
         items: (pedidoDoBanco.items || []).map((i: any) => ({
           ...i,
-          comboSelections: comboParaImpressao(i.comboSelections),
+          // O 2º argumento é o produto: é com os `comboGroups` dele que o preço
+          // de cada adicional é resolvido, para sair "+R$ 3,00" na notinha.
+          comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct),
         })),
       };
       const destinos = destinosDoPedido(printers, order as any);
