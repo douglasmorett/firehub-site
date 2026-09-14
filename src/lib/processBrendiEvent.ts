@@ -129,33 +129,54 @@ async function gravarSendFlags(orderId: string, orderData: any): Promise<void> {
 }
 
 /**
- * Este merchantId é de uma loja de iFood que o FireHub JÁ recebe direto?
+ * Este merchantId é de um marketplace que o FireHub JÁ recebe DIRETO?
  *
- * Devolve o NOME da loja iFood (para o log dizer qual é) ou null.
+ * Devolve "iFood — <nome>" / "99Food — <nome>" para o log dizer qual é, ou null.
  *
- * Confere nos dois lugares onde o vínculo do iFood mora: a tabela multi-loja
- * (`IfoodIntegration`, o caminho de hoje) e o campo antigo de loja única em
- * `User` — uma conta ligada só pelo campo antigo também não pode duplicar.
+ * A Brendi lista, no cartão do FireHub dentro do painel dela, TODOS os ids que
+ * o webhook pode mandar — e ali vêm os merchants de iFood E os shop ids do
+ * 99Food da loja. No Frangoso os seis são lojas já ligadas aqui pelas
+ * integrações diretas.
+ *
+ * Confere nos quatro lugares onde esses vínculos moram: `IfoodIntegration` e
+ * `Food99Store` (as tabelas multi-loja, o caminho de hoje) e os campos antigos
+ * de loja única em `User` — conta ligada só pelo campo antigo também não pode
+ * duplicar.
  */
-async function ehMerchantDeIfoodJaIntegrado(merchantId: string): Promise<string | null> {
+async function ehMerchantDeMarketplaceJaIntegrado(merchantId: string): Promise<string | null> {
   try {
-    const daTabela = await prisma.ifoodIntegration.findFirst({
+    const doIfood = await prisma.ifoodIntegration.findFirst({
       where: { merchantId, active: true, connected: true },
       select: { label: true },
     });
-    if (daTabela) return daTabela.label || "loja iFood";
+    if (doIfood) return `iFood — ${doIfood.label || "loja"}`;
 
-    const doCampoAntigo = await prisma.user.findFirst({
+    const ifoodAntigo = await prisma.user.findFirst({
       where: { ifoodMerchantId: merchantId, ifoodConnected: true },
       select: { storeName: true, name: true },
     });
-    if (doCampoAntigo) return doCampoAntigo.storeName || doCampoAntigo.name || "loja iFood";
+    if (ifoodAntigo) return `iFood — ${ifoodAntigo.storeName || ifoodAntigo.name || "loja"}`;
+
+    // Food99Store ainda não vive no Prisma Client (colunas garantidas no boot),
+    // então vai em SQL cru, como o resto do 99Food.
+    const do99 = await prisma.$queryRaw<{ label: string | null }[]>`
+      SELECT "label" FROM "Food99Store"
+      WHERE "shopId" = ${merchantId} AND "connected" = true AND "active" = true
+      LIMIT 1
+    `.catch(() => [] as { label: string | null }[]);
+    if (Array.isArray(do99) && do99[0]) return `99Food — ${do99[0].label || "loja"}`;
+
+    const noventaENoveAntigo = await prisma.user.findFirst({
+      where: { food99MerchantId: merchantId, food99Connected: true },
+      select: { storeName: true, name: true },
+    });
+    if (noventaENoveAntigo) return `99Food — ${noventaENoveAntigo.storeName || noventaENoveAntigo.name || "loja"}`;
 
     return null;
   } catch (e: any) {
     // Sem conseguir perguntar, NÃO descarta: perder pedido é pior que duplicar,
     // e a duplicata o lojista vê e resolve — a venda perdida, não.
-    console.warn(`[Brendi] não consegui conferir se ${merchantId} é iFood: ${e?.message}`);
+    console.warn(`[Brendi] não consegui conferir se ${merchantId} é de marketplace direto: ${e?.message}`);
     return null;
   }
 }
@@ -452,24 +473,25 @@ export async function processBrendiEvent(
       // conectada; 2+ = recusa registrada — nunca adivinhar a dona.
       const eventMerchantId = orderData.merchant?.id ? String(orderData.merchant.id) : null;
 
-      // ── PEDIDO DE IFOOD REPASSADO PELA BRENDI NÃO ENTRA ───────────────────
+      // ── PEDIDO DE MARKETPLACE REPASSADO PELA BRENDI NÃO ENTRA ─────────────
       //
       // A Brendi é hub: no painel dela, o cartão do FireHub lista os merchantIds
-      // que o webhook pode mandar, e entre eles vêm os merchantIds de IFOOD da
-      // loja. No Frangoso os três são lojas que o FireHub JÁ recebe direto pela
-      // integração do iFood — deixar entrar por aqui também faria o mesmo pedido
-      // chegar DUAS VEZES na cozinha.
+      // que o webhook pode mandar, e entre eles vêm os merchants de IFOOD e os
+      // shop ids do 99FOOD da loja. No Frangoso os seis são lojas que o FireHub
+      // JÁ recebe direto pelas integrações próprias — deixar entrar por aqui
+      // também faria o mesmo pedido chegar DUAS VEZES na cozinha.
       //
-      // E as duas chaves de idempotência não se cruzam: o pedido da Brendi grava
-      // `openDeliveryOrderId`, o do iFood grava `ifoodOrderId`. São dois
-      // registros distintos para o banco — nada os impediria.
+      // E as chaves de idempotência não se cruzam: o pedido da Brendi grava
+      // `openDeliveryOrderId`, o do iFood grava `ifoodOrderId`, o do 99Food vem
+      // por outro caminho ainda. São registros distintos para o banco — nada os
+      // impediria.
       //
       // Descarte DEFINITIVO (`ignoradoDeProposito`): a loja não vai deixar de
-      // ter iFood direto, então reenviar isto todo minuto é só ruído.
+      // ter iFood e 99Food diretos, então reenviar isto todo minuto é só ruído.
       if (eventMerchantId) {
-        const doIfood = await ehMerchantDeIfoodJaIntegrado(eventMerchantId);
-        if (doIfood) {
-          const msg = `pedido de iFood repassado pela Brendi (merchant ${eventMerchantId} = "${doIfood}") — já entra pela integração direta do iFood, ignorado para não duplicar`;
+        const jaDireto = await ehMerchantDeMarketplaceJaIntegrado(eventMerchantId);
+        if (jaDireto) {
+          const msg = `repasse de marketplace pela Brendi (merchant ${eventMerchantId} = "${jaDireto}") — já entra pela integração direta, ignorado para não duplicar`;
           console.log(`[Brendi] ⏭️ ${orderId}: ${msg}`);
           return { action: "skipped", orderId, message: msg, ignoradoDeProposito: true };
         }
