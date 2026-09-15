@@ -2614,6 +2614,20 @@ function logUpdate(msg) {
   try { fs.appendFileSync(path.join(APP_DIR, "update.log"), linha + "\n"); } catch {}
 }
 
+/**
+ * Quanto silencio a atualizacao exige, conforme a versao vai envelhecendo.
+ *
+ * Fixo em 30 min era um impasse: loja movimentada nunca fica 30 min parada com
+ * o PC ligado, e o PC e desligado ao fechar. Afrouxando com o tempo, qualquer
+ * loja converge — em 48 h todo mundo tem dois minutos de intervalo.
+ */
+function janelaCalmaParaVersao(horasPendente) {
+  const h = Number(horasPendente) || 0;
+  if (h >= 48) return 2 * 60_000;
+  if (h >= 24) return 10 * 60_000;
+  return JANELA_CALMA_MS;
+}
+
 function versaoRemotaEhMaisNova(remota, local) {
   const a = String(remota || "").split(".").map((n) => parseInt(n, 10) || 0);
   const b = String(local || "").split(".").map((n) => parseInt(n, 10) || 0);
@@ -2633,6 +2647,21 @@ function lerTentativaDeUpdate() {
 }
 function gravarTentativaDeUpdate(t) {
   try { fs.writeFileSync(UPDATE_TENTATIVA_FILE, JSON.stringify(t)); } catch {}
+}
+
+/* Desde QUANDO esta versao esta disponivel para este PC.
+   Em disco porque o PC da loja reinicia todo dia: na memoria, a conta de
+   "quanto tempo esta pendente" zerava a cada boot e a janela calma nunca
+   afrouxava. Primeiro avistamento de uma versao nova comeca a contar agora. */
+const UPDATE_VISTO_FILE = path.join(APP_DIR, "update-visto.json");
+function primeiroAvistamento(versao) {
+  try {
+    const v = JSON.parse(fs.readFileSync(UPDATE_VISTO_FILE, "utf8"));
+    if (v && v.versao === versao && Number(v.em) > 0) return Number(v.em);
+  } catch {}
+  const agora = Date.now();
+  try { fs.writeFileSync(UPDATE_VISTO_FILE, JSON.stringify({ versao, em: agora })); } catch {}
+  return agora;
 }
 
 async function verificarAtualizacao() {
@@ -2661,9 +2690,31 @@ async function verificarAtualizacao() {
       return;
     }
 
-    if (ultimaImpressaoEm && Date.now() - ultimaImpressaoEm < JANELA_CALMA_MS) {
+    // ── A JANELA CALMA NÃO PODE ADIAR PARA SEMPRE ─────────────────────────
+    //
+    // Exigir 30 min sem imprimir parece educado, e era um impasse: a loja
+    // movimentada nunca fica 30 min parada com o PC ligado, e o PC é desligado
+    // ao fechar. Pior: quando ele liga, o Assistente puxa o ATRASO e imprime
+    // logo — então até a checagem dos 90 s de boot cai na janela e adia.
+    //
+    // Medido em 15/09/2026: cinco lojas em quatro versões diferentes (1.2.9 de
+    // 07/09, duas 1.2.10 de 10/09, 1.2.13 de 12/09, 1.2.14 de 14/09), cada uma
+    // congelada no dia em que teve sorte de pegar um intervalo. A Pastel da
+    // Paulista, com 211 pedidos de balcão em três dias, estava oito dias atrás.
+    //
+    // Agora a exigência AFROUXA com o tempo: quanto mais velha a versão
+    // pendente, menor o silêncio necessário. Em 48 h qualquer loja tem dois
+    // minutos de intervalo — e a instalação em si já espera 5 s e volta sozinha.
+    const vistoEm = primeiroAvistamento(info.versao);
+    const horasPendente = (Date.now() - vistoEm) / 3600_000;
+    const janelaCalma = janelaCalmaParaVersao(horasPendente);
+
+    if (ultimaImpressaoEm && Date.now() - ultimaImpressaoEm < janelaCalma) {
       const min = Math.round((Date.now() - ultimaImpressaoEm) / 60_000);
-      logUpdate(`Versão ${info.versao} disponível, mas imprimiu há ${min} min; adiando 15 min.`);
+      logUpdate(
+        `Versão ${info.versao} disponível há ${Math.round(horasPendente)} h, mas imprimiu há ${min} min ` +
+        `(preciso de ${Math.round(janelaCalma / 60_000)} min parado); adiando 15 min.`
+      );
       setTimeout(verificarAtualizacao, REVERIFICAR_EM_MS);
       return;
     }
