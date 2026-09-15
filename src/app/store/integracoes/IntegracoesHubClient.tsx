@@ -2586,6 +2586,36 @@ export default function IntegracoesHubClient({
                   Ele faz o pedido chegar na hora — e mesmo sem ele o FireHub busca os pedidos sozinho a cada minuto.
                 </div>
 
+                {/* ── DESLIGUE O REPASSE DE IFOOD E 99 DENTRO DA BRENDI ──────
+                    A Brendi é hub: ela repassa os pedidos de iFood e 99Food da
+                    loja. Quem já tem esses canais direto no FireHub recebe o
+                    MESMO pedido duas vezes — e as chaves de idempotência de
+                    cada canal não se cruzam, então nada os junta sozinho.
+
+                    O FireHub descarta o repasse (lib/processBrendiEvent.ts),
+                    mas ele se apoia no campo `salesChannel` da Brendi. Desligar
+                    na origem é a única forma que não depende de um campo do
+                    parceiro continuar com o mesmo nome. Só aparece para quem
+                    TEM o canal ligado aqui — para os outros seria ruído. */}
+                {(initialIfoodConnected || food99Connected) && (
+                  <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#92400E", lineHeight: 1.55, marginBottom: "20px" }}>
+                    <strong>⚠️ Antes de ativar: desligue o repasse na Brendi</strong>
+                    <p style={{ margin: "6px 0 0" }}>
+                      No painel da Brendi, em <strong>Integrações &rarr; FireHub</strong>, deixe marcados
+                      apenas os pedidos <strong>da própria Brendi</strong> (cardápio e painel dela).
+                      Desmarque{" "}
+                      {initialIfoodConnected && food99Connected ? <><strong>iFood</strong> e <strong>99Food</strong></>
+                        : initialIfoodConnected ? <strong>iFood</strong> : <strong>99Food</strong>}
+                      {" "}— {initialIfoodConnected && food99Connected ? "esses canais já entram" : "esse canal já entra"} direto aqui,
+                      e o repasse faria o <strong>mesmo pedido chegar duas vezes</strong> na cozinha.
+                    </p>
+                    <p style={{ margin: "6px 0 0", fontSize: "0.74rem", opacity: 0.9 }}>
+                      O FireHub já descarta o repasse automaticamente — mas desligar na origem é o que
+                      garante, porque ali não depende de a Brendi continuar marcando a origem do mesmo jeito.
+                    </p>
+                  </div>
+                )}
+
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
