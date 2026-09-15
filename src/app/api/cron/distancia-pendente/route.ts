@@ -137,16 +137,37 @@ export async function GET(req: NextRequest) {
   // Uma fatia POR LOJA, não uma fila única: a loja com mais pedidos atrasados
   // não pode empurrar a outra para o fim do dia.
   const porLoja = Math.max(2, Math.floor(LIMITE_PARA_GEOCODIFICAR / Math.max(1, alvosDaGeocodificacao.length)));
+
+  /**
+   * Quantos pedidos recentes entram no SORTEIO de cada ciclo.
+   *
+   * Pegar sempre "os N mais novos" trava a fila no primeiro endereço que o mapa
+   * não resolve: ele fica no topo e é repescado em toda rodada, para sempre.
+   * Aconteceu no mesmo dia em que isto entrou (15/09/2026) — dois endereços do
+   * 99Food com observação solta no fim ("Em cima da oficina do Eduardo")
+   * queimavam 2 das 6 vagas de cada ciclo, e nada os faria resolver.
+   *
+   * Sorteando dentro dos 30 mais recentes, o pedido novo continua sendo
+   * prioridade (a janela é pequena e só de recentes) e o endereço impossível
+   * cai numa vez a cada cinco, em vez de em todas.
+   */
+  const JANELA_DO_SORTEIO = 30;
+
   const semPonto: Array<{ id: string; franchiseeId: string; customerLatLng: unknown; customerAddress: string | null }> = [];
   for (const lojaId of alvosDaGeocodificacao) {
     if (semPonto.length >= LIMITE_PARA_GEOCODIFICAR) break;
-    const daLoja = await prisma.customerOrder.findMany({
+    const recentes = await prisma.customerOrder.findMany({
       where: { ...pendentesDe, customerLatLng: { equals: Prisma.DbNull }, franchiseeId: lojaId },
       select: campos,
       orderBy: { createdAt: "desc" },
-      take: Math.min(porLoja, LIMITE_PARA_GEOCODIFICAR - semPonto.length),
+      take: JANELA_DO_SORTEIO,
     });
-    semPonto.push(...daLoja);
+    // Embaralha a janela e tira a fatia desta loja.
+    for (let i = recentes.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [recentes[i], recentes[j]] = [recentes[j], recentes[i]];
+    }
+    semPonto.push(...recentes.slice(0, Math.min(porLoja, LIMITE_PARA_GEOCODIFICAR - semPonto.length)));
   }
   // Quem geocodifica é a lib da casa (lib/geocodificacao-servidor.ts): cache no
   // banco, limitador de 1,1 s do Nominatim, busca ESTRUTURADA e Photon de
