@@ -35,16 +35,38 @@ export const dynamic = "force-dynamic";
 
 /** Pedido mais velho que isto não muda mais acerto nenhum. */
 const IDADE_MAXIMA_DIAS = 30;
-/** Com coordenada é só conta local — pode ser muito por ciclo. */
-const LIMITE_COM_COORDENADA = 300;
+/** Com coordenada é só conta local, mas ainda é um UPDATE por pedido. */
+const LIMITE_COM_COORDENADA = 150;
 /** Sem coordenada é uma chamada de rede cada: o Nominatim pede ~1 por segundo. */
-const LIMITE_PARA_GEOCODIFICAR = 12;
+const LIMITE_PARA_GEOCODIFICAR = 6;
 const ESPERA_ENTRE_GEOCODIFICACOES_MS = 1200;
+
+/**
+ * O prazo do cron-runner é 55 s (scripts/cron-runner.js) e ele DERRUBA a
+ * chamada ao estourar. Na primeira rodada em produção, 15/09/2026, o ciclo
+ * gravou 300 distâncias, entrou na geocodificação e foi cortado no meio — o
+ * contador parou em 302 e não subiu mais.
+ *
+ * Trabalho por ciclo agora é limitado pelo RELÓGIO, não só pela contagem:
+ * quando o orçamento acaba, a rodada devolve o que fez e o próximo ciclo
+ * continua de onde parou. A fila é sempre "o que ainda está nulo", então
+ * parar no meio nunca perde nada.
+ */
+const ORCAMENTO_MS = 40_000;
+/**
+ * A fatia da fase 1. Sem ela, um dia de muita entrega com coordenada comeria o
+ * ciclo inteiro e a GEOCODIFICACAO — que e o que a loja pagando por faixa
+ * espera — nunca chegaria a rodar.
+ */
+const ORCAMENTO_FASE_1_MS = 18_000;
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
+
+  const comecou = Date.now();
+  const acabouOTempo = () => Date.now() - comecou > ORCAMENTO_MS;
 
   const desde = new Date(Date.now() - IDADE_MAXIMA_DIAS * 24 * 60 * 60_000);
 
@@ -85,6 +107,7 @@ export async function GET(req: NextRequest) {
     take: LIMITE_COM_COORDENADA,
   });
   for (const pedido of comPonto) {
+    if (Date.now() - comecou > ORCAMENTO_FASE_1_MS) break;
     const km = await distanciaDaEntregaKm(pedido.franchiseeId, pedido.customerLatLng);
     if (km == null) { semResposta++; continue; }
     await prisma.customerOrder.update({ where: { id: pedido.id }, data: { deliveryDistance: km } });
@@ -128,7 +151,7 @@ export async function GET(req: NextRequest) {
     semPonto.push(...daLoja);
   }
   for (const pedido of semPonto) {
-    if (geocodificacoesFeitas >= LIMITE_PARA_GEOCODIFICAR) break;
+    if (geocodificacoesFeitas >= LIMITE_PARA_GEOCODIFICAR || acabouOTempo()) break;
 
     // O ponto da loja entra como centro da busca: é o que evita o homônimo
     // ("Rua São João" existe em toda cidade do Brasil).
@@ -167,5 +190,6 @@ export async function GET(req: NextRequest) {
     medidos,
     geocodificados,
     semResposta,
+    segundos: Math.round((Date.now() - comecou) / 100) / 10,
   });
 }
