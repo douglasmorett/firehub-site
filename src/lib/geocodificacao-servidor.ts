@@ -43,6 +43,29 @@ export type ResultadoGeocodificacao = {
   doCache: boolean;
 };
 
+/**
+ * Corta o que vier DEPOIS da sigla do estado.
+ *
+ * O 99Food monta o endereço com a observação do cliente colada no fim, passando
+ * da UF: "R . Cuiabá, 742 - Trindade, São Gonçalo - RJ, Em cima da oficina do
+ * Eduardo (Dudu)". A limpeza da lib remove "Ref:", "Comp:", "apto", "lote" —
+ * mas não texto livre como esse, que entra na busca e faz o Nominatim não achar
+ * nada. Medido em 15/09/2026: três endereços do Frangoso falhavam em TODA
+ * tentativa, e os três resolveram assim que o rabicho saiu.
+ *
+ * Nada que sirva para geocodificar vem depois do estado, então o corte é seguro.
+ * E ele é só para a BUSCA: o endereço gravado no pedido continua inteiro, com a
+ * observação — ela é do motoboy, não do mapa.
+ */
+export function semRabichoDepoisDaUF(endereco: string): string {
+  const e = String(endereco || "").trim();
+  // " - RJ, qualquer coisa"  →  " - RJ".  Exige a vírgula: sem ela o texto
+  // seguinte ainda pode ser parte do endereço.
+  const cortado = e.replace(/(\s[-–]\s*[A-Za-z]{2})\s*,[\s\S]*$/, "$1").trim();
+  // Só aceita o corte se sobrou endereço de verdade — nunca devolve um toco.
+  return cortado.length >= 10 ? cortado : e;
+}
+
 /** A chave do cache ignora acento, caixa e espaço repetido. */
 export function chaveDeCache(endereco: string, cidade: string): string {
   const limpa = (t: string) =>
@@ -155,8 +178,9 @@ export async function geocodificarNoServidor(
       saida.push({ id: p.id, lat: achado.lat, lng: achado.lng, origem: achado.origem || "cache", doCache: true });
       continue;
     }
-    const { neighborhood, streetName, houseNumber } = parseAddressDetails(p.endereco, cidade);
-    const cleanedStreet = cleanAddressForGeocoding(p.endereco);
+    const paraBuscar = semRabichoDepoisDaUF(p.endereco);
+    const { neighborhood, streetName, houseNumber } = parseAddressDetails(paraBuscar, cidade);
+    const cleanedStreet = cleanAddressForGeocoding(paraBuscar);
     const dictFallback = dicionarioDeBairro(neighborhood, loja.centro);
     try {
       const { coords, origem } = await naFila(() =>
