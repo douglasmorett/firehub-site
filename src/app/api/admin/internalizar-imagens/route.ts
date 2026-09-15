@@ -35,7 +35,17 @@ export const maxDuration = 300; // 54 fotos a ~1s cada cabem com folga
 // cardápio do Frangoso vindo da Brendi: as 61 fotos apontavam para o Storage
 // DELES, com token de leitura que eles podem revogar a qualquer momento. Foto
 // de cardápio hospedada no concorrente é cardápio que some sem aviso.
-const ORIGENS_DE_FORA = ["menudino", "static-images.ifood.com.br", "firebasestorage.googleapis.com"];
+// `prod-cardapio-web` é o bucket do Cardápio Web. Entrou com a cópia do
+// cardápio da Delicias de Casa (14/09/2026): 55 fotos que ficaram apontando
+// para o storage deles. Vai o caminho do BUCKET, não `storage.googleapis.com`
+// puro — aquele host serve bucket de meio mundo, e o cron não tem o que fazer
+// com foto que não é de cardápio importado.
+const ORIGENS_DE_FORA = [
+  "menudino",
+  "static-images.ifood.com.br",
+  "firebasestorage.googleapis.com",
+  "prod-cardapio-web",
+];
 
 export async function POST(req: NextRequest) {
   return internalizar(req);
