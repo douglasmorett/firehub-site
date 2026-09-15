@@ -29,7 +29,7 @@ import { Prisma } from "@prisma/client";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { distanciaDaEntregaKm, lerPonto } from "@/lib/distancia-da-entrega";
 import { lerAcerto } from "@/lib/ganho-do-entregador";
-import { geocodeAddress } from "@/lib/geocoding";
+import { geocodificarNoServidor } from "@/lib/geocodificacao-servidor";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +39,6 @@ const IDADE_MAXIMA_DIAS = 30;
 const LIMITE_COM_COORDENADA = 150;
 /** Sem coordenada é uma chamada de rede cada: o Nominatim pede ~1 por segundo. */
 const LIMITE_PARA_GEOCODIFICAR = 6;
-const ESPERA_ENTRE_GEOCODIFICACOES_MS = 1200;
 
 /**
  * O prazo do cron-runner é 55 s (scripts/cron-runner.js) e ele DERRUBA a
@@ -52,13 +51,13 @@ const ESPERA_ENTRE_GEOCODIFICACOES_MS = 1200;
  * continua de onde parou. A fila é sempre "o que ainda está nulo", então
  * parar no meio nunca perde nada.
  */
-const ORCAMENTO_MS = 40_000;
+const ORCAMENTO_MS = 45_000;
 /**
  * A fatia da fase 1. Sem ela, um dia de muita entrega com coordenada comeria o
  * ciclo inteiro e a GEOCODIFICACAO — que e o que a loja pagando por faixa
  * espera — nunca chegaria a rodar.
  */
-const ORCAMENTO_FASE_1_MS = 18_000;
+const ORCAMENTO_FASE_1_MS = 12_000;
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
@@ -76,7 +75,6 @@ export async function GET(req: NextRequest) {
   let medidos = 0;
   let geocodificados = 0;
   let semResposta = 0;
-  let geocodificacoesFeitas = 0;
 
   // ── Só lojas com o pino no mapa ──────────────────────────────────────────
   //
@@ -150,37 +148,50 @@ export async function GET(req: NextRequest) {
     });
     semPonto.push(...daLoja);
   }
+  // Quem geocodifica é a lib da casa (lib/geocodificacao-servidor.ts): cache no
+  // banco, limitador de 1,1 s do Nominatim, busca ESTRUTURADA e Photon de
+  // reserva. O `geocodeAddress` cru que estava aqui engasgava justamente no
+  // formato do 99Food — "Rua Juazeiro, 326 - Trindade, São Gonçalo - RJ, na rua
+  // do bar do amarelo" — porque a observação solta no fim entra na busca e o
+  // Nominatim não acha nada. Medido em 15/09/2026: 2 de 3 endereços falhavam.
+  const porLojaPendente = new Map<string, typeof semPonto>();
   for (const pedido of semPonto) {
-    if (geocodificacoesFeitas >= LIMITE_PARA_GEOCODIFICAR || acabouOTempo()) break;
+    const lista = porLojaPendente.get(pedido.franchiseeId) || [];
+    lista.push(pedido);
+    porLojaPendente.set(pedido.franchiseeId, lista);
+  }
 
-    // O ponto da loja entra como centro da busca: é o que evita o homônimo
-    // ("Rua São João" existe em toda cidade do Brasil).
+  for (const [lojaId, pedidos] of porLojaPendente) {
+    if (acabouOTempo()) break;
     const loja = await prisma.user.findUnique({
-      where: { id: pedido.franchiseeId },
-      select: { storeLatLng: true },
+      where: { id: lojaId },
+      select: { storeLatLng: true, city: true, storeAddress: true },
     });
     const centro = lerPonto(loja?.storeLatLng);
-    if (!centro) { semResposta++; continue; }
+    if (!centro) { semResposta += pedidos.length; continue; }
 
-    geocodificacoesFeitas++;
-    const achado = await geocodeAddress(pedido.customerAddress || "", centro).catch(() => null);
-    if (geocodificacoesFeitas < LIMITE_PARA_GEOCODIFICAR) {
-      await new Promise((r) => setTimeout(r, ESPERA_ENTRE_GEOCODIFICACOES_MS));
+    const achados = await geocodificarNoServidor(
+      pedidos.map((p) => ({ id: p.id, endereco: p.customerAddress || "" })),
+      { cidade: loja?.city || "", endereco: loja?.storeAddress, centro },
+    ).catch(() => []);
+
+    for (const a of achados) {
+      // "Caiu na loja" é ausência de resposta, não endereço encontrado. Gravar
+      // isso daria 0 km e pagaria a faixa mais barata em TODA entrega perdida.
+      if (/não localizado/i.test(a.origem)) { semResposta++; continue; }
+      const coords = { lat: a.lat, lng: a.lng };
+      const km = await distanciaDaEntregaKm(lojaId, coords);
+      if (km == null) { semResposta++; continue; }
+      // As coordenadas vão junto: a roteirização e o "motoboy mais perto"
+      // passam a aproveitar o mesmo trabalho.
+      await prisma.customerOrder.update({
+        where: { id: a.id },
+        data: { deliveryDistance: km, customerLatLng: coords },
+      });
+      medidos++;
+      geocodificados++;
     }
-    if (!achado) { semResposta++; continue; }
-
-    const coords = { lat: achado.lat, lng: achado.lng };
-    const km = await distanciaDaEntregaKm(pedido.franchiseeId, coords);
-    if (km == null) { semResposta++; continue; }
-
-    // As coordenadas vão junto: a roteirização e o "motoboy mais perto"
-    // passam a aproveitar o mesmo trabalho.
-    await prisma.customerOrder.update({
-      where: { id: pedido.id },
-      data: { deliveryDistance: km, customerLatLng: coords },
-    });
-    medidos++;
-    geocodificados++;
+    semResposta += Math.max(0, pedidos.length - achados.length);
   }
 
   return NextResponse.json({
