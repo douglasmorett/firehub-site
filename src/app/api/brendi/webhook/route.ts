@@ -279,29 +279,50 @@ export async function POST(req: NextRequest) {
           //
           // Nestes casos respondemos 200 e NÃO ackamos: o evento continua na
           // fila do polling e entra sozinho quando a loja for conectada.
+          // ── QUEM AVISA QUANDO O PEDIDO NÃO ENTRA ──────────────────────────
+          //
+          // Em 14/09/2026 três pedidos do Frangoso caíram aqui e ninguém
+          // soube: o webhook registrava no diagnóstico em memória e seguia.
+          // O dono descobriu no dia seguinte, pelo cliente. Agora os dois
+          // ramos de erro mandam o mesmo alerta que o cron manda no "SEM
+          // ACK" — com o cooldown do monitor, para não virar enxurrada.
+          const avisar = (detalhe: string) =>
+            import("@/lib/server-monitor")
+              .then(m => m.alertarFalhaDeIntegracao("Brendi", `webhook · marca ${event?.virtualBrand || event?.merchantId || "?"}`, detalhe))
+              .catch(() => {});
+
           if (result.reenviarAdianta === false) {
-            console.warn(`[Brendi Webhook] ${orderId}: ${result.message} — 200 (reenviar não resolve; evento segue na fila do polling)`);
+            // Só chega aqui com ZERO lojas conectadas (o processador pede
+            // reenvio em qualquer outro caso). Não há a quem avisar nem a
+            // quem entregar: 200, e o registro fica no diagnóstico.
+            //
+            // ATENÇÃO ao que este 200 significa para a Brendi: ela dá o evento
+            // por ENTREGUE e NÃO o põe no polling. "Volta pelo polling" era o
+            // que o comentário antigo dizia, e não era verdade — foi assim
+            // que os três pedidos sumiram.
+            console.warn(`[Brendi Webhook] ${orderId}: ${result.message} — 200 (nenhuma loja conectada; a Brendi não vai reenviar nem enfileirar)`);
             registrarBrendi({
               tipo: eventType || "(sem tipo)",
               reconhecido: true,
               pedidoCriado: false,
-              motivo: `NÃO PROCESSADO: ${result.message || "sem detalhe"} — evento NÃO ackado, volta pelo polling quando a loja estiver conectada`,
+              motivo: `NÃO PROCESSADO: ${result.message || "sem detalhe"} — respondido 200; a Brendi NÃO reenvia nem põe no polling`,
               payload: event,
             });
             continue;
           }
 
-          // Falha NOSSA e transitória (banco, rede até a Brendi). O 500 lá
-          // embaixo faz a Brendi reenviar — e o polling também vai ver o
-          // evento, porque ele NÃO foi ackado. Antes de derrubar o lote, os
-          // eventos que JÁ deram certo são ackados para não voltarem.
+          // Falha com chance de resolver no reenvio (banco, rede até a Brendi,
+          // GET que falhou, loja ambígua ou merchant ainda não cadastrado). O
+          // 500 lá embaixo faz a Brendi mandar de novo. Antes de derrubar o
+          // lote, os eventos que JÁ deram certo são ackados para não voltarem.
           registrarBrendi({
             tipo: eventType || "(sem tipo)",
             reconhecido: true,
             pedidoCriado: false,
-            motivo: `ERRO ao processar: ${result.message || "sem detalhe"} — evento NÃO ackado, reenvio vai tentar de novo`,
+            motivo: `ERRO ao processar: ${result.message || "sem detalhe"} — respondido 500, a Brendi vai reenviar`,
             payload: event,
           });
+          void avisar(`${eventType || "evento"} ${orderId}: ${result.message || result.action} — respondido 500, a Brendi vai reenviar`);
           await enviarAcks();
           throw new Error(`processBrendiEvent ${orderId}: ${result.message || result.action}`);
         }

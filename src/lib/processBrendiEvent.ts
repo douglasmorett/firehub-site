@@ -21,6 +21,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
+import { distanciaDaEntregaKm } from "./distancia-da-entrega";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { isBeverageName } from "@/lib/beverage";
@@ -586,11 +587,16 @@ export async function processBrendiEvent(
       }
 
       if (!franchisee) {
-        const msg = `Nenhuma loja com merchantId correspondente (merchant: ${eventMerchantId || "N/A"})`;
+        const conectadas = await lojasBrendiConectadas();
+        const msg = `Nenhuma loja com merchantId correspondente (merchant: ${eventMerchantId || "N/A"}; lojas conectadas: ${conectadas.length})`;
         console.error(`[Brendi] ❌ ${orderId}: ${msg}`);
-        // Pedido de restaurante que não é cliente nosso, ou merchantId ainda
-        // não preenchido na tela de Integrações. Reenvio não muda nenhum dos dois.
-        return { action: "error", orderId, message: msg, reenviarAdianta: false };
+        // Zero lojas conectadas: não somos cliente de ninguém, 200 é certo.
+        // Uma ou mais: o pedido é de alguém que está aqui — merchant ainda não
+        // preenchido, ou uma 2ª marca com Store UUID próprio. Responder 200
+        // aqui perde o pedido (a Brendi não põe no polling o que recebeu 200);
+        // pedir reenvio dá tempo de alguém cadastrar o merchant, e o alerta do
+        // webhook avisa que isso está acontecendo.
+        return { action: "error", orderId, message: msg, reenviarAdianta: conectadas.length >= 1 };
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
@@ -1054,6 +1060,10 @@ export async function processBrendiEvent(
         orderData,
       );
 
+      // Quantos km tem a entrega — é o que a escada de km do entregador compara
+      // no fechamento (lib/distancia-da-entrega.ts).
+      const distanciaDaEntrega = await distanciaDaEntregaKm(franchiseeIdToUse, customerLatLng);
+
       const deliveryType = (() => {
         // `type` é o campo REAL da Brendi ("DELIVERY" / "TAKEOUT"), confirmado
         // nos dois pedidos de teste. Antes a decisão dependia de `orderType`
@@ -1156,6 +1166,7 @@ export async function processBrendiEvent(
               customerPhone: phoneLocalizer ? `${phoneNumber} ID: ${phoneLocalizer}` : phoneNumber,
               customerAddress,
               ...(customerLatLng ? { customerLatLng } : {}),
+              ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
               deliveryType,
               paymentMethod: resolvedPaymentMethod,
               totalAmount: Math.round(total * 100) / 100,
@@ -1231,6 +1242,7 @@ export async function processBrendiEvent(
               customerPhone: phoneLocalizer ? `${phoneNumber} ID: ${phoneLocalizer}` : phoneNumber,
               customerAddress: orderData.delivery?.deliveryAddress?.formattedAddress || "",
               ...(customerLatLng ? { customerLatLng } : {}),
+              ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
               deliveryType: "DELIVERY",
               paymentMethod: resolvedPaymentMethod || "Verificar",
               totalAmount: total,
