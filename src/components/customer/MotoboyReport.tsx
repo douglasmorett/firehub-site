@@ -116,7 +116,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
     PER_KM: "Por KM",
     // Faltava aqui: o entregador pago por faixa aparecia com o rótulo cru
     // "FAIXA_KM" no cabeçalho do acerto dele.
-    FAIXA_KM: "Por faixa de distância",
+    FAIXA_KM: "Diária + faixa de distância",
   };
 
   return (

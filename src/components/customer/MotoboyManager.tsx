@@ -29,9 +29,16 @@ const PAYMENT_TYPES = [
   { value: "BOTH", label: "Diária + Por Entrega" },
   { value: "DAILY_PLUS_FEE", label: "Diária + Taxa do Pedido" },
   { value: "PER_KM", label: "Por KM Percorrido (R$ por km rodado)" },
-  // O acerto que a loja realmente faz: "até 2 km R$ 5, até 4 km R$ 7". Antes
-  // só existia R$/km, e o lojista tinha de converter a tabela de cabeça.
-  { value: "FAIXA_KM", label: "Por faixa de distância (até X km, R$ Y)" },
+  // O acerto que a loja realmente faz: diária mais "até 2 km R$ 3, até 4 km
+  // R$ 4". Antes só existia R$/km, e o lojista tinha de converter a tabela de
+  // cabeça.
+  //
+  // O nome diz DIÁRIA porque é o intuito da opção, confirmado pelo dono em
+  // 15/09/2026: "o Lucas paga diária + a escala cadastrada, esse foi o intuito
+  // dessa funcionalidade nova". Chamada só de "Por faixa de distância", a
+  // diária entrava na conta sem estar no nome. Quem paga só a escada deixa o
+  // campo da diária vazio.
+  { value: "FAIXA_KM", label: "Diária + taxa por distância percorrida (até X km, R$ Y)" },
 ];
 
 const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, faixasDeKm: [], modeloDePagamento: null, notes: "" });

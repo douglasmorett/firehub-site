@@ -49,13 +49,11 @@ export const ROTULO_DA_ORIGEM: Record<OrigemDoGanho, string> = {
 /**
  * Quais campos o tipo de pagamento escolhido realmente usa.
  *
- * `FAIXA_KM` entra na diária de propósito: quem paga por faixa costuma pagar
- * também o dia trabalhado, e os três entregadores do Frangoso já tinham
- * R$ 60,00 de diária gravados quando a escada foi cadastrada. No relatório que
- * o Lucas mandou em 15/09/2026 a diária aparecia — e ele questionou só o
- * "R$ 2,00 por entrega", não ela. Deixar de pagar R$ 660,00 calado seria
- * trocar um erro por outro pior; o campo passou a aparecer no formulário para
- * quem não quiser apagar.
+ * `FAIXA_KM` entra na diária de propósito, e isso é o INTUITO da opção, não
+ * uma inferência: "o Lucas paga diária + a escala cadastrada, esse foi o
+ * intuito dessa funcionalidade nova" (o dono, 15/09/2026). Por isso ela se
+ * chama "Diária + taxa por distância percorrida" na tela. Quem paga só a
+ * escada deixa o campo da diária vazio.
  */
 export const usaDiaria = (t?: string | null) =>
   t === "DAILY_RATE" || t === "BOTH" || t === "DAILY_PLUS_FEE" || t === "FAIXA_KM";
