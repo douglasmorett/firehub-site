@@ -551,15 +551,37 @@ export async function processBrendiEvent(
         }
       }
 
-      // 3. Fallback do sistema de UMA loja: sem ambiguidade possível.
-      //    Com 2+ conectadas a recusa é proposital — pedido na cozinha errada
-      //    é pior que pedido recusado com log (o evento fica na fila).
+      // 3. Fallback de UMA loja só — e SÓ quando o pedido não diz de quem é.
+      //
+      //    ── O QUE ESTE FALLBACK NÃO PODE FAZER ──────────────────────────
+      //
+      //    "Só uma loja NOSSA está conectada" nunca significou "este pedido é
+      //    dela". O `merchant.id` vem no corpo do pedido: quando ele existe e
+      //    não bate com ninguém, o pedido é de OUTRO restaurante — mandá-lo
+      //    para a única loja conectada é entregar o pedido de um cliente na
+      //    cozinha do outro, com nome, telefone e endereço de quem comprou lá.
+      //    Pior: o `adotarMerchantId` logo abaixo gravaria esse merchant
+      //    alheio na loja, e daí em diante os pedidos DELA seriam recusados.
+      //
+      //    Hoje isso não se materializa porque a Brendi isola por credencial
+      //    (medido em 15/09/2026: a credencial de uma loja recebe 503 no
+      //    pedido da outra, então o GET nem traria o conteúdo). Mas depender
+      //    do isolamento do parceiro para não vazar pedido é depender de algo
+      //    que não controlamos — e que muda sem avisar.
+      //
+      //    Então o fallback vale só para o evento SEM merchant nenhum, que é
+      //    o caso para o qual ele foi escrito.
       if (!franchisee) {
         const conectadas = await lojasBrendiConectadas();
+        if (conectadas.length === 1 && eventMerchantId) {
+          const msg = `merchant ${eventMerchantId} não é de nenhuma loja daqui — recusado para não entregar pedido de um cliente na cozinha de outro`;
+          console.error(`[Brendi] ❌ ${orderId}: ${msg}`);
+          return { action: "error", orderId, message: msg, reenviarAdianta: false };
+        }
         if (conectadas.length === 1) {
           franchisee = conectadas[0];
           console.warn(
-            `[Brendi] ⚠️ ${orderId}: merchant ${eventMerchantId || "N/A"} sem loja correspondente — usando a ÚNICA loja conectada (${franchisee.id})`
+            `[Brendi] ⚠️ ${orderId}: evento sem merchant — usando a ÚNICA loja conectada (${franchisee.id})`
           );
           // ── E APRENDE O MERCHANT ID AQUI ────────────────────────────────
           //
@@ -569,11 +591,10 @@ export async function processBrendiEvent(
           // painel não o exibe. A orientação foi textual: "armazene o
           // merchant.id que vier na resposta dos pedidos".
           //
-          // Este é o único momento em que dá para aprendê-lo com segurança:
-          // há exatamente UMA loja conectada, então o pedido só pode ser dela.
-          // A partir daqui a resolução é estrita e o fallback deixa de ser
-          // necessário — que é o que faz a segunda loja poder conectar sem
-          // pedido nenhum cair na cozinha errada.
+          // Inalcançável hoje: chegar aqui exige `eventMerchantId` vazio (o
+          // ramo acima recusa quando ele existe e não bate). Fica porque o
+          // aprendizado de verdade acontece no passo 2, pelo feed da própria
+          // loja — que é evidência forte, e não palpite.
           if (eventMerchantId && !franchisee.brendiMerchantId) {
             await adotarMerchantId(franchisee.id, eventMerchantId);
             franchisee.brendiMerchantId = eventMerchantId;

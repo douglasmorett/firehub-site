@@ -43,6 +43,67 @@ import {
  *                       que cruze com ela não duplica
  */
 export const dynamic = "force-dynamic";
+
+/**
+ * Avisa no WhatsApp SÓ SE o pedido realmente não tiver entrado.
+ *
+ * ── Por que esperar, em vez de avisar na hora ───────────────────────────────
+ *
+ * A falha do webhook quase sempre é TRANSITÓRIA e o próprio sistema se cura:
+ * respondemos 500, a Brendi reenvia, e o cron ainda passa a cada minuto com o
+ * `targetFranchiseeId` — que resolve a loja nos casos em que o webhook, que
+ * não sabe de qual feed veio o evento, não consegue.
+ *
+ * Foi o que aconteceu com o primeiro pedido da PIZZARIA SUPIMPA em 15/09/2026:
+ * falhou às 19:24 porque a loja tinha acabado de conectar e o merchant ainda
+ * não estava amarrado, o 500 pediu reenvio, e o pedido ENTROU. O dono recebeu
+ * um "🚨 pedido não entrou" de um pedido que entrou — e alarme que mente é
+ * alarme que o lojista aprende a ignorar, justamente antes do dia em que ele
+ * for verdade.
+ *
+ * Então o aviso espera a janela de recuperação (reenvio da Brendi + um ciclo
+ * de cron com folga) e só dispara se, passado isso, o pedido continuar fora do
+ * banco. Alarme sobre FATO consumado, não sobre susto.
+ *
+ * O timer vive na memória do container — que é único e longevo neste deploy.
+ * Se ele reiniciar no meio, o aviso se perde: é o lado seguro, porque a perda
+ * de verdade continua visível no cron (que alerta no "SEM ACK") e no
+ * diagnóstico.
+ */
+const JANELA_DE_RECUPERACAO_MS = 100_000;
+const aguardandoConfirmacao = new Set<string>();
+
+function avisarSeNaoEntrar(orderId: string, marca: string | null, detalhe: string): void {
+  if (!orderId || aguardandoConfirmacao.has(orderId)) return;
+  aguardandoConfirmacao.add(orderId);
+
+  setTimeout(async () => {
+    aguardandoConfirmacao.delete(orderId);
+    try {
+      const entrou = await prisma.customerOrder.findFirst({
+        where: {
+          OR: [
+            { openDeliveryOrderId: orderId },
+            { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+          ],
+        } as any,
+        select: { id: true, dailyOrderNumber: true },
+      });
+      if (entrou) {
+        console.log(`[Brendi Webhook] ${orderId}: falhou no push mas ENTROU depois (#${entrou.dailyOrderNumber}) — sem alerta`);
+        return;
+      }
+      const m = await import("@/lib/server-monitor");
+      await m.alertarFalhaDeIntegracao(
+        "Brendi",
+        `webhook · marca ${marca || "?"}`,
+        `${detalhe} — e ${Math.round(JANELA_DE_RECUPERACAO_MS / 1000)}s depois o pedido AINDA não estava no sistema`,
+      );
+    } catch (e: any) {
+      console.error(`[Brendi Webhook] confirmação de ${orderId} falhou: ${e?.message}`);
+    }
+  }, JANELA_DE_RECUPERACAO_MS).unref?.();
+}
 export const maxDuration = 30;
 
 /**
@@ -287,9 +348,7 @@ export async function POST(req: NextRequest) {
           // ramos de erro mandam o mesmo alerta que o cron manda no "SEM
           // ACK" — com o cooldown do monitor, para não virar enxurrada.
           const avisar = (detalhe: string) =>
-            import("@/lib/server-monitor")
-              .then(m => m.alertarFalhaDeIntegracao("Brendi", `webhook · marca ${event?.virtualBrand || event?.merchantId || "?"}`, detalhe))
-              .catch(() => {});
+            avisarSeNaoEntrar(orderId, event?.virtualBrand || event?.merchantId || null, detalhe);
 
           if (result.reenviarAdianta === false) {
             // Só chega aqui com ZERO lojas conectadas (o processador pede
