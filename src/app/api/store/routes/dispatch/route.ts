@@ -82,8 +82,35 @@ export async function POST(req: NextRequest) {
     (async () => {
       const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
       const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
-      const { ehPedidoBrendi } = await import("@/lib/brendi-status");
+      const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
       for (const ord of route.orders) {
+        // ── Sync Brendi ──
+        //
+        // Faltava. `ehPedidoBrendi` era importado só para EXCLUIR a Brendi do
+        // ramo do JotaJá (os dois usam `openDeliveryOrderId`), e depois ninguém
+        // a avisava: despachar a rota punha o pedido em SAIU_ENTREGA aqui e o
+        // cliente da Brendi continuava vendo "em preparo".
+        //
+        // E não era só o aviso: a escada de status da Brendi é progressiva, e
+        // `delivered` depois de um `dispatch` que nunca saiu é recusado — então
+        // o pedido também não FECHAVA lá. Pelo botão do KDS e pelo despacho por
+        // WhatsApp isso já funcionava; só a roteirização ficava de fora.
+        if (ehPedidoBrendi(ord)) {
+          await sincronizarBrendi(
+            {
+              // O resgate manual grava o id com sufixo `_recovered`; a API da
+              // Brendi só conhece o UUID limpo (mesma normalização do KDS e da
+              // rota de status).
+              openDeliveryOrderId: ord.openDeliveryOrderId!.replace(/_recovered$/, ""),
+              franchiseeId: ord.franchiseeId,
+              status: ord.status,
+              deliveryBy: ord.deliveryBy,
+            },
+            "SAIU_ENTREGA"
+          ).catch((err: any) =>
+            console.warn(`[Route Dispatch → Brendi] Erro sync ${ord.openDeliveryOrderId}:`, err?.message)
+          );
+        }
         // ── Sync Wabiz ──
         if (ehPedidoWabiz(ord)) {
           await sincronizarWabiz(

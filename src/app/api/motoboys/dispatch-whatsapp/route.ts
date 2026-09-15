@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
           const orders = pedidosAntesDoDespacho;
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
           const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
-          const { ehPedidoBrendi } = await import("@/lib/brendi-status");
+          const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
           for (const ord of orders) {
             if (ehPedidoWabiz(ord)) {
               await sincronizarWabiz(
@@ -105,7 +105,25 @@ export async function POST(req: NextRequest) {
                 console.warn(`[Motoboy Dispatch → Wabiz] Erro sync ${ord.openDeliveryOrderId}:`, err?.message)
               );
             } else if (ehPedidoBrendi(ord)) {
-              // Não é do JotaJá; a Brendi não é despachada por aqui.
+              // ── DESPACHAR TAMBÉM AVISA A BRENDI ──────────────────────────
+              //
+              // Ramo vazio até aqui, com um comentário que só dizia que ela não
+              // é JotaJá. O cliente da Brendi continuava vendo "em preparo"
+              // depois de a comida sair — e, como a escada de status deles é
+              // progressiva, o `delivered` da baixa vinha em cima de um
+              // `dispatch` que nunca saiu e era recusado: o pedido também não
+              // FECHAVA lá.
+              await sincronizarBrendi(
+                {
+                  openDeliveryOrderId: String(ord.openDeliveryOrderId!).replace(/_recovered$/, ""),
+                  franchiseeId: ord.franchiseeId,
+                  status: ord.status,
+                  deliveryBy: ord.deliveryBy,
+                },
+                "SAIU_ENTREGA"
+              ).catch((err: any) =>
+                console.warn(`[Motoboy Dispatch → Brendi] Erro sync ${ord.openDeliveryOrderId}:`, err?.message)
+              );
             } else if (ehPedido99Food(ord)) {
               // O 99Food TEM dispatch para entrega própria
               // (/v1/order/selfdelivery/dispatch, doc de 2026), e ele quer

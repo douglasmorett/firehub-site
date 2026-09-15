@@ -631,7 +631,7 @@ export async function PATCH(req: NextRequest) {
         try {
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
           const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
-          const { ehPedidoBrendi } = await import("@/lib/brendi-status");
+          const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
           if (ehPedidoWabiz(order as any)) {
             await sincronizarWabiz(
               {
@@ -643,7 +643,29 @@ export async function PATCH(req: NextRequest) {
               "ENTREGUE"
             );
           } else if (ehPedidoBrendi(order as any)) {
-            // Não é do JotaJá: a Brendi não recebe `delivered` por aqui.
+            // ── A BAIXA DO ENTREGADOR FECHA O PEDIDO NA BRENDI ──────────────
+            //
+            // Aqui havia um ramo VAZIO, com o comentário "a Brendi não recebe
+            // `delivered` por aqui" — que só dizia que ela não é JotaJá, não um
+            // motivo. Resultado: a entrega dada pelo app do motoboy, que é como
+            // a loja fecha o pedido no dia a dia, nunca chegava à Brendi. O
+            // pedido ficava "saiu para entrega" no painel deles para sempre, e
+            // o cliente sem a confirmação.
+            //
+            // `sincronizarBrendi` sobe a escada inteira que faltar (confirm →
+            // preparing → readyForPickup → dispatch → delivered) e respeita as
+            // bandeiras do pedido — `sendPickedUp` fecha retirada,
+            // `sendDelivered` fecha entrega. Falha aqui nunca derruba a baixa:
+            // a função não lança, e o pedido já está ENTREGUE no FireHub.
+            await sincronizarBrendi(
+              {
+                openDeliveryOrderId: String((order as any).openDeliveryOrderId).replace(/_recovered$/, ""),
+                franchiseeId: order.franchiseeId,
+                status: order.status,
+                deliveryBy: (order as any).deliveryBy,
+              },
+              "ENTREGUE"
+            );
           } else if (ehPedido99Food(order as any) && codigoConferido99) {
             // O verifyDeliveryCode já concluiu o pedido lá (status 600); o
             // `delivered` em cima disso seria recusa à toa no log.
