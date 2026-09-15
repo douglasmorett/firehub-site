@@ -251,6 +251,14 @@ export async function POST(req: NextRequest) {
           eventId: eventoId || undefined,
           eventType: eventType || undefined,
           orderId,
+          // De quem é o pedido. A Brendi não manda `merchantId` no push; manda
+          // `virtualBrand`, que é o Store UUID da loja — o mesmo valor gravado
+          // em `brendiMerchantId`. Sem repassar isto o processador não sabia a
+          // loja, caía em "única conectada" e, com duas conectadas, rejeitava
+          // tudo com 200 — e a Brendi não põe no polling o que já recebeu 200.
+          merchantId: event?.merchantId || event?.merchant?.id || undefined,
+          virtualBrand: event?.virtualBrand || undefined,
+          sourceAppId: event?.sourceAppId || undefined,
           metadata: event?.metadata && typeof event.metadata === "object" ? event.metadata : undefined,
         } as any;
 

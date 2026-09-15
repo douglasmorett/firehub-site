@@ -36,6 +36,15 @@ export interface BrendiEvent {
   orderId: string;
   /** Alguns originadores Open Delivery mandam o merchant já no evento do feed. */
   merchantId?: string;
+  /**
+   * O que a Brendi manda DE VERDADE no push do webhook. Não vem `merchantId`;
+   * vem `virtualBrand`, e ele é o Store UUID da loja — o mesmo valor gravado
+   * em `brendiMerchantId`. Sem ler este campo o webhook não sabia de quem era
+   * o pedido, caía no "única loja conectada", e com duas conectadas (SANDBOX
+   * + Frangoso) rejeitava tudo: três pedidos perdidos em 14/09/2026.
+   */
+  virtualBrand?: string;
+  sourceAppId?: string;
   displayId?: string | number;
   orderSeqNumber?: string | number;
   metadata?: Record<string, any>;
@@ -436,7 +445,11 @@ export async function processBrendiEvent(
       // Loja para AUTENTICAR o GET do pedido (as credenciais são por loja).
       // Ordem: merchant do próprio evento → loja do feed que trouxe o evento →
       // única loja conectada. Sem loja = erro (sem ACK; o polling reentrega).
-      const merchantIdDoEvento = evento.merchantId || (evento as any).merchant?.id || null;
+      // `virtualBrand` é o que o push da Brendi traz de fato (= Store UUID =
+      // brendiMerchantId). `merchantId` fica na frente por compatibilidade com
+      // originadores que o mandam; a Brendi não manda.
+      const merchantIdDoEvento =
+        evento.merchantId || evento.virtualBrand || (evento as any).merchant?.id || null;
       let lojaCredencial: LojaBrendi | null = null;
       if (merchantIdDoEvento) {
         lojaCredencial = await lojaBrendiPorMerchantId(String(merchantIdDoEvento));
@@ -444,15 +457,28 @@ export async function processBrendiEvent(
       if (!lojaCredencial && targetFranchiseeId) {
         lojaCredencial = await lojaBrendiPorId(targetFranchiseeId);
       }
+      let conectadasAgora = 0;
       if (!lojaCredencial) {
         const conectadas = await lojasBrendiConectadas();
+        conectadasAgora = conectadas.length;
         if (conectadas.length === 1) lojaCredencial = conectadas[0];
       }
       if (!lojaCredencial) {
-        const msg = `nenhuma loja para autenticar o GET do pedido (merchant evento: ${merchantIdDoEvento || "N/A"})`;
+        const msg = `nenhuma loja para autenticar o GET do pedido (merchant evento: ${merchantIdDoEvento || "N/A"}; lojas conectadas: ${conectadasAgora})`;
         console.error(`[Brendi] ❌ ${orderId}: ${msg}`);
-        // Sem credencial nenhuma no banco não há o que reenviar resolva.
-        return { action: "error", orderId, message: msg, reenviarAdianta: false };
+        // ── REENVIAR ADIANTA? DEPENDE DE QUANTAS LOJAS HÁ ───────────────────
+        //
+        // Zero lojas conectadas: estável, nada que reenviar resolva — 200.
+        //
+        // Duas ou mais: NÃO é estável. Há credencial no banco, só não deu para
+        // escolher — e responder 200 aqui é fatal, porque a Brendi, ao receber
+        // 200 no webhook, considera o evento ENTREGUE e não o põe no polling.
+        // Foi assim que três pedidos do Frangoso sumiram em 14/09/2026: o
+        // webhook dizia "volta pelo polling", e o polling nunca os viu. Com
+        // `reenviarAdianta: true` o webhook responde 500 e a Brendi tenta de
+        // novo — tempo para o cron (que sabe a loja pelo próprio feed) ou para
+        // alguém desligar a loja de teste que causou a ambiguidade.
+        return { action: "error", orderId, message: msg, reenviarAdianta: conectadasAgora >= 2 };
       }
 
       // GET /v1/orders/{uuid} com até 3 tentativas resilientes — a Brendi não
