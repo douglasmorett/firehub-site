@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
-import { lerRegraDeRepasse, repasseDaZona, repasseDoPedido } from "@/lib/repasse-do-entregador";
-import { lerFaixasDoMotoboy, valorDaFaixa } from "@/lib/faixas-do-motoboy";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -58,26 +58,6 @@ export async function GET(req: Request) {
     select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true },
   }).catch(() => null);
   const regraDeRepasse = lerRegraDeRepasse(donoDaLoja?.deliveryConfig);
-
-  // Quantas faixas têm repasse cadastrado — só para o aviso da tela saber se
-  // a loja configurou alguma coisa. A conta em si é da lib.
-  const faixasComRepasse = (Array.isArray(donoDaLoja?.deliveryZones) ? donoDaLoja!.deliveryZones as any[] : [])
-    .filter((z: any) => repasseDaZona(z) != null).length;
-
-  /**
-   * O que a loja paga por ESTE pedido, pela regra dela.
-   *
-   * Pedido de app entra aqui com `ehMarketplace`: é o que faz a escolha
-   * "pagar o valor que veio do app" valer sem tocar na tabela de faixas.
-   */
-  const repasseDaRegra = (o: { deliveryFee?: number | null; deliveryDistance?: number | null; source?: string | null; [k: string]: any }): number | null =>
-    repasseDoPedido({
-      regra: regraDeRepasse,
-      zonas: donoDaLoja?.deliveryZones,
-      km: o.deliveryDistance,
-      taxaDaEntrega: o.deliveryFee,
-      ehMarketplace: canalDoPedido(o).ehMarketplace,
-    });
 
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId, ...motoboyFilter },
@@ -215,10 +195,10 @@ export async function GET(req: Request) {
     const cardPosTotal = debitTotal + creditTotal + voucherTotal;
     const cardPosCount = debitCount + creditCount + voucherCount;
 
-    // Calcular remuneração segundo o tipo do motoboy
-    const dailyRate = mb.dailyRate || 0;
-    const perDeliveryRate = mb.perDeliveryRate || 0;
-    const perKmRate = mb.perKmRate || 0;
+    // Só vale o que o TIPO escolhido usa — a regra mora em
+    // lib/ganho-do-entregador.ts, junto com a conta que a usa.
+    const acerto = lerAcerto(mb as any);
+    const { tipo, dailyRate, perDeliveryRate, perKmRate } = acerto;
 
     // ── QUANTO ESTE PEDIDO RENDE PARA O MOTOBOY ──────────────────────────
     //
@@ -233,40 +213,28 @@ export async function GET(req: Request) {
     // R$ 12,00 com R$ 11,00 abatidos pelo 99Food, e o relatório mostrava
     // "Taxa: R$ 1,00" — um valor que não existe em lugar nenhum do acerto
     // entre a loja e o entregador.
-    const ehPorEntrega = mb.paymentType === "PER_DELIVERY" || mb.paymentType === "BOTH" || mb.paymentType === "DAILY_PLUS_FEE";
-    // As faixas de km DESTE entregador — o acerto mais específico que existe,
-    // porque é o combinado com ele, não a regra geral da loja.
-    const faixasDele = lerFaixasDoMotoboy((mb as any).faixasDeKm);
-    // Sem valor por entrega configurado, o relatório cai na taxa do cliente —
-    // que é o comportamento antigo, mantido para não zerar o acerto de quem
-    // nunca configurou. A tela avisa que é isso que está acontecendo.
-    // Só avisa quando REALMENTE caiu na taxa do cliente: com repasse por faixa
-    // cadastrado, a conta já é a certa e o aviso seria ruído.
-    const usandoTaxaDoCliente = (ehPorEntrega || !mb.paymentType) && perDeliveryRate <= 0 && faixasComRepasse === 0 && !regraDeRepasse.separado && faixasDele.length === 0;
+    // A conta é da lib (lib/ganho-do-entregador.ts): a mesma que o cartão
+    // "Hoje: R$ X" da lista de entregadores usa, para os dois nunca divergirem.
+    const ganhoDoPedido = (o: { deliveryFee?: number | null; motoboyFee?: number | null; deliveryDistance?: number | null; source?: string | null; [k: string]: any }) =>
+      calcularGanho({
+        acerto,
+        pedido: o,
+        regraDaLoja: regraDeRepasse,
+        zonas: donoDaLoja?.deliveryZones,
+        ehMarketplace: canalDoPedido(o).ehMarketplace,
+      });
 
-    // A ordem importa e é esta, da mais específica para a mais genérica:
-    //   1. o que ficou gravado NO PEDIDO (motoboyFee) — é história, não regra
-    //   2. o acerto individual deste entregador (por entrega / por km)
-    //   3. a REGRA da loja: a faixa/bairro cadastrado, ou — em pedido de app —
-    //      o valor que veio do app, se foi isso que a loja escolheu
-    //   4. a taxa que o cliente pagou — último recurso, com aviso na tela
-    const ganhoDoPedido = (o: { deliveryFee?: number | null; motoboyFee?: number | null; deliveryDistance?: number | null; source?: string | null; [k: string]: any }) => {
-      if (mb.paymentType === "DAILY_RATE") return 0;
-      const gravado = Number(o.motoboyFee || 0);
-      if (gravado > 0) return gravado;
-      // Faixa do entregador vem ANTES do valor por km e do valor por entrega:
-      // quem cadastrou faixa quis faixa, e ela é o combinado individual dele.
-      const daFaixaDele = valorDaFaixa(faixasDele, o.deliveryDistance);
-      if (daFaixaDele != null) return daFaixaDele;
-      if (mb.paymentType === "PER_KM") return (o.deliveryDistance || 0) * perKmRate;
-      if (perDeliveryRate > 0) return perDeliveryRate;
-      const daRegra = repasseDaRegra(o);
-      if (daRegra != null) return daRegra;
-      return Number(o.deliveryFee || 0);
-    };
+    const ganhos = orders.map((o) => ({ pedido: o, ...ganhoDoPedido(o) }));
+    const quantosDe = (origem: OrigemDoGanho) => ganhos.filter((g) => g.origem === origem).length;
+    /** Caiu mesmo na taxa do cliente — não é suposição pela configuração. */
+    const usandoTaxaDoCliente = quantosDe("TAXA_DO_CLIENTE") > 0;
+    /** Entregas que a escada/km não conseguiu precificar por falta de distância. */
+    const entregasSemDistancia = quantosDe("SEM_DISTANCIA");
 
-    const dailyTotal = (mb.paymentType === "PER_DELIVERY" || mb.paymentType === "PER_KM") ? 0 : uniqueDays * dailyRate;
-    const feeTotal = Math.round(orders.reduce((s, o) => s + ganhoDoPedido(o), 0) * 100) / 100;
+    // A diária só existe nos tipos que a oferecem — `dailyRate` já vem zerado
+    // nos outros, então não há mais o que descontar aqui.
+    const dailyTotal = uniqueDays * dailyRate;
+    const feeTotal = Math.round(ganhos.reduce((s, g) => s + g.valor, 0) * 100) / 100;
 
     const totalWithDaily = dailyTotal + feeTotal;
     const totalFeeOnly = feeTotal;
@@ -279,11 +247,15 @@ export async function GET(req: Request) {
         dailyRate,
         perDeliveryRate,
         perKmRate,
-        faixasDeKm: faixasDele,
+        faixasDeKm: acerto.faixas,
         active: mb.active,
         // A tela precisa dizer ao lojista QUE CONTA foi feita — e avisar
         // quando caiu na taxa do cliente por falta de configuração.
         usandoTaxaDoCliente,
+        // Entregas que a escada de km não pôde precificar porque o pedido veio
+        // sem distância. Elas entram como R$ 0,00: a tela mostra a contagem
+        // para o lojista conferir o endereço em vez de descobrir no bolso.
+        entregasSemDistancia,
       },
       stats: {
         totalDeliveries,
@@ -340,7 +312,10 @@ export async function GET(req: Request) {
           // soma o total. É o que faz a lista detalhada bater com o valor a
           // pagar — antes ela mostrava a taxa que o cliente pagou ao
           // marketplace, que não tem relação com o acerto da loja.
-          ganhoDoMotoboy: Math.round(ganhoDoPedido(o) * 100) / 100,
+          ganhoDoMotoboy: Math.round(ganhoDoPedido(o).valor * 100) / 100,
+          // De onde saiu esse valor: a linha da lista pode dizer "faixa de
+          // 4 km" ou "sem distância" em vez de deixar o lojista adivinhar.
+          origemDoGanho: ganhoDoPedido(o).origem,
           totalAmount: o.totalAmount,
           changeAmount: o.changeAmount,
           changeFor,

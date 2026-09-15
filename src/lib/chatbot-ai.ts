@@ -1,6 +1,7 @@
 import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
 import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
 import { prisma } from "@/lib/prisma";
 import fs from "fs";
 
@@ -2097,6 +2098,12 @@ async function syncAiOrderToDatabase({
         deliveryFee: deliveryFee,
         totalAmount: totalOrderAmount,
         deliveryType,
+        // A distância que a área de entrega já mediu para este endereço. Sem
+        // ela gravada, a escada de km do entregador não tem o que comparar no
+        // fechamento (lib/distancia-da-entrega.ts).
+        ...(distanciaDoVeredicto(vereditoDaArea) != null
+          ? { deliveryDistance: distanciaDoVeredicto(vereditoDaArea) }
+          : {}),
         source: "WHATSAPP_IA",
         status: finalStatus,
         notes: notesText,

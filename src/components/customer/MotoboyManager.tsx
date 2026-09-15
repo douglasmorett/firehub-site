@@ -8,6 +8,9 @@ import {
   acertoSegueOModelo, aplicarModelo, explicarModelo, lerModelosDePagamento, modeloDoAcerto,
   problemasDoModelo, type ModeloDePagamento,
 } from "@/lib/modelos-de-pagamento";
+// Que campos cada tipo de pagamento usa — a MESMA regra do fechamento, para a
+// tela nunca mostrar (nem salvar) um campo que a conta ignora, e vice-versa.
+import { usaDiaria, usaPorEntrega, usaPorKm } from "@/lib/ganho-do-entregador";
 
 type Motoboy = {
   // password só existe na ida (definir/redefinir). A API não devolve mais o
@@ -149,7 +152,17 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
     try {
       const method = editingId ? "PUT" : "POST";
       const url = editingId ? `/api/motoboys/${editingId}` : "/api/motoboys";
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing) });
+      // Salvar LIMPA o que o tipo escolhido não usa. Sem isto o valor do tipo
+      // anterior fica no registro sem aparecer em lugar nenhum do formulário —
+      // e o fechamento pagava por ele (Frangoso, 15/09/2026: R$ 2,00/entrega e
+      // R$ 60,00 de diária num entregador pago por faixa de km).
+      const corpo = {
+        ...editing,
+        dailyRate: usaDiaria(editing.paymentType) ? editing.dailyRate : null,
+        perDeliveryRate: usaPorEntrega(editing.paymentType) ? editing.perDeliveryRate : null,
+        perKmRate: usaPorKm(editing.paymentType) ? editing.perKmRate : null,
+      };
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
       if (!res.ok) throw new Error();
       const saved: Motoboy = await res.json();
       if (editingId) setMotoboys(prev => prev.map(m => m.id === editingId ? saved : m));
@@ -277,19 +290,24 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
           </select>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-          {(editing.paymentType === "DAILY_RATE" || editing.paymentType === "BOTH" || editing.paymentType === "DAILY_PLUS_FEE") && (
+          {usaDiaria(editing.paymentType) && (
             <div>
-              <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Diária (R$)</label>
+              <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
+                Diária (R$)
+                {editing.paymentType === "FAIXA_KM" && (
+                  <span style={{ fontWeight: 500, color: "#64748B" }}> — deixe vazio se paga só a faixa</span>
+                )}
+              </label>
               <input className="input-field" type="number" step="0.5" min="0" value={editing.dailyRate ?? ""} onChange={e => setEditing(p => ({ ...p, dailyRate: e.target.value ? Number(e.target.value) : undefined }))} placeholder="Ex: 60" />
             </div>
           )}
-          {(editing.paymentType === "PER_DELIVERY" || editing.paymentType === "BOTH") && (
+          {usaPorEntrega(editing.paymentType) && (
             <div>
               <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Por entrega (R$)</label>
               <input className="input-field" type="number" step="0.5" min="0" value={editing.perDeliveryRate ?? ""} onChange={e => setEditing(p => ({ ...p, perDeliveryRate: e.target.value ? Number(e.target.value) : undefined }))} placeholder="Ex: 5" />
             </div>
           )}
-          {(editing.paymentType === "PER_KM" || editing.paymentType === "BOTH") && (
+          {usaPorKm(editing.paymentType) && (
             <div>
               <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Por KM (R$)</label>
               <input className="input-field" type="number" step="0.1" min="0" value={editing.perKmRate ?? ""} onChange={e => setEditing(p => ({ ...p, perKmRate: e.target.value ? Number(e.target.value) : undefined }))} placeholder="Ex: 1.50" />
@@ -574,9 +592,15 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                 <div style={{ fontSize: "0.78rem", color: "#64748B", display: "flex", gap: 12, marginTop: 2, flexWrap: "wrap" }}>
                   {mb.phone && <span><Phone size={11} style={{ marginRight: 3 }} />{mb.phone}</span>}
                   <span><DollarSign size={11} style={{ marginRight: 3 }} />{payLabel(mb.paymentType)}</span>
-                  {mb.dailyRate ? <span>Diária: R${mb.dailyRate.toFixed(2)}</span> : null}
-                  {mb.perDeliveryRate ? <span>R${mb.perDeliveryRate.toFixed(2)}/entrega</span> : null}
-                  {mb.perKmRate ? <span>R${mb.perKmRate.toFixed(2)}/km</span> : null}
+                  {/* Só o que o tipo escolhido usa. O valor digitado num tipo
+                      anterior continua gravado, e o cartão mostrava tudo junto:
+                      o Lucas lia "Diária R$60 · R$2,00/entrega · R$1,00/km" num
+                      entregador pago por faixa, sem ter onde apagar — os campos
+                      nem aparecem no formulário nesse tipo. */}
+                  {usaDiaria(mb.paymentType) && mb.dailyRate ? <span>Diária: R${mb.dailyRate.toFixed(2)}</span> : null}
+                  {usaPorEntrega(mb.paymentType) && mb.perDeliveryRate ? <span>R${mb.perDeliveryRate.toFixed(2)}/entrega</span> : null}
+                  {usaPorKm(mb.paymentType) && mb.perKmRate ? <span>R${mb.perKmRate.toFixed(2)}/km</span> : null}
+                  {mb.paymentType === "FAIXA_KM" && (mb.faixasDeKm?.length || 0) > 0 ? <span>{mb.faixasDeKm!.length} faixas de km</span> : null}
                   {mb.paymentType === "DAILY_PLUS_FEE" && <span style={{ color: "#0369A1" }}>💰 Recebe taxa do pedido</span>}
                 </div>
                 {/* Resumo do dia */}

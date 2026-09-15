@@ -114,6 +114,9 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
     BOTH: "Diária + Entrega",
     DAILY_PLUS_FEE: "Diária + Taxa do Pedido",
     PER_KM: "Por KM",
+    // Faltava aqui: o entregador pago por faixa aparecia com o rótulo cru
+    // "FAIXA_KM" no cabeçalho do acerto dele.
+    FAIXA_KM: "Por faixa de distância",
   };
 
   return (
@@ -333,9 +336,16 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         com o total logo abaixo dela. */}
                     {r.stats.feeTotal > 0 && (
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", gap: 10 }}>
+                        {/* O rótulo tem de dizer o acerto DELE. Escrito fixo
+                            como "Por entrega", ele anunciava R$ 2,00/entrega
+                            num entregador pago por faixa de km — que é como o
+                            Lucas descobriu, em 15/09/2026, que o fechamento
+                            não seguia o que ele tinha cadastrado. */}
                         <span>
-                          {r.motoboy.paymentType === "PER_KM"
-                            ? `Por km: ${fmt(r.motoboy.perKmRate || 0)} × ${r.stats.totalDistance} km`
+                          {r.motoboy.paymentType === "FAIXA_KM"
+                            ? `Por faixa de distância (${r.stats.totalDeliveries} entregas, ${r.stats.totalDistance.toFixed(1)} km no total)`
+                            : r.motoboy.paymentType === "PER_KM"
+                            ? `Por km: ${fmt(r.motoboy.perKmRate || 0)} × ${r.stats.totalDistance.toFixed(1)} km`
                             : r.motoboy.usandoTaxaDoCliente
                               ? `Taxa de entrega dos pedidos (${r.stats.totalDeliveries})`
                               : `Por entrega: ${fmt(r.motoboy.perDeliveryRate || 0)} × ${r.stats.totalDeliveries} entregas`}
@@ -353,6 +363,17 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         ⚠️ Este entregador não tem <b>valor por entrega</b> cadastrado, então está sendo usada a
                         taxa que o cliente pagou. Em pedido de iFood e 99Food essa taxa é do marketplace, não sua —
                         cadastre o valor por entrega em Motoboys para o acerto ficar certo.
+                      </div>
+                    )}
+                    {/* Entrega que a escada de km não conseguiu precificar
+                        porque o pedido chegou sem distância. Ela entra como
+                        R$ 0,00 — inventar a taxa do marketplace aqui foi o
+                        erro original. O lojista precisa VER quantas são. */}
+                    {(r.motoboy.entregasSemDistancia ?? 0) > 0 && (
+                      <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", fontSize: "0.74rem", color: "#92400E", lineHeight: 1.45 }}>
+                        ⚠️ {r.motoboy.entregasSemDistancia} {r.motoboy.entregasSemDistancia === 1 ? "entrega está" : "entregas estão"} sem a distância medida,
+                        então a faixa de km não pôde ser aplicada e {r.motoboy.entregasSemDistancia === 1 ? "ela entrou" : "elas entraram"} como R$ 0,00.
+                        O endereço é medido automaticamente em alguns minutos — se continuar assim, confira o endereço desses pedidos.
                       </div>
                     )}
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>

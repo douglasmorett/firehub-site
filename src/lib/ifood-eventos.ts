@@ -19,6 +19,7 @@ import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-nu
 import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
+import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
 
 export type ResultadoEventos = {
   created: number;
@@ -637,6 +638,12 @@ export async function processarEventosIfood(opts: {
             orderData,
           });
 
+          // Quantos km — medido FORA da transação (pode consultar rota) e com o
+          // ponto que o iFood mandou. É o que faz a escada de km do entregador
+          // valer em pedido de app (lib/distancia-da-entrega.ts).
+          const coordsDoCliente = coordenadasDoIfood(orderData);
+          const distanciaDaEntrega = await distanciaDaEntregaKm(eventFranchisee.id, coordsDoCliente);
+
           // Agora número e pedido nascem na MESMA transação: se a gravação falhar
           // — inclusive por duplicidade — o contador volta atrás junto.
           await prisma.$transaction(async (tx) => {
@@ -667,7 +674,8 @@ export async function processarEventosIfood(opts: {
                 const localizer = phone?.localizer;
                 return localizer ? `${number} ID: ${localizer}` : number;
               })(),
-              customerLatLng: coordenadasDoIfood(orderData),
+              customerLatLng: coordsDoCliente,
+              ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
               customerAddress: (() => {
                 const addr = orderData.delivery?.deliveryAddress;
                 if (!addr) return "";

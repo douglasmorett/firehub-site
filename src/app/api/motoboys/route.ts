@@ -5,6 +5,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senha";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
+import { ganhoDoPedido, lerAcerto } from "@/lib/ganho-do-entregador";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+import { canalDoPedido } from "@/lib/canal-do-pedido";
 
 // GET - listar motoboys do franqueado
 export async function GET() {
@@ -29,6 +32,14 @@ export async function GET() {
   // a tela da loja e o app do motoboy viravam o dia em instantes diferentes.
   const today = inicioDoExpedienteDaLoja(user.storeTimezone);
 
+  // A tabela de repasse é do DONO da conta, como no fechamento — conta de
+  // funcionário não tem cadastro de entrega próprio.
+  const donoDaLoja = await prisma.user.findUnique({
+    where: { id: targetFranchiseeId },
+    select: { deliveryZones: true, deliveryConfig: true },
+  }).catch(() => null);
+  const regraDeRepasse = lerRegraDeRepasse(donoDaLoja?.deliveryConfig);
+
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId },
     orderBy: [{ active: "desc" }, { name: "asc" }],
@@ -38,7 +49,14 @@ export async function GET() {
           createdAt: { gte: today },
           status: { notIn: ["CANCELADO"] },
         },
-        select: { id: true, totalAmount: true, deliveryType: true, deliveryFee: true },
+        // O canal sai de lib/canal-do-pedido.ts e precisa destes: sem eles todo
+        // pedido parece do site e a regra do app nunca se aplicaria.
+        select: {
+          id: true, totalAmount: true, deliveryType: true, deliveryFee: true,
+          motoboyFee: true, deliveryDistance: true, source: true,
+          ifoodOrderId: true, ifoodReference: true,
+          openDeliveryChannel: true, openDeliveryOrderId: true, openDeliveryReference: true,
+        },
       },
     },
   });
@@ -47,16 +65,22 @@ export async function GET() {
   const result = await Promise.all(motoboys.map(async (mb) => {
     const todayOrders = mb.orders || [];
     const deliveryCount = todayOrders.length;
-    const daily = mb.dailyRate || 0;
 
-    let deliveryFees = 0;
-    if (mb.paymentType === "DAILY_PLUS_FEE") {
-      deliveryFees = todayOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0);
-    } else {
-      deliveryFees = (mb.perDeliveryRate || 0) * deliveryCount;
-    }
+    // A MESMA conta do fechamento (lib/ganho-do-entregador.ts). Antes este
+    // cartão fazia a sua própria: ignorava a escada de km e multiplicava
+    // `perDeliveryRate × entregas` — inclusive o valor sobrando de um tipo de
+    // pagamento antigo. O lojista via aqui um número e no relatório outro.
+    const acerto = lerAcerto(mb as any);
+    const daily = acerto.dailyRate;
+    const deliveryFees =
+      acerto.tipo === "DAILY_PLUS_FEE"
+        ? todayOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0)
+        : todayOrders.reduce(
+            (sum, o) => sum + ganhoDoPedido({ acerto, pedido: o, regraDaLoja: regraDeRepasse, zonas: donoDaLoja?.deliveryZones, ehMarketplace: canalDoPedido(o).ehMarketplace }).valor,
+            0,
+          );
 
-    const totalEarnings = daily + deliveryFees;
+    const totalEarnings = Math.round((daily + deliveryFees) * 100) / 100;
 
     return {
       ...mb,

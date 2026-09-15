@@ -8,6 +8,7 @@ import { aplicarPedidoAlterado99, sincronizar99Food } from "@/lib/food99-status"
 import { donoDoAppShopId, donoDoShopId } from "@/lib/food99-lojas";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
+import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
 
 /**
  * POST /api/99food/webhook
@@ -537,6 +538,10 @@ export async function POST(req: NextRequest) {
 
           const items = itens99ParaPrisma(p.itens, franchisee!.id);
 
+          // Quantos km — sem isto a escada de km do entregador não tem o que
+          // comparar e o acerto cai no valor por entrega.
+          const distanciaDaEntrega = await distanciaDaEntregaKm(franchisee.id, p.coordenadas);
+
           try {
             await (prisma.customerOrder as any).create({
               data: {
@@ -549,6 +554,7 @@ export async function POST(req: NextRequest) {
                 // faz a roteirização e o "motoboy mais perto" acertarem sem
                 // depender de geocodificar o texto do endereço.
                 ...(p.coordenadas ? { customerLatLng: p.coordenadas } : {}),
+                ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
                 // O aceite automatico da loja vale para o 99Food tambem. Com ele
                 // ligado o pedido ja nasce ACEITO e e confirmado no 99Food logo
                 // abaixo; desligado, nasce NOVO e fica tocando no painel para o

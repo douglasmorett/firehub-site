@@ -4,6 +4,7 @@ import { dataHoraDaLoja } from "@/lib/fuso";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
+import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 
 export const dynamic = "force-dynamic";
@@ -436,6 +437,10 @@ async function pollIfoodEvents(sessionUserId?: string) {
             });
             const { generateDailyOrderNumberTx } = await import("@/lib/order-number");
 
+            // Quantos km — fora da transação, pelo ponto que o iFood mandou.
+            const coordsDoCliente = coordenadasDoIfood(orderData);
+            const distanciaDaEntrega = await distanciaDaEntregaKm(eventFranchisee.id, coordsDoCliente);
+
             // Número e gravação na MESMA transação. O mesmo pedido chega por
             // aqui e pelo webhook (e por cada painel aberto da loja, que também
             // faz este poll): quem grava por segundo cai na unicidade de
@@ -467,7 +472,8 @@ async function pollIfoodEvents(sessionUserId?: string) {
                   const localizer = phone?.localizer || phone?.phoneLocalizer || orderData.customer?.phoneLocalizer || orderData.customer?.localizer;
                   return localizer ? `${number} (ID: ${localizer})` : number;
                 })(),
-                customerLatLng: coordenadasDoIfood(orderData),
+                customerLatLng: coordsDoCliente,
+                ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
                 customerAddress: (() => {
                   const addr = orderData.delivery?.deliveryAddress;
                   if (!addr) return "";

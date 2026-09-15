@@ -10,6 +10,7 @@ import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, descreverVeredicto, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
+import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
 import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { Prisma } from "@prisma/client";
 import { cuponsComCampanha, ORIGEM_CUPOM_CAMPANHA, FONTES_QUE_NAO_SAO_SITE, digitosDoTelefone } from "@/lib/campanha-converter";
@@ -480,6 +481,8 @@ export async function POST(req: Request) {
       });
     })();
 
+    const distanciaDaEntrega = deliveryType === "PICKUP" ? null : distanciaDoVeredicto(veredictoDaArea);
+
     const pmUpper = (paymentMethod || "").toUpperCase().trim();
     const isOnlinePayment = pmUpper.includes("ONLINE") || pmUpper === "PIX" || pmUpper === "PIX_ONLINE" || pmUpper === "CREDITO_ONLINE" || pmUpper === "DEBITO_ONLINE";
 
@@ -523,6 +526,10 @@ export async function POST(req: Request) {
         // lib/repasse-do-entregador.ts, e a faixa/bairro que decidiu a taxa do
         // cliente é a mesma que decide esta (lib/area-de-entrega.ts).
         ...(repasseDoEntregador != null ? { motoboyFee: repasseDoEntregador } : {}),
+        // A distância que a área de entrega JÁ mediu para decidir a taxa. Sem
+        // ela gravada, a escada de km do entregador não tem o que comparar e o
+        // acerto cai no valor por entrega (lib/distancia-da-entrega.ts).
+        ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
         status: initialStatus,
         kdsStage: initialKdsStage,
         kdsProductionAt: initialKdsProductionAt,

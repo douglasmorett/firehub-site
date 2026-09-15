@@ -4,6 +4,7 @@ import { slugAposRenomear } from "@/lib/slug-da-loja";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { fusoPorEndereco } from "@/lib/fuso-por-endereco";
+import { esquecerPontoDaLoja } from "@/lib/distancia-da-entrega";
 
 export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
@@ -209,6 +210,12 @@ export async function PUT(req: Request) {
       data: staffUpdates,
     });
   }
+
+  // O ponto da loja e o modo de medição ficam em cache por 10 min para não
+  // consultar o banco a cada pedido importado (lib/distancia-da-entrega.ts).
+  // Quem acabou de arrastar o pino no mapa não pode esperar esses 10 minutos
+  // para o próximo pedido nascer com a distância certa.
+  esquecerPontoDaLoja(currentUser.id);
 
   // ── Sincronização automática do tempo de preparo/entrega com o iFood ──
   let ifoodSyncResult: any = null;
