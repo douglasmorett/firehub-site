@@ -159,5 +159,57 @@ confere("maquininha: cobra na entrega com bandeira", traduzirPedidoWabiz(maquini
 confere("online: chega pago", traduzirPedidoWabiz(online, ctx).dados.paymentMethod, "Pagamento Online (Wabiz) (Pago Online)");
 confere("hora local de Manaus (UTC-4)", horaLocalParaInstante("2026-09-12 20:00:00", "America/Manaus")?.toISOString(), "2026-09-13T00:00:00.000Z");
 
+
+// ── FIDELIDADE E CUPOM (v2 do pending) ─────────────────────────────────────
+//
+// Confirmado por escrito pela Wabiz em 15/09/2026:
+//   - `total` já é o valor FINAL do pedido (líquido);
+//   - o `discount` de dentro do produto JÁ está somado no `discounts` da raiz
+//     — ler os dois contaria o desconto duas vezes;
+//   - `products[x].discount` é o valor da LINHA (desconto × quantidade);
+//   - não existe troca parcial: borda e adicional da pizza trocada são pagos
+//     à parte, e é por isso que o preço do produto pode passar do desconto.
+const fidelidade: any = {
+  orderNumber: 90, internalKey: "fid-1", dateTime: "2026-09-15 19:00:00", customer: cliente,
+  items: [{ groupName: "Pizzas", products: [
+    { pos: 1, qty: 1, price: 62, discount: "50.00",
+      parts: [{ name: "Pizza", price: 50, externalCode: "p1",
+        customization: { others: [{ name: "Bordas", options: [{ externalCode: "b1", name: "Catupiry", acceptPartition: false, price: 12 }] }] } }] },
+  ] }],
+  service: { type: "delivery", delivery: { address: "Rua A", number: "1", region: "Centro", tax: 5, payment: { type: 7, name: "Pix", value: 17 } } },
+  total: 17, discounts: 50, fidelity: { points: 500 },
+};
+{
+  const { dados, items } = traduzirPedidoWabiz(fidelidade, ctx);
+  confere("fidelidade: total é o LÍQUIDO que o cliente paga", dados.totalAmount, 17);
+  confere("fidelidade: desconto vem da raiz, não somado do produto", dados.discountTotal, 50);
+  confere("fidelidade: desconto é da loja", dados.discountMerchant, 50);
+  confere("fidelidade: bruto da mensalidade fecha", (dados.totalAmount || 0) + (dados.discountTotal || 0), 67);
+  confere("fidelidade: itens + taxa - desconto = total",
+    items.reduce((s: number, i: any) => s + i.price * i.quantity, 0) + dados.deliveryFee - 50, 17);
+  confere("fidelidade: a comanda diz de onde veio o desconto",
+    (dados.notes || "").includes("Troca de fidelidade: -R$50.00"), true);
+  confere("fidelidade: a borda paga à parte continua no item", items[0].productName, "Pizza | Borda Catupiry");
+}
+
+const comCupom: any = {
+  ...fidelidade, orderNumber: 91, internalKey: "cup-1",
+  fidelity: null, discountCoupon: { code: "firehub10" },
+  total: 60.3, discounts: 6.7,
+};
+{
+  const { dados } = traduzirPedidoWabiz(comCupom, ctx);
+  confere("cupom: a comanda mostra o código", (dados.notes || "").includes("Cupom firehub10: -R$6.70"), true);
+  confere("cupom: desconto registrado para a mensalidade", dados.discountTotal, 6.7);
+}
+
+// Sem nenhum dos dois (v1, ou pedido sem promoção) volta ao rótulo genérico —
+// melhor dizer "Desconto" do que inventar uma origem.
+{
+  const semOrigem: any = { ...fidelidade, orderNumber: 92, internalKey: "gen-1", fidelity: null, discountCoupon: null };
+  const { dados } = traduzirPedidoWabiz(semOrigem, ctx);
+  confere("sem fidelidade nem cupom: rótulo genérico", (dados.notes || "").includes("Desconto: -R$50.00"), true);
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

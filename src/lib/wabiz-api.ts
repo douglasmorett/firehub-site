@@ -186,7 +186,18 @@ async function chamar(storeId: string, path: string, init: RequestInit = {}): Pr
  * fila vazia devolve []. O 404 é o "nada pendente" deles — medido na sandbox.
  */
 export async function pedidosPendentesWabiz(storeId: string): Promise<WabizPedido[]> {
-  const res = await chamar(storeId, "/api/v1/orders/pending", { method: "GET" });
+  // ── v2 SÓ AQUI ────────────────────────────────────────────────────────────
+  //
+  // O `pending` ganhou uma v2 (liberada para integrações em 09/2026) que traz
+  // `fidelity` e `discountCoupon` — informativos, para a comanda poder dizer
+  // POR QUE o total veio menor. A estrutura do resto é idêntica à v1, então
+  // nada na tradução muda por causa disto.
+  //
+  // O token e o `orders/status` continuam em v1: a v2 existe só neste método.
+  // Diferença medida em 15/09/2026 contra a sandbox: a v1 responde 404 quando
+  // a fila está vazia e a v2 responde 200 com `[]`. Os dois casos já eram
+  // tratados aqui.
+  const res = await chamar(storeId, "/api/v2/orders/pending", { method: "GET" });
   if (res.status === 404 || res.status === 204) return [];
   const texto = await res.text().catch(() => "");
   if (!res.ok) throw new Error(`orders/pending: HTTP ${res.status} — ${texto.slice(0, 200)}`);
@@ -287,6 +298,19 @@ export interface WabizProduto {
   price?: number;
   unity?: string | null;
   parts?: WabizParte[] | null;
+  /**
+   * Desconto DESTE produto — troca de fidelidade. Vem como texto ("50.00") e é
+   * o valor da LINHA (desconto × quantidade), não o unitário.
+   *
+   * NÃO somar: ele já está dentro do `discounts` da raiz do pedido, e a
+   * tradução lê de lá. Fica declarado aqui porque o campo existe e para quem
+   * for mexer não achar que está faltando tratamento.
+   *
+   * Não existe troca parcial: ou o item é trocado por pontos, ou não. O que
+   * pode acontecer é o cliente pôr borda ou adicional na pizza trocada — esses
+   * ele paga à parte, e é por isso que `price` pode ser maior que `discount`.
+   */
+  discount?: string | number | null;
 }
 
 export interface WabizPagamento {
@@ -335,6 +359,23 @@ export interface WabizPedido {
     payment?: WabizPagamento | null;
   } | null;
   priceRules?: unknown;
+  /**
+   * O valor FINAL do pedido, com tudo já calculado — confirmado por escrito
+   * pela Wabiz em 15/09/2026. É o líquido: o que o cliente paga.
+   */
   total?: number;
+  /**
+   * TODO o desconto do pedido, incluindo o `discount` que vem dentro de cada
+   * produto (a troca de fidelidade) — também confirmado por eles. Por isso a
+   * tradução lê só este campo: somar o do produto contaria duas vezes.
+   */
   discounts?: number;
+  /**
+   * Informativos da v2 do `pending`, quando o pedido teve fidelidade ou cupom.
+   * O formato não foi declarado e eles avisam que não entram em cálculo algum:
+   * servem para a comanda dizer de onde veio o desconto. Leitura tolerante em
+   * `wabiz-traducao.ts` — qualquer coisa que vier é tratada como rótulo.
+   */
+  fidelity?: unknown;
+  discountCoupon?: unknown;
 }

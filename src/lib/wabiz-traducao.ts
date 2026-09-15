@@ -66,6 +66,28 @@ export function traduzirPagamento(pag: WabizPagamento | null | undefined, total:
   };
 }
 
+/**
+ * De ONDE veio o desconto, para a comanda não dizer só "Desconto".
+ *
+ * A v2 do `orders/pending` traz `fidelity` (troca por pontos) e
+ * `discountCoupon` (cupom) — informativos, sem entrar em conta nenhuma. O
+ * formato não foi declarado pela Wabiz, então a leitura é tolerante: serve
+ * qualquer objeto, e o código do cupom sai junto quando estiver em algum dos
+ * nomes prováveis.
+ *
+ * Sem os campos — Assistente da v1, ou pedido sem nenhum dos dois — volta a
+ * ser o "Desconto" de sempre, que é o certo: melhor genérico que errado.
+ */
+export function motivoDoDesconto(pedido: WabizPedido): string {
+  const cupom = pedido?.discountCoupon as any;
+  if (cupom) {
+    const codigo = texto(cupom?.code ?? cupom?.coupon ?? cupom?.name ?? (typeof cupom === "string" ? cupom : ""));
+    return codigo ? `Cupom ${codigo}` : "Cupom";
+  }
+  if (pedido?.fidelity) return "Troca de fidelidade";
+  return "Desconto";
+}
+
 type OpcaoDaParte = {
   id: string;
   /** Como sai na comanda, sem quantidade: "Borda Cheddar", "Esfiha Carne". */
@@ -262,7 +284,7 @@ export function traduzirPedidoWabiz(
     rotuloServico[tipo] || null,
     agendadoPara ? `📅 AGENDADO para ${dataHoraDaLoja(agendadoPara, fuso)}` : null,
     texto(entrega?.referencePoint) ? `📍 Referência: ${texto(entrega?.referencePoint)}` : null,
-    desconto > 0 ? `🏷️ Desconto: -R$${desconto.toFixed(2)}` : null,
+    desconto > 0 ? `🏷️ ${motivoDoDesconto(pedido)}: -R$${desconto.toFixed(2)}` : null,
     texto(pedido.obs) ? `📝 OBS: ${texto(pedido.obs)}` : null,
     ...notasDeItem.map((n) => `📝 ${n}`),
   ]
@@ -286,7 +308,19 @@ export function traduzirPedidoWabiz(
     changeAmount,
     customerCpfCnpj: texto(cliente.document) || null,
     deliveryBy: "MERCHANT",
+    // ── O DESCONTO É TODO DA LOJA ────────────────────────────────────────
+    //
+    // A Wabiz é o app com a MARCA do restaurante: fidelidade e cupom saem do
+    // bolso dele, não de um marketplace. Por isso o mesmo valor vai em
+    // `discountMerchant` — é o que faz a comanda imprimir "Desconto (Cupom -
+    // Loja)" em vez de uma linha sem dono.
+    //
+    // `total` já vem líquido e `discounts` já inclui o `discount` de dentro de
+    // cada produto (confirmado por escrito pela Wabiz em 15/09/2026), então o
+    // bruto da mensalidade — totalAmount + discountTotal, lib/billing.ts —
+    // fecha sozinho. Somar o desconto do produto aqui contaria duas vezes.
     discountTotal: desconto > 0 ? desconto : null,
+    discountMerchant: desconto > 0 ? desconto : null,
     customerName,
     customerPhone,
     customerAddress,
