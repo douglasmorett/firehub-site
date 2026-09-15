@@ -96,7 +96,15 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.14";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.15";
+
+/**
+ * A partir daqui o Assistente imprime a CONTA DA MESA com rodape proprio:
+ * consumo, desconto, taxa de servico e gorjeta, cada um na sua linha. Antes
+ * disso taxa e gorjeta iam como ITEM, no meio dos pratos — foi reclamacao de
+ * cliente em 15/09/2026 (ver src/lib/conta-da-mesa.ts).
+ */
+export const VERSAO_ASSISTENTE_COM_TAXA_SEPARADA = "1.2.15";
 
 export type EscPosProfile = "full" | "safe" | "legacy";
 

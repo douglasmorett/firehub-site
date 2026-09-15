@@ -1384,7 +1384,41 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
   res += LF;
   const subtotal = order.items?.reduce((sum, it) => sum + (getItemEffectivePrice(it, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
-  res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
+  // ── A CONTA DA MESA TEM SEU PROPRIO RODAPE ────────────────────────────
+  //
+  // Antes a taxa de servico e a gorjeta vinham como ITENS, misturadas aos
+  // pratos: o cliente lia "1x Taxa de servico 10% .... R$ 12,90" como se
+  // fosse mais um pedido da mesa, e o subtotal ja vinha com os 10% dentro.
+  // Deu reclamacao de cliente (15/09/2026). Agora o servidor manda os
+  // valores em campos proprios (consumo, taxaServico, gorjeta) e o rodape e
+  // este: consumo, desconto, taxa, gorjeta e o total — nessa ordem, que e a
+  // ordem em que a pessoa confere a conta.
+  // `taxaSeparada` vem do servidor e diz que a taxa NAO esta na lista de
+  // itens. Nao da para deduzir por `consumo`: ele ja viajava no cupom antes
+  // desta mudanca, e cupom antigo reimpresso (PrintRequest guarda o payload)
+  // cairia aqui com a taxa ainda dentro dos itens.
+  const contaComRodape = ehConta && order.taxaSeparada === true;
+  if (contaComRodape) {
+    const dinheiroConta = (v) => "R$ " + Number(v).toFixed(2).replace(".", ",");
+    const consumo = Number(order.consumo || 0) > 0 ? Number(order.consumo) : subtotal;
+    res += rightAlign("Consumo:", dinheiroConta(consumo));
+
+    const descontoConta = Number(order.descontoDaConta?.valor || 0);
+    if (descontoConta > 0) {
+      const motivo = String(order.descontoDaConta?.motivo || "").trim();
+      res += rightAlign("Desconto:" + (motivo ? " " + cleanAscii(motivo).slice(0, 18) : ""), "-" + dinheiroConta(descontoConta));
+    }
+
+    const taxaValor = Number(order.taxaServico?.valor || 0);
+    if (taxaValor > 0) {
+      const pct = Number(order.taxaServico?.percentual || 0);
+      res += rightAlign("Taxa de servico" + (pct > 0 ? " " + pct + "%" : "") + ":", dinheiroConta(taxaValor));
+    }
+    const gorjetaValor = Number(order.gorjeta || 0);
+    if (gorjetaValor > 0) res += rightAlign("Gorjeta:", dinheiroConta(gorjetaValor));
+  } else {
+    res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
+  }
 
   const dFee = typeof order.deliveryFee === "number" ? order.deliveryFee : 0;
   const dFeeLabel = order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:";

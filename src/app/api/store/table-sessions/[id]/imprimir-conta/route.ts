@@ -19,6 +19,8 @@ import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { calcularContaDaMesa, montarCupomDaConta, sanearTaxa } from "@/lib/conta-da-mesa";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
+import { versaoAtende } from "@/lib/campanha-converter";
+import { VERSAO_ASSISTENTE_COM_TAXA_SEPARADA } from "@/lib/print";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Recusar aqui é o que faz aparecer o motivo na tela.
   const dono = await prisma.user.findUnique({
     where: { id: lojaId },
-    select: { printerConfig: true },
+    select: { printerConfig: true, printQueueEstado: true },
   });
   const impressorasDaLoja = (dono?.printerConfig as any)?.printers;
   if (impressorasDaContaDaMesa(Array.isArray(impressorasDaLoja) ? impressorasDaLoja : []) === null) {
@@ -112,10 +114,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "A mesa ainda não tem consumo para imprimir" }, { status: 400 });
   }
 
+  // Taxa e gorjeta em linha própria só saem certo no Assistente que sabe
+  // imprimir o rodapé da conta. No antigo elas continuam entrando como item —
+  // feio, mas com o papel fechando, que é como ficou até 15/09/2026.
+  const versaoDoAssistente = String((dono as any)?.printQueueEstado?.versao || "");
+
   const cupom = montarCupomDaConta(conta, {
     sessionId: id,
     garcom: mesa.waiter?.name || mesa.waiterName || null,
     cliente: mesa.customerName || null,
+    taxaSeparada: versaoAtende(versaoDoAssistente, VERSAO_ASSISTENTE_COM_TAXA_SEPARADA),
   });
 
   await prisma.printRequest.create({

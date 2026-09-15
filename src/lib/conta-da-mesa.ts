@@ -253,8 +253,24 @@ const fmtReais = (v: number) => `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
  */
 export function montarCupomDaConta(
   conta: ContaDaMesa,
-  opcoes: { sessionId: string; garcom?: string | null; cliente?: string | null; agora?: Date }
+  opcoes: {
+    sessionId: string;
+    garcom?: string | null;
+    cliente?: string | null;
+    agora?: Date;
+    /**
+     * O Assistente desta loja imprime taxa e gorjeta em LINHAS PRÓPRIAS
+     * (>= VERSAO_ASSISTENTE_COM_TAXA_SEPARADA).
+     *
+     * Falso — Assistente antigo — mantém o jeito velho: taxa e gorjeta entram
+     * como itens, porque lá o subtotal é a soma dos itens e sem elas o papel
+     * sairia com um buraco entre o subtotal e o total. Feio, mas fechando;
+     * era assim para todo mundo até 15/09/2026.
+     */
+    taxaSeparada?: boolean;
+  }
 ) {
+  const taxaSeparada = opcoes.taxaSeparada === true;
   const agora = opcoes.agora ?? new Date();
   const rotuloDaMesa = `Mesa ${conta.mesa.numero}${conta.mesa.nome ? ` - ${conta.mesa.nome}` : ""}`;
 
@@ -274,15 +290,24 @@ export function montarCupomDaConta(
   }
   const items: { name: string; qty: number; price: number }[] = [...agrupados.values()];
 
-  if (conta.taxaServico.valor > 0) {
-    items.push({
-      name: `Taxa de servico ${conta.taxaServico.percentual}%${opcoes.garcom ? ` (garcom ${opcoes.garcom})` : ""}`,
-      qty: 1,
-      price: conta.taxaServico.valor,
-    });
-  }
-  if (conta.gorjeta > 0) {
-    items.push({ name: "Gorjeta", qty: 1, price: conta.gorjeta });
+  // ── TAXA E GORJETA: LINHA PRÓPRIA, NÃO ITEM ──────────────────────────────
+  //
+  // Como item, elas saíam no meio dos pratos — "1x Taxa de servico 10% ...
+  // R$ 12,90" — e o cliente lia como se a mesa tivesse pedido mais alguma
+  // coisa; o subtotal também já vinha com os 10% dentro. Deu reclamação de
+  // cliente em 15/09/2026. Agora viajam em campo próprio e o Assistente
+  // imprime consumo, taxa, gorjeta e total, nessa ordem.
+  if (!taxaSeparada) {
+    if (conta.taxaServico.valor > 0) {
+      items.push({
+        name: `Taxa de servico ${conta.taxaServico.percentual}%${opcoes.garcom ? ` (garcom ${opcoes.garcom})` : ""}`,
+        qty: 1,
+        price: conta.taxaServico.valor,
+      });
+    }
+    if (conta.gorjeta > 0) {
+      items.push({ name: "Gorjeta", qty: 1, price: conta.gorjeta });
+    }
   }
 
   // O cupom soma unitário × quantidade para montar o subtotal e imprime
@@ -290,8 +315,14 @@ export function montarCupomDaConta(
   // item com preço de mais de duas casas faria os dois números divergirem por
   // centavos no papel — e "Subtotal 99,99 / Total 100,00" numa conta que o
   // cliente confere é discussão na mesa. A diferença entra como linha própria.
+  //
+  // Com a taxa em linha própria, o alvo é o CONSUMO — é ele que o papel
+  // imprime logo abaixo dos itens, e desconto, taxa e gorjeta vêm depois, cada
+  // um na sua linha. Sem ela, o alvo é o total, porque taxa e gorjeta estão
+  // dentro da lista de itens.
+  const alvoDosItens = taxaSeparada ? conta.consumo : conta.total;
   const somaImpressa = items.reduce((soma, i) => soma + Math.round(i.price * i.qty * 100), 0);
-  const diferenca = Math.round(conta.total * 100) - somaImpressa;
+  const diferenca = Math.round(alvoDosItens * 100) - somaImpressa;
   if (diferenca !== 0) {
     items.push({ name: "Ajuste de centavos", qty: 1, price: Math.round(diferenca) / 100 });
   }
@@ -323,6 +354,18 @@ export function montarCupomDaConta(
     consumo: conta.consumo,
     taxaServico: conta.taxaServico,
     gorjeta: conta.gorjeta,
+    // ── QUEM MANDA É ESTA FLAG, NÃO A DEDUÇÃO ────────────────────────────
+    //
+    // O Assistente novo precisa saber se a taxa está NA LISTA de itens ou
+    // fora dela — e não dá para adivinhar: `consumo` já viajava no cupom
+    // antes desta mudança, então um payload ANTIGO reimpresso (eles ficam
+    // gravados em PrintRequest) num Assistente novo imprimiria o rodapé
+    // sobre uma lista que ainda tem a taxa dentro. A flag diz o que foi
+    // feito na hora de montar; Assistente antigo ignora o campo.
+    taxaSeparada,
+    // O desconto da mesa como LINHA da conta — só faz sentido no Assistente
+    // que imprime o rodapé próprio; o antigo ignora campo que não conhece.
+    ...(conta.desconto.valor > 0 ? { descontoDaConta: conta.desconto } : {}),
     createdAt: agora.toISOString(),
   };
 }
