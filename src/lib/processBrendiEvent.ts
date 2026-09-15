@@ -129,54 +129,67 @@ async function gravarSendFlags(orderId: string, orderData: any): Promise<void> {
 }
 
 /**
- * Este merchantId é de um marketplace que o FireHub JÁ recebe DIRETO?
+ * Este pedido é um REPASSE de iFood/99Food que a loja JÁ recebe direto?
  *
- * Devolve "iFood — <nome>" / "99Food — <nome>" para o log dizer qual é, ou null.
+ * Devolve o rótulo do marketplace ("iFood" / "99Food") para o log, ou null.
  *
- * A Brendi lista, no cartão do FireHub dentro do painel dela, TODOS os ids que
- * o webhook pode mandar — e ali vêm os merchants de iFood E os shop ids do
- * 99Food da loja. No Frangoso os seis são lojas já ligadas aqui pelas
- * integrações diretas.
+ * ── Por que olha `salesChannel`, e não `merchant.id` ───────────────────────
  *
- * Confere nos quatro lugares onde esses vínculos moram: `IfoodIntegration` e
- * `Food99Store` (as tabelas multi-loja, o caminho de hoje) e os campos antigos
- * de loja única em `User` — conta ligada só pelo campo antigo também não pode
- * duplicar.
+ * A primeira versão desta trava comparava `merchant.id` com os merchants de
+ * iFood e os shop ids de 99Food — porque é isso que o cartão do FireHub, no
+ * painel da Brendi, lista como "possíveis merchantIds". Só que, medido em
+ * 15/09/2026 nos três pedidos reais do Frangoso, `merchant.id` era SEMPRE o
+ * Store UUID da Brendi, inclusive no #3, que era pedido de iFood repassado. A
+ * trava nunca disparou — e o #3 entrou em dobro.
+ *
+ * Quem diz de onde o pedido veio é `salesChannel`: `BRENDI_MENU` (o cardápio
+ * da própria Brendi), `BRENDI_DASHBOARD` (lançado no painel dela),
+ * `BRENDI_IFOOD` (repasse do iFood) — e, por simetria, o do 99Food.
+ *
+ * Confere na LOJA DONA do pedido, não em qualquer loja: uma conta sem iFood
+ * direto continua recebendo o repasse. E se a consulta falhar, NÃO descarta —
+ * pedido duplicado o lojista vê e resolve; pedido perdido, não.
  */
-async function ehMerchantDeMarketplaceJaIntegrado(merchantId: string): Promise<string | null> {
-  try {
-    const doIfood = await prisma.ifoodIntegration.findFirst({
-      where: { merchantId, active: true, connected: true },
-      select: { label: true },
-    });
-    if (doIfood) return `iFood — ${doIfood.label || "loja"}`;
+async function repasseDeMarketplaceJaDireto(
+  salesChannel: unknown,
+  lojaId: string,
+): Promise<string | null> {
+  const canal = String(salesChannel || "").toUpperCase();
+  const ehIfood = /IFOOD/.test(canal);
+  const eh99 = /99/.test(canal);
+  if (!ehIfood && !eh99) return null;
 
-    const ifoodAntigo = await prisma.user.findFirst({
-      where: { ifoodMerchantId: merchantId, ifoodConnected: true },
-      select: { storeName: true, name: true },
-    });
-    if (ifoodAntigo) return `iFood — ${ifoodAntigo.storeName || ifoodAntigo.name || "loja"}`;
+  try {
+    if (ehIfood) {
+      const [multi, antigo] = await Promise.all([
+        prisma.ifoodIntegration.findFirst({
+          where: { userId: lojaId, active: true, connected: true },
+          select: { id: true },
+        }),
+        prisma.user.findFirst({
+          where: { id: lojaId, ifoodConnected: true, ifoodMerchantId: { not: null } },
+          select: { id: true },
+        }),
+      ]);
+      return multi || antigo ? "iFood" : null;
+    }
 
     // Food99Store ainda não vive no Prisma Client (colunas garantidas no boot),
     // então vai em SQL cru, como o resto do 99Food.
-    const do99 = await prisma.$queryRaw<{ label: string | null }[]>`
-      SELECT "label" FROM "Food99Store"
-      WHERE "shopId" = ${merchantId} AND "connected" = true AND "active" = true
-      LIMIT 1
-    `.catch(() => [] as { label: string | null }[]);
-    if (Array.isArray(do99) && do99[0]) return `99Food — ${do99[0].label || "loja"}`;
-
-    const noventaENoveAntigo = await prisma.user.findFirst({
-      where: { food99MerchantId: merchantId, food99Connected: true },
-      select: { storeName: true, name: true },
-    });
-    if (noventaENoveAntigo) return `99Food — ${noventaENoveAntigo.storeName || noventaENoveAntigo.name || "loja"}`;
-
-    return null;
+    const [multi99, antigo99] = await Promise.all([
+      prisma.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Food99Store"
+        WHERE "userId" = ${lojaId} AND "connected" = true AND "active" = true
+        LIMIT 1
+      `.catch(() => [] as { id: string }[]),
+      prisma.user.findFirst({
+        where: { id: lojaId, food99Connected: true, food99MerchantId: { not: null } },
+        select: { id: true },
+      }),
+    ]);
+    return (Array.isArray(multi99) && multi99[0]) || antigo99 ? "99Food" : null;
   } catch (e: any) {
-    // Sem conseguir perguntar, NÃO descarta: perder pedido é pior que duplicar,
-    // e a duplicata o lojista vê e resolve — a venda perdida, não.
-    console.warn(`[Brendi] não consegui conferir se ${merchantId} é de marketplace direto: ${e?.message}`);
+    console.warn(`[Brendi] não consegui conferir se ${canal} já entra direto na loja ${lojaId}: ${e?.message}`);
     return null;
   }
 }
@@ -473,30 +486,6 @@ export async function processBrendiEvent(
       // conectada; 2+ = recusa registrada — nunca adivinhar a dona.
       const eventMerchantId = orderData.merchant?.id ? String(orderData.merchant.id) : null;
 
-      // ── PEDIDO DE MARKETPLACE REPASSADO PELA BRENDI NÃO ENTRA ─────────────
-      //
-      // A Brendi é hub: no painel dela, o cartão do FireHub lista os merchantIds
-      // que o webhook pode mandar, e entre eles vêm os merchants de IFOOD e os
-      // shop ids do 99FOOD da loja. No Frangoso os seis são lojas que o FireHub
-      // JÁ recebe direto pelas integrações próprias — deixar entrar por aqui
-      // também faria o mesmo pedido chegar DUAS VEZES na cozinha.
-      //
-      // E as chaves de idempotência não se cruzam: o pedido da Brendi grava
-      // `openDeliveryOrderId`, o do iFood grava `ifoodOrderId`, o do 99Food vem
-      // por outro caminho ainda. São registros distintos para o banco — nada os
-      // impediria.
-      //
-      // Descarte DEFINITIVO (`ignoradoDeProposito`): a loja não vai deixar de
-      // ter iFood e 99Food diretos, então reenviar isto todo minuto é só ruído.
-      if (eventMerchantId) {
-        const jaDireto = await ehMerchantDeMarketplaceJaIntegrado(eventMerchantId);
-        if (jaDireto) {
-          const msg = `repasse de marketplace pela Brendi (merchant ${eventMerchantId} = "${jaDireto}") — já entra pela integração direta, ignorado para não duplicar`;
-          console.log(`[Brendi] ⏭️ ${orderId}: ${msg}`);
-          return { action: "skipped", orderId, message: msg, ignoradoDeProposito: true };
-        }
-      }
-
       let franchisee: LojaBrendi | null = null;
 
       // 1. Prioridade absoluta: a loja que possui exatamente o merchantId do pedido
@@ -580,6 +569,28 @@ export async function processBrendiEvent(
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
 
+      // ── REPASSE DE IFOOD/99FOOD PELA BRENDI NÃO ENTRA ─────────────────────
+      //
+      // A Brendi é hub: ela repassa para cá os pedidos de iFood e de 99Food da
+      // loja, marcados em `salesChannel` (`BRENDI_IFOOD`…). O Frangoso já
+      // recebe os dois DIRETO, e as chaves de idempotência não se cruzam —
+      // o pedido da Brendi grava `openDeliveryOrderId`, o do iFood grava
+      // `ifoodOrderId` — então o mesmo pedido chegava DUAS vezes na cozinha.
+      // Foi o #3 de 14/09/2026 (Cibelly, R$ 51,29, `BRENDI_IFOOD`).
+      //
+      // Descarte DEFINITIVO (`ignoradoDeProposito`): a loja não vai deixar de
+      // ter iFood/99 direto, então reenviar isto todo minuto é só ruído. Vem
+      // DEPOIS da resolução de loja de propósito — a pergunta é "ESTA loja já
+      // tem esse marketplace direto?", e para isso é preciso saber qual loja é.
+      if (!apenasPrever) {
+        const direto = await repasseDeMarketplaceJaDireto(orderData.salesChannel, franchiseeIdToUse);
+        if (direto) {
+          const msg = `repasse de ${direto} pela Brendi (salesChannel ${orderData.salesChannel}) — a loja já recebe ${direto} direto, ignorado para não duplicar`;
+          console.log(`[Brendi] ⏭️ ${orderId}: ${msg}`);
+          return { action: "skipped", orderId, message: msg, ignoradoDeProposito: true };
+        }
+      }
+
       // ── 2ª barreira de idempotência: pelo NÚMERO do pedido na Brendi ──────
       // O evento do feed traz só o UUID. O número que o lojista vê (displayId)
       // aparece agora, no corpo do pedido — e é por ele que casam os pedidos
@@ -588,10 +599,24 @@ export async function processBrendiEvent(
       // vezes para a cozinha. (Pulada no apenasPrever: prever não grava nada.)
       const displayIdReal = orderData.displayId ?? orderData.orderSeqNumber ?? null;
       if (displayIdReal && !apenasPrever) {
+        // ── SÓ o que entrou por outro caminho e AINDA não tem o UUID ─────────
+        //
+        // Esta barreira existe para o import manual e o resgate, que gravam o
+        // pedido sem o UUID do feed. Antes ela casava QUALQUER pedido da loja
+        // com o mesmo número, sem janela de tempo — e o `displayId` da Brendi
+        // é um contador curto (1002, 1003…) que se repete. Aí o pedido de hoje
+        // com o número de ontem era tomado por "já importado": o UUID novo era
+        // amarrado no pedido velho, o cron o achava por esse UUID e ackava, e a
+        // venda do cliente sumia sem deixar rastro.
+        //
+        // Duas cercas: só as últimas 12 h (um número repetido não cabe aí), e
+        // só pedido que ainda não carrega um UUID diferente — quem já tem o
+        // seu é OUTRO pedido com o mesmo número, e vira pedido novo.
         const jaImportado = await prisma.customerOrder.findFirst({
           where: {
             franchiseeId: franchiseeIdToUse,
             openDeliveryChannel: "BRENDI",
+            createdAt: { gte: new Date(Date.now() - 12 * 3600_000) },
             OR: [
               { openDeliveryReference: String(displayIdReal) },
               { openDeliveryOrderId: String(displayIdReal) },
@@ -599,7 +624,15 @@ export async function processBrendiEvent(
           } as any,
           select: { id: true, dailyOrderNumber: true, openDeliveryOrderId: true },
         });
-        if (jaImportado) {
+        const uuidAlheio =
+          jaImportado?.openDeliveryOrderId &&
+          jaImportado.openDeliveryOrderId !== orderId &&
+          jaImportado.openDeliveryOrderId !== String(displayIdReal) &&
+          /^[0-9a-f-]{20,}$/i.test(jaImportado.openDeliveryOrderId);
+        if (jaImportado && uuidAlheio) {
+          console.log(`[Brendi] ℹ️ ${orderId}: número ${displayIdReal} repetido — #${jaImportado.dailyOrderNumber} já tem outro UUID, segue como pedido NOVO`);
+        }
+        if (jaImportado && !uuidAlheio) {
           // Amarra o UUID ao pedido que já está lá, para os eventos de status
           // seguintes (CONFIRMED, DISPATCHED…) o encontrarem pelo caminho normal.
           if (jaImportado.openDeliveryOrderId !== orderId) {
