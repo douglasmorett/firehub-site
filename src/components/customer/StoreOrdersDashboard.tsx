@@ -12,6 +12,8 @@ import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido
 import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
+import { avaliarEdicao } from "@/lib/edicao-de-pedido";
+import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -1580,6 +1582,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
   const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
   const [viewReceiptOrderId, setViewReceiptOrderId] = useState<string | null>(null);
+  /** Qual aba do modal Ver pedido está aberta: a prévia do papel ou a edição. */
+  const [abaDoRecibo, setAbaDoRecibo] = useState<"comanda" | "editar">("comanda");
   const [confirmarPagamentoOrder, setConfirmarPagamentoOrder] = useState<any | null>(null);
   const [deliveryInfoModalOrder, setDeliveryInfoModalOrder] = useState<any | null>(null);
   const showToast = (text: string, color = "#10B981") => {
@@ -1635,6 +1639,36 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const periodoRef = useRef({ from: dateFrom, to: dateTo });
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAgoraRef = useRef<() => void>(() => {});
+
+  /**
+   * Relê a lista AGORA e devolve o que voltou, em vez de esperar o próximo tick
+   * do poll.
+   *
+   * Existe para a edição de pedido: depois de tirar ou acrescentar item, a
+   * comanda tem que ser reimpressa com os itens NOVOS. Reimprimir com o `order`
+   * que está no estado desta tela sairia com os itens antigos — o papel certo é
+   * o que o servidor devolve depois de gravar. Usa o mesmo endpoint do poll de
+   * propósito: é ele que monta o formato que todo o painel consome.
+   */
+  const recarregarPedidos = useCallback(async (): Promise<any[] | null> => {
+    try {
+      const { from, to } = periodoRef.current;
+      const janela = `&from=${encodeURIComponent(new Date(from).toISOString())}&to=${encodeURIComponent(new Date(to).toISOString())}`;
+      const res = await fetch(`/api/customer-order/poll?t=${Date.now()}${janela}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+      });
+      if (!res.ok) return null;
+      const novos = await res.json();
+      if (Array.isArray(novos)) {
+        setOrders(novos);
+        return novos;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
   useEffect(() => {
     periodoRef.current = { from: dateFrom, to: dateTo };
     // Trocar o período muda o que o SERVIDOR devolve, não só o que a tela
@@ -1825,6 +1859,41 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (orderKey) printingInProgressRef.current.delete(orderKey);
       }, 10000);
     }
+  };
+
+  /** Abre o modal Ver pedido sempre na prévia do papel, nunca na edição. */
+  const abrirRecibo = (id: string) => {
+    setAbaDoRecibo("comanda");
+    setViewReceiptOrderId(id);
+  };
+
+  /**
+   * A comanda que sai depois de o pedido ser editado.
+   *
+   * O dono escolheu reimprimir a comanda INTEIRA (15/09/2026), e não um papel
+   * só do que mudou. O risco assumido é a cozinha montar duas vezes, porque o
+   * primeiro papel continua pendurado lá — então o aviso de 2ª via tem que ser
+   * impossível de não ver.
+   *
+   * O aviso vai dentro de `notes` e NÃO num campo novo: `notes` é a observação
+   * que TODA versão do Assistente de Impressão já imprime. Um campo novo só
+   * apareceria nas lojas que já atualizaram o Assistente — e é justamente na
+   * loja com versão velha que o papel sem aviso faria estrago. A observação
+   * original do cliente vem logo abaixo, nunca é substituída.
+   *
+   * `isManual = true` porque a reimpressão tem que furar a trava de "já
+   * imprimi este pedido" — sem isso, o papel corrigido simplesmente não sai.
+   */
+  const reimprimirAposEdicao = (pedidoAtualizado: any) => {
+    const original = (pedidoAtualizado?.notes || "").trim();
+    handlePrint(
+      {
+        ...pedidoAtualizado,
+        notes: `*** 2a VIA - PEDIDO ALTERADO - DESCARTE O PAPEL ANTERIOR ***${original ? `\n${original}` : ""}`,
+      },
+      "cozinha",
+      true
+    );
   };
 
   useEffect(() => {
@@ -3220,7 +3289,71 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         return (
           <div onClick={() => setViewReceiptOrderId(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
             <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: receiptPaperSize === "58mm" ? "380px" : "450px", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
-              
+
+              {/* ── Comanda x Editar ──────────────────────────────────────
+                  Este modal sempre foi a PRÉVIA DO PAPEL. A edição entra como
+                  segunda aba em vez de tela nova porque é aqui que o atendente
+                  já vem olhar o pedido item a item com o cliente no telefone.
+                  A aba só aparece para quem pode editar: quem decide é
+                  avaliarEdicao (lib/edicao-de-pedido.ts), a mesma função que a
+                  API consulta — senão existiria aba que o servidor recusa. */}
+              {(() => {
+                const avaliacao = avaliarEdicao(order, { role: user?.role, permissions: user?.permissions });
+                if (avaliacao.modo === "BLOQUEADO") return null;
+                return (
+                  <div style={{ display: "flex", gap: "6px", marginBottom: "12px" }}>
+                    {([["comanda", "🧾 Comanda"], ["editar", avaliacao.modo === "SO_ACRESCIMO" ? "➕ Acrescentar item" : "✏️ Editar itens"]] as const).map(([chave, rotulo]) => (
+                      <button
+                        key={chave}
+                        type="button"
+                        onClick={() => setAbaDoRecibo(chave as "comanda" | "editar")}
+                        style={{
+                          flex: 1, padding: "8px 10px", borderRadius: "10px", cursor: "pointer", fontFamily: "inherit",
+                          fontSize: "0.82rem", fontWeight: 800,
+                          border: `1.5px solid ${abaDoRecibo === chave ? "#C62828" : "#E5E7EB"}`,
+                          background: abaDoRecibo === chave ? "#C6282810" : "#FFF",
+                          color: abaDoRecibo === chave ? "#C62828" : "#6B7280",
+                        }}
+                      >
+                        {rotulo}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {abaDoRecibo === "editar" ? (
+                <EditarPedidoPainel
+                  pedido={order}
+                  operador={{ role: user?.role, permissions: user?.permissions }}
+                  aoFechar={() => setAbaDoRecibo("comanda")}
+                  aoSalvar={async (resultado) => {
+                    // O pedido mudou no banco: a lista tem que ser relida ANTES
+                    // de reimprimir, senão o papel sai com os itens antigos que
+                    // ainda estão no estado desta tela.
+                    setAbaDoRecibo("comanda");
+                    if (resultado?.cancelado) {
+                      setViewReceiptOrderId(null);
+                      showToast("Pedido cancelado e estoque devolvido.", "#DC2626");
+                      await recarregarPedidos();
+                      return;
+                    }
+                    const atualizados = await recarregarPedidos();
+                    const atual = (atualizados || []).find((o: any) => o.id === order.id);
+                    if (resultado?.acrescimo) {
+                      showToast(
+                        `Acréscimo de ${(Number(resultado.acrescimo.valor) || 0).toFixed(2).replace(".", ",")} lançado em ${resultado.acrescimo.pagamento}.`,
+                        "#10B981"
+                      );
+                    } else {
+                      showToast("Pedido alterado. Reimprimindo a comanda...", "#10B981");
+                    }
+                    if (atual) reimprimirAposEdicao(atual);
+                  }}
+                />
+              ) : (
+              <>
+
               {/* Toggle de Formato POS 80 / POS 58 */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", background: "#F9FAFB", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E5E7EB" }}>
                 <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#374151" }}>🖨️ Bobina:</span>
@@ -3567,6 +3700,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   Fechar
                 </button>
               </div>
+
+              </>
+              )}
 
             </div>
           </div>
@@ -5053,7 +5189,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onAssignMotoboy={assignMotoboy}
                   onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                   onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                  onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                  onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                   onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
@@ -5121,7 +5257,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5161,7 +5297,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5197,7 +5333,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5230,7 +5366,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5263,7 +5399,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5298,7 +5434,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => setViewReceiptOrderId(id)}
+                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}

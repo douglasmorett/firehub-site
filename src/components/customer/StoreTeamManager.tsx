@@ -16,7 +16,29 @@ export const STORE_MODULES = [
   { key: "ifood",            label: "⚡ Integrações (iFood / Jotajá)",     desc: "Conexão e status das plataformas de delivery" },
   { key: "impressoras",      label: "🖨️ Configuração de Impressoras",     desc: "Vínculo e vias de impressão de cupons" },
   { key: "minha_loja",       label: "🏪 Configurações da Loja",            desc: "Horários, dados da loja e cadastro de equipe" },
+  { key: "editar_pedidos",   label: "✏️ Editar pedidos já lançados",        desc: "Tirar item, mudar quantidade e acrescentar item em pedido que já entrou" },
 ];
+
+/**
+ * Permissões que NÃO vêm marcadas por padrão — nem no funcionário novo, nem no
+ * cadastro antigo que ficou sem lista salva.
+ *
+ * `editar_pedidos` deixa apagar item de uma venda que já entrou, e isso mexe no
+ * que o caixa espera na gaveta no fim do dia. Quem decide é o dono, funcionário
+ * por funcionário (decisão dele em 15/09/2026). Se entrasse na marcação
+ * automática, as lojas em operação acordariam com todo atendente podendo apagar
+ * venda sem ninguém ter escolhido isso.
+ *
+ * Para o funcionário JÁ cadastrado não precisa de nada: o CSV salvo dele não
+ * contém a chave nova, então `includes` devolve false sozinho. O cuidado aqui é
+ * só com os dois caminhos que preenchem a lista inteira como atalho.
+ */
+export const PERMISSOES_QUE_NASCEM_DESMARCADAS = ["editar_pedidos"];
+
+/** Os módulos marcados por padrão: tudo, menos os que exigem escolha do dono. */
+export const MODULOS_PADRAO = STORE_MODULES
+  .filter(m => !PERMISSOES_QUE_NASCEM_DESMARCADAS.includes(m.key))
+  .map(m => m.key);
 
 export default function StoreTeamManager() {
   const [members, setMembers] = useState<any[]>([]);
@@ -31,7 +53,7 @@ export default function StoreTeamManager() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
-    STORE_MODULES.map(m => m.key) // Por padrão, tudo vem ativado (igual ao dono)
+    MODULOS_PADRAO // Por padrão vem tudo ativado, menos o que exige escolha do dono
   );
 
   // Form de edição
@@ -120,7 +142,7 @@ export default function StoreTeamManager() {
 
   const openEditMember = (m: any) => {
     setEditingMember(m);
-    const existingPerms = m.permissions ? m.permissions.split(",") : STORE_MODULES.map(item => item.key);
+    const existingPerms = m.permissions ? m.permissions.split(",") : MODULOS_PADRAO;
     setEditPermissions(existingPerms);
     setNewPassword("");
   };
@@ -367,7 +389,7 @@ export default function StoreTeamManager() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {members.map((m: any) => {
-              const activePermsList = m.permissions ? m.permissions.split(",").filter(Boolean) : STORE_MODULES.map(x => x.key);
+              const activePermsList = m.permissions ? m.permissions.split(",").filter(Boolean) : MODULOS_PADRAO;
               const permsPct = Math.round((activePermsList.length / STORE_MODULES.length) * 100);
 
               return (

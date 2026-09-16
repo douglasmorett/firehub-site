@@ -32,6 +32,11 @@ export default async function FranchiseeCustomerOrdersPage() {
       slug: true,
       city: true,
       role: true,
+      // Quais módulos este funcionário pode usar. O painel precisa para saber
+      // se desenha o botão de editar pedido (lib/edicao-de-pedido.ts) — sem
+      // isto a tela decidiria pelo `role` sozinho e todo funcionário veria um
+      // botão que a API recusa.
+      permissions: true,
       ownerId: true,
       // Quem manda no grupo de lojas: sem ele, lojasDeOrigemDaConta enxerga
       // só a loja logada e o selo da marca some em conta com grupo.

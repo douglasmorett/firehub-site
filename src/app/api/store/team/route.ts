@@ -4,6 +4,15 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
+/**
+ * O que um funcionário ganha quando o cadastro vem sem lista de permissões.
+ *
+ * NÃO adicione `editar_pedidos` aqui. Essa permissão deixa apagar item de uma
+ * venda já lançada, e o dono decide funcionário por funcionário — ver
+ * PERMISSOES_QUE_NASCEM_DESMARCADAS em components/customer/StoreTeamManager.tsx
+ * e lib/edicao-de-pedido.ts. Toda permissão futura que mexa em dinheiro já
+ * fechado segue a mesma regra: entra desmarcada, não por padrão.
+ */
 export const DEFAULT_STAFF_PERMISSIONS = [
   "dashboard",
   "orders",

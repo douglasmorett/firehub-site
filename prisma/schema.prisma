@@ -696,6 +696,27 @@ model CustomerOrder {
   /// `deliveryFee` vai a zero na isenção e a informação sumia da nota — o
   /// pedido aparecia sem linha de entrega, como se a loja não entregasse.
   entregaGratis    Json?
+  /// O pedido original ao qual ESTE pedido é um acréscimo.
+  ///
+  /// Existe por causa do marketplace: o cliente do iFood liga pedindo mais uma
+  /// Coca, e o item não pode entrar no pedido de lá — o valor tem que continuar
+  /// batendo com o repasse que o iFood vai depositar. Então o acréscimo nasce
+  /// como pedido PRÓPRIO (source PRESENCIAL), com a forma de pagamento que o
+  /// cliente vai usar para pagar essa parte, e fica colado aqui.
+  ///
+  /// É também o que mantém o caixa fechando: gravar as duas partes no mesmo
+  /// pedido exigiria `paymentMethods` com um rótulo "iFood", e a régua de
+  /// api/cash-session/route.ts:77 classifica qualquer texto com "food" como
+  /// VALE-REFEIÇÃO — o repasse do iFood iria parar na linha de voucher.
+  parentOrderId    String?
+  parentOrder      CustomerOrder?  @relation("PedidoAcrescimo", fields: [parentOrderId], references: [id], onDelete: SetNull)
+  acrescimos       CustomerOrder[] @relation("PedidoAcrescimo")
+  /// Rastro de quem tirou/acrescentou item depois do pedido lançado, em ordem:
+  /// [{ quando, quem, acao, descricao, totalAntes, totalDepois }].
+  /// Ver lib/edicao-de-pedido.ts. É o contrapeso de deixar apagar item de
+  /// venda — sem ele, "por que o pedido 47 fechou R$ 12 a menos" não tem
+  /// resposta no dia seguinte.
+  editHistory      Json?
   trilhaPremio     Json?
   cashbackEarned   Float?              // Cashback gerado neste pedido (R$)
   cashbackUsed     Float?              // Cashback resgatado neste pedido (R$)

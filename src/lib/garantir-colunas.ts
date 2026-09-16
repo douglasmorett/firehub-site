@@ -684,6 +684,23 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "food99ShopId" TEXT`,
   // Quando o ENTREGADOR puxou o pedido pelo app (QR/número da comanda).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "motoboyPuxadoEm" TIMESTAMP(3)`,
+  // ── Editar pedido lançado (lib/edicao-de-pedido.ts) ──
+  // `parentOrderId`: o acréscimo que o cliente pediu por fora num pedido de
+  //   marketplace nasce como pedido PRÓPRIO e fica colado no original — o
+  //   pedido do iFood precisa continuar valendo o que o iFood vai repassar.
+  // `editHistory`: quem tirou/acrescentou o quê, e quanto o total andou.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "parentOrderId" TEXT`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "editHistory" JSONB`,
+  // O índice é o que faz "este pedido tem acréscimo?" não virar varredura na
+  // tabela mais quente do sistema — o painel pergunta isso por pedido listado.
+  `CREATE INDEX IF NOT EXISTS "CustomerOrder_parentOrderId_idx" ON "CustomerOrder"("parentOrderId")`,
+  // SET NULL, não CASCADE: apagar o pedido original não pode apagar a venda do
+  // acréscimo, que é dinheiro que entrou na gaveta e já foi conferido no
+  // fechamento do caixa. O acréscimo vira pedido solto, que a tela já trata.
+  `DO $$ BEGIN
+     ALTER TABLE "CustomerOrder" ADD CONSTRAINT "CustomerOrder_parentOrderId_fkey"
+       FOREIGN KEY ("parentOrderId") REFERENCES "CustomerOrder"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "gaClientId" TEXT`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "gaSessionId" TEXT`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "acceptedAt" TIMESTAMP(3)`,
