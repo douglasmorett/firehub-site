@@ -76,6 +76,13 @@ export default function EditarPedidoPainel({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
+  // O canal de preço DESTE pedido. Precisa ir na busca do cardápio: sem
+  // `?canal=`, /api/admin/menu-products devolve o `price` cru, e nas lojas que
+  // cobram diferente no delivery a tela mostraria R$ 8,00 enquanto o servidor
+  // grava R$ 9,00 — que é a mesma régua (lib/preco-por-canal.ts) vista do outro
+  // lado. O atendente leria um total na tela e o pedido fecharia noutro.
+  const canalDePreco = String(pedido?.deliveryType || "").toUpperCase() === "DELIVERY" ? "delivery" : "salao";
+
   // O cardápio só é buscado quando o atendente abre a caixa de acrescentar:
   // é uma lista grande e a maioria das edições é só tirar item.
   useEffect(() => {
@@ -83,7 +90,7 @@ export default function EditarPedidoPainel({
     let vivo = true;
     (async () => {
       try {
-        const res = await fetch("/api/admin/menu-products");
+        const res = await fetch(`/api/admin/menu-products?canal=${canalDePreco}`);
         const data = await res.json().catch(() => []);
         if (!vivo) return;
         const lista = (Array.isArray(data) ? data : data?.products || [])
@@ -97,7 +104,7 @@ export default function EditarPedidoPainel({
     return () => {
       vivo = false;
     };
-  }, [abrindoBusca, cardapio.length]);
+  }, [abrindoBusca, cardapio.length, canalDePreco]);
 
   const itensOriginais: ItemDoPedido[] = pedido.items || [];
   const taxa = Number(pedido.deliveryFee) || 0;
