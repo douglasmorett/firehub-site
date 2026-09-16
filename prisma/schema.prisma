@@ -760,6 +760,11 @@ model CustomerOrder {
   openDeliveryOrderId     String?   @unique   // ID do pedido no Open Delivery (idempotência)
   openDeliveryReference   String?             // Número de exibição do pedido (#1234)
   openDeliveryChannel     String?             // Canal de origem: "JOTAJA"
+  /// Código que o entregador DO PARCEIRO informa para retirar o pedido — o
+  /// equivalente do `ifoodPickupCode` nos outros canais (99Food, JotaJá,
+  /// Brendi). O cartão do painel, a lib de entrega parceira e a comanda do
+  /// Assistente já LIAM este campo; ninguém o gravava e a coluna não existia.
+  openDeliveryPickupCode  String?
   // === ANALYTICS (GA4) ===
   /// `client_id` do GA4 (cookie `_ga`) de quem fez o pedido, capturado no
   /// navegador. É ele que amarra a venda enviada pelo servidor à MESMA pessoa

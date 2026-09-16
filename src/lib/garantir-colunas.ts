@@ -417,6 +417,14 @@ const INSTRUCOES_LOTES = [
   // gaveta fechava com diferença. Nulo = pagamento numa forma só (paymentMethod).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "paymentMethods" JSONB`,
 
+  // Código que o entregador DO PARCEIRO fala no balcão para retirar o pedido,
+  // nos canais que não são o iFood (que tem coluna própria desde sempre).
+  // O cartão do painel, a lib de entrega parceira e a comanda do Assistente já
+  // LIAM `openDeliveryPickupCode` — o Assistente até imprime
+  // "CODIGO DE COLETA: #1234" — e ninguém gravava, porque a coluna não existia.
+  // Sem ela, o atendente entregava o lanche sem ter contra o que conferir.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "openDeliveryPickupCode" TEXT`,
+
   // Token da API de Conversões do Meta. Sem ele a venda só existe pelo pixel do
   // navegador, que perde de 30% a 50% dos eventos.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "metaCapiToken" TEXT`,

@@ -597,6 +597,10 @@ export async function POST(req: NextRequest) {
                 food99AppShopId: appShopId ? String(appShopId) : undefined,
                 food99ShopId: merchantId ? String(merchantId) : undefined,
                 deliveryBy: p.entreguePor,
+                // O código que o entregador do 99Food fala no balcão. O cartão
+                // do painel e a comanda já sabiam imprimir — faltava alguém
+                // gravar (lib/codigo-de-coleta.ts).
+                ...(p.codigoDeColeta ? { openDeliveryPickupCode: p.codigoDeColeta } : {}),
                 items: { create: items },
               },
             });

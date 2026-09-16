@@ -502,6 +502,10 @@ export async function aplicarPedidoAlterado99(
         deliveryFee: p.taxaEntrega,
         // O desconto acompanha o total refeito: a cobrança é sobre o bruto.
         discountTotal: p.descontos.total > 0 ? p.descontos.total : null,
+        // O 99Food designa o entregador DEPOIS de o pedido entrar, então o
+        // código de coleta costuma chegar só nesta releitura. Só grava quando
+        // veio: um `undefined` aqui apagaria o código que já estava certo.
+        ...(p.codigoDeColeta ? { openDeliveryPickupCode: p.codigoDeColeta } : {}),
         notes,
         items: { create: itens99ParaPrisma(p.itens, pedido.franchiseeId) },
       },

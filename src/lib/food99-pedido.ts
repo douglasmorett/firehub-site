@@ -186,6 +186,12 @@ export interface PedidoTraduzido {
   coordenadas?: { lat: number; lng: number };
   pagamento: { texto: string; pagoOnline: boolean };
   entreguePor: "99FOOD" | "MERCHANT";
+  /**
+   * Código que o entregador do 99Food fala no balcão para retirar o pedido.
+   * Nulo quando não veio (ou quando quem entrega é a própria loja, que não
+   * tem código nenhum). Ver lib/codigo-de-coleta.ts.
+   */
+  codigoDeColeta: string | null;
   total: number;
   taxaEntrega: number;
   /**
@@ -218,6 +224,7 @@ export interface PedidoTraduzido {
  * `event.order`; quem chama resolve isso antes.
  */
 import { chavesDoEndereco, coordenadasDoParceiro } from "./coordenadas-do-parceiro";
+import { codigoDeColetaDoParceiro, chavesParaLog } from "@/lib/codigo-de-coleta";
 
 export function traduzirPedido99Food(order: any): PedidoTraduzido {
   const o = order || {};
@@ -236,6 +243,24 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
   // endereco REALMENTE tem: sem isso, "o 99 nao manda coordenada" e um beco —
   // ninguem sabe se o campo nao veio ou se veio com um nome que o leitor nao
   // conhece. Com a lista no log, o proximo pedido de verdade fecha o assunto.
+  // ── O CÓDIGO DE COLETA, E O LOG DE QUANDO ELE NÃO VEM ──────────────────
+  //
+  // Quando quem leva é o motoboy do 99Food, ele chega no balcão e diz um
+  // código. Sem esse número na comanda, o atendente entrega o lanche sem ter
+  // contra o que conferir. O contrato deles não declara o campo, então vale o
+  // mesmo desenho das coordenadas: leitor tolerante (lib/codigo-de-coleta.ts)
+  // e, quando não acha em pedido de entrega parceira, o log com as chaves que
+  // o objeto REALMENTE tem — é o que fecha o assunto no próximo pedido real,
+  // sem depender de acesso ao ambiente deles.
+  const entreguePor = quemEntrega99(o.delivery_type);
+  const codigoDeColeta = codigoDeColetaDoParceiro(o, o.delivery, o.rider, o.logistics);
+  if (!codigoDeColeta && entreguePor === "99FOOD") {
+    console.warn(
+      `[99Food] pedido ${o.order_id ?? "?"} com entrega do 99 e SEM código de coleta; ` +
+      `chaves do pedido: ${chavesParaLog(o)}`,
+    );
+  }
+
   const coordenadas = coordenadasDoParceiro(endereco, o.delivery, o);
   if (!coordenadas && Object.keys(endereco).length > 0) {
     console.warn(
@@ -286,7 +311,8 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     },
     coordenadas,
     pagamento: formaDePagamento99(o.pay_type),
-    entreguePor: quemEntrega99(o.delivery_type),
+    entreguePor,
+    codigoDeColeta,
     total: centavosParaReais(totalCentavos),
     taxaEntrega: centavosParaReais(preco.delivery_price),
     descontos,
