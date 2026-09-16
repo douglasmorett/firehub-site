@@ -38,7 +38,12 @@ const PAYMENT_TYPES = [
   // dessa funcionalidade nova". Chamada só de "Por faixa de distância", a
   // diária entrava na conta sem estar no nome. Quem paga só a escada deixa o
   // campo da diária vazio.
-  { value: "FAIXA_KM", label: "Diária + taxa por distância percorrida (até X km, R$ Y)" },
+  // O nome diz "para cada km percorrido" e não "por faixa de distância" porque
+  // é assim que o lojista descreve o acerto (decisão do dono em 16/09/2026): a
+  // escada "até 1 km R$ 3,70 / até 2 km R$ 4,20" é lida como quanto o
+  // entregador ganha conforme o km que ele roda, não como uma tabela de faixas.
+  // Só o rótulo mudou — a conta e o cadastro das faixas são os mesmos.
+  { value: "FAIXA_KM", label: "Diária + valor para cada km percorrido" },
 ];
 
 const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, faixasDeKm: [], modeloDePagamento: null, notes: "" });

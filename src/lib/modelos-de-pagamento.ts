@@ -35,7 +35,10 @@ export const TIPOS_DE_ACERTO = [
   { valor: "BOTH", rotulo: "Diária + por entrega" },
   { valor: "DAILY_PLUS_FEE", rotulo: "Diária + taxa do pedido" },
   { valor: "PER_KM", rotulo: "Por km percorrido (R$ por km rodado)" },
-  { valor: "FAIXA_KM", rotulo: "Por faixa de distância (até X km, R$ Y)" },
+  // Mesmo nome do cadastro de entregador (MotoboyManager) e do relatório de
+  // acerto: o mesmo modelo tinha três nomes diferentes em três telas, e o
+  // lojista não tinha como saber que eram a mesma coisa.
+  { valor: "FAIXA_KM", rotulo: "Diária + valor para cada km percorrido" },
 ] as const;
 
 export type ModeloDePagamento = {

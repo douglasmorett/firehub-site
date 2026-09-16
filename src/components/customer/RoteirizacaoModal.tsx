@@ -2360,9 +2360,13 @@ export default function RoteirizacaoModal({
           position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,0.6)",
           display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem"
         }}>
+          {/* Mesma trava de altura do modal de configuração: a lista de motoboys
+              cresce com a equipe, e numa loja com muitos entregadores o fim do
+              modal — onde ficam os botões — sairia da tela. */}
           <div style={{
             background: "#FFFFFF", borderRadius: "14px", width: "100%", maxWidth: "480px",
-            padding: "1.5rem", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)"
+            padding: "1.5rem", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)",
+            maxHeight: "90vh", overflowY: "auto",
           }}>
             <h3 style={{ margin: "0 0 0.5rem 0", fontSize: "1.2rem", fontWeight: 900, color: "#0F172A" }}>
               🛵 Despachar Rota de Entrega
@@ -2513,9 +2517,16 @@ export default function RoteirizacaoModal({
           position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,0.6)",
           display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem"
         }}>
+          {/* Altura limitada + rolagem própria.
+              Sem isto o modal crescia com o conteúdo e passava da tela: na
+              modalidade Inteligente são oito campos, e o notebook do lojista
+              cortava justamente o fim — onde fica o botão SALVAR. A tela não
+              ficava só feia, ficava inutilizável, porque não havia como guardar
+              a configuração que a pessoa tinha acabado de escolher. */}
           <div style={{
             background: "#FFFFFF", borderRadius: "14px", width: "100%", maxWidth: "560px",
-            padding: "1.75rem", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)"
+            padding: "1.75rem", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)",
+            maxHeight: "90vh", overflowY: "auto",
           }}>
             <h3 style={{ margin: "0 0 0.25rem 0", fontSize: "1.2rem", fontWeight: 900, color: "#0F172A" }}>
               ⚙️ Configurações da Roteirização
@@ -2657,7 +2668,21 @@ export default function RoteirizacaoModal({
 
             </div>
 
-            <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+            {/* O botão fica GRUDADO no rodapé do modal, não no fim da lista de
+                campos. Com a rolagem acima, ele continuaria existindo — mas só
+                para quem descobrisse que precisa rolar até o fim. O lojista abre
+                isto para mudar uma opção e salvar; o salvar tem que estar à
+                vista o tempo todo.
+
+                As margens negativas compensam o padding do modal, para a faixa
+                branca cobrir a largura inteira e o conteúdo não passar por trás
+                do botão ao rolar. */}
+            <div style={{
+              position: "sticky", bottom: "-1.75rem",
+              margin: "1.5rem -1.75rem -1.75rem", padding: "1rem 1.75rem 1.75rem",
+              background: "#FFFFFF", borderTop: "1px solid #E2E8F0",
+              display: "flex", justifyContent: "flex-end", gap: "0.75rem",
+            }}>
               <button
                 onClick={handleSaveConfig}
                 style={{

@@ -115,8 +115,10 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
     DAILY_PLUS_FEE: "Diária + Taxa do Pedido",
     PER_KM: "Por KM",
     // Faltava aqui: o entregador pago por faixa aparecia com o rótulo cru
-    // "FAIXA_KM" no cabeçalho do acerto dele.
-    FAIXA_KM: "Diária + faixa de distância",
+    // "FAIXA_KM" no cabeçalho do acerto dele. O nome é o mesmo do cadastro
+    // (MotoboyManager) e do modelo (lib/modelos-de-pagamento) — o acerto que o
+    // entregador recebe na mão tem que se chamar igual em toda tela.
+    FAIXA_KM: "Diária + valor para cada km percorrido",
   };
 
   return (
