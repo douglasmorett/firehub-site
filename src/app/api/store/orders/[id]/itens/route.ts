@@ -141,18 +141,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: avaliacao.motivo }, { status: 403 });
     }
 
-    if (acrescentar.length > 0) {
-      return await acrescentarItens({
+    // Pedido de marketplace: o acréscimo vira pedido colado, sozinho.
+    if (avaliacao.modo === "SO_ACRESCIMO") {
+      return await acrescentarColado({
         order,
         lojaId,
         operador,
         acrescentar,
-        colado: avaliacao.modo === "SO_ACRESCIMO",
         pagamento: String(body?.pagamento || "").trim(),
       });
     }
 
-    return await editarOriginais({ order, operador, itens, removerItemIds });
+    // Pedido próprio: tirar, mudar quantidade e acrescentar são UMA operação só.
+    //
+    // Antes isto era um if/else — acréscimo OU remoção — e a remoção enviada
+    // junto era descartada em silêncio. O atendente que tirasse a Coca e
+    // acrescentasse um pastel na mesma edição via a tela prever um total e o
+    // pedido fechar noutro, com a Coca ainda lá. Uma transação só também deixa o
+    // total ser recalculado uma vez, do estado final.
+    return await editarPedidoProprio({ order, lojaId, operador, itens, removerItemIds, acrescentar });
   } catch (error: any) {
     console.error("[Editar Pedido PATCH]", error);
     return NextResponse.json({ error: "Erro ao editar o pedido" }, { status: 500 });
@@ -180,15 +187,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   }
 }
 
-// ── Tirar item / mudar quantidade ───────────────────────────────────────────
+// ── Pedido próprio: tirar, mudar quantidade e acrescentar, tudo junto ───────
 
-async function editarOriginais(entrada: {
+async function editarPedidoProprio(entrada: {
   order: any;
+  lojaId: string;
   operador: any;
   itens: { itemId: string; quantity: number }[];
   removerItemIds: string[];
+  acrescentar: { menuProductId: string; quantity: number; notes?: string }[];
 }) {
-  const { order, operador } = entrada;
+  const { order, lojaId, operador } = entrada;
 
   // Só itens DESTE pedido: id de item de outro pedido no corpo não alcança nada.
   const idsDoPedido = new Set(order.items.map((i: any) => i.id));
@@ -198,17 +207,31 @@ async function editarOriginais(entrada: {
     .map((m) => ({ itemId: String(m.itemId), quantity: Math.floor(Number(m.quantity)) }))
     .filter((m) => Number.isFinite(m.quantity) && m.quantity >= 1 && m.quantity <= 99);
 
-  if (remover.length === 0 && mudar.length === 0) {
+  let novosItens: ItemNovo[] = [];
+  if (entrada.acrescentar.length > 0) {
+    const montados = await montarItensNovos(entrada.acrescentar, lojaId, order.deliveryType);
+    if ("erro" in montados) return montados.erro;
+    novosItens = montados.itens;
+  }
+
+  if (remover.length === 0 && mudar.length === 0 && novosItens.length === 0) {
     return NextResponse.json({ error: "Nenhum item válido para alterar" }, { status: 400 });
   }
 
   // O estado final é calculado ANTES de escrever, porque "sobrou zero item"
   // muda a operação inteira: vira cancelamento.
-  const finais = order.items
+  const sobraram = order.items
     .filter((i: any) => !remover.includes(i.id))
     .map((i: any) => ({ ...i, quantity: mudar.find((m) => m.itemId === i.id)?.quantity ?? i.quantity }));
 
+  const finais = [
+    ...sobraram.map((i: any) => ({ price: i.price, quantity: i.quantity })),
+    ...novosItens.map((i) => ({ price: i.price, quantity: i.quantity })),
+  ];
+
   if (finais.length === 0) {
+    // Tirou tudo e não acrescentou nada: pedido sem item não pode continuar
+    // valendo dinheiro. Mesma via do DELETE, com devolução de estoque.
     return cancelarPedido(order, operador);
   }
 
@@ -228,12 +251,18 @@ async function editarOriginais(entrada: {
       const antes = order.items.find((i: any) => i.id === m.itemId)?.quantity;
       return `${nomeDoItem(m.itemId)} ${antes}x → ${m.quantity}x`;
     }),
+    ...novosItens.map((i) => `+${i.quantity}x ${i.productName}`),
   ].join(", ");
 
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem: nomeDoOperador(operador),
-    acao: remover.length > 0 ? "REMOVEU" : "MUDOU_QTD",
+    acao:
+      remover.length > 0
+        ? "REMOVEU"
+        : mudar.length > 0
+          ? "MUDOU_QTD"
+          : "ACRESCENTOU",
     descricao,
     totalAntes: order.totalAmount || 0,
     totalDepois: novoTotal,
@@ -245,6 +274,9 @@ async function editarOriginais(entrada: {
     }
     for (const m of mudar) {
       await tx.customerOrderItem.update({ where: { id: m.itemId }, data: { quantity: m.quantity } });
+    }
+    for (const i of novosItens) {
+      await tx.customerOrderItem.create({ data: { ...i, orderId: order.id } });
     }
     await tx.customerOrder.update({
       where: { id: order.id },
@@ -292,19 +324,30 @@ async function editarOriginais(entrada: {
   return NextResponse.json({ success: true, totalAmount: novoTotal, registro });
 }
 
-// ── Acrescentar item ────────────────────────────────────────────────────────
+// ── Itens novos: preço do banco e isolamento entre lojas ────────────────────
 
-async function acrescentarItens(entrada: {
-  order: any;
-  lojaId: string;
-  operador: any;
-  acrescentar: { menuProductId: string; quantity: number; notes?: string }[];
-  colado: boolean;
-  pagamento: string;
-}) {
-  const { order, lojaId, operador, colado, pagamento } = entrada;
+type ItemNovo = {
+  menuProductId: string;
+  productName: string;
+  quantity: number;
+  price: number;
+  notes: string | null;
+};
 
-  const pedidos = entrada.acrescentar
+/**
+ * Transforma o que o navegador pediu em itens graváveis.
+ *
+ * O PREÇO VEM DO BANCO, nunca do corpo: aceitar preço do cliente seria deixar o
+ * navegador dizer quanto custa. E só produto DESTA loja entra — é a mesma
+ * guarda da venda de balcão, que existe porque um menuProductId de outra loja
+ * fazia a baixa de estoque seguir a ficha técnica dela, drenando insumo alheio.
+ */
+async function montarItensNovos(
+  brutos: { menuProductId: string; quantity: number; notes?: string }[],
+  lojaId: string,
+  deliveryType: string | null | undefined
+): Promise<{ erro: NextResponse } | { itens: ItemNovo[] }> {
+  const pedidos = brutos
     .map((a) => ({
       menuProductId: String(a?.menuProductId || ""),
       quantity: Math.floor(Number(a?.quantity)),
@@ -313,21 +356,18 @@ async function acrescentarItens(entrada: {
     .filter((a) => a.menuProductId && Number.isFinite(a.quantity) && a.quantity >= 1 && a.quantity <= 99);
 
   if (pedidos.length === 0) {
-    return NextResponse.json({ error: "Nenhum item válido para acrescentar" }, { status: 400 });
+    return { erro: NextResponse.json({ error: "Nenhum item válido para acrescentar" }, { status: 400 }) };
   }
 
-  // ISOLAMENTO ENTRE LOJAS: só produto DESTA loja, e o PREÇO VEM DO BANCO.
-  // Aceitar preço do corpo seria deixar o navegador dizer quanto custa —
-  // mesma regra da venda de balcão (api/store/orders/presencial).
   const produtos = await prisma.menuProduct.findMany({
     where: { id: { in: pedidos.map((p) => p.menuProductId) }, franchiseeId: lojaId },
-    select: { id: true, name: true, price: true, priceDelivery: true, priceSalao: true },
+    select: { id: true, name: true, price: true, priceDelivery: true, priceSalao: true, priceTotem: true },
   });
   const porId = new Map(produtos.map((p) => [p.id, p]));
   const invasores = pedidos.filter((p) => !porId.has(p.menuProductId));
   if (invasores.length > 0) {
     console.error(`[Editar Pedido] Produto de outra loja recusado na loja ${lojaId}:`, invasores.map((i) => i.menuProductId));
-    return NextResponse.json({ error: "Um dos itens não pertence ao cardápio desta loja." }, { status: 400 });
+    return { erro: NextResponse.json({ error: "Um dos itens não pertence ao cardápio desta loja." }, { status: 400 }) };
   }
 
   // Preço por canal pela régua oficial (lib/preco-por-canal.ts), a mesma que o
@@ -335,171 +375,120 @@ async function acrescentarItens(entrada: {
   // o do balcão nas lojas que separam os preços, e reimplementar essa escolha
   // aqui seria o acréscimo sair por um valor que não existe em tela nenhuma.
   const canalDePreco: CanalDePreco =
-    String(order.deliveryType || "").toUpperCase() === "DELIVERY" ? "delivery" : "salao";
+    String(deliveryType || "").toUpperCase() === "DELIVERY" ? "delivery" : "salao";
 
-  const novosItens = pedidos.map((p) => {
-    const prod = porId.get(p.menuProductId)!;
-    return {
-      menuProductId: prod.id,
-      productName: prod.name,
-      quantity: p.quantity,
-      price: precoDoCanal(prod as any, canalDePreco),
-      notes: p.notes,
-    };
-  });
+  return {
+    itens: pedidos.map((p) => {
+      const prod = porId.get(p.menuProductId)!;
+      return {
+        menuProductId: prod.id,
+        productName: prod.name,
+        quantity: p.quantity,
+        price: precoDoCanal(prod as any, canalDePreco),
+        notes: p.notes,
+      };
+    }),
+  };
+}
+
+// ── Marketplace: o acréscimo vira um pedido próprio colado no original ──────
+
+async function acrescentarColado(entrada: {
+  order: any;
+  lojaId: string;
+  operador: any;
+  acrescentar: { menuProductId: string; quantity: number; notes?: string }[];
+  pagamento: string;
+}) {
+  const { order, lojaId, operador, pagamento } = entrada;
+
+  if (entrada.acrescentar.length === 0) {
+    return NextResponse.json({ error: "Nenhum item para acrescentar" }, { status: 400 });
+  }
+  if (!pagamento) {
+    return NextResponse.json(
+      { error: "Escolha como o cliente vai pagar o acréscimo — esse valor não vem do marketplace." },
+      { status: 400 }
+    );
+  }
+
+  const montados = await montarItensNovos(entrada.acrescentar, lojaId, order.deliveryType);
+  if ("erro" in montados) return montados.erro;
+  const novosItens = montados.itens;
+
   const valorDoAcrescimo =
     Math.round(novosItens.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100;
-
   const descricao = novosItens.map((i) => `+${i.quantity}x ${i.productName}`).join(", ");
 
-  // ── Pedido de marketplace: o acréscimo vira pedido COLADO ────────────────
-  if (colado) {
-    if (!pagamento) {
-      return NextResponse.json(
-        { error: "Escolha como o cliente vai pagar o acréscimo — esse valor não vem do marketplace." },
-        { status: 400 }
-      );
-    }
-
-    const numero = await generateDailyOrderNumber(lojaId);
-    const novo = await prisma.customerOrder.create({
-      data: {
-        franchiseeId: lojaId,
-        parentOrderId: order.id,
-        dailyOrderNumber: numero,
-        customerName: order.customerName || "Cliente",
-        customerPhone: order.customerPhone || "00000000000",
-        customerAddress: order.customerAddress || "",
-        deliveryType: order.deliveryType || "DELIVERY",
-        paymentMethod: pagamento,
-        // Nasce sem taxa: a entrega já foi cobrada no pedido original. Cobrar
-        // de novo no acréscimo seria cobrar duas vezes pela mesma viagem.
-        deliveryFee: 0,
-        totalAmount: valorDoAcrescimo,
-        status: "ACEITO",
-        // PRESENCIAL e não o canal do pai: é venda própria da loja, e é assim
-        // que o caixa a classifica pela forma de pagamento — que é justamente o
-        // que não funcionaria se ela ficasse marcada como iFood.
-        source: "PRESENCIAL",
-        notes: `Acréscimo do pedido ${order.ifoodReference || order.openDeliveryReference || order.dailyOrderNumber || order.id.slice(-6).toUpperCase()}`,
-        editHistory: [
-          {
-            quando: new Date().toISOString(),
-            quem: nomeDoOperador(operador),
-            acao: "ACRESCENTOU",
-            descricao,
-            totalAntes: 0,
-            totalDepois: valorDoAcrescimo,
-          },
-        ] as any,
-        items: { create: novosItens },
-      },
-      select: { id: true, dailyOrderNumber: true, totalAmount: true },
-    });
-
-    // O acréscimo é comida saindo da cozinha como qualquer outra: o insumo tem
-    // que baixar, senão o estoque infla exatamente no item que mais sai por
-    // pedido do cliente que liga.
-    import("@/lib/stock")
-      .then(({ deductStockForOrder }) => deductStockForOrder(novo.id))
-      .catch((e: any) => console.error(`[Editar Pedido] baixa de estoque do acréscimo ${novo.id}:`, e?.message));
-
-    // O rastro fica NOS DOIS: no pai, para quem abrir o pedido do iFood ver que
-    // houve acréscimo; no filho, para quem achar a venda solta no caixa saber
-    // de onde ela veio.
-    await prisma.customerOrder.update({
-      where: { id: order.id },
-      data: {
-        editHistory: empilharEdicao(order.editHistory, {
+  const numero = await generateDailyOrderNumber(lojaId);
+  const novo = await prisma.customerOrder.create({
+    data: {
+      franchiseeId: lojaId,
+      parentOrderId: order.id,
+      dailyOrderNumber: numero,
+      customerName: order.customerName || "Cliente",
+      customerPhone: order.customerPhone || "00000000000",
+      customerAddress: order.customerAddress || "",
+      deliveryType: order.deliveryType || "DELIVERY",
+      paymentMethod: pagamento,
+      // Nasce sem taxa: a entrega já foi cobrada no pedido original. Cobrar
+      // de novo no acréscimo seria cobrar duas vezes pela mesma viagem.
+      deliveryFee: 0,
+      totalAmount: valorDoAcrescimo,
+      status: "ACEITO",
+      // PRESENCIAL e não o canal do pai: é venda própria da loja, e é assim
+      // que o caixa a classifica pela forma de pagamento — que é justamente o
+      // que não funcionaria se ela ficasse marcada como iFood.
+      source: "PRESENCIAL",
+      notes: `Acréscimo do pedido ${order.ifoodReference || order.openDeliveryReference || order.dailyOrderNumber || order.id.slice(-6).toUpperCase()}`,
+      editHistory: [
+        {
           quando: new Date().toISOString(),
           quem: nomeDoOperador(operador),
           acao: "ACRESCENTOU",
-          descricao: `${descricao} (pedido colado ${novo.dailyOrderNumber ?? novo.id.slice(-6).toUpperCase()}, pago em ${pagamento})`,
-          totalAntes: order.totalAmount || 0,
-          totalDepois: order.totalAmount || 0,
-        }) as any,
-      },
-    });
-
-    console.log(
-      `[Editar Pedido] acréscimo colado ${novo.id} (R$ ${valorDoAcrescimo}, ${pagamento}) no pedido ${order.id}, por ${nomeDoOperador(operador)}`
-    );
-    return NextResponse.json({
-      success: true,
-      acrescimo: { id: novo.id, numero: novo.dailyOrderNumber, valor: valorDoAcrescimo, pagamento },
-    });
-  }
-
-  // ── Pedido próprio: o item entra no MESMO pedido e o total sobe ──────────
-  const finais = [
-    ...order.items.map((i: any) => ({ price: i.price, quantity: i.quantity })),
-    ...novosItens.map((i) => ({ price: i.price, quantity: i.quantity })),
-  ];
-  const novoTotal = recalcularTotal({
-    itens: finais,
-    deliveryFee: order.deliveryFee,
-    discountTotal: order.discountTotal,
+          descricao,
+          totalAntes: 0,
+          totalDepois: valorDoAcrescimo,
+        },
+      ] as any,
+      items: { create: novosItens },
+    },
+    select: { id: true, dailyOrderNumber: true, totalAmount: true },
   });
 
-  const registro: RegistroDeEdicao = {
-    quando: new Date().toISOString(),
-    quem: nomeDoOperador(operador),
-    acao: "ACRESCENTOU",
-    descricao,
-    totalAntes: order.totalAmount || 0,
-    totalDepois: novoTotal,
-  };
-
-  await prisma.$transaction(async (tx) => {
-    for (const i of novosItens) {
-      await tx.customerOrderItem.create({ data: { ...i, orderId: order.id } });
-    }
-    await tx.customerOrder.update({
-      where: { id: order.id },
-      data: {
-        totalAmount: novoTotal,
-        editHistory: empilharEdicao(order.editHistory, registro) as any,
-      },
-    });
-  });
-
-  // ── ESTOQUE DO ACRÉSCIMO: DEVOLVE TUDO E BAIXA TUDO DE NOVO ─────────────
-  //
-  // `deductStockForOrder` é idempotente POR PEDIDO: se já existe uma venda
-  // registrada para este orderId, ela devolve `skipped` e não baixa nada. Como
-  // o pedido original já baixou quando entrou, chamá-la de novo aqui não
-  // tiraria da prateleira o insumo do item acrescentado — o estoque inflaria
-  // exatamente no item que mais sai por cliente que liga pedindo mais uma.
-  //
-  // Em vez de abrir a função (que trata combo, espelho de marketplace e lote, e
-  // é usada por seis fluxos), usa-se o ciclo que ela JÁ suporta e documenta: a
-  // devolução carimba a data, e a baixa seguinte só considera "já baixado" o
-  // que for posterior à última devolução — então ela roda inteira de novo,
-  // agora com o item novo junto. É o mesmo caminho do pedido cancelado e
-  // reaceito.
-  //
-  // Em SEQUÊNCIA, nunca em paralelo: invertida, a devolução apagaria a baixa
-  // que acabou de acontecer e o insumo voltaria para o saldo sem ter voltado
-  // para a prateleira. O custo é duas linhas a mais no histórico do estoque
-  // (uma devolução e uma venda), que é o preço de o saldo ficar certo.
+  // O acréscimo é comida saindo da cozinha como qualquer outra: o insumo tem
+  // que baixar, senão o estoque infla exatamente no item que mais sai por
+  // pedido do cliente que liga.
   import("@/lib/stock")
-    .then(async ({ restoreStockForOrder, deductStockForOrder }) => {
-      await restoreStockForOrder(order.id);
-      await deductStockForOrder(order.id);
-    })
-    .catch((e: any) =>
-      console.error(
-        `[Editar Pedido] rebaixa de estoque falhou no acréscimo do pedido ${order.id} — ` +
-        `conferir o saldo dos insumos de ${descricao}:`,
-        e?.message
-      )
-    );
+    .then(({ deductStockForOrder }) => deductStockForOrder(novo.id))
+    .catch((e: any) => console.error(`[Editar Pedido] baixa de estoque do acréscimo ${novo.id}:`, e?.message));
+
+  // O rastro fica NOS DOIS: no pai, para quem abrir o pedido do iFood ver que
+  // houve acréscimo; no filho, para quem achar a venda solta no caixa saber
+  // de onde ela veio.
+  await prisma.customerOrder.update({
+    where: { id: order.id },
+    data: {
+      editHistory: empilharEdicao(order.editHistory, {
+        quando: new Date().toISOString(),
+        quem: nomeDoOperador(operador),
+        acao: "ACRESCENTOU",
+        descricao: `${descricao} (pedido colado ${novo.dailyOrderNumber ?? novo.id.slice(-6).toUpperCase()}, pago em ${pagamento})`,
+        totalAntes: order.totalAmount || 0,
+        totalDepois: order.totalAmount || 0,
+      }) as any,
+    },
+  });
 
   console.log(
-    `[Editar Pedido] ${order.id}: ${descricao}, total ${order.totalAmount} → ${novoTotal}, por ${registro.quem}`
+    `[Editar Pedido] acréscimo colado ${novo.id} (R$ ${valorDoAcrescimo}, ${pagamento}) no pedido ${order.id}, por ${nomeDoOperador(operador)}`
   );
-  return NextResponse.json({ success: true, totalAmount: novoTotal, registro });
+  return NextResponse.json({
+    success: true,
+    acrescimo: { id: novo.id, numero: novo.dailyOrderNumber, valor: valorDoAcrescimo, pagamento },
+  });
 }
+
 
 // ── Cancelar ────────────────────────────────────────────────────────────────
 

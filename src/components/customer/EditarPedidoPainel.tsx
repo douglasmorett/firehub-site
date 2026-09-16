@@ -153,6 +153,9 @@ export default function EditarPedidoPainel({
     setSalvando(true);
     setErro("");
     try {
+      // Tudo numa chamada só. Antes isto era um if/else e a remoção ia junto
+      // com um acréscimo era descartada: quem tirasse a Coca e pedisse um
+      // pastel via a tela prever um total e o pedido fechar noutro.
       const corpo: any = {};
       if (acrescimos.length > 0) {
         corpo.acrescentar = acrescimos.map((a) => ({
@@ -160,7 +163,8 @@ export default function EditarPedidoPainel({
           quantity: a.quantity,
         }));
         if (modo === "SO_ACRESCIMO") corpo.pagamento = pagamento;
-      } else {
+      }
+      if (modo === "COMPLETO") {
         corpo.removerItemIds = Array.from(removidos);
         corpo.itens = itensOriginais
           .filter((i) => !removidos.has(i.id) && (quantidades[i.id] ?? i.quantity) !== i.quantity)
