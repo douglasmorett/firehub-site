@@ -26,6 +26,30 @@ confere("minúscula vira maiúscula", codigoDeColetaDoParceiro({ delivery_code: 
 confere("procura em várias fontes", codigoDeColetaDoParceiro({ a: 1 }, null, { collect_code: "77Z" }), "77Z");
 confere("dentro de lista", codigoDeColetaDoParceiro({ riders: [{ nome: "x" }, { fetch_code: "5150" }] }), "5150");
 
+console.log("\n── o formato REAL do 99Food (pedido #403003, 16/09/2026) ──");
+//
+// Confirmado no `order/detail` de um pedido de verdade da Brazza Burguer, com
+// entrega do 99. Vêm DOIS códigos, e não são a mesma coisa:
+//
+//   pickup_code   → o que o entregador fala no BALCÃO, para levar o pedido
+//   handover_code → o da entrega ao cliente, no fim da corrida
+//
+// Trocar um pelo outro manda o atendente conferir o número errado e segurar um
+// pedido que estava certo.
+const pedido99Real = {
+  order_id: "5764687210926376219",
+  pickup_code: "8728",
+  handover_code: "2610",
+  receive_address: { calling_code: "+55", country_code: "BR", postal_code: "28890-000" },
+  shop: { shop_phone: [{ calling_code: 55 }] },
+};
+confere("pega o pickup_code, não o handover_code", codigoDeColetaDoParceiro(pedido99Real), "8728");
+confere(
+  "não confunde com CEP nem com código de país",
+  codigoDeColetaDoParceiro({ receive_address: pedido99Real.receive_address, shop: pedido99Real.shop }),
+  null,
+);
+
 console.log("\n── e RECUSA o que não é código de coleta ──");
 confere("id de pedido de 19 dígitos", codigoDeColetaDoParceiro({ order_code: "5764687210926376219" }), null);
 confere("campo vazio", codigoDeColetaDoParceiro({ pickup_code: "" }), null);

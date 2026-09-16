@@ -29,7 +29,20 @@
  * veio ou se veio com um nome que o leitor não conhece.
  */
 
-/** Nomes que os parceiros usam para o código de coleta, na ordem da busca. */
+/**
+ * Nomes que os parceiros usam para o código de coleta, na ordem da busca.
+ *
+ * ── O 99Food, confirmado em pedido real (#403003, 16/09/2026) ──────────────
+ *
+ * Eles mandam DOIS códigos, e não são a mesma coisa:
+ *
+ *   `pickup_code`    → o que o entregador fala no BALCÃO, para levar o pedido.
+ *                      É este. Está na lista.
+ *   `handover_code`  → o da entrega ao cliente, no fim da corrida. NÃO está na
+ *                      lista de propósito: na comanda da loja ele mandaria o
+ *                      atendente conferir o número errado e segurar um pedido
+ *                      que estava certo.
+ */
 const NOMES = [
   "pickupcode",
   "pickup_code",
