@@ -7,7 +7,7 @@ import { ler99Food } from "@/lib/webhook-99food-log";
 export const dynamic = "force-dynamic";
 
 // GET: Retorna as credenciais salvas do 99Food para o usuário logado
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
@@ -28,6 +28,23 @@ export async function GET() {
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    }
+
+    // ── ?diagnostico=pedido — o pedido CRU, como o 99Food manda ───────────
+    //
+    // O registro de eventos abaixo guarda o que chega pelo WEBHOOK, que é só o
+    // aviso; o pedido inteiro vem de uma segunda chamada (`order/detail`), e é
+    // lá que moram campos que o contrato deles não declara — o código de
+    // coleta, por exemplo. Só que essa chamada precisa das credenciais do app,
+    // que existem no servidor e em nenhum outro lugar.
+    //
+    // Daí este diagnóstico: o lojista logado pede, o servidor busca e devolve o
+    // que o 99Food respondeu sobre um pedido DELE. Sem isso, descobrir o nome
+    // de um campo exige esperar o próximo pedido real e ler log de container.
+    if (req.nextUrl.searchParams.get("diagnostico") === "pedido") {
+      const { diagnosticoDePedido99 } = await import("@/lib/food99-diagnostico");
+      const qual = req.nextUrl.searchParams.get("pedido") || undefined;
+      return NextResponse.json(await diagnosticoDePedido99(user.id, qual));
     }
 
     return NextResponse.json({
