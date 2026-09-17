@@ -18,6 +18,13 @@ import {
 /* ─── Tipos ─────────────────────────────────────────────────── */
 type PrinterConfig = {
   autoprint: boolean;
+  /**
+   * Segura a comanda até a cozinha finalizar o pedido no KDS.
+   * Ausente = desligado, que é como toda loja funcionava antes desta opção.
+   * A regra vive em lib/momento-da-impressao.ts, lida pelos TRÊS caminhos que
+   * imprimem sozinhos (fila da nuvem, ouvinte global e painel de pedidos).
+   */
+  imprimirSoNoFimDoKds?: boolean;
   autoBeverageTag?: boolean;
   customBeverageKeywords?: string;
   defaultPaperWidth?: "58mm" | "80mm"; // herdado por impressora detectada sozinha
@@ -614,6 +621,55 @@ export default function PrinterSetupClient({
             <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: config.autoprint ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
           </button>
         </div>
+
+        {/* ── Imprimir só quando a cozinha finalizar no KDS ──────────────────
+            Fica logo abaixo da impressão automática porque é uma regra SOBRE
+            ela: muda o QUANDO, não o SE. Só aparece com a automática ligada —
+            desligada, não existe momento nenhum para escolher.
+
+            O aviso vermelho não é decoração. Medido em 16/09/2026: de 16 lojas
+            com movimento, 8 NUNCA finalizaram um pedido no KDS. Numa delas,
+            ligar isto faz a impressão parar por completo, e o sintoma que o
+            lojista vê é "a impressora parou" — que o manda procurar defeito no
+            cabo, na bobina, no Assistente. Em todo lugar, menos aqui. */}
+        {config.autoprint && (
+          <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: `1.5px solid ${config.imprimirSoNoFimDoKds ? "#FDE68A" : "#E2E8F0"}`, marginBottom: "1.25rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: config.imprimirSoNoFimDoKds ? "#FFFBEB" : "#F8FAFC", border: `1.5px solid ${config.imprimirSoNoFimDoKds ? "#FDE68A" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
+                  👨‍🍳
+                </div>
+                <div>
+                  <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Imprimir só quando o KDS finalizar</p>
+                  <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>
+                    {config.imprimirSoNoFimDoKds
+                      ? "A comanda sai quando a cozinha finaliza o pedido na tela do KDS"
+                      : "A comanda sai assim que o pedido entra (padrão)"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setConfig(c => ({ ...c, imprimirSoNoFimDoKds: !c.imprimirSoNoFimDoKds }))}
+                style={{ width: 52, height: 28, borderRadius: 14, background: config.imprimirSoNoFimDoKds ? "#D97706" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+              >
+                <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: config.imprimirSoNoFimDoKds ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+              </button>
+            </div>
+
+            {config.imprimirSoNoFimDoKds && (
+              <div style={{ marginTop: 12, background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "10px 14px" }}>
+                <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 800, color: "#B91C1C" }}>
+                  ⚠️ Sua cozinha precisa usar a tela do KDS
+                </p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#7F1D1D", lineHeight: 1.5 }}>
+                  Com esta opção ligada, a comanda <strong>só sai</strong> quando alguém aperta
+                  “Finalizar” na tela do KDS. Se a cozinha não usa o KDS, nenhuma comanda será
+                  impressa e vai parecer que a impressora quebrou.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* O QR do motoboy é marcado POR IMPRESSORA, dentro de cada cartão
             abaixo (nasce ligado em todas). O interruptor único da loja que

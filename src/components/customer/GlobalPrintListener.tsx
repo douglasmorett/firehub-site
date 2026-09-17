@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
+import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 
 const LOCK_PREFIX = "firehub_autoprinted_v4_";
 
@@ -210,6 +211,17 @@ export default function GlobalPrintListener() {
                 if (isOrderPrinted(order)) continue;
                 // Falhou há pouco: espera o prazo da nova tentativa.
                 if (emEsperaDeNovaTentativa(order)) continue;
+
+                // A loja pediu para segurar a comanda até a cozinha finalizar
+                // no KDS (lib/momento-da-impressao.ts). Sem esta linha, o
+                // pedido sairia por AQUI assim que entrasse, e a opção ligada
+                // na tela de impressoras não significaria nada — pior,
+                // significaria "às vezes", dependendo de haver uma aba aberta.
+                //
+                // `continue` sem reivindicar de propósito: o pedido tem que
+                // continuar candidato: quando o KDS finalizar, é este mesmo
+                // laço que vai imprimi-lo.
+                if (aguardandoFimDoKds(order, printerConfig)) continue;
 
                 // Reivindica atomicamente ANTES de disparar a impressão
                 claimOrderPrint(order);

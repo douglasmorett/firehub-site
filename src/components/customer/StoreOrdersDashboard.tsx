@@ -13,6 +13,7 @@ import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 import { avaliarEdicao } from "@/lib/edicao-de-pedido";
+import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
@@ -1743,6 +1744,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const orderKey = order.id || order.ifoodReference || order.openDeliveryReference;
     if (!isManual && orderKey && (printingInProgressRef.current.has(orderKey) || isAutoPrinted(order))) {
       console.log(`[Print] ⚠️ Impressão já em andamento ou pedido já impresso para ${orderKey}. Ignorando chamada duplicada.`);
+      return;
+    }
+
+    // A loja pediu para segurar a comanda até a cozinha finalizar no KDS
+    // (lib/momento-da-impressao.ts). Terceiro e último caminho que imprime
+    // sozinho — os outros dois são a fila da nuvem e o GlobalPrintListener.
+    //
+    // SÓ o automático: `isManual` passa direto. O botão Imprimir do painel é a
+    // pessoa pedindo o papel agora, e uma opção sobre QUANDO imprimir sozinho
+    // não pode transformar o botão em botão que não funciona.
+    if (!isManual && aguardandoFimDoKds(order, printerConfig)) {
+      console.log(`[Print] ⏸️ ${orderKey}: a comanda sai quando a cozinha finalizar no KDS (opção ligada em Impressoras).`);
+      if (orderKey) printingInProgressRef.current.delete(orderKey);
       return;
     }
     if (orderKey) printingInProgressRef.current.add(orderKey);
