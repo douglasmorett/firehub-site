@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Users, DollarSign, Loader2, ArrowLeft, Calendar, FileText, CheckCircle2, XCircle, Link2, Copy, Check, KeyRound, Eye, EyeOff, ExternalLink } from "lucide-react";
 import { useSession } from "next-auth/react";
+import RelatorioDeMesas from "./RelatorioDeMesas";
 
 interface Waiter {
   id: string;
@@ -38,6 +39,8 @@ interface TableSessionData {
 export default function GarconsPage() {
   const { data: session } = useSession();
   const [waiters, setWaiters] = useState<Waiter[]>([]);
+  /** O relatório de mesas da loja (taxa de serviço e vendas por origem). */
+  const [verRelatorioDeMesas, setVerRelatorioDeMesas] = useState(false);
   const [loading, setLoading] = useState(true);
   
   // Modal states
@@ -222,21 +225,34 @@ export default function GarconsPage() {
   }, [reportSessions]);
 
   return (
-    <div style={{ padding: 20, maxWidth: viewingWaiter ? 1200 : 1000, margin: "0 auto" }}>
+    <div style={{ padding: 20, maxWidth: viewingWaiter || verRelatorioDeMesas ? 1200 : 1000, margin: "0 auto" }}>
       
-      {/* ─── LIST VIEW ─── */}
-      {!viewingWaiter ? (
+      {/* ─── RELATÓRIO DE MESAS DA LOJA ─── */}
+      {verRelatorioDeMesas ? (
+        <RelatorioDeMesas onVoltar={() => setVerRelatorioDeMesas(false)} />
+      ) : !viewingWaiter ? (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#1E293B", display: "flex", alignItems: "center", gap: 10 }}>
               <Users size={28} color="#7C3AED" /> Gestão de Garçons
             </h1>
-            <button onClick={openNew} style={{
-              background: "#7C3AED", color: "#fff", border: "none", padding: "10px 16px", borderRadius: 8,
-              fontWeight: 700, display: "flex", alignItems: "center", gap: 6, cursor: "pointer"
-            }}>
-              <Plus size={18} /> Novo Garçom
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {/* O relatório da LOJA (todas as mesas, todos os garçons), pedido
+                  pelo dono em 17/09/2026. O botão "Relatório" de cada linha da
+                  tabela continua sendo o de UM garçom. */}
+              <button onClick={() => setVerRelatorioDeMesas(true)} style={{
+                background: "#fff", color: "#6D28D9", border: "1.5px solid #C4B5FD", padding: "10px 16px", borderRadius: 8,
+                fontWeight: 700, display: "flex", alignItems: "center", gap: 6, cursor: "pointer"
+              }}>
+                <FileText size={18} /> Relatório de Mesas
+              </button>
+              <button onClick={openNew} style={{
+                background: "#7C3AED", color: "#fff", border: "none", padding: "10px 16px", borderRadius: 8,
+                fontWeight: 700, display: "flex", alignItems: "center", gap: 6, cursor: "pointer"
+              }}>
+                <Plus size={18} /> Novo Garçom
+              </button>
+            </div>
           </div>
 
           {/* ─── LINK DE ACESSO DO GARÇOM ─── */}
