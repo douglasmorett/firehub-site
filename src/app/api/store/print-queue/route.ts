@@ -11,6 +11,7 @@ import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-con
 import { blocosDoPedido } from "@/lib/comanda-modelo";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
+import { nomeComPager } from "@/lib/pager";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -362,6 +363,14 @@ export async function GET(req: NextRequest) {
       // objeto).
       const order = {
         ...pedidoDoBanco,
+        // O PAGER ENTRA PELO NOME, igual ao caminho do navegador (lib/pager.ts).
+        //
+        // Precisa estar NOS DOIS: esta fila é o trilho de quando o painel está
+        // fechado, e uma loja de balcão costuma imprimir justamente por aqui.
+        // Se só o navegador soubesse do pager, a mesma loja imprimiria com ou
+        // sem o número dependendo de haver uma aba aberta — a classe de
+        // divergência que o modelo da comanda já documenta neste arquivo.
+        customerName: nomeComPager(pedidoDoBanco.customerName, (pedidoDoBanco as any).pagerNumber) || pedidoDoBanco.customerName,
         items: (pedidoDoBanco.items || []).map((i: any) => ({
           ...i,
           // O 2º argumento é o produto: é com os `comboGroups` dele que o preço

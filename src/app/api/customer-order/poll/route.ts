@@ -953,6 +953,9 @@ export async function GET(req: NextRequest) {
       select: {
         id: true, dailyOrderNumber: true, franchiseeId: true,
         customerName: true, customerPhone: true, customerAddress: true, customerLatLng: true,
+        // O número do pager de quem espera no balcão: o card do painel mostra
+        // para o atendente saber quem chamar quando o pedido fica pronto.
+        pagerNumber: true,
         deliveryType: true, deliveryBy: true, deliveryFee: true,
         paymentMethod: true, paymentPaidAt: true, gatewayProvider: true,
         totalAmount: true, changeAmount: true,

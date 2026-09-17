@@ -36,6 +36,8 @@ export default function VendaPresencialPage() {
   const [tableNum, setTableNum] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  /** Número do pager entregue a quem espera no balcão. Vazio = a loja não usa. */
+  const [pager, setPager] = useState("");
   const [address, setAddress] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Dinheiro");
   const [notes, setNotes] = useState("");
@@ -290,6 +292,7 @@ export default function VendaPresencialPage() {
         ? `Func. ${selectedEmployeeName}`
         : customerName || (orderType === "MESA" ? `Mesa ${tableNum}` : orderType === "BALCAO" ? "Balcão" : "Cliente"),
       customerPhone: customerPhone || "00000000000",
+      pagerNumber: pager.trim() || null,
       customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? `Mesa ${tableNum}` : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
       paymentMethod,
@@ -495,6 +498,23 @@ export default function VendaPresencialPage() {
             <input placeholder="Telefone" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
               style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none", fontFamily: "inherit" }} />
           </div>
+
+          {/* Pager: só onde o cliente ESPERA (balcão e mesa). Em delivery não
+              existe pager, e um campo a mais só atrapalharia quem digita
+              endereço com o cliente no telefone.
+
+              Fica vazio por padrão — loja que não usa pager não digita nada e
+              nada muda. Quem digita vê o número no card do painel e na
+              comanda impressa. */}
+          {(orderType === "BALCAO" || orderType === "MESA") && (
+            <input
+              placeholder="Pager (opcional) — ex: 12"
+              value={pager}
+              onChange={e => setPager(e.target.value.slice(0, 10))}
+              maxLength={10}
+              style={{ width: "100%", marginTop: 6, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${pager.trim() ? "#F59E0B" : "#E2E8F0"}`, background: pager.trim() ? "#FFFBEB" : "#FFF", fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: pager.trim() ? 800 : 400 }}
+            />
+          )}
         </div>
 
         {/* Carrinho */}

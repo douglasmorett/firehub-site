@@ -14,6 +14,7 @@ import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 import { avaliarEdicao } from "@/lib/edicao-de-pedido";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
+import { lerPager, nomeComPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
@@ -680,6 +681,36 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             }}
           >
             #{seqNum} — {order.customerName}
+            {/* O PAGER, quando a loja usa.
+                Vem como selo separado, e não colado no nome, porque a pergunta
+                que ele responde é outra: não é "de quem é o pedido", é "qual
+                aparelho chamar quando ficar pronto". O atendente procura esse
+                número com o pedido na mão, então ele tem que saltar aos olhos
+                no meio do quadro — daí o âmbar, que é a única cor desse tom no
+                cartão. Loja que não usa pager nunca vê este selo. */}
+            {lerPager(order.pagerNumber) && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  marginLeft: 8,
+                  padding: "2px 8px",
+                  borderRadius: 6,
+                  background: "#FEF3C7",
+                  border: "1.5px solid #F59E0B",
+                  color: "#92400E",
+                  fontWeight: 900,
+                  fontSize: "0.8rem",
+                  letterSpacing: "0.3px",
+                  verticalAlign: "middle",
+                  whiteSpace: "nowrap",
+                }}
+                title="Número do pager entregue ao cliente"
+              >
+                📟 {ETIQUETA_DO_PAGER} {lerPager(order.pagerNumber)}
+              </span>
+            )}
           </div>
           {/* Coluna, não linha: o selo do canal em cima e o da loja iFood
               embaixo. Lado a lado, os dois juntos não cabiam na largura da
@@ -1780,7 +1811,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const formattedOrder = {
       id: order.id,
       dailyOrderNumber: seqNum,
-      customerName: order.customerName || "Cliente",
+      // O PAGER ENTRA PELO NOME (lib/pager.ts).
+      //
+      // Campo novo no papel só apareceria nas lojas que atualizassem o
+      // Assistente, e em 17/09/2026 só 2 de 8 estavam na versão atual — o
+      // lojista digitaria o número e não sairia nada em 6 lojas. Pelo nome,
+      // funciona em toda versão hoje, sem ninguém atualizar nada. No balcão o
+      // pager É como o atendente identifica quem vai buscar, então o lugar
+      // também faz sentido, não é só contorno.
+      customerName: nomeComPager(order.customerName, order.pagerNumber) || "Cliente",
+      // Vai TAMBÉM em campo próprio: o Assistente de hoje ignora, e quando o
+      // parque estiver atualizado ele passa a imprimir o pager em linha
+      // dedicada sem precisar mexer em nada aqui.
+      pagerNumber: lerPager(order.pagerNumber),
       customerPhone: order.customerPhone,
       customerAddress: order.customerAddress,
       deliveryType: order.deliveryType || "DELIVERY",

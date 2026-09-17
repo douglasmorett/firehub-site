@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { telefoneDeVerdade } from "@/lib/telefone";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { lerPager } from "@/lib/pager";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -11,6 +12,8 @@ export async function POST(req: Request) {
 
   const data = await req.json();
   const { customerName, customerPhone, customerAddress, deliveryType, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change, discountTotal, discountMerchant } = data;
+  // Número do pager entregue a quem espera no balcão (lib/pager.ts). Opcional.
+  const pagerNumber = lerPager(data.pagerNumber);
   let paymentMethod: string = data.paymentMethod;
 
   // ── PAGAMENTO DIVIDIDO ──────────────────────────────────────────────────
@@ -83,6 +86,11 @@ export async function POST(req: Request) {
       employeeId: employeeId || null,
       employeeName: employeeName || null,
       notes: notes || "",
+      // O pager fica em campo PRÓPRIO, não embutido no nome: é assim que o
+      // painel consegue mostrá-lo com destaque no card e que, amanhã, o
+      // Assistente pode passar a imprimi-lo como linha dedicada. Quem junta os
+      // dois é só a montagem da comanda (lib/pager.ts).
+      ...(pagerNumber ? { pagerNumber } : {}),
       totalAmount: totalAmount || 0,
       // ── DESCONTO DADO NO BALCÃO/MESA ─────────────────────────────────
       //

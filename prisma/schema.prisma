@@ -708,6 +708,17 @@ model CustomerOrder {
   /// pedido exigiria `paymentMethods` com um rótulo "iFood", e a régua de
   /// api/cash-session/route.ts:77 classifica qualquer texto com "food" como
   /// VALE-REFEIÇÃO — o repasse do iFood iria parar na linha de voucher.
+  /// O número do pager entregue ao cliente que espera no balcão.
+  ///
+  /// Texto e não número: a loja numera do jeito dela ("12", "A3", "07").
+  /// Vazio = a loja não usa pager, que é o padrão — o campo só aparece no
+  /// lançamento de balcão e de mesa, e só é preenchido se alguém digitar.
+  ///
+  /// Sai na comanda junto do nome do cliente (ver a montagem da impressão em
+  /// StoreOrdersDashboard): campo NOVO no papel só apareceria nas lojas que
+  /// atualizassem o Assistente, e em 17/09/2026 só 2 de 8 estavam na versão
+  /// atual. Pelo nome, funciona em todas as versões hoje.
+  pagerNumber      String?
   parentOrderId    String?
   parentOrder      CustomerOrder?  @relation("PedidoAcrescimo", fields: [parentOrderId], references: [id], onDelete: SetNull)
   acrescimos       CustomerOrder[] @relation("PedidoAcrescimo")
