@@ -9,7 +9,8 @@ import { comboParaImpressao } from "@/lib/parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
 import { blocosDoPedido } from "@/lib/comanda-modelo";
-import { STATUS_CANCELADOS } from "@/lib/status-pedido";
+import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
+import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -193,14 +194,59 @@ export async function GET(req: NextRequest) {
     // que nunca existiu. Pedido já impresso não volta por causa do printedAt;
     // o que foi cancelado antes de imprimir não precisa de papel. O ouvinte do
     // navegador (GlobalPrintListener) já tratava cancelado como finalizado.
+    // ── O ATRASO NÃO REIMPRIME PEDIDO JÁ ENTREGUE ────────────────────────
+    //
+    // O sintoma: "instalei o Assistente no meio do expediente e ele começou a
+    // imprimir sem parar". A causa não era o tempo do atraso — era o filtro.
+    // Ele já pulava rascunho, aguardando pagamento e cancelado, mas deixava
+    // passar o pedido ENTREGUE. Como o atraso vai até 7 dias, uma instalação
+    // nova recebia a semana inteira.
+    //
+    // Medido em 17/09/2026, somando todas as lojas: 1.563 comandas sairiam de
+    // uma vez, e 1.529 delas (98%) eram de pedidos JÁ ENTREGUES. Só a TAURUS
+    // despejaria 756 — uma bobina inteira de papel que não serve para nada.
+    //
+    // A exclusão vale SÓ NO ATRASO, nunca na janela normal de 2 h, e isso é a
+    // parte que importa: na venda de balcão o atendente lança e conclui o
+    // pedido em menos de dois minutos (119 casos em 30 dias). Se "entregue"
+    // barrasse em todo lugar, essas comandas legítimas parariam de sair. Dentro
+    // das 2 h tudo segue como sempre foi; o filtro só alcança o que já é
+    // história.
+    const naoPrecisaMaisDeComanda = [...STATUS_FINALIZADOS];
+
     const where: any = {
       status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO", ...STATUS_CANCELADOS] },
       franchiseeId,
       OR: [
         { createdAt: { gt: sinceDate } },
-        ...(inicioDoAtraso ? [{ createdAt: { gt: inicioDoAtraso } }] : []),
+        ...(inicioDoAtraso
+          ? [{ createdAt: { gt: inicioDoAtraso }, status: { notIn: naoPrecisaMaisDeComanda } }]
+          : []),
       ],
     };
+
+    // ── A COMANDA SÓ DEPOIS DO KDS (lib/momento-da-impressao.ts) ──────────
+    //
+    // Quando a loja liga `imprimirSoNoFimDoKds`, o papel deixa de ser a ordem
+    // de produção e vira a etiqueta do que já está pronto. Aqui isso é um
+    // filtro a mais: enquanto a cozinha não finalizar, o pedido não entra na
+    // fila — e entra sozinho no poll seguinte assim que finalizar, sem
+    // precisar de aviso nenhum, porque o Assistente pergunta a cada 3 s.
+    //
+    // A JANELA TAMBÉM MUDA, e é isso que faz a opção funcionar de verdade: a
+    // fila normal só enxerga o que foi CRIADO nas últimas horas, e um pedido
+    // que ficou tempo demais na cozinha já teria saído dela ao ser finalizado
+    // — a comanda nunca sairia. Com a opção ligada, vale também a hora da
+    // FINALIZAÇÃO. Sem isso, a loja de movimento lento (ou o pedido agendado)
+    // perderia justamente as comandas que mais demoram.
+    if (esperaOFimDoKds(pc)) {
+      where.kdsStage = "FINISHED";
+      where.OR = [
+        ...where.OR,
+        { kdsFinishedAt: { gt: sinceDate } },
+        ...(inicioDoAtraso ? [{ kdsFinishedAt: { gt: inicioDoAtraso } }] : []),
+      ];
+    }
 
     // ── O que o Assistente já confirmou não volta ─────────────────────────
     //

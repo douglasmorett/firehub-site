@@ -399,8 +399,53 @@ export default function KDSTelaPage() {
       (navigator as any).wakeLock?.request("screen").catch(() => {});
     }
 
+    // ── RITMO DA CONSULTA: 3,5 s à frente, 1 min atrás ────────────────────
+    //
+    // O Worker consultava de 3,5 em 3,5 s SEMPRE, inclusive com a aba do KDS
+    // escondida atrás do painel de pedidos. São 24.686 consultas por dia, por
+    // tela, sem ninguém olhando — custo de banco por nada (decisão do dono em
+    // 16/09/2026: "sem a tela aberta custa desnecessário").
+    //
+    // Escondida, o ritmo cai para 1 min: corta ~94% das consultas e continua
+    // atualizando. Voltou para a frente, volta na hora aos 3,5 s e busca
+    // imediatamente, então quem olha a tela nunca vê dado velho.
+    //
+    // DESACELERA, NUNCA PARA — e isso é de propósito. O Worker existe para
+    // sobreviver à hibernação de Smart TV (Tizen, webOS), que é onde o KDS
+    // roda na cozinha. Se uma TV reportar a tela como oculta ao escurecer,
+    // parar de vez congelaria o KDS: o defeito que o Worker foi criado para
+    // evitar. A 1 min, o pior caso é um atraso de um minuto que se corrige
+    // sozinho no primeiro toque.
+    const RITMO_ATIVO = 3500;
+    const RITMO_OCULTO = 60000;
+    const ritmoDeAgora = () =>
+      typeof document !== "undefined" && document.visibilityState === "hidden"
+        ? RITMO_OCULTO
+        : RITMO_ATIVO;
+
+    let fallbackPoll: ReturnType<typeof setInterval> | null = null;
+    let ritmoAplicado = ritmoDeAgora();
+
+    const aplicarRitmo = () => {
+      const novo = ritmoDeAgora();
+      if (novo === ritmoAplicado) return;
+      ritmoAplicado = novo;
+      if (worker) {
+        worker.postMessage({ command: "start", interval: novo });
+      } else if (fallbackPoll) {
+        clearInterval(fallbackPoll);
+        fallbackPoll = setInterval(() => {
+          if (!isFetching) {
+            isFetching = true;
+            fetchOrders().finally(() => (isFetching = false));
+          }
+        }, novo);
+      }
+    };
+
     // Listener para quando a Smart TV voltar do modo Stand-by / Aba inativa
     const handleVisibilityChange = () => {
+      aplicarRitmo();
       if (document.visibilityState === "visible") {
         fetchOrders();
       }
@@ -423,18 +468,17 @@ export default function KDSTelaPage() {
         }
       };
 
-      // Dispara o polling de 3.5 em 3.5 segundos pelo Worker (Tempo Real Otimizado)
-      worker.postMessage({ command: "start", interval: 3500 });
+      worker.postMessage({ command: "start", interval: ritmoAplicado });
     } else {
       // Fallback para navegadores hiper-antigos sem suporte a Worker (fallback seguro)
-      const fallbackPoll = setInterval(() => {
+      fallbackPoll = setInterval(() => {
         if (!isFetching) {
           isFetching = true;
           fetchOrders().finally(() => (isFetching = false));
         }
-      }, 3500);
+      }, ritmoAplicado);
       return () => {
-        clearInterval(fallbackPoll);
+        if (fallbackPoll) clearInterval(fallbackPoll);
         document.removeEventListener(
           "visibilitychange",
           handleVisibilityChange,

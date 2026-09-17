@@ -691,6 +691,11 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // `editHistory`: quem tirou/acrescentou o quê, e quanto o total andou.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "parentOrderId" TEXT`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "editHistory" JSONB`,
+  // Quando a cozinha FINALIZOU o pedido no KDS. É o relógio da opção
+  // `imprimirSoNoFimDoKds` (lib/momento-da-impressao.ts): sem ela, o pedido que
+  // demorou na cozinha já teria saído da janela da fila ao ser finalizado, e a
+  // comanda nunca sairia — justamente nos pedidos que mais demoram.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "kdsFinishedAt" TIMESTAMP(3)`,
   // O índice é o que faz "este pedido tem acréscimo?" não virar varredura na
   // tabela mais quente do sistema — o painel pergunta isso por pedido listado.
   `CREATE INDEX IF NOT EXISTS "CustomerOrder_parentOrderId_idx" ON "CustomerOrder"("parentOrderId")`,

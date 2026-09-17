@@ -242,6 +242,17 @@ export async function PUT(req: NextRequest) {
     const updateData: any = {
       kdsStage: "FINISHED",
       kdsFinishingAt: new Date(),
+      // A HORA EM QUE A COZINHA DEU O PEDIDO POR PRONTO.
+      //
+      // `kdsFinishingAt` logo acima não serve para isso: ele também é carimbado
+      // em `finish_production`, ao ENTRAR na etapa de finalização, então não
+      // distingue "está finalizando" de "acabou".
+      //
+      // É o relógio da opção `imprimirSoNoFimDoKds`: a fila de impressão só
+      // enxerga as últimas horas, e sem esta data o pedido que demorou na
+      // cozinha já teria saído da janela quando fosse finalizado — a comanda
+      // nunca sairia, justamente nos pedidos que mais demoram.
+      kdsFinishedAt: new Date(),
       kdsStationId: null,
     };
 
