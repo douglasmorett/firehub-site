@@ -99,6 +99,11 @@ export async function GET(req: NextRequest) {
         where,
         select: {
           id: true,
+          // De qual loja é o pedido: é por ele que o item de plataforma casa
+          // com o cardápio real DA LOJA CERTA (lib/categoria-do-item.ts). Uma
+          // conta com duas lojas casaria a esfiha de uma com o cardápio da
+          // outra sem isto.
+          franchiseeId: true,
           dailyOrderNumber: true,
           customerName: true,
           customerPhone: true,
@@ -153,7 +158,20 @@ export async function GET(req: NextRequest) {
       })
     ).catch(() => []);
 
-    const ordersWithDailyNum = orders;
+    // ── A CATEGORIA REAL DO ITEM DE PLATAFORMA ───────────────────────────
+    //
+    // O item do iFood aponta para o espelho `ifood-*`, cuja categoria é
+    // literalmente "iFood". A tela filtra por categoria ("Pizzas
+    // Tradicionais"), "iFood" não casa, e o item some da cozinha. Na NIK
+    // (16/09/2026) a tela de pizza mostrava "Nenhum pedido na fila" com a
+    // pizza do iFood #8073 aparecendo só na tela das esfihas, que estava sem
+    // filtro. Aqui o item de espelho herda a categoria do produto REAL da
+    // loja, casado pelo nome; quem não casa fica sem categoria — e sem
+    // categoria a tela mostra em todo lugar (lib/categoria-do-item.ts).
+    const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
+    const ordersWithDailyNum = await resolverCategoriasDosPedidos(
+      orders.map((o) => ({ ...o, franchiseeId: (o as any).franchiseeId ?? userStoreIds[0] })),
+    ).catch(() => orders);
 
     return NextResponse.json(ordersWithDailyNum, {
       headers: {

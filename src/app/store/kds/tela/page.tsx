@@ -536,7 +536,12 @@ export default function KDSTelaPage() {
             const cat = (item.menuProduct?.category || item.category || "")
               .toLowerCase()
               .trim();
-            // Se o item não tem categoria explícita (pedidos iFood / JotaJá / WhatsApp), mantém o item visível!
+            // Sem categoria = aparece em TODA tela filtrada. É a rede de
+            // segurança, e a API garante que o item de plataforma chega assim
+            // quando não dá para saber a categoria real dele: o espelho do
+            // iFood tem categoria "iFood", que aqui nunca casaria com nada, e
+            // era por isso que a pizza do iFood sumia da tela de pizza da NIK
+            // (16/09/2026). Ver lib/categoria-do-item.ts.
             if (!cat) return true;
             return activeNormalized.includes(cat);
           }),
@@ -1726,6 +1731,34 @@ function OrderCard({
                       ↳ {sub.quantity}x {sub.name}
                     </span>
                   ))}
+                </div>
+              )}
+              {/* ── A OBSERVAÇÃO DO ITEM ───────────────────────────────────
+                  "As duas sem cheddar" é dita para UMA esfiha, e o balcão a
+                  grava no item (CustomerOrderItem.notes). A API sempre mandou
+                  o campo para cá; a tela desenhava só a observação do PEDIDO,
+                  e a da esfiha nunca chegava à cozinha — foi a queixa da NIK
+                  em 16/09/2026 ("não apareceu a observação no KDS"). Fica
+                  colada no item, em destaque: quem monta precisa ler antes de
+                  montar, não depois. */}
+              {item.notes && String(item.notes).trim() && (
+                <div
+                  style={{
+                    marginTop: 3,
+                    marginLeft: isHugeOrder ? 16 : isVeryLargeOrder ? 22 : 36,
+                    padding: "3px 10px",
+                    borderRadius: 8,
+                    background: "rgba(234,179,8,0.16)",
+                    border: "1px solid rgba(234,179,8,0.45)",
+                    color: "#fde68a",
+                    fontSize: subFontSize,
+                    fontWeight: 700,
+                    lineHeight: 1.25,
+                    whiteSpace: "normal",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  ✎ {String(item.notes).trim()}
                 </div>
               )}
             </div>
