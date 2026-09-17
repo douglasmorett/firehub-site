@@ -107,13 +107,26 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ jobs: [] });
     }
 
-    // Padrão: 2 horas atrás. Piso de 6 horas para o `since` que vem de fora:
-    // este endpoint não tem autenticação (só o id da loja, que está no HTML
-    // do cardápio), e sem o piso um `since=2000-01-01` devolvia todos os
-    // pedidos da loja desde sempre. O atraso de um Assistente que ficou
-    // desligado é decidido abaixo, pelo carimbo do servidor — não por quem chama.
-    const pisoDoSince = new Date(Date.now() - 6 * 60 * 60 * 1000);
-    let sinceDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    // ── TETO DE 30 MINUTOS ────────────────────────────────────────────────
+    //
+    // Nada com mais de 30 min entra na impressão automática — nem pela janela
+    // normal, nem pelo atraso de um Assistente que voltou, nem por um `since`
+    // mandado de fora. Decisão do dono em 17/09/2026, depois do episódio da
+    // instalação no meio do expediente.
+    //
+    // O QUE ISSO CUSTA, medido antes de aplicar: 77% dos pedidos levam mais de
+    // 30 min entre entrar e ser entregue. Então numa queda de internet ou de
+    // energia MAIOR que meia hora, a comanda dos pedidos que entraram no começo
+    // da queda não sai mais sozinha — a loja reimprime pelo botão do painel,
+    // que não tem limite de tempo. Em troca, nenhuma instalação volta cuspindo
+    // papel velho, que era o problema real da loja.
+    //
+    // O piso do `since` também desce para cá: este endpoint não tem
+    // autenticação (só o id da loja, que está no HTML do cardápio), e sem o
+    // piso um `since=2000-01-01` devolveria os pedidos da loja desde sempre.
+    const TETO_DA_FILA_MS = 30 * 60 * 1000;
+    const pisoDoSince = new Date(Date.now() - TETO_DA_FILA_MS);
+    let sinceDate = new Date(Date.now() - TETO_DA_FILA_MS);
     if (sinceParam) {
       const parsedSince = new Date(sinceParam);
       if (!isNaN(parsedSince.getTime())) {
@@ -176,10 +189,13 @@ export async function GET(req: NextRequest) {
     // meio-tempo, que não precisa mais de comanda). O carimbo é gravado no
     // máximo uma vez por minuto, daí a folga de 60 s; o Assistente deduplica
     // por id por 48 h, então a folga não repete papel. Teto de 7 dias.
+    // O atraso respeita o MESMO teto de 30 min: um Assistente que voltou depois
+    // de dias recebe, no máximo, a última meia hora. Era 7 dias, e foi assim
+    // que a instalação no meio do expediente virou uma bobina inteira de papel.
     const ultimaConsulta = owner?.printQueuePolledAt?.getTime() ?? null;
     const inicioDoAtraso =
       ultimaConsulta && ultimaConsulta < sinceDate.getTime()
-        ? new Date(Math.max(ultimaConsulta - 60_000, Date.now() - 7 * 24 * 60 * 60 * 1000))
+        ? new Date(Math.max(ultimaConsulta - 60_000, Date.now() - TETO_DA_FILA_MS))
         : null;
     if (inicioDoAtraso) {
       console.log(`[PrintQueue] loja ${franchiseeId}: Assistente voltou depois de ${Math.round((Date.now() - ultimaConsulta!) / 60_000)} min; entregando o atraso desde ${inicioDoAtraso.toISOString()}.`);
