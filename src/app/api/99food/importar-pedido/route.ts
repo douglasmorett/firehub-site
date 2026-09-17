@@ -131,6 +131,12 @@ export async function POST(req: NextRequest) {
       paymentMethod: p.pagamento.texto,
       totalAmount: p.total,
       deliveryFee: p.taxaEntrega,
+      // O import manual gravava só o total: o desconto do 99Food sumia do
+      // pedido. A mensalidade é sobre o BRUTO (total + desconto) e a nota
+      // mostrava item cheio com total menor, sem linha de desconto nenhuma.
+      // Mesmas duas linhas do webhook, para os dois caminhos gravarem igual.
+      discountDetails: { ...p.descontos, precoCru: p.precoCru } as any,
+      ...(p.descontos.total > 0 ? { discountTotal: p.descontos.total } : {}),
       notes: p.observacoes,
       source: "99FOOD",
       openDeliveryOrderId: p.orderId || orderId,

@@ -2450,6 +2450,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         // só descobria pela reclamação do cliente.
         const data = await res.json().catch(() => ({}));
         if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#F59E0B");
+        // O mesmo aviso para o 99Food — antes o erro dele morria no log do
+        // servidor e a tela dizia que estava tudo certo (Frangoso, 17/09/2026).
+        if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#F59E0B");
 
         // 🖨️ Impressão Automática ao Aceitar Pedido (se autoprint estiver ativado)
         if (newStatus === "ACEITO" && printerConfig?.autoprint !== false) {
@@ -3661,7 +3664,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       </div>
                     );
                   })()}
-                  
+
+                  {/* ── TAXA DE SERVIÇO DO 99FOOD ──────────────────────────────
+                      O 99 cobra do cliente uma taxa de serviço que entra no
+                      total pago mas não é item, entrega nem desconto. Sem esta
+                      linha a nota não fechava: no Frangoso (17/09/2026) o item
+                      dizia 44,99, o desconto 14,00 e o total 41,14 — e a
+                      diferença era isto aqui mais a entrega. O lojista lia como
+                      "o cupom não deduz". Só aparece quando existe. */}
+                  {(() => {
+                    const taxaServico = Number((order as any).discountDetails?.taxaServico) || 0;
+                    if (taxaServico <= 0) return null;
+                    return (
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Taxa de serviço ({nomeDoCanal(order)}):</span>
+                        <span>R$ {taxaServico.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                    );
+                  })()}
+
                   {/* Total Box */}
                   <div style={{ border: "1.5px solid #000", padding: "6px 10px", borderRadius: "4px", margin: "8px 0", display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "15px" }}>
                     <span>Total:</span>

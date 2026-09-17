@@ -214,6 +214,11 @@ export async function PUT(req: NextRequest) {
       id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true,
       ifoodOrderId: true, ifoodStoreMerchant: true, openDeliveryOrderId: true,
       openDeliveryChannel: true, source: true, deliveryBy: true, openDeliveryReference: true,
+      // De qual loja do 99Food é o pedido: o "pronto" sai com o token DELA
+      // primeiro (lib/food99-status.ts), em vez de tentar o da conta e só
+      // depois os das outras — que numa conta com três lojas estourava o
+      // orçamento de 12 s antes do `ready` (Frangoso, 17/09/2026).
+      food99AppShopId: true,
     },
   });
 
@@ -271,6 +276,17 @@ export async function PUT(req: NextRequest) {
       // cozinha já teria saído da janela quando fosse finalizado — a comanda
       // nunca sairia, justamente nos pedidos que mais demoram.
       kdsFinishedAt: new Date(),
+      // O MARCO "PRONTO" DO PEDIDO.
+      //
+      // Quem carimba readyAt é a extensão do Prisma, e ela só age quando a
+      // escrita traz `status: "PRONTO"`. Este update não traz status nenhum
+      // (delivery) ou traz SAIU_ENTREGA (retirada) — então a cozinha dava o
+      // pedido por pronto e o pedido nunca ganhava a hora disso. Medido no
+      // Frangoso em 17/09/2026: readyAt nulo em 49 de 49 pedidos, todos
+      // finalizados no KDS. O relatório de tempo de cozinha ficava cego e o
+      // lojista via "dei pronto e não aparece". A extensão respeita o campo
+      // quando ele já vem na escrita, então basta mandá-lo.
+      readyAt: new Date(),
       kdsStationId: null,
     };
 
@@ -336,6 +352,7 @@ export async function PUT(req: NextRequest) {
             franchiseeId: order.franchiseeId,
             status: order.status,
             deliveryBy: order.deliveryBy,
+            appShopId: (order as any).food99AppShopId ?? null,
           },
           "PRONTO"
         ).catch((e) => console.warn("[KDS 99Food Sync Error]:", e?.message));

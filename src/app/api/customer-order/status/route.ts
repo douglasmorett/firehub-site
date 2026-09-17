@@ -182,6 +182,11 @@ export async function PUT(req: Request) {
   // saía para entrega no painel e ficava parado no iFood (lib/ifood-pedido.ts).
   // A recusa agora volta na resposta, em `avisoIfood`, para o painel mostrar.
   let avisoIfood: string | null = null;
+  // O mesmo para o 99Food. O erro dele era `console.error` e só: o lojista
+  // marcava "pronto", o 99 não recebia, e a tela dizia que estava tudo certo.
+  // O Frangoso descreveu exatamente isso em 17/09/2026 — "não reflete no 99,
+  // cheio de erro" — sem nunca ter visto um aviso, porque não existia.
+  let aviso99Food: string | null = null;
   if (order.ifoodOrderId) {
     try {
       const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
@@ -259,12 +264,18 @@ export async function PUT(req: Request) {
         status: order.status,
         deliveryBy: order.deliveryBy,
         entregador: entregadorDoPedido,
+        // A loja do 99Food de onde o pedido veio: o token dela vai na frente.
+        appShopId: (order as any).food99AppShopId ?? null,
       },
       status,
       { motivo: cancelReason, reasonId: cancellationCode ? Number(cancellationCode) : undefined }
     );
     if (r.erros.length > 0) {
       console.error(`[99Food Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      // Volta para a tela, igual ao aviso do iFood. O texto é o que o 99Food
+      // devolveu (ou "demorou mais que o limite"), que é o que alguém precisa
+      // ler para saber se é token, loja errada ou o 99 fora do ar.
+      aviso99Food = r.erros[0].replace(/^[^:]+:\s*/, "");
     }
   }
 
@@ -540,7 +551,7 @@ export async function PUT(req: Request) {
 
   // `avisoIfood` vem preenchido quando o iFood recusou a ação: o status local
   // mudou, mas o lojista precisa saber que o iFood não acompanhou.
-  return NextResponse.json({ success: true, avisoIfood });
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });

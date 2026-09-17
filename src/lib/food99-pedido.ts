@@ -200,7 +200,19 @@ export interface PedidoTraduzido {
    * do FireHub é sobre o bruto (total + descontos), então isto precisa ser
    * gravado, não só subtraído.
    */
-  descontos: { total: number; itens: number; entrega: number; cupom: number; promocoes: unknown[] };
+  descontos: {
+    total: number; itens: number; entrega: number; cupom: number; promocoes: unknown[];
+    /**
+     * Taxa de serviço que o 99Food cobra DO CLIENTE (`others_fees.service_price`).
+     * Não é desconto — está aqui porque este objeto vira `discountDetails`, o
+     * único Json do pedido que já guarda a conta do 99, e criar coluna para
+     * R$ 2,15 não se justifica. Sem ela a nota não fechava: no Frangoso
+     * (17/09/2026) item 44,99 − desconto 14,00 dava 30,99 e o total dizia
+     * 41,14; a diferença era serviço + entrega que o 99 cobrou e o FireHub
+     * não mostrava, e o lojista lia isso como "o cupom não deduz".
+     */
+    taxaServico: number;
+  };
   /**
    * O objeto `price` do 99Food, como veio.
    *
@@ -280,12 +292,18 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
   const descontoItens = centavosParaReais(preco.items_discount);
   const descontoEntrega = centavosParaReais(preco.delivery_discount);
   const descontoCupom = centavosParaReais(preco.coupon_discount);
+  // A taxa de serviço que o 99 cobra do cliente entra no `real_pay_price` mas
+  // não é item, não é entrega e não é desconto. Sem carregá-la, a nota do
+  // painel não fecha (Frangoso, 17/09/2026: sobrava exatamente o service_price).
+  const outrasTaxas = (preco.others_fees ?? {}) as Record<string, unknown>;
+  const taxaServico = centavosParaReais(outrasTaxas.service_price);
   const descontos = {
     total: Math.round((descontoItens + descontoEntrega + descontoCupom) * 100) / 100,
     itens: descontoItens,
     entrega: descontoEntrega,
     cupom: descontoCupom,
     promocoes: Array.isArray(o.promotions) ? o.promotions : [],
+    taxaServico,
   };
 
   // order_index é o número sequencial do dia na loja, que é o que o lojista vê
@@ -314,7 +332,12 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     entreguePor,
     codigoDeColeta,
     total: centavosParaReais(totalCentavos),
-    taxaEntrega: centavosParaReais(preco.delivery_price),
+    // `store_charged_delivery_price` é o que a LOJA cobrou de entrega; é sobre
+    // ele que o `delivery_discount` (frete grátis) incide. `delivery_price`
+    // vinha 0 nos pedidos do Frangoso enquanto a loja cobrava R$ 8,00 e dava
+    // R$ 8,00 de desconto — o desconto entrava em `discountTotal` e a cobrança
+    // nunca entrava em `deliveryFee`, e a nota fechava R$ 8,00 abaixo do total.
+    taxaEntrega: centavosParaReais(preco.store_charged_delivery_price ?? preco.delivery_price),
     descontos,
     precoCru: preco && typeof preco === "object" ? (preco as Record<string, unknown>) : null,
     observacoes: String(o.remark ?? "").trim(),

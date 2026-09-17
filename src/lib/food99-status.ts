@@ -244,17 +244,35 @@ export async function buscarPedido99(
   return { ok: false, errno: ultimo.errno, errmsg: ultimo.errmsg, tentativas: tokens.length };
 }
 
-export async function tokensDaConta(lojaId: string): Promise<string[]> {
+export async function tokensDaConta(lojaId: string, preferirAppShopId?: string | null): Promise<string[]> {
   const tokens: string[] = [];
   const juntar = (t: string | null) => {
     if (t && !tokens.includes(t)) tokens.push(t);
   };
 
+  // ── A LOJA DO PEDIDO VAI NA FRENTE ────────────────────────────────────────
+  //
+  // O comentário antigo dizia que "o pedido não guarda de qual loja veio". Não
+  // é mais verdade: o webhook grava `food99AppShopId` desde que a conta passou
+  // a ter várias lojas. Sem usar isso, a ordem era conta → outras lojas, e num
+  // pedido da 2ª ou 3ª loja a primeira chamada real saía com o token errado.
+  //
+  // O custo disso não era só uma chamada a mais. `sincronizar99Food` tem um
+  // orçamento de 12 s para a operação inteira e cada chamada ao 99 espera até
+  // 15 s; buscar os tokens das outras lojas já é rede. No Frangoso (3 lojas,
+  // 17/09/2026) o `ready` de pedido da Braseou/Salz estourava o prazo antes de
+  // sair: "não enviado — 99Food demorou mais que o limite". Com o token certo
+  // primeiro, a conta de uma loja só e a de três se comportam igual.
+  if (preferirAppShopId && preferirAppShopId !== lojaId) {
+    const t = await tokenDeUmId(preferirAppShopId).catch(() => null);
+    juntar(t?.auth_token ?? null);
+  }
+
   juntar(await tokenDaLoja(lojaId));
 
   const { lojas99DaConta } = await import("@/lib/food99-lojas");
   for (const loja of await lojas99DaConta(lojaId)) {
-    if (loja.appShopId === lojaId) continue; // já coberto acima
+    if (loja.appShopId === lojaId || loja.appShopId === preferirAppShopId) continue; // já cobertos acima
     const t = await tokenDeUmId(loja.appShopId).catch(() => null);
     juntar(t?.auth_token ?? null);
   }
@@ -308,6 +326,11 @@ export async function sincronizar99Food(
     entregador?: { nome: string; telefone?: string | null; id?: string | null } | null;
     /** Minutos previstos até a entrega, para o limit_time do 99Food. */
     minutosAteEntregar?: number | null;
+    /**
+     * De qual loja do 99Food é o pedido (CustomerOrder.food99AppShopId). Com
+     * ele, o token DESSA loja é o primeiro a ser tentado — ver `tokensDaConta`.
+     */
+    appShopId?: string | null;
   },
   novoStatus: string,
   opts: { motivo?: string; reasonId?: number; limiteMs?: number } = {}
@@ -342,7 +365,7 @@ export async function sincronizar99Food(
   // e o pedido não guarda de qual delas veio (não há campo). Então tentamos os
   // candidatos até a API aceitar — e o primeiro da lista é o caminho antigo,
   // que é o de quem está em produção hoje. Com uma loja só, acerta de primeira.
-  const candidatos = await tokensDaConta(pedido.franchiseeId);
+  const candidatos = await tokensDaConta(pedido.franchiseeId, pedido.appShopId);
   if (candidatos.length === 0) {
     const erro = `loja ${pedido.franchiseeId} sem autorização válida no 99Food — ${novoStatus} de ${orderId} não foi avisado`;
     console.error(`[99Food Sync] ❌ ${erro}`);
