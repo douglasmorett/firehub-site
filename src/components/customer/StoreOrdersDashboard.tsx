@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
-import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText } from "lucide-react";
+import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import { lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido";
@@ -483,6 +483,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   onOpenCancelModal,
   onOpenPrintModal,
   onOpenReceiptModal,
+  /** Abre o modal já na aba de edição — o lápis do card. */
+  onOpenEditModal,
+  /** Quem está logado ({ role, permissions }), para o lápis só aparecer a quem pode editar. */
+  operador,
   onOpenDeliveryModal,
   onFetchIfoodDriverQuote,
   onDragStart,
@@ -1141,6 +1145,29 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             >
               <FileText size={15} />
             </button>
+
+            {/* ── O LÁPIS: editar sem passar pela comanda ──────────────────
+                A mesma régua da aba dentro do modal (lib/edicao-de-pedido.ts):
+                quem não pode editar não vê o lápis, em vez de ver um lápis que
+                abre uma tela dizendo "não pode". No marketplace o título muda
+                para "Acrescentar", porque é só isso que dá para fazer lá. */}
+            {onOpenEditModal && (() => {
+              const avaliacao = avaliarEdicao(order, operador || {});
+              if (avaliacao.modo === "BLOQUEADO") return null;
+              const soAcrescimo = avaliacao.modo === "SO_ACRESCIMO";
+              return (
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    onOpenEditModal(order.id);
+                  }}
+                  title={soAcrescimo ? "Acrescentar item ao pedido" : "Editar itens do pedido"}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: soAcrescimo ? "#D97706" : "#C62828", color: "#fff", border: "none", cursor: "pointer" }}
+                >
+                  <Pencil size={15} />
+                </button>
+              );
+            })()}
 
             {/* Delivery Info & Route Map Modal Button */}
             {order.deliveryType !== "TAKEOUT" && order.deliveryType !== "RETIRADA" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA" && (
@@ -1923,6 +1950,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     setAbaDoRecibo("comanda");
     setViewReceiptOrderId(id);
   };
+
+  /**
+   * O lápis do card: abre o mesmo modal, já na aba de edição.
+   *
+   * A edição existia desde 16/09, mas escondida atrás de dois cliques (Ver
+   * pedido → aba Editar itens). Com o cliente no telefone pedindo para tirar
+   * a batata, o atendente não vai procurar aba: ele precisa do lápis na cara
+   * do card (o dono, 17/09/2026). É o mesmo modal e a mesma regra — só o
+   * caminho encurta.
+   */
+  const abrirEdicao = (id: string) => {
+    setAbaDoRecibo("editar");
+    setViewReceiptOrderId(id);
+  };
+
+  /** Quem está logado, no formato que lib/edicao-de-pedido.ts espera. */
+  const operadorDaEdicao = { role: user?.role, permissions: user?.permissions };
 
   /**
    * A comanda que sai depois de o pedido ser editado.
@@ -5268,6 +5312,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                   onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                   onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                  onOpenEditModal={(id: string) => abrirEdicao(id)}
+                  operador={operadorDaEdicao}
                   onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
@@ -5336,6 +5382,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenEditModal={(id: string) => abrirEdicao(id)}
+                operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5376,6 +5424,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenEditModal={(id: string) => abrirEdicao(id)}
+                operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5412,6 +5462,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenEditModal={(id: string) => abrirEdicao(id)}
+                operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5445,6 +5497,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenEditModal={(id: string) => abrirEdicao(id)}
+                operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5478,6 +5532,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenEditModal={(id: string) => abrirEdicao(id)}
+                operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -5513,6 +5569,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenEditModal={(id: string) => abrirEdicao(id)}
+                operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
