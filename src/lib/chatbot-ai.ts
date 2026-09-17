@@ -3,6 +3,8 @@ import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
 import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
 import { prisma } from "@/lib/prisma";
+import { cuponsAnunciaveis } from "@/lib/cupons";
+import { hojeDaLoja } from "@/lib/cupons-no-banco";
 import fs from "fs";
 
 import { generateDailyOrderNumber } from "@/lib/order-number";
@@ -707,8 +709,12 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     // outra loja. Sem o fallback, quem não configurou nada simplesmente não tem
     // cupom para a IA citar — que é o correto.
     const codigoInstantaneo = instantCouponEnabled && instantCouponCode ? instantCouponCode.toUpperCase() : null;
+    // Além de público: não vencido e SEM regra de primeiro pedido
+    // (lib/cupons.ts). O robô não tem como saber se quem pergunta já pediu, e
+    // prometer um desconto que o checkout vai recusar é pior que não prometer.
+    const anunciaveis = new Set(cuponsAnunciaveis(user.storeCoupons, hojeDaLoja((user as any).storeTimezone)).map((c) => c.code));
     const activePublicCoupons = (user.storeCoupons as any[]).filter(
-      (c: any) => c.active !== false && c.code && (c.isPublic === true || (codigoInstantaneo && c.code.toUpperCase() === codigoInstantaneo))
+      (c: any) => c.active !== false && c.code && (anunciaveis.has(String(c.code).toUpperCase()) || (codigoInstantaneo && c.code.toUpperCase() === codigoInstantaneo))
     );
     if (activePublicCoupons.length > 0) {
       availableCouponsText += activePublicCoupons.map((c: any) => {

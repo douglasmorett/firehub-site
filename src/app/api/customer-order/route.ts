@@ -12,8 +12,7 @@ import { avaliarEntrega, descreverVeredicto, type VeredictoDeEntrega } from "@/l
 import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
 import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
 import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
-import { Prisma } from "@prisma/client";
-import { cuponsComCampanha, ORIGEM_CUPOM_CAMPANHA, FONTES_QUE_NAO_SAO_SITE, digitosDoTelefone } from "@/lib/campanha-converter";
+import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
 import { efeitoDoPremio } from "@/lib/trilha-premiada";
 
@@ -27,19 +26,12 @@ import { efeitoDoPremio } from "@/lib/trilha-premiada";
  * comprou. Compara pelos 8 últimos dígitos, porque o telefone é gravado como
  * o cliente digitou — com máscara, com 55, com ou sem o nono dígito.
  */
-async function jaPediuPeloSite(franchiseeId: string, telefone: string): Promise<boolean> {
-  const digitos = digitosDoTelefone(telefone);
-  if (digitos.length < 8) return false;
-  const ultimos8 = digitos.slice(-8);
-  const linhas = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id" FROM "CustomerOrder"
-    WHERE "franchiseeId" = ${franchiseeId}
-      AND "status" NOT IN ('CANCELADO', 'CANCELED', 'CRIANDO_IA', 'AGUARDANDO_PAGAMENTO')
-      AND COALESCE("source", 'ONLINE') NOT IN (${Prisma.join(FONTES_QUE_NAO_SAO_SITE)})
-      AND regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + ultimos8}
-    LIMIT 1`;
-  return linhas.length > 0;
-}
+// A régua dos cupons (validade, limite por cliente, primeiro pedido) e os fatos
+// que ela precisa do banco. `jaPediuPeloSite` morava aqui; saiu para
+// lib/cupons-no-banco.ts porque a validação que o site chama ao digitar o
+// código e a consulta do cliente precisam da MESMA resposta que este checkout.
+import { acharCupom, avaliarCupom } from "@/lib/cupons";
+import { fatosDoCupom } from "@/lib/cupons-no-banco";
 
 export async function POST(req: Request) {
   try {
@@ -342,44 +334,38 @@ export async function POST(req: Request) {
       if (originalFee > 0) entregaGratis = { valor: originalFee, motivo: porValorMinimo(minimo) };
     }
 
-    // Aplicar cupom de desconto
+    // ── CUPOM DE DESCONTO ─────────────────────────────────────────────────
+    //
+    // A régua é lib/cupons.ts (validade, limite de usos por cliente, primeiro
+    // pedido, mínimo) e os fatos vêm do banco (lib/cupons-no-banco.ts). É a
+    // MESMA avaliação que /api/validate-coupon deu ao site quando o cliente
+    // digitou o código — aqui ela roda de novo na hora de gravar, porque o que
+    // chega do navegador é intenção, não prova.
+    //
+    // A recusa volta escrita, nunca em silêncio. O código antigo zerava o
+    // desconto de um cupom abaixo do mínimo sem dizer nada, e o cliente via o
+    // total subir na hora de pagar sem saber por quê.
     let discount = 0;
     if (couponCode) {
-      const coupons = cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty);
-      const coupon = coupons.find((c: any) =>
-        c.code?.toLowerCase() === couponCode.toLowerCase() && c.active !== false
-      );
+      const coupon = acharCupom(cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty), couponCode);
       if (coupon) {
-        // ── CUPOM DA CAMPANHA "CONVERTER": SÓ NO PRIMEIRO PEDIDO ──────────
-        // O prêmio impresso na comanda do iFood/99Food é para trazer o
-        // cliente ao site UMA vez; a partir daí ele já é cliente do site. Um
-        // pedido anterior pelo site, no mesmo telefone, encerra o direito —
-        // e a resposta diz isso com todas as letras, em vez de zerar o
-        // desconto em silêncio e o cliente ver o total subir na hora de pagar.
-        if (coupon.origem === ORIGEM_CUPOM_CAMPANHA && coupon.somentePrimeiroPedido === true) {
-          if (await jaPediuPeloSite(franchisee.id, customerPhone)) {
-            return NextResponse.json({
-              error: `O cupom ${coupon.code} vale só no primeiro pedido pelo site, e este telefone já fez pedido por aqui. Remova o cupom para continuar — os preços do cardápio são os mesmos, sem taxa de aplicativo.`,
-            }, { status: 400 });
-          }
+        const fatos = await fatosDoCupom(coupon, {
+          franchiseeId: franchisee.id,
+          telefone: customerPhone,
+          timeZone: (franchisee as any).storeTimezone,
+          subtotal: totalAmount,
+          taxa: fee,
+        });
+        const veredito = avaliarCupom(coupon, fatos);
+        if (!veredito.ok) {
+          return NextResponse.json({ error: veredito.motivo }, { status: 400 });
         }
-        if (coupon.minOrderValue && totalAmount < coupon.minOrderValue) {
-          discount = 0;
+        if (veredito.zeraTaxa) {
+          discount = fee;
+          if (fee > 0) entregaGratis = { valor: fee, motivo: `Cupom ${coupon.code}` };
+          fee = 0;
         } else {
-          if (coupon.type === "free_shipping") {
-            discount = fee;
-            if (fee > 0) entregaGratis = { valor: fee, motivo: `Cupom ${String(coupon.code || "").toUpperCase()}` };
-            fee = 0;
-          } else if (coupon.type === "fixed") {
-            discount = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 0);
-          } else if (coupon.type === "percent") {
-            const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
-            discount = totalAmount * (pct / 100);
-          } else {
-            const pct = typeof coupon.discount === "number" ? coupon.discount : (coupon.value || 10);
-            discount = totalAmount * (pct / 100);
-          }
-          discount = Math.min(discount, totalAmount + fee);
+          discount = veredito.desconto;
         }
       }
     }

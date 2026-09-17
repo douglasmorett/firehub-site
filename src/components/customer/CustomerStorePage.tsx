@@ -183,6 +183,15 @@ export default function CustomerStorePage({
   // aplicar de cara, com a sacola vazia, esbarraria no pedido mínimo e a
   // pessoa veria o cupom "recusado" antes de escolher qualquer coisa.
   const [cupomDaUrl, setCupomDaUrl] = useState<{ code: string; discount: number; type: string; minOrderValue: number; somentePrimeiroPedido: boolean } | null>(null);
+  /**
+   * O cupom de primeiro pedido que ESTE telefone tem direito, dito pelo
+   * servidor (/api/store-customer). Chega junto com a consulta de pedidos que
+   * o cardápio já faz quando reconhece o telefone (login ou digitado no
+   * checkout). Nulo = a loja não tem, ou este telefone já pediu por aqui.
+   */
+  const [cupomPrimeiroPedido, setCupomPrimeiroPedido] = useState<{ code: string; type: string; discount: number; minOrderValue: number; validade: string | null; beneficio: string } | null>(null);
+  // Quem tirou o cupom na mão não o vê voltar a cada item — mesma regra do da URL.
+  const cupomPrimeiroPedidoAplicado = useRef(false);
   // Quem removeu o cupom na mão não o vê voltar a cada item que põe na sacola.
   const cupomDaUrlAplicado = useRef(false);
   useEffect(() => {
@@ -870,6 +879,9 @@ export default function CustomerStorePage({
         const d = await res.json();
         setMyOrdersList(d.orders || []);
         setTrilhaProgresso(d.trilha || null);
+        // O direito ao cupom de primeiro pedido vem na mesma resposta: quem
+        // decide se este telefone "nunca pediu" é o servidor.
+        setCupomPrimeiroPedido(d.cupomPrimeiroPedido || null);
       }
     } catch {
       // ignore
@@ -878,56 +890,55 @@ export default function CustomerStorePage({
     }
   };
 
-  const applyCoupon = async () => {
-    if (!couponCode.trim()) return;
+  /**
+   * Aplica um cupom perguntando ao SERVIDOR (/api/validate-coupon).
+   *
+   * O código antigo decidia aqui, olhando a lista de cupons que veio com a
+   * página, e só ia ao servidor como plano B — para uma rota que não existia.
+   * Três regras novas não cabem no navegador: validade (o dia é o da loja),
+   * limite de usos por cliente (só o banco sabe quantas vezes este telefone
+   * usou) e primeiro pedido (só o banco sabe se já pediu). Então quem decide é
+   * o servidor, com o telefone que o cliente já informou; o checkout confere
+   * de novo na hora de gravar, com a mesma régua (lib/cupons.ts).
+   */
+  const applyCoupon = async (codigo?: string) => {
+    const cleanCode = String(codigo ?? couponCode).trim().toUpperCase();
+    if (!cleanCode) return;
     setCouponLoading(true);
     setCouponError("");
-    const cleanCode = couponCode.trim().toUpperCase();
-    const storeCoupons = (franchisee as any).storeCoupons || [];
-    const found = storeCoupons.find((c: any) => c.code?.toUpperCase() === cleanCode && c.active !== false);
-
-    if (found) {
-      if (found.minOrderValue && cartTotal < found.minOrderValue) {
-        setCouponError(`⚠️ Válido para pedidos a partir de R$ ${Number(found.minOrderValue).toFixed(2).replace(".", ",")}.`);
+    try {
+      const telefone = String(customer?.phone || customerPhone || "").replace(/\D/g, "");
+      const q = new URLSearchParams({
+        code: cleanCode,
+        franchiseeId: franchisee.id,
+        subtotal: String(cartTotal || 0),
+        fee: String(deliveryFee || 0),
+        ...(telefone.length >= 8 ? { phone: telefone } : {}),
+      });
+      const res = await fetch(`/api/validate-coupon?${q.toString()}`);
+      const d = await res.json().catch(() => ({} as any));
+      if (!res.ok || !d?.ok) {
+        setCouponError(`⚠️ ${d?.motivo || "Cupom inválido ou expirado."}`);
         setCouponApplied(null);
-        setCouponLoading(false);
         return;
       }
-      if (found.type === "free_shipping") {
-        setCouponApplied({ code: found.code, discount: deliveryFee || 0, isFreeShipping: true });
-      } else if (found.type === "fixed") {
-        const fixedVal = typeof found.discount === "number" ? found.discount : 10;
-        setCouponApplied({ code: found.code, discount: fixedVal, isFreeShipping: false });
+      setCouponCode(cleanCode);
+      if (d.zeraTaxa) {
+        setCouponApplied({ code: d.code, discount: deliveryFee || 0, isFreeShipping: true });
       } else {
-        const pct = typeof found.discount === "number" ? found.discount : 10;
-        setCouponApplied({ code: found.code, discount: cartTotal * (pct / 100), pct, isFreeShipping: false });
+        setCouponApplied({ code: d.code, discount: Number(d.desconto) || 0, pct: d.type === "percent" ? d.discount : undefined, isFreeShipping: false });
       }
+      // Regra por telefone (limite de usos / primeiro pedido) e o telefone
+      // ainda não foi digitado: o desconto aparece, e o aviso diz que a
+      // confirmação vem no fechamento — em vez de sumir sem explicação lá.
+      if (d.dependeDoTelefone && telefone.length < 8) {
+        setCouponError("ℹ️ Este cupom é confirmado no fechamento, com o seu telefone.");
+      }
+    } catch {
+      setCouponError("⚠️ Não consegui validar o cupom. Tente de novo.");
+      setCouponApplied(null);
+    } finally {
       setCouponLoading(false);
-    } else {
-      try {
-        const res = await fetch(`/api/validate-coupon?code=${cleanCode}&franchiseeId=${franchisee.id}`);
-        if (res.ok) {
-          const d = await res.json();
-          if (d.minOrderValue && cartTotal < d.minOrderValue) {
-            setCouponError(`⚠️ Válido para pedidos a partir de R$ ${Number(d.minOrderValue).toFixed(2).replace(".", ",")}.`);
-            setCouponApplied(null);
-            setCouponLoading(false);
-            return;
-          }
-          const isFree = d.type === "free_shipping";
-          const isFixed = d.type === "fixed";
-          const calcDiscount = isFree ? (deliveryFee || 0) : isFixed ? (d.discount || 0) : cartTotal * ((d.discount || 10) / 100);
-          setCouponApplied({ code: cleanCode, discount: calcDiscount, pct: (!isFree && !isFixed) ? (d.discount || 10) : undefined, isFreeShipping: isFree });
-        } else {
-          setCouponError("Cupom inválido ou expirado.");
-          setCouponApplied(null);
-        }
-      } catch {
-        setCouponError("Cupom inválido ou expirado.");
-        setCouponApplied(null);
-      } finally {
-        setCouponLoading(false);
-      }
     }
   };
 
@@ -964,6 +975,44 @@ export default function CustomerStorePage({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cupomDaUrl, cartTotal]);
+
+  // ── CUPOM DE PRIMEIRO PEDIDO: APLICA SOZINHO ─────────────────────────────
+  //
+  // O cliente que a loja quer ganhar nunca pediu por aqui — e não vai saber
+  // que existe cupom, nem procurar onde digitar. Então o desconto entra
+  // sozinho assim que o servidor confirma o direito (cupomPrimeiroPedido) e a
+  // sacola atinge o mínimo. Um cupom que a pessoa já aplicou na mão tem
+  // prioridade: não se troca a escolha dela por baixo.
+  //
+  // Prévia, não decisão: o valor exato é o que /api/validate-coupon e o
+  // checkout calculam com a mesma régua. Aqui só se antecipa o número.
+  useEffect(() => {
+    if (!cupomPrimeiroPedido) return;
+    const minimo = cupomPrimeiroPedido.minOrderValue || 0;
+    const atingiu = cartTotal > 0 && cartTotal >= minimo;
+    const fmtR = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+    if (couponApplied?.code === cupomPrimeiroPedido.code) {
+      if (!atingiu) {
+        setCouponApplied(null);
+        cupomPrimeiroPedidoAplicado.current = false;
+        if (cartTotal > 0) setCouponError(`🎁 Falta ${fmtR(minimo - cartTotal)} para o seu desconto de primeiro pedido valer (mínimo ${fmtR(minimo)}).`);
+      }
+      return;
+    }
+    if (atingiu && !couponApplied && !cupomPrimeiroPedidoAplicado.current) {
+      cupomPrimeiroPedidoAplicado.current = true;
+      setCouponCode(cupomPrimeiroPedido.code);
+      setCouponError("");
+      if (cupomPrimeiroPedido.type === "fixed") {
+        setCouponApplied({ code: cupomPrimeiroPedido.code, discount: Math.min(cupomPrimeiroPedido.discount, cartTotal + (deliveryFee || 0)), isFreeShipping: false });
+      } else if (cupomPrimeiroPedido.type === "free_shipping") {
+        setCouponApplied({ code: cupomPrimeiroPedido.code, discount: deliveryFee || 0, isFreeShipping: true });
+      } else {
+        setCouponApplied({ code: cupomPrimeiroPedido.code, discount: cartTotal * (cupomPrimeiroPedido.discount / 100), pct: cupomPrimeiroPedido.discount, isFreeShipping: false });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cupomPrimeiroPedido, cartTotal]);
 
   // Customer auth
   const handleAuth = async () => {
@@ -1812,6 +1861,26 @@ export default function CustomerStorePage({
 
               {/* CUPOM DE DESCONTO */}
               <div style={{ marginTop: "0.25rem", padding: "0.75rem 0" }}>
+                {/* ── SEU PRIMEIRO PEDIDO TEM DESCONTO ─────────────────────
+                    Aparece só para quem o servidor disse que nunca pediu por
+                    aqui e a loja tem o cupom ligado. Não pede código: diz o
+                    que a pessoa ganhou e o desconto já entra sozinho quando a
+                    sacola atinge o mínimo (efeito acima). */}
+                {cupomPrimeiroPedido && (
+                  <div style={{ background: "linear-gradient(135deg, #FFFBEB, #FEF3C7)", border: "1.5px solid #F59E0B", borderRadius: "12px", padding: "10px 12px", marginBottom: "8px" }}>
+                    <div style={{ fontWeight: 900, fontSize: "0.88rem", color: "#92400E" }}>
+                      🎁 Seu primeiro pedido tem {cupomPrimeiroPedido.beneficio}!
+                    </div>
+                    <div style={{ fontSize: "0.74rem", color: "#B45309", marginTop: 2, lineHeight: 1.4 }}>
+                      {couponApplied?.code === cupomPrimeiroPedido.code
+                        ? "Já aplicamos na sua sacola — é só fechar o pedido."
+                        : (cupomPrimeiroPedido.minOrderValue || 0) > 0
+                          ? `Vale em pedidos a partir de R$ ${cupomPrimeiroPedido.minOrderValue.toFixed(2).replace(".", ",")}. Entra sozinho, sem código.`
+                          : "Entra sozinho na sacola, sem código."}
+                      {cupomPrimeiroPedido.validade && ` Válido até ${cupomPrimeiroPedido.validade.split("-").reverse().slice(0, 2).join("/")}.`}
+                    </div>
+                  </div>
+                )}
                 {!showCouponInput && !couponApplied ? (
                   <button
                     onClick={() => setShowCouponInput(true)}
@@ -1849,7 +1918,7 @@ export default function CustomerStorePage({
                           style={{ flex: 1, padding: "6px 10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", textTransform: "uppercase", fontWeight: 700 }}
                         />
                         <button
-                          onClick={applyCoupon}
+                          onClick={() => applyCoupon()}
                           disabled={couponLoading || !couponCode.trim()}
                           style={{ padding: "6px 12px", borderRadius: "8px", background: "#2563EB", color: "#FFF", border: "none", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", opacity: couponLoading || !couponCode.trim() ? 0.6 : 1 }}
                         >

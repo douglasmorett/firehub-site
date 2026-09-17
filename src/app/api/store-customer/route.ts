@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
+import { hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import {
   calcularProgresso,
   chamadaDaTrilha,
@@ -194,7 +196,45 @@ export async function GET(req: Request) {
   });
 
   // `customer: null` de propósito: os dados pessoais só saem pelo login.
-  return NextResponse.json({ orders, customer: null, trilha: await trilhaDoCliente(franchiseeId, cleanPhone) });
+  const [trilha, cupomPrimeiroPedido] = await Promise.all([
+    trilhaDoCliente(franchiseeId, cleanPhone),
+    cupomDePrimeiroPedidoDoCliente(franchiseeId, cleanPhone),
+  ]);
+  return NextResponse.json({ orders, customer: null, trilha, cupomPrimeiroPedido });
+}
+
+/**
+ * O cupom de primeiro pedido que ESTE telefone tem direito nesta loja, ou null.
+ *
+ * Vai junto da consulta que o cardápio já faz ao reconhecer o telefone (login
+ * ou digitado no checkout): é o que permite ao site aplicar o desconto sozinho
+ * e avisar "seu primeiro pedido tem X de desconto" — sem código, sem o cliente
+ * precisar saber que existe cupom. Quem decide se ele "nunca pediu" é o
+ * servidor (lib/cupons-no-banco.ts), pelo telefone; o navegador não tem como.
+ *
+ * Só sai código e benefício: nada que identifique alguém (a rota é pública).
+ */
+async function cupomDePrimeiroPedidoDoCliente(franchiseeId: string, cleanPhone: string) {
+  try {
+    const loja = await prisma.user.findUnique({
+      where: { id: franchiseeId },
+      select: { storeCoupons: true, storeTimezone: true },
+    });
+    const cupom = cupomDePrimeiroPedido(loja?.storeCoupons);
+    if (!cupom || cupomVenceu(cupom, hojeDaLoja(loja?.storeTimezone))) return null;
+    if (await jaPediuPeloSite(franchiseeId, cleanPhone)) return null;
+    return {
+      code: cupom.code,
+      type: cupom.type,
+      discount: cupom.discount,
+      minOrderValue: cupom.minOrderValue,
+      validade: cupom.validade,
+      beneficio: descreverBeneficio(cupom),
+    };
+  } catch {
+    // O cupom nunca pode derrubar a consulta de pedidos do cliente.
+    return null;
+  }
 }
 
 /**

@@ -8,7 +8,28 @@ import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Bankno
 import { DAYS, DAY_MAP, normalizeStoreHours, defaultHours } from "@/lib/store-hours";
 import { FUSOS_DO_BRASIL, fusoPorEndereco, rotuloDoFuso } from "@/lib/fuso-por-endereco";
 
-type Coupon = { id?: string; code: string; discount: number; type?: "percent" | "fixed" | "free_shipping"; minOrderValue?: number; active: boolean };
+/**
+ * O cupom como fica gravado em `storeCoupons`. A régua que lê isto é
+ * lib/cupons.ts — o servidor valida com ela no checkout e em
+ * /api/validate-coupon; esta tela só edita.
+ *
+ * Os três últimos campos entraram em 17/09/2026 a pedido do dono e são
+ * opcionais: cupom antigo sem eles continua valendo exatamente como valia.
+ */
+type Coupon = {
+  id?: string;
+  code: string;
+  discount: number;
+  type?: "percent" | "fixed" | "free_shipping";
+  minOrderValue?: number;
+  active: boolean;
+  /** Último dia válido ("YYYY-MM-DD", no dia da loja). Vazio = não vence. */
+  validade?: string | null;
+  /** Quantas vezes o MESMO telefone pode usar. 0/vazio = sem limite. */
+  usosPorCliente?: number | null;
+  /** Só para quem nunca pediu pelo site; o site aplica sozinho e avisa. */
+  primeiroPedido?: boolean;
+};
 
 // Botão de salvar inline por seção
 function SectionSaveBtn({ dirty, saving, onSave, label = "Salvar alterações" }: { dirty: boolean; saving: boolean; onSave: () => void; label?: string }) {
@@ -323,6 +344,18 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   };
 
   const addCoupon = () => { setCoupons(prev => [...prev, { code: "", discount: 10, type: "percent", active: true }]); setDirtyCoupons(true); };
+  /**
+   * O cupom de primeiro pedido: um só por loja (lib/cupons.ts lê o primeiro
+   * ativo). Nasce com código pronto porque o cliente nunca vai digitá-lo — o
+   * site aplica sozinho quando reconhece um telefone que nunca pediu por aqui.
+   */
+  const temCupomDePrimeiroPedido = coupons.some(c => c.primeiroPedido && c.active);
+  const addCupomPrimeiroPedido = () => {
+    if (temCupomDePrimeiroPedido) return;
+    setCoupons(prev => [...prev, { code: "PRIMEIROPEDIDO", discount: 10, type: "percent", active: true, primeiroPedido: true, usosPorCliente: 1 }]);
+    setDirtyCoupons(true);
+  };
+  const hojeISO = new Date().toISOString().slice(0, 10);
   const updateCoupon = (idx: number, key: string, val: any) => { setCoupons(prev => prev.map((c, i) => i === idx ? { ...c, [key]: val } : c)); setDirtyCoupons(true); };
   const removeCoupon = (idx: number) => { setCoupons(prev => prev.filter((_, i) => i !== idx)); setDirtyCoupons(true); };
 
@@ -708,51 +741,98 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
       {/* CUPONS */}
       {show("coupons") && <div className="card mb-4">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", gap: 8, flexWrap: "wrap" }}>
           <h3 className="font-bold" style={{ margin: 0 }}>🏷️ Cupons de Desconto</h3>
-          <button onClick={addCoupon} className="btn btn-outline" style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem" }}><Plus size={14} /> Novo Cupom</button>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {/* Um por loja: o site aplica "o" cupom de primeiro pedido, não escolhe entre vários. */}
+            <button
+              onClick={addCupomPrimeiroPedido}
+              disabled={temCupomDePrimeiroPedido}
+              title={temCupomDePrimeiroPedido ? "Sua loja já tem um cupom de primeiro pedido ativo" : "Desconto automático para quem nunca pediu pelo seu site"}
+              className="btn btn-outline"
+              style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem", borderColor: "#F59E0B", color: "#B45309", opacity: temCupomDePrimeiroPedido ? 0.5 : 1, cursor: temCupomDePrimeiroPedido ? "not-allowed" : "pointer" }}
+            >
+              🎁 Cupom de 1º pedido
+            </button>
+            <button onClick={addCoupon} className="btn btn-outline" style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem" }}><Plus size={14} /> Novo Cupom</button>
+          </div>
         </div>
+        <p style={{ margin: "0 0 1rem", fontSize: "0.78rem", color: "#64748B", lineHeight: 1.5 }}>
+          Validade e limite por cliente são conferidos pelo telefone, na hora de fechar o pedido. O cupom de 1º pedido
+          é aplicado sozinho para quem nunca pediu pelo seu site — o cliente vê o desconto sem digitar código.
+        </p>
         {coupons.length === 0 ? (
           <p style={{ color: "#94A3B8", fontSize: "0.85rem", textAlign: "center", padding: "1rem" }}>Nenhum cupom cadastrado.</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {coupons.map((c, idx) => (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", backgroundColor: c.active ? "#F0FDF4" : "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0", flexWrap: "wrap" }}>
-                <Tag size={16} color={c.active ? "#16A34A" : "#94A3B8"} />
-                <input placeholder="CÓDIGO" value={c.code} onChange={e => updateCoupon(idx, "code", e.target.value.toUpperCase())} style={{ flex: 1, minWidth: "120px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase" }} />
-                <select
-                  value={c.type || "percent"}
-                  onChange={e => updateCoupon(idx, "type", e.target.value)}
-                  style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, color: c.type === "free_shipping" ? "#16A34A" : c.type === "fixed" ? "#7C3AED" : "#2563EB", background: "#fff" }}
-                >
-                  <option value="percent">% Porcentagem</option>
-                  <option value="fixed">R$ Valor Fixo</option>
-                  <option value="free_shipping">🚚 Frete Grátis</option>
-                </select>
-                {c.type === "free_shipping" ? (
-                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#16A34A", padding: "0.3rem 0.6rem", background: "#DCFCE7", borderRadius: "6px" }}>Frete Grátis</span>
-                ) : c.type === "fixed" ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <span style={{ fontSize: "0.8rem", color: "#64748B" }}>R$</span>
-                    <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+            {coupons.map((c, idx) => {
+              const ehPrimeiro = c.primeiroPedido === true;
+              const venceu = !!c.validade && c.validade < hojeISO;
+              return (
+                <div key={idx} style={{ padding: "0.6rem 0.75rem", backgroundColor: venceu ? "#FEF2F2" : ehPrimeiro ? "#FFFBEB" : c.active ? "#F0FDF4" : "#F8FAFC", borderRadius: "10px", border: `1px solid ${venceu ? "#FECACA" : ehPrimeiro ? "#FDE68A" : "#E2E8F0"}` }}>
+                  {/* Linha 1: o que o cupom é */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {ehPrimeiro
+                      ? <span title="Cupom de primeiro pedido" style={{ fontSize: "0.72rem", fontWeight: 800, color: "#92400E", background: "#FDE68A", padding: "2px 8px", borderRadius: 6, whiteSpace: "nowrap" }}>🎁 1º PEDIDO</span>
+                      : <Tag size={16} color={c.active ? "#16A34A" : "#94A3B8"} />}
+                    <input placeholder="CÓDIGO" value={c.code} onChange={e => updateCoupon(idx, "code", e.target.value.toUpperCase())} style={{ flex: 1, minWidth: "120px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase" }} />
+                    <select
+                      value={c.type || "percent"}
+                      onChange={e => updateCoupon(idx, "type", e.target.value)}
+                      style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, color: c.type === "free_shipping" ? "#16A34A" : c.type === "fixed" ? "#7C3AED" : "#2563EB", background: "#fff" }}
+                    >
+                      <option value="percent">% Porcentagem</option>
+                      <option value="fixed">R$ Valor Fixo</option>
+                      <option value="free_shipping">🚚 Frete Grátis</option>
+                    </select>
+                    {c.type === "free_shipping" ? (
+                      <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#16A34A", padding: "0.3rem 0.6rem", background: "#DCFCE7", borderRadius: "6px" }}>Frete Grátis</span>
+                    ) : c.type === "fixed" ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                        <span style={{ fontSize: "0.8rem", color: "#64748B" }}>R$</span>
+                        <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                        <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
+                        <span style={{ fontSize: "0.8rem", color: "#64748B" }}>%</span>
+                      </div>
+                    )}
+                    <label style={{ display: "flex", alignItems: "center", gap: "3px", cursor: "pointer", marginLeft: "auto" }}>
+                      <input type="checkbox" checked={c.active} onChange={e => updateCoupon(idx, "active", e.target.checked)} />
+                      <span style={{ fontSize: "0.75rem" }}>Ativo</span>
+                    </label>
+                    <button onClick={() => removeCoupon(idx)} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}><Trash2 size={16} color="#EF4444" /></button>
                   </div>
-                ) : (
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <input type="number" value={c.discount} onChange={e => updateCoupon(idx, "discount", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
-                    <span style={{ fontSize: "0.8rem", color: "#64748B" }}>%</span>
+
+                  {/* Linha 2: as regras. Cada uma diz o que "vazio" significa, para
+                      ninguém precisar adivinhar se 0 é "zero vezes" ou "sem limite". */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginTop: 8, paddingLeft: ehPrimeiro ? 0 : 24 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Pedido mín. R$</span>
+                      <input type="number" placeholder="0" value={c.minOrderValue || 0} onChange={e => updateCoupon(idx, "minOrderValue", Number(e.target.value))} style={{ width: "65px", padding: "0.35rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem" }} />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span style={{ fontSize: "0.75rem", color: venceu ? "#B91C1C" : "#64748B", fontWeight: venceu ? 700 : 400 }}>{venceu ? "Venceu em" : "Válido até"}</span>
+                      <input type="date" value={c.validade || ""} onChange={e => updateCoupon(idx, "validade", e.target.value || null)} style={{ padding: "0.3rem 0.4rem", borderRadius: "6px", border: `1px solid ${venceu ? "#FECACA" : "#E2E8F0"}`, fontSize: "0.8rem", fontFamily: "inherit", color: venceu ? "#B91C1C" : "#1E293B" }} />
+                      {c.validade
+                        ? <button type="button" onClick={() => updateCoupon(idx, "validade", null)} title="Sem validade" style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: "0.75rem", padding: "0 2px" }}>✕</button>
+                        : <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>(sem prazo)</span>}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Usos por cliente</span>
+                      <input type="number" min={0} placeholder="0" value={c.usosPorCliente || 0} onChange={e => updateCoupon(idx, "usosPorCliente", Math.max(0, Math.floor(Number(e.target.value) || 0)))} style={{ width: "55px", padding: "0.35rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem" }} />
+                      <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>{(c.usosPorCliente || 0) > 0 ? (c.usosPorCliente === 1 ? "(1 vez)" : `(${c.usosPorCliente} vezes)`) : "(sem limite)"}</span>
+                    </div>
+                    {ehPrimeiro && (
+                      <span style={{ fontSize: "0.72rem", color: "#92400E", fontWeight: 600 }}>
+                        Vale só para quem nunca pediu pelo seu site · aplicado automaticamente
+                      </span>
+                    )}
                   </div>
-                )}
-                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Mín: R$</span>
-                  <input type="number" placeholder="0" value={c.minOrderValue || 0} onChange={e => updateCoupon(idx, "minOrderValue", Number(e.target.value))} style={{ width: "65px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem" }} />
                 </div>
-                <label style={{ display: "flex", alignItems: "center", gap: "3px", cursor: "pointer" }}>
-                  <input type="checkbox" checked={c.active} onChange={e => updateCoupon(idx, "active", e.target.checked)} />
-                  <span style={{ fontSize: "0.75rem" }}>Ativo</span>
-                </label>
-                <button onClick={() => removeCoupon(idx)} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}><Trash2 size={16} color="#EF4444" /></button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         <SectionSaveBtn dirty={dirtyCoupons} saving={savingCoupons} onSave={saveCoupons} label="Salvar Cupons" />
