@@ -2076,6 +2076,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             headers: { "Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache" }
           });
           if (res.ok && active) {
+            // ── A HORA É A DO SERVIDOR, NÃO A DESTE PC ────────────────────
+            //
+            // O bipe de chegada mede a idade do pedido, e media com o relógio
+            // do computador da loja contra o createdAt gravado pelo servidor.
+            // O painel enxerga o pedido segundos depois de ele nascer: bastava
+            // o Windows do caixa estar meio minuto ATRASADO para a idade dar
+            // negativa, a condição ">= 0" falhar e o pedido entrar mudo — para
+            // sempre, porque o id já ficava conhecido. Na R&D Pizzaria
+            // (18/09/2026) o pedido do 99Food não tocou; em outra loja, com
+            // relógio certo, o mesmo código tocava. O cabeçalho Date da própria
+            // resposta é a hora de quem gravou o pedido (resolução de 1 s).
+            const dataDoServidor = new Date(res.headers.get("date") || "").getTime();
+            const agoraDoServidor = Number.isFinite(dataDoServidor) ? dataDoServidor : Date.now();
             const text = await res.text();
             // Only update if data actually changed — prevents re-render closing dropdowns
             if (text !== lastPollHash.current) {
@@ -2124,8 +2137,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     // dia dispararia um bipe por pedido, em rajada. A idade do
                     // pedido é o que separa "acabou de entrar" de "apareceu na
                     // tela agora porque você mudou o filtro".
-                    const idadeMin = (Date.now() - new Date(o.createdAt).getTime()) / 60000;
-                    const chegouAgora = idadeMin >= 0 && idadeMin < 15;
+                    //
+                    // A folga negativa cobre o cabeçalho Date, que vem truncado
+                    // no segundo, e o caso raro de o proxy não mandá-lo (aí
+                    // volta a valer o relógio do PC, com 2 min de tolerância).
+                    const idadeMin = (agoraDoServidor - new Date(o.createdAt).getTime()) / 60000;
+                    const chegouAgora = idadeMin > -2 && idadeMin < 15;
                     // Venda do balcão, do PDV e da mesa é digitada pelo próprio
                     // atendente: ele não precisa ser avisado de um pedido que
                     // acabou de lançar. O bipe é para o que chega de fora.
@@ -2314,32 +2331,75 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   };
 
   // Pre-initialize AudioContext on first user interaction (required by browser autoplay policy)
+  //
+  // ── O SOM BLOQUEADO PRECISA APARECER NA TELA ─────────────────────────────
+  //
+  // O navegador só deixa tocar som depois de um clique, toque ou tecla NESTA
+  // carga da página. Painel que recarrega sozinho (queda de luz, atualização do
+  // navegador, PC que reinicia e reabre as abas) fica mudo até alguém clicar —
+  // e ficava mudo CALADO: o pedido chegava, a tela mostrava, e ninguém ouvia
+  // nada. Queixa da R&D Pizzaria em 18/09/2026 ("não faz barulho quando entra
+  // pedido"). O contexto de áudio agora nasce na montagem, o estado dele é
+  // observado, e enquanto estiver bloqueado uma faixa diz isso com todas as
+  // letras. Qualquer clique na página destrava.
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const [somBloqueado, setSomBloqueado] = useState(false);
   useEffect(() => {
-    const initAudio = () => {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-    };
-    document.addEventListener("click", initAudio, { once: true });
-    document.addEventListener("touchstart", initAudio, { once: true });
-    document.addEventListener("keydown", initAudio, { once: true });
+    let ctx: AudioContext;
+    try {
+      ctx = audioCtxRef.current || new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtxRef.current = ctx;
+    } catch {
+      return; // navegador sem Web Audio: não há o que avisar nem destravar
+    }
+    const conferir = () => setSomBloqueado(ctx.state !== "running");
+    conferir();
+    ctx.addEventListener("statechange", conferir);
+    // Não é "once": o navegador pode suspender o contexto de novo (aba que
+    // dormiu), e resume() num contexto que já toca não faz nada.
+    const destravar = () => { ctx.resume().then(conferir).catch(() => {}); };
+    document.addEventListener("click", destravar);
+    document.addEventListener("touchstart", destravar);
+    document.addEventListener("keydown", destravar);
     return () => {
-      document.removeEventListener("click", initAudio);
-      document.removeEventListener("touchstart", initAudio);
-      document.removeEventListener("keydown", initAudio);
+      ctx.removeEventListener("statechange", conferir);
+      document.removeEventListener("click", destravar);
+      document.removeEventListener("touchstart", destravar);
+      document.removeEventListener("keydown", destravar);
     };
+  }, []);
+
+  /**
+   * O contexto de áudio pronto para tocar — ou null se o navegador não deixa.
+   *
+   * Sem gesto do usuário, resume() fica PENDENTE para sempre (não rejeita).
+   * Esperar por ele segurava cada bipe numa promessa, e no primeiro clique do
+   * dia todos tocavam juntos, de uma vez. Meio segundo de prazo: não destravou,
+   * não toca — a faixa de "som bloqueado" já está na tela dizendo por quê.
+   */
+  const audioPronto = useCallback(async (): Promise<AudioContext | null> => {
+    let ctx = audioCtxRef.current;
+    if (!ctx) {
+      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtxRef.current = ctx;
+    }
+    if (ctx.state !== "running") {
+      await Promise.race([
+        ctx.resume().catch(() => {}),
+        new Promise((r) => setTimeout(r, 500)),
+      ]);
+    }
+    if (ctx.state !== "running") {
+      setSomBloqueado(true);
+      return null;
+    }
+    return ctx;
   }, []);
 
   const playOrderChime = useCallback(async () => {
     try {
-      let ctx = audioCtxRef.current;
-      if (!ctx) {
-        ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        audioCtxRef.current = ctx;
-      }
-      // Resume if suspended (browser policy)
-      if (ctx.state === "suspended") await ctx.resume();
+      const ctx = await audioPronto();
+      if (!ctx) return;
 
       const playChime = (startTime: number) => {
         const osc1 = ctx!.createOscillator();
@@ -2367,7 +2427,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       playChime(t + 0.7);
       playChime(t + 1.4);
     } catch {}
-  }, []);
+  }, [audioPronto]);
 
   /**
    * ── O PEDIDO DE INTEGRAÇÃO CHEGAVA MUDO ─────────────────────────────────
@@ -2385,12 +2445,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
    */
   const tocarChegadaDePedido = useCallback(async () => {
     try {
-      let ctx = audioCtxRef.current;
-      if (!ctx) {
-        ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        audioCtxRef.current = ctx;
-      }
-      if (ctx.state === "suspended") await ctx.resume();
+      const ctx = await audioPronto();
+      if (!ctx) return;
       const nota = (freq: number, quando: number, dur = 0.18) => {
         const osc = ctx!.createOscillator();
         const g = ctx!.createGain();
@@ -2408,7 +2464,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       nota(659.25, t + 0.16);
       nota(783.99, t + 0.32, 0.3);
     } catch { /* sem permissão de áudio: o cartão na tela continua lá */ }
-  }, []);
+  }, [audioPronto]);
 
   /** Avisa na barra do sistema, para a aba em segundo plano. */
   const avisarChegada = useCallback((pedido: any, canal: string) => {
@@ -5907,6 +5963,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* SOM BLOQUEADO PELO NAVEGADOR — ver o efeito do audioCtxRef */}
+      {somBloqueado && (
+        <div
+          role="alert"
+          style={{
+            position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 99998,
+            background: "#B91C1C", color: "#fff", padding: "10px 18px", borderRadius: 999,
+            fontWeight: 800, fontSize: "0.85rem", boxShadow: "0 10px 25px rgba(0,0,0,0.25)",
+            cursor: "pointer", maxWidth: "calc(100vw - 32px)", textAlign: "center",
+          }}
+        >
+          🔇 O som de pedido novo está bloqueado pelo navegador — clique em qualquer lugar desta tela para ativar
         </div>
       )}
 
