@@ -3425,6 +3425,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 );
               })()}
 
+              {/* Trocar a forma de pagamento — ACIMA das abas de propósito:
+                  vale em qualquer status que não seja cancelado, inclusive
+                  finalizado, e em pedido de app. E o lápis do card abre este
+                  modal já na aba de edição — quem veio acrescentar item e
+                  ouviu "vou pagar no cartão" tem que ver a troca sem voltar
+                  para a comanda (dono, 17/09/2026). */}
+              <TrocaDePagamentoPainel
+                pedido={order}
+                operador={{ role: user?.role, permissions: user?.permissions }}
+                aoSalvar={async (r) => {
+                  showToast(`Pagamento alterado para ${r.paymentMethod}.`, "#10B981");
+                  await recarregarPedidos();
+                }}
+              />
+
               {abaDoRecibo === "editar" ? (
                 <EditarPedidoPainel
                   pedido={order}
@@ -3456,19 +3471,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 />
               ) : (
               <>
-
-              {/* Trocar a forma de pagamento — fora das abas de edição de
-                  propósito: vale em qualquer status que não seja cancelado,
-                  inclusive finalizado, e em pedido de app. O cliente diz uma
-                  coisa ao pedir e paga outra na porta (dono, 17/09/2026). */}
-              <TrocaDePagamentoPainel
-                pedido={order}
-                operador={{ role: user?.role, permissions: user?.permissions }}
-                aoSalvar={async (r) => {
-                  showToast(`Pagamento alterado para ${r.paymentMethod}.`, "#10B981");
-                  await recarregarPedidos();
-                }}
-              />
 
               {/* Toggle de Formato POS 80 / POS 58 */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", background: "#F9FAFB", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E5E7EB" }}>
