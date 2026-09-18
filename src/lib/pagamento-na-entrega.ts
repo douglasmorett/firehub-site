@@ -48,6 +48,84 @@ type PedidoParaCobranca = {
   kind?: string | null;
 };
 
+/**
+ * Já está pago por um caminho eletrônico — site, app do parceiro ou gateway.
+ *
+ * É a metade "online" da leitura de `cobrancaNaEntrega`, separada porque é
+ * também a ÚNICA coisa que impede trocar a forma de pagamento depois: o
+ * dinheiro já entrou (ou entra pelo repasse), e mexer no texto só descolaria o
+ * pedido do extrato. `gatewayPaymentId` preenchido é prova por si: passou por
+ * Mercado Pago, PagBank ou maquininha integrada.
+ */
+export function ehPagoOnline(pedido: (PedidoParaCobranca & { gatewayPaymentId?: string | null }) | null | undefined): boolean {
+  if (!pedido) return false;
+  if (pedido.gatewayPaymentId) return true;
+  const texto = String(pedido.paymentMethod || "").toLowerCase();
+  const offlineExplicito =
+    /dinheiro|cobrar|maquin|entrega|pendente|troco|presencial|balc/i.test(texto) ||
+    pedido.isPrepaid === false ||
+    pedido.prepaid === false;
+  return !offlineExplicito && (
+    /pago online|online|prepaid|ifood pago|jotaja pago|jotajá pago|app/i.test(texto) ||
+    pedido.isPrepaid === true
+  );
+}
+
+/**
+ * As formas que se recebem na porta, escritas do jeito que TODOS os
+ * classificadores do FireHub leem: fechamento de caixa (api/cash-session:
+ * "dinheiro", "débito", "crédito", "pix", "vale"), acerto do motoboy
+ * (api/motoboy-report), NFC-e automática (lib/fiscal-automatico) e a própria
+ * `cobrancaNaEntrega`. Rótulo novo aqui = conferir os quatro antes.
+ */
+export const FORMAS_DE_PAGAMENTO_NA_ENTREGA = ["Dinheiro", "Cartão Débito", "Cartão Crédito", "Pix", "Vale-refeição"] as const;
+export type FormaNaEntrega = (typeof FORMAS_DE_PAGAMENTO_NA_ENTREGA)[number];
+
+/**
+ * "Crédito (Cobrar na Entrega)" → "Cartão Crédito". Serve para pré-selecionar
+ * a forma atual na tela e para não registrar troca quando o entregador só
+ * confirmou o que já estava. Texto sem forma conhecida → null.
+ */
+export function formaCanonica(texto: string | null | undefined): FormaNaEntrega | null {
+  const t = String(texto || "").toLowerCase();
+  if (!t) return null;
+  if (/dinheiro|cash|money|esp[eé]cie/.test(t)) return "Dinheiro";
+  if (/d[eé]b/.test(t)) return "Cartão Débito";
+  if (/pix/.test(t)) return "Pix";
+  if (/vale|voucher|refei|aliment|meal/.test(t)) return "Vale-refeição";
+  if (/cr[eé]d|cart|card|maquin/.test(t)) return "Cartão Crédito";
+  return null;
+}
+
+/**
+ * A forma de pagamento deste pedido pode ser trocada?
+ *
+ * O cliente diz "dinheiro" ao pedir e paga no débito na porta — toda noite.
+ * Vale em qualquer canal e em qualquer status que não seja cancelado,
+ * inclusive depois de entregue (é quando a loja descobre). Só não vale para
+ * pagamento online, e mesa se acerta na conta da mesa.
+ *
+ * Sem import de status-pedido de propósito: este arquivo tem um gêmeo no
+ * Assistente e um teste que o carrega sozinho (scripts/teste-troca-de-pagamento.mjs).
+ * Todo status cancelado começa com "CANCEL" (lib/status-pedido.ts).
+ */
+export function podeTrocarPagamento(
+  pedido: (PedidoParaCobranca & { status?: string | null; gatewayPaymentId?: string | null; tableSessionId?: string | null }) | null | undefined,
+): { pode: boolean; motivo?: string } {
+  if (!pedido) return { pode: false, motivo: "Pedido não encontrado." };
+  if (String(pedido.status || "").toUpperCase().startsWith("CANCEL")) {
+    return { pode: false, motivo: "Este pedido foi cancelado." };
+  }
+  const tipo = String(pedido.deliveryType || "").toUpperCase();
+  if (tipo === "MESA" || pedido.kind === "CONTA_DA_MESA" || pedido.tableSessionId) {
+    return { pode: false, motivo: "Pedido de mesa: a forma de pagamento é da conta da mesa, no painel de Mesas." };
+  }
+  if (ehPagoOnline(pedido)) {
+    return { pode: false, motivo: "Pagamento online já confirmado — não dá para trocar." };
+  }
+  return { pode: true };
+}
+
 export function cobrancaNaEntrega(pedido: PedidoParaCobranca | null | undefined): CobrancaNaEntrega {
   const nada: CobrancaNaEntrega = { cobrar: false, metodo: "", valor: 0 };
   if (!pedido) return nada;
@@ -65,17 +143,7 @@ export function cobrancaNaEntrega(pedido: PedidoParaCobranca | null | undefined)
   // na porta da casa dele.
   if (/fiado|anotad|caderneta/i.test(texto)) return nada;
 
-  const offlineExplicito =
-    /dinheiro|cobrar|maquin|entrega|pendente|troco|presencial|balc/i.test(texto) ||
-    pedido.isPrepaid === false ||
-    pedido.prepaid === false;
-
-  const online = !offlineExplicito && (
-    /pago online|online|prepaid|ifood pago|jotaja pago|jotajá pago|app/i.test(texto) ||
-    pedido.isPrepaid === true
-  );
-
-  if (online) return nada;
+  if (ehPagoOnline(pedido)) return nada;
 
   // "Crédito (Pago Online)" → "Crédito". O parêntese é explicação, não o nome
   // do meio de pagamento, e no celular do entregador ele só rouba largura.

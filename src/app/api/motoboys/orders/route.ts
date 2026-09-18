@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
@@ -486,7 +487,7 @@ export async function DELETE(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { orderId, motoboyId, storeId, codigo, semCodigo } = await req.json().catch(() => ({} as any));
+    const { orderId, motoboyId, storeId, codigo, semCodigo, pagamento } = await req.json().catch(() => ({} as any));
     if (!orderId || !motoboyId || !storeId) {
       return NextResponse.json({ error: "orderId, motoboyId e storeId são obrigatórios" }, { status: 400 });
     }
@@ -495,7 +496,7 @@ export async function PATCH(req: NextRequest) {
     // no login (a sessão do app vive para sempre no localStorage).
     const motoboyAtivo = await prisma.motoboy.findFirst({
       where: { id: String(motoboyId), franchiseeId: String(storeId), active: true },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!motoboyAtivo) {
       return NextResponse.json({ error: "Acesso encerrado. Fale com a loja.", precisaRelogar: true }, { status: 401 });
@@ -661,6 +662,43 @@ export async function PATCH(req: NextRequest) {
       };
     }
 
+    // ── O CLIENTE PAGOU DE OUTRO JEITO ──────────────────────────────────────
+    //
+    // "Tava dinheiro e pagou no débito": o entregador informa na baixa e o
+    // pedido passa a dizer a verdade. Sem isto o acerto do motoboy
+    // (api/motoboy-report) cobrava dele um dinheiro que ele não recebeu, o
+    // fechamento de caixa fechava na forma errada, e a loja consertava no
+    // caderno (dono, 17/09/2026). Só quando não é pagamento online, e só se a
+    // forma realmente mudou — confirmar "Dinheiro" num pedido em dinheiro não
+    // vira registro. O rastro fica em editHistory, com o nome do entregador.
+    // A NFC-e automática (logo abaixo) lê o pedido do banco DEPOIS desta
+    // escrita, então já sai na forma certa.
+    const formaInformada = String(pagamento || "").trim();
+    let trocaDePagamento: Record<string, unknown> = {};
+    if (formaInformada) {
+      const { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica, podeTrocarPagamento } = await import("@/lib/pagamento-na-entrega");
+      const { empilharEdicao } = await import("@/lib/edicao-de-pedido");
+      const valida = (FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(formaInformada);
+      const mudou = formaCanonica(order.paymentMethod) !== formaInformada;
+      if (valida && mudou && podeTrocarPagamento(order as any).pode) {
+        trocaDePagamento = {
+          paymentMethod: formaInformada,
+          // Troco é conta de dinheiro; em cartão, pix ou vale não existe.
+          changeAmount: formaInformada === "Dinheiro" ? ((order as any).changeAmount ?? null) : null,
+          ...((order as any).paymentMethods != null ? { paymentMethods: Prisma.DbNull } : {}),
+          editHistory: empilharEdicao((order as any).editHistory, {
+            quando: new Date().toISOString(),
+            quem: `Motoboy ${motoboyAtivo.name}`,
+            acao: "PAGAMENTO",
+            descricao: `Pagamento: ${order.paymentMethod || "não informado"} → ${formaInformada} (informado na entrega)`,
+            totalAntes: order.totalAmount,
+            totalDepois: order.totalAmount,
+          }),
+        };
+        console.log(`[Motoboy Entrega] 💳 pagamento de ${order.id}: ${order.paymentMethod} → ${formaInformada} (${motoboyAtivo.name})`);
+      }
+    }
+
     // ── ESCRITA ATÔMICA: o Postgres decide a corrida ────────────────────────
     //
     // Dois toques rápidos no botão (ou o mesmo request duplicado pelo 4G)
@@ -677,6 +715,8 @@ export async function PATCH(req: NextRequest) {
       },
       data: {
         status: "ENTREGUE", kdsStage: "FINISHED", kdsStationId: null,
+        // A forma de pagamento real, se o entregador informou outra (acima).
+        ...trocaDePagamento,
         // ⚠️ NÃO carimbar `ifoodDriverStatus: "DELIVERED"` aqui.
         //
         // Quem confere o código neste caminho é o motoboy DA LOJA, em entrega

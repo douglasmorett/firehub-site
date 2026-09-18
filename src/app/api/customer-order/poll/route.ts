@@ -974,7 +974,10 @@ export async function GET(req: NextRequest) {
         // para o atendente saber quem chamar quando o pedido fica pronto.
         pagerNumber: true,
         deliveryType: true, deliveryBy: true, deliveryFee: true,
-        paymentMethod: true, paymentPaidAt: true, gatewayProvider: true,
+        // gatewayPaymentId: a tela decide se oferece "trocar pagamento" pela
+        // mesma regra da API (podeTrocarPagamento) — sem o campo, ofereceria
+        // num pedido de gateway e o servidor recusaria.
+        paymentMethod: true, paymentPaidAt: true, gatewayProvider: true, gatewayPaymentId: true,
         totalAmount: true, changeAmount: true,
         discountTotal: true, discountIfood: true, discountMerchant: true, discountDetails: true,
         status: true, source: true, notes: true, kdsStage: true,

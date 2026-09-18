@@ -17,6 +17,7 @@ import { avaliarEdicao } from "@/lib/edicao-de-pedido";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { lerPager, nomeComPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
+import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -3449,6 +3450,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 />
               ) : (
               <>
+
+              {/* Trocar a forma de pagamento — fora das abas de edição de
+                  propósito: vale em qualquer status que não seja cancelado,
+                  inclusive finalizado, e em pedido de app. O cliente diz uma
+                  coisa ao pedir e paga outra na porta (dono, 17/09/2026). */}
+              <TrocaDePagamentoPainel
+                pedido={order}
+                operador={{ role: user?.role, permissions: user?.permissions }}
+                aoSalvar={async (r) => {
+                  showToast(`Pagamento alterado para ${r.paymentMethod}.`, "#10B981");
+                  await recarregarPedidos();
+                }}
+              />
 
               {/* Toggle de Formato POS 80 / POS 58 */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", background: "#F9FAFB", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E5E7EB" }}>

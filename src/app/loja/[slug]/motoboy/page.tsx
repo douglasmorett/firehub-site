@@ -18,6 +18,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { getBeveragesFromOrder } from "@/lib/beverage";
+import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica } from "@/lib/pagamento-na-entrega";
 
 export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
@@ -542,6 +543,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const [codigoModalOrder, setCodigoModalOrder] = useState<any | null>(null);
   const [codigoDigitado, setCodigoDigitado] = useState("");
   const [codigoErro, setCodigoErro] = useState("");
+  /** O que viaja na baixa além do código. Hoje: a forma de pagamento que o
+      cliente usou de verdade. É estado porque o teclado do código abre
+      DEPOIS da escolha e dispara a baixa por conta própria. */
+  type BaixaExtra = { codigo?: string; semCodigo?: boolean; pagamento?: string };
+  const [extraDaBaixa, setExtraDaBaixa] = useState<BaixaExtra>({});
+  /** A forma tocada no modal de cobrança; nulo = a que o pedido já dizia. */
+  const [pagamentoNaPorta, setPagamentoNaPorta] = useState<string | null>(null);
 
   // Initiate Delivery Flow (Checks for Beverages)
   const handleInitiateDelivery = (order: any) => {
@@ -562,6 +570,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
    */
   const prosseguirEntrega = (order: any) => {
     if (order?.cobrarNaEntrega) {
+      setPagamentoNaPorta(null);
       setCobrancaModalOrder(order);
       return;
     }
@@ -573,14 +582,15 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
    * teclado do código (`pedeCodigoEntrega` vem do servidor, já com a regra da
    * loja aplicada); os outros dão baixa direto.
    */
-  const pedirCodigoOuBaixar = (order: any) => {
+  const pedirCodigoOuBaixar = (order: any, extra: BaixaExtra = {}) => {
+    setExtraDaBaixa(extra);
     if (order?.pedeCodigoEntrega) {
       setCodigoDigitado("");
       setCodigoErro("");
       setCodigoModalOrder(order);
       return;
     }
-    handleMarkDelivered(order.id);
+    handleMarkDelivered(order.id, extra);
   };
 
   // Mark Order as Delivered
@@ -591,7 +601,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   // nada acontecia, sem mensagem nenhuma. A baixa acabava sendo feita à mão
   // por alguém da loja. A rota nova valida a amarração (pedido atribuído a
   // ESTE motoboy NESTA loja) e dispara os efeitos: parceiro, WhatsApp, fatura.
-  const handleMarkDelivered = async (orderId: string, extra: { codigo?: string; semCodigo?: boolean } = {}) => {
+  const handleMarkDelivered = async (orderId: string, extra: BaixaExtra = {}) => {
     if (!session) return;
     // Trava POR PEDIDO, conferida aqui (e não só no botão): dois toques
     // rápidos — ou o botão do modal de bebidas chamando direto — disparavam
@@ -1575,7 +1585,50 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               </div>
             </div>
 
-            {cobrancaModalOrder.cobrarNaEntrega.trocoPara ? (
+            {/* ── PAGOU DE OUTRO JEITO? ───────────────────────────────────
+                "Tava dinheiro e pagou no débito" acontece toda noite. Sem
+                isto o pedido ficava gravado como dinheiro, o acerto cobrava do
+                entregador um dinheiro que ele não recebeu, e a loja consertava
+                no caderno (dono, 17/09/2026). O entregador toca na forma real
+                e ela vai junto na baixa (`pagamento` no PATCH). Pago online
+                nunca chega aqui: este modal só abre quando há o que receber. */}
+            {(() => {
+              const formaDoPedido = formaCanonica(cobrancaModalOrder.cobrarNaEntrega?.metodo);
+              const escolhida = pagamentoNaPorta ?? formaDoPedido;
+              return (
+                <div style={{ textAlign: "left", marginBottom: 14 }}>
+                  <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                    O cliente pagou com
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {FORMAS_DE_PAGAMENTO_NA_ENTREGA.map((forma) => {
+                      const ativa = escolhida === forma;
+                      return (
+                        <button
+                          key={forma}
+                          type="button"
+                          onClick={() => setPagamentoNaPorta(forma)}
+                          style={{
+                            padding: "8px 12px", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer",
+                            border: `2px solid ${ativa ? "#16A34A" : "#E2E8F0"}`,
+                            background: ativa ? "#F0FDF4" : "#FFFFFF", color: ativa ? "#14532D" : "#334155",
+                          }}
+                        >
+                          {forma}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {escolhida && formaDoPedido && escolhida !== formaDoPedido && (
+                    <p style={{ margin: "8px 0 0", fontSize: "0.78rem", color: "#B45309", fontWeight: 700 }}>
+                      O pedido dizia {formaDoPedido}. A loja vai ver que foi pago em {escolhida}.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {cobrancaModalOrder.cobrarNaEntrega.trocoPara && (pagamentoNaPorta ?? formaCanonica(cobrancaModalOrder.cobrarNaEntrega?.metodo)) === "Dinheiro" ? (
               <div style={{
                 background: "#FFFBEB", border: "2px solid #FDE68A", borderRadius: 14,
                 padding: "12px", marginBottom: 14, textAlign: "left",
@@ -1606,8 +1659,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 type="button"
                 onClick={() => {
                   const alvo = cobrancaModalOrder;
+                  // Só viaja se for DIFERENTE do que o pedido já dizia: confirmar
+                  // "Dinheiro" num pedido em dinheiro não vira troca no histórico.
+                  const formaDoPedido = formaCanonica(alvo.cobrarNaEntrega?.metodo);
+                  const extra: BaixaExtra =
+                    pagamentoNaPorta && pagamentoNaPorta !== formaDoPedido ? { pagamento: pagamentoNaPorta } : {};
                   setCobrancaModalOrder(null);
-                  pedirCodigoOuBaixar(alvo);
+                  pedirCodigoOuBaixar(alvo, extra);
                 }}
                 style={{
                   flex: 1.5, padding: "12px", background: "#16A34A", color: "#FFFFFF",
@@ -1666,7 +1724,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               maxLength={6}
               value={codigoDigitado}
               onChange={(e) => { setCodigoDigitado(e.target.value.replace(/\D/g, "")); setCodigoErro(""); }}
-              onKeyDown={(e) => { if (e.key === "Enter" && codigoDigitado.length >= 4) handleMarkDelivered(codigoModalOrder.id, { codigo: codigoDigitado }); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && codigoDigitado.length >= 4) handleMarkDelivered(codigoModalOrder.id, { ...extraDaBaixa, codigo: codigoDigitado }); }}
               placeholder="• • • •"
               style={{
                 width: "100%", boxSizing: "border-box", fontSize: "2rem", letterSpacing: "0.5em", textAlign: "center",
@@ -1680,7 +1738,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             <button
               type="button"
               disabled={codigoDigitado.length < 4 || updatingOrderId === codigoModalOrder.id}
-              onClick={() => handleMarkDelivered(codigoModalOrder.id, { codigo: codigoDigitado })}
+              onClick={() => handleMarkDelivered(codigoModalOrder.id, { ...extraDaBaixa, codigo: codigoDigitado })}
               style={{
                 width: "100%", marginTop: "1rem", padding: "14px",
                 background: codigoDigitado.length < 4 ? "#94A3B8" : "#16A34A", color: "#FFFFFF",
@@ -1699,7 +1757,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 if (!confirm("Confirmar a entrega SEM o código? O iFood pode não reconhecer a entrega. Só faça isso se o cliente realmente não tem o código.")) return;
                 const alvo = codigoModalOrder.id;
                 setCodigoModalOrder(null);
-                handleMarkDelivered(alvo, { semCodigo: true });
+                handleMarkDelivered(alvo, { ...extraDaBaixa, semCodigo: true });
               }}
               style={{
                 width: "100%", marginTop: "10px", padding: "10px", background: "#FFFFFF", color: "#B91C1C",
