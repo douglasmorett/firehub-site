@@ -8,6 +8,7 @@ import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import { lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
+import { ESTADOS_DE_ENTREGADOR_IFOOD } from "@/lib/entrega-parceira";
 import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido";
 import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
@@ -115,18 +116,9 @@ export interface PartnerDeliveryInfo {
   pickupCode?: string;
 }
 
-/**
- * Estados que o iFood emite para um entregador DELE, ao longo da corrida.
- *
- * `CONCLUDED` não está aqui de propósito: quem grava esse valor é o próprio
- * FireHub, ao concluir o pedido, e não o iFood ao mover um entregador. Tratá-lo
- * como prova de entrega parceira transformava todo pedido finalizado — inclusive
- * os entregues pelo motoboy da loja — em "Motoboy iFood".
- */
-const ESTADOS_DE_ENTREGADOR_IFOOD = new Set([
-  "REQUESTED", "ASSIGNED", "GOING_TO_ORIGIN", "ARRIVED_AT_ORIGIN",
-  "COLLECTED", "DISPATCHED", "ARRIVED_AT_DESTINATION", "DELIVERED", "FAILED",
-]);
+// A lista de estados de entregador do iFood mora em lib/entrega-parceira.ts,
+// junto da regra que a comanda impressa e o app do motoboy usam: uma lista só,
+// para o painel nunca mais discordar do papel sobre quem entrega o pedido.
 
 export const getPartnerDeliveryInfo = (order: any): PartnerDeliveryInfo => {
   if (!order) return { isPartner: false, partnerName: "" };

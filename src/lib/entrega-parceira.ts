@@ -25,6 +25,28 @@ export type InfoDeEntrega = {
   codigoDeColeta?: string;
 };
 
+/**
+ * Estados que o iFood emite para um entregador DELE ao longo da corrida.
+ *
+ * `CONCLUDED` fica de fora de propósito: quem grava esse valor é o próprio
+ * FireHub ao concluir o pedido (webhook, poll e cron), não o iFood ao mover um
+ * entregador. Tratá-lo como prova transformava pedido entregue pelo motoboy da
+ * loja em "Motoboy iFood" ao virar Finalizado (4.130 pedidos na base em
+ * 03/09/2026).
+ *
+ * `DELIVERED` entra porque só a aba Entrega e a rota logistics/codigo o gravam
+ * — os dois caminhos do entregador parceiro. O app do motoboy da loja carimbava
+ * também, ao conferir o código de entrega própria, e por isso a Frangoso via
+ * todo pedido finalizado como entrega do iFood (17/09/2026); não carimba mais.
+ *
+ * É a ÚNICA lista: o painel importa daqui. Duas listas era como o painel e a
+ * comanda impressa discordavam sobre o mesmo pedido.
+ */
+export const ESTADOS_DE_ENTREGADOR_IFOOD = new Set([
+  "REQUESTED", "ASSIGNED", "GOING_TO_ORIGIN", "ARRIVED_AT_ORIGIN",
+  "COLLECTED", "DISPATCHED", "ARRIVED_AT_DESTINATION", "DELIVERED", "FAILED",
+]);
+
 export function infoDaEntrega(pedido: any): InfoDeEntrega {
   if (!pedido) return { parceira: false, parceiro: "" };
 
@@ -49,10 +71,12 @@ export function infoDaEntrega(pedido: any): InfoDeEntrega {
   }
 
   // 3. iFood — entregador atribuído é prova; código de coleta não é.
+  // "Status ≠ UNASSIGNED" também não era: aceitava o CONCLUDED que o próprio
+  // FireHub carimba. Só os estados que o iFood emite para um entregador dele.
   if (origem === "IFOOD" || por.includes("IFOOD")) {
     const temEntregador =
       Boolean(pedido.ifoodDriverName) ||
-      (pedido.ifoodDriverStatus && pedido.ifoodDriverStatus !== "UNASSIGNED");
+      ESTADOS_DE_ENTREGADOR_IFOOD.has(String(pedido.ifoodDriverStatus || "").toUpperCase());
     if (por.includes("IFOOD") || por.includes("LOGISTICS") || logistica || temEntregador) {
       return { parceira: true, parceiro: "IFOOD", codigoDeColeta };
     }

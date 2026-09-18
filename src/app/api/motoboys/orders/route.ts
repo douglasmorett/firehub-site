@@ -584,8 +584,22 @@ export async function PATCH(req: NextRequest) {
       },
       data: {
         status: "ENTREGUE", kdsStage: "FINISHED", kdsStationId: null,
-        // Mesmo carimbo que a aba Entrega do painel grava quando confere o código.
-        ...(codigoConferido ? { ifoodDriverStatus: "DELIVERED" } : {}),
+        // ⚠️ NÃO carimbar `ifoodDriverStatus: "DELIVERED"` aqui.
+        //
+        // Quem confere o código neste caminho é o motoboy DA LOJA, em entrega
+        // própria. `ifoodDriverStatus` descreve o entregador DO IFOOD, e
+        // DELIVERED é um dos estados que o painel e `infoDaEntrega` aceitam
+        // como prova de entrega parceira. O carimbo, copiado da aba Entrega
+        // (que é do entregador parceiro), fazia todo pedido conferido pelo app
+        // virar "Motoboy iFood" ao chegar em Finalizado, com o entregador que
+        // fez a corrida sumindo do card. A Frangoso - Trindade teve 53 pedidos
+        // assim entre 12 e 17/09/2026 — a única loja conferindo código pelo
+        // app, e a maioria dos pedidos dela nasce sem `deliveryBy`, então nem a
+        // regra "entrega própria declarada" segurava.
+        //
+        // A conferência já fica registrada em ifoodDropCodeInfo (resultado:
+        // "conferido"), que é o que interessa para auditoria.
+        //
         // Fica no pedido: o que o entregador digitou e o que o parceiro
         // respondeu. Sem isto, "deu erro" é tudo o que se sabe no dia seguinte.
         ...(infoCodigo ? { ifoodDropCodeInfo: { ...infoCodigo, quando: new Date().toISOString() } } : {}),

@@ -441,6 +441,22 @@ async function pollIfoodEvents(sessionUserId?: string) {
             const coordsDoCliente = coordenadasDoIfood(orderData);
             const distanciaDaEntrega = await distanciaDaEntregaKm(eventFranchisee.id, coordsDoCliente);
 
+            // Quem entrega — a MESMA derivação do webhook e do cron. Este era o
+            // único dos três caminhos que criava o pedido sem `deliveryBy`, e é
+            // o que roda durante o movimento (5s), então a maioria dos pedidos
+            // nascia com o campo nulo: 274 em 8 dias, medido em 17/09/2026. Sem
+            // "MERCHANT" declarado, a regra de entrega parceira do painel e da
+            // comanda perde a blindagem e qualquer carimbo de entregador vira
+            // "Motoboy iFood" — foi assim que a Frangoso viu todo pedido
+            // finalizado como entrega do iFood.
+            const deliveredByRaw = (
+              orderData.deliveredBy || orderData.deliveryBy ||
+              orderData.delivery?.deliveredBy || orderData.delivery?.deliveryBy ||
+              orderData.merchant?.deliveredBy || orderData.logistics?.deliveredBy ||
+              ""
+            ).toString().toUpperCase();
+            const deliveryBy = (deliveredByRaw.includes("IFOOD") || deliveredByRaw.includes("LOGISTICS") || deliveredByRaw.includes("PARTNER")) ? "IFOOD" : "MERCHANT";
+
             // Número e gravação na MESMA transação. O mesmo pedido chega por
             // aqui e pelo webhook (e por cada painel aberto da loja, que também
             // faz este poll): quem grava por segundo cai na unicidade de
@@ -465,6 +481,7 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 discountMerchant: discountMerchant > 0 ? discountMerchant : null,
                 discountDetails: discountDetails.length > 0 ? discountDetails : undefined,
                 source: "IFOOD",
+                deliveryBy,
                 customerName: orderData.customer?.name ?? "Cliente iFood",
                 customerPhone: (() => {
                   const phone = orderData.customer?.phone;

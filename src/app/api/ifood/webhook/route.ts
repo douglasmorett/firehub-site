@@ -601,7 +601,17 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
     }
 
     if (code === "CON" || code === "CONCLUDED" || event.fullCode === "CONCLUDED") {
-      updateData.ifoodDriverStatus = "CONCLUDED";
+      // Só em pedido que teve entregador do iFood de verdade — a mesma regra
+      // do poll do painel e do cron (lib/ifood-eventos.ts). Em entrega própria
+      // o carimbo fazia `infoDaEntrega` tratar o pedido como parceiro: 26
+      // pedidos sem `deliveryBy` estavam assim em 17/09/2026.
+      const comEntregador: any = await prisma.customerOrder.findFirst({
+        where: { ifoodOrderId: orderId } as any,
+        select: { ifoodDriverName: true } as any,
+      });
+      if (comEntregador?.ifoodDriverName) {
+        updateData.ifoodDriverStatus = "CONCLUDED";
+      }
     }
 
     await (prisma.customerOrder as any).updateMany({
