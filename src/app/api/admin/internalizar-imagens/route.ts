@@ -62,6 +62,15 @@ const ORIGENS_DE_FORA = [
   // plataforma está no host (instadelivery-public.nyc3.cdn.digitaloceanspaces.com),
   // então basta ele — casar "digitaloceanspaces" pegaria bucket de terceiro.
   "instadelivery",
+  // O iFood tem DOIS CDNs, e a lista só conhecia um. `static-images` é o das
+  // fotos de prato; `ifood-static` é o das fotos de catálogo (bebida de marca,
+  // principalmente) — são as 7 da Brazza, que ficaram de fora por nove dias
+  // sem ninguém perceber, porque o host não casava com nada aqui.
+  "ifood-static",
+  // JotaJá: 102 fotos em 19 lojas (48 só na Hakim Centro), do cardápio que a
+  // integração trouxe em julho. Nunca entrou nesta lista — não é que falhava,
+  // é que ninguém olhava para ela.
+  "imagens.jotaja.com",
 ];
 
 /**
@@ -83,6 +92,38 @@ const COLUNAS_DE_IMAGEM: {
   { model: "user", campo: "storeLogo", pasta: "lojas", rotulo: "storeName", filtroDaLoja: (id) => ({ id }) },
   { model: "user", campo: "storeBanner", pasta: "lojas", rotulo: "storeName", filtroDaLoja: (id) => ({ id }) },
 ];
+
+/**
+ * Baixa a imagem, e tenta de novo como NAVEGADOR quando levar a porta na cara.
+ *
+ * O CDN do iFood (static-images.ifood.com.br) responde 403 para o nosso
+ * servidor e 200 para a mesma URL pedida de um computador comum — medido em
+ * 18/09/2026 nas 193 fotos do Taurus, que falharam 193 de 193. Requisição sem
+ * `User-Agent` vinda de faixa de datacenter é exatamente o que um WAF barra.
+ *
+ * Então a segunda tentativa se apresenta: User-Agent de navegador, `Accept` de
+ * imagem e o Referer do próprio site de origem. Se ainda assim vier 403, o erro
+ * sobe com o motivo e aparece na resposta — não some.
+ */
+async function baixar(url: string): Promise<Response> {
+  const direto = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  if (direto.ok || (direto.status !== 403 && direto.status !== 401 && direto.status !== 429)) return direto;
+
+  let origem = "";
+  try {
+    origem = new URL(url).origin + "/";
+  } catch {}
+  return fetch(url, {
+    signal: AbortSignal.timeout(20_000),
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "Accept-Language": "pt-BR,pt;q=0.9",
+      ...(origem ? { Referer: origem } : {}),
+    },
+  });
+}
 
 export async function POST(req: NextRequest) {
   return internalizar(req);
@@ -182,7 +223,7 @@ async function internalizar(req: NextRequest) {
         // Timeout POR IMAGEM. Sem ele, uma origem que aceita a conexão e não
         // responde segura a rodada inteira até o cron desistir — e as outras
         // imagens, que baixariam em 300 ms, nunca chegam a ser tentadas.
-        const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+        const res = await baixar(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const bruto = Buffer.from(await res.arrayBuffer());
         const mime = res.headers.get("content-type")?.split(";")[0] || "image/webp";

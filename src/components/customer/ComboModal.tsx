@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Minus, Check } from "lucide-react";
-import { precoMinimoDoProduto } from "@/lib/preco-combo";
+import { precoMinimoDoProduto, somaDosAdicionais } from "@/lib/preco-combo";
 
 export type ComboGroupData = {
   id: string;
@@ -217,16 +217,16 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
     });
   };
 
-  const extraSum = useMemo(() => {
-    return groups.reduce((sum, group) => {
-      const groupSelections = selections[group.id] || {};
-      return sum + (group.items || []).reduce((gSum, item) => {
-        const qty = groupSelections[item.menuProduct.name] || 0;
-        const addPrice = item.additionalPrice || 0;
-        return gSum + (qty * addPrice);
-      }, 0);
-    }, 0);
-  }, [groups, selections]);
+  // A conta é a de src/lib/preco-combo.ts, a MESMA que o servidor usa para
+  // gravar o pedido. Antes este bloco somava `additionalPrice` por conta
+  // própria — o que passou a estar errado quando a pergunta ganhou regra de
+  // pizza (meio a meio cobra o sabor mais caro, ou a média): a tela mostraria
+  // a soma dos dois sabores e o servidor cobraria um. Duas contas para o mesmo
+  // preço é como o "Nugget" da Hakim apareceu com três valores em três telas.
+  const extraSum = useMemo(
+    () => somaDosAdicionais({ price: 0, comboGroups: groups } as any, selections as any),
+    [groups, selections]
+  );
 
   // ── COBRANÇA EM DOBRO (CORRIGIDA) ───────────────────────────────────────
   // O código anterior procurava um "preço mínimo" somando

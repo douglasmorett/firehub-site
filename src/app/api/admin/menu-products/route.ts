@@ -96,10 +96,17 @@ function dadosDoGrupo(g: any, gIdx: number) {
       ? null
       : Math.min(Math.trunc(minBruto), maxQty);
 
+  // Como a pergunta cobra várias escolhas. Só "MAIOR" e "MEDIA" são gravados;
+  // qualquer outra coisa (inclusive vazio) vira NULL, que é a regra de sempre
+  // — somar. Ver lib/preco-combo.ts.
+  const regra = String(g?.priceRule || "").trim().toUpperCase();
+  const priceRule = regra === "MAIOR" || regra === "MEDIA" ? regra : null;
+
   return {
     title: g?.title,
     maxQty,
     minQty,
+    priceRule,
     sortOrder: gIdx,
     items: {
       create: (Array.isArray(g?.items) ? g.items : []).map((it: any) => {

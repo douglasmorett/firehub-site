@@ -601,6 +601,24 @@ model ComboGroup {
   ///
   /// 0 = opcional (o cliente pode não escolher nada).
   minQty        Int?
+  /// COMO COBRAR QUANDO O CLIENTE ESCOLHE MAIS DE UMA OPÇÃO AQUI.
+  ///
+  /// Nulo ou "SOMA" = a regra de sempre: cada escolha soma o seu preço. Serve
+  /// para adicionais (bacon + cheddar + ovo custam os três).
+  ///
+  /// Pizza não funciona assim. Meia calabresa e meia marguerita é UMA pizza, e
+  /// cada casa cobra de um jeito — a mais cara das duas metades, ou a média
+  /// delas. Sem esta coluna a única saída era o lojista cadastrar cada sabor
+  /// pela METADE do preço (foi o que a Pizzaria do Digão fez no InstaDelivery),
+  /// o que obriga a recalcular 42 sabores na mão a cada reajuste e quebra na
+  /// hora em que o mesmo sabor é vendido inteiro em outra pergunta.
+  ///
+  ///   "MAIOR" — cobra o sabor mais caro entre os escolhidos (padrão do iFood)
+  ///   "MEDIA" — cobra a média dos sabores escolhidos
+  ///
+  /// Nos dois casos o cadastro é o preço CHEIO da pizza de cada sabor, e o
+  /// grupo inteiro vale UMA pizza. Quem decide é o dono, por pergunta.
+  priceRule     String?
   sortOrder     Int              @default(0)
   menuProduct   MenuProduct      @relation(fields: [menuProductId], references: [id], onDelete: Cascade)
   items         ComboGroupItem[]

@@ -131,6 +131,10 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
             title: true,
             maxQty: true,
             minQty: true,
+            // Como a pergunta cobra várias escolhas (pizza meio a meio cobra o
+            // sabor mais caro ou a média). Sem este campo o cardápio somaria os
+            // sabores e anunciaria o dobro do preço. Ver lib/preco-combo.ts.
+            priceRule: true,
             sortOrder: true,
             items: {
               select: {

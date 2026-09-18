@@ -35,8 +35,50 @@ export type GrupoDeCombo = {
   maxQty?: number | null;
   /** Mínimo de escolhas. Nulo = regra antiga: exige exatamente `maxQty`. */
   minQty?: number | null;
+  /** Como cobrar várias escolhas: "SOMA" (padrão), "MAIOR" ou "MEDIA". */
+  priceRule?: string | null;
   items?: ItemDeGrupo[] | null;
 };
+
+/**
+ * COMO ESTA PERGUNTA COBRA VÁRIAS ESCOLHAS.
+ *
+ * "SOMA" é a regra de sempre e o padrão de tudo que já está gravado: bacon +
+ * cheddar + ovo custam os três. É o que vale para adicional.
+ *
+ * Pizza não é assim. Meia calabresa e meia marguerita é UMA pizza, e cada casa
+ * cobra de um jeito: a mais cara das duas metades ("MAIOR", o padrão do iFood)
+ * ou a média delas ("MEDIA"). Nos dois casos o lojista cadastra o preço CHEIO
+ * da pizza de cada sabor e o grupo inteiro vale UMA pizza — sem isso, a única
+ * saída era cadastrar cada sabor pela metade do preço, que é o que a Pizzaria
+ * do Digão fazia no InstaDelivery: 42 sabores para recalcular na mão a cada
+ * reajuste, e o mesmo sabor com dois preços diferentes conforme a pergunta.
+ */
+export type RegraDePreco = "SOMA" | "MAIOR" | "MEDIA";
+
+export function regraDoGrupo(grupo: GrupoDeCombo | null | undefined): RegraDePreco {
+  const r = String(grupo?.priceRule || "").trim().toUpperCase();
+  return r === "MAIOR" || r === "MEDIA" ? r : "SOMA";
+}
+
+/**
+ * O que o GRUPO cobra, dadas as escolhas — já com a regra dele aplicada.
+ *
+ * `escolhas` são pares (preço cheio da opção, quantidade). A soma das
+ * quantidades é quantas "fatias" o cliente marcou; em MAIOR e MEDIA elas
+ * formam UMA pizza, então o grupo cobra o preço de uma só.
+ */
+function totalDoGrupo(regra: RegraDePreco, escolhas: { preco: number; qtd: number }[]): number {
+  if (escolhas.length === 0) return 0;
+  if (regra === "SOMA") {
+    return arredondar(escolhas.reduce((s, e) => s + e.preco * e.qtd, 0));
+  }
+  const unidades = escolhas.reduce((s, e) => s + e.qtd, 0);
+  if (unidades <= 0) return 0;
+  if (regra === "MAIOR") return arredondar(Math.max(...escolhas.map((e) => e.preco)));
+  // MEDIA: ponderada pela quantidade — dois pedaços do mesmo sabor pesam dois.
+  return arredondar(escolhas.reduce((s, e) => s + e.preco * e.qtd, 0) / unidades);
+}
 
 /**
  * Quantas escolhas o grupo EXIGE. É o número que entra no "a partir de".
@@ -126,6 +168,8 @@ export function somaDosAdicionais(
   let total = 0;
   for (const a of adicionaisDetalhados(produto, escolhas)) total += a.precoUnitario * a.qtd;
   return arredondar(total);
+  // (precoUnitario já vem repartido pela regra do grupo, então esta soma vale
+  //  para SOMA, MAIOR e MEDIA sem saber qual é — ver adicionaisDetalhados.)
 }
 
 /**
@@ -169,11 +213,52 @@ export function adicionaisDetalhados(
     }
   }
 
-  return escolhido.map(({ grupoId, nome, qtd }) => {
+  // Preço CHEIO de cada escolha, antes da regra do grupo.
+  const cheios = escolhido.map(({ grupoId, nome, qtd }) => {
     const doGrupo = grupoId ? porGrupoENome.get(`${grupoId}::${nome}`) : undefined;
     const add = doGrupo ?? porNome.get(nome) ?? 0;
-    return { grupoId, nome, qtd, precoUnitario: Number.isFinite(add) ? add : 0 };
+    return { grupoId, nome, qtd, precoCheio: Number.isFinite(add) ? add : 0 };
   });
+
+  // ── A REGRA DO GRUPO ────────────────────────────────────────────────────
+  //
+  // Em SOMA (todo grupo que já existe) nada muda: o preço cheio É o preço.
+  //
+  // Em MAIOR/MEDIA o grupo vale UMA pizza, então o valor do grupo é
+  // REPARTIDO entre as escolhas — meia a meia fica com metade cada. Repartir,
+  // em vez de zerar as outras, é o que mantém a promessa desta lib: o detalhe
+  // impresso na comanda soma exatamente o total cobrado. A sobra de centavo
+  // vai para a última linha, senão R$ 35,00 em três pedaços viraria R$ 34,99.
+  const porGrupo = new Map<string, typeof cheios>();
+  for (const c of cheios) {
+    const k = c.grupoId ?? "\u0000sem-grupo";
+    if (!porGrupo.has(k)) porGrupo.set(k, []);
+    porGrupo.get(k)!.push(c);
+  }
+
+  const regraPorGrupo = new Map<string, RegraDePreco>();
+  for (const g of grupos) if (g.id) regraPorGrupo.set(g.id, regraDoGrupo(g));
+
+  const saida: { grupoId?: string; nome: string; qtd: number; precoUnitario: number; precoCheio: number }[] = [];
+  for (const [k, lista] of porGrupo) {
+    const regra = k === "\u0000sem-grupo" ? "SOMA" : (regraPorGrupo.get(k) ?? "SOMA");
+    if (regra === "SOMA") {
+      for (const c of lista) saida.push({ ...c, precoUnitario: c.precoCheio });
+      continue;
+    }
+    const total = totalDoGrupo(regra, lista.map((c) => ({ preco: c.precoCheio, qtd: c.qtd })));
+    const unidades = lista.reduce((s, c) => s + c.qtd, 0);
+    let distribuido = 0;
+    lista.forEach((c, i) => {
+      const ultima = i === lista.length - 1;
+      const valorDaLinha = ultima
+        ? arredondar(total - distribuido)
+        : arredondar((total * c.qtd) / unidades);
+      distribuido = arredondar(distribuido + valorDaLinha);
+      saida.push({ ...c, precoUnitario: c.qtd > 0 ? valorDaLinha / c.qtd : 0 });
+    });
+  }
+  return saida;
 }
 
 /** Preço unitário final: base + adicionais escolhidos. É o valor a cobrar. */
@@ -211,7 +296,10 @@ export function precoMinimoDoProduto(produto: ProdutoComCombo): number {
     const quantos = minimoExigidoDoGrupo(g);
     if (quantos <= 0) continue;
     const maisBarato = Math.min(...itens.map((i) => Number(i.additionalPrice) || 0));
-    minimo += maisBarato * quantos;
+    // Em MAIOR/MEDIA o grupo vale UMA pizza por mais sabores que ele exija:
+    // duas metades do sabor mais barato custam o preço dele, não o dobro. Sem
+    // esta linha o "a partir de" de uma pizza de 2 sabores sairia dobrado.
+    minimo += regraDoGrupo(g) === "SOMA" ? maisBarato * quantos : maisBarato;
   }
   return arredondar(minimo);
 }

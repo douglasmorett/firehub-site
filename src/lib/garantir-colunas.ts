@@ -40,6 +40,11 @@ const INSTRUCOES = [
   // dois sentidos: escondia pastel sem preço de salão e mostrava adicional
   // com preço como se fosse item avulso.
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "apenasEmCombo" BOOLEAN DEFAULT false`,
+  // Como cobrar a pergunta quando o cliente escolhe mais de uma opção:
+  // nulo/"SOMA" = cada escolha soma (adicionais), "MAIOR" = o sabor mais caro,
+  // "MEDIA" = a média dos sabores. É o que permite pizza meio a meio com o
+  // preço CHEIO cadastrado em cada sabor (lib/preco-combo.ts).
+  `ALTER TABLE "ComboGroup" ADD COLUMN IF NOT EXISTS "priceRule" TEXT`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceSalao" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceDelivery" DOUBLE PRECISION`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceTotem" DOUBLE PRECISION`,
@@ -61,6 +66,7 @@ const ESPERADAS = [
   "MenuProduct.priceDelivery",
   "MenuProduct.priceTotem",
   "MenuProduct.apenasEmCombo",
+  "ComboGroup.priceRule",
   "ComboGroupItem.additionalPriceSalao",
   "ComboGroupItem.additionalPriceDelivery",
   "ComboGroupItem.additionalPriceTotem",

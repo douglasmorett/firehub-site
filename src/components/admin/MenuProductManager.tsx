@@ -725,7 +725,7 @@ export default function MenuProductManager({
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(true);
   const [activeGarcom, setActiveGarcom] = useState(true);
-  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null }[] }[]>([]);
+  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; priceRule: string | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null }[] }[]>([]);
   /** Mostra os três campos de preço por canal em cada opção do combo. */
   const [precosCanalNoCombo, setPrecosCanalNoCombo] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -897,6 +897,9 @@ export default function MenuProductManager({
     if (p.isCombo && p.comboGroups) {
       setComboGroups(p.comboGroups.map((g: any) => ({
         title: g.title, maxQty: g.maxQty,
+        // Como esta pergunta cobra várias escolhas (lib/preco-combo.ts).
+        // Nulo = somar, que é a regra de todo grupo já gravado.
+        priceRule: g.priceRule ?? null,
         // Nulo tem significado (= regra antiga, exige exatamente maxQty) e por
         // isso não vira 0 aqui: carregar como 0 transformaria todo grupo antigo
         // em opcional no primeiro salvamento pela tela.
@@ -1030,7 +1033,7 @@ export default function MenuProductManager({
     router.refresh();
   };
 
-  const addGroup = () => setComboGroups(prev => [...prev, { title: "", maxQty: 1, minQty: 1, items: [] }]);
+  const addGroup = () => setComboGroups(prev => [...prev, { title: "", maxQty: 1, minQty: 1, priceRule: null, items: [] }]);
   const removeGroup = (idx: number) => setComboGroups(prev => prev.filter((_, i) => i !== idx));
   const updateGroup = (idx: number, key: string, val: any) => {
     setComboGroups(prev => prev.map((g, i) => i === idx ? { ...g, [key]: val } : g));
@@ -2374,6 +2377,58 @@ export default function MenuProductManager({
                             ? `Obrigatória — exige exatamente ${group.maxQty} ${group.maxQty === 1 ? "escolha" : "escolhas"}.`
                             : `Obrigatória — de ${minimoDoGrupo} a ${group.maxQty} escolhas.`}
                       </div>
+
+                      {/* ── COMO COBRAR VÁRIOS SABORES ────────────────────────
+                          Só aparece quando a pergunta aceita mais de uma
+                          escolha: em pergunta de uma resposta só não há o que
+                          decidir, e um seletor a mais em toda pergunta de
+                          adicional seria ruído.
+
+                          É a pergunta que o lojista de pizzaria faz primeiro.
+                          Sem isso a única saída era cadastrar cada sabor pela
+                          METADE do preço — 42 sabores para recalcular na mão a
+                          cada reajuste. Aqui ele cadastra o preço CHEIO de cada
+                          sabor e diz como a casa cobra. */}
+                      {group.maxQty > 1 && (
+                        <div style={{ margin: "0 0 0.9rem", padding: "10px 12px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px" }}>
+                          <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#92400E", display: "block", marginBottom: "6px" }}>
+                            🍕 Escolhendo mais de um, como cobrar?
+                          </label>
+                          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                            {([
+                              [null, "Somar", "Cada escolha soma o seu preço (adicionais)."],
+                              ["MAIOR", "O mais caro", "Meio a meio custa o preço do sabor mais caro."],
+                              ["MEDIA", "A média", "Meio a meio custa a média dos dois sabores."],
+                            ] as const).map(([valor, rotulo, ajuda]) => {
+                              const ativa = (group.priceRule ?? null) === valor;
+                              return (
+                                <button
+                                  key={rotulo}
+                                  type="button"
+                                  title={ajuda}
+                                  onClick={() => updateGroup(gIdx, "priceRule", valor)}
+                                  style={{
+                                    padding: "7px 12px", borderRadius: "9px", cursor: "pointer", fontFamily: "inherit",
+                                    fontSize: "0.78rem", fontWeight: 800,
+                                    border: `1.5px solid ${ativa ? "#B45309" : "#E2E8F0"}`,
+                                    background: ativa ? "#FEF3C7" : "#FFF",
+                                    color: ativa ? "#78350F" : "#64748B",
+                                  }}
+                                >
+                                  {rotulo}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p style={{ fontSize: "0.72rem", color: "#92400E", margin: "7px 0 0", lineHeight: 1.45 }}>
+                            {(group.priceRule ?? null) === null
+                              ? "Cada escolha soma o seu preço. É o certo para adicionais — bacon + cheddar custam os dois."
+                              : group.priceRule === "MAIOR"
+                                ? "Cadastre o preço CHEIO de cada sabor. Meia calabresa (R$ 40) + meia marguerita (R$ 50) sai R$ 50."
+                                : "Cadastre o preço CHEIO de cada sabor. Meia calabresa (R$ 40) + meia marguerita (R$ 50) sai R$ 45."}
+                          </p>
+                        </div>
+                      )}
 
                       {group.items.length === 0 ? (
                         <div style={{ fontSize: "0.78rem", color: "#94A3B8", fontStyle: "italic", padding: "10px", background: "#F8FAFC", borderRadius: "8px", marginBottom: "8px" }}>

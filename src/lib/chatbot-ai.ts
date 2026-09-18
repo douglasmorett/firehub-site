@@ -225,7 +225,7 @@ export async function processChatbotAI(
             // O cardápio (que seleciona minQty) mostrava "a partir de R$ 21,90"
             // no Camarão com Catupiry enquanto o robô dizia R$ 131,40 ao
             // cliente no WhatsApp, com o mesmo produto e a mesma função.
-            id: true, title: true, maxQty: true, minQty: true,
+            id: true, title: true, maxQty: true, minQty: true, priceRule: true,
             // `additionalPriceDelivery` pelo mesmo motivo do `priceDelivery`
             // acima: nas lojas de cardápio no molde iFood/Anota AI o preço mora
             // na OPÇÃO de tamanho, não no produto — sem esta coluna o robô
