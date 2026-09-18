@@ -33,7 +33,7 @@
  * que existe e não funciona, ou pior: escrita que a tela não deixaria passar.
  */
 
-import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
+import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 
 /** A chave da permissão no CSV de `User.permissions` (ver lib/permissions.ts). */
@@ -45,18 +45,29 @@ export const PERMISSAO_EDITAR_PEDIDOS = "editar_pedidos";
  * aparecer amanhã e ninguém lembrar de classificar vira "não edita" — o lado
  * seguro.
  *
- * SAIU_ENTREGA e os irmãos ficam de fora por decisão do dono (15/09/2026): a
- * comida já saiu com o motoboy, editar ali é acerto de caixa, não edição. Isso
- * fecha de quebra a porta de mexer em pedido antigo — a mensalidade do FireHub
- * é calculada sobre o valor dos pedidos (lib/billing.ts), então poder editar
- * pedido ENTREGUE seria poder baixar a própria conta no fim do mês.
+ * ── A decisão do dono mudou (17/09/2026) ────────────────────────────────────
  *
- * AGUARDANDO_PAGAMENTO e CRIANDO_IA também ficam fora: pedido que ainda não é
+ * Em 15/09 SAIU_ENTREGA e ENTREGUE ficavam de fora: "a comida já saiu, editar
+ * ali é acerto de caixa". Dois dias de uso mostraram o contrário: o cliente
+ * acrescenta coisa na porta, muda de ideia com o motoboy na rua, e a loja
+ * precisa consertar o pedido depois de finalizado quando o que foi lançado
+ * não é o que foi entregue. Então entra tudo menos cancelado — inclusive
+ * ENTREGUE e ENCERRADO.
+ *
+ * O custo que o dono aceitou de olhos abertos: a mensalidade do FireHub é
+ * calculada sobre o valor dos pedidos (lib/billing.ts), então editar pedido
+ * ENTREGUE é poder mexer na própria conta. O contrapeso é o rastro em
+ * `editHistory` (quem, quando, o quê, total antes e depois), gravado no
+ * pedido — e a permissão por funcionário logo abaixo.
+ *
+ * AGUARDANDO_PAGAMENTO e CRIANDO_IA continuam fora: pedido que ainda não é
  * pedido não se edita (mesma régua da fila de impressão e do app do motoboy).
  */
 export const STATUS_EDITAVEIS = [
   "NOVO", "CONFIRMADO", "RECEBIDO", "PENDENTE", "ACEITO",
   "PREPARANDO", "EM_PREPARO", "EM_ANDAMENTO", "PRONTO",
+  "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "EM_ROTA",
+  "ENTREGUE", "ENCERRADO",
 ] as const;
 
 export type ModoDeEdicao =
@@ -138,21 +149,10 @@ export function avaliarEdicao(
   if ((STATUS_CANCELADOS as readonly string[]).includes(status)) {
     return { modo: "BLOQUEADO", motivo: "Este pedido já foi cancelado." };
   }
-  if ((STATUS_FINALIZADOS as readonly string[]).includes(status)) {
-    return {
-      modo: "BLOQUEADO",
-      motivo: "Este pedido já foi entregue. Ajuste agora é acerto de caixa — fale com o financeiro.",
-    };
-  }
   if (!(STATUS_EDITAVEIS as readonly string[]).includes(status)) {
-    // Cai aqui SAIU_ENTREGA e irmãos, AGUARDANDO_PAGAMENTO, CRIANDO_IA e
-    // qualquer status que apareça depois sem ser classificado.
-    return {
-      modo: "BLOQUEADO",
-      motivo: ehStatusDeRua(status)
-        ? "O pedido já saiu para entrega — não dá mais para mudar o que vai na sacola."
-        : "Este pedido ainda não está pronto para ser editado.",
-    };
+    // Cai aqui AGUARDANDO_PAGAMENTO, CRIANDO_IA e qualquer status que apareça
+    // depois sem ser classificado.
+    return { modo: "BLOQUEADO", motivo: "Este pedido ainda não está pronto para ser editado." };
   }
 
   const canal = canalDoPedido(pedido as any);
@@ -164,10 +164,6 @@ export function avaliarEdicao(
   }
 
   return { modo: "COMPLETO" };
-}
-
-function ehStatusDeRua(status: string): boolean {
-  return status.startsWith("SAIU") || status === "EM_ROTA";
 }
 
 /**
