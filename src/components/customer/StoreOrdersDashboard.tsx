@@ -2150,14 +2150,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     const digitadoAqui = canalDoNovo.chave === "PDV" || canalDoNovo.chave === "MESA" || canalDoNovo.chave === "TOTEM";
                     // Tablet que dormiu 10 min volta com vários pedidos de uma
                     // vez: sem este freio, todas as notas tocam no mesmo instante
-                    // e viram um estouro só.
-                    const podeTocar = Date.now() - ultimoBipeRef.current > 1500;
+                    // e viram um estouro só. 2,5 s porque a sequência do alerta
+                    // dura ~1,9 s: menos que isso e duas sequências se atropelam.
+                    const podeTocar = Date.now() - ultimoBipeRef.current > 2500;
                     if (chegouAgora && !digitadoAqui && !esperaAceite && !jaFinalizado && o.status !== "CRIANDO_IA") {
                       const canal = canalDoNovo.nome;
                       console.log(`[Pedido novo] 🛎️ ${canal} #${o.dailyOrderNumber ?? ""} — chegada`);
                       if (podeTocar) {
                         ultimoBipeRef.current = Date.now();
-                        tocarChegadaDePedido();
+                        // O MESMO som do alerta de novo pedido, UMA sequência
+                        // e para (ver o comentário de playOrderChime). Quem
+                        // repete a cada 4 s é só o pedido esperando aceite.
+                        playOrderChime();
                       }
                       avisarChegada(o, canal);
                     }
@@ -2430,41 +2434,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, [audioPronto]);
 
   /**
-   * ── O PEDIDO DE INTEGRAÇÃO CHEGAVA MUDO ─────────────────────────────────
+   * ── PEDIDO QUE ENTRA JÁ ACEITO TOCA O MESMO SOM, UMA VEZ ────────────────
    *
-   * O painel só tinha UM som: o alerta que repete a cada 4 s enquanto houver
-   * pedido esperando aceite na coluna Novos. Pedido de marketplace quase nunca
-   * passa por lá — o do 99Food entra ACEITO (o webhook confirma na hora, senão
-   * eles cancelam) e o do iFood com aceite automático também. Medido em
-   * 12/09/2026: os 8 pedidos do 99Food da noite entraram sem um único bipe, e a
-   * loja só descobria olhando a tela.
+   * O alerta que repete a cada 4 s só vale para pedido esperando aceite na
+   * coluna Novos. Com aceite automático — e em todo pedido do 99Food, que o
+   * webhook confirma na hora — o pedido nunca passa por lá. Medido em
+   * 12/09/2026: os 8 pedidos do 99Food da noite entraram sem um único bipe.
    *
-   * Este som é outro: toca UMA vez, quando o pedido CHEGA, de qualquer canal.
-   * Três notas subindo, timbre diferente do alerta de aceite, para o ouvido
-   * separar "chegou mais um" de "tem gente esperando você aceitar".
+   * Existiu um som próprio para essa chegada (três notas subindo, mais baixo,
+   * timbre diferente). Decisão do dono em 18/09/2026: tem que ser o MESMO
+   * barulho do alerta de novo pedido — é o som que a equipe já conhece como
+   * "entrou pedido" —, só que UMA sequência e para, porque não há nada para
+   * aceitar. Por isso a chegada chama playOrderChime() uma vez só (ver o
+   * detector de pedidos novos, no poll).
    */
-  const tocarChegadaDePedido = useCallback(async () => {
-    try {
-      const ctx = await audioPronto();
-      if (!ctx) return;
-      const nota = (freq: number, quando: number, dur = 0.18) => {
-        const osc = ctx!.createOscillator();
-        const g = ctx!.createGain();
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(freq, quando);
-        g.gain.setValueAtTime(0.0001, quando);
-        g.gain.exponentialRampToValueAtTime(0.35, quando + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, quando + dur);
-        osc.connect(g).connect(ctx!.destination);
-        osc.start(quando);
-        osc.stop(quando + dur + 0.02);
-      };
-      const t = ctx.currentTime;
-      nota(523.25, t);
-      nota(659.25, t + 0.16);
-      nota(783.99, t + 0.32, 0.3);
-    } catch { /* sem permissão de áudio: o cartão na tela continua lá */ }
-  }, [audioPronto]);
 
   /** Avisa na barra do sistema, para a aba em segundo plano. */
   const avisarChegada = useCallback((pedido: any, canal: string) => {
