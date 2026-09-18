@@ -58,7 +58,20 @@ type CartItem = MenuProduct & {
   quantity: number;
   comboSelections?: any;
   notes?: string;
+  /** O id do MenuProduct de verdade. `id` da linha do carrinho ganha sufixo
+   *  `_<timestamp>[_<n>]` quando é combo ou tem observação. */
+  productId?: string;
 };
+
+// ── O ID DO PRODUTO A PARTIR DA LINHA DO CARRINHO ─────────────────────────
+// Antes era `id.split("_")[0]`. Funcionava enquanto todo id era um cuid, mas os
+// cardápios copiados por script (R&D Pizzaria/Rafas, Brendi) nascem com id
+// `prd_xxxx` — e o corte no primeiro underscore mandava "prd" para a API, que
+// respondia "Um dos itens do carrinho não está mais disponível nesta loja."
+// para TODO pedido da loja. Agora a linha carrega `productId`; a expressão é
+// só para sacola gravada no localStorage antes desta correção (vale 6 horas).
+const idDoProduto = (item: { id: string; productId?: string }): string =>
+  item.productId || String(item.id).replace(/_\d{13}(?:_\d+)?$/, "");
 
 type Franchisee = {
   id: string;
@@ -618,6 +631,7 @@ export default function CustomerStorePage({
         return [...prev, {
           ...product,
           id: product.id + '_' + Date.now(),
+          productId: product.id,
           price: finalPrice,
           quantity: qty || 1,
           comboSelections: cs,
@@ -630,6 +644,7 @@ export default function CustomerStorePage({
         return [...prev, {
           ...product,
           id: product.id + '_' + Date.now(),
+          productId: product.id,
           price: finalPrice,
           quantity: qty || 1,
           notes: itemNotes.trim()
@@ -637,7 +652,7 @@ export default function CustomerStorePage({
       }
       const ex = prev.find(i => i.id === product.id && !i.comboSelections && !(i as any).notes);
       if (ex) return prev.map(i => (i.id === product.id && !i.comboSelections && !(i as any).notes) ? { ...i, quantity: i.quantity + (qty || 1) } : i);
-      return [...prev, { ...product, price: finalPrice, quantity: qty || 1 }];
+      return [...prev, { ...product, productId: product.id, price: finalPrice, quantity: qty || 1 }];
     });
     trackPixelEvent("AddToCart", { content_name: product.name, value: finalPrice * (qty || 1), currency: "BRL" });
     // Mesmo momento, nomenclatura do GA4. Os nomes são os recomendados
@@ -648,7 +663,7 @@ export default function CustomerStorePage({
       currency: "BRL",
       value: finalPrice * (qty || 1),
       items: [{
-        item_id: String(product.id).split("_")[0],
+        item_id: product.id,
         item_name: product.name,
         quantity: qty || 1,
         price: finalPrice,
@@ -746,6 +761,7 @@ export default function CustomerStorePage({
         // Combo e item com observação viram linha própria, como no addToCart:
         // agrupar pelo id do produto misturaria escolhas diferentes do mesmo combo.
         id: temCombo || it.notes ? `${atual.id}_${Date.now()}_${novos.length}` : atual.id,
+        productId: atual.id,
         price: precoNovo,
         quantity: qtd,
         ...(temCombo ? { comboSelections: selecoes } : {}),
@@ -777,7 +793,7 @@ export default function CustomerStorePage({
       currency: "BRL",
       value: valorTotal,
       items: novos.map(n => ({
-        item_id: String(n.id).split("_")[0],
+        item_id: idDoProduto(n),
         item_name: n.name,
         quantity: n.quantity,
         price: n.price,
@@ -1420,7 +1436,7 @@ export default function CustomerStorePage({
           couponCode: couponApplied?.code || null,
           cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
           dispensarPremioDaTrilha: guardarPremioDaTrilha,
-          items: cart.map(i => ({ menuProductId: i.id.split("_")[0], quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
+          items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
           // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
           // e na mesma sessão — sem eles a venda vira "Direct" e o anúncio que
@@ -1445,8 +1461,8 @@ export default function CustomerStorePage({
             currency: "BRL",
             order_id: d.orderId,
             content_type: "product",
-            content_ids: cart.map(i => i.id.split("_")[0]),
-            contents: cart.map(i => ({ id: i.id.split("_")[0], quantity: i.quantity })),
+            content_ids: cart.map(i => idDoProduto(i)),
+            contents: cart.map(i => ({ id: idDoProduto(i), quantity: i.quantity })),
             num_items: cart.reduce((s, i) => s + i.quantity, 0),
           },
           `purchase:${d.orderId}`
@@ -1460,7 +1476,7 @@ export default function CustomerStorePage({
           value: finalTotal,
           shipping: effectiveDeliveryFee || 0,
           items: cart.map(i => ({
-            item_id: i.id.split("_")[0],
+            item_id: idDoProduto(i),
             item_name: i.name,
             quantity: i.quantity,
             price: i.price,
@@ -2582,7 +2598,7 @@ export default function CustomerStorePage({
                   currency: "BRL",
                   value: finalTotal,
                   items: cart.map(i => ({
-                    item_id: i.id.split("_")[0],
+                    item_id: idDoProduto(i),
                     item_name: i.name,
                     quantity: i.quantity,
                     price: i.price,
