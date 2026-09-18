@@ -8,6 +8,7 @@ import {
   type ModuloDePedido,
 } from "@/lib/modulo-do-pedido";
 import ComandaModeloEditor from "./ComandaModeloEditor";
+import AvisoDownloadWindows from "@/components/AvisoDownloadWindows";
 import type { ModeloDeComanda } from "@/lib/comanda-modelo";
 import {
   contaSaiNestaImpressora,
@@ -546,6 +547,10 @@ export default function PrinterSetupClient({
               ✅ Necessário para impressão automática
             </div>
           </div>
+
+          {/* Só para quem ainda não tem o Assistente rodando: quem já instalou
+              não precisa reler o aviso do Windows a cada visita. */}
+          {status !== "connected" && <AvisoDownloadWindows />}
 
           {/* Seção de ajuda expandível */}
           {showHelp && (

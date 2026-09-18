@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   Gift, Info, TrendingUp, Award, Users, Cake, Crown, Check, Sparkles, AlertCircle, HelpCircle
 } from "lucide-react";
+import AvisoDownloadWindows from "@/components/AvisoDownloadWindows";
 import {
   CAMPANHA_PADRAO,
   VERSAO_ASSISTENTE_COM_CAMPANHA,
@@ -361,6 +362,7 @@ export default function LoyaltyConfigForm({
                     🔄 Já instalei — verificar de novo
                   </button>
                 </div>
+                <AvisoDownloadWindows compacto />
               </div>
             ) : !versaoOk ? (
               <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: 16, marginBottom: 20 }}>
