@@ -29,6 +29,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 import { saveUploadedFile } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -96,8 +98,25 @@ export async function GET(req: NextRequest) {
 }
 
 async function internalizar(req: NextRequest) {
-  if (!verifyCronAuth(req)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Cron OU um ADMIN logado.
+  //
+  // O caminho do admin existe porque a falha aqui era INVISÍVEL: em
+  // 18/09/2026 descobrimos que nenhuma das 439 fotos de cinco lojas (Taurus
+  // 193 desde 09/09, R&D 96, Frangoso 60, Delícias 55, Digão 35) tinha sido
+  // internalizada — a rota só era chamada pelo cron, de dentro do container,
+  // e o que ela respondia não chegava a olho nenhum. Poder disparar pelo
+  // painel e LER o resultado (quantas trocaram, quais falharam e por quê) é o
+  // que transforma "não funcionou" em "falhou por causa disto".
+  const daCasa = verifyCronAuth(req);
+  if (!daCasa) {
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email;
+    const quem = email
+      ? await prisma.user.findUnique({ where: { email }, select: { role: true } })
+      : null;
+    if (quem?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
@@ -105,11 +124,31 @@ async function internalizar(req: NextRequest) {
   // cron (GET, sem corpo) chama. O padrão era só "menudino", e as 193 fotos
   // do Taurus, importadas do iFood em 09/09/2026, ficaram apontando para
   // static-images.ifood.com.br por seis horas a fio sem nunca entrar aqui.
-  const dominios: string[] = (body as any)?.dominio ? [String((body as any).dominio)] : ORIGENS_DE_FORA;
-  const franchiseeId = (body as any)?.franchiseeId ? String((body as any).franchiseeId) : null;
+  const q = req.nextUrl.searchParams;
+  const dePara = (chave: string) => (body as any)?.[chave] ?? q.get(chave) ?? null;
+
+  const escolhido = dePara("dominio");
+  const dominios: string[] = escolhido ? [String(escolhido)] : ORIGENS_DE_FORA;
+  const franchiseeId = dePara("franchiseeId") ? String(dePara("franchiseeId")) : null;
+
+  // ── POR QUE ESTA RODADA TEM HORA PARA ACABAR ───────────────────────────
+  //
+  // O cron-runner derruba a conexão aos 55 s (`timeout: 55_000` em
+  // scripts/cron-runner.js). Uma rodada que tenta as 439 imagens de uma vez
+  // nunca chega ao fim dentro dessa janela — e uma rodada interrompida não
+  // tem como dizer o que fez.
+  //
+  // Com orçamento, cada chamada PÁRA sozinha antes do corte, responde o que
+  // conseguiu e deixa o resto para a próxima. Como cada troca é gravada na
+  // hora, o progresso é sempre cumulativo: seis horas depois ela continua de
+  // onde parou, e o número de pendentes só cai.
+  const orcamentoMs = Math.max(5_000, Math.min(240_000, Number(dePara("orcamentoMs")) || 45_000));
+  const limite = Math.max(1, Math.min(5_000, Number(dePara("limite")) || 5_000));
+  const comecou = Date.now();
 
   let total = 0;
   let trocadas = 0;
+  let pendentes = 0;
   const falhas: string[] = [];
   const porColuna: Record<string, number> = {};
 
@@ -133,10 +172,17 @@ async function internalizar(req: NextRequest) {
 
     total += linhas.length;
     for (const linha of linhas) {
+      if (Date.now() - comecou > orcamentoMs || trocadas >= limite) {
+        pendentes += 1;
+        continue;
+      }
       const url: string = linha[alvo.campo];
       const nome = (alvo.rotulo && linha[alvo.rotulo]) || String(linha.id).slice(-6);
       try {
-        const res = await fetch(url);
+        // Timeout POR IMAGEM. Sem ele, uma origem que aceita a conexão e não
+        // responde segura a rodada inteira até o cron desistir — e as outras
+        // imagens, que baixariam em 300 ms, nunca chegam a ser tentadas.
+        const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const bruto = Buffer.from(await res.arrayBuffer());
         const mime = res.headers.get("content-type")?.split(";")[0] || "image/webp";
@@ -152,9 +198,21 @@ async function internalizar(req: NextRequest) {
     }
   }
 
+  const levou = Date.now() - comecou;
   console.log(
-    `[internalizar-imagens] ${trocadas}/${total} imagem(ns) internalizada(s)` +
-    (falhas.length ? `; falhas: ${falhas.length}` : "")
+    `[internalizar-imagens] ${trocadas}/${total} imagem(ns) internalizada(s) em ${levou}ms` +
+    (pendentes ? `; ${pendentes} ficaram para a próxima rodada` : "") +
+    (falhas.length ? `; falhas: ${falhas.length} — ${falhas.slice(0, 3).join(" | ")}` : "")
   );
-  return NextResponse.json({ total, trocadas, porColuna, falhas });
+  return NextResponse.json({
+    total,
+    trocadas,
+    pendentes,
+    levouMs: levou,
+    porColuna,
+    // As falhas vão INTEIRAS na resposta: é o único lugar onde o motivo real
+    // aparece para quem está olhando. Truncar aqui foi o que deixou o
+    // problema invisível por nove dias.
+    falhas,
+  });
 }
