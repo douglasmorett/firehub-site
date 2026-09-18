@@ -1,3 +1,4 @@
+import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { destinosDoPedido } from "@/lib/roteamento-de-impressao";
@@ -423,6 +424,9 @@ export async function GET(req: NextRequest) {
       order: {
         ...order,
         ...camposDeEntregaParaImpressao(order),
+        // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
+        // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
+        ...camposDeDesconto99ParaImpressao(order),
         ...(qrEmTodas ? qr : {}),
         ...campanhaSemDestino,
         ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
@@ -520,6 +524,9 @@ export async function GET(req: NextRequest) {
         order: {
           ...order,
           ...camposDeEntregaParaImpressao(order),
+          // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
+          // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
+          ...camposDeDesconto99ParaImpressao(order),
           ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
         },
         storeName: order.storeName || owner?.storeName || owner?.name || "FIREHUB",

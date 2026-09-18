@@ -1,4 +1,5 @@
 "use client";
+import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
@@ -270,6 +271,8 @@ export default function GlobalPrintListener() {
                     discountTotal: order.discountTotal,
                     discountIfood: order.discountIfood,
                     discountMerchant: order.discountMerchant,
+                    // 99Food: loja x plataforma pela régua única (lib/desconto-99food.ts).
+                    ...camposDeDesconto99ParaImpressao(order),
                     changeAmount: order.changeAmount,
                     ifoodReference: order.ifoodReference,
                     ifoodPickupCode: order.ifoodPickupCode,

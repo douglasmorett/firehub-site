@@ -96,6 +96,40 @@ conferir('o 99FOOD bancou R$ 50,00', p266003.descontos.plataforma, 50);
 conferir('a loja RECEBE R$ 50,98 (bate com o painel do 99)', p266003.descontos.recebeLoja, 50.98);
 conferir('loja + plataforma = total', p266003.descontos.loja + p266003.descontos.plataforma, p266003.descontos.total);
 
+console.log('\n== O mesmo pedido lido do BANCO, como os 128 antigos (sem coluna, com promocoes) ==');
+// Até 18/09/2026 o webhook não gravava discountMerchant/discountIfood, mas
+// sempre guardou `promocoes` em discountDetails. Recibo, comanda e fila leem
+// por esta função — pedido antigo e novo saem iguais, sem acertar banco.
+const { separacaoDoDesconto99, camposDeDesconto99ParaImpressao } = jiti(path.resolve(__dirname, '..', 'src', 'lib', 'desconto-99food.ts'));
+const PROMOS_266003 = [
+  { promo_type: 2, promo_discount: 1200, shop_subside_price: 1200 },
+  { promo_type: 3, promo_discount: 800, shop_subside_price: 800 },
+  { promo_type: 11, promo_discount: 5000, shop_subside_price: 0 },
+];
+const antigoNoBanco = {
+  source: '99FOOD', totalAmount: 1.97, discountTotal: 70, discountMerchant: null, discountIfood: null,
+  discountDetails: { total: 70, taxaServico: 0.99, promocoes: PROMOS_266003 },
+};
+const sep = separacaoDoDesconto99(antigoNoBanco);
+conferir('loja R$ 20,00', sep.loja, 20);
+conferir('plataforma R$ 50,00', sep.plataforma, 50);
+conferir('taxa de serviço R$ 0,99', sep.taxaServico, 0.99);
+conferir('a loja recebe R$ 50,98', sep.recebeLoja, 50.98);
+conferir('taxa lida do precoCru quando não há campo próprio (pedido de antes de 17/09)',
+  separacaoDoDesconto99({ ...antigoNoBanco, discountDetails: { total: 70, promocoes: PROMOS_266003, precoCru: { others_fees: { service_price: 99 } } } }).taxaServico, 0.99);
+conferir('com as colunas gravadas, as colunas mandam',
+  separacaoDoDesconto99({ ...antigoNoBanco, discountMerchant: 20, discountIfood: 50, discountDetails: { total: 70, taxaServico: 0.99, promocoes: [] } }).plataforma, 50);
+conferir('pedido do iFood não é desta função (null)', separacaoDoDesconto99({ source: 'IFOOD', discountTotal: 10, discountIfood: 10 }), null);
+conferir('99Food sem desconto (null)', separacaoDoDesconto99({ source: '99FOOD', totalAmount: 30, discountTotal: 0, discountDetails: {} }), null);
+
+console.log('\n== O que a COMANDA recebe (campos que o Assistente 1.2.17 lê) ==');
+const campos = camposDeDesconto99ParaImpressao(antigoNoBanco);
+conferir('a parte do 99 vai em discountPlatform, com o rótulo do 99', [campos.discountPlatform, campos.discountPlatformLabel], [50, 'Desconto (99Food):']);
+conferir('discountIfood NÃO viaja (o Assistente antigo imprimiria "Desconto (iFood)")', campos.discountIfood, null);
+conferir('discountMerchant 20 e serviceFee 0,99', [campos.discountMerchant, campos.serviceFee], [20, 0.99]);
+conferir('pedido do 99 sem desconto e sem taxa não ganha campo nenhum', camposDeDesconto99ParaImpressao({ source: '99FOOD', totalAmount: 30, discountTotal: 0, discountDetails: {} }), {});
+conferir('pedido do iFood não ganha campo nenhum', camposDeDesconto99ParaImpressao({ source: 'IFOOD', discountIfood: 10 }), {});
+
 console.log('\n== Sem `promotions` (app antigo): tudo cai para a loja, como sempre foi ==');
 const semPromo = traduzirPedido99Food({ order_id: 'z', order_items: [item('Pastel', 1, 5000)], price: { real_pay_price: 4000, order_price: 5000, items_discount: 1000, delivery_price: 0 } });
 conferir('loja = total', semPromo.descontos.loja, 10);

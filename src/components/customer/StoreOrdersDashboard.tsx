@@ -18,6 +18,7 @@ import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { lerPager, nomeComPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
+import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -1871,6 +1872,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       discountTotal: order.discountTotal,
       discountIfood: order.discountIfood,
       discountMerchant: order.discountMerchant,
+      // 99Food: loja x plataforma pela régua única, também em pedido antigo;
+      // a parte do 99 vai em discountPlatform (lib/desconto-99food.ts).
+      ...camposDeDesconto99ParaImpressao(order),
       changeAmount: order.changeAmount,
       ifoodReference: order.ifoodReference,
       ifoodPickupCode: order.ifoodPickupCode,
@@ -3691,8 +3695,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       "Desconto R$ 70" como se fosse tudo da loja. Sem os
                       campos separados, cai na linha única de sempre. */}
                   {(() => {
-                    const loja = Number((order as any).discountMerchant) || 0;
-                    const plataforma = Number((order as any).discountIfood) || 0;
+                    // 99Food: pedido de antes de 18/09/2026 não tem as colunas,
+                    // mas guarda `promocoes` — a mesma régua separa
+                    // (lib/desconto-99food.ts). iFood segue pelas colunas.
+                    const sep99 = separacaoDoDesconto99(order);
+                    const loja = sep99 ? sep99.loja : Number((order as any).discountMerchant) || 0;
+                    const plataforma = sep99 ? sep99.plataforma : Number((order as any).discountIfood) || 0;
                     const total = Number(order.discountTotal) || 0;
                     if (loja > 0 || plataforma > 0) {
                       return (
@@ -3764,7 +3772,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       diferença era isto aqui mais a entrega. O lojista lia como
                       "o cupom não deduz". Só aparece quando existe. */}
                   {(() => {
-                    const taxaServico = Number((order as any).discountDetails?.taxaServico) || 0;
+                    const taxaServico = taxaDeServico99(order) || Number((order as any).discountDetails?.taxaServico) || 0;
                     if (taxaServico <= 0) return null;
                     return (
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -3787,9 +3795,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       a loja recebe R$ 50,98. Sem esta linha o lojista lê o
                       total e acha que vendeu um combo por dois reais. */}
                   {(() => {
-                    const dd = (order as any).discountDetails;
-                    const recebe = Number(dd?.recebeLoja);
-                    const plataforma = Number((order as any).discountIfood) || 0;
+                    const sep99 = separacaoDoDesconto99(order);
+                    const recebe = sep99 ? sep99.recebeLoja : Number((order as any).discountDetails?.recebeLoja);
+                    const plataforma = sep99 ? sep99.plataforma : Number((order as any).discountIfood) || 0;
                     if (!(plataforma > 0) || !Number.isFinite(recebe) || recebe <= 0) return null;
                     return (
                       <div style={{ border: "1.5px dashed #7C3AED", background: "#F5F3FF", padding: "6px 10px", borderRadius: "4px", margin: "0 0 8px", fontSize: "12px", color: "#4C1D95" }}>

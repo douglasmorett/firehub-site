@@ -1439,12 +1439,27 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // (iFood/loja) so saem quando elas mesmas fecham; senao sai uma linha so,
   // com o numero que corresponde ao que o cliente pagou.
   const totalCobrado = Number(order.totalAmount || 0);
-  const descontoQueFecha = Math.round((Number(subtotal) + Number(dFee) - totalCobrado) * 100) / 100;
+  // ── TAXA DE SERVICO DO PARCEIRO ──────────────────────────────────────
+  //
+  // O 99Food cobra do cliente uma taxa de servico que entra no total mas
+  // nao e item, nem entrega, nem desconto. Sem ela a conta abaixo nunca
+  // fechava num pedido do 99 com taxa (R$ 0,99 no #266003 do Frangoso,
+  // 17/09/2026) e as linhas separadas nunca saiam — o papel dizia so
+  // "Desconto: -69,01", que nao e nenhum numero que o lojista reconheca.
+  // O servidor manda `serviceFee` (src/lib/desconto-99food.ts); servidor
+  // antigo nao manda e tudo fica como era.
+  const sFee = Number(order.serviceFee || 0) > 0 ? Number(order.serviceFee) : 0;
+  const descontoQueFecha = Math.round((Number(subtotal) + Number(dFee) + sFee - totalCobrado) * 100) / 100;
 
+  // A parte da PLATAFORMA: `discountIfood` e o campo historico do iFood; o
+  // 99Food chega em `discountPlatform` com o rotulo junto, porque "Desconto
+  // (iFood)" numa comanda do 99 e outra reclamacao.
+  const plataformaValor = Number(order.discountPlatform || order.discountIfood || 0);
+  const plataformaRotulo = String(order.discountPlatformLabel || "Desconto (iFood):");
   const partes = [];
-  if (order.discountIfood && Number(order.discountIfood) > 0) partes.push(["Desconto (iFood):", Number(order.discountIfood)]);
+  if (plataformaValor > 0) partes.push([plataformaRotulo, plataformaValor]);
   if (order.discountMerchant && Number(order.discountMerchant) > 0) partes.push(["Desconto (Cupom - Loja):", Number(order.discountMerchant)]);
-  else if (!order.discountIfood && order.discountTotal && Number(order.discountTotal) > 0) partes.push(["Desconto (Cupom - Loja):", Number(order.discountTotal)]);
+  else if (!(plataformaValor > 0) && order.discountTotal && Number(order.discountTotal) > 0) partes.push(["Desconto (Cupom - Loja):", Number(order.discountTotal)]);
   const somaDasPartes = Math.round(partes.reduce((s, p) => s + p[1], 0) * 100) / 100;
 
   if (ehConta) {
@@ -1480,6 +1495,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     } else {
       res += rightAlign(dFeeLabel, dinheiro(dFee));
     }
+    // Taxa de servico do parceiro, na linha dela — e o que faz o total fechar
+    // na frente do lojista: subtotal - descontos + entrega + servico = total.
+    if (sFee > 0) res += rightAlign(String(order.serviceFeeLabel || "Taxa de servico:"), dinheiro(sFee));
   }
   marcas.fimTaxaEntrega = res.length;
 

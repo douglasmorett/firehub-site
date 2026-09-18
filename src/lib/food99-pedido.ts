@@ -18,6 +18,8 @@
  */
 
 /** Centavos (inteiro) → reais. É assim que todo valor do 99Food chega. */
+
+import { repartirDesconto99 } from "@/lib/desconto-99food";
 export function centavosParaReais(v: unknown): number {
   const n = typeof v === "number" ? v : parseInt(String(v ?? 0), 10);
   return Number.isFinite(n) ? n / 100 : 0;
@@ -319,22 +321,11 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
   const descontoTotal = Math.round((descontoItens + descontoEntrega + descontoCupom) * 100) / 100;
 
   // Quem bancou: a LOJA paga `shop_subside_price` de cada promoção; o resto é
-  // o 99Food. Sem `promotions` (app antigo) não há como saber, e a escolha
-  // conservadora é atribuir tudo à loja — é o que sempre foi feito, e um
-  // desconto do 99 lido como da loja só faz a loja achar que ganhou menos,
-  // nunca mais.
-  // (`loja` já é a loja do 99 neste escopo — daí os nomes com "desconto".)
+  // o 99Food. A conta mora em lib/desconto-99food.ts — a MESMA que o recibo e
+  // a comanda usam para pedido antigo, que não tem as colunas gravadas.
   const promocoes = Array.isArray(o.promotions) ? o.promotions : [];
-  let descontoDaLoja = descontoTotal;
-  let descontoDaPlataforma = 0;
-  if (promocoes.length > 0) {
-    const pagoPelaLoja = promocoes.reduce((s: number, p: any) => s + centavosParaReais(p?.shop_subside_price), 0);
-    const somaPromocoes = promocoes.reduce((s: number, p: any) => s + centavosParaReais(p?.promo_discount), 0);
-    descontoDaPlataforma = Math.max(0, Math.round((somaPromocoes - pagoPelaLoja) * 100) / 100);
-    descontoDaLoja = Math.max(0, Math.round((descontoTotal - descontoDaPlataforma) * 100) / 100);
-  }
   const totalPago = centavosParaReais(totalCentavos);
-  const recebeLoja = Math.round((totalPago + descontoDaPlataforma - taxaServico) * 100) / 100;
+  const reparticao = repartirDesconto99({ descontoTotal, promocoes, taxaServico, totalPago });
 
   const descontos = {
     total: descontoTotal,
@@ -343,9 +334,9 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     cupom: descontoCupom,
     promocoes,
     taxaServico,
-    loja: descontoDaLoja,
-    plataforma: descontoDaPlataforma,
-    recebeLoja,
+    loja: reparticao.loja,
+    plataforma: reparticao.plataforma,
+    recebeLoja: reparticao.recebeLoja,
   };
 
   // order_index é o número sequencial do dia na loja, que é o que o lojista vê
