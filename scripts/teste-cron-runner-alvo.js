@@ -39,6 +39,16 @@ conferir("a PRIMEIRA falha sempre sai no log", /n === 1 \|\| n % 10 === 0/.test(
 conferir("o log diz para onde tentou falar", /\$\{BASE_URL\}/.test(fonte));
 conferir("sucesso zera o contador", /falhasSeguidas\[job\.name\] = 0/.test(fonte));
 
+console.log("\n== JOB DE CRON MORA EM /api/cron/* ==");
+// O proxy (src/proxy.ts) exige sessão NextAuth em todo /api/admin/*, e o cron
+// chega com Bearer e sem cookie: leva 401 ANTES da rota. Foi o que manteve a
+// internalização de imagens parada por nove dias sem um erro sequer — os
+// outros 16 jobs sempre rodaram, porque todos já viviam em /api/cron/.
+const caminhos = [...fonte.matchAll(/^\s+path: '([^']+)'/gm)].map((m) => m[1]);
+conferir(`os ${caminhos.length} jobs apontam todos para /api/cron/`, caminhos.length >= 17 && caminhos.every((p) => p.startsWith("/api/cron/")));
+conferir("nenhum job em /api/admin/ (o proxy derruba antes da rota)", !caminhos.some((p) => p.startsWith("/api/admin/")));
+conferir("internalizar-imagens aponta para /api/cron/internalizar-imagens", caminhos.includes("/api/cron/internalizar-imagens"));
+
 console.log("\n== o que não pode ter mudado ==");
 conferir("internalizar-imagens continua agendado", /name: 'internalizar-imagens'/.test(fonte));
 conferir("os 17 jobs continuam lá", (fonte.match(/^\s+name: '/gm) || []).length >= 17);

@@ -140,6 +140,12 @@ export async function proxy(request: NextRequest) {
   // fino de role continua dentro de cada rota. Aqui só se corta o acesso
   // ANÔNIMO, que hoje permitia a qualquer um na internet chamar
   // seed-hakim-menu, clean-stale-orders, fix-daily-numbers etc.
+  //
+  // ⚠️ CRON NÃO PASSA POR AQUI. O cron-runner chega com
+  // `Authorization: Bearer <CRON_SECRET>` e sem cookie, então esta trava o
+  // derruba com 401 ANTES da rota — e `verifyCronAuth`, que o autorizaria,
+  // só roda depois. Foi o que manteve internalizar-imagens parada por nove
+  // dias sem um erro sequer. JOB DE CRON MORA EM /api/cron/*.
   if (pathname.startsWith("/api/admin")) {
     const token = await getToken({
       req: request,

@@ -8,26 +8,23 @@
 
 const http = require('http');
 
-// ── 127.0.0.1, NÃO "localhost" ────────────────────────────────────────
+// ── 127.0.0.1, NÃO "localhost" (endurecimento, não o bug de 18/09) ────
 //
 // O Next escuta em 0.0.0.0, que é só IPv4. "localhost" no Node 18+ pode
-// resolver para ::1 (IPv6) PRIMEIRO — o Node parou de reordenar o resultado do
-// DNS — e aí a conexão morre com ECONNREFUSED antes de tocar no servidor.
-//
-// Em silêncio, porque o `req.on('error')` abaixo engolia ECONNREFUSED de
-// propósito ("o servidor pode não estar pronto ainda"). O resultado, medido em
-// 18/09/2026: 17 jobs agendados e NENHUM rodando — 439 fotos de cardápio
-// importado nunca internalizadas em nove dias, 587 pedidos sem distância desde
-// 15/09 (a rota faz 150 por ciclo, de 10 em 10 minutos: o acúmulo é impossível
-// com o cron vivo). Os pedidos continuavam entrando porque iFood, 99Food e
-// Brendi também têm webhook — o que escondeu o estrago.
-//
+// resolver para ::1 (IPv6) primeiro — o Node parou de reordenar o resultado do
+// DNS — e a conexão morreria com ECONNREFUSED antes de tocar no servidor.
 // Endereço numérico não passa por DNS e não tem como escolher a família errada.
-// `verifyCronAuth` (src/lib/cron-auth.ts) já aceita host 127.0.0.1 como
-// chamada interna, igual a localhost.
-// E se o ambiente já trouxer CRON_BASE_URL com "localhost" — que é o valor
-// natural de quem configurou isso um dia —, trocamos aqui. Senão a correção
-// valeria só para quem NÃO tem a variável, que é justamente quem já estava bem.
+// `verifyCronAuth` (src/lib/cron-auth.ts) aceita 127.0.0.1 como chamada
+// interna, igual a localhost.
+//
+// NÃO foi isto que quebrou a internalização de imagens em 18/09 — os outros 16
+// jobs rodavam normalmente, e dá para provar: `recuperacao-clientes` carimbou
+// `chatbotConfig.ultimaRecuperacaoEm` no mesmo dia. O que derrubava aquele job
+// era o ENDEREÇO dele, em /api/admin/* (ver o comentário no job, e src/proxy.ts).
+// Esta troca fica porque o silêncio era real e não custa nada.
+//
+// E se o ambiente já trouxer CRON_BASE_URL com "localhost", trocamos aqui:
+// senão a mudança valeria só para quem NÃO tem a variável.
 const BASE_URL = (process.env.CRON_BASE_URL || 'http://127.0.0.1:3000')
   .replace('//localhost', '//127.0.0.1');
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -94,7 +91,11 @@ const jobs = [
     // para fora, é uma consulta e nada mais. Cardápio importado não pode
     // depender da plataforma de onde veio.
     name: 'internalizar-imagens',
-    path: '/api/admin/internalizar-imagens',
+    // ⚠️ /api/cron/, NÃO /api/admin/. O proxy (src/proxy.ts) exige sessão
+    // NextAuth em todo /api/admin/*, e o cron chega com Bearer e sem cookie:
+    // levava 401 ANTES da rota. Ficou nove dias assim, sem erro em lugar
+    // nenhum, com 439 fotos de cardápio importado servidas pelo concorrente.
+    path: '/api/cron/internalizar-imagens',
     intervalMs: 6 * 60 * 60_000, // 6 horas
   },
   {
