@@ -105,24 +105,67 @@ const COLUNAS_DE_IMAGEM: {
  * imagem e o Referer do próprio site de origem. Se ainda assim vier 403, o erro
  * sobe com o motivo e aparece na resposta — não some.
  */
-async function baixar(url: string): Promise<Response> {
-  const direto = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-  if (direto.ok || (direto.status !== 403 && direto.status !== 401 && direto.status !== 429)) return direto;
-
+function cabecalhoDeNavegador(url: string): Record<string, string> {
   let origem = "";
   try {
     origem = new URL(url).origin + "/";
   } catch {}
-  return fetch(url, {
+  return {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9",
+    ...(origem ? { Referer: origem } : {}),
+  };
+}
+
+/** Levou a porta na cara? (403/401/429 é bloqueio, 404 é imagem que sumiu.) */
+const barrado = (r: Response) => r.status === 403 || r.status === 401 || r.status === 429;
+
+/**
+ * O MESMO arquivo, pelo caminho que os apps do iFood usam.
+ *
+ * `static-images.ifood.com.br/pratos/<uuid>/<arquivo>.jpg` é o caminho cru, e é
+ * o que o WAF deles barra para o nosso servidor. O mesmo arquivo também é
+ * servido por `/image/upload/t_high/pratos/...`, que é a rota de transformação
+ * que o app e o site deles pedem — e que costuma ter regra diferente.
+ *
+ * Nulo quando não é esse host, ou quando a URL já está nessa forma.
+ */
+function caminhoAlternativoDoIfood(url: string): string | null {
+  const marca = "static-images.ifood.com.br/";
+  const i = url.indexOf(marca);
+  if (i < 0) return null;
+  const caminho = url.slice(i + marca.length);
+  if (caminho.startsWith("image/upload/")) return null;
+  return `https://static-images.ifood.com.br/image/upload/t_high/${caminho}`;
+}
+
+async function baixar(url: string): Promise<Response> {
+  const direto = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  if (direto.ok || !barrado(direto)) return direto;
+
+  // 2ª tentativa: como navegador. Requisição sem `User-Agent` vinda de faixa de
+  // datacenter é exatamente o que um WAF barra.
+  const comoNavegador = await fetch(url, {
     signal: AbortSignal.timeout(20_000),
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-      "Accept-Language": "pt-BR,pt;q=0.9",
-      ...(origem ? { Referer: origem } : {}),
-    },
+    headers: cabecalhoDeNavegador(url),
   });
+  if (comoNavegador.ok || !barrado(comoNavegador)) return comoNavegador;
+
+  // 3ª: o caminho de transformação do iFood. As 193 fotos do Taurus respondem
+  // 200 para um computador comum e 403 para o servidor no caminho cru — e o
+  // outro CDN deles (static.ifood-static.com.br, as 7 da Brazza) baixa normal,
+  // então não é bloqueio geral: é regra daquele host.
+  const alternativo = caminhoAlternativoDoIfood(url);
+  if (!alternativo) return comoNavegador;
+  const porTransformacao = await fetch(alternativo, {
+    signal: AbortSignal.timeout(20_000),
+    headers: cabecalhoDeNavegador(alternativo),
+  });
+  // Se o alternativo também não veio, devolve o original: o motivo que aparece
+  // na resposta tem que ser o da URL que está no cadastro, não o do contorno.
+  return porTransformacao.ok ? porTransformacao : comoNavegador;
 }
 
 export async function POST(req: NextRequest) {
