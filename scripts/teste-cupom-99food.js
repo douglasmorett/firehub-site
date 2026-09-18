@@ -74,6 +74,34 @@ for (const c of CASOS) {
   console.log(`       (antes: ${somaItens.toFixed(2)} − ${p.descontos.total.toFixed(2)} + 0 = ${antes.toFixed(2)}, e o total dizia ${p.total.toFixed(2)} → sobrava R$ ${(p.total - antes).toFixed(2)} sem explicação)`);
 }
 
+console.log('\n== #266003 — o pedido de R$ 1,97: quem bancou o desconto ==');
+// 17/09/2026, Frangoso. Item 62,98; a loja deu R$ 12 no item e R$ 8 de frete
+// grátis; o 99Food deu R$ 50 de cupom do bolso dele (shop_subside 0). O
+// cliente pagou R$ 1,97 (com R$ 0,99 de serviço) e a loja RECEBE R$ 50,98 — o
+// número que o painel do 99 chama de "Total de ganhos após descontos".
+const p266003 = traduzirPedido99Food({
+  order_id: '266003', order_index: 266003,
+  order_items: [item('Molho', 1, 299), item('Combo Box de Frango P', 1, 5999)],
+  price: { real_price: 5197, order_price: 6298, others_fees: { service_price: 99, coupon_discount: 2000 }, delivery_price: 0, items_discount: 6200, real_pay_price: 197, delivery_discount: 800, customer_need_paying_money: 197, store_charged_delivery_price: 800 },
+  promotions: [
+    { promo_type: 2, promo_discount: 1200, shop_subside_price: 1200 },
+    { promo_type: 3, promo_discount: 800, shop_subside_price: 800 },
+    { promo_type: 11, promo_discount: 5000, shop_subside_price: 0 },
+  ],
+});
+conferir('o cliente pagou R$ 1,97', p266003.total, 1.97);
+conferir('desconto total R$ 70,00', p266003.descontos.total, 70);
+conferir('a LOJA bancou R$ 20,00 (12 do item + 8 do frete)', p266003.descontos.loja, 20);
+conferir('o 99FOOD bancou R$ 50,00', p266003.descontos.plataforma, 50);
+conferir('a loja RECEBE R$ 50,98 (bate com o painel do 99)', p266003.descontos.recebeLoja, 50.98);
+conferir('loja + plataforma = total', p266003.descontos.loja + p266003.descontos.plataforma, p266003.descontos.total);
+
+console.log('\n== Sem `promotions` (app antigo): tudo cai para a loja, como sempre foi ==');
+const semPromo = traduzirPedido99Food({ order_id: 'z', order_items: [item('Pastel', 1, 5000)], price: { real_pay_price: 4000, order_price: 5000, items_discount: 1000, delivery_price: 0 } });
+conferir('loja = total', semPromo.descontos.loja, 10);
+conferir('plataforma = 0', semPromo.descontos.plataforma, 0);
+conferir('recebeLoja = pago (sem plataforma, sem serviço)', semPromo.descontos.recebeLoja, 40);
+
 console.log('\n== Sem taxa nenhuma, nada muda ==');
 const simples = traduzirPedido99Food({ order_id: 'x', order_items: [item('Pastel', 2, 1200)], price: { real_pay_price: 2400, order_price: 2400, delivery_price: 0 } });
 conferir('taxaServico = 0 quando o 99 não manda', simples.descontos.taxaServico, 0);

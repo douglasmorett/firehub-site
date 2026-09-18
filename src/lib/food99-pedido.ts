@@ -212,6 +212,25 @@ export interface PedidoTraduzido {
      * não mostrava, e o lojista lia isso como "o cupom não deduz".
      */
     taxaServico: number;
+    /**
+     * Quem bancou o desconto — a separação que faltava.
+     *
+     * O 99Food manda `promotions[]` com `promo_discount` (o desconto) e
+     * `shop_subside_price` (a parte que a LOJA paga). O que sobra é o 99
+     * pagando do bolso dele. Sem separar, o pedido #266003 do Frangoso
+     * (17/09/2026) saiu com "Desconto (Cupom - Loja) R$ 70,00" e "Total
+     * R$ 1,97": a loja tinha dado R$ 20 (R$ 12 no item + R$ 8 de frete) e o
+     * 99Food R$ 50 — e a loja RECEBIA R$ 50,98, não R$ 1,97. O dono leu como
+     * se tivesse pago o combo inteiro para o cliente.
+     *
+     * É o mesmo par que o iFood já usa: `loja` vira `discountMerchant`,
+     * `plataforma` vira `discountIfood` (o nome do campo é histórico; o
+     * sistema o lê como "desconto da plataforma" no caixa e na comanda).
+     */
+    loja: number;
+    plataforma: number;
+    /** O que a LOJA recebe deste pedido (antes da comissão): pago + plataforma − serviço. */
+    recebeLoja: number;
   };
   /**
    * O objeto `price` do 99Food, como veio.
@@ -297,13 +316,36 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
   // painel não fecha (Frangoso, 17/09/2026: sobrava exatamente o service_price).
   const outrasTaxas = (preco.others_fees ?? {}) as Record<string, unknown>;
   const taxaServico = centavosParaReais(outrasTaxas.service_price);
+  const descontoTotal = Math.round((descontoItens + descontoEntrega + descontoCupom) * 100) / 100;
+
+  // Quem bancou: a LOJA paga `shop_subside_price` de cada promoção; o resto é
+  // o 99Food. Sem `promotions` (app antigo) não há como saber, e a escolha
+  // conservadora é atribuir tudo à loja — é o que sempre foi feito, e um
+  // desconto do 99 lido como da loja só faz a loja achar que ganhou menos,
+  // nunca mais.
+  // (`loja` já é a loja do 99 neste escopo — daí os nomes com "desconto".)
+  const promocoes = Array.isArray(o.promotions) ? o.promotions : [];
+  let descontoDaLoja = descontoTotal;
+  let descontoDaPlataforma = 0;
+  if (promocoes.length > 0) {
+    const pagoPelaLoja = promocoes.reduce((s: number, p: any) => s + centavosParaReais(p?.shop_subside_price), 0);
+    const somaPromocoes = promocoes.reduce((s: number, p: any) => s + centavosParaReais(p?.promo_discount), 0);
+    descontoDaPlataforma = Math.max(0, Math.round((somaPromocoes - pagoPelaLoja) * 100) / 100);
+    descontoDaLoja = Math.max(0, Math.round((descontoTotal - descontoDaPlataforma) * 100) / 100);
+  }
+  const totalPago = centavosParaReais(totalCentavos);
+  const recebeLoja = Math.round((totalPago + descontoDaPlataforma - taxaServico) * 100) / 100;
+
   const descontos = {
-    total: Math.round((descontoItens + descontoEntrega + descontoCupom) * 100) / 100,
+    total: descontoTotal,
     itens: descontoItens,
     entrega: descontoEntrega,
     cupom: descontoCupom,
-    promocoes: Array.isArray(o.promotions) ? o.promotions : [],
+    promocoes,
     taxaServico,
+    loja: descontoDaLoja,
+    plataforma: descontoDaPlataforma,
+    recebeLoja,
   };
 
   // order_index é o número sequencial do dia na loja, que é o que o lojista vê

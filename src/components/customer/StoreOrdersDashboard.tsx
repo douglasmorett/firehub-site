@@ -3681,14 +3681,47 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     <span>Subtotal:</span>
                     <span>R$ {subtotal.toFixed(2).replace('.', ',')}</span>
                   </div>
-                  {order.discountTotal && order.discountTotal > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
-                      {/* Mostra o cupom que gerou o desconto (ex.: "Cupom HAKIM10 (-10%)").
-                          Antes dizia sempre "Cupom - Loja", sem dizer qual nem por quê. */}
-                      <span>{(order as any).discountDetails?.[0]?.description || "Desconto (Cupom)"}:</span>
-                      <span>-R$ {Number(order.discountTotal).toFixed(2).replace('.', ',')}</span>
-                    </div>
-                  )}
+                  {/* ── QUEM BANCOU O DESCONTO ─────────────────────────────
+                      Duas linhas quando dá para separar: a da LOJA
+                      (discountMerchant) e a da PLATAFORMA (discountIfood — nome
+                      histórico; vale para iFood e 99Food). No #266003 do
+                      Frangoso o 99 deu R$ 50 e a loja R$ 20, e a nota dizia
+                      "Desconto R$ 70" como se fosse tudo da loja. Sem os
+                      campos separados, cai na linha única de sempre. */}
+                  {(() => {
+                    const loja = Number((order as any).discountMerchant) || 0;
+                    const plataforma = Number((order as any).discountIfood) || 0;
+                    const total = Number(order.discountTotal) || 0;
+                    if (loja > 0 || plataforma > 0) {
+                      return (
+                        <>
+                          {loja > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
+                              <span>Desconto da loja:</span>
+                              <span>-R$ {loja.toFixed(2).replace('.', ',')}</span>
+                            </div>
+                          )}
+                          {plataforma > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED" }}>
+                              <span>Cupom {nomeDoCanal(order)} (pago por eles):</span>
+                              <span>-R$ {plataforma.toFixed(2).replace('.', ',')}</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    }
+                    if (total > 0) {
+                      return (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
+                          {/* Mostra o cupom que gerou o desconto (ex.: "Cupom HAKIM10 (-10%)").
+                              Antes dizia sempre "Cupom - Loja", sem dizer qual nem por quê. */}
+                          <span>{(order as any).discountDetails?.[0]?.description || "Desconto (Cupom)"}:</span>
+                          <span>-R$ {total.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   {/* ── A ENTREGA APARECE MESMO QUANDO É GRÁTIS ──────────────
                       Isentar zerava `deliveryFee` e a linha sumia da nota: o
                       pedido saía com Subtotal e Total e nada de entrega, como
@@ -3744,6 +3777,30 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     <span>Total:</span>
                     <span>R$ {order.totalAmount.toFixed(2).replace('.', ',')}</span>
                   </div>
+
+                  {/* ── O QUE A LOJA RECEBE ────────────────────────────────
+                      "Total" é o que o CLIENTE pagou. Quando a plataforma
+                      bancou parte do desconto, os dois números se separam
+                      muito: no #266003 do Frangoso o cliente pagou R$ 1,97 e
+                      a loja recebe R$ 50,98. Sem esta linha o lojista lê o
+                      total e acha que vendeu um combo por dois reais. */}
+                  {(() => {
+                    const dd = (order as any).discountDetails;
+                    const recebe = Number(dd?.recebeLoja);
+                    const plataforma = Number((order as any).discountIfood) || 0;
+                    if (!(plataforma > 0) || !Number.isFinite(recebe) || recebe <= 0) return null;
+                    return (
+                      <div style={{ border: "1.5px dashed #7C3AED", background: "#F5F3FF", padding: "6px 10px", borderRadius: "4px", margin: "0 0 8px", fontSize: "12px", color: "#4C1D95" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900 }}>
+                          <span>A loja recebe ({nomeDoCanal(order)}):</span>
+                          <span>R$ {recebe.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                        <div style={{ fontSize: "11px", marginTop: 2 }}>
+                          O {nomeDoCanal(order)} pagou R$ {plataforma.toFixed(2).replace('.', ',')} do desconto — não sai do seu bolso.
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {(() => {

@@ -137,7 +137,12 @@ export async function POST(req: NextRequest) {
       // Mesmas duas linhas do webhook, para os dois caminhos gravarem igual.
       discountDetails: { ...p.descontos, precoCru: p.precoCru } as any,
       ...(p.descontos.total > 0 ? { discountTotal: p.descontos.total } : {}),
-      notes: p.observacoes,
+      // Mesmo par do webhook: loja em discountMerchant, plataforma em discountIfood.
+      ...(p.descontos.loja > 0 ? { discountMerchant: p.descontos.loja } : {}),
+      ...(p.descontos.plataforma > 0 ? { discountIfood: p.descontos.plataforma } : {}),
+      notes: p.descontos.plataforma > 0
+        ? `[99Food pagou R$ ${p.descontos.plataforma.toFixed(2).replace(".", ",")} de cupom — a loja recebe R$ ${p.descontos.recebeLoja.toFixed(2).replace(".", ",")}] ${p.observacoes}`.trim()
+        : p.observacoes,
       source: "99FOOD",
       openDeliveryOrderId: p.orderId || orderId,
       openDeliveryReference: p.numeroNoParceiro,

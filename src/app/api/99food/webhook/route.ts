@@ -572,7 +572,21 @@ export async function POST(req: NextRequest) {
                 // eles enviaram — o evento era traduzido e descartado.
                 discountDetails: { ...p.descontos, precoCru: p.precoCru } as any,
                 ...(p.descontos.total > 0 ? { discountTotal: p.descontos.total } : {}),
-                notes: p.observacoes,
+                // Quem bancou, no mesmo par que o iFood usa: `discountMerchant`
+                // é a loja, `discountIfood` é a plataforma (nome histórico; o
+                // caixa e a comanda o leem como "desconto do parceiro"). Sem
+                // isto o #266003 saiu "Desconto (Cupom - Loja) R$ 70,00" quando
+                // R$ 50 eram do 99Food.
+                ...(p.descontos.loja > 0 ? { discountMerchant: p.descontos.loja } : {}),
+                ...(p.descontos.plataforma > 0 ? { discountIfood: p.descontos.plataforma } : {}),
+                // Quando o 99 bancou parte, a observação diz quanto a loja
+                // recebe — em texto, porque a observação é o único campo que
+                // TODA versão do Assistente imprime (6 de 8 lojas estão em
+                // versão antiga). Sem isso a comanda diz "Total R$ 1,97" e a
+                // cozinha acha que vendeu um combo por dois reais.
+                notes: p.descontos.plataforma > 0
+                  ? `[99Food pagou R$ ${p.descontos.plataforma.toFixed(2).replace(".", ",")} de cupom — a loja recebe R$ ${p.descontos.recebeLoja.toFixed(2).replace(".", ",")}] ${p.observacoes}`.trim()
+                  : p.observacoes,
                 source: "99FOOD",
                 openDeliveryOrderId: orderId,
                 // ── O NUMERO QUE O CLIENTE E O MOTOBOY DIZEM ──────────────
