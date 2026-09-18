@@ -8,7 +8,28 @@
 
 const http = require('http');
 
-const BASE_URL = process.env.CRON_BASE_URL || 'http://localhost:3000';
+// ── 127.0.0.1, NÃO "localhost" ────────────────────────────────────────
+//
+// O Next escuta em 0.0.0.0, que é só IPv4. "localhost" no Node 18+ pode
+// resolver para ::1 (IPv6) PRIMEIRO — o Node parou de reordenar o resultado do
+// DNS — e aí a conexão morre com ECONNREFUSED antes de tocar no servidor.
+//
+// Em silêncio, porque o `req.on('error')` abaixo engolia ECONNREFUSED de
+// propósito ("o servidor pode não estar pronto ainda"). O resultado, medido em
+// 18/09/2026: 17 jobs agendados e NENHUM rodando — 439 fotos de cardápio
+// importado nunca internalizadas em nove dias, 587 pedidos sem distância desde
+// 15/09 (a rota faz 150 por ciclo, de 10 em 10 minutos: o acúmulo é impossível
+// com o cron vivo). Os pedidos continuavam entrando porque iFood, 99Food e
+// Brendi também têm webhook — o que escondeu o estrago.
+//
+// Endereço numérico não passa por DNS e não tem como escolher a família errada.
+// `verifyCronAuth` (src/lib/cron-auth.ts) já aceita host 127.0.0.1 como
+// chamada interna, igual a localhost.
+// E se o ambiente já trouxer CRON_BASE_URL com "localhost" — que é o valor
+// natural de quem configurou isso um dia —, trocamos aqui. Senão a correção
+// valeria só para quem NÃO tem a variável, que é justamente quem já estava bem.
+const BASE_URL = (process.env.CRON_BASE_URL || 'http://127.0.0.1:3000')
+  .replace('//localhost', '//127.0.0.1');
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
 // ── Definição dos cron jobs ──────────────────────────────────────────
@@ -150,6 +171,9 @@ const jobs = [
   },
 ];
 
+/** Falhas de conexão seguidas por job — só para não silenciar o que importa. */
+const falhasSeguidas = {};
+
 // ── Função para chamar um endpoint ───────────────────────────────────
 function callEndpoint(job) {
   return new Promise((resolve) => {
@@ -159,6 +183,9 @@ function callEndpoint(job) {
       port: url.port || 3000,
       path: url.pathname,
       method: 'GET',
+      // Cinto e suspensório do 127.0.0.1 acima: se alguém apontar CRON_BASE_URL
+      // para um nome, ainda assim resolvemos em IPv4, que é onde o Next escuta.
+      family: 4,
       timeout: 55_000, // 55s timeout
       headers: {},
     };
@@ -173,9 +200,10 @@ function callEndpoint(job) {
       res.on('end', () => {
         const status = res.statusCode;
         if (status >= 200 && status < 300) {
+          falhasSeguidas[job.name] = 0;
           // Log sucinto de sucesso para confirmar que o cron está rodando
           const ts = new Date().toISOString().slice(11, 19);
-          console.log(`[cron-runner] ✅ ${ts} ${job.name} ok (${status})`);
+          console.log(`[cron-runner] ✅ ${ts} ${job.name} ok (${status}) ${body.slice(0, 120)}`);
         } else if (status === 401) {
           console.error(`[cron-runner] 🔒 ${job.name} REJEITADO com 401 — CRON_SECRET ${CRON_SECRET ? 'está definido mas pode estar errado' : 'NÃO ESTÁ DEFINIDO (chamadas locais devem funcionar)'}`);
         } else {
@@ -186,9 +214,20 @@ function callEndpoint(job) {
     });
 
     req.on('error', (err) => {
-      // Server pode não estar pronto ainda — silencioso para ECONNREFUSED
-      if (err.code !== 'ECONNREFUSED') {
-        console.warn(`[cron-runner] ❌ ${job.name} erro: ${err.message}`);
+      // ── ERRO DE CONEXÃO NÃO PODE SER INVISÍVEL ────────────────────────
+      //
+      // ECONNREFUSED era engolido em silêncio porque "o servidor pode não estar
+      // pronto ainda". É verdade nos primeiros segundos — e mentira do segundo
+      // minuto em diante. Foi assim que 17 jobs ficaram fora do ar sem uma
+      // linha de log: o cron-runner dizia "agendado a cada 600s" no boot e
+      // depois nunca mais falava.
+      //
+      // Agora a primeira falha sai sempre, e as seguintes de dez em dez, para
+      // não virar enxurrada num servidor que esteja mesmo subindo.
+      falhasSeguidas[job.name] = (falhasSeguidas[job.name] || 0) + 1;
+      const n = falhasSeguidas[job.name];
+      if (err.code !== 'ECONNREFUSED' || n === 1 || n % 10 === 0) {
+        console.warn(`[cron-runner] ❌ ${job.name} erro: ${err.message} (${n}ª falha seguida em ${BASE_URL})`);
       }
       resolve();
     });
@@ -211,7 +250,9 @@ function waitForServer(maxWaitMs = 120_000) {
       const req = http.request(
         // Sonda de prontidao: /api/health. Antes usava /api/debug/env, que
         // vazava dados das lojas e agora responde 404 em producao.
-        { hostname: 'localhost', port: 3000, path: '/api/health', method: 'GET', timeout: 3000 },
+        // 127.0.0.1 pelo mesmo motivo do BASE_URL: "localhost" pode ir para ::1
+        // e esta sonda nunca enxergaria um servidor que está de pé em IPv4.
+        { hostname: '127.0.0.1', family: 4, port: 3000, path: '/api/health', method: 'GET', timeout: 3000 },
         (res) => {
           res.resume();
           console.log('[cron-runner] ✅ Servidor Next.js pronto!');
