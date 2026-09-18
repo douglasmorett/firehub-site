@@ -774,7 +774,20 @@ async function criarSocket(instanceName) {
       // O critério é o mesmo que o gateway já usa para decidir desistir —
       // deslogado ou substituído — mais a insistência: da 4ª tentativa em
       // diante não é mais soluço, é queda.
-      const quedaDeVerdade = !shouldReconnect || count >= 4;
+      //
+      // ── QUEM NUNCA VINCULOU NÃO CAI ───────────────────────────────────────
+      //
+      // Regra do dono (18/09/2026): "se nunca conectou não é pra avisar da
+      // queda". O que fecha numa instância sem aparelho pareado não é uma
+      // sessão — é a espera de um QR que ninguém leu (status 408). Isso contava
+      // como queda, e da 4ª vez em diante avisava o FireHub: a R&D Pizzaria
+      // chegou à tentativa #1020 em um dia, um aviso a cada 3 minutos.
+      //
+      // `creds.account` é a identidade assinada do aparelho: o Baileys só a
+      // grava no pair-success. `creds.me` NÃO serve — o código de pareamento
+      // já o preenche com o número digitado, antes de parear.
+      const jaVinculou = Boolean(sock.authState?.creds?.account);
+      const quedaDeVerdade = jaVinculou && (!shouldReconnect || count >= 4);
       if (quedaDeVerdade) {
         try {
           const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
@@ -793,7 +806,20 @@ async function criarSocket(instanceName) {
         }
       }
 
-      if (shouldReconnect) {
+      if (!jaVinculou && !isLoggedOut) {
+        // ── QR NÃO LIDO NÃO ENTRA EM LAÇO ───────────────────────────────────
+        //
+        // Reconectar aqui só gerava outro QR para ninguém: uma conexão nova
+        // com o WhatsApp a cada 3 minutos, por loja, para sempre — custo e
+        // padrão de tráfego que não ajuda em nada a reputação do IP. A pasta
+        // sai junto, senão o health-check a ressuscita em 5 minutos. Quando o
+        // lojista abrir a tela do QR, o /instance/connect cria tudo de novo,
+        // na hora (e sem os 30 s de espera que o laço impunha).
+        console.log(`[WhatsApp Gateway] 🧹 ${instanceName}: QR não lido (status ${statusCode}). Nunca vinculou — encerrando sem reconectar nem avisar.`);
+        sessions.delete(instanceName);
+        reconnectCounters.delete(instanceName);
+        try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
+      } else if (shouldReconnect) {
         // Reconexão infinita com backoff de 3s até no máximo 30s
         const delay = Math.min(3000 * Math.min(count, 10), 30000);
         console.log(`[WhatsApp Gateway] ⏳ Agendando reconexão de ${instanceName} em ${delay / 1000}s...`);
