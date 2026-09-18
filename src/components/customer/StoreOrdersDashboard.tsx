@@ -405,7 +405,13 @@ const DashboardColumn = memo(function DashboardColumn({
         </div>
       </div>
       {headerBelow}
-      <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.6rem" }}>
+      {/* A folga embaixo (paddingBottom) é para o botão flutuante de suporte
+          (HumanSupportFloatingWidget, canto inferior direito do layout): em
+          tablet e celular as colunas rolam na horizontal e a que está encostada
+          à direita fica com os ícones do último card debaixo do botão. Com a
+          folga, o card rola para cima dele. No desktop a coluna nem chega lá
+          (calha do .dashboard-kanban-container, no CSS abaixo). */}
+      <div style={{ flex: 1, overflowY: "auto", overscrollBehaviorY: "contain", padding: "0.6rem 0.6rem 88px" }}>
         {count === 0 ? (
           <div style={{ textAlign: "center", padding: "4rem 0", color: "#94A3B8", fontSize: "0.9rem" }}>
             <Package size={36} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
@@ -5876,6 +5882,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           transition: all 0.15s ease;
           overflow: hidden;
           box-sizing: border-box;
+        }
+
+        /* ── CALHA PARA O BOTÃO DE SUPORTE ──
+           O widget de Atendimento Humano fica fixo a 24px do canto inferior
+           direito, com 56px. Sem a calha, a última coluna do kanban passa por
+           baixo dele e os ícones (imprimir, editar, motoboy) do último card
+           ficam inclicáveis — foi assim na R&D Pizzaria em 17/09/2026. Com
+           colunas flexíveis, 72px divididos por cinco colunas custam ~14px em
+           cada uma; em troca, nada fica embaixo do botão. */
+        @media (min-width: 1024px) {
+          .dashboard-kanban-container {
+            padding-right: 72px;
+          }
         }
 
         /* Large screens (> 1440px) - all 5 columns comfortable */
