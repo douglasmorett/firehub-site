@@ -278,6 +278,9 @@ export async function POST(req: NextRequest) {
           source: true, openDeliveryChannel: true, ifoodDriverName: true,
           ifoodDriverStatus: true, ifoodPickupCode: true, dailyOrderNumber: true,
           motoboy: { select: { name: true } },
+          // Para avisar os parceiros que o pedido saiu (bloco depois do claim).
+          franchiseeId: true, ifoodOrderId: true, openDeliveryOrderId: true,
+          openDeliveryReference: true, food99AppShopId: true,
         },
       });
       candidatos.push(...achados);
@@ -343,9 +346,99 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[Motoboy Puxou] pedido ${alvo.id} #${numero} loja ${mb.franchiseeId} por ${mb.id}/${mb.name}`);
+
+    // ── PUXOU = SAIU PARA ENTREGA ───────────────────────────────────────────
+    //
+    // O entregador escaneia a comanda com o saco na mão, na porta da loja. Isso
+    // É o pedido saindo — e até aqui o puxar só gravava o nome dele: o card
+    // ficava em "Em Produção" com o motoboy na rua, o iFood continuava "pronto
+    // para retirada" (só descobria na entrega, pelo despacho tardio do PATCH), e
+    // o cliente não recebia o "saiu para entrega" no WhatsApp. A Frangoso
+    // resumiu como "quando o entregador pega o pedido, não atualiza sozinho"
+    // (17/09/2026): a loja tinha que voltar ao painel e clicar em "Saiu".
+    //
+    // Agora o puxar faz o que o botão "Saiu" do painel faz (customer-order/
+    // status): muda o status e avisa cada parceiro pelo seu caminho. O status
+    // só avança — pedido já em rota não volta —, e a escrita é condicional
+    // como o claim: quem perder a corrida com o painel não regride nada.
+    // Os efeitos rodam em segundo plano e falham sozinhos: a resposta ao app
+    // não espera parceiro nenhum. O "soltar" (DELETE) não desfaz o status —
+    // o iFood já foi avisado; a loja arrasta o card de volta se for engano.
+    const { STATUS_ANTES_DE_SAIR } = await import("@/lib/status-pedido");
+    const saiuAgora =
+      (STATUS_ANTES_DE_SAIR as readonly string[]).includes(alvo.status) &&
+      (await prisma.customerOrder.updateMany({
+        where: { id: alvo.id, motoboyId: mb.id, status: { in: [...STATUS_ANTES_DE_SAIR] } },
+        data: { status: "SAIU_ENTREGA" },
+      })).count === 1;
+
+    if (saiuAgora) {
+      console.log(`[Motoboy Puxou] pedido ${alvo.id} #${numero}: ${alvo.status} → SAIU_ENTREGA`);
+      const pedido = alvo as any;
+      (async () => {
+        const rotulo = "Motoboy Puxou → parceiro";
+        if (pedido.ifoodOrderId) {
+          try {
+            const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
+            // Pedido que a loja ainda não aceitou no painel: o iFood exige o
+            // confirm antes de qualquer outro passo. `despacharNoIfood` sobe o
+            // resto da escada (startPreparation → readyToPickup → dispatch).
+            if (pedido.status === "NOVO") await acaoNoPedidoIfood(pedido, "confirm", { rotulo });
+            await despacharNoIfood(pedido, rotulo);
+          } catch (e: any) {
+            console.warn(`[${rotulo} iFood] erro:`, e?.message);
+          }
+        }
+        if (pedido.openDeliveryOrderId) {
+          try {
+            const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
+            const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
+            const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
+            const base = { openDeliveryOrderId: String(pedido.openDeliveryOrderId), franchiseeId: pedido.franchiseeId, status: pedido.status, deliveryBy: pedido.deliveryBy };
+            if (ehPedido99Food(pedido)) {
+              // O 99Food quer saber quem leva: o mesmo entregador que puxou.
+              const entregador = await prisma.motoboy
+                .findUnique({ where: { id: mb.id }, select: { id: true, name: true, phone: true } })
+                .catch(() => null);
+              const r = await sincronizar99Food(
+                { ...base, entregador: entregador ? { nome: entregador.name, telefone: entregador.phone, id: entregador.id } : { nome: mb.name, id: mb.id }, appShopId: pedido.food99AppShopId ?? null },
+                "SAIU_ENTREGA",
+              );
+              if (r.erros.length > 0) console.error(`[${rotulo} 99Food] ${pedido.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+            } else if (ehPedidoBrendi(pedido)) {
+              const r = await sincronizarBrendi({ ...base, openDeliveryOrderId: base.openDeliveryOrderId.replace(/_recovered$/, "") }, "SAIU_ENTREGA");
+              if (r.erros.length > 0) console.error(`[${rotulo} Brendi] ${pedido.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+            } else if (ehPedidoWabiz(pedido)) {
+              const r = await sincronizarWabiz(
+                { openDeliveryOrderId: base.openDeliveryOrderId, openDeliveryReference: pedido.openDeliveryReference, franchiseeId: pedido.franchiseeId, deliveryType: pedido.deliveryType },
+                "SAIU_ENTREGA",
+              );
+              if (r.erros.length > 0) console.error(`[${rotulo} Wabiz] ${pedido.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+            } else {
+              // JotaJá: o Open Delivery recusa dispatch em pedido que não entrou em preparo.
+              const { jotajaMutate } = await import("@/lib/jotaja-api");
+              const odId = String(pedido.openDeliveryOrderId);
+              if (pedido.status === "ACEITO" || pedido.status === "NOVO") {
+                await jotajaMutate(`/v1/orders/${odId}/startPreparation`, { method: "POST" }, pedido.franchiseeId);
+              }
+              const r = await jotajaMutate(`/v1/orders/${odId}/dispatch`, { method: "POST" }, pedido.franchiseeId);
+              console.log(`[${rotulo} JotaJá] dispatch ${odId}: ${r.status}`);
+            }
+          } catch (e: any) {
+            console.warn(`[${rotulo}] erro:`, e?.message);
+          }
+        }
+        // O cliente fica sabendo que saiu — a mesma mensagem do botão do painel.
+        try {
+          const { sendOrderNotification } = await import("@/lib/order-notifications");
+          sendOrderNotification(alvo.id, "SAIU_ENTREGA").catch(() => {});
+        } catch {}
+      })();
+    }
+
     // Resposta MÍNIMA de propósito: o app refaz o GET. Devolver o pedido aqui
     // transformaria o claim num endpoint de leitura paginada de clientes.
-    return NextResponse.json({ success: true, orderId: alvo.id, numero });
+    return NextResponse.json({ success: true, orderId: alvo.id, numero, saiuParaEntrega: saiuAgora });
   } catch (err: any) {
     console.error("[Motoboy Puxar Error]", err);
     return NextResponse.json({ error: "Erro ao puxar o pedido" }, { status: 500 });

@@ -22,3 +22,13 @@ export const STATUS_PUXAVEIS = [
   "PREPARANDO", "EM_PREPARO", "EM_ANDAMENTO", "PRONTO",
   "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "EM_ROTA",
 ] as const;
+
+/**
+ * Os puxáveis que ainda estão DENTRO da loja. Puxar um destes pelo app do
+ * motoboy é o pedido saindo: vira SAIU_ENTREGA (api/motoboys/orders, POST).
+ * Os três de rota ficam de fora porque já saíram — status não regride.
+ */
+export const STATUS_ANTES_DE_SAIR = [
+  "NOVO", "CONFIRMADO", "RECEBIDO", "PENDENTE", "ACEITO",
+  "PREPARANDO", "EM_PREPARO", "EM_ANDAMENTO", "PRONTO",
+] as const;
