@@ -124,6 +124,21 @@ export async function POST(req: NextRequest) {
             .split("@")[0].split(":")[0].replace(/\D/g, "");
           const formattedPhone = phone ? `+55 ${phone.replace(/^55/, "")}` : null;
 
+          // ── QUEM NUNCA CONECTOU NÃO TEM ROBÔ PARA CAIR ────────────────────
+          //
+          // Regra do dono (18/09/2026): "se nunca conectou não é pra avisar da
+          // queda". O gateway mandava "close" a cada QR que ninguém leu — na
+          // R&D Pizzaria foram 1.020 avisos em um dia, um a cada 3 minutos — e
+          // cada um regravava o chatbotConfig INTEIRO da loja a partir de uma
+          // leitura de instantes antes: além de inútil, podia atropelar o que
+          // o lojista estivesse salvando na tela do robô naquele segundo. O
+          // gateway deixou de mandar; esta guarda vale para gateway antigo.
+          const jaConectou =
+            config.jaConectouAlgumaVez === true || Boolean(config.connectedAt) || config.connected === true;
+          if (!conectada && !jaConectou) {
+            return NextResponse.json({ status: "ok", ignorado: "nunca-conectou" });
+          }
+
           await registrarEstadoDoRobo(user.id, config, conectada, formattedPhone, user.storePhone);
 
           console.log(

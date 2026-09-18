@@ -19,6 +19,7 @@ import { lerPager, nomeComPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
+import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
   NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
@@ -2348,6 +2349,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // letras. Qualquer clique na página destrava.
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [somBloqueado, setSomBloqueado] = useState(false);
+  const somNaoVerMais = useNaoVerMais("som-bloqueado", null);
   useEffect(() => {
     let ctx: AudioContext;
     try {
@@ -5950,7 +5952,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       )}
 
       {/* SOM BLOQUEADO PELO NAVEGADOR — ver o efeito do audioCtxRef */}
-      {somBloqueado && (
+      {somBloqueado && somNaoVerMais.pronto && !somNaoVerMais.oculto && (
         <div
           role="alert"
           style={{
@@ -5958,9 +5960,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             background: "#B91C1C", color: "#fff", padding: "10px 18px", borderRadius: 999,
             fontWeight: 800, fontSize: "0.85rem", boxShadow: "0 10px 25px rgba(0,0,0,0.25)",
             cursor: "pointer", maxWidth: "calc(100vw - 32px)", textAlign: "center",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap",
           }}
         >
-          🔇 O som de pedido novo está bloqueado pelo navegador — clique em qualquer lugar desta tela para ativar
+          <span>🔇 O som de pedido novo está bloqueado pelo navegador — clique em qualquer lugar desta tela para ativar</span>
+          <BotaoNaoVerMais compacto onClick={somNaoVerMais.ocultar} cor="#fff" borda="rgba(255,255,255,.6)" />
         </div>
       )}
 

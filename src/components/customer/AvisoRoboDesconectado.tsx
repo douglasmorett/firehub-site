@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { BotaoNaoVerMais, useNaoVerMais } from "./NaoVerMais";
 
 /**
  * A faixa de "seu robô caiu" no topo do painel.
@@ -25,6 +26,8 @@ import Link from "next/link";
 export default function AvisoRoboDesconectado() {
   const [precisa, setPrecisa] = useState(false);
   const [desde, setDesde] = useState<string | null>(null);
+  // A ocorrência é ESTA queda (`desde`): calar a de hoje não cala a próxima.
+  const naoVerMais = useNaoVerMais("robo-desconectado", desde);
 
   useEffect(() => {
     let vivo = true;
@@ -53,7 +56,7 @@ export default function AvisoRoboDesconectado() {
     };
   }, []);
 
-  if (!precisa) return null;
+  if (!precisa || !naoVerMais.pronto || naoVerMais.oculto) return null;
 
   const haQuantoTempo = (() => {
     if (!desde) return "";
@@ -111,6 +114,7 @@ export default function AvisoRoboDesconectado() {
         >
           Religar agora
         </span>
+        <BotaoNaoVerMais onClick={naoVerMais.ocultar} cor="#166534" borda="#86EFAC" />
       </div>
     </Link>
   );

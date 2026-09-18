@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BotaoNaoVerMais, useNaoVerMais } from "./NaoVerMais";
 
 /**
  * A faixa de "seu caixa está aberto há mais de um dia".
@@ -27,6 +28,10 @@ import { useEffect, useState } from "react";
  */
 export default function AvisoCaixaAberto24h() {
   const [horas, setHoras] = useState<number | null>(null);
+  // A ocorrência é ESTA sessão de caixa (a hora em que abriu): o aviso calado
+  // volta sozinho se o próximo caixa também passar de 24h.
+  const [abertura, setAbertura] = useState<string | null>(null);
+  const naoVerMais = useNaoVerMais("caixa-aberto-24h", abertura);
 
   useEffect(() => {
     let vivo = true;
@@ -39,6 +44,7 @@ export default function AvisoCaixaAberto24h() {
         if (!vivo) return;
         const abertoEm = d?.session?.status === "OPEN" ? d?.session?.openedAt : null;
         if (!abertoEm) { setHoras(null); return; }
+        setAbertura(String(abertoEm));
         const h = (Date.now() - new Date(abertoEm).getTime()) / 3_600_000;
         setHoras(Number.isFinite(h) ? h : null);
       } catch {
@@ -54,6 +60,7 @@ export default function AvisoCaixaAberto24h() {
   }, []);
 
   if (horas === null || horas < 24) return null;
+  if (!naoVerMais.pronto || naoVerMais.oculto) return null;
 
   const dias = Math.floor(horas / 24);
   const tempo = dias >= 1
@@ -90,6 +97,7 @@ export default function AvisoCaixaAberto24h() {
       >
         Abrir o caixa →
       </button>
+      <BotaoNaoVerMais onClick={naoVerMais.ocultar} cor="#6B21A8" borda="#D8B4FE" />
     </div>
   );
 }

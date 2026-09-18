@@ -11,6 +11,7 @@ import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
 import AvisoCaixaAberto24h from "@/components/customer/AvisoCaixaAberto24h";
 import AvisoImpressaoParada from "@/components/customer/AvisoImpressaoParada";
+import { AvisoDispensavel, BotaoNaoVerMais } from "@/components/customer/NaoVerMais";
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
 
@@ -71,7 +72,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   }
 
   // === PAGAMENTO: verificar ciclo pendente da loja proprietária ===
-  let pendingPayment: { amount: number; url: string | null; isOverdue: boolean; daysLeft: number } | null = null;
+  let pendingPayment: { amount: number; url: string | null; isOverdue: boolean; daysLeft: number; ocorrencia: string } | null = null;
   const targetFranchiseeId = storeOwner?.id || user?.id;
   const userEmailClean = (storeOwner?.email || user?.email)?.toLowerCase().replace(/\s+/g, "");
   const isHakimStore = storeOwner?.isFranqueadoHakim === true || user?.isFranqueadoHakim === true || userEmailClean === "contatohakim@gmail.com";
@@ -103,6 +104,11 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           url: closedCycle.asaasBoletoUrl,
           isOverdue,
           daysLeft,
+          // Para o "não ver mais" (components/customer/NaoVerMais.tsx): cala
+          // ESTA fatura — e volta uma vez nos 3 últimos dias, porque depois do
+          // vencimento o que vem é o bloqueio da conta, e bloqueio sem aviso
+          // na véspera é pior para a loja do que uma faixa a mais.
+          ocorrencia: `${closedCycle.id}:${daysLeft <= 3 ? "reta-final" : "inicio"}`,
         };
       }
     } catch (err) {
@@ -180,23 +186,29 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         {/* Banner: Trial ativo (esconde no módulo de compras via client-side) */}
         {isInTrial && isFranqueado && (
           <HideOnCompras>
+            {/* Mesma regra da cobrança: calado no começo, volta uma vez nos 3
+                últimos dias do teste. */}
+            <AvisoDispensavel aviso="teste-gratis" ocorrencia={trialDaysLeft <= 3 ? "reta-final" : "inicio"}>
             <div style={{
               background: "linear-gradient(135deg, #2563EB, #1d4ed8)",
               color: "white", padding: "10px 1.5rem", textAlign: "center",
               fontSize: ".85rem", fontWeight: 600,
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap",
             }}>
               🎁 Teste grátis — <strong>{trialDaysLeft} {trialDaysLeft === 1 ? "dia restante" : "dias restantes"}</strong>
               <span style={{ opacity: .7, fontSize: ".78rem", marginLeft: 4 }}>
                 Aproveite todas as funcionalidades sem custo
               </span>
+              <BotaoNaoVerMais compacto cor="#fff" borda="rgba(255,255,255,.55)" />
             </div>
+            </AvisoDispensavel>
           </HideOnCompras>
         )}
 
         {/* Banner: Pagamento pendente DENTRO DO PRAZO */}
         {pendingPayment && !pendingPayment.isOverdue && !isInTrial && (
           <HideOnCompras>
+            <AvisoDispensavel aviso="cobranca-pendente" ocorrencia={pendingPayment.ocorrencia}>
             <div style={{
               background: "linear-gradient(135deg, #F59E0B, #D97706)",
               color: "white", padding: "10px 1.5rem", textAlign: "center",
@@ -218,7 +230,9 @@ export default async function StoreLayout({ children }: { children: React.ReactN
                   Pagar Agora
                 </a>
               )}
+              <BotaoNaoVerMais compacto cor="#fff" borda="rgba(255,255,255,.6)" />
             </div>
+            </AvisoDispensavel>
           </HideOnCompras>
         )}
 

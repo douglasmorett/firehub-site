@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { fetchAssistente, printersParaAssistente, VERSAO_ASSISTENTE_ATUAL } from "@/lib/print";
 import { traduzErroDeImpressao } from "@/lib/erro-de-impressao";
+import { BotaoNaoVerMais, gravarNaoVerMais, lerNaoVerMais } from "./NaoVerMais";
 
 /**
  * A faixa de "a impressão parou" — e, desde 06/09/2026, de "a comanda não
@@ -49,7 +50,8 @@ function versaoMaisNova(a: string, b: string): boolean {
   }
   return false;
 }
-const CHAVE_DISPENSA = "fh_aviso_impressao_dispensado_ate";
+/** Nome deste aviso na regra única de "não ver mais" (./NaoVerMais.tsx). */
+const AVISO = "impressao";
 const PORTAS_DO_ASSISTENTE = [7899, 7900, 7901, 7891];
 
 type Estado = {
@@ -93,7 +95,9 @@ export default function AvisoImpressaoParada() {
   const [estado, setEstado] = useState<Estado | null>(null);
   // undefined = ainda não sondou; null = não há Assistente neste PC.
   const [local, setLocal] = useState<AssistenteLocal | null | undefined>(undefined);
-  const [dispensadoAte, setDispensadoAte] = useState<number>(0);
+  // A ocorrência que o lojista mandou não ver mais. undefined = o navegador
+  // ainda não foi lido (desenhar antes faria a faixa calada piscar).
+  const [calada, setCalada] = useState<string | null | undefined>(undefined);
   const [vinculando, setVinculando] = useState(false);
   const [vinculadoEm, setVinculadoEm] = useState(0);
   const vivo = useRef(true);
@@ -110,9 +114,7 @@ export default function AvisoImpressaoParada() {
   }, []);
 
   useEffect(() => {
-    try {
-      setDispensadoAte(Number(localStorage.getItem(CHAVE_DISPENSA) || 0));
-    } catch {}
+    setCalada(lerNaoVerMais(AVISO));
   }, []);
 
   useEffect(() => {
@@ -173,7 +175,7 @@ export default function AvisoImpressaoParada() {
   // /store/compras é módulo à parte (o HideOnCompras esconde tudo lá).
   if (pathname?.startsWith("/store/compras")) return null;
   if (!estado || !estado.temImpressora) return null;
-  if (dispensadoAte > Date.now()) return null;
+  if (calada === undefined) return null;
   // Fila muda e a sondagem de localhost ainda correndo: espera, para a faixa
   // não trocar de frase na cara da loja segundos depois de aparecer.
   if (filaMuda && local === undefined) return null;
@@ -205,35 +207,54 @@ export default function AvisoImpressaoParada() {
   let titulo = "";
   let texto = "";
   let botaoVincular = false;
+  // ── A OCORRÊNCIA DE CADA FRASE ──────────────────────────────────────────
+  //
+  // Esta faixa fala de seis problemas diferentes, e "não ver mais" cala só o
+  // que está na tela, na ocorrência em que está. Era um "Dispensar por hoje"
+  // que calava TUDO por 24 h: quem dispensava o "Assistente desatualizado"
+  // deixava de ver, no mesmo dia, "3 comandas não saíram na impressora".
+  let ocorrencia = "";
 
   if (naoVinculado) {
     botaoVincular = true;
+    ocorrencia = "nao-vinculado";
     titulo = `O Assistente de Impressão deste computador (v${local!.versao}) não está vinculado a esta loja`;
     texto = local!.franchiseeId
       ? "Ele está vinculado a outra loja. Se este é o PC do caixa desta loja, vincule agora: as comandas de mesa, balcão, iFood e 99Food passam a sair por ele mesmo com o painel fechado."
       : "Sem o vínculo ele não consulta a fila da nuvem: comanda só sai enquanto este painel estiver aberto e acordado nesta aba. Vincular é um clique — e as comandas passam a sair mesmo com o painel fechado.";
   } else if (vinculadoMasMudo && nuncaConsultou) {
+    ocorrencia = "vinculado-e-mudo";
     titulo = "O Assistente está vinculado a esta loja, mas a fila da nuvem nunca o viu";
     texto = `Assistente v${local!.versao}: se for anterior à 1.2.1, instale o atual pelo botão Baixar em Impressoras. Se já é o atual, confira se este computador abre firehubfood.com.br.`;
   } else if (parado) {
+    // ESTA parada: a última consulta é o que a identifica. Voltou e parou de
+    // novo, é outra parada e o aviso reaparece.
+    ocorrencia = `parado:${estado.ultimoPoll}`;
     titulo = `A impressão automática parou há ${tempo}`;
     texto = vinculadoMasMudo
       ? "O Assistente está aberto neste PC, mas não está conseguindo falar com o servidor. Confira a internet deste computador."
       : "Comanda de mesa, de balcão, do iFood e do 99Food não vai sair sozinha até ele voltar. Confira se o Assistente de Impressão está aberto no PC do caixa (ícone 🔥 perto do relógio) e se o PC está ligado e com internet. Quando ele voltar, as comandas que faltam saem sozinhas.";
   } else if (nuncaConsultou && estado.usaSalao) {
+    ocorrencia = "nunca-consultou";
     titulo = "O Assistente de Impressão desta loja nunca consultou a fila da nuvem";
     texto = "Comanda de mesa, de balcão e a conta da mesa dependem dessa fila. Abra o painel no PC do caixa: esta faixa oferece lá o botão Vincular agora. Se o Assistente for anterior à 1.2.1, instale o atual.";
   } else if (ausentes.length > 0) {
+    ocorrencia = `ausentes:${[...ausentes].sort().join("|")}`;
     titulo = ausentes.length === 1
       ? `A impressora "${ausentes[0]}" não existe no PC do caixa`
       : `${ausentes.length} impressoras cadastradas não existem no PC do caixa`;
     const noPc = (estado.impressorasNoPc || []).join(", ");
     texto = `Comanda mandada para "${ausentes[0]}" nunca vai sair. O Windows daquele PC enxerga: ${noPc || "nenhuma impressora"}. Abra Impressoras e escolha a impressora da lista — o Windows pode ter renomeado, ou o PC é outro.`;
   } else if (presas > 0) {
+    // Comanda presa não tem identidade que chegue até aqui; o dia serve. Calar
+    // de vez esconderia pedido sem papel na semana que vem.
+    ocorrencia = `presas:${new Date().toLocaleDateString("sv-SE")}`;
     titulo = presas === 1 ? "1 comanda não saiu na impressora" : `${presas} comandas não saíram na impressora`;
     const erro = traduzErroDeImpressao(estado.erroImpressao);
     texto = `O Assistente tenta de novo em 3 segundos, depois vai espaçando até 2 minutos, e não desiste enquanto não sair. Confira se a impressora está ligada, com papel e sem erro no Windows.${erro ? ` Último erro: ${erro}.` : ""}`;
   } else if (assistenteAntigo) {
+    // Calado até sair versão MAIS NOVA que esta.
+    ocorrencia = `antigo:${VERSAO_ASSISTENTE_ATUAL}`;
     titulo = versaoRelatada
       ? `O Assistente de Impressão do PC do caixa está desatualizado (v${versaoRelatada})`
       : "O Assistente de Impressão do PC do caixa é de uma versão antiga";
@@ -245,11 +266,9 @@ export default function AvisoImpressaoParada() {
     return null;
   }
 
-  const dispensarPorHoje = () => {
-    const ate = Date.now() + 24 * 60 * 60 * 1000;
-    try { localStorage.setItem(CHAVE_DISPENSA, String(ate)); } catch {}
-    setDispensadoAte(ate);
-  };
+  if (calada === ocorrencia) return null;
+
+  const naoVerMais = () => setCalada(gravarNaoVerMais(AVISO, ocorrencia));
 
   return (
     <div
@@ -294,16 +313,7 @@ export default function AvisoImpressaoParada() {
         >
           Abrir Impressoras →
         </a>
-        <button
-          type="button"
-          onClick={dispensarPorHoje}
-          style={{
-            background: "none", border: "1px solid #FDBA74", color: "#9A3412", borderRadius: 10,
-            padding: "9px 14px", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit",
-          }}
-        >
-          Dispensar por hoje
-        </button>
+        <BotaoNaoVerMais onClick={naoVerMais} cor="#9A3412" borda="#FDBA74" />
       </div>
     </div>
   );
