@@ -56,6 +56,10 @@ const ORIGENS_DE_FORA = [
   "firebasestorage.googleapis.com",
   "prod-cardapio-web",
   "menuintegrado",
+  // InstaDelivery serve as fotos de um bucket da DigitalOcean; o nome da
+  // plataforma está no host (instadelivery-public.nyc3.cdn.digitaloceanspaces.com),
+  // então basta ele — casar "digitaloceanspaces" pegaria bucket de terceiro.
+  "instadelivery",
 ];
 
 /**
