@@ -7,6 +7,8 @@ import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
 import { FUSO_PADRAO } from "@/lib/fuso";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
+import { cupomDeAberturaDeCaixa, cupomDeFechamentoDeCaixa } from "@/lib/cupom-do-caixa";
+import { enfileirarCupomDoCaixa } from "@/lib/imprimir-caixa";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -577,6 +579,33 @@ export async function POST(req: Request) {
   });
 
   const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true } });
+
+  // ── O PAPEL DA ABERTURA ────────────────────────────────────────────────
+  //
+  // Sai na hora, nas impressoras do caixa. É o comprovante do troco inicial —
+  // o número que, quando ninguém anota, vira "sobra" no fechamento seguinte.
+  // Falhar aqui não pode derrubar a abertura do caixa: o caixa já está aberto.
+  try {
+    const anterior = await prisma.cashSession.findFirst({
+      where: { franchiseeId: user.targetId, status: "CLOSED", closingCash: { not: null } },
+      orderBy: { closedAt: "desc" },
+      select: { closingCash: true, closedAt: true },
+    });
+    await enfileirarCupomDoCaixa(user.targetId, cupomDeAberturaDeCaixa({
+      sessionId: cashSession.id,
+      loja: ownerInfo?.storeName || "",
+      fuso: ownerInfo?.storeTimezone || FUSO_PADRAO,
+      operador: session.user?.name || session.user?.email || "",
+      abertoEm: cashSession.openedAt,
+      trocoInicial: Number(openingAmount) || 0,
+      fechamentoAnterior: anterior
+        ? { cash: anterior.closingCash || 0, em: anterior.closedAt?.toISOString() || null }
+        : null,
+    }), session.user?.name || session.user?.email || "");
+  } catch (e: any) {
+    console.error("[Caixa] Não consegui enfileirar o cupom de abertura:", e?.message);
+  }
+
   if (ownerInfo?.notificationPhone) {
     const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
     const msg = `🟢 *Caixa Aberto*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *ABERTO* às ${timeStr} com R$ ${Number(openingAmount).toFixed(2).replace('.', ',')} de troco.\n\n_Ass: Seu Assistente FireHub 🔥_`;
@@ -597,8 +626,14 @@ export async function PUT(req: Request) {
   const { closingCash, closingDebit, closingCredit, closingPix, closingVoucher,
     closingIfoodOnline, closingIfoodCoupons,
     closingFood99Online, closingFood99Coupons,
-    expectedCash, expectedDebit, expectedCredit, expectedPix, expectedVoucher, expectedTotal,
     justification } = body;
+
+  // O que a TELA achava que era o esperado. Não entra na conta — serve só para
+  // registrar no log quando ela estiver desatualizada (ver abaixo).
+  const esperadoDaTela = {
+    cash: Number(body.expectedCash || 0),
+    total: Number(body.expectedTotal || 0),
+  };
 
   // ── O CONFERIDO PRECISA FALAR A MESMA LÍNGUA DO ESPERADO ────────────────
   //
@@ -624,14 +659,58 @@ export async function PUT(req: Request) {
   const totalInformed = (closingCash || 0) + (closingDebit || 0) + (closingCredit || 0) +
     (closingPix || 0) + (closingVoucher || 0) +
     (closingIfoodOnline || 0) + (closingFood99Online || 0);
-  const difference = totalInformed - (expectedTotal || 0);
 
   const openSession = await prisma.cashSession.findFirst({
     where: { franchiseeId: user.targetId, status: "OPEN" },
     orderBy: { openedAt: "desc" },
   });
 
+  let difference = 0;
+  // O que o cupom do fechamento precisa. Preenchido dentro do if, impresso
+  // depois de os pedidos da rua serem finalizados — o papel diz quantos foram.
+  let paraOCupom: {
+    esperado: { cash: number; debit: number; credit: number; pix: number; voucher: number; total: number };
+    abertoEm: Date; trocoInicial: number;
+  } | null = null;
   if (openSession) {
+    // ── O ESPERADO É RECALCULADO AQUI, NO SERVIDOR ─────────────────────────
+    //
+    // Até 19/09/2026 estes números vinham do CORPO DA REQUISIÇÃO — ou seja, do
+    // que a tela do fechamento tinha em mãos. E a tela calcula uma vez, quando
+    // carrega. Num turno que abre 23h e fecha 6h30, tudo que aconteceu no meio
+    // ficava de fora do "esperado": pedido novo, sangria, reforço — e,
+    // principalmente, PEDIDO CANCELADO. Cancelar um pedido depois de a tela
+    // abrir não o tirava da conta, e o caixa fechava cobrando da gaveta um
+    // valor que ninguém recebeu. Foi a queixa do dono sobre o caixa da Hakim.
+    //
+    // É a mesma classe do que já foi corrigido em outras contas deste arquivo:
+    // valor que o cliente manda é intenção, não prova. Quem soma é o servidor,
+    // no instante do fechamento, pela MESMA função que a tela consulta — então
+    // a tela nunca mostra um número que o fechamento não vá reproduzir.
+    const doServidor = await calcularEsperadoDoTurno(user.targetId, openSession);
+    const expectedCash = Number(doServidor.expected.cash.toFixed(2));
+    const expectedDebit = Number(doServidor.expected.debit.toFixed(2));
+    const expectedCredit = Number(doServidor.expected.credit.toFixed(2));
+    const expectedPix = Number(doServidor.expected.pix.toFixed(2));
+    const expectedVoucher = Number(doServidor.expected.voucher.toFixed(2));
+    const expectedTotal = Number(doServidor.expected.total.toFixed(2));
+    difference = Number((totalInformed - expectedTotal).toFixed(2));
+    paraOCupom = {
+      esperado: { cash: expectedCash, debit: expectedDebit, credit: expectedCredit, pix: expectedPix, voucher: expectedVoucher, total: expectedTotal },
+      abertoEm: openSession.openedAt,
+      trocoInicial: Number(openSession.openingAmount || 0),
+    };
+
+    // Tela velha não é erro — é aviso. Se a divergência for grande, o operador
+    // fechou olhando um número que já não existia, e é bom saber disso depois.
+    const defasagem = Math.abs(esperadoDaTela.total - expectedTotal);
+    if (defasagem > 0.01) {
+      console.warn(
+        `[Caixa] Tela desatualizada ao fechar ${openSession.id}: ela mostrava esperado R$ ${esperadoDaTela.total.toFixed(2)}, ` +
+        `o servidor apurou R$ ${expectedTotal.toFixed(2)} (defasagem R$ ${defasagem.toFixed(2)}). Gravado o do servidor.`
+      );
+    }
+
     await prisma.cashSession.update({
       where: { id: openSession.id },
       data: {
@@ -647,7 +726,7 @@ export async function PUT(req: Request) {
         expectedPix: Number(expectedPix || 0),
         expectedVoucher: Number(expectedVoucher || 0),
         expectedTotal: Number(expectedTotal || 0),
-        difference: Number(difference.toFixed(2)),
+        difference,
         justification: justification || null,
         closedBy: session.user?.name || session.user?.email || "",
       },
@@ -657,17 +736,32 @@ export async function PUT(req: Request) {
   // 🔧 Auto-finalizar pedidos travados em SAIU_ENTREGA com mais de 3h
   // Isso limpa pedidos que nunca foram confirmados como entregues pelo motoboy
   const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  let finalizadosNoFechamento = 0;
   try {
     const stuckResult = await prisma.customerOrder.updateMany({
       where: {
         franchiseeId: user.targetId,
         status: "SAIU_ENTREGA",
-        createdAt: { lt: threeHoursAgo },
+        // ── TODOS, e não só os de mais de 3h ─────────────────────────────
+        //
+        // O corte de 3h deixava para trás justamente o que fecha o turno: o
+        // pedido que saiu às 6h e o caixa fechou às 6h30. Ele continuava
+        // SAIU_ENTREGA para sempre — e, como o esperado do caixa soma todo
+        // pedido não cancelado, o dinheiro dele já tinha sido cobrado da
+        // gaveta no fechamento (R$ 112,29 em dinheiro no turno da Hakim de
+        // 18/09) sem nunca virar venda concluída.
+        //
+        // Fechar o caixa é dizer "o turno acabou". Decisão do dono
+        // (19/09/2026): tudo que estava na rua é dado por entregue junto, e a
+        // tela avisa QUANTOS são antes de o operador confirmar — ver
+        // GET /api/cash-session, campo `saiuParaEntrega`.
+        ...(openSession ? { createdAt: { gte: openSession.openedAt } } : { createdAt: { lt: threeHoursAgo } }),
       },
       data: { status: "ENTREGUE", updatedAt: new Date() },
     });
+    finalizadosNoFechamento = stuckResult.count;
     if (stuckResult.count > 0) {
-      console.log(`[CashSession Close] ✅ ${stuckResult.count} pedidos SAIU_ENTREGA finalizados automaticamente`);
+      console.log(`[CashSession Close] ✅ ${stuckResult.count} pedidos que estavam na rua foram dados como entregues junto com o caixa`);
     }
   } catch (err) {
     console.error("[CashSession Close] Erro ao finalizar pedidos travados:", err);
@@ -682,9 +776,45 @@ export async function PUT(req: Request) {
   });
 
   const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true } });
+
+  // ── O PAPEL DO FECHAMENTO ──────────────────────────────────────────────
+  //
+  // Esperado ao lado do contado, forma por forma. Sem o lado a lado, "faltou
+  // R$ 274,32" não diz em qual forma faltou e o lojista não tem por onde
+  // começar a procurar (foi a dúvida do dono no caixa da Hakim, 19/09/2026).
+  // Sai depois da finalização dos pedidos da rua, para o papel poder dizer
+  // quantos foram dados como entregues junto com o caixa.
+  if (openSession && paraOCupom) {
+    try {
+      await enfileirarCupomDoCaixa(user.targetId, cupomDeFechamentoDeCaixa({
+        sessionId: openSession.id,
+        loja: ownerInfo?.storeName || "",
+        fuso: ownerInfo?.storeTimezone || FUSO_PADRAO,
+        operador: session.user?.name || session.user?.email || "",
+        abertoEm: paraOCupom.abertoEm,
+        fechadoEm: new Date(),
+        trocoInicial: paraOCupom.trocoInicial,
+        valores: {
+          esperado: paraOCupom.esperado,
+          contado: {
+            cash: Number(closingCash || 0), debit: Number(closingDebit || 0),
+            credit: Number(closingCredit || 0), pix: Number(closingPix || 0),
+            voucher: Number(closingVoucher || 0),
+          },
+          diferenca: difference,
+          online: { ifood: Number(closingIfoodOnline || 0), food99: Number(closingFood99Online || 0) },
+          finalizadosNoFechamento,
+          justificativa: justification || null,
+        },
+      }), session.user?.name || session.user?.email || "");
+    } catch (e: any) {
+      console.error("[Caixa] Não consegui enfileirar o cupom de fechamento:", e?.message);
+    }
+  }
+
   if (ownerInfo?.notificationPhone) {
     const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
-    const msg = `🔴 *Caixa Fechado*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *FECHADO* às ${timeStr}.\n\nDiferença no caixa: R$ ${Number(difference.toFixed(2)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n_Ass: Seu Assistente FireHub 🔥_`;
+    const msg = `🔴 *Caixa Fechado*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *FECHADO* às ${timeStr}.\n\nDiferença no caixa: R$ ${difference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n_Ass: Seu Assistente FireHub 🔥_`;
     sendEvolutionMessage(user.targetId, ownerInfo.notificationPhone, msg).catch(() => {});
   }
 

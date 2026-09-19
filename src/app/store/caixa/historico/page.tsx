@@ -1,3 +1,4 @@
+import BotaoImprimirCaixa from "@/components/customer/BotaoImprimirCaixa";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -116,8 +117,13 @@ export default async function CaixaHistoricoPage() {
               </table>
             )}
 
-            <div style={{ padding: "8px 16px", fontSize: "0.75rem", color: "#94A3B8", borderTop: "1px solid #F1F5F9" }}>
-              Abertura: {fmt(s.openingAmount || 0)} em troco inicial
+            <div style={{ padding: "8px 16px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
+                Abertura: {fmt(s.openingAmount || 0)} em troco inicial
+              </span>
+              {/* Segunda via: papel some, e a conferência do dinheiro não pode
+                  depender de alguém transcrever a tela à mão. */}
+              <BotaoImprimirCaixa sessionId={s.id} />
             </div>
           </div>
         );
