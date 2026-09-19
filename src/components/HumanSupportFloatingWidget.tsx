@@ -243,7 +243,17 @@ export default function HumanSupportFloatingWidget() {
   if (escondido) return null;
 
   return (
-    <div style={{ position: "fixed", bottom: "24px", right: "clamp(8px, 4vw, 24px)", zIndex: 9999, fontFamily: "sans-serif" }}>
+    // ── ELE NÃO PODE FICAR EM CIMA DO "FALE CONOSCO" ─────────────────────────
+    //
+    // O widget de contato do FireHub (`FloatingContactWidget`, montado no layout
+    // RAIZ) usa exatamente `fixed; bottom: 24px; right: 24px; z-index: 9999` —
+    // o mesmo canto, o mesmo empilhamento. Os dois desenhavam um botão redondo
+    // no mesmo pixel, e o de baixo ficava inalcançável: o lojista clicava no
+    // balãozinho achando que era o do WhatsApp e abria "Fale conosco".
+    //
+    // Este sobe 76px e ganha um rótulo, para os dois conviverem e cada um dizer
+    // o que é. z-index 10000 porque o outro já ocupa 9999.
+    <div style={{ position: "fixed", bottom: "100px", right: "clamp(8px, 4vw, 24px)", zIndex: 10000, fontFamily: "sans-serif" }}>
       {/* JANELA DO CHAT DE SUPORTE */}
       {open && (
         <div
@@ -252,8 +262,10 @@ export default function HumanSupportFloatingWidget() {
             bottom: "70px",
             right: "0",
             width: "min(380px, calc(100vw - 24px))",
-            maxHeight: "560px",
-            height: "520px",
+            // Cabe no notebook da loja: o botão agora fica 100px acima do
+            // rodapé, e com altura fixa a janela passava do topo em tela baixa.
+            height: "min(520px, calc(100vh - 200px))",
+            maxHeight: "calc(100vh - 200px)",
             background: "#fff",
             borderRadius: "16px",
             boxShadow: "0 20px 40px rgba(0,0,0,0.25)",
@@ -594,6 +606,33 @@ export default function HumanSupportFloatingWidget() {
           botão inteiro ganha um anel que se expande — visível de longe, e só
           quando há alguém de fato aguardando. */}
       <style>{`@keyframes firehubChamando{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.9);opacity:0}}`}</style>
+
+      {/* O QUE ESTE BOTÃO É. Sem o rótulo, ele é só mais um círculo vermelho no
+          canto — indistinguível do "Fale conosco" logo abaixo, que leva ao
+          suporte do FireHub. Este abre o WhatsApp DA LOJA. */}
+      {!open && (
+        <div
+          onClick={() => setOpen(true)}
+          style={{
+            position: "absolute",
+            bottom: 14,
+            right: 64,
+            whiteSpace: "nowrap",
+            background: "#fff",
+            color: "#B91C1C",
+            border: "1px solid #FECACA",
+            borderRadius: 999,
+            padding: "5px 11px",
+            fontSize: "0.72rem",
+            fontWeight: 800,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+            cursor: "pointer",
+          }}
+        >
+          WhatsApp da loja
+        </div>
+      )}
+
       {totalUnread > 0 && !open && (
         <span
           aria-hidden
