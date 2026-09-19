@@ -9,8 +9,10 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync("src/lib/memoria-da-conversa.ts", "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { historicoParaGuardar, historicoAoLer, MAXIMO_DE_MENSAGENS, VALIDADE_DA_MENSAGEM_MS, LIMITE_DO_TEXTO } =
-  await import("data:text/javascript," + encodeURIComponent(js));
+const {
+  historicoParaGuardar, historicoAoLer, historicoParaAIa,
+  MAXIMO_DE_MENSAGENS, VALIDADE_DA_MENSAGEM_MS, MAXIMO_GUARDADO, VALIDADE_GUARDADA_MS, LIMITE_DO_TEXTO,
+} = await import("data:text/javascript," + encodeURIComponent(js));
 
 let falhas = 0;
 const conferir = (nome, ok, detalhe) => {
@@ -32,17 +34,62 @@ console.log("\n1) Vai e volta igual");
   conferir("aceita o JSON em texto", historicoAoLer(JSON.stringify(guardado), AGORA).length === 3);
 }
 
-console.log("\n2) Mesmas regras do cache em memória");
+console.log("\n2) Duas janelas: a do MODELO é curta, a do PAINEL é larga");
 {
-  const muitas = Array.from({ length: 40 }, (_, i) => msg(i % 2 ? "bot" : "user", "m" + i, 20 - i * 0.4));
+  const muitas = Array.from({ length: 60 }, (_, i) => msg(i % 2 ? "bot" : "user", "m" + i, 120 - i * 2));
   const g = historicoParaGuardar(muitas, AGORA);
-  conferir("no máximo 15", g.length === MAXIMO_DE_MENSAGENS && MAXIMO_DE_MENSAGENS === 15, g.length);
-  conferir("ficam as ÚLTIMAS", g[g.length - 1].text === "m39", g[g.length - 1]);
+  conferir("guarda no máximo 40", g.length === MAXIMO_GUARDADO && MAXIMO_GUARDADO === 40, g.length);
+  conferir("ficam as ÚLTIMAS", g[g.length - 1].text === "m59", g[g.length - 1]);
+  const paraIa = historicoParaAIa(g, AGORA);
+  conferir("o modelo nunca recebe mais que 15", paraIa.length <= MAXIMO_DE_MENSAGENS && MAXIMO_DE_MENSAGENS === 15, paraIa.length);
+  conferir("e só as dos últimos 30 min", paraIa.every((m) => AGORA - m.timestamp < VALIDADE_DA_MENSAGEM_MS), paraIa[0]);
+  conferir("a última é a mesma nas duas", paraIa[paraIa.length - 1].text === "m59");
+  // Conversa apertada (uma mensagem por minuto): aí o teto de 15 aparece.
+  const densa = Array.from({ length: 25 }, (_, i) => msg(i % 2 ? "bot" : "user", "d" + i, 25 - i));
+  conferir("conversa apertada corta em 15 exatas", historicoParaAIa(densa, AGORA).length === 15, historicoParaAIa(densa, AGORA).length);
+
   const velhas = [msg("user", "de manhã", 31), msg("user", "agora", 2)];
-  conferir("mensagem de mais de 30 min sai", historicoAoLer(velhas, AGORA).length === 1 && VALIDADE_DA_MENSAGEM_MS === 30 * 60 * 1000);
-  conferir("conversa toda vencida = vazio", historicoAoLer([msg("user", "oi", 45), msg("bot", "olá", 44)], AGORA).length === 0);
+  conferir("30 min corta para o MODELO", historicoParaAIa(velhas, AGORA).length === 1 && VALIDADE_DA_MENSAGEM_MS === 30 * 60 * 1000);
+  conferir("mas o painel ainda mostra as duas", historicoAoLer(velhas, AGORA).length === 2);
+  conferir("o painel corta em 6 h", historicoAoLer([msg("user", "ontem", 7 * 60), msg("user", "agora", 2)], AGORA).length === 1 && VALIDADE_GUARDADA_MS === 6 * 60 * 60 * 1000);
+  conferir("conversa toda vencida = vazio", historicoAoLer([msg("user", "oi", 400), msg("bot", "olá", 399)], AGORA).length === 0);
   const fora = [msg("user", "b", 1), msg("user", "a", 3)];
   conferir("reordena por horário", historicoAoLer(fora, AGORA)[0].text === "a");
+}
+
+console.log("\n2b) Quem falou pela loja: o robô ou uma pessoa");
+{
+  const c = [
+    { sender: "user", text: "tem pizza?", timestamp: AGORA - 60000 },
+    { sender: "bot", text: "temos sim!", timestamp: AGORA - 50000, autor: "robo" },
+    { sender: "bot", text: "é a Maria falando", timestamp: AGORA - 40000, autor: "atendente" },
+    { sender: "bot", text: "sem autor", timestamp: AGORA - 30000 },
+    { sender: "bot", text: "autor inventado", timestamp: AGORA - 20000, autor: "gerente" },
+  ];
+  const l = historicoAoLer(c, AGORA);
+  conferir("preserva robô e atendente", l[1].autor === "robo" && l[2].autor === "atendente", l);
+  conferir("sem autor continua sem", l[3].autor === undefined);
+  conferir("autor inventado é descartado", l[4].autor === undefined, l[4]);
+}
+
+console.log("\n2c) A mesma mensagem gravada duas vezes aparece UMA vez");
+{
+  // O acréscimo no banco é atômico (não dá para conferir o que já está lá antes
+  // de escrever), então quem tira a repetição é a leitura.
+  const base = [msg("user", "quero 2 x-tudo", 5), msg("bot", "anotado!", 4)];
+  const duplicada = [...base, { sender: "user", text: "e uma coca", timestamp: AGORA - 60000 }, { sender: "user", text: "e uma coca", timestamp: AGORA - 60000 + 2000 }];
+  const lido = historicoAoLer(duplicada, AGORA);
+  conferir("gravação repetida em 5 s aparece uma vez", lido.length === 3 && lido[2].text === "e uma coca", lido);
+  const insistindo = [...base, { sender: "user", text: "oi?", timestamp: AGORA - 60000 }, { sender: "user", text: "oi?", timestamp: AGORA - 40000 }];
+  conferir("o cliente repetindo depois de 20 s aparece duas vezes", historicoAoLer(insistindo, AGORA).length === 4, historicoAoLer(insistindo, AGORA));
+  const cliEBot = [{ sender: "user", text: "oi", timestamp: AGORA - 5000 }, { sender: "bot", text: "oi", timestamp: AGORA - 4000 }];
+  conferir("mesmo texto de lados diferentes não é repetição", historicoAoLer(cliEBot, AGORA).length === 2);
+  const tresIguais = [
+    { sender: "bot", text: "já anotei!", timestamp: AGORA - 9000 },
+    { sender: "bot", text: "já anotei!", timestamp: AGORA - 8000 },
+    { sender: "bot", text: "já anotei!", timestamp: AGORA - 7000 },
+  ];
+  conferir("três gravações iguais em sequência viram uma", historicoAoLer(tresIguais, AGORA).length === 1);
 }
 
 console.log("\n3) O que volta do banco não é confiável");

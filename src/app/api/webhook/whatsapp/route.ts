@@ -33,7 +33,7 @@ import {
   type FalhaDaIa,
 } from '@/lib/falha-da-ia';
 import { comPrazo } from '@/lib/com-prazo';
-import { carregarMemoriaDaConversa, guardarMemoriaDaConversa, limparMemoriasVencidas } from '@/lib/memoria-da-conversa-no-banco';
+import { carregarMemoriaDaConversa, acrescentarNoHistorico, registrarMensagemDoCliente, registrarMensagemDaLoja, limparMemoriasVencidas } from '@/lib/memoria-da-conversa-no-banco';
 
 /**
  * O que o cliente lê quando a IA passa do prazo. NÃO é mensagem de erro: a
@@ -214,7 +214,15 @@ async function replyToCustomer(userId: string, remoteJid: string, text: string, 
   // cala por causa da própria mensagem. Registrar cedo demais não custa nada:
   // se o envio falhar, sobra um hash que nunca aparece.
   await registerBotReply(userId, remoteJid, text);
-  return sendEvolutionMessage(userId, target || remoteJid, text);
+  const enviou = await sendEvolutionMessage(userId, target || remoteJid, text);
+  // TODA resposta que sai do robô entra no histórico, não só a que veio da IA:
+  // é por aqui que passam o aviso de áudio ilegível, a frase de "vou chamar
+  // alguém", a mensagem de loja fechada. Sem isto o painel mostrava a pergunta
+  // do cliente e nenhuma resposta, como se o robô tivesse ficado mudo. Só
+  // grava o que o gateway ACEITOU: mostrar atendimento que não existiu é pior
+  // que não mostrar nada.
+  if (enviou) void registrarMensagemDaLoja(userId, remoteJid, text, "robo");
+  return enviou;
 }
 
 /**
@@ -466,6 +474,12 @@ async function handleIncomingMessage(body: any, instance: string) {
     const tookOver = await handleOutgoingMessage(user.id, remoteJid, ownText, Date.now());
     if (tookOver) {
       console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🧑‍💼 Atendente da loja assumiu ${remoteJid}. Robô em silêncio.`);
+      // O que a loja digitou NO CELULAR entra na conversa do painel. Sem isto,
+      // quem acompanha pelo painel via só um lado: a pergunta do cliente e o
+      // silêncio, sem a resposta que já tinha sido dada pelo aparelho.
+      // `tookOver` é falso para o eco do próprio robô (o hash bate), então
+      // aqui só passa gente digitando.
+      void registrarMensagemDaLoja(user.id, remoteJid, ownText, "atendente");
     }
     return;
   }
@@ -556,6 +570,10 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   if (isCallEvent) {
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 📞 Chamada de voz detectada de ${remoteJid}`);
+    // A loja pode ter assumido esta conversa (botão do painel, pedido de
+    // atendente): a checagem geral só vem mais abaixo, e até aqui o robô
+    // respondia por cima de quem estava atendendo.
+    if (roboEstaPausado(user.id, remoteJid)) return;
     const cleanTarget = remoteJid.replace(/@.*$/, "");
     if (cleanTarget) {
       replyToCustomer(
@@ -573,7 +591,17 @@ async function handleIncomingMessage(body: any, instance: string) {
   const tipoTrace: "texto" | "audio" = (isAudioMessage || audioObj) ? "audio" : "texto";
 
   let textMessage = rawText;
+  /**
+   * O que o PAINEL mostra como fala do cliente.
+   *
+   * Em áudio, `textMessage` vira uma INSTRUÇÃO para o modelo ("escute o áudio
+   * em anexo..."), igual em toda mensagem de voz. Gravar isso faria a loja ler
+   * uma ordem nossa como se fosse o cliente falando — e a mesma frase em todo
+   * áudio. Quando a IA devolve a transcrição, ela substitui este rótulo.
+   */
+  let textoDoClienteParaOPainel = rawText;
   if (isAudioMessage || audioObj) {
+    textoDoClienteParaOPainel = rawText || "🎤 Áudio do cliente";
     registrarTrace({
       instancia: instance,
       telefone: mascararTelefone(remoteJid),
@@ -610,6 +638,9 @@ async function handleIncomingMessage(body: any, instance: string) {
     // x-tudo" / "e uma coca") perde parte do que disse. O substituto já está
     // escrito e testado em lib/fila-da-conversa.ts: agrupa a rajada numa
     // mensagem só e atende uma conversa de cada vez, em vez de descartar.
+    // Enquanto isso, pelo menos ela APARECE: a loja vê no painel o que o
+    // cliente escreveu e o robô não respondeu.
+    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Cooldown ativo para ${remoteJid}`);
     return;
   }
@@ -702,7 +733,11 @@ async function handleIncomingMessage(body: any, instance: string) {
       ? `Recebemos a confirmação do seu pedido *#${orderNum}* pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`
       : `Recebemos a confirmação do seu pedido pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`;
 
-    await replyToCustomer(user.id, remoteJid, thankMsg).catch(() => {});
+    // Idem: com a conversa nas mãos da equipe, o robô não entra com o
+    // "obrigado pela preferência" no meio do atendimento.
+    if (!roboEstaPausado(user.id, remoteJid)) {
+      await replyToCustomer(user.id, remoteJid, thankMsg).catch(() => {});
+    }
     return;
   }
 
@@ -721,6 +756,9 @@ async function handleIncomingMessage(body: any, instance: string) {
   // escrevia depois era descartado sem ninguém ler.
   if (roboEstaPausado(user.id, remoteJid)) {
     enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, "", Date.now());
+    // A conversa continua aparecendo no painel, com o que o cliente escreve
+    // enquanto a equipe atende — é o ponto de poder acompanhar de lá.
+    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Robô pausado para ${remoteJid} (conversa com a equipe) — mensagem encaminhada à fila`);
     return;
   }
@@ -904,6 +942,9 @@ async function handleIncomingMessage(body: any, instance: string) {
       // `updatedAt` se renova a cada mensagem, e o prazo de 30 min nunca vencia.
     } else if (chat.status !== "CLOSED") {
       chat.messages.push({ sender: "user", text: textMessage, timestamp: Date.now() });
+      // Também no histórico: a aba do robô mostra a conversa inteira, e esta
+      // mensagem só existia dentro da fila em memória, que morre no deploy.
+      void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
       chat.lastMessage = textMessage;
       chat.updatedAt = Date.now();
       chat.unreadCount = (chat.unreadCount || 0) + 1;
@@ -929,6 +970,9 @@ async function handleIncomingMessage(body: any, instance: string) {
       instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
       estagio: "guard-ignorou", detalhe: guard.reason,
     });
+    // O robô não responde, mas a mensagem CHEGOU: sem isto o painel fica cego
+    // justamente na conversa travada, que é a que precisa de gente.
+    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
     return;
   }
 
@@ -1153,6 +1197,9 @@ async function handleIncomingMessage(body: any, instance: string) {
       if (transcriptionMatch) {
         transcription = transcriptionMatch[1].trim();
         replyText = replyText.replace(/\[\[TRANSCRICAO:[\s\S]*?\]\]/gi, "").trim();
+        // O que o cliente DISSE no áudio: é isto que a loja lê no painel, no
+        // lugar do rótulo genérico.
+        if (transcription) textoDoClienteParaOPainel = transcription;
       }
 
       // Pedido de atendente por ÁUDIO. Lá em cima o detector só enxerga o
@@ -1190,6 +1237,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       // responder": o mesmo sintoma da Hakim, por outro caminho.
       if (roboEstaPausado(user.id, remoteJid)) {
         enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage, "", now);
+        void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
         console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: ${remoteJid} passou para a equipe enquanto ela era gerada.`);
         return;
       }
@@ -1307,9 +1355,13 @@ async function handleIncomingMessage(body: any, instance: string) {
     
       conversationCache.set(convKey, updatedHistory);
       cooldownCache.set(remoteJid, Date.now());
-      // Cópia no banco, para o próximo deploy não levar a conversa junto. Sem
-      // `await`: o cliente já foi respondido, e a função nunca lança.
-      void guardarMemoriaDaConversa(user.id, remoteJid, updatedHistory);
+      // Cópia no banco, para o próximo deploy não levar a conversa junto — e
+      // para a loja acompanhar o atendimento pelo painel. ACRESCENTA, não
+      // sobrescreve: a mensagem do cliente já pode ter sido gravada por outro
+      // caminho. Sem `await`: o cliente já foi respondido, e nunca lança.
+      // Só a mensagem do CLIENTE: a resposta do robô já foi gravada dentro de
+      // `replyToCustomer`, no instante em que o gateway a aceitou.
+      void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
     }
   };
 

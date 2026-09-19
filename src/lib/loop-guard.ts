@@ -170,6 +170,24 @@ export const HUMAN_TAKEOVER_SILENCE_MS = 5 * 60 * 1000;
  */
 export const DEGRADED_TTL_MS = 12 * 60 * 60 * 1000;
 
+/**
+ * A pausa que a LOJA liga pelo painel dura menos: duas horas.
+ *
+ * Doze horas existem para quem PEDIU uma pessoa — o robô voltar no meio dessa
+ * espera seria pior que o silêncio. Já quem clica "pausar robô" no painel está
+ * assumindo uma conversa no meio do movimento, e esquecer de devolver é o
+ * desfecho mais comum de um sábado cheio. Passadas duas horas, o robô volta
+ * sozinho em vez de o cliente ficar sem ninguém até a madrugada.
+ */
+export const PAUSA_DO_PAINEL_MS = 2 * 60 * 60 * 1000;
+/** Como a pausa do painel se identifica em `degradedReason`. */
+export const MOTIVO_PAUSA_DO_PAINEL = "a loja assumiu a conversa pelo painel";
+
+/** Quanto tempo esta trava vale, conforme quem a pôs. */
+export function prazoDaTrava(motivo?: string | null): number {
+  return motivo === MOTIVO_PAUSA_DO_PAINEL ? PAUSA_DO_PAINEL_MS : DEGRADED_TTL_MS;
+}
+
 /** Hashes de mensagens que o próprio robô enviou, para reconhecer o eco. */
 const BOT_SENT_WINDOW = 10;
 
@@ -345,7 +363,7 @@ async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
   // ser atendido amanhã sem ninguém precisar lembrar de destravar nada.
   if (state?.degradedAt) {
     const idade = now - state.degradedAt.getTime();
-    if (idade < DEGRADED_TTL_MS) {
+    if (idade < prazoDaTrava(state.degradedReason)) {
       return { action: "ignore", reason: state.degradedReason || "conversa degradada" };
     }
     console.log(
@@ -446,7 +464,7 @@ export async function conversaEstaComHumano(userId: string, remoteJid: string): 
   try {
     const state = await readState(userId, remoteJid);
     if (!state?.degradedAt) return false;
-    return Date.now() - state.degradedAt.getTime() < DEGRADED_TTL_MS;
+    return Date.now() - state.degradedAt.getTime() < prazoDaTrava(state.degradedReason);
   } catch {
     // Na dúvida, diz que NÃO está: falar demais é recuperável, calar um cliente
     // por engano é o defeito que este arquivo já produziu antes.

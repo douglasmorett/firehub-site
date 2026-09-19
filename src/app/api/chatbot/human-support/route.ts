@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { clearLoopGuard, registerBotReply } from "@/lib/loop-guard";
 import { retomarRobo } from "@/lib/pausa-do-robo";
+import { registrarMensagemDaLoja } from "@/lib/memoria-da-conversa-no-banco";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +116,10 @@ export async function POST(req: NextRequest) {
       if (!success) {
         return NextResponse.json({ error: "Falha ao enviar mensagem pelo WhatsApp" }, { status: 500 });
       }
+
+      // A mesma resposta entra na conversa que o painel mostra na aba do robô:
+      // as duas abas contam a mesma história, vista de ângulos diferentes.
+      await registrarMensagemDaLoja(targetUserId, jid, message, "atendente").catch(() => {});
 
       if (chat) {
         chat.messages.push({

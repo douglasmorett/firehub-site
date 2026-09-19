@@ -20,6 +20,156 @@ export default function HumanSupportFloatingWidget() {
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
 
+  // ── O ROBÔ ATENDENDO, AO VIVO ────────────────────────────────────────────
+  // A aba de cima mostra quem CHAMOU uma pessoa. Esta mostra todo mundo com
+  // quem o robô está falando agora — é o pedido do lojista que quer acompanhar
+  // o atendimento sem abrir o WhatsApp no celular.
+  const [aba, setAba] = useState<"fila" | "robo">("fila");
+  const [conversas, setConversas] = useState<any[]>([]);
+  const [conversaAberta, setConversaAberta] = useState<string | null>(null);
+  const [mensagens, setMensagens] = useState<any[]>([]);
+  const [pausado, setPausado] = useState(false);
+  const [mudandoPausa, setMudandoPausa] = useState(false);
+  const [erroDoEnvio, setErroDoEnvio] = useState("");
+  const [carregandoConversas, setCarregandoConversas] = useState(true);
+  /** Sem acesso às conversas (funcionário sem a permissão do painel de pedidos). */
+  const [semAcesso, setSemAcesso] = useState(false);
+  const fimDaConversa = useRef<HTMLDivElement | null>(null);
+  /** Qual conversa está na tela AGORA — para descartar resposta que chega atrasada. */
+  const conversaAbertaRef = useRef<string | null>(null);
+
+  const fetchConversas = async () => {
+    try {
+      const r = await fetch("/api/chatbot/conversas");
+      if (r.status === 401 || r.status === 403) {
+        setSemAcesso(true);
+        return;
+      }
+      const res = await r.json();
+      if (res.success) {
+        setConversas(res.conversas || []);
+        setSemAcesso(false);
+      }
+    } catch (e) {
+    } finally {
+      setCarregandoConversas(false);
+    }
+  };
+
+  const fetchMensagens = async (jid: string) => {
+    try {
+      const res = await fetch(`/api/chatbot/conversas?jid=${encodeURIComponent(jid)}`).then((r) => r.json());
+      // A resposta demora e o lojista pode já ter voltado ou aberto OUTRA
+      // conversa: sem esta conferência, o histórico do João aparecia dentro da
+      // conversa da Maria.
+      if (conversaAbertaRef.current !== jid) return;
+      if (res.success) {
+        setMensagens(res.mensagens || []);
+        setPausado(!!res.pausado);
+        setErroDoEnvio("");
+      }
+    } catch (e) {}
+  };
+
+  const abrirConversa = async (jid: string) => {
+    conversaAbertaRef.current = jid;
+    setConversaAberta(jid);
+    setMensagens([]);
+    // O texto digitado para um cliente não pode seguir para outro.
+    setReplyText("");
+    setErroDoEnvio("");
+    const daLista = conversas.find((c) => c.remoteJid === jid);
+    setPausado(!!daLista?.pausado);
+    await fetchMensagens(jid);
+  };
+
+  const alternarPausa = async (jid: string, pausar: boolean) => {
+    if (mudandoPausa) return;
+    setMudandoPausa(true);
+    try {
+      const res = await fetch("/api/chatbot/conversas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: pausar ? "pausar" : "retomar", jid }),
+      }).then((r) => r.json());
+      if (res.success) setPausado(!!res.pausado);
+      fetchConversas();
+    } catch (e) {
+    } finally {
+      setMudandoPausa(false);
+    }
+  };
+
+  const enviarPelaConversa = async () => {
+    if (!conversaAberta || !replyText.trim() || sending) return;
+    setSending(true);
+    setErroDoEnvio("");
+    try {
+      const res = await fetch("/api/chatbot/conversas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "enviar", jid: conversaAberta, message: replyText }),
+      }).then((r) => r.json());
+      if (res.success) {
+        setReplyText("");
+        setPausado(true);
+        await fetchMensagens(conversaAberta);
+        fetchConversas();
+      } else {
+        // O texto FICA na caixa: deixar o atendente achar que o cliente foi
+        // respondido é pior do que o erro em si.
+        setErroDoEnvio(res.error || "Não consegui enviar. Tente de novo.");
+      }
+    } catch (e) {
+      setErroDoEnvio("Não consegui falar com o servidor. Tente de novo.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Só busca enquanto a janela está aberta na aba do robô: fechada, ninguém
+  // está olhando, e são 30 lojas pedindo isto a cada quatro segundos.
+  useEffect(() => {
+    if (escondido || !open || aba !== "robo") return;
+    fetchConversas();
+    // Com a aba do navegador escondida ninguém está lendo: são ~30 lojas
+    // batendo nisto, e o painel fica aberto o dia inteiro.
+    const t = setInterval(() => { if (!document.hidden) fetchConversas(); }, 6000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [escondido, open, aba]);
+
+  useEffect(() => {
+    if (escondido || !open || !conversaAberta) return;
+    const t = setInterval(() => { if (!document.hidden) fetchMensagens(conversaAberta); }, 4000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [escondido, open, conversaAberta]);
+
+  useEffect(() => {
+    // Rola a CAIXA de mensagens, não a página: scrollIntoView numa janela
+    // fixa arrasta a tela do painel inteira junto.
+    const caixa = fimDaConversa.current?.parentElement;
+    if (caixa) caixa.scrollTop = caixa.scrollHeight;
+  }, [mensagens.length]);
+
+  const telefoneBonito = (t: string) => {
+    const d = String(t || "").replace(/\D/g, "").replace(/^55/, "");
+    if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return t || "";
+  };
+
+  const horaDe = (ms: number) =>
+    new Date(ms).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+  const haQuantoTempo = (ms: number) => {
+    const min = Math.floor((Date.now() - ms) / 60000);
+    if (min < 1) return "agora";
+    if (min < 60) return `${min} min`;
+    return `${Math.floor(min / 60)} h`;
+  };
+
   const fetchChats = async () => {
     try {
       const res = await fetch("/api/chatbot/human-support").then((r) => r.json());
@@ -93,7 +243,7 @@ export default function HumanSupportFloatingWidget() {
   if (escondido) return null;
 
   return (
-    <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 9999, fontFamily: "sans-serif" }}>
+    <div style={{ position: "fixed", bottom: "24px", right: "clamp(8px, 4vw, 24px)", zIndex: 9999, fontFamily: "sans-serif" }}>
       {/* JANELA DO CHAT DE SUPORTE */}
       {open && (
         <div
@@ -101,7 +251,7 @@ export default function HumanSupportFloatingWidget() {
             position: "absolute",
             bottom: "70px",
             right: "0",
-            width: "380px",
+            width: "min(380px, calc(100vw - 24px))",
             maxHeight: "560px",
             height: "520px",
             background: "#fff",
@@ -118,11 +268,15 @@ export default function HumanSupportFloatingWidget() {
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <MessageSquare size={20} />
               <div>
-                <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>Atendimento Humano WhatsApp</div>
+                <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>WhatsApp da loja</div>
                 <div style={{ fontSize: "0.72rem", color: "#FECACA" }}>
-                  {chats.length === 0
-                    ? "Nenhum cliente aguardando no momento"
-                    : `${chats.length} ${chats.length === 1 ? "cliente solicitando" : "clientes solicitando"} atendimento`}
+                  {aba === "fila"
+                    ? chats.length === 0
+                      ? "Nenhum cliente aguardando no momento"
+                      : `${chats.length} ${chats.length === 1 ? "cliente solicitando" : "clientes solicitando"} atendimento`
+                    : conversas.length === 0
+                      ? "Nenhuma conversa nas últimas horas"
+                      : `${conversas.length} ${conversas.length === 1 ? "conversa" : "conversas"} · ${conversas.filter((c) => !c.pausado).length} com o robô`}
                 </div>
               </div>
             </div>
@@ -131,8 +285,195 @@ export default function HumanSupportFloatingWidget() {
             </button>
           </div>
 
-          {/* LISTA DE CHATS OU CONVERSA SELECIONADA */}
-          {!selectedChatJid ? (
+          {/* ABAS: quem está chamando x o robô atendendo */}
+          <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #E2E8F0" }}>
+            {([
+              ["fila", `🙋 Chamando${chats.length > 0 ? ` (${chats.length})` : ""}`],
+              ["robo", `🤖 Robô atendendo${conversas.length > 0 ? ` (${conversas.length})` : ""}`],
+            ] as const).map(([id, rotulo]) => (
+              <button
+                key={id}
+                onClick={() => { setAba(id); setSelectedChatJid(null); conversaAbertaRef.current = null; setConversaAberta(null); setReplyText(""); setErroDoEnvio(""); }}
+                style={{
+                  flex: 1,
+                  padding: "9px 6px",
+                  border: "none",
+                  cursor: "pointer",
+                  background: aba === id ? "#FEF2F2" : "#fff",
+                  color: aba === id ? "#B91C1C" : "#64748B",
+                  fontWeight: 800,
+                  fontSize: "0.74rem",
+                  borderBottom: aba === id ? "2px solid #DC2626" : "2px solid transparent",
+                }}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+
+          {/* ── ABA DO ROBÔ ─────────────────────────────────────────────── */}
+          {aba === "robo" ? (
+            !conversaAberta ? (
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px", background: "#F8FAFC" }}>
+                {semAcesso ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B" }}>
+                    <ShieldCheck size={40} color="#94A3B8" style={{ marginBottom: "12px" }} />
+                    <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1E293B" }}>Sem acesso às conversas</div>
+                    <div style={{ fontSize: "0.78rem", marginTop: "4px" }}>
+                      O dono da loja libera em Configurações → Equipe, marcando o Painel de Pedidos para você.
+                    </div>
+                  </div>
+                ) : carregandoConversas ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B", fontSize: "0.82rem" }}>
+                    Carregando as conversas...
+                  </div>
+                ) : conversas.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B" }}>
+                    <Bot size={40} color="#94A3B8" style={{ marginBottom: "12px" }} />
+                    <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1E293B" }}>Nenhuma conversa agora</div>
+                    <div style={{ fontSize: "0.78rem", marginTop: "4px" }}>
+                      Assim que alguém falar com o WhatsApp da loja, a conversa aparece aqui ao vivo — com o que o robô respondeu.
+                    </div>
+                  </div>
+                ) : (
+                  conversas.map((c) => (
+                    <div
+                      key={c.remoteJid}
+                      onClick={() => abrirConversa(c.remoteJid)}
+                      style={{
+                        background: "#fff",
+                        padding: "10px 12px",
+                        borderRadius: "12px",
+                        border: `1px solid ${c.pausado ? "#FCD34D" : "#E2E8F0"}`,
+                        marginBottom: "8px",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: c.pausado ? "#FEF3C7" : "#DCFCE7", color: c.pausado ? "#B45309" : "#166534", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {c.pausado ? <ShieldCheck size={17} /> : <Bot size={17} />}
+                      </div>
+                      <div style={{ overflow: "hidden", flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontWeight: 800, fontSize: "0.82rem", color: "#0F172A", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {c.nome || telefoneBonito(c.telefone)}
+                          </span>
+                          <span style={{ fontSize: "0.68rem", color: "#94A3B8", flexShrink: 0 }}>{haQuantoTempo(c.ultimaEm)}</span>
+                        </div>
+                        <div style={{ fontSize: "0.74rem", color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {c.ultimoAutor === "bot" ? "🤖 " : "👤 "}
+                          {c.ultimaMensagem}
+                        </div>
+                        {c.pausado && (
+                          <div style={{ display: "inline-block", background: "#FEF3C7", color: "#B45309", fontSize: "0.66rem", fontWeight: 800, padding: "1px 6px", borderRadius: 5, marginTop: 3 }}>
+                            robô pausado{c.motivoDaPausa ? ` · ${c.motivoDaPausa}` : ""}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#E5DDD5", minHeight: 0 }}>
+                <div style={{ background: "#fff", padding: "8px 12px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                  <button onClick={() => { conversaAbertaRef.current = null; setConversaAberta(null); setReplyText(""); setErroDoEnvio(""); }} style={{ background: "#F1F5F9", border: "none", padding: "4px 9px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#475569" }}>
+                    ← Voltar
+                  </button>
+                  <div style={{ fontWeight: 800, fontSize: "0.78rem", color: "#0F172A", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                    {conversas.find((c) => c.remoteJid === conversaAberta)?.nome ||
+                      telefoneBonito(conversaAberta.split("@")[0])}
+                  </div>
+                  <button
+                    onClick={() => alternarPausa(conversaAberta, !pausado)}
+                    disabled={mudandoPausa}
+                    title={pausado ? "O robô volta a responder este cliente" : "O robô para de responder este cliente até você devolver"}
+                    style={{
+                      background: pausado ? "#DCFCE7" : "#FEF3C7",
+                      border: `1px solid ${pausado ? "#BBF7D0" : "#FDE68A"}`,
+                      color: pausado ? "#166534" : "#B45309",
+                      padding: "4px 9px",
+                      borderRadius: "6px",
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      cursor: mudandoPausa ? "wait" : "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {mudandoPausa ? "..." : pausado ? "▶ Voltar o robô" : "⏸ Pausar robô"}
+                  </button>
+                </div>
+
+                {pausado && (
+                  <div style={{ background: "#FEF3C7", color: "#92400E", fontSize: "0.72rem", fontWeight: 700, padding: "6px 12px", textAlign: "center" }}>
+                    O robô não está respondendo este cliente. Quem responde é você.
+                  </div>
+                )}
+
+                <div style={{ flex: 1, padding: "12px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px", minHeight: 0 }}>
+                  {mensagens.length === 0 ? (
+                    <div style={{ textAlign: "center", color: "#64748B", fontSize: "0.78rem", padding: "20px" }}>
+                      Sem mensagens guardadas desta conversa.
+                    </div>
+                  ) : (
+                    mensagens.map((m: any, idx: number) => (
+                      <div
+                        key={idx}
+                        style={{
+                          alignSelf: m.sender === "bot" ? "flex-end" : "flex-start",
+                          maxWidth: "85%",
+                          background: m.sender === "bot" ? (m.autor === "atendente" ? "#DCF8C6" : "#E9FBE5") : "#FFFFFF",
+                          color: "#0F172A",
+                          padding: "7px 11px",
+                          borderRadius: m.sender === "bot" ? "10px 0px 10px 10px" : "0px 10px 10px 10px",
+                          fontSize: "0.8rem",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {m.sender === "bot" && (
+                          <div style={{ fontSize: "0.63rem", fontWeight: 800, color: m.autor === "atendente" ? "#166534" : "#15803D", marginBottom: 2 }}>
+                            {m.autor === "atendente" ? "VOCÊ" : "ROBÔ"}
+                          </div>
+                        )}
+                        {m.text}
+                        <div style={{ fontSize: "0.6rem", color: "#94A3B8", textAlign: "right", marginTop: 2 }}>{horaDe(m.timestamp)}</div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={fimDaConversa} />
+                </div>
+
+                {erroDoEnvio && (
+                  <div style={{ background: "#FEE2E2", color: "#991B1B", fontSize: "0.74rem", fontWeight: 700, padding: "7px 12px", textAlign: "center" }}>
+                    {erroDoEnvio}
+                  </div>
+                )}
+
+                <div style={{ padding: "10px", background: "#fff", borderTop: "1px solid #E2E8F0", display: "flex", gap: "6px" }}>
+                  <input
+                    type="text"
+                    maxLength={1000}
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && enviarPelaConversa()}
+                    placeholder="Escrever para o cliente (pausa o robô)..."
+                    style={{ flex: 1, padding: "8px 12px", borderRadius: "20px", border: "1px solid #CBD5E1", fontSize: "0.8rem", outline: "none" }}
+                  />
+                  <button
+                    onClick={enviarPelaConversa}
+                    disabled={sending || !replyText.trim()}
+                    style={{ width: 36, height: 36, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                  >
+                    <Send size={16} />
+                  </button>
+                </div>
+              </div>
+            )
+          ) : /* LISTA DE CHATS OU CONVERSA SELECIONADA */
+          !selectedChatJid ? (
             <div style={{ flex: 1, overflowY: "auto", padding: "12px", background: "#F8FAFC" }}>
               {chats.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B" }}>
@@ -264,7 +605,7 @@ export default function HumanSupportFloatingWidget() {
         />
       )}
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => { const abrindo = !open; setOpen(abrindo); if (abrindo) { conversaAbertaRef.current = null; setConversaAberta(null); setSelectedChatJid(null); setReplyText(""); setErroDoEnvio(""); if (totalUnread > 0) setAba("fila"); } }}
         style={{
           width: "56px",
           height: "56px",
