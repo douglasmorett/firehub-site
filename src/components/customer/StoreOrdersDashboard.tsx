@@ -516,7 +516,11 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
     order.deliveryType === "RETIRADA" ||
     order.deliveryType === "TAKEOUT" ||
     String(order.deliveryType || "").toUpperCase().includes("RETIRADA") ||
-    String(order.notes || "").toUpperCase().includes("RETIRADA");
+    // A observação agora carrega TEXTO LIVRE DO CLIENTE (o robô passou a gravar
+    // o que ele pede, "pode deixar na portaria, não precisa esperar a
+    // retirada"). A palavra solta deixou de bastar: vale o marcador do sistema
+    // ou a observação que COMEÇA com "retirada" — o tipo do pedido é quem manda.
+    /^\s*RETIRADA\b|RETIRADA NO BALC/.test(String(order.notes || "").toUpperCase());
 
   const defaultMinutes = isTakeoutOrder ? 40 : 45;
 
