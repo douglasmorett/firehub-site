@@ -705,7 +705,18 @@ export async function processBrendiEvent(
       // Helper: extrai valor numérico de preço — a Brendi (Open Delivery) pode
       // mandar número puro OU objeto {value, currency}; tratar os dois é o que
       // impede total zero silencioso.
-      const priceVal = (p: any): number => typeof p === "object" && p !== null ? (p.value ?? 0) : (p ?? 0);
+      //
+      // SEMPRE NÚMERO, nunca o que veio. `?? 0` deixava passar qualquer coisa
+      // que não fosse nulo — e a Brendi manda `addition: true` (uma BANDEIRA
+      // de "esta opção é uma adição") no mesmo lugar onde os outros mandam o
+      // preço. O `true` era gravado como preço do adicional e a comanda do
+      // Frangoso imprimia "+R$ 1,00" ao lado de opção que não custa nada
+      // (Number(true) === 1). Visto em pedidos de 19/09/2026.
+      const priceVal = (p: any): number => {
+        const bruto = typeof p === "object" && p !== null ? p.value : p;
+        const n = typeof bruto === "boolean" ? NaN : Number(bruto);
+        return Number.isFinite(n) ? n : 0;
+      };
 
       // Helper: extrai recursivamente todas as opções / subitens / sabores /
       // adições de um item — os originadores Open Delivery variam o nome do
