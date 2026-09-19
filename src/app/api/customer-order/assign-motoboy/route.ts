@@ -134,11 +134,18 @@ export async function PATCH(req: NextRequest) {
         const notesRaw = String(order.notes || "").toUpperCase();
         const total = Number(order.totalAmount || 0);
 
+        // A OBSERVAÇÃO SÓ FALA QUANDO NÃO HÁ FORMA DE PAGAMENTO GRAVADA.
+        //
+        // Ela carrega texto livre do cliente — e o robô passou a gravar o que
+        // ele escreve. "Já paguei no pix, não precisa de troco" marcava o
+        // pedido como DINHEIRO e mandava o motoboy cobrar na porta. O campo de
+        // pagamento é quem sabe; a observação continua valendo para o pedido
+        // antigo (ou de integração) que veio sem ele.
+        const semFormaDePagamento = methodRaw.trim() === "";
         const isCash =
           methodRaw.includes("DINHEIRO") ||
           methodRaw.includes("CASH") ||
-          notesRaw.includes("DINHEIRO") ||
-          notesRaw.includes("TROCO");
+          (semFormaDePagamento && (notesRaw.includes("DINHEIRO") || notesRaw.includes("TROCO")));
         const isCardOnDelivery =
           methodRaw.includes("CARTAO") ||
           methodRaw.includes("MAQUINA") ||
@@ -146,8 +153,7 @@ export async function PATCH(req: NextRequest) {
           methodRaw.includes("DEBITO") ||
           methodRaw.includes("CREDITO") ||
           methodRaw.includes("VALE") ||
-          notesRaw.includes("LEVAR MAQUINA") ||
-          notesRaw.includes("MAQUININHA");
+          (semFormaDePagamento && (notesRaw.includes("LEVAR MAQUINA") || notesRaw.includes("MAQUININHA")));
 
         let changeNeeded = 0;
         if (typeof order.changeAmount === "number" && order.changeAmount > 0) {
