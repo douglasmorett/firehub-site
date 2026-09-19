@@ -9,7 +9,8 @@ import fs from "fs";
 
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { GoogleGenAI } from "@google/genai";
-import { trackGeminiUsage } from "@/lib/usage-tracker";
+import { trackGeminiUsage, trackDivergenciaDePreco } from "@/lib/usage-tracker";
+import { conferirPrecosDitos, extrairPrecosDoTexto, compararTotalDitoComGravado } from "@/lib/precos-ditos";
 import { normalizeStoreHours } from "@/lib/store-hours";
 import { precoMinimoDoProduto, precoVariaPorEscolha, minimoExigidoDoGrupo } from "./preco-combo";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
@@ -953,7 +954,7 @@ REGRAS ABSOLUTAS:
      b) Como COMPLEMENTO depois de já ter respondido preços, sabores ou opções.
      c) O cliente perguntar por promoções ou cupons ativos (dizendo antes quais são).
    - REGRA DE FERRO DOS PREÇOS (a mais importante de todas):
-     a) Todo valor que você disser tem que estar ESCRITO no cardápio acima. Você não calcula
+     a) Todo valor que você disser tem que estar ESCRITO no cardápio abaixo. Você não calcula
         preço, não estima, não arredonda e não deduz. Se o número não está lá, você não o diz.
      b) Item com opções mostra "A partir de R$ X" e a lista de opções com o valor de cada uma.
         NUNCA some os adicionais todos para dar um preço: adicional é ESCOLHA do cliente, e
@@ -1077,7 +1078,7 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       - "notes" é a OBSERVAÇÃO DO CLIENTE SOBRE AQUELE ITEM ("sem cebola", "bem passado", "molho à parte"). É o que sai
         impresso na comanda embaixo do item: se o cliente pediu e você não colocar em "notes", a cozinha não fica sabendo.
         Sem observação, omita o campo.
-      a) "name" tem que ser o nome EXATO do cardápio acima, copiado letra por letra. Não invente,
+      a) "name" tem que ser o nome EXATO do cardápio abaixo, copiado letra por letra. Não invente,
          não abrevie, não junte dois produtos num item só. Nome que não existe é DESCARTADO e o
          cliente recebe menos do que pediu.
       b) "options" leva TODA escolha que o cliente fez dentro do produto: o sabor, o tamanho, cada
@@ -1318,8 +1319,24 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
             contents: fullContents,
             config: {
               systemInstruction: systemPrompt,
-              temperature: 0.9,
-              topP: 0.95,
+              // ── TEMPERATURA: 0.9 era de escrever texto, não de copiar preço ──
+              //
+              // A REGRA DE FERRO manda copiar o número que está escrito no
+              // cardápio, sem calcular nem arredondar. Isso é tarefa de cópia
+              // literal — e cópia literal não se faz com a mesma aleatoriedade
+              // de quem escreve uma legenda de Instagram.
+              //
+              // Em 0.9 o modelo escolhe entre as continuações prováveis quase
+              // como se sorteasse; é assim que um pastel de R$ 21,90 vira
+              // R$ 131,40 mesmo com a proibição escrita logo acima. A simpatia
+              // do robô vem da personalidade no prompt e dos emojis, não de
+              // temperatura alta: 0.35 continua soando gente, e para de sortear
+              // número.
+              //
+              // topP também desceu: 0.95 mantém a cauda longa de tokens raros
+              // viva, e "preço raro" é exatamente o que não pode aparecer.
+              temperature: 0.35,
+              topP: 0.9,
               maxOutputTokens: 3000,
               abortSignal: controller.signal,
             }
@@ -1498,6 +1515,53 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         if (modeloMandouCardapio) cleanText = `${cleanText}\n[[ENVIAR_CARDAPIO]]`.trim();
         if (modeloChamouAtendente) cleanText = `${cleanText}\n[[CHAMAR_ATENDENTE]]`.trim();
 
+        // ── O PREÇO QUE O ROBÔ DISSE EXISTE? ────────────────────────────────
+        //
+        // O sync recalcula o pedido GRAVADO a partir do banco e ignora o preço
+        // que a IA mandou — essa rede é sólida. O que não tinha rede nenhuma
+        // era isto: o texto que o cliente LÊ. O pastel de R$ 21,90 cotado a
+        // R$ 131,40 foi texto, e ninguém ficou sabendo até o cliente reclamar.
+        //
+        // A régua é o próprio `catalogSummary`: todo preço que o modelo viu
+        // está escrito lá. Preço dito que está lá é `conhecido`; o que não está
+        // costuma ser soma legítima (2 itens + entrega) e fica em
+        // `desconhecido`, só para medir; o que passa do teto da loja é
+        // `impossivel` — esse é o sinal do pastel.
+        //
+        // NÃO BLOQUEIA a resposta, de propósito. Régua chutada barrando
+        // atendimento bom é pior que o problema. Primeiro se mede; com uma
+        // semana de dado real os limites se escrevem sozinhos.
+        try {
+          const conferencia = conferirPrecosDitos({
+            texto: cleanText,
+            precosDoCardapio: extrairPrecosDoTexto(catalogSummary).map((p) => p.valor),
+          });
+          if (conferencia.impossiveis.length > 0) {
+            console.error(
+              `[Chatbot AI] 🚨 PREÇO IMPOSSÍVEL dito ao cliente: ${conferencia.impossiveis
+                .map((v) => `R$ ${v.toFixed(2)}`)
+                .join(", ")} (teto da loja R$ ${conferencia.teto.toFixed(2)}) — "${cleanText.slice(0, 160)}"`
+            );
+            trackDivergenciaDePreco(userId, "impossivel", {
+              valores: conferencia.impossiveis,
+              teto: conferencia.teto,
+              conhecidos: conferencia.conhecidos,
+              desconhecidos: conferencia.desconhecidos,
+              trecho: cleanText.slice(0, 300),
+              remoteJid,
+            });
+          } else if (conferencia.desconhecidos.length > 0) {
+            // Linha de base: sem alarme, só medida. Depois de uma semana dá
+            // para saber quanto "desconhecido" é normal numa loja saudável.
+            trackDivergenciaDePreco(userId, "centavos", {
+              tipo: "preco-dito-fora-do-cardapio",
+              desconhecidos: conferencia.desconhecidos,
+              conhecidos: conferencia.conhecidos,
+              remoteJid,
+            });
+          }
+        } catch (_) { /* medir nunca pode quebrar o atendimento */ }
+
         // ── O CONTRATO HONESTO DO PEDIDO ────────────────────────────────────
         //
         // A regra que este bloco impõe: "pedido confirmado" SÓ SAI DA BOCA DO
@@ -1657,8 +1721,21 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           model: "gemini-2.5-flash",
           contents: [{ role: "user", parts: [{ text: message }] }],
           config: {
-            systemInstruction: `${agentName ? `Você é ${agentName}, atendente` : "Você trabalha no atendimento"} do ${storeName}. Responda de forma curta, simpática e natural como uma pessoa no WhatsApp.${agentName ? "" : " Você não tem nome cadastrado: nunca invente um para si."} Link do cardápio: ${storeLink}. ${customerFirstName ? `O cliente se chama ${customerFirstName}.` : ""}`,
-            temperature: 0.9,
+            // ── O CAMINHO SEM CARDÁPIO PRECISA DA TRAVA DE PREÇO, NÃO MENOS ──
+            //
+            // Este prompt roda SEM cardápio e SEM histórico. Até 19/09/2026 ele
+            // também rodava sem nenhuma proibição de preço e a 0.9 de
+            // temperatura — a combinação exata que inventa número: perguntado
+            // "quanto é o pastel?", o modelo não tinha o que copiar e chutava,
+            // com a voz da atendente e o nome do cliente, parecendo atendimento.
+            //
+            // Aqui não existe preço certo para dizer, então a única resposta
+            // correta é não dizer nenhum e mandar para o cardápio.
+            systemInstruction: `${agentName ? `Você é ${agentName}, atendente` : "Você trabalha no atendimento"} do ${storeName}. Responda de forma curta, simpática e natural como uma pessoa no WhatsApp.${agentName ? "" : " Você não tem nome cadastrado: nunca invente um para si."} Link do cardápio: ${storeLink}. ${customerFirstName ? `O cliente se chama ${customerFirstName}.` : ""}
+
+REGRA ABSOLUTA E INEGOCIÁVEL: você está sem acesso ao cardápio agora. É PROIBIDO dizer qualquer PREÇO, valor, taxa de entrega, desconto, cupom ou pedido mínimo, e é PROIBIDO afirmar que a loja tem ou não tem um produto, sabor ou combo. Você não sabe, e chutar é pior do que não responder. Se perguntarem preço, produto ou cardápio, responda com naturalidade que vai conferir certinho e mande o link (${storeLink}) — nunca um número, nunca um nome de produto que você não tem como confirmar.`,
+            // Sem cardápio na mão, aleatoriedade é chute. 0.2 aqui.
+            temperature: 0.2,
             maxOutputTokens: 300,
           }
         });
@@ -2277,6 +2354,37 @@ async function syncAiOrderToDatabase({
         `Faltam R$ ${falta.toFixed(2).replace(".", ",")} — quer incluir mais alguma coisa pra eu fechar pra você?`,
     };
   }
+
+  // ── O TOTAL QUE A IA ANUNCIOU x O QUE VAI SER COBRADO ─────────────────────
+  //
+  // Os dois números sempre estiveram aqui na mão, e um era jogado fora sem
+  // nunca ser comparado: `payload.totalAmount` é o que o modelo achou que ia
+  // cobrar (e quase sempre é o número que ele escreveu na conversa), e
+  // `totalOrderAmount` é o que o sistema recalculou do banco e vai gravar.
+  //
+  // Quem manda é o recalculado, e isso continua certo. Mas quando os dois
+  // discordam, o cliente ouviu um número e vai pagar outro — e até 19/09/2026
+  // isso não deixava rastro em lugar nenhum. É a única telemetria que prova que
+  // o pastel de R$ 131,40 não voltou.
+  try {
+    const divergencia = compararTotalDitoComGravado({
+      ditoPelaIa: payload.totalAmount,
+      gravadoPeloSistema: totalOrderAmount,
+    });
+    if (divergencia.houve) {
+      const linha = `[Chatbot AI Order Sync] 💸 ${divergencia.resumo} · loja ${franchiseeId} · cliente ${customerPhone}`;
+      if (divergencia.gravidade === "grave") console.error(`🚨 ${linha}`);
+      else console.warn(linha);
+      trackDivergenciaDePreco(franchiseeId, divergencia.gravidade, {
+        ditoPelaIa: Number(payload.totalAmount) || 0,
+        gravadoPeloSistema: totalOrderAmount,
+        diferenca: divergencia.diferenca,
+        itens: totalItemsSum,
+        frete: deliveryFee,
+        resumo: divergencia.resumo,
+      });
+    }
+  } catch (_) { /* medir nunca pode impedir a gravação do pedido */ }
 
   // Troco e observação do PEDIDO (lib/item-do-robo.ts). O prompt manda perguntar
   // o troco desde sempre, e a tag nem tinha onde colocá-lo: `changeAmount` nunca

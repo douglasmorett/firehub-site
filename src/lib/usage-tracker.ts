@@ -87,6 +87,37 @@ export function trackGeminiUsage(
   }).catch((err) => console.error("[UsageTracker] Gemini log error:", err));
 }
 
+// ── Preço que o robô DISSE x preço que existe ──────────────────────
+//
+// Não custa dinheiro: entra aqui porque `UsageLog` já é a tabela por lojista,
+// com índice em (category, yearMonth) e `metadata` livre — dá para medir sem
+// DDL e sem tabela nova. `estimatedCost` fica 0 de propósito: isto é
+// telemetria de qualidade, e somá-la ao custo do mês mentiria na fatura.
+//
+// Existe porque a rede de segurança do FireHub cobre o pedido GRAVADO
+// (syncAiOrderToDatabase recalcula tudo do banco) e não cobria NADA do que o
+// robô diz em texto. O pastel de R$ 21,90 cotado a R$ 131,40 foi texto.
+
+export type GravidadeDaDivergencia = "centavos" | "real" | "grave" | "impossivel";
+
+export function trackDivergenciaDePreco(
+  franchiseeId: string,
+  gravidade: GravidadeDaDivergencia,
+  detalhe: Record<string, any>
+) {
+  prisma.usageLog.create({
+    data: {
+      franchiseeId,
+      category: "PRECO_DIVERGENTE",
+      subCategory: gravidade,
+      quantity: 1,
+      estimatedCost: 0,
+      metadata: detalhe,
+      yearMonth: getYearMonth(),
+    },
+  }).catch((err) => console.error("[UsageTracker] Divergência de preço log error:", err));
+}
+
 // ── Gemini Vision Tracking (NF-e scan) ─────────────────────────────
 
 export function trackVisionUsage(

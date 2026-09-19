@@ -15,6 +15,7 @@ import {
 } from '@/lib/loop-guard';
 import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA } from '@/lib/problema-no-pedido';
 import { numeroEstaNaListaDeIgnorados } from '@/lib/numeros-ignorados';
+import { ehConversaDeCliente, tipoDoJid } from '@/lib/jid-de-cliente';
 import { avisarDono, avisarAdminDoSistema, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
 import { mesmoTelefone } from '@/lib/telefone';
 import { detectarPedidoDeAtendente, FRASE_DE_CHAMAR_ATENDENTE } from '@/lib/pedido-de-atendente';
@@ -353,11 +354,17 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   const remoteJid = getRealJid();
 
-  // Ignore status broadcasts
-  if (remoteJid.includes("@broadcast") || remoteJid.includes("status@broadcast")) return;
-
-  // Ignore groups
-  if (remoteJid.endsWith("@g.us") || remoteJid.includes("@g.us")) return;
+  // ── SÓ CONVERSA DE CLIENTE PASSA DAQUI ───────────────────────────────────
+  //
+  // Aqui havia uma lista de BLOQUEIO (barrava `@broadcast` e `@g.us`, deixava
+  // passar o resto) e os Canais do WhatsApp, que nasceram depois, entraram como
+  // se fossem cliente: 1.072 posts viraram chamada de IA em 14 dias na Brazza
+  // Burguer. Agora é lista de PERMISSÃO e o padrão é recusar — a regra e o
+  // porquê estão em lib/jid-de-cliente.ts, com teste.
+  if (!ehConversaDeCliente(remoteJid)) {
+    console.log(`[Webhook] Ignorado: ${tipoDoJid(remoteJid)} (${remoteJid})`);
+    return;
+  }
 
   const shortId = instance.replace(/^firehub_/, "");
   
