@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
-import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil } from "lucide-react";
+import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil, Volume2 } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import { lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { ESTADOS_DE_ENTREGADOR_IFOOD } from "@/lib/entrega-parceira";
@@ -1704,6 +1704,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const periodoRef = useRef({ from: dateFrom, to: dateTo });
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAgoraRef = useRef<() => void>(() => {});
+  const ultimoPollRef = useRef(0);
 
   /**
    * Relê a lista AGORA e devolve o que voltou, em vez de esperar o próximo tick
@@ -2071,6 +2072,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   useEffect(() => {
     let active = true;
     const poll = async () => {
+      // Carimbo da última rodada: é por ele que o despertador de fora
+      // (o Web Worker, mais abaixo) sabe se este laço parou de andar.
+      ultimoPollRef.current = Date.now();
       try {
         if (!isDraggingRef.current) {
           // O período vai no formato ISO: quem sabe o fuso do lojista é este
@@ -2175,20 +2179,37 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 });
               }
 
-              // ── O PEDIDO DA IA NÃO É "NOVO" PARA ESTE DETECTOR ──────────
+              // ── PEDIDO QUE JÁ EXISTIA CHEGA PELA MUDANÇA DE STATUS ──────
               //
-              // O robô do WhatsApp cria o rascunho (CRIANDO_IA) na primeira
-              // mensagem e, quando o cliente confirma, vira NOVO no MESMO
-              // registro. O id já estava em `knownOrderIds` desde o rascunho,
-              // então o pedido nunca entrava em `freshOrders` — e a tela não
-              // imprimia. Quem salvava era o ouvinte global (só nos 30 min
-              // após a criação) ou a fila da nuvem. Aqui a mudança de status
-              // conta como chegada.
+              // Nem todo pedido nasce com id novo. Dois deles aparecem na lista
+              // ANTES de existirem para a cozinha:
+              //
+              //  • CRIANDO_IA — o rascunho que o robô do WhatsApp monta na
+              //    primeira mensagem e fecha quando o cliente confirma, no
+              //    MESMO registro;
+              //  • AGUARDANDO_PAGAMENTO — a cobrança em aberto, que vira
+              //    pedido quando o dinheiro entra.
+              //
+              // Nos dois casos o id já estava em `knownOrderIds`, então o
+              // pedido nunca entrava em `freshOrders`: a tela não imprimia e
+              // não apitava. Aqui a mudança de status conta como chegada.
+              //
+              // A lista existe para a regra não voltar a falhar no dia em que
+              // aparecer um terceiro estado de rascunho: o que decide é "o que
+              // ele era antes não era pedido ainda", não um status específico.
+              const NAO_ERA_PEDIDO_AINDA = ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO"];
               const statusAnterior = previousStatusRef.current;
               newOrders.forEach((o: any) => {
-                if (statusAnterior.get(o.id) !== "CRIANDO_IA" || o.status === "CRIANDO_IA") return;
+                const antes = statusAnterior.get(o.id);
+                if (!antes || !NAO_ERA_PEDIDO_AINDA.includes(antes)) return;
+                if (NAO_ERA_PEDIDO_AINDA.includes(o.status)) return; // ainda não nasceu
                 if (o.status === "CANCELADO" || o.status === "ENCERRADO") return;
-                if (printerConfig?.autoprint !== false && !isAutoPrinted(o)) {
+                // A impressão automática por mudança de status continua só para
+                // o rascunho da IA. O pendente de pagamento que é liberado já
+                // tem quem imprima (o ouvinte global e a fila da nuvem), e um
+                // segundo caminho aqui sairia com comanda dobrada na cozinha —
+                // o som não corre esse risco, porque tem o freio de 2,5 s.
+                if (antes === "CRIANDO_IA" && printerConfig?.autoprint !== false && !isAutoPrinted(o)) {
                   markAutoPrinted(o);
                   console.log("[AutoPrint] 🖨️ Pedido da IA confirmado; imprimindo:", o.id);
                   handlePrint(o, "cozinha");
@@ -2209,15 +2230,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 //
                 // Quem virou NOVO fica de fora: ali o alerta de aceite assume,
                 // e dois sons juntos viram barulho. Mesma regra do bipe de
-                // chegada, e o mesmo freio de 2,5 s entre sequências.
-                if (o.status !== "NOVO") {
-                  const canalDaIA = canalDoPedido(o).nome;
-                  console.log(`[Pedido novo] 🛎️ ${canalDaIA} #${o.dailyOrderNumber ?? ""} — o robô fechou o pedido`);
+                // chegada, e o mesmo freio de 2,5 s entre sequências — e a
+                // mesma dispensa para o que o próprio atendente digitou aqui
+                // (o pedido do totem liberado no balcão é ele quem libera).
+                const canalQueChegou = canalDoPedido(o);
+                const digitadoNoBalcao = canalQueChegou.chave === "PDV" || canalQueChegou.chave === "MESA" || canalQueChegou.chave === "TOTEM";
+                if (o.status !== "NOVO" && !digitadoNoBalcao) {
+                  console.log(`[Pedido novo] 🛎️ ${canalQueChegou.nome} #${o.dailyOrderNumber ?? ""} — ${antes === "CRIANDO_IA" ? "o robô fechou o pedido" : "o pagamento entrou"}`);
                   if (Date.now() - ultimoBipeRef.current > 2500) {
                     ultimoBipeRef.current = Date.now();
                     playOrderChime();
                   }
-                  avisarChegada(o, canalDaIA);
+                  avisarChegada(o, canalQueChegou.nome);
                 }
               });
 
@@ -2378,9 +2402,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // pedido"). O contexto de áudio agora nasce na montagem, o estado dele é
   // observado, e enquanto estiver bloqueado uma faixa diz isso com todas as
   // letras. Qualquer clique na página destrava.
+  //
+  // ── E O "NÃO VER MAIS" DELA VALE SÓ ATÉ O PRÓXIMO F5 ────────────────────
+  //
+  // Todo aviso do painel tem "não ver mais" (decisão do dono, 18/09/2026), e
+  // este tem também — mas a ocorrência que ele cala é ESTA CARGA DA PÁGINA,
+  // não o assunto. Calado para sempre, bastaria um funcionário clicar uma vez
+  // para o painel voltar a ficar mudo em silêncio, que é o defeito que a faixa
+  // existe para matar. E é um aviso que se resolve com um clique: quem o
+  // dispensa hoje resolve o problema de hoje, não o de amanhã.
+  const cargaDaPaginaRef = useRef("");
+  if (!cargaDaPaginaRef.current) cargaDaPaginaRef.current = `carga-${Date.now()}`;
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [somBloqueado, setSomBloqueado] = useState(false);
-  const somNaoVerMais = useNaoVerMais("som-bloqueado", null);
+  const somNaoVerMais = useNaoVerMais("som-bloqueado", cargaDaPaginaRef.current);
   useEffect(() => {
     let ctx: AudioContext;
     try {
@@ -2465,6 +2500,30 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       playChime(t + 1.4);
     } catch {}
   }, [audioPronto]);
+
+  /**
+   * ── TESTAR O SOM É A ÚNICA FORMA DE A LOJA SABER ───────────────────────
+   *
+   * Metade dos "não faz barulho quando entra pedido" não é o painel: é a aba
+   * silenciada no botão direito, o som do site bloqueado nas configurações do
+   * Chrome, o Chrome zerado no mixer de volume do Windows ou a saída de áudio
+   * apontando para um monitor sem alto-falante. Nada disso o navegador conta
+   * para a página — o contexto de áudio segue "running" e o painel jura que
+   * tocou. Sem um botão, a loja passa a noite achando que o sistema falhou e
+   * nós passamos a noite procurando defeito onde não tem.
+   *
+   * O clique no botão também é um gesto do usuário: se o áudio estava só
+   * bloqueado pela política de autoplay, testar já destrava de vez.
+   */
+  const testarSom = useCallback(async () => {
+    const ctx = await audioPronto();
+    if (!ctx) {
+      showToast("O navegador está bloqueando o som. Clique em qualquer lugar da tela e teste de novo.", "#EF4444");
+      return;
+    }
+    playOrderChime();
+    showToast("Tocando o som de pedido novo. Não ouviu? Veja o volume do Windows e se esta aba está sem som (botão direito na aba).", "#2563EB");
+  }, [audioPronto, playOrderChime]);
 
   /**
    * ── PEDIDO QUE ENTRA JÁ ACEITO TOCA O MESMO SOM, UMA VEZ ────────────────
@@ -3044,20 +3103,69 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // pedido, como deve ser.
   const aguardandoAceite = novos.filter(o => o.status !== "CRIANDO_IA");
 
-  // Continuous alert sound — loops every 4s while there are NOVO orders visible in Kanban
-  const alertIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // ── O RELÓGIO DO ALERTA MORA FORA DA ABA ──────────────────────────────────
+  //
+  // O alerta repetia de 4 em 4 s num setInterval desta página. Aba que fica
+  // mais de 5 min em segundo plano entra no "intensive throttling" do Chrome:
+  // todo timer dela passa a rodar UMA VEZ POR MINUTO. No PC da loja, com o
+  // painel atrás do navegador do iFood ou de uma planilha, é exatamente o que
+  // acontece — o alerta de 4 s vira um bipe por minuto e o poll de 8 s também,
+  // e a loja jura que não tocou nada. Nada disso aparece em teste, porque em
+  // teste a aba está na frente.
+  //
+  // Web Worker roda em outra thread e não sofre esse estrangulamento; é o
+  // mesmo `/kdsWorker.js` que a tela do KDS já usa para sobreviver ao modo de
+  // economia das Smart TVs. Ele é o despertador de duas coisas:
+  //
+  //  1. o alerta de pedido esperando aceite (a cada 4 s, como sempre foi);
+  //  2. o poll, se o laço de dentro da aba ficou mais de 20 s sem rodar — o
+  //     que só acontece quando o navegador o estrangulou.
+  //
+  // Os refs existem para o worker não ser recriado a cada render: ele nasce
+  // uma vez e lê o valor da vez.
   const hasNotifiedRef = useRef(false);
+  const aguardandoAceiteRef = useRef(0);
+  const playChimeRef = useRef(playOrderChime);
+  const ultimoAlertaRef = useRef(0);
+  aguardandoAceiteRef.current = aguardandoAceite.length;
+  playChimeRef.current = playOrderChime;
+
+  useEffect(() => {
+    let worker: Worker | null = null;
+    const bater = () => {
+      if (aguardandoAceiteRef.current > 0 && Date.now() - ultimoAlertaRef.current >= 3900) {
+        ultimoAlertaRef.current = Date.now();
+        playChimeRef.current();
+      }
+      // Despertador do poll: 20 s é folgado para a rodada normal de 8 s e curto
+      // o bastante para a cozinha não esperar o minuto do Chrome.
+      if (ultimoPollRef.current && Date.now() - ultimoPollRef.current > 20000) {
+        pollAgoraRef.current();
+      }
+    };
+    try {
+      worker = new Worker("/kdsWorker.js");
+      worker.onmessage = (e: MessageEvent) => { if (e.data?.type === "TICK") bater(); };
+      worker.postMessage({ command: "start", interval: 2000 });
+    } catch {
+      // Navegador sem Worker: o timer de dentro da aba continua valendo.
+      const id = setInterval(bater, 2000);
+      return () => clearInterval(id);
+    }
+    return () => {
+      try { worker?.postMessage({ command: "stop" }); worker?.terminate(); } catch {}
+    };
+  }, []);
 
   useEffect(() => {
     const novoCount = aguardandoAceite.length;
 
     if (novoCount > 0) {
-      // Start looping sound if not already playing
-      if (!alertIntervalRef.current) {
+      // A primeira sequência sai na hora; da segunda em diante quem conta é o
+      // worker. Sem este disparo imediato o pedido esperaria até 2 s pelo tique.
+      if (Date.now() - ultimoAlertaRef.current >= 3900) {
+        ultimoAlertaRef.current = Date.now();
         playOrderChime();
-        alertIntervalRef.current = setInterval(() => {
-          playOrderChime();
-        }, 4000);
       }
 
       // Send push notification only once per batch
@@ -3074,20 +3182,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         }
       }
     } else {
-      // All orders accepted or no new orders in current view — stop the sound immediately
-      if (alertIntervalRef.current) {
-        clearInterval(alertIntervalRef.current);
-        alertIntervalRef.current = null;
-      }
+      // Aceitou tudo: o worker para de bater sozinho, porque lê a contagem.
       hasNotifiedRef.current = false;
     }
-
-    return () => {
-      if (alertIntervalRef.current) {
-        clearInterval(alertIntervalRef.current);
-        alertIntervalRef.current = null;
-      }
-    };
   }, [aguardandoAceite.length, playOrderChime]);
 
   // Transmite em tempo real a quantidade de pedidos em produção para a extensão Chrome do FireHub
@@ -5066,6 +5163,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 sumiria junto — armadilha sem saída. No fim da fila de
                 atalhos, com a fila cheia, ela descia sozinha para uma linha
                 só dela. */}
+            {/* Testar o som fica FORA do menu de configurações de propósito:
+                quem precisa dele está com a cozinha parada perguntando "por que
+                não apitou?" e não vai caçar o botão dentro de uma engrenagem.
+                Um clique responde na hora de que lado está o problema. */}
+            <button
+              type="button"
+              onClick={testarSom}
+              style={{
+                alignSelf: "flex-end", height: "30px", padding: "0 9px", borderRadius: "8px",
+                border: somBloqueado ? "1.5px solid #B91C1C" : "1.5px solid #CBD5E1",
+                background: somBloqueado ? "#FEE2E2" : "#F8FAFC",
+                color: somBloqueado ? "#B91C1C" : "#475569",
+                cursor: "pointer", display: "flex", alignItems: "center", fontFamily: "inherit",
+              }}
+              title="Testar o som de pedido novo"
+            >
+              <Volume2 size={15} />
+            </button>
+
             <button
               type="button"
               onClick={() => setShowBarraConfig(true)}
