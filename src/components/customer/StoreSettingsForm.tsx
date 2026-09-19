@@ -172,7 +172,18 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const initialDelivConfig = (user as any).deliveryConfig || {};
   const [freeShippingActive, setFreeShippingActive] = useState<boolean>(Boolean(initialDelivConfig.freeShippingActive));
   const [freeShippingMinValue, setFreeShippingMinValue] = useState<string>(initialDelivConfig.freeShippingMinValue ? String(initialDelivConfig.freeShippingMinValue) : "60.00");
-  const [minimumOrderValue, setMinimumOrderValue] = useState<string>(initialDelivConfig.minimumOrderValue ? String(initialDelivConfig.minimumOrderValue) : "26.00");
+  // Vazio = a loja nunca cadastrou mínimo, e o cardápio não exige nenhum. Era
+  // "26.00" — o mínimo da Hakim — preenchido no campo de TODA loja: bastava o
+  // dono salvar o telefone para gravar R$ 26 de mínimo sem nunca ter pedido
+  // isso. E como o teste era de "verdadeiro", quem salvava 0 via o 26 voltar ao
+  // campo na recarga e regravava 26 no salvamento seguinte.
+  const minimoSalvo = Number(initialDelivConfig.minimumOrderValue);
+  const [minimumOrderValue, setMinimumOrderValue] = useState<string>(
+    initialDelivConfig.minimumOrderValue !== undefined && initialDelivConfig.minimumOrderValue !== null &&
+      initialDelivConfig.minimumOrderValue !== "" && Number.isFinite(minimoSalvo)
+      ? String(initialDelivConfig.minimumOrderValue)
+      : ""
+  );
   // Mínimo da retirada. Vazio = nunca configurado, e o cardápio herda o mínimo
   // da entrega (o comportamento que ele sempre teve). "0" = sem mínimo.
   const [minimumOrderValuePickup, setMinimumOrderValuePickup] = useState<string>(
@@ -529,9 +540,9 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             <label style={{ color: "#334155", fontWeight: 700 }}>🛵 Pedido Mínimo para Entrega (R$)</label>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
               <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "#64748B" }}>R$</span>
-              <input type="number" step="0.01" min="0" className="input-field" value={minimumOrderValue} onChange={e => { setMinimumOrderValue(e.target.value); setDirtyInfo(true); setDirtyFreeShipping(true); }} placeholder="26.00" style={{ flex: 1, background: "#fff" }} />
+              <input type="number" step="0.01" min="0" className="input-field" value={minimumOrderValue} onChange={e => { setMinimumOrderValue(e.target.value); setDirtyInfo(true); setDirtyFreeShipping(true); }} placeholder="0.00 (sem mínimo)" style={{ flex: 1, background: "#fff" }} />
             </div>
-            <p style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 6, lineHeight: 1.3 }}>Valor mínimo exigido para que o cliente consiga finalizar um pedido de entrega.</p>
+            <p style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 6, lineHeight: 1.3 }}>Valor mínimo exigido para que o cliente consiga finalizar um pedido de entrega. Vazio ou 0 = sem pedido mínimo. Vale para o cardápio online e para o robô do WhatsApp.</p>
           </div>
 
           {/* Quem vem buscar não gera custo de entrega, e a loja quase sempre

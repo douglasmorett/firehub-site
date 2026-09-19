@@ -47,4 +47,10 @@ export async function register() {
   // Conta da extensão FireHub Prazos (produto vendido fora do FireHub). Tabela
   // própria, sem relação com User: se faltar, só o login da extensão falha.
   await garantirEstruturaDePrazos();
+  // Memória da conversa do robô (ChatbotConversationState.history). O schema NÃO
+  // conhece a coluna de propósito — o acesso é por SQL cru e falha em silêncio
+  // (lib/memoria-da-conversa-no-banco.ts). Aqui é só para o ALTER acontecer no
+  // boot, e não na primeira mensagem de um cliente.
+  const { garantirColunaDaMemoria } = await import("./lib/memoria-da-conversa-no-banco");
+  await garantirColunaDaMemoria();
 }

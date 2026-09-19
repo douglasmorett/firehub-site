@@ -38,7 +38,8 @@ async function autorizado(req: NextRequest): Promise<boolean> {
  *   audio-sem-bytes     → o áudio chegou vazio (download falhou no gateway)
  *   robo-desativado     → chatbotConfig.active está false nessa loja
  *   guard-ignorou       → anti-loop calou (o detalhe diz por quê)
- *   ia-timeout          → o Gemini não respondeu a tempo
+ *   ia-timeout          → o Gemini passou do prazo; o cliente leu "só um instante"
+ *   ia-tardia           → a resposta chegou depois do prazo e foi entregue assim mesmo
  *   envio-falhou        → a resposta existia mas o gateway recusou mandar
  *
  * Ausência de QUALQUER entrada para o telefone significa que a mensagem nem

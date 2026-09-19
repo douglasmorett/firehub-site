@@ -20,6 +20,9 @@ import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
 import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmergencia } from "./status-para-o-cliente";
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
+import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
+import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
+import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -323,17 +326,21 @@ export async function processChatbotAI(
 
   const chatbotConfig = (user.chatbotConfig as any) || {};
   const delivConfig = (user.deliveryConfig as any) || {};
-  const minimumOrderValue = parseFloat(delivConfig.minimumOrderValue) || 26.00;
+  // Loja sem mínimo cadastrado NÃO tem mínimo — igual ao cardápio do site. Era
+  // `|| 26.00`: o mínimo da Hakim dito como fato (e COBRADO na gravação) em
+  // qualquer loja que não tivesse preenchido o campo. lib/fatos-da-loja.ts.
+  const minimumOrderValue = minimoDeEntrega(delivConfig);
   // Quem decide se a loja aceita retirada é a própria loja, não uma segunda
   // chave dentro do chatbotConfig. Enquanto foram dois campos, o robô podia
   // prometer retirada que o cardápio não oferecia — e o contrário também.
   const aceitaRetirada = !(user as any).storeDeliveryOnly;
   // Mínimo da retirada: ausente = herda o da entrega, igual ao cardápio.
-  const minimumOrderValuePickup =
-    delivConfig.minimumOrderValuePickup === undefined || delivConfig.minimumOrderValuePickup === null || delivConfig.minimumOrderValuePickup === ""
-      ? minimumOrderValue
-      : parseFloat(delivConfig.minimumOrderValuePickup) || 0;
-  
+  const minimumOrderValuePickup = minimoDeRetirada(delivConfig);
+  const fatosDoMinimo = { minimoEntrega: minimumOrderValue, minimoRetirada: minimumOrderValuePickup, aceitaRetirada };
+  // Tempo de entrega: o `time` das zonas, o mesmo que o site mostra. Sem zona
+  // com tempo, o robô não promete minutos — era "45 a 60" para todo mundo.
+  const prazoDaLoja = prazoParaORobo((user as any).deliveryZones);
+
   const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
   const personality = chatbotConfig.personality || "SIMPATICO";
   const customPrompt = (chatbotConfig.customPrompt || chatbotConfig.customInstructions || "").trim();
@@ -362,7 +369,7 @@ export async function processChatbotAI(
   const cardapioArquivoTipo = String(chatbotConfig.menuFileType || "").trim().toLowerCase();
 
   const personalityMap: Record<string, string> = {
-    SIMPATICO: "muito simpático, acolhedor e fofo. Use carinho, emojis (😊, 🥰, 🍕) e demonstre felicidade.",
+    SIMPATICO: "muito simpático, acolhedor e fofo. Use carinho, emojis (😊, 🥰, 👏) e demonstre felicidade. NUNCA use emoji de comida que a loja não vende.",
     AGIL: "rápido e objetivo, mas sempre como uma pessoa normal no whatsapp. Respostas curtas.",
     FORMAL: "educado e cortês, mas sem parecer um robô.",
     DIVERTIDO: "divertido, descontraído e alto astral! Use humor leve.",
@@ -415,7 +422,9 @@ export async function processChatbotAI(
   };
 
   // Formatar horários de funcionamento (com suporte a múltiplos turnos por dia)
-  let hoursText = "Todos os dias das 18:00 às 23:30.";
+  // Sem horário cadastrado o robô NÃO afirma horário. Era "Todos os dias das
+  // 18:00 às 23:30" — o expediente da Hakim, dito por qualquer loja.
+  let hoursText = HORARIO_NAO_CADASTRADO;
   let nowStatusText = "";
   if (user.storeHours) {
     const hoursArr = normalizeStoreHours(user.storeHours);
@@ -432,9 +441,12 @@ export async function processChatbotAI(
       return "Aberto";
     };
 
-    hoursText = hoursArr
-      .map((h: any) => `${h.day || h.dayName || "Dia"}: ${formatDayHours(h)}`)
-      .join("\n");
+    // Cadastro que existe mas normaliza para nenhum dia continua "não cadastrado".
+    if (hoursArr.length > 0) {
+      hoursText = hoursArr
+        .map((h: any) => `${h.day || h.dayName || "Dia"}: ${formatDayHours(h)}`)
+        .join("\n");
+    }
 
     // ── O DIA TEM QUE SER O DA LOJA, NÃO O DO SERVIDOR ──────────────────────
     //
@@ -469,12 +481,31 @@ export async function processChatbotAI(
   // às 21h de Brasília ele já virou o dia — foi assim que o robô perdeu o
   // jantar uma vez. Respeita também o interruptor manual do painel e a pausa de
   // férias: as três formas de uma loja estar fechada.
-  const estadoAtualDaLoja = estadoDaLoja({
+  const estadoBrutoDaLoja = estadoDaLoja({
     storeHours: user.storeHours,
     storePause: (user as any).storePause,
     storeOpen: (user as any).storeOpen,
     timezone: user.storeTimezone,
   });
+
+  // ── LOJA SEM HORÁRIO CADASTRADO NÃO TEM HORA PARA DIZER ───────────────────
+  //
+  // Sem cadastro, `normalizeStoreHours` devolve o padrão do sistema (18:00 às
+  // 23:00) — é assim no cardápio também, e é o que decide se o pedido entra.
+  // ABERTA/FECHADA continua vindo dali, para o robô e o site não discordarem.
+  // O que sai são as HORAS: "abre hoje às 18:00" é um horário que a loja nunca
+  // informou, e o robô o repetia como fato enquanto o resto do prompt dizia
+  // "horário não cadastrado".
+  const estadoAtualDaLoja = hoursText === HORARIO_NAO_CADASTRADO
+    ? {
+        ...estadoBrutoDaLoja,
+        fechaAs: undefined,
+        proximaAbertura: undefined,
+        texto: estadoBrutoDaLoja.aberta
+          ? "A loja está aberta agora."
+          : "A loja está fechada neste momento (o horário de funcionamento não está cadastrado no sistema).",
+      }
+    : estadoBrutoDaLoja;
 
   // Separa o catálogo em: promoções de hoje, de amanhã, cronograma semanal,
   // combos e itens avulsos.
@@ -666,6 +697,28 @@ ${availableSingleProducts.length > 0 ? availableSingleProducts.join("\n") : "[NE
 === PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER E PROIBIDO DAR O DESCONTO HOJE! ===
 ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
 
+  // ── A MEMÓRIA DO PEDIDO EM ANDAMENTO ──────────────────────────────────────
+  //
+  // O rascunho é gravado a cada mensagem e nunca voltava ao prompt: a consulta
+  // de pedidos recentes o exclui (é rascunho, não pedido). A única memória era
+  // o histórico em RAM, que morre a cada deploy — e deploy aqui é a cada push.
+  // Depois dele o cliente dizia "e uma coca", a tag saía só com a coca e, como
+  // ela SUBSTITUI o rascunho, o resto do pedido evaporava. É a mesma consulta
+  // que o sync usa para decidir o que a tag reescreve (lib/rascunho-do-robo.ts).
+  // Falhar aqui não pode derrubar a resposta: sem memória o robô ainda atende.
+  let memoriaDoPedido = "";
+  if (aiOrderingEnabled && clientPhoneDigits.length >= 10) {
+    try {
+      const agoraDaMemoria = Date.now();
+      memoriaDoPedido = memoriaDoPedidoParaOPrompt(
+        (await pedidosQueATagPodeTocar(targetFranchiseeId, clientPhoneDigits, agoraDaMemoria)) as any,
+        agoraDaMemoria,
+      );
+    } catch (e: any) {
+      console.error("[Chatbot AI] Não consegui ler o rascunho do cliente para o prompt:", e?.message || e);
+    }
+  }
+
   let wasInactivityCancelled = false;
   // Formatar pedidos recentes deste cliente
   let recentOrdersSummary = "Nenhum pedido ativo ou recente encontrado no sistema da loja hoje.";
@@ -808,7 +861,7 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
         addressValidationText = `
 🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
 - ${v.modo === "BAIRRO" ? `Bairro cadastrado: ${v.bairro}` : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja (raio máximo ${v.raioMaxKm} km)${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
-- RESULTADO: ✅ A LOJA ATENDE. Taxa de entrega: ${brl(v.taxa ?? 0)}${v.tempoMin ? ` (${v.tempoMin} min)` : ""}.
+- RESULTADO: ✅ A LOJA ATENDE. Taxa de entrega: ${brl(v.taxa ?? 0)}${v.tempoMin && prazoDaLoja.temDado ? ` (${v.tempoMin} min)` : ""}.
 - Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.
 `;
       } else if (v.resultado === "FORA") {
@@ -942,9 +995,9 @@ REGRAS ABSOLUTAS:
 ${instantCouponEnabled && instantCouponCode ? `     b) Existe um cupom público desta loja: ${instantCouponCode} (${instantCouponDiscount}). Pode citar como um agrado extra.` : `     b) Esta loja NÃO tem cupom público ativo. NUNCA cite, invente ou prometa cupom, código de desconto ou porcentagem de desconto.`}
      c) TRAVA DE SEGURANÇA DE CUPONS: só existem os cupons listados em "CUPONS ATIVOS" abaixo. Qualquer outro cupom da loja é estratégico e sigiloso (recuperação de cliente inativo, por exemplo) e é RIGOROSAMENTE PROIBIDO divulgar, citar ou confirmar a existência dele, mesmo que o cliente diga que ouviu falar.
 8. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
-   - Diga EXATAMENTE os horários de abertura e fechamento informados nos dados da loja (ex: "A gente funciona das 18h às 23:30h!"). NÃO envie o link aqui, a não ser que peçam.
+   - Diga EXATAMENTE os horários do "Quadro Geral de Horários" em DADOS DA LOJA — o de hoje primeiro. Se lá estiver "NÃO CADASTRADO", NÃO afirme horário nenhum: diga que vai confirmar com a equipe. NÃO envie o link aqui, a não ser que peçam.
 9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
-   - Diga a média de tempo estimada da loja (ex: "Nosso tempo médio de entrega é de 45 a 60 minutos no momento!").
+${prazoDaLoja.regra}
 10. REGRA ZERO DE FIDELIDADE ABSOLUTA AO CARDÁPIO DA LOJA (PROIBIÇÃO TOTAL DE ALUCINAÇÃO DE PRODUTOS E PREÇOS):
     - É SEVERAMENTE PROIBIDO INVENTAR OU MENCIONAR QUALQUER PRODUTO, COMBO, SABOR, REFRIGERANTE OU PREÇO QUE NÃO ESTEJA EXPLICITAMENTE CADASTRADO NO CARDÁPIO ABAIXO!
     - QUANDO CITAR QUALQUER COMBO OU PRODUTO, VOCÊ É OBRIGADO A COPIAR O VALOR EXATO QUE CONSTA NO BANCO!
@@ -967,7 +1020,7 @@ ${instantCouponEnabled && instantCouponCode ? `     b) Existe um cupom público 
     - Se o cliente mandar mensagem com a loja fechada, responda normalmente com toda a atenção e simpatia, tire as dúvidas e informe a que horas a loja abre novamente.
 17. QUANDO O CLIENTE PERGUNTAR O ENDEREÇO / LOCALIZAÇÃO OU SE PODE COMER NO LOCAL:
 ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESENCIAL / FÍSICA!
-    - Responda exatamente: "Temos loja física sim! Nosso endereço é: ${user.storeAddress || user.city || "Centro"}" (SEM NENHUM LINK!).` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
+    - Responda exatamente: "Temos loja física sim! Nosso endereço é: ${user.storeAddress || user.city || ""}" (SEM NENHUM LINK!).${(user.storeAddress || user.city) ? "" : " ⚠️ A loja NÃO cadastrou o endereço: NÃO invente rua nem bairro — diga que confirma o endereço com a equipe e já chame uma pessoa."}` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
     - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Não temos atendimento no local! 😊"`}
 18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA, FRETE OU SE ENTREGAMOS EM UM BAIRRO/RUA:
     - REGRA INFALÍVEL DE ÁREA DE ENTREGA:
@@ -1020,32 +1073,33 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       Sem esse campo, nesses casos, o pedido NÃO é gravado e o cliente fica esperando comida
       que ninguém está preparando.
     - FORMATO OBRIGATÓRIO DE CADA ITEM (o campo "options" é o que garante o preço certo):
-      {"name": "NOME EXATO COMO ESTÁ NO CARDÁPIO", "quantity": 2, "options": ["Sabor escolhido", "Adicional escolhido"]}
+      {"name": "NOME EXATO COMO ESTÁ NO CARDÁPIO", "quantity": 2, "options": ["Sabor escolhido", "Adicional escolhido"], "notes": "sem cebola"}
+      - "notes" é a OBSERVAÇÃO DO CLIENTE SOBRE AQUELE ITEM ("sem cebola", "bem passado", "molho à parte"). É o que sai
+        impresso na comanda embaixo do item: se o cliente pediu e você não colocar em "notes", a cozinha não fica sabendo.
+        Sem observação, omita o campo.
       a) "name" tem que ser o nome EXATO do cardápio acima, copiado letra por letra. Não invente,
          não abrevie, não junte dois produtos num item só. Nome que não existe é DESCARTADO e o
          cliente recebe menos do que pediu.
       b) "options" leva TODA escolha que o cliente fez dentro do produto: o sabor, o tamanho, cada
          adicional. Escreva cada uma com o nome EXATO que aparece nas opções daquele produto.
-      c) Se o cliente escolheu uma opção que custa a mais e você NÃO colocar em "options", a loja
+      c) QUANTAS de cada opção: quando o cliente escolhe mais de uma unidade da mesma opção (combo de
+         10 unidades com 6 de um sabor e 4 de outro, por exemplo), escreva a quantidade junto:
+         "options": ["6x Sabor A", "4x Sabor B"]. Sem isso a cozinha recebe uma de cada e a conta sai errada.
+      d) Se o cliente escolheu uma opção que custa a mais e você NÃO colocar em "options", a loja
          cobra a menos e perde dinheiro. Se o cliente não escolheu nada, mande "options": [].
-      d) Antes de fechar, DIGA ao cliente quando a escolha dele tem acréscimo: "o bacon vem +R$ 3,00,
+      e) Antes de fechar, DIGA ao cliente quando a escolha dele tem acréscimo: "o bacon vem +R$ 3,00,
          fica R$ 28,90". Nunca deixe o cliente descobrir o acréscimo só no total.
+    - CAMPOS DO PEDIDO ALÉM DOS ITENS: se o pagamento for em dinheiro e o cliente disser para quanto precisa de troco,
+      inclua "changeFor": 50 (a NOTA que ele vai entregar, não o valor do troco). Observação geral do pedido
+      ("portão azul", "interfone quebrado, ligar ao chegar") vai em "observation": "...".
+    - CAMPO "alteraPedido": use SÓ quando existir, mais abaixo, a seção "📦 PEDIDO Nº ... ENVIADO À LOJA" e o cliente
+      quiser mudar AQUELE pedido (acrescentar, tirar, trocar). Vai o número dele: "alteraPedido": 12, com a lista
+      COMPLETA de itens — e em TODA tag enquanto a alteração está sendo combinada, inclusive as de "finalized": false.
+      Pedido novo e separado NÃO leva esse campo.
 21.9. ⛔ DUAS CONFERÊNCIAS OBRIGATÓRIAS ANTES DE FECHAR QUALQUER PEDIDO DE ENTREGA:
     Você é PROIBIDO de emitir a tag com "finalized": true sem ter conferido AS DUAS.
 
-    A) PEDIDO MÍNIMO — R$ ${minimumOrderValue.toFixed(2).replace(".", ",")} de SUBTOTAL (itens, sem a taxa):
-       - Some os itens. Se o subtotal for MENOR que o mínimo, NÃO FECHE. Não adianta a taxa
-         de entrega somar e passar do mínimo: o que conta é o subtotal dos itens.
-       - Diga com simpatia quanto falta e ofereça complementar. Exemplo do tom:
-         "Ficou 19,00 reais em itens, e o mínimo pra entrega aqui é ${minimumOrderValue.toFixed(2).replace(".", ",")} reais 😊
-          Faltam ${"${(minimumOrderValue - 19).toFixed(2).replace('.', ',')}"} reais — quer que eu acrescente mais uma esfirra pra fechar?"
-         (troque os valores pelos reais do pedido).
-       - Se o cliente NÃO quiser completar, ofereça a RETIRADA NO BALCÃO caso a loja aceite
-         (veja "Aceita Retirada no Balcão" acima) — ${minimumOrderValuePickup > 0
-           ? `na retirada o mínimo é R$ ${minimumOrderValuePickup.toFixed(2).replace(".", ",")}`
-           : "retirada não tem pedido mínimo"}.
-       - Em 01/09/2026 você montou um pedido de 19,00 reais e foi pedir confirmação para
-         mandar para a cozinha, com o mínimo da loja em 26,00. É isto que esta regra impede.
+${regraDoPedidoMinimo(fatosDoMinimo)}
 
     B) A LOJA ENTREGA NESSE ENDEREÇO? — confira na seção
        "TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO" acima:
@@ -1083,12 +1137,12 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       c) somar itens e apresentar total como se fosse um pedido em andamento;
       d) dar qualquer resposta que faça o cliente ACREDITAR que o pedido dele foi feito.
     - Em 01/09/2026 um cliente disse "quero fazer um pedido", você respondeu "pode me mandar
-      o que você quer que eu anoto pra você", montou 10 esfirras e pediu o endereço "pra
+      o que você quer que eu anoto pra você", montou 10 itens e pediu o endereço "pra
       finalizar e enviar pra cozinha". Aquele pedido NUNCA EXISTIU. O cliente esperou comida
       que ninguém estava preparando. É exatamente isto que esta regra existe para impedir.
     - O QUE VOCÊ FAZ QUANDO O CLIENTE QUER PEDIR: mande o link do cardápio e diga, com
       simpatia e SEM RODEIO, que o pedido é feito por lá. Exemplo do tom certo:
-      "Oba! 🍕 Para pedir é rapidinho pelo nosso cardápio: ${storeLink}
+      "Oba! 😊 Para pedir é rapidinho pelo nosso cardápio: ${storeLink}
        Lá você escolhe tudo com foto e finaliza em um minuto — o pedido cai direto na nossa
        cozinha! Qualquer dúvida sobre sabor, preço ou entrega, é só me perguntar que eu te
        ajudo por aqui! 😊"
@@ -1116,7 +1170,7 @@ ${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS
 32. CONSULTAS SOBRE PROMOÇÃO DE AMANHÃ OU DOS DIAS DA SEMANA ("amanhã vai ter promoção?", "quais dias tem?", "é todo dia?"):
     - Você TEM essa informação no cardápio abaixo. É PROIBIDO responder "não sei a de amanhã", "ainda não tenho essa informação" ou qualquer frase de incerteza.
     - SOBRE AMANHÃ: consulte a seção "PROMOÇÕES DE AMANHÃ (${tomorrowDayName})".
-      a) Se houver itens ali, responda com certeza, citando os itens e os preços cadastrados, e lembre o pedido mínimo de ${minimumOrderValue.toFixed(2).replace('.', ',')} reais para entrega.
+      a) Se houver itens ali, responda com certeza, citando os itens e os preços cadastrados${lembreteDoMinimo(minimumOrderValue)}.
       b) Se a seção estiver vazia, diga com naturalidade que para amanhã não há promoção cadastrada e ofereça o que está disponível hoje. NUNCA invente item ou preço promocional.
     - SOBRE OS DIAS DA SEMANA: consulte "CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA" e informe exatamente os dias que constam ali para ESTA loja. Se não houver cronograma, diga que as promoções variam e ofereça as de hoje.
 
@@ -1135,11 +1189,10 @@ DADOS DA LOJA:
 - Endereço / Cidade: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio: ${storeLink}
-- Tempo Médio de Entrega da Loja: 45 a 60 minutos
+- Tempo Médio de Entrega da Loja: ${prazoDaLoja.linhaDosDados}
 - Aceita Retirada no Balcão: ${aceitaRetirada ? "SIM" : "NÃO"}
-- ⚠️ PEDIDO MÍNIMO PARA ENTREGA: R$ ${minimumOrderValue.toFixed(2).replace(".", ",")} (subtotal dos itens, SEM a taxa de entrega)
-- ⚠️ PEDIDO MÍNIMO PARA RETIRADA NO BALCÃO: ${minimumOrderValuePickup > 0 ? `R$ ${minimumOrderValuePickup.toFixed(2).replace(".", ",")}` : "não há — qualquer valor fecha"}
-- Horário de Funcionamento Cadastrado: ${nowStatusText || "Aberto todos os dias das 18:00 às 23:30."}
+${linhasDoMinimoNosDados(fatosDoMinimo)}
+- Horário de Funcionamento Cadastrado: ${linhaDoHorarioDeHoje({ fraseDeHoje: nowStatusText, temQuadro: hoursText !== HORARIO_NAO_CADASTRADO })}
 - Quadro Geral de Horários:
 ${hoursText}
 
@@ -1170,12 +1223,12 @@ ${(() => {
   const kmDaFaixa = (z: any) => Number(z.km ?? z.radius ?? z.maxKm ?? 0);
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
-    taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
+    taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}`).join("\n") +
       "\n- A LOJA SÓ ENTREGA NESTES BAIRROS. Bairro fora da lista: NÃO anote entrega nem cote taxa — ofereça retirada ou peça outro endereço. O sistema recusa a gravação de entrega fora da lista.";
   } else if (zones.length > 0) {
     const maxKm = Math.max(...zones.map(kmDaFaixa));
     taxaText = `TIPO DE ENTREGA DA LOJA: POR RAIO DE DISTÂNCIA DA LOJA!\n- FAIXAS DE KM E TAXAS PERMITIDAS:\n` +
-      zones.map((z: any) => `  * Até ${kmDaFaixa(z) || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}`).join("\n") +
+      zones.map((z: any) => `  * Até ${kmDaFaixa(z) || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}`).join("\n") +
       `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM.` +
       `\n- A TAXA EXATA de um endereço vem da validação no mapa. NUNCA cite uma taxa única como se valesse para todo mundo.` +
       `\n- Endereço FORA do raio: NÃO anote entrega. Endereço que o sistema NÃO localizou: NÃO finalize entrega — peça bairro e ponto de referência. O sistema recusa a gravação nesses dois casos.`;
@@ -1194,7 +1247,7 @@ ${availableCouponsText || "NENHUM CUPOM DISPONÍVEL NO MOMENTO."}
 
 PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
 ${recentOrdersSummary}
-
+${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}
 NOSSO CARDÁPIO COMPLETO DA LOJA:
 ${catalogSummary}
 
@@ -1552,7 +1605,12 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
             ? recusa.motivo
             : (rawJsonPayload ? "sync não executado" : "a IA confirmou em texto sem emitir a tag PEDIDO_IA");
 
-          if (recusa?.regraDeNegocio && recusa.mensagemParaOCliente) {
+          if (recusa?.manterRespostaDaIa) {
+            // Não houve recusa nenhuma: o pedido está na loja e a tag não
+            // precisava gravar nada (alteração ainda sendo combinada, ou tag
+            // repetida). O que o modelo escreveu continua verdade.
+            console.log(`[Chatbot AI] ✅ Nada a gravar, resposta mantida. Loja=${targetFranchiseeId} motivo="${motivo}".`);
+          } else if (recusa?.regraDeNegocio && recusa.mensagemParaOCliente) {
             // Recusa por REGRA DA LOJA (pedido mínimo, área de entrega). Não é
             // falha técnica e não pode ser tratada como uma: dizer "problema no
             // sistema" aqui seria mentir de novo, só que com outra frase — e
@@ -1639,6 +1697,40 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
 }
 
 /**
+ * Os pedidos DESTE telefone que a tag do robô pode tocar, do mais novo ao mais
+ * velho: rascunho dele, ou pedido dele ainda não aceito e dentro da janela.
+ *
+ * Uma consulta só, usada nos dois pontos que precisam concordar: o PROMPT (que
+ * mostra ao modelo o que já está anotado) e o SYNC (que decide o que a tag
+ * reescreve). A comparação de telefone é em memória porque `customerPhone` é
+ * gravado formatado — ver o comentário em `syncAiOrderToDatabase`.
+ */
+async function pedidosQueATagPodeTocar(franchiseeId: string, telefone: string, agora: number) {
+  const recente = new Date(agora - JANELA_DO_PEDIDO_ENVIADO_MS);
+  const lista = await prisma.customerOrder.findMany({
+    where: {
+      franchiseeId,
+      OR: [
+        { status: "CRIANDO_IA" },
+        // ACEITO/PREPARANDO/PRONTO vêm só para COMPARAÇÃO: a tag não os toca,
+        // mas precisa reconhecê-los para não criar um pedido gêmeo quando o
+        // modelo reemite a tag final depois do aceite (lib/rascunho-do-robo.ts).
+        { status: { in: ["NOVO", "ACEITO", "PREPARANDO", "PRONTO"] }, source: "WHATSAPP_IA", createdAt: { gte: recente } },
+      ],
+    },
+    include: { items: { include: { menuProduct: { select: { name: true } } } } },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+  const doCliente = lista.filter((o) => mesmoTelefone(o.customerPhone, telefone));
+  const aproveitaveis = new Set([
+    ...candidatosValidos(doCliente as any, agora).map((p) => p.id),
+    ...candidatosSoDeComparacao(doCliente as any, agora).map((p) => p.id),
+  ]);
+  return doCliente.filter((o) => aproveitaveis.has(o.id));
+}
+
+/**
  * O que aconteceu de verdade com o pedido que a IA mandou gravar.
  *
  * Existe para o chamador poder cumprir o contrato honesto: sem este retorno,
@@ -1667,6 +1759,8 @@ type SyncResultado =
       mensagemParaOCliente?: string;
       /** true quando, além da mensagem, um atendente humano precisa entrar (área não confirmada). */
       chamarAtendente?: boolean;
+      /** Nada foi gravado porque nada PRECISAVA ser: a resposta do modelo vale como está. */
+      manterRespostaDaIa?: boolean;
     };
 
 async function syncAiOrderToDatabase({
@@ -1777,27 +1871,25 @@ async function syncAiOrderToDatabase({
   // tolerado) feita em memória, e só pedido que a loja AINDA NÃO ACEITOU pode
   // ser reescrito. Pedido aceito é intocável — vira pedido separado, que é o
   // que a regra 28 do prompt já manda a IA combinar com o cliente.
-  const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
-  const candidatosDeRascunho = await prisma.customerOrder.findMany({
-    where: {
-      franchiseeId,
-      OR: [
-        { status: "CRIANDO_IA" },
-        { createdAt: { gte: twentyMinutesAgo }, status: "NOVO" },
-      ],
-    },
-    include: { items: true },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
-  const existingDraft =
-    candidatosDeRascunho.find((o) => mesmoTelefone(o.customerPhone, phoneClean)) || null;
+  //
+  // 3) E O PEDIDO "NOVO" DA JANELA DE 20 MIN ERA REBAIXADO A RASCUNHO. Uma tag
+  //    não-final regravava o pedido que a cozinha já tinha imprimido com status
+  //    CRIANDO_IA: ele saía do painel e a faxina de rascunhos o CANCELAVA vinte
+  //    minutos depois. Valia para pedido de qualquer origem — inclusive o do
+  //    site. Quem decide agora é lib/rascunho-do-robo.ts (`destinoDaTag`), mais
+  //    abaixo, depois que os itens da tag estiverem casados com o cardápio.
+  const agoraDoSync = Date.now();
+  /** O número do pedido que o cliente quer alterar (ou cancelar), dito pelo modelo. */
+  const alteraPedidoDaTag = payload.alteraPedido ?? payload.alterarPedido ?? payload.replacesOrder;
+  const candidatosDoCliente = await pedidosQueATagPodeTocar(franchiseeId, phoneClean, agoraDoSync);
+  /** O mais recente deles: serve ao nome e ao cancelamento, antes de existirem itens. */
+  const alvoProvavel = candidatosDoCliente[0] || null;
 
   // Extrai nome real do cliente se o robô capturou no payload da IA
   const payloadName = (payload.customerName || payload.name || "").trim();
   const finalCustomerName = (payloadName && !payloadName.includes("Cliente WhatsApp"))
     ? payloadName
-    : (customerName && !customerName.includes("Cliente WhatsApp") ? customerName : (existingDraft?.customerName || "Cliente WhatsApp"));
+    : (customerName && !customerName.includes("Cliente WhatsApp") ? customerName : (alvoProvavel?.customerName || "Cliente WhatsApp"));
 
   // Salva/Atualiza na base de clientes (StoreCustomer) se o nome for válido e tiver número limpo
   if (finalCustomerName !== "Cliente WhatsApp" && phoneClean && phoneClean.length <= 13) {
@@ -1815,17 +1907,48 @@ async function syncAiOrderToDatabase({
   const isCanceled = payload.canceled === true || rawStatus.includes("CANCEL") || rawStatus.includes("DESIST");
 
   if (isCanceled) {
-    if (existingDraft) {
+    // Só o que é do ROBÔ: rascunho, ou pedido dele que o cliente apontou pelo
+    // número. Antes, o "deixa pra lá" de quem tinha pedido pelo SITE minutos
+    // antes cancelava o pedido do site — e, depois que a alteração deixou de
+    // abrir rascunho, o "deixa pra lá" de quem desistiu da ALTERAÇÃO derrubava
+    // o pedido que já estava na cozinha (lib/rascunho-do-robo.ts).
+    const cancelamento = cancelamentoDaTag({
+      candidatos: candidatosDoCliente as any,
+      alteraPedido: alteraPedidoDaTag,
+      agora: agoraDoSync,
+    });
+    if (cancelamento.acao === "cancelar") {
+      const alvo = cancelamento.pedido;
+      const eraRascunho = String(alvo.status).toUpperCase() === "CRIANDO_IA";
       await prisma.customerOrder.update({
-        where: { id: existingDraft.id },
+        where: { id: alvo.id },
         data: {
           status: "CANCELADO",
           cancelledBy: "CUSTOMER",
           cancelReason: "Cliente desistiu/cancelou no WhatsApp com a IA",
-          notes: "🤖 Rascunho cancelado pelo cliente no WhatsApp",
+          notes: eraRascunho
+            ? "🤖 Rascunho cancelado pelo cliente no WhatsApp"
+            : "🤖 Pedido cancelado pelo cliente no WhatsApp, antes de a loja aceitar",
         },
       });
-      console.log(`[Chatbot AI Order Sync] ❌ Pedido IA cancelado (${existingDraft.id})`);
+      console.log(`[Chatbot AI Order Sync] ❌ Pedido IA cancelado (${alvo.id}, era ${alvo.status})`);
+      return { gravado: false, motivo: "cliente cancelou — nada a confirmar" };
+    }
+
+    if (cancelamento.pedido) {
+      // Existe pedido na loja e o cliente NÃO disse que quer cancelá-lo. O robô
+      // não decide isso sozinho: quem cancela comida em produção é gente.
+      const n = cancelamento.pedido.dailyOrderNumber;
+      console.warn(`[Chatbot AI Order Sync] 🛑 Cancelamento recusado: ${cancelamento.motivo}`);
+      return {
+        gravado: false,
+        motivo: cancelamento.motivo,
+        regraDeNegocio: true,
+        chamarAtendente: true,
+        mensagemParaOCliente:
+          `Seu pedido${n ? ` nº ${n}` : ""} já foi enviado para a loja, então não consigo cancelar por aqui. 😕 ` +
+          `Já chamei nossa equipe: em instantes alguém fala com você por esta conversa.`,
+      };
     }
     // Cancelamento não é pedido gravado: quem chama não pode prometer cozinha.
     return { gravado: false, motivo: "cliente cancelou — nada a confirmar" };
@@ -1907,31 +2030,21 @@ async function syncAiOrderToDatabase({
       // da barata. Agora as escolhas que a IA anotou são casadas com os itens
       // dos grupos e somadas de verdade; o mínimo continua como piso, para o
       // caso de a IA não ter registrado escolha nenhuma.
-      const escolhas: string[] = Array.isArray(it.options)
-        ? it.options.map((o: any) => (typeof o === "string" ? o : o?.name)).filter(Boolean)
-        : [];
-
-      let somaDasOpcoes = 0;
-      const naoCasadas: string[] = [];
-      for (const escolha of escolhas) {
-        const chave = chaveDeNome(escolha);
-        if (!chave) continue;
-        let achou = false;
-        for (const grupo of (matchedProduct as any).comboGroups || []) {
-          const item = (grupo.items || []).find(
-            (gi: any) => chaveDeNome(gi?.menuProduct?.name) === chave
-          );
-          if (item) {
-            somaDasOpcoes += Number(item.additionalPrice) || 0;
-            achou = true;
-            break;
-          }
-        }
-        if (!achou) naoCasadas.push(escolha);
-      }
-      if (naoCasadas.length > 0) {
+      //
+      // ── E AS ESCOLHAS CHEGAM À COZINHA ──────────────────────────────────
+      //
+      // Elas entravam só nesta conta e sumiam: o item era gravado com
+      // quantidade, preço e o id do produto, e a comanda do robô saía "1x Pizza
+      // Grande" — sem sabor, sem adicional, sem o "sem cebola" que o prompt
+      // manda perguntar. Três auditores acharam isso de forma independente em
+      // 18/09/2026. O casamento agora mora em lib/item-do-robo.ts e devolve os
+      // mesmos três campos que o site grava e que a impressão, o KDS e o painel
+      // já leem: comboSelections, notes e productName.
+      const doItem = escolhasDoItem(it, matchedProduct as any);
+      const somaDasOpcoes = doItem.somaDasOpcoes;
+      if (doItem.naoCasadas.length > 0) {
         console.warn(
-          `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${naoCasadas.join(", ")} — não cobradas.`
+          `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${doItem.naoCasadas.join(", ")} — não cobradas; foram para a observação do item.`
         );
       }
 
@@ -1951,7 +2064,15 @@ async function syncAiOrderToDatabase({
 
       return {
         menuProductId: matchedProduct.id,
-        name: escolhas.length > 0 ? `${matchedProduct.name} (${escolhas.join(", ")})` : matchedProduct.name,
+        // Com as escolhas entre parênteses: é o nome para log e resumo.
+        name: doItem.productName,
+        // O que vai para o BANCO é o nome do cadastro, como o site faz: as
+        // escolhas viajam em comboSelections e a comanda as imprime na linha de
+        // baixo ("↳ 15 unidades"). Nome com escolha + comboSelections imprimiria
+        // a escolha duas vezes.
+        productName: matchedProduct.name,
+        comboSelections: doItem.comboSelections,
+        notes: doItem.notes,
         quantity,
         price: realPrice,
       };
@@ -1995,6 +2116,57 @@ async function syncAiOrderToDatabase({
     );
     return { gravado: false, motivo: `nenhum item do pedido existe no cardápio (${pedidos || "sem itens"})` };
   }
+
+  // ── O QUE ESTA TAG FAZ COM O QUE JÁ ESTÁ NO BANCO ─────────────────────────
+  //
+  // Rascunho reescreve; pedido JÁ ENVIADO só é tocado por tag final que seja
+  // alteração dele, e nunca volta a ser rascunho; na dúvida, pedido separado
+  // (lib/rascunho-do-robo.ts, com os casos no teste).
+  const destino = destinoDaTag({
+    candidatos: candidatosDoCliente as any,
+    isFinal,
+    itensNovos: orderItemsData as any,
+    alteraPedido: alteraPedidoDaTag,
+    endereco: payload.address,
+    pagamento: payload.paymentMethod,
+    tipo: payload.deliveryType || payload.orderType,
+    // O que a TAG traz, cru: serve para saber se ela mudou alguma coisa. O
+    // valor que vai ao banco é calculado mais abaixo, contra o total final.
+    troco: payload.changeFor ?? payload.troco ?? payload.changeAmount,
+    observacao: payload.observation ?? payload.observacao ?? payload.obs,
+    agora: agoraDoSync,
+  });
+  if (destino.acao !== "criar" || candidatosDoCliente.length > 0) {
+    console.log(`[Chatbot AI Order Sync] 🧭 Destino da tag: ${destino.acao} — ${destino.motivo}`);
+  }
+  if (destino.acao === "nao_mexer") {
+    // Tag não-final com o pedido já na loja: nada é gravado. Quando o cliente
+    // confirmar, a tag final atualiza o pedido enviado — que até lá continua
+    // inteiro no painel e na cozinha.
+    //
+    // `regraDeNegocio` é o que impede o chamador de ler isto como falha: o
+    // modelo está combinando a alteração e pode ter dito "seu pedido já está na
+    // cozinha" — verdade que casava com o detector de promessa e virava
+    // "probleminha técnico para registrar seu pedido" + chamada de atendente.
+    return { gravado: false, motivo: destino.motivo, regraDeNegocio: true, manterRespostaDaIa: true };
+  }
+  if (destino.acao === "identico") {
+    // O modelo repetiu a tag final (no "obrigado", por exemplo). O pedido está
+    // na loja exatamente assim: regravar apagaria e recriaria os itens à toa, e
+    // a cozinha receberia uma segunda comanda igual.
+    const igual = candidatosDoCliente.find((p) => p.id === destino.pedido.id)!;
+    return {
+      gravado: true,
+      orderId: igual.id,
+      numero: igual.dailyOrderNumber ?? null,
+      status: igual.status,
+      finalizado: true,
+      itens: igual.items.length,
+      total: Number(igual.totalAmount) || 0,
+    };
+  }
+  const existingDraft =
+    destino.acao === "reescrever" ? candidatosDoCliente.find((p) => p.id === destino.pedido.id) || null : null;
 
   // ── RETIRADA NÃO É ENTREGA — E ENTREGA NÃO É RETIRADA ─────────────────────
   //
@@ -2106,10 +2278,44 @@ async function syncAiOrderToDatabase({
     };
   }
 
+  // Troco e observação do PEDIDO (lib/item-do-robo.ts). O prompt manda perguntar
+  // o troco desde sempre, e a tag nem tinha onde colocá-lo: `changeAmount` nunca
+  // era escrito, e o motoboy saía sem saber que nota o cliente ia dar.
+  const doPedido = trocoEObservacaoDoPedido({
+    changeFor: payload.changeFor ?? payload.troco ?? payload.changeAmount,
+    observation: payload.observation ?? payload.observacao ?? payload.obs,
+    paymentMethod: payload.paymentMethod || (existingDraft as any)?.paymentMethod,
+    total: totalOrderAmount,
+  });
+
+  // O texto é RECOMPOSTO do zero a cada gravação, nunca anexado ao que já está
+  // no banco: o sync roda a cada mensagem do rascunho, e anexar duplicaria a
+  // observação a cada turno.
   const notesText = (payload.finalized
     ? `🤖 Pedido finalizado via IA pelo WhatsApp`
     : `🤖 Pedido sendo montado pela IA no WhatsApp`) +
-    (vereditoDaArea ? ` · Entrega: ${descreverVeredicto(vereditoDaArea)}` : "");
+    (vereditoDaArea ? ` · Entrega: ${descreverVeredicto(vereditoDaArea)}` : "") +
+    (doPedido.observacao ? ` · Obs: ${doPedido.observacao}` : "");
+
+  // Troco só existe em dinheiro. Se esta tag não trouxe o valor mas o rascunho
+  // já tinha, ele fica — o modelo nem sempre repete o campo; se o cliente mudou
+  // para cartão ou pix, zera.
+  const pagaEmDinheiro = /dinheiro|esp[eé]cie|cash/i.test(
+    String(payload.paymentMethod || (existingDraft as any)?.paymentMethod || "")
+  );
+  const trocoParaGravar: number | null = pagaEmDinheiro
+    ? (doPedido.changeAmount ?? (existingDraft as any)?.changeAmount ?? null)
+    : null;
+
+  /** O item do jeito que a cozinha lê: nome do dia, escolhas e observação. */
+  const itemParaOBanco = (i: any) => ({
+    quantity: i.quantity,
+    price: i.price,
+    productName: i.productName,
+    ...(i.notes ? { notes: i.notes } : {}),
+    ...(i.comboSelections ? { comboSelections: i.comboSelections } : {}),
+    ...(i.menuProductId ? { menuProduct: { connect: { id: i.menuProductId } } } : {}),
+  });
 
   // Preenchidos pelo ramo que efetivamente gravar — são a prova que sobe para
   // o chamador e vira o "nº do pedido" que o cliente recebe.
@@ -2119,6 +2325,15 @@ async function syncAiOrderToDatabase({
   if (existingDraft) {
     // Atualiza rascunho existente
     await prisma.customerOrderItem.deleteMany({ where: { orderId: existingDraft.id } });
+
+    // Rascunho aberto em paralelo enquanto a alteração era combinada: some
+    // agora. Deixá-lo para a faxina de rascunhos faria o robô avisar o cliente
+    // de que "parou" um pedido — justamente o que está indo para ele.
+    if (destino.acao === "reescrever" && destino.descartarRascunhoId) {
+      await prisma.customerOrder.delete({ where: { id: destino.descartarRascunhoId } }).catch((e) =>
+        console.error("[Chatbot AI Order Sync] Não consegui descartar o rascunho paralelo:", e?.message || e)
+      );
+    }
 
     let finalDailyNumber = existingDraft.dailyOrderNumber;
     if (isFinal && !finalDailyNumber) {
@@ -2132,12 +2347,15 @@ async function syncAiOrderToDatabase({
         customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || existingDraft.customerAddress,
         paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
+        changeAmount: trocoParaGravar,
         deliveryFee: deliveryFee,
         // Sem isto o rascunho ficava com o tipo da PRIMEIRA mensagem, gravado
         // antes de o cliente dar o endereço (lib/tipo-do-pedido-do-robo.ts).
         deliveryType,
         totalAmount: totalOrderAmount,
-        status: finalStatus,
+        // Cinto e suspensório: `destinoDaTag` já não deixa uma tag não-final
+        // chegar aqui com um pedido enviado. Se um dia deixar, o status fica.
+        status: !isFinal && existingDraft.status !== "CRIANDO_IA" ? existingDraft.status : finalStatus,
         notes: notesText,
         ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         // O pedido nasce AGORA, quando o cliente confirma — não quando o robô
@@ -2147,12 +2365,14 @@ async function syncAiOrderToDatabase({
         // 30 min, e a fila da nuvem só lê 2 h. O número do dia já era gerado
         // aqui, no fechamento; a data acompanha.
         ...(isFinal && existingDraft.status === "CRIANDO_IA" ? { createdAt: new Date() } : {}),
+        // ALTERAÇÃO DE PEDIDO JÁ ENVIADO PRECISA VOLTAR AO PAPEL. A fila
+        // automática de impressão ignora pedido com `printedAt` carimbado
+        // (print-queue/route.ts): sem zerar, o sabor trocado, o "sem cebola" e
+        // o item a mais ficavam só no painel, e a cozinha seguia com a comanda
+        // velha. Zerar faz a comanda inteira sair de novo, corrigida.
+        ...(existingDraft.status !== "CRIANDO_IA" ? { printedAt: null } : {}),
         items: {
-          create: orderItemsData.map((i: any) => ({
-            quantity: i.quantity,
-            price: i.price,
-            ...(i.menuProductId ? { menuProduct: { connect: { id: i.menuProductId } } } : {}),
-          })),
+          create: orderItemsData.map(itemParaOBanco),
         },
       },
     });
@@ -2173,6 +2393,7 @@ async function syncAiOrderToDatabase({
         customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || null,
         paymentMethod: payload.paymentMethod || null,
+        changeAmount: trocoParaGravar,
         deliveryFee: deliveryFee,
         totalAmount: totalOrderAmount,
         deliveryType,
@@ -2187,11 +2408,7 @@ async function syncAiOrderToDatabase({
         notes: notesText,
         ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         items: {
-          create: orderItemsData.map((i: any) => ({
-            quantity: i.quantity,
-            price: i.price,
-            ...(i.menuProductId ? { menuProduct: { connect: { id: i.menuProductId } } } : {}),
-          })),
+          create: orderItemsData.map(itemParaOBanco),
         },
       },
     });

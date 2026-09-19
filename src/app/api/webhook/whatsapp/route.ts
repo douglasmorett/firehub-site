@@ -31,6 +31,20 @@ import {
   virouIncidente,
   type FalhaDaIa,
 } from '@/lib/falha-da-ia';
+import { comPrazo } from '@/lib/com-prazo';
+import { carregarMemoriaDaConversa, guardarMemoriaDaConversa, limparMemoriasVencidas } from '@/lib/memoria-da-conversa-no-banco';
+
+/**
+ * O que o cliente lê quando a IA passa do prazo. NÃO é mensagem de erro: a
+ * resposta continua sendo esperada e chega em seguida (lib/com-prazo.ts).
+ */
+const FRASE_DE_SO_UM_INSTANTE = "Só um instantinho que já te respondo 😊";
+/**
+ * Quanto esperar pela resposta DEPOIS do prazo antes de desistir. Os modelos têm
+ * teto próprio (12 s + 7 s em texto); o que passa disso é busca de endereço no
+ * mapa e gravação do pedido. Um minuto além do prazo já é patológico.
+ */
+const TETO_DA_RESPOSTA_TARDIA_MS = 60_000;
 
 // Estado dos alertas de "IA fora do ar". Memória do processo de propósito: depois
 // de um deploy o alerta pode repetir UMA vez, e no meio de um incidente isso é
@@ -79,21 +93,6 @@ function cleanCache() {
   }
 }
 
-/** Executa uma Promise com timeout. Se estourar, retorna null em vez de travar. */
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms);
-  });
-  try {
-    const result = await Promise.race([promise, timeout]);
-    clearTimeout(timer!);
-    return result;
-  } catch (err) {
-    clearTimeout(timer!);
-    throw err;
-  }
-}
 
 export async function POST(req: NextRequest) {
   // ── REGRA CRÍTICA: SEMPRE retornar 200 para a Evolution API ──
@@ -101,6 +100,8 @@ export async function POST(req: NextRequest) {
   // e o bot para de receber mensagens completamente.
   try {
     cleanCache();
+    // No máximo uma vez por hora, sem esperar: conversa de cliente não fica guardada.
+    void limparMemoriasVencidas();
 
     const body = await req.json();
     const event = (body.event || body.type || "").toUpperCase();
@@ -944,14 +945,23 @@ async function handleIncomingMessage(body: any, instance: string) {
   // receber as ultimas mensagens trocadas com a A — produtos, precos, endereco
   // — e continuar a conversa como se fossem dele.
   const convKey = user.id + "_" + remoteJid;
-  const history = conversationCache.get(convKey) || [];
+  let history = conversationCache.get(convKey) || [];
+  // Memória vazia aqui é conversa nova — ou processo novo: deploy no FireHub é
+  // a cada push, e cada um apagava o histórico de TODA conversa em andamento. O
+  // que o robô guardou no banco volta para o cache (lib/memoria-da-conversa.ts).
+  // Só consulta quando o cache está vazio, e nunca lança.
+  if (history.length === 0) {
+    const guardado = await carregarMemoriaDaConversa(user.id, remoteJid);
+    if (guardado.length > 0) {
+      history = guardado;
+      conversationCache.set(convKey, history);
+      console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🧠 Histórico de ${remoteJid} recuperado do banco (${guardado.length} mensagens).`);
+    }
+  }
   const aiHistory = history.map(msg => ({ sender: msg.sender, text: msg.text }));
 
   console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Processando IA para ${remoteJid} com ${aiHistory.length} mensagens no histórico...`);
   
-  // ── Chamada da IA com TIMEOUT de 15 segundos ──
-  // Se o Gemini travar, não podemos deixar o webhook pendurado — a Evolution API
-  // desiste e para de enviar mensagens para o nosso endpoint.
   const customMenuUrl = ((user.chatbotConfig as any)?.externalMenuUrl || "").trim();
   const defaultStoreLink = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "";
   const storeLink = customMenuUrl || defaultStoreLink;
@@ -959,7 +969,352 @@ async function handleIncomingMessage(body: any, instance: string) {
   // sai com `falhaDaIa` para entrar na mesma conta de incidente (mais abaixo).
   const fallbackReply = mensagemDeInstabilidadePassageira({ linkDoCardapio: storeLink });
 
+
+  // ── O QUE FAZER COM A RESPOSTA DA IA ──────────────────────────────────────
+  //
+  // Um caminho só, para a resposta que chegou no prazo e para a que chegou
+  // DEPOIS dele (`tardia`). Enquanto foram dois, a tardia não tinha caminho
+  // nenhum: era descartada — com o pedido já gravado e impresso na cozinha.
+  const entregarRespostaDaIa = async (aiResponse: any, tardia: boolean): Promise<void> => {
+    // ── ONDE O PEDIDO FOI PARAR ───────────────────────────────────────────────
+    // Registrado no rastro para que "a IA confirmou mas a cozinha não recebeu"
+    // seja visível em /api/chatbot/diagnostico, sem depender de log cru.
+    const destinoDoPedido = (aiResponse as any)?.pedido;
+    if (destinoDoPedido) {
+      if (destinoDoPedido.ok) {
+        registrarTrace({
+          instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+          estagio: "pedido-gravado",
+          detalhe: `nº ${destinoDoPedido.numero ?? "—"} · ${destinoDoPedido.itens} item(ns)${destinoDoPedido.finalizado ? " · FINALIZADO" : " · rascunho"}`,
+        });
+      } else {
+        registrarTrace({
+          instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+          estagio: "pedido-nao-gravado", detalhe: destinoDoPedido.motivo,
+        });
+      }
+    }
+
+    if (aiResponse?.reply) {
+      let replyText = aiResponse.reply;
+      let callHuman = false;
+      /** A mensagem vai para a fila da equipe, mas o cliente não recebe a mesma frase de novo. */
+      let silenciarResposta = false;
+
+      // ── IA FORA DO AR É INCIDENTE ───────────────────────────────────────────
+      //
+      // De 13 a 18/09/2026 o crédito do Gemini ficou esgotado e NINGUÉM soube:
+      // o robô respondia frase fixa que parece atendimento. Agora a resposta traz
+      // `falhaDaIa`, e aqui se decide o que fazer com ela (lib/falha-da-ia.ts):
+      //   - falha que exige ação (crédito, chave), ou a terceira falha da loja em
+      //     dez minutos, é INCIDENTE: o cliente lê a verdade uma vez, a conversa
+      //     vai para uma pessoa, a loja é avisada para atender na mão e o
+      //     administrador do FireHub é avisado quando a causa é do sistema;
+      //   - um soluço isolado só pede para o cliente repetir.
+      const falhaDaIa: FalhaDaIa | undefined = (aiResponse as any).falhaDaIa;
+      const respostaDeFalha: "status" | "incidente" | "soluco" | undefined = (aiResponse as any).respostaDeFalha;
+      const chaveDaConversa = `${user.id}_${remoteJid}`;
+      /** O dono escrevendo ao próprio robô durante a queda: lê a verdade, sem fila e sem "já avisei a equipe". */
+      let donoNaQueda = false;
+
+      // A IA RESPONDEU: a conversa que estava na fila só por causa da queda sai
+      // de lá. Sem isto ela ficaria PENDING no balãozinho como fantasma de um
+      // cliente que o robô já voltou a atender.
+      if (!falhaDaIa) {
+        registrarSucessoDaIa(user.id);
+        const naFila = global.__humanSupportChats?.get(chaveDaConversa);
+        if (naFila && (naFila as any).soPorIaForaDoAr === true && naFila.status === "PENDING") {
+          global.__humanSupportChats!.delete(chaveDaConversa);
+        }
+        clientesAvisadosDaFalha.delete(chaveDaConversa);
+      }
+
+      if (falhaDaIa) {
+        const incidente = virouIncidente(falhasDaIaPorLoja, user.id, falhaDaIa, now);
+        registrarTrace({
+          instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+          estagio: incidente ? "ia-fora-do-ar" : "ia-falhou",
+          detalhe: `${falhaDaIa.tipo}: ${falhaDaIa.resumo}`,
+        });
+
+        // A faixa do painel (AvisoIaForaDoAr) lê daqui. É o canal que NÃO depende de
+        // "WhatsApp do Proprietário" — em 18/09/2026 a conta matriz e 3 das 5 lojas
+        // com robô não tinham o número, e os alertas não tinham para onde ir.
+        if (incidente) registrarIncidenteDaIa(user.id, falhaDaIa, now);
+
+        if (incidente && ehODono) {
+          // Quem escreveu foi o DONO (respondendo ao alerta, ou em modo gerencial).
+          // "Já avisei a equipe e uma pessoa vai te responder" seria mentira para
+          // ele — a equipe é ele —, e enfileirá-lo na própria loja geraria um
+          // alerta dizendo que ele mesmo está esperando atendimento.
+          donoNaQueda = true;
+          replyText = mensagemDeIaForaDoArParaODono(falhaDaIa);
+        } else if (incidente) {
+          // O soluço que se repetiu deixa de ser "manda de novo": vira a verdade.
+          // Resposta de STATUS verdadeiro (o cliente perguntou do pedido) fica.
+          if (respostaDeFalha === "soluco") {
+            replyText = mensagemDeIaForaDoAr({ linkDoCardapio: storeLink });
+            callHuman = true;
+          }
+          // O aviso de instabilidade sai UMA vez por conversa a cada duas horas.
+          // Cada mensagem seguinte tenta a IA de novo (um 429 é instantâneo): se
+          // ainda estiver fora, o cliente não lê a mesma frase outra vez — que é
+          // o defeito original com outro texto — e a mensagem só entra na fila.
+          if (respostaDeFalha !== "status") {
+            const avisadoEm = clientesAvisadosDaFalha.get(chaveDaConversa);
+            if (avisadoEm !== undefined && now - avisadoEm < DUAS_HORAS_MS) {
+              silenciarResposta = true;
+              callHuman = true;
+            } else {
+              clientesAvisadosDaFalha.set(chaveDaConversa, now);
+            }
+          }
+          if (podeAlertarAgora(alertasDeIaEnviados, `loja:${user.id}`, now, 30 * 60 * 1000)) {
+            avisarDono(
+              user.id,
+              "ia_fora_do_ar",
+              alertaDeIaForaDoArParaALoja({
+                falha: falhaDaIa,
+                nomeDoCliente: data.pushName || cleanPhone,
+                telefone: cleanPhone,
+                mensagemDoCliente: textMessage,
+                // Quem perguntou do pedido recebeu o status e NÃO foi para a fila.
+                transferido: respostaDeFalha !== "status",
+              })
+            ).catch(() => {});
+          }
+        }
+
+        // O administrador do FireHub: a causa é do sistema (chave única). O freio é
+        // gravado ANTES do envio — com ~30 lojas sentindo a queda ao mesmo tempo,
+        // gravar só no sucesso deixaria todas passarem pela checagem antes do
+        // primeiro envio terminar. Se o envio falhar, o freio é solto para a
+        // próxima loja tentar.
+        if (incidente && falhaDaIa.doSistema && podeAlertarAgora(alertasDeIaEnviados, "admin", now, 60 * 60 * 1000)) {
+          avisarAdminDoSistema(
+            user.id,
+            alertaDeIaForaDoArParaOAdmin({
+              falha: falhaDaIa,
+              loja: (user as any).storeName || (user as any).name || user.id,
+              quando: new Date(now).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+            })
+          )
+            .then((saiu) => { if (!saiu) alertasDeIaEnviados.delete("admin"); })
+            .catch(() => { alertasDeIaEnviados.delete("admin"); });
+        }
+      }
+
+      // A marca em qualquer grafia que o modelo invente ("[[CHAMAR_ATENDENTE: sim]]"),
+      // e removida INTEIRA — com a checagem estrita de antes, a variação vazava o
+      // colchete cru para o cliente e não chamava ninguém.
+      if (/\[\[\s*CHAMAR_ATENDENTE/i.test(replyText)) {
+        replyText = replyText.replace(/\[\[\s*CHAMAR_ATENDENTE[^\]]*\]\]/gi, "").trim();
+        // A loja optou por NÃO pausar, e o dono já foi avisado pelo detector lá em
+        // cima: a marca da IA (regra 6g do prompt) não tira o robô da conversa.
+        const soAlerta = pedidoDeAtendente.pediu && !stopOnHuman;
+        if (!soAlerta && !donoNaQueda) callHuman = true;
+        if (!replyText) replyText = FRASE_DE_CHAMAR_ATENDENTE;
+      }
+
+      // O cliente recusou o site e quer ver o cardápio aqui mesmo: a IA marca a
+      // resposta e nós mandamos o arquivo que o lojista subiu. A marca sai do
+      // texto antes de qualquer coisa — cliente nenhum pode ver "[[...]]".
+      let enviarCardapio = false;
+      // Tolera variação do modelo ("[[ENVIAR_CARDAPIO: agora]]"): qualquer coisa
+      // que comece com a marca conta — e sai INTEIRA do texto, senão o cliente
+      // recebe o colchete cru.
+      if (/\[\[ENVIAR_CARDAPIO/i.test(replyText)) {
+        enviarCardapio = true;
+        replyText = replyText.replace(/\[\[ENVIAR_CARDAPIO[^\]]*\]\]/gi, "").trim();
+        if (!replyText) replyText = "Claro! Segue nosso cardápio 😊";
+      }
+
+      // O que o cliente falou no áudio, para o histórico.
+      //
+      // O áudio vai para o modelo uma vez só, na mensagem em que chega. O que
+      // sobrava no histórico era o texto-marcador ("o cliente enviou um áudio"),
+      // igual em todas as mensagens de voz — então quem pedia "dois x-tudo" por
+      // áudio e depois mandava "e uma coca" via o pedido evaporar. Guardar a
+      // transcrição é o que dá memória à conversa falada.
+      let transcription = "";
+      const transcriptionMatch = replyText.match(/\[\[TRANSCRICAO:\s*([\s\S]*?)\]\]/i);
+      if (transcriptionMatch) {
+        transcription = transcriptionMatch[1].trim();
+        replyText = replyText.replace(/\[\[TRANSCRICAO:[\s\S]*?\]\]/gi, "").trim();
+      }
+
+      // Pedido de atendente por ÁUDIO. Lá em cima o detector só enxerga o
+      // texto-marcador da mensagem de voz, que é igual em todas — quem pedia uma
+      // pessoa falando nunca era ouvido. A transcrição só existe depois da IA;
+      // se ela não tiver chamado a equipe por conta própria, chama-se aqui.
+      if (!callHuman && transcription && !ehODono) {
+        const pedidoNoAudio = detectarPedidoDeAtendente(transcription);
+        if (pedidoNoAudio.pediu) {
+          avisarDono(
+            user.id,
+            "pedido_de_atendente",
+            textoDeProblemaNoPedido({
+              nomeDoCliente: data.pushName || cleanPhone,
+              telefone: cleanPhone,
+              motivo: "pediu para falar com atendente (por áudio)",
+              mensagemDoCliente: transcription,
+            })
+          ).catch(() => {});
+          donoJaAvisado = true;
+          if (chatbotConfig.stopOnHumanRequest !== false) {
+            replyText = FRASE_DE_CHAMAR_ATENDENTE;
+            callHuman = true;
+          }
+        }
+      }
+
+      const recipientTarget = remoteJid || data.from || "";
+    
+      // O cliente enviou áudio, a IA escuta e entende, mas a resposta é enviada SEMPRE em texto.
+      // Enquanto a IA pensava (3–5 s de leitura + a chamada), OUTRA mensagem do
+      // mesmo cliente pode ter entregado a conversa à equipe — "oi" e, dois
+      // segundos depois, "quero falar com um atendente". Sem esta conferência o
+      // cliente leria a resposta do robô ao "oi" logo depois de "uma pessoa vai te
+      // responder": o mesmo sintoma da Hakim, por outro caminho.
+      if (roboEstaPausado(user.id, remoteJid)) {
+        enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage, "", now);
+        console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: ${remoteJid} passou para a equipe enquanto ela era gerada.`);
+        return;
+      }
+
+      const enviou = silenciarResposta ? true : await replyToCustomer(user.id, remoteJid, replyText, recipientTarget);
+      if (!silenciarResposta) {
+        registrarTrace({
+          instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+          estagio: enviou ? "enviado" : "envio-falhou",
+          detalhe: enviou
+            ? (tardia ? "resposta tardia: saiu depois do \"só um instante\"" : undefined)
+            : "gateway recusou o envio (sendText não retornou ok)",
+        });
+      }
+
+      // O arquivo vai DEPOIS do texto, nunca como legenda: no WhatsApp a legenda
+      // de mídia fica escondida atrás do "ver mais" e o cliente não lê. Se o envio
+      // falhar, não deixamos a conversa no vácuo — a IA já prometeu o cardápio,
+      // então cai para o link, que sempre funciona.
+      if (enviarCardapio) {
+        const cfgArquivo = (user.chatbotConfig as any) || {};
+        const arquivo = String(cfgArquivo.menuFileUrl || "").trim();
+        if (arquivo) {
+          const ehPdf = /\.pdf(\?|$)/i.test(arquivo) || String(cfgArquivo.menuFileType || "").includes("pdf");
+          const { sendEvolutionMediaUrl } = await import("@/lib/whatsapp-evolution");
+          const urlAbsoluta = arquivo.startsWith("http")
+            ? arquivo
+            : `https://firehubfood.com.br${arquivo.startsWith("/") ? "" : "/"}${arquivo}`;
+          const foi = await sendEvolutionMediaUrl(
+            user.id, recipientTarget, urlAbsoluta, "",
+            ehPdf ? "document" : "image",
+            ehPdf ? "cardapio.pdf" : undefined,
+          );
+          if (!foi) {
+            console.warn("[WhatsApp Webhook] 📄 Falha ao enviar cardápio em arquivo; caindo para o link.");
+            const linkLoja = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "";
+            if (linkLoja) {
+              await replyToCustomer(user.id, remoteJid, `Nosso cardápio completo tá aqui: ${linkLoja}`, recipientTarget);
+            }
+          } else {
+            trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
+          }
+        }
+      }
+
+      // Track WhatsApp usage (fire-and-forget)
+      trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });
+      if (!silenciarResposta) trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
+
+      console.log(
+        silenciarResposta
+          ? `[${new Date().toISOString()}] [WhatsApp Webhook] 🤫 IA fora do ar e ${recipientTarget} já foi avisado: mensagem só encaminhada à fila da equipe.`
+          : `[${new Date().toISOString()}] [WhatsApp Webhook] 🤖 Resposta enviada para ${recipientTarget}: "${replyText}"`
+      );
+
+      if (callHuman) {
+        // As mesmas duas travas dos outros caminhos de transferência. Este só
+        // gravava a de memória e não avisava ninguém: quando era a IA que decidia
+        // chamar a equipe, com o painel fechado a loja simplesmente não ficava
+        // sabendo — e um deploy devolvia o robô à conversa.
+        const motivoDaTransferencia = falhaDaIa ? MOTIVO_IA_FORA_DO_AR : "Robô chamou atendente";
+        if (!falhaDaIa) {
+          pausarRobo(user.id, remoteJid);
+          await passarParaAtendimentoHumano(user.id, remoteJid, "robô chamou atendente", now);
+        }
+        // Com a IA FORA DO AR não há pausa nem trava no banco, de propósito: a
+        // conversa é da equipe só ENQUANTO a IA estiver fora. Cada mensagem tenta
+        // a IA de novo; quando o crédito voltar, o robô responde na hora e a
+        // entrada sai da fila. Com a trava de 12 h, o cliente ficaria sem robô
+        // muito depois de tudo normalizar.
+        enqueueHumanSupport(
+          user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage,
+          silenciarResposta ? "" : replyText, now, motivoDaTransferencia
+        );
+
+        // Com a IA fora do ar TODA conversa cai aqui: o alerta é um só por loja a
+        // cada meia hora (acima), não um por cliente. Nos outros casos, um alerta
+        // por mensagem — `donoJaAvisado` diz se o detector ou o bloco do áudio já
+        // mandaram. (Havia aqui um `!transcription` fazendo esse papel, e ele
+        // calava o alerta justo quando a IA chamava a equipe a partir de um áudio.)
+        if (!falhaDaIa && !donoJaAvisado) {
+          avisarDono(
+            user.id,
+            "pedido_de_atendente",
+            textoDeProblemaNoPedido({
+              nomeDoCliente: data.pushName || cleanPhone,
+              telefone: cleanPhone,
+              motivo: "o robô transferiu a conversa para a equipe",
+              mensagemDoCliente: transcription || textMessage,
+            })
+          ).catch(() => {});
+        }
+        console.log(`[WhatsApp Webhook] 🙋 Chat transferido para atendimento humano: ${motivoDaTransferencia} (${remoteJid})`);
+      }
+    
+      // Update cache after response
+      // Para áudio, guarda o que foi dito — não o texto-marcador, que é igual em
+      // toda mensagem de voz e não carrega nada do pedido.
+      //
+      // O histórico é RELIDO do cache aqui, não reaproveitado do começo da função:
+      // entre a leitura e este ponto passaram a espera da IA e, na resposta tardia,
+      // possivelmente outra mensagem inteira do mesmo cliente. Gravar por cima com a
+      // cópia antiga apagaria o que a outra mensagem acabou de guardar.
+      const historicoAtual = conversationCache.get(convKey) || [];
+      historicoAtual.push({ sender: 'user', text: transcription || textMessage, timestamp: now });
+    
+      // NÃO salvar mensagens de erro de sistema no histórico da IA,
+      // senão na próxima iteração a IA começa a alucinar que está quebrada de propósito.
+      if (!falhaDaIa && !replyText.includes("instabilidade técnica")) {
+        historicoAtual.push({ sender: 'bot', text: replyText, timestamp: Date.now() });
+      }
+    
+      // Keep only the last 15 messages
+      const updatedHistory = historicoAtual.slice(-15);
+    
+      conversationCache.set(convKey, updatedHistory);
+      cooldownCache.set(remoteJid, Date.now());
+      // Cópia no banco, para o próximo deploy não levar a conversa junto. Sem
+      // `await`: o cliente já foi respondido, e a função nunca lança.
+      void guardarMemoriaDaConversa(user.id, remoteJid, updatedHistory);
+    }
+  };
+
+  // ── CHAMADA DA IA COM PRAZO — SEM JOGAR FORA O QUE CHEGAR DEPOIS ──────────
+  //
+  // Se o Gemini travar, o webhook não pode ficar pendurado: a Evolution desiste
+  // e para de entregar mensagens. Mas o prazo era um `Promise.race`, que só para
+  // de ESCUTAR: a chamada seguia viva e podia gravar o pedido e mandar imprimir
+  // segundos depois de o cliente ler "instabilidade, peça pelo cardápio". Ele
+  // refazia pelo site — dois pedidos, e uma comanda que ninguém esperava.
+  //
+  // Agora (lib/com-prazo.ts): venceu o prazo, o cliente lê "só um instante" e o
+  // webhook é liberado; a resposta que chegar depois passa por
+  // `entregarRespostaDaIa` como qualquer outra. Se nada chegar até o teto, o
+  // vigia fala pela IA — aí sim é falha, e entra na conta de incidente.
   let aiResponse: any = null;
+  let estourouOPrazo = false;
   try {
     // Se for mensagem de usuário, aplicamos um delay de leitura para imitar humano
     if (remoteJid?.includes("@s.whatsapp.net")) {
@@ -969,15 +1324,64 @@ async function handleIncomingMessage(body: any, instance: string) {
 
     const aiTimeout = audioData ? 45000 : 25000;
     const iaInicio = Date.now();
-    aiResponse = await withTimeout(
+    /** Quem já falou por esta mensagem depois do prazo. Um só fala. */
+    let desfecho: "aberto" | "respondida" | "desistiu" = "aberto";
+    let vigia: ReturnType<typeof setTimeout> | undefined;
+    const falhaComoResposta = (motivo: unknown) => ({
+      reply: fallbackReply, falhaDaIa: classificarFalhaDaIa(motivo), respostaDeFalha: "soluco" as const,
+    });
+
+    const espera = await comPrazo(
       processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName),
-      aiTimeout
+      aiTimeout,
+      async (respostaTardia, atrasoMs) => {
+        if (vigia) clearTimeout(vigia);
+        const vigiaJaFalou = desfecho === "desistiu";
+        desfecho = "respondida";
+        const pedidoTardio = (respostaTardia as any)?.pedido;
+        registrarTrace({
+          instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+          estagio: "ia-tardia", ms: aiTimeout + atrasoMs,
+          detalhe: `chegou ${Math.round(atrasoMs / 1000)}s depois do prazo${pedidoTardio?.ok ? " · COM PEDIDO GRAVADO" : ""}${vigiaJaFalou ? " · o vigia já tinha respondido" : ""}`,
+        });
+        // Depois que o vigia falou ("não consegui, manda de novo"), a resposta
+        // tardia só interessa se MEXEU no pedido: aí o cliente precisa saber.
+        if (vigiaJaFalou && !pedidoTardio?.ok) return;
+        try {
+          await entregarRespostaDaIa(respostaTardia?.reply ? respostaTardia : falhaComoResposta("resposta vazia"), true);
+        } catch (e: any) {
+          console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro ao entregar a resposta tardia para ${remoteJid}:`, e?.message || e);
+        }
+      },
+      (erroTardio) => {
+        if (vigia) clearTimeout(vigia);
+        if (desfecho !== "aberto") return;
+        desfecho = "respondida";
+        console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ A IA falhou depois do prazo para ${remoteJid}:`, (erroTardio as any)?.message || erroTardio);
+        entregarRespostaDaIa(falhaComoResposta(erroTardio), true).catch(() => {});
+      },
     );
+
+    if (espera.noPrazo) {
+      // Resposta sem texto (null, ou `{}` de um caminho novo) é falha como
+      // outra qualquer. Sem esta rede o cliente ficaria sem resposta nenhuma:
+      // `entregarRespostaDaIa` só age quando há `reply`.
+      aiResponse = (espera.valor as any)?.reply ? espera.valor : falhaComoResposta("resposta vazia");
+      desfecho = "respondida";
+    } else {
+      estourouOPrazo = true;
+      vigia = setTimeout(() => {
+        if (desfecho !== "aberto") return;
+        desfecho = "desistiu";
+        console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ A IA não respondeu nem depois do prazo para ${remoteJid}. Enviando fallback.`);
+        entregarRespostaDaIa(falhaComoResposta("timeout"), true).catch(() => {});
+      }, TETO_DA_RESPOSTA_TARDIA_MS);
+    }
     registrarTrace({
       instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
-      estagio: aiResponse ? "ia-chamada" : "ia-timeout",
+      estagio: espera.noPrazo ? "ia-chamada" : "ia-timeout",
       ms: Date.now() - iaInicio,
-      detalhe: aiResponse ? undefined : `estourou o limite de ${aiTimeout}ms`,
+      detalhe: espera.noPrazo ? undefined : `passou de ${aiTimeout}ms — cliente avisado, resposta segue sendo esperada`,
     });
   } catch (aiErr: any) {
     console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro na IA para ${remoteJid}:`, aiErr?.message || aiErr);
@@ -988,323 +1392,18 @@ async function handleIncomingMessage(body: any, instance: string) {
     aiResponse = { reply: fallbackReply, falhaDaIa: classificarFalhaDaIa(aiErr), respostaDeFalha: "soluco" };
   }
 
-  if (!aiResponse) {
-    console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ Timeout na IA para ${remoteJid}. Enviando fallback.`);
-    aiResponse = { reply: fallbackReply, falhaDaIa: classificarFalhaDaIa("timeout"), respostaDeFalha: "soluco" };
-  }
-  
-  // ── ONDE O PEDIDO FOI PARAR ───────────────────────────────────────────────
-  // Registrado no rastro para que "a IA confirmou mas a cozinha não recebeu"
-  // seja visível em /api/chatbot/diagnostico, sem depender de log cru.
-  const destinoDoPedido = (aiResponse as any)?.pedido;
-  if (destinoDoPedido) {
-    if (destinoDoPedido.ok) {
-      registrarTrace({
-        instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
-        estagio: "pedido-gravado",
-        detalhe: `nº ${destinoDoPedido.numero ?? "—"} · ${destinoDoPedido.itens} item(ns)${destinoDoPedido.finalizado ? " · FINALIZADO" : " · rascunho"}`,
-      });
-    } else {
-      registrarTrace({
-        instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
-        estagio: "pedido-nao-gravado", detalhe: destinoDoPedido.motivo,
-      });
+  if (estourouOPrazo) {
+    // "Só um instante" NÃO entra no histórico nem na conta de falhas: ainda não
+    // se sabe se a IA falhou. Conversa que passou para a equipe nesse meio-tempo
+    // não recebe nada do robô.
+    if (!roboEstaPausado(user.id, remoteJid)) {
+      await replyToCustomer(user.id, remoteJid, FRASE_DE_SO_UM_INSTANTE, remoteJid || data.from || "");
+      trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: remoteJid || data.from || "" });
     }
+    return;
   }
 
-  if (aiResponse?.reply) {
-    let replyText = aiResponse.reply;
-    let callHuman = false;
-    /** A mensagem vai para a fila da equipe, mas o cliente não recebe a mesma frase de novo. */
-    let silenciarResposta = false;
-
-    // ── IA FORA DO AR É INCIDENTE ───────────────────────────────────────────
-    //
-    // De 13 a 18/09/2026 o crédito do Gemini ficou esgotado e NINGUÉM soube:
-    // o robô respondia frase fixa que parece atendimento. Agora a resposta traz
-    // `falhaDaIa`, e aqui se decide o que fazer com ela (lib/falha-da-ia.ts):
-    //   - falha que exige ação (crédito, chave), ou a terceira falha da loja em
-    //     dez minutos, é INCIDENTE: o cliente lê a verdade uma vez, a conversa
-    //     vai para uma pessoa, a loja é avisada para atender na mão e o
-    //     administrador do FireHub é avisado quando a causa é do sistema;
-    //   - um soluço isolado só pede para o cliente repetir.
-    const falhaDaIa: FalhaDaIa | undefined = (aiResponse as any).falhaDaIa;
-    const respostaDeFalha: "status" | "incidente" | "soluco" | undefined = (aiResponse as any).respostaDeFalha;
-    const chaveDaConversa = `${user.id}_${remoteJid}`;
-    /** O dono escrevendo ao próprio robô durante a queda: lê a verdade, sem fila e sem "já avisei a equipe". */
-    let donoNaQueda = false;
-
-    // A IA RESPONDEU: a conversa que estava na fila só por causa da queda sai
-    // de lá. Sem isto ela ficaria PENDING no balãozinho como fantasma de um
-    // cliente que o robô já voltou a atender.
-    if (!falhaDaIa) {
-      registrarSucessoDaIa(user.id);
-      const naFila = global.__humanSupportChats?.get(chaveDaConversa);
-      if (naFila && (naFila as any).soPorIaForaDoAr === true && naFila.status === "PENDING") {
-        global.__humanSupportChats!.delete(chaveDaConversa);
-      }
-      clientesAvisadosDaFalha.delete(chaveDaConversa);
-    }
-
-    if (falhaDaIa) {
-      const incidente = virouIncidente(falhasDaIaPorLoja, user.id, falhaDaIa, now);
-      registrarTrace({
-        instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
-        estagio: incidente ? "ia-fora-do-ar" : "ia-falhou",
-        detalhe: `${falhaDaIa.tipo}: ${falhaDaIa.resumo}`,
-      });
-
-      // A faixa do painel (AvisoIaForaDoAr) lê daqui. É o canal que NÃO depende de
-      // "WhatsApp do Proprietário" — em 18/09/2026 a conta matriz e 3 das 5 lojas
-      // com robô não tinham o número, e os alertas não tinham para onde ir.
-      if (incidente) registrarIncidenteDaIa(user.id, falhaDaIa, now);
-
-      if (incidente && ehODono) {
-        // Quem escreveu foi o DONO (respondendo ao alerta, ou em modo gerencial).
-        // "Já avisei a equipe e uma pessoa vai te responder" seria mentira para
-        // ele — a equipe é ele —, e enfileirá-lo na própria loja geraria um
-        // alerta dizendo que ele mesmo está esperando atendimento.
-        donoNaQueda = true;
-        replyText = mensagemDeIaForaDoArParaODono(falhaDaIa);
-      } else if (incidente) {
-        // O soluço que se repetiu deixa de ser "manda de novo": vira a verdade.
-        // Resposta de STATUS verdadeiro (o cliente perguntou do pedido) fica.
-        if (respostaDeFalha === "soluco") {
-          replyText = mensagemDeIaForaDoAr({ linkDoCardapio: storeLink });
-          callHuman = true;
-        }
-        // O aviso de instabilidade sai UMA vez por conversa a cada duas horas.
-        // Cada mensagem seguinte tenta a IA de novo (um 429 é instantâneo): se
-        // ainda estiver fora, o cliente não lê a mesma frase outra vez — que é
-        // o defeito original com outro texto — e a mensagem só entra na fila.
-        if (respostaDeFalha !== "status") {
-          const avisadoEm = clientesAvisadosDaFalha.get(chaveDaConversa);
-          if (avisadoEm !== undefined && now - avisadoEm < DUAS_HORAS_MS) {
-            silenciarResposta = true;
-            callHuman = true;
-          } else {
-            clientesAvisadosDaFalha.set(chaveDaConversa, now);
-          }
-        }
-        if (podeAlertarAgora(alertasDeIaEnviados, `loja:${user.id}`, now, 30 * 60 * 1000)) {
-          avisarDono(
-            user.id,
-            "ia_fora_do_ar",
-            alertaDeIaForaDoArParaALoja({
-              falha: falhaDaIa,
-              nomeDoCliente: data.pushName || cleanPhone,
-              telefone: cleanPhone,
-              mensagemDoCliente: textMessage,
-              // Quem perguntou do pedido recebeu o status e NÃO foi para a fila.
-              transferido: respostaDeFalha !== "status",
-            })
-          ).catch(() => {});
-        }
-      }
-
-      // O administrador do FireHub: a causa é do sistema (chave única). O freio é
-      // gravado ANTES do envio — com ~30 lojas sentindo a queda ao mesmo tempo,
-      // gravar só no sucesso deixaria todas passarem pela checagem antes do
-      // primeiro envio terminar. Se o envio falhar, o freio é solto para a
-      // próxima loja tentar.
-      if (incidente && falhaDaIa.doSistema && podeAlertarAgora(alertasDeIaEnviados, "admin", now, 60 * 60 * 1000)) {
-        avisarAdminDoSistema(
-          user.id,
-          alertaDeIaForaDoArParaOAdmin({
-            falha: falhaDaIa,
-            loja: (user as any).storeName || (user as any).name || user.id,
-            quando: new Date(now).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
-          })
-        )
-          .then((saiu) => { if (!saiu) alertasDeIaEnviados.delete("admin"); })
-          .catch(() => { alertasDeIaEnviados.delete("admin"); });
-      }
-    }
-
-    // A marca em qualquer grafia que o modelo invente ("[[CHAMAR_ATENDENTE: sim]]"),
-    // e removida INTEIRA — com a checagem estrita de antes, a variação vazava o
-    // colchete cru para o cliente e não chamava ninguém.
-    if (/\[\[\s*CHAMAR_ATENDENTE/i.test(replyText)) {
-      replyText = replyText.replace(/\[\[\s*CHAMAR_ATENDENTE[^\]]*\]\]/gi, "").trim();
-      // A loja optou por NÃO pausar, e o dono já foi avisado pelo detector lá em
-      // cima: a marca da IA (regra 6g do prompt) não tira o robô da conversa.
-      const soAlerta = pedidoDeAtendente.pediu && !stopOnHuman;
-      if (!soAlerta && !donoNaQueda) callHuman = true;
-      if (!replyText) replyText = FRASE_DE_CHAMAR_ATENDENTE;
-    }
-
-    // O cliente recusou o site e quer ver o cardápio aqui mesmo: a IA marca a
-    // resposta e nós mandamos o arquivo que o lojista subiu. A marca sai do
-    // texto antes de qualquer coisa — cliente nenhum pode ver "[[...]]".
-    let enviarCardapio = false;
-    // Tolera variação do modelo ("[[ENVIAR_CARDAPIO: agora]]"): qualquer coisa
-    // que comece com a marca conta — e sai INTEIRA do texto, senão o cliente
-    // recebe o colchete cru.
-    if (/\[\[ENVIAR_CARDAPIO/i.test(replyText)) {
-      enviarCardapio = true;
-      replyText = replyText.replace(/\[\[ENVIAR_CARDAPIO[^\]]*\]\]/gi, "").trim();
-      if (!replyText) replyText = "Claro! Segue nosso cardápio 😊";
-    }
-
-    // O que o cliente falou no áudio, para o histórico.
-    //
-    // O áudio vai para o modelo uma vez só, na mensagem em que chega. O que
-    // sobrava no histórico era o texto-marcador ("o cliente enviou um áudio"),
-    // igual em todas as mensagens de voz — então quem pedia "dois x-tudo" por
-    // áudio e depois mandava "e uma coca" via o pedido evaporar. Guardar a
-    // transcrição é o que dá memória à conversa falada.
-    let transcription = "";
-    const transcriptionMatch = replyText.match(/\[\[TRANSCRICAO:\s*([\s\S]*?)\]\]/i);
-    if (transcriptionMatch) {
-      transcription = transcriptionMatch[1].trim();
-      replyText = replyText.replace(/\[\[TRANSCRICAO:[\s\S]*?\]\]/gi, "").trim();
-    }
-
-    // Pedido de atendente por ÁUDIO. Lá em cima o detector só enxerga o
-    // texto-marcador da mensagem de voz, que é igual em todas — quem pedia uma
-    // pessoa falando nunca era ouvido. A transcrição só existe depois da IA;
-    // se ela não tiver chamado a equipe por conta própria, chama-se aqui.
-    if (!callHuman && transcription && !ehODono) {
-      const pedidoNoAudio = detectarPedidoDeAtendente(transcription);
-      if (pedidoNoAudio.pediu) {
-        avisarDono(
-          user.id,
-          "pedido_de_atendente",
-          textoDeProblemaNoPedido({
-            nomeDoCliente: data.pushName || cleanPhone,
-            telefone: cleanPhone,
-            motivo: "pediu para falar com atendente (por áudio)",
-            mensagemDoCliente: transcription,
-          })
-        ).catch(() => {});
-        donoJaAvisado = true;
-        if (chatbotConfig.stopOnHumanRequest !== false) {
-          replyText = FRASE_DE_CHAMAR_ATENDENTE;
-          callHuman = true;
-        }
-      }
-    }
-
-    const recipientTarget = remoteJid || data.from || "";
-    
-    // O cliente enviou áudio, a IA escuta e entende, mas a resposta é enviada SEMPRE em texto.
-    // Enquanto a IA pensava (3–5 s de leitura + a chamada), OUTRA mensagem do
-    // mesmo cliente pode ter entregado a conversa à equipe — "oi" e, dois
-    // segundos depois, "quero falar com um atendente". Sem esta conferência o
-    // cliente leria a resposta do robô ao "oi" logo depois de "uma pessoa vai te
-    // responder": o mesmo sintoma da Hakim, por outro caminho.
-    if (roboEstaPausado(user.id, remoteJid)) {
-      enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage, "", now);
-      console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: ${remoteJid} passou para a equipe enquanto ela era gerada.`);
-      return;
-    }
-
-    const enviou = silenciarResposta ? true : await replyToCustomer(user.id, remoteJid, replyText, recipientTarget);
-    if (!silenciarResposta) {
-      registrarTrace({
-        instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
-        estagio: enviou ? "enviado" : "envio-falhou",
-        detalhe: enviou ? undefined : "gateway recusou o envio (sendText não retornou ok)",
-      });
-    }
-
-    // O arquivo vai DEPOIS do texto, nunca como legenda: no WhatsApp a legenda
-    // de mídia fica escondida atrás do "ver mais" e o cliente não lê. Se o envio
-    // falhar, não deixamos a conversa no vácuo — a IA já prometeu o cardápio,
-    // então cai para o link, que sempre funciona.
-    if (enviarCardapio) {
-      const cfgArquivo = (user.chatbotConfig as any) || {};
-      const arquivo = String(cfgArquivo.menuFileUrl || "").trim();
-      if (arquivo) {
-        const ehPdf = /\.pdf(\?|$)/i.test(arquivo) || String(cfgArquivo.menuFileType || "").includes("pdf");
-        const { sendEvolutionMediaUrl } = await import("@/lib/whatsapp-evolution");
-        const urlAbsoluta = arquivo.startsWith("http")
-          ? arquivo
-          : `https://firehubfood.com.br${arquivo.startsWith("/") ? "" : "/"}${arquivo}`;
-        const foi = await sendEvolutionMediaUrl(
-          user.id, recipientTarget, urlAbsoluta, "",
-          ehPdf ? "document" : "image",
-          ehPdf ? "cardapio.pdf" : undefined,
-        );
-        if (!foi) {
-          console.warn("[WhatsApp Webhook] 📄 Falha ao enviar cardápio em arquivo; caindo para o link.");
-          const linkLoja = user.slug ? `https://firehubfood.com.br/loja/${user.slug}` : "";
-          if (linkLoja) {
-            await replyToCustomer(user.id, remoteJid, `Nosso cardápio completo tá aqui: ${linkLoja}`, recipientTarget);
-          }
-        } else {
-          trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
-        }
-      }
-    }
-
-    // Track WhatsApp usage (fire-and-forget)
-    trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });
-    if (!silenciarResposta) trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
-
-    console.log(
-      silenciarResposta
-        ? `[${new Date().toISOString()}] [WhatsApp Webhook] 🤫 IA fora do ar e ${recipientTarget} já foi avisado: mensagem só encaminhada à fila da equipe.`
-        : `[${new Date().toISOString()}] [WhatsApp Webhook] 🤖 Resposta enviada para ${recipientTarget}: "${replyText}"`
-    );
-
-    if (callHuman) {
-      // As mesmas duas travas dos outros caminhos de transferência. Este só
-      // gravava a de memória e não avisava ninguém: quando era a IA que decidia
-      // chamar a equipe, com o painel fechado a loja simplesmente não ficava
-      // sabendo — e um deploy devolvia o robô à conversa.
-      const motivoDaTransferencia = falhaDaIa ? MOTIVO_IA_FORA_DO_AR : "Robô chamou atendente";
-      if (!falhaDaIa) {
-        pausarRobo(user.id, remoteJid);
-        await passarParaAtendimentoHumano(user.id, remoteJid, "robô chamou atendente", now);
-      }
-      // Com a IA FORA DO AR não há pausa nem trava no banco, de propósito: a
-      // conversa é da equipe só ENQUANTO a IA estiver fora. Cada mensagem tenta
-      // a IA de novo; quando o crédito voltar, o robô responde na hora e a
-      // entrada sai da fila. Com a trava de 12 h, o cliente ficaria sem robô
-      // muito depois de tudo normalizar.
-      enqueueHumanSupport(
-        user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage,
-        silenciarResposta ? "" : replyText, now, motivoDaTransferencia
-      );
-
-      // Com a IA fora do ar TODA conversa cai aqui: o alerta é um só por loja a
-      // cada meia hora (acima), não um por cliente. Nos outros casos, um alerta
-      // por mensagem — `donoJaAvisado` diz se o detector ou o bloco do áudio já
-      // mandaram. (Havia aqui um `!transcription` fazendo esse papel, e ele
-      // calava o alerta justo quando a IA chamava a equipe a partir de um áudio.)
-      if (!falhaDaIa && !donoJaAvisado) {
-        avisarDono(
-          user.id,
-          "pedido_de_atendente",
-          textoDeProblemaNoPedido({
-            nomeDoCliente: data.pushName || cleanPhone,
-            telefone: cleanPhone,
-            motivo: "o robô transferiu a conversa para a equipe",
-            mensagemDoCliente: transcription || textMessage,
-          })
-        ).catch(() => {});
-      }
-      console.log(`[WhatsApp Webhook] 🙋 Chat transferido para atendimento humano: ${motivoDaTransferencia} (${remoteJid})`);
-    }
-    
-    // Update cache after response
-    // Para áudio, guarda o que foi dito — não o texto-marcador, que é igual em
-    // toda mensagem de voz e não carrega nada do pedido.
-    history.push({ sender: 'user', text: transcription || textMessage, timestamp: now });
-    
-    // NÃO salvar mensagens de erro de sistema no histórico da IA,
-    // senão na próxima iteração a IA começa a alucinar que está quebrada de propósito.
-    if (!falhaDaIa && !replyText.includes("instabilidade técnica")) {
-      history.push({ sender: 'bot', text: replyText, timestamp: Date.now() });
-    }
-    
-    // Keep only the last 15 messages
-    const updatedHistory = history.slice(-15);
-    
-    conversationCache.set(convKey, updatedHistory);
-    cooldownCache.set(remoteJid, Date.now());
-  }
+  await entregarRespostaDaIa(aiResponse, false);
 }
 
 export async function GET() {

@@ -37,6 +37,8 @@ export type TraceStage =
   | "ia-chamada"
   | "ia-vazia"
   | "ia-timeout"
+  /** A resposta da IA chegou DEPOIS do prazo e foi entregue mesmo assim (lib/com-prazo.ts). */
+  | "ia-tardia"
   | "pedido-gravado"
   | "pedido-nao-gravado"
   | "enviado"
