@@ -66,6 +66,12 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
   const [period, setPeriod] = useState("month");
   const [customFrom, setCustomFrom] = useState(inicial.from);
   const [customTo, setCustomTo] = useState(inicial.to);
+  // HORA do turno, opcional. Vazio = dia inteiro, como sempre foi. Existe para
+  // o entregador que entrou às 18h do dia 1 e saiu às 2h do dia 2: por dia
+  // inteiro o relatório traz os dois dias completos — o dobro do que ele fez,
+  // e um acerto errado (pedido do dono, 19/09/2026).
+  const [horaInicio, setHoraInicio] = useState("");
+  const [horaFim, setHoraFim] = useState("");
 
   /** Clicou num atalho: marca o período E preenche as caixas com ele. */
   const escolherPeriodo = (valor: string) => {
@@ -86,8 +92,11 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
     // As caixas de data são a fonte da verdade: os atalhos preenchem elas, então
     // consultar sempre as caixas garante que o que foi buscado é o que está
     // escrito na tela — sem chance de o botão dizer uma coisa e a busca outra.
-    const range = { from: customFrom, to: customTo };
-    if (!range.from || !range.to) { setLoading(false); return; }
+    const range = {
+      from: customFrom + (horaInicio ? `T${horaInicio}` : ""),
+      to: customTo + (horaFim ? `T${horaFim}` : ""),
+    };
+    if (!customFrom || !customTo) { setLoading(false); return; }
 
     const params = new URLSearchParams({ from: range.from, to: range.to, calcMode });
     if (selectedMotoboy !== "all") params.set("motoboyId", selectedMotoboy);
@@ -100,7 +109,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
       setLoaded(true);
     }
     setLoading(false);
-  }, [period, customFrom, customTo, selectedMotoboy, calcMode]);
+  }, [period, customFrom, customTo, horaInicio, horaFim, selectedMotoboy, calcMode]);
 
   const getMotoboyPay = (r: any) => calcMode === "fee_only" ? r.stats.totalFeeOnly : r.stats.totalWithDaily;
   const totalPay = report.reduce((s, r) => s + getMotoboyPay(r), 0);
@@ -141,12 +150,26 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                 </button>
               ))}
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
               <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setPeriod("custom"); }}
-                style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+                style={{ flex: "1 1 130px", minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+              <input type="time" value={horaInicio} onChange={e => { setHoraInicio(e.target.value); setPeriod("custom"); }} title="Hora de início (opcional)"
+                style={{ width: 96, padding: "7px 8px", borderRadius: 8, border: `1.5px solid ${horaInicio ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
               <span style={{ color: "#94A3B8", fontSize: "0.82rem" }}>até</span>
               <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setPeriod("custom"); }}
-                style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+                style={{ flex: "1 1 130px", minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+              <input type="time" value={horaFim} onChange={e => { setHoraFim(e.target.value); setPeriod("custom"); }} title="Hora de fim (opcional)"
+                style={{ width: 96, padding: "7px 8px", borderRadius: 8, border: `1.5px solid ${horaFim ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+              {(horaInicio || horaFim) && (
+                <button type="button" onClick={() => { setHoraInicio(""); setHoraFim(""); }} title="Voltar para o dia inteiro"
+                  style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  dia inteiro
+                </button>
+              )}
+            </div>
+            <div style={{ marginTop: 6, fontSize: "0.73rem", color: "#94A3B8", lineHeight: 1.45 }}>
+              A hora é opcional — em branco, vale o dia inteiro. Para o turno que vira a noite,
+              use <strong>18:00</strong> no dia 1 e <strong>02:00</strong> no dia 2.
             </div>
             {customFrom && customTo && customFrom > customTo && (
               <div style={{ marginTop: 6, fontSize: "0.75rem", color: "#B91C1C", fontWeight: 600 }}>

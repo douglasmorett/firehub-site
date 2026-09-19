@@ -5,7 +5,7 @@ import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, toLocalISODate } from "@/lib/timezone";
+import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, toLocalISODate, getInstantUTC } from "@/lib/timezone";
 
 // GET /api/motoboy-report?motoboyId=xxx&from=2026-05-01&to=2026-05-31
 export async function GET(req: Request) {
@@ -33,14 +33,18 @@ export async function GET(req: Request) {
   let fromDate: Date;
   let toDate: Date;
 
+  // `from`/`to` aceitam HORA ("2026-09-01T18:00"). É o que permite fechar o
+  // turno do entregador que entrou às 18h do dia 1 e saiu às 2h do dia 2: por
+  // dia inteiro, esse filtro traria os dois dias completos — o dobro das
+  // entregas dele, e um acerto errado. Sem hora, nada muda: dia inteiro.
   if (from) {
-    fromDate = getStartOfDayUTC(from, tz);
+    fromDate = getInstantUTC(from, tz) ?? getStartOfDayUTC(from, tz);
   } else {
     fromDate = getStartOfMonthUTC(new Date(), tz);
   }
 
   if (to) {
-    toDate = getEndOfDayUTC(to, tz);
+    toDate = getInstantUTC(to, tz) ?? getEndOfDayUTC(to, tz);
   } else {
     toDate = new Date();
   }

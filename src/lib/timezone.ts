@@ -21,6 +21,26 @@ export function getOffsetMs(date: Date, timeZone: string): number {
 }
 
 /**
+ * Um INSTANTE do relógio da loja ("2026-09-01T18:00") em UTC.
+ *
+ * Existe para o turno que atravessa a meia-noite: o entregador que trabalhou
+ * das 18h do dia 1 às 2h do dia 2 é UM turno, e filtrar por dia inteiro traz
+ * o dia 1 todo mais o dia 2 todo — o dobro do que ele fez (pedido do dono,
+ * 19/09/2026).
+ *
+ * Aceita "YYYY-MM-DDTHH:mm" ou "YYYY-MM-DD HH:mm". Sem hora, devolve null:
+ * quem chama decide se é início ou fim de dia.
+ */
+export function getInstantUTC(valor: string, timeZone: string): Date | null {
+  const m = String(valor || "").match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m.map(Number) as unknown as number[];
+  const guess = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
+  const offsetMs = getOffsetMs(guess, timeZone);
+  return new Date(Date.UTC(y, mo - 1, d, h, mi, 0) - offsetMs);
+}
+
+/**
  * Converte uma data (YYYY-MM-DD) para um objeto Date UTC representando 00:00:00 local daquele timezone.
  */
 export function getStartOfDayUTC(dateStr: string, timeZone: string): Date {

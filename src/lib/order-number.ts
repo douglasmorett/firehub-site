@@ -102,14 +102,60 @@ export async function generateDailyOrderNumber(
   return generateDailyOrderNumberTx(prisma, franchiseeId, ref);
 }
 
+/**
+ * QUEM DECIDE QUANDO A CONTAGEM RECOMEÇA É O CAIXA, NÃO O RELÓGIO.
+ *
+ * A numeração era por dia de calendário em São Paulo, e à meia-noite voltava
+ * ao 1. Para a loja que vira a noite isso é no meio do expediente: o Frangoso
+ * estava atendendo e o painel começou a recontar (19/09/2026). O turno dele
+ * não acabou à meia-noite — acaba quando ele fecha o caixa.
+ *
+ * Então, com caixa ABERTO, o contador é do TURNO: continua somando enquanto o
+ * caixa estiver aberto, atravessando a meia-noite quantas vezes precisar, e só
+ * recomeça no próximo caixa. Sem caixa aberto (loja que não usa a ferramenta),
+ * nada muda: continua por dia de calendário, como sempre foi.
+ *
+ * A SEMENTE TEM UMA TRAVA. Um caixa novo não começa cegamente do 1: ele começa
+ * do maior número já usado NO DIA. Sem isso, a loja que fecha o caixa de manhã
+ * e abre outro à noite (é o caso da Hakim: 00:40→06:16 e depois 22:58→06:30)
+ * teria dois pedidos #1 no mesmo dia — e duas comandas com o mesmo número é o
+ * que faz a cozinha entregar trocado. Num caixa que abre antes do primeiro
+ * pedido do dia, que é o normal, o maior do dia é zero e a contagem começa no
+ * 1 do mesmo jeito.
+ */
+export async function chaveDoContador(
+  db: ClientePrisma,
+  franchiseeId: string,
+  ref: Date
+): Promise<{ dateKey: string; desde: Date }> {
+  const diaKey = dateKeySP(ref);
+  const inicioDoDia = new Date(`${diaKey}T00:00:00-03:00`);
+  try {
+    const caixa = await db.cashSession.findFirst({
+      where: { franchiseeId, status: "OPEN" },
+      orderBy: { openedAt: "desc" },
+      select: { id: true, openedAt: true },
+    });
+    if (caixa) {
+      // A semente olha do MENOR dos dois: início do dia ou abertura do caixa.
+      // Se o caixa abriu ontem às 23h, o maior número do turno está lá atrás.
+      const desde = caixa.openedAt < inicioDoDia ? caixa.openedAt : inicioDoDia;
+      return { dateKey: `caixa:${caixa.id}`, desde };
+    }
+  } catch {
+    // Sem a tabela de caixa (ou erro de leitura) a numeração não pode parar:
+    // cai no comportamento de sempre, por dia.
+  }
+  return { dateKey: diaKey, desde: inicioDoDia };
+}
+
 /** Mesma numeração, porém usando o client da transação em andamento. */
 export async function generateDailyOrderNumberTx(
   db: ClientePrisma,
   franchiseeId: string,
   ref: Date = new Date()
 ): Promise<number> {
-  const dateKey = dateKeySP(ref);
-  const startOfDay = new Date(`${dateKey}T00:00:00-03:00`);
+  const { dateKey, desde: startOfDay } = await chaveDoContador(db, franchiseeId, ref);
   const chave = { franchiseeId_dateKey: { franchiseeId, dateKey } };
 
   // 1. Garante que o contador do dia existe, semeado com o maior número já usado.

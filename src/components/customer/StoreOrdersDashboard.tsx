@@ -2900,20 +2900,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // Antes isso valia só para pedido de integração — um pedido do próprio
     // site em preparo às 23:50 sumia do quadro à meia-noite, com a comida
     // ainda na chapa. A regra agora é o ESTADO do pedido, não de onde veio.
+    // PRONTO entra aqui inclusive na RETIRADA. Antes o pronto de balcão era
+    // tratado como fim de linha e sumia na virada do dia — mas o pedido só
+    // acaba quando alguém o entrega, e quem trabalha até as 3h da manhã perdia
+    // de vista o que estava em cima do balcão (decisão do dono, 19/09/2026).
+    // Só FINALIZADO (e cancelado) obedece ao filtro de data.
     const activeStatuses = ["NOVO", "ACEITO", "PREPARANDO", "SAIU_ENTREGA", "PRONTO"];
-    // RETIRADA em PRONTO já é fim de linha para o quadro: o pedido está em cima
-    // do balcão e o card cai na coluna Finalizado. Tratá-lo como "em aberto"
-    // faria ele atravessar a meia-noite e reaparecer no dia seguinte — o que o
-    // dono já pediu para não acontecer com pedido finalizado.
-    const prontoDeRetirada = o.status === "PRONTO" && o.deliveryType !== "DELIVERY";
-    const isInProgress = activeStatuses.includes(o.status) && !prontoDeRetirada;
+    const isInProgress = activeStatuses.includes(o.status);
     const refDate = dataDoPedido(o);
 
     if (isInProgress) {
-      // Trava de 12 h: pedido esquecido em aberto não fica na tela para
-      // sempre, empurrando o quadro do dia para baixo.
-      const dozeHorasAtras = new Date(Date.now() - 12 * 60 * 60 * 1000);
-      if (refDate < dozeHorasAtras && refDate < fromDate) return false;
+      // ── ENQUANTO O CAIXA ESTIVER ABERTO, O TURNO NÃO ACABOU ───────────
+      //
+      // É o caixa que define o turno, não o relógio: a loja que vira a noite
+      // fecha às 6h e é ali que o dia dela termina. Tudo que nasceu depois da
+      // abertura do caixa fica na tela até o fechamento — e o fechamento
+      // finaliza o que estava na rua (ver PUT /api/cash-session), então o
+      // quadro se limpa sozinho, sem ninguém perder pedido de vista.
+      if (cashOpenedAt && refDate >= cashOpenedAt) {
+        // segue para a busca por texto, sem cair no filtro de data
+      } else {
+        // Sem caixa aberto, vale a trava de 12 h: pedido esquecido em aberto
+        // não fica na tela para sempre, empurrando o quadro do dia para baixo.
+        const dozeHorasAtras = new Date(Date.now() - 12 * 60 * 60 * 1000);
+        if (refDate < dozeHorasAtras && refDate < fromDate) return false;
+      }
     } else {
       if (refDate < fromDate || refDate > toDate) return false;
     }
