@@ -35,6 +35,15 @@ igual("ponto no lugar da vírgula", valores("R$ 21.90"), [21.9]);
 igual("milhar com vírgula decimal", valores("total de R$ 1.234,56"), [1234.56]);
 igual("por extenso", valores("são 21,90 reais"), [21.9]);
 igual("vários na mesma frase", valores("Pastel R$ 21,90, refri R$ 8,00 e entrega R$ 5,00"), [5, 8, 21.9]);
+// Achado da revisão adversarial de 19/09/2026: o modelo escreve como gente, e
+// gente escreve "R$ 55,5". Com a regra antiga (só 2 casas eram decimal) isso
+// virava 555 e disparava alarme falso de PREÇO IMPOSSÍVEL num total honesto.
+igual("uma casa decimal só — como gente escreve", valores("fica R$ 55,5 no total"), [55.5]);
+igual("uma casa, valor baixo", valores("a entrega fica R$ 7,5"), [7.5]);
+igual("uma casa, três dígitos antes", valores("R$ 120,5"), [120.5]);
+igual("uma casa por extenso", valores("são 8,5 reais"), [8.5]);
+igual("milhar COM uma casa decimal", valores("R$ 1.234,5"), [1234.5]);
+igual("milhar sem decimal continua milhar", valores("R$ 1.234"), [1234]);
 igual("texto sem preço", valores("chega em uns 40 minutos"), []);
 igual("número solto não é preço", valores("são 2 pastéis, pedido 1234, 30 minutos"), []);
 igual("vazio", valores(""), []);

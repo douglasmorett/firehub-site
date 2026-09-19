@@ -101,11 +101,23 @@ export function extrairPrecosDoTexto(texto: unknown): PrecoDito[] {
 }
 
 /**
- * "1.234,56" → 1234.56 · "21,90" → 21.9 · "21.90" → 21.9 · "1,234.56" → 1234.56
+ * "1.234,56" → 1234.56 · "21,90" → 21.9 · "21.90" → 21.9 · "55,5" → 55.5
  *
  * O ponto é ambíguo em português: em "21.90" separa centavos, em "1.234" separa
- * milhar. A regra que resolve: o ÚLTIMO separador com exatamente 2 dígitos
- * depois dele é o decimal; qualquer outro é milhar.
+ * milhar. A regra que resolve: o ÚLTIMO separador com UM OU DOIS dígitos depois
+ * dele é o decimal; com três, é milhar.
+ *
+ * Por que "um dígito" também conta: a primeira versão disto exigia exatamente
+ * dois, porque foi escrita pensando no cardápio — que é formatado por máquina,
+ * com `toFixed(2)`, e nunca tem uma casa só. Só que do outro lado da régua está
+ * texto livre do modelo, onde "fica R$ 55,5 no total" é como gente escreve no
+ * WhatsApp. Aí "55,5" caía na regra de milhar e virava 555: um total honesto de
+ * R$ 55,50 disparava o 🚨 de PREÇO IMPOSSÍVEL numa loja de teto 500.
+ *
+ * Alarme que mente é pior que alarme nenhum — o primeiro 🚨 falso ensina a
+ * ignorar o próximo, que pode ser de verdade. Achado pela revisão adversarial
+ * de 19/09/2026, que rodou os casos: "R$ 8,5" → 85, "R$ 21,9" → 219,
+ * "R$ 55,5" → 555.
  */
 function paraNumero(bruto: string): number | null {
   // Separador solto na ponta é pontuação do texto, não do número: some antes de
@@ -117,14 +129,16 @@ function paraNumero(bruto: string): number | null {
   const ultimoPonto = s.lastIndexOf(".");
   const corte = Math.max(ultimaVirgula, ultimoPonto);
 
+  const digitosDepois = s.length - corte - 1;
+
   let limpo: string;
   if (corte === -1) {
     limpo = s.replace(/\D/g, "");
-  } else if (s.length - corte - 1 === 2) {
-    // exatamente 2 dígitos depois: é o decimal
+  } else if (digitosDepois === 1 || digitosDepois === 2) {
+    // 1 ou 2 dígitos depois: é o decimal. "55,5" = 55.50, "21,90" = 21.90.
     limpo = s.slice(0, corte).replace(/\D/g, "") + "." + s.slice(corte + 1).replace(/\D/g, "");
   } else {
-    // 1 ou 3+ dígitos depois: separador de milhar, não há decimal
+    // 3 dígitos (milhar) ou nenhum: não há decimal.
     limpo = s.replace(/\D/g, "");
   }
 
