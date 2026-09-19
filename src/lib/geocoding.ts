@@ -1,4 +1,5 @@
 import { distanciaPorRotaKm, medicaoDaLoja } from "@/lib/distancia-por-rota";
+import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 
 // Calcula a distância exata em linha reta (KM) usando a fórmula Haversine
 // Alinhado 100% com os círculos de raio desenhados no mapa Leaflet de configurações da loja
@@ -152,22 +153,18 @@ export async function verifyStoreDeliveryAddress(
   const zones = Array.isArray(deliveryZones) ? deliveryZones : [];
 
   // 1. Obter lat/lng da Loja (puxando as coordenadas exatas configuradas pelo lojista)
-  let storeCenter: { lat: number; lng: number } | null = null;
-  if (storeLatLng) {
-    if (typeof storeLatLng === "object" && typeof (storeLatLng as any).lat === "number" && typeof (storeLatLng as any).lng === "number") {
-      storeCenter = { lat: Number((storeLatLng as any).lat), lng: Number((storeLatLng as any).lng) };
-    } else if (typeof storeLatLng === "string") {
-      try {
-        const parsed = JSON.parse(storeLatLng);
-        if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number") {
-          storeCenter = { lat: Number(parsed.lat), lng: Number(parsed.lng) };
-        }
-      } catch {}
-    }
-  }
+  //
+  // A leitura é a compartilhada (lib/ponto-da-loja): a que existia aqui exigia
+  // `typeof lat === "number"` e devolvia "sem ponto" para o mesmo campo gravado
+  // como texto — e aí a loja caía na geocodificação do endereço mesmo tendo
+  // pino salvo.
+  let storeCenter: { lat: number; lng: number } | null = lerPontoDaLoja(storeLatLng);
 
   if ((!storeCenter || !storeCenter.lat) && storeAddress) {
-    const storeGeo = await geocodeAddress(`${storeAddress}, ${storeCity || "Rio das Ostras"}`);
+    // A cidade entra só se a loja tiver uma. O padrão era "Rio das Ostras":
+    // loja sem cidade cadastrada tinha o PRÓPRIO endereço procurado em Rio das
+    // Ostras, e o raio de entrega passava a ser medido de lá.
+    const storeGeo = await geocodeAddress([storeAddress, storeCity].filter(Boolean).join(", "));
     if (storeGeo) storeCenter = { lat: storeGeo.lat, lng: storeGeo.lng };
   }
 

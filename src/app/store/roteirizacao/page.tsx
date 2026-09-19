@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import RoteirizacaoIndependente from "@/components/customer/RoteirizacaoIndependente";
+import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,27 @@ export default async function RoteirizacaoPage() {
     }
   }
 
+  // ── O MAPA ABRE ONDE A LOJA ESTÁ ──────────────────────────────────────────
+  //
+  // Duas coisas erravam aqui. Primeira: o endereço e o ponto vinham SEMPRE do
+  // usuário logado, então quem tem mais de uma loja e trocava de loja na barra
+  // via os pedidos da loja B no mapa da loja A. Segunda: sem `storeLatLng`
+  // salvo — o caso de 32 das 41 lojas — o mapa caía no padrão de Rio das
+  // Ostras, mesmo com o endereço cadastrado. Agora a loja do mapa é a loja
+  // ativa, e o endereço dela resolve o ponto quando o pino não foi salvo.
+  const idDaLojaNoMapa = franchiseeIds.length === 1 ? franchiseeIds[0] : targetFranchiseeId;
+  const lojaDoMapa =
+    idDaLojaNoMapa === user.id
+      ? user
+      : (await prisma.user
+          .findUnique({
+            where: { id: idDaLojaNoMapa },
+            select: { id: true, storeAddress: true, city: true, slug: true, storeLatLng: true, storeName: true, name: true },
+          })
+          .catch(() => null)) || user;
+
+  const noMapa = await resolverLojaNoMapa(lojaDoMapa);
+
   let orders: any[] = [];
   try {
     orders = await prisma.customerOrder.findMany({
@@ -92,11 +114,11 @@ export default async function RoteirizacaoPage() {
     <RoteirizacaoIndependente
       user={{
         id: user.id,
-        storeAddress: user.storeAddress,
-        city: user.city,
+        storeAddress: noMapa.endereco || lojaDoMapa.storeAddress,
+        city: noMapa.cidade || lojaDoMapa.city,
         slug: user.slug,
-        storeLatLng: user.storeLatLng,
-        storeName: user.storeName || user.name,
+        storeLatLng: noMapa.ponto,
+        storeName: (lojaDoMapa as any).storeName || (lojaDoMapa as any).name || user.storeName || user.name,
       }}
       initialOrders={orders}
     />

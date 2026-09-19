@@ -179,16 +179,25 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     if (leafletMapRef.current) return;
 
     import("leaflet").then((L) => {
-      const defaultPos: [number, number] = latLng ? [latLng.lat, latLng.lng] : [-22.5213, -41.9422];
+      // Sem pino salvo, isto abria em Rio das Ostras — a coordenada que ficou
+      // no código da primeira loja. A loja de São Paulo abria a área de entrega
+      // e via o litoral fluminense. Agora o fallback é o país inteiro (o mapa
+      // não finge saber) e, logo em seguida, o endereço do cadastro traz a
+      // câmera para a cidade certa (ver o efeito "câmera no endereço").
+      const defaultPos: [number, number] = latLng ? [latLng.lat, latLng.lng] : [-14.235, -51.925];
 
-      const map = L.map(mapRef.current!, { zoomControl: false }).setView(defaultPos, latLng ? 13 : 12);
+      const map = L.map(mapRef.current!, { zoomControl: false }).setView(defaultPos, latLng ? 13 : 4);
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap",
         maxZoom: 19,
       }).addTo(map);
 
-      L.control.zoom({ position: "bottomright" }).addTo(map);
+      // O controle nativo do Leaflet não entra aqui: ele fica no canto inferior
+      // direito e o painel de configuração flutua POR CIMA dele (z-index maior,
+      // ver .fh-entrega-painel) — o lojista ficava sem + e sem −, só com a roda
+      // do mouse, que ninguém adivinha. Os botões desta tela são os da coluna
+      // "fh-zoom", na borda esquerda do mapa, onde nada os cobre.
 
       const storeIcon = L.divIcon({
         className: "",
@@ -257,6 +266,34 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       observadorDoTamanho.current = null;
     };
   }, [leafletLoaded]);
+
+  // ── CÂMERA NO ENDEREÇO DA LOJA ────────────────────────────────────────────
+  //
+  // Loja que nunca salvou o pino abria esta tela num mapa que não é o dela.
+  // O endereço está no cadastro desde sempre; o servidor devolve o ponto dele
+  // (e guarda no cache, então isto custa uma consulta, não uma busca).
+  //
+  // Move só a CÂMERA: não cria pino nem marca "localização confirmada". Quem
+  // diz onde a loja fica — e é esse ponto que passa a valer para raio e taxa —
+  // continua sendo o lojista, clicando no mapa ou buscando o endereço.
+  const cameraJaMovida = useRef(false);
+  useEffect(() => {
+    if (!leafletLoaded || latLng || cameraJaMovida.current) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/geocodificar/loja", { cache: "no-store" });
+        if (!r.ok) return;
+        const { ponto } = await r.json();
+        // `vivo` cai quando o lojista busca o endereço enquanto isto volta —
+        // aí quem manda na câmera é a busca dele, não este palpite.
+        if (!vivo || !ponto || !leafletMapRef.current) return;
+        cameraJaMovida.current = true;
+        leafletMapRef.current.map.setView([ponto.lat, ponto.lng], 14);
+      } catch {}
+    })();
+    return () => { vivo = false; };
+  }, [leafletLoaded, latLng]);
 
 
   // Draw circles/polygons when zones, zoneType, latLng, or hoveredZoneIndex change
@@ -657,6 +694,27 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       <div className="fh-entrega-area">
         <div className="fh-entrega-mapa">
           <div ref={mapRef} style={{ width: "100%", height: "100%" }} />
+
+          {/* ── AMPLIAR / DIMINUIR ────────────────────────────────────────
+              Na borda esquerda, longe do painel que flutua à direita. */}
+          <div className="fh-zoom">
+            <button
+              type="button"
+              onClick={() => { try { leafletMapRef.current?.map.zoomIn(); } catch {} }}
+              title="Ampliar o mapa (aproximar)"
+              aria-label="Ampliar o mapa"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => { try { leafletMapRef.current?.map.zoomOut(); } catch {} }}
+              title="Diminuir o mapa (afastar)"
+              aria-label="Diminuir o mapa"
+            >
+              −
+            </button>
+          </div>
 
           {/* Confirm button & address preview overlay */}
           {latLng && !confirmed && (
@@ -1071,6 +1129,21 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           box-shadow: 0 4px 20px rgba(0,0,0,0.08);
         }
         .fh-entrega-mapa { width: 100%; height: min(78vh, 880px); min-height: 580px; }
+        /* Os + e − da tela. Acima do mapa (1000 é a faixa do Leaflet) e fora do
+           caminho do painel, que mora do outro lado. */
+        .fh-zoom {
+          position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+          z-index: 1001; display: flex; flex-direction: column;
+          background: #fff; border: 1.5px solid #CBD5E1; border-radius: 10px;
+          overflow: hidden; box-shadow: 0 4px 14px rgba(15,23,42,0.18);
+        }
+        .fh-zoom button {
+          width: 42px; height: 40px; border: none; background: #fff; color: #0F172A;
+          font-size: 1.35rem; font-weight: 800; line-height: 1; cursor: pointer;
+          font-family: inherit;
+        }
+        .fh-zoom button:first-child { border-bottom: 1px solid #E2E8F0; }
+        .fh-zoom button:hover { background: #F1F5F9; }
         .fh-entrega-painel {
           position: absolute;
           top: 14px; right: 14px; bottom: 14px;

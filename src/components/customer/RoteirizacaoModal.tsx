@@ -23,6 +23,7 @@ import {
   criarGeocodificador,
   parseAddressDetails as parseEnderecoDaEntrega,
 } from "@/lib/geocodificacao";
+import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 
 interface Motoboy {
   id: string;
@@ -205,7 +206,10 @@ export default function RoteirizacaoModal({
   onClose,
   orders = [],
   storeAddress = "",
-  storeCity = "Rio das Ostras",
+  // Vazio, nunca "Rio das Ostras": a cidade entra na busca de endereço e no
+  // texto da rota que vai para o motoboy. Chutar a cidade de outra loja manda
+  // o entregador para outro município — melhor não opinar.
+  storeCity = "",
   storeSlug,
   storeId,
   storeLatLng = null,
@@ -304,13 +308,24 @@ export default function RoteirizacaoModal({
   /** Força o redesenho do mapa para o pino verde sumir na hora certa. */
   const [tiqueDoMapa, setTiqueDoMapa] = useState(0);
 
-  // Default Store Center (Rio das Ostras / Store Coordinates)
-  const defaultCenter = useMemo(() => {
-    if (storeLatLng && storeLatLng.lat && storeLatLng.lng) {
-      return storeLatLng;
-    }
-    return { lat: -22.5262, lng: -41.9461 }; // Default Rio das Ostras
-  }, [storeLatLng]);
+  // ── DE ONDE O MAPA PARTE ────────────────────────────────────────────────
+  //
+  // Era Rio das Ostras fixo quando a loja não tinha `storeLatLng` — e é o caso
+  // da maioria das lojas, porque o campo só é gravado por quem abre Minha Loja
+  // → Área de entrega e salva o pino. Uma pizzaria de São Paulo abria a
+  // roteirização e via o litoral fluminense, com a casinha dela a 400 km.
+  //
+  // Agora quem manda o ponto é o servidor (lib/ponto-da-loja-servidor): pino
+  // salvo, senão o ENDEREÇO do cadastro geocodificado. Aqui só sobrou o caso de
+  // a loja não ter nem endereço — e aí o mapa abre no Brasil e pede o endereço,
+  // em vez de plantar a loja numa cidade que não é a dela.
+  const pontoDaLoja = useMemo(() => lerPontoDaLoja(storeLatLng), [storeLatLng]);
+  const temPontoDaLoja = pontoDaLoja !== null;
+  /** Só para a matemática das rotas não precisar de um `null` em cada conta. */
+  const defaultCenter = useMemo(
+    () => pontoDaLoja || { lat: -14.235, lng: -51.925 }, // centro do Brasil
+    [pontoDaLoja],
+  );
 
   // UF da loja para as buscas (null = sem estado). Ver lib/geocodificacao.ts.
   const estadoDaLoja = useMemo(() => estadoPeloEndereco(storeAddress), [storeAddress]);
@@ -809,6 +824,15 @@ export default function RoteirizacaoModal({
         return;
       }
 
+      // Sem o ponto da loja não existe âncora para a busca do navegador: o raio
+      // de 30 km e o último recurso ("não achei, fica na loja") saem dela. Pino
+      // nenhum é melhor que pino no meio do Brasil.
+      if (!temPontoDaLoja) {
+        if (hasNewCache) { try { localStorage.setItem("firehub_geo_cache_v3", JSON.stringify(updatedCache)); } catch {} }
+        if (isMounted) setGeocodingLoading(false);
+        return;
+      }
+
       const geo = criarGeocodificador({ storeCity, estado: estadoDaLoja, centroDaLoja: defaultCenter });
 
       // A política de uso do Nominatim é 1 requisição por segundo — e não é
@@ -851,7 +875,7 @@ export default function RoteirizacaoModal({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, deliveryOrders, storeCity, defaultCenter]);
+  }, [isOpen, deliveryOrders, storeCity, defaultCenter, temPontoDaLoja]);
 
 
   // Algoritmo TSP Nearest-Neighbor para Ordenação Inteligente do Trajeto a partir da Loja
@@ -1026,13 +1050,19 @@ export default function RoteirizacaoModal({
     return { displayCoordinatesMap: dispMap, clusterCentersMap: centersMap, clusterFanMap: fanMap };
   }, [deliveryOrders, geocodedMap]);
 
+  // Ampliar e diminuir pelos botões. A roda do mouse continua funcionando —
+  // mas ela não é óbvia, e em notebook com touchpad é briga. Pedido do lojista
+  // em 19/09/2026: "coloca um + e um - para ampliar e diminuir o mapa".
+  const aproximarMapa = () => { try { leafletMapRef.current?.zoomIn(); } catch {} };
+  const afastarMapa = () => { try { leafletMapRef.current?.zoomOut(); } catch {} };
+
   // Helper para centralizar manualmente a visão do mapa sob demanda do usuário
   const handleFitAllBounds = () => {
     if (!leafletMapRef.current) return;
     const L = (window as any).L;
     if (!L) return;
 
-    const points: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
+    const points: [number, number][] = temPontoDaLoja ? [[defaultCenter.lat, defaultCenter.lng]] : [];
     deliveryOrders.forEach((o) => {
       const coords = displayCoordinatesMap[o.id] || geocodedMap[o.id];
       if (coords) points.push([coords.lat, coords.lng]);
@@ -1053,8 +1083,14 @@ export default function RoteirizacaoModal({
     if (!leafletMapRef.current) {
       const map = L.map(mapRef.current, {
         center: [defaultCenter.lat, defaultCenter.lng],
-        zoom: 13,
-        zoomControl: true,
+        // Sem o ponto da loja, aproximar em 13 seria apontar para um lugar
+        // qualquer com cara de certeza. Abre no país e o lojista se situa.
+        zoom: temPontoDaLoja ? 13 : 4,
+        // Os + e − são NOSSOS (canto direito, do tamanho dos outros botões).
+        // O controle nativo do Leaflet nasce pequeno no canto esquerdo e ficava
+        // escondido atrás do painel de rotas — o lojista não achava como
+        // aproximar e ficava no scroll do mouse.
+        zoomControl: false,
         preferCanvas: true,
         updateWhenZooming: false,
         updateWhenIdle: true,
@@ -1092,7 +1128,7 @@ export default function RoteirizacaoModal({
         leafletMapRef.current = null;
       }
     };
-  }, [leafletLoaded, defaultCenter]);
+  }, [leafletLoaded, defaultCenter, temPontoDaLoja]);
 
   // 2. Reajusta dimensões do container do mapa instantaneamente ao abrir o modal
   useEffect(() => {
@@ -1122,27 +1158,33 @@ export default function RoteirizacaoModal({
     polylinesRef.current = [];
 
     // 1. Render Store Marker (Blue House Icon)
-    const storeHtml = `
-      <div style="
-        background: #2563EB; color: #fff; width: 38px; height: 38px; borderRadius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        box-shadow: 0 4px 12px rgba(37,99,235,0.5); border: 3px solid #fff;
-        font-size: 1.2rem; cursor: pointer;
-      " title="Sua Loja - ${storeAddress || storeCity}">
-        🏠
-      </div>
-    `;
-    const storeIcon = L.divIcon({
-      html: storeHtml,
-      className: "custom-store-pin",
-      iconSize: [38, 38],
-      iconAnchor: [19, 19],
-    });
+    //
+    // Só com ponto de verdade. A casinha num lugar que ninguém marcou é pior
+    // que casinha nenhuma: o lojista lê como "é aqui que o FireHub acha que eu
+    // estou" e sai medindo distância a partir dali.
+    if (temPontoDaLoja) {
+      const storeHtml = `
+        <div style="
+          background: #2563EB; color: #fff; width: 38px; height: 38px; borderRadius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 4px 12px rgba(37,99,235,0.5); border: 3px solid #fff;
+          font-size: 1.2rem; cursor: pointer;
+        " title="Sua Loja - ${storeAddress || storeCity}">
+          🏠
+        </div>
+      `;
+      const storeIcon = L.divIcon({
+        html: storeHtml,
+        className: "custom-store-pin",
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
+      });
 
-    const storeMarker = L.marker([defaultCenter.lat, defaultCenter.lng], { icon: storeIcon })
-      .addTo(map)
-      .bindPopup(`<b>🏠 ${storeAddress || "Sua Loja"}</b><br/>Ponto Inicial de Entrega`);
-    markersRef.current.set("STORE", storeMarker);
+      const storeMarker = L.marker([defaultCenter.lat, defaultCenter.lng], { icon: storeIcon })
+        .addTo(map)
+        .bindPopup(`<b>🏠 ${storeAddress || "Sua Loja"}</b><br/>Ponto Inicial de Entrega`);
+      markersRef.current.set("STORE", storeMarker);
+    }
 
     // 2. Render Orders Markers com Posição Anti-Sobreposição (Lado a Lado / Leque Circular)
     deliveryOrders.forEach(order => {
@@ -1387,7 +1429,8 @@ export default function RoteirizacaoModal({
 
     // 4. Draw Polylines for Active Selection Sequence
     if (selectedOrderIds.length > 0) {
-      const routePoints: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
+      // A linha da rota começa na loja — quando se sabe onde ela fica.
+      const routePoints: [number, number][] = temPontoDaLoja ? [[defaultCenter.lat, defaultCenter.lng]] : [];
 
       selectedOrderIds.forEach(id => {
         const coords = displayCoordinatesMap[id] || geocodedMap[id];
@@ -1411,7 +1454,7 @@ export default function RoteirizacaoModal({
     // 5. Draw Polylines for Existing Created Routes
     if (activeTab === "ROTAS") {
       createdRoutes.forEach(route => {
-        const points: [number, number][] = [[defaultCenter.lat, defaultCenter.lng]];
+        const points: [number, number][] = temPontoDaLoja ? [[defaultCenter.lat, defaultCenter.lng]] : [];
         route.orders.forEach(ro => {
           const coords = displayCoordinatesMap[ro.id] || geocodedMap[ro.id];
           if (coords) points.push([coords.lat, coords.lng]);
@@ -1427,7 +1470,7 @@ export default function RoteirizacaoModal({
         }
       });
     }
-  }, [leafletLoaded, defaultCenter, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa]);
+  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa]);
 
   // O pino verde do recém-entregue precisa SUMIR sozinho ao completar os 10 s.
   // Sem um tique, ele só sairia no próximo evento que redesenhasse o mapa — e
@@ -1663,8 +1706,13 @@ export default function RoteirizacaoModal({
         .replace(/(-?\s*Comp(?:lemento)?:.*)/gi, "")
         .replace(/(-?\s*Ref(?:erencia)?:.*)/gi, "")
         .trim();
-      const cityStr = storeCity || "Rio das Ostras";
-      const fullAddr = cleanAddr.toLowerCase().includes(cityStr.toLowerCase()) ? cleanAddr : `${cleanAddr}, ${cityStr}`;
+      // A cidade da LOJA, e só se ela estiver cadastrada. Era "Rio das Ostras"
+      // por padrão: numa loja sem cidade no cadastro, todo endereço da rota
+      // saía com ", Rio das Ostras" colado no fim — e o Google Maps do motoboy
+      // abria a 400 km do bairro certo.
+      const cityStr = (storeCity || "").trim();
+      const fullAddr =
+        !cityStr || cleanAddr.toLowerCase().includes(cityStr.toLowerCase()) ? cleanAddr : `${cleanAddr}, ${cityStr}`;
       mapsStops.push(encodeURIComponent(fullAddr));
     });
 
@@ -2191,44 +2239,110 @@ export default function RoteirizacaoModal({
             {/* FLOATING MAP CONTROLS (TOP RIGHT) */}
             <div style={{
               position: "absolute", top: "16px", right: "16px", zIndex: 999,
-              display: "flex", gap: "8px"
+              display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px"
             }}>
-              <button
-                type="button"
-                onClick={handleFitAllBounds}
-                style={{
-                  background: "#FFFFFF", color: "#0F172A", border: "1.5px solid #CBD5E1",
-                  borderRadius: "8px", padding: "8px 12px", fontSize: "0.82rem", fontWeight: 800,
-                  cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                  display: "flex", alignItems: "center", gap: "6px"
-                }}
-                title="Centralizar visão em todos os pinos de entrega"
-              >
-                <Navigation size={15} style={{ transform: "rotate(45deg)", color: "#2563EB" }} />
-                Centralizar Visão
-              </button>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  type="button"
+                  onClick={handleFitAllBounds}
+                  style={{
+                    background: "#FFFFFF", color: "#0F172A", border: "1.5px solid #CBD5E1",
+                    borderRadius: "8px", padding: "8px 12px", fontSize: "0.82rem", fontWeight: 800,
+                    cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                    display: "flex", alignItems: "center", gap: "6px"
+                  }}
+                  title="Centralizar visão em todos os pinos de entrega"
+                >
+                  <Navigation size={15} style={{ transform: "rotate(45deg)", color: "#2563EB" }} />
+                  Centralizar Visão
+                </button>
 
-              {/* Filtro de motoboys — nasce MARCADO. Com muitos entregadores o
-                  mapa fica poluído na hora de montar rota, então quem quiser
-                  ver só os pinos de entrega desmarca aqui. */}
-              <label
-                title="Mostrar ou esconder os entregadores no mapa"
-                style={{
-                  background: "#FFFFFF", color: "#0F172A", border: "1.5px solid #CBD5E1",
-                  borderRadius: "8px", padding: "8px 12px", fontSize: "0.82rem", fontWeight: 800,
-                  cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                  display: "flex", alignItems: "center", gap: "6px", userSelect: "none",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={mostrarMotoboys}
-                  onChange={(e) => setMostrarMotoboys(e.target.checked)}
-                  style={{ width: 15, height: 15, accentColor: "#2563EB", cursor: "pointer" }}
-                />
-                ⛑️ Motoboys
-              </label>
+                {/* Filtro de motoboys — nasce MARCADO. Com muitos entregadores o
+                    mapa fica poluído na hora de montar rota, então quem quiser
+                    ver só os pinos de entrega desmarca aqui. */}
+                <label
+                  title="Mostrar ou esconder os entregadores no mapa"
+                  style={{
+                    background: "#FFFFFF", color: "#0F172A", border: "1.5px solid #CBD5E1",
+                    borderRadius: "8px", padding: "8px 12px", fontSize: "0.82rem", fontWeight: 800,
+                    cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                    display: "flex", alignItems: "center", gap: "6px", userSelect: "none",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={mostrarMotoboys}
+                    onChange={(e) => setMostrarMotoboys(e.target.checked)}
+                    style={{ width: 15, height: 15, accentColor: "#2563EB", cursor: "pointer" }}
+                  />
+                  ⛑️ Motoboys
+                </label>
+              </div>
+
+              {/* ── AMPLIAR / DIMINUIR ──────────────────────────────────────
+                  O controle nativo do Leaflet nasce miúdo no canto esquerdo e
+                  some atrás do painel de rotas. Estes ficam do tamanho dos
+                  outros botões, no mesmo canto onde a loja já olha. */}
+              <div style={{
+                display: "flex", flexDirection: "column", background: "#FFFFFF",
+                border: "1.5px solid #CBD5E1", borderRadius: "10px", overflow: "hidden",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+              }}>
+                <button
+                  type="button"
+                  onClick={aproximarMapa}
+                  title="Ampliar o mapa (aproximar)"
+                  aria-label="Ampliar o mapa"
+                  style={{
+                    width: "42px", height: "40px", border: "none", borderBottom: "1px solid #E2E8F0",
+                    background: "#FFFFFF", color: "#0F172A", fontSize: "1.35rem", fontWeight: 800,
+                    lineHeight: 1, cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  onClick={afastarMapa}
+                  title="Diminuir o mapa (afastar)"
+                  aria-label="Diminuir o mapa"
+                  style={{
+                    width: "42px", height: "40px", border: "none",
+                    background: "#FFFFFF", color: "#0F172A", fontSize: "1.35rem", fontWeight: 800,
+                    lineHeight: 1, cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >
+                  −
+                </button>
+              </div>
             </div>
+
+            {/* ── A LOJA NÃO TEM ENDEREÇO NO CADASTRO ─────────────────────
+                O mapa só cai aqui quando não há NADA de onde tirar o ponto:
+                nem pino salvo, nem endereço. Antes disso ele abria em Rio das
+                Ostras, calado, e a loja achava que o mapa é assim mesmo. */}
+            {!temPontoDaLoja && (
+              <div style={{
+                position: "absolute", top: "16px", left: "16px", zIndex: 999, maxWidth: "340px",
+                background: "#FFFBEB", border: "1.5px solid #F59E0B", borderRadius: "10px",
+                padding: "10px 12px", boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
+                fontSize: "0.8rem", color: "#92400E", fontWeight: 600, lineHeight: 1.45,
+              }}>
+                <strong style={{ display: "block", fontWeight: 800, marginBottom: "3px" }}>
+                  📍 Falta dizer onde fica sua loja
+                </strong>
+                O mapa não tem de onde partir e as entregas não aparecem. Abra{" "}
+                <a
+                  href="/store/minha-loja"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#B45309", fontWeight: 800, textDecoration: "underline" }}
+                >
+                  Minha loja → Área de entrega
+                </a>
+                , arraste o pino até a sua porta e salve.
+              </div>
+            )}
 
             {/* ─── LEGENDA DAS CORES, QUE TAMBÉM FILTRA ────────────────────
                 O significado das cores foi ditado pelo lojista e até agora só

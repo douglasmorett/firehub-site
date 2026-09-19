@@ -3248,11 +3248,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       {/* DELIVERY INFO & ROUTE MAP MODAL */}
       {deliveryInfoModalOrder && (() => {
         const order = deliveryInfoModalOrder;
-        const storeOriginAddress = user?.storeAddress || user?.address || (user?.city ? `São Francisco, ${user.city}` : "Sua Loja");
+        // Sem endereço cadastrado, a origem é a CIDADE da loja — nada mais.
+        // Aqui havia "São Francisco, <cidade>" como padrão: São Francisco é um
+        // bairro de Rio das Ostras que virou origem de rota para qualquer loja
+        // sem endereço, em qualquer estado. E o destino ganhava ", Rio das
+        // Ostras" colado quando a loja não tinha cidade — o mesmo vazamento do
+        // texto de rota do motoboy.
+        const storeOriginAddress = user?.storeAddress || user?.address || user?.city || "";
         const rawCustomerAddress = cleanAddress(order.customerAddress) || "Endereço do Cliente";
 
         const originFull = cleanAddressForMap(storeOriginAddress, user?.city);
-        const destFull = cleanAddressForMap(rawCustomerAddress, user?.city || "Rio das Ostras");
+        const destFull = cleanAddressForMap(rawCustomerAddress, user?.city);
 
         // Google Maps Directions Iframe URL (saddr = start/origem, daddr = destination/destino) -> gera a linha azul da rota e tempo estimado
         const mapEmbedUrl = `https://maps.google.com/maps?saddr=${encodeURIComponent(originFull)}&daddr=${encodeURIComponent(destFull)}&output=embed`;

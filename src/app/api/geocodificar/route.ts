@@ -14,6 +14,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { geocodificarNoServidor } from "@/lib/geocodificacao-servidor";
+import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -58,18 +59,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Sem a coordenada da loja não há âncora: o raio de 30 km e o viés da busca
-  // dependem dela. Melhor recusar do que devolver pino aleatório.
-  const lat = Number(centro?.lat);
-  const lng = Number(centro?.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  // dependem dela. Antes isto recusava na hora — e, como 32 das 41 lojas nunca
+  // salvaram o pino em Minha Loja, o mapa delas abria SEM PINO NENHUM, com um
+  // aviso que o lojista lia como "o mapa está quebrado". O endereço da loja
+  // está no cadastro e resolve a âncora sozinho (ver lib/ponto-da-loja-servidor).
+  const noMapa = await resolverLojaNoMapa({ id: usuario.ownerId || usuario.id, storeLatLng: centro, storeAddress: endereco, city: cidade });
+  if (!noMapa.ponto) {
     return NextResponse.json(
-      { error: "A loja está sem coordenada no cadastro. Salve o endereço em Minha Loja para o mapa funcionar." },
+      { error: "A loja está sem endereço no cadastro. Preencha o endereço em Minha Loja para o mapa funcionar." },
       { status: 409 },
     );
   }
 
   try {
-    const resultados = await geocodificarNoServidor(lote, { cidade, endereco, centro: { lat, lng } });
+    const resultados = await geocodificarNoServidor(lote, { cidade, endereco, centro: noMapa.ponto });
     const doCache = resultados.filter((r) => r.doCache).length;
     console.log(`[Geocodificação] ${resultados.length} endereço(s) para ${cidade}: ${doCache} do cache, ${resultados.length - doCache} novos`);
     return NextResponse.json({ resultados });

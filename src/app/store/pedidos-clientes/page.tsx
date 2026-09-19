@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import StoreOrdersDashboard from "@/components/customer/StoreOrdersDashboard";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
+import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 
 export const dynamic = "force-dynamic";
@@ -162,9 +163,34 @@ export default async function FranchiseeCustomerOrdersPage() {
     orders = [];
   }
 
+  // ── O MAPA DA ROTEIRIZAÇÃO ABRE ONDE A LOJA ESTÁ ─────────────────────────
+  //
+  // O modal de roteirização recebe daqui o ponto da loja. Ele vinha do usuário
+  // logado e, sem `storeLatLng` salvo, virava Rio das Ostras — o padrão antigo
+  // do código — mesmo com o endereço cadastrado. Ver lib/ponto-da-loja-servidor.
+  const idDaLojaNoMapa = franchiseeIds.length === 1 ? franchiseeIds[0] : targetFranchiseeId;
+  const lojaDoMapa =
+    idDaLojaNoMapa === user.id
+      ? user
+      : (await prisma.user
+          .findUnique({
+            where: { id: idDaLojaNoMapa },
+            select: { id: true, storeAddress: true, city: true, storeLatLng: true },
+          })
+          .catch(() => null)) || user;
+  // Prazo curto: esta é a tela onde a loja trabalha, e ela não pode esperar um
+  // geocodificador de fora. Se não der tempo na primeira vez, o resultado cai
+  // no cache e a próxima abertura (ou a aba /store/roteirizacao) já tem o ponto.
+  const noMapa = await resolverLojaNoMapa(lojaDoMapa, { prazoMs: 1200 });
+
   return (
     <StoreOrdersDashboard
-      user={user}
+      user={{
+        ...user,
+        storeAddress: noMapa.endereco || user.storeAddress,
+        city: noMapa.cidade || user.city,
+        storeLatLng: noMapa.ponto,
+      }}
       orders={orders}
       // De qual MARCA é cada pedido. Sem isto o selo da loja só saía para o
       // iFood (que grava o nome na linha do pedido) e o do 99Food vinha sem

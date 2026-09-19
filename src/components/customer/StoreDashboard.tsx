@@ -10,7 +10,8 @@ import { nomeDoItem } from "@/lib/nome-do-item";
 type Order = {
   id: string; totalAmount: number; status: string; deliveryType: string;
   paymentMethod?: string; customerName: string; customerPhone?: string;
-  customerAddress?: string; ifoodReference?: string; openDeliveryReference?: string;
+  customerAddress?: string; customerLatLng?: unknown;
+  ifoodReference?: string; openDeliveryReference?: string;
   source?: string; notes?: string;
   createdAt: string; items?: any[]; storeName?: string; storeSlug?: string;
 };
@@ -56,7 +57,12 @@ const STATUS_LABELS: Record<string, { label: string; emoji: string; color: strin
 
 type DateFilter = "hoje" | "ontem" | "semana" | "mes" | "custom";
 
-export default function StoreDashboard({ orders: allOrders, paymentFees = {}, completedOnboardingSteps = [], isAdmin = false, storeList = [], selectedStoreId = "todas" }: { orders: Order[]; paymentFees?: Record<string, any>; completedOnboardingSteps?: string[]; isAdmin?: boolean; storeList?: StoreOption[]; selectedStoreId?: string; }) {
+export default function StoreDashboard({ orders: allOrders, paymentFees = {}, completedOnboardingSteps = [], isAdmin = false, storeList = [], selectedStoreId = "todas", pontoDaLoja = null, cidadeDaLoja = "" }: { orders: Order[]; paymentFees?: Record<string, any>; completedOnboardingSteps?: string[]; isAdmin?: boolean; storeList?: StoreOption[]; selectedStoreId?: string;
+  /** Onde fica a loja, para o mapa abrir no lugar certo e ter âncora para
+   *  localizar os endereços das entregas. Ver lib/ponto-da-loja-servidor. */
+  pontoDaLoja?: { lat: number; lng: number } | null;
+  cidadeDaLoja?: string;
+}) {
   const router = useRouter();
   const [dateFilter, setDateFilter] = useState<DateFilter>("hoje");
   const [customStart, setCustomStart] = useState("");
@@ -380,6 +386,8 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
             ? "Este Mês"
             : "Período Personalizado"
         }
+        pontoDaLoja={pontoDaLoja}
+        cidadeDaLoja={cidadeDaLoja}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "1rem", marginBottom: "1.25rem" }}>

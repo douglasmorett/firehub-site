@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import StoreDashboard from "@/components/customer/StoreDashboard";
+import { lojaNoMapaPorId } from "@/lib/ponto-da-loja-servidor";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,9 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         customerName: o.customerName,
         customerPhone: o.customerPhone,
         customerAddress: o.customerAddress || undefined,
+        // O ponto que o parceiro mandou com o pedido: o mapa de calor usa
+        // direto, sem gastar uma busca de endereço. Ver StoreDashboardMap.
+        customerLatLng: o.customerLatLng || undefined,
         ifoodReference: o.ifoodReference || undefined,
         openDeliveryReference: o.openDeliveryReference || undefined,
         source: o.source || undefined,
@@ -88,6 +92,11 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         ...franchisees.map(f => ({ id: f.id, name: f.name || f.slug || f.id, slug: f.slug || "" }))
       ];
 
+      // Com uma loja escolhida, o mapa abre nela. Em "todas as lojas" não
+      // existe um ponto só — o mapa se ajusta aos pedidos que já têm
+      // coordenada e não sai procurando endereço sem âncora.
+      const noMapa = selectedId !== "todas" ? await lojaNoMapaPorId(selectedId) : null;
+
       return (
         <StoreDashboard
           orders={serialized}
@@ -96,6 +105,8 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
           isAdmin={true}
           storeList={storeList}
           selectedStoreId={selectedId}
+          pontoDaLoja={noMapa?.ponto || null}
+          cidadeDaLoja={noMapa?.cidade || ""}
         />
       );
     } catch (err: any) {
@@ -171,6 +182,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
       customerName: o.customerName,
       customerPhone: o.customerPhone,
       customerAddress: o.customerAddress || undefined,
+      customerLatLng: o.customerLatLng || undefined,
       ifoodReference: o.ifoodReference || undefined,
       openDeliveryReference: o.openDeliveryReference || undefined,
       source: o.source || undefined,
@@ -196,12 +208,19 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
       })
     }));
 
+    // Onde fica a loja: pino salvo ou, quando ele nunca foi salvo, o endereço
+    // do cadastro. É daqui que o mapa de calor parte e é esta a âncora que
+    // permite localizar os endereços das entregas.
+    const noMapa = await lojaNoMapaPorId(targetFranchiseeId);
+
     return (
       <>
         <StoreDashboard
           orders={serialized}
           paymentFees={(user.paymentFees as any) || {}}
           completedOnboardingSteps={completedSteps}
+          pontoDaLoja={noMapa.ponto}
+          cidadeDaLoja={noMapa.cidade}
         />
       </>
     );

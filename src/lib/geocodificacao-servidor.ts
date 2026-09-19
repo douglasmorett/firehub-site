@@ -25,8 +25,10 @@ import {
   cleanAddressForGeocoding,
   estadoPeloEndereco,
   dicionarioDeBairro,
+  isPointInSea,
   type Ponto,
 } from "@/lib/geocodificacao";
+import { geocodeAddress, geocodeStreetStructured, extrairLogradouro } from "@/lib/geocoding";
 
 export type PedidoDeGeocodificacao = {
   /** Id do pedido, só para devolver o resultado casado. */
@@ -202,6 +204,104 @@ export async function geocodificarNoServidor(
   }
 
   return saida;
+}
+
+/**
+ * Onde fica a LOJA quando ela nunca marcou o ponto no mapa.
+ *
+ * Medido no banco em 19/09/2026: 32 das 41 lojas estão sem `storeLatLng`. Aquele
+ * campo só é escrito quando o lojista abre Minha Loja → Área de entrega e salva
+ * o pino — mas o ENDEREÇO dela está no cadastro desde o primeiro dia, e é ele
+ * que o mapa precisa para abrir no lugar certo. Sem isso a roteirização abria
+ * em Rio das Ostras (o padrão que ficou no código) para uma pizzaria de São
+ * Paulo: a casinha da loja fincada a 400 km do fogão e, pior, o dicionário de
+ * bairros de Rio das Ostras passando a valer para os pedidos dela.
+ *
+ * O endereço do cadastro vira coordenada UMA vez e fica no mesmo cache de
+ * endereços dos pedidos (GeocodeCache) — a segunda abertura não vai à rede.
+ *
+ * Isto NÃO grava em `storeLatLng`: aquele campo decide raio e taxa de entrega
+ * (lib/area-de-entrega.ts) e só o lojista, arrastando o pino, pode dizer que
+ * ele está certo. Aqui é só de onde a câmera do mapa parte.
+ */
+let ultimaChamadaNominatim = 0;
+async function ritmoDoNominatim() {
+  const espera = ultimaChamadaNominatim + 1100 - Date.now();
+  if (espera > 0) await new Promise((r) => setTimeout(r, espera));
+  ultimaChamadaNominatim = Date.now();
+}
+
+export async function pontoDeEndereco(
+  endereco: string,
+  cidade: string,
+): Promise<{ lat: number; lng: number; origem: string } | null> {
+  const texto = String(endereco || "").trim();
+  const cid = String(cidade || "").trim();
+  if (!texto && !cid) return null;
+
+  await garantirTabela().catch(() => undefined);
+  const chave = chaveDeCache(texto, cid);
+
+  try {
+    const linhas = await prisma.$queryRawUnsafe<{ lat: number; lng: number; origem: string | null }[]>(
+      `SELECT "lat", "lng", "origem" FROM "GeocodeCache" WHERE "chave" = $1 LIMIT 1`,
+      chave,
+    );
+    if (linhas[0]) {
+      prisma
+        .$executeRawUnsafe(`UPDATE "GeocodeCache" SET "usos" = "usos" + 1, "ultimoUso" = NOW() WHERE "chave" = $1`, chave)
+        .catch(() => undefined);
+      return { lat: linhas[0].lat, lng: linhas[0].lng, origem: linhas[0].origem || "cache" };
+    }
+  } catch (e: any) {
+    console.warn("[Geocodificação] leitura do cache da loja falhou:", e?.message);
+  }
+
+  const estado = estadoPeloEndereco(texto);
+  const sufixo = [cid, estado, "Brasil"].filter(Boolean).join(", ");
+
+  const achado = await naFila(async () => {
+    // 1. Busca estruturada (rua + cidade): é a que acha endereço de loja onde o
+    //    texto solto falha. Ver o comentário de geocodeStreetStructured.
+    const rua = extrairLogradouro(texto);
+    if (rua && cid) {
+      await ritmoDoNominatim();
+      const trechos = await geocodeStreetStructured(rua, cid, null);
+      const bom = trechos.find((t) => !isPointInSea(t.lat, t.lng));
+      if (bom) return { lat: bom.lat, lng: bom.lng, origem: "loja: rua estruturada" };
+    }
+
+    // 2. Endereço inteiro em texto livre.
+    if (texto) {
+      await ritmoDoNominatim();
+      const r = await geocodeAddress(sufixo ? `${texto}, ${sufixo}` : texto, null);
+      if (r && !isPointInSea(r.lat, r.lng)) return { lat: r.lat, lng: r.lng, origem: "loja: endereço" };
+    }
+
+    // 3. Só a cidade. Pior que o endereço e melhor que abrir em outro estado:
+    //    o lojista vê o próprio bairro na tela e entende onde arrastar o pino.
+    if (cid) {
+      await ritmoDoNominatim();
+      const r = await geocodeAddress([cid, estado, "Brasil"].filter(Boolean).join(", "), null);
+      if (r && !isPointInSea(r.lat, r.lng)) return { lat: r.lat, lng: r.lng, origem: "loja: cidade" };
+    }
+    return null;
+  }).catch((e: any) => {
+    console.warn(`[Geocodificação] ponto da loja "${texto.slice(0, 50)}" falhou: ${e?.message}`);
+    return null;
+  });
+
+  if (!achado) return null;
+
+  await gravarNoCache({
+    chave,
+    lat: achado.lat,
+    lng: achado.lng,
+    origem: achado.origem,
+    bairro: "",
+    cidade: cid,
+  });
+  return achado;
 }
 
 /** Uma linha do cache. Falhar aqui nunca derruba a geocodificação em si. */
