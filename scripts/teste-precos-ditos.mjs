@@ -40,15 +40,23 @@ igual("número solto não é preço", valores("são 2 pastéis, pedido 1234, 30 
 igual("vazio", valores(""), []);
 igual("nulo não explode", valores(null), []);
 
-console.log("\n2) O pastel de R$ 131,40");
-const CARDAPIO_PASTEL = [21.9, 18.9, 24.9, 8.0, 12.5, 5.0];
+console.log("\n2) O pastel de R$ 131,40 — COM A RÉGUA DE PRODUÇÃO, sem teto forçado");
+// A primeira versão deste teste passava `tetoManual: 100`, um valor que produção
+// nunca usa — e com o teto real (piso de R$ 500) o pastel NÃO era marcado. A
+// revisão adversarial de 19/09/2026 derrubou isso. Agora o teste usa a régua de
+// verdade e afirma em que balde o caso cai.
+const CARDAPIO_PASTEL = [21.9, 18.9, 24.9, 8.0, 12.5, 5.0]; // maior = 24,90
 const pastel = conferirPrecosDitos({
   texto: "Fica assim: 1 Pastel de Carne com todos os adicionais dá R$ 131,40 😊",
   precosDoCardapio: CARDAPIO_PASTEL,
-  tetoManual: 100,
 });
-conferir("R$ 131,40 é sinalizado como impossível", pastel.impossiveis.includes(131.4), JSON.stringify(pastel));
+conferir("a régua sai do cardápio, sem piso inventado (24,90 × 3 = 74,70)", pastel.tetoDeItemUnico === 74.7, `obtido ${pastel.tetoDeItemUnico}`);
+conferir("R$ 131,40 é sinalizado como SUSPEITO", pastel.suspeitos.includes(131.4), JSON.stringify(pastel));
+conferir("e NÃO fica escondido no balde de ruído", !pastel.desconhecidos.includes(131.4));
 conferir("e não é confundido com preço conhecido", !pastel.conhecidos.includes(131.4));
+// Honestidade: 131,40 não é "impossível" — um pedido de 6 pastéis dá isso. Quem
+// pega o caso com certeza é compararTotalDitoComGravado, na seção 7.
+conferir("não é marcado como impossível (seria exagero: 6 pastéis dão isso)", !pastel.impossiveis.includes(131.4));
 
 console.log("\n3) Preço que ESTÁ no cardápio passa limpo");
 const ok1 = conferirPrecosDitos({ texto: "O pastel de carne é R$ 21,90", precosDoCardapio: CARDAPIO_PASTEL });
@@ -65,20 +73,25 @@ igual("a soma cai em desconhecido, não em impossível", soma.impossiveis, []);
 conferir("e o total 48,80 aparece como desconhecido (para medir, não para gritar)", soma.desconhecidos.includes(48.8));
 conferir("os preços de tabela continuam conhecidos", soma.conhecidos.includes(21.9) && soma.conhecidos.includes(5));
 
-console.log("\n5) O teto é largo de propósito: pedido grande de verdade não alarma");
+console.log("\n5) A régua acompanha o cardápio da loja, sem número mágico");
 const festa = conferirPrecosDitos({
   texto: "Fechando o pedido da festa: R$ 438,00",
-  precosDoCardapio: CARDAPIO_PASTEL, // maior = 24,90 → teto = max(500, 498) = 500
+  precosDoCardapio: CARDAPIO_PASTEL, // maior 24,90 → item único 74,70 · absurdo 498
 });
-igual("R$ 438 de pedido de festa não é impossível", festa.impossiveis, []);
-conferir("teto calculado tem piso de 500", festa.teto >= 500, `teto ${festa.teto}`);
+igual("R$ 438 de pedido de festa NÃO é impossível", festa.impossiveis, []);
+conferir("mas entra em suspeito, que é só medida", festa.suspeitos.includes(438));
+conferir("teto de absurdo = 24,90 × 20", Math.round(festa.teto * 100) / 100 === 498, `teto ${festa.teto}`);
 const caro = conferirPrecosDitos({ texto: "R$ 900,00", precosDoCardapio: [100] });
-conferir("com cardápio caro o teto sobe junto (100 × 20 = 2000)", caro.impossiveis.length === 0, `teto ${caro.teto}`);
+conferir("cardápio caro sobe a régua junto (100 × 20 = 2000)", caro.impossiveis.length === 0, `teto ${caro.teto}`);
+const barato = conferirPrecosDitos({ texto: "R$ 300,00", precosDoCardapio: [8] });
+conferir("cardápio barato BAIXA a régua junto: R$ 300 numa loja de R$ 8 é impossível", barato.impossiveis.includes(300), `teto ${barato.teto}`);
 
-console.log("\n6) Cardápio vazio não derruba");
+console.log("\n6) Cardápio vazio não derruba e não inventa alarme");
 const semCardapio = conferirPrecosDitos({ texto: "R$ 21,90", precosDoCardapio: [] });
 conferir("sem cardápio nada é conhecido", semCardapio.conhecidos.length === 0);
-conferir("e nada é impossível abaixo do piso", semCardapio.impossiveis.length === 0);
+conferir("sem régua, nada é impossível (não há com o que comparar)", semCardapio.impossiveis.length === 0);
+conferir("nem suspeito", semCardapio.suspeitos.length === 0);
+conferir("o valor ainda é medido", semCardapio.desconhecidos.includes(21.9));
 
 console.log("\n7) Total dito x total gravado");
 const g = (a, b) => compararTotalDitoComGravado({ ditoPelaIa: a, gravadoPeloSistema: b });

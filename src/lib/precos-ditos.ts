@@ -44,12 +44,19 @@ export type ConferenciaDePrecos = {
    */
   desconhecidos: number[];
   /**
-   * Ditos que nenhuma combinação do cardápio explica — acima do teto do que a
-   * loja consegue vender. Este é o sinal do pastel de R$ 131,40.
+   * Acima de qualquer pedido plausível da loja. Absurdo grosso.
    */
   impossiveis: number[];
-  /** O maior valor que a loja pode cobrar num pedido plausível. */
+  /**
+   * Alto demais para UM item, baixo demais para ser absurdo — a faixa do pastel
+   * de R$ 21,90 cotado a R$ 131,40. Não é prova de erro (o total de um pedido
+   * grande mora aqui também), por isso não alarma: mede.
+   */
+  suspeitos: number[];
+  /** Acima disto é absurdo: maior item do cardápio × 20. */
   teto: number;
+  /** Acima disto é alto para um item só: maior item do cardápio × 3. */
+  tetoDeItemUnico: number;
 };
 
 /**
@@ -133,11 +140,27 @@ function paraNumero(bruto: string): number | null {
  * opção de combo, taxa de entrega de cada zona. Quem chama monta essa lista a
  * partir dos mesmos dados que foram para o prompt.
  *
- * O TETO é deliberadamente generoso: maior preço do cardápio × 20, com piso de
- * R$ 500. Um pedido de festa real chega a algumas centenas de reais; passar
- * disso por uma conversa de WhatsApp é chute, não venda. Teto largo erra para o
- * lado de não alarmar — o que este arquivo não pode fazer é gritar por pedido
- * grande legítimo e virar ruído que ninguém lê.
+ * ── A RÉGUA, e o que ela honestamente pega ─────────────────────────────────
+ *
+ * A primeira versão disto tinha um piso fixo de R$ 500 no teto. A revisão
+ * adversarial de 19/09/2026 derrubou: com piso de 500, o pastel de R$ 131,40 —
+ * o caso que deu origem a tudo — NUNCA seria marcado, em loja nenhuma. O teste
+ * só passava porque forçava um teto artificial que produção jamais usaria.
+ * Alarme que não pode disparar é pior que alarme nenhum: dá sensação de rede.
+ *
+ * Agora a régua sai do próprio cardápio, sem piso inventado:
+ *
+ *   > maior × 20  → `impossivel`. Absurdo grosso, alarma no log.
+ *   > maior × 3   → `suspeito`. Alto demais para um item, plausível para um
+ *                   pedido grande. O pastel mora aqui (24,90 × 3 = 74,70 < 131,40).
+ *                   NÃO alarma: o total de um pedido de 8 pastéis também cai
+ *                   aqui, e gritar por venda boa vira ruído que ninguém lê.
+ *   resto         → `desconhecido`, pura medida.
+ *
+ * O que pega o pastel com CERTEZA não é este arquivo sozinho: é
+ * `compararTotalDitoComGravado`, quando o pedido é fechado e o total anunciado
+ * encontra o total recalculado do banco. Este aqui é a rede da COTAÇÃO, onde
+ * não existe número certo para comparar — e por isso mede em vez de afirmar.
  */
 export function conferirPrecosDitos(e: {
   texto: unknown;
@@ -152,12 +175,19 @@ export function conferirPrecosDitos(e: {
     .filter((n) => Number.isFinite(n) && n > 0);
 
   const maiorDoCardapio = cardapio.length ? Math.max(...cardapio) : 0;
-  const teto = e.tetoManual ?? Math.max(500, maiorDoCardapio * 20);
+  // Sem cardápio não há régua: nada é impossível, porque não há com o que
+  // comparar. Infinity é honesto; um número inventado aqui viraria alarme falso.
+  // Arredondado a centavos: 24,9 × 3 dá 74.69999999999999 em ponto flutuante, e
+  // limiar com sujeira decimal decide errado exatamente em cima da borda.
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  const teto = e.tetoManual ?? (maiorDoCardapio > 0 ? centavos(maiorDoCardapio * 20) : Infinity);
+  const tetoDeItemUnico = maiorDoCardapio > 0 ? centavos(maiorDoCardapio * 3) : Infinity;
 
   const noCardapio = new Set(cardapio.map((n) => n.toFixed(2)));
 
   const conhecidos: number[] = [];
   const desconhecidos: number[] = [];
+  const suspeitos: number[] = [];
   const impossiveis: number[] = [];
 
   for (const v of ditos) {
@@ -165,12 +195,14 @@ export function conferirPrecosDitos(e: {
       conhecidos.push(v);
     } else if (v > teto) {
       impossiveis.push(v);
+    } else if (v > tetoDeItemUnico) {
+      suspeitos.push(v);
     } else {
       desconhecidos.push(v);
     }
   }
 
-  return { ditos, conhecidos, desconhecidos, impossiveis, teto };
+  return { ditos, conhecidos, desconhecidos, suspeitos, impossiveis, teto, tetoDeItemUnico };
 }
 
 // ── O total que a IA anunciou x o que o sistema gravou ─────────────────────

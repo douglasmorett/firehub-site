@@ -33,6 +33,11 @@ atende("conversa 1-a-1 clássica", "5522999622213@s.whatsapp.net");
 atende("conversa 1-a-1 no formato novo (@lid)", "52935992025141@lid");
 atende("número cru, sem sufixo (o webhook às vezes cai no data.from)", "5522999622213");
 conferir("@lid NÃO pode ser barrado: são 151 conversas vivas em produção", ehConversaDeCliente("62638272815331@lid"));
+// Achado da revisão adversarial de 19/09/2026: o `pontuar` do webhook dá NOTA
+// MÁXIMA a @c.us (temSufixoDeContato). Quando esse formato chega, é ele que vira
+// o telefone do cliente — recusá-lo calaria o endereço que o próprio webhook elegeu.
+atende("formato legado de contato (@c.us)", "5522999622213@c.us");
+ehTipo("5522999622213@c.us", "cliente_legado");
 
 console.log("\n2) O que gerou a conta de setembro");
 recusa("canal do WhatsApp (o vazamento de R$ 41,57)", "120363172867223601@newsletter");

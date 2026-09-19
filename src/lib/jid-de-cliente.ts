@@ -31,8 +31,15 @@
  *                   tinha 151 conversas vivas nesse formato (contra 915 no
  *                   clássico), e 1.420 chamadas de IA no histórico. Barrar isto
  *                   deixa o robô mudo para um sexto da base.
+ *   c.us            formato legado de contato. Não aparece no banco hoje, mas o
+ *                   `getRealJid` do webhook o trata como sufixo de contato
+ *                   VÁLIDO e lhe dá a nota máxima (route.ts, `temSufixoDeContato`)
+ *                   — ou seja, quando ele chega, é ELE que vence a disputa e vira
+ *                   o telefone do cliente. Fora desta lista, o robô recusaria
+ *                   justamente o endereço que o próprio webhook elegeu como o bom.
+ *                   Achado pela revisão adversarial de 19/09/2026, antes do deploy.
  */
-const SUFIXOS_DE_CLIENTE = ["s.whatsapp.net", "lid"] as const;
+const SUFIXOS_DE_CLIENTE = ["s.whatsapp.net", "lid", "c.us"] as const;
 
 /**
  * Este endereço é de uma conversa de cliente, que o robô deve atender?
@@ -81,6 +88,7 @@ export function tipoDoJid(remoteJid: unknown): string {
   }
   if (sufixo === "s.whatsapp.net") return "cliente";
   if (sufixo === "lid") return "cliente_lid";
+  if (sufixo === "c.us") return "cliente_legado";
   if (sufixo === "g.us") return "grupo";
   if (sufixo === "broadcast") return "transmissao";
   if (sufixo === "newsletter") return "canal";

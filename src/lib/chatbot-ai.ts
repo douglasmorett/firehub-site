@@ -1103,7 +1103,7 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
 ${regraDoPedidoMinimo(fatosDoMinimo)}
 
     B) A LOJA ENTREGA NESSE ENDEREÇO? — confira na seção
-       "TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO" acima:
+       "TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO" abaixo:
        - Se a loja entrega POR BAIRRO: o bairro do cliente TEM que estar naquela lista.
          Não está? Diga com carinho que ainda não entregam lá, e ofereça a retirada se a
          loja aceitar. NUNCA invente taxa para bairro que não está cadastrado, e NUNCA use
@@ -1432,7 +1432,20 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         let cleanText = generatedText
           .replace(/^(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|RESPONSE|RESPOSTA|PLAN|STEPS):\s*/gi, "")
           .replace(/(\*\*|\*|_|#|`)/g, "")
-          .replace(/R\$\s?(\d+)[.,](\d{2})/gi, (_, g1, g2) => (g2 === "00" ? `${g1} reais` : `${g1},${g2} reais`))
+          // ── "R$ 1.234,56" NÃO PODE VIRAR "1,23 reais4,56" ────────────────
+          //
+          // O padrão antigo era /R\$\s?(\d+)[.,](\d{2})/: em "R$ 1.234,56" o
+          // `(\d+)` parava no "1", o `[.,]` comia o ponto de MILHAR e o
+          // `(\d{2})` pegava "23" — sobrava "4,56" solto. O cliente lia
+          // "1,23 reais4,56" num pedido de festa ou encomenda, e a conferência
+          // de preço (lib/precos-ditos.ts) lia o mesmo lixo e ficava cega
+          // justamente na faixa de valor alto. Achado pela revisão adversarial
+          // de 19/09/2026.
+          //
+          // Agora `([\d.]*\d)` engole os separadores de milhar e o `(?!\d)`
+          // garante que os dois dígitos finais são os centavos, e não o começo
+          // de um número maior.
+          .replace(/R\$\s?([\d.]*\d)[.,](\d{2})(?!\d)/gi, (_, g1, g2) => (g2 === "00" ? `${g1} reais` : `${g1},${g2} reais`))
           .trim();
 
         // ── SINCRONIZAR PEDIDO IA EM TEMPO REAL ──
@@ -1547,6 +1560,23 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
               teto: conferencia.teto,
               conhecidos: conferencia.conhecidos,
               desconhecidos: conferencia.desconhecidos,
+              trecho: cleanText.slice(0, 300),
+              remoteJid,
+            });
+          } else if (conferencia.suspeitos.length > 0) {
+            // A faixa do pastel: alto demais para um item, plausível para um
+            // pedido grande. Vai para o log com aviso, não com erro — o total
+            // de uma venda boa mora aqui também.
+            console.warn(
+              `[Chatbot AI] 💸 preço alto para item único: ${conferencia.suspeitos
+                .map((v) => `R$ ${v.toFixed(2)}`)
+                .join(", ")} (item mais caro da loja × 3 = R$ ${conferencia.tetoDeItemUnico.toFixed(2)})`
+            );
+            trackDivergenciaDePreco(userId, "real", {
+              tipo: "preco-dito-alto-para-item-unico",
+              suspeitos: conferencia.suspeitos,
+              tetoDeItemUnico: conferencia.tetoDeItemUnico,
+              conhecidos: conferencia.conhecidos,
               trecho: cleanText.slice(0, 300),
               remoteJid,
             });
