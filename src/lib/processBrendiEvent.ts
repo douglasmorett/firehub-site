@@ -19,6 +19,7 @@
  *      Foi esse modo que, no 99Food, pegou o parser lendo campo errado com
  *      total zero ANTES de entrar em produção.
  */
+import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
 import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
 import { distanciaDaEntregaKm } from "./distancia-da-entrega";
@@ -801,6 +802,13 @@ export async function processBrendiEvent(
           price: Math.round(itemPrice * 100) / 100,
           quantity: qty,
           productName: fullName,
+          // "sem cebola", "bem passado". É desta coluna que a comanda da
+          // cozinha e a notinha tiram a linha embaixo do item — e nenhum
+          // caminho da Brendi a preenchia: 0 de 105 itens em 30 dias. A
+          // observação ia só para a descrição do produto-espelho (que ninguém
+          // imprime) e para o rodapé do pedido. Foi a queixa do Frangoso em
+          // 19/09/2026. Mesma regra do iFood, agora num lugar só.
+          notes: observacaoDoItem(i),
           comboSelections: comboSelectionsJson,
           menuProduct: {
             // Produto fantasma: existe só para a comanda/relatório referenciar;
@@ -983,12 +991,16 @@ export async function processBrendiEvent(
       const phoneLocalizer = phone?.localizer;
 
       // Notas — observações do cliente em destaque
-      const customerNote = orderData.extraInfo ?? orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
+      // `||`, não `??`: estas APIs mandam string VAZIA quando não há recado, e
+      // `??` só cai para o próximo em null/undefined — um `extraInfo: ""`
+      // barrava o `delivery.observations` que vinha preenchido atrás.
+      const customerNote = orderData.extraInfo || orderData.delivery?.observations || orderData.customer?.customerNote || null;
 
       // Observações por item
       const itemNotes = rawItemsList
-        .filter((i: any) => i.specialInstructions?.trim())
-        .map((i: any) => `${i.name || i.productName || 'Item'}: ${i.specialInstructions.trim()}`);
+        .map((i: any) => ({ nome: i.name || i.productName || "Item", obs: observacaoDoItem(i) }))
+        .filter((x: any) => x.obs)
+        .map((x: any) => `${x.nome}: ${x.obs}`);
 
       const fusoDaLojaAlvo = await fusoDaLoja(franchiseeIdToUse);
       const notesArr = [

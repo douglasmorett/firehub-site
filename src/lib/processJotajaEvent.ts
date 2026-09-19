@@ -3,6 +3,7 @@
  * Lógica centralizada de processamento de eventos Open Delivery (JotaJá).
  * Usada por: webhook, cron-poll e dashboard-poll — elimina triplicação.
  */
+import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
@@ -313,6 +314,9 @@ export async function processJotajaEvent(
           price: Math.round(itemPrice * 100) / 100,
           quantity: qty,
           productName: fullName,
+          // A observação do prato, na coluna que a comanda imprime. Eram 0 de
+          // 365 itens em 30 dias — ver lib/observacao-do-item.ts.
+          notes: observacaoDoItem(i),
           comboSelections: comboSelectionsJson,
           menuProduct: {
             connectOrCreate: {
@@ -495,15 +499,17 @@ export async function processJotajaEvent(
       const customerCpfCnpj = orderData.customer?.taxPayerIdentificationNumber ?? orderData.customer?.documentNumber ?? null;
 
       // Notas — customer observations prominent
-      const customerNote = orderData.extraInfo ?? orderData.delivery?.observations ?? orderData.customer?.customerNote ?? null;
+      // `||`, não `??`: string vazia é o que vem quando não há recado.
+      const customerNote = orderData.extraInfo || orderData.delivery?.observations || orderData.customer?.customerNote || null;
       const phone = orderData.customer?.phone;
       const phoneNumber = phone?.number ?? (typeof phone === "string" ? phone : "");
       const phoneLocalizer = phone?.localizer;
 
       // Collect item-level special instructions
       const itemNotes = rawItemsList
-        .filter((i: any) => i.specialInstructions?.trim())
-        .map((i: any) => `${i.name || i.productName || 'Item'}: ${i.specialInstructions.trim()}`);
+        .map((i: any) => ({ nome: i.name || i.productName || "Item", obs: observacaoDoItem(i) }))
+        .filter((x: any) => x.obs)
+        .map((x: any) => `${x.nome}: ${x.obs}`);
 
       const fusoDaLojaAlvo = await fusoDaLoja(franchiseeIdToUse);
       const notesArr = [

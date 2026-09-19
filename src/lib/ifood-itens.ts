@@ -45,6 +45,7 @@
  * catálogo repetido entre duas lojas deixaria uma renomear o produto da outra.
  */
 
+import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "./prisma";
 
 /** Uma opção/complemento do item, como a comanda e o KDS leem. */
@@ -124,7 +125,10 @@ export async function montarItensDoPedidoIfood(
       // preenchia: a observação do cliente sobre O PRATO era descartada, e a
       // cozinha recebia a comanda sem ela. `delivery.observations`, que os
       // caminhos já liam, é outra coisa: é o recado do ENTREGADOR.
-      notes: i?.observations || i?.specialInstructions || i?.notes || null,
+      // A MESMA leitura das outras integrações (lib/observacao-do-item.ts).
+      // Era esta linha, escrita só aqui, que fazia o iFood ser o único canal
+      // com observação no item.
+      notes: observacaoDoItem(i),
       comboSelections: opcoes.length > 0 ? JSON.stringify(opcoes) : null,
       // Continua `connectOrCreate`, e não `connect`: assim o espelho nasce
       // dentro da mesma transação do pedido. Com `connect`, um espelho que

@@ -4,6 +4,7 @@
  * Separado de processWabizOrder para ser testado com os exemplos da doc:
  *   npx tsx scripts/teste-traducao-wabiz.ts
  */
+import { observacaoDasPartes } from "@/lib/observacao-do-item";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
 import { isBeverageName } from "@/lib/beverage";
@@ -212,6 +213,13 @@ export function traduzirPedidoWabiz(
         price: precoUnit,
         quantity: qtd,
         productName: nomeCompleto,
+        // A observação de cada METADE, na coluna que a comanda imprime. Eram
+        // 0 de 15 itens: `p.obs` só ia para o rodapé do pedido, e numa pizza
+        // meio a meio o rodapé não diz de qual lado é — ver
+        // lib/observacao-do-item.ts.
+        notes: observacaoDasPartes(
+          partes.map((p, i) => ({ rotulo: frac > 1 ? nomesDasPartes[i] : nomeComTamanho, observacao: texto(p.obs) }))
+        ),
         comboSelections: selecoes.length > 0 ? JSON.stringify(selecoes) : null,
         menuProduct: {
           connectOrCreate: {

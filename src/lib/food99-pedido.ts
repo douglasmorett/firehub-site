@@ -397,8 +397,15 @@ export function itens99ParaPrisma(itens: ItemTraduzido[], lojaId: string) {
     // O nome como o 99Food mandou neste pedido. Sem ele, a comanda cai no nome
     // do cadastro, que é de outro dia — ver src/lib/nome-do-item.ts.
     productName: i.nome,
-    // A observação do item entra junto dos complementos porque é ali que a
-    // comanda da cozinha lê o que veio escrito para o prato.
+    // A observação vai na COLUNA do item, que é de onde a comanda e a notinha
+    // tiram a linha embaixo do prato. Eram 0 de 366 itens em 30 dias — a
+    // observação existia, mas só como pseudo-complemento "Obs: ...", que o
+    // rodapé de complementos imprime e a linha de observação não.
+    notes: i.observacao || null,
+    // Continua TAMBÉM junto dos complementos: o Assistente antigo, instalado
+    // na maioria das lojas, imprime a lista de complementos e ainda não lê a
+    // observação do item. Tirar daqui agora apagaria a observação do papel de
+    // quem não atualizou.
     comboSelections:
       i.complementos.length > 0 || i.observacao
         ? JSON.stringify([
