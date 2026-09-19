@@ -15,6 +15,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  // ── SEM ISTO O og:image NÃO TEM ENDEREÇO ──────────────────────────────────
+  //
+  // Toda imagem de prévia precisa de URL absoluta. É a partir desta base que o
+  // Next monta a do `opengraph-image` de cada loja; sem ela, em produção sai
+  // um endereço de localhost e a prévia do WhatsApp fica sem imagem. Sem "www"
+  // porque é assim que o link da loja é divulgado (lib/campanha-converter.ts).
+  metadataBase: new URL("https://firehubfood.com.br"),
   title: "FireHub — Simples, Rápido e Completo. Sistema para Restaurantes.",
   description: "Tudo que o seu restaurante precisa em um só lugar. Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro e auditoria com IA. Teste grátis por 15 dias.",
   keywords: "sistema restaurante, cardápio digital, delivery, gestão restaurante, FireHub, sistema para delivery, chatbot whatsapp restaurante",

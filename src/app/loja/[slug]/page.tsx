@@ -20,9 +20,33 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!franchisee) return { title: "Loja não encontrada" };
   
   const name = franchisee.storeName || franchisee.name;
+  const descricao = franchisee.city
+    ? `Peça online em ${name} — ${franchisee.city}. Cardápio, promoções e entrega.`
+    : `Peça online em ${name}. Cardápio, promoções e entrega.`;
+
+  // ── QUEM APARECE NA PRÉVIA É A LOJA ───────────────────────────────────────
+  //
+  // Só `title` e `description` não bastam: o WhatsApp lê as tags OpenGraph, e
+  // sem um `openGraph` próprio aqui o Next herda o do layout raiz — a
+  // propaganda do FireHub. O lojista mandava o link do cardápio dele e o
+  // cliente via o nosso anúncio. A IMAGEM vem do opengraph-image.tsx desta
+  // mesma pasta (a logo do lojista), que tem prioridade sobre este bloco.
   return {
     title: `${name} | Cardápio Online`,
-    description: `Faça seu pedido online em ${name}. Peça agora pelo cardápio digital!`,
+    description: descricao,
+    openGraph: {
+      title: name,
+      description: descricao,
+      url: `/loja/${slug}`,
+      siteName: name,
+      locale: "pt_BR",
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: name,
+      description: descricao,
+    },
   };
 }
 
