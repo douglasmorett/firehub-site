@@ -43,6 +43,10 @@ export const SELECT_DO_CARDAPIO = {
     orderBy: { sortOrder: "asc" },
     include: {
       items: {
+        // A ordem que o lojista arrumou na tela. Sem ela a lista sai na ordem
+        // física do Postgres — foi assim que os seis sabores doces subiram
+        // para o topo da pergunta de 42 sabores na Pizzaria do Digão.
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
         include: {
           menuProduct: { select: { id: true, name: true, active: true } },
         },

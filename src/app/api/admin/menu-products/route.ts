@@ -109,7 +109,7 @@ function dadosDoGrupo(g: any, gIdx: number) {
     priceRule,
     sortOrder: gIdx,
     items: {
-      create: (Array.isArray(g?.items) ? g.items : []).map((it: any) => {
+      create: (Array.isArray(g?.items) ? g.items : []).map((it: any, iIdx: number) => {
         const maxItem = Number(it?.maxPerItem);
         // Preço por canal da OPÇÃO: só grava o que é número positivo. Zero,
         // vazio e lixo viram NULL, que é "usa o additionalPrice" — a mesma
@@ -130,6 +130,10 @@ function dadosDoGrupo(g: any, gIdx: number) {
             typeof it === "object" && typeof it?.optionNote === "string" && it.optionNote.trim()
               ? it.optionNote.trim()
               : null,
+          // A ordem que o lojista arrumou com as setinhas na tela. É o índice
+          // do array, do mesmo jeito que o grupo usa `gIdx` — sem isto as
+          // setinhas mexiam na tela e nada mudava para o cliente.
+          sortOrder: iIdx,
         };
       }),
     },

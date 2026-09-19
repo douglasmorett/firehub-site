@@ -660,6 +660,17 @@ model ComboGroupItem {
   /// pode ser um produto genérico ("Baby") reaproveitado em dezenas de grupos,
   /// e o que muda de um para outro é justamente essa linha.
   optionNote      String?
+  /// A ORDEM EM QUE A OPÇÃO APARECE DENTRO DA PERGUNTA.
+  ///
+  /// A tela de cadastro sempre teve as setinhas de subir e descer opção, mas
+  /// não havia onde gravar o resultado: as leituras vinham sem ORDER BY e a
+  /// ordem era a que o Postgres devolvesse — ordem física, que muda quando a
+  /// linha é regravada em página com buraco. Na Pizzaria do Digão os seis
+  /// sabores DOCES apareciam no topo da pergunta de 42 sabores salgados.
+  ///
+  /// Gravada pelo índice do array na hora de salvar (api/admin/menu-products),
+  /// lida com desempate por `id` para nunca embaralhar entre dois iguais.
+  sortOrder       Int         @default(0)
   comboGroup      ComboGroup  @relation(fields: [comboGroupId], references: [id], onDelete: Cascade)
   menuProduct     MenuProduct @relation(fields: [menuProductId], references: [id])
 

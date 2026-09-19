@@ -161,6 +161,8 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
             priceRule: true,
             sortOrder: true,
             items: {
+              // A ordem escolhida pelo lojista (setinhas do cadastro).
+              orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
               select: {
                 id: true,
                 additionalPrice: true,

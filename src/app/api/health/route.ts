@@ -90,6 +90,9 @@ export async function GET() {
       ["CustomerOrderItem", "notes"], ["CustomerOrderItem", "tableGuestId"],
       ["MenuProduct", "sortOrder"], ["ComboGroup", "minQty"],
       ["ComboGroupItem", "maxPerItem"], ["ComboGroupItem", "optionNote"],
+      // A ordem das opções dentro da pergunta. Toda tela de venda ordena por
+      // ela: coluna ausente é 500 no cardápio inteiro, não item fora de lugar.
+      ["ComboGroupItem", "sortOrder"],
       ["StoreCustomer", "birthDate"], ["TotemLicense", "posTerminalId"],
       ["Ambassador", "parentAmbassadorId"], ["Ambassador", "linkedUserId"],
       ["Ambassador", "level2Percent"],

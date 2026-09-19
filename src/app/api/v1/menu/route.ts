@@ -20,8 +20,9 @@ export async function GET(req: NextRequest) {
       where: { franchiseeId: auth.franchiseeId },
       include: {
         comboGroups: {
+          orderBy: { sortOrder: "asc" },
           include: {
-            items: true,
+            items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
           },
         },
       },

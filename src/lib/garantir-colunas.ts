@@ -739,6 +739,11 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "ComboGroup" ADD COLUMN IF NOT EXISTS "minQty" INTEGER`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "maxPerItem" INTEGER`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "optionNote" TEXT`,
+  // A ordem das OPÇÕES dentro da pergunta. As setinhas de subir/descer opção
+  // existiam na tela desde sempre, mas não havia coluna para guardar o que o
+  // lojista arrumou — e as leituras, sem ORDER BY, devolviam a ordem física do
+  // Postgres. Ver o backfill ORDEM_DAS_OPCOES logo abaixo.
+  `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0`,
 
   // ── Cliente da loja ──
   `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "birthDate" TEXT`,
@@ -983,6 +988,41 @@ export async function garantirEstruturaDeMesa(): Promise<void> {
 
 let colunasDoSchemaOk = false;
 
+/**
+ * Congela nos dados a ordem que as opções de combo JÁ TINHAM.
+ *
+ * A coluna nasce com zero em tudo. Como as telas passam a ler
+ * `ORDER BY sortOrder, id`, sem este UPDATE o desempate cairia no `id` (cuid,
+ * aleatório) e TODA pergunta de TODO cardápio seria embaralhada de uma vez —
+ * exatamente no boot que entrega a correção.
+ *
+ * `ctid` é a posição física da linha: é a ordem que o `SELECT` sem `ORDER BY`
+ * vinha devolvendo, ou seja, a ordem que o lojista vê hoje na tela. Não é
+ * garantia de nada para o futuro (é justamente por isso que a coluna existe),
+ * mas é o retrato fiel do presente na hora de congelar.
+ *
+ * ── Por que roda a cada boot sem estragar nada ─────────────────────────────
+ *
+ * Só alcança pergunta com mais de uma opção em que TODAS estão em zero. Ao
+ * terminar, a última opção do grupo vale `n-1` > 0, então a segunda execução
+ * não casa mais com ele. Pergunta de uma opção só não tem ordem para arrumar.
+ * Quem for salvo pela tela depois disto já vem numerado pelo índice do array.
+ */
+const ORDEM_DAS_OPCOES = `
+  UPDATE "ComboGroupItem" i SET "sortOrder" = o.pos
+  FROM (
+    SELECT ctid AS linha,
+           row_number() OVER (PARTITION BY "comboGroupId" ORDER BY ctid) - 1 AS pos
+    FROM "ComboGroupItem"
+  ) o
+  WHERE i.ctid = o.linha
+    AND i."comboGroupId" IN (
+      SELECT "comboGroupId" FROM "ComboGroupItem"
+      GROUP BY "comboGroupId"
+      HAVING COUNT(*) > 1 AND MAX("sortOrder") = 0
+    )
+`;
+
 export async function garantirColunasDoSchema(): Promise<void> {
   if (colunasDoSchemaOk) return;
 
@@ -1010,6 +1050,16 @@ export async function garantirColunasDoSchema(): Promise<void> {
       const coluna = sql.match(/IF NOT EXISTS "(\w+)"/)?.[1] ?? "?";
       falhas.push(`${tabela}.${coluna}: ${String(err?.message || "").slice(0, 90)}`);
     }
+  }
+
+  // Depois de a coluna existir, e nunca antes.
+  try {
+    const numeradas = await prisma.$executeRawUnsafe(ORDEM_DAS_OPCOES);
+    if (Number(numeradas) > 0) {
+      console.log(`[Boot] ${numeradas} opção(ões) de combo numeradas na ordem em que já estavam.`);
+    }
+  } catch (err: any) {
+    falhas.push(`ComboGroupItem.sortOrder (backfill): ${String(err?.message || "").slice(0, 90)}`);
   }
 
   // Marca resolvido mesmo com falha: isto roda uma vez por instância, e

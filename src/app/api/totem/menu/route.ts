@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
           orderBy: { sortOrder: "asc" },
           include: {
             items: {
+              orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
               include: {
                 menuProduct: { select: { id: true, name: true, active: true, imageUrl: true, price: true } },
               },

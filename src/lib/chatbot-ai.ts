@@ -238,6 +238,10 @@ export async function processChatbotAI(
             // na OPÇÃO de tamanho, não no produto — sem esta coluna o robô
             // cotaria o preço do balcão para quem pede pelo WhatsApp.
             items: {
+              // Mesma ordem que o cliente vê no cardápio: o robô lista as
+              // opções para escolher, e lista fora de ordem confunde quem
+              // responde por número.
+              orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
               select: {
                 additionalPrice: true, additionalPriceDelivery: true,
                 menuProduct: { select: { id: true, name: true, price: true } },
