@@ -598,6 +598,11 @@ async function handleIncomingMessage(body: any, instance: string) {
   // descartado aqui em silêncio, sem fila e sem alerta, antes de qualquer
   // checagem (medido em 18/09/2026).
   if (now - lastResponse < 3000 && !detectarPedidoDeAtendente(textMessage).pediu) {
+    // ⚠️ ESTE DESCARTE AINDA EXISTE, e é o próximo a sair: a mensagem some sem
+    // fila, sem histórico e sem rastro. Quem escreve picado ("oi" / "quero 2
+    // x-tudo" / "e uma coca") perde parte do que disse. O substituto já está
+    // escrito e testado em lib/fila-da-conversa.ts: agrupa a rajada numa
+    // mensagem só e atende uma conversa de cada vez, em vez de descartar.
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Cooldown ativo para ${remoteJid}`);
     return;
   }
