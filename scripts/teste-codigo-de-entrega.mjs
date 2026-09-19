@@ -49,8 +49,47 @@ igual("204 confere", lerRespostaCodigoIfood({ ok: true, status: 204, data: null 
 console.log("\n3) iFood: o que prende e o que não prende");
 igual("422 sem código conhecido é código errado", lerRespostaCodigoIfood({ ok: false, status: 422, data: null }), "errado");
 igual("422 com outro código é código errado", lerRespostaCodigoIfood({ ok: false, status: 422, data: { code: "INVALID_CODE" } }), "errado");
-igual("422 com code em minúsculas não é o de já confirmado", lerRespostaCodigoIfood({ ok: false, status: 422, data: { code: "order_already_confirmed" } }), "errado");
-igual("400 não prende", lerRespostaCodigoIfood({ ok: false, status: 400, data: { code: "BadRequest" } }), "indisponivel");
+// ── O 400 DO CÓDIGO ERRADO (medido em 19/09/2026) ────────────────────────
+//
+// Nove entregas em 30 dias receberam este corpo e foram CONCLUÍDAS assim
+// mesmo, porque 400 caía em "indisponivel". O motoboy digitava errado e o
+// pedido fechava — o contrário de para que o código existe.
+igual(
+  "400 \"Confirmation code is invalid\" é código ERRADO",
+  lerRespostaCodigoIfood({ ok: false, status: 400, data: { errorType: "NOT_FOUND", description: "Confirmation code is invalid", code: "400" } }),
+  "errado",
+);
+igual(
+  "o mesmo, com o corpo chegando só como texto",
+  lerRespostaCodigoIfood({ ok: false, status: 400, data: null, texto: '{"errorType":"NOT_FOUND","description":"Confirmation code is invalid","code":"400"}' }),
+  "errado",
+);
+igual(
+  "400 de requisição malformada, sem falar do código, não manda redigitar",
+  lerRespostaCodigoIfood({ ok: false, status: 400, data: { code: "BadRequest", message: "malformed body" } }),
+  "indisponivel",
+);
+
+// ── O 403 CONTINUA NÃO PRENDENDO ─────────────────────────────────────────
+// "Access Denied" em HTML é bloqueio da plataforma e não diz nada sobre o
+// código. Prender o entregador por permissão nossa foi o incidente de 12/09.
+igual(
+  "403 Access Denied segue indisponivel",
+  lerRespostaCodigoIfood({ ok: false, status: 403, data: null, texto: "<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD><BODY>You don't have permission</BODY></HTML>" }),
+  "indisponivel",
+);
+
+// ── "JÁ CONFIRMADO" É CÓDIGO CERTO, VENHA COMO VIER ──────────────────────
+igual(
+  "422 já confirmado, corpo só em texto, confere",
+  lerRespostaCodigoIfood({ ok: false, status: 422, data: null, texto: '{"message":"Order is already confirmed","code":"ORDER_ALREADY_CONFIRMED"}' }),
+  "conferido",
+);
+igual(
+  "422 já confirmado em minúsculas também confere",
+  lerRespostaCodigoIfood({ ok: false, status: 422, data: { code: "order_already_confirmed" } }),
+  "conferido",
+);
 igual("404 não prende", lerRespostaCodigoIfood({ ok: false, status: 404, data: null }), "indisponivel");
 igual("500 não prende", lerRespostaCodigoIfood({ ok: false, status: 500, data: null }), "indisponivel");
 igual("sem resposta (status 0) não prende", lerRespostaCodigoIfood({ ok: false, status: 0 }), "indisponivel");
