@@ -3,7 +3,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
-import { clearLoopGuard } from "@/lib/loop-guard";
+import { clearLoopGuard, registerBotReply } from "@/lib/loop-guard";
+import { retomarRobo } from "@/lib/pausa-do-robo";
 
 export const dynamic = "force-dynamic";
 
@@ -155,8 +156,20 @@ export async function POST(req: NextRequest) {
       // o prazo de 12 h vencer — mesmo com o atendimento já resolvido.
       await clearLoopGuard(targetUserId, jid).catch(() => {});
 
+      // E a pausa em MEMÓRIA, que é conferida antes de tudo no webhook. Ela
+      // vivia num Map privado de lá, fora do alcance desta rota: o cliente lia
+      // "nosso robô continuará te ajudando por aqui" e o robô seguia mudo por
+      // até 12 horas (lib/pausa-do-robo.ts).
+      retomarRobo(targetUserId, jid);
+
       // Envia aviso ao cliente no WhatsApp
       const endMessage = "Atendimento humano finalizado com sucesso! Se precisar de mais alguma coisa, nosso robô continuará te ajudando por aqui. Obrigado! 😊";
+      // Registrar ANTES de enviar. O WhatsApp devolve esta mensagem como
+      // `fromMe`; sem o hash gravado, o webhook a lê como "o lojista digitou" e
+      // cala o robô por 5 minutos — logo depois de prometer ao cliente que o
+      // robô continua ajudando. Tem que vir depois do clearLoopGuard, que zera
+      // os hashes.
+      await registerBotReply(targetUserId, jid, endMessage).catch(() => {});
       await sendEvolutionMessage(targetUserId, jid, endMessage).catch(() => {});
 
       return NextResponse.json({ success: true, message: "Atendimento encerrado. Robô reativado." });

@@ -17,6 +17,9 @@ import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { inicioDoExpedienteDaLoja } from "./fuso";
 import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
+import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmergencia } from "./status-para-o-cliente";
+import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
+import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -261,6 +264,9 @@ export async function processChatbotAI(
         customerPhone: true,
         createdAt: true,
         deliveryType: true,
+        // O número que o cliente e a loja VEEM (#8). Sem ele o robô citava os
+        // quatro últimos caracteres do id ("#XDN6"), que não está em tela nenhuma.
+        dailyOrderNumber: true,
         ifoodReference: true,
         openDeliveryReference: true,
         openDeliveryChannel: true,
@@ -669,23 +675,21 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
       wasInactivityCancelled = true;
     }
     recentOrdersSummary = recentOrders.map(o => {
-      const statusMap: Record<string, string> = {
-        NOVO: "Novo (Recebido no sistema e aguardando confirmação na cozinha)",
-        ACEITO: "Em Preparação na Cozinha 🔥",
-        PREPARANDO: "Em Preparação na Cozinha 🔥",
-        EM_PREPARO: "Em Preparação na Cozinha 🔥",
-        SAIU_ENTREGA: "Saiu para Entrega com Motoboy 🛵",
-        SAIU_PARA_ENTREGA: "Saiu para Entrega com Motoboy 🛵",
-        ENTREGUE: "Entregue com Sucesso ✅",
-        CANCELADO: "Cancelado ❌"
-      };
-      const statusReadable = statusMap[o.status] || o.status;
+      // O status dito do jeito que é VERDADE para aquele pedido. Havia aqui um
+      // mapa único em que SAIU_ENTREGA era sempre "Saiu para Entrega com
+      // Motoboy" — mas na RETIRADA esse status é "pronto no balcão" (é o que o
+      // KDS grava ao finalizar, api/kds/route.ts). Em 18/09/2026, na Hakim, a
+      // cliente do pedido #8 (PICKUP, 10 esfirras) leu sete vezes que o pedido
+      // estava a caminho com um motoboy que não existia. A regra mora em
+      // lib/status-para-o-cliente.ts, com teste.
+      const statusReadable = rotuloDeStatusParaOModelo(o.status, (o as any).deliveryType);
+      const tipoDoPedido = rotuloDoTipoDeEntrega((o as any).deliveryType);
       const itemsList = o.items.map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
       const channel = (o as any).openDeliveryChannel || ((o as any).openDeliveryReference ? "Jotajá" : (o as any).ifoodReference ? "iFood" : "Site/WhatsApp");
       const refNum = (o as any).openDeliveryReference || (o as any).ifoodReference || (o as any).dailyOrderNumber || o.id.slice(-4).toUpperCase();
       const customerName = o.customerName || "Cliente";
 
-      return `- Pedido #${refNum} (${channel}) | Cliente: "${customerName}" | Tel: "${o.customerPhone || '—'}" | Status: "${statusReadable}" | Itens: ${itemsList} | Total: R$ ${o.totalAmount.toFixed(2)}`;
+      return `- Pedido #${refNum} (${channel}) | Tipo: ${tipoDoPedido} | Cliente: "${customerName}" | Tel: "${o.customerPhone || '—'}" | Status: "${statusReadable}" | Itens: ${itemsList} | Total: R$ ${o.totalAmount.toFixed(2)}`;
     }).join("\n");
   }
 
@@ -729,11 +733,54 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     }
   }
 
+  // ── IA FORA DO AR É INCIDENTE, NÃO MODO DE OPERAÇÃO ──────────────────────
+  //
+  // Quando os modelos falhavam, o robô caía numa frase fixa com o nome do
+  // cliente — que parece atendimento. De 13 a 18/09/2026 o crédito do Gemini
+  // ficou esgotado por CINCO DIAS e ninguém soube: 1.053 respostas sem uma
+  // chamada de IA, pedidos do robô de 20 por dia para zero. Havendo pedido do
+  // dia, a frase fixa devolvia o status para QUALQUER mensagem: na Hakim, uma
+  // cliente de retirada pediu uma pessoa e leu sete vezes que o pedido "saiu
+  // para entrega com o motoboy".
+  //
+  // Agora toda falha passa por aqui, e a resposta carrega `falhaDaIa` para o
+  // webhook avisar a loja e o administrador (lib/falha-da-ia.ts):
+  //   - quem PERGUNTOU do pedido recebe o status verdadeiro, que o robô tem no
+  //     banco sem precisar de IA — e dito conforme o tipo de entrega;
+  //   - qualquer outra mensagem recebe a verdade sobre o atendimento, uma vez,
+  //     e a conversa vai para uma pessoa ([[CHAMAR_ATENDENTE]]).
+  const falhasDosModelos: FalhaDaIa[] = [];
+  const respostaDeIaForaDoAr = (falha: FalhaDaIa) => {
+    if (ehPerguntaSobreOPedido(message || "") && Array.isArray(recentOrders) && recentOrders.length > 0) {
+      const ativo: any =
+        recentOrders.find((o: any) => !["CANCELADO", "ENTREGUE", "ENCERRADO", "CONCLUIDO"].includes(String(o.status || "").toUpperCase())) ||
+        recentOrders[0];
+      const ref = ativo.ifoodReference || ativo.openDeliveryReference || ativo.dailyOrderNumber || String(ativo.id).slice(-4).toUpperCase();
+      const itens = (ativo.items || []).map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
+      const frase = fraseDeStatusDeEmergencia({
+        status: ativo.status,
+        deliveryType: ativo.deliveryType,
+        primeiroNome: customerFirstName,
+        numero: `#${ref}`,
+        itens,
+      });
+      if (frase) return { reply: frase, falhaDaIa: falha, respostaDeFalha: "status" as const };
+    }
+    // Falha que exige ação (crédito, chave) não volta sozinha: verdade + pessoa.
+    // Soluço (timeout, 503) só pede para repetir — quem decide se a repetição
+    // já virou incidente é o webhook, que conta as falhas da loja
+    // (`virouIncidente` em lib/falha-da-ia.ts) e aí troca a resposta.
+    const quem = { primeiroNome: customerFirstName, linkDoCardapio: storeLink };
+    return falha.exigeAcao
+      ? { reply: `${mensagemDeIaForaDoAr(quem)}\n[[CHAMAR_ATENDENTE]]`, falhaDaIa: falha, respostaDeFalha: "incidente" as const }
+      : { reply: mensagemDeInstabilidadePassageira(quem), falhaDaIa: falha, respostaDeFalha: "soluco" as const };
+  };
+
   const apiKey = await resolverChaveGemini(user.chatbotConfig);
 
   if (!apiKey) {
     console.error("[Chatbot AI] CRITICAL: No Gemini API key configured!");
-    return { reply: `Olá! 😊 No momento estou com uma instabilidade técnica.${storeLinkMsg}` };
+    return respostaDeIaForaDoAr(classificarFalhaDaIa("sem_chave"));
   }
 
   // Geocodificação e verificação de raio no mapa em tempo real
@@ -876,14 +923,19 @@ REGRAS ABSOLUTAS:
    - Você tem acesso EM TEMPO REAL aos pedidos do dia cadastrados no sistema da loja (Jotajá, iFood, Site e WhatsApp) listados no campo "PEDIDOS RECENTES DO CLIENTE / PEDIDOS ATIVOS DO DIA" abaixo.
    - Quando o cliente perguntar sobre o pedido ("Chega dentro da prévia?", "cadê meu pedido?", "meu pedido já saiu?", "tá demorando?", "onde tá meu pedido?", "já fiz o pedido"):
      a) Consulte a lista de pedidos abaixo. Se encontrar um pedido correspondente (seja pelo número do WhatsApp, pelo nome do cliente ou pelo número de referência informado como 32653126, 1876 ou #142):
-        RESPONDA IMEDIATAMENTE INFORMANDO O STATUS REAL DO PEDIDO COM MUITA SIMPATIA E ALEGRIA! Exemplo: "Oi, [Nome]! 🥰 Localizei aqui seu pedido nº [número] do [canal] ([itens do pedido])! Ele já está em preparação na nossa cozinha e vai sair para entrega em instantes dentro da prévia! 🛵🔥"
+        RESPONDA IMEDIATAMENTE INFORMANDO O STATUS REAL DO PEDIDO COM MUITA SIMPATIA E ALEGRIA — o que está no campo "Status" da lista, respeitando o campo "Tipo" do pedido (ENTREGA ou RETIRADA no balcão).
+        Exemplo para Tipo ENTREGA: "Oi, [Nome]! 🥰 Localizei aqui seu pedido nº [número] ([itens do pedido])! Ele está em preparação na nossa cozinha, e assim que sair para entrega a gente te avisa por aqui! 🛵🔥"
+        Exemplo para Tipo RETIRADA no balcão: "Oi, [Nome]! 🥰 Localizei aqui seu pedido nº [número] ([itens do pedido])! Ele está em preparação na nossa cozinha, e assim que ficar pronto para retirada a gente te avisa por aqui! 🛍️🔥"
      b) Se o cliente informar um número de código (ex: 32653126, 1876, #142) ou disser que fez pelo Jotajá/iFood:
         Localize o pedido correspondente na lista abaixo e informe a posição na hora. Se houver qualquer dúvida ou se não tiver 100% de certeza do nome do cliente, pergunte com carinho: "É o pedido no nome de [Nome do Cliente] pelo Jotajá/iFood? Me confirma que eu já te passo a posição exata!"
-     c) Se o pedido estiver com status "SAIU_PARA_ENTREGA" ou "SAIU_ENTREGA":
-        Diga que o entregador já está a caminho com o pedido e peça para o cliente ficar atento ao interfone/portaria!
+     c) Pedido do Tipo ENTREGA com Status "Saiu para entrega com o motoboy":
+        Diga que o pedido já saiu para entrega e peça para o cliente ficar atento ao interfone/portaria!
+     c2) Pedido do Tipo RETIRADA no balcão: esse pedido NÃO TEM ENTREGA — é o cliente que vem buscar. NUNCA fale em entrega, motoboy, entregador, "a caminho" ou "saiu para entrega" num pedido de retirada, em status nenhum. Se o Status disser PRONTO para retirar, diga que o pedido já está pronto esperando por ele no balcão. Se disser em preparação, diga que avisamos por aqui quando ficar pronto para retirada.
      d) PROIBIDO INVENTAR AÇÃO QUE VOCÊ NÃO EXECUTA. Você NÃO liga para ninguém, NÃO fala com o motoboy, NÃO tem o telefone dele, NÃO vê onde ele está e NÃO aciona ninguém. NUNCA escreva "vou ligar para o entregador", "já acionei o motoboy", "consegui falar com ele", "ele confirmou que está na sua rua", "vou pedir prioridade" ou "estou verificando a posição exata". Tudo isso é MENTIRA — e foi exatamente o que uma cliente real leu enquanto esperava 1h40 pelo pedido dela.
      e) PROIBIDO PROMETER PRAZO QUE VOCÊ NÃO TEM. Nunca diga "chega em 2 minutinhos", "está virando a esquina", "já está na sua porta" ou "mais uns minutinhos". Você só sabe o STATUS que está na lista de pedidos abaixo — nada além disso.
-     f) SE O CLIENTE RECLAMAR (atraso, não chegou, faltou item, veio errado, veio frio, quer cancelar): NÃO tente resolver, NÃO invente explicação e NÃO peça para ele esperar mais. Quem resolve isso é uma pessoa da equipe. Diga só que vai chamar alguém agora e pare por aí.
+     f) SE O CLIENTE RECLAMAR (atraso, não chegou, faltou item, veio errado, veio frio, quer cancelar): NÃO tente resolver, NÃO invente explicação e NÃO peça para ele esperar mais. Quem resolve isso é uma pessoa da equipe. Diga só que vai chamar alguém agora, inclua no final da resposta a marca [[CHAMAR_ATENDENTE]] e pare por aí.
+     g) SE O CLIENTE PEDIR PARA FALAR COM UMA PESSOA — atendente, alguém da loja, gerente, dono, responsável, "não quero robô", "me chama alguém", por TEXTO ou por ÁUDIO: NÃO informe status, NÃO tente resolver e NÃO responda "pode falar comigo". Diga só que vai chamar alguém da equipe agora e inclua no final da resposta a marca [[CHAMAR_ATENDENTE]].
+     h) A MARCA É A AÇÃO: toda vez que você disser que vai chamar alguém da equipe, a marca [[CHAMAR_ATENDENTE]] TEM que ir no final da resposta. Sem ela ninguém é chamado, e "vou chamar alguém" vira mentira — o cliente fica esperando uma pessoa que nunca foi avisada.
 7. QUANDO O CLIENTE PERGUNTAR SOBRE PROMOÇÕES OU CUPOM:
    - REGRA MANDATÓRIA DE RESPOSTA A PROMOÇÕES: Se o cliente perguntar "tem alguma promoção?", "quais são as promoções?", "o que tem de promoção hoje?":
      a) APRESENTE PRIMEIRO os itens da seção "PROMOÇÕES DE HOJE" do cardápio, com o preço cadastrado, e depois os COMBOS da loja. NUNCA responda apenas com cupom de desconto sem antes falar das promoções do dia. Se não houver nenhuma promoção cadastrada para hoje, diga isso com naturalidade e ofereça os combos e os mais pedidos — NUNCA invente uma promoção.
@@ -1239,10 +1291,22 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
             } catch (_) { /* tracking should never break chatbot */ }
             break;
           }
+          // Respondeu sem texto (bloqueio de segurança, resposta vazia): também é falha.
+          falhasDosModelos.push(classificarFalhaDaIa("resposta vazia"));
         } catch (mErr: any) {
           const isTimeout = mErr?.name === "AbortError" || mErr?.message?.includes("abort");
           const errDetail = mErr?.message || mErr?.status || JSON.stringify(mErr).slice(0, 200);
           console.warn(`[Chatbot AI] Modelo ${mName} ${isTimeout ? "⏳ timeout" : "❌ falhou"} (${modelTimeout}ms): ${errDetail}`);
+          const falha = classificarFalhaDaIa(mErr);
+          falhasDosModelos.push(falha);
+          // Crédito esgotado e chave recusada são do PROJETO, não do modelo: o
+          // próximo modelo e o prompt mínimo morreriam no mesmo erro, com o
+          // cliente esperando. Modelo aposentado é o contrário — o próximo da
+          // lista é justamente a saída.
+          if (falha.exigeAcao && falha.tipo !== "modelo_indisponivel") {
+            console.error(`[Chatbot AI] 🔥 IA FORA DO AR: ${falha.resumo}. Robô passando as conversas para atendimento humano.`);
+            break;
+          }
           // Se não foi timeout, o modelo falhou rápido — não vale tentar o próximo com mesmo prompt
           if (!isTimeout && idx === 0) continue;
         }
@@ -1273,6 +1337,27 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           // Remove qualquer prefixo numerado até a frase natural humana
           generatedText = generatedText.replace(/^\s*(?:\d+\.\s+[\s\S]*?)+?(?=(?:Imagina|Oi|Olá|Tudo|Certo|Perfeito|É|Desculpe|[A-ZÀ-Ú][a-zà-ú]+!|\n\n|$))/m, "").trim();
         }
+
+        // ── AS MARCAS DO MODELO TÊM QUE SOBREVIVER À LIMPEZA ─────────────────
+        //
+        // A limpeza de markdown logo abaixo remove TODO "_" do texto. As duas
+        // marcas de ação têm sublinhado: [[CHAMAR_ATENDENTE]] virava
+        // [[CHAMARATENDENTE]], e a rede de segurança mais adiante — que apaga
+        // qualquer [[...]] desconhecido — terminava o serviço. Conferido com a
+        // cadeia real de replace em 18/09/2026: a marca escrita pelo MODELO
+        // NUNCA chegou ao webhook. "Vou chamar alguém" dito pela IA sempre foi
+        // promessa vazia, e o envio do cardápio em arquivo ([[ENVIAR_CARDAPIO]])
+        // também nunca disparou; só funcionavam as marcas que este arquivo
+        // concatena depois da limpeza. [[TRANSCRICAO]] escapava por não ter "_".
+        //
+        // Agora as marcas são lidas ANTES da limpeza (tolerando variação do
+        // modelo: espaço, minúscula, ": true"), tiradas do texto e recolocadas
+        // na grafia exata depois da rede de segurança.
+        const MARCA_ATENDENTE = /\[\[\s*CHAMAR[_\s]?ATENDENTE[^\]]*\]\]/gi;
+        const MARCA_CARDAPIO = /\[\[\s*ENVIAR[_\s]?CARDAPIO[^\]]*\]\]/gi;
+        const modeloChamouAtendente = MARCA_ATENDENTE.test(generatedText);
+        const modeloMandouCardapio = MARCA_CARDAPIO.test(generatedText);
+        generatedText = generatedText.replace(MARCA_ATENDENTE, "").replace(MARCA_CARDAPIO, "");
 
         let cleanText = generatedText
           .replace(/^(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|RESPONSE|RESPOSTA|PLAN|STEPS):\s*/gi, "")
@@ -1355,6 +1440,10 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
           .replace(/\[\[(?!TRANSCRICAO|CHAMAR_ATENDENTE|ENVIAR_CARDAPIO)[\s\S]*?\]\]/g, "")
           .replace(/[ \t]{2,}/g, " ")
           .trim();
+
+        // As marcas que o modelo escreveu voltam aqui, na grafia que o webhook lê.
+        if (modeloMandouCardapio) cleanText = `${cleanText}\n[[ENVIAR_CARDAPIO]]`.trim();
+        if (modeloChamouAtendente) cleanText = `${cleanText}\n[[CHAMAR_ATENDENTE]]`.trim();
 
         // ── O CONTRATO HONESTO DO PEDIDO ────────────────────────────────────
         //
@@ -1498,9 +1587,13 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         };
       }
 
-      // Todos os modelos falharam — última tentativa com prompt mínimo
-      console.warn("[Chatbot AI] Todos os modelos falharam com prompt completo. Tentando prompt mínimo...");
-      try {
+      // Todos os modelos falharam — última tentativa com prompt mínimo.
+      // Só quando a falha é passageira: com crédito esgotado ou chave recusada
+      // o prompt mínimo morre no mesmo erro, e ele responde SEM cardápio e sem
+      // histórico — improviso que o cliente lê como atendimento.
+      const falhaDoProjeto = falhaQueManda(falhasDosModelos)?.exigeAcao === true;
+      if (!falhaDoProjeto) console.warn("[Chatbot AI] Todos os modelos falharam com prompt completo. Tentando prompt mínimo...");
+      if (!falhaDoProjeto) try {
         const ai = new GoogleGenAI({ apiKey });
         const miniResponse = await ai.models.generateContent({
           model: "gemini-2.5-flash",
@@ -1529,41 +1622,20 @@ Lembre-se: Seja ultra sucinto e objetivo como uma pessoa de verdade digitando no
         }
       } catch (miniErr) {
         console.error("[Chatbot AI] Prompt mínimo também falhou:", miniErr);
+        falhasDosModelos.push(classificarFalhaDaIa(miniErr));
       }
 
     } catch (geminiErr) {
       console.error("[Chatbot AI] Erro geral crítico:", geminiErr);
+      falhasDosModelos.push(classificarFalhaDaIa(geminiErr));
     }
 
-  // Se o cliente tem pedido ativo de hoje no banco e a mensagem é sobre status ou se houve falha na IA:
-  if (Array.isArray(recentOrders) && recentOrders.length > 0) {
-    const activeOrder = recentOrders.find((o: any) => {
-      const st = (o.status || "").toUpperCase();
-      return st !== "CANCELADO" && st !== "ENTREGUE" && st !== "CONCLUIDO";
-    }) || recentOrders[0];
-
-    if (activeOrder) {
-      const numLabel = activeOrder.ifoodReference ? `#${activeOrder.ifoodReference}` : activeOrder.openDeliveryReference ? `#${activeOrder.openDeliveryReference}` : `#${activeOrder.id.slice(-4).toUpperCase()}`;
-      const itemsList = (activeOrder.items || []).map((i: any) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", ");
-      const itemsStr = itemsList ? ` (${itemsList})` : "";
-      const st = (activeOrder.status || "").toUpperCase();
-
-      if (st === "SAIU_ENTREGA" || st === "SAIU_PARA_ENTREGA") {
-        return { reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 🛵 Seu pedido ${numLabel}${itemsStr} já saiu para entrega e está a caminho com o motoboy! Em breve chega aí! 😋` };
-      } else if (st === "NOVO" || st === "ACEITO" || st === "PREPARANDO" || st === "EM_PREPARO") {
-        return { reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Seu pedido ${numLabel}${itemsStr} está em preparação na nossa cozinha! Ele vai sair para entrega em instantes, dentro da prévia! 🛵🔥` };
-      } else if (st === "ENTREGUE" || st === "CONCLUIDO") {
-        return { reply: `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! ✅ Consta em nosso sistema que seu pedido ${numLabel} já foi entregue! Bom apetite!` };
-      }
-    }
-  }
-
-  // Último recurso absoluto — só se TUDO falhou e não havia nenhum pedido no banco
-  return {
-    reply: storeLink
-      ? `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 Como posso te ajudar? Se quiser conferir nossos pratos e fazer seu pedido, acesse nosso cardápio digital: ${storeLink}`
-      : `Oi${customerFirstName ? `, ${customerFirstName}` : ""}! 😊 No momento estou com uma instabilidade técnica por aqui. Por favor, tente novamente em instantes!`
-  };
+  // Chegou aqui = nenhum modelo respondeu. Havia neste ponto uma resposta fixa
+  // que devolvia o status do pedido para QUALQUER mensagem, em linguagem de
+  // entrega mesmo para retirada, e — sem pedido no banco — um "Como posso te
+  // ajudar?" que se repetia igual a cada mensagem do cliente (29/08 e
+  // 13–18/09/2026). Ver `respostaDeIaForaDoAr`, acima.
+  return respostaDeIaForaDoAr(falhaQueManda(falhasDosModelos) || classificarFalhaDaIa(null));
 }
 
 /**

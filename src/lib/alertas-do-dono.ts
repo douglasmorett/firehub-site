@@ -44,7 +44,15 @@ export type TipoDeAlerta =
    * em 04/09/2026 — a reclamação era "pula impressão", e o dono acabou
    * desligando o 99Food achando que o problema era a integração.
    */
-  | "impressao_parada";
+  | "impressao_parada"
+  /**
+   * A inteligência artificial do robô está fora do ar (crédito do Gemini
+   * esgotado, chave recusada, modelo aposentado). De 13 a 18/09/2026 isso durou
+   * CINCO DIAS sem ninguém saber: o robô não cala, ele repete uma frase fixa que
+   * parece atendimento. A loja precisa saber para atender na mão
+   * (lib/falha-da-ia.ts).
+   */
+  | "ia_fora_do_ar";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -53,6 +61,7 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   pedido_atrasado: true,
   "99food_desconectado": true,
   impressao_parada: true,
+  ia_fora_do_ar: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -62,6 +71,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   pedido_atrasado: "Pedido atrasado que ainda não saiu para entrega",
   "99food_desconectado": "Loja perdeu a conexão com o 99Food (pedidos de lá param de entrar)",
   impressao_parada: "Impressão automática parou, ou comanda não está saindo na impressora",
+  ia_fora_do_ar: "A inteligência artificial do robô caiu (ele passa as conversas para a equipe até voltar)",
 };
 
 /** O dono ligou este alerta? Sem config salva, vale o padrão. */
@@ -105,10 +115,19 @@ export async function avisarDono(
       config = dono?.chatbotConfig as any;
     }
 
+    // As duas desistências abaixo eram MUDAS. "Ninguém foi avisado" não pode
+    // ser invisível: é a diferença entre "o dono ignorou o alerta" e "o alerta
+    // nunca existiu", e só o log conta qual das duas aconteceu.
     const numero = (destino || "").replace(/\D/g, "");
-    if (!numero || numero.length < 10) return false;
+    if (!numero || numero.length < 10) {
+      console.warn(`[Alertas] Alerta "${tipo}" NÃO enviado: a loja ${userId} não tem "WhatsApp do Proprietário" cadastrado (Minha Loja).`);
+      return false;
+    }
 
-    if (!alertaLigado(config, tipo)) return false;
+    if (!alertaLigado(config, tipo)) {
+      console.warn(`[Alertas] Alerta "${tipo}" não enviado: desligado pela loja ${userId} em Chatbot IA → Alertas.`);
+      return false;
+    }
 
     // ── O robô não pode avisar a si mesmo ────────────────────────────────
     // Se o número de alerta for o mesmo que está conectado ao robô, a mensagem
@@ -132,6 +151,56 @@ export async function avisarDono(
     return true;
   } catch (err: any) {
     console.error(`[Alertas] Falha ao avisar o dono (${tipo}):`, err?.message);
+    return false;
+  }
+}
+
+/**
+ * Avisa o ADMINISTRADOR do FireHub (a conta matriz) — para o que é do sistema
+ * inteiro, não de uma loja: a chave do Gemini é uma só, e quando o crédito
+ * acaba todas as lojas ficam sem IA ao mesmo tempo.
+ *
+ * Sai pela instância da loja que sentiu o problema (a matriz pode nem ter robô
+ * conectado), para o `notificationPhone` da conta `isFireHubSystem`. Sem número
+ * cadastrado lá, grita no log — que é o único lugar que sobra.
+ */
+export async function avisarAdminDoSistema(userIdQueEnvia: string, mensagem: string): Promise<boolean> {
+  try {
+    const matriz = await prisma.user.findFirst({
+      where: { isFireHubSystem: true },
+      select: { notificationPhone: true },
+    });
+    const numero = (matriz?.notificationPhone || "").replace(/\D/g, "");
+    if (!numero || numero.length < 10) {
+      console.error(
+        `[Alertas] 🔥 ALERTA DE SISTEMA SEM DESTINO: a conta matriz não tem "WhatsApp do Proprietário". Mensagem: ${mensagem.replace(/\s+/g, " ").slice(0, 300)}`
+      );
+      return false;
+    }
+    // O robô não avisa a si mesmo — a mesma guarda de `avisarDono`. Se o número
+    // do administrador for o que está conectado ao robô da loja que envia, a
+    // mensagem voltaria como mensagem recebida: conversa do robô com ele mesmo.
+    const lojaQueEnvia = await prisma.user.findUnique({
+      where: { id: userIdQueEnvia },
+      select: { chatbotConfig: true },
+    });
+    const numeroDoRobo = String((lojaQueEnvia?.chatbotConfig as any)?.phone || "").replace(/\D/g, "");
+    if (numeroDoRobo && numeroDoRobo.slice(-10) === numero.slice(-10)) {
+      console.warn("[Alertas] Alerta de sistema não enviado por esta loja: o número do administrador é o próprio número do robô dela.");
+      return false;
+    }
+
+    const jid = `${numero.startsWith("55") ? numero : `55${numero}`}@s.whatsapp.net`;
+    await registerBotReply(userIdQueEnvia, jid, mensagem).catch(() => {});
+    // O retorno é o do envio DE VERDADE: quem chama solta o freio de uma hora
+    // quando não saiu, para a próxima loja tentar — devolver `true` sempre
+    // deixava o administrador sem aviso por uma hora se a primeira loja a
+    // sentir a queda estivesse com o gateway recusando envio.
+    const saiu = await sendEvolutionMessage(userIdQueEnvia, jid, mensagem);
+    if (!saiu) console.error("[Alertas] 🔥 Alerta de sistema NÃO saiu (o gateway recusou o envio). Outra loja vai tentar.");
+    return Boolean(saiu);
+  } catch (err: any) {
+    console.error("[Alertas] Falha ao avisar o administrador do sistema:", err?.message);
     return false;
   }
 }

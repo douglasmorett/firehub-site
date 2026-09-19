@@ -3,6 +3,7 @@ import { STATUS_CANCELADOS } from "./status-pedido";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { inicioDoExpedienteDaLoja } from "./fuso";
 import { telefoneDeVerdade, paraEnvioWhatsApp } from "./telefone";
+import { ehRetirada } from "./status-para-o-cliente";
 
 /**
  * `EM_PREPARO` é novo. A promessa feita ao cliente no "Pedido Recebido" é
@@ -40,6 +41,14 @@ export async function sendOrderNotification(
     });
 
     if (!order || !order.customerPhone) return;
+
+    // Pedido que o cliente vem BUSCAR nunca "saiu para entrega". A rota de
+    // status já escolhe PRONTO_RETIRADA para quem não é DELIVERY, mas qualquer
+    // outro chamador que mande SAIU_ENTREGA num pedido de retirada (o status no
+    // banco é o mesmo para os dois) diria ao cliente que um entregador está a
+    // caminho. A correção mora aqui para valer para todos eles
+    // (lib/status-para-o-cliente.ts).
+    if (type === "SAIU_ENTREGA" && ehRetirada(order.deliveryType)) type = "PRONTO_RETIRADA";
 
     // Verificar se a loja desativou notificações automáticas de pedido nas configurações
     const chatbotConfig = (order.franchisee?.chatbotConfig as any) || {};

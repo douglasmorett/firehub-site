@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
+import AvisoIaForaDoAr from "@/components/customer/AvisoIaForaDoAr";
 import AvisoCaixaAberto24h from "@/components/customer/AvisoCaixaAberto24h";
 import AvisoImpressaoParada from "@/components/customer/AvisoImpressaoParada";
 import { AvisoDispensavel, BotaoNaoVerMais } from "@/components/customer/NaoVerMais";
@@ -180,6 +181,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           <div style={{ padding: "1rem 1.5rem 0" }}>
             <AvisoCaixaAberto24h />
             <AvisoRoboDesconectado />
+            <AvisoIaForaDoAr />
           </div>
         </HideOnCompras>
 

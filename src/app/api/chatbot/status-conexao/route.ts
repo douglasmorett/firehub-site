@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { estadoAoVivoDoRobo, registrarEstadoDoRobo } from "@/lib/whatsapp-estado";
+import { saudeDaIa } from "@/lib/saude-da-ia";
 
 export const dynamic = "force-dynamic";
 
@@ -99,6 +100,8 @@ export async function GET() {
     return NextResponse.json({
       precisaReconectar,
       desde: precisaReconectar ? cfg.desconectadoDesde : null,
+      // A IA do robô está fora do ar? (faixa AvisoIaForaDoAr; lib/saude-da-ia.ts)
+      ia: saudeDaIa(lojaId),
     });
   } catch (err: any) {
     // Falha aqui nunca pode quebrar o painel: sem resposta, sem faixa.

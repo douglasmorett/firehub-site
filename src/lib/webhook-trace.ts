@@ -26,6 +26,12 @@ export type TraceStage =
   | "numero-ignorado"
   /** Cliente reclamou do pedido: o robô saiu e chamou a equipe. */
   | "problema-no-pedido"
+  /** Cliente pediu uma pessoa com todas as letras (lib/pedido-de-atendente.ts). */
+  | "pediu-atendente"
+  /** A IA falhou nesta mensagem, mas ainda não é incidente (soluço isolado). */
+  | "ia-falhou"
+  /** A IA está fora do ar: crédito, chave, ou falhas repetidas (lib/falha-da-ia.ts). */
+  | "ia-fora-do-ar"
   | "guard-ignorou"
   | "guard-degradou"
   | "ia-chamada"

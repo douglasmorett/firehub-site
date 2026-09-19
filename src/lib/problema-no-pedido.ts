@@ -142,3 +142,15 @@ export function detectarProblemaNoPedido(
 export const FRASE_DE_TRANSFERENCIA =
   "Poxa, sinto muito por isso! 🙏 Vou chamar agora uma pessoa da nossa equipe " +
   "para resolver isso com você por aqui.";
+
+/**
+ * A mensagem é uma pergunta sobre o pedido ("cadê meu pedido?", "já saiu?")?
+ *
+ * Usada pela resposta de emergência do robô (IA fora do ar): só quem PERGUNTOU
+ * do pedido recebe o status. Antes a resposta fixa devolvia status para
+ * qualquer mensagem — inclusive "quero falar com alguém" (Hakim, 17/09/2026).
+ */
+export function ehPerguntaSobreOPedido(texto: string): boolean {
+  if (typeof texto !== "string" || !texto.trim()) return false;
+  return Boolean(bate(COBRANCA_DE_PEDIDO, texto));
+}
