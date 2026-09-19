@@ -2,11 +2,18 @@
  * Editar um pedido de delivery/balcão JÁ LANÇADO — o cliente ligou.
  *
  * PATCH  { itens: [{ itemId, quantity }], removerItemIds: [...] }
- *          → muda quantidade e/ou remove itens do PRÓPRIO pedido. O total é
- *            recalculado do que sobrou (nunca digitado à mão), pela conta de
+ *          → muda quantidade e/ou remove itens. O total é recalculado do que
+ *            sobrou (nunca digitado à mão), pela conta de
  *            lib/edicao-de-pedido.ts — que preserva taxa de entrega e desconto,
  *            ao contrário da conta da mesa. Sobrou zero item = pedido cancelado
  *            e estoque devolvido.
+ *
+ *            EM PEDIDO DE MARKETPLACE isto também passa (desde 19/09/2026 — o
+ *            cliente liga na loja, não no app), com duas diferenças: se o
+ *            pedido foi pago na plataforma o `totalAmount` NÃO cai junto (ele
+ *            tem que continuar batendo com o repasse; só os itens mudam), e
+ *            tirar o último item não vira cancelamento — cancelar pedido de
+ *            parceiro é pelo botão que avisa o parceiro.
  *
  *        { acrescentar: [{ menuProductId, quantity, notes }], pagamento }
  *          → acrescenta item. Em pedido próprio o item entra no MESMO pedido e
@@ -64,6 +71,11 @@ const CAMPOS_DO_PEDIDO = {
   deliveryFee: true,
   discountTotal: true,
   tableSessionId: true,
+  // O que decide se o dinheiro já entrou pela plataforma — é isso que separa
+  // "o total cai junto com o item" de "o total fica em pé para bater com o
+  // repasse" (lib/edicao-de-pedido.ts).
+  paymentMethod: true,
+  gatewayPaymentId: true,
   ifoodOrderId: true,
   ifoodReference: true,
   openDeliveryOrderId: true,
@@ -135,14 +147,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Nada para alterar" }, { status: 400 });
     }
 
-    // A trava do marketplace mora aqui, não só na tela: tirar item de pedido do
-    // parceiro é o que faria o valor divergir do repasse.
-    if (avaliacao.modo === "SO_ACRESCIMO" && querMexerNosOriginais) {
-      return NextResponse.json({ error: avaliacao.motivo }, { status: 403 });
-    }
-
-    // Pedido de marketplace: o acréscimo vira pedido colado, sozinho.
-    if (avaliacao.modo === "SO_ACRESCIMO") {
+    // ── Marketplace: as duas metades, cada uma no seu lugar ──────────────
+    //
+    // Mexer nos itens originais passa (é o pedido do lojista: o cliente ligou
+    // na loja para tirar item). O ACRÉSCIMO continua virando pedido colado
+    // pelas duas razões escritas no topo — repasse do parceiro e fechamento de
+    // caixa —, então quando vêm as duas coisas na mesma chamada, a remoção é
+    // gravada primeiro e o colado nasce depois.
+    if (avaliacao.modo === "MARKETPLACE") {
+      if (querMexerNosOriginais) {
+        const resposta = await editarItensDoMarketplace({
+          order,
+          operador,
+          itens,
+          removerItemIds,
+          totalMuda: avaliacao.totalMuda === true,
+        });
+        // Erro (nada válido, ou tirou tudo): não segue para o acréscimo.
+        if (!resposta.ok) return resposta.resposta;
+        if (acrescentar.length === 0) return resposta.resposta;
+        // Com acréscimo junto, quem responde é o colado — a tela precisa do
+        // pedido novo para imprimir a comanda dele.
+      }
       return await acrescentarColado({
         order,
         lojaId,
@@ -174,7 +200,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // quem fala com o iFood/99/Brendi é a rota de status, com o código de
     // cancelamento que cada um exige. O botão de cancelar do painel continua
     // sendo o caminho.
-    if (ctx.avaliacao.modo === "SO_ACRESCIMO") {
+    if (ctx.avaliacao.modo === "MARKETPLACE") {
       return NextResponse.json(
         { error: "Para cancelar um pedido de marketplace, use o botão Cancelar do painel — ele avisa o parceiro." },
         { status: 403 }
@@ -322,6 +348,136 @@ async function editarPedidoProprio(entrada: {
     `total ${order.totalAmount} → ${novoTotal}, por ${registro.quem}`
   );
   return NextResponse.json({ success: true, totalAmount: novoTotal, registro });
+}
+
+// ── Marketplace: tirar item e mudar quantidade, sem mexer no repasse ───────
+
+/**
+ * O cliente ligou NA LOJA para tirar dois dos dez itens de um pedido do iFood.
+ *
+ * O que muda aqui e não no pedido próprio:
+ *
+ *   • O TOTAL SÓ CAI SE O CLIENTE AINDA VAI PAGAR. Pedido pago na plataforma
+ *     continua valendo o que o parceiro vai depositar — `totalAmount` intocado,
+ *     com os itens certos na comanda. Reduzir o total ali faria o relatório de
+ *     faturamento divergir do extrato do iFood todo santo dia, que é o motivo
+ *     pelo qual esta edição era proibida até 19/09/2026. Quem paga na porta tem
+ *     o total recalculado, porque o entregador vai cobrar o novo valor.
+ *     Quem decide é `avaliarEdicao` (`totalMuda`), nunca esta função.
+ *
+ *   • TIRAR O ÚLTIMO ITEM NÃO CANCELA. No pedido próprio isso vira
+ *     cancelamento; aqui cancelar significa avisar o parceiro com o código de
+ *     cancelamento que ele exige, e quem faz isso é o botão Cancelar do painel.
+ *     Pedido de parceiro vazio e ativo seria pior que o erro que corrige.
+ *
+ * O estoque segue a mesma regra do pedido próprio: devolve o que foi baixado e
+ * baixa de novo o que sobrou, em sequência — a cozinha vai produzir menos.
+ */
+async function editarItensDoMarketplace(entrada: {
+  order: any;
+  operador: any;
+  itens: { itemId: string; quantity: number }[];
+  removerItemIds: string[];
+  totalMuda: boolean;
+}): Promise<{ ok: boolean; resposta: NextResponse }> {
+  const { order, operador, totalMuda } = entrada;
+
+  const idsDoPedido = new Set(order.items.map((i: any) => i.id));
+  const remover = entrada.removerItemIds.filter((rid) => idsDoPedido.has(rid));
+  const mudar = entrada.itens
+    .filter((m) => m && idsDoPedido.has(String(m.itemId)) && !remover.includes(String(m.itemId)))
+    .map((m) => ({ itemId: String(m.itemId), quantity: Math.floor(Number(m.quantity)) }))
+    .filter((m) => Number.isFinite(m.quantity) && m.quantity >= 1 && m.quantity <= 99);
+
+  if (remover.length === 0 && mudar.length === 0) {
+    return {
+      ok: false,
+      resposta: NextResponse.json({ error: "Nenhum item válido para alterar" }, { status: 400 }),
+    };
+  }
+
+  const sobraram = order.items
+    .filter((i: any) => !remover.includes(i.id))
+    .map((i: any) => ({ ...i, quantity: mudar.find((m) => m.itemId === i.id)?.quantity ?? i.quantity }));
+
+  if (sobraram.length === 0) {
+    return {
+      ok: false,
+      resposta: NextResponse.json(
+        {
+          error:
+            "Para tirar TODOS os itens, cancele o pedido pelo botão Cancelar do painel — é ele que avisa o parceiro.",
+        },
+        { status: 403 }
+      ),
+    };
+  }
+
+  const novoTotal = totalMuda
+    ? recalcularTotal({
+        itens: sobraram.map((i: any) => ({ price: i.price, quantity: i.quantity })),
+        deliveryFee: order.deliveryFee,
+        discountTotal: order.discountTotal,
+      })
+    : Number(order.totalAmount) || 0;
+
+  const nomeDoItem = (id: string) => order.items.find((i: any) => i.id === id)?.productName || "item";
+  const descricao =
+    [
+      ...remover.map((rid) => `−${nomeDoItem(rid)}`),
+      ...mudar.map((m) => {
+        const antes = order.items.find((i: any) => i.id === m.itemId)?.quantity;
+        return `${nomeDoItem(m.itemId)} ${antes}x → ${m.quantity}x`;
+      }),
+    ].join(", ") + (totalMuda ? "" : " (pago na plataforma: total mantido)");
+
+  const registro: RegistroDeEdicao = {
+    quando: new Date().toISOString(),
+    quem: nomeDoOperador(operador),
+    acao: remover.length > 0 ? "REMOVEU" : "MUDOU_QTD",
+    descricao,
+    totalAntes: order.totalAmount || 0,
+    totalDepois: novoTotal,
+  };
+
+  await prisma.$transaction(async (tx) => {
+    for (const rid of remover) {
+      await tx.customerOrderItem.delete({ where: { id: rid } });
+    }
+    for (const m of mudar) {
+      await tx.customerOrderItem.update({ where: { id: m.itemId }, data: { quantity: m.quantity } });
+    }
+    await tx.customerOrder.update({
+      where: { id: order.id },
+      data: {
+        ...(totalMuda ? { totalAmount: novoTotal } : {}),
+        editHistory: empilharEdicao(order.editHistory, registro) as any,
+      },
+    });
+  });
+
+  import("@/lib/stock")
+    .then(async ({ restoreStockForOrder, deductStockForOrder }) => {
+      await restoreStockForOrder(order.id);
+      await deductStockForOrder(order.id);
+    })
+    .catch((e: any) =>
+      console.error(
+        `[Editar Pedido] rebaixa de estoque falhou no pedido de parceiro ${order.id} — ` +
+        `conferir o saldo dos insumos de ${descricao}:`,
+        e?.message
+      )
+    );
+
+  console.log(
+    `[Editar Pedido] marketplace ${order.id}: ${remover.length} removido(s), ${mudar.length} qtd alterada(s), ` +
+    `total ${order.totalAmount} → ${novoTotal}${totalMuda ? "" : " (mantido)"}, por ${registro.quem}`
+  );
+
+  return {
+    ok: true,
+    resposta: NextResponse.json({ success: true, totalAmount: novoTotal, totalMantido: !totalMuda, registro }),
+  };
 }
 
 // ── Itens novos: preço do banco e isolamento entre lojas ────────────────────

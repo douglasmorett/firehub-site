@@ -20,9 +20,20 @@
  *
  *   2. EXISTE MARKETPLACE. 80,6% do volume vem de iFood, 99Food, Jotajá,
  *      Brendi e Wabiz, e lá quem manda é o parceiro: o cliente pagou lá e o
- *      repasse é calculado lá. Mexer nos itens do lado do FireHub só faria o
- *      valor divergir do que vai ser depositado. Nesses o modo é
- *      `SO_ACRESCIMO` — ver `MODOS` abaixo.
+ *      repasse é calculado lá. Até 19/09/2026 esses pedidos eram
+ *      `SO_ACRESCIMO` — nem tirar item nem mudar quantidade.
+ *
+ *      A prática derrubou a regra: o cliente liga na loja (não no app) para
+ *      tirar dois dos dez itens, e o atendente ficava sem saída — a cozinha
+ *      produzia os dez porque a comanda dizia dez. Agora o modo é
+ *      `MARKETPLACE`: tira, muda quantidade e acrescenta.
+ *
+ *      O que NÃO mudou é o dinheiro. Em pedido PAGO NA PLATAFORMA o
+ *      `totalAmount` fica intocado mesmo quando some item: é ele que tem que
+ *      continuar batendo com o repasse do parceiro no fim do mês. Quem
+ *      recebe na porta (dinheiro, cartão na entrega) tem o total recalculado,
+ *      porque aí o valor a cobrar mudou de verdade. A tela diz qual dos dois
+ *      é, com todas as letras — ver `Avaliacao.avisoDoDinheiro`.
  *
  * ── A regra mora aqui, não nas telas ────────────────────────────────────────
  *
@@ -35,6 +46,7 @@
 
 import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
+import { ehPagoOnline } from "@/lib/pagamento-na-entrega";
 
 /** A chave da permissão no CSV de `User.permissions` (ver lib/permissions.ts). */
 export const PERMISSAO_EDITAR_PEDIDOS = "editar_pedidos";
@@ -73,8 +85,12 @@ export const STATUS_EDITAVEIS = [
 export type ModoDeEdicao =
   /** Tira item, muda quantidade e acrescenta. O dinheiro é todo da loja. */
   | "COMPLETO"
-  /** Só acrescenta, e o acréscimo vira pedido colado. Pedido de marketplace. */
-  | "SO_ACRESCIMO"
+  /**
+   * Pedido de marketplace: tira, muda quantidade e acrescenta — mas o
+   * acréscimo vira pedido colado (o parceiro não cobrou por ele) e o total só
+   * cai quando o cliente paga na porta. Ver `avisoDoDinheiro`.
+   */
+  | "MARKETPLACE"
   /** Não edita aqui. `motivo` diz o que o lojista tem que fazer. */
   | "BLOQUEADO";
 
@@ -82,6 +98,19 @@ export type Avaliacao = {
   modo: ModoDeEdicao;
   /** Frase pronta para a tela. Escrita para o lojista, não para o log. */
   motivo?: string;
+  /**
+   * O que acontece com o DINHEIRO ao tirar item — a frase que o atendente lê
+   * antes de salvar. Só no marketplace, onde a resposta não é óbvia.
+   */
+  avisoDoDinheiro?: string;
+  /**
+   * O total do pedido muda quando o item sai? Falso no marketplace pago na
+   * plataforma: lá o valor é o que o parceiro vai repassar, e some item sem
+   * mudar o total de propósito. A API lê ISTO, não o modo.
+   */
+  totalMuda?: boolean;
+  /** "iFood", "99Food"... para a tela escrever o nome certo. */
+  canal?: string;
 };
 
 export type PedidoParaEdicao = {
@@ -91,6 +120,11 @@ export type PedidoParaEdicao = {
   ifoodOrderId?: string | null;
   openDeliveryOrderId?: string | null;
   openDeliveryChannel?: string | null;
+  /** O que decide se o dinheiro já entrou (lib/pagamento-na-entrega.ts). */
+  paymentMethod?: string | null;
+  gatewayPaymentId?: string | null;
+  isPrepaid?: boolean | null;
+  prepaid?: boolean | null;
 };
 
 export type OperadorDaEdicao = {
@@ -157,13 +191,22 @@ export function avaliarEdicao(
 
   const canal = canalDoPedido(pedido as any);
   if (canal.ehMarketplace) {
+    // O cliente ligou na LOJA para tirar item — é o caso que existe, e o app
+    // do parceiro não está na mão do atendente. Deixa tirar; o que o aviso
+    // faz é impedir que ele prometa ao cliente um estorno que não acontece.
+    const pagoNaPlataforma = ehPagoOnline(pedido as any);
     return {
-      modo: "SO_ACRESCIMO",
-      motivo: `Pedido do ${canal.nome}: os itens e o valor de lá não mudam aqui — para tirar item, use o app do ${canal.nome}. Aqui você acrescenta o que o cliente pediu por fora.`,
+      modo: "MARKETPLACE",
+      canal: canal.nome,
+      totalMuda: !pagoNaPlataforma,
+      motivo: `Pedido do ${canal.nome}. A alteração vale no FireHub — comanda, cozinha e estoque. No app do ${canal.nome} o pedido continua como está.`,
+      avisoDoDinheiro: pagoNaPlataforma
+        ? `O cliente já pagou no ${canal.nome}: tirar item NÃO devolve dinheiro a ele e NÃO muda o repasse. O total do pedido fica em pé aqui para continuar batendo com o que o ${canal.nome} vai depositar. Se o cliente tem direito a diferença, quem resolve é o ${canal.nome}.`
+        : `O cliente paga na entrega: o total cai junto com o item, e é o novo valor que o entregador cobra. No app do ${canal.nome} o valor continua o antigo.`,
     };
   }
 
-  return { modo: "COMPLETO" };
+  return { modo: "COMPLETO", totalMuda: true };
 }
 
 /**

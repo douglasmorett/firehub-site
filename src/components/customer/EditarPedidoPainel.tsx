@@ -16,8 +16,11 @@
  *     pessoa esquece que existem.
  *   • Nada é gravado enquanto o botão Salvar não for clicado. A edição inteira
  *     vive no rascunho aqui, então dá para errar e voltar atrás.
- *   • Pedido de marketplace não mostra botão de tirar item: mostra o recado de
- *     que aquilo se resolve no app do parceiro, e a caixa de acrescentar.
+ *   • Pedido de marketplace TAMBÉM tira item (o cliente liga na loja, não no
+ *     app) — o que ele ganha é um aviso do que acontece com o dinheiro: pago
+ *     no parceiro, o total fica em pé de propósito; pago na entrega, o total
+ *     cai e é o novo valor que o entregador cobra. O acréscimo lá continua
+ *     virando um pedido colado, com forma de pagamento própria.
  *
  * Quem decide o que pode é lib/edicao-de-pedido.ts — a MESMA função que a API
  * consulta. Esta tela não tem régua própria de status nem de canal: se ela
@@ -60,6 +63,10 @@ export default function EditarPedidoPainel({
 }) {
   const avaliacao = useMemo(() => avaliarEdicao(pedido, operador), [pedido, operador]);
   const modo: ModoDeEdicao = avaliacao.modo;
+  /** Marketplace e pedido próprio editam itens do mesmo jeito. O que muda é o dinheiro. */
+  const ehMarketplace = modo === "MARKETPLACE";
+  /** No marketplace pago na plataforma o total NÃO acompanha o item que saiu. */
+  const totalAcompanha = avaliacao.totalMuda !== false;
 
   // Rascunho: quantidade por item e o que foi marcado para remover. Nada disso
   // toca o servidor antes do Salvar.
@@ -117,20 +124,28 @@ export default function EditarPedidoPainel({
       .filter((i) => !removidos.has(i.id))
       .reduce((s, i) => s + i.price * (quantidades[i.id] ?? i.quantity), 0);
     const somaNovos = acrescimos.reduce((s, a) => s + a.produto.price * a.quantity, 0);
-    if (modo === "SO_ACRESCIMO") {
-      // No marketplace o pedido original não muda: o que a tela prevê é o valor
-      // a cobrar do cliente por fora.
+    if (modo === "MARKETPLACE") {
+      // O acréscimo do marketplace nunca entra no pedido do parceiro: ele vira
+      // pedido colado, e é esse valor que o cliente paga por fora.
       return Math.round(somaNovos * 100) / 100;
     }
     return Math.round(Math.max(0, somaOriginais + somaNovos - desconto + taxa) * 100) / 100;
   }, [itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo]);
 
+  /** O total do PEDIDO depois de tirar item — só existe quando ele acompanha. */
+  const totalDoPedidoPrevisto = useMemo(() => {
+    const soma = itensOriginais
+      .filter((i) => !removidos.has(i.id))
+      .reduce((s, i) => s + i.price * (quantidades[i.id] ?? i.quantity), 0);
+    return Math.round(Math.max(0, soma - desconto + taxa) * 100) / 100;
+  }, [itensOriginais, removidos, quantidades, desconto, taxa]);
+
   const totalAtual = Number(pedido.totalAmount) || 0;
   const sobrouAlgum = itensOriginais.some((i) => !removidos.has(i.id));
-  const mudouAlgo =
-    acrescimos.length > 0 ||
+  const mexeuNosOriginais =
     removidos.size > 0 ||
     itensOriginais.some((i) => (quantidades[i.id] ?? i.quantity) !== i.quantity);
+  const mudouAlgo = acrescimos.length > 0 || mexeuNosOriginais;
 
   if (modo === "BLOQUEADO") {
     return (
@@ -157,6 +172,24 @@ export default function EditarPedidoPainel({
       if (!ok) return;
     }
 
+    // No marketplace tirar tudo NÃO cancela: cancelar pedido de parceiro é pelo
+    // botão que avisa o parceiro. O servidor recusa; a tela diz antes, para o
+    // atendente não descobrir isso com o cliente no telefone.
+    if (ehMarketplace && !sobrouAlgum) {
+      setErro(
+        `Para cancelar o pedido inteiro, use o botão Cancelar do painel — é ele que avisa o ${avaliacao.canal || "parceiro"}.`
+      );
+      return;
+    }
+
+    // Tirar item de pedido JÁ PAGO na plataforma não devolve dinheiro a
+    // ninguém. Confirmar aqui é o que separa "o atendente entendeu" de "o
+    // atendente prometeu estorno ao cliente no telefone".
+    if (ehMarketplace && !totalAcompanha && mexeuNosOriginais) {
+      const ok = confirm(`${avaliacao.avisoDoDinheiro}\n\nConfirma a alteração?`);
+      if (!ok) return;
+    }
+
     setSalvando(true);
     setErro("");
     try {
@@ -169,14 +202,14 @@ export default function EditarPedidoPainel({
           menuProductId: a.produto.id,
           quantity: a.quantity,
         }));
-        if (modo === "SO_ACRESCIMO") corpo.pagamento = pagamento;
+        if (ehMarketplace) corpo.pagamento = pagamento;
       }
-      if (modo === "COMPLETO") {
-        corpo.removerItemIds = Array.from(removidos);
-        corpo.itens = itensOriginais
-          .filter((i) => !removidos.has(i.id) && (quantidades[i.id] ?? i.quantity) !== i.quantity)
-          .map((i) => ({ itemId: i.id, quantity: quantidades[i.id] }));
-      }
+      // Tirar item e mudar quantidade valem nos dois modos. No marketplace o
+      // servidor grava os itens e decide sozinho se o total acompanha.
+      corpo.removerItemIds = Array.from(removidos);
+      corpo.itens = itensOriginais
+        .filter((i) => !removidos.has(i.id) && (quantidades[i.id] ?? i.quantity) !== i.quantity)
+        .map((i) => ({ itemId: i.id, quantity: quantidades[i.id] }));
 
       const res = await fetch(`/api/store/orders/${pedido.id}/itens`, {
         method: "PATCH",
@@ -204,28 +237,30 @@ export default function EditarPedidoPainel({
 
   return (
     <div style={{ padding: "4px 2px" }}>
-      {/* O recado do marketplace vem ANTES de tudo: é a primeira coisa que
-          explica por que não há botão de lixeira nos itens. */}
-      {modo === "SO_ACRESCIMO" && (
+      {/* O recado do marketplace vem ANTES de tudo: o atendente está com o
+          cliente no telefone e precisa saber, antes de mexer, o que acontece
+          com o dinheiro — porque a resposta não é a intuitiva. */}
+      {ehMarketplace && (
         <div
           style={{
-            background: "#FEF2F2",
-            border: "1px solid #FECACA",
+            background: totalAcompanha ? "#FFFBEB" : "#FEF2F2",
+            border: `1px solid ${totalAcompanha ? "#FDE68A" : "#FECACA"}`,
             borderRadius: "10px",
             padding: "10px 12px",
             fontSize: "0.82rem",
-            color: "#7F1D1D",
+            color: totalAcompanha ? "#92400E" : "#7F1D1D",
             lineHeight: 1.5,
             marginBottom: "12px",
           }}
         >
-          {avaliacao.motivo}
+          <div style={{ fontWeight: 800, marginBottom: "4px" }}>{avaliacao.motivo}</div>
+          <div>{avaliacao.avisoDoDinheiro}</div>
         </div>
       )}
 
       {/* ── Itens do pedido ───────────────────────────────────────────── */}
       <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: "6px" }}>
-        {modo === "SO_ACRESCIMO" ? "Itens do pedido (não editáveis aqui)" : "Itens do pedido"}
+        {ehMarketplace ? `Itens do pedido (só aqui — o ${avaliacao.canal || "parceiro"} não muda)` : "Itens do pedido"}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "14px" }}>
@@ -263,7 +298,7 @@ export default function EditarPedidoPainel({
                 <div style={{ fontSize: "0.75rem", color: "#64748B" }}>{fmt(item.price)} cada</div>
               </div>
 
-              {modo === "COMPLETO" && !fora && (
+              {!fora && (
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   <button
                     type="button"
@@ -286,12 +321,7 @@ export default function EditarPedidoPainel({
                 </div>
               )}
 
-              {modo === "SO_ACRESCIMO" && (
-                <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#475569" }}>{qtd}x</span>
-              )}
-
-              {modo === "COMPLETO" && (
-                <button
+              <button
                   type="button"
                   onClick={() =>
                     setRemovidos((s) => {
@@ -314,8 +344,7 @@ export default function EditarPedidoPainel({
                   }}
                 >
                   {fora ? "↩" : "🗑️"}
-                </button>
-              )}
+              </button>
             </div>
           );
         })}
@@ -452,7 +481,7 @@ export default function EditarPedidoPainel({
       )}
 
       {/* ── Como o cliente paga o acréscimo (só marketplace) ───────────── */}
-      {modo === "SO_ACRESCIMO" && acrescimos.length > 0 && (
+      {ehMarketplace && acrescimos.length > 0 && (
         <div style={{ marginTop: "12px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px 12px" }}>
           <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#92400E", marginBottom: "2px" }}>
             Como o cliente vai pagar os {fmt(totalPrevisto)}?
@@ -487,10 +516,26 @@ export default function EditarPedidoPainel({
 
       {/* ── A conta, na cara ──────────────────────────────────────────── */}
       <div style={{ marginTop: "14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "10px 12px", fontSize: "0.84rem" }}>
-        {modo === "SO_ACRESCIMO" ? (
+        {ehMarketplace ? (
           <>
-            <Linha rotulo={`Pedido do marketplace (já pago lá)`} valor={fmt(totalAtual)} />
-            <Linha rotulo="Acréscimo a cobrar do cliente" valor={fmt(totalPrevisto)} destaque />
+            {/* A conta do marketplace tem DUAS linhas de total por um motivo:
+                o que o parceiro vai depositar e o que entra no caixa por fora
+                nunca se misturam. Quando o cliente paga na entrega, o primeiro
+                número muda junto com os itens; quando já pagou lá, não muda —
+                e a tela diz isso na própria linha, não numa nota de rodapé. */}
+            <Linha
+              rotulo={totalAcompanha ? `Total do pedido (cobrar na entrega)` : `Pedido do ${avaliacao.canal || "parceiro"} (já pago lá)`}
+              valor={fmt(totalAtual)}
+            />
+            {totalAcompanha && mexeuNosOriginais && (
+              <Linha rotulo="Novo total a cobrar" valor={fmt(totalDoPedidoPrevisto)} destaque />
+            )}
+            {!totalAcompanha && mexeuNosOriginais && (
+              <Linha rotulo="Total depois da alteração" valor={`${fmt(totalAtual)} (não muda)`} />
+            )}
+            {acrescimos.length > 0 && (
+              <Linha rotulo="Acréscimo a cobrar do cliente" valor={fmt(totalPrevisto)} destaque />
+            )}
           </>
         ) : (
           <>

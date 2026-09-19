@@ -1154,20 +1154,21 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             {/* ── O LÁPIS: editar sem passar pela comanda ──────────────────
                 A mesma régua da aba dentro do modal (lib/edicao-de-pedido.ts):
                 quem não pode editar não vê o lápis, em vez de ver um lápis que
-                abre uma tela dizendo "não pode". No marketplace o título muda
-                para "Acrescentar", porque é só isso que dá para fazer lá. */}
+                abre uma tela dizendo "não pode". No marketplace o lápis é de
+                outra cor: tirar item ali mexe no pedido do parceiro só do lado
+                de cá, e a tela avisa o que acontece com o dinheiro. */}
             {onOpenEditModal && (() => {
               const avaliacao = avaliarEdicao(order, operador || {});
               if (avaliacao.modo === "BLOQUEADO") return null;
-              const soAcrescimo = avaliacao.modo === "SO_ACRESCIMO";
+              const ehMarketplace = avaliacao.modo === "MARKETPLACE";
               return (
                 <button
                   onClick={e => {
                     e.stopPropagation();
                     onOpenEditModal(order.id);
                   }}
-                  title={soAcrescimo ? "Acrescentar item ao pedido" : "Editar itens do pedido"}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: soAcrescimo ? "#D97706" : "#C62828", color: "#fff", border: "none", cursor: "pointer" }}
+                  title={ehMarketplace ? `Editar itens (o ${avaliacao.canal || "parceiro"} não muda)` : "Editar itens do pedido"}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: ehMarketplace ? "#D97706" : "#C62828", color: "#fff", border: "none", cursor: "pointer" }}
                 >
                   <Pencil size={15} />
                 </button>
@@ -2191,6 +2192,32 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   markAutoPrinted(o);
                   console.log("[AutoPrint] 🖨️ Pedido da IA confirmado; imprimindo:", o.id);
                   handlePrint(o, "cozinha");
+                }
+
+                // ── E TAMBÉM TEM QUE APITAR ─────────────────────────────────
+                //
+                // A mudança de status contava como chegada só para a
+                // impressora. O som ficava de fora, e por dois caminhos
+                // fechados ao mesmo tempo: o bipe de chegada só olha id que
+                // apareceu agora (este existe desde o rascunho) e o alerta de
+                // aceite só toca enquanto o status é NOVO — que, com aceite
+                // automático, nunca chega a ser visto aqui, porque o robô já
+                // fecha o pedido como ACEITO (o `finalStatus` de
+                // lib/chatbot-ai.ts). Resultado medido na R&D Pizzaria em
+                // 19/09/2026: pedido do 99Food apitava, pedido do WhatsApp
+                // entrava mudo — a cozinha só via quando alguém olhava a tela.
+                //
+                // Quem virou NOVO fica de fora: ali o alerta de aceite assume,
+                // e dois sons juntos viram barulho. Mesma regra do bipe de
+                // chegada, e o mesmo freio de 2,5 s entre sequências.
+                if (o.status !== "NOVO") {
+                  const canalDaIA = canalDoPedido(o).nome;
+                  console.log(`[Pedido novo] 🛎️ ${canalDaIA} #${o.dailyOrderNumber ?? ""} — o robô fechou o pedido`);
+                  if (Date.now() - ultimoBipeRef.current > 2500) {
+                    ultimoBipeRef.current = Date.now();
+                    playOrderChime();
+                  }
+                  avisarChegada(o, canalDaIA);
                 }
               });
 
@@ -3471,7 +3498,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 if (avaliacao.modo === "BLOQUEADO") return null;
                 return (
                   <div style={{ display: "flex", gap: "6px", marginBottom: "12px" }}>
-                    {([["comanda", "🧾 Comanda"], ["editar", avaliacao.modo === "SO_ACRESCIMO" ? "➕ Acrescentar item" : "✏️ Editar itens"]] as const).map(([chave, rotulo]) => (
+                    {([["comanda", "🧾 Comanda"], ["editar", "✏️ Editar itens"]] as const).map(([chave, rotulo]) => (
                       <button
                         key={chave}
                         type="button"
@@ -4829,7 +4856,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
                 Filtro de pedidos
               </span>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
+              {/* ── O FILTRO NÃO PODE SER ESPREMIDO ATÉ SUMIR ───────────────
+                  Faltando espaço na barra, o flex encolhia os botões — e os
+                  três primeiros são LOGOS (iFood, 99Food, Jotajá): sem texto
+                  para segurar uma largura mínima, eles viravam três riscos
+                  vermelhos de 4 px, sem imagem nenhuma, enquanto Brendi,
+                  Retirada e Site continuavam inteiros ao lado. A loja via
+                  "os filtros estão com problema" (R&D Pizzaria, 19/09/2026)
+                  em telas largas, porque o que decide é o espaço que sobra na
+                  barra, não o tamanho do monitor. Cada botão recusa encolher
+                  e a fila quebra linha quando não couber. */}
+              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
                 {/* iFood */}
                 <button
                   type="button"
@@ -4837,6 +4874,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   title={selectedChannels.ifood ? "iFood: Ativo (Clique para filtrar)" : "iFood: Oculto (Clique para exibir)"}
                   style={{
                     height: "26px",
+                    flexShrink: 0,
                     padding: "2px 6px",
                     borderRadius: "6px",
                     border: selectedChannels.ifood ? "1.5px solid #EF4444" : "1.5px solid #CBD5E1",
@@ -4860,6 +4898,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   title={selectedChannels["99food"] ? "99Food: Ativo (Clique para filtrar)" : "99Food: Oculto (Clique para exibir)"}
                   style={{
                     height: "26px",
+                    flexShrink: 0,
                     padding: "2px 5px",
                     borderRadius: "6px",
                     border: selectedChannels["99food"] ? "1.5px solid #F59E0B" : "1.5px solid #CBD5E1",
@@ -4883,6 +4922,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   title={selectedChannels.jotaja ? "Jotajá: Ativo (Clique para filtrar)" : "Jotajá: Oculto (Clique para exibir)"}
                   style={{
                     height: "26px",
+                    flexShrink: 0,
                     padding: "2px 5px",
                     borderRadius: "6px",
                     border: selectedChannels.jotaja ? "1.5px solid #DC2626" : "1.5px solid #CBD5E1",
@@ -4909,6 +4949,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   title={selectedChannels.brendi ? "Brendi: Ativo (Clique para filtrar)" : "Brendi: Oculto (Clique para exibir)"}
                   style={{
                     height: "26px",
+                    flexShrink: 0,
                     padding: "2px 7px",
                     borderRadius: "6px",
                     border: selectedChannels.brendi ? "1.5px solid #8B5CF6" : "1.5px solid #CBD5E1",
@@ -4938,6 +4979,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     title={selectedChannels.wabiz ? "Wabiz: Ativo (Clique para filtrar)" : "Wabiz: Oculto (Clique para exibir)"}
                     style={{
                       height: "26px",
+                      flexShrink: 0,
                       padding: "2px 7px",
                       borderRadius: "6px",
                       border: selectedChannels.wabiz ? "1.5px solid #65A30D" : "1.5px solid #CBD5E1",
@@ -4965,6 +5007,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   title={selectedChannels.retirada ? "Retirada: Ativo (Clique para filtrar)" : "Retirada: Oculto (Clique para exibir)"}
                   style={{
                     height: "26px",
+                    flexShrink: 0,
                     padding: "2px 7px",
                     borderRadius: "6px",
                     border: selectedChannels.retirada ? "1.5px solid #10B981" : "1.5px solid #CBD5E1",
@@ -4992,6 +5035,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   title={selectedChannels.site ? "Cardápio/WhatsApp: Ativo (Clique para filtrar)" : "Cardápio/WhatsApp: Oculto (Clique para exibir)"}
                   style={{
                     height: "26px",
+                    flexShrink: 0,
                     padding: "2px 7px",
                     borderRadius: "6px",
                     border: selectedChannels.site ? "1.5px solid #3B82F6" : "1.5px solid #CBD5E1",

@@ -41,17 +41,38 @@ const proprio = { status: "PREPARANDO", source: "PRESENCIAL" };
 conferir("pedido proprio em preparo -> COMPLETO", avaliarEdicao(proprio, DONO).modo, "COMPLETO");
 conferir("pedido do site -> COMPLETO", avaliarEdicao({ status: "ACEITO", source: "ONLINE" }, DONO).modo, "COMPLETO");
 conferir("whatsapp IA -> COMPLETO", avaliarEdicao({ status: "ACEITO", source: "WHATSAPP_IA" }, DONO).modo, "COMPLETO");
-conferir("iFood -> SO_ACRESCIMO", avaliarEdicao({ status: "PREPARANDO", source: "IFOOD", ifoodOrderId: "x" }, DONO).modo, "SO_ACRESCIMO");
-conferir("99Food -> SO_ACRESCIMO", avaliarEdicao({ status: "PREPARANDO", source: "99FOOD", openDeliveryChannel: "99FOOD" }, DONO).modo, "SO_ACRESCIMO");
-conferir("Brendi -> SO_ACRESCIMO", avaliarEdicao({ status: "ACEITO", source: "BRENDI", openDeliveryChannel: "BRENDI" }, DONO).modo, "SO_ACRESCIMO");
-conferir("Wabiz -> SO_ACRESCIMO", avaliarEdicao({ status: "ACEITO", source: "WABIZ", openDeliveryChannel: "WABIZ" }, DONO).modo, "SO_ACRESCIMO");
-conferir("Jotaja -> SO_ACRESCIMO", avaliarEdicao({ status: "ACEITO", source: "JOTAJA", openDeliveryOrderId: "y" }, DONO).modo, "SO_ACRESCIMO");
+conferir("iFood -> MARKETPLACE", avaliarEdicao({ status: "PREPARANDO", source: "IFOOD", ifoodOrderId: "x" }, DONO).modo, "MARKETPLACE");
+conferir("99Food -> MARKETPLACE", avaliarEdicao({ status: "PREPARANDO", source: "99FOOD", openDeliveryChannel: "99FOOD" }, DONO).modo, "MARKETPLACE");
+conferir("Brendi -> MARKETPLACE", avaliarEdicao({ status: "ACEITO", source: "BRENDI", openDeliveryChannel: "BRENDI" }, DONO).modo, "MARKETPLACE");
+conferir("Wabiz -> MARKETPLACE", avaliarEdicao({ status: "ACEITO", source: "WABIZ", openDeliveryChannel: "WABIZ" }, DONO).modo, "MARKETPLACE");
+conferir("Jotaja -> MARKETPLACE", avaliarEdicao({ status: "ACEITO", source: "JOTAJA", openDeliveryOrderId: "y" }, DONO).modo, "MARKETPLACE");
+
+// ── O DINHEIRO do marketplace, que e o que a tela precisa dizer ──────────
+//
+// Tirar item de pedido pago NA PLATAFORMA nao pode derrubar o total: e ele que
+// tem que continuar batendo com o repasse do parceiro. Quem paga na porta tem
+// o total recalculado, porque o entregador vai cobrar o novo valor.
+console.log("\n== Marketplace: quando o total acompanha o item que saiu ==");
+const ifoodPago = { status: "PREPARANDO", source: "IFOOD", ifoodOrderId: "x", paymentMethod: "Pago Online (iFood)" };
+const ifoodNaPorta = { status: "PREPARANDO", source: "IFOOD", ifoodOrderId: "x", paymentMethod: "Dinheiro" };
+conferir("iFood pago na plataforma -> total NAO muda", avaliarEdicao(ifoodPago, DONO).totalMuda, false);
+conferir("iFood pago na entrega -> total muda", avaliarEdicao(ifoodNaPorta, DONO).totalMuda, true);
+conferir("gateway preenchido -> total NAO muda", avaliarEdicao({ ...ifoodNaPorta, gatewayPaymentId: "pay_1" }, DONO).totalMuda, false);
+conferir("pedido proprio -> total muda", avaliarEdicao(proprio, DONO).totalMuda, true);
+conferir("marketplace diz o canal", avaliarEdicao(ifoodPago, DONO).canal, "iFood");
+conferir("marketplace avisa do dinheiro", typeof avaliarEdicao(ifoodPago, DONO).avisoDoDinheiro === "string", true);
 
 console.log("\n== A janela que o dono escolheu (ate sair para entrega) ==");
 for (const s of ["NOVO", "CONFIRMADO", "ACEITO", "PREPARANDO", "EM_PREPARO", "PRONTO"]) {
   conferir(`${s} -> edita`, avaliarEdicao({ status: s, source: "PRESENCIAL" }, DONO).modo, "COMPLETO");
 }
-for (const s of ["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "EM_ROTA", "ENTREGUE", "ENCERRADO", "CANCELADO", "CANCELLED", "CANCELED", "AGUARDANDO_PAGAMENTO", "CRIANDO_IA", "STATUS_QUE_NAO_EXISTE"]) {
+// A decisao do dono mudou em 17/09/2026: depois que o pedido sai (e ate depois
+// de entregue) ele continua editavel, porque e ai que o cliente muda de ideia
+// na porta. So nao entra o que nem pedido e, e o que ja foi cancelado.
+for (const s of ["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "EM_ROTA", "ENTREGUE", "ENCERRADO"]) {
+  conferir(`${s} -> edita`, avaliarEdicao({ status: s, source: "PRESENCIAL" }, DONO).modo, "COMPLETO");
+}
+for (const s of ["CANCELADO", "CANCELLED", "CANCELED", "AGUARDANDO_PAGAMENTO", "CRIANDO_IA", "STATUS_QUE_NAO_EXISTE"]) {
   conferir(`${s} -> bloqueado`, avaliarEdicao({ status: s, source: "PRESENCIAL" }, DONO).modo, "BLOQUEADO");
 }
 
