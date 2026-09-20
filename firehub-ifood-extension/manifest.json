@@ -48,11 +48,11 @@
     },
     {
       "matches": [
-        "https://firehubfood.com.br/*",
-        "https://*.firehubfood.com.br/*",
-        "http://localhost:3000/*",
-        "http://localhost:3001/*",
-        "http://localhost/*"
+        "https://firehubfood.com.br/store/*",
+        "https://*.firehubfood.com.br/store/*",
+        "http://localhost:3000/store/*",
+        "http://localhost:3001/store/*",
+        "http://localhost/store/*"
       ],
       "js": [
         "scripts/firehub-bridge.js"

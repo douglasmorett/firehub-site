@@ -168,6 +168,16 @@ export default function PrazosLanding() {
   return (
     <main style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif", color: "#0F172A", background: "#F8FAFC" }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
+      {/* Nada do FireHub (o sistema) em cima da venda do Prazos.
+          A extensão INTERNA da casa injeta uma pílula no canto
+          ("FireHub: 28 min · 2 ped.") em toda página do domínio — o
+          manifesto dela já foi restringido a /store/*, mas isto aqui vale
+          para quem ainda não recarregou a extensão, e para qualquer outra
+          que injete algo parecido amanhã. É CSS: a página não tem como
+          desinstalar extensão, mas tem como esconder o que ela desenha. */}
+      <style>{`
+        #firehub-corner-pill, #firehub-ifood-tab-alert, #fhprazos-pill { display: none !important; }
+      `}</style>
       <RastreioDeClique />
 
       {/* ─────────── HERO: a demonstração é a imagem ─────────── */}

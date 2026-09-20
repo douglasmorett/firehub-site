@@ -8,6 +8,21 @@
  * 3. Marca a presença da extensão no DOM para a página /store/extensao-ifood saber que já está instalada.
  */
 
+/**
+ * Só o PAINEL. Até 19/09/2026 o manifesto injetava este script em
+ * `firehubfood.com.br/*`, ou seja, no site inteiro — e a pílula do canto
+ * ("FireHub: 28 min · 2 ped.") aparecia por cima da página de venda do
+ * FireHub Prazos para qualquer pessoa da casa que fosse olhar, gravar um
+ * vídeo ou tirar print para anúncio. O manifesto agora casa só `/store/*`;
+ * esta guarda existe para o caso de alguém reverter aquilo sem lembrar
+ * deste motivo. O bridge não tem nada a fazer fora do painel: ele lê o
+ * contador da coluna "Em produção" e anuncia a extensão para
+ * /store/extensao-ifood.
+ */
+if (!location.pathname.startsWith("/store")) {
+  console.log("[FireHub Extension Bridge] fora do painel — nada a fazer aqui.");
+} else {
+
 console.log("[FireHub Extension Bridge] ⚡ Conectado ao painel do FireHub em tempo real!");
 
 // ── PRESENÇA DA EXTENSÃO ──
@@ -391,3 +406,5 @@ function observeBadge() {
 }
 
 setTimeout(observeBadge, 2000);
+
+} // fim da guarda "só no painel" declarada no topo do arquivo

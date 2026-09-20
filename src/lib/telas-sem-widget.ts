@@ -27,6 +27,15 @@ export const TELAS_SEM_WIDGET = [
   "/store/kds",
   /** Totem: é o CLIENTE na frente, e o widget é a venda do FireHub ao lojista. */
   "/totem",
+  /**
+   * A página de venda do FireHub Prazos. Aqui o motivo é outro: o widget
+   * vende o FireHub (o sistema) no meio da venda de OUTRO produto, e é uma
+   * segunda ação concorrendo com o "Assinar" — em landing de low ticket,
+   * CTA concorrente derruba conversão. Pior no celular: o balão fica
+   * exatamente por cima da barra fixa de assinar. A página já tem o
+   * WhatsApp dela, no texto, com a mensagem certa.
+   */
+  "/prazos",
 ];
 
 export function ehTelaSemWidget(pathname: string | null | undefined): boolean {
