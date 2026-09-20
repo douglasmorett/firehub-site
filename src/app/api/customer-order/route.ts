@@ -139,6 +139,8 @@ export async function POST(req: Request) {
     const ehRetirada = RETIRADA.includes(canalNormalizado);
     const ehEntrega = !ehRetirada;
 
+    /** O ponto que o cliente confirmou (GPS ou pino no mapa), já validado. */
+    let pontoConfirmadoDoCliente: { lat: number; lng: number } | null = null;
     let veredictoDaArea: VeredictoDeEntrega | null = null;
     if (ehEntrega) {
       const coordsBrutas = body.customerCoords;
@@ -151,6 +153,7 @@ export async function POST(req: Request) {
         Math.abs(latBruta) <= 90 && Math.abs(lngBruta) <= 180 &&
         !(Math.abs(latBruta) < 0.01 && Math.abs(lngBruta) < 0.01);
       const coords = coordsValidas ? { lat: latBruta, lng: lngBruta } : null;
+      pontoConfirmadoDoCliente = coords;
       if (coordsBrutas && !coordsValidas) {
         console.warn(`[customer-order] customerCoords recusado (${JSON.stringify(coordsBrutas)}) na loja ${franchisee.id}`);
       }
@@ -608,6 +611,13 @@ export async function POST(req: Request) {
         // mesma sessão que veio do anúncio — sem eles a venda aparece como
         // visitante novo, sem origem. Vazio quando o cliente bloqueia cookie
         // ou quando a loja não usa GA4: o disparo simplesmente não acontece.
+        // O PONTO QUE O CLIENTE CONFIRMOU NO MAPA FICA NO PEDIDO.
+        //
+        // Ele decidia a área e era jogado fora: a roteirização, o app do
+        // entregador e o mapa do painel geocodificavam o endereço DE NOVO — e
+        // erravam de novo, do mesmo jeito que o mapa erra. A coluna já existe
+        // e é a mesma que o iFood preenche com o ponto que o parceiro manda.
+        ...(pontoConfirmadoDoCliente ? { customerLatLng: pontoConfirmadoDoCliente } : {}),
         gaClientId: typeof body.gaClientId === "string" ? body.gaClientId.slice(0, 64) : null,
         gaSessionId: typeof body.gaSessionId === "string" ? body.gaSessionId.slice(0, 32) : null,
         items: { create: orderItems }

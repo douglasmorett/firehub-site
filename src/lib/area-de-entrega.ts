@@ -327,7 +327,14 @@ export async function avaliarEntrega(
           loja.storeAddress ?? null, loja.storeLatLng as any, loja.city ?? null,
           [], loja.deliveryZoneType ?? null, endereco, null, loja.deliveryConfig, pedido.partes,
         );
-        if (check?.addressFound && check.clienteLat != null && check.clienteLng != null) {
+        // PRECISÃO DE BAIRRO NÃO SERVE PARA GEOMETRIA.
+        //
+        // Quando o mapa só acha o CENTRO DO BAIRRO, esse ponto pode estar
+        // dentro do contorno com a casa do cliente do lado de fora (e vice-
+        // versa). No raio isso vira uma aproximação tolerável; numa área
+        // desenhada é decidir a fronteira com o ponto errado. Aqui a resposta
+        // honesta é "não sei" — e quem resolve é o cliente, confirmando o pino.
+        if (check?.addressFound && check.clienteLat != null && check.clienteLng != null && check.precisao !== "bairro") {
           pontoFinal = { lat: check.clienteLat, lng: check.clienteLng };
           enderecoNoMapa = check.matchedAddress;
         }

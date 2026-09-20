@@ -865,16 +865,26 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
       if (v.resultado === "ATENDE") {
         addressValidationText = `
 🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
-- ${v.modo === "BAIRRO" ? `Bairro cadastrado: ${v.bairro}` : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja (raio máximo ${v.raioMaxKm} km)${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
+- ${v.modo === "BAIRRO"
+    ? `Bairro cadastrado: ${v.bairro}`
+    : v.modo === "POLIGONO"
+      // Área desenhada não tem raio: falar em "raio máximo undefined km" é o
+      // robô entregando texto quebrado ao cliente, assinado pela loja.
+      ? `Endereço dentro da área de entrega da loja${v.bairro ? ` ("${v.bairro}")` : ""}${v.distanciaKm != null ? ` — ${v.distanciaKm} km da loja` : ""}`
+      : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja (raio máximo ${v.raioMaxKm} km)${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
 - RESULTADO: ✅ A LOJA ATENDE. Taxa de entrega: ${brl(v.taxa ?? 0)}${v.tempoMin && prazoDaLoja.temDado ? ` (${v.tempoMin} min)` : ""}.
 - Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.
 `;
       } else if (v.resultado === "FORA") {
         addressValidationText = `
 🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
-- ${v.modo === "BAIRRO" ? "O bairro informado NÃO está entre os bairros que a loja entrega." : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja, e a loja entrega até ${v.raioMaxKm} km.`}
+- ${v.modo === "BAIRRO"
+    ? "O bairro informado NÃO está entre os bairros que a loja entrega."
+    : v.modo === "POLIGONO"
+      ? `Esse endereço está FORA da área que a loja desenhou como área de entrega${v.areaDeRisco ? ` (a loja não atende a região "${v.areaDeRisco}")` : ""}.`
+      : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja, e a loja entrega até ${v.raioMaxKm} km.`}
 - RESULTADO: 🛑 FORA DA ÁREA DE ENTREGA. É PROIBIDO anotar entrega para este endereço, cotar taxa ou pedir pagamento.
-- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && v.distanciaKm != null ? ` (fica a ${v.distanciaKm} km; entregamos até ${v.raioMaxKm} km)` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.
+- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && v.distanciaKm != null && v.raioMaxKm != null ? ` (fica a ${v.distanciaKm} km; entregamos até ${v.raioMaxKm} km)` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.
 `;
       } else {
         addressValidationText = `
@@ -2317,7 +2327,11 @@ async function syncAiOrderToDatabase({
       const lista = bairrosAtendidos(loja);
       const explicacao = vereditoDaArea.modo === "BAIRRO"
         ? `a gente ainda não entrega nesse bairro.${lista.length ? ` Atendemos: ${lista.slice(0, 12).map((b) => b.name).join(", ")}${lista.length > 12 ? "…" : ""}.` : ""}`
-        : `esse endereço fica a ${vereditoDaArea.distanciaKm} km da loja, e nossa entrega vai até ${vereditoDaArea.raioMaxKm} km.`;
+        : vereditoDaArea.modo === "POLIGONO" || vereditoDaArea.distanciaKm == null || vereditoDaArea.raioMaxKm == null
+          // Sem raio cadastrado (área desenhada) não há número para citar: a
+          // frase genérica é melhor que "a undefined km da loja".
+          ? "esse endereço está fora da nossa área de entrega."
+          : `esse endereço fica a ${vereditoDaArea.distanciaKm} km da loja, e nossa entrega vai até ${vereditoDaArea.raioMaxKm} km.`;
       return {
         gravado: false,
         motivo: `endereço fora da área de entrega (${vereditoDaArea.motivo})`,
