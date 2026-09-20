@@ -10,6 +10,7 @@ import QuemJaUsa from "./QuemJaUsa";
 import { CHECKOUT_PADRAO, PLANOS } from "./planos";
 import { CHEFS } from "./chefs";
 import { SeloDeGarantia } from "./SeloDeGarantia";
+import { TEXTO_CTA, PRECO_SOB_BOTAO } from "./textos";
 
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
@@ -142,6 +143,7 @@ function Botao({ children, style }: { children: React.ReactNode; style?: React.C
   return (
     <a
       href={CHECKOUT}
+      className="cta-pulsa"
       style={{
         display: "inline-block",
         background: `linear-gradient(135deg, ${LARANJA} 0%, #E64A19 100%)`,
@@ -177,6 +179,22 @@ export default function PrazosLanding() {
           desinstalar extensão, mas tem como esconder o que ela desenha. */}
       <style>{`
         #firehub-corner-pill, #firehub-ifood-tab-alert, #fhprazos-pill { display: none !important; }
+
+        /* A pulsação do botão de ação: ela existe para o olho achar o botão
+           depois de rolar meia tela de texto, não para chamar atenção o
+           tempo todo. Por isso é lenta, discreta (3% de escala) e some
+           quando o ponteiro chega. CSS puro — a página não carrega
+           biblioteca de animação por causa do tempo de abertura no 4G. */
+        @keyframes cta-pulsa {
+          0%, 100% { transform: scale(1); box-shadow: 0 10px 28px rgba(255,87,34,.35); }
+          50% { transform: scale(1.03); box-shadow: 0 14px 34px rgba(255,87,34,.55); }
+        }
+        .cta-pulsa { animation: cta-pulsa 2.4s ease-in-out infinite; will-change: transform; }
+        .cta-pulsa:hover, .cta-pulsa:focus-visible { animation-play-state: paused; transform: scale(1.03); }
+        /* Quem pediu menos movimento no sistema não recebe pulsação nenhuma. */
+        @media (prefers-reduced-motion: reduce) {
+          .cta-pulsa { animation: none; }
+        }
       `}</style>
       <RastreioDeClique />
 
@@ -200,9 +218,16 @@ export default function PrazosLanding() {
             Feita para quem entrega com motoboy próprio. Você deixa o portal aberto e não mexe em mais nada.
           </p>
 
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-            <Botao>Assinar por R$ 29,90/mês</Botao>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: "1.05rem" }}>Menos de R$ 1 por dia.</div>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+            <Botao>{TEXTO_CTA}</Botao>
+            {/* O preço sai do botão e vira a âncora ao lado dele: o número
+                que ele compara não é com concorrente, é com o pedido que
+                ele perde numa noite. */}
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: "1.05rem", lineHeight: 1.35 }}>
+              R$ 29,90 por mês.
+              <br />
+              <span style={{ color: "#FF7A59" }}>Menos de R$ 1 por dia.</span>
+            </div>
           </div>
           {/* Quem chega de anúncio quase nunca compra no primeiro clique, e a
               alternativa a "comprar agora" não pode ser "fechar a aba" — tem
@@ -364,7 +389,10 @@ export default function PrazosLanding() {
           </figure>
 
           <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-            <Botao>Assinar por R$ 29,90/mês</Botao>
+            <div>
+              <Botao>{TEXTO_CTA}</Botao>
+              <div style={{ color: "#64748B", fontSize: ".85rem", marginTop: 8 }}>{PRECO_SOB_BOTAO}</div>
+            </div>
             {/* O texto antigo ("Quer testar antes?") mandava quem não tem a
                 extensão para uma página que só funciona com ela instalada —
                 e essa pessoa não voltava. O convite agora diz para quem é. */}
@@ -610,11 +638,21 @@ export default function PrazosLanding() {
       <section style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#fff" }}>
         <div style={{ ...secao, textAlign: "center" }}>
           <h2 style={{ ...h2, color: "#fff" }}>Hoje à noite o prazo já pode estar certo</h2>
-          <p style={{ color: "#CBD5E1", maxWidth: 520, margin: "0 auto 22px", lineHeight: 1.6 }}>
-            R$ 29,90 por mês, 30 dias de garantia, sem fidelidade. O acesso chega no e-mail na hora.
+          {/* A urgência desta página é a real, não um contador regressivo:
+              enquanto ele não instala, o prazo errado continua indo para o
+              cliente todas as noites. Escassez inventada converte pior que
+              nenhuma — e o público aqui já viu essa peça em infoproduto. */}
+          <p style={{ color: "#FFD9CF", fontWeight: 800, maxWidth: 560, margin: "0 auto 14px", lineHeight: 1.55, fontSize: "1.05rem" }}>
+            Toda noite que passa é uma noite prometendo 28 minutos com a cozinha cheia.
           </p>
-          <Botao style={{ fontSize: "1.15rem", padding: "18px 36px" }}>Assinar por R$ 29,90/mês</Botao>
-          <div style={{ color: "#94A3B8", fontSize: ".82rem", marginTop: 16, lineHeight: 1.6 }}>
+          <p style={{ color: "#CBD5E1", maxWidth: 520, margin: "0 auto 22px", lineHeight: 1.6 }}>
+            Instala em 2 minutos e o acesso chega no e-mail na hora. Sem fidelidade.
+          </p>
+          <Botao style={{ fontSize: "1.15rem", padding: "18px 36px" }}>{TEXTO_CTA}</Botao>
+          <div style={{ color: "#fff", fontWeight: 800, fontSize: "1rem", marginTop: 14 }}>
+            R$ 29,90 por mês · menos de R$ 1 por dia
+          </div>
+          <div style={{ color: "#94A3B8", fontSize: ".82rem", marginTop: 10, lineHeight: 1.6 }}>
             Pagamento pela Cakto · cartão ou Pix
             <br />
             A Cakto soma R$ 0,99 de taxa de serviço no checkout: o total dessa cobrança fica R$ 30,89.

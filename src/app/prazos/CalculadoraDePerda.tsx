@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CHECKOUT_PADRAO } from "./planos";
+import { TEXTO_CTA } from "./textos";
 
 /**
  * "Quanto o prazo errado te custa por mês" — a calculadora da página de venda.
@@ -129,7 +130,7 @@ export default function CalculadoraDePerda() {
           boxShadow: "0 10px 28px rgba(255,87,34,.3)",
         }}
       >
-        Assinar por R$ 29,90/mês
+        {TEXTO_CTA}
       </a>
     </div>
   );

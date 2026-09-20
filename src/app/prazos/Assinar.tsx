@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PLANOS, type Plano } from "./planos";
 import { SeloPequeno } from "./SeloDeGarantia";
+import { TEXTO_CTA, TEXTO_CTA_CURTO } from "./textos";
 
 /**
  * Preço com seletor de lojas, e a barra fixa do celular.
@@ -116,12 +117,14 @@ export function SeletorDePlano() {
         Um pedido cancelado custa mais que isso.
       </div>
 
-      <a href={p.url} style={{
+      {/* O preço já está logo acima, no tamanho de manchete — o botão não
+          precisa repeti-lo, precisa dizer o que ele ganha ao clicar. */}
+      <a href={p.url} className="cta-pulsa" style={{
         display: "block", marginTop: 18, background: `linear-gradient(135deg, ${LARANJA}, #E64A19)`,
         color: "#fff", fontWeight: 900, padding: "16px 22px", borderRadius: 12,
         textDecoration: "none", fontSize: "1.05rem", boxShadow: "0 10px 28px rgba(255,87,34,.35)",
       }}>
-        Assinar por {p.preco}/mês
+        {TEXTO_CTA}
       </a>
       {/* Selos de pagamento colados no botão, não no rodapé: é ali que a
           dúvida "onde eu estou pondo o cartão" aparece. Três, nunca mais —
@@ -189,11 +192,11 @@ function BarraFixa({ plano: p }: { plano: Plano }) {
             {p.lojas === 1 ? "30 dias de garantia" : `${p.lojas} lojas · 30 dias de garantia`}
           </div>
         </div>
-        <a href={p.url} style={{
+        <a href={p.url} className="cta-pulsa" style={{
           background: `linear-gradient(135deg, ${LARANJA}, #E64A19)`, color: "#fff", fontWeight: 900,
           padding: "11px 18px", borderRadius: 10, textDecoration: "none", fontSize: ".9rem", whiteSpace: "nowrap",
         }}>
-          Assinar agora
+          {TEXTO_CTA_CURTO}
         </a>
       </div>
       <style>{`

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CHECKOUT_PADRAO } from "../planos";
+import { TEXTO_CTA } from "../textos";
 
 /**
  * Kanban de mentira para testar a extensão sem ter loja.
@@ -136,8 +137,8 @@ export default function KanbanDeDemonstracao() {
               R$ 29,90 por mês · 30 dias de garantia · sem fidelidade
             </div>
           </div>
-          <a href={CHECKOUT_PADRAO} style={{ background: "linear-gradient(135deg,#FF5722,#E64A19)", color: "#fff", fontWeight: 900, padding: "14px 24px", borderRadius: 12, textDecoration: "none", fontSize: "1rem", whiteSpace: "nowrap", boxShadow: "0 10px 28px rgba(255,87,34,.35)" }}>
-            Assinar por R$ 29,90/mês
+          <a href={CHECKOUT_PADRAO} style={{ background: "linear-gradient(135deg,#FF5722,#E64A19)", color: "#fff", fontWeight: 900, padding: "14px 24px", borderRadius: 12, textDecoration: "none", fontSize: "1rem", boxShadow: "0 10px 28px rgba(255,87,34,.35)", maxWidth: 260, textAlign: "center", lineHeight: 1.3 }}>
+            {TEXTO_CTA}
           </a>
         </div>
 
