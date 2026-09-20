@@ -1,17 +1,18 @@
 /**
- * scripts/teste-opcoes-da-brendi.ts
+ * scripts/teste-opcoes-open-delivery.ts
  *
  * Trava o que fazia ADICIONAL SUMIR antes de chegar à cozinha.
  *
+ * Vale para a Brendi E para o JotaJá: os dois usam a mesma função.
  * A extração das opções encadeava os nove nomes de lista do Open Delivery com
  * `??` e ficava com o PRIMEIRO array não-vazio. Item com a escolha obrigatória
  * em `options` e o bacon extra em `additions` chegava sem o bacon: a comanda
  * imprimia o que veio, e o que veio já estava incompleto. Queixa do Frangoso,
  * 19/09/2026.
  *
- *   npx tsx scripts/teste-opcoes-da-brendi.ts
+ *   npx tsx scripts/teste-opcoes-open-delivery.ts
  */
-import { extrairOpcoesBrendi, valorBrendi } from "../src/lib/processBrendiEvent";
+import { extrairOpcoesDoItem, valorOpenDelivery } from "../src/lib/opcoes-open-delivery";
 
 let ok = 0;
 let falhou = 0;
@@ -26,7 +27,7 @@ function conferir(nome: string, obtido: unknown, esperado: unknown) {
     console.log(`  FALHOU ${nome}\n         esperado: ${b}\n         obtido:   ${a}`);
   }
 }
-const nomes = (item: any) => extrairOpcoesBrendi(item).map((o: any) => o.name);
+const nomes = (item: any) => extrairOpcoesDoItem(item).map((o: any) => o.name);
 
 console.log("\n== O bug: adicional em outra lista que não a primeira ==");
 conferir(
@@ -73,14 +74,14 @@ conferir(
 );
 
 console.log("\n== Preço: booleano nunca vira dinheiro ==");
-conferir("addition: true não é preço", extrairOpcoesBrendi({ options: [{ name: "Peito", addition: true }] })[0].price, 0);
-conferir("preço em objeto { value }", valorBrendi({ value: 7.5, currency: "BRL" }), 7.5);
-conferir("preço número puro", valorBrendi(3), 3);
-conferir("texto que não é número", valorBrendi("grátis"), 0);
-conferir("nulo", valorBrendi(null), 0);
+conferir("addition: true não é preço", extrairOpcoesDoItem({ options: [{ name: "Peito", addition: true }] })[0].price, 0);
+conferir("preço em objeto { value }", valorOpenDelivery({ value: 7.5, currency: "BRL" }), 7.5);
+conferir("preço número puro", valorOpenDelivery(3), 3);
+conferir("texto que não é número", valorOpenDelivery("grátis"), 0);
+conferir("nulo", valorOpenDelivery(null), 0);
 conferir(
   "o adicional pago mantém o valor",
-  extrairOpcoesBrendi({ options: [{ name: "X" }], additions: [{ name: "Bacon", price: 4.5 }] })[1].price,
+  extrairOpcoesDoItem({ options: [{ name: "X" }], additions: [{ name: "Bacon", price: 4.5 }] })[1].price,
   4.5,
 );
 
