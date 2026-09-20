@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { PLANOS } from "./planos";
 
 /**
  * Duas coisas que a página precisa no clique de "Assinar" e um <a> não faz
@@ -39,12 +40,33 @@ function comOrigem(href: string): string {
 export default function RastreioDeClique() {
   useEffect(() => {
     function aoClicar(e: MouseEvent) {
-      const alvo = (e.target as HTMLElement | null)?.closest?.('a[href^="https://pay.cakto.com.br/"]') as HTMLAnchorElement | null;
+      const link = (e.target as HTMLElement | null)?.closest?.("a") as HTMLAnchorElement | null;
+
+      // Clique no WhatsApp: é a segunda saída da página (dúvida antes de
+      // assinar, e a rede que precisa de várias lojas). Sem este evento, o
+      // Meta só enxerga quem vai direto ao checkout — e boa parte da venda
+      // desta página nasce numa conversa.
+      if (link?.href?.startsWith("https://wa.me/")) {
+        const fbq = (window as unknown as { fbq?: (...args: unknown[]) => void }).fbq;
+        if (typeof fbq === "function") fbq("track", "Contact", { content_name: "FireHub Prazos" });
+        return;
+      }
+
+      const alvo = link?.href?.startsWith("https://pay.cakto.com.br/") ? link : null;
       if (!alvo) return;
       try { alvo.href = comOrigem(alvo.href); } catch { /* href estranho: deixa como está */ }
       const fbq = (window as unknown as { fbq?: (...args: unknown[]) => void }).fbq;
       if (typeof fbq === "function") {
-        fbq("track", "InitiateCheckout", { currency: "BRL", value: 29.9, content_name: "FireHub Prazos" });
+        // O valor tem que ser o da faixa clicada, não R$ 29,90 sempre: quem
+        // compra de 5 lojas vale mais que o dobro para o algoritmo, e mandar
+        // 29,90 para todo mundo ensina o Meta a buscar o cliente errado.
+        const plano = PLANOS.find((p) => alvo.href.startsWith(p.url));
+        fbq("track", "InitiateCheckout", {
+          currency: "BRL",
+          value: (plano?.centavos ?? 2990) / 100,
+          content_name: "FireHub Prazos",
+          contents: plano ? [{ id: `prazos-${plano.lojas}-lojas`, quantity: plano.lojas }] : undefined,
+        });
       }
     }
     document.addEventListener("click", aoClicar, true);

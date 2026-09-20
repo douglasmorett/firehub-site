@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CHECKOUT_PADRAO } from "../planos";
 
 /**
  * Kanban de mentira para testar a extensão sem ter loja.
@@ -66,6 +67,20 @@ export default function KanbanDeDemonstracao() {
             depois clique no <b style={{ color: "#fff" }}>cabeçalho da coluna do meio</b>, ali onde fica o
             número. Use os botões abaixo para encher e esvaziar a cozinha e veja a contagem mudar no popup.
           </div>
+
+          {/* Esta página só funciona com a extensão instalada — e até hoje ela
+              recebia, pela página de venda, gente que ainda não tinha assinado.
+              Essa pessoa chegava, não via nada acontecer e ia embora. A faixa
+              dá a ela o caminho de volta em vez do botão de voltar. */}
+          <div style={{ marginTop: 14, background: "rgba(255,87,34,.12)", border: "1px solid rgba(255,122,89,.45)", borderRadius: 12, padding: "12px 14px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", maxWidth: 720 }}>
+            <div style={{ color: "#FFD9CF", fontSize: ".92rem", lineHeight: 1.5, flex: 1, minWidth: 240 }}>
+              <b style={{ color: "#fff" }}>Ainda não tem a extensão?</b> Esta página é para testar a marcação
+              depois de instalar. Para ver o prazo mudando sozinho agora, volte para a página do produto.
+            </div>
+            <a href="/prazos" style={{ background: "#fff", color: "#0F172A", fontWeight: 800, padding: "10px 16px", borderRadius: 10, textDecoration: "none", fontSize: ".88rem", whiteSpace: "nowrap" }}>
+              Ver a demonstração ao vivo
+            </a>
+          </div>
         </div>
       </div>
 
@@ -110,6 +125,20 @@ export default function KanbanDeDemonstracao() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Quem testou a marcação aqui e viu funcionar está no melhor momento
+            para assinar — e até agora a única saída da página era "voltar". */}
+        <div style={{ marginTop: 22, background: "#0B1220", borderRadius: 16, padding: "1.3rem 1.4rem", color: "#fff", display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ fontWeight: 900, fontSize: "1.15rem", marginBottom: 4 }}>Funcionou aqui? Funciona no seu painel.</div>
+            <div style={{ color: "#94A3B8", fontSize: ".9rem", lineHeight: 1.55 }}>
+              R$ 29,90 por mês · 30 dias de garantia · sem fidelidade
+            </div>
+          </div>
+          <a href={CHECKOUT_PADRAO} style={{ background: "linear-gradient(135deg,#FF5722,#E64A19)", color: "#fff", fontWeight: 900, padding: "14px 24px", borderRadius: 12, textDecoration: "none", fontSize: "1rem", whiteSpace: "nowrap", boxShadow: "0 10px 28px rgba(255,87,34,.35)" }}>
+            Assinar por R$ 29,90/mês
+          </a>
         </div>
 
         <div style={{ color: "#64748B", fontSize: ".85rem", marginTop: 18, lineHeight: 1.6 }}>

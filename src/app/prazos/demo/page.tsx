@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import KanbanDeDemonstracao from "./KanbanDeDemonstracao";
+import RastreioDeClique from "../RastreioDeClique";
 
 export const metadata: Metadata = {
   title: "Painel de demonstração — FireHub Prazos",
@@ -21,5 +22,13 @@ export const metadata: Metadata = {
  * extensão procura em um painel de verdade.
  */
 export default function DemoPage() {
-  return <KanbanDeDemonstracao />;
+  return (
+    <>
+      {/* A demonstração agora tem botão de assinar: sem isto, o clique daqui
+          chegaria na Cakto sem utm_* e sem InitiateCheckout, e a venda que
+          nasceu no anúncio apareceria no relatório como "direta". */}
+      <RastreioDeClique />
+      <KanbanDeDemonstracao />
+    </>
+  );
 }

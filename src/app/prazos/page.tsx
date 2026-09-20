@@ -2,17 +2,19 @@ import type { Metadata } from "next";
 import DemoAoVivo from "./DemoAoVivo";
 import NoiteDaCozinha from "./NoiteDaCozinha";
 import CalculadoraDePerda from "./CalculadoraDePerda";
-import { SeletorDePlano, BarraFixa } from "./Assinar";
+import { SeletorDePlano } from "./Assinar";
 import VoceSabia from "./VoceSabia";
 import GatilhoDoHero from "./GatilhoDoHero";
 import RastreioDeClique from "./RastreioDeClique";
 import QuemJaUsa from "./QuemJaUsa";
 import { CHECKOUT_PADRAO, PLANOS } from "./planos";
+import { CHEFS } from "./chefs";
+import { SeloDeGarantia } from "./SeloDeGarantia";
 
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
   description:
-    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 29,90 por mês, 7 dias de garantia.",
+    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 29,90 por mês, 30 dias de garantia.",
   openGraph: {
     title: "O prazo do seu iFood muda sozinho quando a cozinha enche",
     description: "A extensão olha a fila da sua cozinha e escreve o prazo certo no iFood e no 99Food. Você deixa o portal aberto e ela faz o resto.",
@@ -47,7 +49,10 @@ export const metadata: Metadata = {
  *   - números só medidos ou publicados pela plataforma, com link;
  *   - preço: R$ 29,90 = menos de R$ 1 por dia (29,90 ÷ 30 = 0,9967; nunca
  *     arredondar para "R$ 1,00", cruzar para baixo de um real é o argumento);
- *   - garantia de 7 dias, igual ao cadastro da Cakto, decisão do dono;
+ *   - garantia de 30 dias (era 7, o mínimo do CDC art. 49, que comunica
+ *     "fiz o mínimo"): o produto prova valor no PICO, e 7 dias pegam um fim
+ *     de semana só. Trocado em 19/09/2026, decisão do dono — a oferta na
+ *     Cakto tem que dizer o mesmo;
  *   - um só botão, repetido, sempre com o mesmo texto.
  *
  * Acrescentado em 09/09/2026, a pedido do dono ("quero gatilhos: você sabia
@@ -68,11 +73,12 @@ const FAQ: [string, string][] = [
   ["Preciso deixar o computador ligado?", "Sim. Ela roda no Chrome do computador da loja, com o painel e os portais abertos. Se a aba do painel fechar, ela segura o último prazo e avisa na tela, em vez de zerar e prometer 28 minutos na hora errada."],
   ["Ela pode bagunçar minha loja?", "Ela só escreve o prazo de entrega. Não aceita, não recusa, não cancela e não pausa. E você desliga o robô num clique, quando quiser."],
   ["Extensão de Chrome é seguro? O que ela lê?", "Ela roda em três lugares: no seu painel de pedidos, no Portal do Parceiro e no 99Food Admin. Ela lê o número de pedidos da coluna que você marcou. Não lê senha, não lê suas outras abas e não vê nada de banco."],
-  ["E se eu tiver várias lojas?", "Você marca na extensão quais lojas mudam de prazo. As que não marcar ficam como estão. Cada loja a mais custa R$ 9,90 e vale para as duas plataformas: mais uma no iFood e mais uma no 99Food. Todas precisam estar no mesmo login do iFood."],
+  ["Tenho mais de uma marca saindo da mesma cozinha. Como fica?", "Esse é o caso da faixa com desconto. Como é uma fila só, a extensão escreve o prazo nas duas (ou cinco) ao mesmo tempo: a primeira loja custa R$ 29,90 e cada uma a mais custa R$ 9,90 — um terço. Vale para as duas plataformas: mais uma no iFood e mais uma no 99Food. Só precisam estar no mesmo login do Portal do Parceiro. E você marca na extensão quais mudam de prazo; as que não marcar ficam como estão."],
+  ["E se minhas lojas ficam em endereços diferentes?", "Aí é uma assinatura para cada uma, e não a faixa de 2, 3 ou 5. O motivo é simples: a extensão roda no Chrome do computador da loja e lê a fila DAQUELE painel. A cozinha do centro pode estar com 14 pedidos enquanto a da praia está vazia — uma não pode escrever o prazo da outra. Se você tem rede, chama no WhatsApp que a gente fecha as lojas juntas e organiza o acesso de todas."],
   ["O prazo do 99 é o mesmo do iFood?", "Não, e é de propósito. No 99 o cliente vê o tempo de preparo somado ao tempo de entrega da faixa que você cadastrou, então a extensão mexe só no preparo. Você configura essa regra separada."],
-  ["E se o iFood mudar a tela e ela parar?", "Acontece, e quem corre é a gente: a atualização é nossa, não sua. Enquanto isso ela segura o último prazo e avisa na tela, em vez de sumir com o prazo. Se ficar sem funcionar, você cancela na Cakto e, dentro dos 7 dias, o dinheiro volta inteiro."],
+  ["E se o iFood mudar a tela e ela parar?", "Acontece, e quem corre é a gente: a atualização é nossa, não sua. Enquanto isso ela segura o último prazo e avisa na tela, em vez de sumir com o prazo. Se ficar sem funcionar, você cancela na Cakto e, dentro dos 30 dias, o dinheiro volta inteiro."],
   ["Dá para pagar no Pix?", "Sim: Pix Automático ou cartão, pela Cakto. No Pix a renovação também é automática, sem você lembrar todo mês."],
-  ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa. E se cancelar dentro de 7 dias, o dinheiro volta inteiro."],
+  ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa. E se cancelar dentro de 30 dias, o dinheiro volta inteiro."],
   ["E se eu deixar de pagar?", "Ela para de ajustar na hora e explica na tela por quê. Pagou de novo, volta sozinha."],
 ];
 
@@ -95,7 +101,10 @@ const JSON_LD = JSON.stringify([
     author: { "@type": "Organization", name: "FireHub", url: "https://firehubfood.com.br" },
     offers: PLANOS.map((p) => ({
       "@type": "Offer",
-      name: p.lojas === 1 ? "1 loja" : `${p.lojas} lojas`,
+      // O nome da oferta diz a regra, porque o assistente de IA que lê isto
+      // responde "quanto custa para 5 lojas?" sem abrir a página — e a
+      // resposta certa depende de as lojas dividirem ou não a mesma cozinha.
+      name: p.lojas === 1 ? "1 loja" : `${p.lojas} lojas no mesmo endereço (mesma cozinha, mesmo login do iFood)`,
       price: (p.centavos / 100).toFixed(2),
       priceCurrency: "BRL",
       url: p.url,
@@ -124,6 +133,8 @@ const LARANJA = "#FF5722";
 // O laranja da marca sobre branco dá contraste 3,16 — abaixo do mínimo de
 // leitura. Este é o mesmo laranja escurecido, só para texto de link.
 const LARANJA_LINK = "#C2410C";
+/** Alcance somado de quem indica, em milhares. */
+const ALCANCE_MIL = CHEFS.reduce((t, c) => t + (c.seguidoresMil ?? 0), 0);
 const CHECKOUT = CHECKOUT_PADRAO;
 const WA = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Tenho%20uma%20d%C3%BAvida%20sobre%20o%20FireHub%20Prazos.";
 
@@ -183,9 +194,59 @@ export default function PrazosLanding() {
             <Botao>Assinar por R$ 29,90/mês</Botao>
             <div style={{ color: "#fff", fontWeight: 800, fontSize: "1.05rem" }}>Menos de R$ 1 por dia.</div>
           </div>
-          <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 28 }}>
-            Leva 2 minutos · Pix ou cartão · 7 dias de garantia · sem fidelidade
+          {/* Quem chega de anúncio quase nunca compra no primeiro clique, e a
+              alternativa a "comprar agora" não pode ser "fechar a aba" — tem
+              que ser a demonstração, que é o melhor vendedor desta página.
+              Ela roda logo abaixo, então aqui vai só a seta: mandar para
+              /prazos/demo seria pior, porque aquela página só faz sentido
+              com a extensão JÁ instalada. */}
+          <div style={{ color: "#FF7A59", fontWeight: 800, fontSize: ".95rem", marginBottom: 10 }}>
+            ↓ Veja aqui embaixo, ao vivo: a fila enche, o prazo sobe sozinho.
           </div>
+          <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 10 }}>
+            Leva 2 minutos · Pix ou cartão · 30 dias de garantia · sem fidelidade
+          </div>
+          {/* A objeção de "extensão do Chrome" nasce no primeiro segundo, e
+              até aqui só era respondida lá embaixo na FAQ — depois do ponto
+              em que essa pessoa já tinha saído. */}
+          {/* #64748B sobre o azul do hero dá 3,2 de contraste — abaixo do
+              mínimo para texto pequeno. Mesmo cinza das outras linhas. */}
+          <div style={{ color: "#94A3B8", fontSize: ".82rem", marginBottom: 18 }}>
+            Não lê senha · não aceita nem cancela pedido · você desliga num clique
+          </div>
+
+          {/* Quem indica, com a cara, no primeiro segundo da página: a seção
+              inteira fica depois de três dobras, e a maioria decide antes de
+              chegar lá. O selo leva para ela. */}
+          {CHEFS.length > 0 && (
+            <a href="#quem-indica" style={{ display: "inline-flex", alignItems: "center", gap: 10, background: "rgba(255,87,34,.12)", border: "1px solid rgba(255,122,89,.45)", borderRadius: 999, padding: "7px 16px 7px 7px", marginBottom: 28, textDecoration: "none" }}>
+              <span style={{ display: "flex" }}>
+                {CHEFS.map((c, i) =>
+                  c.foto ? (
+                    <img
+                      key={c.arroba}
+                      src={c.foto}
+                      width={34}
+                      height={34}
+                      alt=""
+                      style={{ width: 34, height: 34, borderRadius: 999, objectFit: "cover", border: "2px solid #0F172A", marginLeft: i === 0 ? 0 : -10 }}
+                    />
+                  ) : null,
+                )}
+              </span>
+              <span style={{ color: "#FFD9CF", fontSize: ".92rem", lineHeight: 1.35 }}>
+                Indicado por{" "}
+                <b style={{ color: "#fff" }}>
+                  {CHEFS.map((c) => "@" + c.arroba).join(" e ")}
+                </b>
+                {/* Com dois chefs, repetir só o número do primeiro daria a
+                    entender que 145 mil é o total. Aqui vai a soma, e ela é
+                    arredondada PARA BAIXO na casa das dezenas: número de
+                    alcance a gente não infla. */}
+                {ALCANCE_MIL > 0 ? ` · ${Math.floor(ALCANCE_MIL / 10) * 10} mil seguidores${CHEFS.length > 1 ? " somados" : ""}` : ""}
+              </span>
+            </a>
+          )}
 
           <DemoAoVivo />
         </div>
@@ -206,17 +267,64 @@ export default function PrazosLanding() {
         </div>
       </section>
 
+      {/* ─────────── "EU MUDO NA MÃO": a objeção que segura a venda ───────────
+          Ninguém compra isto por não saber mudar o prazo — todo lojista sabe.
+          A objeção real é "eu já faço isso". A página respondia a segurança,
+          o preço e a instalação, e deixava essa de pé. Três cartões, porque
+          o argumento é o mesmo em três horas diferentes da noite. */}
+      <section style={{ background: "#F1F5F9", borderTop: "1px solid #E2E8F0" }}>
+        <div style={secao}>
+          <h2 style={h2}>“Mas eu mudo o prazo na mão”</h2>
+          <p style={p}>
+            Muda. Nas duas ou três vezes em que dá para parar. O problema é que a fila muda a cada pedido
+            que entra e a cada um que sai — e o Portal do Parceiro não vem até você.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 14, marginTop: 18 }}>
+            {[
+              ["🔥", "20h30, entraram 14 pedidos", "É exatamente a hora em que ninguém tem mão livre para abrir o Portal e digitar 58."],
+              ["🥶", "22h10, a cozinha esvaziou", "O prazo alto continua lá, afastando cliente, porque baixar não parece urgente para ninguém."],
+              // Era "Domingo, o gerente folga" — e o dono cortou: ninguém dá
+              // folga de domingo para gerente de delivery. O argumento não
+              // precisa do dia, precisa da ausência.
+              ["🧯", "No dia de folga do gerente", "Na mão, o prazo certo depende de uma pessoa lembrar. A loja não pode depender de memória."],
+            ].map(([e, t, d]) => (
+              <div key={t} style={card}>
+                <div style={{ fontSize: "1.8rem", lineHeight: 1, marginBottom: 8 }}>{e}</div>
+                <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>{t}</div>
+                <div style={{ color: "#64748B", fontSize: ".95rem", marginTop: 6, lineHeight: 1.5 }}>{d}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{ ...p, marginTop: 16, marginBottom: 0 }}>
+            A extensão não lembra melhor que você. Ela só não tem mais nada para fazer: a cada mudança na
+            tela, ela conta a fila e escreve o número. A noite inteira, todo dia que a loja abre.
+          </p>
+        </div>
+      </section>
+
       {/* ─────────── COMO FUNCIONA: três ícones e a foto real ─────────── */}
       <section style={{ background: "#fff", borderTop: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F0" }}>
         <div style={secao}>
           <h2 style={h2}>Três passos, uma vez só</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginTop: 18 }}>
+            {/* O número em laranja dá ordem de leitura ao que antes eram três
+                cartões cinzas iguais — e diz de relance que são só três. */}
             {[
               ["👆", "Marca a coluna", "no seu painel, com um clique"],
               ["🔢", "Ela conta", "a cada mudança na tela"],
               ["✍️", "Ela escreve", "no iFood e no 99Food, nas lojas que você marcar"],
-            ].map(([e, t, d]) => (
-              <div key={t} style={{ ...tile, background: "#F8FAFC" }}>
+            ].map(([e, t, d], i) => (
+              // Fundo levemente cinza porque a seção é branca: cartão branco
+              // em fundo branco não existe.
+              <div key={t} style={{ ...tile, background: "#F8FAFC", border: "1px solid #E2E8F0", borderTop: `4px solid ${LARANJA}`, position: "relative", paddingTop: "1.6rem" }}>
+                <div style={{
+                  position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)",
+                  width: 30, height: 30, borderRadius: 999, background: `linear-gradient(135deg, ${LARANJA}, #E64A19)`,
+                  color: "#fff", fontWeight: 900, display: "grid", placeItems: "center", fontSize: ".95rem",
+                  boxShadow: "0 6px 16px rgba(255,87,34,.35)",
+                }}>
+                  {i + 1}
+                </div>
                 <div style={emoji}>{e}</div>
                 <div style={{ fontWeight: 900, fontSize: "1.1rem" }}>{t}</div>
                 <div style={{ color: "#64748B", fontSize: ".95rem", marginTop: 4, lineHeight: 1.45 }}>{d}</div>
@@ -247,8 +355,11 @@ export default function PrazosLanding() {
 
           <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
             <Botao>Assinar por R$ 29,90/mês</Botao>
+            {/* O texto antigo ("Quer testar antes?") mandava quem não tem a
+                extensão para uma página que só funciona com ela instalada —
+                e essa pessoa não voltava. O convite agora diz para quem é. */}
             <a href="/prazos/demo" style={{ color: LARANJA_LINK, fontWeight: 800, fontSize: ".98rem" }}>
-              Quer testar antes? Abra o painel de demonstração →
+              Já instalou? Teste a marcação no painel de demonstração →
             </a>
           </div>
         </div>
@@ -289,7 +400,10 @@ export default function PrazosLanding() {
           </ul>
 
           <details style={{ ...detalhes, background: "#0B1220", border: "1px solid #334155", maxWidth: 720, margin: "18px auto 0" }}>
-            <summary style={{ ...resumo, color: "#CBD5E1" }}>🧮 Quer fazer a conta da sua loja?</summary>
+            {/* O rótulo antigo ("Quer fazer a conta da sua loja?") pedia
+                trabalho sem prometer nada. Este promete o número que a
+                calculadora entrega — que é o argumento de venda dela. */}
+            <summary style={{ ...resumo, color: "#CBD5E1" }}>🧮 Quanto a sua loja perde por mês com prazo errado?</summary>
             <div style={{ color: "#0F172A" }}>
               <CalculadoraDePerda />
             </div>
@@ -300,16 +414,20 @@ export default function PrazosLanding() {
       {/* ─────────── O QUE ELA NUNCA FAZ ─────────── */}
       <section style={secao}>
         <h2 style={h2}>O que ela nunca faz</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginTop: 16 }}>
+        {/* Quatro emojis 🚫 iguais viravam ruído visual. Cada limite ganhou
+            o ícone do que ele protege, num cartão vermelho claro: isto aqui
+            é alívio, não proibição — e alívio precisa ser visto. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginTop: 16 }}>
           {[
-            ["🚫", "Não aceita pedido"],
-            ["🚫", "Não cancela"],
-            ["🚫", "Não pausa a loja"],
-            ["🚫", "Não mexe em preço"],
+            ["🧾", "Não aceita pedido"],
+            ["🗑️", "Não cancela"],
+            ["⏸️", "Não pausa a loja"],
+            ["🏷️", "Não mexe em preço"],
           ].map(([e, t]) => (
-            <div key={t} style={tile}>
+            <div key={t} style={{ ...tile, background: "#FEF2F2", border: "1px solid #FECACA", position: "relative", paddingTop: "1.5rem" }}>
+              <div style={{ position: "absolute", top: 10, right: 12, color: "#DC2626", fontWeight: 900, fontSize: ".95rem" }}>✕</div>
               <div style={emoji}>{e}</div>
-              <div style={{ fontWeight: 800 }}>{t}</div>
+              <div style={{ fontWeight: 800, color: "#7F1D1D" }}>{t}</div>
             </div>
           ))}
         </div>
@@ -318,47 +436,125 @@ export default function PrazosLanding() {
         </p>
       </section>
 
-      {/* ─────────── GARANTIA ─────────── */}
+      {/* ─────────── GARANTIA ───────────
+          Era um retângulo verde claro com um emoji de escudo, e o dono
+          resumiu bem: "sem graça". Garantia é o argumento que tira o medo de
+          pagar; ela merece o peso de um selo — verde forte, o 7 no tamanho
+          de manchete e as três promessas separadas, para serem lidas de
+          relance por quem está decidindo. */}
       <section style={secao}>
-        <div style={{ ...card, borderColor: "#BBF7D0", background: "#F0FDF4", display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ fontSize: "2.6rem", lineHeight: 1 }}>🛡️</div>
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <div style={{ fontSize: "1.3rem", fontWeight: 900, marginBottom: 6 }}>7 dias de garantia, incondicional</div>
-            <div style={{ color: "#166534", lineHeight: 1.55 }}>
-              Use no seu movimento de verdade. Não fez o que promete? Cancela na Cakto ou manda um zap, e o
-              dinheiro volta inteiro — sem pergunta, sem formulário. Depois disso, sem fidelidade: para quando quiser.
+        <div className="bloco-garantia" style={{
+          background: "linear-gradient(135deg, #047857 0%, #065F46 55%, #064E3B 100%)",
+          borderRadius: 22, padding: "1.8rem 1.9rem", color: "#fff",
+          display: "flex", gap: 26, alignItems: "center", flexWrap: "wrap",
+          boxShadow: "0 22px 50px rgba(4,120,87,.28)",
+        }}>
+          {/* Medalha em SVG (./SeloDeGarantia): o círculo tracejado anterior
+              parecia rascunho. No celular ela vai para o meio — encostada na
+              esquerda, com o texto embaixo, ficava torta. */}
+          <div className="selo-garantia">
+            <SeloDeGarantia />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <div style={{ fontSize: "clamp(1.4rem, 3vw, 1.8rem)", fontWeight: 900, lineHeight: 1.15, marginBottom: 8 }}>
+              Use um mês inteiro. Não gostou, devolvemos tudo.
+            </div>
+            <div style={{ color: "#D1FAE5", lineHeight: 1.6, fontSize: "1.02rem", marginBottom: 14 }}>
+              {/* Quatro fins de semana é o argumento: prazo de garantia só
+                  vale se pegar o movimento em que o produto prova valor. */}
+              Trinta dias é mês fechado — <b style={{ color: "#fff" }}>quatro sextas e quatro sábados</b>,
+              que é quando a cozinha enche e o prazo importa. Não fez o que promete? Cancela na Cakto
+              ou manda um zap: o dinheiro volta <b style={{ color: "#fff" }}>inteiro</b>.
+            </div>
+            <div className="pilulas-garantia" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {["Sem pergunta", "Sem formulário", "Sem fidelidade depois"].map((t) => (
+                <span key={t} style={{
+                  background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.32)",
+                  borderRadius: 999, padding: "6px 14px", fontWeight: 800, fontSize: ".88rem",
+                }}>
+                  ✓ {t}
+                </span>
+              ))}
             </div>
           </div>
         </div>
+        <style>{`
+          .selo-garantia { flex-shrink: 0; }
+          @media (max-width: 720px) {
+            /* No celular a medalha vira o título do bloco: centralizada em
+               cima do texto, que continua alinhado à esquerda para ler. */
+            .bloco-garantia { justify-content: center; text-align: center; }
+            .selo-garantia { width: 100%; display: flex; justify-content: center; }
+            .bloco-garantia .pilulas-garantia { justify-content: center; }
+          }
+        `}</style>
       </section>
 
       {/* ─────────── SERVE / NÃO SERVE ─────────── */}
       <section style={{ background: "#fff", borderTop: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F0" }}>
         <div style={secao}>
           <h2 style={h2}>Serve para você?</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginTop: 16 }}>
-            <div style={{ ...card, borderColor: "#BBF7D0" }}>
-              <div style={{ fontWeight: 900, marginBottom: 10, color: "#15803D", fontSize: "1.05rem" }}>✅ Serve se você</div>
-              <ul style={{ margin: 0, paddingLeft: "1.1rem", color: "#334155", lineHeight: 1.8 }}>
-                <li>Vê seus pedidos em colunas, numa aba do Chrome</li>
-                <li>Entrega com motoboy próprio</li>
-                <li>Deixa um computador ligado durante o serviço</li>
-                <li>Tem uma loja ou várias, no mesmo login</li>
-              </ul>
-            </div>
-            <div style={{ ...card, borderColor: "#FECACA" }}>
-              <div style={{ fontWeight: 900, marginBottom: 10, color: "#B91C1C", fontSize: "1.05rem" }}>❌ Não serve se você</div>
-              <ul style={{ margin: 0, paddingLeft: "1.1rem", color: "#334155", lineHeight: 1.8 }}>
-                <li>Só usa a entrega do próprio iFood</li>
-                <li>Anota pedido só no papel ou no WhatsApp</li>
-                <li>Não deixa computador ligado na loja</li>
-                <li>Tem lojas em logins separados do iFood</li>
-                <li>Precisa de mais de 30 min de preparo no 99Food <span style={{ color: "#64748B", fontSize: ".88rem" }}>(teto deles, não nosso)</span></li>
-              </ul>
-            </div>
+          {/* Duas caixas brancas com borda pálida não diziam de longe qual
+              era a boa e qual era a ruim — a cor faz esse trabalho antes da
+              leitura. Faixa colorida no topo, fundo tingido, e o marcador de
+              cada linha em vez de bolinha de lista. */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginTop: 16 }}>
+            {[
+              {
+                titulo: "Serve se você",
+                marcador: "✓",
+                faixa: "linear-gradient(135deg,#16A34A,#15803D)",
+                fundo: "#F0FDF4",
+                borda: "#BBF7D0",
+                cor: "#166534",
+                itens: [
+                  <>Vê seus pedidos em colunas, numa aba do Chrome</>,
+                  <>Entrega com motoboy próprio</>,
+                  <>Deixa um computador ligado durante o serviço</>,
+                  <>Tem uma loja — ou várias marcas saindo da mesma cozinha</>,
+                ],
+              },
+              {
+                titulo: "Não serve se você",
+                marcador: "✕",
+                faixa: "linear-gradient(135deg,#DC2626,#B91C1C)",
+                fundo: "#FEF2F2",
+                borda: "#FECACA",
+                cor: "#991B1B",
+                itens: [
+                  <>Só usa a entrega do próprio iFood</>,
+                  <>Anota pedido só no papel ou no WhatsApp</>,
+                  <>Não deixa computador ligado na loja</>,
+                  <>
+                    Quer cobrir com uma assinatura só lojas de endereços diferentes, ou de logins separados do iFood{" "}
+                    <span style={{ color: "#B45309", fontSize: ".88rem" }}>(cada cozinha tem a própria fila — é uma assinatura para cada)</span>
+                  </>,
+                  <>
+                    Precisa de mais de 30 min de preparo no 99Food{" "}
+                    <span style={{ color: "#B45309", fontSize: ".88rem" }}>(teto deles, não nosso)</span>
+                  </>,
+                ],
+              },
+            ].map((c) => (
+              <div key={c.titulo} style={{ background: c.fundo, border: `1px solid ${c.borda}`, borderRadius: 16, overflow: "hidden", boxShadow: "0 6px 20px rgba(15,23,42,.05)" }}>
+                <div style={{ background: c.faixa, color: "#fff", fontWeight: 900, fontSize: "1.05rem", padding: "11px 18px", display: "flex", alignItems: "center", gap: 9 }}>
+                  <span style={{ display: "grid", placeItems: "center", width: 22, height: 22, borderRadius: 999, background: "rgba(255,255,255,.22)", fontSize: ".85rem" }}>{c.marcador}</span>
+                  {c.titulo}
+                </div>
+                <ul style={{ listStyle: "none", margin: 0, padding: "14px 18px", color: "#334155", lineHeight: 1.55, display: "grid", gap: 10 }}>
+                  {c.itens.map((t, i) => (
+                    <li key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <span style={{ color: c.cor, fontWeight: 900, flexShrink: 0 }}>{c.marcador}</span>
+                      <span>{t}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
           <p style={{ ...p, marginTop: 16, marginBottom: 0 }}>
-            Preferimos perder a venda a ter você pedindo o dinheiro de volta na semana seguinte.
+            Preferimos perder a venda a ter você pedindo o dinheiro de volta no mês seguinte.
           </p>
         </div>
       </section>
@@ -405,13 +601,22 @@ export default function PrazosLanding() {
         <div style={{ ...secao, textAlign: "center" }}>
           <h2 style={{ ...h2, color: "#fff" }}>Hoje à noite o prazo já pode estar certo</h2>
           <p style={{ color: "#CBD5E1", maxWidth: 520, margin: "0 auto 22px", lineHeight: 1.6 }}>
-            R$ 29,90 por mês, 7 dias de garantia, sem fidelidade. O acesso chega no e-mail na hora.
+            R$ 29,90 por mês, 30 dias de garantia, sem fidelidade. O acesso chega no e-mail na hora.
           </p>
           <Botao style={{ fontSize: "1.15rem", padding: "18px 36px" }}>Assinar por R$ 29,90/mês</Botao>
           <div style={{ color: "#94A3B8", fontSize: ".82rem", marginTop: 16, lineHeight: 1.6 }}>
             Pagamento pela Cakto · cartão ou Pix
             <br />
             A Cakto soma R$ 0,99 de taxa de serviço no checkout: o total dessa cobrança fica R$ 30,89.
+          </div>
+          {/* Quem chegou até aqui e não clicou tem uma pergunta, não uma
+              objeção de preço. A saída dele não pode ser o botão de voltar. */}
+          <div style={{ color: "#CBD5E1", fontSize: ".95rem", marginTop: 18 }}>
+            Ficou uma dúvida sobre a sua loja?{" "}
+            <a href={WA} target="_blank" rel="noopener" style={{ color: "#4ADE80", fontWeight: 800 }}>
+              Pergunta no WhatsApp
+            </a>{" "}
+            — responde quem fez o produto.
           </div>
         </div>
       </section>
@@ -426,7 +631,6 @@ export default function PrazosLanding() {
         </span>
       </footer>
 
-      <BarraFixa />
     </main>
   );
 }
