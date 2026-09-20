@@ -44,6 +44,18 @@
  */
 export const VERSAO_MINIMA_DO_MODELO = "1.2.11";
 
+/**
+ * A versão em que o Assistente passou a ler as palavras trocadas pela loja
+ * (`Bloco.rotulos`) e a destacar número do app e observação.
+ *
+ * Separada da de cima porque o aviso tem que ser proporcional: quem só
+ * reordenou blocos continua bem servido pelo 1.2.11, e receber "atualize o
+ * programa" por causa de um recurso que não usa é o jeito mais rápido de a
+ * loja aprender a ignorar os nossos avisos. Só quem REESCREVE uma palavra vê
+ * a cobrança (ver `temRotuloTrocado`).
+ */
+export const VERSAO_MINIMA_DOS_ROTULOS = "1.2.18";
+
 export type Alinhamento = "esquerda" | "centro" | "direita";
 
 /**
@@ -129,6 +141,21 @@ export type Bloco = {
   tamanho?: Tamanho;
   alinhamento?: Alinhamento;
   /**
+   * As palavras fixas que este bloco escreve, trocadas pela loja.
+   *
+   * Chave do catálogo `ROTULOS_DO_BLOCO` → o texto que sai no lugar do de
+   * fábrica. Só o RÓTULO muda; o valor ao lado continua vindo do pedido, então
+   * trocar "Nome:" por "Cliente:" não tem como fazer o nome errado sair no
+   * papel. Chave ausente = texto de fábrica, que é o que 100% das lojas têm
+   * hoje.
+   *
+   * Mora dentro do bloco de propósito: "Subtotal:" é do bloco de valores como
+   * o tamanho da letra é. Um dicionário solto no modelo sobreviveria ao bloco
+   * que ele descreve, e no dia em que a loja tirasse o bloco ficaria um rótulo
+   * órfão que ninguém sabe de onde veio.
+   */
+  rotulos?: Record<string, string>;
+  /**
    * Só no bloco `totais`: a linha "Taxa de Entrega" não sai no papel.
    *
    * O TOTAL não muda — ele vem de `totalAmount`, que já inclui a taxa. Some a
@@ -169,6 +196,103 @@ export function aceitaFormato(tipo: TipoDeBloco): boolean {
 /** Blocos que têm um título editável em cima. */
 export function aceitaTitulo(tipo: TipoDeBloco): boolean {
   return tipo === "cliente" || tipo === "entrega" || tipo === "itens";
+}
+
+/**
+ * ── TODA PALAVRA FIXA DO PAPEL, E DE QUEM ELA É ────────────────────────────
+ *
+ * Este catálogo é a lista do que a loja pode reescrever na comanda. Pedido do
+ * dono (19/09/2026), com a Saipos como régua: lá o lojista clica no papel da
+ * tela e muda a palavra. Até aqui ele só podia mexer nos TÍTULOS de três
+ * seções; "Nome:", "Subtotal:", "Forma de pagamento:" eram código, nos DOIS
+ * lados (aqui e no Assistente), e trocar qualquer um exigia atualizar o
+ * programa em todas as lojas.
+ *
+ * ── É UM CONTRATO, como a lista de tipos de bloco ──────────────────────────
+ *
+ * Cada `chave` daqui tem um `R(...)` correspondente em
+ * firehub-print-assistant/server.js. Chave que exista só de um lado é pior do
+ * que chave nenhuma: a prévia mostra a palavra nova e o papel sai com a
+ * antiga, e o lojista conclui que a tela mente — o contrário do que esta tela
+ * inteira foi feita para resolver. Ao acrescentar uma, acrescente nos dois e
+ * no teste `scripts/teste-modelo-comanda.js`.
+ *
+ * O `padrao` é o texto de fábrica. Ele NÃO é gravado no modelo: o que fica
+ * guardado é só o que a loja trocou, então o dia em que quisermos mudar um
+ * texto de fábrica (um acento, um "nº") ele muda para todo mundo que não
+ * personalizou — que é a maioria.
+ */
+export type RotuloDoBloco = { chave: string; padrao: string; ajuda?: string };
+
+export const ROTULOS_DO_BLOCO: Partial<Record<TipoDeBloco, RotuloDoBloco[]>> = {
+  numeroPedido: [
+    { chave: "delivery", padrao: "DELIVERY", ajuda: "A palavra ao lado do número, no topo." },
+  ],
+  loja: [{ chave: "estabelecimento", padrao: "Estabelecimento:" }],
+  dataHora: [
+    { chave: "numeroNoParceiro", padrao: "N. do Pedido:" },
+    { chave: "data", padrao: "Data:" },
+  ],
+  avisoEntrega: [
+    { chave: "motoboy", padrao: "MOTOBOY", ajuda: "Vem antes do nome do parceiro: \"*** MOTOBOY IFOOD ***\"." },
+    { chave: "entregaParceira", padrao: "(ENTREGA PARCEIRA)" },
+    { chave: "naoUsar", padrao: "NAO USAR MOTOBOY DA LOJA!" },
+    { chave: "codigoDeColeta", padrao: "CODIGO DE COLETA:" },
+  ],
+  cliente: [
+    { chave: "nome", padrao: "Nome:" },
+    { chave: "telefone", padrao: "Telefone:" },
+    { chave: "qtdPedidos", padrao: "Qtd Pedidos:" },
+  ],
+  entrega: [
+    { chave: "endereco", padrao: "Endereco:" },
+    { chave: "observacao", padrao: "Obs:", ajuda: "O que o cliente escreveu sobre a entrega." },
+  ],
+  itens: [
+    { chave: "observacaoDoItem", padrao: "Obs:", ajuda: "O que o cliente pediu naquele item." },
+  ],
+  totais: [
+    { chave: "subtotal", padrao: "Subtotal:" },
+    { chave: "desconto", padrao: "Desconto (Cupom - Loja):" },
+    { chave: "taxaEntrega", padrao: "Taxa de Entrega:" },
+    { chave: "total", padrao: "Total:" },
+  ],
+  // Os textos de fábrica daqui são os do PAPEL, copiados de server.js — não os
+  // que a prévia mostrava antes. A prévia sempre foi uma aproximação do
+  // conteúdo ("ENTREGADOR: PUXAR PEDIDO" onde o papel escreve "MOTOBOY:
+  // escaneie para puxar"), e isso não fazia mal enquanto ela só ilustrava.
+  // Agora que a palavra da tela É a palavra do papel, aproximação vira mentira:
+  // a loja editaria um texto que não existe e o papel sairia com outro.
+  pagamento: [
+    { chave: "formaDePagamento", padrao: "Forma de Pagamento:" },
+    { chave: "troco", padrao: "Troco para:", ajuda: "Vem antes do valor que o cliente vai entregar." },
+  ],
+  qrMotoboy: [
+    { chave: "chamada", padrao: "MOTOBOY: escaneie para puxar" },
+    { chave: "digite", padrao: "ou digite o numero", ajuda: "Antes do código curto do pedido." },
+  ],
+  qrCliente: [
+    { chave: "chamada", padrao: "Escaneie e faca seu proximo pedido" },
+    { chave: "cupom", padrao: "ou use o cupom" },
+  ],
+};
+
+/** O texto de fábrica de um rótulo, ou "" se a chave não existir no catálogo. */
+export function rotuloPadrao(tipo: TipoDeBloco, chave: string): string {
+  return ROTULOS_DO_BLOCO[tipo]?.find((r) => r.chave === chave)?.padrao ?? "";
+}
+
+/** O que sai no papel para este rótulo: o da loja, ou o de fábrica. */
+export function rotuloDoBloco(bloco: Bloco, chave: string): string {
+  const meu = bloco.rotulos?.[chave];
+  return meu != null && String(meu).trim() !== "" ? String(meu) : rotuloPadrao(bloco.tipo, chave);
+}
+
+/** A loja reescreveu alguma palavra? Decide o aviso de versão do Assistente. */
+export function temRotuloTrocado(modelo: ModeloDeComanda): boolean {
+  return [...modelo.completo, ...modelo.cozinha].some((b) =>
+    Object.entries(b.rotulos || {}).some(([chave, valor]) =>
+      String(valor ?? "").trim() !== "" && String(valor) !== rotuloPadrao(b.tipo, chave)));
 }
 
 /** Os campos que o lojista pode usar dentro de um bloco de texto livre. */
@@ -229,15 +353,25 @@ export const AJUDA_DO_BLOCO: Record<TipoDeBloco, string> = {
 const b = (tipo: TipoDeBloco, extra: Partial<Bloco> = {}): Bloco => ({ tipo, ligado: true, ...extra });
 
 /**
- * O modelo que toda loja começa usando — a comanda que o FireHub já imprime
- * hoje, seção por seção, na mesma ordem. Quem nunca abrir a tela de edição não
- * vê diferença nenhuma no papel, que é a única forma segura de introduzir isto.
+ * O modelo que toda loja começa usando — a comanda que o FireHub imprime,
+ * seção por seção, na mesma ordem.
+ *
+ * ── O NÚMERO EM 3x É DE FÁBRICA, E DE PROPÓSITO ──────────────────────────
+ *
+ * Decisão do dono em 19/09/2026, com a comanda do próprio iFood na mão: o
+ * número do pedido sai gigante lá porque é o que a cozinha, o balcão e o
+ * entregador leem de longe, em papel amassado, sob luz ruim. Em 2x ele
+ * dividia o topo com o nome do canal e os dois disputavam o olho. Em 3x cabem
+ * 16 colunas — "(79) DELIVERY #3523" quebra em duas linhas, e é o que o iFood
+ * faz também. O par disso está no Assistente: quem nunca abriu esta tela não
+ * manda modelo nenhum e imprime pelo layout embutido, então o mesmo destaque
+ * teve que ser feito lá (`aplicarModelo` não roda para essa loja).
  */
 export function modeloPadrao(): ModeloDeComanda {
   return {
     versao: 1,
     cozinha: [
-      b("numeroPedido", { tamanho: 2, negrito: true, alinhamento: "centro" }),
+      b("numeroPedido", { tamanho: 3, negrito: true, alinhamento: "centro" }),
       b("canal", { tamanho: 2, negrito: true, alinhamento: "centro" }),
       b("avisoEntrega"),
       b("separador"),
@@ -248,7 +382,7 @@ export function modeloPadrao(): ModeloDeComanda {
       b("itens", { titulo: "RESUMO DO PEDIDO" }),
     ],
     completo: [
-      b("numeroPedido", { tamanho: 2, negrito: true, alinhamento: "centro" }),
+      b("numeroPedido", { tamanho: 3, negrito: true, alinhamento: "centro" }),
       b("canal", { tamanho: 2, negrito: true, alinhamento: "centro" }),
       b("avisoEntrega"),
       b("separador"),
@@ -263,6 +397,27 @@ export function modeloPadrao(): ModeloDeComanda {
       b("qrCliente"),
     ],
   };
+}
+
+/**
+ * Guarda só rótulo de chave que existe, e corta o que for grande demais.
+ *
+ * O que chega aqui pode vir de um modelo salvo por uma versão futura da tela,
+ * de edição na mão do JSON ou de um bug meu. Chave desconhecida some (o
+ * Assistente a ignoraria de qualquer jeito, e guardá-la só faria o payload
+ * crescer para sempre); 60 letras é mais que qualquer rótulo cabe no papel —
+ * é trava contra alguém colar um texto inteiro no lugar de "Nome:".
+ */
+function saneiaRotulos(tipo: TipoDeBloco, bruto: unknown): Record<string, string> | undefined {
+  if (!bruto || typeof bruto !== "object") return undefined;
+  const conhecidas = new Set((ROTULOS_DO_BLOCO[tipo] || []).map((r) => r.chave));
+  const limpo: Record<string, string> = {};
+  for (const [chave, valor] of Object.entries(bruto as Record<string, unknown>)) {
+    if (!conhecidas.has(chave) || typeof valor !== "string") continue;
+    const t = valor.trim().slice(0, 60);
+    if (t) limpo[chave] = t;
+  }
+  return Object.keys(limpo).length ? limpo : undefined;
 }
 
 /** Lê o que está gravado, completando o que faltar com o padrão. */
@@ -280,6 +435,7 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
         // Tamanho fora da escada (modelo de versão futura, edição na mão)
         // encosta no degrau mais próximo em vez de virar tarja preta.
         tamanho: x.tamanho ? tamanhoValido(x.tamanho) : undefined,
+        rotulos: saneiaRotulos(x.tipo, x.rotulos),
       }));
     // Bloco obrigatório que sumiu do modelo salvo volta para o fim. Some por
     // edição manual, por versão antiga, ou por um bug meu — e em qualquer um
@@ -315,6 +471,14 @@ export function blocosParaOAssistente(lista: Bloco[]): Bloco[] {
       if (x.ocultarTaxaEntrega) saida.ocultarTaxaEntrega = true;
       if (x.tamanho && x.tamanho !== 1) saida.tamanho = x.tamanho;
       if (x.alinhamento && x.alinhamento !== "esquerda") saida.alinhamento = x.alinhamento;
+      // Só viaja a palavra que a loja REESCREVEU. Mandar o texto de fábrica
+      // junto engordaria o payload de toda comanda e, pior, congelaria o
+      // padrão: o dia em que corrigirmos um rótulo de fábrica, a loja que
+      // nunca o tocou continuaria imprimindo o antigo.
+      const trocados = Object.entries(x.rotulos || {}).filter(
+        ([chave, valor]) => String(valor ?? "").trim() !== "" && String(valor) !== rotuloPadrao(x.tipo, chave),
+      );
+      if (trocados.length) saida.rotulos = Object.fromEntries(trocados);
       return saida;
     });
 }
@@ -355,7 +519,24 @@ export type LinhaDaComanda = {
   alinhamento?: Alinhamento;
   /** Marca a linha como QR: o papel mostra o código, não o texto. */
   qr?: string;
+  /** Índice do bloco que desenhou esta linha — a prévia usa para saber onde o clique caiu. */
+  bloco?: number;
+  /** A chave do rótulo que esta linha escreve, quando tem um. "@titulo" = o título da seção. */
+  rotulo?: string;
 };
+
+/**
+ * O corpo do número do pedido no app e o da observação do cliente.
+ *
+ * Ficam aqui, com nome, porque valem nos DOIS lados (esta prévia e o layout
+ * embutido do Assistente) e porque são decisão de produto, não gosto: o número
+ * é o que a loja procura no app com o cliente no telefone, e a observação é o
+ * que a cozinha erra. Ver a comanda do iFood, que usa exatamente este recurso.
+ * 1,5x e não 2x na observação: "sem cebola, sem azeitona e capricha no
+ * recheio" em 2x vira quatro linhas de bobina.
+ */
+export const DESTAQUE_DO_NUMERO_NO_APP: Tamanho = 2;
+export const DESTAQUE_DA_OBSERVACAO: Tamanho = 1.5;
 
 export type PedidoParaComanda = {
   numero?: string | number | null;
@@ -421,24 +602,40 @@ export function montarComanda(
 ): LinhaDaComanda[] {
   const { colunas, comValores } = opcoes;
   const saida: LinhaDaComanda[] = [];
-  const por = (texto: string, extra: Partial<LinhaDaComanda> = {}) => saida.push({ texto, ...extra });
+  /**
+   * `iBloco` e `rotulo` carimbam de onde a linha veio.
+   *
+   * É o que deixa a prévia ser clicável: o papel da direita devolve o bloco e
+   * a palavra exata que aquela linha desenhou, então clicar em "Subtotal:"
+   * abre "Subtotal:" para editar em vez de mandar o lojista caçar na lista da
+   * esquerda qual card faz aquela linha. Sem o carimbo, o papel é um texto só
+   * e não há como saber onde o clique caiu.
+   */
+  let iBloco = -1;
+  const por = (texto: string, extra: Partial<LinhaDaComanda> = {}) =>
+    saida.push({ texto, bloco: iBloco, ...extra });
   const titulo = (bloco: Bloco, padrao: string) => {
     const t = String(bloco.titulo == null ? padrao : bloco.titulo).trim();
-    if (t) por(t.toUpperCase(), { alinhamento: "centro", tamanho: bloco.tamanho || 1.5 });
+    if (t) por(t.toUpperCase(), { alinhamento: "centro", tamanho: bloco.tamanho || 1.5, rotulo: "@titulo" });
   };
+  /** A observação do cliente sai em destaque — ver DESTAQUE_DA_OBSERVACAO. */
+  const obs: Partial<LinhaDaComanda> = { negrito: true, tamanho: DESTAQUE_DA_OBSERVACAO };
 
   for (const bloco of modelo) {
+    iBloco++;
     if (!bloco.ligado) continue;
     const formato: Partial<LinhaDaComanda> = {
       negrito: bloco.negrito,
       tamanho: bloco.tamanho,
       alinhamento: bloco.alinhamento,
     };
+    /** O texto desta palavra: o que a loja escreveu, ou o de fábrica. */
+    const R = (chave: string) => rotuloDoBloco(bloco, chave);
 
     switch (bloco.tipo) {
       case "numeroPedido":
         if (pedido.numero != null && pedido.numero !== "") {
-          por(`(${pedido.numero}) DELIVERY ${pedido.codigoCanal || ""}`.trim(), formato);
+          por(`(${pedido.numero}) ${R("delivery")} ${pedido.codigoCanal || ""}`.replace(/\s+/g, " ").trim(), { ...formato, rotulo: "delivery" });
         }
         break;
 
@@ -447,36 +644,49 @@ export function montarComanda(
         break;
 
       case "loja":
-        if (pedido.loja) por(`Estabelecimento: ${pedido.loja.toUpperCase()}`, formato);
+        if (pedido.loja) por(`${R("estabelecimento")} ${pedido.loja.toUpperCase()}`.trim(), { ...formato, rotulo: "estabelecimento" });
         break;
 
       case "dataHora":
-        if (pedido.codigoCanal) por(`N. do Pedido: ${String(pedido.codigoCanal).replace("#", "")}`, formato);
-        if (pedido.data || pedido.hora) por(`Data: ${pedido.data || ""} ${pedido.hora || ""}`.trim(), formato);
+        // ── O NÚMERO NO APP SAI GRANDE, COMO O DO PEDIDO ──────────────────
+        //
+        // É por ele que a loja acha o pedido dentro do iFood/99 quando o
+        // cliente liga, e era a única linha de 1x no meio de um cabeçalho de
+        // números grandes: para ler, alguém pegava o papel e aproximava.
+        // Decisão do dono (19/09/2026), com a comanda do próprio iFood como
+        // régua — lá o número sai em corpo dobrado. A DATA continua miúda: ela
+        // é conferência, não é o que alguém procura com o telefone na mão.
+        if (pedido.codigoCanal) {
+          por(`${R("numeroNoParceiro")} ${String(pedido.codigoCanal).replace("#", "")}`.trim(),
+            { ...formato, negrito: true, tamanho: DESTAQUE_DO_NUMERO_NO_APP, rotulo: "numeroNoParceiro" });
+        }
+        if (pedido.data || pedido.hora) {
+          por(`${R("data")} ${pedido.data || ""} ${pedido.hora || ""}`.trim(), { ...formato, rotulo: "data" });
+        }
         break;
 
       case "avisoEntrega": {
         const e = pedido.entregaParceira;
         if (!e) break;
-        por(`*** MOTOBOY ${e.parceiro.toUpperCase()} (ENTREGA PARCEIRA) ***`, { alinhamento: "centro", tamanho: 2 });
-        por("NAO USAR MOTOBOY DA LOJA!", { alinhamento: "centro", tamanho: 2 });
-        if (e.codigoDeColeta) por(`CODIGO DE COLETA: #${e.codigoDeColeta}`, { alinhamento: "centro", tamanho: 2 });
+        por(`*** ${R("motoboy")} ${e.parceiro.toUpperCase()} ${R("entregaParceira")} ***`.replace(/\s+/g, " "), { alinhamento: "centro", tamanho: 2, rotulo: "motoboy" });
+        por(R("naoUsar"), { alinhamento: "centro", tamanho: 2, rotulo: "naoUsar" });
+        if (e.codigoDeColeta) por(`${R("codigoDeColeta")} #${e.codigoDeColeta}`.trim(), { alinhamento: "centro", tamanho: 2, rotulo: "codigoDeColeta" });
         break;
       }
 
       case "cliente":
         if (!pedido.cliente && !pedido.telefone) break;
         titulo(bloco, "CLIENTE");
-        if (pedido.cliente) por(`Nome: ${pedido.cliente}`);
-        if (pedido.telefone) por(`Telefone: ${pedido.telefone}`);
-        por("Qtd Pedidos: 1");
+        if (pedido.cliente) por(`${R("nome")} ${pedido.cliente}`.trim(), { rotulo: "nome" });
+        if (pedido.telefone) por(`${R("telefone")} ${pedido.telefone}`.trim(), { rotulo: "telefone" });
+        por(`${R("qtdPedidos")} 1`.trim(), { rotulo: "qtdPedidos" });
         break;
 
       case "entrega":
         if (!pedido.endereco) break;
         titulo(bloco, "ENTREGA");
-        por(`Endereco: ${pedido.endereco}`);
-        if (pedido.observacao) por(`Obs: ${pedido.observacao}`);
+        por(`${R("endereco")} ${pedido.endereco}`.trim(), { rotulo: "endereco" });
+        if (pedido.observacao) por(`${R("observacao")} ${pedido.observacao}`.trim(), { ...obs, rotulo: "observacao" });
         break;
 
       case "itens": {
@@ -485,7 +695,12 @@ export function montarComanda(
           const valor = comValores && item.preco != null ? dinheiro(item.preco) : "";
           por(linhaComValor(`${item.quantidade}x ${item.nome}`, valor, colunas));
           for (const c of item.complementos || []) por(`  - ${c}`);
-          if (item.observacao) por(`  Obs: ${item.observacao}`);
+          // A OBSERVAÇÃO DO ITEM É O QUE A COZINHA ERRA. Saía do mesmo tamanho
+          // da lista, recuada dois espaços, e "sem cebola" se perdia entre os
+          // complementos — o pedido voltava. Decisão do dono (19/09/2026):
+          // destaque, como na comanda do iFood. Sem recuo, porque em corpo
+          // ampliado o recuo come coluna que falta para a frase.
+          if (item.observacao) por(`${R("observacaoDoItem")} ${item.observacao}`.trim(), { ...obs, rotulo: "observacaoDoItem" });
           por("_".repeat(colunas));
         }
         break;
@@ -493,20 +708,20 @@ export function montarComanda(
 
       case "totais":
         if (!comValores) break;
-        if (pedido.subtotal != null) por(linhaComValor("Subtotal:", dinheiro(pedido.subtotal), colunas));
-        if (pedido.desconto) por(linhaComValor("Desconto (Cupom - Loja):", `-${dinheiro(pedido.desconto)}`, colunas));
+        if (pedido.subtotal != null) por(linhaComValor(R("subtotal"), dinheiro(pedido.subtotal), colunas), { rotulo: "subtotal" });
+        if (pedido.desconto) por(linhaComValor(R("desconto"), `-${dinheiro(pedido.desconto)}`, colunas), { rotulo: "desconto" });
         if (pedido.taxaEntrega != null && !bloco.ocultarTaxaEntrega) {
-          por(linhaComValor("Taxa de Entrega:", dinheiro(pedido.taxaEntrega), colunas));
+          por(linhaComValor(R("taxaEntrega"), dinheiro(pedido.taxaEntrega), colunas), { rotulo: "taxaEntrega" });
         }
         por("_".repeat(colunas));
-        por(linhaComValor("Total:", dinheiro(pedido.total), larguraDoTamanho(colunas, 2)), { negrito: true, tamanho: 2 });
+        por(linhaComValor(R("total"), dinheiro(pedido.total), larguraDoTamanho(colunas, 2)), { negrito: true, tamanho: 2, rotulo: "total" });
         por("_".repeat(colunas));
         break;
 
       case "pagamento":
         if (!comValores || !pedido.pagamento) break;
-        por(`Forma de pagamento: ${pedido.pagamento}`);
-        if (pedido.troco) por(`Levar ${dinheiro(pedido.troco)} de troco`, { negrito: true, tamanho: 2 });
+        por(`${R("formaDePagamento")} ${pedido.pagamento}`.trim(), { rotulo: "formaDePagamento" });
+        if (pedido.troco) por(`${R("troco")} ${dinheiro(pedido.troco)}`, { negrito: true, tamanho: 2, rotulo: "troco" });
         break;
 
       // ── OS DOIS QR NÃO PODEM SE PARECER ─────────────────────────────────
@@ -520,9 +735,9 @@ export function montarComanda(
       case "qrMotoboy":
         if (!pedido.qrMotoboy) break;
         por("-".repeat(colunas));
-        por("ENTREGADOR: PUXAR PEDIDO", { alinhamento: "centro", negrito: true });
         por("", { qr: pedido.qrMotoboy });
-        por("(uso da loja - leia pelo app do entregador)", { alinhamento: "centro" });
+        por(R("chamada"), { alinhamento: "centro", negrito: true, rotulo: "chamada" });
+        por(`${R("digite")} 4821 no app`, { alinhamento: "centro", rotulo: "digite" });
         break;
 
       case "qrCliente": {
@@ -534,8 +749,8 @@ export function montarComanda(
         por("=".repeat(colunas));
         if (c.valor) por(String(c.valor), { alinhamento: "centro", negrito: true, tamanho: 2 });
         por("", { qr: c.url });
-        por("Escaneie e faca seu proximo pedido", { alinhamento: "centro", negrito: true });
-        if (c.cupom) por(`ou use o cupom ${c.cupom.toUpperCase()}`, { alinhamento: "centro" });
+        por(R("chamada"), { alinhamento: "centro", negrito: true, rotulo: "chamada" });
+        if (c.cupom) por(`${R("cupom")} ${c.cupom.toUpperCase()}`.trim(), { alinhamento: "centro", rotulo: "cupom" });
         por("=".repeat(colunas));
         break;
       }
@@ -581,6 +796,17 @@ export type LinhaRenderizada = {
   negrito?: boolean;
   /** Linha de QR: quem desenha mostra o código, não o texto. */
   qr?: string;
+  /** De qual bloco esta linha saiu, e que palavra ela escreve (ver LinhaDaComanda). */
+  bloco?: number;
+  rotulo?: string;
+  /**
+   * Qual pedaço da frase original esta linha é (0 = o começo).
+   *
+   * A palavra editável está sempre no COMEÇO da frase, e a frase pode ter
+   * quebrado em três linhas no papel. Sem saber qual pedaço é o primeiro, a
+   * tela abriria a edição de "Endereco:" em cima do meio do endereço.
+   */
+  parte?: number;
 };
 
 /**
@@ -602,21 +828,25 @@ export type LinhaRenderizada = {
 export function linhasDoPapel(linhas: LinhaDaComanda[], colunas: number): LinhaRenderizada[] {
   const out: LinhaRenderizada[] = [];
   for (const l of linhas) {
+    // `bloco` e `rotulo` atravessam a quebra: a frase que virou três linhas no
+    // papel continua sendo a MESMA palavra editável, e clicar em qualquer
+    // pedaço dela abre a mesma edição.
+    const origem = { bloco: l.bloco, rotulo: l.rotulo };
     if (l.qr) {
-      out.push({ recuo: Math.max(0, Math.floor((colunas - 6) / 2)), texto: "[ QR ]", tamanho: 1, qr: l.qr });
+      out.push({ ...origem, recuo: Math.max(0, Math.floor((colunas - 6) / 2)), texto: "[ QR ]", tamanho: 1, qr: l.qr });
       continue;
     }
     const n = tamanhoValido(l.tamanho);
     const partes = quebrar(l.texto, larguraDoTamanho(colunas, n));
-    if (partes.length === 0) { out.push({ recuo: 0, texto: "", tamanho: 1 }); continue; }
-    for (const p of partes) {
+    if (partes.length === 0) { out.push({ ...origem, recuo: 0, texto: "", tamanho: 1, parte: 0 }); continue; }
+    partes.forEach((p, parte) => {
       const sobra = Math.max(0, colunas - p.length * n);
       const recuo =
         l.alinhamento === "centro" ? Math.floor(sobra / 2)
           : l.alinhamento === "direita" ? sobra
           : 0;
-      out.push({ recuo, texto: p, tamanho: n, negrito: l.negrito });
-    }
+      out.push({ ...origem, recuo, texto: p, tamanho: n, negrito: l.negrito, parte });
+    });
   }
   return out;
 }

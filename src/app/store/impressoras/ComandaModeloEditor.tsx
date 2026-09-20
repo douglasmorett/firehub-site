@@ -17,13 +17,15 @@
  * deixar o lojista achar que o nome do cliente vai ser sempre "Larissa".
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AJUDA_DO_BLOCO,
   BLOCOS_OBRIGATORIOS,
   CAMPOS_DISPONIVEIS,
   NOME_DO_BLOCO,
+  ROTULOS_DO_BLOCO,
   TAMANHOS,
+  VERSAO_MINIMA_DOS_ROTULOS,
   aceitaFormato,
   aceitaTitulo,
   lerModelo,
@@ -31,7 +33,10 @@ import {
   modeloPadrao,
   montarComanda,
   pedidoDeExemplo,
+  rotuloDoBloco,
+  rotuloPadrao,
   tamanhoValido,
+  temRotuloTrocado,
   type Alinhamento,
   type Bloco,
   type ModeloDeComanda,
@@ -88,6 +93,39 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
   const [arrastando, setArrastando] = useState<number | null>(null);
   const [menuAberto, setMenuAberto] = useState(false);
 
+  /**
+   * ── EDITAR CLICANDO NO PAPEL ───────────────────────────────────────────
+   *
+   * Pedido do dono (19/09/2026): "na Saipos o cara clica na comanda e muda o
+   * que vai sair escrito". Até aqui o papel da direita era só desenho, e para
+   * trocar uma palavra o lojista tinha que adivinhar qual card da esquerda
+   * desenha aquela linha — quando a palavra era editável, o que quase nunca
+   * era.
+   *
+   * `edicao` guarda a palavra aberta: o bloco e a chave do rótulo (ou
+   * "@titulo", o título da seção, que já existia). O texto em edição fica num
+   * estado à parte e só entra no modelo ao confirmar — digitar direto no
+   * modelo remontava a comanda inteira a cada tecla e o cursor pulava para o
+   * fim.
+   */
+  const [edicao, setEdicao] = useState<{ bloco: number; rotulo: string } | null>(null);
+  const [rascunho, setRascunho] = useState("");
+  /** O bloco que o clique no papel acabou de apontar, para o card piscar. */
+  const [blocoApontado, setBlocoApontado] = useState<number | null>(null);
+  const campoRef = useRef<HTMLInputElement | null>(null);
+  const cardsRef = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    if (edicao) campoRef.current?.focus();
+  }, [edicao]);
+
+  // O realce do card apaga sozinho: piscar é para achar, não para marcar.
+  useEffect(() => {
+    if (blocoApontado == null) return;
+    const t = setTimeout(() => setBlocoApontado(null), 1600);
+    return () => clearTimeout(t);
+  }, [blocoApontado]);
+
   const lista = atual[via];
   const exemplo = useMemo(() => pedidoDeExemplo(nomeDaLoja), [nomeDaLoja]);
   const papel = useMemo(
@@ -98,6 +136,46 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
   const trocar = (novaLista: Bloco[]) => onChange({ ...atual, [via]: novaLista });
   const mexerNoBloco = (i: number, mudanca: Partial<Bloco>) =>
     trocar(lista.map((b, j) => (j === i ? { ...b, ...mudanca } : b)));
+
+  /** O texto que está no papel para aquela palavra (o da loja ou o de fábrica). */
+  const textoDoRotulo = (iBloco: number, chave: string): string => {
+    const bloco = lista[iBloco];
+    if (!bloco) return "";
+    if (chave === "@titulo") return String(bloco.titulo ?? "");
+    return rotuloDoBloco(bloco, chave);
+  };
+
+  /** Grava a palavra. Vazio volta ao texto de fábrica em vez de sumir do papel. */
+  const gravarRotulo = (iBloco: number, chave: string, valor: string) => {
+    const bloco = lista[iBloco];
+    if (!bloco) return;
+    const t = valor.trim();
+    if (chave === "@titulo") {
+      // Título aceita ficar vazio: é como se tira "CLIENTE" do papel sem
+      // desligar a seção — comportamento que já existia antes desta tela.
+      mexerNoBloco(iBloco, { titulo: t });
+      return;
+    }
+    const rotulos = { ...(bloco.rotulos || {}) };
+    if (!t || t === rotuloPadrao(bloco.tipo, chave)) delete rotulos[chave];
+    else rotulos[chave] = t.slice(0, 60);
+    mexerNoBloco(iBloco, { rotulos: Object.keys(rotulos).length ? rotulos : undefined });
+  };
+
+  const abrirEdicao = (iBloco: number, chave: string) => {
+    setRascunho(textoDoRotulo(iBloco, chave));
+    setEdicao({ bloco: iBloco, rotulo: chave });
+  };
+  const confirmarEdicao = () => {
+    if (edicao) gravarRotulo(edicao.bloco, edicao.rotulo, rascunho);
+    setEdicao(null);
+  };
+
+  /** Clique numa linha sem palavra editável: leva ao card que a desenha. */
+  const apontarBloco = (iBloco: number) => {
+    setBlocoApontado(iBloco);
+    cardsRef.current[iBloco]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
   const mover = (de: number, para: number) => {
     if (para < 0 || para >= lista.length || de === para) return;
     const nova = [...lista];
@@ -108,8 +186,10 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
   return (
     <div>
       <p style={{ fontSize: "0.84rem", color: "#64748B", margin: "0 0 14px", maxWidth: "62ch", lineHeight: 1.5 }}>
-        Arraste para mudar a ordem, desligue o que não quer e escreva o que quiser. O papel ao lado
-        mostra a largura exata que vai sair da sua impressora.
+        Arraste para mudar a ordem, desligue o que não quer e escreva o que quiser.{" "}
+        <b style={{ color: "#0F172A" }}>Clique direto no papel ao lado para trocar uma palavra</b>{" "}
+        — as que dão para mudar ficam com um tracinho embaixo. Apague tudo e tecle Enter para voltar
+        ao texto de fábrica. A largura é exatamente a que vai sair da sua impressora.
       </p>
 
       {/* ── O ASSISTENTE VELHO IGNORA O MODELO, E ISSO PRECISA ESTAR ESCRITO ──
@@ -125,6 +205,23 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
           <p style={{ margin: "3px 0 0", fontSize: "0.78rem", color: "#B45309", lineHeight: 1.5 }}>
             Pode montar a comanda à vontade: fica salva. Até o Assistente atualizar (ele faz
             isso sozinho em até 6 horas), o papel sai no layout de sempre.
+          </p>
+        </div>
+      )}
+
+      {/* ── AS PALAVRAS TROCADAS PEDEM UM ASSISTENTE MAIS NOVO ──────────────
+          Aviso separado do de cima, e só para quem trocou alguma: quem apenas
+          reordenou blocos está servido desde a 1.2.11, e cobrar atualização de
+          quem não usa o recurso é o jeito mais rápido de ensinar a loja a
+          ignorar os nossos avisos. */}
+      {temRotuloTrocado(atual) && ehMaisVelha(versaoInstalada, VERSAO_MINIMA_DOS_ROTULOS) && (
+        <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "10px 13px", marginBottom: 14 }}>
+          <p style={{ margin: 0, fontSize: "0.83rem", color: "#92400E", fontWeight: 700 }}>
+            ⚠️ As palavras que você trocou pedem o Assistente {VERSAO_MINIMA_DOS_ROTULOS} — esta máquina está na {versaoInstalada}.
+          </p>
+          <p style={{ margin: "3px 0 0", fontSize: "0.78rem", color: "#B45309", lineHeight: 1.5 }}>
+            Fica tudo salvo. Até ele atualizar sozinho (leva até 6 horas), a ordem e o tamanho já
+            valem no papel, mas essas palavras saem no texto de fábrica.
           </p>
         </div>
       )}
@@ -167,6 +264,7 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
               return (
                 <div
                   key={`${bloco.tipo}-${i}`}
+                  ref={(el) => { cardsRef.current[i] = el; }}
                   draggable
                   onDragStart={() => setArrastando(i)}
                   onDragEnd={() => setArrastando(null)}
@@ -175,8 +273,11 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                   style={{
                     display: "flex", gap: 9, alignItems: "flex-start", padding: "10px 11px",
                     borderBottom: i === lista.length - 1 ? "none" : "1px solid #F1F5F9",
-                    background: arrastando === i ? "#FEF2F2" : bloco.ligado ? "#fff" : "#F8FAFC",
+                    background: arrastando === i ? "#FEF2F2"
+                      : blocoApontado === i ? "#FEF9C3"
+                      : bloco.ligado ? "#fff" : "#F8FAFC",
                     opacity: arrastando === i ? 0.5 : 1,
+                    transition: "background 0.25s",
                   }}
                 >
                   <span title="Arraste para mudar a ordem" style={{ cursor: "grab", color: "#CBD5E1", fontSize: "1.05rem", lineHeight: 1.2, userSelect: "none" }}>⠿</span>
@@ -201,6 +302,34 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                         {stepper(tamanhoValido(bloco.tamanho), (t) => mexerNoBloco(i, { tamanho: t }))}
                       </div>
                     )}
+
+                    {/* ── O DESFAZER DAS PALAVRAS TROCADAS ──────────────────
+                        A troca acontece no papel, mas o desfazer não pode
+                        depender de o lojista lembrar EM QUAL linha ele mexeu —
+                        e uma palavra trocada por engano some justamente onde
+                        ninguém procura. Aqui o card diz o que mudou e devolve
+                        tudo ao de fábrica de uma vez. */}
+                    {(() => {
+                      const trocadas = (ROTULOS_DO_BLOCO[bloco.tipo] || []).filter(
+                        (r) => rotuloDoBloco(bloco, r.chave) !== r.padrao,
+                      );
+                      if (!trocadas.length) return null;
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 7, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "0.72rem", color: "#0F172A", fontWeight: 700 }}>
+                            Suas palavras: {trocadas.map((r) => `"${rotuloDoBloco(bloco, r.chave)}"`).join(", ")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => mexerNoBloco(i, { rotulos: undefined })}
+                            style={{ ...mini, width: "auto", padding: "0 7px" }}
+                            title="Devolve as palavras desta seção ao texto de fábrica"
+                          >
+                            voltar ao padrão
+                          </button>
+                        </div>
+                      );
+                    })()}
 
                     {/* A única opção que uma seção tem: a linha da taxa.
                         Fica dentro do bloco dos valores porque é lá que ela
@@ -343,17 +472,86 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
               boxShadow: "0 2px 10px rgba(60,40,25,0.12)",
             }}>
               {papel.length === 0 && <div style={{ color: "#94A3B8" }}>(nenhum bloco ligado)</div>}
-              {papel.map((l, i) => (
-                <div key={i} style={{ lineHeight: l.tamanho > 1 ? 1.18 : 1.42, minHeight: "1em" }}>
-                  {l.recuo > 0 ? " ".repeat(l.recuo) : ""}
-                  <span style={{
-                    fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined,
-                    fontWeight: l.negrito ? 700 : 400,
-                  }}>
-                    {l.texto}
-                  </span>
-                </div>
-              ))}
+              {papel.map((l, i) => {
+                // ── O QUE DÁ PARA CLICAR, E O QUE ACONTECE ──────────────────
+                //
+                // Linha com palavra própria (e só no PRIMEIRO pedaço dela,
+                // quando a frase quebrou) abre a edição daquela palavra. Linha
+                // sem palavra — o nome do cliente, o item, o valor — não tem o
+                // que editar: ela vem do pedido de verdade. Clicar nela leva ao
+                // card que a desenha, que é a outra pergunta que o lojista faz
+                // olhando o papel ("de onde sai isto?").
+                const editavel = l.bloco != null && l.rotulo && (l.parte ?? 0) === 0;
+                const emEdicao = editavel && edicao?.bloco === l.bloco && edicao?.rotulo === l.rotulo;
+                const palavra = editavel ? textoDoRotulo(l.bloco as number, l.rotulo as string) : "";
+                // O resto da linha (o valor que vem do pedido) fica visível ao
+                // lado do campo: editar "Nome:" sem ver "Larissa Moreira" do
+                // lado tira a única referência do que se está mexendo.
+                const resto = palavra && l.texto.startsWith(palavra) ? l.texto.slice(palavra.length) : "";
+
+                if (emEdicao) {
+                  return (
+                    <div key={i} style={{ lineHeight: l.tamanho > 1 ? 1.18 : 1.42, minHeight: "1em" }}>
+                      {l.recuo > 0 ? " ".repeat(l.recuo) : ""}
+                      <input
+                        ref={campoRef}
+                        value={rascunho}
+                        onChange={(e) => setRascunho(e.target.value)}
+                        onBlur={confirmarEdicao}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); confirmarEdicao(); }
+                          if (e.key === "Escape") { e.preventDefault(); setEdicao(null); }
+                        }}
+                        maxLength={60}
+                        style={{
+                          font: "inherit", fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined,
+                          fontWeight: l.negrito ? 700 : 400,
+                          width: `${Math.max(4, rascunho.length + 1)}ch`,
+                          border: "none", borderBottom: `2px solid ${VERMELHO}`, background: "#FEF9C3",
+                          color: "inherit", padding: 0, outline: "none", borderRadius: 2,
+                        }}
+                      />
+                      <span style={{ fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined, fontWeight: l.negrito ? 700 : 400 }}>
+                        {resto}
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={i}
+                    onClick={() => {
+                      if (editavel) abrirEdicao(l.bloco as number, l.rotulo as string);
+                      else if (l.bloco != null) apontarBloco(l.bloco);
+                    }}
+                    title={editavel ? "Clique para mudar esta palavra" : l.bloco != null ? `Sai de: ${NOME_DO_BLOCO[lista[l.bloco]?.tipo]}` : undefined}
+                    className={l.bloco != null ? "linha-do-papel" : undefined}
+                    style={{
+                      lineHeight: l.tamanho > 1 ? 1.18 : 1.42, minHeight: "1em",
+                      cursor: l.bloco != null ? "pointer" : "default",
+                      borderRadius: 3,
+                    }}
+                  >
+                    {l.recuo > 0 ? " ".repeat(l.recuo) : ""}
+                    <span style={{
+                      fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined,
+                      fontWeight: l.negrito ? 700 : 400,
+                      // O tracejado embaixo da palavra editável é a única
+                      // pista de que o papel responde ao clique. Sem ele, a
+                      // loja não descobre o recurso: papel não parece botão.
+                      borderBottom: editavel ? "1px dashed #CBD5E1" : undefined,
+                    }}>
+                      {editavel ? palavra : l.texto}
+                    </span>
+                    {editavel && (
+                      <span style={{ fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined, fontWeight: l.negrito ? 700 : 400 }}>
+                        {resto}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
           <p style={{ fontSize: "0.74rem", color: "#94A3B8", margin: "8px 2px 0", lineHeight: 1.5 }}>
@@ -364,7 +562,10 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
       </div>
 
       {/* Em tela estreita a prévia vai para baixo da lista, em vez de espremer as duas. */}
-      <style>{`@media (max-width: 900px) { .comanda-grade { grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`
+        @media (max-width: 900px) { .comanda-grade { grid-template-columns: 1fr !important; } }
+        .linha-do-papel:hover { background: #FEF9C3; }
+      `}</style>
     </div>
   );
 }

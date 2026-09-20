@@ -251,5 +251,73 @@ const certinho = legivel(buildEscPos(
   { ...pedido99, totalAmount: 35.99 }, "Loja do Lucas", 48, "safe"));
 conferir("pedido que ja fechava mantem a quebra por origem", certinho.includes("Desconto (Cupom - Loja):"));
 
+
+console.log("\n13) As palavras que a loja reescreveu (order.blocos[].rotulos)");
+// O contrato com o site: cada chave de ROTULOS_DO_BLOCO (src/lib/comanda-modelo.ts)
+// tem um R() aqui em server.js. Chave que existe so de um lado faz a previa
+// mostrar uma palavra e o papel sair com outra — e a tela inteira, que existe
+// para a loja NAO descobrir o layout imprimindo, perde a serventia.
+const comRotulos = legivel(buildEscPos({
+  ...PEDIDO,
+  blocos: [
+    { tipo: "numeroPedido", ligado: true, tamanho: 3, negrito: true, alinhamento: "centro", rotulos: { delivery: "PEDIDO" } },
+    { tipo: "loja", ligado: true, rotulos: { estabelecimento: "Loja:" } },
+    { tipo: "dataHora", ligado: true, rotulos: { numeroNoParceiro: "Pedido no app:" } },
+    { tipo: "cliente", ligado: true, titulo: "CLIENTE", rotulos: { nome: "Cliente:", telefone: "Fone:" } },
+    { tipo: "entrega", ligado: true, titulo: "ENTREGA", rotulos: { endereco: "Levar em:" } },
+    { tipo: "itens", ligado: true, titulo: "RESUMO DO PEDIDO" },
+    { tipo: "totais", ligado: true, rotulos: { subtotal: "Parcial:", total: "A PAGAR:" } },
+    { tipo: "pagamento", ligado: true, rotulos: { formaDePagamento: "Paga com:" } },
+  ],
+}, "Salz Burgueria", 48, "safe"));
+conferir("o nome virou Cliente:", comRotulos.includes("Cliente: Larissa") && !comRotulos.includes("Nome: Larissa"));
+conferir("o telefone virou Fone:", comRotulos.includes("Fone:") && !comRotulos.includes("Telefone:"));
+conferir("o endereco virou Levar em:", comRotulos.includes("Levar em:") && !comRotulos.includes("Endereco:"));
+conferir("o estabelecimento virou Loja:", comRotulos.includes("Loja: SALZ"));
+conferir("o subtotal virou Parcial:", comRotulos.includes("Parcial:") && !comRotulos.includes("Subtotal:"));
+conferir("o total virou A PAGAR:", comRotulos.includes("A PAGAR:"));
+conferir("a forma de pagamento virou Paga com:", comRotulos.includes("Paga com:"));
+conferir("DELIVERY virou PEDIDO no topo", comRotulos.includes("PEDIDO") && !comRotulos.includes("DELIVERY"));
+conferir("o numero no app usa o rotulo da loja", comRotulos.includes("Pedido no app:"));
+
+// Rotulo em branco, ou de chave que nao existe, nao pode APAGAR a palavra do
+// papel: o pior resultado possivel aqui e uma comanda sem "Total".
+const rotuloRuim = legivel(buildEscPos({
+  ...PEDIDO,
+  blocos: [
+    { tipo: "cliente", ligado: true, titulo: "CLIENTE", rotulos: { nome: "   ", inventado: "xx" } },
+    { tipo: "itens", ligado: true, titulo: "RESUMO DO PEDIDO" },
+    { tipo: "totais", ligado: true, rotulos: { total: "" } },
+  ],
+}, "Salz Burgueria", 48, "safe"));
+conferir("rotulo em branco volta ao de fabrica", rotuloRuim.includes("Nome: Larissa"));
+conferir("rotulo vazio nao apaga o Total", rotuloRuim.includes("Total:"));
+conferir("chave desconhecida e ignorada", !rotuloRuim.includes("xx"));
+
+console.log("\n14) O que sai grande no papel de FABRICA (loja que nunca abriu a tela)");
+// Quem nao personalizou nao manda blocos, entao quem desenha e o layout
+// embutido. O destaque pedido pelo dono em 19/09/2026 (numero do pedido, numero
+// no app e observacao) tem que valer ali tambem — senao vale so para quem
+// personalizou, que e a minoria.
+const bruto = buildEscPos(PEDIDO, "Salz Burgueria", 48, "safe").toString("binary");
+const TRIPLO = "\x1D!\x22", DOBRADO = "\x1D!\x11", NEGRITO = "\x1BE\x01";
+const linhaDoNumero = bruto.split("\n").find((l) => l.includes("(79)"));
+conferir("o numero do pedido sai em corpo triplo, na linha dele", !!linhaDoNumero && linhaDoNumero.includes(TRIPLO));
+const linhaDoApp = bruto.split("\n").find((l) => l.includes("N. do Pedido:"));
+conferir("o numero no app sai ampliado", !!linhaDoApp && (linhaDoApp.includes(DOBRADO) || linhaDoApp.includes(TRIPLO)));
+
+const pedidoComObs = {
+  ...PEDIDO,
+  notes: "Sem cebola, por favor",
+  items: [{ name: "Esfirra Duo", qty: 1, price: 7.98, notes: "bem passada" }],
+};
+const comObs = buildEscPos(pedidoComObs, "Salz Burgueria", 48, "safe").toString("binary");
+const linhaObsEntrega = comObs.split("\n").find((l) => l.includes("Sem cebola"));
+const linhaObsItem = comObs.split("\n").find((l) => l.includes("bem passada"));
+conferir("a observacao da entrega sai destacada", !!linhaObsEntrega && linhaObsEntrega.includes("\x1D!") && linhaObsEntrega.includes(NEGRITO));
+conferir("a observacao do item sai destacada", !!linhaObsItem && linhaObsItem.includes("\x1D!") && linhaObsItem.includes(NEGRITO));
+const linhaData = comObs.split("\n").find((l) => l.includes("Data:"));
+conferir("a data continua miuda", !!linhaData && !linhaData.includes("\x1D!\x11") && !linhaData.includes("\x1D!\x22"));
+
 console.log(falhas === 0 ? "\nTUDO OK\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

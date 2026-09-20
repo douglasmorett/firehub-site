@@ -720,6 +720,65 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
   const makeHeaderTitle = (title) => centerLine(cleanAscii(title).toUpperCase());
 
+  // ── AS PALAVRAS QUE A LOJA REESCREVEU ─────────────────────────────────
+  //
+  // "Nome:", "Subtotal:", "Forma de pagamento:" eram literais aqui dentro, e
+  // trocar qualquer uma exigia versao nova do Assistente em todas as lojas.
+  // Agora cada bloco pode trazer `rotulos` (src/lib/comanda-modelo.ts no
+  // site), e o catalogo ROTULOS_DO_BLOCO de la e o contrato: cada chave tem um
+  // R() aqui. Chave sem par de um dos lados e pior que chave nenhuma — a
+  // previa mostra a palavra nova e o papel sai com a antiga.
+  //
+  // Vale tambem para o layout EMBUTIDO (este, abaixo), nao so para
+  // aplicarModelo(): a loja que so reescreveu uma palavra, sem reordenar nada,
+  // continua sem mandar modelo personalizado — e ela tem que ver a palavra
+  // dela no papel do mesmo jeito.
+  const rotulosPorTipo = {};
+  for (const bl of (Array.isArray(order.blocos) ? order.blocos : [])) {
+    if (bl && bl.tipo && bl.rotulos && typeof bl.rotulos === "object") rotulosPorTipo[bl.tipo] = bl.rotulos;
+  }
+  const R = (tipo, chave, padrao) => {
+    const v = rotulosPorTipo[tipo] && rotulosPorTipo[tipo][chave];
+    return typeof v === "string" && v.trim() ? cleanAscii(v.trim()) : padrao;
+  };
+
+  // ── TEXTO AMPLIADO FORA DO aplicarModelo ──────────────────────────────
+  //
+  // O layout embutido so tinha DOUBLE_HEIGHT (altura dobrada, largura igual).
+  // Para o numero do pedido e a observacao saírem como saem na comanda do
+  // iFood, o texto precisa ser ampliado NA LARGURA tambem — e aí a conta de
+  // quantas letras cabem muda, e o recuo tem que sair em colunas NORMAIS,
+  // antes do comando de tamanho. E a mesma regra de `linha()` em
+  // aplicarModelo(); as duas existem porque uma vale para o modelo da loja e
+  // outra para o papel de fabrica, e nenhuma pode divergir da previa do site.
+  const ampliado = (texto, mult, opcoes = {}) => {
+    const n = Number(mult) || 1;
+    const fonteB = n > 1 && n < 2 && profile !== "legacy";
+    const cmd = ESC + "M" + String.fromCharCode(fonteB ? 1 : 0)
+              + GS + "!" + String.fromCharCode(n >= 3 ? 0x22 : n >= 1.5 ? 0x11 : 0x00);
+    const reset = ESC + "M" + String.fromCharCode(0) + GS + "!" + String.fromCharCode(0);
+    const partes = wrap(texto, Math.max(4, Math.floor(columns / n)));
+    let s = "";
+    for (const p of partes) {
+      const sobra = Math.max(0, columns - Math.round(p.length * n));
+      const recuo = opcoes.centro ? Math.floor(sobra / 2) : 0;
+      s += " ".repeat(recuo) + cmd + (opcoes.negrito ? BOLD_ON : "") + p
+         + (opcoes.negrito ? BOLD_OFF : "") + reset + LF;
+    }
+    return s;
+  };
+
+  /**
+   * O corpo do numero do pedido no app e o da observacao do cliente.
+   *
+   * Os mesmos valores de DESTAQUE_DO_NUMERO_NO_APP e DESTAQUE_DA_OBSERVACAO
+   * em src/lib/comanda-modelo.ts. Decisao do dono (19/09/2026): o numero e o
+   * que a loja procura no app com o cliente no telefone, e a observacao e o
+   * que a cozinha erra — os dois tinham o mesmo corpo do resto do papel.
+   */
+  const CORPO_DO_NUMERO_NO_APP = 2;
+  const CORPO_DA_OBSERVACAO = 1.5;
+
   // rightAlign e makeBoxLine eram byte-a-byte identicas: viram uma so.
   // Em vez de TRUNCAR o rotulo (o que comia o fim do nome do produto), quebra
   // em linhas e alinha o valor a direita na ultima.
@@ -959,11 +1018,18 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           break;
         }
         case "loja":
-          out += linha("Estabelecimento: " + cleanAscii(storeName || "FIREHUB").toUpperCase(), f);
+          out += linha(R("loja", "estabelecimento", "Estabelecimento:") + " " + cleanAscii(storeName || "FIREHUB").toUpperCase(), f);
           break;
         case "dataHora":
-          if (orderRef) out += linha("N. do Pedido: " + cleanAscii(orderRef), f);
-          if (dateStr) out += linha("Data: " + dateStr + " " + timeStr, f);
+          // O numero no app sai no corpo do destaque, nao no do bloco: e o que
+          // a loja procura dentro do iFood/99 com o cliente no telefone. A
+          // data segue o bloco, porque e conferencia. Mesma regra da previa do
+          // site (DESTAQUE_DO_NUMERO_NO_APP em lib/comanda-modelo.ts).
+          if (orderRef) {
+            out += linha(R("dataHora", "numeroNoParceiro", "N. do Pedido:") + " " + cleanAscii(orderRef),
+              { ...f, negrito: true, tamanho: CORPO_DO_NUMERO_NO_APP });
+          }
+          if (dateStr) out += linha(R("dataHora", "data", "Data:") + " " + dateStr + " " + timeStr, f);
           break;
         // Nao desligavel no site: e o aviso de que o pedido tem motoboy do
         // parceiro e o codigo de coleta. Some daqui e a loja manda o proprio
@@ -1022,7 +1088,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // e papel que vai para a mao do cliente.
   const ehConta = order.kind === "CONTA_DA_MESA";
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
-  const deliveryTypeTag = order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : "RETIRADA";
+  // A palavra ao lado do numero. A loja pode troca-la (bloco numeroPedido,
+  // chave "delivery"); trocada, vale para os tres tipos — quem escreve
+  // "PEDIDO" ali quer "PEDIDO" no papel inteiro, nao so na entrega.
+  const deliveryTypeTag = R("numeroPedido", "delivery",
+    order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : "RETIRADA");
   const orderRef = ehConta ? "" : (order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : ""));
   const refTag = orderRef ? `#${orderRef}` : "";
 
@@ -1083,7 +1153,15 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     : (is99FoodDriver ? "99FOOD" : (isIfoodDriver ? "IFOOD" : (srcStr || "PARCEIRO")));
   const pCode = order.ifoodPickupCode || order.openDeliveryPickupCode || "";
 
-  res += DOUBLE_HEIGHT + BOLD_ON + centerLine(headerLine) + BOLD_OFF + DOUBLE_OFF;
+  // ── O NUMERO DO PEDIDO EM CORPO TRIPLO ───────────────────────────────
+  //
+  // Era altura dobrada com largura normal, e dividia o topo com o nome do
+  // canal em pe de igualdade. Decisao do dono (19/09/2026), com a comanda do
+  // proprio iFood na mao: o numero e o que a cozinha, o balcao e o entregador
+  // leem de longe, em papel amassado e sob luz ruim — sai grande. Cabem 16
+  // colunas em 3x, entao "(79) DELIVERY #3523" quebra em duas linhas, que e o
+  // que o iFood tambem faz. O par disto esta em modeloPadrao() no site.
+  res += ampliado(headerLine, 3, { centro: true, negrito: true });
   // Logo abaixo do numero, em destaque: e a primeira coisa que a cozinha
   // precisa saber quando a mesma impressora recebe tres marcas.
   if (lojaOrigem) {
@@ -1091,35 +1169,42 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   }
   marcas.avisoEntrega = res.length;
   if (isPartnerDriver) {
-    res += DOUBLE_HEIGHT + centerLine(`*** MOTOBOY ${partnerLabel} (ENTREGA PARCEIRA) ***`)
-         + centerLine("NAO USAR MOTOBOY DA LOJA!") + DOUBLE_OFF;
+    const rMotoboy = R("avisoEntrega", "motoboy", "MOTOBOY");
+    const rParceira = R("avisoEntrega", "entregaParceira", "(ENTREGA PARCEIRA)");
+    res += DOUBLE_HEIGHT + centerLine(`*** ${rMotoboy} ${partnerLabel} ${rParceira} ***`)
+         + centerLine(R("avisoEntrega", "naoUsar", "NAO USAR MOTOBOY DA LOJA!")) + DOUBLE_OFF;
     if (pCode) {
-      res += DOUBLE_HEIGHT + centerLine(`CODIGO DE COLETA: #${pCode}`) + DOUBLE_OFF;
+      res += DOUBLE_HEIGHT + centerLine(`${R("avisoEntrega", "codigoDeColeta", "CODIGO DE COLETA:")} #${pCode}`) + DOUBLE_OFF;
     }
   }
   marcas.fimAvisoEntrega = res.length;
   res += LEFT + divider;
   marcas.loja = res.length;
-  res += wrapLines("Estabelecimento: " + cleanAscii(storeName || "FIREHUB").toUpperCase(), 2);
+  res += wrapLines(R("loja", "estabelecimento", "Estabelecimento:") + " " + cleanAscii(storeName || "FIREHUB").toUpperCase(), 2);
+  // O NUMERO NO APP SAI GRANDE. E por ele que a loja acha o pedido dentro do
+  // iFood/99 quando o cliente liga reclamando, e era a unica linha miuda no
+  // meio de um cabecalho de numeros grandes: para ler, alguem pegava o papel e
+  // aproximava do rosto. A DATA continua pequena — ela e conferencia, ninguem
+  // a procura com o telefone na mao.
   if (orderRef) {
-    res += "N. do Pedido: " + cleanAscii(orderRef) + LF;
+    res += ampliado(R("dataHora", "numeroNoParceiro", "N. do Pedido:") + " " + cleanAscii(orderRef), CORPO_DO_NUMERO_NO_APP, { negrito: true });
   }
   const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
   const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
-  if (dateStr) res += "Data: " + dateStr + " " + timeStr + LF;
+  if (dateStr) res += R("dataHora", "data", "Data:") + " " + dateStr + " " + timeStr + LF;
   marcas.fimCabecalho = res.length;
 
   // 2. CLIENTE SECTION
   marcas.tituloCliente = res.length;
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
   marcas.cliente = res.length;
-  if (order.customerName) res += wrapLines("Nome: " + cleanAscii(order.customerName), 2);
+  if (order.customerName) res += wrapLines(R("cliente", "nome", "Nome:") + " " + cleanAscii(order.customerName), 2);
   // Pedido de mesa nasce com telefone "00000000000" (campo obrigatorio no
   // banco): imprimir isso e ruido no papel.
   if (order.customerPhone && !/^0+$/.test(String(order.customerPhone).trim())) {
-    res += wrapLines("Telefone: " + cleanAscii(order.customerPhone), 2);
+    res += wrapLines(R("cliente", "telefone", "Telefone:") + " " + cleanAscii(order.customerPhone), 2);
   }
-  if (!ehConta) res += "Qtd Pedidos: 1" + LF;
+  if (!ehConta) res += R("cliente", "qtdPedidos", "Qtd Pedidos:") + " 1" + LF;
 
   // 3. ENTREGA SECTION
   marcas.fimCliente = res.length;
@@ -1127,7 +1212,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
     res += LF + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LF;
     marcas.entrega = res.length;
-    res += wrapLines("Endereco: " + cleanAscii(order.customerAddress), 2);
+    res += wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2);
     if (order.notes) {
       const cleanObs = cleanAscii(order.notes)
         .replace(/Pedido iFood #[A-Z0-9]+/gi, "")
@@ -1135,8 +1220,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
         .replace(/\|\s*\|/g, "|")
         .replace(/^[\s|]+|[\s|]+$/g, "")
         .trim();
+      // A OBSERVACAO EM DESTAQUE: e o que o cliente pediu e o que a loja erra.
+      // Saia do mesmo corpo do endereco, recuada dois espacos, e passava
+      // despercebida. Ver CORPO_DA_OBSERVACAO.
       if (cleanObs) {
-        res += wrapLines("Obs: " + cleanObs, 2);
+        res += ampliado(R("entrega", "observacao", "Obs:") + " " + cleanObs, CORPO_DA_OBSERVACAO, { negrito: true });
       }
     }
   }
@@ -1346,8 +1434,13 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
         });
       }
 
+      // A OBSERVACAO DO ITEM E O QUE A COZINHA ERRA. Saia no mesmo corpo da
+      // lista e recuada dois espacos, e "sem cebola" se perdia no meio dos
+      // complementos — o pedido voltava. Decisao do dono (19/09/2026), com a
+      // comanda do iFood como regua. Sem o recuo: em corpo ampliado ele come a
+      // coluna que falta para a frase.
       if (item.notes) {
-        res += makeBoxText(`  Obs: ${item.notes}`);
+        res += ampliado(`${R("itens", "observacaoDoItem", "Obs:")} ${cleanAscii(item.notes)}`, CORPO_DA_OBSERVACAO, { negrito: true });
       }
       res += boxBorder;
     });
@@ -1417,11 +1510,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     const gorjetaValor = Number(order.gorjeta || 0);
     if (gorjetaValor > 0) res += rightAlign("Gorjeta:", dinheiroConta(gorjetaValor));
   } else {
-    res += rightAlign("Subtotal:", "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
+    res += rightAlign(R("totais", "subtotal", "Subtotal:"), "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
   }
 
   const dFee = typeof order.deliveryFee === "number" ? order.deliveryFee : 0;
-  const dFeeLabel = order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:";
+  const dFeeLabel = R("totais", "taxaEntrega", order.source === "IFOOD" ? "Taxa de Entrega (iFood):" : "Taxa de Entrega:");
   const dinheiro = (v) => "R$ " + Number(v).toFixed(2).replace(".", ",");
 
   // ── O DESCONTO IMPRESSO E O QUE REALMENTE SAIU DA CONTA ──────────────
@@ -1458,8 +1551,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const plataformaRotulo = String(order.discountPlatformLabel || "Desconto (iFood):");
   const partes = [];
   if (plataformaValor > 0) partes.push([plataformaRotulo, plataformaValor]);
-  if (order.discountMerchant && Number(order.discountMerchant) > 0) partes.push(["Desconto (Cupom - Loja):", Number(order.discountMerchant)]);
-  else if (!(plataformaValor > 0) && order.discountTotal && Number(order.discountTotal) > 0) partes.push(["Desconto (Cupom - Loja):", Number(order.discountTotal)]);
+  if (order.discountMerchant && Number(order.discountMerchant) > 0) partes.push([R("totais", "desconto", "Desconto (Cupom - Loja):"), Number(order.discountMerchant)]);
+  else if (!(plataformaValor > 0) && order.discountTotal && Number(order.discountTotal) > 0) partes.push([R("totais", "desconto", "Desconto (Cupom - Loja):"), Number(order.discountTotal)]);
   const somaDasPartes = Math.round(partes.reduce((s, p) => s + p[1], 0) * 100) / 100;
 
   if (ehConta) {
@@ -1504,7 +1597,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // TOTAL BOX — destaque limpo
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");
   res += boxBorder;
-  res += DOUBLE_HEIGHT + BOLD_ON + makeBoxLine("Total:", totalValStr) + BOLD_OFF + DOUBLE_OFF;
+  res += DOUBLE_HEIGHT + BOLD_ON + makeBoxLine(R("totais", "total", "Total:"), totalValStr) + BOLD_OFF + DOUBLE_OFF;
   res += boxBorder;
 
   marcas.fimTotais = res.length;
@@ -1547,10 +1640,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJa" : "Online";
 
   if (isOnlinePayment) {
-    res += BOLD_ON + wrapLines("Forma de Pagamento: " + baseMethodName, 2) + BOLD_OFF;
+    res += BOLD_ON + wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2) + BOLD_OFF;
     res += DOUBLE_HEIGHT + wrapLines("(Pago via " + onlineSource + " - NAO COBRAR)", 2) + DOUBLE_OFF;
   } else {
-    res += BOLD_ON + wrapLines("Forma de Pagamento: " + baseMethodName, 2) + BOLD_OFF;
+    res += BOLD_ON + wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2) + BOLD_OFF;
     res += DOUBLE_HEIGHT + wrapLines(ehMesa ? "(PAGAR NO CAIXA OU NA MESA)" : "(COBRAR NA ENTREGA)", 2) + DOUBLE_OFF;
 
     if (order.changeAmount != null && Number(order.changeAmount) > 0) {
@@ -1560,7 +1653,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       const changeForStr = "R$ " + changeFor.toFixed(2).replace(".", ",");
       const changeToReturnStr = "R$ " + changeToReturn.toFixed(2).replace(".", ",");
 
-      res += DOUBLE_HEIGHT + wrapLines("Troco para: " + changeForStr + " (Levar " + changeToReturnStr + " de troco)", 2) + DOUBLE_OFF;
+      res += DOUBLE_HEIGHT + wrapLines(R("pagamento", "troco", "Troco para:") + " " + changeForStr + " (Levar " + changeToReturnStr + " de troco)", 2) + DOUBLE_OFF;
     }
 
     res += divider;
@@ -1585,10 +1678,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // com comando desconhecido.
   if (order.qrPuxarUrl && profile !== "legacy") {
     res += LF + CENTER + qrEscPos(order.qrPuxarUrl, 6);
-    res += LF + BOLD_ON + centerLine("MOTOBOY: escaneie para puxar") + BOLD_OFF;
+    res += LF + BOLD_ON + centerLine(R("qrMotoboy", "chamada", "MOTOBOY: escaneie para puxar")) + BOLD_OFF;
     const codigoCurto = String(order.qrPuxarCodigo || "").split("-").pop() || "";
     if (codigoCurto) {
-      res += centerLine("ou digite o numero " + codigoCurto + " no app");
+      res += centerLine(R("qrMotoboy", "digite", "ou digite o numero") + " " + codigoCurto + " no app");
     }
     res += LEFT;
   }
@@ -1626,9 +1719,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       // do celular, em casa, e nao pelo motoboy a 30 cm — quanto maior, melhor.
       res += LF + CENTER + qrEscPos(campanha.url, 8) + LF;
     }
-    res += LEFT + BOLD_ON + centerLine("Escaneie e faca seu proximo pedido") + BOLD_OFF;
+    res += LEFT + BOLD_ON + centerLine(R("qrCliente", "chamada", "Escaneie e faca seu proximo pedido")) + BOLD_OFF;
     if (campanha.codigo) {
-      res += centerLine("ou use o cupom " + String(campanha.codigo).toUpperCase());
+      res += centerLine(R("qrCliente", "cupom", "ou use o cupom") + " " + String(campanha.codigo).toUpperCase());
       if (campanha.endereco) {
         // Na bobina de 58 mm o endereco nao cabe numa linha e a quebra por
         // palavra cortaria o slug no meio ("pastel-d / a-paulista"). Parte

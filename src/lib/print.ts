@@ -96,7 +96,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.17";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.18";
 
 /**
  * A partir daqui o Assistente imprime a CONTA DA MESA com rodape proprio:
