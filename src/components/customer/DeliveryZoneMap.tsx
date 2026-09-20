@@ -129,8 +129,16 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
   // State for Radius (KM) mode
   const [zones, setZones] = useState<Zone[]>(
-    (zoneType === "KM" || zoneType === "RADIUS") && initialZones?.length
-      ? initialZones
+    // ROTA e DISTANCE são cadastros de FAIXA DE DISTÂNCIA, iguais ao raio —
+    // só muda como a distância é medida. Faltando aqui, a loja que cobra por
+    // km percorrido abria a tela com as faixas de fábrica (1/3/5 km) e o
+    // primeiro Salvar — mesmo só para arrastar o pino — gravava essas por cima
+    // das dela, sem aviso e sem volta.
+    ["KM", "RADIUS", "ROTA", "DISTANCE"].includes(String(zoneType || "").toUpperCase()) && initialZones?.length
+      ? (initialZones as any[]).map((z: any) => ({
+          ...z,
+          km: Number(z?.km ?? z?.maxKm ?? z?.radius ?? 0) || 0,
+        })) as Zone[]
       : [
           { km: 1, time: 30, fee: 5 },
           { km: 3, time: 45, fee: 8 },
@@ -165,6 +173,14 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const [confirmed, setConfirmed] = useState(!!initialLatLng);
   const [msg, setMsg] = useState("");
   const [leafletLoaded, setLeafletLoaded] = useState(false);
+  /**
+   * O MAPA já existe? `leafletMapRef` é um ref: mudar não re-renderiza, então
+   * o efeito que desenha os polígonos rodava ANTES do mapa nascer, via
+   * `leafletMapRef.current` vazio e desistia. A loja abria a tela com as áreas
+   * na lista e o mapa limpo — e redesenhava tudo por cima, achando que tinha
+   * perdido o trabalho.
+   */
+  const [mapaPronto, setMapaPronto] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -278,6 +294,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       });
 
       leafletMapRef.current = { map, L };
+      // Avisa o React que o mapa existe: é o que faz o efeito dos polígonos
+      // (áreas desenhadas e de risco) rodar DEPOIS que há onde desenhar.
+      setMapaPronto(true);
       drawCircles();
 
       // ── O MAPA TEM QUE RECONHECER A LARGURA QUE TEM ──────────────────
@@ -472,7 +491,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         riscoRef.current.push(linha);
       }
     }
-  }, [areasDeRisco, areasDeEntrega, desenhando, alvoDoDesenho, leafletLoaded]);
+  }, [areasDeRisco, areasDeEntrega, desenhando, alvoDoDesenho, leafletLoaded, mapaPronto]);
 
   // Autocomplete live search as user types
   const handleAddressChange = (val: string) => {
@@ -657,6 +676,37 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       setMsg("⚠️ Desenhe pelo menos uma área de entrega no mapa antes de salvar.");
       setSaving(false);
       return;
+    }
+
+    // ── Área com taxa ZERO é a armadilha que originou esta tela ───────────
+    //
+    // A R&D Pizzaria tinha as três faixas cadastradas com R$ 0,00 e descobriu
+    // entregando de graça a 10 km. Área desenhada nasce com fee 0, e o Salvar
+    // fica sempre à vista: dá para desenhar três áreas e salvar todas a zero
+    // sem perceber. Zero de propósito existe (entrega grátis) — mas tem que
+    // ser dito em voz alta.
+    if (currentZoneType === "POLIGONO") {
+      const deGraca = (activeZones as any[]).filter((a) => !(Number(a?.fee) > 0)).map((a) => a?.nome || "sem nome");
+      if (deGraca.length > 0) {
+        const ok = window.confirm(
+          `Estas áreas estão com taxa R$ 0,00 (entrega grátis):\n\n• ${deGraca.join("\n• ")}\n\n` +
+          `Se for de propósito, tudo bem. Se não, cancele e preencha a taxa. Salvar assim?`
+        );
+        if (!ok) { setSaving(false); return; }
+      }
+    }
+
+    // ── Trocar de método APAGA o cadastro do outro ────────────────────────
+    //
+    // `deliveryZones` é uma coluna só: salvar em raio grava as faixas por cima
+    // dos contornos, e o desenho some do banco sem cópia em lugar nenhum. Quem
+    // clicou em "Por raio" só para ver como ficaria perdia as 4 áreas.
+    if (currentZoneType !== "POLIGONO" && areasDeEntrega.length > 0) {
+      const ok = window.confirm(
+        `Você tem ${areasDeEntrega.length} área(s) desenhada(s) no mapa.\n\n` +
+        `Salvar em "${METODOS_DE_COBRANCA.find((m) => m.chave === metodoAtivo)?.nome || currentZoneType}" APAGA o desenho. Continuar?`
+      );
+      if (!ok) { setSaving(false); return; }
     }
     try {
       await onSave({ storeLatLng: latLng, deliveryZones: activeZones, deliveryZoneType: currentZoneType, storeAddress: address, ifoodSyncDeliveryTime: ifoodSync, areasDeRisco });

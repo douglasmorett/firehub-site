@@ -301,6 +301,16 @@ export default function CustomerStorePage({
    * taxa já apareceu.
    */
   const [lojaDesenhouArea, setLojaDesenhouArea] = useState(false);
+  /**
+   * PARA QUAL ENDEREÇO o ponto confirmado vale.
+   *
+   * O cliente confirma o pino na casa dele, troca a rua e o número para o
+   * trabalho e finaliza: o pedido saía com o endereço NOVO validado pela
+   * coordenada VELHA — a área aprovava um lugar e o motoboy ia para outro. O
+   * ponto só viaja no pedido quando o endereço escrito ainda é o mesmo de
+   * quando ele foi confirmado.
+   */
+  const enderecoDoPonto = useRef<string>("");
   const [mapaDeConfirmacaoAberto, setMapaDeConfirmacaoAberto] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [showVipTooltip, setShowVipTooltip] = useState(false);
@@ -1210,6 +1220,10 @@ export default function CustomerStorePage({
     );
   }, [availableNeighborhoods, neighborhoodSearch]);
 
+  /** Rua+número+bairro normalizados: é o que identifica "o mesmo endereço". */
+  const chaveDoEndereco = () =>
+    `${customerStreet}|${customerNumber}|${customerNeighborhood}`.toLowerCase().replace(/\s+/g, " ").trim();
+
   const handleUseGpsLocation = () => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       alert("Geolocalização não é suportada pelo seu navegador.");
@@ -1222,6 +1236,7 @@ export default function CustomerStorePage({
         try {
           const { latitude, longitude } = pos.coords;
           setGpsCoords({ lat: latitude, lng: longitude });
+          enderecoDoPonto.current = chaveDoEndereco();
           // Reverse geocode para obter rua, número e bairro
           try {
             const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`, {
@@ -1246,8 +1261,8 @@ export default function CustomerStorePage({
           if (res.ok) {
             const data = await res.json();
             setPrecisaConfirmarNoMapa(Boolean(data.precisaConfirmarNoMapa));
-        setLojaDesenhouArea(data.type === "poligono");
-            setLojaDesenhouArea(data.type === "poligono");
+        setLojaDesenhouArea(data.type === "poligono" || Boolean(data.podeConfirmarNoMapa));
+            setLojaDesenhouArea(data.type === "poligono" || Boolean(data.podeConfirmarNoMapa));
             if (data.available === false) {
               setDeliveryFee(0);
               setDeliveryFeeCalculated(true);
@@ -1317,8 +1332,14 @@ export default function CustomerStorePage({
     const fullNum = customerNumber.trim();
     const fullNeigh = (neigh || customerNeighborhood || "").trim();
     const addrQuery = customAddress || `${fullStreet}, ${fullNum} - ${fullNeigh}, ${franchisee.city || ""}`.trim();
-    // Endereço digitado de novo: o GPS de antes não vale mais.
-    setGpsCoords(null);
+    // Endereço digitado de novo: o ponto de antes era de OUTRO endereço.
+    // O carimbo é o que impede o pedido de sair com endereço A e ponto B — e
+    // também o que faz o ponto confirmado no mapa SOBREVIVER a um recálculo
+    // automático do mesmo endereço (antes ele era apagado em toda chamada).
+    if (enderecoDoPonto.current && enderecoDoPonto.current !== chaveDoEndereco()) {
+      setGpsCoords(null);
+      enderecoDoPonto.current = "";
+    }
 
     if (!fullStreet || !fullNum || (!isNeighborhoodType && !fullNeigh) || addrQuery.length < 5) {
       setDeliveryFee(null);
@@ -1455,7 +1476,16 @@ export default function CustomerStorePage({
           franchiseeSlug: franchisee.slug,
           customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? finalAddress : null,
-          customerCoords: deliveryType === "DELIVERY" ? gpsCoords : null,
+          // O ponto só acompanha o pedido se for DESTE endereço.
+          customerCoords:
+            deliveryType === "DELIVERY" && gpsCoords && enderecoDoPonto.current === chaveDoEndereco()
+              ? gpsCoords
+              : null,
+          // As MESMAS peças que a cotação de taxa usou: sem elas o servidor
+          // geocodificava só a string livre e chegava a outra conclusão.
+          customerStreet: customerStreet || null,
+          customerNumber: customerNumber || null,
+          customerNeighborhood: customerNeighborhood || null,
           deliveryType, paymentMethod, notes,
           // Troco em dinheiro: vai para a cozinha/motoboy junto do pedido.
           changeAmount: (() => {
@@ -3502,12 +3532,14 @@ export default function CustomerStorePage({
             // O ponto confirmado vale como a localização do cliente: é o mesmo
             // campo que o GPS preenche, e é ele que viaja no pedido.
             setGpsCoords(p);
+            enderecoDoPonto.current = chaveDoEndereco();
             setMapaDeConfirmacaoAberto(false);
             setDeliveryCalculating(true);
             try {
               const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&lat=${p.lat}&lng=${p.lng}`);
               const data = await res.json().catch(() => ({} as any));
               setPrecisaConfirmarNoMapa(Boolean(data?.precisaConfirmarNoMapa));
+              setLojaDesenhouArea(data?.type === "poligono" || Boolean(data?.podeConfirmarNoMapa));
               if (data?.available === false) {
                 setDeliveryFee(0);
                 setDeliveryFeeCalculated(true);

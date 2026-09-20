@@ -52,6 +52,19 @@ export default function ConfirmarPontoNoMapa({
   const pinoRef = useRef<any>(null);
   const [ponto, setPonto] = useState<Ponto>(pontoInicial || centro);
   const [pronto, setPronto] = useState(false);
+  /**
+   * O cliente JÁ disse onde mora?
+   *
+   * O pino nasce em cima da loja quando o mapa não achou o endereço — e o
+   * botão verde nascia habilitado ali. Um toque sem arrastar confirmava a
+   * coordenada DA PIZZARIA como sendo a casa do cliente: dentro do raio,
+   * dentro de todos os contornos, frete da faixa mais barata. O pedido de
+   * 10,8 km entraria de novo, agora com um "confirmado no mapa" em cima.
+   *
+   * Então: com palpite do servidor, o ponto já vale (o mapa achou algo, e o
+   * cliente está conferindo). Sem palpite, só vale depois que ele tocar.
+   */
+  const [confirmouOPonto, setConfirmouOPonto] = useState(Boolean(pontoInicial));
 
   // O CSS do Leaflet vem do NOSSO domínio: o CSP bloqueia stylesheet de CDN, e
   // sem ele os tiles viram um embaralhado (mesma nota do mapa do painel).
@@ -84,12 +97,14 @@ export default function ConfirmarPontoNoMapa({
       pino.on("dragend", (e: any) => {
         const p = e.target.getLatLng();
         setPonto({ lat: p.lat, lng: p.lng });
+        setConfirmouOPonto(true);
       });
       // Tocar no mapa também move o pino: no celular, arrastar um alfinete de
       // 30 px com o dedo é mais difícil do que apontar onde ele deve ficar.
       mapa.on("click", (e: any) => {
         pino.setLatLng(e.latlng);
         setPonto({ lat: e.latlng.lat, lng: e.latlng.lng });
+        setConfirmouOPonto(true);
       });
 
       // A loja, para o cliente se situar ("minha casa é para lá da pizzaria").
@@ -172,13 +187,16 @@ export default function ConfirmarPontoNoMapa({
           </button>
           <button
             type="button"
-            onClick={() => aoConfirmar(ponto)}
+            disabled={!confirmouOPonto}
+            onClick={() => confirmouOPonto && aoConfirmar(ponto)}
             style={{
-              flex: 2, padding: "11px", borderRadius: 10, border: "none", background: "#16A34A",
-              color: "#fff", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit",
+              flex: 2, padding: "11px", borderRadius: 10, border: "none",
+              background: confirmouOPonto ? "#16A34A" : "#CBD5E1",
+              color: "#fff", fontWeight: 800, fontSize: "0.88rem",
+              cursor: confirmouOPonto ? "pointer" : "not-allowed", fontFamily: "inherit",
             }}
           >
-            ✓ É aqui, confirmar
+            {confirmouOPonto ? "✓ É aqui, confirmar" : "Toque no mapa onde você mora"}
           </button>
         </div>
       </div>

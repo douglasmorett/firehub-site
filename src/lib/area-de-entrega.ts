@@ -27,7 +27,8 @@
  * Loja SEM área cadastrada não tem regra para aplicar: continua como sempre
  * (taxa padrão), porque bloquear venda de quem nunca configurou seria pior.
  */
-import { verifyStoreDeliveryAddress } from "@/lib/geocoding";
+import { verifyStoreDeliveryAddress, haversineDistanceKm } from "@/lib/geocoding";
+import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
 import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
 
@@ -122,12 +123,36 @@ function kmDaFaixa(z: any): number {
  * `deliveryZones`: contorno com menos de 3 pontos não é área e cai fora aqui,
  * antes de qualquer decisão.
  */
+function pontosDaZona(z: any): any[] {
+  // O contorno pode voltar do banco como STRING (um backup, um import, uma
+  // integração que serializou o JSONB duas vezes). Ler o texto aqui é o que
+  // impede a loja de "perder" a área sem ninguém saber — e, pior, de cair no
+  // modo SEM_AREA, que atende o mundo inteiro.
+  const bruto = z?.pontos;
+  if (Array.isArray(bruto)) return bruto;
+  if (typeof bruto === "string") {
+    try {
+      const lido = JSON.parse(bruto);
+      return Array.isArray(lido) ? lido : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** A loja CHAMOU o cadastro de áreas desenhadas, mesmo que o conteúdo esteja ilegível. */
+function temCadastroDeDesenho(loja: LojaParaEntrega): boolean {
+  if (String(loja.deliveryZoneType || "").toUpperCase() === "POLIGONO") return true;
+  return zonas(loja).some((z) => z && (Array.isArray(z.pontos) || typeof z.pontos === "string"));
+}
+
 export function areasDesenhadas(loja: LojaParaEntrega): AreaDesenhada[] {
   return zonas(loja)
-    .filter((z) => z && Array.isArray(z.pontos) && z.pontos.length >= 3)
+    .filter((z) => z && pontosDaZona(z).length >= 3)
     .map((z) => ({
       nome: String(z.nome || z.name || "Área de entrega").trim(),
-      pontos: (z.pontos as any[])
+      pontos: pontosDaZona(z)
         .map((p) => [Number(p?.[0] ?? p?.lat), Number(p?.[1] ?? p?.lng)] as [number, number])
         .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1])),
       fee: Number(z.fee) || 0,
@@ -147,7 +172,13 @@ export function modoDaArea(loja: LojaParaEntrega): ModoDaArea {
   // O desenho vem ANTES dos outros na leitura do tipo: quem desenhou escolheu
   // a forma mais específica que existe, e ela não convive com raio no mesmo
   // cadastro (a tela troca um pelo outro).
-  if (tipo === "POLIGONO") return temDesenho ? "POLIGONO" : "SEM_AREA";
+  //
+  // POLIGONO declarado continua POLIGONO mesmo com o conteúdo ilegível ou
+  // vazio. O contrário — cair em SEM_AREA — trocaria "a loja desenhou onde
+  // entrega" por "a loja não tem regra, atende todo mundo": um `pontos`
+  // gravado como string por um backup faria a loja aceitar pedido de outro
+  // estado. Área ilegível é motivo para não fechar pedido, nunca para abrir.
+  if (tipo === "POLIGONO") return "POLIGONO";
   if (tipo === "NEIGHBORHOOD") return temBairro ? "BAIRRO" : "SEM_AREA";
   // "ROTA" é o mesmo cadastro do raio — faixas em km — medido pelas ruas em
   // vez de em linha reta (lib/distancia-por-rota.ts). Para a regra de área é
@@ -156,6 +187,9 @@ export function modoDaArea(loja: LojaParaEntrega): ModoDaArea {
   if (tipo === "ROTA") return temKm ? "KM" : "SEM_AREA";
   if (temDesenho) return "POLIGONO";
   if (temKm) return "KM";
+  // Cadastro que TEM a chave `pontos` mas nenhum contorno legível: é loja de
+  // área desenhada com o dado corrompido, não loja sem área.
+  if (temCadastroDeDesenho(loja)) return "POLIGONO";
   if (temBairro) return "BAIRRO"; // cadastro antigo sem tipo
   return "SEM_AREA";
 }
@@ -266,6 +300,16 @@ export async function avaliarEntrega(
   // por um descuido de cadastro dele.
   if (modo === "POLIGONO") {
     const areas = areasDesenhadas(loja);
+
+    // Nenhum contorno legível: a loja escolheu decidir por desenho e não há
+    // desenho. Recusar é a única resposta segura — "atende" aqui seria
+    // entregar em qualquer lugar por acidente de cadastro.
+    if (areas.length === 0) {
+      return {
+        modo, resultado: "FORA", taxa: null, tempoMin: null,
+        motivo: "a loja usa área desenhada no mapa e não há nenhuma área válida cadastrada",
+      };
+    }
     const ponto = pedido.coords && Number.isFinite(pedido.coords.lat) && Number.isFinite(pedido.coords.lng)
       ? pedido.coords
       : null;
@@ -315,9 +359,16 @@ export async function avaliarEntrega(
       };
     }
     const escolhida = dentro.sort((a, b) => a.fee - b.fee)[0];
+    // A distância não decide nada na geometria, mas é o insumo do repasse por
+    // faixa de km do entregador, do relatório e do roteiro. Sem ela, quem paga
+    // o motoboy por distância fecha o mês com zero em toda entrega.
+    const pontoDaLoja = lerPontoDaLoja(loja.storeLatLng as any);
+    const distanciaKm = pontoDaLoja
+      ? haversineDistanceKm(pontoDaLoja.lat, pontoDaLoja.lng, pontoFinal.lat, pontoFinal.lng)
+      : undefined;
     return {
       modo, resultado: "ATENDE", taxa: escolhida.fee, tempoMin: escolhida.time,
-      bairro: escolhida.nome, enderecoNoMapa,
+      bairro: escolhida.nome, enderecoNoMapa, distanciaKm,
       taxaDoEntregador: escolhida.repasse ?? null,
       motivo: `dentro da área desenhada "${escolhida.nome}"`,
     };

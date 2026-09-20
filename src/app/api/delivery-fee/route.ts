@@ -53,11 +53,26 @@ export async function GET(req: NextRequest) {
   }
 
   if (v.resultado === "FORA") {
+    // A mensagem tem que caber no modo. Em área desenhada não existe raio, e a
+    // frase saía "fora do raio de entrega (undefined km. Raio máximo:
+    // undefined km)" — no cardápio e, pior, na boca do robô no WhatsApp.
+    const mensagemDeFora =
+      v.areaDeRisco
+        ? "A loja não entrega nesse endereço."
+        : v.modo === "BAIRRO"
+          ? "Bairro não atendido pela loja. Por favor, selecione um dos bairros cadastrados."
+          : v.modo === "POLIGONO"
+            ? "Esse endereço está fora da área que a loja entrega. Se o ponto no mapa não for a sua casa, ajuste e tentamos de novo."
+            : v.distanciaKm != null && v.raioMaxKm != null
+              ? `Endereço fora do raio de entrega (${v.distanciaKm} km. Raio máximo: ${v.raioMaxKm} km).`
+              : "Endereço fora da área de entrega da loja.";
     return NextResponse.json({
       fee: 0, available: false, type, distanceKm: v.distanciaKm, maxRadiusKm: v.raioMaxKm,
-      message: v.modo === "BAIRRO"
-        ? "Bairro não atendido pela loja. Por favor, selecione um dos bairros cadastrados."
-        : `Endereço fora do raio de entrega (${v.distanciaKm} km. Raio máximo: ${v.raioMaxKm} km).`,
+      // Em área desenhada o cliente SEMPRE pode corrigir o ponto — inclusive
+      // quando a resposta é "fora", porque pode ser o mapa que errou o pino,
+      // não ele que mora longe.
+      ...(v.modo === "POLIGONO" ? { podeConfirmarNoMapa: true } : {}),
+      message: mensagemDeFora,
     });
   }
 
@@ -89,6 +104,10 @@ export async function GET(req: NextRequest) {
   const fee = v.taxa ?? taxaFixaDaLoja(user) ?? (v.modo === "SEM_AREA" ? 5 : 0);
   return NextResponse.json({
     fee, available: true, type, distanceKm: v.distanciaKm, maxRadiusKm: v.raioMaxKm, matchedAddress: v.enderecoNoMapa, neighborhood: v.bairro,
+    // Mesmo com taxa calculada, área desenhada deixa o cliente conferir o
+    // pino: o mapa acha rua homônima em outro bairro com a mesma facilidade
+    // com que não acha nada, e aí a taxa é de uma área que não é a dele.
+    ...(v.modo === "POLIGONO" ? { podeConfirmarNoMapa: true } : {}),
     message: v.modo === "BAIRRO" ? `Bairro atendido: ${v.bairro}`
       : v.modo === "KM" ? `Distância aproximada: ${v.distanciaKm} km`
       : "Taxa padrão da loja",

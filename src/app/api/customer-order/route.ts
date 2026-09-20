@@ -8,7 +8,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
-import { avaliarEntrega, descreverVeredicto, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { avaliarEntrega, descreverVeredicto, taxaFixaDaLoja, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
 import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
 import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
@@ -124,15 +124,54 @@ export async function POST(req: Request) {
     // FORA → recusa. ATENDE → a taxa é a da faixa/bairro, não a que veio no
     // corpo. DESCONHECIDO (mapa não achou) → aceita com a taxa informada e
     // marca o pedido para a loja conferir a área.
+    // ── É ENTREGA OU RETIRADA? A pergunta é pelo COMPLEMENTO ───────────────
+    //
+    // A guarda de área rodava só quando `deliveryType` era exatamente
+    // "DELIVERY". Qualquer outra palavra — "ENTREGA", "delivery" minúsculo,
+    // "DELIVERY " com espaço — pulava raio, bairro, polígono e área de risco
+    // de uma vez, e ainda gravava frete zero. A rota é PÚBLICA: a palavra vem
+    // de fora.
+    //
+    // Agora a lista fechada é a da RETIRADA. O que não for retirada é entrega,
+    // e entrega passa pela área. Palavra desconhecida cai no lado seguro.
+    const RETIRADA = ["PICKUP", "TAKEOUT", "RETIRADA", "BALCAO", "BALCÃO", "MESA"];
+    const canalNormalizado = String(deliveryType || "").trim().toUpperCase();
+    const ehRetirada = RETIRADA.includes(canalNormalizado);
+    const ehEntrega = !ehRetirada;
+
     let veredictoDaArea: VeredictoDeEntrega | null = null;
-    if (deliveryType === "DELIVERY") {
+    if (ehEntrega) {
       const coordsBrutas = body.customerCoords;
-      const coords =
-        coordsBrutas && Number.isFinite(Number(coordsBrutas.lat)) && Number.isFinite(Number(coordsBrutas.lng))
-          ? { lat: Number(coordsBrutas.lat), lng: Number(coordsBrutas.lng) }
-          : null;
+      // COORDENADA DO CORPO É PALPITE, NÃO PROVA. Ela decide a área inteira, e
+      // esta rota é pública: fora da faixa válida, (0,0) e lixo saem daqui.
+      const latBruta = Number(coordsBrutas?.lat);
+      const lngBruta = Number(coordsBrutas?.lng);
+      const coordsValidas =
+        Number.isFinite(latBruta) && Number.isFinite(lngBruta) &&
+        Math.abs(latBruta) <= 90 && Math.abs(lngBruta) <= 180 &&
+        !(Math.abs(latBruta) < 0.01 && Math.abs(lngBruta) < 0.01);
+      const coords = coordsValidas ? { lat: latBruta, lng: lngBruta } : null;
+      if (coordsBrutas && !coordsValidas) {
+        console.warn(`[customer-order] customerCoords recusado (${JSON.stringify(coordsBrutas)}) na loja ${franchisee.id}`);
+      }
       try {
-        veredictoDaArea = await avaliarEntrega(franchisee, { endereco: customerAddress, coords });
+        // As MESMAS peças que a /api/delivery-fee recebe. Sem elas, a cotação
+        // e a gravação geocodificavam o mesmo endereço de jeitos diferentes:
+        // a tela mostrava "entregamos, R$ 6,00" e o pedido entrava marcado
+        // como "não localizado" (ou ao contrário, recusando quem a tela
+        // aceitou). Duas respostas para o mesmo endereço, no mesmo fluxo.
+        const partesDoEndereco = {
+          street: typeof body.customerStreet === "string" ? body.customerStreet : undefined,
+          number: typeof body.customerNumber === "string" ? body.customerNumber : undefined,
+          neighborhood: typeof body.customerNeighborhood === "string" ? body.customerNeighborhood : undefined,
+          city: franchisee.city || undefined,
+        };
+        veredictoDaArea = await avaliarEntrega(franchisee, {
+          endereco: customerAddress,
+          coords,
+          bairro: partesDoEndereco.neighborhood,
+          partes: partesDoEndereco,
+        });
       } catch (e: any) {
         console.warn(`[customer-order] avaliarEntrega falhou na loja ${franchisee.id}: ${e?.message || e}`);
       }
@@ -315,7 +354,7 @@ export async function POST(req: Request) {
     // O teto é rede de segurança contra o oposto (inflar o pedido de outra
     // pessoa): frete acima de R$ 200 ou maior que 3x o valor dos itens não é
     // frete, é erro ou abuso.
-    const feeInformada = deliveryType === "DELIVERY" ? Number(deliveryFee) : 0;
+    const feeInformada = ehEntrega ? Number(deliveryFee) : 0;
     const feeEhNumero = Number.isFinite(feeInformada);
 
     // O teto é ABSOLUTO de propósito, não proporcional ao valor dos itens.
@@ -326,7 +365,7 @@ export async function POST(req: Request) {
     const TETO_FRETE = 300;
     const feeForaDaFaixa = !feeEhNumero || feeInformada < 0 || feeInformada > TETO_FRETE;
 
-    if (deliveryType === "DELIVERY" && feeForaDaFaixa && deliveryFee !== undefined && deliveryFee !== null) {
+    if (ehEntrega && feeForaDaFaixa && deliveryFee !== undefined && deliveryFee !== null) {
       console.warn(
         `[customer-order] deliveryFee recusado (${JSON.stringify(deliveryFee)}) na loja ${franchisee.id} — gravando 0.`
       );
@@ -341,8 +380,28 @@ export async function POST(req: Request) {
         console.warn(`[customer-order] taxa do corpo (${originalFee}) ≠ taxa da área (${daRegra}) na loja ${franchisee.id} — gravando a da área.`);
       }
       originalFee = daRegra;
-    } else if (veredictoDaArea?.resultado === "DESCONHECIDO") {
-      notaDaArea = ` [⚠️ Endereço não localizado no mapa — confira a área de entrega e a taxa]`;
+    } else if (ehEntrega) {
+      // ── O CORPO NÃO DEFINE A TAXA SOZINHO ────────────────────────────
+      //
+      // Quando o veredicto não é ATENDE (endereço que o mapa não achou, ou
+      // loja sem área cadastrada), a taxa gravada era exatamente a que o
+      // navegador mandou — e `deliveryFee: 0` num POST fazia a loja entregar
+      // de graça, toda vez, sem nada no pedido dizendo por quê.
+      //
+      // O piso é calculado AQUI, com a mesma régua da cotação (a faixa mais
+      // cara da loja, ou a taxa fixa dela). Quem mandar menos que isso grava o
+      // piso; quem mandar mais grava o que mandou (a loja pode ter combinado
+      // um valor maior com o cliente).
+      const zonasDaLoja = Array.isArray(franchisee.deliveryZones) ? (franchisee.deliveryZones as any[]) : [];
+      const maisCara = Math.max(0, ...zonasDaLoja.map((z: any) => Number(z?.fee) || 0));
+      const piso = Math.round((maisCara || taxaFixaDaLoja(franchisee as any) || 0) * 100) / 100;
+      if (piso > originalFee) {
+        console.warn(`[customer-order] taxa do corpo (${originalFee}) abaixo do piso da loja (${piso}) em ${franchisee.id} — gravando o piso.`);
+        originalFee = piso;
+      }
+      if (veredictoDaArea?.resultado === "DESCONHECIDO") {
+        notaDaArea = ` [⚠️ Endereço não localizado no mapa — confira a área de entrega e a taxa]`;
+      }
     }
     let fee = originalFee;
     let freeShippingNote = "";

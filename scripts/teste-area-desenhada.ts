@@ -72,6 +72,41 @@ async function main() {
   const semNada = await avaliarEntrega(loja, { endereco: "", coords: null });
   conferir("endereço vazio → DESCONHECIDO", semNada.resultado, "DESCONHECIDO");
 
+  // ── O CADASTRO ILEGÍVEL NÃO PODE VIRAR "ATENDE TODO MUNDO" ───────────
+  //
+  // `deliveryZones` é JSONB: um backup, um import ou uma integração podem
+  // devolver `pontos` como STRING, ou uma lista vazia. Antes, qualquer um
+  // desses casos fazia modoDaArea cair em SEM_AREA — e SEM_AREA atende o
+  // mundo inteiro pela taxa padrão. Loja que desenhou a área passaria a
+  // aceitar pedido de outro estado por causa de um dado torto.
+  console.log("\n== Cadastro torto nunca vira 'atende' ==");
+  const comoTexto = {
+    ...loja,
+    deliveryZones: [{ nome: "Centro", pontos: JSON.stringify(quadrado(LOJA.lat, LOJA.lng, 0.01)), fee: 5, time: 30 }],
+  };
+  conferir("pontos como STRING ainda é POLIGONO", modoDaArea(comoTexto), "POLIGONO");
+  conferir("e o contorno é lido de verdade", areasDesenhadas(comoTexto).length, 1);
+  const dentroDoTexto = await avaliarEntrega(comoTexto, { endereco: "x", coords: { lat: LOJA.lat, lng: LOJA.lng } });
+  conferir("ponto dentro dele ATENDE pela taxa certa", [dentroDoTexto.resultado, dentroDoTexto.taxa], ["ATENDE", 5]);
+
+  const vazio = { ...loja, deliveryZones: [] };
+  conferir("POLIGONO sem nenhuma área continua POLIGONO", modoDaArea(vazio), "POLIGONO");
+  const semArea = await avaliarEntrega(vazio, { endereco: "x", coords: { lat: LOJA.lat, lng: LOJA.lng } });
+  conferir("e recusa em vez de atender o mundo", semArea.resultado, "FORA");
+
+  const lixo = { ...loja, deliveryZones: [{ nome: "Quebrada", pontos: "isto não é json", fee: 5, time: 30 }] };
+  const comLixo = await avaliarEntrega(lixo, { endereco: "x", coords: { lat: LOJA.lat, lng: LOJA.lng } });
+  conferir("contorno ilegível NUNCA devolve ATENDE", comLixo.resultado === "ATENDE", false);
+
+  // ── A DISTÂNCIA SAI NO VEREDICTO ─────────────────────────────────────
+  //
+  // Ela não decide nada na geometria, mas é o insumo do repasse por faixa de
+  // km do entregador e do relatório. Sem ela, quem paga o motoboy por
+  // distância fechava o mês com zero em toda entrega da loja.
+  console.log("\n== A distância medida acompanha o veredicto ==");
+  const comDistancia = await avaliarEntrega(loja, { endereco: "x", coords: { lat: LOJA.lat + 0.005, lng: LOJA.lng } });
+  conferir("ATENDE traz distanciaKm", typeof comDistancia.distanciaKm === "number" && comDistancia.distanciaKm > 0, true);
+
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exit(falhou > 0 ? 1 : 0);
 }
