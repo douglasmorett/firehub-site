@@ -28,7 +28,7 @@
  * (taxa padrão), porque bloquear venda de quem nunca configurou seria pior.
  */
 import { verifyStoreDeliveryAddress } from "@/lib/geocoding";
-import { areaDeRiscoDoPonto } from "@/lib/area-de-risco";
+import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
 import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
 
 export type LojaParaEntrega = {
@@ -40,7 +40,32 @@ export type LojaParaEntrega = {
   deliveryConfig?: unknown;
 };
 
-export type ModoDaArea = "BAIRRO" | "KM" | "SEM_AREA";
+export type ModoDaArea = "BAIRRO" | "KM" | "POLIGONO" | "SEM_AREA";
+
+/**
+ * Uma área de entrega DESENHADA no mapa: o lojista liga os pontinhos até
+ * fechar o contorno, e cada contorno tem a sua taxa e o seu tempo.
+ *
+ * ── Por que não basta o raio ───────────────────────────────────────────────
+ *
+ * O círculo não conhece geografia: ele atravessa o rio, sobe o morro e pula a
+ * linha do trem. A loja que entrega "até o fim da avenida, mas não do outro
+ * lado dela" não tem como dizer isso com um raio, e com bairro só consegue se
+ * o mapa souber onde o bairro começa — que é justamente o que falha.
+ *
+ * O desenho é a única forma em que a resposta não depende de o mapa conhecer
+ * nome nenhum: é geometria pura sobre o ponto do cliente.
+ */
+export type AreaDesenhada = {
+  /** O nome que o lojista deu ("Centro", "Até a BR"). Aparece no pedido. */
+  nome: string;
+  /** Os vértices, em [lat, lng]. Mínimo 3 — três pontos fecham um triângulo. */
+  pontos: [number, number][];
+  fee: number;
+  time: number;
+  /** Quanto a loja paga ao entregador nesta área. Nulo = usa a regra geral. */
+  repasse?: number | null;
+};
 
 export type BairroAtendido = { name: string; fee: number; time: number };
 
@@ -92,18 +117,44 @@ function kmDaFaixa(z: any): number {
   return Number(z?.km ?? z?.radius ?? z?.maxKm ?? 0) || 0;
 }
 
-/** O que a loja cadastrou: bairros, raio em km, ou nada. O tipo gravado pela tela é "KM" ou "NEIGHBORHOOD". */
+/**
+ * As áreas desenhadas, já validadas. Vive ao lado das outras zonas, no mesmo
+ * `deliveryZones`: contorno com menos de 3 pontos não é área e cai fora aqui,
+ * antes de qualquer decisão.
+ */
+export function areasDesenhadas(loja: LojaParaEntrega): AreaDesenhada[] {
+  return zonas(loja)
+    .filter((z) => z && Array.isArray(z.pontos) && z.pontos.length >= 3)
+    .map((z) => ({
+      nome: String(z.nome || z.name || "Área de entrega").trim(),
+      pontos: (z.pontos as any[])
+        .map((p) => [Number(p?.[0] ?? p?.lat), Number(p?.[1] ?? p?.lng)] as [number, number])
+        .filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1])),
+      fee: Number(z.fee) || 0,
+      time: Number(z.time) || 45,
+      repasse: z.repasse == null || z.repasse === "" ? null : Number(z.repasse),
+    }))
+    .filter((a) => a.pontos.length >= 3);
+}
+
+/** O que a loja cadastrou: bairros, raio em km, áreas desenhadas, ou nada. O tipo gravado pela tela é "KM", "NEIGHBORHOOD", "ROTA" ou "POLIGONO". */
 export function modoDaArea(loja: LojaParaEntrega): ModoDaArea {
   const lista = zonas(loja);
   const tipo = String(loja.deliveryZoneType || "").toUpperCase();
-  const temBairro = lista.some((z) => z && z.name && !(kmDaFaixa(z) > 0));
+  const temBairro = lista.some((z) => z && z.name && !(kmDaFaixa(z) > 0) && !Array.isArray(z.pontos));
   const temKm = lista.some((z) => kmDaFaixa(z) > 0);
+  const temDesenho = areasDesenhadas(loja).length > 0;
+  // O desenho vem ANTES dos outros na leitura do tipo: quem desenhou escolheu
+  // a forma mais específica que existe, e ela não convive com raio no mesmo
+  // cadastro (a tela troca um pelo outro).
+  if (tipo === "POLIGONO") return temDesenho ? "POLIGONO" : "SEM_AREA";
   if (tipo === "NEIGHBORHOOD") return temBairro ? "BAIRRO" : "SEM_AREA";
   // "ROTA" é o mesmo cadastro do raio — faixas em km — medido pelas ruas em
   // vez de em linha reta (lib/distancia-por-rota.ts). Para a regra de área é
   // o modo KM, e tem que ser: tratar como tipo desconhecido faria a loja que
   // escolheu rota cair em SEM_AREA e passar a entregar em qualquer lugar.
   if (tipo === "ROTA") return temKm ? "KM" : "SEM_AREA";
+  if (temDesenho) return "POLIGONO";
   if (temKm) return "KM";
   if (temBairro) return "BAIRRO"; // cadastro antigo sem tipo
   return "SEM_AREA";
@@ -196,6 +247,79 @@ export async function avaliarEntrega(
     return {
       modo, resultado: "FORA", taxa: null, tempoMin: null, areaDeRisco: riscoDireto,
       motivo: `endereço dentro da área que a loja não atende (${riscoDireto})`,
+    };
+  }
+
+  // ── ÁREA DESENHADA ────────────────────────────────────────────────────
+  //
+  // Geometria pura: o ponto do cliente está dentro do contorno ou não está.
+  // Não depende de o mapa conhecer o nome do bairro nem de a rua existir na
+  // base — que é o que falha hoje e deixou entrar pedido de 10,8 km numa loja
+  // de raio 4 km (R&D Pizzaria, 19/09/2026).
+  //
+  // O PREÇO DE TUDO ISSO É A COORDENADA. Sem ponto não há geometria, e aqui
+  // "não sei" é a única resposta honesta — nunca "atende". Quem chama decide
+  // o que fazer com o DESCONHECIDO (o site pede a confirmação no mapa).
+  //
+  // Áreas sobrepostas: vale a de MENOR taxa. O lojista desenhou as duas em
+  // cima do mesmo lugar; cobrar a mais cara seria escolher contra o cliente
+  // por um descuido de cadastro dele.
+  if (modo === "POLIGONO") {
+    const areas = areasDesenhadas(loja);
+    const ponto = pedido.coords && Number.isFinite(pedido.coords.lat) && Number.isFinite(pedido.coords.lng)
+      ? pedido.coords
+      : null;
+
+    let pontoFinal = ponto;
+    let enderecoNoMapa: string | undefined;
+    if (!pontoFinal) {
+      // Sem coordenada na mão, tenta o mapa uma vez — o mesmo caminho do modo
+      // KM. Se o mapa também não souber, para aqui.
+      if (endereco.length < 4) {
+        return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, motivo: "endereço vazio" };
+      }
+      try {
+        const check = await verifyStoreDeliveryAddress(
+          loja.storeAddress ?? null, loja.storeLatLng as any, loja.city ?? null,
+          [], loja.deliveryZoneType ?? null, endereco, null, loja.deliveryConfig, pedido.partes,
+        );
+        if (check?.addressFound && check.clienteLat != null && check.clienteLng != null) {
+          pontoFinal = { lat: check.clienteLat, lng: check.clienteLng };
+          enderecoNoMapa = check.matchedAddress;
+        }
+      } catch {
+        // Mapa fora do ar: cai no DESCONHECIDO logo abaixo.
+      }
+    }
+
+    if (!pontoFinal) {
+      return {
+        modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null,
+        motivo: "endereço sem ponto no mapa — a área desenhada só decide com a localização confirmada",
+      };
+    }
+
+    const risco = areaDeRiscoDoPonto(pontoFinal, loja.deliveryConfig);
+    if (risco) {
+      return {
+        modo, resultado: "FORA", taxa: null, tempoMin: null, areaDeRisco: risco, enderecoNoMapa,
+        motivo: `endereço dentro da área que a loja não atende (${risco})`,
+      };
+    }
+
+    const dentro = areas.filter((a) => dentroDoPoligono(pontoFinal!, a.pontos));
+    if (dentro.length === 0) {
+      return {
+        modo, resultado: "FORA", taxa: null, tempoMin: null, enderecoNoMapa,
+        motivo: "endereço fora das áreas de entrega desenhadas pela loja",
+      };
+    }
+    const escolhida = dentro.sort((a, b) => a.fee - b.fee)[0];
+    return {
+      modo, resultado: "ATENDE", taxa: escolhida.fee, tempoMin: escolhida.time,
+      bairro: escolhida.nome, enderecoNoMapa,
+      taxaDoEntregador: escolhida.repasse ?? null,
+      motivo: `dentro da área desenhada "${escolhida.nome}"`,
     };
   }
 

@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     coords,
     partes: { street, number, neighborhood, city: user.city || "" },
   });
-  const type = v.modo === "BAIRRO" ? "neighborhood" : "radius";
+  const type = v.modo === "BAIRRO" ? "neighborhood" : v.modo === "POLIGONO" ? "poligono" : "radius";
   const brl = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
 
   if (v.modo === "BAIRRO" && v.resultado === "DESCONHECIDO") {
@@ -58,6 +58,17 @@ export async function GET(req: NextRequest) {
       message: v.modo === "BAIRRO"
         ? "Bairro não atendido pela loja. Por favor, selecione um dos bairros cadastrados."
         : `Endereço fora do raio de entrega (${v.distanciaKm} km. Raio máximo: ${v.raioMaxKm} km).`,
+    });
+  }
+
+  if (v.modo === "POLIGONO" && v.resultado === "DESCONHECIDO") {
+    // Área DESENHADA é geometria: sem ponto no mapa não há o que calcular, e
+    // chutar a faixa mais cara seria aceitar entrega onde a loja disse que não
+    // vai. Aqui a resposta é "confirme no mapa" — o checkout mostra o pino
+    // para o cliente arrastar até a casa dele.
+    return NextResponse.json({
+      fee: 0, available: false, unknown: true, type, precisaConfirmarNoMapa: true,
+      message: "Não localizamos esse endereço no mapa. Confirme no mapa onde fica a sua casa para ver se entregamos aí.",
     });
   }
 

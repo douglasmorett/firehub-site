@@ -136,6 +136,23 @@ export async function POST(req: Request) {
       } catch (e: any) {
         console.warn(`[customer-order] avaliarEntrega falhou na loja ${franchisee.id}: ${e?.message || e}`);
       }
+      // ── ÁREA DESENHADA NÃO ACEITA "NÃO SEI" ──────────────────────────
+      //
+      // No raio e no bairro, endereço que o mapa não acha entra marcado para a
+      // loja conferir: é a escolha de não perder venda por falha do mapa. A
+      // loja que DESENHOU a área escolheu o contrário, e com razão — foi por
+      // esse buraco que um pedido de 10,8 km entrou numa loja de raio 4 km com
+      // frete zero (R&D Pizzaria, 19/09/2026). Sem ponto no mapa não há
+      // geometria, e sem geometria não há entrega.
+      if (veredictoDaArea?.resultado === "DESCONHECIDO" && veredictoDaArea.modo === "POLIGONO") {
+        return NextResponse.json(
+          {
+            error: "Não localizamos o seu endereço no mapa. Confirme o ponto da entrega no mapa (ou escolha retirar no balcão) para fechar o pedido.",
+            precisaConfirmarNoMapa: true,
+          },
+          { status: 400 }
+        );
+      }
       if (veredictoDaArea?.resultado === "FORA") {
         const detalhe = veredictoDaArea.modo === "KM" && veredictoDaArea.distanciaKm != null
           ? ` (${veredictoDaArea.distanciaKm} km da loja; entregamos até ${veredictoDaArea.raioMaxKm} km)`

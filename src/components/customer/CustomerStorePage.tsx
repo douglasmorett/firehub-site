@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useRef, useEffect, useMemo, useDeferredValue } from "react";
+import ConfirmarPontoNoMapa from "./ConfirmarPontoNoMapa";
 import {
   ShoppingCart,
   Plus,
@@ -111,6 +112,13 @@ type StoreRating = {
   count: number;
   reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[];
 };
+
+function pontoDaLojaNaVitrine(bruto: unknown): { lat: number; lng: number } | null {
+  const v: any = typeof bruto === "string" ? (() => { try { return JSON.parse(bruto); } catch { return null; } })() : bruto;
+  const lat = Number(v?.lat);
+  const lng = Number(v?.lng);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
 
 export default function CustomerStorePage({
   franchisee,
@@ -277,6 +285,23 @@ export default function CustomerStorePage({
   // Coordenadas do "Minha localização": vão no pedido para o servidor conferir
   // a área pelo GPS, não pelo texto (que o mapa às vezes não acha).
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  /**
+   * O mapa não achou o endereço e a loja decide por GEOMETRIA (área desenhada
+   * ou raio): sem ponto não dá para dizer se entrega. Em vez de aceitar e
+   * descobrir na hora de despachar — foi assim que um pedido de 10,8 km entrou
+   * numa loja de raio 4 km —, o cliente confirma no mapa onde fica a casa
+   * dele. Um toque, sem pedir permissão de GPS a ninguém.
+   */
+  const [precisaConfirmarNoMapa, setPrecisaConfirmarNoMapa] = useState(false);
+  /**
+   * A loja desenhou a área no mapa? Então o ponto é TUDO: o mapa acha o
+   * endereço errado com a mesma facilidade com que não acha (o caso real:
+   * "Boa Vista, Nova Iguaçu" devolve uma rua homônima a 2 km da loja). Com
+   * área desenhada o cliente sempre pode conferir o pino, mesmo quando a
+   * taxa já apareceu.
+   */
+  const [lojaDesenhouArea, setLojaDesenhouArea] = useState(false);
+  const [mapaDeConfirmacaoAberto, setMapaDeConfirmacaoAberto] = useState(false);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [showVipTooltip, setShowVipTooltip] = useState(false);
 
@@ -1220,6 +1245,9 @@ export default function CustomerStorePage({
           const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&lat=${latitude}&lng=${longitude}`);
           if (res.ok) {
             const data = await res.json();
+            setPrecisaConfirmarNoMapa(Boolean(data.precisaConfirmarNoMapa));
+        setLojaDesenhouArea(data.type === "poligono");
+            setLojaDesenhouArea(data.type === "poligono");
             if (data.available === false) {
               setDeliveryFee(0);
               setDeliveryFeeCalculated(true);
@@ -1307,6 +1335,9 @@ export default function CustomerStorePage({
       );
       if (res.ok) {
         const data = await res.json();
+        // "Confirme no mapa": a loja desenhou a área e o endereço não virou
+        // ponto. Quem resolve é o próprio cliente, arrastando o pino.
+        setPrecisaConfirmarNoMapa(Boolean(data.precisaConfirmarNoMapa));
         if (data.available === false) {
           setDeliveryFee(0);
           setDeliveryFeeCalculated(true);
@@ -1498,7 +1529,17 @@ export default function CustomerStorePage({
           setIsCheckout(false);
           setMobileCartOpen(false);
         }
-      } else { const d = await res.json(); alert(d.error || "Erro."); }
+      } else {
+        const d = await res.json().catch(() => ({} as any));
+        // O servidor recusou por falta de ponto no mapa (loja com área
+        // desenhada). Em vez de só avisar, abre o mapa: o cliente resolve ali
+        // mesmo, no toque seguinte, sem sair do checkout.
+        if (d?.precisaConfirmarNoMapa) {
+          setPrecisaConfirmarNoMapa(true);
+          setMapaDeConfirmacaoAberto(true);
+        }
+        alert(d?.error || "Erro.");
+      }
     } catch { alert("Erro ao conectar."); } finally { setLoading(false); }
   };
 
@@ -2444,6 +2485,19 @@ export default function CustomerStorePage({
                         <span style={{ fontSize: "0.70rem", color: !deliveryAvailable ? "#DC2626" : "#15803D", fontWeight: 600 }}>
                           {deliveryMessage}
                         </span>
+                      )}
+                      {(precisaConfirmarNoMapa || lojaDesenhouArea) && (
+                        <button
+                          type="button"
+                          onClick={() => setMapaDeConfirmacaoAberto(true)}
+                          style={{
+                            marginTop: 6, alignSelf: "flex-start", padding: "7px 12px", borderRadius: 8,
+                            border: "none", background: "#16A34A", color: "#fff", fontWeight: 800,
+                            fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit",
+                          }}
+                        >
+                          {precisaConfirmarNoMapa ? "📍 Mostrar no mapa onde eu moro" : "📍 Conferir o ponto no mapa"}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -3438,6 +3492,42 @@ export default function CustomerStorePage({
           Antes só combos abriam; produto simples caía direto na sacola com um
           toque em qualquer ponto do card: compra acidental na rolagem, sem
           descrição completa, sem observação e sem o botão claro de confirmar. */}
+      {mapaDeConfirmacaoAberto && pontoDaLojaNaVitrine((franchisee as any).storeLatLng) && (
+        <ConfirmarPontoNoMapa
+          centro={pontoDaLojaNaVitrine((franchisee as any).storeLatLng)!}
+          pontoInicial={gpsCoords}
+          enderecoEscrito={`${customerStreet} ${customerNumber}, ${customerNeighborhood}`.trim()}
+          aoFechar={() => setMapaDeConfirmacaoAberto(false)}
+          aoConfirmar={async (p: { lat: number; lng: number }) => {
+            // O ponto confirmado vale como a localização do cliente: é o mesmo
+            // campo que o GPS preenche, e é ele que viaja no pedido.
+            setGpsCoords(p);
+            setMapaDeConfirmacaoAberto(false);
+            setDeliveryCalculating(true);
+            try {
+              const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&lat=${p.lat}&lng=${p.lng}`);
+              const data = await res.json().catch(() => ({} as any));
+              setPrecisaConfirmarNoMapa(Boolean(data?.precisaConfirmarNoMapa));
+              if (data?.available === false) {
+                setDeliveryFee(0);
+                setDeliveryFeeCalculated(true);
+                setDeliveryAvailable(false);
+                setDeliveryMessage(data?.message || "A loja não entrega nesse ponto.");
+              } else {
+                setDeliveryFee(Number(data?.fee) || 0);
+                setDeliveryFeeCalculated(true);
+                setDeliveryAvailable(true);
+                setDeliveryMessage(data?.message || "Ponto confirmado no mapa.");
+              }
+            } catch {
+              setDeliveryMessage("Não consegui confirmar agora. Tente de novo.");
+            } finally {
+              setDeliveryCalculating(false);
+            }
+          }}
+        />
+      )}
+
       {comboProduct && (
         <ComboModal
           product={{
