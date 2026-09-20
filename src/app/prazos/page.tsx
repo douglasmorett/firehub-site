@@ -11,6 +11,7 @@ import { CHECKOUT_PADRAO, PLANOS } from "./planos";
 import { CHEFS } from "./chefs";
 import { SeloDeGarantia } from "./SeloDeGarantia";
 import { TEXTO_CTA, PRECO_SOB_BOTAO } from "./textos";
+import MedidorDaPagina from "./MedidorDaPagina";
 
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
@@ -197,6 +198,10 @@ export default function PrazosLanding() {
         }
       `}</style>
       <RastreioDeClique />
+      {/* Medição própria da página: tempo visível, até onde rolou, o que
+          abriu e o que clicou. O pixel do Meta responde uma pergunta só, e
+          mistura o domínio inteiro — ver ./MedidorDaPagina.tsx. */}
+      <MedidorDaPagina />
 
       {/* ─────────── HERO: a demonstração é a imagem ─────────── */}
       <section style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", color: "#fff" }}>

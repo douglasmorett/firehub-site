@@ -96,8 +96,25 @@ export default function FacebookPixel({ pixelId }: { pixelId: string }) {
 /**
  * Dispara evento de conversão.
  *
- * Vai para o pixel DA LOJA quando existir; se a loja não configurou pixel,
- * cai no comportamento antigo (`track`), para não perder a métrica agregada.
+ * Vai para o pixel DA LOJA, e SÓ para ele.
+ *
+ * ── O que o fallback custou (20/09/2026) ──────────────────────────────────
+ * Até aqui, loja sem pixel caía num `fbq("track", …)` solto "para não perder
+ * a métrica agregada". Mas o pixel solto da página é o do FIREHUB
+ * (1508278337585097, iniciado no layout). Resultado: quando um cliente final
+ * comprava comida numa loja sem pixel próprio, o Purchase — com o valor do
+ * pedido — entrava na CONTA DE ANÚNCIOS do FireHub, e o Meta atribuía a
+ * venda à campanha que estivesse rodando. Foi assim que a campanha da
+ * extensão de prazos apareceu com "1 Compra no site · R$ 22,33" num dia em
+ * que nada foi vendido: R$ 22,33 é ticket de comida, não a assinatura.
+ *
+ * O estrago não é só o relatório errado: o algoritmo passa a procurar quem
+ * compra hambúrguer para vender software de prazo.
+ *
+ * Sem pixel da loja, portanto, NÃO se dispara nada. Métrica agregada de
+ * cardápio de terceiro no nosso pixel não vale o que ela estraga. Os eventos
+ * do próprio FireHub (StartTrial e CompleteRegistration em /cadastro) não
+ * passam por aqui: aqueles são nossos e continuam no `track` de lá.
  */
 export const trackPixelEvent = (
   event: string,
@@ -119,11 +136,14 @@ export const trackPixelEvent = (
 
   const opts = eventID ? { eventID } : undefined;
 
-  if (pixelDaLojaAtual) {
-    window.fbq("trackSingle", pixelDaLojaAtual, event, params, opts);
+  if (!pixelDaLojaAtual) {
+    // Loja sem pixel: o evento morre aqui, de propósito (ver o bloco acima).
+    if (process.env.NODE_ENV !== "production") {
+      console.info(`[Pixel] "${event}" não enviado: esta loja não tem pixel próprio configurado.`);
+    }
     return;
   }
-  window.fbq("track", event, params, opts);
+  window.fbq("trackSingle", pixelDaLojaAtual, event, params, opts);
 };
 
 // Eventos padrão para delivery:
