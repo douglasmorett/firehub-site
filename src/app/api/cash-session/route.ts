@@ -7,7 +7,9 @@ import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
 import { FUSO_PADRAO } from "@/lib/fuso";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
-import { cupomDeAberturaDeCaixa, cupomDeFechamentoDeCaixa } from "@/lib/cupom-do-caixa";
+// Só o fechamento imprime sozinho. O cupom de abertura continua em
+// lib/cupom-do-caixa, para o botão "imprimir de novo" do histórico.
+import { cupomDeFechamentoDeCaixa } from "@/lib/cupom-do-caixa";
 import { enfileirarCupomDoCaixa } from "@/lib/imprimir-caixa";
 
 async function getUser(session: any) {
@@ -580,31 +582,19 @@ export async function POST(req: Request) {
 
   const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true } });
 
-  // ── O PAPEL DA ABERTURA ────────────────────────────────────────────────
+  // ── A ABERTURA NÃO IMPRIME SOZINHA ─────────────────────────────────────
   //
-  // Sai na hora, nas impressoras do caixa. É o comprovante do troco inicial —
-  // o número que, quando ninguém anota, vira "sobra" no fechamento seguinte.
-  // Falhar aqui não pode derrubar a abertura do caixa: o caixa já está aberto.
-  try {
-    const anterior = await prisma.cashSession.findFirst({
-      where: { franchiseeId: user.targetId, status: "CLOSED", closingCash: { not: null } },
-      orderBy: { closedAt: "desc" },
-      select: { closingCash: true, closedAt: true },
-    });
-    await enfileirarCupomDoCaixa(user.targetId, cupomDeAberturaDeCaixa({
-      sessionId: cashSession.id,
-      loja: ownerInfo?.storeName || "",
-      fuso: ownerInfo?.storeTimezone || FUSO_PADRAO,
-      operador: session.user?.name || session.user?.email || "",
-      abertoEm: cashSession.openedAt,
-      trocoInicial: Number(openingAmount) || 0,
-      fechamentoAnterior: anterior
-        ? { cash: anterior.closingCash || 0, em: anterior.closedAt?.toISOString() || null }
-        : null,
-    }), session.user?.name || session.user?.email || "");
-  } catch (e: any) {
-    console.error("[Caixa] Não consegui enfileirar o cupom de abertura:", e?.message);
-  }
+  // Nasceu imprimindo junto com o fechamento (19/09/2026), pela ideia de que o
+  // troco inicial no papel evita a "sobra" misteriosa do fechamento seguinte.
+  // Na prática é bobina toda vez que alguém abre o caixa, e o troco inicial já
+  // sai IMPRESSO no papel do fechamento, ao lado do que foi contado — que é
+  // onde ele serve para alguma coisa. Decisão do dono no mesmo dia, depois de
+  // ver o papel sair: abrir não precisa, só fechar.
+  //
+  // O cupom de abertura continua existindo e sai pelo botão "imprimir de novo"
+  // do histórico do caixa (api/cash-session/imprimir): quem quiser o papel do
+  // troco inicial tira um, quando quiser. O que sumiu foi a impressão
+  // automática, não o documento.
 
   if (ownerInfo?.notificationPhone) {
     const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
