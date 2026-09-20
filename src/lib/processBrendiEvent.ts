@@ -29,6 +29,91 @@ import { isBeverageName } from "@/lib/beverage";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { brendiFetch, confirmarPedidoBrendi } from "@/lib/brendi-api";
 
+/**
+ * O valor de um preço do Open Delivery — número puro ou `{ value, currency }`.
+ *
+ * SEMPRE NÚMERO, nunca o que veio. O `?? 0` de antes deixava passar qualquer
+ * coisa não-nula, e a Brendi manda `addition: true` (uma BANDEIRA de "esta
+ * opção é uma adição") no mesmo lugar onde os outros mandam o valor. O `true`
+ * era gravado como preço do adicional e, como `Number(true)` é 1, a comanda do
+ * Frangoso imprimia "+R$ 1,00" ao lado de opção que não custa nada. 19/09/2026.
+ */
+export function valorBrendi(p: any): number {
+  const bruto = typeof p === "object" && p !== null ? p.value : p;
+  const n = typeof bruto === "boolean" ? NaN : Number(bruto);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Os nomes que os originadores Open Delivery usam para a lista de opções. */
+const LISTAS_DE_OPCAO = [
+  "options", "subItems", "sub_items", "garnishItems", "choices",
+  "items", "additions", "customizations", "toppings",
+] as const;
+
+/**
+ * Todas as opções, sabores e ADICIONAIS de um item, achatados.
+ *
+ * ── O bug que isto conserta ────────────────────────────────────────────────
+ *
+ * A versão anterior encadeava os nove nomes com `??`: ficava com o PRIMEIRO
+ * array não-vazio e jogava os outros fora. O comentário dizia "aceitamos todos
+ * os formatos conhecidos", mas o código aceitava um só.
+ *
+ * Quando o item traz a escolha obrigatória em `options` ("Peito de frango") e
+ * os adicionais pagos em `additions`/`toppings` — que é justamente o hambúrguer
+ * com bacon extra —, os adicionais sumiam antes de virar `comboSelections`. Da
+ * cozinha para baixo ninguém tinha como saber: a comanda imprimia o que
+ * chegou, e o que chegou já vinha sem eles. Foi a queixa do Frangoso em
+ * 19/09/2026 ("os adicionais da Brendi não saem na impressão").
+ *
+ * Agora as nove listas são CONCATENADAS. A deduplicação existe porque nomes
+ * sinônimos (`subItems` e `sub_items`) às vezes carregam o mesmo conteúdo: cai
+ * fora o que repete a referência ou a assinatura id+nome+quantidade.
+ *
+ * A recursão continua igual: opção que tem filhos entra pelos filhos (é o
+ * grupo "Molhos", que não é escolha nenhuma), e opção folha entra por si.
+ */
+export function extrairOpcoesBrendi(item: any): any[] {
+  if (!item || typeof item !== "object") return [];
+
+  const rawList: any[] = [];
+  const vistos = new Set<unknown>();
+  for (const campo of LISTAS_DE_OPCAO) {
+    const lista = (item as any)[campo];
+    if (!Array.isArray(lista)) continue;
+    for (const o of lista) {
+      if (!o || typeof o !== "object") continue;
+      if (vistos.has(o)) continue;
+      const assinatura = `${o.id ?? ""}|${o.name ?? o.productName ?? ""}|${o.quantity ?? ""}`;
+      if (assinatura !== "||" && vistos.has(assinatura)) continue;
+      vistos.add(o);
+      vistos.add(assinatura);
+      rawList.push(o);
+    }
+  }
+
+  const extracted: any[] = [];
+  for (const o of rawList) {
+    const nested = extrairOpcoesBrendi(o);
+    if (nested.length > 0) {
+      extracted.push(...nested);
+    } else {
+      const name = o.name || o.productName || o.label || o.optionName || o.description || o.nameOption || "";
+      if (name) {
+        extracted.push({
+          id: o.id || `opt-${Math.random().toString(36).slice(2)}`,
+          name,
+          quantity: o.quantity ?? o.qty ?? 1,
+          price:
+            valorBrendi(o.unitPrice) || valorBrendi(o.price) ||
+            valorBrendi(o.totalPrice) || valorBrendi(o.addition) || 0,
+        });
+      }
+    }
+  }
+  return extracted;
+}
+
 export interface BrendiEvent {
   id?: string;
   eventId?: string;
@@ -702,59 +787,6 @@ export async function processBrendiEvent(
         }
       }
 
-      // Helper: extrai valor numérico de preço — a Brendi (Open Delivery) pode
-      // mandar número puro OU objeto {value, currency}; tratar os dois é o que
-      // impede total zero silencioso.
-      //
-      // SEMPRE NÚMERO, nunca o que veio. `?? 0` deixava passar qualquer coisa
-      // que não fosse nulo — e a Brendi manda `addition: true` (uma BANDEIRA
-      // de "esta opção é uma adição") no mesmo lugar onde os outros mandam o
-      // preço. O `true` era gravado como preço do adicional e a comanda do
-      // Frangoso imprimia "+R$ 1,00" ao lado de opção que não custa nada
-      // (Number(true) === 1). Visto em pedidos de 19/09/2026.
-      const priceVal = (p: any): number => {
-        const bruto = typeof p === "object" && p !== null ? p.value : p;
-        const n = typeof bruto === "boolean" ? NaN : Number(bruto);
-        return Number.isFinite(n) ? n : 0;
-      };
-
-      // Helper: extrai recursivamente todas as opções / subitens / sabores /
-      // adições de um item — os originadores Open Delivery variam o nome do
-      // array entre versões, então aceitamos todos os formatos conhecidos.
-      const extractBrendiOptions = (item: any): any[] => {
-        if (!item || typeof item !== "object") return [];
-        const rawList =
-          (Array.isArray(item.options) && item.options.length > 0 ? item.options : null) ??
-          (Array.isArray(item.subItems) && item.subItems.length > 0 ? item.subItems : null) ??
-          (Array.isArray(item.sub_items) && item.sub_items.length > 0 ? item.sub_items : null) ??
-          (Array.isArray(item.garnishItems) && item.garnishItems.length > 0 ? item.garnishItems : null) ??
-          (Array.isArray(item.choices) && item.choices.length > 0 ? item.choices : null) ??
-          (Array.isArray(item.items) && item.items.length > 0 ? item.items : null) ??
-          (Array.isArray(item.additions) && item.additions.length > 0 ? item.additions : null) ??
-          (Array.isArray(item.customizations) && item.customizations.length > 0 ? item.customizations : null) ??
-          (Array.isArray(item.toppings) && item.toppings.length > 0 ? item.toppings : null) ??
-          [];
-
-        const extracted: any[] = [];
-        for (const o of rawList) {
-          const nested = extractBrendiOptions(o);
-          if (nested.length > 0) {
-            extracted.push(...nested);
-          } else {
-            const name = o.name || o.productName || o.label || o.optionName || o.description || o.nameOption || "";
-            if (name) {
-              extracted.push({
-                id: o.id || `opt-${Math.random().toString(36).slice(2)}`,
-                name,
-                quantity: o.quantity ?? o.qty ?? 1,
-                price: priceVal(o.unitPrice) || priceVal(o.price) || priceVal(o.totalPrice) || priceVal(o.addition) || 0,
-              });
-            }
-          }
-        }
-        return extracted;
-      };
-
       // Itens — suporte a todos os formatos de payload do Open Delivery
       const rawItemsList = (
         (Array.isArray(orderData.items) && orderData.items.length > 0 ? orderData.items : null) ??
@@ -767,14 +799,14 @@ export async function processBrendiEvent(
 
       const items = rawItemsList.map((i: any) => {
         const itemName = i.name || i.productName || i.title || i.label || "Item Brendi";
-        const options = extractBrendiOptions(i);
+        const options = extrairOpcoesBrendi(i);
         const optionNames = options.map((o: any) => `${o.quantity > 1 ? o.quantity + 'x ' : ''}${o.name}`);
         const fullName = optionNames.length > 0
           ? `${itemName} | ${optionNames.join(" | ")}`
           : itemName;
         const qty = i.quantity ?? i.qty ?? 1;
-        const rawUnit = priceVal(i.unitPrice) || priceVal(i.price) || 0;
-        const rawTotal = priceVal(i.totalPrice) || priceVal(i.total) || 0;
+        const rawUnit = valorBrendi(i.unitPrice) || valorBrendi(i.price) || 0;
+        const rawTotal = valorBrendi(i.totalPrice) || valorBrendi(i.total) || 0;
 
         // Preço do item:
         // 1. Se totalPrice disponível → usar direto (já inclui opções pagas)
@@ -786,14 +818,14 @@ export async function processBrendiEvent(
         } else if (rawUnit > 0) {
           // Sem totalPrice — somar manualmente apenas adições
           const additionsSum = options.reduce(
-            (sum: number, o: any) => sum + (priceVal(o.addition) || 0) * (o.quantity || 1),
+            (sum: number, o: any) => sum + (valorBrendi(o.addition) || 0) * (o.quantity || 1),
             0
           );
           itemPrice = rawUnit + additionsSum;
         } else {
           // Fallback: usar soma de opções como preço total
           const optionsSum = options.reduce(
-            (sum: number, o: any) => sum + (priceVal(o.price) || priceVal(o.addition) || priceVal(o.unitPrice) || 0) * (o.quantity || 1),
+            (sum: number, o: any) => sum + (valorBrendi(o.price) || valorBrendi(o.addition) || valorBrendi(o.unitPrice) || 0) * (o.quantity || 1),
             0
           );
           itemPrice = optionsSum;
@@ -803,7 +835,7 @@ export async function processBrendiEvent(
           id: o.id,
           name: o.name,
           quantity: o.quantity ?? 1,
-          price: priceVal(o.price) || 0,
+          price: valorBrendi(o.price) || 0,
         })) : null;
 
         const comboSelectionsJson = comboSelsList ? JSON.stringify(comboSelsList) : null;
@@ -843,17 +875,17 @@ export async function processBrendiEvent(
 
       // Totais — aceita número puro ou objetos {value, currency}
       const rawTotal = orderData.total?.orderAmount ?? orderData.total?.subTotal ?? orderData.totalPrice ?? orderData.total;
-      const total = priceVal(rawTotal);
+      const total = valorBrendi(rawTotal);
 
       // Taxa de entrega — total.deliveryFee ou array otherFees
-      let deliveryFeeValue = priceVal(orderData.total?.deliveryFee) || priceVal(orderData.delivery?.deliveryFee) || priceVal(orderData.deliveryFee) || 0;
+      let deliveryFeeValue = valorBrendi(orderData.total?.deliveryFee) || valorBrendi(orderData.delivery?.deliveryFee) || valorBrendi(orderData.deliveryFee) || 0;
       if (!deliveryFeeValue && Array.isArray(orderData.otherFees)) {
         const delFee = orderData.otherFees.find((f: any) =>
           (f.type || f.name || "").toUpperCase().includes("DELIVERY") ||
           (f.type || f.name || "").toUpperCase().includes("FRETE") ||
           (f.type || f.name || "").toUpperCase().includes("FEE")
         );
-        if (delFee) deliveryFeeValue = priceVal(delFee.price ?? delFee.value);
+        if (delFee) deliveryFeeValue = valorBrendi(delFee.price ?? delFee.value);
       }
 
       // Descontos/benefits (padrão Open Delivery completo)
@@ -861,7 +893,7 @@ export async function processBrendiEvent(
       let discountPlatform = 0, discountMerchant = 0, discountTotal = 0;
       const discountDetails: any[] = [];
       for (const benefit of benefits) {
-        const value = priceVal(benefit.value);
+        const value = valorBrendi(benefit.value);
         discountTotal += value;
         const sponsorships = Array.isArray(benefit.sponsorshipValues)
           ? benefit.sponsorshipValues
@@ -869,7 +901,7 @@ export async function processBrendiEvent(
         let bPlatform = 0, bMerchant = 0;
         for (const sp of sponsorships) {
           const spName = (sp.name ?? sp.sponsorship ?? "").toUpperCase();
-          const spValue = priceVal(sp.value);
+          const spValue = valorBrendi(sp.value);
           if (spName === "MERCHANT") bMerchant += spValue;
           else bPlatform += spValue;
         }
@@ -898,8 +930,8 @@ export async function processBrendiEvent(
         orderData.coupon?.code ?? orderData.cupom?.codigo ?? orderData.voucher?.code ?? orderData.promoCode ?? null;
 
       if (discountTotal === 0) {
-        const descontoDoPayload = priceVal(orderData.total?.discount);
-        const somaItens = priceVal(orderData.total?.itemsPrice) ||
+        const descontoDoPayload = valorBrendi(orderData.total?.discount);
+        const somaItens = valorBrendi(orderData.total?.itemsPrice) ||
           items.reduce((s: number, it: any) => s + (it.price || 0) * (it.quantity || 1), 0);
 
         const valor = descontoDoPayload > 0
@@ -927,8 +959,8 @@ export async function processBrendiEvent(
       // Se a taxa de entrega ainda veio 0 em pedido DELIVERY, deduz pela
       // diferença entre total e subtotal (mesma aritmética defensiva do JotaJá)
       if (deliveryFeeValue === 0 && (orderData.total?.orderAmount || orderData.totalPrice) && orderData.total?.subTotal) {
-        const orderTotal = priceVal(orderData.total?.orderAmount ?? orderData.totalPrice);
-        const subTotal = priceVal(orderData.total?.subTotal);
+        const orderTotal = valorBrendi(orderData.total?.orderAmount ?? orderData.totalPrice);
+        const subTotal = valorBrendi(orderData.total?.subTotal);
         const benefitsValue = discountTotal || 0;
         const calcFee = orderTotal - subTotal + benefitsValue;
         if (calcFee > 0 && calcFee < 100) {
