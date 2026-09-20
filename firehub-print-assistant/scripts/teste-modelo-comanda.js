@@ -319,5 +319,57 @@ conferir("a observacao do item sai destacada", !!linhaObsItem && linhaObsItem.in
 const linhaData = comObs.split("\n").find((l) => l.includes("Data:"));
 conferir("a data continua miuda", !!linhaData && !linhaData.includes("\x1D!\x11") && !linhaData.includes("\x1D!\x22"));
 
+
+console.log("\n15) O negrito por linha (order.blocos[].negritos)");
+// Pedido do dono em 19/09/2026: "forma de pagamento e qualquer outra palavra
+// tem que poder marcar em negrito". Tres estados, e o "false" e o que importa:
+// "Forma de Pagamento:" e "Total:" ja nascem em negrito aqui, entao sem ele a
+// loja poderia LIGAR o negrito de tudo e nunca desligar o de nada.
+const negritoDe = (buf, trecho) => {
+  const linha = buf.toString("binary").split("\n").find((l) => l.includes(trecho));
+  return !!linha && linha.includes("\x1BE\x01");
+};
+
+const semMarcar = buildEscPos({ ...PEDIDO, blocos: MODELO_PADRAO }, "Salz Burgueria", 48, "safe");
+conferir("de fabrica, a forma de pagamento sai em negrito", negritoDe(semMarcar, "Forma de Pagamento:"));
+conferir("de fabrica, o telefone NAO sai em negrito", !negritoDe(semMarcar, "Telefone:"));
+
+const marcado = buildEscPos({
+  ...PEDIDO,
+  blocos: [
+    { tipo: "cliente", ligado: true, titulo: "CLIENTE", negritos: { telefone: true } },
+    { tipo: "itens", ligado: true, titulo: "RESUMO DO PEDIDO" },
+    { tipo: "totais", ligado: true, negritos: { subtotal: true, total: false } },
+    { tipo: "pagamento", ligado: true, negritos: { formaDePagamento: false } },
+  ],
+}, "Salz Burgueria", 48, "safe");
+conferir("ligou o negrito do telefone", negritoDe(marcado, "Telefone:"));
+conferir("ligou o negrito do subtotal", negritoDe(marcado, "Subtotal:"));
+conferir("DESLIGOU o negrito do total", !negritoDe(marcado, "Total:"));
+conferir("DESLIGOU o negrito da forma de pagamento", !negritoDe(marcado, "Forma de Pagamento:"));
+
+// O negrito nao pode mexer no LAYOUT: ele nao muda quantas letras cabem na
+// linha, entao o papel marcado tem que ter exatamente as mesmas linhas de
+// texto do papel sem marcar. Se alguem trocar BOLD por corpo ampliado algum
+// dia, este e o teste que cai.
+const soTexto = (buf) => legivel(buf).split("\n").map((l) => l.trimEnd()).join("\n");
+conferir("marcar negrito nao muda a quebra das linhas", soTexto(marcado).length > 0 &&
+  soTexto(buildEscPos({ ...PEDIDO, blocos: [
+    { tipo: "cliente", ligado: true, titulo: "CLIENTE" },
+    { tipo: "itens", ligado: true, titulo: "RESUMO DO PEDIDO" },
+    { tipo: "totais", ligado: true },
+    { tipo: "pagamento", ligado: true },
+  ] }, "Salz Burgueria", 48, "safe")) === soTexto(marcado));
+
+// Valor que nao e booleano nao pode virar "ligado" por descuido de conversao.
+const negritoRuim = buildEscPos({
+  ...PEDIDO,
+  blocos: [
+    { tipo: "cliente", ligado: true, titulo: "CLIENTE", negritos: { telefone: "sim", inventado: true } },
+    { tipo: "itens", ligado: true, titulo: "RESUMO DO PEDIDO" },
+  ],
+}, "Salz Burgueria", 48, "safe");
+conferir("marcacao que nao e booleano e ignorada", !negritoDe(negritoRuim, "Telefone:"));
+
 console.log(falhas === 0 ? "\nTUDO OK\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

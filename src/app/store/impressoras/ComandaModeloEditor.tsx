@@ -26,6 +26,8 @@ import {
   ROTULOS_DO_BLOCO,
   TAMANHOS,
   VERSAO_MINIMA_DOS_ROTULOS,
+  negritoDoBloco,
+  negritoPadrao,
   aceitaFormato,
   aceitaTitulo,
   lerModelo,
@@ -162,6 +164,25 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
     mexerNoBloco(iBloco, { rotulos: Object.keys(rotulos).length ? rotulos : undefined });
   };
 
+  /**
+   * Liga e desliga o negrito daquela linha.
+   *
+   * Guarda `false` explícito quando a loja DESLIGA um negrito de fábrica —
+   * "Forma de Pagamento:" e "Total:" já nascem em negrito no papel, e apagar a
+   * chave em vez de gravar `false` faria o padrão voltar no próximo carregamento.
+   * Quando a marcação volta a coincidir com a de fábrica, aí sim a chave sai:
+   * modelo limpo é modelo que acompanha o dia em que mudarmos um padrão nosso.
+   */
+  const alternarNegrito = (iBloco: number, chave: string) => {
+    const bloco = lista[iBloco];
+    if (!bloco || chave === "@titulo") return;
+    const novo = !negritoDoBloco(bloco, chave);
+    const negritos = { ...(bloco.negritos || {}) };
+    if (novo === negritoPadrao(bloco.tipo, chave)) delete negritos[chave];
+    else negritos[chave] = novo;
+    mexerNoBloco(iBloco, { negritos: Object.keys(negritos).length ? negritos : undefined });
+  };
+
   const abrirEdicao = (iBloco: number, chave: string) => {
     setRascunho(textoDoRotulo(iBloco, chave));
     setEdicao({ bloco: iBloco, rotulo: chave });
@@ -188,8 +209,9 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
       <p style={{ fontSize: "0.84rem", color: "#64748B", margin: "0 0 14px", maxWidth: "62ch", lineHeight: 1.5 }}>
         Arraste para mudar a ordem, desligue o que não quer e escreva o que quiser.{" "}
         <b style={{ color: "#0F172A" }}>Clique direto no papel ao lado para trocar uma palavra</b>{" "}
-        — as que dão para mudar ficam com um tracinho embaixo. Apague tudo e tecle Enter para voltar
-        ao texto de fábrica. A largura é exatamente a que vai sair da sua impressora.
+        — as que dão para mudar ficam com um tracinho embaixo. O botão <b>N</b> que aparece junto
+        deixa aquela linha em negrito. Apague tudo e tecle Enter para voltar ao texto de fábrica.
+        A largura é exatamente a que vai sair da sua impressora.
       </p>
 
       {/* ── O ASSISTENTE VELHO IGNORA O MODELO, E ISSO PRECISA ESTAR ESCRITO ──
@@ -310,20 +332,24 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                         ninguém procura. Aqui o card diz o que mudou e devolve
                         tudo ao de fábrica de uma vez. */}
                     {(() => {
-                      const trocadas = (ROTULOS_DO_BLOCO[bloco.tipo] || []).filter(
-                        (r) => rotuloDoBloco(bloco, r.chave) !== r.padrao,
-                      );
-                      if (!trocadas.length) return null;
+                      const doBloco = ROTULOS_DO_BLOCO[bloco.tipo] || [];
+                      const trocadas = doBloco.filter((r) => rotuloDoBloco(bloco, r.chave) !== r.padrao);
+                      const marcadas = doBloco.filter((r) => negritoDoBloco(bloco, r.chave) !== (r.negritoPadrao === true));
+                      if (!trocadas.length && !marcadas.length) return null;
                       return (
                         <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 7, flexWrap: "wrap" }}>
                           <span style={{ fontSize: "0.72rem", color: "#0F172A", fontWeight: 700 }}>
-                            Suas palavras: {trocadas.map((r) => `"${rotuloDoBloco(bloco, r.chave)}"`).join(", ")}
+                            {trocadas.length > 0 && <>Suas palavras: {trocadas.map((r) => `"${rotuloDoBloco(bloco, r.chave)}"`).join(", ")}</>}
+                            {trocadas.length > 0 && marcadas.length > 0 && " · "}
+                            {marcadas.length > 0 && (
+                              <>Negrito: {marcadas.map((r) => `${negritoDoBloco(bloco, r.chave) ? "" : "sem "}${rotuloDoBloco(bloco, r.chave)}`).join(", ")}</>
+                            )}
                           </span>
                           <button
                             type="button"
-                            onClick={() => mexerNoBloco(i, { rotulos: undefined })}
+                            onClick={() => mexerNoBloco(i, { rotulos: undefined, negritos: undefined })}
                             style={{ ...mini, width: "auto", padding: "0 7px" }}
-                            title="Devolve as palavras desta seção ao texto de fábrica"
+                            title="Devolve as palavras e os negritos desta seção ao padrão de fábrica"
                           >
                             voltar ao padrão
                           </button>
@@ -514,6 +540,32 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                       <span style={{ fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined, fontWeight: l.negrito ? 700 : 400 }}>
                         {resto}
                       </span>
+                      {/* ── O NEGRITO FICA ONDE A PALAVRA ESTÁ ──────────────
+                          Pedido do dono (19/09/2026): "forma de pagamento e
+                          qualquer outra palavra tem que poder marcar em
+                          negrito". Mora aqui, dentro da edição, e não num menu
+                          da esquerda, porque a pergunta "esta linha destaca?"
+                          se faz olhando o papel. `onMouseDown` com
+                          preventDefault: o clique não pode tirar o foco do
+                          campo, senão o blur fecha a edição antes de o botão
+                          ser ouvido. */}
+                      {l.rotulo !== "@titulo" && (
+                        <button
+                          type="button"
+                          onMouseDown={(e) => { e.preventDefault(); alternarNegrito(l.bloco as number, l.rotulo as string); }}
+                          title={negritoDoBloco(lista[l.bloco as number], l.rotulo as string) ? "Tirar o negrito desta linha" : "Deixar esta linha em negrito"}
+                          style={{
+                            marginLeft: 8, fontFamily: "inherit", fontSize: "0.7rem", fontWeight: 900,
+                            width: 22, height: 20, lineHeight: 1, padding: 0, borderRadius: 5, cursor: "pointer",
+                            border: `1.5px solid ${negritoDoBloco(lista[l.bloco as number], l.rotulo as string) ? VERMELHO : "#CBD5E1"}`,
+                            background: negritoDoBloco(lista[l.bloco as number], l.rotulo as string) ? VERMELHO : "#fff",
+                            color: negritoDoBloco(lista[l.bloco as number], l.rotulo as string) ? "#fff" : "#64748B",
+                            verticalAlign: "middle",
+                          }}
+                        >
+                          N
+                        </button>
+                      )}
                     </div>
                   );
                 }

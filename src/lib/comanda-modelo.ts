@@ -46,7 +46,12 @@ export const VERSAO_MINIMA_DO_MODELO = "1.2.11";
 
 /**
  * A versão em que o Assistente passou a ler as palavras trocadas pela loja
- * (`Bloco.rotulos`) e a destacar número do app e observação.
+ * (`Bloco.rotulos`), o negrito marcado por linha (`Bloco.negritos`) e o
+ * destaque de número do app e observação.
+ *
+ * Subiu de 1.2.18 para 1.2.19 no mesmo dia, quando o negrito entrou: a tela
+ * cobra as duas coisas com um aviso só, e um aviso que diz "atualize" mas
+ * deixa metade do recurso mudo é pior que nenhum.
  *
  * Separada da de cima porque o aviso tem que ser proporcional: quem só
  * reordenou blocos continua bem servido pelo 1.2.11, e receber "atualize o
@@ -54,7 +59,7 @@ export const VERSAO_MINIMA_DO_MODELO = "1.2.11";
  * loja aprender a ignorar os nossos avisos. Só quem REESCREVE uma palavra vê
  * a cobrança (ver `temRotuloTrocado`).
  */
-export const VERSAO_MINIMA_DOS_ROTULOS = "1.2.18";
+export const VERSAO_MINIMA_DOS_ROTULOS = "1.2.19";
 
 export type Alinhamento = "esquerda" | "centro" | "direita";
 
@@ -156,6 +161,23 @@ export type Bloco = {
    */
   rotulos?: Record<string, string>;
   /**
+   * Quais linhas desta seção saem em NEGRITO, por chave do mesmo catálogo.
+   *
+   * `true` liga, `false` desliga, chave ausente = como sai de fábrica (o
+   * `negritoPadrao` do catálogo). Precisa dos três estados: "Forma de
+   * Pagamento:" e "Total:" já nascem em negrito no papel, e sem o `false`
+   * explícito não haveria como a loja TIRAR o destaque de uma linha que ela
+   * não quer destacada.
+   *
+   * Só negrito, e não tamanho: negrito não muda quantas letras cabem na linha.
+   * Corpo ampliado muda, e estas seções são montadas pelo Assistente já
+   * quebradas na largura da bobina — reformatá-las por fora faria a IMPRESSORA
+   * quebrar a linha onde quisesse, que foi como "Rua Ma / cae" apareceu. Onde o
+   * corpo maior valia a pena, ele está fixo e decidido (número do pedido,
+   * número no app, observação).
+   */
+  negritos?: Record<string, boolean>;
+  /**
    * Só no bloco `totais`: a linha "Taxa de Entrega" não sai no papel.
    *
    * O TOTAL não muda — ele vem de `totalAmount`, que já inclui a taxa. Some a
@@ -222,15 +244,29 @@ export function aceitaTitulo(tipo: TipoDeBloco): boolean {
  * texto de fábrica (um acento, um "nº") ele muda para todo mundo que não
  * personalizou — que é a maioria.
  */
-export type RotuloDoBloco = { chave: string; padrao: string; ajuda?: string };
+export type RotuloDoBloco = {
+  chave: string;
+  padrao: string;
+  ajuda?: string;
+  /**
+   * Esta linha já sai em negrito no papel de fábrica?
+   *
+   * Copiado de server.js, linha por linha — "Forma de Pagamento:" e "Total:"
+   * sempre saíram em negrito, e a prévia os desenhava normais. Enquanto a tela
+   * só ilustrava, isso passava; agora que ela é o lugar onde a loja MARCA o
+   * negrito, um padrão errado aqui faria o lojista clicar em "N" achando que
+   * está ligando o que já estava ligado — e o papel não mudaria.
+   */
+  negritoPadrao?: boolean;
+};
 
 export const ROTULOS_DO_BLOCO: Partial<Record<TipoDeBloco, RotuloDoBloco[]>> = {
   numeroPedido: [
-    { chave: "delivery", padrao: "DELIVERY", ajuda: "A palavra ao lado do número, no topo." },
+    { chave: "delivery", padrao: "DELIVERY", ajuda: "A palavra ao lado do número, no topo.", negritoPadrao: true },
   ],
   loja: [{ chave: "estabelecimento", padrao: "Estabelecimento:" }],
   dataHora: [
-    { chave: "numeroNoParceiro", padrao: "N. do Pedido:" },
+    { chave: "numeroNoParceiro", padrao: "N. do Pedido:", negritoPadrao: true },
     { chave: "data", padrao: "Data:" },
   ],
   avisoEntrega: [
@@ -246,16 +282,16 @@ export const ROTULOS_DO_BLOCO: Partial<Record<TipoDeBloco, RotuloDoBloco[]>> = {
   ],
   entrega: [
     { chave: "endereco", padrao: "Endereco:" },
-    { chave: "observacao", padrao: "Obs:", ajuda: "O que o cliente escreveu sobre a entrega." },
+    { chave: "observacao", padrao: "Obs:", ajuda: "O que o cliente escreveu sobre a entrega.", negritoPadrao: true },
   ],
   itens: [
-    { chave: "observacaoDoItem", padrao: "Obs:", ajuda: "O que o cliente pediu naquele item." },
+    { chave: "observacaoDoItem", padrao: "Obs:", ajuda: "O que o cliente pediu naquele item.", negritoPadrao: true },
   ],
   totais: [
     { chave: "subtotal", padrao: "Subtotal:" },
     { chave: "desconto", padrao: "Desconto (Cupom - Loja):" },
     { chave: "taxaEntrega", padrao: "Taxa de Entrega:" },
-    { chave: "total", padrao: "Total:" },
+    { chave: "total", padrao: "Total:", negritoPadrao: true },
   ],
   // Os textos de fábrica daqui são os do PAPEL, copiados de server.js — não os
   // que a prévia mostrava antes. A prévia sempre foi uma aproximação do
@@ -264,15 +300,15 @@ export const ROTULOS_DO_BLOCO: Partial<Record<TipoDeBloco, RotuloDoBloco[]>> = {
   // Agora que a palavra da tela É a palavra do papel, aproximação vira mentira:
   // a loja editaria um texto que não existe e o papel sairia com outro.
   pagamento: [
-    { chave: "formaDePagamento", padrao: "Forma de Pagamento:" },
-    { chave: "troco", padrao: "Troco para:", ajuda: "Vem antes do valor que o cliente vai entregar." },
+    { chave: "formaDePagamento", padrao: "Forma de Pagamento:", negritoPadrao: true },
+    { chave: "troco", padrao: "Troco para:", ajuda: "Vem antes do valor que o cliente vai entregar.", negritoPadrao: true },
   ],
   qrMotoboy: [
-    { chave: "chamada", padrao: "MOTOBOY: escaneie para puxar" },
+    { chave: "chamada", padrao: "MOTOBOY: escaneie para puxar", negritoPadrao: true },
     { chave: "digite", padrao: "ou digite o numero", ajuda: "Antes do código curto do pedido." },
   ],
   qrCliente: [
-    { chave: "chamada", padrao: "Escaneie e faca seu proximo pedido" },
+    { chave: "chamada", padrao: "Escaneie e faca seu proximo pedido", negritoPadrao: true },
     { chave: "cupom", padrao: "ou use o cupom" },
   ],
 };
@@ -288,7 +324,18 @@ export function rotuloDoBloco(bloco: Bloco, chave: string): string {
   return meu != null && String(meu).trim() !== "" ? String(meu) : rotuloPadrao(bloco.tipo, chave);
 }
 
-/** A loja reescreveu alguma palavra? Decide o aviso de versão do Assistente. */
+/** Esta linha sai em negrito no papel de fábrica? */
+export function negritoPadrao(tipo: TipoDeBloco, chave: string): boolean {
+  return ROTULOS_DO_BLOCO[tipo]?.find((r) => r.chave === chave)?.negritoPadrao === true;
+}
+
+/** Esta linha sai em negrito: o que a loja marcou, ou o de fábrica. */
+export function negritoDoBloco(bloco: Bloco, chave: string): boolean {
+  const meu = bloco.negritos?.[chave];
+  return typeof meu === "boolean" ? meu : negritoPadrao(bloco.tipo, chave);
+}
+
+/** A loja reescreveu alguma palavra OU mexeu em algum negrito? */
 export function temRotuloTrocado(modelo: ModeloDeComanda): boolean {
   return [...modelo.completo, ...modelo.cozinha].some((b) =>
     Object.entries(b.rotulos || {}).some(([chave, valor]) =>
@@ -420,6 +467,17 @@ function saneiaRotulos(tipo: TipoDeBloco, bruto: unknown): Record<string, string
   return Object.keys(limpo).length ? limpo : undefined;
 }
 
+/** Mesma trava do rótulo: só chave do catálogo, e só booleano de verdade. */
+function saneiaNegritos(tipo: TipoDeBloco, bruto: unknown): Record<string, boolean> | undefined {
+  if (!bruto || typeof bruto !== "object") return undefined;
+  const conhecidas = new Set((ROTULOS_DO_BLOCO[tipo] || []).map((r) => r.chave));
+  const limpo: Record<string, boolean> = {};
+  for (const [chave, valor] of Object.entries(bruto as Record<string, unknown>)) {
+    if (conhecidas.has(chave) && typeof valor === "boolean") limpo[chave] = valor;
+  }
+  return Object.keys(limpo).length ? limpo : undefined;
+}
+
 /** Lê o que está gravado, completando o que faltar com o padrão. */
 export function lerModelo(bruto: unknown): ModeloDeComanda {
   const padrao = modeloPadrao();
@@ -436,6 +494,7 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
         // encosta no degrau mais próximo em vez de virar tarja preta.
         tamanho: x.tamanho ? tamanhoValido(x.tamanho) : undefined,
         rotulos: saneiaRotulos(x.tipo, x.rotulos),
+        negritos: saneiaNegritos(x.tipo, x.negritos),
       }));
     // Bloco obrigatório que sumiu do modelo salvo volta para o fim. Some por
     // edição manual, por versão antiga, ou por um bug meu — e em qualquer um
@@ -631,11 +690,13 @@ export function montarComanda(
     };
     /** O texto desta palavra: o que a loja escreveu, ou o de fábrica. */
     const R = (chave: string) => rotuloDoBloco(bloco, chave);
+    /** Esta linha sai em negrito? O que a loja marcou, ou o de fábrica. */
+    const N = (chave: string) => negritoDoBloco(bloco, chave);
 
     switch (bloco.tipo) {
       case "numeroPedido":
         if (pedido.numero != null && pedido.numero !== "") {
-          por(`(${pedido.numero}) ${R("delivery")} ${pedido.codigoCanal || ""}`.replace(/\s+/g, " ").trim(), { ...formato, rotulo: "delivery" });
+          por(`(${pedido.numero}) ${R("delivery")} ${pedido.codigoCanal || ""}`.replace(/\s+/g, " ").trim(), { ...formato, negrito: N("delivery"), rotulo: "delivery" });
         }
         break;
 
@@ -644,7 +705,7 @@ export function montarComanda(
         break;
 
       case "loja":
-        if (pedido.loja) por(`${R("estabelecimento")} ${pedido.loja.toUpperCase()}`.trim(), { ...formato, rotulo: "estabelecimento" });
+        if (pedido.loja) por(`${R("estabelecimento")} ${pedido.loja.toUpperCase()}`.trim(), { ...formato, negrito: N("estabelecimento"), rotulo: "estabelecimento" });
         break;
 
       case "dataHora":
@@ -658,35 +719,35 @@ export function montarComanda(
         // é conferência, não é o que alguém procura com o telefone na mão.
         if (pedido.codigoCanal) {
           por(`${R("numeroNoParceiro")} ${String(pedido.codigoCanal).replace("#", "")}`.trim(),
-            { ...formato, negrito: true, tamanho: DESTAQUE_DO_NUMERO_NO_APP, rotulo: "numeroNoParceiro" });
+            { ...formato, negrito: N("numeroNoParceiro"), tamanho: DESTAQUE_DO_NUMERO_NO_APP, rotulo: "numeroNoParceiro" });
         }
         if (pedido.data || pedido.hora) {
-          por(`${R("data")} ${pedido.data || ""} ${pedido.hora || ""}`.trim(), { ...formato, rotulo: "data" });
+          por(`${R("data")} ${pedido.data || ""} ${pedido.hora || ""}`.trim(), { ...formato, negrito: N("data"), rotulo: "data" });
         }
         break;
 
       case "avisoEntrega": {
         const e = pedido.entregaParceira;
         if (!e) break;
-        por(`*** ${R("motoboy")} ${e.parceiro.toUpperCase()} ${R("entregaParceira")} ***`.replace(/\s+/g, " "), { alinhamento: "centro", tamanho: 2, rotulo: "motoboy" });
-        por(R("naoUsar"), { alinhamento: "centro", tamanho: 2, rotulo: "naoUsar" });
-        if (e.codigoDeColeta) por(`${R("codigoDeColeta")} #${e.codigoDeColeta}`.trim(), { alinhamento: "centro", tamanho: 2, rotulo: "codigoDeColeta" });
+        por(`*** ${R("motoboy")} ${e.parceiro.toUpperCase()} ${R("entregaParceira")} ***`.replace(/\s+/g, " "), { alinhamento: "centro", tamanho: 2, negrito: N("motoboy"), rotulo: "motoboy" });
+        por(R("naoUsar"), { alinhamento: "centro", tamanho: 2, negrito: N("naoUsar"), rotulo: "naoUsar" });
+        if (e.codigoDeColeta) por(`${R("codigoDeColeta")} #${e.codigoDeColeta}`.trim(), { alinhamento: "centro", tamanho: 2, negrito: N("codigoDeColeta"), rotulo: "codigoDeColeta" });
         break;
       }
 
       case "cliente":
         if (!pedido.cliente && !pedido.telefone) break;
         titulo(bloco, "CLIENTE");
-        if (pedido.cliente) por(`${R("nome")} ${pedido.cliente}`.trim(), { rotulo: "nome" });
-        if (pedido.telefone) por(`${R("telefone")} ${pedido.telefone}`.trim(), { rotulo: "telefone" });
-        por(`${R("qtdPedidos")} 1`.trim(), { rotulo: "qtdPedidos" });
+        if (pedido.cliente) por(`${R("nome")} ${pedido.cliente}`.trim(), { negrito: N("nome"), rotulo: "nome" });
+        if (pedido.telefone) por(`${R("telefone")} ${pedido.telefone}`.trim(), { negrito: N("telefone"), rotulo: "telefone" });
+        por(`${R("qtdPedidos")} 1`.trim(), { negrito: N("qtdPedidos"), rotulo: "qtdPedidos" });
         break;
 
       case "entrega":
         if (!pedido.endereco) break;
         titulo(bloco, "ENTREGA");
-        por(`${R("endereco")} ${pedido.endereco}`.trim(), { rotulo: "endereco" });
-        if (pedido.observacao) por(`${R("observacao")} ${pedido.observacao}`.trim(), { ...obs, rotulo: "observacao" });
+        por(`${R("endereco")} ${pedido.endereco}`.trim(), { negrito: N("endereco"), rotulo: "endereco" });
+        if (pedido.observacao) por(`${R("observacao")} ${pedido.observacao}`.trim(), { ...obs, negrito: N("observacao"), rotulo: "observacao" });
         break;
 
       case "itens": {
@@ -700,7 +761,7 @@ export function montarComanda(
           // complementos — o pedido voltava. Decisão do dono (19/09/2026):
           // destaque, como na comanda do iFood. Sem recuo, porque em corpo
           // ampliado o recuo come coluna que falta para a frase.
-          if (item.observacao) por(`${R("observacaoDoItem")} ${item.observacao}`.trim(), { ...obs, rotulo: "observacaoDoItem" });
+          if (item.observacao) por(`${R("observacaoDoItem")} ${item.observacao}`.trim(), { ...obs, negrito: N("observacaoDoItem"), rotulo: "observacaoDoItem" });
           por("_".repeat(colunas));
         }
         break;
@@ -708,20 +769,20 @@ export function montarComanda(
 
       case "totais":
         if (!comValores) break;
-        if (pedido.subtotal != null) por(linhaComValor(R("subtotal"), dinheiro(pedido.subtotal), colunas), { rotulo: "subtotal" });
-        if (pedido.desconto) por(linhaComValor(R("desconto"), `-${dinheiro(pedido.desconto)}`, colunas), { rotulo: "desconto" });
+        if (pedido.subtotal != null) por(linhaComValor(R("subtotal"), dinheiro(pedido.subtotal), colunas), { negrito: N("subtotal"), rotulo: "subtotal" });
+        if (pedido.desconto) por(linhaComValor(R("desconto"), `-${dinheiro(pedido.desconto)}`, colunas), { negrito: N("desconto"), rotulo: "desconto" });
         if (pedido.taxaEntrega != null && !bloco.ocultarTaxaEntrega) {
-          por(linhaComValor(R("taxaEntrega"), dinheiro(pedido.taxaEntrega), colunas), { rotulo: "taxaEntrega" });
+          por(linhaComValor(R("taxaEntrega"), dinheiro(pedido.taxaEntrega), colunas), { negrito: N("taxaEntrega"), rotulo: "taxaEntrega" });
         }
         por("_".repeat(colunas));
-        por(linhaComValor(R("total"), dinheiro(pedido.total), larguraDoTamanho(colunas, 2)), { negrito: true, tamanho: 2, rotulo: "total" });
+        por(linhaComValor(R("total"), dinheiro(pedido.total), larguraDoTamanho(colunas, 2)), { negrito: N("total"), tamanho: 2, rotulo: "total" });
         por("_".repeat(colunas));
         break;
 
       case "pagamento":
         if (!comValores || !pedido.pagamento) break;
-        por(`${R("formaDePagamento")} ${pedido.pagamento}`.trim(), { rotulo: "formaDePagamento" });
-        if (pedido.troco) por(`${R("troco")} ${dinheiro(pedido.troco)}`, { negrito: true, tamanho: 2, rotulo: "troco" });
+        por(`${R("formaDePagamento")} ${pedido.pagamento}`.trim(), { negrito: N("formaDePagamento"), rotulo: "formaDePagamento" });
+        if (pedido.troco) por(`${R("troco")} ${dinheiro(pedido.troco)}`, { negrito: N("troco"), tamanho: 2, rotulo: "troco" });
         break;
 
       // ── OS DOIS QR NÃO PODEM SE PARECER ─────────────────────────────────
@@ -736,8 +797,8 @@ export function montarComanda(
         if (!pedido.qrMotoboy) break;
         por("-".repeat(colunas));
         por("", { qr: pedido.qrMotoboy });
-        por(R("chamada"), { alinhamento: "centro", negrito: true, rotulo: "chamada" });
-        por(`${R("digite")} 4821 no app`, { alinhamento: "centro", rotulo: "digite" });
+        por(R("chamada"), { alinhamento: "centro", negrito: N("chamada"), rotulo: "chamada" });
+        por(`${R("digite")} 4821 no app`, { alinhamento: "centro", negrito: N("digite"), rotulo: "digite" });
         break;
 
       case "qrCliente": {
@@ -749,8 +810,8 @@ export function montarComanda(
         por("=".repeat(colunas));
         if (c.valor) por(String(c.valor), { alinhamento: "centro", negrito: true, tamanho: 2 });
         por("", { qr: c.url });
-        por(R("chamada"), { alinhamento: "centro", negrito: true, rotulo: "chamada" });
-        if (c.cupom) por(`${R("cupom")} ${c.cupom.toUpperCase()}`.trim(), { alinhamento: "centro", rotulo: "cupom" });
+        por(R("chamada"), { alinhamento: "centro", negrito: N("chamada"), rotulo: "chamada" });
+        if (c.cupom) por(`${R("cupom")} ${c.cupom.toUpperCase()}`.trim(), { alinhamento: "centro", negrito: N("cupom"), rotulo: "cupom" });
         por("=".repeat(colunas));
         break;
       }

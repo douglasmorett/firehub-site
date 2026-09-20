@@ -742,6 +742,27 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     return typeof v === "string" && v.trim() ? cleanAscii(v.trim()) : padrao;
   };
 
+  // ── O NEGRITO QUE A LOJA MARCOU ───────────────────────────────────────
+  //
+  // Mesmo contrato dos rotulos, chave por chave. Tres estados: `true` liga,
+  // `false` desliga e ausente mantem o de fabrica — sem o `false` explicito
+  // nao haveria como TIRAR o negrito de "Forma de Pagamento:" ou de "Total:",
+  // que ja nascem marcados aqui.
+  //
+  // So negrito, e nao corpo: negrito nao muda quantas letras cabem na linha,
+  // entao pode ser ligado em cima de uma secao ja montada sem reformatar nada.
+  const negritosPorTipo = {};
+  for (const bl of (Array.isArray(order.blocos) ? order.blocos : [])) {
+    if (bl && bl.tipo && bl.negritos && typeof bl.negritos === "object") negritosPorTipo[bl.tipo] = bl.negritos;
+  }
+  const N = (tipo, chave, padrao) => {
+    const v = negritosPorTipo[tipo] && negritosPorTipo[tipo][chave];
+    return typeof v === "boolean" ? v : !!padrao;
+  };
+  /** Liga/desliga o negrito de um trecho ja montado, conforme a marcacao. */
+  const comNegrito = (texto, tipo, chave, padrao) =>
+    N(tipo, chave, padrao) ? BOLD_ON + texto + BOLD_OFF : texto;
+
   // ── TEXTO AMPLIADO FORA DO aplicarModelo ──────────────────────────────
   //
   // O layout embutido so tinha DOUBLE_HEIGHT (altura dobrada, largura igual).
@@ -1018,7 +1039,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           break;
         }
         case "loja":
-          out += linha(R("loja", "estabelecimento", "Estabelecimento:") + " " + cleanAscii(storeName || "FIREHUB").toUpperCase(), f);
+          out += linha(R("loja", "estabelecimento", "Estabelecimento:") + " " + cleanAscii(storeName || "FIREHUB").toUpperCase(), { ...f, negrito: f.negrito || N("loja", "estabelecimento", false) });
           break;
         case "dataHora":
           // O numero no app sai no corpo do destaque, nao no do bloco: e o que
@@ -1027,9 +1048,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           // site (DESTAQUE_DO_NUMERO_NO_APP em lib/comanda-modelo.ts).
           if (orderRef) {
             out += linha(R("dataHora", "numeroNoParceiro", "N. do Pedido:") + " " + cleanAscii(orderRef),
-              { ...f, negrito: true, tamanho: CORPO_DO_NUMERO_NO_APP });
+              { ...f, negrito: N("dataHora", "numeroNoParceiro", true), tamanho: CORPO_DO_NUMERO_NO_APP });
           }
-          if (dateStr) out += linha(R("dataHora", "data", "Data:") + " " + dateStr + " " + timeStr, f);
+          if (dateStr) out += linha(R("dataHora", "data", "Data:") + " " + dateStr + " " + timeStr, { ...f, negrito: f.negrito || N("dataHora", "data", false) });
           break;
         // Nao desligavel no site: e o aviso de que o pedido tem motoboy do
         // parceiro e o codigo de coleta. Some daqui e a loja manda o proprio
@@ -1161,7 +1182,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // leem de longe, em papel amassado e sob luz ruim — sai grande. Cabem 16
   // colunas em 3x, entao "(79) DELIVERY #3523" quebra em duas linhas, que e o
   // que o iFood tambem faz. O par disto esta em modeloPadrao() no site.
-  res += ampliado(headerLine, 3, { centro: true, negrito: true });
+  res += ampliado(headerLine, 3, { centro: true, negrito: N("numeroPedido", "delivery", true) });
   // Logo abaixo do numero, em destaque: e a primeira coisa que a cozinha
   // precisa saber quando a mesma impressora recebe tres marcas.
   if (lojaOrigem) {
@@ -1171,40 +1192,40 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (isPartnerDriver) {
     const rMotoboy = R("avisoEntrega", "motoboy", "MOTOBOY");
     const rParceira = R("avisoEntrega", "entregaParceira", "(ENTREGA PARCEIRA)");
-    res += DOUBLE_HEIGHT + centerLine(`*** ${rMotoboy} ${partnerLabel} ${rParceira} ***`)
-         + centerLine(R("avisoEntrega", "naoUsar", "NAO USAR MOTOBOY DA LOJA!")) + DOUBLE_OFF;
+    res += DOUBLE_HEIGHT + comNegrito(centerLine(`*** ${rMotoboy} ${partnerLabel} ${rParceira} ***`), "avisoEntrega", "motoboy", false)
+         + comNegrito(centerLine(R("avisoEntrega", "naoUsar", "NAO USAR MOTOBOY DA LOJA!")), "avisoEntrega", "naoUsar", false) + DOUBLE_OFF;
     if (pCode) {
-      res += DOUBLE_HEIGHT + centerLine(`${R("avisoEntrega", "codigoDeColeta", "CODIGO DE COLETA:")} #${pCode}`) + DOUBLE_OFF;
+      res += DOUBLE_HEIGHT + comNegrito(centerLine(`${R("avisoEntrega", "codigoDeColeta", "CODIGO DE COLETA:")} #${pCode}`), "avisoEntrega", "codigoDeColeta", false) + DOUBLE_OFF;
     }
   }
   marcas.fimAvisoEntrega = res.length;
   res += LEFT + divider;
   marcas.loja = res.length;
-  res += wrapLines(R("loja", "estabelecimento", "Estabelecimento:") + " " + cleanAscii(storeName || "FIREHUB").toUpperCase(), 2);
+  res += comNegrito(wrapLines(R("loja", "estabelecimento", "Estabelecimento:") + " " + cleanAscii(storeName || "FIREHUB").toUpperCase(), 2), "loja", "estabelecimento", false);
   // O NUMERO NO APP SAI GRANDE. E por ele que a loja acha o pedido dentro do
   // iFood/99 quando o cliente liga reclamando, e era a unica linha miuda no
   // meio de um cabecalho de numeros grandes: para ler, alguem pegava o papel e
   // aproximava do rosto. A DATA continua pequena — ela e conferencia, ninguem
   // a procura com o telefone na mao.
   if (orderRef) {
-    res += ampliado(R("dataHora", "numeroNoParceiro", "N. do Pedido:") + " " + cleanAscii(orderRef), CORPO_DO_NUMERO_NO_APP, { negrito: true });
+    res += ampliado(R("dataHora", "numeroNoParceiro", "N. do Pedido:") + " " + cleanAscii(orderRef), CORPO_DO_NUMERO_NO_APP, { negrito: N("dataHora", "numeroNoParceiro", true) });
   }
   const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
   const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
-  if (dateStr) res += R("dataHora", "data", "Data:") + " " + dateStr + " " + timeStr + LF;
+  if (dateStr) res += comNegrito(R("dataHora", "data", "Data:") + " " + dateStr + " " + timeStr, "dataHora", "data", false) + LF;
   marcas.fimCabecalho = res.length;
 
   // 2. CLIENTE SECTION
   marcas.tituloCliente = res.length;
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
   marcas.cliente = res.length;
-  if (order.customerName) res += wrapLines(R("cliente", "nome", "Nome:") + " " + cleanAscii(order.customerName), 2);
+  if (order.customerName) res += comNegrito(wrapLines(R("cliente", "nome", "Nome:") + " " + cleanAscii(order.customerName), 2), "cliente", "nome", false);
   // Pedido de mesa nasce com telefone "00000000000" (campo obrigatorio no
   // banco): imprimir isso e ruido no papel.
   if (order.customerPhone && !/^0+$/.test(String(order.customerPhone).trim())) {
-    res += wrapLines(R("cliente", "telefone", "Telefone:") + " " + cleanAscii(order.customerPhone), 2);
+    res += comNegrito(wrapLines(R("cliente", "telefone", "Telefone:") + " " + cleanAscii(order.customerPhone), 2), "cliente", "telefone", false);
   }
-  if (!ehConta) res += R("cliente", "qtdPedidos", "Qtd Pedidos:") + " 1" + LF;
+  if (!ehConta) res += comNegrito(R("cliente", "qtdPedidos", "Qtd Pedidos:") + " 1", "cliente", "qtdPedidos", false) + LF;
 
   // 3. ENTREGA SECTION
   marcas.fimCliente = res.length;
@@ -1212,7 +1233,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
     res += LF + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LF;
     marcas.entrega = res.length;
-    res += wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2);
+    res += comNegrito(wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2), "entrega", "endereco", false);
     if (order.notes) {
       const cleanObs = cleanAscii(order.notes)
         .replace(/Pedido iFood #[A-Z0-9]+/gi, "")
@@ -1224,7 +1245,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       // Saia do mesmo corpo do endereco, recuada dois espacos, e passava
       // despercebida. Ver CORPO_DA_OBSERVACAO.
       if (cleanObs) {
-        res += ampliado(R("entrega", "observacao", "Obs:") + " " + cleanObs, CORPO_DA_OBSERVACAO, { negrito: true });
+        res += ampliado(R("entrega", "observacao", "Obs:") + " " + cleanObs, CORPO_DA_OBSERVACAO, { negrito: N("entrega", "observacao", true) });
       }
     }
   }
@@ -1440,7 +1461,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       // comanda do iFood como regua. Sem o recuo: em corpo ampliado ele come a
       // coluna que falta para a frase.
       if (item.notes) {
-        res += ampliado(`${R("itens", "observacaoDoItem", "Obs:")} ${cleanAscii(item.notes)}`, CORPO_DA_OBSERVACAO, { negrito: true });
+        res += ampliado(`${R("itens", "observacaoDoItem", "Obs:")} ${cleanAscii(item.notes)}`, CORPO_DA_OBSERVACAO, { negrito: N("itens", "observacaoDoItem", true) });
       }
       res += boxBorder;
     });
@@ -1510,7 +1531,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     const gorjetaValor = Number(order.gorjeta || 0);
     if (gorjetaValor > 0) res += rightAlign("Gorjeta:", dinheiroConta(gorjetaValor));
   } else {
-    res += rightAlign(R("totais", "subtotal", "Subtotal:"), "R$ " + Number(subtotal).toFixed(2).replace(".", ","));
+    res += comNegrito(rightAlign(R("totais", "subtotal", "Subtotal:"), "R$ " + Number(subtotal).toFixed(2).replace(".", ",")), "totais", "subtotal", false);
   }
 
   const dFee = typeof order.deliveryFee === "number" ? order.deliveryFee : 0;
@@ -1597,7 +1618,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // TOTAL BOX — destaque limpo
   const totalValStr = "R$ " + Number(order.totalAmount || 0).toFixed(2).replace(".", ",");
   res += boxBorder;
-  res += DOUBLE_HEIGHT + BOLD_ON + makeBoxLine(R("totais", "total", "Total:"), totalValStr) + BOLD_OFF + DOUBLE_OFF;
+  res += DOUBLE_HEIGHT + comNegrito(makeBoxLine(R("totais", "total", "Total:"), totalValStr), "totais", "total", true) + DOUBLE_OFF;
   res += boxBorder;
 
   marcas.fimTotais = res.length;
@@ -1640,10 +1661,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJa" : "Online";
 
   if (isOnlinePayment) {
-    res += BOLD_ON + wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2) + BOLD_OFF;
+    res += comNegrito(wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2), "pagamento", "formaDePagamento", true);
     res += DOUBLE_HEIGHT + wrapLines("(Pago via " + onlineSource + " - NAO COBRAR)", 2) + DOUBLE_OFF;
   } else {
-    res += BOLD_ON + wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2) + BOLD_OFF;
+    res += comNegrito(wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2), "pagamento", "formaDePagamento", true);
     res += DOUBLE_HEIGHT + wrapLines(ehMesa ? "(PAGAR NO CAIXA OU NA MESA)" : "(COBRAR NA ENTREGA)", 2) + DOUBLE_OFF;
 
     if (order.changeAmount != null && Number(order.changeAmount) > 0) {
@@ -1653,7 +1674,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       const changeForStr = "R$ " + changeFor.toFixed(2).replace(".", ",");
       const changeToReturnStr = "R$ " + changeToReturn.toFixed(2).replace(".", ",");
 
-      res += DOUBLE_HEIGHT + wrapLines(R("pagamento", "troco", "Troco para:") + " " + changeForStr + " (Levar " + changeToReturnStr + " de troco)", 2) + DOUBLE_OFF;
+      res += DOUBLE_HEIGHT + comNegrito(wrapLines(R("pagamento", "troco", "Troco para:") + " " + changeForStr + " (Levar " + changeToReturnStr + " de troco)", 2), "pagamento", "troco", true) + DOUBLE_OFF;
     }
 
     res += divider;
@@ -1678,10 +1699,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // com comando desconhecido.
   if (order.qrPuxarUrl && profile !== "legacy") {
     res += LF + CENTER + qrEscPos(order.qrPuxarUrl, 6);
-    res += LF + BOLD_ON + centerLine(R("qrMotoboy", "chamada", "MOTOBOY: escaneie para puxar")) + BOLD_OFF;
+    res += LF + comNegrito(centerLine(R("qrMotoboy", "chamada", "MOTOBOY: escaneie para puxar")), "qrMotoboy", "chamada", true);
     const codigoCurto = String(order.qrPuxarCodigo || "").split("-").pop() || "";
     if (codigoCurto) {
-      res += centerLine(R("qrMotoboy", "digite", "ou digite o numero") + " " + codigoCurto + " no app");
+      res += comNegrito(centerLine(R("qrMotoboy", "digite", "ou digite o numero") + " " + codigoCurto + " no app"), "qrMotoboy", "digite", false);
     }
     res += LEFT;
   }
@@ -1719,9 +1740,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       // do celular, em casa, e nao pelo motoboy a 30 cm — quanto maior, melhor.
       res += LF + CENTER + qrEscPos(campanha.url, 8) + LF;
     }
-    res += LEFT + BOLD_ON + centerLine(R("qrCliente", "chamada", "Escaneie e faca seu proximo pedido")) + BOLD_OFF;
+    res += LEFT + comNegrito(centerLine(R("qrCliente", "chamada", "Escaneie e faca seu proximo pedido")), "qrCliente", "chamada", true);
     if (campanha.codigo) {
-      res += centerLine(R("qrCliente", "cupom", "ou use o cupom") + " " + String(campanha.codigo).toUpperCase());
+      res += comNegrito(centerLine(R("qrCliente", "cupom", "ou use o cupom") + " " + String(campanha.codigo).toUpperCase()), "qrCliente", "cupom", false);
       if (campanha.endereco) {
         // Na bobina de 58 mm o endereco nao cabe numa linha e a quebra por
         // palavra cortaria o slug no meio ("pastel-d / a-paulista"). Parte
