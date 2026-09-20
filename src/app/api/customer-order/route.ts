@@ -265,6 +265,13 @@ export async function POST(req: Request) {
       return {
         menuProductId: product.id,
         quantity: item.quantity,
+        // O NOME NO MOMENTO DA VENDA. A coluna existia e o pedido do site
+        // nunca a preenchia: quem lê `productName` sem cair na relação via
+        // "item" no lugar do nome — a tela de editar itens é a mais visível, e
+        // a comanda só escapava porque o Assistente tem o `menuProduct.name`
+        // de reserva. Também é o que faz o histórico sobreviver ao produto
+        // renomeado ou apagado do cardápio depois da venda.
+        productName: product.name,
         price: precoUnitario,
         notes: typeof item.notes === "string" && item.notes.trim() ? item.notes.trim().slice(0, 500) : null,
         comboSelections: item.comboSelections || null,
@@ -409,6 +416,7 @@ export async function POST(req: Request) {
               orderItems.push({
                 menuProductId: efeito.produtoGratis.id,
                 quantity: 1,
+                productName: efeito.produtoGratis.nome,
                 price: 0,
                 notes: "Prêmio da Trilha Premiada",
                 comboSelections: null,

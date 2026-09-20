@@ -51,11 +51,15 @@ export async function POST(req: Request) {
   // O corpo vinha cru — um menuProductId de outra loja entrava no pedido e a
   // baixa de estoque seguia a ficha tecnica dela, drenando insumo alheio.
   const idsInformados = (items || []).map((i: any) => i.menuProductId).filter(Boolean);
+  // O nome sai da MESMA consulta que já confere a dona do produto: é o nome do
+  // cardápio, não o que o navegador mandou, e não custa uma ida a mais ao banco.
+  const nomeDoProduto = new Map<string, string>();
   if (idsInformados.length > 0) {
     const daLoja = await prisma.menuProduct.findMany({
       where: { id: { in: idsInformados }, franchiseeId: targetFranchiseeId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
+    for (const p of daLoja) nomeDoProduto.set(p.id, p.name);
     const permitidos = new Set(daLoja.map((p) => p.id));
     const invasores = idsInformados.filter((id: string) => !permitidos.has(id));
     if (invasores.length > 0) {
@@ -111,6 +115,11 @@ export async function POST(req: Request) {
         create: items.map((item: any) => ({
           menuProductId: item.menuProductId,
           quantity: item.quantity,
+          // O NOME NO MOMENTO DA VENDA. Sem ele, quem lê `productName` sem cair
+          // na relação mostra "item" no lugar do nome — foi o que apareceu na
+          // tela de editar itens. E é o que guarda a venda de um produto que
+          // for renomeado ou apagado do cardápio depois.
+          productName: nomeDoProduto.get(item.menuProductId) || item.productName || item.name || null,
           price: item.price,
           comboSelections: item.comboSelections ? (typeof item.comboSelections === "string" ? item.comboSelections : JSON.stringify(item.comboSelections)) : null,
           // Observação do item ("tirar o milho"): a coluna existia, a cozinha
