@@ -5,6 +5,7 @@ import { fusoPorEndereco } from "@/lib/fuso-por-endereco";
 import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { diasDeTesteDoLink } from "@/lib/trial-do-cadastro";
 
 // CORS headers for cross-origin requests from firehubfood.com.br
 export async function OPTIONS(req: NextRequest) {
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Teste grátis: 15 dias para TODO MUNDO ─────────────────────────────
+    // ── Teste grátis: 15 dias, e 30 para os links de campanha ─────────────
     //
     // Era `ambassadorId ? 30 : 15` — quem entrava por link de embaixador ganhava
     // o dobro. Voltou a ser 15 para todos, por decisão comercial (26/08/2026).
@@ -128,7 +129,19 @@ export async function POST(req: NextRequest) {
     // loja fica gravado em `trialEndsAt` na hora do cadastro e nada o recalcula
     // depois (só `/api/admin/grant-days`, que é manual e ESTENDE). Mudar a conta
     // aqui só alcança cadastro novo.
-    const TRIAL_DIAS = 15;
+    //
+    // ── O QR DA PALESTRA ──────────────────────────────────────────────────
+    //
+    // O QR do slide do FireHub Conect (21/09/2026) leva para
+    // /cadastro?ref=conect e o slide promete "30 dias Grátis". O `refCode` só
+    // servia para achar embaixador ou parceiro; "conect" não é nenhum dos dois,
+    // caía fora e a loja recebia os 15 de sempre — a plateia inteira scaneando
+    // um QR que entrega metade do que está escrito na tela atrás do palestrante.
+    //
+    // A regra mora em lib/trial-do-cadastro.ts, e a TELA de cadastro lê a
+    // mesma função: é o que impede a página prometer 30 e a conta nascer com
+    // 15, que já aconteceu uma vez com o link de embaixador.
+    const TRIAL_DIAS = diasDeTesteDoLink(refCode);
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DIAS);
 

@@ -1,5 +1,6 @@
 "use client";
 import { nomeDaLojaPeloCnpj } from "@/lib/slug-da-loja";
+import { diasDeTesteDoLink, TRIAL_PADRAO_DIAS } from "@/lib/trial-do-cadastro";
 import { useState, useEffect } from "react";
 
 const API = "";
@@ -42,13 +43,24 @@ export default function CadastroPage() {
   const [step, setStep] = useState<1|2|3|4|5|6>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  // 15 dias para todo mundo, inclusive quem chega por link de embaixador.
+  // ── O PRAZO VEM DO LINK, E A CONTA VEM DA MESMA FUNÇÃO ────────────────
   //
-  // Esta tela consultava /api/check-ref e anunciava 30 dias quando o código era
-  // de embaixador. Como o cadastro voltou a gravar 15 para todos, deixar isto
-  // aqui faria a página prometer 30 e a conta nascer com 15 — o lojista
-  // descobriria na metade do prazo. Os dois lados mudam juntos, sempre.
-  const trialDays = 15;
+  // 15 dias para todo mundo, 30 para os links de campanha — quem decide é
+  // lib/trial-do-cadastro.ts, a MESMA função que /api/register usa para gravar
+  // `trialEndsAt`. É a regra que faltava quando esta tela consultava
+  // /api/check-ref e anunciava 30 para link de embaixador enquanto a rota já
+  // gravava 15: o lojista descobria na metade do prazo.
+  //
+  // Começa no padrão e sobe depois de montar: `window` não existe no servidor,
+  // e ler a URL direto aqui quebraria o render. O primeiro quadro mostra 15 e
+  // o seguinte já mostra 30 — antes de a pessoa ter lido a tela.
+  const [trialDays, setTrialDays] = useState(TRIAL_PADRAO_DIAS);
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      setTrialDays(diasDeTesteDoLink(p.get("ref") || p.get("codigo")));
+    } catch {}
+  }, []);
 
   // Step 1 - Qualificação
   const [nome, setNome] = useState("");
