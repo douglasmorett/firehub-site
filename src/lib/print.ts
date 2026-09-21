@@ -72,6 +72,8 @@ type PrintOrder = {
   id: string;
   customerName: string;
   customerPhone?: string;
+  /** "CPF na nota" (só os dígitos). Ver lib/documento-do-cliente.ts. */
+  customerCpfCnpj?: string | null;
   customerAddress?: string;
   deliveryType: "DELIVERY" | "RETIRADA";
   paymentMethod: string;
@@ -298,6 +300,11 @@ async function printToDevice(
           dailyOrderNumber: (order as any).dailyOrderNumber,
           customerName: order.customerName,
           customerPhone: order.customerPhone,
+          // O "CPF na nota" JÁ vem embutido no nome (lib/documento-do-cliente.ts)
+          // — é assim que ele sai no papel em toda versão do Assistente. Este
+          // campo é o aditivo: o Assistente de hoje ignora, o de amanhã imprime
+          // em linha própria sem precisar de mudança aqui.
+          customerCpfCnpj: (order as any).customerCpfCnpj,
           customerAddress: order.customerAddress,
           deliveryType: order.deliveryType,
           paymentMethod: order.paymentMethod,

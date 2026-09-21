@@ -973,6 +973,9 @@ export async function GET(req: NextRequest) {
         // O número do pager de quem espera no balcão: o card do painel mostra
         // para o atendente saber quem chamar quando o pedido fica pronto.
         pagerNumber: true,
+        // O "CPF na nota" pedido no balcão: sai na comanda impressa por este
+        // trilho (o do painel aberto) e no card do pedido.
+        customerCpfCnpj: true,
         deliveryType: true, deliveryBy: true, deliveryFee: true,
         // gatewayPaymentId: a tela decide se oferece "trocar pagamento" pela
         // mesma regra da API (podeTrocarPagamento) — sem o campo, ofereceria
