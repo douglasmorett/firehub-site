@@ -107,10 +107,22 @@ export default function PrazosAdminClient() {
   return (
     <div style={{ maxWidth: 1240 }}>
       <h1 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "0 0 4px" }}>⏱️ FireHub Prazos — contas da extensão</h1>
-      <p style={{ color: "#64748B", margin: "0 0 1.25rem", fontSize: ".9rem" }}>
+      <p style={{ color: "#64748B", margin: "0 0 .8rem", fontSize: ".9rem" }}>
         Produto vendido fora do FireHub: a extensão ajusta o prazo no Portal do Parceiro (iFood) e o tempo de preparo no
         99Food Admin pela carga do painel que o lojista já usa. Cada conta aqui é um cliente (ou um piloto) — e um lead.
       </p>
+
+      {/* Esta tela mostra quem JÁ comprou. Quem chegou na página e não
+          comprou está na outra, e é lá que se descobre por quê. */}
+      <a
+        href="/admin/prazos/metricas"
+        style={{
+          display: "inline-block", marginBottom: "1.25rem", background: "#0F172A", color: "#fff",
+          fontWeight: 800, fontSize: ".85rem", padding: "8px 14px", borderRadius: 999, textDecoration: "none",
+        }}
+      >
+        📈 O que acontece na página de venda →
+      </a>
 
       {/* ── Como instalar / o que dizer ao piloto ───────────────────────── */}
       <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: "1.25rem", fontSize: ".85rem", lineHeight: 1.6 }}>
