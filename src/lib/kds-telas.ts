@@ -42,6 +42,8 @@ export type TelaDoKds = {
   id?: string | null;
   name?: string | null;
   stage?: string | null;
+  /** "all" | "odd" | "even" | "delivery" | "pickup". Vazio = tudo. */
+  filter?: string | null;
   /** Nomes de categoria. Vazio = a tela mostra tudo. */
   categoryFilter?: string[] | null;
 };
@@ -180,4 +182,115 @@ export function nomesDasTelasQueFaltam(
     const t = (telas || []).find((x) => chaveDaTela(x) === chave);
     return String(t?.name ?? "").trim() || "outra tela";
   });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   O PRONTO NA PRODUÇÃO É DO ITEM, NÃO DA TELA
+
+   Decisão do dono em 22/09/2026, e ela junta duas frases que pareciam opostas:
+
+     "se der baixa na esfirra, a pizza continua na tela dela"
+     "se duas telas mostram a mesma coisa e alguém já fez, não é pra fazer de novo"
+
+   As duas só brigam se o pronto for da TELA. Sendo do ITEM, viram a mesma
+   regra: marcar na tela de esfirra carimba os ITENS de esfirra. A pizza segue
+   sem carimbo, então continua na tela de pizza. E o item que aparece nas duas
+   telas, uma vez carimbado, sai das duas.
+
+   A finalização é o contrário e continua por TELA: duas telas de finalização
+   mostram tudo e são estações diferentes — a baixa de uma não é a da outra.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** O item já foi dado por pronto na produção? */
+export function itemPronto(item: { prontoEm?: Date | string | null } | null | undefined): boolean {
+  return !!item?.prontoEm;
+}
+
+/**
+ * Os itens que ESTA tela mostra.
+ *
+ * Usa a regra generosa (`telaMostraItem`): o que está na tela é o que aquele
+ * cozinheiro vê e faz, inclusive o item de categoria desconhecida, que aparece
+ * em todas. Carimbar o que está na tela é exatamente "o que eu fiz".
+ */
+export function itensDaTela<T extends ItemParaTela>(tela: TelaDoKds, itens: T[] | null | undefined): T[] {
+  return (itens || []).filter((i) => telaMostraItem(tela, i));
+}
+
+/**
+ * Esta tela de produção ainda tem o que fazer neste pedido?
+ *
+ * `false` = tudo que ela mostra já está carimbado, então o pedido sai DAQUI —
+ * sem tirar de quem ainda tem item pendente.
+ */
+export function telaTemPendencia<T extends ItemParaTela & { prontoEm?: Date | string | null }>(
+  tela: TelaDoKds,
+  itens: T[] | null | undefined
+): boolean {
+  const meus = itensDaTela(tela, itens);
+  if (meus.length === 0) return false;
+  return meus.some((i) => !itemPronto(i));
+}
+
+/** Alguma coisa deste pedido já foi dada por pronta? */
+export function temAlgoPronto(itens: { prontoEm?: Date | string | null }[] | null | undefined): boolean {
+  return (itens || []).some((i) => itemPronto(i));
+}
+
+/** Tudo que o pedido tem já foi dado por pronto? */
+export function tudoPronto(itens: { prontoEm?: Date | string | null }[] | null | undefined): boolean {
+  const lista = itens || [];
+  return lista.length > 0 && lista.every((i) => itemPronto(i));
+}
+
+/**
+ * Ainda falta alguma tela de FINALIZAÇÃO dar a baixa dela?
+ *
+ * Aqui não entra item: a finalização não pergunta "a comida ficou pronta",
+ * pergunta "esta estação fez a parte dela". Por isso é por tela, e por isso
+ * uma não fala pela outra.
+ */
+export function faltaFinalizacao(
+  telas: TelaDoKds[] | null | undefined,
+  prontas: unknown,
+  pedido?: { numero?: unknown; deliveryType?: string | null } | null
+): boolean {
+  const deFinalizacao = (telas || [])
+    .filter((t) => texto(t?.stage) === "finishing")
+    // So conta quem MOSTRA este pedido: com uma tela em impar e outra em par,
+    // exigir baixa das duas travaria o pedido — a outra nunca vai ver aquele
+    // numero.
+    .filter((t) => !pedido || telaMostraPedido(t as any, pedido))
+    .map(chaveDaTela)
+    .filter(Boolean);
+  const unicas = [...new Set(deFinalizacao)];
+  if (unicas.length <= 1) return false;
+  const jaDeram = lerTelasProntas(prontas);
+  return unicas.some((c) => !jaDeram.includes(c));
+}
+
+/**
+ * A tela mostra ESTE PEDIDO? (o filtro de par/ímpar, entrega e retirada)
+ *
+ * Existe porque duas telas de finalização podem dividir a operação em vez de
+ * duplicá-la: uma só ímpar, outra só par (pedido do dono, 22/09/2026). Nesse
+ * arranjo o pedido ímpar aparece só numa delas, e exigir baixa das DUAS
+ * travaria o pedido para sempre — a outra nunca vai ver aquele número.
+ *
+ * É a mesma régua que a tela usa para desenhar; mora aqui para o servidor
+ * decidir "quem ainda falta" com o mesmo critério que o cozinheiro enxerga.
+ */
+export function telaMostraPedido(
+  tela: { filter?: string | null } | null | undefined,
+  pedido: { numero?: unknown; deliveryType?: string | null } | null | undefined
+): boolean {
+  const f = texto(tela?.filter);
+  if (!f || f === "all") return true;
+  if (f === "delivery") return texto(pedido?.deliveryType) === "delivery";
+  if (f === "pickup") return texto(pedido?.deliveryType) === "retirada";
+  if (f === "odd" || f === "even") {
+    const n = parseInt(String(pedido?.numero ?? "").replace(/\D/g, "") || "0", 10);
+    return f === "odd" ? n % 2 !== 0 : n % 2 === 0;
+  }
+  return true;
 }

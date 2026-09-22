@@ -1722,12 +1722,36 @@ function OrderCard({
                   lineHeight: 1.2,
                 }}
               >
+                {/* ── O VISTO DE PRONTO, ITEM A ITEM ──────────────────────
+                    Só na FINALIZAÇÃO, e é o ponto dela: o pedido chega aqui na
+                    primeira baixa da produção, com o que já ficou pronto
+                    marcado e o que falta chegar sinalizado. Quem está na
+                    expedição sabe, de relance, se pode fechar. Na produção não
+                    aparece — lá o item pendente é o trabalho, não um aviso.
+                    (pedido do dono, 22/09/2026) */}
+                {stage === "finishing" && (
+                  <span
+                    title={item.prontoEm ? "A cozinha deu este item por pronto" : "Ainda não veio da cozinha"}
+                    style={{
+                      fontSize: mainFontSize,
+                      fontWeight: 900,
+                      lineHeight: 1,
+                      minWidth: isHugeOrder ? 20 : 26,
+                      color: item.prontoEm ? "#22C55E" : "#F59E0B",
+                    }}
+                  >
+                    {item.prontoEm ? "✓" : "○"}
+                  </span>
+                )}
                 <span
                   style={{
                     color: accent,
                     fontWeight: 800,
                     fontSize: mainFontSize,
                     minWidth: isHugeOrder ? 24 : 30,
+                    // Item ainda não pronto fica esmaecido: o olho vai primeiro
+                    // no que já está na bancada.
+                    opacity: stage === "finishing" && !item.prontoEm ? 0.55 : 1,
                   }}
                 >
                   {item.quantity}x

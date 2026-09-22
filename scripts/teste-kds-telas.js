@@ -1,12 +1,21 @@
 /**
- * Harness da baixa do KDS por tela (src/lib/kds-telas.ts).
- *
- * O caso que originou tudo: a NIK separa a cozinha em tela de esfirra e tela
- * de pizza. Um pedido com 20 esfirras e 1 pizza aparece nas duas, e a baixa da
- * esfirra estava finalizando o pedido inteiro — sumia da tela de pizza, que
- * nem tinha começado, e ia direto para a finalização (21/09/2026).
+ * Harness da baixa do KDS (src/lib/kds-telas.ts).
  *
  * Roda o TS direto, via jiti, sem tocar no banco: a regra é função pura.
+ *
+ * ── O fluxo que estes testes travam ─────────────────────────────────────────
+ *
+ * PRODUÇÃO — o pronto é do ITEM. A NIK separa a cozinha em tela de esfirra e
+ * tela de pizza. Marcar na de esfirra carimba as esfirras; a pizza continua
+ * pendente na tela dela. E o item que aparece nas DUAS telas sai das duas ao
+ * ser carimbado uma vez: "se alguém fez, não é pra fazer de novo".
+ *
+ * FINALIZAÇÃO — o pronto é da TELA. Duas telas de finalização são estações
+ * diferentes: a baixa de uma não é a da outra, mesmo sendo o mesmo pedido. Só
+ * conta quem MOSTRA o pedido — com uma em ímpar e outra em par, exigir as duas
+ * travaria tudo.
+ *
+ * (decisões do dono, 21 e 22/09/2026)
  */
 const path = require("path");
 const createJiti = require("jiti");
@@ -17,8 +26,20 @@ const jiti = createJiti(__filename, {
   esmResolve: true,
 });
 
-const { telasComItem, faltaTelaDarBaixa, chaveDaTela, telaMostraItem, telaPrecisaDarBaixa } =
-  jiti(path.resolve(__dirname, "..", "src", "lib", "kds-telas.ts"));
+const {
+  chaveDaTela,
+  telaMostraItem,
+  telaPrecisaDarBaixa,
+  telasComItem,
+  faltaTelaDarBaixa,
+  itemPronto,
+  itensDaTela,
+  telaTemPendencia,
+  temAlgoPronto,
+  tudoPronto,
+  faltaFinalizacao,
+  telaMostraPedido,
+} = jiti(path.resolve(__dirname, "..", "src", "lib", "kds-telas.ts"));
 
 let ok = 0;
 let falhou = 0;
@@ -29,69 +50,74 @@ function conferir(nome, obtido, esperado) {
   else { falhou++; console.log("  FALHA " + nome + "\n       esperado " + b + "\n       obtido   " + a); }
 }
 
-// ── O cenário da NIK ────────────────────────────────────────────────────────
-const ESFIRRA = { id: "t-esfirra", name: "Esfirras", stage: "production", categoryFilter: ["Esfihas"] };
-const PIZZA   = { id: "t-pizza",   name: "Pizzas",   stage: "production", categoryFilter: ["Pizzas"] };
-const FINAL   = { id: "t-final",   name: "Expedição", stage: "finishing",  categoryFilter: [] };
-const TELAS = [ESFIRRA, PIZZA, FINAL];
+// ── As telas da NIK ─────────────────────────────────────────────────────────
+const ESFIRRA = { id: "t-esfirra", name: "Esfirras", stage: "production", filter: "all", categoryFilter: ["Esfihas"] };
+const PIZZA   = { id: "t-pizza",   name: "Pizzas",   stage: "production", filter: "all", categoryFilter: ["Pizzas"] };
+const FINAL   = { id: "t-final",   name: "Expedição", stage: "finishing", filter: "all", categoryFilter: [] };
 
-const pedidoMisto = [
-  { menuProduct: { category: "Esfihas" } },
-  { menuProduct: { category: "Pizzas" } },
-];
-const soEsfirra = [{ menuProduct: { category: "Esfihas" } }];
+const umaEsfirra = { id: "i1", menuProduct: { category: "Esfihas" }, prontoEm: null };
+const umaPizza   = { id: "i2", menuProduct: { category: "Pizzas" },  prontoEm: null };
+const carimbado  = (i) => ({ ...i, prontoEm: new Date() });
 
-console.log("\nquais telas precisam dar baixa");
-conferir("pedido misto -> as duas de producao", telasComItem(TELAS, pedidoMisto, "production"), ["t-esfirra", "t-pizza"]);
-conferir("so esfirra -> so a de esfirra", telasComItem(TELAS, soEsfirra, "production"), ["t-esfirra"]);
-conferir("finalizacao sem filtro pega tudo", telasComItem(TELAS, pedidoMisto, "finishing"), ["t-final"]);
+console.log("\nPRODUCAO: a tela carimba os itens DELA");
+conferir("a tela de esfirra ve so a esfirra", itensDaTela(ESFIRRA, [umaEsfirra, umaPizza]).map((i) => i.id), ["i1"]);
+conferir("a tela de pizza ve so a pizza", itensDaTela(PIZZA, [umaEsfirra, umaPizza]).map((i) => i.id), ["i2"]);
 
-console.log("\na baixa de uma tela nao finaliza o pedido");
-conferir("misto, so a esfirra deu baixa -> AINDA falta", faltaTelaDarBaixa(TELAS, pedidoMisto, "production", ["t-esfirra"]), true);
-conferir("misto, as duas deram baixa -> pode avancar", faltaTelaDarBaixa(TELAS, pedidoMisto, "production", ["t-esfirra", "t-pizza"]), false);
-conferir("misto, ninguem deu baixa -> falta", faltaTelaDarBaixa(TELAS, pedidoMisto, "production", []), true);
+console.log("\nPRODUCAO: baixa numa tela nao tira o pedido da outra");
+const esfirraFeita = [carimbado(umaEsfirra), umaPizza];
+conferir("a esfirra terminou o que era dela", telaTemPendencia(ESFIRRA, esfirraFeita), false);
+conferir("a pizza AINDA tem o que fazer", telaTemPendencia(PIZZA, esfirraFeita), true);
+conferir("e o pedido nao esta todo pronto", tudoPronto(esfirraFeita), false);
 
-console.log("\nquem tem uma tela so nao muda de comportamento");
-conferir("so esfirra, a esfirra deu baixa -> avanca", faltaTelaDarBaixa(TELAS, soEsfirra, "production", ["t-esfirra"]), false);
-conferir("loja sem telas configuradas -> avanca sempre", faltaTelaDarBaixa([], pedidoMisto, "production", []), false);
-conferir("uma tela so, sem filtro -> avanca", faltaTelaDarBaixa([FINAL], pedidoMisto, "finishing", []), false);
+console.log("\nPRODUCAO: item em duas telas sai das duas quando alguem faz");
+const ORFAO = { id: "i9", menuProduct: { category: null }, prontoEm: null };
+conferir("orfao aparece na tela de esfirra", telaMostraItem(ESFIRRA, ORFAO), true);
+conferir("orfao aparece na tela de pizza", telaMostraItem(PIZZA, ORFAO), true);
+const orfaoFeito = [carimbado(ORFAO)];
+conferir("carimbado, sai da esfirra", telaTemPendencia(ESFIRRA, orfaoFeito), false);
+conferir("carimbado, sai da pizza tambem", telaTemPendencia(PIZZA, orfaoFeito), false);
 
-console.log("\nas telas do OUTRO estagio nao seguram");
-conferir("producao nao espera a finalizacao", faltaTelaDarBaixa(TELAS, pedidoMisto, "production", ["t-esfirra", "t-pizza"]), false);
+console.log("\nFINALIZACAO enxerga na PRIMEIRA baixa, nao na ultima");
+conferir("nada pronto -> a expedicao nao ve", temAlgoPronto([umaEsfirra, umaPizza]), false);
+conferir("esfirra pronta -> a expedicao JA ve", temAlgoPronto(esfirraFeita), true);
+conferir("e sabe que ainda falta chegar coisa", tudoPronto(esfirraFeita), false);
+conferir("com tudo carimbado, esta tudo la", tudoPronto([carimbado(umaEsfirra), carimbado(umaPizza)]), true);
+conferir("o visto por item e o proprio carimbo", [itemPronto(esfirraFeita[0]), itemPronto(esfirraFeita[1])], [true, false]);
 
-console.log("\nitem sem categoria: MOSTRA em toda tela, mas nao PRENDE nenhuma");
-const semCategoria = [{ menuProduct: { category: null } }];
-conferir("mostra na tela de esfirra", telaMostraItem(ESFIRRA, semCategoria[0]), true);
-conferir("mostra na tela de pizza", telaMostraItem(PIZZA, semCategoria[0]), true);
-conferir("NAO exige baixa da esfirra", telaPrecisaDarBaixa(ESFIRRA, semCategoria[0]), false);
-conferir("NAO exige baixa da pizza", telaPrecisaDarBaixa(PIZZA, semCategoria[0]), false);
-conferir("orfao sozinho nao prende ninguem", telasComItem(TELAS, semCategoria, "production"), []);
-conferir("orfao nao trava o pedido", faltaTelaDarBaixa(TELAS, semCategoria, "production", []), false);
+console.log("\nFINALIZACAO: uma tela NAO finaliza pela outra");
+const FIM1 = { id: "f1", name: "Expedicao 1", stage: "finishing", filter: "all", categoryFilter: [] };
+const FIM2 = { id: "f2", name: "Expedicao 2", stage: "finishing", filter: "all", categoryFilter: [] };
+const PEDIDO = { numero: "8825", deliveryType: "DELIVERY" };
+conferir("f1 deu baixa -> f2 ainda falta", faltaFinalizacao([FIM1, FIM2], ["f1"], PEDIDO), true);
+conferir("as duas deram -> acabou", faltaFinalizacao([FIM1, FIM2], ["f1", "f2"], PEDIDO), false);
+conferir("uma tela so -> a primeira baixa fecha", faltaFinalizacao([FIM1], [], PEDIDO), false);
+conferir("producao nao conta na finalizacao", faltaFinalizacao([ESFIRRA, PIZZA, FIM1], ["f1"], PEDIDO), false);
 
-// O caso que o dono levantou (21/09/2026): a loja tem uma tela que ninguem
-// abre. Um item orfao nao pode transformar essa tela em refem do pedido.
-const ESQUECIDA = { id: "t-abandonada", name: "Sobremesas", stage: "production", categoryFilter: ["Sobremesas"] };
-const TRES_TELAS = [ESFIRRA, PIZZA, ESQUECIDA];
-const esfirraMaisOrfao = [{ menuProduct: { category: "Esfihas" } }, semCategoria[0]];
-conferir("esfirra + orfao: so a esfirra prende", telasComItem(TRES_TELAS, esfirraMaisOrfao, "production"), ["t-esfirra"]);
-conferir("a baixa da esfirra libera o pedido", faltaTelaDarBaixa(TRES_TELAS, esfirraMaisOrfao, "production", ["t-esfirra"]), false);
+console.log("\nFINALIZACAO dividida em impar e par nao trava");
+const IMPAR = { id: "f-i", name: "Impares", stage: "finishing", filter: "odd", categoryFilter: [] };
+const PAR   = { id: "f-p", name: "Pares",   stage: "finishing", filter: "even", categoryFilter: [] };
+const IMPAR_8825 = { numero: "8825", deliveryType: "DELIVERY" };
+const PAR_8824   = { numero: "8824", deliveryType: "DELIVERY" };
+conferir("a tela de impar mostra o 8825", telaMostraPedido(IMPAR, IMPAR_8825), true);
+conferir("a tela de par NAO mostra o 8825", telaMostraPedido(PAR, IMPAR_8825), false);
+conferir("8825: so a de impar precisa fechar", faltaFinalizacao([IMPAR, PAR], ["f-i"], IMPAR_8825), false);
+conferir("8824: so a de par precisa fechar", faltaFinalizacao([IMPAR, PAR], ["f-p"], PAR_8824), false);
+conferir("8825 sem ninguem fechar -> falta", faltaFinalizacao([IMPAR, PAR], [], IMPAR_8825), false);
 
-// A bebida do exemplo do dono: nenhuma tela a mostra.
-const BEBIDA = { menuProduct: { category: "Bebidas" } };
-const esfirraMaisBebida = [{ menuProduct: { category: "Esfihas" } }, BEBIDA];
-conferir("bebida nao aparece na tela de esfirra", telaMostraItem(ESFIRRA, BEBIDA), false);
-conferir("esfirra + bebida: so a esfirra prende", telasComItem(TELAS, esfirraMaisBebida, "production"), ["t-esfirra"]);
-conferir("e o pedido anda com a baixa da esfirra", faltaTelaDarBaixa(TELAS, esfirraMaisBebida, "production", ["t-esfirra"]), false);
-conferir("tela com filtro mostra item sem categoria", telaMostraItem(ESFIRRA, { menuProduct: { category: "" } }), true);
-conferir("tela com filtro NAO mostra categoria alheia", telaMostraItem(ESFIRRA, { menuProduct: { category: "Pizzas" } }), false);
+console.log("\nfiltro de entrega e retirada");
+conferir("tela de delivery mostra delivery", telaMostraPedido({ filter: "delivery" }, { deliveryType: "DELIVERY" }), true);
+conferir("tela de delivery nao mostra retirada", telaMostraPedido({ filter: "delivery" }, { deliveryType: "RETIRADA" }), false);
+conferir("tela sem filtro mostra tudo", telaMostraPedido({ filter: "all" }, { deliveryType: "RETIRADA" }), true);
+
+console.log("\nitem sem categoria MOSTRA em toda tela, mas nao PRENDE nenhuma");
+conferir("NAO exige baixa da esfirra", telaPrecisaDarBaixa(ESFIRRA, ORFAO), false);
+conferir("orfao sozinho nao prende ninguem", telasComItem([ESFIRRA, PIZZA, FINAL], [ORFAO], "production"), []);
+conferir("orfao nao trava o pedido", faltaTelaDarBaixa([ESFIRRA, PIZZA, FINAL], [ORFAO], "production", []), false);
 
 console.log("\nchave da tela");
 conferir("usa o id quando existe", chaveDaTela({ id: "abc", name: "Esfirras" }), "abc");
 conferir("cai no nome quando nao ha id (link antigo)", chaveDaTela({ name: "Esfirras" }), "nome:esfirras");
 conferir("sem id e sem nome -> vazio", chaveDaTela({}), "");
-
-console.log("\nbaixa repetida da mesma tela nao destrava nada");
-conferir("esfirra duas vezes -> ainda falta a pizza", faltaTelaDarBaixa(TELAS, pedidoMisto, "production", ["t-esfirra", "t-esfirra"]), true);
 
 console.log("\n" + ok + " ok, " + falhou + " falharam\n");
 process.exit(falhou ? 1 : 0);

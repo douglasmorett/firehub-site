@@ -2,7 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { faltaTelaDarBaixa, lerTelasProntas, nomesDasTelasQueFaltam, type TelaDoKds } from "@/lib/kds-telas";
+import {
+  chaveDaTela,
+  faltaFinalizacao,
+  itemPronto,
+  itensDaTela,
+  telaTemPendencia,
+  lerTelasProntas,
+  temAlgoPronto,
+  type TelaDoKds,
+} from "@/lib/kds-telas";
 
 /**
  * GET /api/kds?stage=production|finishing
@@ -145,6 +154,10 @@ export async function GET(req: NextRequest) {
               // cozinha lê o nome do cadastro, que pode estar desatualizado.
               productName: true,
               comboSelections: true,
+              // O carimbo de pronto do item: é ele que vira o ✓ na tela de
+              // finalização e que decide se a tela de produção ainda tem o que
+              // fazer neste pedido (lib/kds-telas.ts).
+              prontoEm: true,
               menuProduct: {
                 select: {
                   name: true,
@@ -177,16 +190,37 @@ export async function GET(req: NextRequest) {
       orders.map((o) => ({ ...o, franchiseeId: (o as any).franchiseeId ?? userStoreIds[0] })),
     ).catch(() => orders);
 
-    // ── O PEDIDO SOME DA TELA QUE JA DEU BAIXA ──────────────────────────
+    // ── O QUE CADA TELA ENXERGA ───────────────────────────────────────────
     //
-    // Nao do KDS inteiro: as outras telas continuam com ele ate a ultima
-    // terminar. Sem `tela` na URL (link antigo, loja de uma tela so) nada muda.
+    // PRODUÇÃO: enxerga enquanto tiver item SEU sem carimbo. A tela de esfirra
+    // sai de cena quando as esfirras estão prontas; a de pizza continua com o
+    // mesmo pedido até a pizza sair. E o item carimbado some das duas telas
+    // que o mostravam — "se alguém fez, não é pra fazer de novo".
+    //
+    // FINALIZAÇÃO: enxerga assim que a PRIMEIRA baixa acontece, com visto no
+    // que já ficou pronto e sinal no que falta chegar (decisão do dono,
+    // 22/09/2026) — é isso que deixa a expedição saber o que já veio e o que
+    // ainda vem. E some só da tela que deu a baixa DELA: duas telas de
+    // finalização são estações diferentes e cada uma fecha a sua.
     const daTela = String(req.nextUrl.searchParams.get("tela") || "").trim();
-    const visiveis = daTela
-      ? (ordersWithDailyNum as any[]).filter(
-          (o) => !lerTelasProntas((o as any)?.kdsTelasProntas).includes(daTela),
-        )
-      : ordersWithDailyNum;
+    let visiveis: any[] = ordersWithDailyNum as any[];
+
+    if (daTela) {
+      const donoDasTelas = await prisma.user
+        .findUnique({ where: { id: userStoreIds[0] }, select: { kdsScreens: true } })
+        .catch(() => null);
+      const telas = (Array.isArray(donoDasTelas?.kdsScreens) ? donoDasTelas!.kdsScreens : []) as any[];
+      const minha = telas.find((t) => chaveDaTela(t) === daTela);
+
+      if (stage === "finishing") {
+        visiveis = visiveis.filter((o) => {
+          if (lerTelasProntas(o?.kdsTelasProntas).includes(daTela)) return false;
+          return temAlgoPronto(o?.items);
+        });
+      } else if (stage === "production" && minha) {
+        visiveis = visiveis.filter((o) => telaTemPendencia(minha, o?.items || []));
+      }
+    }
 
     return NextResponse.json(visiveis, {
       headers: {
@@ -237,11 +271,15 @@ export async function PUT(req: NextRequest) {
       // o pedido tem — é o cruzamento com `User.kdsScreens` que diz se ainda
       // falta alguém (ver lib/kds-telas.ts).
       kdsTelasProntas: true,
+      // Para nao reescrever a hora de entrada na finalizacao a cada baixa.
+      kdsFinishingAt: true,
+      // O numero do pedido: e o que o filtro de par/impar da tela usa.
+      dailyOrderNumber: true,
       // `CustomerOrderItem` não tem coluna de categoria: ela vem do produto.
       // `productName` entra porque o item de plataforma aponta para o espelho
       // (categoria literal "iFood") e a categoria real é resolvida pelo nome —
       // a mesma regra do GET, em lib/categoria-do-item.ts.
-      items: { select: { productName: true, menuProduct: { select: { name: true, category: true } } } },
+      items: { select: { id: true, prontoEm: true, productName: true, menuProduct: { select: { name: true, category: true } } } },
       // De qual loja do 99Food é o pedido: o "pronto" sai com o token DELA
       // primeiro (lib/food99-status.ts), em vez de tentar o da conta e só
       // depois os das outras — que numa conta com três lojas estourava o
@@ -260,43 +298,40 @@ export async function PUT(req: NextRequest) {
   }
 
 
-  // ── A BAIXA QUANDO O PEDIDO ESTÁ EM MAIS DE UMA TELA ────────────────────
+  // ── A BAIXA NO KDS, EM DOIS MODELOS ─────────────────────────────────────
   //
-  // Cozinha separada por categoria: o mesmo pedido aparece na tela de esfirra
-  // e na de pizza, cada uma com os itens dela. `kdsStage` é um campo só, então
-  // a baixa de uma finalizava o pedido INTEIRO e ele sumia da outra, que nem
-  // tinha começado (NIK, 21/09/2026).
+  // PRODUÇÃO: o pronto é do ITEM. A tela carimba os itens que ELA mostra. A
+  // pizza sem carimbo continua na tela de pizza, e o item que aparece nas duas
+  // telas sai das duas ao ser carimbado uma vez — "se alguém fez, não é pra
+  // fazer de novo".
   //
-  // Aqui a baixa vira "esta TELA terminou". O estágio só avança quando a
-  // última tela que tem item no pedido terminar; até lá o pedido some só da
-  // tela de quem deu baixa e NÃO entra na finalização.
+  // FINALIZAÇÃO: o pronto é da TELA. Duas telas de finalização são estações
+  // diferentes: a baixa de uma não é a da outra, mesmo sendo o mesmo pedido.
+  // E só conta a tela que MOSTRA o pedido — com uma em ímpar e outra em par,
+  // exigir as duas travaria tudo.
   //
-  // A categoria dos itens passa pelo MESMO resolvedor que o GET usa, senão o
-  // item de plataforma (categoria literal "iFood") contaria numa tela na hora
-  // de mostrar e noutra na hora de dar baixa.
-  const baixaDaTela = async (estagio: "production" | "finishing") => {
-    if (!chaveDaTelaQueDeuBaixa) return { falta: false, prontas: null as string[] | null, faltando: [] as string[] };
+  // (decisões do dono, 21 e 22/09/2026)
+  const telasDaLoja = async (): Promise<TelaDoKds[]> => {
     const dono = await prisma.user
       .findUnique({ where: { id: order.franchiseeId! }, select: { kdsScreens: true } })
       .catch(() => null);
-    const telas = (Array.isArray(dono?.kdsScreens) ? dono!.kdsScreens : []) as TelaDoKds[];
-    const prontas = [...new Set([...lerTelasProntas(order.kdsTelasProntas), chaveDaTelaQueDeuBaixa])];
-    let itens: any[] = (order as any).items || [];
+    return (Array.isArray(dono?.kdsScreens) ? dono!.kdsScreens : []) as TelaDoKds[];
+  };
+
+  // A categoria do item passa pelo MESMO resolvedor que o GET usa, senão o
+  // item de plataforma (categoria literal "iFood") cairia numa tela para
+  // desenhar e noutra para carimbar.
+  const itensResolvidos = async (): Promise<any[]> => {
+    const crus: any[] = (order as any).items || [];
     try {
       const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
       const [resolvido] = await resolverCategoriasDosPedidos([order as any]);
-      if (resolvido?.items) itens = resolvido.items;
+      return resolvido?.items || crus;
     } catch {
-      // Sem o resolvedor, vale a categoria crua do produto: pior filtro, nunca
-      // pedido preso. Comida parada na cozinha é mais caro que baixa adiantada.
+      // Sem o resolvedor vale a categoria crua: pior filtro, nunca pedido
+      // preso. Comida parada é mais cara que carimbo adiantado.
+      return crus;
     }
-    return {
-      falta: faltaTelaDarBaixa(telas, itens, estagio, prontas),
-      prontas,
-      // Quem ainda nao deu baixa, pelo nome. A tela mostra isso no aviso: pedido
-      // que sai da vista sem explicacao e pedido que a cozinha para de procurar.
-      faltando: nomesDasTelasQueFaltam(telas, itens, estagio, prontas),
-    };
   };
 
   if (action === "start_production") {
@@ -314,42 +349,87 @@ export async function PUT(req: NextRequest) {
   }
 
   if (action === "finish_production") {
-    const { falta, prontas, faltando } = await baixaDaTela("production");
-    if (falta) {
-      // Outra tela de produção ainda tem item deste pedido. Grava só a baixa
-      // desta: ela para de ver o pedido, a outra continua vendo, e o estágio
-      // fica onde está — nada de mandar para a finalização pela metade.
-      await prisma.customerOrder.update({
-        where: { id: orderId },
-        data: { kdsTelasProntas: prontas as any },
-      });
-      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true, faltando });
+    // ── O CARIMBO É NOS ITENS QUE ESTA TELA MOSTRA ────────────────────────
+    //
+    // Marcar na tela de esfirra carimba as esfirras. A pizza continua sem
+    // carimbo e a tela de pizza continua com ela. E o item que aparece nas
+    // DUAS telas sai das duas ao ser carimbado uma vez, que é o "se alguém
+    // fez não é pra fazer de novo".
+    const telas = await telasDaLoja();
+    const itens = await itensResolvidos();
+    const minhaTela = telas.find((t) => chaveDaTela(t) === chaveDaTelaQueDeuBaixa);
+
+    // Sem identidade de tela (link antigo, loja de uma tela só) carimba tudo:
+    // é como o KDS sempre funcionou, e vale mais que travar o pedido.
+    const aCarimbar = minhaTela ? itensDaTela(minhaTela, itens) : itens;
+    const ids = aCarimbar.map((i: any) => i?.id).filter(Boolean);
+    if (ids.length) {
+      await prisma.customerOrderItem.updateMany({
+        where: { id: { in: ids }, orderId, prontoEm: null },
+        data: { prontoEm: new Date() },
+      }).catch(() => null);
     }
-    // Production done → move to finishing stage
+
+    // Reflete o carimbo na lista em memória para decidir o estágio sem uma
+    // segunda ida ao banco.
+    const depois = itens.map((i: any) =>
+      ids.includes(i?.id) ? { ...i, prontoEm: i?.prontoEm || new Date() } : i,
+    );
+
+    // ── QUANDO O PEDIDO CHEGA NA FINALIZAÇÃO ──────────────────────────────
+    //
+    // Na PRIMEIRA baixa, e não na última (decisão do dono, 22/09/2026): a
+    // expedição precisa ver o pedido com visto no que já foi feito e sinal no
+    // que falta chegar. Esperar tudo ficar pronto esconderia dela justamente
+    // a informação de que ela precisa para se organizar.
+    const jaTemAlgoPronto = temAlgoPronto(depois);
+    const aindaFalta = (depois as any[]).some((i) => !itemPronto(i));
+
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
-        kdsStage: "FINISHING",
-        kdsFinishingAt: new Date(),
-        kdsStationId: null, // Reset station for finishing team to pick up
+        ...(jaTemAlgoPronto && order.kdsStage !== "FINISHED"
+          ? { kdsStage: "FINISHING", kdsFinishingAt: order.kdsFinishingAt || new Date() }
+          : {}),
+        kdsStationId: null,
         status: order.status === "ACEITO" ? "PREPARANDO" : undefined,
-        ...(prontas ? { kdsTelasProntas: prontas as any } : {}),
       },
     });
-    return NextResponse.json({ success: true, stage: "FINISHING" });
+
+    return NextResponse.json({
+      success: true,
+      stage: "FINISHING",
+      itensCarimbados: ids.length,
+      // O que ainda falta ficar pronto, para a tela avisar em vez de deixar o
+      // pedido sumir calado.
+      aindaFalta,
+    });
   }
 
   if (action === "finish_order") {
-    const { falta, prontas, faltando } = await baixaDaTela("finishing");
-    if (falta) {
-      // Mesma regra da produção: o pedido sai da tela de quem deu baixa e
-      // continua nas outras. Sem `kdsFinishedAt` e sem `readyAt`, porque o
-      // pedido NÃO está pronto — ainda tem item em outra tela.
+    // ── NA FINALIZAÇÃO O PRONTO É DA TELA, NÃO DO ITEM ────────────────────
+    //
+    // Duas telas de finalização são estações DIFERENTES: a baixa de uma não
+    // é a da outra, mesmo sendo o mesmo pedido e o mesmo item. É o contrário
+    // da produção, onde o carimbo é do item e sai de todas as telas de uma
+    // vez. (decisão do dono, 22/09/2026)
+    //
+    // E só conta a tela que MOSTRA este pedido: com uma em ímpar e outra em
+    // par, exigir as duas travaria o pedido para sempre.
+    const telasFim = await telasDaLoja();
+    const prontas = chaveDaTelaQueDeuBaixa
+      ? [...new Set([...lerTelasProntas(order.kdsTelasProntas), chaveDaTelaQueDeuBaixa])]
+      : null;
+    const pedidoParaFiltro = { numero: (order as any).dailyOrderNumber, deliveryType: order.deliveryType };
+    if (prontas && faltaFinalizacao(telasFim, prontas, pedidoParaFiltro)) {
+      // Outra tela de finalização ainda tem que fazer a parte dela. O pedido
+      // sai DESTA e continua lá; nada de FINISHED, de readyAt nem de avisar
+      // a plataforma, porque a expedição ainda não acabou.
       await prisma.customerOrder.update({
         where: { id: orderId },
         data: { kdsTelasProntas: prontas as any },
       });
-      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true, faltando });
+      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true });
     }
     const isPickup = order.deliveryType !== "DELIVERY";
     const updateData: any = {

@@ -707,6 +707,11 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // pizza, que nem tinha começado (NIK, 21/09/2026). Nulo = ninguém deu baixa,
   // que é o comportamento de sempre para quem tem uma tela só.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "kdsTelasProntas" JSONB`,
+  // O "pronto" de CADA ITEM na produção do KDS (ver lib/kds-telas.ts). É o que
+  // permite a tela de esfirra marcar só as esfirras, a de pizza continuar com a
+  // pizza, e a finalização mostrar o pedido inteiro com visto no que já ficou
+  // pronto e sinalizado no que falta chegar.
+  `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "prontoEm" TIMESTAMP(3)`,
   // O número do pager do cliente que espera no balcão. Texto porque a loja
   // numera do jeito dela ("12", "A3", "07").
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "pagerNumber" TEXT`,

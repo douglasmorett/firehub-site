@@ -1128,6 +1128,18 @@ model CustomerOrderItem {
   price           Float
   notes           String?       // Observacao do cliente POR ITEM ("sem cebola"). O front ja enviava e a impressao/KDS ja liam, mas nao havia coluna: a observacao era descartada em silencio.
   comboSelections Json?
+  /// QUANDO A COZINHA DEU ESTE ITEM POR PRONTO, no KDS (ver lib/kds-telas.ts).
+  ///
+  /// Na produção o "pronto" é do ITEM, não da tela, e é isso que faz as duas
+  /// regras do dono virarem uma só: a tela de esfirra marca os itens de
+  /// esfirra e a pizza continua pendente na tela dela; e se DUAS telas
+  /// mostrarem o mesmo item, marcar numa tira das duas, porque "se alguém fez
+  /// não é pra fazer de novo".
+  ///
+  /// A finalização é o contrário: lá o pronto é da TELA
+  /// (`CustomerOrder.kdsTelasProntas`), porque duas telas de finalização são
+  /// estações diferentes e cada uma faz a parte dela.
+  prontoEm        DateTime?
   // Quem, na mesa, pediu este item. Nulo quando o pedido é da mesa inteira
   // (couvert, entrada para dividir) ou quando não é pedido de mesa.
   // É o que permite rachar a conta pelo que cada um consumiu, em vez de
