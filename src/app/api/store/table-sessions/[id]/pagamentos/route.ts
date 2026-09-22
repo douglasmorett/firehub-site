@@ -24,6 +24,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
+import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import {
   lerPagamentos,
   somarPagamentos,
@@ -63,7 +64,7 @@ async function abrirContexto(req: NextRequest, id: string) {
     return { erro: NextResponse.json({ error: "Mesa não encontrada" }, { status: 404 }) };
   }
 
-  return { mesa, operador };
+  return { mesa, operador, lojaId };
 }
 
 /** Grava a lista e mantém `totalPaid` igual à soma — os dois nunca divergem. */
@@ -96,6 +97,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       { status: 400 }
     );
   }
+
+  // Pagamento parcial da mesa é dinheiro entrando agora. Sem caixa aberto ele
+  // não tem turno onde cair (ver lib/caixa-aberto.ts) — e o DELETE continua
+  // liberado de propósito: desfazer um lançamento errado não pode depender do
+  // caixa estar aberto.
+  const semCaixa = await recusaSeCaixaFechado(ctx.lojaId!, "registrar o pagamento");
+  if (semCaixa) return semCaixa;
 
   const corpo = await req.json().catch(() => ({}));
   const valor = Number(corpo?.valor ?? corpo?.amount) || 0;

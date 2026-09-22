@@ -9,6 +9,7 @@ import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
 import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
+import { CAMINHO_DO_CAIXA } from "@/lib/caixa-aberto";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
   type DescontoManual,
@@ -350,6 +351,8 @@ export default function MesasApp({
   const [toast, setToast] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [tick, setTick] = useState(0);
+  /** Tem caixa aberto? `null` = ainda perguntando (ver lib/caixa-aberto.ts). */
+  const [caixaAberto, setCaixaAberto] = useState<boolean | null>(null);
 
   // Pessoas na mesa e conta dividida
   const [pessoas, setPessoas] = useState<Pessoa[]>([]);
@@ -746,6 +749,26 @@ export default function MesasApp({
     const i = setInterval(() => setTick(t => t + 1), 30000);
     return () => clearInterval(i);
   }, []);
+
+  // ── O CAIXA PRECISA ESTAR ABERTO (lib/caixa-aberto.ts) ────────────────────
+  //
+  // Repergunta a cada 30s e quando a aba ganha foco: quem abre o caixa é o
+  // painel, noutra tela e quase sempre noutro aparelho. Sem reperguntar, o
+  // garçom ficaria olhando a faixa vermelha num caixa já aberto.
+  useEffect(() => {
+    let vivo = true;
+    const conferir = () => {
+      chamar("/api/store/caixa-aberto")
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => { if (vivo && d) setCaixaAberto(d.aberto === true); })
+        .catch(() => { /* mantém o que já sabia; quem barra de verdade é o servidor */ });
+    };
+    conferir();
+    const relogio = setInterval(conferir, 30_000);
+    window.addEventListener("focus", conferir);
+    return () => { vivo = false; clearInterval(relogio); window.removeEventListener("focus", conferir); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ehGarcom]);
 
   // ─── Actions ───────────────────────────────────────────────────────────────
   const openTable = async () => {
@@ -1706,6 +1729,38 @@ export default function MesasApp({
       fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
     }}>
       <style>{ESTILO_TABLET}</style>
+
+      {/* ── CAIXA FECHADO ──────────────────────────────────────────────────
+          Faixa no topo, acima de tudo, e não um toast: com o caixa fechado
+          NADA passa nesta tela — abrir mesa, lançar item, fechar conta e
+          registrar pagamento estão todos barrados no servidor
+          (lib/caixa-aberto.ts). O garçom precisa saber disso antes de ir até a
+          mesa, não ao voltar com o pedido anotado.
+
+          O garçom não tem a tela de caixa: por isso o texto manda AVISAR quem
+          abre, em vez de mandar ele abrir. */}
+      {caixaAberto === false && (
+        <div style={{
+          flexShrink: 0, padding: "10px 20px", background: "#B91C1C", color: "#fff",
+          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        }}>
+          <span style={{ fontSize: 18 }}>🔒</span>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontWeight: 900, fontSize: "0.9rem" }}>O caixa está fechado</div>
+            <div style={{ fontSize: "0.78rem", opacity: 0.95, lineHeight: 1.4 }}>
+              Enquanto ele não abrir não dá para abrir mesa, lançar item, fechar conta nem registrar pagamento — o consumo não teria onde entrar no fechamento do dia.
+              {ehGarcom ? " Avise quem abre o caixa na loja." : " Abra o caixa para liberar o salão."}
+            </div>
+          </div>
+          {!ehGarcom && (
+            <a href={CAMINHO_DO_CAIXA} style={{
+              padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#B91C1C",
+              fontWeight: 800, fontSize: "0.82rem", textDecoration: "none", whiteSpace: "nowrap",
+            }}>Abrir o caixa →</a>
+          )}
+        </div>
+      )}
+
       {/* ─── Header ─── */}
       <header className="mesa-topo" style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
