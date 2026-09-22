@@ -618,57 +618,56 @@ export default function KDSTelaPage() {
         break;
     }
 
-    // Filtro por categoria: mostra só itens da(s) categoria(s) selecionada(s)
+    // ── QUEM ENTRA NESTA TELA ────────────────────────────────────────────
+    //
+    // A decisão é POR PEDIDO, não item a item — foi assim que o lojista
+    // descreveu, e é como a cozinha trabalha: "se o pedido tivesse esfirra
+    // deveria aparecer tudo; como é só pizza, não tem nada que faz parte do
+    // filtro dele, não deve aparecer" (NIK, 22/09/2026).
+    //
+    // Antes, o corte era por item: o pedido entrava se sobrasse QUALQUER item
+    // depois da peneira, e um pedido só de pizza entrava na tela das esfihas
+    // pelo item que ninguém reclamava — o curinga sem categoria.
     if (activeCategories.length > 0) {
-      const activeNormalized = activeCategories.map((c) =>
-        c.toLowerCase().trim(),
-      );
+      const activeNormalized = activeCategories.map((c) => c.toLowerCase().trim());
       const categoriaDoItem = (item: any) =>
         (item.menuProduct?.category || item.category || "").toLowerCase().trim();
+      // Categoria que nenhuma tela desta etapa pediu. Ninguém vai produzi-la
+      // em lugar nenhum, então ela não pode ser o motivo de esconder o pedido
+      // — nem de mostrá-lo numa tela que não tem nada a ver com ele.
+      const semDono = (cat: string) => !cat || (!!categoriasComDono && !categoriasComDono.has(cat));
 
       result = result
         .map((order) => {
           const cats = order.items.map(categoriaDoItem);
-          // Algum item deste pedido é produzido em ALGUMA tela desta etapa?
-          const temItemComDono = categoriasComDono
-            ? cats.some((c) => c && categoriasComDono.has(c))
-            : true;
-          // …e algum item dele é desta tela aqui?
-          const ehTelaDestePedido = cats.some((c) => !c || activeNormalized.includes(c));
+          const temItemDesteFiltro = cats.some((c) => c && activeNormalized.includes(c));
+          // O pedido inteiro é de categoria que ninguém pediu (a comanda só de
+          // refrigerante): aparece em TODA tela, senão não apareceria em
+          // nenhuma. Comida parada é mais cara que linha a mais na tela.
+          const pedidoTodoSemDono = cats.every(semDono);
+          if (!temItemDesteFiltro && !pedidoTodoSemDono) return null;
 
+          // NA FINALIZAÇÃO, O PEDIDO INTEIRO. É onde a sacola é montada: quem
+          // confere precisa ver tudo o que vai dentro, inclusive a pizza que
+          // saiu da outra tela e a bebida que ninguém produz.
+          if (stage === "finishing") return order;
+
+          // NA PRODUÇÃO, só o que é desta tela — mais o que não é de tela
+          // nenhuma, que senão não é feito por ninguém. O cozinheiro das
+          // esfihas não precisa ler a pizza que o outro está fazendo.
           return {
             ...order,
             items: order.items.filter((item: any) => {
               const cat = categoriaDoItem(item);
-              // Sem categoria = aparece em TODA tela filtrada. É a rede de
-              // segurança, e a API garante que o item de plataforma chega assim
-              // quando não dá para saber a categoria real dele: o espelho do
-              // iFood tem categoria "iFood", que aqui nunca casaria com nada, e
-              // era por isso que a pizza do iFood sumia da tela de pizza da NIK
-              // (16/09/2026). Ver lib/categoria-do-item.ts.
-              if (!cat) return true;
-              if (activeNormalized.includes(cat)) return true;
-              if (!categoriasComDono) return false; // ainda não sei quem é dono do quê
-              if (categoriasComDono.has(cat)) return false; // é de outra tela, e ela mostra
-              // ── ÓRFÃO: nenhuma tela desta etapa pediu esta categoria ──────
-              //
-              // Se o pedido inteiro é órfão (a comanda só de Coca-Cola), ele
-              // aparece em TODA tela — senão não apareceria em nenhuma, que é
-              // o pior desfecho possível para a cozinha.
-              //
-              // Se o pedido tem dono em algum lugar, o órfão vai JUNTO com ele:
-              // a bebida do pedido de esfiha sai na tela da esfiha, e a tela da
-              // pizza não ganha um card só com a bebida de um pedido que ela
-              // não produz.
-              return !temItemComDono || ehTelaDestePedido;
+              return activeNormalized.includes(cat) || semDono(cat);
             }),
           };
         })
-        .filter((order) => order.items.length > 0);
+        .filter((order): order is Order => order !== null && order.items.length > 0);
     }
 
     return result;
-  }, [orders, filter, activeCategories, categoriasComDono]);
+  }, [orders, filter, activeCategories, categoriasComDono, stage]);
 
   const exitingOrderIdsRef = useRef<Set<string>>(new Set());
   const completedOrderIdsRef = useRef<Set<string>>(new Set());
