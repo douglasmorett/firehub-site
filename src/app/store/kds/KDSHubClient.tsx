@@ -127,7 +127,7 @@ export default function KDSHubClient() {
           style={{
             padding: "10px 24px", border: "none", borderRadius: "10px", fontWeight: 800,
             fontSize: "0.95rem", cursor: "pointer", fontFamily: "inherit",
-            background: "linear-gradient(135deg, #f97316, #ef4444)", color: "#fff",
+            background: "linear-gradient(135deg, #f97316, #C92E09)", color: "#fff",
             boxShadow: "0 4px 20px rgba(249,115,22,0.3)", transition: "transform 0.15s",
           }}
         >
@@ -156,7 +156,7 @@ export default function KDSHubClient() {
             style={{
               padding: "10px 28px", border: "none", borderRadius: "10px", fontWeight: 700,
               fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
-              background: "linear-gradient(135deg, #f97316, #ef4444)", color: "#fff",
+              background: "linear-gradient(135deg, #f97316, #C92E09)", color: "#fff",
             }}
           >
             + Adicionar Tela
@@ -169,7 +169,7 @@ export default function KDSHubClient() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
           {screens.map((screen) => {
             const isProd = screen.stage === "production";
-            const accent = isProd ? "#f97316" : "#8b5cf6";
+            const accent = isProd ? "#f97316" : "#64748B";
             const cats = screen.categoryFilter || [];
             const catParam = cats.length > 0 ? ("&categories=" + encodeURIComponent(cats.join(","))) : "";
             // `tela` e a identidade da tela na baixa: e ela que permite o
@@ -206,7 +206,7 @@ export default function KDSHubClient() {
                   </span>
                   <span style={{
                     padding: "3px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
-                    background: "#374151", color: "#d1d5db",
+                    background: "#334155", color: "#CBD5E1",
                   }}>
                     {filterLabel(screen.filter)}
                   </span>
@@ -242,7 +242,7 @@ export default function KDSHubClient() {
                     onClick={() => openForm(screen)}
                     style={{
                       padding: "11px 14px", border: "1px solid #3a3a5a", borderRadius: "10px",
-                      background: "#2a2a4a", color: "#d1d5db", fontSize: "0.85rem", fontWeight: 600,
+                      background: "#2a2a4a", color: "#CBD5E1", fontSize: "0.85rem", fontWeight: 600,
                       cursor: "pointer", fontFamily: "inherit",
                     }}
                   >
@@ -309,7 +309,7 @@ export default function KDSHubClient() {
             <div style={{ display: "flex", gap: "8px", marginBottom: "1.25rem" }}>
               {([
                 { value: "production" as const, label: "🔥 Produção", desc: "Montar e preparar", color: "#f97316" },
-                { value: "finishing" as const, label: "📦 Finalização", desc: "Embalar e conferir", color: "#8b5cf6" },
+                { value: "finishing" as const, label: "📦 Finalização", desc: "Embalar e conferir", color: "#64748B" },
               ]).map((opt) => (
                 <button
                   key={opt.value}
@@ -408,7 +408,7 @@ export default function KDSHubClient() {
                 style={{
                   flex: 1, padding: "12px", borderRadius: "10px", fontWeight: 800,
                   fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
-                  border: "none", background: "linear-gradient(135deg, #f97316, #ef4444)", color: "#fff",
+                  border: "none", background: "linear-gradient(135deg, #f97316, #C92E09)", color: "#fff",
                 }}
               >
                 {editId ? "Salvar" : "Criar Tela"}

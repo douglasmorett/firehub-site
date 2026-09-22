@@ -88,13 +88,13 @@ export default async function AdminOrdersPage() {
           marginBottom: "1.5rem"
         }}>
           <StatCard label="Total" value={stats.total} color="#475569" />
-          <StatCard label="Pendentes" value={stats.pendentes} color="#F59E0B" />
-          <StatCard label="Pagos" value={stats.pagos} color="#16A34A" />
-          <StatCard label="Entrega" value={stats.entrega} color="#2563EB" />
-          <StatCard label="Finalizados" value={stats.finalizados} color="#10B981" />
-          <StatCard label="Cancelados" value={stats.cancelados} color="#EF4444" />
+          <StatCard label="Pendentes" value={stats.pendentes} color="#B45309" />
+          <StatCard label="Pagos" value={stats.pagos} color="#15803D" />
+          <StatCard label="Entrega" value={stats.entrega} color="#1D4ED8" />
+          <StatCard label="Finalizados" value={stats.finalizados} color="#15803D" />
+          <StatCard label="Cancelados" value={stats.cancelados} color="#C92E09" />
           {stats.emergencias > 0 && (
-            <StatCard label="🚨 Emergência" value={stats.emergencias} color="#DC2626" highlight />
+            <StatCard label="🚨 Emergência" value={stats.emergencias} color="#C92E09" highlight />
           )}
         </div>
 

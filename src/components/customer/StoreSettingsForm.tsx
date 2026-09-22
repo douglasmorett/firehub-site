@@ -35,7 +35,7 @@ type Coupon = {
 function SectionSaveBtn({ dirty, saving, onSave, label = "Salvar alterações" }: { dirty: boolean; saving: boolean; onSave: () => void; label?: string }) {
   return (
     <button onClick={onSave} disabled={saving || !dirty}
-      style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "8px 16px", background: dirty ? "#C62828" : "#E2E8F0", color: dirty ? "#fff" : "#94A3B8", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem", cursor: (saving || !dirty) ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "all 0.2s" }}>
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "8px 16px", background: dirty ? "#C92E09" : "#E2E8F0", color: dirty ? "#fff" : "#94A3B8", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem", cursor: (saving || !dirty) ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "all 0.2s" }}>
       <Save size={14} />{saving ? "Salvando..." : label}
     </button>
   );
@@ -393,7 +393,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
               <input type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0], type)} />
             </label>
             <button onClick={() => type === "logo" ? setStoreLogo("") : setStoreBanner("")} style={{ width: "30px", height: "30px", borderRadius: "8px", background: "rgba(255,255,255,0.9)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.15)" }}>
-              <Trash2 size={14} color="#EF4444" />
+              <Trash2 size={14} color="#C92E09" />
             </button>
           </div>
         </div>
@@ -443,16 +443,16 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             {storeUrl}
           </div>
           <button onClick={() => { navigator.clipboard.writeText(storeUrl); alert("Copiado com sucesso!"); }} 
-            style={{ display: "flex", alignItems: "center", gap: "6px", background: "#3B82F6", color: "#fff", border: "none", padding: "10px 16px", borderRadius: "8px", fontWeight: 600, cursor: "pointer", transition: "all 0.2s" }}
-            onMouseOver={(e) => e.currentTarget.style.background = "#2563EB"}
-            onMouseOut={(e) => e.currentTarget.style.background = "#3B82F6"}
+            style={{ display: "flex", alignItems: "center", gap: "6px", background: "#1D4ED8", color: "#fff", border: "none", padding: "10px 16px", borderRadius: "8px", fontWeight: 600, cursor: "pointer", transition: "all 0.2s" }}
+            onMouseOver={(e) => e.currentTarget.style.background = "#1D4ED8"}
+            onMouseOut={(e) => e.currentTarget.style.background = "#1D4ED8"}
           >
             <Copy size={16} /> Copiar
           </button>
           <a href={storeUrl} target="_blank" 
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "#F59E0B", color: "#fff", border: "none", padding: "10px", borderRadius: "8px", fontWeight: 600, cursor: "pointer", textDecoration: "none", transition: "all 0.2s" }}
-            onMouseOver={(e) => e.currentTarget.style.background = "#D97706"}
-            onMouseOut={(e) => e.currentTarget.style.background = "#F59E0B"}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "#B45309", color: "#fff", border: "none", padding: "10px", borderRadius: "8px", fontWeight: 600, cursor: "pointer", textDecoration: "none", transition: "all 0.2s" }}
+            onMouseOver={(e) => e.currentTarget.style.background = "#B45309"}
+            onMouseOut={(e) => e.currentTarget.style.background = "#B45309"}
           >
             <ExternalLink size={18} />
           </a>
@@ -588,7 +588,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             const isActive = h?.active !== false;
 
             return (
-              <div key={idx} style={{ padding: "0.6rem 0.75rem", backgroundColor: isActive ? "#F0FDF4" : "#FEF2F2", borderRadius: "10px", border: `1px solid ${isActive ? "#BBF7D0" : "#FECACA"}` }}>
+              <div key={idx} style={{ padding: "0.6rem 0.75rem", backgroundColor: isActive ? "#ECFDF3" : "#FEF2F2", borderRadius: "10px", border: `1px solid ${isActive ? "#ABEFC6" : "#FECACA"}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: isActive && dayShifts.length > 0 ? "0.5rem" : 0 }}>
                   <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", minWidth: "90px" }}>
                     <input type="checkbox" checked={isActive} onChange={e => {
@@ -599,7 +599,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                     }} />
                     <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{h?.day}</span>
                   </label>
-                  {!isActive && <span style={{ fontSize: "0.8rem", color: "#EF4444", fontWeight: 600 }}>Fechado</span>}
+                  {!isActive && <span style={{ fontSize: "0.8rem", color: "#C92E09", fontWeight: 600 }}>Fechado</span>}
                   {isActive && (
                     <button type="button" onClick={() => {
                       const updated = [...storeHours];
@@ -607,7 +607,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                       updated[idx] = { ...h, shifts: newShifts };
                       setStoreHours(updated);
                       setDirtyHours(true);
-                    }} style={{ marginLeft: "auto", padding: "2px 8px", borderRadius: "6px", border: "1px solid #BBF7D0", background: "#fff", cursor: "pointer", fontSize: "0.72rem", fontWeight: 600, color: "#16A34A" }}>
+                    }} style={{ marginLeft: "auto", padding: "2px 8px", borderRadius: "6px", border: "1px solid #ABEFC6", background: "#fff", cursor: "pointer", fontSize: "0.72rem", fontWeight: 600, color: "#15803D" }}>
                       + Turno
                     </button>
                   )}
@@ -639,7 +639,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                         updated[idx] = { ...h, shifts: newShifts };
                         setStoreHours(updated);
                         setDirtyHours(true);
-                      }} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "#EF4444" }}>
+                      }} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "#C92E09" }}>
                         <Trash2 size={13} />
                       </button>
                     )}
@@ -652,8 +652,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <SectionSaveBtn dirty={dirtyHours} saving={savingHours} onSave={saveHours} label="Salvar Horários" />
         {hoursError && (
           <div style={{ marginTop: 10, padding: "10px 14px", background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 10, display: "flex", alignItems: "center", gap: 8 }}>
-            <AlertTriangle size={16} color="#DC2626" />
-            <span style={{ fontSize: "0.82rem", color: "#DC2626", fontWeight: 600 }}>{hoursError}</span>
+            <AlertTriangle size={16} color="#C92E09" />
+            <span style={{ fontSize: "0.82rem", color: "#C92E09", fontWeight: 600 }}>{hoursError}</span>
           </div>
         )}
         <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: "0.82rem", color: "#475569", cursor: "pointer" }}>
@@ -661,7 +661,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           <span><strong>Refletir horários do site no iFood</strong> — ao salvar, os mesmos horários serão enviados para o iFood automaticamente</span>
         </label>
         {hoursSyncMsg && (
-          <div style={{ marginTop: 8, padding: "10px 14px", background: hoursSyncMsg.startsWith("✅") ? "#F0FDF4" : "#FEF2F2", border: `1.5px solid ${hoursSyncMsg.startsWith("✅") ? "#BBF7D0" : "#FECACA"}`, borderRadius: 10, fontSize: "0.82rem", fontWeight: 600, color: hoursSyncMsg.startsWith("✅") ? "#16A34A" : "#DC2626" }}>
+          <div style={{ marginTop: 8, padding: "10px 14px", background: hoursSyncMsg.startsWith("✅") ? "#ECFDF3" : "#FEF2F2", border: `1.5px solid ${hoursSyncMsg.startsWith("✅") ? "#ABEFC6" : "#FECACA"}`, borderRadius: 10, fontSize: "0.82rem", fontWeight: 600, color: hoursSyncMsg.startsWith("✅") ? "#15803D" : "#C92E09" }}>
             {hoursSyncMsg}
           </div>
         )}
@@ -671,11 +671,11 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
       {show("hours") && <div className="card mb-4" style={{ border: pauseSavedActive ? "1.5px solid #FCA5A5" : "1.5px solid #E2E8F0", background: pauseSavedActive ? "#FFF5F5" : "#fff" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Calendar size={18} color={pauseSavedActive ? "#DC2626" : "#64748B"} />
-            <h3 className="font-bold" style={{ margin: 0, color: pauseSavedActive ? "#DC2626" : "inherit" }}>
+            <Calendar size={18} color={pauseSavedActive ? "#C92E09" : "#64748B"} />
+            <h3 className="font-bold" style={{ margin: 0, color: pauseSavedActive ? "#C92E09" : "inherit" }}>
               📅 Agendar Pausa / Férias
             </h3>
-            {pauseSavedActive && <span style={{ padding: "2px 8px", background: "#FEE2E2", color: "#DC2626", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700 }}>ATIVO</span>}
+            {pauseSavedActive && <span style={{ padding: "2px 8px", background: "#FEE2E2", color: "#C92E09", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 700 }}>ATIVO</span>}
           </div>
           <button
             onClick={async () => {
@@ -704,7 +704,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             }}
             style={{ background: "none", border: "none", cursor: "pointer" }}
           >
-            {pauseActive ? <ToggleRight size={28} color="#DC2626" /> : <ToggleLeft size={28} color="#CBD5E1" />}
+            {pauseActive ? <ToggleRight size={28} color="#C92E09" /> : <ToggleLeft size={28} color="#CBD5E1" />}
           </button>
         </div>
 
@@ -741,8 +741,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
         {pauseActive && (
           <div style={{ marginTop: "0.75rem", padding: "10px 14px", background: "#FEE2E2", borderRadius: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <AlertTriangle size={16} color="#DC2626" />
-            <span style={{ fontSize: "0.8rem", color: "#DC2626", fontWeight: 600 }}>
+            <AlertTriangle size={16} color="#C92E09" />
+            <span style={{ fontSize: "0.8rem", color: "#C92E09", fontWeight: 600 }}>
               Loja pausada de {new Date(pauseFrom + "T12:00").toLocaleDateString("pt-BR")} até {new Date(pauseTo + "T12:00").toLocaleDateString("pt-BR")} — Motivo: {pauseReason}
             </span>
           </div>
@@ -761,7 +761,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
               disabled={temCupomDePrimeiroPedido}
               title={temCupomDePrimeiroPedido ? "Sua loja já tem um cupom de primeiro pedido ativo" : "Desconto automático para quem nunca pediu pelo seu site"}
               className="btn btn-outline"
-              style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem", borderColor: "#F59E0B", color: "#B45309", opacity: temCupomDePrimeiroPedido ? 0.5 : 1, cursor: temCupomDePrimeiroPedido ? "not-allowed" : "pointer" }}
+              style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem", borderColor: "#B45309", color: "#B45309", opacity: temCupomDePrimeiroPedido ? 0.5 : 1, cursor: temCupomDePrimeiroPedido ? "not-allowed" : "pointer" }}
             >
               🎁 Cupom de 1º pedido
             </button>
@@ -780,24 +780,24 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
               const ehPrimeiro = c.primeiroPedido === true;
               const venceu = !!c.validade && c.validade < hojeISO;
               return (
-                <div key={idx} style={{ padding: "0.6rem 0.75rem", backgroundColor: venceu ? "#FEF2F2" : ehPrimeiro ? "#FFFBEB" : c.active ? "#F0FDF4" : "#F8FAFC", borderRadius: "10px", border: `1px solid ${venceu ? "#FECACA" : ehPrimeiro ? "#FDE68A" : "#E2E8F0"}` }}>
+                <div key={idx} style={{ padding: "0.6rem 0.75rem", backgroundColor: venceu ? "#FEF2F2" : ehPrimeiro ? "#FFF7E6" : c.active ? "#ECFDF3" : "#F8FAFC", borderRadius: "10px", border: `1px solid ${venceu ? "#FECACA" : ehPrimeiro ? "#FDE68A" : "#E2E8F0"}` }}>
                   {/* Linha 1: o que o cupom é */}
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                     {ehPrimeiro
                       ? <span title="Cupom de primeiro pedido" style={{ fontSize: "0.72rem", fontWeight: 800, color: "#92400E", background: "#FDE68A", padding: "2px 8px", borderRadius: 6, whiteSpace: "nowrap" }}>🎁 1º PEDIDO</span>
-                      : <Tag size={16} color={c.active ? "#16A34A" : "#94A3B8"} />}
+                      : <Tag size={16} color={c.active ? "#15803D" : "#94A3B8"} />}
                     <input placeholder="CÓDIGO" value={c.code} onChange={e => updateCoupon(idx, "code", e.target.value.toUpperCase())} style={{ flex: 1, minWidth: "120px", padding: "0.4rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase" }} />
                     <select
                       value={c.type || "percent"}
                       onChange={e => updateCoupon(idx, "type", e.target.value)}
-                      style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, color: c.type === "free_shipping" ? "#16A34A" : c.type === "fixed" ? "#7C3AED" : "#2563EB", background: "#fff" }}
+                      style={{ padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, color: c.type === "free_shipping" ? "#15803D" : c.type === "fixed" ? "#475569" : "#1D4ED8", background: "#fff" }}
                     >
                       <option value="percent">% Porcentagem</option>
                       <option value="fixed">R$ Valor Fixo</option>
                       <option value="free_shipping">🚚 Frete Grátis</option>
                     </select>
                     {c.type === "free_shipping" ? (
-                      <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#16A34A", padding: "0.3rem 0.6rem", background: "#DCFCE7", borderRadius: "6px" }}>Frete Grátis</span>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#15803D", padding: "0.3rem 0.6rem", background: "#ECFDF3", borderRadius: "6px" }}>Frete Grátis</span>
                     ) : c.type === "fixed" ? (
                       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                         <span style={{ fontSize: "0.8rem", color: "#64748B" }}>R$</span>
@@ -813,7 +813,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                       <input type="checkbox" checked={c.active} onChange={e => updateCoupon(idx, "active", e.target.checked)} />
                       <span style={{ fontSize: "0.75rem" }}>Ativo</span>
                     </label>
-                    <button onClick={() => removeCoupon(idx)} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}><Trash2 size={16} color="#EF4444" /></button>
+                    <button onClick={() => removeCoupon(idx)} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}><Trash2 size={16} color="#C92E09" /></button>
                   </div>
 
                   {/* Linha 2: as regras. Cada uma diz o que "vazio" significa, para
@@ -824,8 +824,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                       <input type="number" placeholder="0" value={c.minOrderValue || 0} onChange={e => updateCoupon(idx, "minOrderValue", Number(e.target.value))} style={{ width: "65px", padding: "0.35rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem" }} />
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                      <span style={{ fontSize: "0.75rem", color: venceu ? "#B91C1C" : "#64748B", fontWeight: venceu ? 700 : 400 }}>{venceu ? "Venceu em" : "Válido até"}</span>
-                      <input type="date" value={c.validade || ""} onChange={e => updateCoupon(idx, "validade", e.target.value || null)} style={{ padding: "0.3rem 0.4rem", borderRadius: "6px", border: `1px solid ${venceu ? "#FECACA" : "#E2E8F0"}`, fontSize: "0.8rem", fontFamily: "inherit", color: venceu ? "#B91C1C" : "#1E293B" }} />
+                      <span style={{ fontSize: "0.75rem", color: venceu ? "#B71C1C" : "#64748B", fontWeight: venceu ? 700 : 400 }}>{venceu ? "Venceu em" : "Válido até"}</span>
+                      <input type="date" value={c.validade || ""} onChange={e => updateCoupon(idx, "validade", e.target.value || null)} style={{ padding: "0.3rem 0.4rem", borderRadius: "6px", border: `1px solid ${venceu ? "#FECACA" : "#E2E8F0"}`, fontSize: "0.8rem", fontFamily: "inherit", color: venceu ? "#B71C1C" : "#1E293B" }} />
                       {c.validade
                         ? <button type="button" onClick={() => updateCoupon(idx, "validade", null)} title="Sem validade" style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: "0.75rem", padding: "0 2px" }}>✕</button>
                         : <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>(sem prazo)</span>}
@@ -855,10 +855,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.25rem" }}>Gerencie suas formas de pagamento online e na entrega do pedido.</p>
 
         {/* ── ALERTA DE OBRIGATORIEDADE ── */}
-        <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: "14px", padding: "1rem 1.25rem", marginBottom: "1.5rem" }}>
+        <div style={{ background: "#EFF6FF", border: "1.5px solid #B2DDFF", borderRadius: "14px", padding: "1rem 1.25rem", marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
             <ShieldCheck size={20} color="#1D4ED8" style={{ marginTop: 2, flexShrink: 0 }} />
-            <div style={{ fontSize: "0.83rem", color: "#1E40AF", lineHeight: 1.6 }}>
+            <div style={{ fontSize: "0.83rem", color: "#1D4ED8", lineHeight: 1.6 }}>
               <strong>🔒 Pagamento Online no FireHub:</strong>
               <ul style={{ margin: "4px 0 0", paddingLeft: "1.2rem" }}>
                 <li>O <strong>Pix Online</strong> é <strong>obrigatório e permanece sempre ativo</strong> para garantir praticidade ao cliente final e permitir o abatimento automático da sua fatura mensal.</li>
@@ -872,7 +872,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         {/* ── SEÇÃO PAGAMENTO ONLINE ── */}
         <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "1rem" }}>
-            <ShieldCheck size={20} color="#16A34A" />
+            <ShieldCheck size={20} color="#15803D" />
             <div>
               <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Pagamento online</h4>
               <span style={{ fontSize: "0.76rem", color: "#64748B" }}>Sempre disponível para seus clientes. Não podem ser desativados.</span>
@@ -892,7 +892,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
               <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
                 <div><strong>Taxa:</strong> 0,5% + R$ 0,40 por pedido</div>
                 <div><strong>Recebimento:</strong> Conforme suas configurações de repasse</div>
-                <div style={{ color: "#166534", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático em até 24h na conta do cliente ao cancelar</div>
+                <div style={{ color: "#15803D", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático em até 24h na conta do cliente ao cancelar</div>
               </div>
               <button
                 type="button"
@@ -910,12 +910,12 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                   <CreditCard size={18} color="#9C27B0" />
                   <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Cartão de crédito online</strong>
                 </div>
-                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#FEF3C7", color: "#92400E", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>⚡ D+30 / D+0</span>
+                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#FFF7E6", color: "#92400E", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>⚡ D+30 / D+0</span>
               </div>
               <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
                 <div><strong>Taxa:</strong> 3,99% por transação</div>
                 <div><strong>Recebimento:</strong> D+30, ou no mesmo dia (D+0) com +1,7% de adiantamento</div>
-                <div style={{ color: "#166534", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático na fatura do cartão ao cancelar</div>
+                <div style={{ color: "#15803D", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático na fatura do cartão ao cancelar</div>
               </div>
               <button
                 type="button"
@@ -1015,11 +1015,11 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                             display: "inline-flex", alignItems: "center", gap: 6,
                             padding: "6px 14px", borderRadius: 99, cursor: "pointer",
                             fontSize: "0.82rem", fontWeight: 700, transition: "all 0.2s",
-                            border: brand.active ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0",
+                            border: brand.active ? "1.5px solid #C92E09" : "1.5px solid #E2E8F0",
                             background: brand.active ? "#FEF2F2" : "#F8FAFC",
-                            color: brand.active ? "#DC2626" : "#94A3B8",
+                            color: brand.active ? "#C92E09" : "#94A3B8",
                           }}>
-                          <span style={{ width: 14, height: 14, borderRadius: "50%", background: brand.active ? "#DC2626" : "#CBD5E1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", color: "#fff" }}>
+                          <span style={{ width: 14, height: 14, borderRadius: "50%", background: brand.active ? "#C92E09" : "#CBD5E1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", color: "#fff" }}>
                             {brand.active ? "✓" : ""}
                           </span>
                           {brand.name}
@@ -1031,8 +1031,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                         style={{
                           display: "inline-flex", alignItems: "center", gap: 4,
                           padding: "6px 14px", borderRadius: 99, cursor: "pointer",
-                          fontSize: "0.82rem", fontWeight: 700, border: "1.5px dashed #EF4444",
-                          background: "#fff", color: "#EF4444", transition: "all 0.2s",
+                          fontSize: "0.82rem", fontWeight: 700, border: "1.5px dashed #C92E09",
+                          background: "#fff", color: "#C92E09", transition: "all 0.2s",
                         }}>
                         + Nova bandeira
                       </button>
@@ -1044,7 +1044,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                         <input type="text" placeholder={pm.key === 'VOUCHER' ? 'Nome do voucher...' : 'Nome da nova bandeira (ex: Hiper)'}
                           value={newBrandName} onChange={e => setNewBrandName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addBrand()}
                           style={{ flex: 1, padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.84rem' }} />
-                        <button onClick={addBrand} style={{ padding: '0.5rem 1rem', borderRadius: '8px', background: "#EF4444", color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><Plus size={14} /> Adicionar</button>
+                        <button onClick={addBrand} style={{ padding: '0.5rem 1rem', borderRadius: '8px', background: "#C92E09", color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><Plus size={14} /> Adicionar</button>
                       </div>
                     )}
                   </div>
@@ -1073,10 +1073,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
       {show("delivery") && (
         <div style={{ marginTop: "1.5rem" }}>
           {/* Card: Frete Grátis por Valor Mínimo */}
-          <div className="card mb-4" style={{ background: "#fff", border: "1.5px solid #BBF7D0", borderRadius: 16, padding: "1.25rem", marginBottom: "1.5rem" }}>
+          <div className="card mb-4" style={{ background: "#fff", border: "1.5px solid #ABEFC6", borderRadius: 16, padding: "1.25rem", marginBottom: "1.5rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <Truck size={22} color="#16A34A" />
+                <Truck size={22} color="#15803D" />
                 <div>
                   <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1rem", color: "#15803D" }}>🚚 Frete Grátis por Valor Mínimo</h3>
                   <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Ofereça entrega grátis automaticamente para pedidos acima de um determinado valor</span>
@@ -1090,13 +1090,13 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 }}
                 style={{ background: "none", border: "none", cursor: "pointer" }}
               >
-                {freeShippingActive ? <ToggleRight size={32} color="#16A34A" /> : <ToggleLeft size={32} color="#CBD5E1" />}
+                {freeShippingActive ? <ToggleRight size={32} color="#15803D" /> : <ToggleLeft size={32} color="#CBD5E1" />}
               </button>
             </div>
 
             {freeShippingActive && (
-              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "12px", marginTop: "10px" }}>
-                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#166534", display: "block", marginBottom: "6px" }}>
+              <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: 12, padding: "12px", marginTop: "10px" }}>
+                <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#15803D", display: "block", marginBottom: "6px" }}>
                   Valor mínimo do pedido para Frete Grátis (R$) *
                 </label>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1111,10 +1111,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                       setDirtyFreeShipping(true);
                     }}
                     placeholder="60.00"
-                    style={{ width: 140, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #16A34A", fontSize: "1rem", fontWeight: 800, color: "#0F172A", outline: "none" }}
+                    style={{ width: 140, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #15803D", fontSize: "1rem", fontWeight: 800, color: "#0F172A", outline: "none" }}
                   />
                 </div>
-                <p style={{ fontSize: "0.76rem", color: "#166534", margin: "8px 0 0", lineHeight: 1.4 }}>
+                <p style={{ fontSize: "0.76rem", color: "#15803D", margin: "8px 0 0", lineHeight: 1.4 }}>
                   💡 Exemplo: Com R$ {Number(freeShippingMinValue || 0).toFixed(2).replace(".", ",")}, qualquer pedido em que o valor dos produtos atingir ou ultrapassar essa quantia terá a entrega gratuita para o cliente. A taxa de entrega original continuará visível na notinha com o aviso <strong>(Frete Grátis)</strong>.
                 </p>
               </div>
@@ -1208,9 +1208,9 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             </div>
 
             {/* Banner de status / aviso */}
-            <div style={{ background: "#FFFBEB", border: "1.5px solid #FCD34D", borderRadius: "14px", padding: "14px 16px", marginBottom: "20px" }}>
+            <div style={{ background: "#FFF7E6", border: "1.5px solid #FCD34D", borderRadius: "14px", padding: "14px 16px", marginBottom: "20px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                <ShieldCheck size={22} color="#D97706" style={{ marginTop: 2, flexShrink: 0 }} />
+                <ShieldCheck size={22} color="#B45309" style={{ marginTop: 2, flexShrink: 0 }} />
                 <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
                   <strong>Ativação da sua conta bancária na FireHub</strong>
                   <div style={{ marginTop: 4 }}>Acompanhe o progresso da sua conta. Quando estiver tudo certo, você receberá seus repasses automaticamente no Pix cadastrado!</div>
@@ -1221,7 +1221,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             {/* CARD 1: Conta de repasse */}
             <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.25rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "0.75rem" }}>
-                <Banknote size={20} color="#16A34A" />
+                <Banknote size={20} color="#15803D" />
                 <div>
                   <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Conta de repasse</h4>
                   <span style={{ fontSize: "0.76rem", color: "#64748B" }}>Configure a conta para recebimento do saldo disponível das vendas online da sua loja.</span>
@@ -1284,7 +1284,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             {/* CARD 2: Frequência do repasse */}
             <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "0.75rem" }}>
-                <Clock size={20} color="#2563EB" />
+                <Clock size={20} color="#1D4ED8" />
                 <div>
                   <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Frequência do repasse</h4>
                   <span style={{ fontSize: "0.76rem", color: "#64748B" }}>De quanto em quanto tempo e a que horas você quer receber o saldo disponível da sua loja.</span>
@@ -1294,7 +1294,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "14px" }}>
                 <label
                   onClick={() => setRepasseConfig({ ...repasseConfig, frequencia: "DAILY" })}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: "12px", border: `2px solid ${repasseConfig.frequencia === "DAILY" ? "#EF4444" : "#E2E8F0"}`, background: repasseConfig.frequencia === "DAILY" ? "#FEF2F2" : "#fff", cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: "12px", border: `2px solid ${repasseConfig.frequencia === "DAILY" ? "#C92E09" : "#E2E8F0"}`, background: repasseConfig.frequencia === "DAILY" ? "#FEF2F2" : "#fff", cursor: "pointer" }}
                 >
                   <input type="radio" checked={repasseConfig.frequencia === "DAILY"} readOnly />
                   <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#0F172A" }}>Todos os dias</span>
@@ -1302,7 +1302,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
                 <label
                   onClick={() => setRepasseConfig({ ...repasseConfig, frequencia: "WEEKLY" })}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: "12px", border: `2px solid ${repasseConfig.frequencia === "WEEKLY" ? "#EF4444" : "#E2E8F0"}`, background: repasseConfig.frequencia === "WEEKLY" ? "#FEF2F2" : "#fff", cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: "12px", border: `2px solid ${repasseConfig.frequencia === "WEEKLY" ? "#C92E09" : "#E2E8F0"}`, background: repasseConfig.frequencia === "WEEKLY" ? "#FEF2F2" : "#fff", cursor: "pointer" }}
                 >
                   <input type="radio" checked={repasseConfig.frequencia === "WEEKLY"} readOnly />
                   <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#0F172A" }}>Uma vez por semana</span>
@@ -1338,7 +1338,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 type="button"
                 onClick={handleSaveRepasse}
                 disabled={savingRepasse}
-                style={{ flex: 2, padding: "12px", borderRadius: "10px", border: "none", background: "#EF4444", color: "#fff", fontWeight: 700, cursor: savingRepasse ? "not-allowed" : "pointer" }}
+                style={{ flex: 2, padding: "12px", borderRadius: "10px", border: "none", background: "#C92E09", color: "#fff", fontWeight: 700, cursor: savingRepasse ? "not-allowed" : "pointer" }}
               >
                 {savingRepasse ? "Salvando..." : "Salvar Configurações de Repasse"}
               </button>

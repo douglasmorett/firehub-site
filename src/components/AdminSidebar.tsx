@@ -42,7 +42,7 @@ export default async function AdminSidebar() {
         padding: "0 1rem"
       }} className="mobile-topbar">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: "#EF4444", fontWeight: 900, fontSize: "1.1rem" }}>HAKIM</span>
+          <span style={{ color: "#C92E09", fontWeight: 900, fontSize: "1.1rem" }}>HAKIM</span>
         </div>
       </div>
 
@@ -66,13 +66,13 @@ export default async function AdminSidebar() {
         <div style={{ padding: "20px", borderBottom: "1px solid var(--border-color)", textAlign: "center" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8 }}>
             <svg width="36" height="36" viewBox="0 0 100 100" fill="none">
-              <circle cx="50" cy="50" r="48" fill="#1E293B" stroke="#EF4444" strokeWidth="3"/>
-              <path d="M50 15C45 30 30 40 30 55C30 68 39 80 50 85C61 80 70 68 70 55C70 40 55 30 50 15Z" fill="#EF4444"/>
+              <circle cx="50" cy="50" r="48" fill="#1E293B" stroke="#C92E09" strokeWidth="3"/>
+              <path d="M50 15C45 30 30 40 30 55C30 68 39 80 50 85C61 80 70 68 70 55C70 40 55 30 50 15Z" fill="#C92E09"/>
               <path d="M50 35C47 45 40 50 40 58C40 65 44 72 50 75C56 72 60 65 60 58C60 50 53 45 50 35Z" fill="#FF8C00"/>
               <circle cx="50" cy="60" r="6" fill="#FFD700"/>
             </svg>
             <div>
-              <span style={{ color: "#EF4444", fontWeight: 900, fontSize: "1.3rem" }}>HAKIM</span>
+              <span style={{ color: "#C92E09", fontWeight: 900, fontSize: "1.3rem" }}>HAKIM</span>
             </div>
           </div>
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{session?.user?.name}</p>
@@ -139,8 +139,8 @@ export default async function AdminSidebar() {
             </a>
           )}
           {role === "ADMIN" && (
-            <a href="/admin/gestao-financeira" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", borderLeft: "3px solid #DC2626", background: "rgba(220,38,38,0.06)" }}>
-              <BarChart3 size={18} style={{ marginRight: "10px", color: "#DC2626" }} /> Gestão Financeira
+            <a href="/admin/gestao-financeira" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", borderLeft: "3px solid #C92E09", background: "rgba(220,38,38,0.06)" }}>
+              <BarChart3 size={18} style={{ marginRight: "10px", color: "#C92E09" }} /> Gestão Financeira
             </a>
           )}
 
@@ -148,8 +148,8 @@ export default async function AdminSidebar() {
           <p style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, padding: "12px 12px 4px", margin: 0 }}>Ferramentas</p>
 
           {(role === "ADMIN" || isFranchisee) && (
-            <a href="/admin/checklist" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "linear-gradient(135deg, rgba(234,179,8,0.08), rgba(249,115,22,0.08))", borderLeft: "3px solid #F59E0B" }}>
-              <ClipboardCheck size={18} style={{ marginRight: "10px", color: "#F59E0B" }} /> Checklist IA
+            <a href="/admin/checklist" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "linear-gradient(135deg, rgba(234,179,8,0.08), rgba(249,115,22,0.08))", borderLeft: "3px solid #B45309" }}>
+              <ClipboardCheck size={18} style={{ marginRight: "10px", color: "#B45309" }} /> Checklist IA
             </a>
           )}
           {role === "ADMIN" && (
@@ -176,8 +176,8 @@ export default async function AdminSidebar() {
               <a href="/admin/routes" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none" }}>
                 <Truck size={18} style={{ marginRight: "10px" }} /> Logística / Rotas
               </a>
-              <a href="/admin/lojistas" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "rgba(220,38,38,0.06)", borderLeft: "3px solid #DC2626" }}>
-                <Store size={18} style={{ marginRight: "10px", color: "#DC2626" }} /> Painel de Lojistas
+              <a href="/admin/lojistas" className="btn btn-outline sidebar-link" style={{ justifyContent: "flex-start", border: "none", background: "rgba(220,38,38,0.06)", borderLeft: "3px solid #C92E09" }}>
+                <Store size={18} style={{ marginRight: "10px", color: "#C92E09" }} /> Painel de Lojistas
               </a>
             </>
           )}

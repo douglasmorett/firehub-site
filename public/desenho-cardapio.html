@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cardápio — desenho</title>
+<style>
+  :root{
+    --n0:#F1F5F9; --n1:#FFFFFF; --n3:#F8FAFC;
+    --linha:#E2E8F0; --contorno:#7C8DA5;
+    --t1:#0F172A; --t2:#334155; --t3:#475569; --t4:#64748B; --inerte:#94A3B8;
+    --marca:#C92E09; --marca-topo:#E8360C; --marca-claro:#FFF4EF; --marca-borda:#FFD3C2;
+    --preto:#12161C; --preto2:#1F2731; --preto3:#2A3441; --vermelho:#C62828;
+    --ok:#15803D; --ok-claro:#ECFDF3; --ok-borda:#ABEFC6;
+    --at:#B45309; --at-claro:#FFF7E6; --at-borda:#FDE68A;
+    --r2:10px; --r3:14px; --r4:18px; --r5:24px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--n0); color:var(--t1);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    line-height:1.5;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:28px 16px 80px}
+
+  .topo{background:var(--preto); color:#fff; border-radius:var(--r5); padding:26px 28px; margin-bottom:26px}
+  .topo h1{margin:0 0 6px; font-size:1.5rem; letter-spacing:-.5px}
+  .topo p{margin:0; color:#CBD5E1; font-size:.92rem; max-width:70ch}
+  .brasa{height:4px; border-radius:99px; background:linear-gradient(90deg,#FF4D00,#C92E09); margin:14px 0 0; width:120px}
+
+  h2.sec{font-size:1.15rem; margin:34px 0 4px; letter-spacing:-.3px}
+  p.sub{margin:0 0 16px; color:var(--t4); font-size:.88rem; max-width:80ch}
+
+  .card{background:var(--n1); border:1px solid var(--linha); border-radius:var(--r4); padding:18px}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+
+  /* diagnóstico */
+  table.diag{width:100%; border-collapse:collapse; font-size:.86rem}
+  table.diag th{text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.4px;
+    color:var(--t3); padding:8px 10px; background:var(--n3); border-bottom:1px solid var(--linha)}
+  table.diag td{padding:9px 10px; border-bottom:1px solid #F1F5F9; vertical-align:top; color:var(--t2)}
+  table.diag td:first-child{font-weight:700; color:var(--t1); width:31%}
+  .num{font-variant-numeric:tabular-nums; font-weight:800; color:var(--marca)}
+
+  /* maquete do modal */
+  .modal{background:var(--n1); border:1px solid var(--linha); border-radius:var(--r5);
+    box-shadow:0 18px 50px rgba(15,23,42,.13); overflow:hidden}
+  .modal-head{padding:18px 20px; border-bottom:1px solid #F1F5F9; display:flex;
+    justify-content:space-between; align-items:flex-start; gap:12px}
+  .tag{font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.5px;
+    padding:3px 9px; border-radius:99px; background:var(--marca-claro); color:var(--marca);
+    border:1px solid var(--marca-borda); display:inline-block}
+  .modal-head h3{margin:7px 0 0; font-size:1.22rem; letter-spacing:-.4px}
+  .xis{width:32px;height:32px;border-radius:50%;background:#F1F5F9;border:none;color:var(--t4);
+    font-size:1rem;cursor:pointer;flex:none}
+  .modal-body{padding:20px}
+
+  /* passos */
+  .passos{display:flex; gap:6px; align-items:center; padding:12px 20px; background:var(--n3);
+    border-bottom:1px solid var(--linha); font-size:.76rem; color:var(--t4); flex-wrap:wrap}
+  .passo{display:flex; align-items:center; gap:6px; font-weight:700}
+  .bola{width:20px;height:20px;border-radius:50%;background:var(--linha);color:var(--t4);
+    display:flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:800;flex:none}
+  .passo.on{color:var(--t1)} .passo.on .bola{background:var(--marca);color:#fff}
+  .passo.feito .bola{background:var(--ok);color:#fff}
+  .seta{color:var(--inerte)}
+
+  /* cards de tipo */
+  .tipos{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
+  @media(max-width:760px){.tipos{grid-template-columns:1fr}}
+  .tipo{border:2px solid var(--linha); border-radius:var(--r3); padding:16px 14px; cursor:pointer;
+    background:#fff; text-align:left; font-family:inherit; transition:.15s; display:block; width:100%}
+  .tipo:hover{border-color:var(--contorno)}
+  .tipo.on{border-color:var(--marca-topo); background:var(--marca-claro)}
+  .tipo .ic{font-size:1.5rem; display:block; margin-bottom:7px}
+  .tipo b{display:block; font-size:.95rem; color:var(--t1); margin-bottom:3px}
+  .tipo span{display:block; font-size:.78rem; color:var(--t4); line-height:1.45}
+
+  /* campos */
+  .campo{margin-bottom:14px}
+  .campo label{display:block; font-size:.78rem; font-weight:700; color:var(--t2); margin-bottom:5px}
+  .campo input, .campo select, .campo textarea{width:100%; padding:10px 12px; border:1px solid var(--contorno);
+    border-radius:var(--r2); font-size:.9rem; font-family:inherit; color:var(--t1); background:#fff}
+  .campo .dica{font-size:.74rem; color:var(--t4); margin:5px 0 0}
+
+  /* regra da pizza */
+  .regra{border:1px solid var(--at-borda); background:var(--at-claro); border-radius:var(--r3); padding:16px}
+  .regra h4{margin:0 0 3px; font-size:.95rem; color:#78350F}
+  .regra .exp{font-size:.8rem; color:#92400E; margin:0 0 13px; line-height:1.5}
+  .opcoes{display:grid; grid-template-columns:repeat(3,1fr); gap:9px}
+  @media(max-width:760px){.opcoes{grid-template-columns:1fr}}
+  .opc{border:2px solid #FDE68A; background:#fff; border-radius:var(--r2); padding:12px;
+    cursor:pointer; text-align:left; font-family:inherit; width:100%; transition:.15s}
+  .opc:hover{border-color:#B45309}
+  .opc.on{border-color:#B45309; background:#FFFBEB}
+  .opc b{display:block; font-size:.88rem; color:var(--t1); margin-bottom:4px}
+  .opc .conta{font-size:.76rem; color:var(--t3); line-height:1.5}
+  .opc .total{display:block; margin-top:6px; font-size:1.05rem; font-weight:800; color:var(--marca);
+    font-variant-numeric:tabular-nums}
+  .opc.on .total{color:#78350F}
+  .selo{font-size:.64rem; font-weight:800; text-transform:uppercase; letter-spacing:.4px;
+    background:var(--ok-claro); color:var(--ok); border:1px solid var(--ok-borda);
+    padding:1px 6px; border-radius:99px; margin-left:5px; vertical-align:1px}
+
+  .aviso{border-radius:var(--r2); padding:11px 13px; font-size:.8rem; line-height:1.5; margin-top:12px}
+  .aviso.ok{background:var(--ok-claro); border:1px solid var(--ok-borda); color:#14532D}
+  .aviso.at{background:var(--at-claro); border:1px solid var(--at-borda); color:#78350F}
+
+  /* rodapé do modal */
+  .modal-pe{padding:14px 20px; background:var(--n3); border-top:1px solid var(--linha);
+    display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap}
+  .btn{padding:10px 18px; border-radius:var(--r3); font-size:.88rem; font-weight:800;
+    font-family:inherit; cursor:pointer; border:1px solid transparent}
+  .btn-1{background:var(--marca); color:#fff}
+  .btn-1:hover{background:#B22908}
+  .btn-2{background:#fff; color:var(--t2); border-color:var(--contorno)}
+  .antes-depois{font-size:.78rem; color:var(--t4)}
+
+  /* comparação de cores */
+  .paleta{display:flex; gap:6px; margin:10px 0 0; flex-wrap:wrap}
+  .chip{width:34px;height:34px;border-radius:8px;border:1px solid rgba(15,23,42,.12)}
+  .bloco-cor{border-radius:var(--r4); overflow:hidden; border:1px solid var(--linha)}
+  .bloco-cor .cab{padding:12px 16px; font-weight:800; font-size:.9rem; display:flex;
+    justify-content:space-between; align-items:center; gap:8px}
+  .bloco-cor .corpo{padding:16px; background:#fff}
+  .amostra{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}
+  .amostra .b{padding:8px 13px; border-radius:var(--r2); font-size:.8rem; font-weight:800; border:1px solid transparent}
+
+  .nota{font-size:.8rem; color:var(--t4); margin:8px 0 0; line-height:1.55}
+  code{background:#F1F5F9; padding:1px 5px; border-radius:4px; font-size:.84em; color:var(--t2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topo">
+    <h1>Cardápio — o desenho antes do código</h1>
+    <p>Três coisas: por que a tela confunde (medido no código), como ficaria o cadastro
+       guiado com a pergunta da pizza na frente, e duas pegadas de cor pra você escolher.
+       Nada aqui está no sistema ainda.</p>
+    <div class="brasa"></div>
+  </div>
+
+  <!-- ═══════════ 1. DIAGNÓSTICO ═══════════ -->
+  <h2 class="sec">1. Por que ela confunde</h2>
+  <p class="sub">Não é impressão sua. São quatro coisas concretas, e a pior é a da pizza.</p>
+
+  <div class="card">
+    <table class="diag">
+      <tr><th>O que acontece</th><th>Por quê</th></tr>
+      <tr>
+        <td>Pizza não tem porta de entrada</td>
+        <td>Os dois botões são <b>Novo Item</b> e <b>Novo Combo</b>. Uma pizza com sabores
+            <b>tem que ser cadastrada como Combo</b> — os sabores moram em
+            <code>comboGroups</code>. Ninguém que vende pizza pensa "vou criar um combo".</td>
+      </tr>
+      <tr>
+        <td>A regra do meio a meio está escondida</td>
+        <td>Ela existe e funciona (<code>SOMA</code> / <code>MAIOR</code> / <code>MÉDIA</code>),
+            mas só aparece depois de: criar combo <span class="seta">→</span> criar uma pergunta
+            <span class="seta">→</span> botar "No máx." maior que 1. <b>Três níveis</b> antes da
+            primeira pergunta que um pizzaiolo faz.</td>
+      </tr>
+      <tr>
+        <td>Formulário dentro de formulário</td>
+        <td>Loja sem categoria abre o gerenciador de categorias <b>dentro</b> do cadastro do
+            produto. É exatamente o print que você mandou: um formulário por cima do outro.</td>
+      </tr>
+      <tr>
+        <td>Tudo aparece de uma vez</td>
+        <td>Foto, nome, preço, preço por canal, categoria, custo/CMV, descrição e o construtor de
+            perguntas — a tela inteira, sempre, pra quem só quer cadastrar uma coca-cola.</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ═══════════ 2. O FLUXO ═══════════ -->
+  <h2 class="sec">2. O cadastro guiado</h2>
+  <p class="sub">Um botão só — <b>Novo item</b> — e a primeira pergunta decide o resto da tela.
+     Clique nos cartões e nas opções pra ver funcionando.</p>
+
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <span class="tag">✨ Novo item</span>
+        <h3 id="titulo">O que você vai cadastrar?</h3>
+      </div>
+      <button class="xis">✕</button>
+    </div>
+
+    <div class="passos">
+      <span class="passo on" id="p1"><span class="bola">1</span> Tipo</span>
+      <span class="seta">→</span>
+      <span class="passo" id="p2"><span class="bola">2</span> <span id="p2txt">O básico</span></span>
+      <span class="seta">→</span>
+      <span class="passo" id="p3"><span class="bola">3</span> <span id="p3txt">Sabores e preço</span></span>
+    </div>
+
+    <div class="modal-body">
+      <div class="tipos">
+        <button class="tipo on" data-t="pizza">
+          <span class="ic">🍕</span>
+          <b>Pizza / esfiha de sabores</b>
+          <span>O cliente monta escolhendo sabores. Meio a meio, dois terços, borda.</span>
+        </button>
+        <button class="tipo" data-t="simples">
+          <span class="ic">🥤</span>
+          <b>Item simples</b>
+          <span>Um preço só. Coca-cola, marmita, porção. Adicionais são opcionais.</span>
+        </button>
+        <button class="tipo" data-t="combo">
+          <span class="ic">📦</span>
+          <b>Combo / promoção</b>
+          <span>Junta itens por um preço fechado. "2 pizzas + refri por R$ 89,90".</span>
+        </button>
+      </div>
+
+      <!-- PIZZA -->
+      <div id="box-pizza" style="margin-top:20px">
+        <div class="regra">
+          <h4>🍕 Como a sua casa cobra a pizza de dois sabores?</h4>
+          <p class="exp">Cada pizzaria faz de um jeito, e é isso que decide o preço na tela do
+             cliente. Cadastre o preço <b>cheio</b> de cada sabor — o sistema faz a conta.</p>
+
+          <div class="opcoes">
+            <button class="opc on" data-r="maior">
+              <b>O mais caro <span class="selo">comum</span></b>
+              <span class="conta">Meia Calabresa R$&nbsp;40<br>+ meia Marguerita R$&nbsp;50</span>
+              <span class="total">R$ 50,00</span>
+            </button>
+            <button class="opc" data-r="media">
+              <b>A média</b>
+              <span class="conta">Meia Calabresa R$&nbsp;40<br>+ meia Marguerita R$&nbsp;50</span>
+              <span class="total">R$ 45,00</span>
+            </button>
+            <button class="opc" data-r="soma">
+              <b>Soma os dois</b>
+              <span class="conta">Meia Calabresa R$&nbsp;40<br>+ meia Marguerita R$&nbsp;50</span>
+              <span class="total">R$ 90,00</span>
+            </button>
+          </div>
+
+          <div class="aviso ok" id="explica">
+            <b>O mais caro:</b> é como o iFood cobra. O cliente escolhe dois sabores e paga o preço
+            do mais caro dos dois. Você cadastra cada sabor pelo preço cheio da pizza inteira.
+          </div>
+        </div>
+
+        <div class="aviso at" style="margin-top:14px">
+          <b>Isso some o resto da tela?</b> Não. Depois desta pergunta vêm nome, preço, foto e
+          categoria como sempre — só que a lista de sabores já vem pronta pra preencher, e a conta
+          do meio a meio já está decidida.
+        </div>
+      </div>
+
+      <!-- SIMPLES -->
+      <div id="box-simples" style="display:none; margin-top:20px">
+        <div class="grid2">
+          <div class="campo">
+            <label>Nome do item</label>
+            <input placeholder="Ex: Coca-Cola Lata 350ml">
+          </div>
+          <div class="campo">
+            <label>Preço de venda</label>
+            <input placeholder="Ex: 6,50">
+          </div>
+        </div>
+        <div class="campo">
+          <label>Categoria</label>
+          <select><option>Bebidas</option><option>+ Criar nova categoria…</option></select>
+          <p class="dica">Loja sem categoria nenhuma: aparece um campo só aqui, escrever e pronto.
+             Nada de gerenciador por cima do formulário.</p>
+        </div>
+        <div class="aviso ok">
+          <b>Só isso pra salvar.</b> Foto, custo/CMV, descrição, preço por canal e adicionais ficam
+          num "Mais opções" fechado. Quem precisa abre; quem não precisa nem vê.
+        </div>
+      </div>
+
+      <!-- COMBO -->
+      <div id="box-combo" style="display:none; margin-top:20px">
+        <div class="campo">
+          <label>Nome do combo</label>
+          <input placeholder="Ex: Combo Família — 2 pizzas grandes + refri 2L">
+        </div>
+        <div class="campo">
+          <label>Preço fechado do combo</label>
+          <input placeholder="Ex: 89,90">
+          <p class="dica">O cliente paga isto, não importa o que ele escolher dentro.</p>
+        </div>
+        <div class="aviso ok">
+          <b>Depois:</b> "o que entra no combo" — uma lista de perguntas, cada uma com quantas
+          escolhas o cliente faz. Mesma tela de hoje, só que com o nome trocado: <b>"o que o
+          cliente escolhe"</b> no lugar de "perguntas do combo".
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-pe">
+      <span class="antes-depois" id="rodape">Passo 1 de 3</span>
+      <div style="display:flex; gap:8px">
+        <button class="btn btn-2">Cancelar</button>
+        <button class="btn btn-1">Continuar →</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <b style="font-size:.92rem">O que muda de verdade</b>
+    <table class="diag" style="margin-top:10px">
+      <tr><th>Hoje</th><th>Proposta</th></tr>
+      <tr><td>2 botões: Novo Item / Novo Combo</td><td>1 botão: Novo item → pergunta o tipo</td></tr>
+      <tr><td>Pizza = criar um "combo"</td><td>Pizza tem cartão próprio, com a palavra pizza</td></tr>
+      <tr><td>Regra do meio a meio: 3 níveis de profundidade</td><td>É a 1ª pergunta, com a conta na tela</td></tr>
+      <tr><td>Gerenciador de categoria dentro do form</td><td>Um campo; "criar nova" é uma linha</td></tr>
+      <tr><td>~12 campos visíveis sempre</td><td>4 pra salvar; o resto em "Mais opções"</td></tr>
+    </table>
+    <p class="nota">Nada é apagado — custo/CMV, preço por canal, foto, tags, tudo continua existindo.
+       Muda <b>quando</b> aparece.</p>
+  </div>
+
+  <!-- ═══════════ 3. CORES ═══════════ -->
+  <h2 class="sec">3. As cores</h2>
+  <p class="sub">O sistema já tem uma paleta preta e vermelha escrita e carregada
+     (<code>src/styles/fh-tokens.css</code>). O painel simplesmente não usa: escreve a cor
+     na mão dentro de cada botão. Contei só no arquivo do cardápio:</p>
+
+  <div class="card" style="margin-bottom:16px">
+    <table class="diag">
+      <tr><th>Cor solta no arquivo do cardápio</th><th>Usos</th><th>Existe na paleta?</th></tr>
+      <tr><td><span class="chip" style="background:#7C3AED;display:inline-block;width:16px;height:16px;vertical-align:-3px;margin-right:6px"></span>Roxo (#7C3AED, #6D28D9, #EDE9FE)</td><td><span class="num">26</span></td><td>Não existe</td></tr>
+      <tr><td><span class="chip" style="background:#16A34A;display:inline-block;width:16px;height:16px;vertical-align:-3px;margin-right:6px"></span>Verde vivo (#16A34A, #10B981)</td><td><span class="num">26</span></td><td>Não — o verde da paleta é #15803D</td></tr>
+      <tr><td><span class="chip" style="background:#EF4444;display:inline-block;width:16px;height:16px;vertical-align:-3px;margin-right:6px"></span>Vermelho genérico (#EF4444, #DC2626)</td><td><span class="num">34</span></td><td>Não — o vermelho da marca é #C92E09</td></tr>
+      <tr><td><span class="chip" style="background:#F59E0B;display:inline-block;width:16px;height:16px;vertical-align:-3px;margin-right:6px"></span>Âmbar (#F59E0B, #FEF3C7)</td><td><span class="num">15</span></td><td>Não — o da paleta é #B45309</td></tr>
+      <tr><td><span class="chip" style="background:#E8360C;display:inline-block;width:16px;height:16px;vertical-align:-3px;margin-right:6px"></span><b>Vermelho da marca (#E8360C)</b></td><td><span class="num">11</span></td><td>Sim — e é o menos usado</td></tr>
+    </table>
+    <p class="nota">No painel inteiro: <b>35 arquivos</b> usam roxo e <b>78</b> usam o verde que
+       não é o da paleta. É daí que vem a sensação de "colorido demais" — são quatro famílias de
+       cor que o sistema não tem.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="bloco-cor">
+      <div class="cab" style="background:#F1F5F9; color:var(--t2)">
+        <span>A — como está hoje</span>
+        <span style="font-size:.74rem; font-weight:600; color:var(--t4)">4 famílias soltas</span>
+      </div>
+      <div class="corpo">
+        <div class="amostra">
+          <span class="b" style="background:#7C3AED;color:#fff">Reordenar</span>
+          <span class="b" style="background:#16A34A;color:#fff">Adicionar</span>
+          <span class="b" style="background:#F59E0B;color:#fff">Atenção</span>
+          <span class="b" style="background:#EF4444;color:#fff">Excluir</span>
+          <span class="b" style="background:#1D4ED8;color:#fff">Info</span>
+        </div>
+        <div class="paleta">
+          <span class="chip" style="background:#7C3AED"></span>
+          <span class="chip" style="background:#16A34A"></span>
+          <span class="chip" style="background:#F59E0B"></span>
+          <span class="chip" style="background:#EF4444"></span>
+          <span class="chip" style="background:#1D4ED8"></span>
+          <span class="chip" style="background:#10B981"></span>
+        </div>
+        <p class="nota">Cada botão grita igual. Nada indica o que é a ação principal da tela.</p>
+      </div>
+    </div>
+
+    <div class="bloco-cor" style="border-color:var(--marca-borda)">
+      <div class="cab" style="background:var(--preto); color:#fff">
+        <span>B — preta e vermelha (a da barra lateral)</span>
+        <span style="font-size:.74rem; font-weight:600; color:#94A3B8">1 cor de ação</span>
+      </div>
+      <div class="corpo">
+        <div class="amostra">
+          <span class="b" style="background:var(--marca);color:#fff">Salvar produto</span>
+          <span class="b" style="background:#fff;color:var(--t2);border-color:var(--contorno)">Reordenar</span>
+          <span class="b" style="background:#fff;color:var(--t2);border-color:var(--contorno)">Adicionar</span>
+          <span class="b" style="background:var(--preto);color:#fff">Ver cardápio</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <span class="b" style="background:var(--ok-claro);color:var(--ok);border-color:var(--ok-borda);font-size:.74rem">✓ Ativo</span>
+          <span class="b" style="background:var(--at-claro);color:var(--at);border-color:var(--at-borda);font-size:.74rem">Sem foto</span>
+          <span class="b" style="background:#FEF2F2;color:#B71C1C;border-color:#FECACA;font-size:.74rem">Esgotado</span>
+        </div>
+        <div class="paleta">
+          <span class="chip" style="background:#12161C"></span>
+          <span class="chip" style="background:#1F2731"></span>
+          <span class="chip" style="background:#C92E09"></span>
+          <span class="chip" style="background:#E8360C"></span>
+          <span class="chip" style="background:#F1F5F9"></span>
+          <span class="chip" style="background:#FFFFFF;border-color:#CBD5E1"></span>
+        </div>
+        <p class="nota"><b>Vermelho só na ação principal</b> — um por tela. Botão secundário é
+           branco com borda. Verde, âmbar e vermelho-escuro viram <b>só estado</b> (ativo, sem
+           foto, esgotado), em fundo claro, nunca em botão.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <b style="font-size:.92rem">A regra, em uma linha</b>
+    <p class="nota" style="margin-top:6px">
+      Cor cheia = <b>a ação principal</b> (vermelho da marca) ou <b>navegação</b> (preto).
+      Todo o resto é branco com borda. Verde / âmbar / vermelho existem, mas só como
+      <b>etiqueta de estado</b> em fundo claro — nunca como botão. É o que a barra lateral já faz,
+      e é o que a paleta do sistema já manda fazer.
+    </p>
+  </div>
+
+  <div class="card" style="margin-top:22px; border-color:var(--marca-borda); background:var(--marca-claro)">
+    <b style="font-size:.95rem; color:var(--marca)">Pra você decidir</b>
+    <p class="nota" style="color:#7A1F06; margin-top:8px">
+      <b>1.</b> O fluxo guiado (cartão da pizza + regra do meio a meio na frente) — vale a pena?<br>
+      <b>2.</b> Cor: fica no <b>A</b> ou vai pro <b>B</b>?<br>
+      <b>3.</b> Se for o B: começo pelo cardápio e você olha, ou aplico no painel inteiro de uma vez?
+    </p>
+  </div>
+
+</div>
+
+<script>
+  var CONTAS = {
+    maior: ["<b>O mais caro:</b> é como o iFood cobra. O cliente escolhe dois sabores e paga o preço do mais caro dos dois. Você cadastra cada sabor pelo preço cheio da pizza inteira.", "ok"],
+    media: ["<b>A média:</b> soma os dois sabores e divide por dois. Mais justo pro cliente, e o mais usado por pizzaria de bairro. Cadastre o preço cheio de cada sabor.", "ok"],
+    soma:  ["<b>Soma os dois:</b> o cliente paga a soma dos dois preços. Só faz sentido se você cadastra cada sabor já pela METADE do valor — e aí todo reajuste vira conta na mão, sabor por sabor.", "at"]
+  };
+  var TITULOS = {
+    pizza:   ["Nova pizza", "Sabores e preço"],
+    simples: ["Novo item", "Adicionais"],
+    combo:   ["Novo combo", "O que o cliente escolhe"]
+  };
+
+  document.querySelectorAll(".tipo").forEach(function(b){
+    b.onclick = function(){
+      document.querySelectorAll(".tipo").forEach(function(o){ o.classList.remove("on"); });
+      b.classList.add("on");
+      var t = b.dataset.t;
+      ["pizza","simples","combo"].forEach(function(k){
+        document.getElementById("box-" + k).style.display = (k === t) ? "block" : "none";
+      });
+      document.getElementById("titulo").textContent = TITULOS[t][0];
+      document.getElementById("p3txt").textContent = TITULOS[t][1];
+      document.getElementById("p2txt").textContent = "O básico";
+    };
+  });
+
+  document.querySelectorAll(".opc").forEach(function(b){
+    b.onclick = function(){
+      document.querySelectorAll(".opc").forEach(function(o){ o.classList.remove("on"); });
+      b.classList.add("on");
+      var d = CONTAS[b.dataset.r];
+      var cx = document.getElementById("explica");
+      cx.innerHTML = d[0];
+      cx.className = "aviso " + d[1];
+    };
+  });
+</script>
+</body>
+</html>

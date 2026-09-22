@@ -566,7 +566,7 @@ export default function CustomerStorePage({
         remaining: 0,
         nextSpend: goldMinSpend,
         color: "#92400E",
-        bg: "#FEF3C7",
+        bg: "#FFF7E6",
         border: "#FCD34D",
         progress: 100
       };
@@ -1628,14 +1628,14 @@ export default function CustomerStorePage({
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: "32px" }}>
                       <div style={{
                         width: "32px", height: "32px", borderRadius: "50%",
-                        background: done ? "linear-gradient(135deg, #16A34A, #22C55E)" : "#E2E8F0",
+                        background: done ? "linear-gradient(135deg, #15803D, #15803D)" : "#E2E8F0",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: "0.9rem", color: done ? "white" : "#94A3B8",
                         boxShadow: active ? "0 0 0 4px rgba(22,163,74,0.2)" : "none",
                         transition: "all 0.3s ease",
                         animation: active ? "pulse 2s infinite" : "none"
                       }}>{done ? "✓" : (i + 1)}</div>
-                      {i < 4 && <div style={{ width: "2px", height: "28px", background: done && i < currentIdx ? "#22C55E" : "#E2E8F0", transition: "all 0.3s" }} />}
+                      {i < 4 && <div style={{ width: "2px", height: "28px", background: done && i < currentIdx ? "#15803D" : "#E2E8F0", transition: "all 0.3s" }} />}
                     </div>
                     <div style={{ paddingTop: "4px", paddingBottom: i < 4 ? "12px" : "0" }}>
                       <p style={{ fontWeight: active ? 800 : 600, fontSize: "0.85rem", color: done ? "#111" : "#94A3B8" }}>
@@ -1650,7 +1650,7 @@ export default function CustomerStorePage({
           )}
 
           {isCancelled && (
-            <p style={{ color: "#EF4444", fontWeight: 600, fontSize: "0.85rem", margin: "1rem 0" }}>
+            <p style={{ color: "#C92E09", fontWeight: 600, fontSize: "0.85rem", margin: "1rem 0" }}>
               A loja cancelou este pedido. Entre em contato para mais informações.
             </p>
           )}
@@ -1687,29 +1687,29 @@ export default function CustomerStorePage({
       {freeShippingThreshold && (
         <div style={{
           padding: "10px 14px",
-          background: isFreeShippingByMin ? "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)" : "linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",
-          borderBottom: isFreeShippingByMin ? "1.5px solid #86EFAC" : "1.5px dashed #FDE68A",
+          background: isFreeShippingByMin ? "linear-gradient(135deg, #ECFDF3 0%, #ECFDF3 100%)" : "linear-gradient(135deg, #FFF7E6 0%, #FFF7E6 100%)",
+          borderBottom: isFreeShippingByMin ? "1.5px solid #ABEFC6" : "1.5px dashed #FDE68A",
           flexShrink: 0,
           textAlign: "left",
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px", marginBottom: "5px" }}>
-            <div style={{ fontSize: "0.82rem", fontWeight: 800, color: isFreeShippingByMin ? "#166534" : "#92400E", display: "flex", alignItems: "center", gap: "6px" }}>
+            <div style={{ fontSize: "0.82rem", fontWeight: 800, color: isFreeShippingByMin ? "#15803D" : "#92400E", display: "flex", alignItems: "center", gap: "6px" }}>
               <span>{isFreeShippingByMin ? "🎉" : "🚚"}</span>
               {isFreeShippingByMin ? (
-                <span><strong>PARABÉNS!</strong> Você ganhou <strong style={{ color: "#16A34A" }}>FRETE GRÁTIS!</strong></span>
+                <span><strong>PARABÉNS!</strong> Você ganhou <strong style={{ color: "#15803D" }}>FRETE GRÁTIS!</strong></span>
               ) : (
-                <span>Faltam <strong style={{ color: "#D97706", fontSize: "0.9rem" }}>R$ {remainingForFreeShipping.toFixed(2).replace(".", ",")}</strong> para <strong style={{ color: "#16A34A" }}>FRETE GRÁTIS!</strong></span>
+                <span>Faltam <strong style={{ color: "#B45309", fontSize: "0.9rem" }}>R$ {remainingForFreeShipping.toFixed(2).replace(".", ",")}</strong> para <strong style={{ color: "#15803D" }}>FRETE GRÁTIS!</strong></span>
               )}
             </div>
-            <span style={{ fontSize: "0.72rem", fontWeight: 800, color: isFreeShippingByMin ? "#166534" : "#B45309", background: isFreeShippingByMin ? "#BBF7D0" : "#FEF08A", padding: "2px 6px", borderRadius: "10px" }}>
+            <span style={{ fontSize: "0.72rem", fontWeight: 800, color: isFreeShippingByMin ? "#15803D" : "#B45309", background: isFreeShippingByMin ? "#ABEFC6" : "#FEF08A", padding: "2px 6px", borderRadius: "10px" }}>
               {Math.round(freeShippingProgress)}%
             </span>
           </div>
-          <div style={{ width: "100%", height: "6px", backgroundColor: isFreeShippingByMin ? "#BBF7D0" : "#FDE68A", borderRadius: "999px", overflow: "hidden" }}>
+          <div style={{ width: "100%", height: "6px", backgroundColor: isFreeShippingByMin ? "#ABEFC6" : "#FDE68A", borderRadius: "999px", overflow: "hidden" }}>
             <div style={{
               width: `${Math.max(4, freeShippingProgress)}%`,
               height: "100%",
-              background: isFreeShippingByMin ? "linear-gradient(90deg, #22C55E 0%, #16A34A 100%)" : "linear-gradient(90deg, #F59E0B 0%, #10B981 100%)",
+              background: isFreeShippingByMin ? "linear-gradient(90deg, #15803D 0%, #15803D 100%)" : "linear-gradient(90deg, #B45309 0%, #15803D 100%)",
               borderRadius: "999px",
               transition: "width 0.4s cubic-bezier(0.4, 0, 0.2, 1)"
             }} />
@@ -1780,7 +1780,7 @@ export default function CustomerStorePage({
                     onClick={() => repetirPedido(ultimoPedido)}
                     style={{
                       width: "100%", padding: "12px", borderRadius: 12, border: "none",
-                      background: "#059669", color: "#fff", fontWeight: 800,
+                      background: "#15803D", color: "#fff", fontWeight: 800,
                       fontSize: "0.88rem", cursor: "pointer",
                     }}
                   >
@@ -1808,7 +1808,7 @@ export default function CustomerStorePage({
                     }}
                     style={{
                       width: "100%", padding: "12px", borderRadius: 12,
-                      border: "1.5px solid #059669", background: "#F0FDF4",
+                      border: "1.5px solid #15803D", background: "#ECFDF3",
                       color: "#047857", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer",
                     }}
                   >
@@ -1850,7 +1850,7 @@ export default function CustomerStorePage({
                           </div>
                         )}
                         {item.notes && (
-                          <div style={{ fontSize: "0.72rem", color: "#92400E", backgroundColor: "#FEF3C7", padding: "2px 6px", borderRadius: "4px", marginTop: "4px", display: "inline-block" }}>
+                          <div style={{ fontSize: "0.72rem", color: "#92400E", backgroundColor: "#FFF7E6", padding: "2px 6px", borderRadius: "4px", marginTop: "4px", display: "inline-block" }}>
                             📝 {item.notes}
                           </div>
                         )}
@@ -1920,7 +1920,7 @@ export default function CustomerStorePage({
                             maxWidth: "34px",
                             maxHeight: "34px",
                             borderRadius: "50%",
-                            background: "#16A34A",
+                            background: "#15803D",
                             border: "none",
                             display: "flex",
                             alignItems: "center",
@@ -1954,7 +1954,7 @@ export default function CustomerStorePage({
                     que a pessoa ganhou e o desconto já entra sozinho quando a
                     sacola atinge o mínimo (efeito acima). */}
                 {cupomPrimeiroPedido && (
-                  <div style={{ background: "linear-gradient(135deg, #FFFBEB, #FEF3C7)", border: "1.5px solid #F59E0B", borderRadius: "12px", padding: "10px 12px", marginBottom: "8px" }}>
+                  <div style={{ background: "linear-gradient(135deg, #FFF7E6, #FFF7E6)", border: "1.5px solid #B45309", borderRadius: "12px", padding: "10px 12px", marginBottom: "8px" }}>
                     <div style={{ fontWeight: 900, fontSize: "0.88rem", color: "#92400E" }}>
                       🎁 Seu primeiro pedido tem {cupomPrimeiroPedido.beneficio}!
                     </div>
@@ -1971,7 +1971,7 @@ export default function CustomerStorePage({
                 {!showCouponInput && !couponApplied ? (
                   <button
                     onClick={() => setShowCouponInput(true)}
-                    style={{ background: "none", border: "none", color: "#2563EB", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px", padding: 0 }}
+                    style={{ background: "none", border: "none", color: "#1D4ED8", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px", padding: 0 }}
                   >
                     🏷️ Que tal usar um cupom de desconto?
                   </button>
@@ -1984,16 +1984,16 @@ export default function CustomerStorePage({
                       )}
                     </div>
                     {couponApplied ? (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#DCFCE7", border: "1px solid #86EFAC", padding: "6px 10px", borderRadius: "8px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#ECFDF3", border: "1px solid #ABEFC6", padding: "6px 10px", borderRadius: "8px" }}>
                         <div>
-                          <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#166534" }}>🏷️ {couponApplied.code}</div>
+                          <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#15803D" }}>🏷️ {couponApplied.code}</div>
                           <div style={{ fontSize: "0.72rem", color: "#15803D" }}>
                             {couponApplied.isFreeShipping
                               ? "Frete Grátis Aplicado!"
                               : `Desconto de R$ ${discount.toFixed(2).replace(".", ",")}`}
                           </div>
                         </div>
-                        <button onClick={() => setCouponApplied(null)} style={{ background: "none", border: "none", color: "#DC2626", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>Remover</button>
+                        <button onClick={() => setCouponApplied(null)} style={{ background: "none", border: "none", color: "#C92E09", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>Remover</button>
                       </div>
                     ) : (
                       <div style={{ display: "flex", gap: "6px" }}>
@@ -2007,13 +2007,13 @@ export default function CustomerStorePage({
                         <button
                           onClick={() => applyCoupon()}
                           disabled={couponLoading || !couponCode.trim()}
-                          style={{ padding: "6px 12px", borderRadius: "8px", background: "#2563EB", color: "#FFF", border: "none", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", opacity: couponLoading || !couponCode.trim() ? 0.6 : 1 }}
+                          style={{ padding: "6px 12px", borderRadius: "8px", background: "#1D4ED8", color: "#FFF", border: "none", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", opacity: couponLoading || !couponCode.trim() ? 0.6 : 1 }}
                         >
                           {couponLoading ? "..." : "Aplicar"}
                         </button>
                       </div>
                     )}
-                    {couponError && <p style={{ margin: "4px 0 0", color: "#DC2626", fontSize: "0.72rem", fontWeight: 600 }}>{couponError}</p>}
+                    {couponError && <p style={{ margin: "4px 0 0", color: "#C92E09", fontSize: "0.72rem", fontWeight: 600 }}>{couponError}</p>}
                   </div>
                 )}
               </div>
@@ -2022,7 +2022,7 @@ export default function CustomerStorePage({
               {isBelowCartMin && (
                 <div style={{
                   padding: "10px 12px",
-                  background: "#FFFBEB",
+                  background: "#FFF7E6",
                   border: "1px solid #FDE68A",
                   borderRadius: "12px",
                   display: "flex",
@@ -2046,7 +2046,7 @@ export default function CustomerStorePage({
                 <div style={{
                   padding: "10px 12px",
                   background: "#EFF6FF",
-                  border: "1px solid #BFDBFE",
+                  border: "1px solid #B2DDFF",
                   borderRadius: "12px",
                   display: "flex",
                   alignItems: "center",
@@ -2054,7 +2054,7 @@ export default function CustomerStorePage({
                   margin: "4px 0"
                 }}>
                   <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>🛍️</span>
-                  <div style={{ fontSize: "0.78rem", color: "#1E40AF", lineHeight: 1.35 }}>
+                  <div style={{ fontSize: "0.78rem", color: "#1D4ED8", lineHeight: 1.35 }}>
                     <div style={{ fontWeight: 800 }}>Abaixo de R$ {storeMinOrderDelivery.toFixed(2).replace(".", ",")} a loja não entrega.</div>
                     <div>Mas você pode <strong>retirar no balcão</strong>{storeMinOrderPickup > 0 ? ` — mínimo de R$ ${storeMinOrderPickup.toFixed(2).replace(".", ",")}` : " — sem valor mínimo"}. É só continuar.</div>
                   </div>
@@ -2065,7 +2065,7 @@ export default function CustomerStorePage({
               {isCashbackActive && cashbackEarnedOnOrder > 0 && (
                 <div style={{
                   padding: "8px 12px",
-                  background: "linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)",
+                  background: "linear-gradient(135deg, #ECFDF5 0%, #ECFDF3 100%)",
                   border: "1px solid #A7F3D0",
                   borderRadius: "12px",
                   display: "flex",
@@ -2077,7 +2077,7 @@ export default function CustomerStorePage({
                     <span>🎁</span>
                     <span>Cashback neste pedido:</span>
                   </div>
-                  <span style={{ fontSize: "0.82rem", fontWeight: 900, color: "#059669" }}>
+                  <span style={{ fontSize: "0.82rem", fontWeight: 900, color: "#15803D" }}>
                     +R$ {cashbackEarnedOnOrder.toFixed(2).replace(".", ",")}
                   </span>
                 </div>
@@ -2091,7 +2091,7 @@ export default function CustomerStorePage({
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>Taxa de entrega</span>
-                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
+                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#15803D" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
                     {deliveryType === "PICKUP" ? (
                       "Retirada no local (Grátis)"
                     ) : isFreeShippingByMin ? (
@@ -2112,7 +2112,7 @@ export default function CustomerStorePage({
                   </span>
                 </div>
                 {discount > 0 && !couponApplied?.isFreeShipping && (
-                  <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#15803D" }}>
                     <span>Desconto</span>
                     <span style={{ fontWeight: 700 }}>- R$ {discount.toFixed(2).replace(".", ",")}</span>
                   </div>
@@ -2124,7 +2124,7 @@ export default function CustomerStorePage({
                       <button
                         type="button"
                         onClick={() => setGuardarPremioDaTrilha(v => !v)}
-                        style={{ display: "block", marginTop: 2, background: "none", border: "none", padding: 0, fontSize: "0.7rem", fontWeight: 700, color: "#7C3AED", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}
+                        style={{ display: "block", marginTop: 2, background: "none", border: "none", padding: 0, fontSize: "0.7rem", fontWeight: 700, color: "#475569", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}
                       >
                         {guardarPremioDaTrilha ? "usar neste pedido" : "guardar para a próxima"}
                       </button>
@@ -2139,7 +2139,7 @@ export default function CustomerStorePage({
                   </div>
                 )}
                 {cashbackDiscountApplied > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
                     <span>Desconto Cashback</span>
                     <span style={{ fontWeight: 700 }}>- R$ {cashbackDiscountApplied.toFixed(2).replace(".", ",")}</span>
                   </div>
@@ -2249,7 +2249,7 @@ export default function CustomerStorePage({
                       gap: "6px",
                       padding: "8px 12px",
                       background: "#EFF6FF",
-                      border: "1.5px solid #BFDBFE",
+                      border: "1.5px solid #B2DDFF",
                       borderRadius: "10px",
                       color: "#1D4ED8",
                       fontSize: "0.80rem",
@@ -2302,7 +2302,7 @@ export default function CustomerStorePage({
                           style={{
                             background: "none",
                             border: "none",
-                            color: "#2563EB",
+                            color: "#1D4ED8",
                             fontSize: "0.70rem",
                             fontWeight: 700,
                             cursor: "pointer",
@@ -2325,7 +2325,7 @@ export default function CustomerStorePage({
                             style={{
                               padding: "8px 10px",
                               background: "#ECFDF5",
-                              border: "1.5px solid #10B981",
+                              border: "1.5px solid #15803D",
                               borderRadius: "8px",
                               cursor: "pointer",
                               display: "flex",
@@ -2336,7 +2336,7 @@ export default function CustomerStorePage({
                             <div style={{ fontSize: "0.84rem", fontWeight: 800, color: "#065F46", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               📍 {customerNeighborhood}
                             </div>
-                            <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 6px", borderRadius: "4px" }}>
+                            <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#15803D", background: "#ECFDF3", padding: "2px 6px", borderRadius: "4px" }}>
                               {effectiveDeliveryFee > 0 ? `R$ ${effectiveDeliveryFee.toFixed(2).replace('.', ',')}` : isFreeShippingByMin ? 'Grátis' : 'Grátis'}
                             </span>
                           </div>
@@ -2352,7 +2352,7 @@ export default function CustomerStorePage({
                               onFocus={() => setIsNeighborhoodOpen(true)}
                               placeholder="🔍 Digite seu bairro..."
                               style={{
-                                borderColor: isNeighborhoodOpen ? "#2563EB" : undefined
+                                borderColor: isNeighborhoodOpen ? "#1D4ED8" : undefined
                               }}
                             />
 
@@ -2368,7 +2368,7 @@ export default function CustomerStorePage({
                                   overflowY: "auto",
                                   background: "#FFFFFF",
                                   borderRadius: "10px",
-                                  border: "1.5px solid #3B82F6",
+                                  border: "1.5px solid #1D4ED8",
                                   boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.15)",
                                   zIndex: 100,
                                   padding: "4px"
@@ -2399,20 +2399,20 @@ export default function CustomerStorePage({
                                         justifyContent: "space-between",
                                         transition: "background 0.15s"
                                       }}
-                                      onMouseEnter={e => (e.currentTarget.style.background = "#F0FDF4")}
+                                      onMouseEnter={e => (e.currentTarget.style.background = "#ECFDF3")}
                                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                                     >
                                       <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#1E293B" }}>
                                         📍 {z.name}
                                       </span>
-                                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: z.fee > 0 ? "#16A34A" : "#059669", background: "#F0FDF4", padding: "2px 6px", borderRadius: "4px" }}>
+                                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: z.fee > 0 ? "#15803D" : "#15803D", background: "#ECFDF3", padding: "2px 6px", borderRadius: "4px" }}>
                                         {z.fee > 0 ? `R$ ${z.fee.toFixed(2).replace('.', ',')}` : "Grátis"}
                                       </span>
                                     </div>
                                   ))
                                 ) : (
                                   <div style={{ padding: "10px", textAlign: "center" }}>
-                                    <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#DC2626", marginBottom: "4px" }}>
+                                    <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#C92E09", marginBottom: "4px" }}>
                                       ❌ Bairro não atendido
                                     </div>
                                     <div style={{ fontSize: "0.70rem", color: "#64748B", marginBottom: "6px" }}>
@@ -2483,8 +2483,8 @@ export default function CustomerStorePage({
                 <div style={{
                   padding: "9px 12px",
                   borderRadius: "10px",
-                  background: !deliveryAvailable ? "#FEF2F2" : isFreeShippingByMin ? "#ECFDF5" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#F0FDF4" : deliveryCalculating ? "#EFF6FF" : "#F8FAFC",
-                  border: `1.5px solid ${!deliveryAvailable ? "#FCA5A5" : isFreeShippingByMin ? "#86EFAC" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#86EFAC" : deliveryCalculating ? "#BFDBFE" : "#E2E8F0"}`,
+                  background: !deliveryAvailable ? "#FEF2F2" : isFreeShippingByMin ? "#ECFDF5" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#ECFDF3" : deliveryCalculating ? "#EFF6FF" : "#F8FAFC",
+                  border: `1.5px solid ${!deliveryAvailable ? "#FCA5A5" : isFreeShippingByMin ? "#ABEFC6" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#ABEFC6" : deliveryCalculating ? "#B2DDFF" : "#E2E8F0"}`,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
@@ -2496,7 +2496,7 @@ export default function CustomerStorePage({
                       {!deliveryAvailable ? "⛔" : deliveryCalculating ? "⏳" : isFreeShippingByMin ? "🎉" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "🛵" : "📍"}
                     </span>
                     <div style={{ display: "flex", flexDirection: "column" }}>
-                      <span style={{ fontSize: "0.80rem", fontWeight: 800, color: !deliveryAvailable ? "#DC2626" : isFreeShippingByMin ? "#166534" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#166534" : "#475569" }}>
+                      <span style={{ fontSize: "0.80rem", fontWeight: 800, color: !deliveryAvailable ? "#C92E09" : isFreeShippingByMin ? "#15803D" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#15803D" : "#475569" }}>
                         {!deliveryAvailable ? (
                           "Fora da Área de Entrega"
                         ) : deliveryCalculating ? (
@@ -2512,7 +2512,7 @@ export default function CustomerStorePage({
                         )}
                       </span>
                       {deliveryMessage && (
-                        <span style={{ fontSize: "0.70rem", color: !deliveryAvailable ? "#DC2626" : "#15803D", fontWeight: 600 }}>
+                        <span style={{ fontSize: "0.70rem", color: !deliveryAvailable ? "#C92E09" : "#15803D", fontWeight: 600 }}>
                           {deliveryMessage}
                         </span>
                       )}
@@ -2522,7 +2522,7 @@ export default function CustomerStorePage({
                           onClick={() => setMapaDeConfirmacaoAberto(true)}
                           style={{
                             marginTop: 6, alignSelf: "flex-start", padding: "7px 12px", borderRadius: 8,
-                            border: "none", background: "#16A34A", color: "#fff", fontWeight: 800,
+                            border: "none", background: "#15803D", color: "#fff", fontWeight: 800,
                             fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit",
                           }}
                         >
@@ -2564,7 +2564,7 @@ export default function CustomerStorePage({
               </div>
               {/* Dinheiro sem pergunta de troco = motoboy sem troco na porta. */}
               {paymentMethod === "DINHEIRO" && (
-                <div style={{ marginTop: "8px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px 12px" }}>
+                <div style={{ marginTop: "8px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px 12px" }}>
                   <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#92400E", display: "block", marginBottom: "4px" }}>
                     💵 Troco para quanto? <span style={{ fontWeight: 500 }}>(deixe vazio se não precisar)</span>
                   </label>
@@ -2580,7 +2580,7 @@ export default function CustomerStorePage({
                     const v = parseFloat(trocoPara.replace(",", "."));
                     if (trocoPara.trim() && Number.isFinite(v) && v > 0 && v < finalTotal) {
                       return (
-                        <div style={{ fontSize: "0.75rem", color: "#DC2626", fontWeight: 600, marginTop: "4px" }}>
+                        <div style={{ fontSize: "0.75rem", color: "#C92E09", fontWeight: 600, marginTop: "4px" }}>
                           O valor é menor que o total do pedido (R$ {finalTotal.toFixed(2).replace(".", ",")}).
                         </div>
                       );
@@ -2604,7 +2604,7 @@ export default function CustomerStorePage({
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>Entrega:</span>
-                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
+                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#15803D" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
                   {deliveryType === "PICKUP" ? (
                     "Retirada (Grátis)"
                   ) : isFreeShippingByMin ? (
@@ -2625,13 +2625,13 @@ export default function CustomerStorePage({
                 </span>
               </div>
               {cashbackDiscountApplied > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED", fontWeight: 700 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#475569", fontWeight: 700 }}>
                   <span>Desconto Cashback:</span>
                   <span>- R$ {cashbackDiscountApplied.toFixed(2).replace(".", ",")}</span>
                 </div>
               )}
               {discount > 0 && !couponApplied?.isFreeShipping && (
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A", fontWeight: 700 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#15803D", fontWeight: 700 }}>
                   <span>Desconto (Cupom):</span>
                   <span>- R$ {discount.toFixed(2).replace(".", ",")}</span>
                 </div>
@@ -2722,7 +2722,7 @@ export default function CustomerStorePage({
                   padding: "13px",
                   borderRadius: "12px",
                   border: "none",
-                  background: lojaFechadaAgora ? "#E2E8F0" : "linear-gradient(135deg, #059669, #047857)",
+                  background: lojaFechadaAgora ? "#E2E8F0" : "linear-gradient(135deg, #15803D, #047857)",
                   color: lojaFechadaAgora ? "#64748B" : "#FFFFFF",
                   fontWeight: 900,
                   fontSize: "0.95rem",
@@ -2767,7 +2767,7 @@ export default function CustomerStorePage({
 
       {/* BANNER DE PAUSA */}
       {isPaused && (
-        <div style={{ background: "linear-gradient(135deg,#B91C1C,#DC2626)", color: "#fff", padding: "1rem 1.5rem", textAlign: "center" }}>
+        <div style={{ background: "linear-gradient(135deg,#B71C1C,#C92E09)", color: "#fff", padding: "1rem 1.5rem", textAlign: "center" }}>
           <p style={{ fontWeight: 800, fontSize: "1.05rem", marginBottom: "4px" }}>📅 Loja Temporariamente Fechada</p>
           <p style={{ fontSize: "0.85rem", opacity: 0.9, margin: 0 }}>
             Motivo: {pauseInfo?.reason || "Pausa programada"} · Retorna em {new Date((pauseInfo?.to || "") + "T12:00").toLocaleDateString("pt-BR")}
@@ -2777,14 +2777,14 @@ export default function CustomerStorePage({
 
       {/* Loja manualmente fechada */}
       {!isPaused && franchisee.storeOpen === false && (
-        <div style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
+        <div style={{ background: "#334155", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
           🔴 Loja fechada no momento · Em breve voltamos!
         </div>
       )}
 
       {/* PRÊMIO DA COMANDA (campanha "converter para site próprio") */}
       {cupomDaUrl && (
-        <div style={{ background: "linear-gradient(135deg,#065F46,#059669)", color: "#fff", padding: "0.85rem 1.25rem", textAlign: "center" }}>
+        <div style={{ background: "linear-gradient(135deg,#065F46,#15803D)", color: "#fff", padding: "0.85rem 1.25rem", textAlign: "center" }}>
           <p style={{ fontWeight: 900, fontSize: "1.05rem", margin: 0 }}>
             🎁 Você ganhou {cupomDaUrl.type === "fixed"
               ? `R$ ${cupomDaUrl.discount.toFixed(2).replace(".", ",")}`
@@ -2836,8 +2836,8 @@ export default function CustomerStorePage({
                     gap: "4px",
                     fontSize: "0.78rem",
                     fontWeight: 700,
-                    color: "#D97706",
-                    background: "#FFFBEB",
+                    color: "#B45309",
+                    background: "#FFF7E6",
                     border: "1px solid #FCD34D",
                     padding: "2px 9px",
                     borderRadius: "20px",
@@ -2850,7 +2850,7 @@ export default function CustomerStorePage({
                   onMouseLeave={e => (e.currentTarget.style.transform = "scale(1)")}
                   title="Clique para ver todas as avaliações dos clientes"
                 >
-                  <Star size={13} fill="#F59E0B" color="#F59E0B" />
+                  <Star size={13} fill="#B45309" color="#B45309" />
                   <span>{storeRating.average.toFixed(1)}</span>
                   <span style={{ fontWeight: 600, color: "#92400E" }}>({storeRating.count})</span>
                 </button>
@@ -2868,7 +2868,7 @@ export default function CustomerStorePage({
               <button
                 onClick={() => setShowPromotionsModal(true)}
                 style={{
-                  background: "linear-gradient(135deg, #EF4444, #F97316)",
+                  background: "linear-gradient(135deg, #C92E09, #F97316)",
                   border: "none",
                   borderRadius: "10px",
                   padding: "6px 12px",
@@ -2883,7 +2883,7 @@ export default function CustomerStorePage({
                 }}
               >
                 <Flame size={14} /> Ofertas
-                <span style={{ background: "white", color: "#DC2626", borderRadius: "10px", padding: "1px 6px", fontSize: "0.7rem", fontWeight: 900 }}>
+                <span style={{ background: "white", color: "#C92E09", borderRadius: "10px", padding: "1px 6px", fontSize: "0.7rem", fontWeight: 900 }}>
                   {promoProducts.length}
                 </span>
               </button>
@@ -2916,7 +2916,7 @@ export default function CustomerStorePage({
             {customer && customerCashbackBalance > 0 && (
               <div
                 style={{
-                  background: "linear-gradient(135deg, #10B981, #059669)",
+                  background: "linear-gradient(135deg, #15803D, #15803D)",
                   color: "#FFFFFF",
                   borderRadius: "10px",
                   padding: "5px 9px",
@@ -3046,7 +3046,7 @@ export default function CustomerStorePage({
               whiteSpace: "nowrap",
               cursor: "pointer",
               border: "none",
-              background: "linear-gradient(135deg, #EF4444, #F97316)",
+              background: "linear-gradient(135deg, #C92E09, #F97316)",
               color: "#FFFFFF",
               display: "flex",
               alignItems: "center",
@@ -3080,7 +3080,7 @@ export default function CustomerStorePage({
                 <h2 style={{ fontSize: "1.15rem", fontWeight: 800, margin: 0, color: "#0F172A" }}>
                   ⭐ Destaques da Casa
                 </h2>
-                <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#16A34A", backgroundColor: "#DCFCE7", padding: "2px 8px", borderRadius: "12px" }}>
+                <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#15803D", backgroundColor: "#ECFDF3", padding: "2px 8px", borderRadius: "12px" }}>
                   Mais pedidos
                 </span>
               </div>
@@ -3094,7 +3094,7 @@ export default function CustomerStorePage({
                       style={{
                         backgroundColor: "#FFFFFF",
                         borderRadius: "16px",
-                        border: q > 0 ? "1.5px solid #16A34A" : "1px solid #E2E8F0",
+                        border: q > 0 ? "1.5px solid #15803D" : "1px solid #E2E8F0",
                         overflow: "hidden",
                         display: "flex",
                         flexDirection: "column",
@@ -3127,7 +3127,7 @@ export default function CustomerStorePage({
                             display: "inline-flex",
                             alignItems: "center",
                             gap: "4px",
-                            background: "linear-gradient(135deg, #ECFDF5, #DCFCE7)",
+                            background: "linear-gradient(135deg, #ECFDF5, #ECFDF3)",
                             border: "1px solid #A7F3D0",
                             borderRadius: "8px",
                             padding: "3px 8px",
@@ -3141,7 +3141,7 @@ export default function CustomerStorePage({
                           </div>
                         )}
                         <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "8px" }}>
-                          <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#059669" }}>
+                          <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#15803D" }}>
                             {precoVariaPorEscolha(p as any) && <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
                             R$ {precoMinimoDoProduto(p as any).toFixed(2).replace(".", ",")}
                           </span>
@@ -3155,7 +3155,7 @@ export default function CustomerStorePage({
                               padding: "6px 14px",
                               borderRadius: "8px",
                               border: "none",
-                              backgroundColor: "#059669",
+                              backgroundColor: "#15803D",
                               color: "#fff",
                               fontWeight: 700,
                               fontSize: "0.8rem",
@@ -3198,13 +3198,13 @@ export default function CustomerStorePage({
                               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", margin: "4px 0" }}>
                                 {t.map((tag: string) => {
                                   const colorMap: Record<string, { bg: string; color: string }> = {
-                                    "🔥 Mais Vendido": { bg: "#FEF2F2", color: "#DC2626" },
-                                    "✨ Novo": { bg: "#F5F3FF", color: "#7C3AED" },
-                                    "🏷️ Promoção": { bg: "#F0FDF4", color: "#16A34A" },
-                                    "🌱 Vegano": { bg: "#DCFCE7", color: "#15803D" },
-                                    "🌶️ Picante": { bg: "#FEF3C7", color: "#D97706" },
+                                    "🔥 Mais Vendido": { bg: "#FEF2F2", color: "#C92E09" },
+                                    "✨ Novo": { bg: "#F8FAFC", color: "#475569" },
+                                    "🏷️ Promoção": { bg: "#ECFDF3", color: "#15803D" },
+                                    "🌱 Vegano": { bg: "#ECFDF3", color: "#15803D" },
+                                    "🌶️ Picante": { bg: "#FFF7E6", color: "#B45309" },
                                     "⭐ Destaque": { bg: "#FEFCE8", color: "#CA8A04" },
-                                    "❄️ Gelado": { bg: "#EFF6FF", color: "#2563EB" },
+                                    "❄️ Gelado": { bg: "#EFF6FF", color: "#1D4ED8" },
                                     "🎉 Especial do Dia": { bg: "#FDF2F8", color: "#BE185D" },
                                   };
                                   const c = colorMap[tag] || { bg: "#F8FAFC", color: "#475569" };
@@ -3223,8 +3223,8 @@ export default function CustomerStorePage({
                             display: "inline-flex",
                             alignItems: "center",
                             gap: "3px",
-                            background: "#F0FDF4",
-                            border: "1px solid #BBF7D0",
+                            background: "#ECFDF3",
+                            border: "1px solid #ABEFC6",
                             borderRadius: "6px",
                             padding: "1px 6px",
                             fontSize: "0.68rem",
@@ -3280,7 +3280,7 @@ export default function CustomerStorePage({
                     cursor: "pointer"
                   }}
                 >
-                  <Star size={12} fill="#F59E0B" color="#F59E0B" />
+                  <Star size={12} fill="#B45309" color="#B45309" />
                   {storeRating?.average.toFixed(1)} ({storeRating?.count} avaliações)
                 </div>
               </div>
@@ -3288,7 +3288,7 @@ export default function CustomerStorePage({
                 {positiveReviews.slice(0, 6).map((r, i) => (
                   <div key={i} style={{ background: "#fff", borderRadius: "14px", padding: "1rem 1.25rem", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #E63946, #C62828)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}>
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #E63946, #C92E09)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}>
                         {r.customerName.charAt(0).toUpperCase()}
                       </div>
                       <div>
@@ -3296,7 +3296,7 @@ export default function CustomerStorePage({
                         <p style={{ fontSize: "0.65rem", color: "#94A3B8", margin: 0 }}>{new Date(r.createdAt).toLocaleDateString("pt-BR")}</p>
                       </div>
                       <div style={{ marginLeft: "auto", display: "flex", gap: "2px" }}>
-                        {[1,2,3,4,5].map(n => <Star key={n} size={11} fill={n <= r.rating ? "#F59E0B" : "none"} color={n <= r.rating ? "#F59E0B" : "#CBD5E1"} />)}
+                        {[1,2,3,4,5].map(n => <Star key={n} size={11} fill={n <= r.rating ? "#B45309" : "none"} color={n <= r.rating ? "#B45309" : "#CBD5E1"} />)}
                       </div>
                     </div>
                     <p style={{ fontSize: "0.82rem", color: "#475569", margin: 0, lineHeight: 1.5 }}>"{r.comment}"</p>
@@ -3319,7 +3319,7 @@ export default function CustomerStorePage({
                   Benefícios & Fidelidade
                 </span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#ECFDF5", padding: "2px 8px", borderRadius: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.72rem", fontWeight: 800, color: "#15803D", background: "#ECFDF5", padding: "2px 8px", borderRadius: "12px" }}>
                 <Sparkles size={12} /> Ativo
               </div>
             </div>
@@ -3362,7 +3362,7 @@ export default function CustomerStorePage({
                   </div>
                 ) : (
                   <div style={{ fontSize: "0.75rem", color: "#64748B", lineHeight: 1.35 }}>
-                    Suba de nível conforme suas compras no mês e ganhe até +{goldCashback}% de cashback extra! <button type="button" onClick={() => setShowAuth(true)} style={{ background: "none", border: "none", color: "#7C3AED", fontWeight: 800, padding: 0, cursor: "pointer" }}>Faça login</button> para ver seu nível.
+                    Suba de nível conforme suas compras no mês e ganhe até +{goldCashback}% de cashback extra! <button type="button" onClick={() => setShowAuth(true)} style={{ background: "none", border: "none", color: "#475569", fontWeight: 800, padding: 0, cursor: "pointer" }}>Faça login</button> para ver seu nível.
                   </div>
                 )}
               </div>
@@ -3376,7 +3376,7 @@ export default function CustomerStorePage({
                     <span>🎫</span>
                     <span>Cartão Fidelidade</span>
                   </div>
-                  <span style={{ fontSize: "0.74rem", fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", padding: "1px 6px", borderRadius: "6px" }}>
+                  <span style={{ fontSize: "0.74rem", fontWeight: 800, color: "#475569", background: "#F1F5F9", padding: "1px 6px", borderRadius: "6px" }}>
                     {currentStamps} / {stampGoal} Carimbos
                   </span>
                 </div>
@@ -3390,8 +3390,8 @@ export default function CustomerStorePage({
                         width: "26px",
                         height: "26px",
                         borderRadius: "50%",
-                        background: idx < currentStamps ? "#7C3AED" : "#FFFFFF",
-                        border: idx < currentStamps ? "2px solid #6D28D9" : "1.5px dashed #CBD5E1",
+                        background: idx < currentStamps ? "#475569" : "#FFFFFF",
+                        border: idx < currentStamps ? "2px solid #334155" : "1.5px dashed #CBD5E1",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -3410,7 +3410,7 @@ export default function CustomerStorePage({
                 <div style={{ fontSize: "0.74rem", color: "#475569", lineHeight: 1.35 }}>
                   {customer ? (
                     remainingStamps === 0 ? (
-                      <span style={{ color: "#16A34A", fontWeight: 800 }}>🎉 Você completou a cartela! Ganhou {loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}!</span>
+                      <span style={{ color: "#15803D", fontWeight: 800 }}>🎉 Você completou a cartela! Ganhou {loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}!</span>
                     ) : (
                       <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} OFF`}</strong>!</span>
                     )
@@ -3444,8 +3444,8 @@ export default function CustomerStorePage({
                     padding: "6px 10px",
                     borderRadius: "8px",
                     border: "1px solid #D8B4FE",
-                    background: copiedReferral ? "#DCFCE7" : "#FFFFFF",
-                    color: copiedReferral ? "#15803D" : "#7C3AED",
+                    background: copiedReferral ? "#ECFDF3" : "#FFFFFF",
+                    color: copiedReferral ? "#15803D" : "#475569",
                     fontSize: "0.75rem",
                     fontWeight: 800,
                     cursor: "pointer",
@@ -3463,7 +3463,7 @@ export default function CustomerStorePage({
 
             {/* MÓDULO 4: CASHBACK PADRÃO */}
             {isCashbackActive && (
-              <div style={{ fontSize: "0.75rem", color: "#059669", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "8px 10px", lineHeight: 1.35, display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ fontSize: "0.75rem", color: "#15803D", background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: "10px", padding: "8px 10px", lineHeight: 1.35, display: "flex", alignItems: "center", gap: "6px" }}>
                 <span>💰</span>
                 <span>
                   Ganhe <strong>{cashbackRate}% de volta</strong> em saldo em todos os seus pedidos acima de R$ {cashbackMinOrder.toFixed(2).replace(".", ",")}.
@@ -3612,7 +3612,7 @@ export default function CustomerStorePage({
                   <div key={i} style={{ background: "#F8FAFC", borderRadius: "12px", padding: "14px", border: "1px solid #E2E8F0" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #E63946, #C62828)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: "0.8rem" }}>
+                        <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #E63946, #C92E09)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: "0.8rem" }}>
                           {r.customerName.charAt(0).toUpperCase()}
                         </div>
                         <div>
@@ -3622,7 +3622,7 @@ export default function CustomerStorePage({
                       </div>
                       <div style={{ display: "flex", gap: "2px" }}>
                         {[1,2,3,4,5].map(n => (
-                          <Star key={n} size={13} fill={n <= r.rating ? "#F59E0B" : "none"} color={n <= r.rating ? "#F59E0B" : "#CBD5E1"} />
+                          <Star key={n} size={13} fill={n <= r.rating ? "#B45309" : "none"} color={n <= r.rating ? "#B45309" : "#CBD5E1"} />
                         ))}
                       </div>
                     </div>
@@ -3667,7 +3667,7 @@ export default function CustomerStorePage({
                     <span>🎫</span>
                     <span>Seu Cartão Fidelidade de Carimbos</span>
                   </div>
-                  <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", padding: "2px 8px", borderRadius: "8px" }}>
+                  <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "#475569", background: "#F1F5F9", padding: "2px 8px", borderRadius: "8px" }}>
                     {currentStamps} de {stampGoal} Carimbos
                   </span>
                 </div>
@@ -3680,8 +3680,8 @@ export default function CustomerStorePage({
                         width: "30px",
                         height: "30px",
                         borderRadius: "50%",
-                        background: idx < currentStamps ? "#7C3AED" : "#FFFFFF",
-                        border: idx < currentStamps ? "2px solid #6D28D9" : "1.5px dashed #CBD5E1",
+                        background: idx < currentStamps ? "#475569" : "#FFFFFF",
+                        border: idx < currentStamps ? "2px solid #334155" : "1.5px dashed #CBD5E1",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -3737,12 +3737,12 @@ export default function CustomerStorePage({
                         <img src={p.imageUrl} alt={p.name} style={{ width: "65px", height: "65px", borderRadius: "10px", objectFit: "cover" }} />
                       )}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ background: "#FEE2E2", color: "#DC2626", padding: "1px 6px", borderRadius: "4px", fontSize: "0.65rem", fontWeight: 800 }}>
+                        <span style={{ background: "#FEE2E2", color: "#C92E09", padding: "1px 6px", borderRadius: "4px", fontSize: "0.65rem", fontWeight: 800 }}>
                           🔥 OFERTA
                         </span>
                         <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginTop: "2px" }}>{p.name}</div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
-                          <span style={{ fontWeight: 900, fontSize: "0.95rem", color: "#059669" }}>
+                          <span style={{ fontWeight: 900, fontSize: "0.95rem", color: "#15803D" }}>
                             {precoVariaPorEscolha(p as any) && <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
                             R$ {precoMinimoDoProduto(p as any).toFixed(2).replace(".", ",")}
                           </span>
@@ -3808,7 +3808,7 @@ export default function CustomerStorePage({
                   <div key={o.id} style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", borderRadius: "14px", padding: "14px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                       <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>#{o.id.slice(-6).toUpperCase()}</span>
-                      <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 800, background: o.status === "ENTREGUE" ? "#DCFCE7" : "#FEF3C7", color: o.status === "ENTREGUE" ? "#15803D" : "#B45309" }}>
+                      <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 800, background: o.status === "ENTREGUE" ? "#ECFDF3" : "#FFF7E6", color: o.status === "ENTREGUE" ? "#15803D" : "#B45309" }}>
                         {o.status}
                       </span>
                     </div>
@@ -3825,7 +3825,7 @@ export default function CustomerStorePage({
                             repetirPedido(o);
                             setShowMyOrdersModal(false);
                           }}
-                          style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer" }}
+                          style={{ padding: "5px 12px", borderRadius: "8px", border: "none", background: "#15803D", color: "#fff", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer" }}
                         >
                           🔁 Repetir pedido
                         </button>
@@ -3835,7 +3835,7 @@ export default function CustomerStorePage({
                             setTrackingStatus(o.status);
                             setShowMyOrdersModal(false);
                           }}
-                          style={{ padding: "5px 12px", borderRadius: "8px", border: "1px solid #3B82F6", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}
+                          style={{ padding: "5px 12px", borderRadius: "8px", border: "1px solid #1D4ED8", background: "#EFF6FF", color: "#1D4ED8", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}
                         >
                           Acompanhar →
                         </button>
@@ -3879,7 +3879,7 @@ export default function CustomerStorePage({
             )}
 
             {resumoRepeticao.mudaramDePreco.length > 0 && (
-              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 12, padding: "10px 12px", marginBottom: 10 }}>
+              <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 12, padding: "10px 12px", marginBottom: 10 }}>
                 <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#92400E", marginBottom: 6 }}>
                   Mudou de preço desde o seu último pedido:
                 </div>
@@ -3894,11 +3894,11 @@ export default function CustomerStorePage({
 
             {resumoRepeticao.forasDoCardapio.length > 0 && (
               <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: "10px 12px", marginBottom: 10 }}>
-                <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#991B1B", marginBottom: 6 }}>
+                <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#B71C1C", marginBottom: 6 }}>
                   Não está mais disponível:
                 </div>
                 {resumoRepeticao.forasDoCardapio.map((n, i) => (
-                  <div key={i} style={{ fontSize: "0.78rem", color: "#7F1D1D", lineHeight: 1.6 }}>• {n}</div>
+                  <div key={i} style={{ fontSize: "0.78rem", color: "#B71C1C", lineHeight: 1.6 }}>• {n}</div>
                 ))}
               </div>
             )}
@@ -3922,7 +3922,7 @@ export default function CustomerStorePage({
             <p style={{ fontSize: "0.8rem", color: "#666", marginBottom: "1rem" }}>
               {authMode === "login" ? "Entre com seu telefone e senha" : "Crie sua conta para salvar seus dados"}
             </p>
-            {authError && <p style={{ color: "#EF4444", fontSize: "0.8rem", marginBottom: "0.5rem", fontWeight: 600 }}>❌ {authError}</p>}
+            {authError && <p style={{ color: "#C92E09", fontSize: "0.8rem", marginBottom: "0.5rem", fontWeight: 600 }}>❌ {authError}</p>}
             {authMode === "register" && (
               <>
                 <div style={{ marginBottom: "0.75rem" }}>
@@ -3940,7 +3940,7 @@ export default function CustomerStorePage({
                     onChange={e => setAuthBirthDate(e.target.value)} 
                     style={{ width: "100%", padding: "8px 12px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.85rem", boxSizing: "border-box", color: "#334155" }} 
                   />
-                  <p style={{ fontSize: "0.7rem", color: "#7C3AED", margin: "4px 0 0", fontWeight: 600, lineHeight: 1.3 }}>
+                  <p style={{ fontSize: "0.7rem", color: "#475569", margin: "4px 0 0", fontWeight: 600, lineHeight: 1.3 }}>
                     🎁 Não é obrigatório, mas queremos lembrar do seu dia e te presentear!
                   </p>
                 </div>
@@ -3977,7 +3977,7 @@ export default function CustomerStorePage({
             </div>
             <p style={{ fontSize: "0.8rem", color: "#666", marginBottom: "0.5rem" }}>📱 {customer.phone}</p>
             {customer.address && <p style={{ fontSize: "0.8rem", color: "#666", marginBottom: "0.75rem" }}>📍 {customer.address}</p>}
-            <button onClick={handleLogout} style={{ width: "100%", padding: "8px", borderRadius: "10px", border: "1.5px solid #EF4444", background: "none", color: "#EF4444", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
+            <button onClick={handleLogout} style={{ width: "100%", padding: "8px", borderRadius: "10px", border: "1.5px solid #C92E09", background: "none", color: "#C92E09", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
               Sair da Conta
             </button>
           </div>
@@ -3996,7 +3996,7 @@ export default function CustomerStorePage({
               ))}
             </div>
             <textarea value={ratingComment} onChange={e => setRatingComment(e.target.value)} placeholder="Deixe um comentário (opcional)..." rows={3} style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.85rem", boxSizing: "border-box", resize: "vertical", marginBottom: "1rem" }} />
-            <button onClick={submitReview} style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #F59E0B, #EF4444)", color: "white", fontWeight: 700, fontSize: "0.95rem", cursor: "pointer" }}>
+            <button onClick={submitReview} style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #B45309, #C92E09)", color: "white", fontWeight: 700, fontSize: "0.95rem", cursor: "pointer" }}>
               Enviar Avaliação
             </button>
           </div>

@@ -118,7 +118,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
   return (
     <div style={{ background: "#fff", borderRadius: 16, padding: 24, marginTop: 24, border: "1px solid #E2E8F0" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-        <CreditCard size={22} color="#7C3AED" />
+        <CreditCard size={22} color="#475569" />
         <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Maquininhas</h2>
       </div>
       <p style={{ color: "#64748B", fontSize: 14, margin: "0 0 20px" }}>
@@ -129,9 +129,9 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
       {aviso && (
         <div style={{
           padding: "10px 14px", borderRadius: 10, marginBottom: 16, fontSize: 14, fontWeight: 600,
-          background: aviso.erro ? "#FEF2F2" : "#F0FDF4",
-          color: aviso.erro ? "#991B1B" : "#166534",
-          border: `1px solid ${aviso.erro ? "#FECACA" : "#BBF7D0"}`,
+          background: aviso.erro ? "#FEF2F2" : "#ECFDF3",
+          color: aviso.erro ? "#B71C1C" : "#15803D",
+          border: `1px solid ${aviso.erro ? "#FECACA" : "#ABEFC6"}`,
         }}>{aviso.texto}</div>
       )}
 
@@ -139,7 +139,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
           inteiro em vez de virar uma linha discreta: quem fechar sem copiar
           precisa gerar outro, e o aparelho antigo para de funcionar. */}
       {codigoNovo && (
-        <div style={{ padding: 18, borderRadius: 12, background: "#FFFBEB", border: "1.5px solid #FDE68A", marginBottom: 20 }}>
+        <div style={{ padding: 18, borderRadius: 12, background: "#FFF7E6", border: "1.5px solid #FDE68A", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <AlertTriangle size={18} color="#B45309" />
             <strong style={{ color: "#92400E", fontSize: 15 }}>
@@ -183,7 +183,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {m.online
-                  ? <Wifi size={20} color="#16A34A" />
+                  ? <Wifi size={20} color="#15803D" />
                   : <WifiOff size={20} color="#94A3B8" />}
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 15 }}>{m.label}</div>
@@ -200,7 +200,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
                 {m.pareado && m.online && (
                   <span style={{
                     display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700,
-                    color: "#166534", background: "#F0FDF4", padding: "4px 10px", borderRadius: 20,
+                    color: "#15803D", background: "#ECFDF3", padding: "4px 10px", borderRadius: 20,
                   }}><CheckCircle2 size={13} /> pronta para cobrar</span>
                 )}
                 <button onClick={() => regerar(m.id, m.label)} title="Gerar código novo" style={{
@@ -239,7 +239,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
             </select>
           )}
           <button onClick={criar} disabled={salvando || !nome.trim()} style={{
-            padding: "10px 18px", borderRadius: 8, border: "none", background: "#7C3AED", color: "#fff",
+            padding: "10px 18px", borderRadius: 8, border: "none", background: "#475569", color: "#fff",
             fontWeight: 700, fontSize: 14, cursor: salvando || !nome.trim() ? "default" : "pointer",
             opacity: salvando || !nome.trim() ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6,
           }}><Plus size={16} /> {salvando ? "Criando…" : "Cadastrar"}</button>

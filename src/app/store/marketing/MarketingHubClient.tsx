@@ -48,7 +48,7 @@ export default function MarketingHubClient() {
 
   // Toast State
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
-  const showToast = (msg: string, color: string = "#10B981") => {
+  const showToast = (msg: string, color: string = "#15803D") => {
     setToast({ msg, color });
     setTimeout(() => setToast(null), 5000);
   };
@@ -66,7 +66,7 @@ export default function MarketingHubClient() {
         setSelectedPhones((res.customers || []).map((c: any) => c.phone));
       }
     } catch (e) {
-      showToast("⚠️ Falha ao carregar base de marketing", "#EF4444");
+      showToast("⚠️ Falha ao carregar base de marketing", "#C92E09");
     } finally {
       setLoading(false);
     }
@@ -90,12 +90,12 @@ export default function MarketingHubClient() {
       });
 
       if (res.ok) {
-        showToast("✅ Automações de Marketing salvas com sucesso!", "#10B981");
+        showToast("✅ Automações de Marketing salvas com sucesso!", "#15803D");
       } else {
-        showToast("⚠️ Erro ao salvar configurações", "#EF4444");
+        showToast("⚠️ Erro ao salvar configurações", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Falha de conexão", "#EF4444");
+      showToast("⚠️ Falha de conexão", "#C92E09");
     } finally {
       setSaving(false);
     }
@@ -104,11 +104,11 @@ export default function MarketingHubClient() {
   // Disparar Campanha Anti-Ban
   const handleSendBroadcast = async () => {
     if (!broadcastMessage.trim()) {
-      showToast("⚠️ Digite o texto da promoção", "#EF4444");
+      showToast("⚠️ Digite o texto da promoção", "#C92E09");
       return;
     }
     if (selectedPhones.length === 0) {
-      showToast("⚠️ Selecione pelo menos 1 contato da sua base", "#EF4444");
+      showToast("⚠️ Selecione pelo menos 1 contato da sua base", "#C92E09");
       return;
     }
 
@@ -126,12 +126,12 @@ export default function MarketingHubClient() {
 
       const data = await res.json();
       if (res.ok) {
-        showToast(data.message, "#10B981");
+        showToast(data.message, "#15803D");
       } else {
-        showToast(data.error || "⚠️ Falha ao iniciar disparo", "#EF4444");
+        showToast(data.error || "⚠️ Falha ao iniciar disparo", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de rede ao disparar campanha", "#EF4444");
+      showToast("⚠️ Erro de rede ao disparar campanha", "#C92E09");
     } finally {
       setSendingBroadcast(false);
     }
@@ -283,7 +283,7 @@ export default function MarketingHubClient() {
             />
 
             {DISPARO_EM_MASSA_LIBERADO ? (
-              <div style={{ background: "#F0FDF4", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #BBF7D0", color: "#166534", fontSize: "0.95rem" }}>
+              <div style={{ background: "#ECFDF3", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #ABEFC6", color: "#15803D", fontSize: "0.95rem" }}>
                 🛡️ <strong>Envio em ritmo humano:</strong> as mensagens saem uma a cada 12 a 28 segundos, com descanso de 45 a 75 segundos a cada dez. O disparo roda em segundo plano e leva alguns minutos.
               </div>
             ) : (
@@ -292,13 +292,13 @@ export default function MarketingHubClient() {
                  mandar devagar não conserta mandar para quem não pediu. Um número
                  da casa foi perdido com essa impressão de segurança. */
               <div style={{ background: "#FEF2F2", padding: "18px", borderRadius: "14px", border: "2px solid #FCA5A5" }}>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: "1rem", color: "#991B1B", display: "flex", alignItems: "center", gap: 8 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: "1rem", color: "#B71C1C", display: "flex", alignItems: "center", gap: 8 }}>
                   🚫 Disparo de campanha desligado
                 </p>
-                <p style={{ margin: "8px 0 0", fontSize: "0.9rem", color: "#7F1D1D", lineHeight: 1.6 }}>
+                <p style={{ margin: "8px 0 0", fontSize: "0.9rem", color: "#B71C1C", lineHeight: 1.6 }}>
                   {MOTIVO_DISPARO_DESLIGADO}
                 </p>
-                <p style={{ margin: "10px 0 0", fontSize: "0.86rem", color: "#7F1D1D", lineHeight: 1.6 }}>
+                <p style={{ margin: "10px 0 0", fontSize: "0.86rem", color: "#B71C1C", lineHeight: 1.6 }}>
                   <strong>O que continua funcionando:</strong> o robô responde normalmente quem
                   manda mensagem para a loja. O que saiu do ar é só o envio para uma lista.
                 </p>
@@ -306,7 +306,7 @@ export default function MarketingHubClient() {
             )}
 
             {selectedPhones.length > 150 && (
-              <div style={{ background: "#FEF2F2", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #FECACA", color: "#991B1B", fontSize: "0.95rem", marginTop: "12px" }}>
+              <div style={{ background: "#FEF2F2", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #FECACA", color: "#B71C1C", fontSize: "0.95rem", marginTop: "12px" }}>
                 ⚠️ <strong>Risco de Banimento Elevado:</strong> Você selecionou {selectedPhones.length} clientes. Recomendamos disparar para no máximo 100-150 pessoas por dia usando o QR Code para proteger o seu número de bloqueios do WhatsApp.
               </div>
             )}
@@ -320,7 +320,7 @@ export default function MarketingHubClient() {
                 borderRadius: "12px",
                 border: "none",
                 background: DISPARO_EM_MASSA_LIBERADO
-                  ? "linear-gradient(135deg, #16A34A, #15803D)"
+                  ? "linear-gradient(135deg, #15803D, #15803D)"
                   : "#E2E8F0",
                 color: DISPARO_EM_MASSA_LIBERADO ? "#fff" : "#94A3B8",
                 fontWeight: 800,
@@ -361,8 +361,8 @@ export default function MarketingHubClient() {
                     style={{
                       padding: "8px 10px",
                       borderRadius: "8px",
-                      background: isChecked ? "#F0FDF4" : "#F8FAFC",
-                      border: `1px solid ${isChecked ? "#BBF7D0" : "#E2E8F0"}`,
+                      background: isChecked ? "#ECFDF3" : "#F8FAFC",
+                      border: `1px solid ${isChecked ? "#ABEFC6" : "#E2E8F0"}`,
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
@@ -374,7 +374,7 @@ export default function MarketingHubClient() {
                       <div style={{ fontWeight: 700, color: "#1E293B" }}>{c.name}</div>
                       <div style={{ color: "#64748B", fontSize: "0.72rem" }}>{c.phone}</div>
                     </div>
-                    <input type="checkbox" checked={isChecked} readOnly style={{ accentColor: "#16A34A" }} />
+                    <input type="checkbox" checked={isChecked} readOnly style={{ accentColor: "#15803D" }} />
                   </div>
                 );
               })}
@@ -408,7 +408,7 @@ export default function MarketingHubClient() {
                     padding: "4px 12px",
                     borderRadius: "6px",
                     border: "none",
-                    background: autoConfig.autoRecuperation7d ? "#16A34A" : "#CBD5E1",
+                    background: autoConfig.autoRecuperation7d ? "#15803D" : "#CBD5E1",
                     color: "#fff",
                     fontWeight: 800,
                     fontSize: "0.75rem",
@@ -429,7 +429,7 @@ export default function MarketingHubClient() {
             <div style={{ background: "#F8FAFC", padding: "1.25rem", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 800, color: "#1E293B" }}>
-                  <Gift size={18} color="#2563EB" /> 2º Incentivo — Cliente 15 Dias Sem Pedir
+                  <Gift size={18} color="#1D4ED8" /> 2º Incentivo — Cliente 15 Dias Sem Pedir
                 </div>
                 <button
                   onClick={() => setAutoConfig({ ...autoConfig, autoRecuperation15d: !autoConfig.autoRecuperation15d })}
@@ -437,7 +437,7 @@ export default function MarketingHubClient() {
                     padding: "4px 12px",
                     borderRadius: "6px",
                     border: "none",
-                    background: autoConfig.autoRecuperation15d ? "#16A34A" : "#CBD5E1",
+                    background: autoConfig.autoRecuperation15d ? "#15803D" : "#CBD5E1",
                     color: "#fff",
                     fontWeight: 800,
                     fontSize: "0.75rem",
@@ -458,7 +458,7 @@ export default function MarketingHubClient() {
             <div style={{ background: "#F8FAFC", padding: "1.25rem", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 800, color: "#1E293B" }}>
-                  <Sparkles size={18} color="#7C3AED" /> 3º Incentivo — Cliente 30 Dias Sem Pedir (Super Cupom/Frete Grátis)
+                  <Sparkles size={18} color="#475569" /> 3º Incentivo — Cliente 30 Dias Sem Pedir (Super Cupom/Frete Grátis)
                 </div>
                 <button
                   onClick={() => setAutoConfig({ ...autoConfig, autoRecuperation30d: !autoConfig.autoRecuperation30d })}
@@ -466,7 +466,7 @@ export default function MarketingHubClient() {
                     padding: "4px 12px",
                     borderRadius: "6px",
                     border: "none",
-                    background: autoConfig.autoRecuperation30d ? "#16A34A" : "#CBD5E1",
+                    background: autoConfig.autoRecuperation30d ? "#15803D" : "#CBD5E1",
                     color: "#fff",
                     fontWeight: 800,
                     fontSize: "0.75rem",
@@ -556,7 +556,7 @@ export default function MarketingHubClient() {
                   filteredCustomers.map((c) => (
                     <tr key={c.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                       <td style={{ padding: "10px 14px", fontWeight: 700, color: "#0F172A" }}>{c.name}</td>
-                      <td style={{ padding: "10px 14px", color: "#2563EB", fontWeight: 700 }}>{c.phone}</td>
+                      <td style={{ padding: "10px 14px", color: "#1D4ED8", fontWeight: 700 }}>{c.phone}</td>
                       <td style={{ padding: "10px 14px" }}>{c.totalOrders || 0} pedido(s)</td>
                       <td style={{ padding: "10px 14px", color: "#64748B", fontSize: "0.78rem" }}>
                         {new Date(c.updatedAt).toLocaleDateString("pt-BR")}

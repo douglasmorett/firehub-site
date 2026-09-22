@@ -673,9 +673,9 @@ ${dados.aviso}` : "")
   const emHomologacao = Number(fiscalConfig.ambiente) === 2;
   const AvisoDeHomologacao = () =>
     !emHomologacao ? null : (
-      <div style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "6px solid #D97706", borderRadius: 12 }}>
+      <div style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#FFF7E6", border: "1px solid #FDE68A", borderLeft: "6px solid #B45309", borderRadius: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <AlertTriangle size={18} color="#D97706" />
+          <AlertTriangle size={18} color="#B45309" />
           <strong style={{ fontSize: "0.92rem", color: "#92400E" }}>
             Modo TESTE (homologação) — as notas emitidas aqui NÃO têm valor fiscal
           </strong>
@@ -693,17 +693,17 @@ ${dados.aviso}` : "")
     podeEmitir ? null : (
       <div style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <AlertTriangle size={18} color="#DC2626" />
-          <strong style={{ fontSize: "0.92rem", color: "#991B1B" }}>
+          <AlertTriangle size={18} color="#C92E09" />
+          <strong style={{ fontSize: "0.92rem", color: "#B71C1C" }}>
             Esta loja ainda não emite nota fiscal
           </strong>
         </div>
-        <p style={{ fontSize: "0.83rem", color: "#7F1D1D", margin: "8px 0 0", lineHeight: 1.5 }}>
+        <p style={{ fontSize: "0.83rem", color: "#B71C1C", margin: "8px 0 0", lineHeight: 1.5 }}>
           Nenhuma NFC-e é transmitida à SEFAZ enquanto o cadastro abaixo não estiver completo.
           Os pedidos aparecem como <strong>pendentes</strong> — não há nota emitida para eles.
         </p>
         {pendenciasFiscais.length > 0 && (
-          <ul style={{ margin: "10px 0 0", paddingLeft: 20, fontSize: "0.82rem", color: "#7F1D1D", lineHeight: 1.6 }}>
+          <ul style={{ margin: "10px 0 0", paddingLeft: 20, fontSize: "0.82rem", color: "#B71C1C", lineHeight: 1.6 }}>
             {pendenciasFiscais.slice(0, 8).map((p, i) => (
               <li key={i}>
                 <strong>{p.campo}</strong>: {p.mensagem}
@@ -788,8 +788,8 @@ ${dados.aviso}` : "")
                     style={{ padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Check size={20} color="#16A34A" />
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#ECFDF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={20} color="#15803D" />
                       </div>
                       <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Dados da empresa</span>
                     </div>
@@ -840,8 +840,8 @@ ${dados.aviso}` : "")
                     style={{ padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Check size={20} color="#16A34A" />
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#ECFDF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={20} color="#15803D" />
                       </div>
                       <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Configurações fiscais gerais</span>
                     </div>
@@ -876,8 +876,8 @@ ${dados.aviso}` : "")
                     style={{ padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Check size={20} color="#16A34A" />
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#ECFDF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={20} color="#15803D" />
                       </div>
                       <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Endereço fiscal da empresa</span>
                     </div>
@@ -934,8 +934,8 @@ ${dados.aviso}` : "")
                     style={{ padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Check size={20} color="#16A34A" />
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#ECFDF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={20} color="#15803D" />
                       </div>
                       <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Provedor de emissão (SEFAZ)</span>
                     </div>
@@ -963,7 +963,7 @@ ${dados.aviso}` : "")
                         </div>
                         <div>
                           <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>
-                            Token do provedor * {fiscalConfig.temTokenDoProvedor && <span style={{ color: "#16A34A" }}>— já cadastrado ✓</span>}
+                            Token do provedor * {fiscalConfig.temTokenDoProvedor && <span style={{ color: "#15803D" }}>— já cadastrado ✓</span>}
                           </label>
                           <input
                             type="password"
@@ -994,7 +994,7 @@ ${dados.aviso}` : "")
                         </div>
                         <div style={{ gridColumn: "1 / -1" }}>
                           <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>
-                            CSC — Código de Segurança do Contribuinte * {fiscalConfig.temCsc && <span style={{ color: "#16A34A" }}>— já cadastrado ✓</span>}
+                            CSC — Código de Segurança do Contribuinte * {fiscalConfig.temCsc && <span style={{ color: "#15803D" }}>— já cadastrado ✓</span>}
                           </label>
                           <input
                             type="password"
@@ -1029,8 +1029,8 @@ ${dados.aviso}` : "")
                     style={{ padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Check size={20} color="#16A34A" />
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#ECFDF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={20} color="#15803D" />
                       </div>
                       <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Certificado digital modelo A1</span>
                     </div>
@@ -1051,7 +1051,7 @@ ${dados.aviso}` : "")
                           cliente — e um vazamento nosso viraria fraude fiscal deles.
                           O certificado vai direto para o provedor de emissão, que é
                           quem assina e transmite. */}
-                      <div style={{ marginTop: 12, padding: 14, background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10 }}>
+                      <div style={{ marginTop: 12, padding: 14, background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 10 }}>
                         <p style={{ fontSize: "0.85rem", color: "#92400E", fontWeight: 700, margin: 0 }}>
                           O certificado não é enviado ao FireHub
                         </p>
@@ -1091,8 +1091,8 @@ ${dados.aviso}` : "")
                     style={{ padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <Check size={20} color="#16A34A" />
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#ECFDF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Check size={20} color="#15803D" />
                       </div>
                       <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Ambiente de emissão</span>
                     </div>
@@ -1113,7 +1113,7 @@ ${dados.aviso}` : "")
                           </button>
                         ))}
                       </div>
-                      <p style={{ fontSize: "0.78rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", marginTop: 12, lineHeight: 1.5 }}>
+                      <p style={{ fontSize: "0.78rem", color: "#92400E", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", marginTop: 12, lineHeight: 1.5 }}>
                         Nota emitida em <strong>homologação</strong> é teste e não tem valor fiscal.
                         Só mude para produção depois de emitir com sucesso em homologação — e lembre
                         que cada ambiente tem token e CSC próprios.
@@ -1211,7 +1211,7 @@ ${dados.aviso}` : "")
                             <td style={{ padding: "8px 10px", fontWeight: 700, color: "#1E293B" }}>{p.name}</td>
                             <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(p.price)}</td>
                             <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                              <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: isRegular ? "#DCFCE7" : "#FFEDD5", color: isRegular ? "#16A34A" : "#EA580C" }}>
+                              <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: isRegular ? "#ECFDF3" : "#FFEDD5", color: isRegular ? "#15803D" : "#EA580C" }}>
                                 {isRegular ? "Regular" : "Pendente"}
                               </span>
                             </td>
@@ -1235,7 +1235,7 @@ ${dados.aviso}` : "")
                 {combosList.map(combo => (
                   <div key={combo.id} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px" }}>
                     <h3 style={{ margin: "0 0 4px", fontSize: "0.95rem", fontWeight: 800 }}>{combo.name}</h3>
-                    <span style={{ fontSize: "0.9rem", fontWeight: 900, color: "#16A34A" }}>{fmt(combo.price)}</span>
+                    <span style={{ fontSize: "0.9rem", fontWeight: 900, color: "#15803D" }}>{fmt(combo.price)}</span>
                     <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "6px 0 12px" }}>
                       {combo.fiscalBreakdown ? "🟢 Engenharia Discriminada Ativa" : "⚪ Valor Único Padrão"}
                     </p>
@@ -1365,14 +1365,14 @@ ${dados.aviso}` : "")
               </div>
 
               {/* Card 2: Notas Autorizadas */}
-              <div style={{ background: "#fff", border: "1px solid #BBF7D0", borderRadius: 14, padding: "14px 16px", display: "flex", gap: 14, alignItems: "center" }}>
-                <div style={{ width: 42, height: 42, borderRadius: 12, background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Check size={22} color="#16A34A" />
+              <div style={{ background: "#fff", border: "1px solid #ABEFC6", borderRadius: 14, padding: "14px 16px", display: "flex", gap: 14, alignItems: "center" }}>
+                <div style={{ width: 42, height: 42, borderRadius: 12, background: "#ECFDF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Check size={22} color="#15803D" />
                 </div>
                 <div>
-                  <span style={{ fontSize: "0.72rem", color: "#166534", fontWeight: 700, textTransform: "uppercase" }}>Notas autorizadas</span>
+                  <span style={{ fontSize: "0.72rem", color: "#15803D", fontWeight: 700, textTransform: "uppercase" }}>Notas autorizadas</span>
                   <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#15803D" }}>{orderStats.countAutorizadas}</div>
-                  <span style={{ fontSize: "0.75rem", color: "#166534" }}>{fmt(orderStats.valAutorizadas)}</span>
+                  <span style={{ fontSize: "0.75rem", color: "#15803D" }}>{fmt(orderStats.valAutorizadas)}</span>
                 </div>
               </div>
 
@@ -1391,12 +1391,12 @@ ${dados.aviso}` : "")
               {/* Card 4: Notas Canceladas */}
               <div style={{ background: "#fff", border: "1px solid #FECACA", borderRadius: 14, padding: "14px 16px", display: "flex", gap: 14, alignItems: "center" }}>
                 <div style={{ width: 42, height: 42, borderRadius: 12, background: "#FEF2F2", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <AlertTriangle size={22} color="#DC2626" />
+                  <AlertTriangle size={22} color="#C92E09" />
                 </div>
                 <div>
-                  <span style={{ fontSize: "0.72rem", color: "#991B1B", fontWeight: 700, textTransform: "uppercase" }}>Notas canceladas</span>
-                  <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#991B1B" }}>{orderStats.countCanceladas}</div>
-                  <span style={{ fontSize: "0.75rem", color: "#991B1B" }}>{fmt(orderStats.valCanceladas)}</span>
+                  <span style={{ fontSize: "0.72rem", color: "#B71C1C", fontWeight: 700, textTransform: "uppercase" }}>Notas canceladas</span>
+                  <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#B71C1C" }}>{orderStats.countCanceladas}</div>
+                  <span style={{ fontSize: "0.75rem", color: "#B71C1C" }}>{fmt(orderStats.valCanceladas)}</span>
                 </div>
               </div>
             </div>
@@ -1456,7 +1456,7 @@ ${dados.aviso}` : "")
                         <td style={{ padding: "10px", textAlign: "center" }}>
                           {/* Antes era "Concluído" carimbado em TODA linha —
                               inclusive pedido cancelado. */}
-                          <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: isPedidoCancelado ? "#FEE2E2" : "#DCFCE7", color: isPedidoCancelado ? "#B91C1C" : "#15803D" }}>
+                          <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: isPedidoCancelado ? "#FEE2E2" : "#ECFDF3", color: isPedidoCancelado ? "#B71C1C" : "#15803D" }}>
                             {isPedidoCancelado ? "Cancelado" : "Concluído"}
                           </span>
                         </td>
@@ -1481,8 +1481,8 @@ ${dados.aviso}` : "")
                             }
                             style={{
                               fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6,
-                              background: isHomologacao ? "#FEF3C7" : isEmitted ? "#DCFCE7" : isProcessing ? "#FEF3C7" : isFailed ? "#FEE2E2" : "#F1F5F9",
-                              color: isHomologacao ? "#92400E" : isEmitted ? "#15803D" : isProcessing ? "#B45309" : isFailed ? "#B91C1C" : "#64748B",
+                              background: isHomologacao ? "#FFF7E6" : isEmitted ? "#ECFDF3" : isProcessing ? "#FFF7E6" : isFailed ? "#FEE2E2" : "#F1F5F9",
+                              color: isHomologacao ? "#92400E" : isEmitted ? "#15803D" : isProcessing ? "#B45309" : isFailed ? "#B71C1C" : "#64748B",
                             }}
                           >
                             {isHomologacao ? "TESTE — sem valor fiscal" : isEmitted ? "Autorizada" : isNotaCancelada ? "Nota cancelada" : isProcessing ? "Processando" : isFailed ? "Falhou" : "Não emitida"}
@@ -1499,7 +1499,7 @@ ${dados.aviso}` : "")
                               <button onClick={() => window.open(`/api/store/fiscal/danfe?orderId=${order.id}`, "_blank")} style={{ background: "none", border: "none", cursor: "pointer" }} title="DANFE oficial (PDF com QR Code)">
                                 🧾 DANFE
                               </button>
-                              <button onClick={() => handleCancelarNota(order)} style={{ background: "none", border: "none", cursor: "pointer", color: "#B91C1C" }} title="Cancelar a nota na SEFAZ (prazo curto — normalmente 30 min)">
+                              <button onClick={() => handleCancelarNota(order)} style={{ background: "none", border: "none", cursor: "pointer", color: "#B71C1C" }} title="Cancelar a nota na SEFAZ (prazo curto — normalmente 30 min)">
                                 ✕ Cancelar
                               </button>
                             </div>
@@ -1513,7 +1513,7 @@ ${dados.aviso}` : "")
                             <button
                               onClick={() => handleConsultarSituacao(order)}
                               title="A SEFAZ recebeu a nota e ainda não respondeu. Consulte em vez de reemitir."
-                              style={{ background: "#FEF3C7", border: "1px solid #B45309", color: "#B45309", borderRadius: 6, padding: "4px 8px", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}
+                              style={{ background: "#FFF7E6", border: "1px solid #B45309", color: "#B45309", borderRadius: 6, padding: "4px 8px", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}
                             >
                               Consultar situação
                             </button>
@@ -1594,7 +1594,7 @@ ${dados.aviso}` : "")
                 <div><strong>relacao-de-notas.csv</strong> — uma linha por nota (número, série, chave, protocolo, valor, forma de pagamento). Abre no Excel com duplo clique.</div>
                 <div><strong>vendas-sem-nota.csv</strong> — os pedidos do período que <strong>não</strong> tiveram nota, com o motivo. É a diferença entre o que a loja vendeu e o que ela declarou — o arquivo que ninguém pede e todo mundo precisa.</div>
               </div>
-              <div style={{ marginTop: 10, fontSize: "0.78rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 10px" }}>
+              <div style={{ marginTop: 10, fontSize: "0.78rem", color: "#92400E", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 10px" }}>
                 Notas emitidas em <strong>homologação</strong> (teste) ficam de fora do pacote. Elas não valem
                 fiscalmente, e mandá-las junto é o jeito mais rápido de alguém lançar um documento de teste
                 na contabilidade da empresa.
@@ -1730,7 +1730,7 @@ ${dados.aviso}` : "")
                   Mandar uma cópia para o e-mail da loja (para você conferir que chegou)
                 </label>
 
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", fontWeight: 700, color: contador.automatico ? "#15803D" : "#64748B", cursor: "pointer", background: contador.automatico ? "#F0FDF4" : "#F8FAFC", border: `1px solid ${contador.automatico ? "#A7F3D0" : "#E2E8F0"}`, borderRadius: 10, padding: "10px 12px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem", fontWeight: 700, color: contador.automatico ? "#15803D" : "#64748B", cursor: "pointer", background: contador.automatico ? "#ECFDF3" : "#F8FAFC", border: `1px solid ${contador.automatico ? "#A7F3D0" : "#E2E8F0"}`, borderRadius: 10, padding: "10px 12px" }}>
                   <input type="checkbox" checked={contador.automatico}
                     onChange={e => setContador((c: any) => ({ ...c, automatico: e.target.checked }))}
                     style={{ width: 17, height: 17, cursor: "pointer" }} />
@@ -1785,7 +1785,7 @@ ${dados.aviso}` : "")
                   O único lugar onde o ambiente aparecia era um alert exibido
                   uma vez, já com a nota emitida. */}
               {emHomologacao && (
-                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "6px solid #D97706", borderRadius: 10, padding: "12px", marginBottom: 12, fontSize: "0.82rem", color: "#92400E", lineHeight: 1.45 }}>
+                <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderLeft: "6px solid #B45309", borderRadius: 10, padding: "12px", marginBottom: 12, fontSize: "0.82rem", color: "#92400E", lineHeight: 1.45 }}>
                   <strong>Modo TESTE (homologação).</strong> Esta nota vai para o ambiente de teste
                   da SEFAZ: ela <strong>não tem valor fiscal</strong> e não serve para o cliente nem
                   para o contador. Para emitir de verdade, mude o ambiente em Configuração.
@@ -1854,7 +1854,7 @@ ${dados.aviso}` : "")
                         <input type="checkbox" checked={checked} onChange={() => setSelectedBatchOrderIds(prev => checked ? prev.filter(id => id !== order.id) : [...prev, order.id])} style={{ accentColor: "#7E22CE", width: 16, height: 16 }} />
                         <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>Pedido #{order.dailyOrderNumber} — {order.customerName}</span>
                       </div>
-                      <strong style={{ fontSize: "0.85rem", color: "#16A34A" }}>{fmt(order.totalAmount)}</strong>
+                      <strong style={{ fontSize: "0.85rem", color: "#15803D" }}>{fmt(order.totalAmount)}</strong>
                     </label>
                   );
                 })}
@@ -1889,7 +1889,7 @@ ${dados.aviso}` : "")
                 que fazem uma nota "parecer real". Se ela saiu do ambiente de
                 teste, isso precisa estar escrito antes deles, não depois. */}
             {Number(selectedOrderForDanfe.fiscalInfo?.ambiente) === 2 && (
-              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "6px solid #D97706", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+              <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderLeft: "6px solid #B45309", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
                 <strong style={{ fontSize: "0.85rem", color: "#92400E" }}>⚠️ NOTA DE TESTE — SEM VALOR FISCAL</strong>
                 <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#78350F", lineHeight: 1.45 }}>
                   Emitida no ambiente de <strong>homologação</strong> da SEFAZ. A chave e o protocolo
@@ -1996,7 +1996,7 @@ ${dados.aviso}` : "")
                 <div style={{ fontWeight: 800, fontSize: "1rem", color: "#581C87" }}>{editingCombo.name}</div>
                 <div style={{ fontSize: "0.78rem", color: "#7E22CE" }}>Preço do combo para o cliente</div>
               </div>
-              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#16A34A" }}>{fmt(editingCombo.price)}</div>
+              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#15803D" }}>{fmt(editingCombo.price)}</div>
             </div>
 
             {/* Groups from comboDetails */}
@@ -2120,7 +2120,7 @@ ${dados.aviso}` : "")
                                     width: 78, padding: "3px 6px", borderRadius: 6, textAlign: "right",
                                     border: `1.5px solid ${foiAlterado ? "#7E22CE" : "#CBD5E1"}`,
                                     background: foiAlterado ? "#FAF5FF" : "#fff",
-                                    fontWeight: 800, color: foiAlterado ? "#6B21A8" : "#16A34A",
+                                    fontWeight: 800, color: foiAlterado ? "#6B21A8" : "#15803D",
                                     fontSize: "0.8rem", fontFamily: "inherit",
                                   }}
                                 />
@@ -2175,7 +2175,7 @@ ${dados.aviso}` : "")
               </div>
 
               {fiscalItemsDraft.length === 0 ? (
-                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "1rem", textAlign: "center", fontSize: "0.82rem", color: "#92400E" }}>
+                <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 10, padding: "1rem", textAlign: "center", fontSize: "0.82rem", color: "#92400E" }}>
                   ⚠️ Nenhum item fiscal configurado. Clique em "Auto-preencher" acima para gerar automaticamente a partir dos grupos do combo.
                 </div>
               ) : (
@@ -2186,7 +2186,7 @@ ${dados.aviso}` : "")
                         <span style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 600 }}>
                           {item.groupTitle ? `${item.groupTitle}` : `Item ${idx + 1}`}
                         </span>
-                        <button onClick={() => setFiscalItemsDraft(fiscalItemsDraft.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", padding: 2 }}>
+                        <button onClick={() => setFiscalItemsDraft(fiscalItemsDraft.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", cursor: "pointer", color: "#C92E09", padding: 2 }}>
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -2307,28 +2307,28 @@ ${dados.aviso}` : "")
               const diff = totalFiscal - editingCombo.price;
               const isValid = Math.abs(diff) < 0.02; // tolerância de centavos
               return (
-                <div style={{ background: isValid ? "#F0FDF4" : "#FEF2F2", border: `1px solid ${isValid ? "#BBF7D0" : "#FECACA"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+                <div style={{ background: isValid ? "#ECFDF3" : "#FEF2F2", border: `1px solid ${isValid ? "#ABEFC6" : "#FECACA"}`, borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: isValid ? "#166534" : "#991B1B" }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: isValid ? "#15803D" : "#B71C1C" }}>
                       {isValid ? "✅ Valores batendo!" : "⚠️ Valores divergentes!"}
                     </span>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, fontSize: "0.82rem" }}>
                     <div>
-                      <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Preço combo (cliente)</div>
+                      <div style={{ color: "#64748B", fontSize: "0.72rem" }}>Preço combo (cliente)</div>
                       <div style={{ fontWeight: 800, color: "#334155" }}>{fmt(editingCombo.price)}</div>
                     </div>
                     <div>
-                      <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Menor seleção possível ({fiscalItemsDraft.length} opções)</div>
-                      <div style={{ fontWeight: 800, color: isValid ? "#16A34A" : "#EF4444" }}>{fmt(totalFiscal)}</div>
+                      <div style={{ color: "#64748B", fontSize: "0.72rem" }}>Menor seleção possível ({fiscalItemsDraft.length} opções)</div>
+                      <div style={{ fontWeight: 800, color: isValid ? "#15803D" : "#C92E09" }}>{fmt(totalFiscal)}</div>
                     </div>
                     <div>
-                      <div style={{ color: "#6B7280", fontSize: "0.72rem" }}>Diferença</div>
-                      <div style={{ fontWeight: 800, color: isValid ? "#16A34A" : "#EF4444" }}>{diff > 0 ? "+" : ""}{fmt(diff)}</div>
+                      <div style={{ color: "#64748B", fontSize: "0.72rem" }}>Diferença</div>
+                      <div style={{ fontWeight: 800, color: isValid ? "#15803D" : "#C92E09" }}>{diff > 0 ? "+" : ""}{fmt(diff)}</div>
                     </div>
                   </div>
                   {!isValid && (
-                    <p style={{ margin: "8px 0 0", fontSize: "0.75rem", color: "#991B1B", lineHeight: 1.4 }}>
+                    <p style={{ margin: "8px 0 0", fontSize: "0.75rem", color: "#B71C1C", lineHeight: 1.4 }}>
                       ⚠️ <strong>Atenção:</strong> A soma dos itens fiscais está diferente do preço base do combo. Isso é normal quando o combo tem itens com acréscimo — o valor final na NF irá refletir a escolha real do cliente. Certifique-se que o preço base por item está correto.
                     </p>
                   )}
@@ -2340,7 +2340,7 @@ ${dados.aviso}` : "")
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button onClick={() => { setEditingCombo(null); setComboDetails(null); }} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
               {fiscalItemsDraft.length > 0 && (
-                <button onClick={() => { setFiscalItemsDraft([]); }} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#EF4444", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer" }}>
+                <button onClick={() => { setFiscalItemsDraft([]); }} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer" }}>
                   <Trash2 size={14} style={{ marginRight: 4 }} /> Limpar tudo
                 </button>
               )}

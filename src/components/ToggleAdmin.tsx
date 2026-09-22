@@ -32,13 +32,13 @@ export default function ToggleAdmin({ userId, initialValue }: { userId: string; 
       cursor: loading ? "wait" : "pointer", userSelect: "none",
       padding: "0.35rem 0.75rem", borderRadius: "8px",
       background: checked ? "rgba(239,68,68,0.08)" : "rgba(0,0,0,0.03)",
-      border: checked ? "1.5px solid #EF4444" : "1.5px solid #E2E8F0",
+      border: checked ? "1.5px solid #C92E09" : "1.5px solid #E2E8F0",
       transition: "all 0.2s"
     }}>
       <div style={{
         width: "18px", height: "18px", borderRadius: "4px",
-        border: checked ? "2px solid #EF4444" : "2px solid #CBD5E1",
-        background: checked ? "#EF4444" : "#fff",
+        border: checked ? "2px solid #C92E09" : "2px solid #CBD5E1",
+        background: checked ? "#C92E09" : "#fff",
         display: "flex", alignItems: "center", justifyContent: "center",
         transition: "all 0.2s"
       }} onClick={handleToggle}>
@@ -50,12 +50,12 @@ export default function ToggleAdmin({ userId, initialValue }: { userId: string; 
       </div>
       <span style={{
         fontSize: "0.82rem", fontWeight: checked ? 700 : 500,
-        color: checked ? "#EF4444" : "#64748B"
+        color: checked ? "#C92E09" : "#64748B"
       }} onClick={handleToggle}>
         Admin
       </span>
       {checked && (
-        <span style={{ fontSize: "0.65rem", background: "#EF4444", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
+        <span style={{ fontSize: "0.65rem", background: "#C92E09", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
           🔑
         </span>
       )}

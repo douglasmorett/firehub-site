@@ -40,7 +40,7 @@ export default function GrantDaysButton({ userId, storeName }: { userId: string;
       disabled={loading}
       style={{
         background: "rgba(16,185,129,0.1)",
-        color: "#10B981",
+        color: "#15803D",
         border: "1px solid rgba(16,185,129,0.3)",
         padding: "4px 8px",
         borderRadius: "6px",

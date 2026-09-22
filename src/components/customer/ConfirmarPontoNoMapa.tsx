@@ -109,7 +109,7 @@ export default function ConfirmarPontoNoMapa({
 
       // A loja, para o cliente se situar ("minha casa é para lá da pizzaria").
       L.circleMarker([centro.lat, centro.lng], {
-        radius: 7, color: "#C62828", fillColor: "#C62828", fillOpacity: 1, weight: 2,
+        radius: 7, color: "#C92E09", fillColor: "#C92E09", fillOpacity: 1, weight: 2,
       })
         .addTo(mapa)
         .bindTooltip("A loja", { permanent: false });
@@ -191,7 +191,7 @@ export default function ConfirmarPontoNoMapa({
             onClick={() => confirmouOPonto && aoConfirmar(ponto)}
             style={{
               flex: 2, padding: "11px", borderRadius: 10, border: "none",
-              background: confirmouOPonto ? "#16A34A" : "#CBD5E1",
+              background: confirmouOPonto ? "#15803D" : "#CBD5E1",
               color: "#fff", fontWeight: 800, fontSize: "0.88rem",
               cursor: confirmouOPonto ? "pointer" : "not-allowed", fontFamily: "inherit",
             }}

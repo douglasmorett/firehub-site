@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { areasDeRisco as lerAreasDeRisco, type AreaDeRisco } from "@/lib/area-de-risco";
 import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from "lucide-react";
 
-const ZONE_COLORS = ["#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
+const ZONE_COLORS = ["#C92E09", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
 
 /**
  * Como a loja cobra a entrega. Três métodos, e cada um se explica em uma
@@ -35,7 +35,7 @@ const METODOS_DE_COBRANCA: { chave: string; emoji: string; nome: string; ajuda: 
 /** Uma área de entrega desenhada no mapa (lib/area-de-entrega.ts). */
 type AreaDeEntrega = { nome: string; pontos: [number, number][]; fee: number; time: number };
 
-const CORES_DA_AREA = ["#16A34A", "#2563EB", "#9333EA", "#EA580C", "#0891B2", "#DB2777"];
+const CORES_DA_AREA = ["#15803D", "#1D4ED8", "#9333EA", "#EA580C", "#0891B2", "#DB2777"];
 
 /**
  * Esta tela cadastra UMA coisa: quanto o CLIENTE paga (`fee`).
@@ -366,8 +366,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       const isHovered = hoveredZoneIndex !== null;
       const circle = L.circle([latLng.lat, latLng.lng], {
         radius: 6000,
-        color: isHovered ? "#9333EA" : "#8B5CF6",
-        fillColor: isHovered ? "#9333EA" : "#8B5CF6",
+        color: isHovered ? "#9333EA" : "#64748B",
+        fillColor: isHovered ? "#9333EA" : "#64748B",
         fillOpacity: isHovered ? 0.28 : 0.12,
         weight: isHovered ? 4.5 : 2.5,
         dashArray: "6,4",
@@ -394,13 +394,13 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     }));
 
     const sorted = [...items].sort((a, b) => b.km - a.km);
-    const CIRCLE_COLORS = ["#DC2626", "#EA580C", "#D97706", "#16A34A", "#2563EB", "#7C3AED"];
+    const CIRCLE_COLORS = ["#C92E09", "#EA580C", "#B45309", "#15803D", "#1D4ED8", "#475569"];
 
     sorted.forEach((zone, i) => {
       const isHovered = hoveredZoneIndex === zone.origIdx;
       const anyHovered = hoveredZoneIndex !== null;
       const colorIdx = items.length - 1 - i;
-      const strokeColor = isHovered ? "#DC2626" : CIRCLE_COLORS[colorIdx % CIRCLE_COLORS.length];
+      const strokeColor = isHovered ? "#C92E09" : CIRCLE_COLORS[colorIdx % CIRCLE_COLORS.length];
 
       const circle = L.circle([latLng.lat, latLng.lng], {
         radius: zone.km * 1000,
@@ -465,10 +465,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
     for (const area of areasDeRisco) {
       const poligono = L.polygon(area.pontos, {
-        color: area.ativa === false ? "#94A3B8" : "#DC2626",
+        color: area.ativa === false ? "#94A3B8" : "#C92E09",
         weight: 2,
         dashArray: "6 5",
-        fillColor: area.ativa === false ? "#94A3B8" : "#DC2626",
+        fillColor: area.ativa === false ? "#94A3B8" : "#C92E09",
         fillOpacity: area.ativa === false ? 0.08 : 0.2,
       }).addTo(map);
       poligono.bindTooltip(`🚫 ${area.nome}${area.ativa === false ? " (desligada)" : ""}`, { sticky: true });
@@ -481,7 +481,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       // Verde quando o contorno é de ENTREGA, vermelho quando é de recusa: a
       // loja está clicando no mesmo mapa para as duas coisas, e a cor é o que
       // diz qual delas está desenhando agora.
-      const corDoTracado = alvoDoDesenho === "ENTREGA" ? "#16A34A" : "#DC2626";
+      const corDoTracado = alvoDoDesenho === "ENTREGA" ? "#15803D" : "#C92E09";
       for (const p of desenhando) {
         const bolinha = L.circleMarker(p, { radius: 5, color: corDoTracado, fillColor: "#fff", fillOpacity: 1, weight: 2 }).addTo(map);
         riscoRef.current.push(bolinha);
@@ -737,9 +737,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
       {msg && (
         <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "1rem",
-          background: msg.startsWith("✅") ? "#f0fdf4" : msg.startsWith("⚠") ? "#fffbeb" : "#fef2f2",
-          color: msg.startsWith("✅") ? "#16a34a" : msg.startsWith("⚠") ? "#b45309" : "#dc2626",
-          border: `1px solid ${msg.startsWith("✅") ? "#bbf7d0" : msg.startsWith("⚠") ? "#fde68a" : "#fecaca"}`,
+          background: msg.startsWith("✅") ? "#ECFDF3" : msg.startsWith("⚠") ? "#FFF7E6" : "#fef2f2",
+          color: msg.startsWith("✅") ? "#15803D" : msg.startsWith("⚠") ? "#b45309" : "#C92E09",
+          border: `1px solid ${msg.startsWith("✅") ? "#ABEFC6" : msg.startsWith("⚠") ? "#fde68a" : "#fecaca"}`,
           fontSize: "0.85rem" }}>
           {msg}
         </div>
@@ -788,7 +788,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                   onMouseEnter={e => (e.currentTarget.style.background = "#F8FAFC")}
                   onMouseLeave={e => (e.currentTarget.style.background = "#fff")}
                 >
-                  <MapPin size={14} style={{ color: "#EF4444", flexShrink: 0 }} />
+                  <MapPin size={14} style={{ color: "#C92E09", flexShrink: 0 }} />
                   <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {item.display_name}
                   </span>
@@ -861,7 +861,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 </div>
               </div>
               <button onClick={confirmLocation}
-                style={{ padding: "8px 14px", background: "#DC2626", color: "#fff", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", fontFamily: "inherit", flexShrink: 0 }}>
+                style={{ padding: "8px 14px", background: "#C92E09", color: "#fff", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", fontFamily: "inherit", flexShrink: 0 }}>
                 <Check size={14} /> Confirmar local
               </button>
             </div>
@@ -871,11 +871,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               direita, o "Editar Endereço" ia parar atrás dele. */}
           {confirmed && (
             <div style={{ position: "absolute", top: "12px", left: "12px", zIndex: 1000, display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-              <div style={{ background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.8rem", fontWeight: 700, color: "#16a34a", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+              <div style={{ background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.8rem", fontWeight: 700, color: "#15803D", border: "1px solid #ABEFC6", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
                 <Check size={14} /> Localização confirmada
               </div>
               <button onClick={startEditingAddress}
-                style={{ background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.78rem", fontWeight: 700, color: "#DC2626", border: "1px solid #FCA5A5", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", fontFamily: "inherit" }}>
+                style={{ background: "#fff", borderRadius: "8px", padding: "6px 12px", fontSize: "0.78rem", fontWeight: 700, color: "#C92E09", border: "1px solid #FCA5A5", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", fontFamily: "inherit" }}>
                 <Pencil size={13} /> Editar Endereço
               </button>
             </div>
@@ -884,7 +884,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           {/* Map instructions */}
           {!latLng && (
             <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1000, background: "rgba(255,255,255,0.92)", borderRadius: "12px", padding: "16px 20px", textAlign: "center", fontSize: "0.85rem", color: "#475569", pointerEvents: "none" }}>
-              <Navigation size={24} style={{ margin: "0 auto 8px", color: "#DC2626" }} />
+              <Navigation size={24} style={{ margin: "0 auto 8px", color: "#C92E09" }} />
               <strong>Busque o endereço acima</strong><br />
               ou clique no mapa para posicionar o pin
             </div>
@@ -892,7 +892,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
           {/* Stats bar */}
           {zones.length > 0 && (
-            <div style={{ position: "absolute", bottom: "12px", left: "12px", right: confirmed ? "12px" : "auto", zIndex: 1000, background: "rgba(255,255,255,0.92)", borderRadius: "8px", padding: "6px 12px", fontSize: "0.75rem", color: "#374151", display: "flex", gap: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+            <div style={{ position: "absolute", bottom: "12px", left: "12px", right: confirmed ? "12px" : "auto", zIndex: 1000, background: "rgba(255,255,255,0.92)", borderRadius: "8px", padding: "6px 12px", fontSize: "0.75rem", color: "#334155", display: "flex", gap: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
               <span>📍 {Math.min(...zones.map(z => z.km))} km → {Math.max(...zones.map(z => z.km))} km</span>
               <span>⏱️ {Math.min(...zones.map(z => z.time))} → {Math.max(...zones.map(z => z.time))} min</span>
               <span>💰 R$ {Math.min(...zones.map(z => z.fee)).toFixed(2)} → {Math.max(...zones.map(z => z.fee)).toFixed(2)}</span>
@@ -917,7 +917,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             <button onClick={handleSave} disabled={saving || !latLng}
               title={latLng ? "Salvar a configuração de entrega" : "Escolha o local da loja no mapa primeiro"}
               style={{ padding: "9px 15px", borderRadius: 10, border: "none", whiteSpace: "nowrap", flexShrink: 0,
-                background: !latLng ? "#E2E8F0" : currentZoneType === "NEIGHBORHOOD" ? "#7C3AED" : "#16A34A",
+                background: !latLng ? "#E2E8F0" : currentZoneType === "NEIGHBORHOOD" ? "#475569" : "#15803D",
                 color: !latLng ? "#94A3B8" : "#fff",
                 fontWeight: 800, fontSize: "0.86rem", cursor: !latLng ? "not-allowed" : "pointer", fontFamily: "inherit",
                 display: "flex", alignItems: "center", gap: 6,
@@ -948,7 +948,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                   style={{
                     display: "flex", alignItems: "flex-start", gap: 10, width: "100%", textAlign: "left",
                     padding: "11px 13px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
-                    border: `2px solid ${ativo ? "#DC2626" : "#E2E8F0"}`,
+                    border: `2px solid ${ativo ? "#C92E09" : "#E2E8F0"}`,
                     background: ativo ? "#FEF2F2" : "#FFFFFF",
                     boxShadow: ativo ? "0 3px 12px rgba(220,38,38,0.10)" : "none",
                     transition: "all .15s ease",
@@ -957,9 +957,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                   <span style={{ fontSize: "1.1rem", lineHeight: 1.2, flexShrink: 0 }}>{m.emoji}</span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <b style={{ fontSize: "0.88rem", color: ativo ? "#991B1B" : "#1E293B" }}>{m.nome}</b>
+                      <b style={{ fontSize: "0.88rem", color: ativo ? "#B71C1C" : "#1E293B" }}>{m.nome}</b>
                       {m.recomendado && (
-                        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#15803D", background: "#DCFCE7", borderRadius: 999, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#15803D", background: "#ECFDF3", borderRadius: 999, padding: "2px 7px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                           Recomendado
                         </span>
                       )}
@@ -968,12 +968,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                       {m.ajuda}
                     </span>
                   </span>
-                  {ativo && <Check size={16} style={{ color: "#DC2626", flexShrink: 0, marginTop: 3 }} />}
+                  {ativo && <Check size={16} style={{ color: "#C92E09", flexShrink: 0, marginTop: 3 }} />}
                 </button>
               );
             })}
           </div>
-          <p style={{ margin: "8px 0 0", fontSize: "0.72rem", color: "#92400E", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
+          <p style={{ margin: "8px 0 0", fontSize: "0.72rem", color: "#92400E", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
             Faixa de distância e lista de bairros são cadastros diferentes: ao trocar entre eles, os valores
             não são transferidos — confira a tabela antes de salvar.
           </p>
@@ -1035,7 +1035,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                       <button
                         onClick={() => removeZone(i)}
                         title="Remover esta faixa"
-                        style={{ marginLeft: "auto", width: 28, height: 28, borderRadius: 7, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                        style={{ marginLeft: "auto", width: 28, height: 28, borderRadius: 7, border: "1px solid #FCA5A5", background: "#fff", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                       >
                         <Trash2 size={13} />
                       </button>
@@ -1082,8 +1082,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                     onMouseEnter={() => setHoveredZoneIndex(i)}
                     onMouseLeave={() => setHoveredZoneIndex(null)}
                     style={{
-                      border: `1.5px solid ${hoveredZoneIndex === i ? "#DDD6FE" : "#E2E8F0"}`,
-                      background: hoveredZoneIndex === i ? "#F5F3FF" : "#FFFFFF",
+                      border: `1.5px solid ${hoveredZoneIndex === i ? "#E2E8F0" : "#E2E8F0"}`,
+                      background: hoveredZoneIndex === i ? "#F8FAFC" : "#FFFFFF",
                       borderRadius: 12, padding: "10px 12px", marginBottom: 8, transition: "all .15s ease",
                     }}
                   >
@@ -1098,7 +1098,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                       <button
                         onClick={() => setNeighborhoodZones(prev => prev.filter((_, idx) => idx !== i))}
                         title="Remover este bairro"
-                        style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                        style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #FCA5A5", background: "#fff", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                       >
                         <Trash2 size={13} />
                       </button>
@@ -1134,11 +1134,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               acha não fecha entrega, e a vitrine pede a confirmação no mapa. */}
           {porDesenho && (
             <>
-              <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+              <div style={{ background: "#ECFDF3", border: "1.5px solid #ABEFC6", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
                 <p style={{ margin: 0, fontSize: "0.84rem", fontWeight: 800, color: "#14532D" }}>
                   ✏️ Desenhe onde você entrega
                 </p>
-                <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#166534", lineHeight: 1.45 }}>
+                <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#15803D", lineHeight: 1.45 }}>
                   Clique no mapa ponto a ponto até fechar o contorno. Cada área tem a sua taxa e o
                   seu tempo — e quem ficar fora de todos os contornos não consegue fechar pedido de
                   entrega.
@@ -1146,11 +1146,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               </div>
 
               {desenhando && alvoDoDesenho === "ENTREGA" ? (
-                <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ background: "#ECFDF3", border: "1.5px solid #ABEFC6", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
                   <p style={{ margin: 0, fontSize: "0.84rem", fontWeight: 800, color: "#14532D" }}>
                     Clique no mapa para marcar os cantos da área
                   </p>
-                  <p style={{ margin: "3px 0 10px", fontSize: "0.76rem", color: "#166534" }}>
+                  <p style={{ margin: "3px 0 10px", fontSize: "0.76rem", color: "#15803D" }}>
                     {desenhando.length} {desenhando.length === 1 ? "ponto marcado" : "pontos marcados"} — são necessários pelo menos 3.
                   </p>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1164,12 +1164,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                         setDesenhando(null);
                         setAlvoDoDesenho("RISCO");
                       }}
-                      style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: desenhando.length < 3 ? "#86EFAC" : "#16A34A", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: desenhando.length < 3 ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: desenhando.length < 3 ? "#ABEFC6" : "#15803D", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: desenhando.length < 3 ? "not-allowed" : "pointer", fontFamily: "inherit" }}
                     >
                       ✓ Fechar área
                     </button>
                     <button type="button" onClick={() => setDesenhando(desenhando.slice(0, -1))} disabled={desenhando.length === 0}
-                      style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #86EFAC", background: "#fff", color: "#166534", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}>
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #ABEFC6", background: "#fff", color: "#15803D", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}>
                       ↶ Desfazer ponto
                     </button>
                     <button type="button" onClick={() => { setDesenhando(null); setAlvoDoDesenho("RISCO"); }}
@@ -1182,14 +1182,14 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 <button
                   type="button"
                   onClick={() => { setAlvoDoDesenho("ENTREGA"); setDesenhando([]); }}
-                  style={{ width: "100%", padding: "10px", borderRadius: 9, border: "1.5px dashed #86EFAC", background: "#F0FDF4", color: "#15803D", fontWeight: 800, fontSize: "0.86rem", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}
+                  style={{ width: "100%", padding: "10px", borderRadius: 9, border: "1.5px dashed #ABEFC6", background: "#ECFDF3", color: "#15803D", fontWeight: 800, fontSize: "0.86rem", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}
                 >
                   + Desenhar área de entrega no mapa
                 </button>
               )}
 
               {areasDeEntrega.length === 0 && (
-                <p style={{ fontSize: "0.78rem", color: "#B45309", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 9, padding: "9px 11px", margin: "0 0 12px", lineHeight: 1.45 }}>
+                <p style={{ fontSize: "0.78rem", color: "#B45309", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 9, padding: "9px 11px", margin: "0 0 12px", lineHeight: 1.45 }}>
                   ⚠️ Nenhuma área desenhada. Enquanto não houver ao menos uma, a loja não recebe
                   pedido de entrega pelo cardápio — só retirada.
                 </p>
@@ -1208,7 +1208,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                       type="button"
                       onClick={() => setAreasDeEntrega((atual) => atual.filter((_, j) => j !== i))}
                       title="Apagar esta área"
-                      style={{ border: "none", background: "#FEE2E2", color: "#B91C1C", borderRadius: 7, width: 28, height: 28, cursor: "pointer" }}
+                      style={{ border: "none", background: "#FEE2E2", color: "#B71C1C", borderRadius: 7, width: 28, height: 28, cursor: "pointer" }}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -1246,10 +1246,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
             {desenhando && alvoDoDesenho === "RISCO" ? (
               <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
-                <p style={{ margin: 0, fontSize: "0.84rem", fontWeight: 800, color: "#991B1B" }}>
+                <p style={{ margin: 0, fontSize: "0.84rem", fontWeight: 800, color: "#B71C1C" }}>
                   Clique no mapa para marcar os cantos da área
                 </p>
-                <p style={{ margin: "3px 0 10px", fontSize: "0.76rem", color: "#B91C1C" }}>
+                <p style={{ margin: "3px 0 10px", fontSize: "0.76rem", color: "#B71C1C" }}>
                   {desenhando.length} {desenhando.length === 1 ? "ponto marcado" : "pontos marcados"} — são necessários pelo menos 3.
                 </p>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1263,12 +1263,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                       setDesenhando(null);
                       setAlvoDoDesenho("RISCO");
                     }}
-                    style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: desenhando.length < 3 ? "#FCA5A5" : "#DC2626", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: desenhando.length < 3 ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+                    style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: desenhando.length < 3 ? "#FCA5A5" : "#C92E09", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: desenhando.length < 3 ? "not-allowed" : "pointer", fontFamily: "inherit" }}
                   >
                     ✓ Fechar área
                   </button>
                   <button type="button" onClick={() => setDesenhando(desenhando.slice(0, -1))} disabled={desenhando.length === 0}
-                    style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #FCA5A5", background: "#fff", color: "#B91C1C", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}>
+                    style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #FCA5A5", background: "#fff", color: "#B71C1C", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}>
                     ↶ Desfazer ponto
                   </button>
                   <button type="button" onClick={() => setDesenhando(null)}
@@ -1281,7 +1281,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               <button
                 type="button"
                 onClick={() => { setAlvoDoDesenho("RISCO"); setDesenhando([]); }}
-                style={{ width: "100%", padding: "9px", borderRadius: 9, border: "1.5px dashed #FCA5A5", background: "#FEF2F2", color: "#B91C1C", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}
+                style={{ width: "100%", padding: "9px", borderRadius: 9, border: "1.5px dashed #FCA5A5", background: "#FEF2F2", color: "#B71C1C", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}
               >
                 + Desenhar área de risco no mapa
               </button>
@@ -1300,7 +1300,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                   checked={area.ativa !== false}
                   title={area.ativa === false ? "Voltar a recusar esta área" : "Parar de recusar, sem apagar o desenho"}
                   onChange={(e) => setAreasDeRisco((atual) => atual.map((a, j) => (j === i ? { ...a, ativa: e.target.checked } : a)))}
-                  style={{ width: 16, height: 16, accentColor: "#DC2626", cursor: "pointer", flexShrink: 0 }}
+                  style={{ width: 16, height: 16, accentColor: "#C92E09", cursor: "pointer", flexShrink: 0 }}
                 />
                 <input
                   value={area.nome}
@@ -1310,7 +1310,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 <span style={{ fontSize: "0.72rem", color: "#94A3B8", whiteSpace: "nowrap" }}>{area.pontos.length} pontos</span>
                 <button type="button" title="Apagar esta área"
                   onClick={() => { if (confirm(`Apagar a área "${area.nome}"?`)) setAreasDeRisco((atual) => atual.filter((_, j) => j !== i)); }}
-                  style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #FCA5A5", background: "#fff", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -1323,7 +1323,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
           <div className="fh-painel-rodape">
             {!latLng && (
-              <p style={{ margin: "0 0 8px", fontSize: "0.74rem", color: "#B91C1C", lineHeight: 1.4 }}>
+              <p style={{ margin: "0 0 8px", fontSize: "0.74rem", color: "#B71C1C", lineHeight: 1.4 }}>
                 Escolha o local da loja no mapa (busque o endereço acima) para poder salvar.
               </p>
             )}
@@ -1391,11 +1391,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         .fh-painel-rodape { padding: 10px 14px 12px; border-top: 1px solid #F1F5F9; background: #fff; flex-shrink: 0; }
         .fh-add-principal {
           width: 100%; padding: 11px; border-radius: 10px; border: none; cursor: pointer;
-          background: #DC2626; color: #fff; font-weight: 800; font-size: 0.88rem;
+          background: #C92E09; color: #fff; font-weight: 800; font-size: 0.88rem;
           display: flex; align-items: center; justify-content: center; gap: 7px;
           font-family: inherit; box-shadow: 0 4px 14px rgba(220,38,38,0.28);
         }
-        .fh-add-principal:hover { background: #B91C1C; }
+        .fh-add-principal:hover { background: #B71C1C; }
         @media (max-width: 1080px) {
           .fh-entrega-area { border: none; box-shadow: none; border-radius: 0; overflow: visible; }
           .fh-entrega-mapa {
@@ -1439,7 +1439,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
 const adjBtn: React.CSSProperties = {
   padding: "5px 10px", borderRadius: "6px", border: "1px solid #E2E8F0",
-  background: "#fff", color: "#374151", fontWeight: 600, fontSize: "0.75rem",
+  background: "#fff", color: "#334155", fontWeight: 600, fontSize: "0.75rem",
   cursor: "pointer", fontFamily: "inherit",
 };
 

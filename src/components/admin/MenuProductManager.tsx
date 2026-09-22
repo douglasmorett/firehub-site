@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
 
 const CHANNELS = [
-  { key: "activePDV",      label: "PDV",      icon: "🖥️",  color: "#3B82F6", desc: "Atendimento no balcão/caixa" },
-  { key: "activeDelivery", label: "Delivery", icon: "🛵",  color: "#10B981", desc: "Pedidos online pelo site" },
-  { key: "activeTotem",    label: "Totem",    icon: "📲",  color: "#8B5CF6", desc: "Autoatendimento no totem" },
-  { key: "activeGarcom",   label: "Garçom",   icon: "🍽️", color: "#F59E0B", desc: "Cardápio do garçom/mesa" },
+  { key: "activePDV",      label: "PDV",      icon: "🖥️",  color: "#1D4ED8", desc: "Atendimento no balcão/caixa" },
+  { key: "activeDelivery", label: "Delivery", icon: "🛵",  color: "#15803D", desc: "Pedidos online pelo site" },
+  { key: "activeTotem",    label: "Totem",    icon: "📲",  color: "#64748B", desc: "Autoatendimento no totem" },
+  { key: "activeGarcom",   label: "Garçom",   icon: "🍽️", color: "#B45309", desc: "Cardápio do garçom/mesa" },
 ];
 
 function ChannelBadges({ product, onToggle }: { product: any; onToggle: (key: string, val: boolean) => void }) {
@@ -75,7 +75,7 @@ function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }
                   Pergunta {gIdx + 1}
                 </span>
                 <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F172A" }}>{g.title}</span>
-                <span style={{ fontSize: "0.66rem", fontWeight: 700, color: obrigatoria ? "#B91C1C" : "#475569", background: obrigatoria ? "#FEF2F2" : "#F1F5F9", border: `1px solid ${obrigatoria ? "#FECACA" : "#E2E8F0"}`, padding: "1px 7px", borderRadius: "20px" }}>
+                <span style={{ fontSize: "0.66rem", fontWeight: 700, color: obrigatoria ? "#B71C1C" : "#475569", background: obrigatoria ? "#FEF2F2" : "#F1F5F9", border: `1px solid ${obrigatoria ? "#FECACA" : "#E2E8F0"}`, padding: "1px 7px", borderRadius: "20px" }}>
                   {regra}
                 </span>
               </div>
@@ -93,7 +93,7 @@ function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }
                     const porCanal = [it.additionalPriceSalao, it.additionalPriceDelivery, it.additionalPriceTotem].some(v => Number(v) > 0);
                     return (
                       <div key={it.id || opcaoId} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", minWidth: 0, opacity: pausada ? 0.6 : 1 }}>
-                        <span title={nome} style={{ flex: 1, minWidth: 0, fontSize: "0.78rem", fontWeight: 700, color: opcao || it.menuProduct ? "#1E293B" : "#EF4444", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span title={nome} style={{ flex: 1, minWidth: 0, fontSize: "0.78rem", fontWeight: 700, color: opcao || it.menuProduct ? "#1E293B" : "#C92E09", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {nome}
                           {it.optionNote && <span style={{ fontWeight: 500, color: "#64748B" }}> · {it.optionNote}</span>}
                           {pausada && <span title="Opção pausada"> ⏸️</span>}
@@ -103,10 +103,10 @@ function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }
                         ) : null}
                         <span
                           title={porCanal ? "Cobra valor diferente por canal (balcão, delivery, totem)" : "Quanto esta opção soma ao preço do combo"}
-                          style={{ fontSize: "0.76rem", fontWeight: 800, color: acrescimo > 0 ? "#E8360C" : "#16A34A", whiteSpace: "nowrap" }}
+                          style={{ fontSize: "0.76rem", fontWeight: 800, color: acrescimo > 0 ? "#E8360C" : "#15803D", whiteSpace: "nowrap" }}
                         >
                           {acrescimo > 0 ? `+${moeda(acrescimo)}` : "Grátis"}
-                          {porCanal && <span style={{ fontSize: "0.6rem", color: "#7C3AED", marginLeft: "3px" }}>por canal</span>}
+                          {porCanal && <span style={{ fontSize: "0.6rem", color: "#475569", marginLeft: "3px" }}>por canal</span>}
                         </span>
                         {opcao && (
                           <button type="button" onClick={() => onEditarOpcao(opcao)} title="Editar nome, foto ou descrição desta opção"
@@ -131,7 +131,7 @@ function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }
         <button
           type="button"
           onClick={onEditarCombo}
-          style={{ padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #93C5FD", background: "#EFF6FF", color: "#1D4ED8", fontSize: "0.76rem", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}
+          style={{ padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #B2DDFF", background: "#EFF6FF", color: "#1D4ED8", fontSize: "0.76rem", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}
         >
           ✏️ Editar perguntas e opções
         </button>
@@ -298,10 +298,10 @@ export default function MenuProductManager({
         setNewCatName(""); setNewCatEmoji("🍽️"); setNewCatColor("#E8360C");
         showToast("Categoria criada!");
       } else {
-        showToast("Erro ao criar categoria", "#EF4444");
+        showToast("Erro ao criar categoria", "#C92E09");
       }
     } catch {
-      showToast("Erro ao criar categoria", "#EF4444");
+      showToast("Erro ao criar categoria", "#C92E09");
     } finally {
       setNewCatSaving(false);
     }
@@ -409,10 +409,10 @@ export default function MenuProductManager({
         }
         showToast(`🗑️ Categoria "${catName}" excluída!`);
       } else {
-        showToast("Erro ao excluir categoria", "#EF4444");
+        showToast("Erro ao excluir categoria", "#C92E09");
       }
     } catch {
-      showToast("Erro ao excluir categoria", "#EF4444");
+      showToast("Erro ao excluir categoria", "#C92E09");
     } finally {
       setDeletingCatId(null);
     }
@@ -601,16 +601,16 @@ export default function MenuProductManager({
 
         setShowReorderModal(false);
         if (falhas.length > 0) {
-          showToast(`Ordem salva, mas ${falhas.length} categoria(s) falharam`, "#F59E0B");
+          showToast(`Ordem salva, mas ${falhas.length} categoria(s) falharam`, "#B45309");
         } else {
           showToast("✅ Ordem do cardápio salva com sucesso!");
         }
         router.refresh();
       } else {
-        showToast("Erro ao salvar ordem", "#EF4444");
+        showToast("Erro ao salvar ordem", "#C92E09");
       }
     } catch {
-      showToast("Erro ao salvar ordem", "#EF4444");
+      showToast("Erro ao salvar ordem", "#C92E09");
     } finally {
       setSavingReorder(false);
     }
@@ -644,10 +644,10 @@ export default function MenuProductManager({
         showToast("✅ Categoria renomeada com sucesso!");
         router.refresh();
       } else {
-        showToast("Erro ao renomear", "#EF4444");
+        showToast("Erro ao renomear", "#C92E09");
       }
     } catch {
-      showToast("Erro ao renomear", "#EF4444");
+      showToast("Erro ao renomear", "#C92E09");
     } finally {
       setSavingRename(false);
     }
@@ -683,7 +683,7 @@ export default function MenuProductManager({
   };
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
 
-  const showToast = (text: string, color = "#10B981") => {
+  const showToast = (text: string, color = "#15803D") => {
     setToastMsg({ text, color });
     setTimeout(() => setToastMsg(null), 4000);
   };
@@ -776,7 +776,7 @@ export default function MenuProductManager({
         setRecipeIngredients(existing.length > 0 ? existing : [{ stockItemId: "", quantityConsumed: "", newItemName: "", newItemUnit: "g" }]);
       }
     } catch {
-      showToast("Erro ao carregar ficha técnica", "#EF4444");
+      showToast("Erro ao carregar ficha técnica", "#C92E09");
     } finally {
       setRecipeLoading(false);
     }
@@ -790,7 +790,7 @@ export default function MenuProductManager({
         ri => (ri.stockItemId || ri.stockItemId === 'NEW') && parseFloat(ri.quantityConsumed) > 0
       );
       if (validIngredients.length === 0) {
-        showToast("Adicione pelo menos um ingrediente", "#EF4444");
+        showToast("Adicione pelo menos um ingrediente", "#C92E09");
         setRecipeSaving(false);
         return;
       }
@@ -813,10 +813,10 @@ export default function MenuProductManager({
         setProductsWithRecipe(prev => new Set([...prev, recipeProductId!]));
       } else {
         const d = await res.json();
-        showToast(d.error || "Erro ao salvar", "#EF4444");
+        showToast(d.error || "Erro ao salvar", "#C92E09");
       }
     } catch {
-      showToast("Erro ao salvar ficha técnica", "#EF4444");
+      showToast("Erro ao salvar ficha técnica", "#C92E09");
     } finally {
       setRecipeSaving(false);
     }
@@ -841,7 +841,7 @@ export default function MenuProductManager({
         router.refresh();
       }
     } catch {
-      showToast("Erro ao atualizar destaque", "#EF4444");
+      showToast("Erro ao atualizar destaque", "#C92E09");
     }
   };
 
@@ -1239,7 +1239,7 @@ export default function MenuProductManager({
       const res = await fetch("/api/admin/clean-no-photo-products");
       const data = await res.json();
       if (data.ok) {
-        showToast(`✅ ${data.count} produtos sem foto foram excluídos!`, "#10B981");
+        showToast(`✅ ${data.count} produtos sem foto foram excluídos!`, "#15803D");
         router.refresh();
       } else {
         alert("Erro ao excluir: " + (data.error || "tente novamente"));
@@ -1268,18 +1268,18 @@ export default function MenuProductManager({
             <div style={{ textAlign: "center", marginBottom: "1rem" }}>
               <div style={{
                 width: 56, height: 56, borderRadius: "50%",
-                background: "rgba(239,68,68,0.1)", border: "2px solid #EF4444",
+                background: "rgba(239,68,68,0.1)", border: "2px solid #C92E09",
                 display: "inline-flex", alignItems: "center", justifyContent: "center",
                 fontSize: "1.5rem",
               }}>🗑️</div>
             </div>
 
-            <h3 style={{ textAlign: "center", fontWeight: 800, fontSize: "1.1rem", marginBottom: "0.4rem", color: "#111827" }}>
+            <h3 style={{ textAlign: "center", fontWeight: 800, fontSize: "1.1rem", marginBottom: "0.4rem", color: "#0F172A" }}>
               Excluir produto permanentemente?
             </h3>
-            <p style={{ textAlign: "center", color: "#6B7280", fontSize: "0.88rem", marginBottom: "1rem", lineHeight: 1.6 }}>
+            <p style={{ textAlign: "center", color: "#64748B", fontSize: "0.88rem", marginBottom: "1rem", lineHeight: 1.6 }}>
               Você está prestes a excluir 
-              <strong style={{ color: "#111827" }}>“{confirmModal.name}”</strong>.
+              <strong style={{ color: "#0F172A" }}>“{confirmModal.name}”</strong>.
             </p>
 
             {/* Aviso de Vinculação a Combos */}
@@ -1307,7 +1307,7 @@ export default function MenuProductManager({
               background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "10px",
               padding: "0.75rem 1rem", marginBottom: "1.25rem",
             }}>
-              <p style={{ color: "#B91C1C", fontSize: "0.82rem", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
+              <p style={{ color: "#B71C1C", fontSize: "0.82rem", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
                 ⚠️ <strong>Esta ação é irreversível.</strong> Uma vez excluído, o produto
                 não pode ser recuperado. O histórico de pedidos que contêm este item
                 será preservado, mas o produto não aparecerá mais no cardápio.
@@ -1316,8 +1316,8 @@ export default function MenuProductManager({
 
             {/* Campo de confirmação */}
             <div style={{ marginBottom: "1.25rem" }}>
-              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#374151", marginBottom: "0.4rem" }}>
-                Para confirmar, digite <strong style={{ color: "#EF4444" }}>excluir</strong> no campo abaixo:
+              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#334155", marginBottom: "0.4rem" }}>
+                Para confirmar, digite <strong style={{ color: "#C92E09" }}>excluir</strong> no campo abaixo:
               </label>
               <input
                 type="text"
@@ -1327,20 +1327,20 @@ export default function MenuProductManager({
                 autoFocus
                 style={{
                   width: "100%", padding: "0.6rem 0.9rem", borderRadius: "8px", fontSize: "0.95rem",
-                  border: `2px solid ${deleteConfirmText === "excluir" ? "#10B981" : "#D1D5DB"}`,
-                  outline: "none", color: "#111827", boxSizing: "border-box",
-                  background: deleteConfirmText === "excluir" ? "#F0FDF4" : "#fff",
+                  border: `2px solid ${deleteConfirmText === "excluir" ? "#15803D" : "#CBD5E1"}`,
+                  outline: "none", color: "#0F172A", boxSizing: "border-box",
+                  background: deleteConfirmText === "excluir" ? "#ECFDF3" : "#fff",
                   transition: "border-color 0.2s, background 0.2s",
                   fontFamily: "inherit",
                 }}
               />
               {deleteConfirmText.length > 0 && deleteConfirmText !== "excluir" && (
-                <p style={{ color: "#EF4444", fontSize: "0.75rem", marginTop: "4px" }}>
+                <p style={{ color: "#C92E09", fontSize: "0.75rem", marginTop: "4px" }}>
                   Digite exatamente: <strong>excluir</strong>
                 </p>
               )}
               {deleteConfirmText === "excluir" && (
-                <p style={{ color: "#10B981", fontSize: "0.75rem", marginTop: "4px", fontWeight: 600 }}>
+                <p style={{ color: "#15803D", fontSize: "0.75rem", marginTop: "4px", fontWeight: 600 }}>
                   ✓ Confirmado — botão liberado
                 </p>
               )}
@@ -1351,8 +1351,8 @@ export default function MenuProductManager({
                 onClick={() => { setConfirmModal(null); setDeleteConfirmText(""); }}
                 style={{
                   flex: 1, padding: "0.65rem", borderRadius: "10px", fontWeight: 700,
-                  border: "1.5px solid #D1D5DB",
-                  background: "#F9FAFB", color: "#374151",
+                  border: "1.5px solid #CBD5E1",
+                  background: "#F8FAFC", color: "#334155",
                   cursor: "pointer", fontSize: "0.9rem",
                 }}>
                 Cancelar
@@ -1363,7 +1363,7 @@ export default function MenuProductManager({
                 style={{
                   flex: 1, padding: "0.65rem", borderRadius: "10px", fontWeight: 800,
                   border: "none",
-                  background: deleteConfirmText !== "excluir" ? "#FCA5A5" : deleting ? "#B91C1C" : "#EF4444",
+                  background: deleteConfirmText !== "excluir" ? "#FCA5A5" : deleting ? "#B71C1C" : "#C92E09",
                   color: "#fff",
                   cursor: (deleting || deleteConfirmText !== "excluir") ? "not-allowed" : "pointer",
                   fontSize: "0.9rem", transition: "background 0.2s",
@@ -1380,7 +1380,7 @@ export default function MenuProductManager({
       {(toastMsg || softDeletedName) && (
         <div style={{
           position: "fixed", bottom: 24, right: 24, zIndex: 9998,
-          background: toastMsg?.color || "#F59E0B", color: toastMsg?.color === "#EF4444" ? "#fff" : "#000",
+          background: toastMsg?.color || "#B45309", color: toastMsg?.color === "#C92E09" ? "#fff" : "#000",
           fontWeight: 700, padding: "0.75rem 1.25rem", borderRadius: "12px",
           boxShadow: "0 8px 24px rgba(0,0,0,0.3)", fontSize: "0.85rem",
         }}>
@@ -1405,28 +1405,28 @@ export default function MenuProductManager({
             <div style={{ textAlign: "center", marginBottom: "1rem" }}>
               <div style={{
                 width: 60, height: 60, borderRadius: "50%",
-                background: "rgba(245,158,11,0.1)", border: "2px solid #F59E0B",
+                background: "rgba(245,158,11,0.1)", border: "2px solid #B45309",
                 display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "1.8rem",
               }}>⏸️</div>
             </div>
 
-            <h3 style={{ textAlign: "center", fontWeight: 900, fontSize: "1.15rem", color: "#111827", marginBottom: "0.4rem" }}>
+            <h3 style={{ textAlign: "center", fontWeight: 900, fontSize: "1.15rem", color: "#0F172A", marginBottom: "0.4rem" }}>
               Pausar item vinculado a combos
             </h3>
-            <p style={{ textAlign: "center", color: "#6B7280", fontSize: "0.88rem", marginBottom: "1rem", lineHeight: 1.5 }}>
+            <p style={{ textAlign: "center", color: "#64748B", fontSize: "0.88rem", marginBottom: "1rem", lineHeight: 1.5 }}>
               <strong style={{ color: "#B45309" }}>“{pauseModal.name}”</strong> faz parte de{" "}
-              <strong style={{ color: "#111827" }}>{pauseModal.affectedCombos.length} combo{pauseModal.affectedCombos.length > 1 ? "s" : ""}</strong>:
+              <strong style={{ color: "#0F172A" }}>{pauseModal.affectedCombos.length} combo{pauseModal.affectedCombos.length > 1 ? "s" : ""}</strong>:
             </p>
 
             {/* Lista de combos afetados */}
             <div style={{
-              background: "#F3F4F6", borderRadius: "10px", padding: "0.6rem 1rem",
+              background: "#F1F5F9", borderRadius: "10px", padding: "0.6rem 1rem",
               marginBottom: "1.25rem", maxHeight: "120px", overflowY: "auto",
-              border: "1px solid #E5E7EB",
+              border: "1px solid #E2E8F0",
             }}>
               {pauseModal.affectedCombos.map((c: any) => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", fontSize: "0.85rem", color: "#374151" }}>
-                  <span style={{ fontSize: "0.7rem", background: "#F59E0B", color: "#fff", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>COMBO</span>
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.25rem 0", fontSize: "0.85rem", color: "#334155" }}>
+                  <span style={{ fontSize: "0.7rem", background: "#B45309", color: "#fff", borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>COMBO</span>
                   {c.name}
                 </div>
               ))}
@@ -1438,8 +1438,8 @@ export default function MenuProductManager({
                 onClick={() => { doToggle(pauseModal.id, false); showToast(`✅ Só “${pauseModal.name}” foi pausado.`); }}
                 disabled={pausing}
                 style={{
-                  padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #F59E0B",
-                  background: "#FFFBEB", color: "#92400E", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
+                  padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #B45309",
+                  background: "#FFF7E6", color: "#92400E", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
                 }}>
                 ⏸️ Pausar só este item
                 <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#B45309", marginTop: "2px" }}>
@@ -1454,11 +1454,11 @@ export default function MenuProductManager({
                 }}
                 disabled={pausing}
                 style={{
-                  padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #EF4444",
-                  background: "#FEF2F2", color: "#B91C1C", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
+                  padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #C92E09",
+                  background: "#FEF2F2", color: "#B71C1C", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
                 }}>
                 ⏸️ Pausar este item + todos os {pauseModal.affectedCombos.length} combo(s)
-                <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#DC2626", marginTop: "2px" }}>
+                <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#C92E09", marginTop: "2px" }}>
                   Recomendado quando o item é essencial para o combo
                 </span>
               </button>
@@ -1467,8 +1467,8 @@ export default function MenuProductManager({
                 onClick={() => setPauseModal(null)}
                 style={{
                   padding: "0.55rem", borderRadius: "10px", fontWeight: 600,
-                  border: "1px solid #D1D5DB", background: "#F9FAFB",
-                  color: "#6B7280", cursor: "pointer", fontSize: "0.85rem",
+                  border: "1px solid #CBD5E1", background: "#F8FAFC",
+                  color: "#64748B", cursor: "pointer", fontSize: "0.85rem",
                 }}>
                 Cancelar
               </button>
@@ -1502,7 +1502,7 @@ export default function MenuProductManager({
           <button
             onClick={openReorderModal}
             className="btn btn-outline"
-            style={{ fontSize: "0.85rem", background: "#F5F3FF", borderColor: "#7C3AED", color: "#6D28D9", fontWeight: 800, boxShadow: "0 2px 6px rgba(124,58,237,0.12)" }}
+            style={{ fontSize: "0.85rem", background: "#F8FAFC", borderColor: "#475569", color: "#334155", fontWeight: 800, boxShadow: "0 2px 6px rgba(124,58,237,0.12)" }}
             title="Ordenar as categorias e os produtos dentro de cada uma"
           >
             <ArrowUpDown size={15} style={{ marginRight: "4px" }} /> Reordenar Cardápio
@@ -1588,7 +1588,7 @@ export default function MenuProductManager({
             {/* Header com botão Fechar X */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", borderBottom: "1px solid #F1F5F9", paddingBottom: "1rem" }}>
               <div>
-                <span style={{ fontSize: "0.72rem", background: editandoOpcao ? "#EFF6FF" : "#FEF2F2", color: editandoOpcao ? "#1D4ED8" : "#DC2626", fontWeight: 800, padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                <span style={{ fontSize: "0.72rem", background: editandoOpcao ? "#EFF6FF" : "#FEF2F2", color: editandoOpcao ? "#1D4ED8" : "#C92E09", fontWeight: 800, padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   {editandoOpcao ? "🧩 Editar Opção de Combo" : editingId ? "✏️ Editar Produto" : "✨ Novo Produto"}
                 </span>
                 <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#0F172A", margin: "6px 0 0", letterSpacing: "-0.5px" }}>
@@ -1615,9 +1615,9 @@ export default function MenuProductManager({
                 canais e as tags não valem para ela — o que a mostra é a
                 pergunta do combo, e o que cobra é o acréscimo lá dentro. */}
             {editandoOpcao && (
-              <div style={{ marginBottom: "1.25rem", padding: "12px 14px", background: "#EFF6FF", border: "1.5px solid #93C5FD", borderRadius: "12px" }}>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: "0.88rem", color: "#1E3A8A" }}>🧩 Este item é uma opção de combo</p>
-                <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1E40AF", lineHeight: 1.55 }}>
+              <div style={{ marginBottom: "1.25rem", padding: "12px 14px", background: "#EFF6FF", border: "1.5px solid #B2DDFF", borderRadius: "12px" }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: "0.88rem", color: "#1D4ED8" }}>🧩 Este item é uma opção de combo</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1D4ED8", lineHeight: 1.55 }}>
                   Ele não aparece no cardápio como item nem é vendido avulso.{" "}
                   {combosDaOpcaoEditada.length > 0 ? (
                     <>O cliente só o vê dentro das perguntas de <strong>{combosDaOpcaoEditada.map(c => c.name).join(", ")}</strong>, e o valor cobrado é o acréscimo definido em cada combo.</>
@@ -1645,7 +1645,7 @@ export default function MenuProductManager({
                         style={{ width: "90px", height: "90px", objectFit: "cover", borderRadius: "16px", border: "2.5px solid #FFF", boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
                         onError={(e: any) => { e.target.style.display = 'none'; }}
                       />
-                      <span style={{ position: "absolute", bottom: "-6px", left: "50%", transform: "translateX(-50%)", background: "#16A34A", color: "#FFF", fontSize: "0.58rem", fontWeight: 800, padding: "1px 6px", borderRadius: "10px", whiteSpace: "nowrap" }}>
+                      <span style={{ position: "absolute", bottom: "-6px", left: "50%", transform: "translateX(-50%)", background: "#15803D", color: "#FFF", fontSize: "0.58rem", fontWeight: 800, padding: "1px 6px", borderRadius: "10px", whiteSpace: "nowrap" }}>
                         FOTO ATIVA
                       </span>
                     </div>
@@ -1713,7 +1713,7 @@ export default function MenuProductManager({
                         onClick={() => setImageUrl("")}
                         style={{
                           padding: "6px 10px", borderRadius: "8px", background: "#FEF2F2",
-                          color: "#DC2626", border: "1px solid #FCA5A5", fontSize: "0.75rem",
+                          color: "#C92E09", border: "1px solid #FCA5A5", fontSize: "0.75rem",
                           fontWeight: 700, cursor: "pointer"
                         }}
                       >
@@ -1773,9 +1773,9 @@ export default function MenuProductManager({
                   style={{
                     width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
                     padding: "13px 16px", borderRadius: 14,
-                    border: `2px solid ${abaPrecos || precoSalao || precoDelivery || precoTotem ? "#7C3AED" : "#C4B5FD"}`,
+                    border: `2px solid ${abaPrecos || precoSalao || precoDelivery || precoTotem ? "#475569" : "#CBD5E1"}`,
                     background: abaPrecos || precoSalao || precoDelivery || precoTotem
-                      ? "linear-gradient(90deg, #F5F3FF 0%, #FFF 100%)"
+                      ? "linear-gradient(90deg, #F8FAFC 0%, #FFF 100%)"
                       : "#FFF",
                     boxShadow: abaPrecos || precoSalao || precoDelivery || precoTotem ? "0 2px 10px rgba(124,58,237,0.14)" : "none",
                     display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
@@ -1785,21 +1785,21 @@ export default function MenuProductManager({
                     <span style={{
                       display: "inline-flex", alignItems: "center", justifyContent: "center",
                       width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                      background: "#EDE9FE", fontSize: "1.05rem",
+                      background: "#F1F5F9", fontSize: "1.05rem",
                     }}>💰</span>
                     <span style={{ minWidth: 0 }}>
-                      <span style={{ display: "block", fontWeight: 800, fontSize: "0.92rem", color: "#4C1D95" }}>
+                      <span style={{ display: "block", fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>
                         Preço diferente por canal
                       </span>
-                      <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#7C3AED", opacity: 0.9 }}>
+                      <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#475569", opacity: 0.9 }}>
                         Cobrar valores diferentes no balcão/mesa, no delivery e no totem
                       </span>
                     </span>
                   </span>
                   <span style={{
                     flexShrink: 0, fontSize: "0.76rem", fontWeight: 800, padding: "6px 12px", borderRadius: 999,
-                    background: (precoSalao || precoDelivery || precoTotem) ? "#7C3AED" : "#EDE9FE",
-                    color: (precoSalao || precoDelivery || precoTotem) ? "#FFF" : "#6D28D9",
+                    background: (precoSalao || precoDelivery || precoTotem) ? "#475569" : "#F1F5F9",
+                    color: (precoSalao || precoDelivery || precoTotem) ? "#FFF" : "#334155",
                   }}>
                     {(precoSalao || precoDelivery || precoTotem)
                       ? `${[precoSalao, precoDelivery, precoTotem].filter(Boolean).length} preço próprio`
@@ -1857,7 +1857,7 @@ export default function MenuProductManager({
                   </button>
                 </div>
                 {dynCategories.length === 0 ? (
-                  <div style={{ padding: "10px 12px", background: "#FFF5F3", border: "1.5px dashed #FCA5A5", borderRadius: 10, fontSize: "0.8rem", color: "#DC2626" }}>
+                  <div style={{ padding: "10px 12px", background: "#FFF5F3", border: "1.5px dashed #FCA5A5", borderRadius: 10, fontSize: "0.8rem", color: "#C92E09" }}>
                     ⚠️ Cadastre sua primeira categoria abaixo para poder salvar produtos:
                   </div>
                 ) : (
@@ -1919,7 +1919,7 @@ export default function MenuProductManager({
                         onClick={handleCreateCategory}
                         disabled={newCatSaving || !newCatName.trim()}
                         style={{
-                          width: "100%", padding: "8px", background: "#16A34A", color: "#fff",
+                          width: "100%", padding: "8px", background: "#15803D", color: "#fff",
                           border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.82rem",
                           cursor: newCatSaving || !newCatName.trim() ? "not-allowed" : "pointer",
                           opacity: newCatSaving || !newCatName.trim() ? 0.6 : 1
@@ -1954,7 +1954,7 @@ export default function MenuProductManager({
                               onClick={() => handleDeleteCategory(c.id, c.name)}
                               disabled={deletingCatId === c.id}
                               style={{
-                                border: "none", background: "#FEF2F2", color: "#DC2626",
+                                border: "none", background: "#FEF2F2", color: "#C92E09",
                                 borderRadius: "6px", padding: "4px 8px", cursor: "pointer",
                                 fontSize: "0.75rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px"
                               }}
@@ -1974,7 +1974,7 @@ export default function MenuProductManager({
               <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
                 <div style={{ height: "24px", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
                   <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Custo do Produto (R$)</label>
-                  <span style={{ fontSize: "0.68rem", background: "#FEF3C7", color: "#92400E", padding: "1px 6px", borderRadius: "4px", fontWeight: 700, lineHeight: 1 }}>
+                  <span style={{ fontSize: "0.68rem", background: "#FFF7E6", color: "#92400E", padding: "1px 6px", borderRadius: "4px", fontWeight: 700, lineHeight: 1 }}>
                     Usado no CMV
                   </span>
                 </div>
@@ -1989,7 +1989,7 @@ export default function MenuProductManager({
                   onChange={e => setCost(e.target.value)}
                 />
                 {cost && parseFloat(price) > 0 && parseFloat(cost) > 0 && (
-                  <p style={{ fontSize: "0.72rem", color: "#16A34A", marginTop: "4px", fontWeight: 600 }}>
+                  <p style={{ fontSize: "0.72rem", color: "#15803D", marginTop: "4px", fontWeight: 600 }}>
                     Margem bruta: {(((parseFloat(price) - parseFloat(cost)) / parseFloat(price)) * 100).toFixed(1)}%
                   </p>
                 )}
@@ -2015,13 +2015,13 @@ export default function MenuProductManager({
                 <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem", color: "#92400E" }}>🏷️ Tags do Produto <span style={{ fontSize: "0.7rem", fontWeight: 400, color: "#B45309" }}>(aparecem no cardápio digital)</span></p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                   {[
-                    { label: "🔥 Mais Vendido", color: "#EF4444" },
-                    { label: "✨ Novo", color: "#8B5CF6" },
-                    { label: "🏷️ Promoção", color: "#10B981" },
-                    { label: "🌱 Vegano", color: "#16A34A" },
-                    { label: "🌶️ Picante", color: "#F59E0B" },
-                    { label: "⭐ Destaque", color: "#F59E0B" },
-                    { label: "❄️ Gelado", color: "#3B82F6" },
+                    { label: "🔥 Mais Vendido", color: "#C92E09" },
+                    { label: "✨ Novo", color: "#64748B" },
+                    { label: "🏷️ Promoção", color: "#15803D" },
+                    { label: "🌱 Vegano", color: "#15803D" },
+                    { label: "🌶️ Picante", color: "#B45309" },
+                    { label: "⭐ Destaque", color: "#B45309" },
+                    { label: "❄️ Gelado", color: "#1D4ED8" },
                     { label: "🎉 Especial do Dia", color: "#EC4899" },
                   ].map(tag => {
                     const active = tags.includes(tag.label);
@@ -2055,7 +2055,7 @@ export default function MenuProductManager({
                 <p style={{ fontWeight: 700, fontSize: "0.85rem", color: "#0F172A", margin: 0 }}>
                   📅 Dias de Disponibilidade no Cardápio
                 </p>
-                <span style={{ fontSize: "0.7rem", fontWeight: 700, background: availableDaysMode === "all" ? "#DCFCE7" : "#FEF3C7", color: availableDaysMode === "all" ? "#166534" : "#92400E", padding: "2px 8px", borderRadius: "6px" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 700, background: availableDaysMode === "all" ? "#ECFDF3" : "#FFF7E6", color: availableDaysMode === "all" ? "#15803D" : "#92400E", padding: "2px 8px", borderRadius: "6px" }}>
                   {availableDaysMode === "all" ? "🟢 Sempre Ativo" : `📅 ${selectedDays.length} dia(s) selecionado(s)`}
                 </span>
               </div>
@@ -2067,8 +2067,8 @@ export default function MenuProductManager({
                   onClick={() => setAvailableDaysMode("all")}
                   style={{
                     padding: "10px 14px", borderRadius: "10px", fontSize: "0.82rem", fontWeight: 700,
-                    border: `1.5px solid ${availableDaysMode === "all" ? "#16A34A" : "#CBD5E1"}`,
-                    background: availableDaysMode === "all" ? "#F0FDF4" : "#FFF",
+                    border: `1.5px solid ${availableDaysMode === "all" ? "#15803D" : "#CBD5E1"}`,
+                    background: availableDaysMode === "all" ? "#ECFDF3" : "#FFF",
                     color: availableDaysMode === "all" ? "#15803D" : "#64748B",
                     cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
                     textAlign: "left"
@@ -2091,7 +2091,7 @@ export default function MenuProductManager({
                     padding: "10px 14px", borderRadius: "10px", fontSize: "0.82rem", fontWeight: 700,
                     border: `1.5px solid ${availableDaysMode === "specific" ? "#E8360C" : "#CBD5E1"}`,
                     background: availableDaysMode === "specific" ? "#FEF2F2" : "#FFF",
-                    color: availableDaysMode === "specific" ? "#DC2626" : "#64748B",
+                    color: availableDaysMode === "specific" ? "#C92E09" : "#64748B",
                     cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
                     textAlign: "left"
                   }}
@@ -2125,8 +2125,8 @@ export default function MenuProductManager({
                           }}
                           style={{
                             padding: "8px 2px", borderRadius: "8px", fontSize: "0.78rem", fontWeight: 800,
-                            border: `2px solid ${active ? "#16A34A" : "#E2E8F0"}`,
-                            background: active ? "#DCFCE7" : "#F8FAFC",
+                            border: `2px solid ${active ? "#15803D" : "#E2E8F0"}`,
+                            background: active ? "#ECFDF3" : "#F8FAFC",
                             color: active ? "#15803D" : "#94A3B8",
                             cursor: "pointer", textAlign: "center", transition: "all 0.15s"
                           }}
@@ -2140,7 +2140,7 @@ export default function MenuProductManager({
                     })}
                   </div>
                   {selectedDays.length === 0 && (
-                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#DC2626", fontWeight: 700 }}>
+                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#C92E09", fontWeight: 700 }}>
                       ⚠️ Selecione pelo menos 1 dia da semana para o produto ficar visível.
                     </p>
                   )}
@@ -2175,13 +2175,13 @@ export default function MenuProductManager({
             </div>}
 
             {/* SINALIZAÇÃO DE BEBIDA NA COMANDA */}
-            <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: isBeverage ? "#EFF6FF" : "#F8FAFC", borderRadius: "14px", border: `1.5px solid ${isBeverage ? "#3B82F6" : "#E2E8F0"}`, transition: "all 0.2s" }}>
+            <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: isBeverage ? "#EFF6FF" : "#F8FAFC", borderRadius: "14px", border: `1.5px solid ${isBeverage ? "#1D4ED8" : "#E2E8F0"}`, transition: "all 0.2s" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
                 <input
                   type="checkbox"
                   checked={isBeverage}
                   onChange={e => setIsBeverage(e.target.checked)}
-                  style={{ width: "20px", height: "20px", accentColor: "#2563EB", cursor: "pointer" }}
+                  style={{ width: "20px", height: "20px", accentColor: "#1D4ED8", cursor: "pointer" }}
                 />
                 <div>
                   <p style={{ fontWeight: 800, fontSize: "0.88rem", color: isBeverage ? "#1D4ED8" : "#0F172A", margin: 0 }}>
@@ -2236,9 +2236,9 @@ export default function MenuProductManager({
                       style={{
                         width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
                         marginBottom: precosCanalNoCombo ? "0.6rem" : "0.9rem", padding: "13px 16px", borderRadius: 14,
-                        border: `2px solid ${precosCanalNoCombo || comPrecoProprio > 0 ? "#7C3AED" : "#C4B5FD"}`,
+                        border: `2px solid ${precosCanalNoCombo || comPrecoProprio > 0 ? "#475569" : "#CBD5E1"}`,
                         background: precosCanalNoCombo || comPrecoProprio > 0
-                          ? "linear-gradient(90deg, #F5F3FF 0%, #FFF 100%)"
+                          ? "linear-gradient(90deg, #F8FAFC 0%, #FFF 100%)"
                           : "#FFF",
                         boxShadow: precosCanalNoCombo || comPrecoProprio > 0 ? "0 2px 10px rgba(124,58,237,0.14)" : "none",
                         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
@@ -2248,21 +2248,21 @@ export default function MenuProductManager({
                         <span style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
                           width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                          background: "#EDE9FE", fontSize: "1.05rem",
+                          background: "#F1F5F9", fontSize: "1.05rem",
                         }}>💰</span>
                         <span style={{ minWidth: 0 }}>
-                          <span style={{ display: "block", fontWeight: 800, fontSize: "0.92rem", color: "#4C1D95" }}>
+                          <span style={{ display: "block", fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>
                             Preço diferente por canal nas opções
                           </span>
-                          <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#7C3AED", opacity: 0.9 }}>
+                          <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#475569", opacity: 0.9 }}>
                             Cobrar valores diferentes no balcão/mesa, no delivery e no totem
                           </span>
                         </span>
                       </span>
                       <span style={{
                         flexShrink: 0, fontSize: "0.76rem", fontWeight: 800, padding: "6px 12px", borderRadius: 999,
-                        background: comPrecoProprio > 0 ? "#7C3AED" : "#EDE9FE",
-                        color: comPrecoProprio > 0 ? "#FFF" : "#6D28D9",
+                        background: comPrecoProprio > 0 ? "#475569" : "#F1F5F9",
+                        color: comPrecoProprio > 0 ? "#FFF" : "#334155",
                       }}>
                         {comPrecoProprio > 0
                           ? `${comPrecoProprio} opç${comPrecoProprio > 1 ? "ões" : "ão"} com preço próprio`
@@ -2273,7 +2273,7 @@ export default function MenuProductManager({
                 })()}
 
                 {precosCanalNoCombo && (
-                  <p style={{ margin: "0 0 0.9rem", fontSize: "0.78rem", color: "#5B21B6", lineHeight: 1.55, padding: "9px 12px", background: "#FAF5FF", border: "1px dashed #DDD6FE", borderRadius: 10 }}>
+                  <p style={{ margin: "0 0 0.9rem", fontSize: "0.78rem", color: "#334155", lineHeight: 1.55, padding: "9px 12px", background: "#FAF5FF", border: "1px dashed #E2E8F0", borderRadius: 10 }}>
                     Cada opção abaixo ganhou os três campos. <strong>Canal em branco cobra o +R$ normal</strong> da
                     opção (o campo mostra qual valor é esse) — preencha só onde o preço muda.
                   </p>
@@ -2315,7 +2315,7 @@ export default function MenuProductManager({
                           <ArrowDown size={14} />
                         </button>
                         <button type="button" onClick={() => removeGroup(gIdx)} title="Remover pergunta"
-                          style={{ padding: "5px", borderRadius: "7px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#EF4444", cursor: "pointer" }}>
+                          style={{ padding: "5px", borderRadius: "7px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", cursor: "pointer" }}>
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -2334,12 +2334,12 @@ export default function MenuProductManager({
                           <div style={{ display: "flex", border: "1.5px solid #E2E8F0", borderRadius: "9px", overflow: "hidden" }}>
                             <button type="button"
                               onClick={() => { if (!obrigatorio) updateGroup(gIdx, "minQty", 1); }}
-                              style={{ padding: "8px 14px", border: "none", fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", background: obrigatorio ? "#2563EB" : "#FFF", color: obrigatorio ? "#FFF" : "#64748B" }}>
+                              style={{ padding: "8px 14px", border: "none", fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", background: obrigatorio ? "#1D4ED8" : "#FFF", color: obrigatorio ? "#FFF" : "#64748B" }}>
                               Obrigatória
                             </button>
                             <button type="button"
                               onClick={() => { if (obrigatorio) updateGroup(gIdx, "minQty", 0); }}
-                              style={{ padding: "8px 14px", border: "none", fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", background: !obrigatorio ? "#2563EB" : "#FFF", color: !obrigatorio ? "#FFF" : "#64748B" }}>
+                              style={{ padding: "8px 14px", border: "none", fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", background: !obrigatorio ? "#1D4ED8" : "#FFF", color: !obrigatorio ? "#FFF" : "#64748B" }}>
                               Opcional
                             </button>
                           </div>
@@ -2390,7 +2390,7 @@ export default function MenuProductManager({
                           cada reajuste. Aqui ele cadastra o preço CHEIO de cada
                           sabor e diz como a casa cobra. */}
                       {group.maxQty > 1 && (
-                        <div style={{ margin: "0 0 0.9rem", padding: "10px 12px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px" }}>
+                        <div style={{ margin: "0 0 0.9rem", padding: "10px 12px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "10px" }}>
                           <label style={{ fontSize: "0.75rem", fontWeight: 800, color: "#92400E", display: "block", marginBottom: "6px" }}>
                             🍕 Escolhendo mais de um, como cobrar?
                           </label>
@@ -2411,7 +2411,7 @@ export default function MenuProductManager({
                                     padding: "7px 12px", borderRadius: "9px", cursor: "pointer", fontFamily: "inherit",
                                     fontSize: "0.78rem", fontWeight: 800,
                                     border: `1.5px solid ${ativa ? "#B45309" : "#E2E8F0"}`,
-                                    background: ativa ? "#FEF3C7" : "#FFF",
+                                    background: ativa ? "#FFF7E6" : "#FFF",
                                     color: ativa ? "#78350F" : "#64748B",
                                   }}
                                 >
@@ -2451,7 +2451,7 @@ export default function MenuProductManager({
                                   </button>
                                 </div>
 
-                                <span style={{ flex: 1, minWidth: "120px", fontSize: "0.82rem", fontWeight: 700, color: produto ? "#1E293B" : "#EF4444" }}>
+                                <span style={{ flex: 1, minWidth: "120px", fontSize: "0.82rem", fontWeight: 700, color: produto ? "#1E293B" : "#C92E09" }}>
                                   {produto ? produto.name : "Item excluído do cardápio"} {produto && produto.active === false && "⏸️"}
                                 </span>
 
@@ -2484,16 +2484,16 @@ export default function MenuProductManager({
                                   title="Quantas vezes ESTE item pode ser repetido. Vazio = só o limite da pergunta."
                                   style={{ width: "56px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
                                 />
-                                <button type="button" onClick={() => removeGroupItem(gIdx, it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444" }} title="Tirar item da pergunta">
+                                <button type="button" onClick={() => removeGroupItem(gIdx, it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C92E09" }} title="Tirar item da pergunta">
                                   <Trash2 size={15} />
                                 </button>
 
                                 {precosCanalNoCombo && (
-                                  <div style={{ flexBasis: "100%", display: "flex", alignItems: "stretch", gap: "8px", flexWrap: "wrap", marginTop: "6px", padding: "9px 10px", background: "#F5F3FF", borderRadius: "10px", border: "1.5px solid #DDD6FE" }}>
+                                  <div style={{ flexBasis: "100%", display: "flex", alignItems: "stretch", gap: "8px", flexWrap: "wrap", marginTop: "6px", padding: "9px 10px", background: "#F8FAFC", borderRadius: "10px", border: "1.5px solid #E2E8F0" }}>
                                     {[
-                                      { campo: "additionalPriceSalao", icone: "🍽️", rotulo: "Balcão/mesa", cor: "#B45309", fundo: "#FFFBEB", borda: "#FCD34D", titulo: "Preço desta opção no balcão e na mesa." },
-                                      { campo: "additionalPriceDelivery", icone: "🛵", rotulo: "Delivery", cor: "#1D4ED8", fundo: "#EFF6FF", borda: "#BFDBFE", titulo: "Preço desta opção no cardápio online, iFood, JotaJá, 99Food e WhatsApp." },
-                                      { campo: "additionalPriceTotem", icone: "📲", rotulo: "Totem", cor: "#6D28D9", fundo: "#FAF5FF", borda: "#DDD6FE", titulo: "Preço desta opção no totem de autoatendimento." },
+                                      { campo: "additionalPriceSalao", icone: "🍽️", rotulo: "Balcão/mesa", cor: "#B45309", fundo: "#FFF7E6", borda: "#FCD34D", titulo: "Preço desta opção no balcão e na mesa." },
+                                      { campo: "additionalPriceDelivery", icone: "🛵", rotulo: "Delivery", cor: "#1D4ED8", fundo: "#EFF6FF", borda: "#B2DDFF", titulo: "Preço desta opção no cardápio online, iFood, JotaJá, 99Food e WhatsApp." },
+                                      { campo: "additionalPriceTotem", icone: "📲", rotulo: "Totem", cor: "#334155", fundo: "#FAF5FF", borda: "#E2E8F0", titulo: "Preço desta opção no totem de autoatendimento." },
                                     ].map(c => {
                                       // Preenchido = este canal cobra o seu próprio preço. Vazio = herda o
                                       // "+R$" da opção, e o campo diz qual valor é esse em vez de ficar em
@@ -2549,20 +2549,20 @@ export default function MenuProductManager({
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                         <button type="button"
                           onClick={() => { setSeletorAberto(seletorDesteGrupo ? null : gIdx); setBuscaOpcao(""); setNovaOpcao(null); }}
-                          style={{ flex: 1, minWidth: "180px", padding: "9px 12px", borderRadius: "9px", border: "1.5px solid #3B82F6", background: seletorDesteGrupo ? "#3B82F6" : "#EFF6FF", color: seletorDesteGrupo ? "#FFF" : "#1D4ED8", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}>
+                          style={{ flex: 1, minWidth: "180px", padding: "9px 12px", borderRadius: "9px", border: "1.5px solid #1D4ED8", background: seletorDesteGrupo ? "#1D4ED8" : "#EFF6FF", color: seletorDesteGrupo ? "#FFF" : "#1D4ED8", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}>
                           <Search size={13} style={{ marginRight: "5px", verticalAlign: "-2px" }} />
                           Item que já existe
                         </button>
                         <button type="button"
                           onClick={() => { setNovaOpcao(formularioAberto ? null : { gIdx, nome: "", acrescimo: "", obs: "" }); setSeletorAberto(null); }}
-                          style={{ flex: 1, minWidth: "180px", padding: "9px 12px", borderRadius: "9px", border: "1.5px solid #16A34A", background: formularioAberto ? "#16A34A" : "#F0FDF4", color: formularioAberto ? "#FFF" : "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}>
+                          style={{ flex: 1, minWidth: "180px", padding: "9px 12px", borderRadius: "9px", border: "1.5px solid #15803D", background: formularioAberto ? "#15803D" : "#ECFDF3", color: formularioAberto ? "#FFF" : "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}>
                           <Sparkles size={13} style={{ marginRight: "5px", verticalAlign: "-2px" }} />
                           Cadastrar item novo
                         </button>
                       </div>
 
                       {seletorDesteGrupo && (
-                        <div style={{ marginTop: "8px", padding: "10px", background: "#F8FAFC", border: "1px solid #BFDBFE", borderRadius: "10px" }}>
+                        <div style={{ marginTop: "8px", padding: "10px", background: "#F8FAFC", border: "1px solid #B2DDFF", borderRadius: "10px" }}>
                           <input
                             autoFocus
                             value={buscaOpcao}
@@ -2593,7 +2593,7 @@ export default function MenuProductManager({
                       )}
 
                       {formularioAberto && novaOpcao && (
-                        <div style={{ marginTop: "8px", padding: "12px", background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: "10px" }}>
+                        <div style={{ marginTop: "8px", padding: "12px", background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: "10px" }}>
                           <p style={{ fontSize: "0.74rem", color: "#15803D", margin: "0 0 8px", fontWeight: 700 }}>
                             O item entra só nesta pergunta — não vira produto avulso no cardápio.
                           </p>
@@ -2633,7 +2633,7 @@ export default function MenuProductManager({
                           </div>
                           <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
                             <button type="button" onClick={criarOpcaoNaHora} disabled={salvandoOpcao}
-                              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#16A34A", color: "#FFF", fontWeight: 800, fontSize: "0.8rem", cursor: salvandoOpcao ? "default" : "pointer", opacity: salvandoOpcao ? 0.6 : 1 }}>
+                              style={{ padding: "8px 16px", borderRadius: "8px", border: "none", background: "#15803D", color: "#FFF", fontWeight: 800, fontSize: "0.8rem", cursor: salvandoOpcao ? "default" : "pointer", opacity: salvandoOpcao ? 0.6 : 1 }}>
                               {salvandoOpcao ? "Cadastrando..." : "Cadastrar e adicionar"}
                             </button>
                             <button type="button" onClick={() => setNovaOpcao(null)}
@@ -2672,7 +2672,7 @@ export default function MenuProductManager({
                 disabled={loading}
                 style={{
                   flex: 2, padding: "12px", borderRadius: "12px",
-                  background: "linear-gradient(135deg, #E8360C, #C62828)",
+                  background: "linear-gradient(135deg, #E8360C, #C92E09)",
                   color: "#FFF", border: "none", fontWeight: 800,
                   fontSize: "0.95rem", cursor: loading ? "not-allowed" : "pointer",
                   opacity: loading ? 0.7 : 1, boxShadow: "0 4px 14px rgba(232,54,12,0.35)"
@@ -2844,7 +2844,7 @@ export default function MenuProductManager({
 
                       <button
                         onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                        style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#EF4444", cursor: "pointer" }}
+                        style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", cursor: "pointer" }}
                         title="Excluir categoria"
                       >
                         <Trash2 size={13} />
@@ -2871,7 +2871,7 @@ export default function MenuProductManager({
                                 padding: "10px 14px",
                                 background: p.active ? "#FFFFFF" : "#F8FAFC",
                                 borderRadius: "12px",
-                                border: !p.active ? "1.5px dashed #EF4444" : "1px solid #E2E8F0",
+                                border: !p.active ? "1.5px dashed #C92E09" : "1px solid #E2E8F0",
                                 opacity: p.active ? 1 : 0.65,
                                 gap: "12px",
                                 flexWrap: "wrap",
@@ -2891,7 +2891,7 @@ export default function MenuProductManager({
                                   <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                                     <h4 style={{ margin: 0, fontSize: "0.92rem", fontWeight: 800, color: "#0F172A" }}>{p.name}</h4>
                                     {p.isCombo ? (
-                                      <span style={{ fontSize: "0.68rem", fontWeight: 800, padding: "2px 7px", borderRadius: "6px", background: "#EFF6FF", color: "#1D4ED8", border: "1.5px solid #93C5FD", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                      <span style={{ fontSize: "0.68rem", fontWeight: 800, padding: "2px 7px", borderRadius: "6px", background: "#EFF6FF", color: "#1D4ED8", border: "1.5px solid #B2DDFF", display: "inline-flex", alignItems: "center", gap: "3px" }}>
                                         📦 COMBO {p.comboGroups?.length ? `• ${p.comboGroups.length} grupos` : ""}
                                       </span>
                                     ) : (
@@ -2900,7 +2900,7 @@ export default function MenuProductManager({
                                       </span>
                                     )}
                                     {!p.active && (
-                                      <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "2px 6px", borderRadius: "6px", background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA" }}>
+                                      <span style={{ fontSize: "0.65rem", fontWeight: 800, padding: "2px 6px", borderRadius: "6px", background: "#FEF2F2", color: "#C92E09", border: "1px solid #FECACA" }}>
                                         ⏸️ PAUSADO
                                       </span>
                                     )}
@@ -2915,13 +2915,13 @@ export default function MenuProductManager({
                                   {/* Tags e margem */}
                                   <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
                                     {p.tags && (() => { try { const t = JSON.parse(p.tags); return t.map((tag: string) => (
-                                      <span key={tag} style={{ fontSize: "0.62rem", fontWeight: 700, padding: "1px 6px", borderRadius: "12px", background: tag.includes("Destaque") ? "#FEF3C7" : "#F1F5F9", color: tag.includes("Destaque") ? "#92400E" : "#475569", border: `1px solid ${tag.includes("Destaque") ? "#FCD34D" : "#CBD5E1"}` }}>
+                                      <span key={tag} style={{ fontSize: "0.62rem", fontWeight: 700, padding: "1px 6px", borderRadius: "12px", background: tag.includes("Destaque") ? "#FFF7E6" : "#F1F5F9", color: tag.includes("Destaque") ? "#92400E" : "#475569", border: `1px solid ${tag.includes("Destaque") ? "#FCD34D" : "#CBD5E1"}` }}>
                                         {tag}
                                       </span>
                                     )); } catch { return null; } })()}
                                     
                                     {p.cost > 0 && !p.isCombo && (
-                                      <span style={{ fontSize: "0.62rem", background: "#F0FDF4", color: "#16A34A", border: "1px solid #BBF7D0", borderRadius: "4px", padding: "1px 5px", fontWeight: 700 }}>
+                                      <span style={{ fontSize: "0.62rem", background: "#ECFDF3", color: "#15803D", border: "1px solid #ABEFC6", borderRadius: "4px", padding: "1px 5px", fontWeight: 700 }}>
                                         Margem: {(((p.price - p.cost) / p.price) * 100).toFixed(0)}%
                                       </span>
                                     )}
@@ -2935,7 +2935,7 @@ export default function MenuProductManager({
                                           type="button"
                                           onClick={() => setComplementosAbertos(prev => ({ ...prev, [p.id]: !aberto }))}
                                           title="Ver as perguntas e opções deste combo"
-                                          style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "0.66rem", fontWeight: 800, padding: "2px 8px", borderRadius: "12px", cursor: "pointer", background: aberto ? "#1D4ED8" : "#EFF6FF", color: aberto ? "#FFF" : "#1D4ED8", border: "1px solid #93C5FD" }}
+                                          style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "0.66rem", fontWeight: 800, padding: "2px 8px", borderRadius: "12px", cursor: "pointer", background: aberto ? "#1D4ED8" : "#EFF6FF", color: aberto ? "#FFF" : "#1D4ED8", border: "1px solid #B2DDFF" }}
                                         >
                                           🧩 Complementos · {p.comboGroups.length} {p.comboGroups.length === 1 ? "pergunta" : "perguntas"} · {totalOpcoes} {totalOpcoes === 1 ? "opção" : "opções"}
                                           {aberto ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
@@ -2963,8 +2963,8 @@ export default function MenuProductManager({
                                   style={{
                                     padding: "4px 8px",
                                     fontSize: "0.72rem",
-                                    borderColor: (p.tags && p.tags.includes("Destaque")) ? "#F59E0B" : "#CBD5E1",
-                                    background: (p.tags && p.tags.includes("Destaque")) ? "#FEF3C7" : "#FFF",
+                                    borderColor: (p.tags && p.tags.includes("Destaque")) ? "#B45309" : "#CBD5E1",
+                                    background: (p.tags && p.tags.includes("Destaque")) ? "#FFF7E6" : "#FFF",
                                     color: (p.tags && p.tags.includes("Destaque")) ? "#92400E" : "#64748B",
                                     fontWeight: (p.tags && p.tags.includes("Destaque")) ? 800 : 600,
                                     borderRadius: "8px",
@@ -2981,9 +2981,9 @@ export default function MenuProductManager({
                                     padding: "4px 8px",
                                     fontSize: "0.72rem",
                                     borderRadius: "8px",
-                                    borderColor: productsWithRecipe.has(p.id) ? "#10B981" : "#F59E0B",
-                                    color: productsWithRecipe.has(p.id) ? "#10B981" : "#92400E",
-                                    background: productsWithRecipe.has(p.id) ? "#F0FDF4" : "#FFFBEB",
+                                    borderColor: productsWithRecipe.has(p.id) ? "#15803D" : "#B45309",
+                                    color: productsWithRecipe.has(p.id) ? "#15803D" : "#92400E",
+                                    background: productsWithRecipe.has(p.id) ? "#ECFDF3" : "#FFF7E6",
                                     fontWeight: 700,
                                   }}
                                   title="Ficha técnica do produto"
@@ -2997,7 +2997,7 @@ export default function MenuProductManager({
                                   style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px" }}
                                   title={p.active ? "Pausar vendas" : "Ativar vendas"}
                                 >
-                                  {p.active ? <Pause size={12} color="#64748B" /> : <Play size={12} color="#16A34A" />}
+                                  {p.active ? <Pause size={12} color="#64748B" /> : <Play size={12} color="#15803D" />}
                                 </button>
 
                                 <button
@@ -3197,7 +3197,7 @@ export default function MenuProductManager({
             </button>
 
             <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
-              <div style={{ width: "42px", height: "42px", borderRadius: "13px", background: "linear-gradient(135deg, #EDE9FE, #DDD6FE)", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: "42px", height: "42px", borderRadius: "13px", background: "linear-gradient(135deg, #F1F5F9, #E2E8F0)", color: "#475569", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <ArrowUpDown size={21} />
               </div>
               <div style={{ minWidth: 0 }}>
@@ -3217,7 +3217,7 @@ export default function MenuProductManager({
               <span>•</span>
               <span>📦 {comboProducts.length} combos</span>
               {categoriasMexidas.size > 0 && (
-                <span style={{ marginLeft: "auto", color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", fontWeight: 900 }}>
+                <span style={{ marginLeft: "auto", color: "#15803D", background: "#ECFDF3", padding: "2px 8px", borderRadius: "6px", fontWeight: 900 }}>
                   {categoriasMexidas.size} {categoriasMexidas.size === 1 ? "categoria alterada" : "categorias alteradas"}
                 </span>
               )}
@@ -3246,8 +3246,8 @@ export default function MenuProductManager({
                         style={{
                           display: "flex", alignItems: "center", gap: "7px",
                           padding: "7px 8px", borderRadius: "10px",
-                          border: selecionada ? "1.5px solid #7C3AED" : "1.5px solid #E2E8F0",
-                          background: selecionada ? "#F5F3FF" : "#FFF",
+                          border: selecionada ? "1.5px solid #475569" : "1.5px solid #E2E8F0",
+                          background: selecionada ? "#F8FAFC" : "#FFF",
                           cursor: "pointer",
                           // O que faltava: sem isto o flex espreme as linhas
                           // abaixo da altura natural e um texto vaza sobre o outro.
@@ -3264,7 +3264,7 @@ export default function MenuProductManager({
                           <ArrowUpDown size={13} />
                         </span>
 
-                        <span style={{ fontSize: "0.72rem", fontWeight: 900, color: "#7C3AED", background: "#EDE9FE", padding: "3px 6px", borderRadius: "6px", flexShrink: 0 }}>
+                        <span style={{ fontSize: "0.72rem", fontWeight: 900, color: "#475569", background: "#F1F5F9", padding: "3px 6px", borderRadius: "6px", flexShrink: 0 }}>
                           {idx + 1}º
                         </span>
 
@@ -3274,7 +3274,7 @@ export default function MenuProductManager({
                             {qtd}
                           </span>
                           {categoriasMexidas.has(chave) && (
-                            <span style={{ marginLeft: "5px", fontSize: "0.62rem", fontWeight: 900, color: "#059669", background: "#D1FAE5", padding: "1px 5px", borderRadius: "5px" }}>
+                            <span style={{ marginLeft: "5px", fontSize: "0.62rem", fontWeight: 900, color: "#15803D", background: "#ECFDF3", padding: "1px 5px", borderRadius: "5px" }}>
                               ✓
                             </span>
                           )}
@@ -3357,7 +3357,7 @@ export default function MenuProductManager({
                           <ArrowUpDown size={13} />
                         </span>
 
-                        <span style={{ fontSize: "0.72rem", fontWeight: 900, color: "#6D28D9", minWidth: "24px", flexShrink: 0 }}>
+                        <span style={{ fontSize: "0.72rem", fontWeight: 900, color: "#334155", minWidth: "24px", flexShrink: 0 }}>
                           {pIdx + 1}º
                         </span>
 
@@ -3369,7 +3369,7 @@ export default function MenuProductManager({
                         <span style={{ flex: 1, minWidth: 0, fontSize: "0.83rem", fontWeight: 700, color: "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {prod.name}
                           {prod.isCombo && (
-                            <span style={{ marginLeft: "6px", fontSize: "0.62rem", fontWeight: 800, color: "#7C3AED", background: "#EDE9FE", padding: "1px 5px", borderRadius: "5px" }}>
+                            <span style={{ marginLeft: "6px", fontSize: "0.62rem", fontWeight: 800, color: "#475569", background: "#F1F5F9", padding: "1px 5px", borderRadius: "5px" }}>
                               COMBO
                             </span>
                           )}
@@ -3416,7 +3416,7 @@ export default function MenuProductManager({
                 type="button"
                 onClick={() => handleSaveReorder()}
                 disabled={savingReorder}
-                style={{ flex: 2, padding: "11px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #7C3AED, #6D28D9)", color: "#FFF", fontWeight: 900, cursor: savingReorder ? "not-allowed" : "pointer", boxShadow: "0 4px 14px rgba(124,58,237,0.35)", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                style={{ flex: 2, padding: "11px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg, #475569, #334155)", color: "#FFF", fontWeight: 900, cursor: savingReorder ? "not-allowed" : "pointer", boxShadow: "0 4px 14px rgba(124,58,237,0.35)", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
               >
                 {savingReorder ? (
                   <>
@@ -3460,7 +3460,7 @@ export default function MenuProductManager({
               <button
                 onClick={handleRenameCategory}
                 disabled={savingRename}
-                style={{ flex: 1.5, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #E8360C, #C62828)", color: "#FFF", fontWeight: 800, cursor: savingRename ? "not-allowed" : "pointer" }}
+                style={{ flex: 1.5, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #E8360C, #C92E09)", color: "#FFF", fontWeight: 800, cursor: savingRename ? "not-allowed" : "pointer" }}
               >
                 {savingRename ? "Salvando..." : "Salvar Nome"}
               </button>
@@ -3484,7 +3484,7 @@ export default function MenuProductManager({
 
             {recipeLoading ? (
               <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
-                <div style={{ width: "36px", height: "36px", border: "3px solid #f1f5f9", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 1rem" }} />
+                <div style={{ width: "36px", height: "36px", border: "3px solid #f1f5f9", borderTopColor: "#1D4ED8", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 1rem" }} />
                 <p style={{ color: "#64748b", fontSize: "0.85rem" }}>Carregando...</p>
               </div>
             ) : (
@@ -3558,7 +3558,7 @@ export default function MenuProductManager({
                               const n = [...recipeIngredients];
                               n.splice(idx, 1);
                               setRecipeIngredients(n.length > 0 ? n : [{ stockItemId: "", quantityConsumed: "", newItemName: "", newItemUnit: "g" }]);
-                            }} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", padding: "0.3rem", borderRadius: "0.25rem", display: "flex" }}>
+                            }} style={{ background: "none", border: "none", color: "#C92E09", cursor: "pointer", padding: "0.3rem", borderRadius: "0.25rem", display: "flex" }}>
                               <Trash2 size={14} />
                             </button>
                           </td>
@@ -3570,7 +3570,7 @@ export default function MenuProductManager({
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
                   <button onClick={() => setRecipeIngredients([...recipeIngredients, { stockItemId: "", quantityConsumed: "", newItemName: "", newItemUnit: "g" }])}
-                    style={{ border: "1.5px dashed #2563eb", background: "none", color: "#2563eb", fontWeight: 700, fontSize: "0.82rem", padding: "0.5rem 1rem", borderRadius: "0.5rem", cursor: "pointer" }}>
+                    style={{ border: "1.5px dashed #1D4ED8", background: "none", color: "#1D4ED8", fontWeight: 700, fontSize: "0.82rem", padding: "0.5rem 1rem", borderRadius: "0.5rem", cursor: "pointer" }}>
                     + Adicionar Ingrediente
                   </button>
                   <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -3579,7 +3579,7 @@ export default function MenuProductManager({
                       Cancelar
                     </button>
                     <button onClick={handleSaveRecipe} disabled={recipeSaving}
-                      style={{ background: "#2563eb", color: "white", border: "none", padding: "0.55rem 1.1rem", borderRadius: "0.5rem", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", opacity: recipeSaving ? 0.6 : 1 }}>
+                      style={{ background: "#1D4ED8", color: "white", border: "none", padding: "0.55rem 1.1rem", borderRadius: "0.5rem", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", opacity: recipeSaving ? 0.6 : 1 }}>
                       {recipeSaving ? "Salvando..." : "💾 Salvar Ficha Técnica"}
                     </button>
                   </div>

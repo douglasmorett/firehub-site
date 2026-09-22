@@ -120,11 +120,11 @@ export default function CartPage() {
 
           {isSpecialStore ? (
             <div style={{
-              background: "#F0FDF4", borderRadius: 14, padding: "1.25rem",
-              marginBottom: "1.5rem", border: "1.5px solid #BBF7D0",
+              background: "#ECFDF3", borderRadius: 14, padding: "1.25rem",
+              marginBottom: "1.5rem", border: "1.5px solid #ABEFC6",
               textAlign: "left"
             }}>
-              <p style={{ color: "#166534", fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: 6 }}>
+              <p style={{ color: "#15803D", fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: 6 }}>
                 ✓ Conta de Registro
               </p>
               <p style={{ color: "#14532D", fontSize: "0.82rem", lineHeight: 1.5 }}>
@@ -143,13 +143,13 @@ export default function CartPage() {
               {boletoCode && (
                 <div style={{
                   background: "#F0F4FF", borderRadius: 14, padding: "1rem",
-                  marginBottom: "1rem", border: "1.5px solid #BFDBFE",
+                  marginBottom: "1rem", border: "1.5px solid #B2DDFF",
                 }}>
                   <p style={{ fontSize: "0.75rem", color: "#64748B", marginBottom: "0.5rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                     Código de Barras
                   </p>
                   <p style={{
-                    fontSize: "0.8rem", color: "#1E3A8A", fontFamily: "monospace",
+                    fontSize: "0.8rem", color: "#1D4ED8", fontFamily: "monospace",
                     wordBreak: "break-all", lineHeight: 1.6, marginBottom: "0.75rem",
                   }}>
                     {boletoCode}
@@ -159,7 +159,7 @@ export default function CartPage() {
                     style={{
                       width: "100%", padding: "0.75rem", borderRadius: 10,
                       border: "none", cursor: "pointer", fontWeight: 700, fontSize: "0.9rem",
-                      background: copied ? "#10B981" : "#1565C0", color: "#fff",
+                      background: copied ? "#15803D" : "#1565C0", color: "#fff",
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                       transition: "background 0.2s",
                     }}
@@ -227,7 +227,7 @@ export default function CartPage() {
     return (
       <div style={{
         minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-        background: "linear-gradient(135deg, #7F1D1D 0%, #EF4444 100%)",
+        background: "linear-gradient(135deg, #B71C1C 0%, #C92E09 100%)",
         padding: "1.5rem",
       }}>
         <div style={{
@@ -320,8 +320,8 @@ export default function CartPage() {
             animation: "fadeIn 0.3s ease",
           }}>
             <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-              <AlertTriangle size={48} color="#DC2626" style={{ margin: "0 auto 0.75rem" }} />
-              <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#DC2626", marginBottom: "0.5rem" }}>
+              <AlertTriangle size={48} color="#C92E09" style={{ margin: "0 auto 0.75rem" }} />
+              <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#C92E09", marginBottom: "0.5rem" }}>
                 Pendência Financeira
               </h2>
               <p style={{ color: "#64748B", fontSize: "0.9rem", lineHeight: 1.5 }}>
@@ -338,10 +338,10 @@ export default function CartPage() {
                   gap: "0.75rem", flexWrap: "wrap",
                 }}>
                   <div>
-                    <p style={{ fontWeight: 700, fontSize: "0.95rem", color: "#991B1B" }}>
+                    <p style={{ fontWeight: 700, fontSize: "0.95rem", color: "#B71C1C" }}>
                       R$ {p.value?.toFixed(2)}
                     </p>
-                    <p style={{ fontSize: "0.8rem", color: "#B91C1C" }}>
+                    <p style={{ fontSize: "0.8rem", color: "#B71C1C" }}>
                       Vencido em {new Date(p.dueDate + "T12:00:00").toLocaleDateString("pt-BR")}
                     </p>
                   </div>
@@ -353,7 +353,7 @@ export default function CartPage() {
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
                         padding: "0.6rem 1.2rem", borderRadius: 10,
-                        background: "linear-gradient(135deg, #16A34A, #22C55E)",
+                        background: "linear-gradient(135deg, #15803D, #15803D)",
                         color: "#fff", fontWeight: 700, fontSize: "0.85rem",
                         textDecoration: "none", whiteSpace: "nowrap",
                         boxShadow: "0 3px 10px rgba(22,163,74,0.3)",
@@ -414,7 +414,7 @@ export default function CartPage() {
         .cart-item-price { font-weight: 800; font-size: 1rem; color: #1565C0; white-space: nowrap; }
         .cart-remove-btn {
           background: none; border: 1px solid #FCA5A5; border-radius: 8px;
-          padding: 6px; cursor: pointer; color: #EF4444; display: flex;
+          padding: 6px; cursor: pointer; color: #C92E09; display: flex;
           align-items: center; justify-content: center; flex-shrink: 0;
           transition: background 0.2s;
         }
@@ -434,14 +434,14 @@ export default function CartPage() {
         /* Barra de progresso do mínimo */
         .min-bar-wrap {
           background: #FFF7ED;
-          border: 1.5px solid #FBBF24;
+          border: 1.5px solid #B45309;
           border-radius: 12px;
           padding: 0.85rem;
           margin-bottom: 1rem;
         }
         .min-bar-title { font-weight: 700; color: #B45309; font-size: 0.85rem; margin-bottom: 0.4rem; }
         .min-bar-track { height: 8px; background: #FDE68A; border-radius: 4px; overflow: hidden; margin-bottom: 0.4rem; }
-        .min-bar-fill  { height: 100%; background: linear-gradient(90deg, #F59E0B, #EF4444); border-radius: 4px; transition: width 0.4s; }
+        .min-bar-fill  { height: 100%; background: linear-gradient(90deg, #B45309, #C92E09); border-radius: 4px; transition: width 0.4s; }
         .min-bar-text  { font-size: 0.78rem; color: #92400E; }
 
         /* Botão finalizar */
@@ -481,7 +481,7 @@ export default function CartPage() {
           font-weight: 700;
           font-size: 0.9rem;
           cursor: pointer;
-          background: linear-gradient(135deg, #DC2626, #EF4444);
+          background: linear-gradient(135deg, #C92E09, #C92E09);
           color: #fff;
           box-shadow: 0 6px 16px rgba(220,38,38,0.35);
           transition: all 0.2s;
@@ -528,7 +528,7 @@ export default function CartPage() {
         @media (min-width: 600px) { .modal-handle { display: none; } }
 
         .modal-title {
-          font-size: 1.2rem; font-weight: 800; color: #DC2626;
+          font-size: 1.2rem; font-weight: 800; color: #C92E09;
           display: flex; align-items: center; gap: 8px; margin-bottom: 1rem;
         }
         .modal-rule-list {
@@ -536,17 +536,17 @@ export default function CartPage() {
           margin-bottom: 1.25rem;
         }
         .modal-rule-list li {
-          font-size: 0.88rem; color: #374151; line-height: 1.5;
-          padding: 0.5rem 0.75rem; background: #F9FAFB;
+          font-size: 0.88rem; color: #334155; line-height: 1.5;
+          padding: 0.5rem 0.75rem; background: #F8FAFC;
           border-radius: 8px; border-left: 3px solid #E2E8F0;
         }
         .modal-rule-list li.danger {
-          background: #FEF2F2; border-left-color: #EF4444; color: #7F1D1D;
+          background: #FEF2F2; border-left-color: #C92E09; color: #B71C1C;
         }
         .modal-agree-box {
-          background: #F0F4FF; border: 1.5px solid #BFDBFE;
+          background: #F0F4FF; border: 1.5px solid #B2DDFF;
           border-radius: 12px; padding: 0.85rem; text-align: center;
-          font-weight: 700; color: #1E3A8A; font-size: 0.9rem;
+          font-weight: 700; color: #1D4ED8; font-size: 0.9rem;
           margin-bottom: 1.25rem;
         }
         .modal-actions { display: flex; gap: 0.75rem; }
@@ -557,7 +557,7 @@ export default function CartPage() {
         }
         .modal-confirm-btn {
           flex: 1; padding: 0.85rem; border: none;
-          background: linear-gradient(135deg, #DC2626, #EF4444);
+          background: linear-gradient(135deg, #C92E09, #C92E09);
           border-radius: 12px; font-weight: 800; font-size: 0.9rem;
           color: #fff; cursor: pointer; box-shadow: 0 6px 16px rgba(220,38,38,0.3);
         }
@@ -618,7 +618,7 @@ export default function CartPage() {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
               <span style={{ color: "#64748B", fontSize: "0.9rem" }}>Frete (Rota Franquia)</span>
-              <span style={{ color: "#10B981", fontWeight: 700 }}>Grátis</span>
+              <span style={{ color: "#15803D", fontWeight: 700 }}>Grátis</span>
             </div>
             <div style={{
               display: "flex", justifyContent: "space-between",
@@ -705,7 +705,7 @@ export default function CartPage() {
               <li>Link de pagamento gerado <strong>somente após aprovação</strong>.</li>
               <li className="danger">
                 🚨 Após enviar, <strong>avise o responsável:</strong>{" "}
-                <a href="https://wa.me/5521972947120" target="_blank" rel="noopener noreferrer" style={{ color: "#DC2626", textDecoration: "underline" }}>
+                <a href="https://wa.me/5521972947120" target="_blank" rel="noopener noreferrer" style={{ color: "#C92E09", textDecoration: "underline" }}>
                   (21) 97294-7120
                 </a>
               </li>

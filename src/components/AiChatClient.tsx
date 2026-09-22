@@ -125,7 +125,7 @@ export default function AiChatClient() {
           onClick={handleClear}
           style={{ 
             background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)",
-            color: "#ef4444", padding: "8px 16px", borderRadius: "8px", cursor: "pointer",
+            color: "#C92E09", padding: "8px 16px", borderRadius: "8px", cursor: "pointer",
             display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem"
           }}
         >
@@ -151,7 +151,7 @@ export default function AiChatClient() {
               width: "36px", height: "36px", borderRadius: "12px", flexShrink: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
               background: msg.role === "user" 
-                ? "linear-gradient(135deg, #f97316, #ef4444)" 
+                ? "linear-gradient(135deg, #f97316, #C92E09)" 
                 : "linear-gradient(135deg, #667eea, #764ba2)",
             }}>
               {msg.role === "user" ? <User size={18} color="white" /> : <Bot size={18} color="white" />}

@@ -36,7 +36,7 @@ export default function TrilhaDoCliente({
   trilha,
   progresso,
   fotoDoProduto,
-  corDaLoja = "#7C3AED",
+  corDaLoja = "#475569",
 }: {
   trilha: TrilhaPremiada;
   /** `null` enquanto o cliente não se identificou: a trilha aparece como convite. */
@@ -145,17 +145,17 @@ export default function TrilhaDoCliente({
 
 const ESTILO = `
 .fh-faixa{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:14px;cursor:pointer;
-  background:linear-gradient(135deg,#F0FDF4,#FEFCE8);border:1.5px solid #BBF7D0;margin-bottom:14px;
+  background:linear-gradient(135deg,#ECFDF3,#FEFCE8);border:1.5px solid #ABEFC6;margin-bottom:14px;
   transition:box-shadow .2s}
 .fh-faixa:hover{box-shadow:0 4px 14px rgba(22,33,30,.10)}
-.fh-faixa-icone{width:38px;height:38px;border-radius:11px;background:#fff;border:1.5px solid #BBF7D0;
+.fh-faixa-icone{width:38px;height:38px;border-radius:11px;background:#fff;border:1.5px solid #ABEFC6;
   display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
 .fh-faixa-txt{flex:1;min-width:0}
 .fh-faixa-txt b{display:block;font-size:.8rem;font-weight:800;color:#14532D}
 .fh-faixa-txt>span{display:block;font-size:.78rem;color:#3F6212;line-height:1.4;margin-top:1px}
 .fh-faixa-btn{font-size:.76rem;font-weight:800;white-space:nowrap;flex-shrink:0}
-.fh-barra{height:5px;border-radius:999px;background:#DCFCE7;margin-top:6px;overflow:hidden}
-.fh-barra i{display:block;height:100%;border-radius:999px;background:#16A34A}
+.fh-barra{height:5px;border-radius:999px;background:#ECFDF3;margin-top:6px;overflow:hidden}
+.fh-barra i{display:block;height:100%;border-radius:999px;background:#15803D}
 
 .fh-cortina-cli{position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:99999;display:flex;
   align-items:flex-end;justify-content:center}
@@ -169,12 +169,12 @@ const ESTILO = `
   font-weight:800;flex-shrink:0;font-family:inherit}
 .fh-corpo-cli{padding:14px 16px;overflow-y:auto;flex:1}
 .fh-onde{margin:10px 0 0;font-size:.8rem;font-weight:700;color:#0F172A;text-align:center}
-.fh-fila{margin:6px 0 0;font-size:.76rem;color:#92400E;background:#FFFBEB;border:1px solid #FDE68A;
+.fh-fila{margin:6px 0 0;font-size:.76rem;color:#92400E;background:#FFF7E6;border:1px solid #FDE68A;
   border-radius:10px;padding:8px 10px;line-height:1.45}
 .fh-premios{display:flex;flex-direction:column;gap:7px;margin-top:14px}
 .fh-premio-linha{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1.5px solid #E2E8F0;
   border-radius:12px;background:#fff}
-.fh-premio-linha.ganho{border-color:#BBF7D0;background:#F0FDF4}
+.fh-premio-linha.ganho{border-color:#ABEFC6;background:#ECFDF3}
 .fh-premio-linha .mini{width:40px;height:40px;border-radius:9px;overflow:hidden;background:#F1F5F9;
   display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .fh-premio-linha .mini img{width:100%;height:100%;object-fit:cover}
@@ -182,7 +182,7 @@ const ESTILO = `
 .fh-premio-linha .txt{flex:1;min-width:0}
 .fh-premio-linha .txt b{display:block;font-size:.82rem;font-weight:800;color:#0F172A}
 .fh-premio-linha .txt span{display:block;font-size:.72rem;color:#64748B;margin-top:1px}
-.fh-premio-linha .selo{color:#16A34A;font-weight:900}
+.fh-premio-linha .selo{color:#15803D;font-weight:900}
 .fh-regras{margin-top:16px;padding:12px 14px;border-radius:12px;background:#F8FAFC;border:1px solid #E2E8F0}
 .fh-regras b{display:block;font-size:.82rem;font-weight:800;color:#0F172A;margin-bottom:6px}
 .fh-regras ul{margin:0;padding-left:17px;display:flex;flex-direction:column;gap:4px}

@@ -131,7 +131,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
       {feedback && (
         <div style={{
           position: "fixed", top: "20px", right: "20px", zIndex: 9999,
-          background: feedback.type === "success" ? "#16A34A" : "#C62828",
+          background: feedback.type === "success" ? "#15803D" : "#C92E09",
           color: "white", padding: "12px 24px", borderRadius: "8px",
           display: "flex", alignItems: "center", gap: "8px",
           boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
@@ -146,14 +146,14 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "32px" }}>
         <div>
           <h1 style={{ fontSize: "28px", fontWeight: 800, margin: "0 0 8px 0", display: "flex", alignItems: "center", gap: "12px" }}>
-            <Monitor size={32} color="#C62828" />
+            <Monitor size={32} color="#C92E09" />
             Módulo Totem
           </h1>
           <p style={{ color: "#64748B", margin: 0 }}>Gerencie as licenças e dispositivos de autoatendimento.</p>
         </div>
         
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <span style={{ fontWeight: 600, color: store.totemEnabled ? "#16A34A" : "#64748B" }}>
+          <span style={{ fontWeight: 600, color: store.totemEnabled ? "#15803D" : "#64748B" }}>
             {store.totemEnabled ? "Módulo Ativo" : "Módulo Inativo"}
           </span>
           <button 
@@ -165,8 +165,8 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
               fontWeight: 700,
               cursor: loading ? "not-allowed" : "pointer",
               border: "none",
-              background: store.totemEnabled ? "#FEE2E2" : "#16A34A",
-              color: store.totemEnabled ? "#C62828" : "white",
+              background: store.totemEnabled ? "#FEE2E2" : "#15803D",
+              color: store.totemEnabled ? "#C92E09" : "white",
               display: "flex", alignItems: "center", gap: "8px",
               opacity: loading ? 0.7 : 1
             }}
@@ -209,7 +209,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
             }}>
               <p style={{ margin: "0 0 4px 0", color: "#64748B", fontSize: "14px", fontWeight: 500 }}>Totens Online</p>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <p style={{ margin: 0, fontSize: "28px", fontWeight: 800, color: onlineCount > 0 ? "#16A34A" : "inherit" }}>
+                <p style={{ margin: 0, fontSize: "28px", fontWeight: 800, color: onlineCount > 0 ? "#15803D" : "inherit" }}>
                   {onlineCount}
                 </p>
                 <span style={{ color: "#64748B" }}>/ {totems.length}</span>
@@ -235,7 +235,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                 fontWeight: 700,
                 cursor: "pointer",
                 border: "none",
-                background: "#C62828",
+                background: "#C92E09",
                 color: "white",
                 display: "flex", alignItems: "center", gap: "8px"
               }}
@@ -267,15 +267,15 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div>
                         <h3 style={{ margin: "0 0 4px 0", fontSize: "18px", fontWeight: 700 }}>{t.label}</h3>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", fontWeight: 500, color: online ? "#16A34A" : "#64748B" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "14px", fontWeight: 500, color: online ? "#15803D" : "#64748B" }}>
                           {online ? <Wifi size={14} /> : <WifiOff size={14} />}
                           {online ? "Online agora" : "Offline"}
                         </div>
                       </div>
                       <span style={{ 
                         padding: "4px 8px", borderRadius: "8px", fontSize: "12px", fontWeight: 700,
-                        background: t.active ? "#DCFCE7" : "#F1F5F9",
-                        color: t.active ? "#166534" : "#64748B"
+                        background: t.active ? "#ECFDF3" : "#F1F5F9",
+                        color: t.active ? "#15803D" : "#64748B"
                       }}>
                         {t.active ? "Ativo" : "Inativo"}
                       </span>
@@ -294,7 +294,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span style={{ color: "#64748B" }}>Mensalidade:</span>
-                        <span style={{ fontWeight: 600, color: "#C62828" }}>R$ 100,00</span>
+                        <span style={{ fontWeight: 600, color: "#C92E09" }}>R$ 100,00</span>
                       </div>
                     </div>
 
@@ -319,7 +319,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                             flex: 1, padding: "10px", borderRadius: "12px", fontWeight: 600,
                             cursor: loading ? "not-allowed" : "pointer", border: "1px solid #E2E8F0", background: "white",
                             display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                            color: "#F59E0B"
+                            color: "#B45309"
                           }}
                           title="Desvincular dispositivo"
                         >
@@ -337,7 +337,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                         }}
                         title={t.active ? "Desativar" : "Ativar"}
                       >
-                        <Power size={16} color={t.active ? "#64748B" : "#16A34A"} />
+                        <Power size={16} color={t.active ? "#64748B" : "#15803D"} />
                       </button>
 
                       <button 
@@ -346,7 +346,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                         style={{
                           width: "42px", padding: "10px", borderRadius: "12px", fontWeight: 600,
                           cursor: loading ? "not-allowed" : "pointer", border: "1px solid #FEE2E2", background: "#FEF2F2",
-                          display: "flex", alignItems: "center", justifyContent: "center", color: "#C62828"
+                          display: "flex", alignItems: "center", justifyContent: "center", color: "#C92E09"
                         }}
                         title="Excluir"
                       >
@@ -412,7 +412,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                 style={{
                   flex: 2, padding: "12px", borderRadius: "12px", fontWeight: 700,
                   cursor: (loading || !newTotemLabel.trim()) ? "not-allowed" : "pointer", 
-                  border: "none", background: "#C62828", color: "white",
+                  border: "none", background: "#C92E09", color: "white",
                   opacity: (loading || !newTotemLabel.trim()) ? 0.7 : 1
                 }}
               >

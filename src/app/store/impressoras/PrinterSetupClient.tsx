@@ -137,10 +137,10 @@ export default function PrinterSetupClient({
 
   const selo =
     status === "connected"
-      ? { texto: "Conectado", fundo: "#F0FDF4", cor: "#16A34A", borda: "#BBF7D0" }
+      ? { texto: "Conectado", fundo: "#ECFDF3", cor: "#15803D", borda: "#ABEFC6" }
       : status === "checking"
         ? { texto: "Verificando...", fundo: "#F8FAFC", cor: "#64748B", borda: "#E2E8F0" }
-        : { texto: "Desconectado", fundo: "#FEF2F2", cor: "#DC2626", borda: "#FECACA" };
+        : { texto: "Desconectado", fundo: "#FEF2F2", cor: "#C92E09", borda: "#FECACA" };
 
   const tryConnect = useCallback(async (userClicked = false) => {
     setStatus("checking");
@@ -450,7 +450,7 @@ export default function PrinterSetupClient({
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg,#B71C1C,#C62828)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg,#B71C1C,#C92E09)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Printer size={24} color="#fff" />
             </div>
             <div>
@@ -463,14 +463,14 @@ export default function PrinterSetupClient({
                 diálogo o cabeçalho ficava cortado pela faixa do topo. */}
             <a
               href="/store/impressoras/comanda"
-              style={{ padding: "10px 20px", borderRadius: 12, background: "#fff", color: "#C62828", border: "1.5px solid #C62828", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", textDecoration: "none", display: "inline-block" }}
+              style={{ padding: "10px 20px", borderRadius: 12, background: "#fff", color: "#C92E09", border: "1.5px solid #C92E09", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", textDecoration: "none", display: "inline-block" }}
             >
               🧾 Personalizar impressão
             </a>
             <button
               onClick={saveConfig}
               disabled={saving}
-              style={{ padding: "10px 24px", borderRadius: 12, background: saved ? "#16A34A" : "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}
+              style={{ padding: "10px 24px", borderRadius: 12, background: saved ? "#15803D" : "linear-gradient(135deg,#B71C1C,#C92E09)", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}
             >
               {saving ? "Salvando..." : saved ? "✅ Salvo!" : "Salvar configurações"}
             </button>
@@ -522,7 +522,7 @@ export default function PrinterSetupClient({
                     ele insiste até a impressora responder. Isto era um console
                     num programa sem janela: a loja só descobria pelo cliente. */}
                 {pendentesAssistente.length > 0 && (
-                  <div style={{ margin: "6px 0 0", padding: "6px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 6, fontSize: "0.72rem", color: "#92400E" }}>
+                  <div style={{ margin: "6px 0 0", padding: "6px 10px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 6, fontSize: "0.72rem", color: "#92400E" }}>
                     <strong>Comandas aguardando a impressora</strong> — saem sozinhas assim que ela responder; confira cabo, papel e se está ligada:
                     <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
                       {pendentesAssistente.slice(0, 10).map((f, i) => (
@@ -539,7 +539,7 @@ export default function PrinterSetupClient({
               <a
                 href="/downloads/FireHub-Assistente-Impressao-Setup.exe"
                 download
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#B71C1C,#C62828)", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.78rem", whiteSpace: "nowrap" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#B71C1C,#C92E09)", color: "#fff", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: "0.78rem", whiteSpace: "nowrap" }}
               >
                 <Download size={14} /> Baixar Instalador (.exe)
               </a>
@@ -573,7 +573,7 @@ export default function PrinterSetupClient({
               
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>1</div>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C92E09", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>1</div>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Baixe o Assistente FireHub</p>
                     <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>Clique no botão vermelho "Baixar Assistente" acima. Salve o arquivo no computador que está conectado à impressora.</p>
@@ -581,7 +581,7 @@ export default function PrinterSetupClient({
                 </div>
                 
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>2</div>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C92E09", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>2</div>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Execute o programa</p>
                     <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>Dê dois cliques no arquivo baixado para abrir. Uma janela preta vai aparecer com a mensagem "FireHub Assistente rodando". <strong>Não feche essa janela!</strong></p>
@@ -589,7 +589,7 @@ export default function PrinterSetupClient({
                 </div>
                 
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>3</div>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C92E09", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>3</div>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Permita acesso à rede local</p>
                     <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>O navegador pode pedir permissão para acessar a rede local. Clique em <strong>"Permitir"</strong>. Isso é necessário apenas na primeira vez.</p>
@@ -597,7 +597,7 @@ export default function PrinterSetupClient({
                 </div>
                 
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>4</div>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C92E09", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>4</div>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Configure sua impressora</p>
                     <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>Clique em "Adicionar impressora", selecione a impressora na lista, dê um apelido (ex: "Cozinha") e faça um teste de impressão.</p>
@@ -605,7 +605,7 @@ export default function PrinterSetupClient({
                 </div>
                 
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C62828", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>5</div>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#C92E09", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.75rem", flexShrink: 0, marginTop: 1 }}>5</div>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Ative a impressão automática</p>
                     <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0" }}>Ligue o botão "Impressão automática" e salve. Pronto! Cada pedido aceito vai imprimir a comanda sozinho.</p>
@@ -613,7 +613,7 @@ export default function PrinterSetupClient({
                 </div>
               </div>
 
-              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 14px", marginTop: "1rem", fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
+              <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 14px", marginTop: "1rem", fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
                 <strong>⚠️ Importante:</strong> O Assistente precisa estar aberto no computador para funcionar. Se fechar o programa, a impressão automática para até abrir novamente.
               </div>
             </div>
@@ -623,8 +623,8 @@ export default function PrinterSetupClient({
         {/* Auto-print toggle */}
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1px solid #E2E8F0", marginBottom: "1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: config.autoprint ? "#F0FDF4" : "#F8FAFC", border: `1.5px solid ${config.autoprint ? "#BBF7D0" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <CheckCircle size={18} color={config.autoprint ? "#16A34A" : "#94A3B8"} />
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: config.autoprint ? "#ECFDF3" : "#F8FAFC", border: `1.5px solid ${config.autoprint ? "#ABEFC6" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CheckCircle size={18} color={config.autoprint ? "#15803D" : "#94A3B8"} />
             </div>
             <div>
               <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Impressão automática de pedidos</p>
@@ -635,7 +635,7 @@ export default function PrinterSetupClient({
           </div>
           <button
             onClick={() => setConfig(c => ({ ...c, autoprint: !c.autoprint }))}
-            style={{ width: 52, height: 28, borderRadius: 14, background: config.autoprint ? "#16A34A" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+            style={{ width: 52, height: 28, borderRadius: 14, background: config.autoprint ? "#15803D" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
           >
             <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: config.autoprint ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
           </button>
@@ -655,7 +655,7 @@ export default function PrinterSetupClient({
           <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: `1.5px solid ${config.imprimirSoNoFimDoKds ? "#FDE68A" : "#E2E8F0"}`, marginBottom: "1.25rem" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: config.imprimirSoNoFimDoKds ? "#FFFBEB" : "#F8FAFC", border: `1.5px solid ${config.imprimirSoNoFimDoKds ? "#FDE68A" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: config.imprimirSoNoFimDoKds ? "#FFF7E6" : "#F8FAFC", border: `1.5px solid ${config.imprimirSoNoFimDoKds ? "#FDE68A" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
                   👨‍🍳
                 </div>
                 <div>
@@ -669,7 +669,7 @@ export default function PrinterSetupClient({
               </div>
               <button
                 onClick={() => setConfig(c => ({ ...c, imprimirSoNoFimDoKds: !c.imprimirSoNoFimDoKds }))}
-                style={{ width: 52, height: 28, borderRadius: 14, background: config.imprimirSoNoFimDoKds ? "#D97706" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+                style={{ width: 52, height: 28, borderRadius: 14, background: config.imprimirSoNoFimDoKds ? "#B45309" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
               >
                 <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: config.imprimirSoNoFimDoKds ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
               </button>
@@ -677,10 +677,10 @@ export default function PrinterSetupClient({
 
             {config.imprimirSoNoFimDoKds && (
               <div style={{ marginTop: 12, background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "10px 14px" }}>
-                <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 800, color: "#B91C1C" }}>
+                <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 800, color: "#B71C1C" }}>
                   ⚠️ Sua cozinha precisa usar a tela do KDS
                 </p>
-                <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#7F1D1D", lineHeight: 1.5 }}>
+                <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#B71C1C", lineHeight: 1.5 }}>
                   Com esta opção ligada, a comanda <strong>só sai</strong> quando alguém aperta
                   “Finalizar” na tela do KDS. Se a cozinha não usa o KDS, nenhuma comanda será
                   impressa e vai parecer que a impressora quebrou.
@@ -698,7 +698,7 @@ export default function PrinterSetupClient({
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1.5px solid #E2E8F0", marginBottom: "1.25rem" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: (config.autoBeverageTag !== false) ? "#EFF6FF" : "#F8FAFC", border: `1.5px solid ${(config.autoBeverageTag !== false) ? "#93C5FD" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: (config.autoBeverageTag !== false) ? "#EFF6FF" : "#F8FAFC", border: `1.5px solid ${(config.autoBeverageTag !== false) ? "#B2DDFF" : "#E2E8F0"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>
                 🍹
               </div>
               <div>
@@ -710,7 +710,7 @@ export default function PrinterSetupClient({
             </div>
             <button
               onClick={() => setConfig(c => ({ ...c, autoBeverageTag: c.autoBeverageTag === false ? true : false }))}
-              style={{ width: 52, height: 28, borderRadius: 14, background: (config.autoBeverageTag !== false) ? "#2563EB" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+              style={{ width: 52, height: 28, borderRadius: 14, background: (config.autoBeverageTag !== false) ? "#1D4ED8" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
             >
               <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: (config.autoBeverageTag !== false) ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
             </button>
@@ -753,7 +753,7 @@ export default function PrinterSetupClient({
               return (
                 <div key={mod.chave} style={{
                   border: `1.5px solid ${doModulo.length > 0 ? "#E2E8F0" : "#FDE68A"}`,
-                  background: doModulo.length > 0 ? "#F8FAFC" : "#FFFBEB",
+                  background: doModulo.length > 0 ? "#F8FAFC" : "#FFF7E6",
                   borderRadius: 14, padding: "0.9rem 1rem",
                 }}>
                   <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>
@@ -818,7 +818,7 @@ export default function PrinterSetupClient({
                 style={{ flex: 1, minWidth: 120, padding: "8px 12px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", fontWeight: 700, fontFamily: "inherit" }}
               />
               <button onClick={() => removePrinter(printer.id)} style={{ padding: 8, borderRadius: 8, background: "#FEF2F2", border: "none", cursor: "pointer" }}>
-                <Trash2 size={15} color="#EF4444" />
+                <Trash2 size={15} color="#C92E09" />
               </button>
             </div>
 
@@ -908,9 +908,9 @@ export default function PrinterSetupClient({
                     onClick={() => updatePrinter(printer.id, { paperWidth: op.papel, columns: op.colunas })}
                     style={{
                       flex: "1 1 170px", minWidth: 150, padding: "8px 12px", borderRadius: 10,
-                      border: `1.5px solid ${op.ativo ? "#C62828" : "#E2E8F0"}`,
+                      border: `1.5px solid ${op.ativo ? "#C92E09" : "#E2E8F0"}`,
                       background: op.ativo ? "#C6282810" : "#fff",
-                      color: op.ativo ? "#C62828" : "#64748B",
+                      color: op.ativo ? "#C92E09" : "#64748B",
                       fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s"
                     }}
                   >
@@ -978,7 +978,7 @@ export default function PrinterSetupClient({
                       style={{
                         flex: "1 1 200px", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
                         padding: "10px 12px", borderRadius: 12,
-                        border: ligado ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                        border: ligado ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
                         background: ligado ? "#FEF2F2" : "#fff",
                         color: ligado ? "#B71C1C" : "#64748B",
                       }}
@@ -1037,7 +1037,7 @@ export default function PrinterSetupClient({
                       style={{
                         flex: "1 1 200px", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
                         padding: "10px 12px", borderRadius: 12,
-                        border: ligado ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                        border: ligado ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
                         background: ligado ? "#FEF2F2" : "#fff",
                         color: ligado ? "#B71C1C" : "#64748B",
                       }}
@@ -1143,7 +1143,7 @@ export default function PrinterSetupClient({
                 style={{
                   width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
                   padding: "12px 14px", borderRadius: 12,
-                  border: printer.somenteBebidas ? "2px solid #2563EB" : "1.5px solid #E2E8F0",
+                  border: printer.somenteBebidas ? "2px solid #1D4ED8" : "1.5px solid #E2E8F0",
                   background: printer.somenteBebidas ? "#EFF6FF" : "#fff",
                   color: printer.somenteBebidas ? "#1D4ED8" : "#64748B",
                 }}
@@ -1168,7 +1168,7 @@ export default function PrinterSetupClient({
                   para esta impressora, o pedido INTEIRO sairia no bar. Pior do que
                   antes, então o aviso precisa ser explícito. */}
               {printer.somenteBebidas && versaoDesatualizada && (
-                <p style={{ fontSize: "0.74rem", color: "#DC2626", margin: "6px 0 0", fontWeight: 800, lineHeight: 1.4 }}>
+                <p style={{ fontSize: "0.74rem", color: "#C92E09", margin: "6px 0 0", fontWeight: 800, lineHeight: 1.4 }}>
                   ⚠️ Este computador está com o Assistente {versaoInstalada}. A separação da bebida
                   dentro do combo só funciona a partir da {VERSAO_ASSISTENTE_ATUAL} — até atualizar,
                   esta impressora vai receber o pedido inteiro. Baixe o instalador lá em cima.
@@ -1188,9 +1188,9 @@ export default function PrinterSetupClient({
                 style={{
                   width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
                   padding: "12px 14px", borderRadius: 12,
-                  border: printer.qrPuxar !== false ? "2px solid #7C3AED" : "1.5px solid #E2E8F0",
-                  background: printer.qrPuxar !== false ? "#F5F3FF" : "#fff",
-                  color: printer.qrPuxar !== false ? "#5B21B6" : "#64748B",
+                  border: printer.qrPuxar !== false ? "2px solid #475569" : "1.5px solid #E2E8F0",
+                  background: printer.qrPuxar !== false ? "#F8FAFC" : "#fff",
+                  color: printer.qrPuxar !== false ? "#334155" : "#64748B",
                 }}
               >
                 <div style={{ fontWeight: 800, fontSize: "0.88rem" }}>
@@ -1243,7 +1243,7 @@ export default function PrinterSetupClient({
                 </div>
               </button>
               {contaSemImpressora && (
-                <p style={{ fontSize: "0.74rem", color: "#DC2626", margin: "6px 0 0", fontWeight: 800, lineHeight: 1.4 }}>
+                <p style={{ fontSize: "0.74rem", color: "#C92E09", margin: "6px 0 0", fontWeight: 800, lineHeight: 1.4 }}>
                   ⚠️ Nenhuma impressora está marcada para a conta da mesa. Enquanto ficar assim, o
                   botão “Imprimir Conta” do módulo de mesas vai avisar que não há para onde mandar.
                 </p>
@@ -1260,7 +1260,7 @@ export default function PrinterSetupClient({
                   {categories.map(cat => {
                     const active = printer.categories.includes(cat);
                     return (
-                      <button key={cat} onClick={() => toggleCategory(printer.id, cat)} style={{ padding: "5px 12px", borderRadius: 20, border: `1.5px solid ${active ? "#C62828" : "#E2E8F0"}`, background: active ? "#C6282810" : "#fff", color: active ? "#C62828" : "#64748B", fontSize: "0.78rem", fontWeight: active ? 700 : 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+                      <button key={cat} onClick={() => toggleCategory(printer.id, cat)} style={{ padding: "5px 12px", borderRadius: 20, border: `1.5px solid ${active ? "#C92E09" : "#E2E8F0"}`, background: active ? "#C6282810" : "#fff", color: active ? "#C92E09" : "#64748B", fontSize: "0.78rem", fontWeight: active ? 700 : 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
                         {active ? "✓ " : ""}{cat}
                       </button>
                     );
@@ -1274,15 +1274,15 @@ export default function PrinterSetupClient({
 
             {/* Botão de teste individual */}
             {printer.name && (
-              <div style={{ background: "#EFF6FF", borderRadius: 12, padding: "0.85rem 1rem", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: "1rem" }}>
+              <div style={{ background: "#EFF6FF", borderRadius: 12, padding: "0.85rem 1rem", border: "1px solid #B2DDFF", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: "1rem" }}>
                 <div>
-                  <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0, color: "#1E40AF" }}>🧪 Testar "{printer.label}"</p>
-                  <p style={{ fontSize: "0.72rem", color: "#3B82F6", margin: "2px 0 0" }}>Imprime uma comanda de teste</p>
+                  <p style={{ fontWeight: 700, fontSize: "0.82rem", margin: 0, color: "#1D4ED8" }}>🧪 Testar "{printer.label}"</p>
+                  <p style={{ fontSize: "0.72rem", color: "#1D4ED8", margin: "2px 0 0" }}>Imprime uma comanda de teste</p>
                 </div>
                 <button
                   onClick={() => testPrint(printer.name, printer.label)}
                   disabled={testingPrinter === printer.name}
-                  style={{ padding: "8px 16px", borderRadius: 10, background: "#3B82F6", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: testingPrinter === printer.name ? 0.6 : 1 }}
+                  style={{ padding: "8px 16px", borderRadius: 10, background: "#1D4ED8", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: testingPrinter === printer.name ? 0.6 : 1 }}
                 >
                   {testingPrinter === printer.name ? "Imprimindo..." : "Imprimir teste"}
                 </button>

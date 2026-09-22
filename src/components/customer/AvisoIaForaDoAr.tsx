@@ -59,16 +59,16 @@ export default function AvisoIaForaDoAr() {
       role="alert"
       style={{
         display: "flex", alignItems: "center", gap: "0.9rem", flexWrap: "wrap",
-        background: "#FEF2F2", border: "1px solid #FECACA", borderLeft: "6px solid #DC2626",
+        background: "#FEF2F2", border: "1px solid #FECACA", borderLeft: "6px solid #C92E09",
         borderRadius: 12, padding: "0.9rem 1.1rem", margin: "0 0 1rem",
       }}
     >
       <span style={{ fontSize: "1.6rem", lineHeight: 1 }} aria-hidden>🤖</span>
       <div style={{ flex: 1, minWidth: 240 }}>
-        <div style={{ fontWeight: 800, color: "#991B1B", fontSize: "1rem" }}>
+        <div style={{ fontWeight: 800, color: "#B71C1C", fontSize: "1rem" }}>
           O robô está sem inteligência artificial {haQuantoTempo}
         </div>
-        <div style={{ color: "#B91C1C", fontSize: "0.88rem", marginTop: 2, lineHeight: 1.45 }}>
+        <div style={{ color: "#B71C1C", fontSize: "0.88rem", marginTop: 2, lineHeight: 1.45 }}>
           Ele NÃO está atendendo: avisa cada cliente e passa a conversa para a equipe. Responda pelo WhatsApp da loja
           ou pelo balãozinho vermelho.{" "}
           {ia.exigeAcao

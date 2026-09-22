@@ -48,7 +48,7 @@ export default async function CaixaHistoricoPage() {
         return (
           <div key={s.id} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, marginBottom: 12, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
             {/* Header */}
-            <div style={{ background: ok ? "#F0FDF4" : "#FEF2F2", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <div style={{ background: ok ? "#ECFDF3" : "#FEF2F2", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: "1.3rem" }}>{ok ? "✅" : "⚠️"}</span>
                 <div>
@@ -63,10 +63,10 @@ export default async function CaixaHistoricoPage() {
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: "0.72rem", color: "#64748B" }}>TOTAL</div>
-                <div style={{ fontWeight: 900, fontSize: "1.1rem", color: ok ? "#16A34A" : "#DC2626" }}>
+                <div style={{ fontWeight: 900, fontSize: "1.1rem", color: ok ? "#15803D" : "#C92E09" }}>
                   {fmt((s as any).expectedTotal || 0)}
                 </div>
-                {!ok && <div style={{ fontSize: "0.72rem", color: diff < 0 ? "#DC2626" : "#D97706", fontWeight: 700 }}>
+                {!ok && <div style={{ fontSize: "0.72rem", color: diff < 0 ? "#C92E09" : "#B45309", fontWeight: 700 }}>
                   {diff < 0 ? `Faltou ${fmt(Math.abs(diff))}` : `Sobrou ${fmt(diff)}`}
                 </div>}
               </div>
@@ -94,10 +94,10 @@ export default async function CaixaHistoricoPage() {
                     const d = (r.cnt || 0) - (r.exp || 0);
                     return (
                       <tr key={r.label} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                        <td style={{ padding: "7px 16px", fontWeight: 600, color: "#374151" }}>{r.label}</td>
+                        <td style={{ padding: "7px 16px", fontWeight: 600, color: "#334155" }}>{r.label}</td>
                         <td style={{ padding: "7px 16px", textAlign: "right", color: "#64748B" }}>{fmt(r.exp || 0)}</td>
-                        <td style={{ padding: "7px 16px", textAlign: "right", color: "#374151", fontWeight: 700 }}>{fmt(r.cnt || 0)}</td>
-                        <td style={{ padding: "7px 16px", textAlign: "right", fontWeight: 700, color: Math.abs(d) < 0.01 ? "#16A34A" : d < 0 ? "#DC2626" : "#D97706" }}>
+                        <td style={{ padding: "7px 16px", textAlign: "right", color: "#334155", fontWeight: 700 }}>{fmt(r.cnt || 0)}</td>
+                        <td style={{ padding: "7px 16px", textAlign: "right", fontWeight: 700, color: Math.abs(d) < 0.01 ? "#15803D" : d < 0 ? "#C92E09" : "#B45309" }}>
                           {Math.abs(d) < 0.01 ? "✓" : d > 0 ? `+${fmt(d)}` : fmt(d)}
                         </td>
                       </tr>
@@ -105,11 +105,11 @@ export default async function CaixaHistoricoPage() {
                   })}
                 </tbody>
                 <tfoot>
-                  <tr style={{ background: ok ? "#F0FDF4" : "#FEF2F2" }}>
+                  <tr style={{ background: ok ? "#ECFDF3" : "#FEF2F2" }}>
                     <td style={{ padding: "8px 16px", fontWeight: 900 }}>TOTAL</td>
                     <td style={{ padding: "8px 16px", textAlign: "right", fontWeight: 700 }}>{fmt((s as any).expectedTotal || 0)}</td>
-                    <td style={{ padding: "8px 16px", textAlign: "right", fontWeight: 900, color: ok ? "#16A34A" : "#DC2626" }}>{fmt((s as any).closingCash + (s as any).closingDebit + (s as any).closingCredit + (s as any).closingPix + (s as any).closingVoucher || 0)}</td>
-                    <td style={{ padding: "8px 16px", textAlign: "right", fontWeight: 900, color: ok ? "#16A34A" : diff < 0 ? "#DC2626" : "#D97706" }}>
+                    <td style={{ padding: "8px 16px", textAlign: "right", fontWeight: 900, color: ok ? "#15803D" : "#C92E09" }}>{fmt((s as any).closingCash + (s as any).closingDebit + (s as any).closingCredit + (s as any).closingPix + (s as any).closingVoucher || 0)}</td>
+                    <td style={{ padding: "8px 16px", textAlign: "right", fontWeight: 900, color: ok ? "#15803D" : diff < 0 ? "#C92E09" : "#B45309" }}>
                       {ok ? "✅ OK" : diff > 0 ? `+${fmt(diff)}` : fmt(diff)}
                     </td>
                   </tr>

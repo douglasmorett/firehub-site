@@ -165,7 +165,7 @@ export default function ComandaModeloClient({
             disabled={salvando}
             style={{
               padding: "11px 26px", borderRadius: 12,
-              background: salvo ? "#16A34A" : "linear-gradient(135deg,#B71C1C,#C62828)",
+              background: salvo ? "#15803D" : "linear-gradient(135deg,#B71C1C,#C92E09)",
               color: "#fff", border: "none", fontWeight: 800, fontSize: "0.9rem",
               cursor: salvando ? "wait" : "pointer", fontFamily: "inherit",
             }}
@@ -175,7 +175,7 @@ export default function ComandaModeloClient({
         </div>
 
         {erro && (
-          <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", color: "#B91C1C", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontWeight: 700, fontSize: "0.85rem" }}>
+          <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", color: "#B71C1C", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontWeight: 700, fontSize: "0.85rem" }}>
             {erro}
           </div>
         )}
@@ -201,8 +201,8 @@ export default function ComandaModeloClient({
                   style={{
                     padding: "7px 14px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
                     fontSize: "0.82rem", fontWeight: 800,
-                    border: `1.5px solid ${ativo ? "#C62828" : "#E2E8F0"}`,
-                    background: ativo ? "#C62828" : "#fff",
+                    border: `1.5px solid ${ativo ? "#C92E09" : "#E2E8F0"}`,
+                    background: ativo ? "#C92E09" : "#fff",
                     color: ativo ? "#fff" : "#475569",
                   }}
                 >
@@ -237,7 +237,7 @@ export default function ComandaModeloClient({
                 <button
                   type="button"
                   onClick={excluir}
-                  style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: "0.76rem", fontWeight: 700, border: "1.5px solid #FCA5A5", background: "#FEF2F2", color: "#B91C1C" }}
+                  style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: "0.76rem", fontWeight: 700, border: "1.5px solid #FCA5A5", background: "#FEF2F2", color: "#B71C1C" }}
                 >
                   Apagar
                 </button>

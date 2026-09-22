@@ -19,7 +19,7 @@ import { Loader, RefreshCw, Bike, MapPin, Package, Home, KeyRound, Check, X } fr
 import { posicaoAtual } from "@/lib/ifood-logistics";
 
 const LARANJA = "#E8360C";
-const VERDE = "#16A34A";
+const VERDE = "#15803D";
 const TINTA = "#0F172A";
 const CINZA = "#64748B";
 const LINHA = "#E2E8F0";
@@ -44,7 +44,7 @@ const VEICULOS: { v: string; nome: string }[] = [
 ];
 
 const agora = () => new Date().toLocaleTimeString("pt-BR");
-const corDoStatus = (s: number) => (s >= 200 && s < 300 ? VERDE : s >= 400 && s < 500 ? "#D97706" : "#DC2626");
+const corDoStatus = (s: number) => (s >= 200 && s < 300 ? VERDE : s >= 400 && s < 500 ? "#B45309" : "#C92E09");
 
 // A contagem de etapas vem do lib, e não de uma cópia local: quando eram duas
 // implementações, a da tela continuou zerando a viagem em estados que o webhook
@@ -212,7 +212,7 @@ export default function TabEntrega() {
                     </strong>
                     {p.exigeCodigo && (
                       <span title="Este pedido exige código de entrega"
-                        style={{ fontSize: "0.62rem", fontWeight: 800, color: "#7C3AED", background: "#F3E8FF", padding: "1px 5px", borderRadius: 4 }}>
+                        style={{ fontSize: "0.62rem", fontWeight: 800, color: "#475569", background: "#F3E8FF", padding: "1px 5px", borderRadius: 4 }}>
                         CÓDIGO
                       </span>
                     )}
@@ -235,11 +235,11 @@ export default function TabEntrega() {
       {/* ── interface do entregador ── */}
       <div>
         {erro && (
-          <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", color: "#991B1B",
+          <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", color: "#B71C1C",
             borderRadius: 10, padding: "10px 13px", marginBottom: "1rem", fontSize: "0.85rem" }}>{erro}</div>
         )}
         {aviso && (
-          <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", color: "#92400E",
+          <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", color: "#92400E",
             borderRadius: 10, padding: "10px 13px", marginBottom: "1rem", fontSize: "0.85rem" }}>{aviso}</div>
         )}
 
@@ -287,7 +287,7 @@ export default function TabEntrega() {
                 /* Estado gravado por outro caminho (webhook, motoboy do iFood) com
                    vocabulário que esta tela não conhece. Dizer isso é melhor que
                    mostrar a viagem zerada e deixar clicar em algo que vai falhar. */
-                <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", color: "#92400E",
+                <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", color: "#92400E",
                   borderRadius: 10, padding: "10px 13px", marginBottom: "0.9rem", fontSize: "0.84rem", lineHeight: 1.45 }}>
                   Este pedido está em <strong>{String(sel.ifoodDriverStatus)}</strong>, um estado
                   registrado fora desta tela. A viagem dele não pode ser conduzida por aqui.
@@ -330,8 +330,8 @@ export default function TabEntrega() {
                       style={{
                         display: "flex", alignItems: "center", gap: 10, padding: "11px 13px",
                         borderRadius: 10, fontFamily: "inherit", textAlign: "left",
-                        border: `1.5px solid ${feita ? "#BBF7D0" : proxima ? LARANJA : LINHA}`,
-                        background: feita ? "#F0FDF4" : proxima ? "#fff" : "#F8FAFC",
+                        border: `1.5px solid ${feita ? "#ABEFC6" : proxima ? LARANJA : LINHA}`,
+                        background: feita ? "#ECFDF3" : proxima ? "#fff" : "#F8FAFC",
                         cursor: proxima && !ocupado ? "pointer" : "default",
                         opacity: !feita && !proxima ? 0.55 : 1,
                       }}>
@@ -384,7 +384,7 @@ export default function TabEntrega() {
                     <button onClick={enviarCodigo} disabled={ocupado || !codigo || pos < ETAPAS.length}
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 16px",
-                        background: ocupado || !codigo || pos < ETAPAS.length ? "#CBD5E1" : "#7C3AED",
+                        background: ocupado || !codigo || pos < ETAPAS.length ? "#CBD5E1" : "#475569",
                         color: "#fff", border: "none", borderRadius: 9, fontWeight: 800, fontSize: "0.86rem",
                         cursor: ocupado || !codigo || pos < ETAPAS.length ? "not-allowed" : "pointer", fontFamily: "inherit",
                       }}>
@@ -396,8 +396,8 @@ export default function TabEntrega() {
                     <div style={{
                       marginTop: "0.8rem", display: "inline-flex", alignItems: "center", gap: 7,
                       padding: "8px 12px", borderRadius: 9, fontSize: "0.84rem", fontWeight: 700,
-                      background: resultadoCodigo.ok ? "#F0FDF4" : "#FEF2F2",
-                      color: resultadoCodigo.ok ? VERDE : "#991B1B",
+                      background: resultadoCodigo.ok ? "#ECFDF3" : "#FEF2F2",
+                      color: resultadoCodigo.ok ? VERDE : "#B71C1C",
                     }}>
                       {resultadoCodigo.ok ? <Check size={14} /> : <X size={14} />} {resultadoCodigo.texto}
                     </div>

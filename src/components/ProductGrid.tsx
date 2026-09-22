@@ -92,7 +92,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
               <div key={item.id} style={{ background: "#fff", borderRadius: "10px", padding: "0.75rem", border: "1px solid #F1F5F9" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.4rem" }}>
                   <span style={{ fontWeight: 600, fontSize: "0.85rem", flex: 1 }}>{item.name}</span>
-                  <button onClick={() => removeFromCart(item.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "#EF4444" }}>
+                  <button onClick={() => removeFromCart(item.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "#C92E09" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -120,7 +120,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
           <div style={{ marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
               <span style={{ fontWeight: 600, color: "#64748B", fontSize: "0.82rem" }}>Total</span>
-              <span style={{ fontWeight: 800, fontSize: "1.05rem", color: total >= MIN_ORDER ? "#16A34A" : "#1565C0" }}>
+              <span style={{ fontWeight: 800, fontSize: "1.05rem", color: total >= MIN_ORDER ? "#15803D" : "#1565C0" }}>
                 R$ {total.toFixed(2)}
               </span>
             </div>
@@ -129,7 +129,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
             {total < MIN_ORDER && (
               <>
                 <div style={{ width: "100%", height: "6px", background: "#E2E8F0", borderRadius: "3px", overflow: "hidden", marginBottom: "6px" }}>
-                  <div style={{ width: `${Math.min((total / MIN_ORDER) * 100, 100)}%`, height: "100%", background: "linear-gradient(90deg, #F59E0B, #EF4444)", borderRadius: "3px", transition: "width 0.3s" }} />
+                  <div style={{ width: `${Math.min((total / MIN_ORDER) * 100, 100)}%`, height: "100%", background: "linear-gradient(90deg, #B45309, #C92E09)", borderRadius: "3px", transition: "width 0.3s" }} />
                 </div>
                 <p style={{ fontSize: "0.75rem", color: "#B45309", margin: 0, textAlign: "center" }}>
                   Faltam <strong>R$ {(MIN_ORDER - total).toFixed(2)}</strong> para o mínimo de R$ {MIN_ORDER},00
@@ -138,8 +138,8 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
             )}
 
             {total >= MIN_ORDER && (
-              <div style={{ background: "#F0FDF4", borderRadius: 8, padding: "6px 10px", textAlign: "center" }}>
-                <span style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 700 }}>✅ Pedido mínimo atingido!</span>
+              <div style={{ background: "#ECFDF3", borderRadius: 8, padding: "6px 10px", textAlign: "center" }}>
+                <span style={{ fontSize: "0.78rem", color: "#15803D", fontWeight: 700 }}>✅ Pedido mínimo atingido!</span>
               </div>
             )}
           </div>
@@ -147,10 +147,10 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
           {/* Alerta vermelho ao tentar finalizar sem atingir o mínimo */}
           {showMinError && total < MIN_ORDER && (
             <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: 10, padding: "10px 12px", marginBottom: "0.75rem", display: "flex", gap: 8, alignItems: "flex-start", animation: "shake 0.4s ease" }}>
-              <AlertCircle size={16} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
+              <AlertCircle size={16} color="#C92E09" style={{ flexShrink: 0, marginTop: 1 }} />
               <div>
-                <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#DC2626", margin: "0 0 2px" }}>Pedido mínimo não atingido</p>
-                <p style={{ fontSize: "0.75rem", color: "#B91C1C", margin: 0 }}>Adicione mais <strong>R$ {(MIN_ORDER - total).toFixed(2)}</strong> em produtos para finalizar.</p>
+                <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#C92E09", margin: "0 0 2px" }}>Pedido mínimo não atingido</p>
+                <p style={{ fontSize: "0.75rem", color: "#B71C1C", margin: 0 }}>Adicione mais <strong>R$ {(MIN_ORDER - total).toFixed(2)}</strong> em produtos para finalizar.</p>
               </div>
             </div>
           )}

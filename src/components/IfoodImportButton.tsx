@@ -70,9 +70,9 @@ function IfoodApiTab() {
       <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 14, padding: "1.25rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <AlertCircle size={20} color="#EA1D2C" />
-          <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#991B1B" }}>Integração iFood Não Conectada</span>
+          <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#B71C1C" }}>Integração iFood Não Conectada</span>
         </div>
-        <p style={{ fontSize: "0.85rem", color: "#7F1D1D", margin: "0 0 14px", lineHeight: 1.6 }}>
+        <p style={{ fontSize: "0.85rem", color: "#B71C1C", margin: "0 0 14px", lineHeight: 1.6 }}>
           Para importar seu cardápio do iFood automaticamente via API oficial, você precisa primeiro conectar sua loja iFood no FireHub.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -89,9 +89,9 @@ function IfoodApiTab() {
 
   if (step === "not_ready") {
     return (
-      <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "1.25rem" }}>
+      <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "1.25rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <Info size={20} color="#D97706" />
+          <Info size={20} color="#B45309" />
           <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#92400E" }}>Sincronização Direta do iFood</span>
         </div>
         <p style={{ fontSize: "0.84rem", color: "#78350F", margin: "0 0 14px", lineHeight: 1.6 }}>
@@ -99,7 +99,7 @@ function IfoodApiTab() {
           Você também pode enviar uma foto ou PDF do cardápio diretamente para o nosso suporte no WhatsApp abaixo!
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button onClick={reset} style={{ padding: "8px 18px", borderRadius: 8, border: "1.5px solid #D97706", background: "#fff", color: "#D97706", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>
+          <button onClick={reset} style={{ padding: "8px 18px", borderRadius: 8, border: "1.5px solid #B45309", background: "#fff", color: "#B45309", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>
             ← Voltar
           </button>
           <a href="/store/integracoes" style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#EA1D2C", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -114,11 +114,11 @@ function IfoodApiTab() {
     return (
       <div style={{ background: "#FEF2F2", borderRadius: 12, padding: "1.25rem", border: "1px solid #FECACA" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <AlertCircle size={18} color="#EF4444" />
-          <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#B91C1C" }}>Erro ao buscar cardápio</span>
+          <AlertCircle size={18} color="#C92E09" />
+          <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#B71C1C" }}>Erro ao buscar cardápio</span>
         </div>
-        <p style={{ fontSize: "0.83rem", color: "#7F1D1D", margin: "0 0 1rem" }}>{error}</p>
-        <button onClick={reset} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid #EF4444", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>
+        <p style={{ fontSize: "0.83rem", color: "#B71C1C", margin: "0 0 1rem" }}>{error}</p>
+        <button onClick={reset} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid #C92E09", background: "#fff", color: "#C92E09", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>
           Tentar Novamente
         </button>
       </div>
@@ -128,8 +128,8 @@ function IfoodApiTab() {
   if (step === "preview" && preview) {
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "1rem", background: "#F0FDF4", borderRadius: 10, padding: "0.75rem 1rem", border: "1px solid #BBF7D0" }}>
-          <CheckCircle size={18} color="#16A34A" />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "1rem", background: "#ECFDF3", borderRadius: 10, padding: "0.75rem 1rem", border: "1px solid #ABEFC6" }}>
+          <CheckCircle size={18} color="#15803D" />
           <span style={{ fontSize: "0.88rem", fontWeight: 800, color: "#15803D" }}>
             {preview.count} produtos encontrados em {preview.categories.length} categorias do iFood!
           </span>
@@ -181,13 +181,13 @@ function IfoodApiTab() {
 
   if (step === "done" && result) {
     return (
-      <div style={{ background: "#F0FDF4", borderRadius: 12, padding: "1.25rem", border: "1px solid #BBF7D0", textAlign: "center" }}>
+      <div style={{ background: "#ECFDF3", borderRadius: 12, padding: "1.25rem", border: "1px solid #ABEFC6", textAlign: "center" }}>
         <div style={{ fontSize: "2.5rem", marginBottom: 8 }}>🎉</div>
         <p style={{ fontWeight: 800, fontSize: "1.05rem", margin: "0 0 4px", color: "#15803D" }}>Cardápio importado com sucesso!</p>
-        <p style={{ fontSize: "0.85rem", color: "#166534", margin: "0 0 1rem" }}>{result.message}</p>
+        <p style={{ fontSize: "0.85rem", color: "#15803D", margin: "0 0 1rem" }}>{result.message}</p>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={reset} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid #16A34A", background: "#fff", color: "#16A34A", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>Importar novamente</button>
-          <a href="/store/cardapio" style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#16A34A", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", textDecoration: "none" }}>Ver Meus Produtos →</a>
+          <button onClick={reset} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid #15803D", background: "#fff", color: "#15803D", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}>Importar novamente</button>
+          <a href="/store/cardapio" style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: "#15803D", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", textDecoration: "none" }}>Ver Meus Produtos →</a>
         </div>
       </div>
     );
@@ -277,11 +277,11 @@ function CsvImportTab() {
     return (
       <div style={{ background: "#FEF2F2", borderRadius: 10, padding: "1rem", border: "1px solid #FECACA" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <AlertCircle size={16} color="#EF4444" />
-          <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "#B91C1C" }}>Erro ao processar</span>
+          <AlertCircle size={16} color="#C92E09" />
+          <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "#B71C1C" }}>Erro ao processar</span>
         </div>
-        <p style={{ fontSize: "0.82rem", color: "#7F1D1D", margin: "0 0 0.75rem" }}>{error}</p>
-        <button onClick={reset} style={{ padding: "7px 16px", borderRadius: 8, border: "1.5px solid #EF4444", background: "#fff", color: "#EF4444", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer" }}>Tentar Novamente</button>
+        <p style={{ fontSize: "0.82rem", color: "#B71C1C", margin: "0 0 0.75rem" }}>{error}</p>
+        <button onClick={reset} style={{ padding: "7px 16px", borderRadius: 8, border: "1.5px solid #C92E09", background: "#fff", color: "#C92E09", fontWeight: 600, fontSize: "0.82rem", cursor: "pointer" }}>Tentar Novamente</button>
       </div>
     );
   }
@@ -289,8 +289,8 @@ function CsvImportTab() {
   if (step === "preview" && preview) {
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "1rem", background: "#F0FDF4", borderRadius: 10, padding: "0.75rem 1rem", border: "1px solid #BBF7D0" }}>
-          <CheckCircle size={16} color="#16A34A" />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "1rem", background: "#ECFDF3", borderRadius: 10, padding: "0.75rem 1rem", border: "1px solid #ABEFC6" }}>
+          <CheckCircle size={16} color="#15803D" />
           <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#15803D" }}>
             {preview.count} produtos encontrados em {preview.categories.length} categorias
           </span>
@@ -336,11 +336,11 @@ function CsvImportTab() {
 
   if (step === "done" && result) {
     return (
-      <div style={{ background: "#F0FDF4", borderRadius: 10, padding: "1.25rem", border: "1px solid #BBF7D0", textAlign: "center" }}>
+      <div style={{ background: "#ECFDF3", borderRadius: 10, padding: "1.25rem", border: "1px solid #ABEFC6", textAlign: "center" }}>
         <div style={{ fontSize: "2.5rem", marginBottom: 8 }}>🎉</div>
         <p style={{ fontWeight: 800, fontSize: "1rem", margin: "0 0 4px", color: "#15803D" }}>Importação concluída!</p>
-        <p style={{ fontSize: "0.85rem", color: "#166534", margin: "0 0 1rem" }}>{result.message}</p>
-        <a href="/store/cardapio" style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: "#16A34A", color: "#fff", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer", textDecoration: "none", display: "inline-block" }}>Ver Cardápio →</a>
+        <p style={{ fontSize: "0.85rem", color: "#15803D", margin: "0 0 1rem" }}>{result.message}</p>
+        <a href="/store/cardapio" style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: "#15803D", color: "#fff", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer", textDecoration: "none", display: "inline-block" }}>Ver Cardápio →</a>
       </div>
     );
   }
@@ -420,7 +420,7 @@ export default function IfoodImportButton() {
 
       {/* BANNER SUPORTE WHATSAPP (SOLICITADO PELO LOJISTA) */}
       <div style={{
-        background: "linear-gradient(135deg, #059669 0%, #10B981 100%)",
+        background: "linear-gradient(135deg, #15803D 0%, #15803D 100%)",
         borderRadius: 16,
         padding: "1.25rem 1.5rem",
         color: "#FFFFFF",

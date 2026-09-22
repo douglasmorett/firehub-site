@@ -102,8 +102,8 @@ function getSourceInfo(order: Order): {
     return { label: loja ? `iFood${refStr} · ${loja}` : `iFood${refStr}`, color: "#fff", bg: "#EA1D2C" };
   }
   if (src.includes("jotaja") || src.includes("jotajá"))
-    return { label: `Jotajá${refStr}`, color: "#fff", bg: "#7c3aed" };
-  return { label: `Online${refStr}`, color: "#fff", bg: "#2563EB" };
+    return { label: `Jotajá${refStr}`, color: "#fff", bg: "#475569" };
+  return { label: `Online${refStr}`, color: "#fff", bg: "#1D4ED8" };
 }
 
 function getElapsedSeconds(order: Order, stage: string): number {
@@ -127,9 +127,9 @@ function formatTimer(totalSeconds: number): string {
 }
 
 function timerColor(totalSeconds: number): string {
-  if (totalSeconds < 300) return "#22c55e";
+  if (totalSeconds < 300) return "#15803D";
   if (totalSeconds < 600) return "#eab308";
-  return "#ef4444";
+  return "#C92E09";
 }
 
 function timerGlow(totalSeconds: number): string {
@@ -769,7 +769,7 @@ export default function KDSTelaPage() {
 
   // ─── Accent color for stage ─────────────────────────────────────────────────
 
-  const accent = stage === "production" ? "#f97316" : "#8b5cf6";
+  const accent = stage === "production" ? "#f97316" : "#64748B";
 
   // ─── Don't render if no stage ───────────────────────────────────────────────
 
@@ -904,7 +904,7 @@ export default function KDSTelaPage() {
                 padding: "5px 12px",
                 borderRadius: 14,
                 background: lastCompletedOrder
-                  ? "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)"
+                  ? "linear-gradient(135deg, #B45309 0%, #B45309 100%)"
                   : "rgba(255, 255, 255, 0.07)",
                 color: lastCompletedOrder ? "#FFF" : "rgba(255, 255, 255, 0.4)",
                 fontSize: 12,
@@ -952,7 +952,7 @@ export default function KDSTelaPage() {
                   cursor: "pointer",
                   fontFamily: FONT,
                   background: filter === "all" ? accent : "transparent",
-                  color: filter === "all" ? "#fff" : "#9ca3af",
+                  color: filter === "all" ? "#fff" : "#94A3B8",
                   minHeight: 36,
                   touchAction: "manipulation",
                 }}
@@ -972,7 +972,7 @@ export default function KDSTelaPage() {
                   cursor: "pointer",
                   fontFamily: FONT,
                   background: filter === "odd" ? accent : "transparent",
-                  color: filter === "odd" ? "#fff" : "#9ca3af",
+                  color: filter === "odd" ? "#fff" : "#94A3B8",
                   minHeight: 36,
                   touchAction: "manipulation",
                 }}
@@ -992,7 +992,7 @@ export default function KDSTelaPage() {
                   cursor: "pointer",
                   fontFamily: FONT,
                   background: filter === "even" ? accent : "transparent",
-                  color: filter === "even" ? "#fff" : "#9ca3af",
+                  color: filter === "even" ? "#fff" : "#94A3B8",
                   minHeight: 36,
                   touchAction: "manipulation",
                 }}
@@ -1019,7 +1019,7 @@ export default function KDSTelaPage() {
                   style={{
                     padding: "6px 12px",
                     borderRadius: 10,
-                    border: "1px solid #ef4444",
+                    border: "1px solid #C92E09",
                     background: "#ef444422",
                     color: "#fca5a5",
                     fontWeight: 700,
@@ -1099,7 +1099,7 @@ export default function KDSTelaPage() {
                     }}
                   >
                     <span
-                      style={{ fontWeight: 800, fontSize: 13, color: "#9ca3af" }}
+                      style={{ fontWeight: 800, fontSize: 13, color: "#94A3B8" }}
                     >
                       CATEGORIAS
                     </span>
@@ -1144,7 +1144,7 @@ export default function KDSTelaPage() {
                             fontSize: 13,
                             fontWeight: 600,
                             background: selected ? `${accent}15` : "transparent",
-                            color: selected ? "#fff" : "#9ca3af",
+                            color: selected ? "#fff" : "#94A3B8",
                             transition: "all 0.15s",
                           }}
                         >
@@ -1187,7 +1187,7 @@ export default function KDSTelaPage() {
                 style={{
                   fontSize: 13,
                   fontWeight: 600,
-                  color: "#ef4444",
+                  color: "#C92E09",
                   animation: "kds-reconnecting-pulse 1.5s ease-in-out infinite",
                   whiteSpace: "nowrap",
                 }}
@@ -1199,7 +1199,7 @@ export default function KDSTelaPage() {
               style={{
                 fontSize: 15,
                 fontWeight: 600,
-                color: "#9ca3af",
+                color: "#94A3B8",
                 whiteSpace: "nowrap",
               }}
             >
@@ -1211,7 +1211,7 @@ export default function KDSTelaPage() {
                 fontSize: 18,
                 fontWeight: 700,
                 fontFamily: MONO_FONT,
-                color: "#e5e7eb",
+                color: "#E2E8F0",
                 letterSpacing: "1px",
                 whiteSpace: "nowrap",
               }}
@@ -1260,13 +1260,13 @@ export default function KDSTelaPage() {
                 style={{
                   fontSize: 28,
                   fontWeight: 600,
-                  color: "#6b7280",
+                  color: "#64748B",
                   animation: "kds-pulse-empty 3s ease-in-out infinite",
                 }}
               >
                 Nenhum pedido na fila
               </span>
-              <span style={{ fontSize: 16, color: "#4b5563" }}>
+              <span style={{ fontSize: 16, color: "#475569" }}>
                 Os pedidos aparecerão automaticamente aqui
               </span>
             </div>
@@ -1315,13 +1315,13 @@ export default function KDSTelaPage() {
         >
           <div
             style={{
-              background: "#1f2937",
+              background: "#1E293B",
               padding: "8px 28px",
               borderRadius: 12,
-              border: "1px solid #374151",
+              border: "1px solid #334155",
             }}
           >
-            <span style={{ fontSize: 15, fontWeight: 600, color: "#9ca3af" }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: "#94A3B8" }}>
               Aperte o{" "}
               <span
                 style={{
@@ -1408,7 +1408,7 @@ export default function KDSTelaPage() {
               bottom: 80,
               left: "50%",
               transform: "translateX(-50%)",
-              background: "linear-gradient(135deg, #166534, #15803d)",
+              background: "linear-gradient(135deg, #15803D, #15803d)",
               color: "#fff",
               padding: "14px 32px",
               borderRadius: 16,
@@ -1457,7 +1457,7 @@ function OrderCard({
   const glow = timerGlow(elapsed);
   const sourceInfo = getSourceInfo(order);
   const borderColor =
-    elapsed >= 600 ? "#ef4444" : elapsed >= 300 ? "#eab308" : "#2a2a4a";
+    elapsed >= 600 ? "#C92E09" : elapsed >= 300 ? "#eab308" : "#2a2a4a";
 
   // ─── Order Density & TV Fit Scaling ──────────────────────────────
   const totalSubItemsCount = order.items.reduce((acc: number, item: any) => {
@@ -1519,7 +1519,7 @@ function OrderCard({
             width: "100%",
             padding: "6px 12px",
             borderRadius: 10,
-            background: "linear-gradient(135deg, #DC2626 0%, #991B1B 100%)",
+            background: "linear-gradient(135deg, #C92E09 0%, #B71C1C 100%)",
             color: "#FFFFFF",
             fontSize: 14,
             fontWeight: 900,
@@ -1611,13 +1611,13 @@ function OrderCard({
                 gap: 4,
                 padding: "4px 12px",
                 borderRadius: 12,
-                background: "linear-gradient(135deg, #EF4444, #DC2626)",
+                background: "linear-gradient(135deg, #C92E09, #C92E09)",
                 color: "#FFFFFF",
                 fontSize: 13,
                 fontWeight: 900,
                 letterSpacing: "0.5px",
                 boxShadow: "0 0 14px rgba(239, 68, 68, 0.6)",
-                border: "1px solid #B91C1C",
+                border: "1px solid #B71C1C",
               }}
             >
               🛵 MOTOBOY IFOOD
@@ -1631,11 +1631,11 @@ function OrderCard({
             display: "inline-block",
             padding: "3px 10px",
             borderRadius: 12,
-            background: order.deliveryType === "MESA" ? "#5B21B6" : "#1f2937",
-            color: order.deliveryType === "MESA" ? "#E9D5FF" : "#d1d5db",
+            background: order.deliveryType === "MESA" ? "#334155" : "#1E293B",
+            color: order.deliveryType === "MESA" ? "#E9D5FF" : "#CBD5E1",
             fontSize: 12,
             fontWeight: order.deliveryType === "MESA" ? 800 : 600,
-            border: order.deliveryType === "MESA" ? "1px solid #7C3AED" : "1px solid #374151",
+            border: order.deliveryType === "MESA" ? "1px solid #475569" : "1px solid #334155",
           }}
         >
           {order.deliveryType === "DELIVERY"
@@ -1663,7 +1663,7 @@ function OrderCard({
             style={{
               fontSize: 10,
               fontWeight: 700,
-              color: "#9CA3AF",
+              color: "#94A3B8",
               textTransform: "uppercase",
               marginTop: -2,
               letterSpacing: "0.05em",
@@ -1679,7 +1679,7 @@ function OrderCard({
         <div
           style={{
             fontSize: isHugeOrder ? 12 : 14,
-            color: "#9ca3af",
+            color: "#94A3B8",
             fontWeight: 500,
             marginTop: -4,
             paddingLeft: position <= 9 ? (isHugeOrder ? 44 : 54) : 0,
@@ -1715,7 +1715,7 @@ function OrderCard({
                 style={{
                   fontSize: mainFontSize,
                   fontWeight: 700,
-                  color: "#e5e7eb",
+                  color: "#E2E8F0",
                   display: "flex",
                   alignItems: "baseline",
                   gap: 6,
@@ -1737,7 +1737,7 @@ function OrderCard({
                       fontWeight: 900,
                       lineHeight: 1,
                       minWidth: isHugeOrder ? 20 : 26,
-                      color: item.prontoEm ? "#22C55E" : "#F59E0B",
+                      color: item.prontoEm ? "#15803D" : "#B45309",
                     }}
                   >
                     {item.prontoEm ? "✓" : "○"}
@@ -1776,7 +1776,7 @@ function OrderCard({
                       key={i}
                       style={{
                         fontSize: subFontSize,
-                        color: "#9ca3af",
+                        color: "#94A3B8",
                         fontWeight: 500,
                         lineHeight: 1.2,
                         whiteSpace: "normal",

@@ -157,7 +157,7 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
             backgroundColor: "#fef2f2",
             border: "1px solid #fecaca",
             borderRadius: "0.5rem",
-            color: "#dc2626",
+            color: "#C92E09",
             fontSize: "0.9rem",
             display: "flex",
             alignItems: "center",
@@ -168,17 +168,17 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
             <button 
               type="button"
               onClick={() => setErrorMsg(null)} 
-              style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "#dc2626" }}
+              style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "#C92E09" }}
             >×</button>
           </div>
         )}
         {successMsg && (
           <div style={{
             padding: "0.75rem 1rem",
-            backgroundColor: "#f0fdf4",
-            border: "1px solid #bbf7d0",
+            backgroundColor: "#ECFDF3",
+            border: "1px solid #ABEFC6",
             borderRadius: "0.5rem",
-            color: "#16a34a",
+            color: "#15803D",
             fontSize: "0.9rem",
             display: "flex",
             alignItems: "center",
@@ -188,7 +188,7 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
             <button 
               type="button"
               onClick={() => setSuccessMsg(null)} 
-              style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "#16a34a" }}
+              style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem", color: "#15803D" }}
             >×</button>
           </div>
         )}
@@ -249,7 +249,7 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
                   flexDirection: "column",
                   alignItems: "center",
                   gap: "0.5rem",
-                  backgroundColor: "#f59e0b",
+                  backgroundColor: "#B45309",
                   color: "white",
                   borderRadius: "0.75rem",
                   border: "none",
@@ -278,11 +278,11 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
               alignItems: "center", 
               justifyContent: "space-between",
               padding: "0.5rem 0.75rem",
-              backgroundColor: inputMode === "manual" ? "#eff6ff" : "#fffbeb",
+              backgroundColor: inputMode === "manual" ? "#eff6ff" : "#FFF7E6",
               borderRadius: "0.5rem",
               fontSize: "0.85rem",
               fontWeight: "bold",
-              color: inputMode === "manual" ? "#2563eb" : "#d97706"
+              color: inputMode === "manual" ? "#1D4ED8" : "#B45309"
             }}>
               <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 {inputMode === "manual" ? <PenLine size={16} /> : <Camera size={16} />}
@@ -383,7 +383,7 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
                   justifyContent: "center",
                   gap: "0.5rem", 
                   padding: "0.5rem 1rem",
-                  backgroundColor: "#f59e0b",
+                  backgroundColor: "#B45309",
                   color: "white",
                   border: "none",
                   borderRadius: "0.5rem",

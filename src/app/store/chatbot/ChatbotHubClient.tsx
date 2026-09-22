@@ -129,7 +129,7 @@ export default function ChatbotHubClient() {
       const data = await res.json();
       if (data.success && data.message) {
         setCampaignMsg(data.message);
-        showToast("✨ Mensagem persuasiva gerada pela IA com sucesso!", "#8B5CF6");
+        showToast("✨ Mensagem persuasiva gerada pela IA com sucesso!", "#64748B");
       } else {
         throw new Error();
       }
@@ -141,7 +141,7 @@ export default function ChatbotHubClient() {
         "Bateu aquela fome? 😋 Aproveite as nossas promoções exclusivas com entrega super rápida! Peça pelo site agora!"
       ];
       setCampaignMsg(fallbackMsgs[Math.floor(Math.random() * fallbackMsgs.length)]);
-      showToast("✨ Mensagem rápida gerada com IA!", "#8B5CF6");
+      showToast("✨ Mensagem rápida gerada com IA!", "#64748B");
     } finally {
       setIsGeneratingAi(false);
     }
@@ -182,15 +182,15 @@ export default function ChatbotHubClient() {
           handleSaveConfig(newFieldsToSave);
         }
 
-        showToast(`🗑️ Cupom "${codeToDelete}" excluído permanentemente!`, "#10B981");
+        showToast(`🗑️ Cupom "${codeToDelete}" excluído permanentemente!`, "#15803D");
         setShowDeleteCouponModal(false);
         setCouponToDelete(null);
         setDeleteConfirmInput("");
       } else {
-        showToast("⚠️ Falha ao excluir cupom do banco de dados.", "#EF4444");
+        showToast("⚠️ Falha ao excluir cupom do banco de dados.", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro ao comunicar com o servidor.", "#EF4444");
+      showToast("⚠️ Erro ao comunicar com o servidor.", "#C92E09");
     } finally {
       setDeletingCoupon(false);
     }
@@ -222,16 +222,16 @@ export default function ChatbotHubClient() {
       });
       const d = await r.json();
       if (d?.jaConectada) {
-        showToast("✅ Este WhatsApp já está conectado!", "#16A34A");
+        showToast("✅ Este WhatsApp já está conectado!", "#15803D");
         return;
       }
       if (!r.ok || !d?.pairingCode) {
-        showToast(d?.error || "Não consegui gerar o código agora.", "#EF4444");
+        showToast(d?.error || "Não consegui gerar o código agora.", "#C92E09");
         return;
       }
       setCodigoPareamento(String(d.pairingCode));
     } catch {
-      showToast("Falha de conexão ao gerar o código.", "#EF4444");
+      showToast("Falha de conexão ao gerar o código.", "#C92E09");
     } finally {
       setGerandoCodigo(false);
     }
@@ -264,17 +264,17 @@ export default function ChatbotHubClient() {
 
       if (res.connected) {
         setConfig((prev: any) => ({ ...prev, connected: true, phone: res.phone || prev.phone }));
-        showToast("🎉 WhatsApp Conectado com Sucesso!", "#10B981");
+        showToast("🎉 WhatsApp Conectado com Sucesso!", "#15803D");
       } else if (res.qrCodeUrl && typeof res.qrCodeUrl === "string" && res.qrCodeUrl.length > 20) {
         setQrCodeUrl(res.qrCodeUrl);
         setQrTimer(60);
         setIsQrExpired(false);
-        showToast("⚡ QR Code gerado em tempo real! Expira em 60 segundos.", "#2563EB");
+        showToast("⚡ QR Code gerado em tempo real! Expira em 60 segundos.", "#1D4ED8");
       } else {
-        showToast("⚠️ O servidor de WhatsApp precisa estar online para gerar o QR Code.", "#EF4444");
+        showToast("⚠️ O servidor de WhatsApp precisa estar online para gerar o QR Code.", "#C92E09");
       }
     } catch (e) {
-      showToast("⚠️ Falha ao conectar ao servidor de QR Code", "#EF4444");
+      showToast("⚠️ Falha ao conectar ao servidor de QR Code", "#C92E09");
     } finally {
       setIsRefreshingQr(false);
     }
@@ -287,7 +287,7 @@ export default function ChatbotHubClient() {
 
   // Toast State
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
-  const showToast = (msg: string, color: string = "#10B981") => {
+  const showToast = (msg: string, color: string = "#15803D") => {
     setToast({ msg, color });
     setTimeout(() => setToast(null), 4000);
   };
@@ -332,7 +332,7 @@ export default function ChatbotHubClient() {
 
   const handleCreateNewCoupon = async (targetRecuperationKey?: string) => {
     if (!newCouponCode.trim()) {
-      showToast("⚠️ Digite um código de cupom (ex: BEMVINDO10)", "#EF4444");
+      showToast("⚠️ Digite um código de cupom (ex: BEMVINDO10)", "#C92E09");
       return;
     }
     const cleanCode = newCouponCode.trim().toUpperCase();
@@ -363,7 +363,7 @@ export default function ChatbotHubClient() {
           ? `🎉 Cupom "${cleanCode}" de R$ ${discountVal.toFixed(2)} OFF criado e salvo!${minOrderLabel}`
           : `🎉 Cupom "${cleanCode}" de ${discountVal}% OFF criado e salvo!${minOrderLabel}`;
         
-        showToast(toastLabel, "#10B981");
+        showToast(toastLabel, "#15803D");
         
         // Se foi acionado por um card específico ou pelo botão abaixo do seletor, auto-seleciona
         const keyToUpdate = targetRecuperationKey || targetCouponField;
@@ -379,10 +379,10 @@ export default function ChatbotHubClient() {
         setTargetCouponField(null);
         setShowNewCouponModal(false);
       } else {
-        showToast("⚠️ Falha ao salvar novo cupom.", "#EF4444");
+        showToast("⚠️ Falha ao salvar novo cupom.", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro ao criar cupom.", "#EF4444");
+      showToast("⚠️ Erro ao criar cupom.", "#C92E09");
     } finally {
       setCreatingCoupon(false);
     }
@@ -403,11 +403,11 @@ export default function ChatbotHubClient() {
           setCampaignHistory(res.campaignHistory);
         }
         if (isManualClick) {
-          showToast("📊 Métricas e disparos atualizados com sucesso!", "#10B981");
+          showToast("📊 Métricas e disparos atualizados com sucesso!", "#15803D");
         }
       }
     } catch (e) {
-      if (isManualClick) showToast("⚠️ Erro ao atualizar métricas.", "#EF4444");
+      if (isManualClick) showToast("⚠️ Erro ao atualizar métricas.", "#C92E09");
     } finally {
       if (isManualClick) setRefreshingMetrics(false);
     }
@@ -487,7 +487,7 @@ export default function ChatbotHubClient() {
             connected: true,
             phone: qrRes.phone || prev.phone,
           }));
-          showToast("🎉 WhatsApp Conectado com Sucesso!", "#10B981");
+          showToast("🎉 WhatsApp Conectado com Sucesso!", "#15803D");
         } else if (qrRes.qrCodeUrl && qrRes.qrCodeUrl !== qrCodeUrl) {
           setQrCodeUrl(qrRes.qrCodeUrl);
         }
@@ -536,14 +536,14 @@ export default function ChatbotHubClient() {
         const mexidos = Object.keys(newFields || {});
         const perdidos = mexidos.filter((c) => recusados.includes(c));
         if (perdidos.length > 0) {
-          showToast(`⚠️ Não foi possível salvar: ${perdidos.join(", ")}`, "#EF4444");
+          showToast(`⚠️ Não foi possível salvar: ${perdidos.join(", ")}`, "#C92E09");
         } else {
-          showToast("✅ Configurações salvas!", "#10B981");
+          showToast("✅ Configurações salvas!", "#15803D");
         }
       }
     } catch (err) {
       console.error("[ChatbotHub] Erro ao salvar:", err);
-      showToast("⚠️ Falha ao salvar alterações", "#EF4444");
+      showToast("⚠️ Falha ao salvar alterações", "#C92E09");
     } finally {
       setSaving(false);
     }
@@ -552,7 +552,7 @@ export default function ChatbotHubClient() {
   // Salvar Número por Digitação Direta
   const handleSaveStorePhone = async () => {
     if (!storePhoneInput.trim()) {
-      showToast("⚠️ Digite um número de WhatsApp válido", "#EF4444");
+      showToast("⚠️ Digite um número de WhatsApp válido", "#C92E09");
       return;
     }
 
@@ -572,12 +572,12 @@ export default function ChatbotHubClient() {
 
       if (res.ok) {
         setConfig((prev: any) => ({ ...prev, phone: cleanPhone, connected: true, active: true }));
-        showToast("🎉 WhatsApp vinculado com sucesso ao número " + cleanPhone, "#10B981");
+        showToast("🎉 WhatsApp vinculado com sucesso ao número " + cleanPhone, "#15803D");
       } else {
-        showToast("⚠️ Erro ao vincular número", "#EF4444");
+        showToast("⚠️ Erro ao vincular número", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão ao salvar número", "#EF4444");
+      showToast("⚠️ Erro de conexão ao salvar número", "#C92E09");
     } finally {
       setPhoneSaving(false);
     }
@@ -586,7 +586,7 @@ export default function ChatbotHubClient() {
   // Enviar Mensagem de Teste
   const handleSendTestMessage = async () => {
     if (!testPhone.trim()) {
-      showToast("⚠️ Digite o número de telefone de destino com DDD", "#EF4444");
+      showToast("⚠️ Digite o número de telefone de destino com DDD", "#C92E09");
       return;
     }
 
@@ -602,12 +602,12 @@ export default function ChatbotHubClient() {
       });
 
       if (res.ok) {
-        showToast("🚀 Mensagem de teste enviada com sucesso!", "#10B981");
+        showToast("🚀 Mensagem de teste enviada com sucesso!", "#15803D");
       } else {
-        showToast("⚠️ Não foi possível enviar a mensagem. Verifique a conexão do WhatsApp.", "#EF4444");
+        showToast("⚠️ Não foi possível enviar a mensagem. Verifique a conexão do WhatsApp.", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Falha na conexão de envio", "#EF4444");
+      showToast("⚠️ Falha na conexão de envio", "#C92E09");
     } finally {
       setSendingTest(false);
     }
@@ -627,7 +627,7 @@ export default function ChatbotHubClient() {
       setConfig((prev: any) => ({ ...prev, connected: false, phone: "" }));
       setQrCodeUrl(null);
       setIsQrExpired(false);
-      showToast("📱 Aparelho desconectado! Gerando novo QR Code...", "#F59E0B");
+      showToast("📱 Aparelho desconectado! Gerando novo QR Code...", "#B45309");
       handleFetchFreshQr();
     } catch (err) {
       console.error("[ChatbotHub] Erro ao desconectar:", err);
@@ -710,11 +710,11 @@ export default function ChatbotHubClient() {
           role="button"
           tabIndex={0}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setActiveTab("qr"); handleFetchFreshQr(); } }}
-          style={{ display: "flex", alignItems: "center", gap: "0.9rem", flexWrap: "wrap", background: "#F0FDF4", border: "1px solid #A7F3D0", borderLeft: "6px solid #16A34A", borderRadius: 12, padding: "0.9rem 1.1rem", marginBottom: "1rem", cursor: "pointer" }}
+          style={{ display: "flex", alignItems: "center", gap: "0.9rem", flexWrap: "wrap", background: "#ECFDF3", border: "1px solid #A7F3D0", borderLeft: "6px solid #15803D", borderRadius: 12, padding: "0.9rem 1.1rem", marginBottom: "1rem", cursor: "pointer" }}
         >
           <span style={{ fontSize: "1.6rem", lineHeight: 1 }} aria-hidden>🤖</span>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <div style={{ fontWeight: 800, color: "#166534", fontSize: "1rem" }}>
+            <div style={{ fontWeight: 800, color: "#15803D", fontSize: "1rem" }}>
               Seu robô de WhatsApp está desconectado
             </div>
             <div style={{ color: "#15803D", fontSize: "0.88rem", marginTop: 2 }}>
@@ -722,7 +722,7 @@ export default function ChatbotHubClient() {
               Clique aqui para reconectar e leia o QR Code de novo.
             </div>
           </div>
-          <span style={{ background: "#16A34A", color: "#fff", fontWeight: 800, fontSize: "0.9rem", padding: "0.6rem 1.1rem", borderRadius: 10, whiteSpace: "nowrap" }}>
+          <span style={{ background: "#15803D", color: "#fff", fontWeight: 800, fontSize: "0.9rem", padding: "0.6rem 1.1rem", borderRadius: 10, whiteSpace: "nowrap" }}>
             Clique aqui para reconectar
           </span>
         </div>
@@ -731,7 +731,7 @@ export default function ChatbotHubClient() {
       {/* Gateway mudo não é loja desconectada: aqui o sistema diz que NÃO SABE,
           em vez de afirmar qualquer um dos dois lados e errar. */}
       {gatewayMudo && config.connected && (
-        <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderLeft: "6px solid #D97706", borderRadius: 12, padding: "0.8rem 1.1rem", marginBottom: "1rem", color: "#92400E", fontSize: "0.86rem", fontWeight: 600 }}>
+        <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderLeft: "6px solid #B45309", borderRadius: 12, padding: "0.8rem 1.1rem", marginBottom: "1rem", color: "#92400E", fontSize: "0.86rem", fontWeight: 600 }}>
           ⚠️ Não consegui confirmar agora se o robô está no ar — o servidor de WhatsApp não respondeu.
           O status abaixo é o da última verificação que deu certo.
         </div>
@@ -753,7 +753,7 @@ export default function ChatbotHubClient() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", padding: "12px 18px", borderRadius: "16px" }}>
-            <div style={{ width: 44, height: 44, borderRadius: "12px", background: config.connected ? "#16A34A" : "#D97706", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 44, height: 44, borderRadius: "12px", background: config.connected ? "#15803D" : "#B45309", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {config.connected ? <CheckCircle2 size={24} color="#fff" /> : <Smartphone size={24} color="#fff" />}
             </div>
             <div>
@@ -772,7 +772,7 @@ export default function ChatbotHubClient() {
             onClick={() => setActiveTab("qr")}
             style={{
               padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
-              background: activeTab === "qr" ? "#22C55E" : "rgba(255,255,255,0.1)", color: "#fff",
+              background: activeTab === "qr" ? "#15803D" : "rgba(255,255,255,0.1)", color: "#fff",
               display: "flex", alignItems: "center", gap: "8px"
             }}
           >
@@ -782,7 +782,7 @@ export default function ChatbotHubClient() {
             onClick={() => setActiveTab("marketing")}
             style={{
               padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
-              background: activeTab === "marketing" ? "linear-gradient(135deg, #8B5CF6, #6D28D9)" : "rgba(255,255,255,0.1)", color: "#fff",
+              background: activeTab === "marketing" ? "linear-gradient(135deg, #64748B, #334155)" : "rgba(255,255,255,0.1)", color: "#fff",
               display: "flex", alignItems: "center", gap: "8px", boxShadow: activeTab === "marketing" ? "0 4px 12px rgba(139,92,246,0.3)" : "none"
             }}
           >
@@ -792,7 +792,7 @@ export default function ChatbotHubClient() {
             onClick={() => setActiveTab("disparos")}
             style={{
               padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
-              background: activeTab === "disparos" ? "linear-gradient(135deg, #F59E0B, #D97706)" : "rgba(255,255,255,0.1)", color: "#fff",
+              background: activeTab === "disparos" ? "linear-gradient(135deg, #B45309, #B45309)" : "rgba(255,255,255,0.1)", color: "#fff",
               display: "flex", alignItems: "center", gap: "8px", boxShadow: activeTab === "disparos" ? "0 4px 12px rgba(245,158,11,0.3)" : "none"
             }}
           >
@@ -802,7 +802,7 @@ export default function ChatbotHubClient() {
             onClick={() => setActiveTab("cardapio")}
             style={{
               padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
-              background: activeTab === "cardapio" ? "linear-gradient(135deg, #10B981, #059669)" : "rgba(255,255,255,0.1)", color: "#fff",
+              background: activeTab === "cardapio" ? "linear-gradient(135deg, #15803D, #15803D)" : "rgba(255,255,255,0.1)", color: "#fff",
               display: "flex", alignItems: "center", gap: "8px", boxShadow: activeTab === "cardapio" ? "0 4px 12px rgba(16,185,129,0.3)" : "none"
             }}
           >
@@ -832,7 +832,7 @@ export default function ChatbotHubClient() {
             onClick={() => setActiveTab("alertas")}
             style={{
               padding: "10px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer",
-              background: activeTab === "alertas" ? "#DC2626" : "rgba(255,255,255,0.1)", color: "#fff",
+              background: activeTab === "alertas" ? "#C92E09" : "rgba(255,255,255,0.1)", color: "#fff",
               display: "flex", alignItems: "center", gap: "8px"
             }}
           >
@@ -852,7 +852,7 @@ export default function ChatbotHubClient() {
             <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#DCFCE7", color: "#16A34A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#ECFDF3", color: "#15803D", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <QrCode size={20} />
                   </div>
                   <div>
@@ -866,7 +866,7 @@ export default function ChatbotHubClient() {
                     disabled={isRefreshingQr}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
-                      background: "#FEE2E2", color: "#DC2626", fontWeight: 700,
+                      background: "#FEE2E2", color: "#C92E09", fontWeight: 700,
                       fontSize: "0.82rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
                     }}
                   >
@@ -885,7 +885,7 @@ export default function ChatbotHubClient() {
                     {!qrCodeUrl || isQrExpired ? (
                       <div style={{ background: "#FFF", padding: "24px", borderRadius: "16px", border: "1px solid #E2E8F0", textAlign: "center", maxWidth: "300px" }}>
                         {isQrExpired && (
-                          <div style={{ color: "#DC2626", fontWeight: 700, fontSize: "0.82rem", marginBottom: "12px" }}>
+                          <div style={{ color: "#C92E09", fontWeight: 700, fontSize: "0.82rem", marginBottom: "12px" }}>
                             ⏱️ O QR Code anterior expirou após 60s.
                           </div>
                         )}
@@ -896,7 +896,7 @@ export default function ChatbotHubClient() {
                             padding: "12px 20px",
                             borderRadius: "12px",
                             border: "none",
-                            background: "linear-gradient(135deg, #16A34A, #15803D)",
+                            background: "linear-gradient(135deg, #15803D, #15803D)",
                             color: "#fff",
                             fontWeight: 800,
                             fontSize: "0.9rem",
@@ -916,7 +916,7 @@ export default function ChatbotHubClient() {
                         <div style={{ padding: "12px", background: "#fff", borderRadius: "12px", border: "1px solid #E2E8F0", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)" }}>
                           <img src={qrCodeUrl} alt="QR Code WhatsApp" style={{ width: "210px", height: "210px", display: "block" }} />
                         </div>
-                        <div style={{ marginTop: "12px", fontSize: "0.82rem", fontWeight: 800, color: "#D97706", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <div style={{ marginTop: "12px", fontSize: "0.82rem", fontWeight: 800, color: "#B45309", display: "flex", alignItems: "center", gap: "6px" }}>
                           ⏱️ QR Code ativo · Expira em {qrTimer}s
                         </div>
                         <button
@@ -930,7 +930,7 @@ export default function ChatbotHubClient() {
                     )}
                   </div>
 
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#FEF3C7", border: "1px solid #FDE68A", color: "#B45309", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, marginBottom: "16px" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "#FFF7E6", border: "1px solid #FDE68A", color: "#B45309", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, marginBottom: "16px" }}>
                     <RefreshCw size={12} className="spin" /> Checando leitura em tempo real...
                   </div>
 
@@ -988,8 +988,8 @@ export default function ChatbotHubClient() {
                     </div>
 
                     {codigoPareamento && (
-                      <div style={{ marginTop: "14px", background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: "10px", padding: "14px" }}>
-                        <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#166534", marginBottom: "6px" }}>
+                      <div style={{ marginTop: "14px", background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: "10px", padding: "14px" }}>
+                        <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#15803D", marginBottom: "6px" }}>
                           SEU CÓDIGO
                         </div>
                         <div
@@ -1001,7 +1001,7 @@ export default function ChatbotHubClient() {
                         >
                           {codigoPareamento}
                         </div>
-                        <div style={{ fontSize: "0.8rem", color: "#166534", lineHeight: 1.7 }}>
+                        <div style={{ fontSize: "0.8rem", color: "#15803D", lineHeight: 1.7 }}>
                           No <strong>celular da loja</strong>:<br />
                           1. Abra o <strong>WhatsApp</strong>.<br />
                           2. Vá em <strong>Configurações ➔ Aparelhos conectados</strong>.<br />
@@ -1017,13 +1017,13 @@ export default function ChatbotHubClient() {
                   </div>
                 </div>
               ) : (
-                <div style={{ background: "#F0FDF4", borderRadius: "12px", padding: "1.25rem", border: "1px solid #BBF7D0", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div style={{ background: "#ECFDF3", borderRadius: "12px", padding: "1.25rem", border: "1px solid #ABEFC6", display: "flex", flexDirection: "column", gap: "12px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                     <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#25D366", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>
                       WA
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#166534" }}>WhatsApp Vinculado com Sucesso!</div>
+                      <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#15803D" }}>WhatsApp Vinculado com Sucesso!</div>
                       <div style={{ fontSize: "0.8rem", color: "#15803D" }}>A IA está pronta para responder mensagens no número {config.phone}.</div>
                     </div>
                   </div>
@@ -1033,8 +1033,8 @@ export default function ChatbotHubClient() {
                     style={{
                       padding: "10px 16px",
                       borderRadius: "10px",
-                      border: "1px solid #BBF7D0",
-                      background: "#DCFCE7",
+                      border: "1px solid #ABEFC6",
+                      background: "#ECFDF3",
                       color: "#15803D",
                       fontWeight: 800,
                       fontSize: "0.85rem",
@@ -1057,7 +1057,7 @@ export default function ChatbotHubClient() {
           {activeTab === "phone" && (
             <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1rem" }}>
-                <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#DBEAFE", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#EFF6FF", color: "#1D4ED8", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Phone size={20} />
                 </div>
                 <div>
@@ -1086,7 +1086,7 @@ export default function ChatbotHubClient() {
                   disabled={phoneSaving}
                   style={{
                     width: "100%", padding: "12px", borderRadius: "10px", border: "none",
-                    background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff",
+                    background: "linear-gradient(135deg, #1D4ED8, #1D4ED8)", color: "#fff",
                     fontWeight: 800, fontSize: "0.9rem", cursor: "pointer"
                   }}
                 >
@@ -1104,9 +1104,9 @@ export default function ChatbotHubClient() {
           {activeTab === "marketing" && (
             <div style={{ background: "#fff", borderRadius: "20px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.05)" }}>
               {/* HEADER DA ABA */}
-              <div style={{ background: "linear-gradient(135deg, #4C1D95, #6D28D9)", color: "#fff", padding: "1.5rem", borderRadius: "16px", marginBottom: "1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+              <div style={{ background: "linear-gradient(135deg, #0F172A, #334155)", color: "#fff", padding: "1.5rem", borderRadius: "16px", marginBottom: "1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
                 <div>
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.15)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.74rem", fontWeight: 800, color: "#DDD6FE", marginBottom: "6px" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.15)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.74rem", fontWeight: 800, color: "#E2E8F0", marginBottom: "6px" }}>
                     <Sparkles size={14} /> MÓDULO INTELIGENTE DE VENDAS RECORRENTES
                   </div>
                   <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.3rem" }}>🚀 Marketing, Disparos &amp; Relatório de Fidelização</h3>
@@ -1123,33 +1123,33 @@ export default function ChatbotHubClient() {
                     type="date"
                     value={marketingStartDate}
                     onChange={(e) => setMarketingStartDate(e.target.value)}
-                    style={{ background: "#fff", border: "none", padding: "4px 8px", borderRadius: "6px", fontSize: "0.76rem", fontWeight: 700, color: "#4C1D95" }}
+                    style={{ background: "#fff", border: "none", padding: "4px 8px", borderRadius: "6px", fontSize: "0.76rem", fontWeight: 700, color: "#0F172A" }}
                   />
                   <span style={{ fontSize: "0.78rem" }}>até</span>
                   <input
                     type="date"
                     value={marketingEndDate}
                     onChange={(e) => setMarketingEndDate(e.target.value)}
-                    style={{ background: "#fff", border: "none", padding: "4px 8px", borderRadius: "6px", fontSize: "0.76rem", fontWeight: 700, color: "#4C1D95" }}
+                    style={{ background: "#fff", border: "none", padding: "4px 8px", borderRadius: "6px", fontSize: "0.76rem", fontWeight: 700, color: "#0F172A" }}
                   />
                 </div>
               </div>
 
               {/* RELATÓRIO DE IMPACTO DE VENDAS */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginBottom: "1.5rem" }}>
-                <div style={{ background: "#F3E8FF", border: "1px solid #DDD6FE", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
-                  <div style={{ color: "#6D28D9", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>👥 Clientes na Base Ativa</div>
-                  <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#4C1D95", marginTop: "4px" }}>{marketingCustomers.length}</div>
-                  <div style={{ fontSize: "0.7rem", color: "#6D28D9", marginTop: "2px" }}>Contatos reais registrados</div>
+                <div style={{ background: "#F3E8FF", border: "1px solid #E2E8F0", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
+                  <div style={{ color: "#334155", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>👥 Clientes na Base Ativa</div>
+                  <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A", marginTop: "4px" }}>{marketingCustomers.length}</div>
+                  <div style={{ fontSize: "0.7rem", color: "#334155", marginTop: "2px" }}>Contatos reais registrados</div>
                 </div>
 
-                <div style={{ background: "#DCFCE7", border: "1px solid #BBF7D0", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
-                  <div style={{ color: "#166534", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>🛍️ Pedidos Recuperados</div>
+                <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
+                  <div style={{ color: "#15803D", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>🛍️ Pedidos Recuperados</div>
                   <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#15803D", marginTop: "4px" }}>{recoveredOrdersCount}</div>
-                  <div style={{ fontSize: "0.7rem", color: "#166534", marginTop: "2px" }}>Vendas efetuadas via cupons</div>
+                  <div style={{ fontSize: "0.7rem", color: "#15803D", marginTop: "2px" }}>Vendas efetuadas via cupons</div>
                 </div>
 
-                <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
+                <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "1.2rem", borderRadius: "14px", textAlign: "center" }}>
                   <div style={{ color: "#92400E", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase" }}>💰 Faturamento Gerado</div>
                   <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#B45309", marginTop: "4px" }}>R$ {recoveredRevenue.toFixed(2).replace(".", ",")}</div>
                   <div style={{ fontSize: "0.7rem", color: "#92400E", marginTop: "2px" }}>Receita vinda das automações</div>
@@ -1157,13 +1157,13 @@ export default function ChatbotHubClient() {
               </div>
 
               {/* SEÇÃO 1: CONFIGURAÇÃO DE CUPOM INSTANTÂNEO PARA QUEM PERGUNTAR NO WHATSAPP */}
-              <div style={{ background: "linear-gradient(135deg, #EFF6FF, #DBEAFE)", padding: "1.5rem", borderRadius: "16px", border: "1px solid #BFDBFE", marginBottom: "1.5rem" }}>
+              <div style={{ background: "linear-gradient(135deg, #EFF6FF, #EFF6FF)", padding: "1.5rem", borderRadius: "16px", border: "1px solid #B2DDFF", marginBottom: "1.5rem" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", marginBottom: "10px" }}>
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: "1rem", color: "#1E40AF", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <div style={{ fontWeight: 800, fontSize: "1rem", color: "#1D4ED8", display: "flex", alignItems: "center", gap: "6px" }}>
                       💬 Se o cliente perguntar se tem cupom de desconto no WhatsApp, quer liberar um cupom automático?
                     </div>
-                    <div style={{ fontSize: "0.78rem", color: "#1E3A8A", marginTop: "2px" }}>
+                    <div style={{ fontSize: "0.78rem", color: "#1D4ED8", marginTop: "2px" }}>
                       Sugestão recomendada: <strong>10% de Desconto</strong> (ex: cupom <code>PRIMEIRACOMPRA10</code> ou <code>QUEROCUPOM10</code>)
                     </div>
                   </div>
@@ -1171,13 +1171,13 @@ export default function ChatbotHubClient() {
                   <div style={{ display: "flex", gap: "6px" }}>
                     <button
                       onClick={() => handleSaveConfig({ instantCouponEnabled: true })}
-                      style={{ padding: "6px 16px", borderRadius: "8px", border: "none", background: config.instantCouponEnabled === true ? "#16A34A" : "#E2E8F0", color: config.instantCouponEnabled === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                      style={{ padding: "6px 16px", borderRadius: "8px", border: "none", background: config.instantCouponEnabled === true ? "#15803D" : "#E2E8F0", color: config.instantCouponEnabled === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
                     >
                       SIM, LIBERAR
                     </button>
                     <button
                       onClick={() => handleSaveConfig({ instantCouponEnabled: false })}
-                      style={{ padding: "6px 16px", borderRadius: "8px", border: "none", background: config.instantCouponEnabled !== true ? "#DC2626" : "#E2E8F0", color: config.instantCouponEnabled !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                      style={{ padding: "6px 16px", borderRadius: "8px", border: "none", background: config.instantCouponEnabled !== true ? "#C92E09" : "#E2E8F0", color: config.instantCouponEnabled !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
                     >
                       NÃO, RESPONDER QUE NÃO TEM
                     </button>
@@ -1185,9 +1185,9 @@ export default function ChatbotHubClient() {
                 </div>
 
                 {config.instantCouponEnabled === true && (
-                  <div style={{ background: "#fff", padding: "1rem", borderRadius: "12px", border: "1px solid #93C5FD", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
+                  <div style={{ background: "#fff", padding: "1rem", borderRadius: "12px", border: "1px solid #B2DDFF", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
                     <div>
-                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 800, color: "#1E40AF", marginBottom: "4px" }}>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 800, color: "#1D4ED8", marginBottom: "4px" }}>
                         Selecione o Cupom do Banco de Dados para Liberar no WhatsApp:
                       </label>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
@@ -1198,7 +1198,7 @@ export default function ChatbotHubClient() {
                             setConfig((prev: any) => ({ ...prev, instantCouponCode: code }));
                             handleSaveConfig({ instantCouponCode: code });
                           }}
-                          style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid #93C5FD", fontSize: "0.85rem", fontWeight: 700, color: "#1D4ED8" }}
+                          style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid #B2DDFF", fontSize: "0.85rem", fontWeight: 700, color: "#1D4ED8" }}
                         >
                           <option value="">-- Selecione um cupom cadastrado --</option>
                           {storeCoupons.map((c: any, i: number) => (
@@ -1212,7 +1212,7 @@ export default function ChatbotHubClient() {
                             type="button"
                             title={`Excluir cupom ${config.instantCouponCode}`}
                             onClick={() => handleRequestDeleteCoupon(config.instantCouponCode)}
-                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center" }}
                           >
                             <Trash2 size={16} />
                           </button>
@@ -1224,14 +1224,14 @@ export default function ChatbotHubClient() {
                           setTargetCouponField("instantCouponCode");
                           setShowNewCouponModal(true);
                         }}
-                        style={{ marginTop: "6px", background: "none", border: "none", color: "#2563EB", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                        style={{ marginTop: "6px", background: "none", border: "none", color: "#1D4ED8", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                       >
                         ➕ Criar Novo Cupom
                       </button>
                     </div>
 
                     <div>
-                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 800, color: "#1E40AF", marginBottom: "4px" }}>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 800, color: "#1D4ED8", marginBottom: "4px" }}>
                         Descrição do Benefício (Ex: 10% de desconto):
                       </label>
                       <input
@@ -1240,7 +1240,7 @@ export default function ChatbotHubClient() {
                         value={config.instantCouponDiscount || "10% de desconto"}
                         onChange={(e) => setConfig((prev: any) => ({ ...prev, instantCouponDiscount: e.target.value }))}
                         onBlur={() => handleSaveConfig({ instantCouponDiscount: config.instantCouponDiscount })}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #93C5FD", fontSize: "0.85rem", boxSizing: "border-box" }}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #B2DDFF", fontSize: "0.85rem", boxSizing: "border-box" }}
                       />
                     </div>
                   </div>
@@ -1265,8 +1265,8 @@ export default function ChatbotHubClient() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                     <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#EA580C" }}>🔥 1º Incentivo — Cliente 7 Dias Sem Pedir</div>
                     <div style={{ display: "flex", gap: "6px" }}>
-                      <button onClick={() => handleSaveConfig({ autoRecuperation7d: true })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d === true ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation7d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>ATIVADO</button>
-                      <button onClick={() => handleSaveConfig({ autoRecuperation7d: false })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d !== true ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation7d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>DESATIVADO</button>
+                      <button onClick={() => handleSaveConfig({ autoRecuperation7d: true })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d === true ? "#15803D" : "#E2E8F0", color: config.autoRecuperation7d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>ATIVADO</button>
+                      <button onClick={() => handleSaveConfig({ autoRecuperation7d: false })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation7d !== true ? "#C92E09" : "#E2E8F0", color: config.autoRecuperation7d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>DESATIVADO</button>
                     </div>
                   </div>
 
@@ -1281,7 +1281,7 @@ export default function ChatbotHubClient() {
                             setConfig((prev: any) => ({ ...prev, coupon7d: code }));
                             handleSaveConfig({ coupon7d: code });
                           }}
-                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#1D4ED8" }}
                         >
                           <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                           {storeCoupons.map((c: any, idx: number) => (
@@ -1295,7 +1295,7 @@ export default function ChatbotHubClient() {
                             type="button"
                             title={`Excluir cupom ${config.coupon7d}`}
                             onClick={() => handleRequestDeleteCoupon(config.coupon7d)}
-                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center" }}
                           >
                             <Trash2 size={16} />
                           </button>
@@ -1307,7 +1307,7 @@ export default function ChatbotHubClient() {
                           setTargetCouponField("coupon7d");
                           setShowNewCouponModal(true);
                         }}
-                        style={{ marginTop: "6px", background: "none", border: "none", color: "#2563EB", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                        style={{ marginTop: "6px", background: "none", border: "none", color: "#1D4ED8", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                       >
                         ➕ Criar Novo Cupom
                       </button>
@@ -1334,7 +1334,7 @@ export default function ChatbotHubClient() {
                           <img src={config.img7d} alt="Imagem 7d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
                           <button
                             onClick={() => { setConfig((p: any) => ({ ...p, img7d: "" })); handleSaveConfig({ img7d: "" }); }}
-                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C92E09", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
                           >✕</button>
                         </div>
                       ) : (
@@ -1344,7 +1344,7 @@ export default function ChatbotHubClient() {
                             const file = e.target.files?.[0]; if (!file) return;
                             const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
                             const res = await fetch("/api/upload", { method: "POST", body: fd });
-                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img7d: url })); handleSaveConfig({ img7d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img7d: url })); handleSaveConfig({ img7d: url }); showToast("✅ Imagem salva!", "#15803D"); }
                           }} />
                         </label>
                       )}
@@ -1355,10 +1355,10 @@ export default function ChatbotHubClient() {
                 {/* CARD 15 DIAS */}
                 <div style={{ background: "#fff", padding: "1rem", borderRadius: "14px", border: "1px solid #CBD5E1", marginBottom: "1rem", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-                    <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#2563EB" }}>🎁 2º Incentivo — Cliente 15 Dias Sem Pedir</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#1D4ED8" }}>🎁 2º Incentivo — Cliente 15 Dias Sem Pedir</div>
                     <div style={{ display: "flex", gap: "6px" }}>
-                      <button onClick={() => handleSaveConfig({ autoRecuperation15d: true })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation15d === true ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation15d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>ATIVADO</button>
-                      <button onClick={() => handleSaveConfig({ autoRecuperation15d: false })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation15d !== true ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation15d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>DESATIVADO</button>
+                      <button onClick={() => handleSaveConfig({ autoRecuperation15d: true })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation15d === true ? "#15803D" : "#E2E8F0", color: config.autoRecuperation15d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>ATIVADO</button>
+                      <button onClick={() => handleSaveConfig({ autoRecuperation15d: false })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation15d !== true ? "#C92E09" : "#E2E8F0", color: config.autoRecuperation15d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>DESATIVADO</button>
                     </div>
                   </div>
 
@@ -1373,7 +1373,7 @@ export default function ChatbotHubClient() {
                             setConfig((prev: any) => ({ ...prev, coupon15d: code }));
                             handleSaveConfig({ coupon15d: code });
                           }}
-                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#1D4ED8" }}
                         >
                           <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                           {storeCoupons.map((c: any, idx: number) => (
@@ -1387,7 +1387,7 @@ export default function ChatbotHubClient() {
                             type="button"
                             title={`Excluir cupom ${config.coupon15d}`}
                             onClick={() => handleRequestDeleteCoupon(config.coupon15d)}
-                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center" }}
                           >
                             <Trash2 size={16} />
                           </button>
@@ -1399,7 +1399,7 @@ export default function ChatbotHubClient() {
                           setTargetCouponField("coupon15d");
                           setShowNewCouponModal(true);
                         }}
-                        style={{ marginTop: "6px", background: "none", border: "none", color: "#2563EB", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                        style={{ marginTop: "6px", background: "none", border: "none", color: "#1D4ED8", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                       >
                         ➕ Criar Novo Cupom
                       </button>
@@ -1426,7 +1426,7 @@ export default function ChatbotHubClient() {
                           <img src={config.img15d} alt="Imagem 15d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
                           <button
                             onClick={() => { setConfig((p: any) => ({ ...p, img15d: "" })); handleSaveConfig({ img15d: "" }); }}
-                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C92E09", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
                           >✕</button>
                         </div>
                       ) : (
@@ -1436,7 +1436,7 @@ export default function ChatbotHubClient() {
                             const file = e.target.files?.[0]; if (!file) return;
                             const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
                             const res = await fetch("/api/upload", { method: "POST", body: fd });
-                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img15d: url })); handleSaveConfig({ img15d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img15d: url })); handleSaveConfig({ img15d: url }); showToast("✅ Imagem salva!", "#15803D"); }
                           }} />
                         </label>
                       )}
@@ -1447,10 +1447,10 @@ export default function ChatbotHubClient() {
                 {/* CARD 30 DIAS */}
                 <div style={{ background: "#fff", padding: "1rem", borderRadius: "14px", border: "1px solid #CBD5E1", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-                    <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#7C3AED" }}>✨ 3º Incentivo — Cliente 30 Dias Sem Pedir</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#475569" }}>✨ 3º Incentivo — Cliente 30 Dias Sem Pedir</div>
                     <div style={{ display: "flex", gap: "6px" }}>
-                      <button onClick={() => handleSaveConfig({ autoRecuperation30d: true })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation30d === true ? "#16A34A" : "#E2E8F0", color: config.autoRecuperation30d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>ATIVADO</button>
-                      <button onClick={() => handleSaveConfig({ autoRecuperation30d: false })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation30d !== true ? "#DC2626" : "#E2E8F0", color: config.autoRecuperation30d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>DESATIVADO</button>
+                      <button onClick={() => handleSaveConfig({ autoRecuperation30d: true })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation30d === true ? "#15803D" : "#E2E8F0", color: config.autoRecuperation30d === true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>ATIVADO</button>
+                      <button onClick={() => handleSaveConfig({ autoRecuperation30d: false })} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: config.autoRecuperation30d !== true ? "#C92E09" : "#E2E8F0", color: config.autoRecuperation30d !== true ? "#fff" : "#475569", fontWeight: 800, fontSize: "0.74rem", cursor: "pointer" }}>DESATIVADO</button>
                     </div>
                   </div>
 
@@ -1465,7 +1465,7 @@ export default function ChatbotHubClient() {
                             setConfig((prev: any) => ({ ...prev, coupon30d: code }));
                             handleSaveConfig({ coupon30d: code });
                           }}
-                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#2563EB" }}
+                          style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 800, color: "#1D4ED8" }}
                         >
                           <option value="">-- NENHUM CUPOM SELECIONADO --</option>
                           {storeCoupons.map((c: any, idx: number) => (
@@ -1479,7 +1479,7 @@ export default function ChatbotHubClient() {
                             type="button"
                             title={`Excluir cupom ${config.coupon30d}`}
                             onClick={() => handleRequestDeleteCoupon(config.coupon30d)}
-                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                            style={{ padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center" }}
                           >
                             <Trash2 size={16} />
                           </button>
@@ -1491,7 +1491,7 @@ export default function ChatbotHubClient() {
                           setTargetCouponField("coupon30d");
                           setShowNewCouponModal(true);
                         }}
-                        style={{ marginTop: "6px", background: "none", border: "none", color: "#2563EB", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                        style={{ marginTop: "6px", background: "none", border: "none", color: "#1D4ED8", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                       >
                         ➕ Criar Novo Cupom
                       </button>
@@ -1518,7 +1518,7 @@ export default function ChatbotHubClient() {
                           <img src={config.img30d} alt="Imagem 30d" style={{ width: 80, height: 80, objectFit: "cover", borderRadius: "10px", border: "2px solid #CBD5E1" }} />
                           <button
                             onClick={() => { setConfig((p: any) => ({ ...p, img30d: "" })); handleSaveConfig({ img30d: "" }); }}
-                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
+                            style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C92E09", color: "#fff", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 900 }}
                           >✕</button>
                         </div>
                       ) : (
@@ -1528,7 +1528,7 @@ export default function ChatbotHubClient() {
                             const file = e.target.files?.[0]; if (!file) return;
                             const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
                             const res = await fetch("/api/upload", { method: "POST", body: fd });
-                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img30d: url })); handleSaveConfig({ img30d: url }); showToast("✅ Imagem salva!", "#10B981"); }
+                            if (res.ok) { const { url } = await res.json(); setConfig((p: any) => ({ ...p, img30d: url })); handleSaveConfig({ img30d: url }); showToast("✅ Imagem salva!", "#15803D"); }
                           }} />
                         </label>
                       )}
@@ -1543,7 +1543,7 @@ export default function ChatbotHubClient() {
                     <button
                       type="button"
                       onClick={() => { setTargetCouponField(null); setShowNewCouponModal(true); }}
-                      style={{ background: "#EFF6FF", border: "1px solid #93C5FD", color: "#1D4ED8", padding: "4px 10px", borderRadius: "8px", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer" }}
+                      style={{ background: "#EFF6FF", border: "1px solid #B2DDFF", color: "#1D4ED8", padding: "4px 10px", borderRadius: "8px", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer" }}
                     >
                       ➕ Criar Cupom
                     </button>
@@ -1568,7 +1568,7 @@ export default function ChatbotHubClient() {
                             type="button"
                             title={`Excluir cupom ${c.code}`}
                             onClick={() => handleRequestDeleteCoupon(c.code)}
-                            style={{ padding: "6px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                            style={{ padding: "6px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center" }}
                           >
                             <Trash2 size={14} />
                           </button>
@@ -1604,7 +1604,7 @@ export default function ChatbotHubClient() {
                         marketingCustomers.map((c: any) => (
                           <tr key={c.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                             <td style={{ padding: "8px 12px", fontWeight: 700, color: "#1E293B" }}>{c.name}</td>
-                            <td style={{ padding: "8px 12px", color: "#2563EB", fontWeight: 700 }}>{c.phone}</td>
+                            <td style={{ padding: "8px 12px", color: "#1D4ED8", fontWeight: 700 }}>{c.phone}</td>
                             <td style={{ padding: "8px 12px" }}>{c.totalOrders} pedido(s)</td>
                             <td style={{ padding: "8px 12px", color: "#64748B" }}>{new Date(c.updatedAt).toLocaleDateString("pt-BR")}</td>
                           </tr>
@@ -1621,7 +1621,7 @@ export default function ChatbotHubClient() {
           {activeTab === "notifications" && (
             <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1rem" }}>
-                <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#F3E8FF", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#F3E8FF", color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Bell size={20} />
                 </div>
                 <div>
@@ -1665,8 +1665,8 @@ export default function ChatbotHubClient() {
                 </div>
 
                 <button
-                  onClick={() => showToast("✅ Mensagens salvas com sucesso!", "#10B981")}
-                  style={{ padding: "10px", borderRadius: "8px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: "0.85rem", marginTop: "4px" }}
+                  onClick={() => showToast("✅ Mensagens salvas com sucesso!", "#15803D")}
+                  style={{ padding: "10px", borderRadius: "8px", border: "none", background: "#475569", color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: "0.85rem", marginTop: "4px" }}
                 >
                   ✓ Salvar Modelos de Mensagens
                 </button>
@@ -1731,7 +1731,7 @@ export default function ChatbotHubClient() {
                 {/* 1. O ROBÔ SAI QUANDO O CLIENTE RECLAMA */}
                 <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.75rem" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#FEE2E2", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#FEE2E2", color: "#C92E09", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <AlertCircle size={20} />
                     </div>
                     <div>
@@ -1752,7 +1752,7 @@ export default function ChatbotHubClient() {
                       onClick={() => handleSaveConfig({ escalateOnComplaint: true })}
                       style={{
                         flex: 1, padding: "10px", borderRadius: "10px", border: "none", cursor: "pointer", fontWeight: 800, fontSize: "0.82rem",
-                        background: config.escalateOnComplaint !== false ? "#16A34A" : "#E2E8F0",
+                        background: config.escalateOnComplaint !== false ? "#15803D" : "#E2E8F0",
                         color: config.escalateOnComplaint !== false ? "#fff" : "#475569",
                       }}
                     >
@@ -1762,7 +1762,7 @@ export default function ChatbotHubClient() {
                       onClick={() => handleSaveConfig({ escalateOnComplaint: false })}
                       style={{
                         flex: 1, padding: "10px", borderRadius: "10px", border: "none", cursor: "pointer", fontWeight: 800, fontSize: "0.82rem",
-                        background: config.escalateOnComplaint === false ? "#DC2626" : "#E2E8F0",
+                        background: config.escalateOnComplaint === false ? "#C92E09" : "#E2E8F0",
                         color: config.escalateOnComplaint === false ? "#fff" : "#475569",
                       }}
                     >
@@ -1770,7 +1770,7 @@ export default function ChatbotHubClient() {
                     </button>
                   </div>
                   {config.escalateOnComplaint === false && (
-                    <p style={{ fontSize: "0.75rem", color: "#B91C1C", marginTop: 8, lineHeight: 1.5 }}>
+                    <p style={{ fontSize: "0.75rem", color: "#B71C1C", marginTop: 8, lineHeight: 1.5 }}>
                       ⚠️ Com isto desligado o robô continua respondendo quem está reclamando. Ele não liga
                       para o motoboy nem sabe onde a entrega está — e já inventou que tinha ligado.
                     </p>
@@ -1780,7 +1780,7 @@ export default function ChatbotHubClient() {
                 {/* 2. QUE ALERTAS O DONO RECEBE NO WHATSAPP */}
                 <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.75rem" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#F3E8FF", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#F3E8FF", color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <Bell size={20} />
                     </div>
                     <div>
@@ -1790,22 +1790,22 @@ export default function ChatbotHubClient() {
                   </div>
 
                   {alertaNoNumeroDoRobo ? (
-                    <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#991B1B", marginBottom: 12, lineHeight: 1.5 }}>
+                    <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#B71C1C", marginBottom: 12, lineHeight: 1.5 }}>
                       ⚠️ O número de alerta (<strong>{telefoneDeAlerta}</strong>) é o <strong>mesmo do robô</strong> —
                       e por isso <strong>nenhum alerta é enviado</strong>: o robô estaria mandando mensagem para si
                       mesmo, e responderia a própria mensagem. Cadastre em{" "}
-                      <a href="/store/minha-loja" style={{ color: "#991B1B", fontWeight: 800 }}>Minha Loja</a> um
+                      <a href="/store/minha-loja" style={{ color: "#B71C1C", fontWeight: 800 }}>Minha Loja</a> um
                       número <strong>diferente</strong> (o seu celular pessoal), no campo &quot;WhatsApp do Proprietário&quot;.
                     </div>
                   ) : telefoneDeAlerta ? (
-                    <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#166534", marginBottom: 12 }}>
+                    <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#15803D", marginBottom: 12 }}>
                       Os alertas vão para <strong>{telefoneDeAlerta}</strong>. Para trocar, vá em{" "}
-                      <a href="/store/minha-loja" style={{ color: "#166534", fontWeight: 800 }}>Minha Loja</a>.
+                      <a href="/store/minha-loja" style={{ color: "#15803D", fontWeight: 800 }}>Minha Loja</a>.
                     </div>
                   ) : (
-                    <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#991B1B", marginBottom: 12 }}>
+                    <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#B71C1C", marginBottom: 12 }}>
                       ⚠️ Nenhum WhatsApp cadastrado para receber alertas — nada será enviado. Cadastre o seu
-                      número em <a href="/store/minha-loja" style={{ color: "#991B1B", fontWeight: 800 }}>Minha Loja</a>,
+                      número em <a href="/store/minha-loja" style={{ color: "#B71C1C", fontWeight: 800 }}>Minha Loja</a>,
                       no campo &quot;WhatsApp do Proprietário&quot;.
                     </div>
                   )}
@@ -1816,7 +1816,7 @@ export default function ChatbotHubClient() {
                         key={t.id}
                         style={{
                           display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px",
-                          borderRadius: "10px", border: `1px solid ${ligado(t.id) ? "#DDD6FE" : "#E2E8F0"}`,
+                          borderRadius: "10px", border: `1px solid ${ligado(t.id) ? "#E2E8F0" : "#E2E8F0"}`,
                           background: ligado(t.id) ? "#FAF5FF" : "#F8FAFC", cursor: "pointer",
                         }}
                       >
@@ -1865,14 +1865,14 @@ export default function ChatbotHubClient() {
                       onClick={() => {
                         const digitos = novoNumeroMudo.replace(/\D/g, "");
                         if (digitos.length < 10) {
-                          showToast("Informe o número com DDD (ex: 21999998888)", "#EF4444");
+                          showToast("Informe o número com DDD (ex: 21999998888)", "#C92E09");
                           return;
                         }
                         const jaTem = numerosMudos.some(
                           (n: any) => String(n?.numero || "").replace(/\D/g, "").slice(-8) === digitos.slice(-8)
                         );
                         if (jaTem) {
-                          showToast("Esse número já está na lista", "#F59E0B");
+                          showToast("Esse número já está na lista", "#B45309");
                           return;
                         }
                         handleSaveConfig({
@@ -1901,7 +1901,7 @@ export default function ChatbotHubClient() {
                           </div>
                           <button
                             onClick={() => handleSaveConfig({ numerosIgnorados: numerosMudos.filter((_: any, j: number) => j !== i) })}
-                            style={{ background: "transparent", border: "none", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center" }}
+                            style={{ background: "transparent", border: "none", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center" }}
                             title="Remover"
                           >
                             <Trash2 size={16} />
@@ -1920,12 +1920,12 @@ export default function ChatbotHubClient() {
             const criteriaOptions = [
               { id: "all", label: "📋 Todos os Clientes", description: "Enviar para toda a base de contatos", color: "#6366F1", icon: "📋" },
               { id: "7d", label: "🔥 Sumidos há 7 Dias", description: "Clientes que não pedem há 7 dias ou mais", color: "#EA580C", icon: "🔥" },
-              { id: "15d", label: "⏰ Sumidos há 15 Dias", description: "Clientes que não pedem há 15 dias ou mais", color: "#2563EB", icon: "⏰" },
-              { id: "30d", label: "💤 Sumidos há 30+ Dias", description: "Clientes inativos há mais de 30 dias", color: "#7C3AED", icon: "💤" },
-              { id: "loyal", label: "⭐ Clientes Fiéis", description: "Clientes com 3 ou mais pedidos feitos", color: "#16A34A", icon: "⭐" },
-              { id: "top_spenders", label: "👑 Top Clientes (VIP)", description: "Os 20 clientes que mais fizeram pedidos", color: "#D97706", icon: "👑" },
+              { id: "15d", label: "⏰ Sumidos há 15 Dias", description: "Clientes que não pedem há 15 dias ou mais", color: "#1D4ED8", icon: "⏰" },
+              { id: "30d", label: "💤 Sumidos há 30+ Dias", description: "Clientes inativos há mais de 30 dias", color: "#475569", icon: "💤" },
+              { id: "loyal", label: "⭐ Clientes Fiéis", description: "Clientes com 3 ou mais pedidos feitos", color: "#15803D", icon: "⭐" },
+              { id: "top_spenders", label: "👑 Top Clientes (VIP)", description: "Os 20 clientes que mais fizeram pedidos", color: "#B45309", icon: "👑" },
               { id: "new_customers", label: "🆕 Clientes Novos", description: "Clientes com apenas 1 pedido — conquiste a fidelização", color: "#0EA5E9", icon: "🆕" },
-              { id: "never_ordered", label: "👻 Nunca Compraram", description: "Contatos WhatsApp que nunca fizeram um pedido", color: "#DC2626", icon: "👻" },
+              { id: "never_ordered", label: "👻 Nunca Compraram", description: "Contatos WhatsApp que nunca fizeram um pedido", color: "#C92E09", icon: "👻" },
             ];
 
             const now = Date.now();
@@ -1956,11 +1956,11 @@ export default function ChatbotHubClient() {
 
             const handleSendCampaign = async () => {
               if (!campaignMsg.trim()) {
-                showToast("⚠️ Escreva a mensagem do disparo", "#EF4444");
+                showToast("⚠️ Escreva a mensagem do disparo", "#C92E09");
                 return;
               }
               if (finalCustomers.length === 0) {
-                showToast("⚠️ Nenhum cliente encontrado para esse critério", "#EF4444");
+                showToast("⚠️ Nenhum cliente encontrado para esse critério", "#C92E09");
                 return;
               }
               setSendingCampaign(true);
@@ -1978,7 +1978,7 @@ export default function ChatbotHubClient() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                  showToast(data.message || "🚀 Disparo iniciado com sucesso!", "#10B981");
+                  showToast(data.message || "🚀 Disparo iniciado com sucesso!", "#15803D");
                   setShowCampaignConfirm(false);
                   setCampaignMsg("");
                   setCampaignImg("");
@@ -1988,10 +1988,10 @@ export default function ChatbotHubClient() {
                     document.getElementById("history-section")?.scrollIntoView({ behavior: "smooth" });
                   }, 300);
                 } else {
-                  showToast(`⚠️ ${data.error || "Erro ao disparar"}`, "#EF4444");
+                  showToast(`⚠️ ${data.error || "Erro ao disparar"}`, "#C92E09");
                 }
               } catch {
-                showToast("⚠️ Erro de conexão ao disparar campanha", "#EF4444");
+                showToast("⚠️ Erro de conexão ao disparar campanha", "#C92E09");
               } finally {
                 setSendingCampaign(false);
               }
@@ -2001,7 +2001,7 @@ export default function ChatbotHubClient() {
               <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
                 {/* Header */}
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1.5rem" }}>
-                  <div style={{ width: 40, height: 40, borderRadius: "12px", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: "12px", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>
                     📢
                   </div>
                   <div>
@@ -2013,7 +2013,7 @@ export default function ChatbotHubClient() {
                 {/* STEP 1: Critério de Audiência */}
                 <div style={{ marginBottom: "1.5rem" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>1</div>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>1</div>
                     <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Escolha o Público-Alvo</div>
                   </div>
 
@@ -2063,7 +2063,7 @@ export default function ChatbotHubClient() {
                   </div>
 
                   {/* Resumo do público selecionado */}
-                  <div style={{ marginTop: "10px", padding: "10px 14px", borderRadius: "10px", background: "linear-gradient(135deg, #FEF3C7, #FDE68A)", border: "1px solid #FCD34D", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ marginTop: "10px", padding: "10px 14px", borderRadius: "10px", background: "linear-gradient(135deg, #FFF7E6, #FDE68A)", border: "1px solid #FCD34D", display: "flex", alignItems: "center", gap: "8px" }}>
                     <span style={{ fontSize: "1.1rem" }}>👥</span>
                     <span style={{ fontWeight: 800, fontSize: "0.82rem", color: "#92400E" }}>
                       {finalCustomers.length} {finalCustomers.length === 1 ? "cliente selecionado" : "clientes selecionados"}
@@ -2076,7 +2076,7 @@ export default function ChatbotHubClient() {
                 <div style={{ marginBottom: "1.5rem" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>2</div>
+                      <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>2</div>
                       <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Escreva a Mensagem</div>
                     </div>
 
@@ -2090,7 +2090,7 @@ export default function ChatbotHubClient() {
                         border: "none",
                         background: isGeneratingAi
                           ? "#94A3B8"
-                          : "linear-gradient(135deg, #8B5CF6, #EC4899)",
+                          : "linear-gradient(135deg, #64748B, #EC4899)",
                         color: "#fff",
                         fontSize: "0.76rem",
                         fontWeight: 800,
@@ -2121,7 +2121,7 @@ export default function ChatbotHubClient() {
                     }}
                   />
                   <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
-                    <span style={{ fontSize: "0.7rem", color: campaignMsg.length > 1000 ? "#DC2626" : "#94A3B8", fontWeight: 700 }}>
+                    <span style={{ fontSize: "0.7rem", color: campaignMsg.length > 1000 ? "#C92E09" : "#94A3B8", fontWeight: 700 }}>
                       {campaignMsg.length} / 1000 caracteres
                     </span>
                   </div>
@@ -2135,7 +2135,7 @@ export default function ChatbotHubClient() {
                         onClick={handleGenerateAiMessage}
                         disabled={isGeneratingAi}
                         style={{
-                          background: "none", border: "none", color: "#8B5CF6", cursor: "pointer",
+                          background: "none", border: "none", color: "#64748B", cursor: "pointer",
                           fontSize: "0.72rem", fontWeight: 800, textDecoration: "underline", padding: 0
                         }}
                       >
@@ -2167,7 +2167,7 @@ export default function ChatbotHubClient() {
                 {/* STEP 3: Imagem (Opcional) */}
                 <div style={{ marginBottom: "1.5rem" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>3</div>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900 }}>3</div>
                     <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>Imagem da Campanha <span style={{ fontWeight: 500, color: "#94A3B8", fontSize: "0.78rem" }}>(opcional)</span></div>
                   </div>
 
@@ -2177,11 +2177,11 @@ export default function ChatbotHubClient() {
                         <img src={campaignImg} alt="Campanha" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: "14px", border: "2px solid #CBD5E1", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }} />
                         <button
                           onClick={() => setCampaignImg("")}
-                          style={{ position: "absolute", top: -8, right: -8, width: 24, height: 24, borderRadius: "50%", background: "#EF4444", color: "#fff", border: "2px solid #fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900, boxShadow: "0 2px 4px rgba(0,0,0,0.15)" }}
+                          style={{ position: "absolute", top: -8, right: -8, width: 24, height: 24, borderRadius: "50%", background: "#C92E09", color: "#fff", border: "2px solid #fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900, boxShadow: "0 2px 4px rgba(0,0,0,0.15)" }}
                         >✕</button>
                       </div>
                       <div>
-                        <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#16A34A" }}>✅ Imagem carregada</div>
+                        <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#15803D" }}>✅ Imagem carregada</div>
                         <div style={{ fontSize: "0.7rem", color: "#94A3B8" }}>A imagem será enviada junto com a mensagem</div>
                       </div>
                     </div>
@@ -2203,9 +2203,9 @@ export default function ChatbotHubClient() {
                         try {
                           const fd = new FormData(); fd.append("file", file); fd.append("type", "marketing");
                           const res = await fetch("/api/upload", { method: "POST", body: fd });
-                          if (res.ok) { const { url } = await res.json(); setCampaignImg(url); showToast("✅ Imagem carregada!", "#10B981"); }
-                          else showToast("⚠️ Erro ao enviar imagem", "#EF4444");
-                        } catch { showToast("⚠️ Falha no upload", "#EF4444"); }
+                          if (res.ok) { const { url } = await res.json(); setCampaignImg(url); showToast("✅ Imagem carregada!", "#15803D"); }
+                          else showToast("⚠️ Erro ao enviar imagem", "#C92E09");
+                        } catch { showToast("⚠️ Falha no upload", "#C92E09"); }
                         finally { setCampaignImgUploading(false); }
                       }} />
                     </label>
@@ -2213,11 +2213,11 @@ export default function ChatbotHubClient() {
                 </div>
 
                 {/* Prévia do Disparo */}
-                <div style={{ background: "#F0FDF4", borderRadius: "14px", padding: "16px", border: "1px solid #BBF7D0", marginBottom: "1.5rem" }}>
-                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#166534", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <div style={{ background: "#ECFDF3", borderRadius: "14px", padding: "16px", border: "1px solid #ABEFC6", marginBottom: "1.5rem" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#15803D", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
                     📱 Prévia do Disparo
                   </div>
-                  <div style={{ background: "#fff", borderRadius: "12px", padding: "12px", border: "1px solid #D1FAE5", maxWidth: "340px" }}>
+                  <div style={{ background: "#fff", borderRadius: "12px", padding: "12px", border: "1px solid #ECFDF3", maxWidth: "340px" }}>
                     {campaignImg && (
                       <img src={campaignImg} alt="Preview" style={{ width: "100%", maxHeight: "160px", objectFit: "cover", borderRadius: "8px", marginBottom: "8px" }} />
                     )}
@@ -2235,14 +2235,14 @@ export default function ChatbotHubClient() {
                 {/* Botão de Disparar */}
                 <button
                   onClick={() => {
-                    if (!campaignMsg.trim()) { showToast("⚠️ Escreva a mensagem antes de disparar", "#EF4444"); return; }
-                    if (finalCustomers.length === 0) { showToast("⚠️ Nenhum cliente para esse critério", "#EF4444"); return; }
+                    if (!campaignMsg.trim()) { showToast("⚠️ Escreva a mensagem antes de disparar", "#C92E09"); return; }
+                    if (finalCustomers.length === 0) { showToast("⚠️ Nenhum cliente para esse critério", "#C92E09"); return; }
                     setShowCampaignConfirm(true);
                   }}
                   disabled={sendingCampaign || !campaignMsg.trim() || finalCustomers.length === 0}
                   style={{
                     width: "100%", padding: "14px", borderRadius: "14px", border: "none",
-                    background: sendingCampaign || !campaignMsg.trim() ? "#CBD5E1" : "linear-gradient(135deg, #F59E0B, #D97706)",
+                    background: sendingCampaign || !campaignMsg.trim() ? "#CBD5E1" : "linear-gradient(135deg, #B45309, #B45309)",
                     color: "#fff", fontWeight: 900, fontSize: "0.95rem", cursor: sendingCampaign ? "wait" : "pointer",
                     boxShadow: campaignMsg.trim() ? "0 4px 16px rgba(245,158,11,0.3)" : "none",
                     transition: "all 0.2s ease", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
@@ -2295,7 +2295,7 @@ export default function ChatbotHubClient() {
                           disabled={sendingCampaign}
                           style={{
                             flex: 1.5, padding: "12px", borderRadius: "12px", border: "none",
-                            background: sendingCampaign ? "#94A3B8" : "linear-gradient(135deg, #F59E0B, #D97706)",
+                            background: sendingCampaign ? "#94A3B8" : "linear-gradient(135deg, #B45309, #B45309)",
                             color: "#fff", fontWeight: 900, fontSize: "0.88rem", cursor: sendingCampaign ? "wait" : "pointer",
                             boxShadow: "0 4px 12px rgba(245,158,11,0.3)"
                           }}
@@ -2311,7 +2311,7 @@ export default function ChatbotHubClient() {
                 <div id="history-section" style={{ marginTop: "2rem", background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: "10px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "10px", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "10px", background: "linear-gradient(135deg, #15803D, #15803D)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
                         📊
                       </div>
                       <div>
@@ -2344,16 +2344,16 @@ export default function ChatbotHubClient() {
                       <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#0F172A", marginTop: "2px" }}>{campaignHistory.length}</div>
                     </div>
 
-                    <div style={{ background: "#EFF6FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #BFDBFE" }}>
+                    <div style={{ background: "#EFF6FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #B2DDFF" }}>
                       <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#1D4ED8" }}>👥 Total de Envios</div>
-                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1E40AF", marginTop: "2px" }}>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1D4ED8", marginTop: "2px" }}>
                         {campaignHistory.reduce((acc: number, c: any) => acc + (c.sentCount || c.targetCount || 0), 0)} clientes
                       </div>
                     </div>
 
-                    <div style={{ background: "#F5F3FF", padding: "12px 14px", borderRadius: "12px", border: "1px solid #DDD6FE" }}>
-                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#6D28D9" }}>👀 Visualizações (Lidos)</div>
-                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#5B21B6", marginTop: "2px" }}>
+                    <div style={{ background: "#F8FAFC", padding: "12px 14px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+                      <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#334155" }}>👀 Visualizações (Lidos)</div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#334155", marginTop: "2px" }}>
                         {/* Leitura não é medida pelo WhatsApp por aqui. O número
                             anterior era 76% dos envios, inventado no servidor. */}
                         {campaignHistory.some((c: any) => typeof c.viewedCount === "number")
@@ -2369,16 +2369,16 @@ export default function ChatbotHubClient() {
                       </div>
                     </div>
 
-                    <div style={{ background: "#FEF3C7", padding: "12px 14px", borderRadius: "12px", border: "1px solid #FDE68A" }}>
+                    <div style={{ background: "#FFF7E6", padding: "12px 14px", borderRadius: "12px", border: "1px solid #FDE68A" }}>
                       <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#B45309" }}>💰 Vendas Geradas</div>
                       <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#92400E", marginTop: "2px" }}>
                         R$ {campaignHistory.reduce((acc: number, c: any) => acc + (c.convertedRevenue || 0), 0).toFixed(2)}
                       </div>
                     </div>
 
-                    <div style={{ background: "#F0FDF4", padding: "12px 14px", borderRadius: "12px", border: "1px solid #86EFAC" }}>
+                    <div style={{ background: "#ECFDF3", padding: "12px 14px", borderRadius: "12px", border: "1px solid #ABEFC6" }}>
                       <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#15803D" }}>💚 Lucro Estimado</div>
-                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#166534", marginTop: "2px" }}>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#15803D", marginTop: "2px" }}>
                         R$ {campaignHistory.reduce((acc: number, c: any) => acc + (c.estimatedProfit || 0), 0).toFixed(2)}
                       </div>
                     </div>
@@ -2402,11 +2402,11 @@ export default function ChatbotHubClient() {
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
                               <div>
                                 {camp.status === "DISPARANDO" ? (
-                                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#D97706", background: "#FEF3C7", padding: "2px 10px", borderRadius: "6px", border: "1px solid #FCD34D", marginRight: "8px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#B45309", background: "#FFF7E6", padding: "2px 10px", borderRadius: "6px", border: "1px solid #FCD34D", marginRight: "8px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
                                     ⏳ Disparando em segundo plano ({camp.sentCount || 0} / {camp.targetCount || 0} enviados)
                                   </span>
                                 ) : (
-                                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#059669", background: "#D1FAE5", padding: "2px 8px", borderRadius: "6px", marginRight: "8px" }}>
+                                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#15803D", background: "#ECFDF3", padding: "2px 8px", borderRadius: "6px", marginRight: "8px" }}>
                                     ✅ Concluído
                                   </span>
                                 )}
@@ -2419,7 +2419,7 @@ export default function ChatbotHubClient() {
                                 onClick={() => {
                                   setCampaignMsg(camp.message);
                                   if (camp.imageUrl) setCampaignImg(camp.imageUrl);
-                                  showToast("📋 Mensagem carregada no formulário acima!", "#8B5CF6");
+                                  showToast("📋 Mensagem carregada no formulário acima!", "#64748B");
                                   window.scrollTo({ top: 0, behavior: "smooth" });
                                 }}
                                 style={{
@@ -2439,9 +2439,9 @@ export default function ChatbotHubClient() {
                             <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", fontSize: "0.75rem", background: "#F1F5F9", padding: "8px 12px", borderRadius: "8px" }}>
                               <span style={{ fontWeight: 700, color: "#475569" }}>👥 Audiência: <b>{camp.targetCount || totalSent} clientes</b></span>
                               <span style={{ color: "#CBD5E1" }}>|</span>
-                              <span style={{ fontWeight: 800, color: "#2563EB" }}>✅ Entregues: <b>{totalSent} msgs</b></span>
+                              <span style={{ fontWeight: 800, color: "#1D4ED8" }}>✅ Entregues: <b>{totalSent} msgs</b></span>
                               <span style={{ color: "#CBD5E1" }}>|</span>
-                              <span style={{ fontWeight: 800, color: "#7C3AED" }}>👀 Visualizações (Lidos): <b>{totalViewed != null ? `${totalViewed} clientes (${openRate}% taxa de abertura)` : "não medido"}</b></span>
+                              <span style={{ fontWeight: 800, color: "#475569" }}>👀 Visualizações (Lidos): <b>{totalViewed != null ? `${totalViewed} clientes (${openRate}% taxa de abertura)` : "não medido"}</b></span>
                               <span style={{ color: "#CBD5E1" }}>|</span>
                               <span style={{ fontWeight: 800, color: "#047857" }}>🛒 Vendas: <b>{camp.convertedOrders || 0} pedidos</b></span>
                               <span style={{ color: "#CBD5E1" }}>|</span>
@@ -2473,9 +2473,9 @@ export default function ChatbotHubClient() {
                 como já faz hoje.
               </p>
 
-              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "12px", padding: "14px 16px", marginBottom: "20px" }}>
+              <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: "12px", padding: "14px 16px", marginBottom: "20px" }}>
                 <div style={{ color: "#047857", fontSize: "0.8rem", fontWeight: 800, marginBottom: "6px" }}>ORDEM QUE O ROBÔ SEGUE</div>
-                <div style={{ color: "#166534", fontSize: "0.83rem", lineHeight: 1.8 }}>
+                <div style={{ color: "#15803D", fontSize: "0.83rem", lineHeight: 1.8 }}>
                   1️⃣ Manda o link do site &nbsp;→&nbsp; 2️⃣ Cliente recusa? Manda este arquivo &nbsp;→&nbsp; 3️⃣ Sem arquivo? Escreve os itens
                 </div>
               </div>
@@ -2488,7 +2488,7 @@ export default function ChatbotHubClient() {
                   {String(config.menuFileUrl).toLowerCase().endsWith(".pdf") ? (
                     <a href={config.menuFileUrl} target="_blank" rel="noreferrer"
                       style={{ display: "inline-flex", alignItems: "center", gap: "10px", padding: "16px 20px", borderRadius: "12px",
-                        background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#B91C1C",
+                        background: "#FEF2F2", border: "1px solid #FCA5A5", color: "#B71C1C",
                         textDecoration: "none", fontWeight: 700, fontSize: "0.9rem" }}>
                       📕 Ver PDF do cardápio
                     </a>
@@ -2515,7 +2515,7 @@ export default function ChatbotHubClient() {
                     }}
                     disabled={menuFileSaving}
                     style={{ marginTop: "14px", display: "block", padding: "10px 18px", borderRadius: "10px", border: "1px solid #FCA5A5",
-                      background: "#FEF2F2", color: "#B91C1C", fontWeight: 700, fontSize: "0.83rem",
+                      background: "#FEF2F2", color: "#B71C1C", fontWeight: 700, fontSize: "0.83rem",
                       cursor: menuFileSaving ? "not-allowed" : "pointer", opacity: menuFileSaving ? 0.6 : 1 }}
                   >
                     🗑️ Remover cardápio
@@ -2529,7 +2529,7 @@ export default function ChatbotHubClient() {
               )}
 
               <label style={{ display: "inline-flex", alignItems: "center", gap: "10px", padding: "12px 22px", borderRadius: "12px",
-                background: menuFileSaving ? "#CBD5E1" : "linear-gradient(135deg, #10B981, #059669)", color: "#fff",
+                background: menuFileSaving ? "#CBD5E1" : "linear-gradient(135deg, #15803D, #15803D)", color: "#fff",
                 fontWeight: 800, fontSize: "0.88rem", cursor: menuFileSaving ? "not-allowed" : "pointer" }}>
                 {menuFileSaving ? "Enviando..." : config.menuFileUrl ? "🔄 Trocar arquivo" : "📤 Enviar cardápio (foto ou PDF)"}
                 <input
@@ -2628,7 +2628,7 @@ export default function ChatbotHubClient() {
               <button
                 onClick={() => {
                   if (!testPhone.trim()) {
-                    showToast("⚠️ Digite o número de telefone de destino com DDD", "#EF4444");
+                    showToast("⚠️ Digite o número de telefone de destino com DDD", "#C92E09");
                     return;
                   }
                   setShowConfirmTestModal(true);
@@ -2668,7 +2668,7 @@ export default function ChatbotHubClient() {
                 ].map((item, idx) => (
                   <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
                     <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#1E293B" }}>{item.label}</span>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 800, padding: "3px 10px", borderRadius: "12px", background: item.ok ? "#DCFCE7" : "#FEE2E2", color: item.ok ? "#166534" : "#991B1B" }}>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 800, padding: "3px 10px", borderRadius: "12px", background: item.ok ? "#ECFDF3" : "#FEE2E2", color: item.ok ? "#15803D" : "#B71C1C" }}>
                       {item.ok ? "🟢 OPERACIONAL" : "🔴 NECESSITA ATENÇÃO"}
                     </span>
                   </div>
@@ -2680,7 +2680,7 @@ export default function ChatbotHubClient() {
                   Essa ação pode levar alguns instantes." — criptografia da
                   conversa apodreceu no gateway. O reinício renegocia as sessões
                   SEM deslogar (não pede QR de novo). */}
-              <div style={{ marginTop: "14px", padding: "14px 16px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "12px" }}>
+              <div style={{ marginTop: "14px", padding: "14px 16px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "12px" }}>
                 <div style={{ fontSize: "0.84rem", fontWeight: 800, color: "#92400E", marginBottom: "6px" }}>
                   🔐 Mensagens chegando como &quot;Aguardando mensagem&quot;?
                 </div>
@@ -2698,12 +2698,12 @@ export default function ChatbotHubClient() {
                       const r = await fetch("/api/chatbot/reparar-sessao", { method: "POST" });
                       const j = await r.json().catch(() => ({}));
                       if (r.ok) {
-                        showToast("🔄 " + (j.message || "Instância reiniciada!"), "#10B981");
+                        showToast("🔄 " + (j.message || "Instância reiniciada!"), "#15803D");
                       } else {
-                        showToast("⚠️ " + (j.error || "Falha ao reiniciar"), "#EF4444");
+                        showToast("⚠️ " + (j.error || "Falha ao reiniciar"), "#C92E09");
                       }
                     } catch {
-                      showToast("⚠️ Falha ao falar com o servidor", "#EF4444");
+                      showToast("⚠️ Falha ao falar com o servidor", "#C92E09");
                     } finally {
                       setReparandoSessao(false);
                     }
@@ -2711,7 +2711,7 @@ export default function ChatbotHubClient() {
                   disabled={reparandoSessao}
                   style={{
                     padding: "10px 18px", borderRadius: "10px", border: "none", fontWeight: 800, fontSize: "0.84rem",
-                    background: reparandoSessao ? "#FCD34D" : "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff",
+                    background: reparandoSessao ? "#FCD34D" : "linear-gradient(135deg, #B45309, #B45309)", color: "#fff",
                     cursor: reparandoSessao ? "not-allowed" : "pointer",
                   }}
                 >
@@ -2724,7 +2724,7 @@ export default function ChatbotHubClient() {
           {/* CARD PERMANENTE: PERSONALIDADE & TOM DE VOZ DA IA */}
           <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "1rem" }}>
-              <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#F3E8FF", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#F3E8FF", color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Sliders size={20} />
               </div>
               <div>
@@ -2767,12 +2767,12 @@ export default function ChatbotHubClient() {
                   onClick={() => handleSaveConfig({ personality: p.id })}
                   style={{
                     padding: "10px", borderRadius: "10px",
-                    border: `2px solid ${config.personality === p.id ? "#7C3AED" : "#E2E8F0"}`,
+                    border: `2px solid ${config.personality === p.id ? "#475569" : "#E2E8F0"}`,
                     background: config.personality === p.id ? "#F3E8FF" : "#fff",
                     cursor: "pointer", transition: "all 0.15s",
                   }}
                 >
-                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: config.personality === p.id ? "#6D28D9" : "#1E293B" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: config.personality === p.id ? "#334155" : "#1E293B" }}>
                     {p.label}
                   </div>
                   <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "2px" }}>{p.desc}</div>
@@ -2803,10 +2803,10 @@ export default function ChatbotHubClient() {
             </div>
 
             {/* CONFIRMAÇÃO AUTOMÁTICA DE PEDIDOS POR WHATSAPP */}
-            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F0FDF4", borderRadius: "12px", border: "1px solid #BBF7D0" }}>
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#ECFDF3", borderRadius: "12px", border: "1px solid #ABEFC6" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#166534" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#15803D" }}>
                     📲 Enviar Confirmação de Pedidos Automática pelo WhatsApp? (Marcado por padrão)
                   </div>
                   <div style={{ fontSize: "0.74rem", color: "#15803D", marginTop: "2px" }}>
@@ -2819,7 +2819,7 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ sendOrderConfirmation: true })}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
-                      background: config.sendOrderConfirmation !== false ? "#16A34A" : "#E2E8F0",
+                      background: config.sendOrderConfirmation !== false ? "#15803D" : "#E2E8F0",
                       color: config.sendOrderConfirmation !== false ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -2830,7 +2830,7 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ sendOrderConfirmation: false })}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
-                      background: config.sendOrderConfirmation === false ? "#DC2626" : "#E2E8F0",
+                      background: config.sendOrderConfirmation === false ? "#C92E09" : "#E2E8F0",
                       color: config.sendOrderConfirmation === false ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -2851,8 +2851,8 @@ export default function ChatbotHubClient() {
                   <p style={{ fontSize: "0.76rem", color: "#7E22CE", marginTop: "4px", lineHeight: "1.4" }}>
                     Quando ativo, a IA apresenta o cardápio no WhatsApp, anota produtos, quantidade, endereço e forma de pagamento, montando o pedido ao vivo na sua tela!
                   </p>
-                  <div style={{ marginTop: "8px", padding: "8px 10px", background: "#FFFBEB", borderRadius: "8px", border: "1px solid #FDE68A", display: "flex", alignItems: "center", gap: "6px" }}>
-                    <AlertCircle size={16} color="#D97706" style={{ flexShrink: 0 }} />
+                  <div style={{ marginTop: "8px", padding: "8px 10px", background: "#FFF7E6", borderRadius: "8px", border: "1px solid #FDE68A", display: "flex", alignItems: "center", gap: "6px" }}>
+                    <AlertCircle size={16} color="#B45309" style={{ flexShrink: 0 }} />
                     <span style={{ fontSize: "0.72rem", color: "#B45309", fontWeight: 600 }}>
                       ⚠️ <strong>Aviso:</strong> A IA está em modo de auxílio e pode cometer eventuais equívocos nos detalhes do pedido. Recomendamos conferir os pedidos novos.
                     </span>
@@ -2864,7 +2864,7 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ aiOrderingEnabled: true })}
                     style={{
                       padding: "8px 16px", borderRadius: "8px", border: "none",
-                      background: config.aiOrderingEnabled === true ? "#7C3AED" : "#E2E8F0",
+                      background: config.aiOrderingEnabled === true ? "#475569" : "#E2E8F0",
                       color: config.aiOrderingEnabled === true ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -2903,7 +2903,7 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ stopOnHumanRequest: true })}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
-                      background: config.stopOnHumanRequest !== false ? "#16A34A" : "#E2E8F0",
+                      background: config.stopOnHumanRequest !== false ? "#15803D" : "#E2E8F0",
                       color: config.stopOnHumanRequest !== false ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -2914,7 +2914,7 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ stopOnHumanRequest: false })}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
-                      background: config.stopOnHumanRequest === false ? "#DC2626" : "#E2E8F0",
+                      background: config.stopOnHumanRequest === false ? "#C92E09" : "#E2E8F0",
                       color: config.stopOnHumanRequest === false ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -2942,7 +2942,7 @@ export default function ChatbotHubClient() {
                     onClick={() => salvarAceitaRetirada(true)}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
-                      background: config.acceptsPickup ? "#16A34A" : "#E2E8F0",
+                      background: config.acceptsPickup ? "#15803D" : "#E2E8F0",
                       color: config.acceptsPickup ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -2953,7 +2953,7 @@ export default function ChatbotHubClient() {
                     onClick={() => salvarAceitaRetirada(false)}
                     style={{
                       padding: "6px 14px", borderRadius: "8px", border: "none",
-                      background: config.acceptsPickup === false || !config.acceptsPickup ? "#DC2626" : "#E2E8F0",
+                      background: config.acceptsPickup === false || !config.acceptsPickup ? "#C92E09" : "#E2E8F0",
                       color: config.acceptsPickup === false || !config.acceptsPickup ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -3000,7 +3000,7 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ storeType: "PHYSICAL" })}
                     style={{
                       padding: "6px 12px", borderRadius: "8px", border: "none",
-                      background: config.storeType === "PHYSICAL" ? "#2563EB" : "#E2E8F0",
+                      background: config.storeType === "PHYSICAL" ? "#1D4ED8" : "#E2E8F0",
                       color: config.storeType === "PHYSICAL" ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -3011,7 +3011,7 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ storeType: "DELIVERY_ONLY" })}
                     style={{
                       padding: "6px 12px", borderRadius: "8px", border: "none",
-                      background: config.storeType === "DELIVERY_ONLY" || !config.storeType ? "#7C3AED" : "#E2E8F0",
+                      background: config.storeType === "DELIVERY_ONLY" || !config.storeType ? "#475569" : "#E2E8F0",
                       color: config.storeType === "DELIVERY_ONLY" || !config.storeType ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
@@ -3101,7 +3101,7 @@ export default function ChatbotHubClient() {
 
             {chatLoading && (
               <div style={{ alignSelf: "flex-start", background: "#FFF", padding: "8px 14px", borderRadius: "0px 12px 12px 12px", fontSize: "0.8rem", color: "#64748B", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Sparkles size={14} className="spin" color="#7C3AED" /> Digitando resposta com Gemini 2.5...
+                <Sparkles size={14} className="spin" color="#475569" /> Digitando resposta com Gemini 2.5...
               </div>
             )}
             <div ref={chatEndRef} />
@@ -3158,7 +3158,7 @@ export default function ChatbotHubClient() {
                   onClick={() => setNewCouponType("percent")}
                   style={{
                     padding: "8px 4px", borderRadius: "10px", textAlign: "center",
-                    border: newCouponType === "percent" ? "2px solid #2563EB" : "1px solid #CBD5E1",
+                    border: newCouponType === "percent" ? "2px solid #1D4ED8" : "1px solid #CBD5E1",
                     background: newCouponType === "percent" ? "#EFF6FF" : "#fff",
                     color: newCouponType === "percent" ? "#1D4ED8" : "#64748B",
                     fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
@@ -3171,9 +3171,9 @@ export default function ChatbotHubClient() {
                   onClick={() => setNewCouponType("fixed")}
                   style={{
                     padding: "8px 4px", borderRadius: "10px", textAlign: "center",
-                    border: newCouponType === "fixed" ? "2px solid #7C3AED" : "1px solid #CBD5E1",
-                    background: newCouponType === "fixed" ? "#F5F3FF" : "#fff",
-                    color: newCouponType === "fixed" ? "#6D28D9" : "#64748B",
+                    border: newCouponType === "fixed" ? "2px solid #475569" : "1px solid #CBD5E1",
+                    background: newCouponType === "fixed" ? "#F8FAFC" : "#fff",
+                    color: newCouponType === "fixed" ? "#334155" : "#64748B",
                     fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
                   }}
                 >
@@ -3184,8 +3184,8 @@ export default function ChatbotHubClient() {
                   onClick={() => setNewCouponType("free_shipping")}
                   style={{
                     padding: "8px 4px", borderRadius: "10px", textAlign: "center",
-                    border: newCouponType === "free_shipping" ? "2px solid #16A34A" : "1px solid #CBD5E1",
-                    background: newCouponType === "free_shipping" ? "#F0FDF4" : "#fff",
+                    border: newCouponType === "free_shipping" ? "2px solid #15803D" : "1px solid #CBD5E1",
+                    background: newCouponType === "free_shipping" ? "#ECFDF3" : "#fff",
                     color: newCouponType === "free_shipping" ? "#15803D" : "#64748B",
                     fontWeight: 800, fontSize: "0.78rem", cursor: "pointer"
                   }}
@@ -3204,7 +3204,7 @@ export default function ChatbotHubClient() {
                 placeholder={newCouponType === "free_shipping" ? "Ex: FRETEGRATIS ou VEMDEFRETE" : newCouponType === "fixed" ? "Ex: DEZREAIS ou OFF10" : "Ex: PRIMEIRACOMPRA10 ou VOLTEI10"}
                 value={newCouponCode}
                 onChange={(e) => setNewCouponCode(e.target.value.toUpperCase())}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, color: "#2563EB", boxSizing: "border-box" }}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, color: "#1D4ED8", boxSizing: "border-box" }}
               />
             </div>
 
@@ -3238,10 +3238,10 @@ export default function ChatbotHubClient() {
                 </>
               )}
               {newCouponType === "free_shipping" && (
-                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "12px 14px", borderRadius: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", padding: "12px 14px", borderRadius: "12px", display: "flex", alignItems: "center", gap: "10px" }}>
                   <span style={{ fontSize: "1.3rem" }}>🚚</span>
                   <div>
-                    <div style={{ fontWeight: 800, color: "#166534", fontSize: "0.85rem" }}>Benefício de Frete Grátis</div>
+                    <div style={{ fontWeight: 800, color: "#15803D", fontSize: "0.85rem" }}>Benefício de Frete Grátis</div>
                   </div>
                 </div>
               )}
@@ -3273,7 +3273,7 @@ export default function ChatbotHubClient() {
               <button
                 onClick={() => handleCreateNewCoupon()}
                 disabled={creatingCoupon}
-                style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #16A34A, #15803D)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+                style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #15803D, #15803D)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
               >
                 {creatingCoupon ? "Salvando..." : "✓ Salvar & Selecionar Cupom"}
               </button>
@@ -3285,9 +3285,9 @@ export default function ChatbotHubClient() {
       {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DEFINITIVA DE CUPOM */}
       {showDeleteCouponModal && couponToDelete && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.65)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: "1rem" }}>
-          <div style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "440px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)", border: "2px solid #EF4444" }}>
+          <div style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: "440px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)", border: "2px solid #C92E09" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#DC2626" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#C92E09" }}>
                 <Trash2 size={24} />
                 <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800 }}>Excluir Cupom Permanentemente</h3>
               </div>
@@ -3296,14 +3296,14 @@ export default function ChatbotHubClient() {
               </button>
             </div>
 
-            <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", padding: "12px 14px", borderRadius: "12px", marginBottom: "1.25rem", color: "#991B1B", fontSize: "0.85rem", lineHeight: 1.4 }}>
+            <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", padding: "12px 14px", borderRadius: "12px", marginBottom: "1.25rem", color: "#B71C1C", fontSize: "0.85rem", lineHeight: 1.4 }}>
               ⚠️ <strong>Atenção! Esta ação é definitiva e irreversível.</strong><br />
               O cupom <strong style={{ textDecoration: "underline" }}>"{couponToDelete.code}"</strong> será excluído do banco de dados e removido de todas as automações da loja.
             </div>
 
             <div style={{ marginBottom: "1.25rem" }}>
               <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: "6px" }}>
-                Para confirmar a exclusão, digite <span style={{ color: "#DC2626", fontWeight: 900 }}>EXCLUIR</span> abaixo:
+                Para confirmar a exclusão, digite <span style={{ color: "#C92E09", fontWeight: 900 }}>EXCLUIR</span> abaixo:
               </label>
               <input
                 type="text"
@@ -3313,7 +3313,7 @@ export default function ChatbotHubClient() {
                 style={{
                   width: "100%", padding: "10px 12px", borderRadius: "10px",
                   border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800,
-                  color: "#DC2626", boxSizing: "border-box"
+                  color: "#C92E09", boxSizing: "border-box"
                 }}
               />
             </div>
@@ -3334,7 +3334,7 @@ export default function ChatbotHubClient() {
                 onClick={() => handleConfirmDeleteCoupon()}
                 style={{
                   padding: "10px 18px", borderRadius: "10px", border: "none",
-                  background: deleteConfirmInput.trim().toUpperCase() === "EXCLUIR" && !deletingCoupon ? "#DC2626" : "#CBD5E1",
+                  background: deleteConfirmInput.trim().toUpperCase() === "EXCLUIR" && !deletingCoupon ? "#C92E09" : "#CBD5E1",
                   color: "#fff", fontWeight: 800, fontSize: "0.85rem",
                   cursor: deleteConfirmInput.trim().toUpperCase() === "EXCLUIR" && !deletingCoupon ? "pointer" : "not-allowed"
                 }}
@@ -3370,7 +3370,7 @@ export default function ChatbotHubClient() {
 
             <div style={{ background: "#F8FAFC", borderRadius: "12px", padding: "12px 14px", border: "1px solid #E2E8F0", marginBottom: "1.2rem" }}>
               <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>Número de Destino:</div>
-              <div style={{ fontSize: "1rem", fontWeight: 900, color: "#2563EB", display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ fontSize: "1rem", fontWeight: 900, color: "#1D4ED8", display: "flex", alignItems: "center", gap: "6px" }}>
                 📱 {testPhone}
               </div>
             </div>

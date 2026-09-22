@@ -109,7 +109,7 @@ function KPICard({ icon, label, value, sub, color, trend }: any) {
           {icon}
         </div>
         {trend !== undefined && (
-          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: trend >= 0 ? "#16A34A" : "#DC2626", display: "flex", alignItems: "center", gap: "2px" }}>
+          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: trend >= 0 ? "#15803D" : "#C92E09", display: "flex", alignItems: "center", gap: "2px" }}>
             {trend >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
             {Math.abs(trend).toFixed(1)}%
           </span>
@@ -562,7 +562,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <button
               style={{
                 ...tabStyle("notascompras"),
-                background: activeTab === "notascompras" ? "#2563EB" : "transparent",
+                background: activeTab === "notascompras" ? "#1D4ED8" : "transparent",
                 color: activeTab === "notascompras" ? "#fff" : "#64748B",
               }}
               onClick={() => setActiveTab("notascompras")}
@@ -572,12 +572,12 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <button
               style={{
                 ...tabStyle("custosfix"),
-                background: activeTab === "custosfix" ? "#7C3AED" : (fixedCosts.length > 0 ? "#F3E8FF" : "transparent"),
-                color: activeTab === "custosfix" ? "#fff" : (fixedCosts.length > 0 ? "#7C3AED" : "#64748B"),
+                background: activeTab === "custosfix" ? "#475569" : (fixedCosts.length > 0 ? "#F3E8FF" : "transparent"),
+                color: activeTab === "custosfix" ? "#fff" : (fixedCosts.length > 0 ? "#475569" : "#64748B"),
               }}
               onClick={() => setActiveTab("custosfix")}
             >
-              🏢 Custos Fixos {fixedCosts.length > 0 && <span style={{ background: "#7C3AED", color: "#fff", borderRadius: 20, padding: "1px 7px", fontSize: "0.72rem", marginLeft: 4 }}>{fixedCosts.length}</span>}
+              🏢 Custos Fixos {fixedCosts.length > 0 && <span style={{ background: "#475569", color: "#fff", borderRadius: 20, padding: "1px 7px", fontSize: "0.72rem", marginLeft: 4 }}>{fixedCosts.length}</span>}
             </button>
           </div>
         </div>
@@ -618,11 +618,11 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <div style={{
                 background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
                 borderRadius: "20px", padding: "1.75rem", color: "#FFFFFF",
-                boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: isExempt ? "1.5px solid #10B981" : "1px solid #334155"
+                boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: isExempt ? "1.5px solid #15803D" : "1px solid #334155"
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: isExempt ? 0 : "1.25rem" }}>
                   <div>
-                    <span style={{ background: isExempt ? "#DCFCE7" : "#FEF3C7", color: isExempt ? "#15803D" : "#92400E", padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ background: isExempt ? "#ECFDF3" : "#FFF7E6", color: isExempt ? "#15803D" : "#92400E", padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4 }}>
                       {isExempt ? "✨ Conta VIP / Loja Oficial — Isenção Ativa" : situacao}
                     </span>
                     <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>
@@ -641,7 +641,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     </p>
                   </div>
 
-                  <div style={{ textAlign: "right", background: isExempt ? "#064E3B" : "#1E293B", padding: "12px 18px", borderRadius: "14px", border: isExempt ? "1px solid #10B981" : "1px solid #334155" }}>
+                  <div style={{ textAlign: "right", background: isExempt ? "#064E3B" : "#1E293B", padding: "12px 18px", borderRadius: "14px", border: isExempt ? "1px solid #15803D" : "1px solid #334155" }}>
                     <div style={{ fontSize: "0.75rem", color: isExempt ? "#A7F3D0" : "#94A3B8", fontWeight: 700 }}>
                       {statusCiclo === "OPEN" ? "ACUMULADO ATÉ AGORA" : "VALOR DA FATURA"}
                     </div>
@@ -660,7 +660,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                         target="_blank"
                         rel="noreferrer"
                         style={{
-                          background: "linear-gradient(135deg, #10B981, #059669)", color: "#FFFFFF",
+                          background: "linear-gradient(135deg, #15803D, #15803D)", color: "#FFFFFF",
                           textDecoration: "none", padding: "12px 22px", borderRadius: "12px", fontSize: "0.92rem",
                           fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
                           boxShadow: "0 4px 14px rgba(16, 185, 129, 0.4)", fontFamily: "inherit"
@@ -704,22 +704,22 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                   </p>
                 </div>
 
-                <div style={{ background: "#F0FDF4", borderRadius: "16px", padding: "1.25rem", border: "1px solid #BBF7D0", boxShadow: "0 2px 10px rgba(16,185,129,0.05)" }}>
-                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#166534" }}>💚 Economia Estimada (vs iFood)</div>
+                <div style={{ background: "#ECFDF3", borderRadius: "16px", padding: "1.25rem", border: "1px solid #ABEFC6", boxShadow: "0 2px 10px rgba(16,185,129,0.05)" }}>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#15803D" }}>💚 Economia Estimada (vs iFood)</div>
                   <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#15803D", marginTop: 4 }}>
                     {fmtR(dre.receitaBruta * 0.26)}
                   </div>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#166534" }}>
+                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#15803D" }}>
                     Sua loja economizou ~26% pedindo direto no FireHub
                   </p>
                 </div>
 
-                <div style={{ background: "#EFF6FF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #BFDBFE" }}>
-                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#1E40AF" }}>💳 Status do Ciclo</div>
+                <div style={{ background: "#EFF6FF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #B2DDFF" }}>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#1D4ED8" }}>💳 Status do Ciclo</div>
                   <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#1D4ED8", marginTop: 4 }}>
                     {isExempt ? "Isento" : emTeste ? "Em teste" : statusCiclo === "OPEN" ? "Aberto" : statusCiclo === "CLOSED" ? "Boleto emitido" : "Pago"}
                   </div>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1E40AF" }}>
+                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1D4ED8" }}>
                     {isExempt
                       ? "Sem cobrança"
                       : emTeste
@@ -752,7 +752,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             {/* ALERTA PRODUTOS SEM CUSTO */}
             {produtosSemCusto.length > 0 && (
               <div style={{
-                background: "#FFFBEB", border: "2px solid #F59E0B", borderRadius: "14px",
+                background: "#FFF7E6", border: "2px solid #B45309", borderRadius: "14px",
                 padding: "16px 20px", marginBottom: "1.5rem",
                 display: "flex", gap: "14px", alignItems: "flex-start"
               }}>
@@ -772,12 +772,12 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                         href="/store/cardapio"
                         title={`Clique para cadastrar custo de ${p.name}`}
                         style={{
-                          background: "#FEF3C7", border: "1px solid #FCD34D", borderRadius: "6px",
+                          background: "#FFF7E6", border: "1px solid #FCD34D", borderRadius: "6px",
                           padding: "3px 10px", fontSize: "0.78rem", fontWeight: 600, color: "#92400E",
                           textDecoration: "none", cursor: "pointer", transition: "background 0.15s",
                         }}
                         onMouseEnter={e => (e.currentTarget.style.background = "#FDE68A")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "#FEF3C7")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "#FFF7E6")}
                       >
                         {p.name}
                       </a>
@@ -799,7 +799,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     href="/store/cardapio"
                     style={{
                       display: "inline-flex", alignItems: "center", gap: "6px",
-                      background: "#F59E0B", color: "#fff", padding: "8px 16px",
+                      background: "#B45309", color: "#fff", padding: "8px 16px",
                       borderRadius: "8px", fontWeight: 700, fontSize: "0.82rem", textDecoration: "none"
                     }}
                   >
@@ -811,10 +811,10 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
             {/* KPIs */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
-              <KPICard icon={<DollarSign size={18} color="#16A34A" />} label="Receita Bruta" value={fmtR(dre.receitaBruta)} sub={`${dre.totalPedidos} pedidos`} color="#16A34A" />
-              <KPICard icon={<TrendingUp size={18} color="#3B82F6" />} label="Lucro Líquido" value={fmtR(dre.lucroLiquido)} sub={`Margem: ${fmtPct(dre.margemLiquida)}`} color="#3B82F6" />
-              <KPICard icon={<ShoppingBag size={18} color="#8B5CF6" />} label="Ticket Médio" value={fmtR(dre.ticketMedio)} sub={`Delivery: ${dre.delivery} | Retirada: ${dre.retirada}`} color="#8B5CF6" />
-              <KPICard icon={<Package size={18} color="#F59E0B" />} label="CMV (Custo Produto)" value={fmtR(dre.cmv)} sub={`${fmtPct(dre.margemCMV)} da receita`} color="#F59E0B" />
+              <KPICard icon={<DollarSign size={18} color="#15803D" />} label="Receita Bruta" value={fmtR(dre.receitaBruta)} sub={`${dre.totalPedidos} pedidos`} color="#15803D" />
+              <KPICard icon={<TrendingUp size={18} color="#1D4ED8" />} label="Lucro Líquido" value={fmtR(dre.lucroLiquido)} sub={`Margem: ${fmtPct(dre.margemLiquida)}`} color="#1D4ED8" />
+              <KPICard icon={<ShoppingBag size={18} color="#64748B" />} label="Ticket Médio" value={fmtR(dre.ticketMedio)} sub={`Delivery: ${dre.delivery} | Retirada: ${dre.retirada}`} color="#64748B" />
+              <KPICard icon={<Package size={18} color="#B45309" />} label="CMV (Custo Produto)" value={fmtR(dre.cmv)} sub={`${fmtPct(dre.margemCMV)} da receita`} color="#B45309" />
               <KPICard icon={<Truck size={18} color="#06B6D4" />} label="Custo Motoboy" value={fmtR(dre.custoMotoboy)} sub={`${dre.delivery} entregas`} color="#06B6D4" />
               <KPICard icon={<Users size={18} color="#EC4899" />} label="Cancelamentos" value={`${dre.cancelados}`} sub="pedidos cancelados" color="#EC4899" />
             </div>
@@ -832,8 +832,8 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             </div>
 
             {/* RECEITAS */}
-            <div style={{ padding: "12px 24px 4px", background: "#F0FDF4" }}>
-              <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#16A34A", letterSpacing: 1 }}>RECEITAS</span>
+            <div style={{ padding: "12px 24px 4px", background: "#ECFDF3" }}>
+              <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#15803D", letterSpacing: 1 }}>RECEITAS</span>
             </div>
             <DRERow label="(+) Receita Bruta Total" value={dre.receitaBruta} bold />
             <DRERow label="    Receita de Produtos" value={dre.receitaSemFrete} indent={1} />
@@ -843,16 +843,16 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <div style={{ padding: "12px 24px 4px", background: "#FFF7ED" }}>
               <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#EA580C", letterSpacing: 1 }}>CUSTO DOS PRODUTOS VENDIDOS</span>
             </div>
-            <DRERow label="(-) CMV — Custo das Mercadorias" value={-dre.cmv} color={dre.cmv > 0 ? "#DC2626" : "#0F172A"} />
-            <DRERow label="(=) LUCRO BRUTO" value={dre.lucro1} bold color={dre.lucro1 >= 0 ? "#16A34A" : "#DC2626"} border />
+            <DRERow label="(-) CMV — Custo das Mercadorias" value={-dre.cmv} color={dre.cmv > 0 ? "#C92E09" : "#0F172A"} />
+            <DRERow label="(=) LUCRO BRUTO" value={dre.lucro1} bold color={dre.lucro1 >= 0 ? "#15803D" : "#C92E09"} border />
 
             {/* DESPESAS OPERACIONAIS */}
             <div style={{ padding: "12px 24px 4px", background: "#FFF1F2" }}>
               <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#E11D48", letterSpacing: 1 }}>DESPESAS OPERACIONAIS</span>
             </div>
-            <DRERow label="(-) Taxa de Pagamento (Gateway)" value={-dre.taxaGateway} color="#DC2626" />
-            <DRERow label="(-) Custo de Entrega (Motoboy)" value={-dre.custoMotoboy} color="#DC2626" />
-            <DRERow label="(=) EBITDA" value={dre.ebitda} bold color={dre.ebitda >= 0 ? "#16A34A" : "#DC2626"} border />
+            <DRERow label="(-) Taxa de Pagamento (Gateway)" value={-dre.taxaGateway} color="#C92E09" />
+            <DRERow label="(-) Custo de Entrega (Motoboy)" value={-dre.custoMotoboy} color="#C92E09" />
+            <DRERow label="(=) EBITDA" value={dre.ebitda} bold color={dre.ebitda >= 0 ? "#15803D" : "#C92E09"} border />
 
             {/* TAXA FIREHUB */}
             <div style={{ padding: "12px 24px 4px", background: "#F0F9FF" }}>
@@ -867,15 +867,15 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 }
               </span>
             </div>
-            <div style={{ background: dre.lucroAntesFixos >= 0 ? "#F0FDF4" : "#FFF1F2", borderTop: "2px solid #E2E8F0" }}>
-              <DRERow label="(=) LUCRO ANTES DOS CUSTOS FIXOS" value={dre.lucroAntesFixos} bold color={dre.lucroAntesFixos >= 0 ? "#16A34A" : "#DC2626"} />
+            <div style={{ background: dre.lucroAntesFixos >= 0 ? "#ECFDF3" : "#FFF1F2", borderTop: "2px solid #E2E8F0" }}>
+              <DRERow label="(=) LUCRO ANTES DOS CUSTOS FIXOS" value={dre.lucroAntesFixos} bold color={dre.lucroAntesFixos >= 0 ? "#15803D" : "#C92E09"} />
             </div>
 
             {/* CUSTOS FIXOS */}
             {fixedCosts.length > 0 && (
               <>
-                <div style={{ padding: "12px 24px 4px", background: "#F5F3FF" }}>
-                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#7C3AED", letterSpacing: 1 }}>
+                <div style={{ padding: "12px 24px 4px", background: "#F8FAFC" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#475569", letterSpacing: 1 }}>
                     CUSTOS FIXOS MENSAIS
                     {dre.proporcaoPeriodo < 1 && (
                       <span style={{ fontWeight: 400, marginLeft: 8 }}>
@@ -885,9 +885,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                   </span>
                 </div>
                 {fixedCosts.map(c => (
-                  <DRERow key={c.id} label={`(-) ${c.label}`} value={-(c.value * dre.proporcaoPeriodo)} color="#7C3AED" indent={1} />
+                  <DRERow key={c.id} label={`(-) ${c.label}`} value={-(c.value * dre.proporcaoPeriodo)} color="#475569" indent={1} />
                 ))}
-                <DRERow label="(-) Total Custos Fixos (período)" value={-dre.custosFixosPeriodo} color="#7C3AED" />
+                <DRERow label="(-) Total Custos Fixos (período)" value={-dre.custosFixosPeriodo} color="#475569" />
               </>
             )}
 
@@ -895,24 +895,24 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <div style={{ padding: "10px 24px", background: "#FAFAFA", borderTop: "1px solid #F1F5F9" }}>
                 <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
                   💡 Nenhum custo fixo cadastrado —{" "}
-                  <button onClick={() => setActiveTab("custosfix")} style={{ background: "none", border: "none", color: "#7C3AED", cursor: "pointer", fontWeight: 700, fontSize: "0.75rem", padding: 0, fontFamily: "inherit" }}>
+                  <button onClick={() => setActiveTab("custosfix")} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontWeight: 700, fontSize: "0.75rem", padding: 0, fontFamily: "inherit" }}>
                     clique aqui para cadastrar aluguel, funcionários, etc.
                   </button>
                 </span>
               </div>
             )}
 
-            <div style={{ background: dre.lucroLiquido >= 0 ? "#F0FDF4" : "#FFF1F2", borderTop: "2px solid #E2E8F0" }}>
-              <DRERow label="(=) LUCRO LÍQUIDO FINAL" value={dre.lucroLiquido} bold color={dre.lucroLiquido >= 0 ? "#16A34A" : "#DC2626"} />
+            <div style={{ background: dre.lucroLiquido >= 0 ? "#ECFDF3" : "#FFF1F2", borderTop: "2px solid #E2E8F0" }}>
+              <DRERow label="(=) LUCRO LÍQUIDO FINAL" value={dre.lucroLiquido} bold color={dre.lucroLiquido >= 0 ? "#15803D" : "#C92E09"} />
             </div>
 
             {/* Margem visual */}
             <div style={{ padding: "20px 24px", borderTop: "1px solid #F1F5F9" }}>
               <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
                 {[
-                  { label: "Margem Bruta", val: dre.receitaBruta > 0 ? (dre.lucro1 / dre.receitaBruta) * 100 : 0, color: "#F59E0B" },
-                  { label: "Margem EBITDA", val: dre.receitaBruta > 0 ? (dre.ebitda / dre.receitaBruta) * 100 : 0, color: "#3B82F6" },
-                  { label: "Margem Líquida", val: dre.margemLiquida, color: "#16A34A" },
+                  { label: "Margem Bruta", val: dre.receitaBruta > 0 ? (dre.lucro1 / dre.receitaBruta) * 100 : 0, color: "#B45309" },
+                  { label: "Margem EBITDA", val: dre.receitaBruta > 0 ? (dre.ebitda / dre.receitaBruta) * 100 : 0, color: "#1D4ED8" },
+                  { label: "Margem Líquida", val: dre.margemLiquida, color: "#15803D" },
                 ].map((m, i) => (
                   <div key={i} style={{ flex: 1, minWidth: 160 }}>
                     <p style={{ fontSize: "0.75rem", color: "#64748B", margin: "0 0 4px" }}>{m.label}</p>
@@ -947,7 +947,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               {/* Esquerda: Saldo Disponível e Saldo a Liberar */}
               <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#1E40AF", fontSize: "0.88rem", fontWeight: 800 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#1D4ED8", fontSize: "0.88rem", fontWeight: 800 }}>
                     <span>💳 Saldo Gateway da Loja (Mercado Pago / Pix Centralizado)</span>
                   </div>
                   <span style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "2px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
@@ -955,28 +955,28 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                   </span>
                 </div>
 
-                <p style={{ fontSize: "2.1rem", fontWeight: 900, color: "#16A34A", margin: "4px 0 6px" }}>
+                <p style={{ fontSize: "2.1rem", fontWeight: 900, color: "#15803D", margin: "4px 0 6px" }}>
                   {fmtR(extratoCalc.saldoDisponivel)}
                 </p>
 
                 {/* Status do Repasse Automático */}
                 {repasseConfig?.chavePix ? (
-                  <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "8px 12px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
+                  <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: "10px", padding: "8px 12px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
                     <div>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#166534", display: "block" }}>🔑 Chave Pix cadastrada para repasse</span>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#15803D", display: "block" }}>🔑 Chave Pix cadastrada para repasse</span>
                       <span style={{ fontSize: "0.72rem", color: "#15803D" }}>
                         Chave: <strong>{repasseConfig.chavePix}</strong> · O repasse automático ainda não está ativo — está sendo implementado junto com o pagamento online.
                       </span>
                     </div>
-                    <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#166534", fontWeight: 700, textDecoration: "underline" }}>Alterar</a>
+                    <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#15803D", fontWeight: 700, textDecoration: "underline" }}>Alterar</a>
                   </div>
                 ) : (
                   <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "10px", padding: "8px 12px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
                     <div>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#991B1B", display: "block" }}>⚪ Repasse Automático Não Configurado</span>
-                      <span style={{ fontSize: "0.72rem", color: "#B91C1C" }}>Cadastre sua chave Pix para receber os repasses automaticamente.</span>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#B71C1C", display: "block" }}>⚪ Repasse Automático Não Configurado</span>
+                      <span style={{ fontSize: "0.72rem", color: "#B71C1C" }}>Cadastre sua chave Pix para receber os repasses automaticamente.</span>
                     </div>
-                    <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#DC2626", fontWeight: 800, textDecoration: "underline" }}>Configurar Pix</a>
+                    <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#C92E09", fontWeight: 800, textDecoration: "underline" }}>Configurar Pix</a>
                   </div>
                 )}
 
@@ -996,7 +996,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                       padding: "11px 16px",
                       borderRadius: "10px",
                       border: "none",
-                      background: "linear-gradient(135deg, #16A34A, #15803D)",
+                      background: "linear-gradient(135deg, #15803D, #15803D)",
                       color: "#fff",
                       fontWeight: 800,
                       fontSize: "0.88rem",
@@ -1045,7 +1045,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 </div>
 
                 {/* Box Azul de taxas operacionais */}
-                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "1rem", fontSize: "0.76rem", color: "#1E40AF", lineHeight: 1.7 }}>
+                <div style={{ background: "#EFF6FF", border: "1px solid #B2DDFF", borderRadius: "12px", padding: "1rem", fontSize: "0.76rem", color: "#1D4ED8", lineHeight: 1.7 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                     <div>• <strong>Taxa do pix:</strong> 0,5% + R$ 0,40</div>
                     <div>• <strong>Taxa do crédito:</strong> 3,99% por pedido</div>
@@ -1062,28 +1062,28 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "0.86rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
                       <span style={{ color: "#475569" }}>Receita Bruta ℹ️</span>
-                      <strong style={{ color: "#16A34A" }}>+ {fmtR(extratoCalc.receitaBruta)}</strong>
+                      <strong style={{ color: "#15803D" }}>+ {fmtR(extratoCalc.receitaBruta)}</strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
                       <span style={{ color: "#475569" }}>Taxas Operacionais ℹ️</span>
-                      <strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.taxasOperacionais)}</strong>
+                      <strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.taxasOperacionais)}</strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
                       <span style={{ color: "#475569" }}>Investimentos e Mensalidade ℹ️</span>
-                      <strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.mensalidade)}</strong>
+                      <strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.mensalidade)}</strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
                       <span style={{ color: "#475569" }}>Reembolsos ℹ️</span>
-                      <strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.reembolsos)}</strong>
+                      <strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.reembolsos)}</strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, fontSize: "0.95rem" }}>
                       <strong style={{ color: "#0F172A" }}>Receita Líquida</strong>
-                      <strong style={{ color: "#16A34A" }}>= {fmtR(extratoCalc.receitaLiquida)}</strong>
+                      <strong style={{ color: "#15803D" }}>= {fmtR(extratoCalc.receitaLiquida)}</strong>
                     </div>
                   </div>
                 </div>
 
-                <button onClick={() => setActiveTab("relatorio")} style={{ marginTop: "16px", width: "100%", padding: "10px", borderRadius: "10px", border: "1.5px solid #DC2626", background: "#fff", color: "#DC2626", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                <button onClick={() => setActiveTab("relatorio")} style={{ marginTop: "16px", width: "100%", padding: "10px", borderRadius: "10px", border: "1.5px solid #C92E09", background: "#fff", color: "#C92E09", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                   Ver demonstrativo completo
                 </button>
               </div>
@@ -1093,14 +1093,14 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "10px" }}>
               <div style={{ display: "flex", gap: "8px" }}>
                 {PERIOD_PRESETS.map((p, i) => (
-                  <button key={i} onClick={() => setPreset(i)} style={{ padding: "6px 14px", borderRadius: "8px", border: preset === i ? "2px solid #DC2626" : "1px solid #CBD5E1", background: preset === i ? "#FEF2F2" : "#fff", color: preset === i ? "#DC2626" : "#475569", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>
+                  <button key={i} onClick={() => setPreset(i)} style={{ padding: "6px 14px", borderRadius: "8px", border: preset === i ? "2px solid #C92E09" : "1px solid #CBD5E1", background: preset === i ? "#FEF2F2" : "#fff", color: preset === i ? "#C92E09" : "#475569", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>
                     {p.label}
                   </button>
                 ))}
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
-                <button onClick={() => setActiveTab("configuracoes")} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #DC2626", background: "#fff", color: "#DC2626", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>↩️ Ver último repasse</button>
-                <button onClick={() => alert("📥 Relatório exportado com sucesso!")} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #DC2626", background: "#fff", color: "#DC2626", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>📥 Exportar transações</button>
+                <button onClick={() => setActiveTab("configuracoes")} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #C92E09", background: "#fff", color: "#C92E09", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>↩️ Ver último repasse</button>
+                <button onClick={() => alert("📥 Relatório exportado com sucesso!")} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #C92E09", background: "#fff", color: "#C92E09", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>📥 Exportar transações</button>
               </div>
             </div>
 
@@ -1134,28 +1134,28 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                       const isIf = l.sourceChannel === "IFOOD";
                       const isJt = l.sourceChannel === "JOTAJA";
                       return (
-                        <tr key={l.id || i} style={{ borderBottom: "1px solid #F1F5F9", background: isMp ? "#F0FDF4" : "#FFFFFF" }}>
+                        <tr key={l.id || i} style={{ borderBottom: "1px solid #F1F5F9", background: isMp ? "#ECFDF3" : "#FFFFFF" }}>
                           <td style={{ padding: "10px 14px", fontWeight: 700 }}>{l.tipo}</td>
                           <td style={{ padding: "10px 14px" }}>{l.horario}</td>
                           <td style={{ padding: "10px 14px" }}>{l.descricao}</td>
                           <td style={{ padding: "10px 14px" }}>
                             <span style={{
                               padding: "2px 8px", borderRadius: 6, fontSize: "0.72rem", fontWeight: 800,
-                              background: isMp ? "#DBEAFE" : isIf ? "#FEE2E2" : isJt ? "#FFEDD5" : "#F1F5F9",
-                              color: isMp ? "#1E40AF" : isIf ? "#991B1B" : isJt ? "#9A3412" : "#475569"
+                              background: isMp ? "#EFF6FF" : isIf ? "#FEE2E2" : isJt ? "#FFEDD5" : "#F1F5F9",
+                              color: isMp ? "#1D4ED8" : isIf ? "#B71C1C" : isJt ? "#9A3412" : "#475569"
                             }}>
                               {l.origem}
                             </span>
                           </td>
                           <td style={{ padding: "10px 14px" }}>{l.formaPagamento}</td>
                           <td style={{ padding: "10px 14px" }}>
-                            <span style={{ padding: "2px 8px", borderRadius: 99, background: l.status === "Aprovado" ? "#E6F4EA" : "#FEF3C7", color: l.status === "Aprovado" ? "#137333" : "#92400E", fontSize: "0.72rem", fontWeight: 700 }}>
+                            <span style={{ padding: "2px 8px", borderRadius: 99, background: l.status === "Aprovado" ? "#E6F4EA" : "#FFF7E6", color: l.status === "Aprovado" ? "#137333" : "#92400E", fontSize: "0.72rem", fontWeight: 700 }}>
                               {l.status}
                             </span>
                           </td>
                           <td style={{ padding: "10px 14px" }}>{l.dataLiberacao}</td>
-                          <td style={{ padding: "10px 14px", color: "#16A34A", fontWeight: 700 }}>{fmtR(l.valorBruto)}</td>
-                          <td style={{ padding: "10px 14px", color: "#DC2626" }}>- {fmtR(l.taxa)}</td>
+                          <td style={{ padding: "10px 14px", color: "#15803D", fontWeight: 700 }}>{fmtR(l.valorBruto)}</td>
+                          <td style={{ padding: "10px 14px", color: "#C92E09" }}>- {fmtR(l.taxa)}</td>
                           <td style={{ padding: "10px 14px", fontWeight: 800 }}>{fmtR(l.valorLiquido)}</td>
                         </tr>
                       );
@@ -1183,7 +1183,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
               <div>
                 <span style={{ fontSize: "0.82rem", color: "#64748B", fontWeight: 700 }}>Faturamento Online</span>
-                <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#16A34A", margin: 0 }}>{fmtR(extratoCalc.faturamentoOnline)}</h2>
+                <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#15803D", margin: 0 }}>{fmtR(extratoCalc.faturamentoOnline)}</h2>
               </div>
               <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: "10px", padding: "8px 14px", fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
                 📅 Período: {from.toLocaleDateString("pt-BR")} - {to.toLocaleDateString("pt-BR")}
@@ -1195,11 +1195,11 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
                 <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Demonstrativo de Receita Online</h4>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>PIX (Online)</span><strong style={{ color: "#16A34A" }}>{fmtR(extratoCalc.pixTotal)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Cartão de Crédito (Online)</span><strong style={{ color: "#16A34A" }}>{fmtR(extratoCalc.cardTotal)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Programa de Indicação</span><strong style={{ color: "#16A34A" }}>R$ 0,00</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Reembolsos Recebidos</span><strong style={{ color: "#16A34A" }}>R$ 0,00</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Receita Bruta</strong><strong style={{ color: "#16A34A" }}>{fmtR(extratoCalc.receitaBruta)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>PIX (Online)</span><strong style={{ color: "#15803D" }}>{fmtR(extratoCalc.pixTotal)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Cartão de Crédito (Online)</span><strong style={{ color: "#15803D" }}>{fmtR(extratoCalc.cardTotal)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Programa de Indicação</span><strong style={{ color: "#15803D" }}>R$ 0,00</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Reembolsos Recebidos</span><strong style={{ color: "#15803D" }}>R$ 0,00</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Receita Bruta</strong><strong style={{ color: "#15803D" }}>{fmtR(extratoCalc.receitaBruta)}</strong></div>
                 </div>
               </div>
 
@@ -1207,10 +1207,10 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
                 <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Taxas Operacionais</h4>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxas PIX</span><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.taxasPix)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxas Cartão</span><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.taxasCard)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxa de Repasse</span><strong style={{ color: "#DC2626" }}>- R$ 0,00</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Taxas</strong><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.taxasOperacionais)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxas PIX</span><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.taxasPix)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxas Cartão</span><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.taxasCard)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxa de Repasse</span><strong style={{ color: "#C92E09" }}>- R$ 0,00</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Taxas</strong><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.taxasOperacionais)}</strong></div>
                 </div>
               </div>
 
@@ -1218,9 +1218,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
                 <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Investimentos e Mensalidade</h4>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Investimento em Tráfego Pago</span><strong style={{ color: "#DC2626" }}>- R$ 0,00</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Mensalidade FireHub</span><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.mensalidade)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Investimentos</strong><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.mensalidade)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Investimento em Tráfego Pago</span><strong style={{ color: "#C92E09" }}>- R$ 0,00</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Mensalidade FireHub</span><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.mensalidade)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Investimentos</strong><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.mensalidade)}</strong></div>
                 </div>
               </div>
 
@@ -1228,8 +1228,8 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
                 <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Reembolsos a Clientes</h4>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Reembolsos a Clientes</span><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.reembolsos)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Reembolsos</strong><strong style={{ color: "#DC2626" }}>- {fmtR(extratoCalc.reembolsos)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Reembolsos a Clientes</span><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.reembolsos)}</strong></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Reembolsos</strong><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.reembolsos)}</strong></div>
                 </div>
               </div>
             </div>
@@ -1258,7 +1258,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
             <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", maxWidth: "650px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1rem" }}>
-                <Building2 size={22} color="#16A34A" />
+                <Building2 size={22} color="#15803D" />
                 <h4 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, color: "#0F172A" }}>Conta de repasse</h4>
               </div>
 
@@ -1300,7 +1300,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
                 <button
                   onClick={() => alert("✅ Configurações de repasse salvas com sucesso!")}
-                  style={{ marginTop: "10px", padding: "12px", borderRadius: "10px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                  style={{ marginTop: "10px", padding: "12px", borderRadius: "10px", border: "none", background: "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
                 >
                   Salvar Conta de Repasse
                 </button>
@@ -1362,7 +1362,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               { titulo: "Revise a cada mudança", texto: "contratou alguém ou o aluguel subiu? Atualize aqui." },
             ]}
           />
-          <div style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", borderRadius: 16, padding: "1.5rem", color: "#fff", marginBottom: "1.5rem" }}>
+          <div style={{ background: "linear-gradient(135deg,#475569,#334155)", borderRadius: 16, padding: "1.5rem", color: "#fff", marginBottom: "1.5rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
               <Building2 size={24} />
               <h2 style={{ fontWeight: 900, fontSize: "1.2rem", margin: 0 }}>Custos Fixos Mensais</h2>
@@ -1404,7 +1404,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               <button
                 onClick={addFixedCost}
                 disabled={!newLabel.trim() || !newValue}
-                style={{ padding: "10px 20px", borderRadius: 10, background: (!newLabel.trim() || !newValue) ? "#E2E8F0" : "#7C3AED", color: (!newLabel.trim() || !newValue) ? "#94A3B8" : "#fff", border: "none", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit" }}
+                style={{ padding: "10px 20px", borderRadius: 10, background: (!newLabel.trim() || !newValue) ? "#E2E8F0" : "#475569", color: (!newLabel.trim() || !newValue) ? "#94A3B8" : "#fff", border: "none", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit" }}
               >
                 <Plus size={16} /> Adicionar
               </button>
@@ -1430,22 +1430,22 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               {fixedCosts.map((c, i) => (
                 <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderTop: i === 0 ? "none" : "1px solid #F1F5F9" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#7C3AED", flexShrink: 0 }} />
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#475569", flexShrink: 0 }} />
                     <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{c.label}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#7C3AED" }}>
+                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#475569" }}>
                       R$ {c.value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <button onClick={() => removeFixedCost(c.id)} style={{ padding: 6, borderRadius: 8, background: "#FEF2F2", border: "none", cursor: "pointer" }}>
-                      <Trash2 size={14} color="#EF4444" />
+                      <Trash2 size={14} color="#C92E09" />
                     </button>
                   </div>
                 </div>
               ))}
-              <div style={{ padding: "14px 16px", background: "#F5F3FF", borderTop: "2px solid #DDD6FE", display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 800, color: "#7C3AED" }}>Total mensal</span>
-                <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#7C3AED" }}>
+              <div style={{ padding: "14px 16px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontWeight: 800, color: "#475569" }}>Total mensal</span>
+                <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#475569" }}>
                   R$ {totalFixedCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
@@ -1454,7 +1454,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
           {/* Impacto */}
           {fixedCosts.length > 0 && (
-            <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "1rem 1.25rem", marginTop: "1.25rem" }}>
+            <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "1rem 1.25rem", marginTop: "1.25rem" }}>
               <p style={{ fontWeight: 800, fontSize: "0.88rem", color: "#92400E", margin: "0 0 8px" }}>📊 Impacto no período atual ({dre.diasNoPeriodo} dias)</p>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#78350F", marginBottom: 4 }}>
                 <span>Custo proporcional do período:</span>
@@ -1462,13 +1462,13 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#78350F" }}>
                 <span>Lucro líquido resultante:</span>
-                <strong style={{ color: dre.lucroLiquido >= 0 ? "#16A34A" : "#DC2626" }}>
+                <strong style={{ color: dre.lucroLiquido >= 0 ? "#15803D" : "#C92E09" }}>
                   R$ {dre.lucroLiquido.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </strong>
               </div>
             </div>
           )}
-          {savedFC && <div style={{ marginTop: 12, textAlign: "center", color: "#16A34A", fontWeight: 700 }}>✅ Custos salvos!</div>}
+          {savedFC && <div style={{ marginTop: 12, textAlign: "center", color: "#15803D", fontWeight: 700 }}>✅ Custos salvos!</div>}
         </div>
       )}
 
@@ -1550,14 +1550,14 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
                   <div>
                     <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>TAXA OFICIAL APLICADA</span>
-                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#059669", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                      1,0% <span style={{ fontSize: "0.7rem", color: "#166534", background: "#DCFCE7", padding: "2px 6px", borderRadius: 4, fontWeight: 800 }}>Promessa Landing Page</span>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#15803D", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                      1,0% <span style={{ fontSize: "0.7rem", color: "#15803D", background: "#ECFDF3", padding: "2px 6px", borderRadius: 4, fontWeight: 800 }}>Promessa Landing Page</span>
                     </div>
                   </div>
 
                   <div>
                     <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>VALOR DA MENSALIDADE</span>
-                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#2563EB", marginTop: 2 }}>
+                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#1D4ED8", marginTop: 2 }}>
                       {fmtR(isExempt ? 0 : billingCycle ? billingCycle.amountPending : calcMensalidade(dre.receitaBruta).mensalidade)}
                     </div>
                   </div>
@@ -1618,7 +1618,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                                 </div>
                               )}
                             </td>
-                            <td style={{ padding: "10px 12px", fontWeight: 800, color: "#2563EB" }}>{fmtR(comissaoPedido)}</td>
+                            <td style={{ padding: "10px 12px", fontWeight: 800, color: "#1D4ED8" }}>{fmtR(comissaoPedido)}</td>
                           </tr>
                         );
                       })
@@ -1658,7 +1658,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     href={billingCycle.asaasBoletoUrl}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ background: "linear-gradient(135deg, #10B981, #059669)", textDecoration: "none", borderRadius: "8px", padding: "8px 16px", fontSize: "0.82rem", fontWeight: 900, color: "#FFFFFF", cursor: "pointer" }}
+                    style={{ background: "linear-gradient(135deg, #15803D, #15803D)", textDecoration: "none", borderRadius: "8px", padding: "8px 16px", fontSize: "0.82rem", fontWeight: 900, color: "#FFFFFF", cursor: "pointer" }}
                   >
                     ⚡ Abrir boleto / pagar
                   </a>
@@ -1684,7 +1684,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
           }}>
             {/* Header */}
             <div style={{
-              background: "linear-gradient(135deg, #16A34A 0%, #15803D 100%)",
+              background: "linear-gradient(135deg, #15803D 0%, #15803D 100%)",
               padding: "1.25rem 1.5rem", color: "#FFFFFF",
               display: "flex", justifyContent: "space-between", alignItems: "center"
             }}>
@@ -1713,12 +1713,12 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <div style={{ padding: "1.5rem" }}>
               {/* Card Saldo Disponível */}
               <div style={{
-                background: "#F0FDF4", border: "1.5px solid #BBF7D0",
+                background: "#ECFDF3", border: "1.5px solid #ABEFC6",
                 borderRadius: "14px", padding: "14px", marginBottom: "16px",
                 display: "flex", justifyContent: "space-between", alignItems: "center"
               }}>
                 <div>
-                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#166534" }}>Saldo Disponível</span>
+                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#15803D" }}>Saldo Disponível</span>
                   <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#15803D" }}>
                     {fmtR(extratoCalc.saldoDisponivel)}
                   </div>
@@ -1727,7 +1727,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                   type="button"
                   onClick={() => setWithdrawAmount(extratoCalc.saldoDisponivel.toFixed(2))}
                   style={{
-                    background: "#16A34A", color: "#fff", border: "none",
+                    background: "#15803D", color: "#fff", border: "none",
                     borderRadius: "8px", padding: "8px 14px", fontSize: "0.8rem",
                     fontWeight: 800, cursor: "pointer", fontFamily: "inherit"
                   }}
@@ -1739,9 +1739,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
               {/* Feedback messages */}
               {withdrawFeedback && (
                 <div style={{
-                  background: withdrawFeedback.type === "success" ? "#F0FDF4" : "#FEF2F2",
-                  border: `1px solid ${withdrawFeedback.type === "success" ? "#BBF7D0" : "#FECACA"}`,
-                  color: withdrawFeedback.type === "success" ? "#166534" : "#991B1B",
+                  background: withdrawFeedback.type === "success" ? "#ECFDF3" : "#FEF2F2",
+                  border: `1px solid ${withdrawFeedback.type === "success" ? "#ABEFC6" : "#FECACA"}`,
+                  color: withdrawFeedback.type === "success" ? "#15803D" : "#B71C1C",
                   borderRadius: "10px", padding: "10px 14px", marginBottom: "14px",
                   fontSize: "0.84rem", fontWeight: 700
                 }}>
@@ -1829,7 +1829,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     border: "none",
                     background: withdrawLoading || !withdrawAmount || Number(withdrawAmount) <= 0 || !withdrawChavePix.trim()
                       ? "#94A3B8"
-                      : "linear-gradient(135deg, #16A34A, #15803D)",
+                      : "linear-gradient(135deg, #15803D, #15803D)",
                     color: "#fff", fontWeight: 800, cursor: withdrawLoading ? "not-allowed" : "pointer",
                     fontSize: "0.88rem", fontFamily: "inherit",
                     boxShadow: "0 4px 14px rgba(22, 163, 74, 0.3)"

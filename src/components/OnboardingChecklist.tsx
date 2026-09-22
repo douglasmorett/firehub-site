@@ -272,7 +272,7 @@ export default function OnboardingChecklist({
 
   if (dismissed) return null;
   if (allComplete && globalPct === 100) return (
-    <div style={{ background: "linear-gradient(135deg,#F59E0B,#EF4444)", borderRadius: 20, padding: "1.5rem", marginBottom: "1.5rem", textAlign: "center", color: "#fff" }}>
+    <div style={{ background: "linear-gradient(135deg,#B45309,#C92E09)", borderRadius: 20, padding: "1.5rem", marginBottom: "1.5rem", textAlign: "center", color: "#fff" }}>
       <div style={{ fontSize: "3rem", marginBottom: 8 }}>🏆</div>
       <h3 style={{ fontWeight: 900, fontSize: "1.2rem", margin: "0 0 4px" }}>Loja Campeã! Configuração 100% completa.</h3>
       <p style={{ opacity: 0.85, fontSize: "0.85rem", margin: 0 }}>Continue crescendo com Meta Ads e acompanhe seus resultados no Financeiro.</p>
@@ -286,12 +286,12 @@ export default function OnboardingChecklist({
       <div style={{ background: "linear-gradient(135deg,#0F172A,#1E293B)", padding: "1rem 1.25rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Zap size={18} color="#F59E0B" />
+            <Zap size={18} color="#B45309" />
             <span style={{ fontWeight: 800, color: "#fff", fontSize: "0.95rem" }}>Sua jornada FireHub</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)" }}>
-              Faltam <strong style={{ color: "#F59E0B" }}>{totalTasks - doneTasks} passos</strong> para completar
+              Faltam <strong style={{ color: "#B45309" }}>{totalTasks - doneTasks} passos</strong> para completar
             </span>
             <button onClick={() => setDismissed(true)} style={{ background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 6, padding: "3px 8px", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: "0.7rem" }}>
               Ocultar
@@ -301,7 +301,7 @@ export default function OnboardingChecklist({
 
         {/* Barra de progresso global */}
         <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: 100, height: 5, marginBottom: "0.85rem" }}>
-          <div style={{ width: `${globalPct}%`, height: "100%", background: "linear-gradient(90deg,#E63946,#F59E0B)", borderRadius: 100, transition: "width 0.5s" }} />
+          <div style={{ width: `${globalPct}%`, height: "100%", background: "linear-gradient(90deg,#E63946,#B45309)", borderRadius: 100, transition: "width 0.5s" }} />
         </div>
 
         {/* Timeline de fases */}
@@ -326,8 +326,8 @@ export default function OnboardingChecklist({
                 >
                   <div style={{
                     width: 30, height: 30, borderRadius: "50%",
-                    background: phComplete ? "#16A34A" : isCurrent ? "#E63946" : "rgba(255,255,255,0.12)",
-                    border: isCurrent ? "2px solid #E63946" : phComplete ? "2px solid #16A34A" : "2px solid rgba(255,255,255,0.2)",
+                    background: phComplete ? "#15803D" : isCurrent ? "#E63946" : "rgba(255,255,255,0.12)",
+                    border: isCurrent ? "2px solid #E63946" : phComplete ? "2px solid #15803D" : "2px solid rgba(255,255,255,0.2)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: phComplete ? "0.7rem" : "0.85rem",
                     transition: "all 0.2s",
@@ -339,7 +339,7 @@ export default function OnboardingChecklist({
                   </span>
                 </button>
                 {!isLast && (
-                  <div style={{ width: 20, height: 2, background: isPast && !isCurrent ? "#16A34A" : "rgba(255,255,255,0.15)", marginBottom: 14, flexShrink: 0 }} />
+                  <div style={{ width: 20, height: 2, background: isPast && !isCurrent ? "#15803D" : "rgba(255,255,255,0.15)", marginBottom: 14, flexShrink: 0 }} />
                 )}
               </div>
             );
@@ -358,7 +358,7 @@ export default function OnboardingChecklist({
             </p>
           )}
           {phase.id === "loja_campea" && (
-            <p style={{ fontSize: "0.85rem", color: "#D97706", margin: "4px 0 0", fontWeight: 700 }}>
+            <p style={{ fontSize: "0.85rem", color: "#B45309", margin: "4px 0 0", fontWeight: 700 }}>
               🎊 Complete todas as fases anteriores para se tornar uma Loja Campeã!
             </p>
           )}
@@ -375,8 +375,8 @@ export default function OnboardingChecklist({
               <div
                 key={task.id}
                 style={{
-                  borderRadius: 14, border: `1.5px solid ${isDone ? "#BBF7D0" : "#E2E8F0"}`,
-                  background: isDone ? "#F0FDF4" : "#FAFAFA",
+                  borderRadius: 14, border: `1.5px solid ${isDone ? "#ABEFC6" : "#E2E8F0"}`,
+                  background: isDone ? "#ECFDF3" : "#FAFAFA",
                   overflow: "hidden", transition: "all 0.2s",
                 }}
               >
@@ -385,8 +385,8 @@ export default function OnboardingChecklist({
                   <div
                     style={{
                       width: 30, height: 30, borderRadius: "50%", flexShrink: 0, cursor: "default",
-                      border: isDone ? "2px solid #16A34A" : "2px solid #CBD5E1",
-                      background: isDone ? "#16A34A" : "#fff",
+                      border: isDone ? "2px solid #15803D" : "2px solid #CBD5E1",
+                      background: isDone ? "#15803D" : "#fff",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       transition: "all 0.2s",
                     }}
@@ -433,12 +433,12 @@ export default function OnboardingChecklist({
                             const subId = `${task.id}_${sub.id}`;
                             const isSubDone = done.has(subId);
                             return (
-                              <div key={subId} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.75rem", color: isSubDone ? "#16A34A" : "#475569" }}>
+                              <div key={subId} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.75rem", color: isSubDone ? "#15803D" : "#475569" }}>
                                 <input
                                   type="checkbox"
                                   checked={isSubDone}
                                   readOnly
-                                  style={{ accentColor: "#16A34A", width: 13, height: 13, cursor: "default", pointerEvents: "none" }}
+                                  style={{ accentColor: "#15803D", width: 13, height: 13, cursor: "default", pointerEvents: "none" }}
                                 />
                                 {sub.label}
                               </div>

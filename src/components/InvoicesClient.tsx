@@ -207,7 +207,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
         {canSeePersonal && (
           <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "10px", padding: "4px", border: "1px solid #e2e8f0" }}>
             {(["BUSINESS", "PERSONAL"] as const).map(cat => (
-              <button key={cat} onClick={() => setCategory(cat)} style={{ padding: "8px 18px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem", transition: "all 0.2s", background: category === cat ? (cat === "BUSINESS" ? "#DC2626" : "#7C3AED") : "transparent", color: category === cat ? "#fff" : "#64748b", fontFamily: "inherit" }}>
+              <button key={cat} onClick={() => setCategory(cat)} style={{ padding: "8px 18px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem", transition: "all 0.2s", background: category === cat ? (cat === "BUSINESS" ? "#C92E09" : "#475569") : "transparent", color: category === cat ? "#fff" : "#64748b", fontFamily: "inherit" }}>
                 {cat === "BUSINESS" ? "🏢 Empresarial" : "👤 Pessoal"}
               </button>
             ))}
@@ -216,13 +216,13 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
       </div>
 
       {error && (
-        <div style={{ background: "#fee2e2", color: "#b91c1c", padding: "0.85rem 1rem", borderRadius: "10px", marginBottom: "1rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <div style={{ background: "#fee2e2", color: "#B71C1C", padding: "0.85rem 1rem", borderRadius: "10px", marginBottom: "1rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <AlertCircle size={18} /><span>{error}</span>
-          <button onClick={() => setError("")} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#b91c1c", fontSize: "1.1rem" }}>✕</button>
+          <button onClick={() => setError("")} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#B71C1C", fontSize: "1.1rem" }}>✕</button>
         </div>
       )}
       {success && (
-        <div style={{ background: "#f0fdf4", color: "#15803d", padding: "0.85rem 1rem", borderRadius: "10px", marginBottom: "1rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <div style={{ background: "#ECFDF3", color: "#15803d", padding: "0.85rem 1rem", borderRadius: "10px", marginBottom: "1rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <CheckCircle size={18} /><span>{success}</span>
           <button onClick={() => setSuccess("")} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#15803d", fontSize: "1.1rem" }}>✕</button>
         </div>
@@ -233,11 +233,11 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
           <h2 style={{ fontSize: "1.1rem", fontWeight: "bold", margin: 0 }}>Nova Nota Fiscal</h2>
           <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "10px", padding: "3px", gap: "2px" }}>
             <button onClick={() => { setMode("ai"); setError(""); setSuccess(""); }}
-              style={{ padding: "6px 14px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 5, background: mode === "ai" ? "#DC2626" : "transparent", color: mode === "ai" ? "#fff" : "#64748b", fontFamily: "inherit" }}>
+              style={{ padding: "6px 14px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 5, background: mode === "ai" ? "#C92E09" : "transparent", color: mode === "ai" ? "#fff" : "#64748b", fontFamily: "inherit" }}>
               <Zap size={13} /> IA (Foto)
             </button>
             <button onClick={() => { setMode("manual"); setError(""); setSuccess(""); }}
-              style={{ padding: "6px 14px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 5, background: mode === "manual" ? "#2563EB" : "transparent", color: mode === "manual" ? "#fff" : "#64748b", fontFamily: "inherit" }}>
+              style={{ padding: "6px 14px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 5, background: mode === "manual" ? "#1D4ED8" : "transparent", color: mode === "manual" ? "#fff" : "#64748b", fontFamily: "inherit" }}>
               <PenLine size={13} /> Manual
             </button>
           </div>
@@ -269,7 +269,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
 
         {mode === "manual" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-            <p style={{ fontSize: "0.82rem", color: "#2563EB", margin: 0, background: "#EFF6FF", padding: "8px 12px", borderRadius: 8 }}>
+            <p style={{ fontSize: "0.82rem", color: "#1D4ED8", margin: 0, background: "#EFF6FF", padding: "8px 12px", borderRadius: 8 }}>
               ✏️ Preencha os dados manualmente — sem precisar de foto.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
@@ -306,7 +306,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
               </div>
             </div>
             <button onClick={handleManualSave} disabled={savingManual}
-              style={{ width: "100%", padding: "0.9rem", borderRadius: 10, border: "none", background: savingManual ? "#94a3b8" : "#2563EB", color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: savingManual ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              style={{ width: "100%", padding: "0.9rem", borderRadius: 10, border: "none", background: savingManual ? "#94a3b8" : "#1D4ED8", color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: savingManual ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <Receipt size={18} />
               {savingManual ? "Salvando..." : "Salvar Nota Manual"}
             </button>
@@ -316,7 +316,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
         <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", margin: 0 }}>Relatório de Gastos</h2>
-        <div style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", padding: "0.5rem 1rem", borderRadius: "20px", fontWeight: "bold" }}>
+        <div style={{ background: "rgba(239,68,68,0.1)", color: "#C92E09", padding: "0.5rem 1rem", borderRadius: "20px", fontWeight: "bold" }}>
           Total: R$ {totalGasto.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </div>
       </div>
@@ -368,7 +368,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
                     <td style={{ padding: "0.5rem", fontSize: "0.82rem", color: "#64748b" }}>
                       <div>{new Date(inv.createdAt).toLocaleDateString("pt-BR")}</div>
                       <div style={{ fontSize: "0.72rem", opacity: 0.7 }}>{inv.uploadedBy}</div>
-                      {inv.source === "manual" && <span style={{ fontSize: "0.68rem", background: "#EFF6FF", color: "#2563EB", padding: "1px 5px", borderRadius: 4, fontWeight: 700 }}>MANUAL</span>}
+                      {inv.source === "manual" && <span style={{ fontSize: "0.68rem", background: "#EFF6FF", color: "#1D4ED8", padding: "1px 5px", borderRadius: 4, fontWeight: 700 }}>MANUAL</span>}
                     </td>
                     <td style={{ padding: "0.5rem", fontWeight: 600 }}>
                       {inv.invoiceDate ? (
@@ -384,7 +384,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
                     <td style={{ padding: "0.5rem", color: "#64748b", fontSize: "0.82rem" }}>
                       {inv.category}
                     </td>
-                    <td style={{ padding: "0.5rem", fontWeight: 700, color: "#ef4444" }}>
+                    <td style={{ padding: "0.5rem", fontWeight: 700, color: "#C92E09" }}>
                       R$ {inv.aiValue?.toFixed(2) ?? "–"}
                     </td>
                     <td style={{ padding: "0.5rem", textAlign: "right" }}>
@@ -406,13 +406,13 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
                                 invoiceDate: inv.invoiceDate ? inv.invoiceDate.slice(0, 10) : "",
                               });
                             }}
-                            style={{ color: "#2563eb", background: "none", border: "1px solid #2563eb", borderRadius: "6px", padding: "4px 10px", cursor: "pointer", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px" }}
+                            style={{ color: "#1D4ED8", background: "none", border: "1px solid #1D4ED8", borderRadius: "6px", padding: "4px 10px", cursor: "pointer", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "4px" }}
                           >
                             <Pencil size={14} /> Editar
                           </button>
                         )}
                         <button onClick={() => handleDelete(inv.id)}
-                          style={{ padding: "4px 8px", color: "#ef4444", background: "rgba(239,68,68,0.1)", border: "none", borderRadius: 7, cursor: "pointer" }}
+                          style={{ padding: "4px 8px", color: "#C92E09", background: "rgba(239,68,68,0.1)", border: "none", borderRadius: 7, cursor: "pointer" }}
                           title="Excluir">
                           <Trash2 size={15} />
                         </button>
@@ -453,7 +453,7 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
             </div>
             <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.5rem", justifyContent: "flex-end" }}>
               <button onClick={() => setEditingInvoice(null)} style={{ padding: "8px 20px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "none", cursor: "pointer" }}>Cancelar</button>
-              <button onClick={handleEdit} disabled={editLoading} style={{ padding: "8px 20px", borderRadius: "8px", border: "none", background: "#2563eb", color: "white", cursor: "pointer", fontWeight: "bold" }}>
+              <button onClick={handleEdit} disabled={editLoading} style={{ padding: "8px 20px", borderRadius: "8px", border: "none", background: "#1D4ED8", color: "white", cursor: "pointer", fontWeight: "bold" }}>
                 {editLoading ? "Salvando..." : "💾 Salvar"}
               </button>
             </div>

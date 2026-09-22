@@ -25,7 +25,7 @@ export default function AvisoDownloadWindows({ compacto = false }: { compacto?: 
     <details
       style={{
         marginTop: 10,
-        background: "#FFFBEB",
+        background: "#FFF7E6",
         border: "1.5px solid #FDE68A",
         borderRadius: 10,
         padding: compacto ? "8px 10px" : "10px 12px",

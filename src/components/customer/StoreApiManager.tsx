@@ -164,11 +164,11 @@ export function StoreApiManager() {
 
       {/* Modal / Alert de Exibição Única da Chave de API recém gerada */}
       {createdRawKey && (
-        <div style={{ background: "#F0FDF4", border: "2px solid #22C55E", borderRadius: 16, padding: "1.25rem", marginBottom: "2rem", boxShadow: "0 4px 12px rgba(34,197,94,0.15)" }}>
+        <div style={{ background: "#ECFDF3", border: "2px solid #15803D", borderRadius: 16, padding: "1.25rem", marginBottom: "2rem", boxShadow: "0 4px 12px rgba(34,197,94,0.15)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#15803D", fontWeight: 900, marginBottom: 6 }}>
             <Key size={20} /> CHAVE DE API GERADA COM SUCESSO!
           </div>
-          <p style={{ fontSize: "0.85rem", color: "#166534", margin: "0 0 12px" }}>
+          <p style={{ fontSize: "0.85rem", color: "#15803D", margin: "0 0 12px" }}>
             <b>IMPORTANTE:</b> Copie e guarde esta chave agora. Por motivos de segurança, <b>ela não será exibida novamente</b>!
           </p>
 
@@ -177,11 +177,11 @@ export function StoreApiManager() {
               type="text"
               readOnly
               value={createdRawKey}
-              style={{ flex: 1, padding: "10px 14px", background: "#FFFFFF", border: "1px solid #86EFAC", borderRadius: 8, fontFamily: "monospace", fontSize: "0.95rem", fontWeight: 700, color: "#0F172A" }}
+              style={{ flex: 1, padding: "10px 14px", background: "#FFFFFF", border: "1px solid #ABEFC6", borderRadius: 8, fontFamily: "monospace", fontSize: "0.95rem", fontWeight: 700, color: "#0F172A" }}
             />
             <button
               onClick={handleCopyRawKey}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 16px", background: "#16A34A", color: "#FFFFFF", border: "none", borderRadius: 8, fontWeight: 800, cursor: "pointer" }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 16px", background: "#15803D", color: "#FFFFFF", border: "none", borderRadius: 8, fontWeight: 800, cursor: "pointer" }}
             >
               {copiedKey ? <Check size={16} /> : <Copy size={16} />}
               {copiedKey ? "Copiado!" : "Copiar"}
@@ -275,7 +275,7 @@ export function StoreApiManager() {
                     <td style={{ padding: "12px", textAlign: "right" }}>
                       <button
                         onClick={() => handleRevokeKey(k.id)}
-                        style={{ padding: "6px 12px", background: "#FEE2E2", color: "#DC2626", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: 4 }}
+                        style={{ padding: "6px 12px", background: "#FEE2E2", color: "#C92E09", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: 4 }}
                       >
                         <Trash2 size={14} /> Revogar
                       </button>
@@ -293,7 +293,7 @@ export function StoreApiManager() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
           <div>
             <h3 style={{ fontSize: "1.15rem", fontWeight: 800, color: "#0F172A", margin: "0 0 4px", display: "flex", alignItems: "center", gap: 8 }}>
-              <Webhook size={18} color="#059669" /> Webhooks de Saída (Notificações em Tempo Real)
+              <Webhook size={18} color="#15803D" /> Webhooks de Saída (Notificações em Tempo Real)
             </h3>
             <p style={{ fontSize: "0.82rem", color: "#64748B", margin: 0 }}>
               Receba um POST no seu sistema sempre que um pedido for criado ou mudar de status.
@@ -302,14 +302,14 @@ export function StoreApiManager() {
 
           <button
             onClick={() => setCreatingWebhook(!creatingWebhook)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#059669", color: "#FFFFFF", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#15803D", color: "#FFFFFF", border: "none", borderRadius: 10, fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
           >
             <Plus size={16} /> Cadastrar Webhook
           </button>
         </div>
 
         {creatingWebhook && (
-          <form onSubmit={handleCreateWebhook} style={{ background: "#F0FDF4", padding: "1.25rem", borderRadius: 12, border: "1px solid #A7F3D0", marginBottom: "1.25rem" }}>
+          <form onSubmit={handleCreateWebhook} style={{ background: "#ECFDF3", padding: "1.25rem", borderRadius: 12, border: "1px solid #A7F3D0", marginBottom: "1.25rem" }}>
             <h4 style={{ margin: "0 0 10px", fontSize: "0.95rem", fontWeight: 800, color: "#065F46" }}>Cadastrar Novo Webhook de Saída</h4>
             
             <div style={{ marginBottom: 12 }}>
@@ -349,7 +349,7 @@ export function StoreApiManager() {
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 type="submit"
-                style={{ padding: "10px 20px", background: "#059669", color: "#FFFFFF", border: "none", borderRadius: 8, fontWeight: 800, cursor: "pointer" }}
+                style={{ padding: "10px 20px", background: "#15803D", color: "#FFFFFF", border: "none", borderRadius: 8, fontWeight: 800, cursor: "pointer" }}
               >
                 Cadastrar Webhook
               </button>
@@ -385,14 +385,14 @@ export function StoreApiManager() {
                 {webhooks.map((w) => (
                   <tr key={w.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                     <td style={{ padding: "12px", fontWeight: 700, color: "#0F172A", wordBreak: "break-all" }}>{w.url}</td>
-                    <td style={{ padding: "12px", fontFamily: "monospace", color: "#059669", fontSize: "0.8rem" }}>{w.secret}</td>
+                    <td style={{ padding: "12px", fontFamily: "monospace", color: "#15803D", fontSize: "0.8rem" }}>{w.secret}</td>
                     <td style={{ padding: "12px", color: "#64748B", fontSize: "0.8rem" }}>
                       {Array.isArray(w.events) ? w.events.join(", ") : "*"}
                     </td>
                     <td style={{ padding: "12px", textAlign: "right" }}>
                       <button
                         onClick={() => handleDeleteWebhook(w.id)}
-                        style={{ padding: "6px 12px", background: "#FEE2E2", color: "#DC2626", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: 4 }}
+                        style={{ padding: "6px 12px", background: "#FEE2E2", color: "#C92E09", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: 4 }}
                       >
                         <Trash2 size={14} /> Excluir
                       </button>

@@ -342,7 +342,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               </p>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "#059669" }}>
+              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "#15803D" }}>
                 {/* Com preço base 0, o "a partir de" é o MÍNIMO do produto, não a
                     base crua — senão um pastel cujo valor inteiro está no tamanho
                     (Baby R$ 15,90) anuncia "A partir de R$ 0,00" no topo do modal,
@@ -353,7 +353,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
               </span>
               {extraSum > 0 && (
-                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", padding: "2px 8px", borderRadius: "12px" }}>
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#B45309", backgroundColor: "#FFF7E6", padding: "2px 8px", borderRadius: "12px" }}>
                   + R$ {extraSum.toFixed(2).replace(".", ",")} adicionais
                 </span>
               )}
@@ -380,7 +380,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   style={{
                     backgroundColor: "#FFFFFF",
                     borderRadius: "14px",
-                    border: isMissing ? "1.5px solid #EF4444" : "1px solid #E2E8F0",
+                    border: isMissing ? "1.5px solid #C92E09" : "1px solid #E2E8F0",
                     overflow: "hidden",
                     boxShadow: "0 2px 6px rgba(0,0,0,0.02)",
                     transition: "border-color 0.2s ease",
@@ -390,7 +390,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   <div
                     style={{
                       padding: "0.75rem 1rem",
-                      backgroundColor: complete && total > 0 ? "#F0FDF4" : isMissing ? "#FEF2F2" : "#F8FAFC",
+                      backgroundColor: complete && total > 0 ? "#ECFDF3" : isMissing ? "#FEF2F2" : "#F8FAFC",
                       borderBottom: "1px solid #E2E8F0",
                       display: "flex",
                       alignItems: "center",
@@ -435,8 +435,8 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                           fontWeight: 700,
                           padding: "3px 9px",
                           borderRadius: "20px",
-                          backgroundColor: complete && total > 0 ? "#DCFCE7" : isMissing ? "#FEE2E2" : "#FEF3C7",
-                          color: complete && total > 0 ? "#16A34A" : isMissing ? "#DC2626" : "#D97706",
+                          backgroundColor: complete && total > 0 ? "#ECFDF3" : isMissing ? "#FEE2E2" : "#FFF7E6",
+                          color: complete && total > 0 ? "#15803D" : isMissing ? "#C92E09" : "#B45309",
                           display: "inline-flex",
                           alignItems: "center",
                           gap: "3px",
@@ -479,8 +479,8 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                             justifyContent: "space-between",
                             padding: "0.65rem 0.85rem",
                             borderRadius: "10px",
-                            backgroundColor: isSelected ? "#F0FDF4" : "#FFFFFF",
-                            border: isSelected ? "1.5px solid #86EFAC" : "1px solid #F1F5F9",
+                            backgroundColor: isSelected ? "#ECFDF3" : "#FFFFFF",
+                            border: isSelected ? "1.5px solid #ABEFC6" : "1px solid #F1F5F9",
                             cursor: "pointer",
                             transition: "all 0.15s ease",
                             minHeight: "56px",
@@ -508,7 +508,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                 </div>
                               )}
                               {addPrice > 0 ? (
-                                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#059669", marginTop: "2px" }}>
+                                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#15803D", marginTop: "2px" }}>
                                   + R$ {addPrice.toFixed(2).replace(".", ",")}
                                 </div>
                               ) : (
@@ -534,7 +534,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                 minHeight: "24px",
                                 aspectRatio: "1 / 1",
                                 borderRadius: "50%",
-                                border: isSelected ? "7px solid #10B981" : "2px solid #CBD5E1",
+                                border: isSelected ? "7px solid #15803D" : "2px solid #CBD5E1",
                                 backgroundColor: "#FFFFFF",
                                 flexShrink: 0,
                                 boxSizing: "border-box",
@@ -594,7 +594,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                   padding: 0,
                                   borderRadius: "50%",
                                   border: "none",
-                                  backgroundColor: grupoCheio || qty >= tetoDoItem ? "#E2E8F0" : "#10B981",
+                                  backgroundColor: grupoCheio || qty >= tetoDoItem ? "#E2E8F0" : "#15803D",
                                   color: grupoCheio || qty >= tetoDoItem ? "#94A3B8" : "#FFFFFF",
                                   cursor: grupoCheio || qty >= tetoDoItem ? "not-allowed" : "pointer",
                                   display: "flex",
@@ -624,7 +624,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                 <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
                   📝 Alguma observação?
                 </span>
-                <span style={{ fontSize: "0.72rem", color: notes.length > 120 ? "#DC2626" : "#94A3B8" }}>
+                <span style={{ fontSize: "0.72rem", color: notes.length > 120 ? "#C92E09" : "#94A3B8" }}>
                   {notes.length}/140
                 </span>
               </div>
@@ -736,7 +736,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               borderRadius: "12px",
               border: "none",
               cursor: "pointer",
-              backgroundColor: allComplete ? "#059669" : "#E2E8F0",
+              backgroundColor: allComplete ? "#15803D" : "#E2E8F0",
               color: allComplete ? "#FFFFFF" : "#64748B",
               fontWeight: 800,
               fontSize: "0.95rem",

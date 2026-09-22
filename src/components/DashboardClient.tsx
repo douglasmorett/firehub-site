@@ -32,9 +32,9 @@ const formatDate = (d: string) =>
   new Date(d).toLocaleDateString("pt-BR");
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  PENDING_PAYMENT: { label: "Aguardando Pgto.", color: "#f59e0b" },
-  PAID: { label: "Pago", color: "#10b981" },
-  CANCELLED: { label: "Cancelado", color: "#ef4444" },
+  PENDING_PAYMENT: { label: "Aguardando Pgto.", color: "#B45309" },
+  PAID: { label: "Pago", color: "#15803D" },
+  CANCELLED: { label: "Cancelado", color: "#C92E09" },
 };
 
 export default function DashboardClient({
@@ -100,7 +100,7 @@ export default function DashboardClient({
           value={formatCurrency(asaasData?.received?.value || 0)}
           subtitle={`${asaasData?.received?.count || 0} cobranças pagas`}
           icon={<TrendingUp size={22} />}
-          color="#10b981"
+          color="#15803D"
           bg="rgba(16,185,129,0.1)"
         />
         <StatCard
@@ -108,7 +108,7 @@ export default function DashboardClient({
           value={formatCurrency(asaasData?.pending?.value || 0)}
           subtitle={`${asaasData?.pending?.count || 0} cobranças em aberto`}
           icon={<Clock size={22} />}
-          color="#f59e0b"
+          color="#B45309"
           bg="rgba(245,158,11,0.1)"
         />
         <StatCard
@@ -116,7 +116,7 @@ export default function DashboardClient({
           value={formatCurrency(asaasData?.overdue?.value || 0)}
           subtitle={`${asaasData?.overdue?.count || 0} lojistas inadimplentes`}
           icon={<AlertTriangle size={22} />}
-          color="#ef4444"
+          color="#C92E09"
           bg="rgba(239,68,68,0.1)"
         />
       </div>
@@ -147,7 +147,7 @@ export default function DashboardClient({
           value={formatCurrency(totalPayablesToday)}
           subtitle={overduePayables > 0 ? `⚠️ ${overduePayables} conta(s) atrasada(s)!` : "Sem atrasos"}
           icon={<CalendarCheck size={22} />}
-          color={overduePayables > 0 ? "#ef4444" : "#10b981"}
+          color={overduePayables > 0 ? "#C92E09" : "#15803D"}
           bg={overduePayables > 0 ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)"}
         />
         <StatCard
@@ -155,7 +155,7 @@ export default function DashboardClient({
           value={String(pendingPayables)}
           subtitle="Ainda não pagas"
           icon={<DollarSign size={22} />}
-          color="#f59e0b"
+          color="#B45309"
           bg="rgba(245,158,11,0.1)"
         />
       </div>

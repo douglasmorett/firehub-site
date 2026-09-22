@@ -189,7 +189,7 @@ export default function ProductsClient({ products }: { products: any[] }) {
                   <>
                     <img src={preview} alt="Preview" style={{ maxHeight: "100px", maxWidth: "100%", borderRadius: "8px", objectFit: "contain" }} />
                     {uploading && <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Enviando imagem...</p>}
-                    {uploadedUrl && <p style={{ fontSize: "0.75rem", color: "#10b981" }}>✓ Imagem pronta!</p>}
+                    {uploadedUrl && <p style={{ fontSize: "0.75rem", color: "#15803D" }}>✓ Imagem pronta!</p>}
                   </>
                 ) : (
                   <>
@@ -221,7 +221,7 @@ export default function ProductsClient({ products }: { products: any[] }) {
             <button
               type="submit"
               className="btn btn-primary mt-4"
-              style={{ width: "100%", backgroundColor: editingId ? "#10b981" : undefined }}
+              style={{ width: "100%", backgroundColor: editingId ? "#15803D" : undefined }}
               disabled={submitting || uploading}
             >
               {editingId ? <Save size={18} style={{ marginRight: "0.5rem" }} /> : <Plus size={18} style={{ marginRight: "0.5rem" }} />}

@@ -241,7 +241,7 @@ export default function AmbassadorsTab() {
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <button
             onClick={openPicker}
-            style={{ background: "#F5F3FF", color: "#6D28D9", padding: "8px 16px", borderRadius: "8px", border: "1px solid #DDD6FE", fontWeight: 700, cursor: "pointer" }}
+            style={{ background: "#F8FAFC", color: "#334155", padding: "8px 16px", borderRadius: "8px", border: "1px solid #E2E8F0", fontWeight: 700, cursor: "pointer" }}
           >
             Promover lojista
           </button>
@@ -282,12 +282,12 @@ export default function AmbassadorsTab() {
                     <div>{amb.phone}</div>
                   </td>
                   <td style={{ padding: "12px 16px" }}>
-                    <span style={{ background: "#DCFCE7", color: "#166534", padding: "4px 8px", borderRadius: "6px", fontWeight: 700, fontSize: "0.85rem" }}>
+                    <span style={{ background: "#ECFDF3", color: "#15803D", padding: "4px 8px", borderRadius: "6px", fontWeight: 700, fontSize: "0.85rem" }}>
                       {amb.commissionPercent}% recorrente
                     </span>
-                    {amb.asaasWalletId && <div style={{ fontSize:"0.75rem", color:"#3B82F6", marginTop:4 }}>Asaas Split Ativo</div>}
+                    {amb.asaasWalletId && <div style={{ fontSize:"0.75rem", color:"#1D4ED8", marginTop:4 }}>Asaas Split Ativo</div>}
                     {amb.parentAmbassador && (
-                      <div style={{ fontSize:"0.75rem", color:"#7C3AED", marginTop:4 }}>
+                      <div style={{ fontSize:"0.75rem", color:"#475569", marginTop:4 }}>
                         Indicado por <strong>{amb.parentAmbassador.name}</strong> · leva {amb.parentAmbassador.level2Percent}%
                       </div>
                     )}
@@ -296,15 +296,15 @@ export default function AmbassadorsTab() {
                     {amb._count?.referredStores || 0} lojas
                     <span style={{ marginLeft: 4, fontSize: "0.7rem", color: "#64748B" }}>{expandedId === amb.id ? "▲" : "▼"}</span>
                     {!!amb._count?.subAmbassadors && (
-                      <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#7C3AED", marginTop: 4 }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#475569", marginTop: 4 }}>
                         + {amb._count.subAmbassadors} embaixador{amb._count.subAmbassadors > 1 ? "es" : ""} na rede
                       </div>
                     )}
                   </td>
                   <td style={{ padding: "12px 16px" }}>
                     <span style={{ 
-                      background: amb.active ? "#DCFCE7" : "#FEE2E2", 
-                      color: amb.active ? "#166534" : "#991B1B", 
+                      background: amb.active ? "#ECFDF3" : "#FEE2E2", 
+                      color: amb.active ? "#15803D" : "#B71C1C", 
                       padding: "4px 8px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700 
                     }}>
                       {amb.active ? "Ativo" : "Inativo"}
@@ -313,13 +313,13 @@ export default function AmbassadorsTab() {
                   <td style={{ padding: "12px 16px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <button 
                       onClick={() => copyInviteLink(amb.code)}
-                      style={{ background: copiedCode === amb.code ? "#10B981" : "#F1F5F9", color: copiedCode === amb.code ? "#FFF" : "#334155", border: "1px solid #CBD5E1", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
+                      style={{ background: copiedCode === amb.code ? "#15803D" : "#F1F5F9", color: copiedCode === amb.code ? "#FFF" : "#334155", border: "1px solid #CBD5E1", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
                     >
                       {copiedCode === amb.code ? "Copiado!" : "Copiar Link"}
                     </button>
                     <button 
                       onClick={() => openEditModal(amb)}
-                      style={{ background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
+                      style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #B2DDFF", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
                     >
                       Editar
                     </button>
@@ -336,21 +336,21 @@ export default function AmbassadorsTab() {
                     <td colSpan={6} style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0" }}>
                       {(amb.subAmbassadors?.length ?? 0) > 0 && (
                         <div style={{ marginBottom: "16px" }}>
-                          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#5B21B6", marginBottom: "8px" }}>
+                          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>
                             Rede — nível 2 ({amb.level2Percent ?? 3}% das lojas destes embaixadores):
                           </div>
                           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                             {amb.subAmbassadors!.map((sub) => (
-                              <div key={sub.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFF", padding: "10px 16px", borderRadius: "8px", border: "1px solid #DDD6FE" }}>
+                              <div key={sub.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFF", padding: "10px 16px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                                 <div>
                                   <div style={{ fontWeight: 600, color: "#334155" }}>
-                                    {sub.name} {!sub.active && <span style={{ fontSize: "0.7rem", color: "#991B1B" }}>(inativo)</span>}
+                                    {sub.name} {!sub.active && <span style={{ fontSize: "0.7rem", color: "#B71C1C" }}>(inativo)</span>}
                                   </div>
                                   <div style={{ fontSize: "0.75rem", color: "#64748B" }}>
-                                    Código: <strong style={{ color: "#7C3AED" }}>{sub.code}</strong> · leva {sub.commissionPercent}% das lojas dele
+                                    Código: <strong style={{ color: "#475569" }}>{sub.code}</strong> · leva {sub.commissionPercent}% das lojas dele
                                   </div>
                                 </div>
-                                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#5B21B6" }}>
+                                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#334155" }}>
                                   {sub._count?.referredStores || 0} lojas
                                 </span>
                               </div>
@@ -368,13 +368,13 @@ export default function AmbassadorsTab() {
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                               {store.ambassadorAccount ? (
-                                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#5B21B6", background: "#F5F3FF", border: "1px solid #DDD6FE", padding: "4px 10px", borderRadius: "6px" }}>
+                                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155", background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "4px 10px", borderRadius: "6px" }}>
                                   Embaixador · {store.ambassadorAccount.code}
                                 </span>
                               ) : (
                                 <button
                                   onClick={() => openPromoteModal(store, amb)}
-                                  style={{ background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE", padding: "4px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "0.75rem", fontWeight: 700 }}
+                                  style={{ background: "#F8FAFC", color: "#334155", border: "1px solid #E2E8F0", padding: "4px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "0.75rem", fontWeight: 700 }}
                                 >
                                   Promover a embaixador
                                 </button>
@@ -455,8 +455,8 @@ export default function AmbassadorsTab() {
                 </p>
               </div>
 
-              <div style={{ background: "#F5F3FF", padding: "12px", borderRadius: "8px", border: "1px solid #DDD6FE" }}>
-                <h4 style={{ fontSize: "0.9rem", fontWeight: 700, color: "#5B21B6", marginBottom: "10px" }}>Rede (nível 2)</h4>
+              <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                <h4 style={{ fontSize: "0.9rem", fontWeight: 700, color: "#334155", marginBottom: "10px" }}>Rede (nível 2)</h4>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 100px", gap: "12px", alignItems: "end" }}>
                   <div>
@@ -554,7 +554,7 @@ export default function AmbassadorsTab() {
           <div style={{ background: "#FFF", width: "100%", maxWidth: "520px", borderRadius: "12px", padding: "24px", boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
             {promoteResult ? (
               <>
-                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: "8px", color: "#166534" }}>
+                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: "8px", color: "#15803D" }}>
                   {promoteResult.nome} agora é embaixador
                 </h3>
                 <p style={{ fontSize: "0.85rem", color: "#475569", marginBottom: "16px", lineHeight: 1.5 }}>
@@ -575,7 +575,7 @@ export default function AmbassadorsTab() {
                   <div>
                     <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>SENHA TEMPORÁRIA</div>
                     <div style={{ fontSize: "1rem", fontWeight: 800, color: "#EA1D2C", letterSpacing: "1px" }}>{promoteResult.senha}</div>
-                    <div style={{ fontSize: "0.75rem", color: "#B91C1C", marginTop: 4 }}>
+                    <div style={{ fontSize: "0.75rem", color: "#B71C1C", marginTop: 4 }}>
                       Anote agora — esta senha não aparece de novo em lugar nenhum.
                     </div>
                   </div>
@@ -640,7 +640,7 @@ Seu link: ${promoteResult.link}`); }}
 
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
                   <button type="button" onClick={() => setPromoteStore(null)} style={{ padding: "8px 16px", border: "1px solid #CBD5E1", background: "#FFF", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-                  <button type="submit" disabled={promoting} style={{ padding: "8px 16px", border: "none", background: promoting ? "#94A3B8" : "#6D28D9", color: "#FFF", borderRadius: "6px", cursor: promoting ? "default" : "pointer", fontWeight: 700 }}>
+                  <button type="submit" disabled={promoting} style={{ padding: "8px 16px", border: "none", background: promoting ? "#94A3B8" : "#334155", color: "#FFF", borderRadius: "6px", cursor: promoting ? "default" : "pointer", fontWeight: 700 }}>
                     {promoting ? "Promovendo..." : "Promover"}
                   </button>
                 </div>

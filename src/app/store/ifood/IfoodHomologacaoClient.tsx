@@ -172,14 +172,14 @@ export default function IfoodHomologacaoClient({
       </div>
 
       {/* ── CARD: Status da Integração iFood ── */}
-      <div style={{ background: connStatus === "ok" ? "#F0FDF4" : "#fff", border: `1.5px solid ${connStatus === "ok" ? "#BBF7D0" : "#E2E8F0"}`, borderRadius: 16, marginBottom: "1.25rem", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+      <div style={{ background: connStatus === "ok" ? "#ECFDF3" : "#fff", border: `1.5px solid ${connStatus === "ok" ? "#ABEFC6" : "#E2E8F0"}`, borderRadius: 16, marginBottom: "1.25rem", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
         {/* Card header */}
         <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: "1.2rem" }}>
             {connStatus === "loading" ? "⏳" : connStatus === "ok" ? "✅" : "🔗"}
           </span>
           <div>
-            <p style={{ margin: 0, fontWeight: 800, fontSize: "0.95rem", color: connStatus === "ok" ? "#16A34A" : "#0F172A" }}>
+            <p style={{ margin: 0, fontWeight: 800, fontSize: "0.95rem", color: connStatus === "ok" ? "#15803D" : "#0F172A" }}>
               {connStatus === "loading" ? "Verificando integração..." :
                connStatus === "ok" ? `${connData?.storeName || "Loja iFood"}` :
                "Nenhuma loja conectada"}
@@ -194,15 +194,15 @@ export default function IfoodHomologacaoClient({
           {/* Só mostra botão de reconectar se já conectado (discreto) ou botão integrar se não */}
           {connStatus === "ok" ? (
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={() => testConnection(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #BBF7D0", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#16A34A", fontFamily: "inherit" }}>
+              <button onClick={() => testConnection(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #ABEFC6", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#15803D", fontFamily: "inherit" }}>
                 <RefreshCw size={11} /> Reconectar
               </button>
-              <button onClick={disconnectStore} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #FECACA", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#DC2626", fontFamily: "inherit" }}>
+              <button onClick={disconnectStore} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "transparent", border: "1px solid #FECACA", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: "0.72rem", color: "#C92E09", fontFamily: "inherit" }}>
                 <Trash2 size={11} /> Desconectar
               </button>
             </div>
           ) : connStatus !== "loading" ? (
-            <button onClick={() => testConnection(true)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit" }}>
+            <button onClick={() => testConnection(true)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "linear-gradient(135deg,#E8360C,#C92E09)", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit" }}>
               <ExternalLink size={14} /> Conectar conta iFood
             </button>
           ) : null}
@@ -213,7 +213,7 @@ export default function IfoodHomologacaoClient({
           <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
 
             {/* Banner: app centralizado — aguardando homologação completa */}
-            <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "14px 16px", display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "14px 16px", display: "flex", gap: 12, alignItems: "flex-start" }}>
               <span style={{ fontSize: "1.2rem", flexShrink: 0, marginTop: 1 }}>⚠️</span>
               <div>
                 <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: "0.85rem", color: "#92400E" }}>App iFood aguardando homologação completa</p>
@@ -226,7 +226,7 @@ export default function IfoodHomologacaoClient({
 
             {/* Passo 1 */}
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", fontWeight: 900, fontSize: "0.88rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(232,54,12,0.3)" }}>1</div>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#E8360C,#C92E09)", color: "#fff", fontWeight: 900, fontSize: "0.88rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(232,54,12,0.3)" }}>1</div>
               <div style={{ flex: 1 }}>
                 <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>Solicite o acesso à loja no Portal do Desenvolvedor</p>
                 <p style={{ margin: "0 0 10px", fontSize: "0.79rem", color: "#64748B", lineHeight: 1.6 }}>
@@ -236,7 +236,7 @@ export default function IfoodHomologacaoClient({
                   href="https://developer.ifood.com.br"
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 20px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", borderRadius: 12, textDecoration: "none", fontWeight: 800, fontSize: "0.88rem", boxShadow: "0 4px 14px rgba(232,54,12,0.28)" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 20px", background: "linear-gradient(135deg,#E8360C,#C92E09)", color: "#fff", borderRadius: 12, textDecoration: "none", fontWeight: 800, fontSize: "0.88rem", boxShadow: "0 4px 14px rgba(232,54,12,0.28)" }}
                 >
                   <ExternalLink size={16} /> Abrir Portal do Desenvolvedor
                 </a>
@@ -248,7 +248,7 @@ export default function IfoodHomologacaoClient({
 
             {/* Passo 2 */}
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#16A34A,#15803D)", color: "#fff", fontWeight: 900, fontSize: "0.88rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(22,163,74,0.3)" }}>2</div>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#15803D,#15803D)", color: "#fff", fontWeight: 900, fontSize: "0.88rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px rgba(22,163,74,0.3)" }}>2</div>
               <div style={{ flex: 1 }}>
                 <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>Após aprovação, cole o ID da loja e conecte</p>
                 <p style={{ margin: "0 0 10px", fontSize: "0.79rem", color: "#64748B" }}>
@@ -262,19 +262,19 @@ export default function IfoodHomologacaoClient({
                     onChange={(e) => setDirectId(e.target.value)}
                     disabled={directLoading}
                     style={{ flex: 1, minWidth: 200, padding: "11px 14px", border: "1.5px solid #E2E8F0", borderRadius: 12, fontSize: "0.85rem", fontFamily: "monospace", outline: "none" }}
-                    onFocus={(e) => (e.target.style.borderColor = "#16A34A")}
+                    onFocus={(e) => (e.target.style.borderColor = "#15803D")}
                     onBlur={(e) => (e.target.style.borderColor = "#E2E8F0")}
                   />
                   <button
                     onClick={linkDirectMerchantId}
                     disabled={directLoading || !directId.trim()}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 22px", background: directLoading || !directId.trim() ? "#E2E8F0" : "linear-gradient(135deg,#16A34A,#15803D)", color: directLoading || !directId.trim() ? "#94A3B8" : "#fff", border: "none", borderRadius: 12, fontWeight: 800, fontSize: "0.88rem", cursor: directLoading || !directId.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: directLoading || !directId.trim() ? "none" : "0 4px 14px rgba(22,163,74,0.28)", transition: "all 0.2s" }}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 22px", background: directLoading || !directId.trim() ? "#E2E8F0" : "linear-gradient(135deg,#15803D,#15803D)", color: directLoading || !directId.trim() ? "#94A3B8" : "#fff", border: "none", borderRadius: 12, fontWeight: 800, fontSize: "0.88rem", cursor: directLoading || !directId.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: directLoading || !directId.trim() ? "none" : "0 4px 14px rgba(22,163,74,0.28)", transition: "all 0.2s" }}
                   >
                     {directLoading ? <><Loader size={14} /> Conectando...</> : <><CheckCircle size={14} /> Conectar loja</>}
                   </button>
                 </div>
                 {directError && (
-                  <div style={{ marginTop: 10, padding: "10px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, fontSize: "0.78rem", color: "#DC2626", fontWeight: 600, lineHeight: 1.5 }}>
+                  <div style={{ marginTop: 10, padding: "10px 14px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, fontSize: "0.78rem", color: "#C92E09", fontWeight: 600, lineHeight: 1.5 }}>
                     ⚠️ {directError}
                   </div>
                 )}
@@ -291,7 +291,7 @@ export default function IfoodHomologacaoClient({
       {connStatus === "ok" && (
         <>
           <div style={{ marginBottom: "1.25rem", border: "1.5px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
-            <div style={{ padding: "0.75rem 1.25rem", background: "linear-gradient(135deg, #FFF7ED, #FEF3C7)", borderBottom: "1px solid #FDE68A", display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ padding: "0.75rem 1.25rem", background: "linear-gradient(135deg, #FFF7ED, #FFF7E6)", borderBottom: "1px solid #FDE68A", display: "flex", alignItems: "flex-start", gap: 10 }}>
               <span style={{ fontSize: "1.1rem", flexShrink: 0 }}>💡</span>
               <div>
                 <p style={{ margin: 0, fontWeight: 700, fontSize: "0.82rem", color: "#92400E" }}>
@@ -307,7 +307,7 @@ export default function IfoodHomologacaoClient({
                 <p style={{ margin: 0, fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>Integrar nova loja ao iFood</p>
                 <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748B" }}>Conecte outra conta iFood ao FireHub</p>
               </div>
-              <button onClick={() => { setShowModal(true); setGenCode(null); setGenError(""); }} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+              <button onClick={() => { setShowModal(true); setGenCode(null); setGenError(""); }} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: "linear-gradient(135deg,#E8360C,#C92E09)", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
                 + Integrar nova loja
               </button>
             </div>
@@ -328,7 +328,7 @@ export default function IfoodHomologacaoClient({
                     <div style={{ flex: 1 }}>
                       <p style={{ margin: "0 0 0.5rem", fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>Gere o código de ativação</p>
                       <p style={{ margin: "0 0 0.75rem", fontSize: "0.78rem", color: "#64748B" }}>Clique abaixo para gerar o código de 8 dígitos e insira no Portal do Parceiro iFood.</p>
-                      <button onClick={() => generateActivationCode("producao")} disabled={genLoading} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: "linear-gradient(135deg,#E8360C,#C62828)", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit", opacity: genLoading ? 0.7 : 1 }}>
+                      <button onClick={() => generateActivationCode("producao")} disabled={genLoading} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: "linear-gradient(135deg,#E8360C,#C92E09)", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit", opacity: genLoading ? 0.7 : 1 }}>
                         {genLoading ? <><Loader size={15} /> Gerando...</> : "🔑 Gerar Código de Ativação"}
                       </button>
                       {/* A homologação tem que ser gravada com o APLICATIVO DE TESTE.
@@ -347,7 +347,7 @@ export default function IfoodHomologacaoClient({
                       >
                         🧪 Código para a loja de teste
                       </button>
-                      {genError && <p style={{ margin: "0.5rem 0 0", fontSize: "0.78rem", color: "#DC2626", fontWeight: 700 }}>⚠️ {genError}</p>}
+                      {genError && <p style={{ margin: "0.5rem 0 0", fontSize: "0.78rem", color: "#C92E09", fontWeight: 700 }}>⚠️ {genError}</p>}
                       {genCode && (
                         <div style={{ marginTop: "0.75rem", background: "#FFF5F3", border: "2px solid #E8360C", borderRadius: 12, padding: "1rem 1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                           <div>
@@ -374,10 +374,10 @@ export default function IfoodHomologacaoClient({
                   </div>
                   {/* Passo 3 */}
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 14, opacity: genCode ? 1 : 0.4 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: genCode ? "#16A34A" : "#CBD5E1", color: "#fff", fontWeight: 900, fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>3</div>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: genCode ? "#15803D" : "#CBD5E1", color: "#fff", fontWeight: 900, fontSize: "0.85rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>3</div>
                     <div style={{ flex: 1 }}>
                       <p style={{ margin: "0 0 0.5rem", fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>Confirme a conexão</p>
-                      <button onClick={() => { testConnection(true); setShowModal(false); }} disabled={!genCode} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: genCode ? "#16A34A" : "#CBD5E1", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: genCode ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+                      <button onClick={() => { testConnection(true); setShowModal(false); }} disabled={!genCode} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", background: genCode ? "#15803D" : "#CBD5E1", color: "#fff", border: "none", borderRadius: 10, fontWeight: 800, fontSize: "0.88rem", cursor: genCode ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
                         <CheckCircle size={15} /> Já conectei — Verificar
                       </button>
                     </div>
@@ -393,7 +393,7 @@ export default function IfoodHomologacaoClient({
           "pedir acesso no Portal do Desenvolvedor" muda o que se deve fazer. */}
       {connStatus === "ok" && connData?.moduloMerchant?.aviso && (
         <div style={{
-          background: "#FFFBEB", border: "1.5px solid #FDE68A", color: "#92400E",
+          background: "#FFF7E6", border: "1.5px solid #FDE68A", color: "#92400E",
           borderRadius: 12, padding: "12px 15px", marginBottom: "1rem", fontSize: "0.86rem", lineHeight: 1.5,
         }}>
           <strong style={{ display: "block", marginBottom: 3 }}>
@@ -518,7 +518,7 @@ function TabLoja() {
           const isAvailable = entries.some((s: any) => s.available === true);
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", borderRadius: 20, background: isAvailable ? "#DCFCE7" : "#FEE2E2", color: isAvailable ? "#16A34A" : "#DC2626", fontWeight: 800, fontSize: "0.95rem", alignSelf: "flex-start" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", borderRadius: 20, background: isAvailable ? "#ECFDF3" : "#FEE2E2", color: isAvailable ? "#15803D" : "#C92E09", fontWeight: 800, fontSize: "0.95rem", alignSelf: "flex-start" }}>
                 {isAvailable ? "✅ LOJA DISPONÍVEL" : "🔴 LOJA INDISPONÍVEL"}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -623,16 +623,16 @@ function TabPausas() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
             <div>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Descrição</label>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Descrição</label>
               <input style={inp} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ex: Pausa para manutenção" />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Início</label>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Início</label>
                 <input type="datetime-local" style={inp} value={start} onChange={e => setStart(e.target.value)} />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Fim</label>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Fim</label>
                 <input type="datetime-local" style={inp} value={end} onChange={e => setEnd(e.target.value)} />
               </div>
             </div>
@@ -670,7 +670,7 @@ function TabPausas() {
             <button
               onClick={() => removePausa(p.id)}
               disabled={removing === p.id}
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", background: "#DC2626", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", opacity: removing === p.id ? 0.6 : 1 }}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", background: "#C92E09", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", opacity: removing === p.id ? 0.6 : 1 }}
             >
               {removing === p.id ? <Loader size={13} /> : <Trash2 size={13} />}
               {removing === p.id ? "Removendo..." : "Remover"}
@@ -774,11 +774,11 @@ function TabHorarios() {
         {!loading && current && (
           <div style={{ marginTop: "0.75rem" }}>
             {(Array.isArray(current) ? current : current?.openingHours ?? []).map((d: any, i: number) => (
-              <div key={i} style={{ padding: "10px 14px", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, marginBottom: 6 }}>
+              <div key={i} style={{ padding: "10px 14px", background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: 10, marginBottom: 6 }}>
                 <strong style={{ fontSize: "0.88rem", color: "#0F172A" }}>{DAYS_PT[d.dayOfWeek] || d.dayOfWeek}</strong>
                 <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {(d.shifts ?? []).map((s: any, j: number) => (
-                    <span key={j} style={{ padding: "3px 10px", background: "#DCFCE7", color: "#16A34A", borderRadius: 20, fontSize: "0.78rem", fontWeight: 700 }}>
+                    <span key={j} style={{ padding: "3px 10px", background: "#ECFDF3", color: "#15803D", borderRadius: 20, fontSize: "0.78rem", fontWeight: 700 }}>
                       {s.start} → {durationToEnd(s.start, s.duration)}
                     </span>
                   ))}
@@ -864,8 +864,8 @@ function IfoodLiveCheck({ type, triggerAfterAction }: { type: "pausas" | "horari
               const cor = semDado
                 ? { bg: "#F1F5F9", fg: "#475569", txt: "⚪ DISPONIBILIDADE NÃO INFORMADA" }
                 : aberta
-                  ? { bg: "#DCFCE7", fg: "#16A34A", txt: "🟢 LOJA ABERTA" }
-                  : { bg: "#FEE2E2", fg: "#DC2626", txt: "🔴 LOJA FECHADA/PAUSADA" };
+                  ? { bg: "#ECFDF3", fg: "#15803D", txt: "🟢 LOJA ABERTA" }
+                  : { bg: "#FEE2E2", fg: "#C92E09", txt: "🔴 LOJA FECHADA/PAUSADA" };
               return (
                 <span style={{ padding: "5px 14px", borderRadius: 20, fontWeight: 800, fontSize: "0.85rem", background: cor.bg, color: cor.fg }}>
                   {cor.txt}
@@ -877,14 +877,14 @@ function IfoodLiveCheck({ type, triggerAfterAction }: { type: "pausas" | "horari
           <p style={{ margin: "0 0 0.5rem", fontSize: "0.78rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Pausas ativas no iFood</p>
           {Array.isArray(data.interruptions) && data.interruptions.length > 0 ? (
             data.interruptions.map((i: any, idx: number) => (
-              <div key={idx} style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, marginBottom: 6, border: "1px solid #F59E0B" }}>
+              <div key={idx} style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, marginBottom: 6, border: "1px solid #B45309" }}>
                 <p style={{ margin: 0, fontWeight: 700, color: "#FCD34D", fontSize: "0.88rem" }}>⏸ {i.description ?? "Pausa"}</p>
                 {(i.start || i.startTime) && <p style={{ margin: "3px 0 0", fontSize: "0.75rem", color: "#94A3B8" }}>{i.start ?? i.startTime} → {i.end ?? i.endTime}</p>}
                 <p style={{ margin: "3px 0 0", fontSize: "0.68rem", color: "#475569", fontFamily: "monospace" }}>ID: {i.id}</p>
               </div>
             ))
           ) : (
-            <div style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, color: "#22C55E", fontWeight: 700, fontSize: "0.85rem" }}>✅ Nenhuma pausa ativa — loja disponível</div>
+            <div style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, color: "#15803D", fontWeight: 700, fontSize: "0.85rem" }}>✅ Nenhuma pausa ativa — loja disponível</div>
           )}
         </div>
       )}
@@ -897,11 +897,11 @@ function IfoodLiveCheck({ type, triggerAfterAction }: { type: "pausas" | "horari
             <p style={{ margin: "0 0 0.5rem", fontSize: "0.78rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Horários de funcionamento no iFood</p>
             {hours.length === 0 && <div style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, color: "#94A3B8", fontSize: "0.85rem" }}>Nenhum horário cadastrado</div>}
             {hours.map((h: any, i: number) => (
-              <div key={i} style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, marginBottom: 6, border: "1px solid #3B82F6" }}>
-                <p style={{ margin: 0, fontWeight: 800, color: "#93C5FD", fontSize: "0.88rem" }}>{DAYS_PT[h.dayOfWeek] || h.dayOfWeek}</p>
+              <div key={i} style={{ padding: "10px 14px", background: "#1E293B", borderRadius: 10, marginBottom: 6, border: "1px solid #1D4ED8" }}>
+                <p style={{ margin: 0, fontWeight: 800, color: "#B2DDFF", fontSize: "0.88rem" }}>{DAYS_PT[h.dayOfWeek] || h.dayOfWeek}</p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 5 }}>
                   {(h.shifts ?? []).map((s: any, j: number) => (
-                    <span key={j} style={{ padding: "3px 10px", background: "#1D4ED8", color: "#BFDBFE", borderRadius: 20, fontSize: "0.78rem", fontWeight: 700 }}>
+                    <span key={j} style={{ padding: "3px 10px", background: "#1D4ED8", color: "#B2DDFF", borderRadius: 20, fontSize: "0.78rem", fontWeight: 700 }}>
                       🕐 {s.start} → {durationToEnd(s.start, s.duration)}
                     </span>
                   ))}
@@ -956,7 +956,7 @@ function TabWidget({ currentWidgetId }: { currentWidgetId?: string }) {
           Cole aqui o <strong>widgetId</strong> do chat integrado do iFood. Ele aparecerá como opção de contato no cardápio online da sua loja.
         </p>
         <div style={{ marginBottom: "0.75rem" }}>
-          <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Widget ID</label>
+          <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Widget ID</label>
           <input
             style={inp}
             value={widgetId}
@@ -980,7 +980,7 @@ function TabWidget({ currentWidgetId }: { currentWidgetId?: string }) {
       </SectionCard>
 
       <SectionCard title="Como obter o Widget ID" emoji="📖">
-        <div style={{ fontSize: "0.82rem", color: "#374151", lineHeight: 1.7 }}>
+        <div style={{ fontSize: "0.82rem", color: "#334155", lineHeight: 1.7 }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: "0.75rem" }}>
             <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#E8360C", color: "#fff", fontWeight: 900, fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>1</div>
             <span>Acesse o <a href="https://portal.ifood.com.br" target="_blank" rel="noopener noreferrer" style={{ color: "#E8360C", fontWeight: 700 }}>Portal do Parceiro iFood</a> → <strong>Developer Portal</strong> → <strong>Widgets</strong></span>
@@ -994,7 +994,7 @@ function TabWidget({ currentWidgetId }: { currentWidgetId?: string }) {
             <span>Clique em <strong>"Embedding Code"</strong> (Código de Incorporação)</span>
           </div>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: "0.75rem" }}>
-            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#16A34A", color: "#fff", fontWeight: 900, fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>4</div>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#15803D", color: "#fff", fontWeight: 900, fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>4</div>
             <span>Copie o <strong>widgetId</strong> do código gerado e cole no campo acima</span>
           </div>
           <div style={{ padding: "10px 14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, marginTop: "0.5rem" }}>
@@ -1042,8 +1042,8 @@ function LoadingBox() {
   return <div style={{ textAlign: "center", color: "#94A3B8", padding: "1.5rem", fontSize: "0.85rem" }}>⏳ Carregando...</div>;
 }
 function ErrorBox({ msg }: { msg: string }) {
-  return <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", padding: "10px 14px", borderRadius: 10, fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.75rem" }}>⚠️ {msg}</div>;
+  return <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#C92E09", padding: "10px 14px", borderRadius: 10, fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.75rem" }}>⚠️ {msg}</div>;
 }
 function SuccessBox({ msg }: { msg: string }) {
-  return <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#16A34A", padding: "10px 14px", borderRadius: 10, fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.75rem" }}>{msg}</div>;
+  return <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", color: "#15803D", padding: "10px 14px", borderRadius: 10, fontSize: "0.85rem", fontWeight: 700, marginBottom: "0.75rem" }}>{msg}</div>;
 }

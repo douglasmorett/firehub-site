@@ -118,7 +118,7 @@ export default function AmbassadorDashboard({
           transition: all 0.2s ease;
         }
         .amb-filter-pill:hover {
-          border-color: #DC2626 !important;
+          border-color: #C92E09 !important;
         }
       `}</style>
 
@@ -141,12 +141,12 @@ export default function AmbassadorDashboard({
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontWeight: 900, fontSize: "1.25rem", letterSpacing: "-0.5px" }}>
-                <span style={{ color: "#DC2626" }}>FIRE</span><span style={{ color: "#0F172A" }}>HUB</span>
+                <span style={{ color: "#C92E09" }}>FIRE</span><span style={{ color: "#0F172A" }}>HUB</span>
               </span>
               <span
                 style={{
                   background: "#FEF2F2",
-                  color: "#DC2626",
+                  color: "#C92E09",
                   border: "1px solid #FECACA",
                   padding: "3px 8px",
                   borderRadius: "6px",
@@ -165,7 +165,7 @@ export default function AmbassadorDashboard({
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F1F5F9", padding: "6px 14px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
             <span style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>Comissão:</span>
-            <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#059669" }}>{ambassador.commissionPercent}% Recorrente</span>
+            <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#15803D" }}>{ambassador.commissionPercent}% Recorrente</span>
           </div>
 
           <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#475569" }}>
@@ -210,11 +210,11 @@ export default function AmbassadorDashboard({
               <span style={{ color: "#64748B", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                 💰 Seu Lucro no Mês
               </span>
-              <span style={{ background: "#ECFDF5", color: "#059669", border: "1px solid #A7F3D0", padding: "3px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
+              <span style={{ background: "#ECFDF5", color: "#15803D", border: "1px solid #A7F3D0", padding: "3px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
                 {ambassador.commissionPercent}%
               </span>
             </div>
-            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: currentMonthIncome > 0 ? "#059669" : "#0F172A", letterSpacing: "-0.5px" }}>
+            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: currentMonthIncome > 0 ? "#15803D" : "#0F172A", letterSpacing: "-0.5px" }}>
               {formatBRL(currentMonthIncome)}
             </div>
             <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6 }}>
@@ -231,8 +231,8 @@ export default function AmbassadorDashboard({
               {stores.length}
             </div>
             <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6, display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <span style={{ color: "#059669", fontWeight: 700 }}>● {activeCount} ativa{activeCount !== 1 ? "s" : ""}</span>
-              <span style={{ color: "#D97706", fontWeight: 700 }}>● {trialCount} em teste</span>
+              <span style={{ color: "#15803D", fontWeight: 700 }}>● {activeCount} ativa{activeCount !== 1 ? "s" : ""}</span>
+              <span style={{ color: "#B45309", fontWeight: 700 }}>● {trialCount} em teste</span>
               <span style={{ color: "#475569", fontWeight: 700 }}>● {inactiveCount} inativa{inactiveCount !== 1 ? "s" : ""}</span>
             </div>
           </div>
@@ -242,7 +242,7 @@ export default function AmbassadorDashboard({
             <div style={{ color: "#64748B", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
               📈 Faturamento das Lojas (Mês)
             </div>
-            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: "#2563EB", letterSpacing: "-0.5px" }}>
+            <div style={{ fontSize: "2.1rem", fontWeight: 900, color: "#1D4ED8", letterSpacing: "-0.5px" }}>
               {formatBRL(totalPortfolioSales)}
             </div>
             <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6 }}>
@@ -252,16 +252,16 @@ export default function AmbassadorDashboard({
 
           {/* Card da Rede (nível 2) — só aparece para quem trouxe embaixadores */}
           {temRede && (
-            <div style={{ background: "#FFFFFF", border: "1.5px solid #DDD6FE", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(109,40,217,0.06)" }}>
+            <div style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(109,40,217,0.06)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ color: "#64748B", fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   🌐 Sua Rede
                 </span>
-                <span style={{ background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE", padding: "3px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
+                <span style={{ background: "#F8FAFC", color: "#334155", border: "1px solid #E2E8F0", padding: "3px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
                   {network!.level2Percent}%
                 </span>
               </div>
-              <div style={{ fontSize: "2.1rem", fontWeight: 900, color: network!.monthIncome > 0 ? "#6D28D9" : "#0F172A", letterSpacing: "-0.5px" }}>
+              <div style={{ fontSize: "2.1rem", fontWeight: 900, color: network!.monthIncome > 0 ? "#334155" : "#0F172A", letterSpacing: "-0.5px" }}>
                 {formatBRL(network!.monthIncome)}
               </div>
               <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6 }}>
@@ -271,13 +271,13 @@ export default function AmbassadorDashboard({
           )}
 
           {/* Card 4: Link de Convite Oficial */}
-          <div style={{ background: "#FFFFFF", border: "2px solid #DC2626", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(220,38,38,0.08)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div style={{ background: "#FFFFFF", border: "2px solid #C92E09", padding: "22px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(220,38,38,0.08)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ color: "#DC2626", fontSize: "0.82rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                <span style={{ color: "#C92E09", fontSize: "0.82rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   🔗 Seu Link de Indicação
                 </span>
-                <span style={{ background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "2px 8px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 800 }}>
+                <span style={{ background: "#FEF2F2", color: "#C92E09", border: "1px solid #FECACA", padding: "2px 8px", borderRadius: "4px", fontSize: "0.72rem", fontWeight: 800 }}>
                   {ambassador.code}
                 </span>
               </div>
@@ -291,7 +291,7 @@ export default function AmbassadorDashboard({
               style={{
                 width: "100%",
                 padding: "12px",
-                background: copied ? "#059669" : "linear-gradient(135deg, #DC2626, #B91C1C)",
+                background: copied ? "#15803D" : "linear-gradient(135deg, #C92E09, #B71C1C)",
                 color: "#FFF",
                 border: "none",
                 borderRadius: "10px",
@@ -313,24 +313,24 @@ export default function AmbassadorDashboard({
 
         {/* REDE — NÍVEL 2 */}
         {temRede && (
-          <div style={{ background: "#FFFFFF", border: "1.5px solid #DDD6FE", borderRadius: "14px", padding: "20px 24px", marginBottom: "28px" }}>
+          <div style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", borderRadius: "14px", padding: "20px 24px", marginBottom: "28px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <strong style={{ fontSize: "0.98rem", color: "#5B21B6" }}>🌐 Embaixadores que você trouxe</strong>
+              <strong style={{ fontSize: "0.98rem", color: "#334155" }}>🌐 Embaixadores que você trouxe</strong>
               <span style={{ fontSize: "0.82rem", color: "#64748B" }}>
                 você recebe {network!.level2Percent}% da mensalidade das lojas deles — e para por aqui
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {network!.ambassadors.map((sub) => (
-                <div key={sub.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#FAFAFF", border: "1px solid #EDE9FE", borderRadius: "10px", padding: "12px 16px" }}>
+                <div key={sub.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#FAFAFF", border: "1px solid #F1F5F9", borderRadius: "10px", padding: "12px 16px" }}>
                   <div>
                     <div style={{ fontWeight: 800, color: "#0F172A" }}>{sub.name}</div>
                     <div style={{ fontSize: "0.78rem", color: "#64748B" }}>
-                      Código <strong style={{ color: "#6D28D9" }}>{sub.code}</strong> · {sub.storesCount} loja{sub.storesCount !== 1 ? "s" : ""} ({sub.activeStores} ativa{sub.activeStores !== 1 ? "s" : ""}) · {formatBRL(sub.monthSales)} em vendas no mês
+                      Código <strong style={{ color: "#334155" }}>{sub.code}</strong> · {sub.storesCount} loja{sub.storesCount !== 1 ? "s" : ""} ({sub.activeStores} ativa{sub.activeStores !== 1 ? "s" : ""}) · {formatBRL(sub.monthSales)} em vendas no mês
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "1.1rem", fontWeight: 900, color: sub.monthIncome > 0 ? "#6D28D9" : "#94A3B8" }}>
+                    <div style={{ fontSize: "1.1rem", fontWeight: 900, color: sub.monthIncome > 0 ? "#334155" : "#94A3B8" }}>
                       {formatBRL(sub.monthIncome)}
                     </div>
                     <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>seu no mês</div>
@@ -345,7 +345,7 @@ export default function AmbassadorDashboard({
         <div
           style={{
             background: "#EFF6FF",
-            border: "1.5px solid #BFDBFE",
+            border: "1.5px solid #B2DDFF",
             borderRadius: "14px",
             padding: "20px 24px",
             marginBottom: "28px",
@@ -359,11 +359,11 @@ export default function AmbassadorDashboard({
           <div style={{ maxWidth: 750 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <span style={{ fontSize: "1.1rem" }}>💡</span>
-              <strong style={{ fontSize: "0.98rem", color: "#1E3A8A" }}>
+              <strong style={{ fontSize: "0.98rem", color: "#1D4ED8" }}>
                 Apresentando o FireHub para novos clientes?
               </strong>
             </div>
-            <p style={{ fontSize: "0.85rem", color: "#1E40AF", margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: "0.85rem", color: "#1D4ED8", margin: 0, lineHeight: 1.5 }}>
               Mostre a agilidade do cardápio digital, o painel do garçom e o fechamento automático de caixa. Para cadastrar um novo cliente, envie sempre o seu link com <strong>15 dias de teste grátis</strong> para vinculá-lo automaticamente à sua carteira de comissões.
             </p>
           </div>
@@ -375,7 +375,7 @@ export default function AmbassadorDashboard({
               rel="noopener noreferrer"
               style={{
                 background: "#FFFFFF",
-                border: "1.5px solid #93C5FD",
+                border: "1.5px solid #B2DDFF",
                 color: "#1D4ED8",
                 padding: "10px 18px",
                 borderRadius: "8px",
@@ -447,8 +447,8 @@ export default function AmbassadorDashboard({
                   onClick={() => setStatusFilter("ACTIVE")}
                   className="amb-filter-pill"
                   style={{
-                    background: statusFilter === "ACTIVE" ? "#059669" : "transparent",
-                    color: statusFilter === "ACTIVE" ? "#FFFFFF" : "#059669",
+                    background: statusFilter === "ACTIVE" ? "#15803D" : "transparent",
+                    color: statusFilter === "ACTIVE" ? "#FFFFFF" : "#15803D",
                     border: "none",
                     padding: "6px 12px",
                     borderRadius: "6px",
@@ -462,8 +462,8 @@ export default function AmbassadorDashboard({
                   onClick={() => setStatusFilter("TRIAL")}
                   className="amb-filter-pill"
                   style={{
-                    background: statusFilter === "TRIAL" ? "#D97706" : "transparent",
-                    color: statusFilter === "TRIAL" ? "#FFFFFF" : "#D97706",
+                    background: statusFilter === "TRIAL" ? "#B45309" : "transparent",
+                    color: statusFilter === "TRIAL" ? "#FFFFFF" : "#B45309",
                     border: "none",
                     padding: "6px 12px",
                     borderRadius: "6px",
@@ -508,7 +508,7 @@ export default function AmbassadorDashboard({
                 <button
                   onClick={copyLink}
                   style={{
-                    background: "#DC2626",
+                    background: "#C92E09",
                     color: "#FFF",
                     border: "none",
                     borderRadius: "8px",
@@ -565,7 +565,7 @@ export default function AmbassadorDashboard({
                                 height: "12px",
                                 minWidth: "12px",
                                 borderRadius: "50%",
-                                background: isStoreActive ? "#10B981" : "#0F172A",
+                                background: isStoreActive ? "#15803D" : "#0F172A",
                                 boxShadow: isStoreActive ? "0 0 0 3px rgba(16,185,129,0.25)" : "0 0 0 3px rgba(15,23,42,0.15)",
                               }}
                             />
@@ -588,7 +588,7 @@ export default function AmbassadorDashboard({
                                     display: "inline-flex",
                                     alignItems: "center",
                                     gap: 4,
-                                    color: "#2563EB",
+                                    color: "#1D4ED8",
                                     fontSize: "0.75rem",
                                     marginTop: 4,
                                     textDecoration: "none",
@@ -608,7 +608,7 @@ export default function AmbassadorDashboard({
                             <span
                               style={{
                                 background: "#ECFDF5",
-                                color: "#059669",
+                                color: "#15803D",
                                 border: "1px solid #A7F3D0",
                                 padding: "4px 10px",
                                 borderRadius: "20px",
@@ -619,7 +619,7 @@ export default function AmbassadorDashboard({
                                 gap: 6,
                               }}
                             >
-                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#059669" }} />
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#15803D" }} />
                               Ativa
                             </span>
                           )}
@@ -627,8 +627,8 @@ export default function AmbassadorDashboard({
                             <div>
                               <span
                                 style={{
-                                  background: "#FFFBEB",
-                                  color: "#D97706",
+                                  background: "#FFF7E6",
+                                  color: "#B45309",
                                   border: "1px solid #FDE68A",
                                   padding: "4px 10px",
                                   borderRadius: "20px",
@@ -691,10 +691,10 @@ export default function AmbassadorDashboard({
 
                         {/* Ambassador Profit */}
                         <td style={{ padding: "16px 16px" }}>
-                          <div style={{ fontWeight: 900, color: store.ambassadorProfit > 0 ? "#059669" : "#64748B", fontSize: "1.05rem" }}>
+                          <div style={{ fontWeight: 900, color: store.ambassadorProfit > 0 ? "#15803D" : "#64748B", fontSize: "1.05rem" }}>
                             {formatBRL(store.ambassadorProfit)}
                           </div>
-                          <div style={{ fontSize: "0.72rem", color: store.ambassadorProfit > 0 ? "#059669" : "#94A3B8", marginTop: 2 }}>
+                          <div style={{ fontSize: "0.72rem", color: store.ambassadorProfit > 0 ? "#15803D" : "#94A3B8", marginTop: 2 }}>
                             {store.ambassadorProfit > 0 ? `${ambassador.commissionPercent}% da mensalidade` : "Aguardando pagamento"}
                           </div>
                         </td>
@@ -764,7 +764,7 @@ export default function AmbassadorDashboard({
             🔒 <strong style={{ color: "#0F172A" }}>Repasse Automático via Asaas:</strong> Suas comissões de {ambassador.commissionPercent}% são processadas e repassadas automaticamente pelo Asaas quando a loja parceira realiza o pagamento da mensalidade.
           </div>
           {ambassador.asaasWalletId ? (
-            <span style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 800, background: "#ECFDF5", border: "1px solid #A7F3D0", padding: "4px 10px", borderRadius: "6px" }}>
+            <span style={{ fontSize: "0.75rem", color: "#15803D", fontWeight: 800, background: "#ECFDF5", border: "1px solid #A7F3D0", padding: "4px 10px", borderRadius: "6px" }}>
               ✓ Carteira Asaas Conectada
             </span>
           ) : (

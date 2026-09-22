@@ -47,12 +47,12 @@ function normalizePaymentMethod(rawMethod?: string): { key: string; label: strin
 }
 
 const STATUS_LABELS: Record<string, { label: string; emoji: string; color: string }> = {
-  NOVO: { label: "Novos", emoji: "🔔", color: "#3B82F6" },
-  ACEITO: { label: "Aceitos", emoji: "✅", color: "#10B981" },
-  PREPARANDO: { label: "Preparando", emoji: "👨‍🍳", color: "#F59E0B" },
-  SAIU_ENTREGA: { label: "Em Entrega", emoji: "🛵", color: "#8B5CF6" },
-  ENTREGUE: { label: "Entregues", emoji: "📦", color: "#059669" },
-  CANCELADO: { label: "Cancelados", emoji: "❌", color: "#EF4444" },
+  NOVO: { label: "Novos", emoji: "🔔", color: "#1D4ED8" },
+  ACEITO: { label: "Aceitos", emoji: "✅", color: "#15803D" },
+  PREPARANDO: { label: "Preparando", emoji: "👨‍🍳", color: "#B45309" },
+  SAIU_ENTREGA: { label: "Em Entrega", emoji: "🛵", color: "#64748B" },
+  ENTREGUE: { label: "Entregues", emoji: "📦", color: "#15803D" },
+  CANCELADO: { label: "Cancelados", emoji: "❌", color: "#C92E09" },
 };
 
 type DateFilter = "hoje" | "ontem" | "semana" | "mes" | "custom";
@@ -230,7 +230,7 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
         </div>
       </div>
       {trend !== undefined && trend !== 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "8px", fontSize: "0.72rem", fontWeight: 700, color: trend > 0 ? "#10B981" : "#EF4444" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "8px", fontSize: "0.72rem", fontWeight: 700, color: trend > 0 ? "#15803D" : "#C92E09" }}>
           {trend > 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
           {Math.abs(trend).toFixed(1)}% vs período anterior
         </div>
@@ -245,7 +245,7 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
       {isAdmin && storeList.length > 1 && (
         <div style={{ background: "#fff", borderRadius: "14px", border: "1px solid #E2E8F0", padding: "1rem 1.25rem", marginBottom: "1.25rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-            <StoreIcon size={16} color="#C62828" />
+            <StoreIcon size={16} color="#C92E09" />
             <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#1E293B" }}>Selecionar Loja</span>
             <span style={{ fontSize: "0.75rem", color: "#94A3B8", marginLeft: "4px" }}>{storeList.length - 1} franquia(s) cadastrada(s)</span>
           </div>
@@ -255,8 +255,8 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
               return (
                 <button key={s.id} onClick={() => router.push(`/store${s.id === "todas" ? "" : `?loja=${s.id}`}`)}
                   style={{ padding: "0.45rem 1rem", borderRadius: "20px", fontSize: "0.82rem", fontWeight: active ? 700 : 500, cursor: "pointer", transition: "all 0.15s",
-                    border: active ? "2px solid #C62828" : "1.5px solid #E2E8F0",
-                    background: active ? "#C62828" : "#F8FAFC",
+                    border: active ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
+                    background: active ? "#C92E09" : "#F8FAFC",
                     color: active ? "#fff" : "#64748B",
                     boxShadow: active ? "0 2px 8px #C6282830" : "none"
                   }}>
@@ -279,8 +279,8 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
         {filterBtns.map(f => (
           <button key={f.key} onClick={() => setDateFilter(f.key)} style={{
             padding: "0.4rem 0.9rem", borderRadius: "8px", fontSize: "0.82rem", fontWeight: dateFilter === f.key ? 700 : 500,
-            border: dateFilter === f.key ? "2px solid #C62828" : "1.5px solid #E2E8F0",
-            background: dateFilter === f.key ? "#C6282810" : "#fff", color: dateFilter === f.key ? "#C62828" : "#64748B", cursor: "pointer"
+            border: dateFilter === f.key ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
+            background: dateFilter === f.key ? "#C6282810" : "#fff", color: dateFilter === f.key ? "#C92E09" : "#64748B", cursor: "pointer"
           }}>{f.label}</button>
         ))}
         {dateFilter === "custom" && (
@@ -295,11 +295,11 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
 
       {/* KPI CARDS (Formatação em Real BRL brasileira: R$ 31.428,71) */}
       <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1.25rem" }}>
-        <Card title="FATURAMENTO" value={formatBRL(totalVendas)} icon={DollarSign} color="#10B981" trend={crescimento} subtitle={`${totalPedidos} pedidos`} />
-        <Card title="PEDIDOS" value={totalPedidos} icon={ShoppingCart} color="#3B82F6" subtitle={cancelados > 0 ? `${cancelados} cancelado(s)` : "Sem cancelamentos"} />
-        <Card title="TICKET MÉDIO" value={formatBRL(ticketMedio)} icon={TrendingUp} color="#8B5CF6" />
-        <Card title="CLIENTES" value={new Set(activeOrders.map(o => o.customerPhone || o.customerName)).size} icon={Users} color="#F59E0B" subtitle="Clientes únicos" />
-        <Card title="LUCRO LÍQUIDO" value={formatBRL(lucroLiquido)} icon={DollarSign} color={lucroLiquido >= 0 ? "#059669" : "#EF4444"} subtitle={`Margem: ${margemLucro.toFixed(1)}% | Custos: ${formatBRL(totalCost)} | Taxas: ${formatBRL(totalFees)}`} />
+        <Card title="FATURAMENTO" value={formatBRL(totalVendas)} icon={DollarSign} color="#15803D" trend={crescimento} subtitle={`${totalPedidos} pedidos`} />
+        <Card title="PEDIDOS" value={totalPedidos} icon={ShoppingCart} color="#1D4ED8" subtitle={cancelados > 0 ? `${cancelados} cancelado(s)` : "Sem cancelamentos"} />
+        <Card title="TICKET MÉDIO" value={formatBRL(ticketMedio)} icon={TrendingUp} color="#64748B" />
+        <Card title="CLIENTES" value={new Set(activeOrders.map(o => o.customerPhone || o.customerName)).size} icon={Users} color="#B45309" subtitle="Clientes únicos" />
+        <Card title="LUCRO LÍQUIDO" value={formatBRL(lucroLiquido)} icon={DollarSign} color={lucroLiquido >= 0 ? "#15803D" : "#C92E09"} subtitle={`Margem: ${margemLucro.toFixed(1)}% | Custos: ${formatBRL(totalCost)} | Taxas: ${formatBRL(totalFees)}`} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
@@ -361,10 +361,10 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
                 <p style={{ fontSize: "0.7rem", color: "#64748B", margin: 0 }}>Delivery</p>
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem", borderRadius: "10px", background: "#F0FDF4", border: "1px solid #DCFCE720" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem", borderRadius: "10px", background: "#ECFDF3", border: "1px solid #DCFCE720" }}>
               <span style={{ fontSize: "1.2rem" }}>🏪</span>
               <div>
-                <p style={{ fontWeight: 700, fontSize: "1.1rem", margin: 0, color: "#16A34A" }}>{pickupCount}</p>
+                <p style={{ fontWeight: 700, fontSize: "1.1rem", margin: 0, color: "#15803D" }}>{pickupCount}</p>
                 <p style={{ fontSize: "0.7rem", color: "#64748B", margin: 0 }}>Retirada</p>
               </div>
             </div>
@@ -397,13 +397,13 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
             <h3 style={{ fontSize: "0.9rem", fontWeight: 700, margin: 0, color: "#1E293B" }}>🕐 Pedidos por Hora (Pico do Dia)</h3>
             <div style={{ display: "flex", gap: "0.75rem", fontSize: "0.72rem", fontWeight: 600 }}>
               <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#EF4444" }} />Almoço (11h-14h)
+                <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#C92E09" }} />Almoço (11h-14h)
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#F59E0B" }} />Jantar (18h-22h)
+                <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#B45309" }} />Jantar (18h-22h)
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#3B82F6" }} />Outros
+                <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#1D4ED8" }} />Outros
               </span>
             </div>
           </div>
@@ -412,7 +412,7 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
           <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", height: "150px", padding: "10px 0 5px" }}>
             {byHour.map((count, h) => {
               const heightPct = count > 0 ? Math.max((count / maxHour) * 100, 10) : 4;
-              const barColor = h >= 11 && h <= 14 ? "#EF4444" : h >= 18 && h <= 22 ? "#F59E0B" : "#3B82F6";
+              const barColor = h >= 11 && h <= 14 ? "#C92E09" : h >= 18 && h <= 22 ? "#B45309" : "#1D4ED8";
 
               return (
                 <div key={h} style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center" }} title={`${h}h: ${count} pedido(s)`}>
@@ -447,11 +447,11 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
             <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
               {topProducts.map((p, i) => {
                 const margem = p.total > 0 && p.cost > 0 ? ((p.total - p.cost) / p.total * 100) : null;
-                const margemColor = margem === null ? "#94A3B8" : margem >= 40 ? "#16A34A" : margem >= 20 ? "#F59E0B" : "#EF4444";
+                const margemColor = margem === null ? "#94A3B8" : margem >= 40 ? "#15803D" : margem >= 20 ? "#B45309" : "#C92E09";
                 return (
                   <div key={p.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.4rem 0.5rem", borderRadius: "8px", background: i === 0 ? "#FFF7ED" : "transparent" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span style={{ width: "22px", height: "22px", borderRadius: "6px", background: i < 3 ? "#C62828" : "#E2E8F0", color: i < 3 ? "#fff" : "#64748B", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 700 }}>{i + 1}</span>
+                      <span style={{ width: "22px", height: "22px", borderRadius: "6px", background: i < 3 ? "#C92E09" : "#E2E8F0", color: i < 3 ? "#fff" : "#64748B", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 700 }}>{i + 1}</span>
                       <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "#1E293B" }}>{p.name}</span>
                     </div>
                     <div style={{ textAlign: "right", display: "flex", alignItems: "center", gap: "8px" }}>

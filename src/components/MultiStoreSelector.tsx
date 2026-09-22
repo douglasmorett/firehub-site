@@ -66,7 +66,7 @@ export default function MultiStoreSelector() {
           boxShadow: open ? "0 4px 12px rgba(0,0,0,0.1)" : "none",
         }}
       >
-        <Store size={18} style={{ color: "#EF4444", flexShrink: 0 }} />
+        <Store size={18} style={{ color: "#C92E09", flexShrink: 0 }} />
         <div style={{ flex: 1, textAlign: "left" }}>
           <p style={{ fontSize: ".65rem", color: "var(--text-muted)", margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
             Multilojas
@@ -110,9 +110,9 @@ export default function MultiStoreSelector() {
                 transition: "background 0.15s",
               }}
             >
-              <Store size={16} style={{ color: "#EF4444" }} />
+              <Store size={16} style={{ color: "#C92E09" }} />
               <span style={{ flex: 1, textAlign: "left", fontSize: ".85rem", fontWeight: selected === "all" ? 700 : 500 }}>Todas as Lojas</span>
-              {selected === "all" && <Check size={16} style={{ color: "#EF4444" }} />}
+              {selected === "all" && <Check size={16} style={{ color: "#C92E09" }} />}
             </button>
           )}
 
@@ -136,7 +136,7 @@ export default function MultiStoreSelector() {
             >
               <div style={{
                 width: 28, height: 28, borderRadius: 8,
-                background: "linear-gradient(135deg, #EF4444, #DC2626)",
+                background: "linear-gradient(135deg, #C92E09, #C92E09)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#fff", fontSize: ".7rem", fontWeight: 800,
               }}>
@@ -146,7 +146,7 @@ export default function MultiStoreSelector() {
                 <p style={{ fontSize: ".85rem", fontWeight: selected === store.id ? 700 : 500, margin: 0 }}>{store.name}</p>
                 <p style={{ fontSize: ".7rem", color: "var(--text-muted)", margin: 0 }}>{store.slug}</p>
               </div>
-              {selected === store.id && <Check size={16} style={{ color: "#EF4444" }} />}
+              {selected === store.id && <Check size={16} style={{ color: "#C92E09" }} />}
             </button>
           ))}
 
@@ -172,7 +172,7 @@ export default function MultiStoreSelector() {
               border: "none",
               background: "transparent",
               cursor: "pointer",
-              color: "#EF4444",
+              color: "#C92E09",
               fontSize: ".85rem",
               fontWeight: 600,
             }}

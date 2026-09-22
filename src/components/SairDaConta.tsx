@@ -94,7 +94,7 @@ export default function SairDaConta({
 
             {caixaAberto && (
               <div style={{
-                background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12,
+                background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12,
                 padding: "0.8rem 0.9rem", marginBottom: "1.25rem",
                 fontSize: "0.82rem", color: "#92400E", textAlign: "left", lineHeight: 1.5,
               }}>
@@ -123,7 +123,7 @@ export default function SairDaConta({
                 autoFocus
                 style={{
                   flex: 1, padding: "12px", borderRadius: 12, border: "none",
-                  background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: "0.9rem",
+                  background: "#C92E09", color: "#fff", fontWeight: 800, fontSize: "0.9rem",
                   cursor: saindo ? "wait" : "pointer", fontFamily: "inherit",
                   opacity: saindo ? 0.75 : 1,
                 }}

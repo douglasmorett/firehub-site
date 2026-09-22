@@ -99,7 +99,7 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
         <b style={{ fontSize: "0.95rem", color: "#9A3412" }}>🔴 Pedido de iFood, 99Food e outros apps</b>
         {salvando && <span style={{ fontSize: "0.74rem", color: "#94A3B8" }}>salvando…</span>}
-        {aviso && <span style={{ fontSize: "0.74rem", fontWeight: 700, color: aviso === "Salvo." ? "#16A34A" : "#B91C1C" }}>{aviso}</span>}
+        {aviso && <span style={{ fontSize: "0.74rem", fontWeight: 700, color: aviso === "Salvo." ? "#15803D" : "#B71C1C" }}>{aviso}</span>}
       </div>
       <p style={{ margin: "0 0 11px", fontSize: "0.8rem", color: "#64748B", lineHeight: 1.5 }}>
         Nesses pedidos, o que o entregador recebe é:
@@ -162,7 +162,7 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
       <p style={{
         margin: "10px 0 0", fontSize: "0.76rem", lineHeight: 1.5,
         color: valor === "APP" ? "#334155" : "#92400E",
-        background: valor === "APP" ? "#F8FAFC" : "#FFFBEB",
+        background: valor === "APP" ? "#F8FAFC" : "#FFF7E6",
         border: `1px solid ${valor === "APP" ? "#E2E8F0" : "#FDE68A"}`,
         borderRadius: 9, padding: "8px 11px",
       }}>

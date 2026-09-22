@@ -127,7 +127,11 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           até 0,58rem para caber. Em pé, cada item tem a largura inteira e o
           conteúdo ganha a tela — que é o que o dono pediu ao comparar com o
           iFood. */}
-      <div style={{ minHeight: "100vh", display: "flex", backgroundColor: "#F5F5F5" }}>
+      {/* `fh-painel` marca o que é PAINEL. As classes .btn/.btn-primary são as
+          mesmas do site público (src/app/page.tsx), e o painel tem regra de cor
+          própria: cheio só na ação principal. Sem esta marca, mexer no botão do
+          painel repintaria a landing junto. Ver src/styles/fh-painel.css. */}
+      <div className="fh-painel" style={{ minHeight: "100vh", display: "flex", backgroundColor: "#F5F5F5" }}>
         <StoreSidebar
           nomeDaLoja={storeOwner?.storeName || user?.storeName || session.user?.name || "Minha loja"}
           logo={storeOwner?.storeLogo || user?.storeLogo || null}
@@ -192,7 +196,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
                 últimos dias do teste. */}
             <AvisoDispensavel aviso="teste-gratis" ocorrencia={trialDaysLeft <= 3 ? "reta-final" : "inicio"}>
             <div style={{
-              background: "linear-gradient(135deg, #2563EB, #1d4ed8)",
+              background: "linear-gradient(135deg, #1D4ED8, #1d4ed8)",
               color: "white", padding: "10px 1.5rem", textAlign: "center",
               fontSize: ".85rem", fontWeight: 600,
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap",
@@ -212,21 +216,21 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           <HideOnCompras>
             <AvisoDispensavel aviso="cobranca-pendente" ocorrencia={pendingPayment.ocorrencia}>
             <div style={{
-              background: "linear-gradient(135deg, #F59E0B, #D97706)",
+              background: "linear-gradient(135deg, #B45309, #B45309)",
               color: "white", padding: "10px 1.5rem", textAlign: "center",
               fontSize: ".85rem", fontWeight: 600,
               display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap",
             }}>
               <span>⚠️ Cobrança pendente de R$ {pendingPayment.amount.toFixed(2).replace(".", ",")} — <strong>Faltam {pendingPayment.daysLeft} {pendingPayment.daysLeft === 1 ? "dia" : "dias"}</strong> para o vencimento. Regularize para evitar bloqueios.</span>
               <a href="/store/financeiro#fatura" style={{
-                background: "#fff", color: "#D97706", padding: "5px 16px",
+                background: "#fff", color: "#B45309", padding: "5px 16px",
                 borderRadius: 8, fontWeight: 700, fontSize: ".8rem", textDecoration: "none",
               }}>
                 Ver Fatura
               </a>
               {pendingPayment.url && (
                 <a href={pendingPayment.url} target="_blank" rel="noopener noreferrer" style={{
-                  background: "#fff", color: "#D97706", padding: "5px 16px",
+                  background: "#fff", color: "#B45309", padding: "5px 16px",
                   borderRadius: 8, fontWeight: 700, fontSize: ".8rem", textDecoration: "none",
                 }}>
                   Pagar Agora
@@ -253,14 +257,14 @@ export default async function StoreLayout({ children }: { children: React.ReactN
               </p>
 
               <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 14, padding: "1.25rem", marginBottom: "1.5rem" }}>
-                <div style={{ fontSize: "0.8rem", color: "#991B1B", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Para liberar pague o valor de:</div>
-                <div style={{ fontSize: "2.4rem", fontWeight: 900, color: "#DC2626", marginTop: 4 }}>
+                <div style={{ fontSize: "0.8rem", color: "#B71C1C", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Para liberar pague o valor de:</div>
+                <div style={{ fontSize: "2.4rem", fontWeight: 900, color: "#C92E09", marginTop: 4 }}>
                   R$ {pendingPayment!.amount.toFixed(2).replace(".", ",")}
                 </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                <a href="/store/financeiro#fatura" style={{ width: "100%", background: "#DC2626", color: "#fff", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, textDecoration: "none", display: "inline-block" }}>
+                <a href="/store/financeiro#fatura" style={{ width: "100%", background: "#C92E09", color: "#fff", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, textDecoration: "none", display: "inline-block" }}>
                   ⚡ Pagar e Liberar Conta →
                 </a>
                 <a href="https://wa.me/5522998851680?text=Preciso+de+ajuda+com+minha+conta+bloqueada" target="_blank" rel="noopener noreferrer" style={{ color: "#64748B", fontSize: "0.85rem", textDecoration: "underline" }}>

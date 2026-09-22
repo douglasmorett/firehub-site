@@ -281,7 +281,7 @@ export default function HumanSupportFloatingWidget() {
           }}
         >
           {/* HEADER DO WIDGET */}
-          <div style={{ background: "linear-gradient(135deg, #DC2626, #B91C1C)", color: "#fff", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ background: "linear-gradient(135deg, #C92E09, #B71C1C)", color: "#fff", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <MessageSquare size={20} />
               <div>
@@ -317,10 +317,10 @@ export default function HumanSupportFloatingWidget() {
                   border: "none",
                   cursor: "pointer",
                   background: aba === id ? "#FEF2F2" : "#fff",
-                  color: aba === id ? "#B91C1C" : "#64748B",
+                  color: aba === id ? "#B71C1C" : "#64748B",
                   fontWeight: 800,
                   fontSize: "0.74rem",
-                  borderBottom: aba === id ? "2px solid #DC2626" : "2px solid transparent",
+                  borderBottom: aba === id ? "2px solid #C92E09" : "2px solid transparent",
                 }}
               >
                 {rotulo}
@@ -369,7 +369,7 @@ export default function HumanSupportFloatingWidget() {
                         gap: "10px",
                       }}
                     >
-                      <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: c.pausado ? "#FEF3C7" : "#DCFCE7", color: c.pausado ? "#B45309" : "#166534", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: c.pausado ? "#FFF7E6" : "#ECFDF3", color: c.pausado ? "#B45309" : "#15803D", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         {c.pausado ? <ShieldCheck size={17} /> : <Bot size={17} />}
                       </div>
                       <div style={{ overflow: "hidden", flex: 1 }}>
@@ -384,7 +384,7 @@ export default function HumanSupportFloatingWidget() {
                           {c.ultimaMensagem}
                         </div>
                         {c.pausado && (
-                          <div style={{ display: "inline-block", background: "#FEF3C7", color: "#B45309", fontSize: "0.66rem", fontWeight: 800, padding: "1px 6px", borderRadius: 5, marginTop: 3 }}>
+                          <div style={{ display: "inline-block", background: "#FFF7E6", color: "#B45309", fontSize: "0.66rem", fontWeight: 800, padding: "1px 6px", borderRadius: 5, marginTop: 3 }}>
                             robô pausado{c.motivoDaPausa ? ` · ${c.motivoDaPausa}` : ""}
                           </div>
                         )}
@@ -408,9 +408,9 @@ export default function HumanSupportFloatingWidget() {
                     disabled={mudandoPausa}
                     title={pausado ? "O robô volta a responder este cliente" : "O robô para de responder este cliente até você devolver"}
                     style={{
-                      background: pausado ? "#DCFCE7" : "#FEF3C7",
-                      border: `1px solid ${pausado ? "#BBF7D0" : "#FDE68A"}`,
-                      color: pausado ? "#166534" : "#B45309",
+                      background: pausado ? "#ECFDF3" : "#FFF7E6",
+                      border: `1px solid ${pausado ? "#ABEFC6" : "#FDE68A"}`,
+                      color: pausado ? "#15803D" : "#B45309",
                       padding: "4px 9px",
                       borderRadius: "6px",
                       fontSize: "0.7rem",
@@ -424,7 +424,7 @@ export default function HumanSupportFloatingWidget() {
                 </div>
 
                 {pausado && (
-                  <div style={{ background: "#FEF3C7", color: "#92400E", fontSize: "0.72rem", fontWeight: 700, padding: "6px 12px", textAlign: "center" }}>
+                  <div style={{ background: "#FFF7E6", color: "#92400E", fontSize: "0.72rem", fontWeight: 700, padding: "6px 12px", textAlign: "center" }}>
                     O robô não está respondendo este cliente. Quem responde é você.
                   </div>
                 )}
@@ -451,7 +451,7 @@ export default function HumanSupportFloatingWidget() {
                         }}
                       >
                         {m.sender === "bot" && (
-                          <div style={{ fontSize: "0.63rem", fontWeight: 800, color: m.autor === "atendente" ? "#166534" : "#15803D", marginBottom: 2 }}>
+                          <div style={{ fontSize: "0.63rem", fontWeight: 800, color: m.autor === "atendente" ? "#15803D" : "#15803D", marginBottom: 2 }}>
                             {m.autor === "atendente" ? "VOCÊ" : "ROBÔ"}
                           </div>
                         )}
@@ -464,7 +464,7 @@ export default function HumanSupportFloatingWidget() {
                 </div>
 
                 {erroDoEnvio && (
-                  <div style={{ background: "#FEE2E2", color: "#991B1B", fontSize: "0.74rem", fontWeight: 700, padding: "7px 12px", textAlign: "center" }}>
+                  <div style={{ background: "#FEE2E2", color: "#B71C1C", fontSize: "0.74rem", fontWeight: 700, padding: "7px 12px", textAlign: "center" }}>
                     {erroDoEnvio}
                   </div>
                 )}
@@ -482,7 +482,7 @@ export default function HumanSupportFloatingWidget() {
                   <button
                     onClick={enviarPelaConversa}
                     disabled={sending || !replyText.trim()}
-                    style={{ width: 36, height: 36, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                    style={{ width: 36, height: 36, borderRadius: "50%", background: "#C92E09", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
                   >
                     <Send size={16} />
                   </button>
@@ -494,7 +494,7 @@ export default function HumanSupportFloatingWidget() {
             <div style={{ flex: 1, overflowY: "auto", padding: "12px", background: "#F8FAFC" }}>
               {chats.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B" }}>
-                  <CheckCircle2 size={40} color="#16A34A" style={{ marginBottom: "12px" }} />
+                  <CheckCircle2 size={40} color="#15803D" style={{ marginBottom: "12px" }} />
                   <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1E293B" }}>Tudo em dia!</div>
                   <div style={{ fontSize: "0.78rem", marginTop: "4px" }}>Quando um cliente pedir atendente no WhatsApp, a notificação com número piscará aqui.</div>
                 </div>
@@ -517,7 +517,7 @@ export default function HumanSupportFloatingWidget() {
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, overflow: "hidden" }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#FEE2E2", color: "#DC2626", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#FEE2E2", color: "#C92E09", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>
                         <User size={18} />
                       </div>
                       <div style={{ overflow: "hidden" }}>
@@ -525,7 +525,7 @@ export default function HumanSupportFloatingWidget() {
                         {/* Numa fila de dez, o motivo é o que diz por onde começar:
                             quem está reclamando de atraso não pode esperar a vez. */}
                         {c.motivo && (
-                          <div style={{ display: "inline-block", background: "#FEE2E2", color: "#B91C1C", fontSize: "0.68rem", fontWeight: 800, padding: "1px 7px", borderRadius: 6, margin: "2px 0" }}>
+                          <div style={{ display: "inline-block", background: "#FEE2E2", color: "#B71C1C", fontSize: "0.68rem", fontWeight: 800, padding: "1px 7px", borderRadius: 6, margin: "2px 0" }}>
                             {c.motivo}
                           </div>
                         )}
@@ -534,7 +534,7 @@ export default function HumanSupportFloatingWidget() {
                     </div>
 
                     {c.unreadCount > 0 && (
-                      <span style={{ background: "#DC2626", color: "#fff", fontSize: "0.72rem", fontWeight: 800, padding: "2px 8px", borderRadius: "10px", marginLeft: "8px" }}>
+                      <span style={{ background: "#C92E09", color: "#fff", fontSize: "0.72rem", fontWeight: 800, padding: "2px 8px", borderRadius: "10px", marginLeft: "8px" }}>
                         {c.unreadCount}
                       </span>
                     )}
@@ -555,7 +555,7 @@ export default function HumanSupportFloatingWidget() {
 
                 <button
                   onClick={() => handleCloseSupport(selectedChatJid)}
-                  style={{ background: "#DCFCE7", border: "1px solid #BBF7D0", color: "#166534", padding: "4px 10px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer" }}
+                  style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", color: "#15803D", padding: "4px 10px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer" }}
                 >
                   ✓ Encerrar &amp; Reativar Robô
                 </button>
@@ -595,7 +595,7 @@ export default function HumanSupportFloatingWidget() {
                 <button
                   onClick={handleSendReply}
                   disabled={sending || !replyText.trim()}
-                  style={{ width: 36, height: 36, borderRadius: "50%", background: "#DC2626", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                  style={{ width: 36, height: 36, borderRadius: "50%", background: "#C92E09", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
                 >
                   <Send size={16} />
                 </button>
@@ -624,7 +624,7 @@ export default function HumanSupportFloatingWidget() {
             right: 64,
             whiteSpace: "nowrap",
             background: "#fff",
-            color: "#B91C1C",
+            color: "#B71C1C",
             border: "1px solid #FECACA",
             borderRadius: 999,
             padding: "5px 11px",
@@ -643,7 +643,7 @@ export default function HumanSupportFloatingWidget() {
           aria-hidden
           style={{
             position: "absolute", bottom: 0, right: 0, width: 56, height: 56,
-            borderRadius: "50%", background: "#DC2626", pointerEvents: "none",
+            borderRadius: "50%", background: "#C92E09", pointerEvents: "none",
             animation: "firehubChamando 1.6s ease-out infinite",
           }}
         />
@@ -660,7 +660,7 @@ export default function HumanSupportFloatingWidget() {
           width: "56px",
           height: "56px",
           borderRadius: "50%",
-          background: "linear-gradient(135deg, #DC2626, #B91C1C)",
+          background: "linear-gradient(135deg, #C92E09, #B71C1C)",
           color: "#fff",
           border: "none",
           boxShadow: "0 8px 24px rgba(220, 38, 38, 0.4)",
@@ -684,7 +684,7 @@ export default function HumanSupportFloatingWidget() {
               position: "absolute",
               top: "-4px",
               right: "-4px",
-              background: "#EF4444",
+              background: "#C92E09",
               color: "#fff",
               border: "2px solid #fff",
               borderRadius: "50%",

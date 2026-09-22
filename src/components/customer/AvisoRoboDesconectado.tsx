@@ -80,9 +80,9 @@ export default function AvisoRoboDesconectado() {
           alignItems: "center",
           gap: "0.9rem",
           flexWrap: "wrap",
-          background: "#F0FDF4",
+          background: "#ECFDF3",
           border: "1px solid #A7F3D0",
-          borderLeft: "6px solid #16A34A",
+          borderLeft: "6px solid #15803D",
           borderRadius: 12,
           padding: "0.9rem 1.1rem",
         }}
@@ -92,7 +92,7 @@ export default function AvisoRoboDesconectado() {
         </span>
 
         <div style={{ flex: 1, minWidth: 240 }}>
-          <div style={{ fontWeight: 800, color: "#166534", fontSize: "1rem" }}>
+          <div style={{ fontWeight: 800, color: "#15803D", fontSize: "1rem" }}>
             Seu robô de WhatsApp desconectou {haQuantoTempo}
           </div>
           <div style={{ color: "#15803D", fontSize: "0.88rem", marginTop: 2 }}>
@@ -103,7 +103,7 @@ export default function AvisoRoboDesconectado() {
 
         <span
           style={{
-            background: "#16A34A",
+            background: "#15803D",
             color: "#fff",
             fontWeight: 800,
             fontSize: "0.9rem",
@@ -114,7 +114,7 @@ export default function AvisoRoboDesconectado() {
         >
           Religar agora
         </span>
-        <BotaoNaoVerMais onClick={naoVerMais.ocultar} cor="#166534" borda="#86EFAC" />
+        <BotaoNaoVerMais onClick={naoVerMais.ocultar} cor="#15803D" borda="#ABEFC6" />
       </div>
     </Link>
   );

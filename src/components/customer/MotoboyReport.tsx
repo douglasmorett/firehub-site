@@ -135,7 +135,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
       {/* Filtros */}
       <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, padding: 20, marginBottom: 20 }}>
         <h3 style={{ fontWeight: 800, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-          <Filter size={18} color="#C62828" /> Filtros do Relatório
+          <Filter size={18} color="#C92E09" /> Filtros do Relatório
         </h3>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
@@ -145,21 +145,21 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {PERIODS.map(p => (
                 <button key={p.value} onClick={() => escolherPeriodo(p.value)}
-                  style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${period === p.value ? "#C62828" : "#E2E8F0"}`, background: period === p.value ? "#C62828" : "#fff", color: period === p.value ? "#fff" : "#475569", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
+                  style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${period === p.value ? "#C92E09" : "#E2E8F0"}`, background: period === p.value ? "#C92E09" : "#fff", color: period === p.value ? "#fff" : "#475569", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
                   {p.label}
                 </button>
               ))}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
               <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setPeriod("custom"); }}
-                style={{ flex: "1 1 130px", minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+                style={{ flex: "1 1 130px", minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C92E09" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
               <input type="time" value={horaInicio} onChange={e => { setHoraInicio(e.target.value); setPeriod("custom"); }} title="Hora de início (opcional)"
-                style={{ width: 96, padding: "7px 8px", borderRadius: 8, border: `1.5px solid ${horaInicio ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+                style={{ width: 96, padding: "7px 8px", borderRadius: 8, border: `1.5px solid ${horaInicio ? "#C92E09" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
               <span style={{ color: "#94A3B8", fontSize: "0.82rem" }}>até</span>
               <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setPeriod("custom"); }}
-                style={{ flex: "1 1 130px", minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+                style={{ flex: "1 1 130px", minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${period === "custom" ? "#C92E09" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
               <input type="time" value={horaFim} onChange={e => { setHoraFim(e.target.value); setPeriod("custom"); }} title="Hora de fim (opcional)"
-                style={{ width: 96, padding: "7px 8px", borderRadius: 8, border: `1.5px solid ${horaFim ? "#C62828" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
+                style={{ width: 96, padding: "7px 8px", borderRadius: 8, border: `1.5px solid ${horaFim ? "#C92E09" : "#E2E8F0"}`, fontSize: "0.82rem", fontFamily: "inherit" }} />
               {(horaInicio || horaFim) && (
                 <button type="button" onClick={() => { setHoraInicio(""); setHoraFim(""); }} title="Voltar para o dia inteiro"
                   style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
@@ -172,7 +172,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
               use <strong>18:00</strong> no dia 1 e <strong>02:00</strong> no dia 2.
             </div>
             {customFrom && customTo && customFrom > customTo && (
-              <div style={{ marginTop: 6, fontSize: "0.75rem", color: "#B91C1C", fontWeight: 600 }}>
+              <div style={{ marginTop: 6, fontSize: "0.75rem", color: "#B71C1C", fontWeight: 600 }}>
                 A data inicial está depois da final — inverta para o relatório vir com dados.
               </div>
             )}
@@ -194,18 +194,18 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
           <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 6, textTransform: "uppercase" }}>Composição de Cálculo</label>
           <div style={{ display: "flex", gap: 8, maxWidth: 400 }}>
             <button onClick={() => setCalcMode("all")}
-              style={{ flex: 1, padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${calcMode === "all" ? "#C62828" : "#E2E8F0"}`, background: calcMode === "all" ? "#FEF2F2" : "#fff", color: calcMode === "all" ? "#C62828" : "#475569", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              style={{ flex: 1, padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${calcMode === "all" ? "#C92E09" : "#E2E8F0"}`, background: calcMode === "all" ? "#FEF2F2" : "#fff", color: calcMode === "all" ? "#C92E09" : "#475569", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               💵 Diária + Taxa
             </button>
             <button onClick={() => setCalcMode("fee_only")}
-              style={{ flex: 1, padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${calcMode === "fee_only" ? "#C62828" : "#E2E8F0"}`, background: calcMode === "fee_only" ? "#FEF2F2" : "#fff", color: calcMode === "fee_only" ? "#C62828" : "#475569", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              style={{ flex: 1, padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${calcMode === "fee_only" ? "#C92E09" : "#E2E8F0"}`, background: calcMode === "fee_only" ? "#FEF2F2" : "#fff", color: calcMode === "fee_only" ? "#C92E09" : "#475569", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               🛵 Só Taxa
             </button>
           </div>
         </div>
 
         <button onClick={load} disabled={loading}
-          style={{ padding: "10px 24px", background: "#C62828", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
+          style={{ padding: "10px 24px", background: "#C92E09", color: "#fff", border: "none", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
           {loading ? <Loader2 size={16} className="animate-spin" /> : <TrendingUp size={16} />}
           {loading ? "Carregando..." : "Gerar Relatório"}
         </button>
@@ -217,10 +217,10 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
           {/* Totais */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
             {[
-              { label: "Total Entregas", value: totalDeliveries.toString(), icon: Bike, color: "#3B82F6" },
-              { label: "Dinheiro a Entregar", value: fmt(totalCashCollected), icon: DollarSign, color: "#16A34A" },
-              { label: "Maquininhas Cartão", value: fmt(totalCardPos), icon: DollarSign, color: "#6D28D9" },
-              { label: "Taxas/Diárias (Motoboy)", value: fmt(totalPay), icon: DollarSign, color: "#C62828" },
+              { label: "Total Entregas", value: totalDeliveries.toString(), icon: Bike, color: "#1D4ED8" },
+              { label: "Dinheiro a Entregar", value: fmt(totalCashCollected), icon: DollarSign, color: "#15803D" },
+              { label: "Maquininhas Cartão", value: fmt(totalCardPos), icon: DollarSign, color: "#334155" },
+              { label: "Taxas/Diárias (Motoboy)", value: fmt(totalPay), icon: DollarSign, color: "#C92E09" },
             ].map(card => (
               <div key={card.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
@@ -248,7 +248,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 44, height: 44, background: "#FEF3E2", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Bike size={22} color="#C62828" />
+                      <Bike size={22} color="#C92E09" />
                     </div>
                     <div>
                       <div style={{ fontWeight: 800, fontSize: "1rem" }}>{r.motoboy.name}</div>
@@ -259,7 +259,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                     <div style={{ fontSize: "0.7rem", color: "#94A3B8", textTransform: "uppercase", fontWeight: 700 }}>
                       Total a pagar ao motoboy {calcMode === "fee_only" ? "(Só Taxa)" : ""}
                     </div>
-                    <div style={{ fontWeight: 900, fontSize: "1.4rem", color: "#C62828" }}>{fmt(payAmount)}</div>
+                    <div style={{ fontWeight: 900, fontSize: "1.4rem", color: "#C92E09" }}>{fmt(payAmount)}</div>
                   </div>
                 </div>
 
@@ -285,10 +285,10 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                       📋 CONFERÊNCIA DO MOTOBOY ({r.stats.totalDeliveries} entregas)
                     </span>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#166534", background: "#DCFCE7", padding: "4px 10px", borderRadius: 20 }}>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#15803D", background: "#ECFDF3", padding: "4px 10px", borderRadius: 20 }}>
                         💵 Entregar Dinheiro: {fmt(r.stats.cashCollectedSum || 0)}
                       </span>
-                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#6D28D9", background: "#F3E8FF", padding: "4px 10px", borderRadius: 20 }}>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#334155", background: "#F3E8FF", padding: "4px 10px", borderRadius: 20 }}>
                         💳 Total Maquininha: {fmt(r.stats.cardPosTotal || 0)}
                       </span>
                     </div>
@@ -296,14 +296,14 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
                     {/* Quadrado Dinheiro */}
-                    <div style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#F0FDF4" : "#fff", border: `1.5px solid ${(r.stats.cashCollectedSum || 0) > 0 ? "#86EFAC" : "#CBD5E1"}`, borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: "0.72rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#64748B", fontWeight: 700 }}>💵 Dinheiro (em mãos)</div>
+                    <div style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#ECFDF3" : "#fff", border: `1.5px solid ${(r.stats.cashCollectedSum || 0) > 0 ? "#ABEFC6" : "#CBD5E1"}`, borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: "0.72rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#15803D" : "#64748B", fontWeight: 700 }}>💵 Dinheiro (em mãos)</div>
                       <div style={{ fontWeight: 900, fontSize: "1.05rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#15803D" : "#0F172A", marginTop: 2 }}>{fmt(r.stats.cashCollectedSum || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#166534" : "#94A3B8", marginTop: 2 }}>
+                      <div style={{ fontSize: "0.68rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#15803D" : "#94A3B8", marginTop: 2 }}>
                         {r.stats.cashOrdersCount || 0} pedido(s)
                       </div>
                       {(r.stats.changeGivenSum || 0) > 0 && (
-                        <div style={{ fontSize: "0.65rem", color: "#15803D", marginTop: 3, fontWeight: 600, borderTop: "1px dashed #86EFAC", paddingTop: 3 }}>
+                        <div style={{ fontSize: "0.65rem", color: "#15803D", marginTop: 3, fontWeight: 600, borderTop: "1px dashed #ABEFC6", paddingTop: 3 }}>
                           {fmt(r.stats.cashOrdersValueSum || 0)} ped. + {fmt(r.stats.changeGivenSum || 0)} troco
                         </div>
                       )}
@@ -332,10 +332,10 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
 
                     {/* Quadrado Pago Online */}
                     {r.stats.onlineTotal > 0 && (
-                      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 12px" }}>
-                        <div style={{ fontSize: "0.72rem", color: "#166534", fontWeight: 700 }}>⚡ Pago Online</div>
+                      <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: 10, padding: "10px 12px" }}>
+                        <div style={{ fontSize: "0.72rem", color: "#15803D", fontWeight: 700 }}>⚡ Pago Online</div>
                         <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#15803D", marginTop: 2 }}>{fmt(r.stats.onlineTotal)}</div>
-                        <div style={{ fontSize: "0.68rem", color: "#166534", marginTop: 2 }}>{r.stats.onlineCount} pedido(s) site/app</div>
+                        <div style={{ fontSize: "0.68rem", color: "#15803D", marginTop: 2 }}>{r.stats.onlineCount} pedido(s) site/app</div>
                       </div>
                     )}
                   </div>
@@ -384,7 +384,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         vem descontada pelo cupom deles. Precisa estar escrito,
                         senão o lojista confere com um número que não é dele. */}
                     {r.motoboy.usandoTaxaDoCliente && r.stats.feeTotal > 0 && (
-                      <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", fontSize: "0.74rem", color: "#92400E", lineHeight: 1.45 }}>
+                      <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", fontSize: "0.74rem", color: "#92400E", lineHeight: 1.45 }}>
                         ⚠️ Este entregador não tem <b>valor por entrega</b> cadastrado, então está sendo usada a
                         taxa que o cliente pagou. Em pedido de iFood e 99Food essa taxa é do marketplace, não sua —
                         cadastre o valor por entrega em Motoboys para o acerto ficar certo.
@@ -395,7 +395,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         R$ 0,00 — inventar a taxa do marketplace aqui foi o
                         erro original. O lojista precisa VER quantas são. */}
                     {(r.motoboy.entregasSemDistancia ?? 0) > 0 && (
-                      <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", fontSize: "0.74rem", color: "#92400E", lineHeight: 1.45 }}>
+                      <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", fontSize: "0.74rem", color: "#92400E", lineHeight: 1.45 }}>
                         ⚠️ {r.motoboy.entregasSemDistancia} {r.motoboy.entregasSemDistancia === 1 ? "entrega está" : "entregas estão"} sem a distância medida,
                         então a faixa de km não pôde ser aplicada e {r.motoboy.entregasSemDistancia === 1 ? "ela entrou" : "elas entraram"} como R$ 0,00.
                         O endereço é medido automaticamente em alguns minutos — se continuar assim, confira o endereço desses pedidos.
@@ -403,7 +403,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                     )}
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>
                       <span>TOTAL {calcMode === "fee_only" ? "(SÓ TAXAS)" : "(DIÁRIA + TAXAS)"}</span>
-                      <span style={{ color: "#C62828" }}>{fmt(payAmount)}</span>
+                      <span style={{ color: "#C92E09" }}>{fmt(payAmount)}</span>
                     </div>
                   </div>
                 </div>
@@ -429,12 +429,12 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                             <span>
                               {isCash ? (
                                 (o.changeGiven || 0) > 0 ? (
-                                  <span style={{ background: "#DCFCE7", color: "#166534", border: "1px solid #86EFAC", padding: "2px 8px", borderRadius: 6, fontWeight: 800, fontSize: "0.72rem", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                  <span style={{ background: "#ECFDF3", color: "#15803D", border: "1px solid #ABEFC6", padding: "2px 8px", borderRadius: 6, fontWeight: 800, fontSize: "0.72rem", display: "inline-flex", alignItems: "center", gap: 4 }}>
                                     💵 Entregar: {fmt(o.cashToDeliver || o.totalAmount)}
                                     <span style={{ fontWeight: 600, color: "#15803D", fontSize: "0.68rem" }}>(Ped: {fmt(o.totalAmount)} + Troco: {fmt(o.changeGiven)})</span>
                                   </span>
                                 ) : (
-                                  <span style={{ background: "#FEF3C7", color: "#B45309", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
+                                  <span style={{ background: "#FFF7E6", color: "#B45309", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
                                     💵 Dinheiro ({fmt(o.totalAmount)})
                                   </span>
                                 )
@@ -444,20 +444,20 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                                 </span>
                               )}
                             </span>
-                            {o.deliveryDistance ? <span style={{ color: "#3B82F6", fontWeight: 600 }}>{o.deliveryDistance} km</span> : <span />}
+                            {o.deliveryDistance ? <span style={{ color: "#1D4ED8", fontWeight: 600 }}>{o.deliveryDistance} km</span> : <span />}
                             {/* O que o MOTOBOY ganha nesta entrega, pela mesma
                                 conta que soma o total — não a taxa que o
                                 cliente pagou ao marketplace. */}
                             <span
                               title={r.motoboy.usandoTaxaDoCliente ? "Taxa que o cliente pagou — sem valor por entrega cadastrado" : "O que este entregador recebe por esta entrega"}
-                              style={{ fontWeight: 700, color: r.motoboy.usandoTaxaDoCliente ? "#B45309" : "#16A34A" }}
+                              style={{ fontWeight: 700, color: r.motoboy.usandoTaxaDoCliente ? "#B45309" : "#15803D" }}
                             >
                               {r.motoboy.usandoTaxaDoCliente ? "Taxa do cliente: " : "Motoboy: "}
                               {fmt(o.ganhoDoMotoboy ?? o.deliveryFee ?? 0)}
                             </span>
                             <button
                               onClick={() => setSelectedOrderModal(o)}
-                              style={{ padding: "4px 8px", background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", borderRadius: 6, fontWeight: 700, fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+                              style={{ padding: "4px 8px", background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #B2DDFF", borderRadius: 6, fontWeight: 700, fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
                             >
                               👁️ Ver Pedido
                             </button>
@@ -480,7 +480,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
             <button onClick={() => setSelectedOrderModal(null)} style={{ position: "absolute", top: 14, right: 14, background: "#F1F5F9", border: "none", borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><X size={16} color="#64748B" /></button>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-              <div style={{ background: "#FEF2F2", color: "#C62828", width: 44, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "1.2rem" }}>
+              <div style={{ background: "#FEF2F2", color: "#C92E09", width: 44, height: 44, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "1.2rem" }}>
                 📦
               </div>
               <div>
@@ -503,7 +503,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
               <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: 4 }}>👤 Cliente & Entrega</div>
               <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>{selectedOrderModal.customerName}</div>
               {selectedOrderModal.customerPhone && (
-                <div style={{ fontSize: "0.82rem", color: "#2563EB", fontWeight: 600, marginTop: 2 }}>📞 {selectedOrderModal.customerPhone}</div>
+                <div style={{ fontSize: "0.82rem", color: "#1D4ED8", fontWeight: 600, marginTop: 2 }}>📞 {selectedOrderModal.customerPhone}</div>
               )}
               {selectedOrderModal.customerAddress && (
                 <div style={{ fontSize: "0.82rem", color: "#475569", marginTop: 4, lineHeight: 1.4 }}>
@@ -520,15 +520,15 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
 
             {/* Destaque de Troco / Prestação de Contas em Dinheiro */}
             {(selectedOrderModal.changeGiven || 0) > 0 && (
-              <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
-                <div style={{ fontSize: "0.74rem", fontWeight: 800, color: "#166534", textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ background: "#ECFDF3", border: "1.5px solid #ABEFC6", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontSize: "0.74rem", fontWeight: 800, color: "#15803D", textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
                   💵 Prestação de Contas (Dinheiro com Troco)
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: "0.82rem", color: "#166534", marginBottom: 6 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: "0.82rem", color: "#15803D", marginBottom: 6 }}>
                   <div>Valor do Pedido: <strong>{fmt(selectedOrderModal.totalAmount)}</strong></div>
                   <div>Troco levado da loja: <strong>{fmt(selectedOrderModal.changeGiven)}</strong></div>
                 </div>
-                <div style={{ borderTop: "1px dashed #86EFAC", paddingTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ borderTop: "1px dashed #ABEFC6", paddingTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#15803D" }}>Dinheiro a Devolver na Loja:</span>
                   <span style={{ fontWeight: 900, fontSize: "1.15rem", color: "#15803D" }}>{fmt(selectedOrderModal.cashToDeliver || selectedOrderModal.changeFor || selectedOrderModal.totalAmount)}</span>
                 </div>
@@ -564,7 +564,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
               const linha = (rotulo: string, valor: number, forte = false) => (
                 <div key={rotulo} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: forte ? "0.95rem" : "0.84rem", fontWeight: forte ? 900 : 600, color: forte ? "#0F172A" : "#475569", padding: forte ? "6px 0 0" : "2px 0", borderTop: forte ? "2px solid #CBD5E1" : "none", marginTop: forte ? 4 : 0 }}>
                   <span>{rotulo}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums", color: forte ? "#16A34A" : valor < 0 ? "#B91C1C" : "#0F172A" }}>{emReaisConta(valor)}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: forte ? "#15803D" : valor < 0 ? "#B71C1C" : "#0F172A" }}>{emReaisConta(valor)}</span>
                 </div>
               );
               return (
@@ -591,7 +591,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
             })()}
 
             {selectedOrderModal.notes && (
-              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: "0.8rem", color: "#92400E" }}>
+              <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: "0.8rem", color: "#92400E" }}>
                 📝 <strong>Obs:</strong> {selectedOrderModal.notes}
               </div>
             )}
@@ -599,7 +599,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <a
                 href="/store/pedidos-clientes"
-                style={{ flex: 1, padding: "10px", background: "#2563EB", color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem", textDecoration: "none", textAlign: "center" }}
+                style={{ flex: 1, padding: "10px", background: "#1D4ED8", color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: "0.85rem", textDecoration: "none", textAlign: "center" }}
               >
                 📋 Abrir no Gerenciador ↗
               </a>

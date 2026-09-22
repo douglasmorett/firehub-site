@@ -119,11 +119,11 @@ export default function AdminCostsTab() {
             </div>
             <div style={{ background: "#FFF", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>Lucro Líquido Estimado</div>
-              <div style={{ fontSize: "1.8rem", fontWeight: 800, color: data.totals.totalProfit >= 0 ? "#10B981" : "#EA1D2C", marginTop: 4 }}>{fmt(data.totals.totalProfit)}</div>
+              <div style={{ fontSize: "1.8rem", fontWeight: 800, color: data.totals.totalProfit >= 0 ? "#15803D" : "#EA1D2C", marginTop: 4 }}>{fmt(data.totals.totalProfit)}</div>
             </div>
             <div style={{ background: "#FFF", padding: "16px", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
               <div style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>Margem Média</div>
-              <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#3B82F6", marginTop: 4 }}>{data.totals.avgMargin.toFixed(1)}%</div>
+              <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#1D4ED8", marginTop: 4 }}>{data.totals.avgMargin.toFixed(1)}%</div>
             </div>
           </div>
 
@@ -150,7 +150,7 @@ export default function AdminCostsTab() {
                         </span>
                       )}
                       {s.rateio === "direto" && (
-                        <span style={{ marginLeft: 8, background: "#EFF6FF", color: "#2563EB", padding: "1px 6px", borderRadius: 4, fontSize: "0.65rem", fontWeight: 700 }}>
+                        <span style={{ marginLeft: 8, background: "#EFF6FF", color: "#1D4ED8", padding: "1px 6px", borderRadius: 4, fontSize: "0.65rem", fontWeight: 700 }}>
                           medido por loja
                         </span>
                       )}
@@ -160,7 +160,7 @@ export default function AdminCostsTab() {
                       <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 3, lineHeight: 1.4 }}>{s.observacao}</div>
                     )}
                   </div>
-                  <div style={{ fontWeight: 800, color: s.mensalBRL > 0 ? "#EA1D2C" : "#10B981", fontSize: "0.9rem", whiteSpace: "nowrap" }}>
+                  <div style={{ fontWeight: 800, color: s.mensalBRL > 0 ? "#EA1D2C" : "#15803D", fontSize: "0.9rem", whiteSpace: "nowrap" }}>
                     {s.mensalBRL > 0 ? `${fmt(s.mensalBRL)}/mês` : "grátis"}
                   </div>
                 </div>
@@ -224,7 +224,7 @@ export default function AdminCostsTab() {
                             {l.cobraDesde ? " · a partir daí as vendas entram na cobrança" : " · não paga este mês"}
                           </div>
                         ) : l.revenue.amountPaid >= l.revenue.amountDue && l.revenue.amountDue > 0 ? (
-                          <div style={{ fontSize: "0.75rem", color: "#10B981" }}>
+                          <div style={{ fontSize: "0.75rem", color: "#15803D" }}>
                             Pago: {fmt(l.revenue.amountPaid)}
                           </div>
                         ) : (
@@ -235,7 +235,7 @@ export default function AdminCostsTab() {
                               </span>
                             )}
                             {l.revenue.amountDue - l.revenue.amountPaid > 0.009 ? (
-                              <span style={{ color: "#2563EB", fontWeight: 700 }}>
+                              <span style={{ color: "#1D4ED8", fontWeight: 700 }}>
                                 {l.cycleStatus === "OPEN"
                                   ? `acumulado no mês: ${fmt(l.revenue.amountDue - l.revenue.amountPaid)} · boleto no fechamento`
                                   : `boleto em aberto: ${fmt(l.revenue.amountDue - l.revenue.amountPaid)}`}
@@ -250,13 +250,13 @@ export default function AdminCostsTab() {
                       <td style={{ padding: "12px 16px", fontWeight: 700, color: "#EA1D2C" }}>
                         {fmt(l.costs.total)}
                       </td>
-                      <td style={{ padding: "12px 16px", fontWeight: 700, color: l.profit >= 0 ? "#10B981" : "#EA1D2C" }}>
+                      <td style={{ padding: "12px 16px", fontWeight: 700, color: l.profit >= 0 ? "#15803D" : "#EA1D2C" }}>
                         {fmt(l.profit)}
                       </td>
                       <td style={{ padding: "12px 16px", fontWeight: 600 }}>
                         <span style={{ 
-                          background: l.margin >= 70 ? "#DCFCE7" : l.margin >= 40 ? "#FEF9C3" : "#FEE2E2",
-                          color: l.margin >= 70 ? "#166534" : l.margin >= 40 ? "#854D0E" : "#991B1B",
+                          background: l.margin >= 70 ? "#ECFDF3" : l.margin >= 40 ? "#FEF9C3" : "#FEE2E2",
+                          color: l.margin >= 70 ? "#15803D" : l.margin >= 40 ? "#854D0E" : "#B71C1C",
                           padding: "4px 8px", borderRadius: "6px", fontSize: "0.8rem"
                         }}>
                           {l.margin.toFixed(1)}%
@@ -265,7 +265,7 @@ export default function AdminCostsTab() {
                       <td style={{ padding: "12px 16px" }}>
                         <button 
                           onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
-                          style={{ background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
+                          style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #B2DDFF", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
                         >
                           {expandedId === l.id ? "Ocultar Detalhes" : "Ver Detalhes"}
                         </button>
@@ -299,7 +299,7 @@ export default function AdminCostsTab() {
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "4px 0" }}>
                                 <span style={{ color: "#64748B" }}>Rateio da infraestrutura</span>
-                                <strong style={{ color: l.costs.hosting > 0 ? "#EA1D2C" : "#10B981" }}>{fmt(l.costs.hosting)}</strong>
+                                <strong style={{ color: l.costs.hosting > 0 ? "#EA1D2C" : "#15803D" }}>{fmt(l.costs.hosting)}</strong>
                               </div>
                             </div>
 

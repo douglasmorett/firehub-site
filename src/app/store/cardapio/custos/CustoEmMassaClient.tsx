@@ -110,14 +110,14 @@ export default function CustoEmMassaClient({ products }: { products: Product[] }
             <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#0F172A" }}>
               {preenchidos} de {products.length} produtos com custo
             </span>
-            <span style={{ fontSize: "0.82rem", color: semCustoCount > 0 ? "#F59E0B" : "#16A34A", fontWeight: 700 }}>
+            <span style={{ fontSize: "0.82rem", color: semCustoCount > 0 ? "#B45309" : "#15803D", fontWeight: 700 }}>
               {semCustoCount > 0 ? `⚠️ ${semCustoCount} sem custo` : "✅ Completo!"}
             </span>
           </div>
           <div style={{ height: "8px", background: "#F1F5F9", borderRadius: "999px", overflow: "hidden" }}>
             <div style={{
               height: "100%", borderRadius: "999px",
-              background: preenchidos === products.length ? "#16A34A" : "#F59E0B",
+              background: preenchidos === products.length ? "#15803D" : "#B45309",
               width: `${(preenchidos / products.length) * 100}%`,
               transition: "width 0.3s",
             }} />
@@ -137,7 +137,7 @@ export default function CustoEmMassaClient({ products }: { products: Product[] }
             style={{
               padding: "9px 16px", borderRadius: "10px", fontWeight: 700, fontSize: "0.8rem",
               border: filterSemCusto ? "none" : "1.5px solid #FCD34D",
-              background: filterSemCusto ? "#F59E0B" : "#FFFBEB",
+              background: filterSemCusto ? "#B45309" : "#FFF7E6",
               color: filterSemCusto ? "#fff" : "#92400E", cursor: "pointer", fontFamily: "inherit",
             }}>
             {filterSemCusto ? "⚠️ Só sem custo (ativo)" : "⚠️ Só sem custo"}
@@ -169,21 +169,21 @@ export default function CustoEmMassaClient({ products }: { products: Product[] }
                 <div key={p.id} style={{
                   display: "grid", gridTemplateColumns: "3fr 1fr 1.2fr 1fr auto",
                   gap: "0", padding: "10px 20px", alignItems: "center",
-                  borderBottom: idx < prods.length - 1 ? "1px solid #F9FAFB" : "none",
-                  background: isSaved ? "#F0FDF4" : "transparent",
+                  borderBottom: idx < prods.length - 1 ? "1px solid #F8FAFC" : "none",
+                  background: isSaved ? "#ECFDF3" : "transparent",
                   transition: "background 0.3s",
                 }}>
                   {/* Nome */}
                   <div>
                     <p style={{ fontWeight: 600, fontSize: "0.85rem", color: "#0F172A", margin: 0 }}>
                       {p.name}
-                      {!p.active && <span style={{ fontSize: "0.65rem", color: "#EF4444", marginLeft: "6px" }}>⏸️</span>}
+                      {!p.active && <span style={{ fontSize: "0.65rem", color: "#C92E09", marginLeft: "6px" }}>⏸️</span>}
                     </p>
                   </div>
 
                   {/* Preço */}
                   <div>
-                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#16A34A" }}>{fmtR(p.price)}</span>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#15803D" }}>{fmtR(p.price)}</span>
                   </div>
 
                   {/* Input custo */}
@@ -200,14 +200,14 @@ export default function CustoEmMassaClient({ products }: { products: Product[] }
                         placeholder="0,00"
                         style={{
                           width: "80px", padding: "5px 8px", borderRadius: "8px",
-                          border: `1.5px solid ${custos[p.id] ? (parseFloat(custos[p.id]) > p.price ? "#EF4444" : "#10B981") : "#E2E8F0"}`,
+                          border: `1.5px solid ${custos[p.id] ? (parseFloat(custos[p.id]) > p.price ? "#C92E09" : "#15803D") : "#E2E8F0"}`,
                           fontSize: "0.85rem", outline: "none", fontFamily: "inherit",
-                          background: custos[p.id] ? "#F0FDF4" : "#F8FAFC",
+                          background: custos[p.id] ? "#ECFDF3" : "#F8FAFC",
                         }}
                       />
                     </div>
                     {custoVal > p.price && (
-                      <p style={{ fontSize: "0.65rem", color: "#EF4444", margin: "2px 0 0", fontWeight: 600 }}>⚠️ Custo &gt; Preço!</p>
+                      <p style={{ fontSize: "0.65rem", color: "#C92E09", margin: "2px 0 0", fontWeight: 600 }}>⚠️ Custo &gt; Preço!</p>
                     )}
                   </div>
 
@@ -216,7 +216,7 @@ export default function CustoEmMassaClient({ products }: { products: Product[] }
                     {m ? (
                       <span style={{
                         fontSize: "0.78rem", fontWeight: 800,
-                        color: parseInt(m) < 20 ? "#EF4444" : parseInt(m) < 40 ? "#F59E0B" : "#16A34A",
+                        color: parseInt(m) < 20 ? "#C92E09" : parseInt(m) < 40 ? "#B45309" : "#15803D",
                       }}>
                         {m}%
                       </span>
@@ -227,7 +227,7 @@ export default function CustoEmMassaClient({ products }: { products: Product[] }
 
                   {/* Salvo */}
                   <div style={{ width: "24px" }}>
-                    {isSaved && <CheckCircle size={16} color="#16A34A" />}
+                    {isSaved && <CheckCircle size={16} color="#15803D" />}
                   </div>
                 </div>
               );

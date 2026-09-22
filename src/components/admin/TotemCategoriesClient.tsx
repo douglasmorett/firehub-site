@@ -73,7 +73,7 @@ export default function TotemCategoriesClient({ categories, storeSlug }: { categ
               
               {loading === cat.id && (
                 <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.8)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "16px" }}>
-                  <Loader2 size={24} className="animate-spin" color="#C62828" />
+                  <Loader2 size={24} className="animate-spin" color="#C92E09" />
                 </div>
               )}
             </div>

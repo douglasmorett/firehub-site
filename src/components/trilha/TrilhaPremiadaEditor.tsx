@@ -138,9 +138,9 @@ export default function TrilhaPremiadaEditor({
           onClick={() => mudar({ ativa: !trilha.ativa })}
           className="fh-liga"
           style={{
-            background: trilha.ativa ? "#DCFCE7" : "#F1F5F9",
+            background: trilha.ativa ? "#ECFDF3" : "#F1F5F9",
             color: trilha.ativa ? "#15803D" : "#475569",
-            borderColor: trilha.ativa ? "#86EFAC" : "#CBD5E1",
+            borderColor: trilha.ativa ? "#ABEFC6" : "#CBD5E1",
           }}
         >
           {trilha.ativa ? "✅ Trilha ligada" : "Ligar trilha"}
@@ -433,7 +433,7 @@ const ESTILO = `
 
 .fh-escolher{display:flex;align-items:center;gap:9px;padding:5px 9px 5px 5px;border:1.5px solid #E2E8F0;
   border-radius:11px;background:#fff;cursor:pointer;text-align:left;font-family:inherit;min-width:0}
-.fh-escolher:hover{border-color:#A78BFA}
+.fh-escolher:hover{border-color:#94A3B8}
 .fh-escolher .mini{width:42px;height:42px;border-radius:9px;overflow:hidden;background:#F1F5F9;
   display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .fh-escolher .mini img{width:100%;height:100%;object-fit:cover}
@@ -444,31 +444,31 @@ const ESTILO = `
 
 .fh-remover{width:30px;height:30px;border-radius:8px;border:1.5px solid #E2E8F0;background:#fff;
   color:#94A3B8;cursor:pointer;font-weight:800;font-family:inherit}
-.fh-remover:hover{border-color:#FCA5A5;color:#DC2626;background:#FEF2F2}
-.fh-add{padding:9px;border-radius:10px;border:1.5px dashed #CBD5E1;background:#fff;color:#6D28D9;
+.fh-remover:hover{border-color:#FCA5A5;color:#C92E09;background:#FEF2F2}
+.fh-add{padding:9px;border-radius:10px;border:1.5px dashed #CBD5E1;background:#fff;color:#334155;
   font-size:.82rem;font-weight:800;cursor:pointer;font-family:inherit}
-.fh-add:hover{border-color:#A78BFA;background:#F5F3FF}
+.fh-add:hover{border-color:#94A3B8;background:#F8FAFC}
 
 .fh-prazo{padding:8px 14px;border-radius:999px;border:1.5px solid #E2E8F0;background:#fff;
   font-size:.8rem;font-weight:700;color:#475569;cursor:pointer;font-family:inherit}
-.fh-prazo[aria-pressed="true"]{border-color:#6D28D9;background:#F5F3FF;color:#6D28D9}
+.fh-prazo[aria-pressed="true"]{border-color:#334155;background:#F8FAFC;color:#334155}
 
 .fh-canal{display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border:1.5px solid #E2E8F0;
   border-radius:12px;background:#fff;cursor:pointer;text-align:left;font-family:inherit;width:100%}
-.fh-canal:hover{border-color:#A78BFA}
-.fh-canal.ligado{border-color:#86EFAC;background:#F0FDF4}
+.fh-canal:hover{border-color:#94A3B8}
+.fh-canal.ligado{border-color:#ABEFC6;background:#ECFDF3}
 .fh-canal.fixo{cursor:default;border-color:#E2E8F0;background:#F8FAFC}
 .fh-canal .marca{width:20px;height:20px;border-radius:6px;border:1.5px solid #CBD5E1;background:#fff;
   display:flex;align-items:center;justify-content:center;font-size:.74rem;font-weight:900;color:#15803D;
   flex-shrink:0;margin-top:1px}
-.fh-canal.ligado .marca,.fh-canal.fixo .marca{border-color:#16A34A;background:#DCFCE7}
+.fh-canal.ligado .marca,.fh-canal.fixo .marca{border-color:#15803D;background:#ECFDF3}
 .fh-canal>span:last-child{display:flex;flex-direction:column;min-width:0}
 .fh-canal b{font-size:.82rem;font-weight:800;color:#0F172A}
 .fh-canal>span:last-child>span{font-size:.72rem;color:#64748B;line-height:1.4;margin-top:1px}
 .fh-alerta{border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:.78rem;line-height:1.5}
 .fh-alerta ul{margin:4px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
-.fh-alerta.erro{background:#FEF2F2;border:1.5px solid #FECACA;color:#B91C1C}
-.fh-alerta.aviso{background:#FFFBEB;border:1.5px solid #FDE68A;color:#92400E}
+.fh-alerta.erro{background:#FEF2F2;border:1.5px solid #FECACA;color:#B71C1C}
+.fh-alerta.aviso{background:#FFF7E6;border:1.5px solid #FDE68A;color:#92400E}
 
 .fh-cortina{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;display:flex;
   align-items:flex-end;justify-content:center;padding:0}
@@ -483,19 +483,19 @@ const ESTILO = `
 .fh-tipos{display:flex;gap:6px;padding:12px 16px 0;flex-wrap:wrap}
 .fh-tipos button{padding:8px 12px;border-radius:999px;border:1.5px solid #E2E8F0;background:#fff;
   font-size:.78rem;font-weight:700;color:#475569;cursor:pointer;font-family:inherit}
-.fh-tipos button[aria-pressed="true"]{border-color:#6D28D9;background:#F5F3FF;color:#6D28D9}
+.fh-tipos button[aria-pressed="true"]{border-color:#334155;background:#F8FAFC;color:#334155}
 .fh-folha-corpo{padding:12px 16px;overflow-y:auto;flex:1}
 .fh-folha-pe{padding:10px 16px 14px;border-top:1px solid #F1F5F9}
-.fh-pronto{width:100%;padding:11px;border-radius:11px;border:none;background:#6D28D9;color:#fff;
+.fh-pronto{width:100%;padding:11px;border-radius:11px;border:none;background:#334155;color:#fff;
   font-size:.86rem;font-weight:800;cursor:pointer;font-family:inherit}
 .fh-busca{width:100%;padding:9px 12px;border-radius:10px;border:1.5px solid #E2E8F0;margin-bottom:10px;
   font-size:.84rem;font-family:inherit;outline:none}
-.fh-busca:focus{border-color:#A78BFA}
+.fh-busca:focus{border-color:#94A3B8}
 .fh-grelha{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:9px}
 .fh-item{border:2px solid #E2E8F0;border-radius:12px;overflow:hidden;background:#fff;padding:0;
   cursor:pointer;text-align:left;font-family:inherit}
-.fh-item:hover{border-color:#A78BFA}
-.fh-item[aria-pressed="true"]{border-color:#6D28D9;box-shadow:0 0 0 3px rgba(109,40,217,.18)}
+.fh-item:hover{border-color:#94A3B8}
+.fh-item[aria-pressed="true"]{border-color:#334155;box-shadow:0 0 0 3px rgba(109,40,217,.18)}
 .fh-item img{width:100%;height:88px;object-fit:cover;display:block}
 .fh-item .sem-foto{height:88px;display:flex;align-items:center;justify-content:center;
   background:#F1F5F9;font-size:1.6rem}

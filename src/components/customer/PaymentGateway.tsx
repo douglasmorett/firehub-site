@@ -326,7 +326,7 @@ export default function PaymentGateway({
             {method === "pix" ? "💰 Pagamento via Pix" : "💳 Pagamento via Cartão"}
           </h2>
           <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "2px 0 0" }}>
-            Total a pagar: <strong style={{ color: "#16A34A" }}>R$ {amount.toFixed(2).replace(".", ",")}</strong>
+            Total a pagar: <strong style={{ color: "#15803D" }}>R$ {amount.toFixed(2).replace(".", ",")}</strong>
           </p>
         </div>
         <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "#94A3B8" }}>
@@ -337,7 +337,7 @@ export default function PaymentGateway({
       {/* Banner explicativo */}
       {!pixPaid && (
         <div style={{
-          background: "#FEF3C7",
+          background: "#FFF7E6",
           border: "1.5px solid #FCD34D",
           borderRadius: "12px",
           padding: "10px 14px",
@@ -362,7 +362,7 @@ export default function PaymentGateway({
           marginBottom: "16px",
           textAlign: "center"
         }}>
-          <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "#DC2626", margin: "0 0 12px" }}>
+          <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "#C92E09", margin: "0 0 12px" }}>
             ❌ {errorMessage}
           </p>
           <div style={{ display: "flex", gap: "8px", justifyContent: "center", flexWrap: "wrap" }}>
@@ -376,7 +376,7 @@ export default function PaymentGateway({
                 padding: "8px 14px",
                 borderRadius: "8px",
                 border: "none",
-                background: "#DC2626",
+                background: "#C92E09",
                 color: "#fff",
                 fontWeight: 700,
                 fontSize: "0.8rem",
@@ -418,11 +418,11 @@ export default function PaymentGateway({
               }}
               style={{
                 flex: 1, padding: "10px 8px", borderRadius: "10px",
-                border: `2px solid ${method === m ? "#DC2626" : "#E2E8F0"}`,
+                border: `2px solid ${method === m ? "#C92E09" : "#E2E8F0"}`,
                 background: method === m ? "#FEF2F2" : "#fff",
                 cursor: "pointer", textAlign: "center",
                 fontWeight: method === m ? 800 : 600, fontSize: "0.82rem",
-                color: method === m ? "#DC2626" : "#475569",
+                color: method === m ? "#C92E09" : "#475569",
                 transition: "all 0.15s", fontFamily: "inherit",
               }}>
               {PAYMENT_LABELS[m]}
@@ -434,7 +434,7 @@ export default function PaymentGateway({
       {/* ── PIX ── */}
       {method === "pix" && !pixData && !pixPaid && !errorMessage && (
         <div style={{ textAlign: "center", padding: "24px 0" }}>
-          <Loader size={32} color="#DC2626" style={{ animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
+          <Loader size={32} color="#C92E09" style={{ animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
           <p style={{ fontWeight: 700, fontSize: "0.9rem", color: "#334155" }}>Gerando QR Code PIX seguro...</p>
         </div>
       )}
@@ -442,8 +442,8 @@ export default function PaymentGateway({
       {/* QR CODE */}
       {method === "pix" && pixData && !pixPaid && !pixExpired && (
         <div style={{ textAlign: "center" }}>
-          <div style={{ background: "#F0FDF4", border: "2px solid #BBF7D0", borderRadius: "16px", padding: "20px", marginBottom: "12px" }}>
-            <p style={{ fontSize: "0.82rem", fontWeight: 700, color: "#16A34A", marginBottom: "12px" }}>
+          <div style={{ background: "#ECFDF3", border: "2px solid #ABEFC6", borderRadius: "16px", padding: "20px", marginBottom: "12px" }}>
+            <p style={{ fontSize: "0.82rem", fontWeight: 700, color: "#15803D", marginBottom: "12px" }}>
               📱 Escaneie o QR Code ou copie o código PIX
             </p>
             {pixData.qrCodeBase64 ? (
@@ -457,9 +457,9 @@ export default function PaymentGateway({
               <button onClick={copyPix}
                 style={{
                   padding: "12px 24px", borderRadius: "10px",
-                  border: "1.5px solid #16A34A",
-                  background: copied ? "#16A34A" : "#fff",
-                  color: copied ? "#fff" : "#16A34A",
+                  border: "1.5px solid #15803D",
+                  background: copied ? "#15803D" : "#fff",
+                  color: copied ? "#fff" : "#15803D",
                   fontWeight: 800, cursor: "pointer", fontSize: "0.9rem",
                   display: "inline-flex", alignItems: "center", gap: "8px", fontFamily: "inherit",
                   boxShadow: "0 2px 4px rgba(0,0,0,0.05)"
@@ -482,10 +482,10 @@ export default function PaymentGateway({
 
       {pixPaid && (
         <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#16A34A", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#15803D", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
             <Check size={36} color="#fff" />
           </div>
-          <h3 style={{ fontWeight: 800, color: "#16A34A", fontSize: "1.2rem", marginBottom: "6px" }}>
+          <h3 style={{ fontWeight: 800, color: "#15803D", fontSize: "1.2rem", marginBottom: "6px" }}>
             Pagamento Confirmado! ✅
           </h3>
           <p style={{ fontSize: "0.88rem", color: "#334155", fontWeight: 600 }}>
@@ -496,9 +496,9 @@ export default function PaymentGateway({
 
       {pixExpired && (
         <div style={{ textAlign: "center", padding: "1.5rem" }}>
-          <p style={{ fontWeight: 700, color: "#DC2626" }}>⏱️ PIX expirado.</p>
+          <p style={{ fontWeight: 700, color: "#C92E09" }}>⏱️ PIX expirado.</p>
           <button onClick={() => { setPixData(null); setPixExpired(false); handlePixPay(); }}
-            style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px", fontFamily: "inherit" }}>
+            style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px", fontFamily: "inherit" }}>
             <RefreshCw size={14} /> Gerar novo PIX
           </button>
         </div>
@@ -507,8 +507,8 @@ export default function PaymentGateway({
       {/* ── CARTÃO DE CRÉDITO ── */}
       {method === "credit_card" && !pixPaid && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div style={{ padding: "10px 14px", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "10px", fontSize: "0.78rem", color: "#1E40AF", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
-            <ShieldCheck size={18} color="#2563EB" style={{ flexShrink: 0 }} />
+          <div style={{ padding: "10px 14px", background: "#EFF6FF", border: "1px solid #B2DDFF", borderRadius: "10px", fontSize: "0.78rem", color: "#1D4ED8", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
+            <ShieldCheck size={18} color="#1D4ED8" style={{ flexShrink: 0 }} />
             <span>Dados criptografados pelo Mercado Pago com proteção antifraude.</span>
           </div>
 
@@ -554,7 +554,7 @@ export default function PaymentGateway({
             disabled={loading || !cardNumber || !cardHolder || !cardExpiry || !cardCvv || !payerCpf}
             style={{
               width: "100%", padding: "14px", borderRadius: "12px", border: "none",
-              background: loading ? "#94A3B8" : "linear-gradient(135deg, #DC2626, #B91C1C)",
+              background: loading ? "#94A3B8" : "linear-gradient(135deg, #C92E09, #B71C1C)",
               color: "#fff", fontWeight: 800, fontSize: "1rem",
               cursor: loading ? "not-allowed" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontFamily: "inherit",

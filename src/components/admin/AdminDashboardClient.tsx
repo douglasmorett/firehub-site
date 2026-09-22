@@ -181,7 +181,7 @@ export default function AdminDashboardClient({
         .fha-topbar { background: #1E293B; border-bottom: 1px solid #334155; padding: 16px 28px; display: flex; align-items: center; justify-content: space-between; }
         .fha-nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-size: 0.875rem; font-weight: 500; color: #94A3B8; transition: all 0.15s; text-decoration: none; margin: 2px 0; }
         .fha-nav-item:hover { background: rgba(255,255,255,0.06); color: #F1F5F9; }
-        .fha-nav-item.active { background: rgba(239,68,68,0.15); color: #F87171; font-weight: 700; }
+        .fha-nav-item.active { background: rgba(239,68,68,0.15); color: #E8360C; font-weight: 700; }
         .fha-kpi { background: #1E293B; border: 1px solid #334155; border-radius: 14px; padding: 20px 22px; }
         .fha-kpi-val { font-size: 2rem; font-weight: 900; color: #F1F5F9; margin: 4px 0 2px; }
         .fha-kpi-lbl { font-size: 0.75rem; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
@@ -193,20 +193,20 @@ export default function AdminDashboardClient({
         .fha-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; }
         .fha-badge-trial { background: rgba(245,158,11,0.15); color: #FCD34D; border: 1px solid rgba(245,158,11,0.25); }
         .fha-badge-active { background: rgba(16,185,129,0.15); color: #34D399; border: 1px solid rgba(16,185,129,0.25); }
-        .fha-badge-pending { background: rgba(239,68,68,0.15); color: #F87171; border: 1px solid rgba(239,68,68,0.25); }
+        .fha-badge-pending { background: rgba(239,68,68,0.15); color: #E8360C; border: 1px solid rgba(239,68,68,0.25); }
         .fha-badge-exempt { background: rgba(99,102,241,0.15); color: #818CF8; border: 1px solid rgba(99,102,241,0.25); }
         .fha-input { background: #1E293B; border: 1px solid #334155; border-radius: 10px; padding: 10px 14px; color: #F1F5F9; font-size: 0.875rem; font-family: inherit; outline: none; transition: border-color 0.2s; }
-        .fha-input:focus { border-color: #EF4444; }
+        .fha-input:focus { border-color: #C92E09; }
         .fha-input::placeholder { color: #475569; }
         .fha-section { background: #1E293B; border: 1px solid #334155; border-radius: 16px; overflow: hidden; }
-        .fha-bar { background: linear-gradient(180deg, #EF4444, #DC2626); border-radius: 4px 4px 0 0; transition: height 0.5s ease; min-height: 3px; }
+        .fha-bar { background: linear-gradient(180deg, #C92E09, #C92E09); border-radius: 4px 4px 0 0; transition: height 0.5s ease; min-height: 3px; }
         .fha-btn-action { background: #334155; color: #F1F5F9; border: 1px solid #475569; padding: 5px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
         .fha-btn-action:hover { background: #475569; border-color: #64748B; }
-        .fha-btn-impersonate { background: rgba(37,99,235,0.15); color: #60A5FA; border: 1px solid rgba(37,99,235,0.3); }
-        .fha-btn-impersonate:hover { background: rgba(37,99,235,0.25); color: #93C5FD; }
+        .fha-btn-impersonate { background: rgba(37,99,235,0.15); color: #1D4ED8; border: 1px solid rgba(37,99,235,0.3); }
+        .fha-btn-impersonate:hover { background: rgba(37,99,235,0.25); color: #B2DDFF; }
         .fha-btn-grant { background: rgba(16,185,129,0.15); color: #34D399; border: 1px solid rgba(16,185,129,0.3); }
         .fha-btn-grant:hover { background: rgba(16,185,129,0.25); color: #6EE7B7; }
-        .fha-btn-reset { background: rgba(245,158,11,0.12); color: #FBBF24; border: 1px solid rgba(245,158,11,0.3); }
+        .fha-btn-reset { background: rgba(245,158,11,0.12); color: #B45309; border: 1px solid rgba(245,158,11,0.3); }
         .fha-btn-reset:hover { background: rgba(245,158,11,0.22); color: #FCD34D; }
       `}</style>
 
@@ -214,7 +214,7 @@ export default function AdminDashboardClient({
       <aside className="fha-sidebar">
         <div style={{ padding: "20px 16px", borderBottom: "1px solid #334155" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#EF4444,#DC2626)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>🔥</div>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#C92E09,#C92E09)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem" }}>🔥</div>
             <div>
               <div style={{ color: "#F1F5F9", fontWeight: 900, fontSize: "1rem", letterSpacing: "-0.5px" }}>FireHub</div>
               <div style={{ color: "#64748B", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>Admin Panel</div>
@@ -253,7 +253,7 @@ export default function AdminDashboardClient({
 
         <div style={{ padding: "12px 10px", borderTop: "1px solid #334155" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.04)" }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#EF4444,#B91C1C)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.85rem" }}>👤</div>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#C92E09,#B71C1C)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.85rem" }}>👤</div>
             <div>
               <div style={{ color: "#F1F5F9", fontSize: "0.8rem", fontWeight: 700 }}>{adminName}</div>
               <div style={{ color: "#64748B", fontSize: "0.65rem" }}>Administrador</div>
@@ -301,11 +301,11 @@ export default function AdminDashboardClient({
               {/* KPI Grid */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
                 {[
-                  { icon: "🏪", label: "Total de Lojistas", val: kpis.totalLojistas, sub: `${kpis.emTrial} em trial · ${kpis.assinantes} assinantes`, color: "#60A5FA" },
+                  { icon: "🏪", label: "Total de Lojistas", val: kpis.totalLojistas, sub: `${kpis.emTrial} em trial · ${kpis.assinantes} assinantes`, color: "#1D4ED8" },
                   { icon: "🆕", label: "Novos este mês", val: kpis.novosMes, sub: `${kpis.novosSemana} esta semana`, color: "#34D399" },
-                  { icon: "💵", label: "MRR Estimado", val: fmt(kpis.mrr), sub: "Receita recorrente mensal", color: "#A78BFA" },
-                  { icon: "💰", label: "Total Arrecadado", val: fmt(kpis.totalArrecadado), sub: "Histórico de pagamentos", color: "#F59E0B" },
-                  { icon: "⚠️", label: "Pendências", val: fmt(kpis.totalPendente), sub: `${kpis.comPendencia} lojistas com débito`, color: "#F87171" },
+                  { icon: "💵", label: "MRR Estimado", val: fmt(kpis.mrr), sub: "Receita recorrente mensal", color: "#94A3B8" },
+                  { icon: "💰", label: "Total Arrecadado", val: fmt(kpis.totalArrecadado), sub: "Histórico de pagamentos", color: "#B45309" },
+                  { icon: "⚠️", label: "Pendências", val: fmt(kpis.totalPendente), sub: `${kpis.comPendencia} lojistas com débito`, color: "#E8360C" },
                   { icon: "🎁", label: "Em Trial / Benefício", val: kpis.emTrial, sub: `${kpis.assinantes} já são assinantes`, color: "#FCD34D" },
                 ].map(k => (
                   <div key={k.label} className="fha-kpi">
@@ -362,7 +362,7 @@ export default function AdminDashboardClient({
                           <div style={{ color: "#475569", fontSize: "0.72rem" }}>{l.email}</div>
                         </td>
                         <td style={{ color: "#94A3B8" }}>{l.city || "—"}</td>
-                        <td style={{ color: "#60A5FA", whiteSpace: "nowrap", fontSize: "0.78rem" }}>
+                        <td style={{ color: "#1D4ED8", whiteSpace: "nowrap", fontSize: "0.78rem" }}>
                           {l.storePhone ? (
                             <a href={`https://wa.me/${l.storePhone.replace(/\D/g, '')}`} target="_blank" style={{ color: "#34D399", textDecoration: "none" }}>📱 {l.storePhone}</a>
                           ) : "—"}
@@ -406,7 +406,7 @@ export default function AdminDashboardClient({
                             <button
                               onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
                               className="fha-btn-action"
-                              style={{ background: expandedId === l.id ? "rgba(139,92,246,0.25)" : "rgba(100,116,139,0.15)", color: expandedId === l.id ? "#A78BFA" : "#94A3B8", border: `1px solid ${expandedId === l.id ? "rgba(139,92,246,0.4)" : "#334155"}` }}
+                              style={{ background: expandedId === l.id ? "rgba(139,92,246,0.25)" : "rgba(100,116,139,0.15)", color: expandedId === l.id ? "#94A3B8" : "#94A3B8", border: `1px solid ${expandedId === l.id ? "rgba(139,92,246,0.4)" : "#334155"}` }}
                               title="Ver dados completos do cadastro"
                             >
                               📋 Dados
@@ -440,7 +440,7 @@ export default function AdminDashboardClient({
                               </div>
                               <div>
                                 <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Slug</div>
-                                <div style={{ color: "#60A5FA", fontSize: "0.82rem", fontWeight: 600 }}>{l.slug || "—"}</div>
+                                <div style={{ color: "#1D4ED8", fontSize: "0.82rem", fontWeight: 600 }}>{l.slug || "—"}</div>
                               </div>
                               <div>
                                 <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Trial Encerra</div>
@@ -477,7 +477,7 @@ export default function AdminDashboardClient({
                 <h3 style={{ color: "#F1F5F9", fontWeight: 700, margin: 0, fontSize: "0.9rem" }}>
                   Todos os Lojistas <span style={{ color: "#64748B", fontWeight: 400 }}>({filtered.length} de {lojistas.length})</span>
                 </h3>
-                <a href="/store/admin/lojistas" style={{ background: "rgba(239,68,68,0.15)", color: "#F87171", border: "1px solid rgba(239,68,68,0.3)", padding: "6px 14px", borderRadius: 8, fontWeight: 700, fontSize: "0.78rem", textDecoration: "none" }}>
+                <a href="/store/admin/lojistas" style={{ background: "rgba(239,68,68,0.15)", color: "#E8360C", border: "1px solid rgba(239,68,68,0.3)", padding: "6px 14px", borderRadius: 8, fontWeight: 700, fontSize: "0.78rem", textDecoration: "none" }}>
                   + Novo Lojista
                 </a>
               </div>
@@ -514,7 +514,7 @@ export default function AdminDashboardClient({
                         padding: "6px 12px", borderRadius: 20, fontSize: "0.72rem", fontWeight: 700, cursor: "pointer",
                         fontFamily: "inherit", transition: "all 0.2s",
                         background: statusFilter === opt.key ? "rgba(239,68,68,0.15)" : "#0F172A",
-                        color: statusFilter === opt.key ? "#F87171" : "#94A3B8",
+                        color: statusFilter === opt.key ? "#E8360C" : "#94A3B8",
                         border: `1px solid ${statusFilter === opt.key ? "rgba(239,68,68,0.35)" : "#334155"}`,
                       }}
                     >{opt.label}</button>
@@ -600,7 +600,7 @@ export default function AdminDashboardClient({
                             <button
                               onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
                               className="fha-btn-action"
-                              style={{ background: expandedId === l.id ? "rgba(139,92,246,0.25)" : "rgba(100,116,139,0.15)", color: expandedId === l.id ? "#A78BFA" : "#94A3B8", border: `1px solid ${expandedId === l.id ? "rgba(139,92,246,0.4)" : "#334155"}` }}
+                              style={{ background: expandedId === l.id ? "rgba(139,92,246,0.25)" : "rgba(100,116,139,0.15)", color: expandedId === l.id ? "#94A3B8" : "#94A3B8", border: `1px solid ${expandedId === l.id ? "rgba(139,92,246,0.4)" : "#334155"}` }}
                             >
                               📋 Dados
                             </button>
@@ -633,7 +633,7 @@ export default function AdminDashboardClient({
                               </div>
                               <div>
                                 <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Slug (Cardápio)</div>
-                                <div style={{ color: "#60A5FA", fontSize: "0.82rem", fontWeight: 600 }}>{l.slug ? <a href={`/loja/${l.slug}`} target="_blank" style={{ color: "#60A5FA" }}>{l.slug}</a> : "—"}</div>
+                                <div style={{ color: "#1D4ED8", fontSize: "0.82rem", fontWeight: 600 }}>{l.slug ? <a href={`/loja/${l.slug}`} target="_blank" style={{ color: "#1D4ED8" }}>{l.slug}</a> : "—"}</div>
                               </div>
                               <div>
                                 <div style={{ color: "#64748B", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 2 }}>Trial Encerra</div>
@@ -673,9 +673,9 @@ export default function AdminDashboardClient({
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
                 {[
-                  { icon: "💵", label: "MRR Estimado", val: fmt(kpis.mrr), color: "#A78BFA" },
+                  { icon: "💵", label: "MRR Estimado", val: fmt(kpis.mrr), color: "#94A3B8" },
                   { icon: "💰", label: "Total Arrecadado", val: fmt(kpis.totalArrecadado), color: "#34D399" },
-                  { icon: "⚠️", label: "Total Pendente", val: fmt(kpis.totalPendente), color: "#F87171" },
+                  { icon: "⚠️", label: "Total Pendente", val: fmt(kpis.totalPendente), color: "#E8360C" },
                   { icon: "👥", label: "Com Pendência", val: `${kpis.comPendencia} lojistas`, color: "#FCD34D" },
                 ].map(k => (
                   <div key={k.label} className="fha-kpi">
@@ -700,7 +700,7 @@ export default function AdminDashboardClient({
                           <div style={{ fontWeight: 600, color: "#F1F5F9" }}>{l.storeName || l.name}</div>
                           <div style={{ color: "#475569", fontSize: "0.72rem" }}>{l.email}</div>
                         </td>
-                        <td style={{ color: "#F87171", fontWeight: 700 }}>{fmt(l.pendente)}</td>
+                        <td style={{ color: "#E8360C", fontWeight: 700 }}>{fmt(l.pendente)}</td>
                         <td><span className="fha-badge fha-badge-pending">⚠️ Em aberto</span></td>
                         <td>
                           <button
@@ -756,7 +756,7 @@ export default function AdminDashboardClient({
 
             <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px 14px", borderRadius: 10, border: "1px solid #334155", marginBottom: 20 }}>
               <div style={{ fontSize: "0.75rem", color: "#64748B" }}>Status atual de Trial:</div>
-              <div style={{ color: grantModalUser.emTrial ? "#34D399" : "#F87171", fontWeight: 700, fontSize: "0.9rem", marginTop: 2 }}>
+              <div style={{ color: grantModalUser.emTrial ? "#34D399" : "#E8360C", fontWeight: 700, fontSize: "0.9rem", marginTop: 2 }}>
                 {grantModalUser.emTrial
                   ? `🎁 Ativo — ${grantModalUser.diasRestantesTrial ?? 0} dias restantes`
                   : "⏹️ Encerrado"}
@@ -774,7 +774,7 @@ export default function AdminDashboardClient({
                   onClick={() => handleGrantDays(15)}
                   disabled={granting}
                   style={{
-                    background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff",
+                    background: "linear-gradient(135deg, #15803D, #15803D)", color: "#fff",
                     border: "none", padding: "12px", borderRadius: 10, fontWeight: 800,
                     cursor: "pointer", fontSize: "0.9rem", transition: "transform 0.1s",
                   }}
@@ -786,7 +786,7 @@ export default function AdminDashboardClient({
                   onClick={() => handleGrantDays(30)}
                   disabled={granting}
                   style={{
-                    background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff",
+                    background: "linear-gradient(135deg, #1D4ED8, #1D4ED8)", color: "#fff",
                     border: "none", padding: "12px", borderRadius: 10, fontWeight: 800,
                     cursor: "pointer", fontSize: "0.9rem", transition: "transform 0.1s",
                   }}
@@ -916,7 +916,7 @@ export default function AdminDashboardClient({
                     onClick={handleResetPassword}
                     disabled={!resetConfirmado || resetting}
                     style={{
-                      background: resetConfirmado ? "linear-gradient(135deg, #F59E0B, #D97706)" : "#334155",
+                      background: resetConfirmado ? "linear-gradient(135deg, #B45309, #B45309)" : "#334155",
                       color: resetConfirmado ? "#fff" : "#64748B",
                       border: "none", padding: "10px 18px", borderRadius: 10, fontWeight: 800,
                       cursor: resetConfirmado && !resetting ? "pointer" : "not-allowed", fontSize: "0.85rem",

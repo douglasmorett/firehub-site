@@ -85,7 +85,7 @@ const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 const PLATAFORMAS: Record<string, { label: string; cor: string }> = {
   IFOOD:       { label: "iFood",           cor: "#EA1D2C" },
   "99FOOD":    { label: "99Food",          cor: "#EAB308" },
-  JOTAJA:      { label: "Jotajá",          cor: "#7C3AED" },
+  JOTAJA:      { label: "Jotajá",          cor: "#475569" },
   BRENDI:      { label: "Brendi",          cor: "#0EA5E9" },
   WABIZ:       { label: "Wabiz",           cor: "#65A30D" },
   TOTEM:       { label: "Totem",           cor: "#F97316" },
@@ -93,8 +93,8 @@ const PLATAFORMAS: Record<string, { label: string; cor: string }> = {
   PRESENCIAL:  { label: "Balcão",          cor: "#64748B" },
   MESA:        { label: "Mesa",            cor: "#B45309" },
   WHATSAPP_IA: { label: "WhatsApp (robô)", cor: "#25D366" },
-  ONLINE:      { label: "Site da loja",    cor: "#2563EB" },
-  SITE:        { label: "Site da loja",    cor: "#2563EB" },
+  ONLINE:      { label: "Site da loja",    cor: "#1D4ED8" },
+  SITE:        { label: "Site da loja",    cor: "#1D4ED8" },
 };
 
 // "SITE" e "ONLINE" sao o mesmo canal escrito de dois jeitos por rotas
@@ -535,10 +535,10 @@ export default function RelatoriosClient({
     });
 
     const etapas = [
-      { chave: "fila", titulo: "Esperando aceite", legenda: "Da hora que o pedido caiu ate alguem aceitar", cor: "#3B82F6", dados: fila },
-      { chave: "cozinha", titulo: "Na cozinha", legenda: "Do aceite ate o pedido ficar pronto ou sair", cor: "#F59E0B", dados: cozinha },
-      { chave: "esperandoSaida", titulo: "Pronto esperando motoboy", legenda: "Do PRONTO ate sair para entrega", cor: "#8B5CF6", dados: esperandoSaida },
-      { chave: "naRua", titulo: "Na rua", legenda: "Da saida ate a entrega no cliente", cor: "#10B981", dados: naRua },
+      { chave: "fila", titulo: "Esperando aceite", legenda: "Da hora que o pedido caiu ate alguem aceitar", cor: "#1D4ED8", dados: fila },
+      { chave: "cozinha", titulo: "Na cozinha", legenda: "Do aceite ate o pedido ficar pronto ou sair", cor: "#B45309", dados: cozinha },
+      { chave: "esperandoSaida", titulo: "Pronto esperando motoboy", legenda: "Do PRONTO ate sair para entrega", cor: "#64748B", dados: esperandoSaida },
+      { chave: "naRua", titulo: "Na rua", legenda: "Da saida ate a entrega no cliente", cor: "#15803D", dados: naRua },
       { chave: "kds", titulo: "Finalizacao no KDS", legenda: "Da producao ate a montagem terminar", cor: "#0EA5E9", dados: kdsMontagem },
       { chave: "total", titulo: "Tempo total", legenda: "Do pedido ate o cliente receber", cor: "#0F172A", dados: total },
     ].map((e) => ({ ...e, media: media(e.dados), mediana: mediana(e.dados), medidos: e.dados.length }));
@@ -584,10 +584,10 @@ export default function RelatoriosClient({
       folgaMedia: medidos > 0 ? somaFolga / medidos : null,
       limites: cfg,
       faixas: [
-        { chave: "noPrazo", titulo: "Saiu no prazo", n: noPrazo, pct: pct(noPrazo), cor: "#16A34A", fundo: "#DCFCE7", detalhe: "Mais de " + cfg.yellowMinutes + " min de folga" },
-        { chave: "amarelo", titulo: "Alerta amarelo", n: amarelo, pct: pct(amarelo), cor: "#B45309", fundo: "#FEF3C7", detalhe: "Saiu com " + cfg.redMinutes + " a " + cfg.yellowMinutes + " min de folga" },
-        { chave: "vermelho", titulo: "Alerta vermelho", n: vermelho, pct: pct(vermelho), cor: "#DC2626", fundo: "#FEE2E2", detalhe: "Saiu em cima da hora (ate " + cfg.redMinutes + " min)" },
-        { chave: "estourado", titulo: "Prazo estourado", n: estourado, pct: pct(estourado), cor: "#7F1D1D", fundo: "#FECACA", detalhe: "Ja tinha passado do prazo prometido" },
+        { chave: "noPrazo", titulo: "Saiu no prazo", n: noPrazo, pct: pct(noPrazo), cor: "#15803D", fundo: "#ECFDF3", detalhe: "Mais de " + cfg.yellowMinutes + " min de folga" },
+        { chave: "amarelo", titulo: "Alerta amarelo", n: amarelo, pct: pct(amarelo), cor: "#B45309", fundo: "#FFF7E6", detalhe: "Saiu com " + cfg.redMinutes + " a " + cfg.yellowMinutes + " min de folga" },
+        { chave: "vermelho", titulo: "Alerta vermelho", n: vermelho, pct: pct(vermelho), cor: "#C92E09", fundo: "#FEE2E2", detalhe: "Saiu em cima da hora (ate " + cfg.redMinutes + " min)" },
+        { chave: "estourado", titulo: "Prazo estourado", n: estourado, pct: pct(estourado), cor: "#B71C1C", fundo: "#FECACA", detalhe: "Ja tinha passado do prazo prometido" },
       ],
     };
   }, [dateFilteredOrders, timeAlertConfig]);
@@ -821,9 +821,9 @@ export default function RelatoriosClient({
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(22,163,74,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <DollarSign size={18} color="#16A34A" />
+              <DollarSign size={18} color="#15803D" />
             </div>
-            <span style={{ fontSize: "0.7rem", color: "#16A34A", background: "rgba(22,163,74,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+            <span style={{ fontSize: "0.7rem", color: "#15803D", background: "rgba(22,163,74,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
               Faturamento
             </span>
           </div>
@@ -838,9 +838,9 @@ export default function RelatoriosClient({
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(37,99,235,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Package size={18} color="#2563EB" />
+              <Package size={18} color="#1D4ED8" />
             </div>
-            <span style={{ fontSize: "0.7rem", color: "#2563EB", background: "rgba(37,99,235,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+            <span style={{ fontSize: "0.7rem", color: "#1D4ED8", background: "rgba(37,99,235,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
               Volume
             </span>
           </div>
@@ -882,9 +882,9 @@ export default function RelatoriosClient({
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(220,38,38,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Bike size={18} color="#DC2626" />
+              <Bike size={18} color="#C92E09" />
             </div>
-            <span style={{ fontSize: "0.7rem", color: "#DC2626", background: "rgba(220,38,38,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+            <span style={{ fontSize: "0.7rem", color: "#C92E09", background: "rgba(220,38,38,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
               Custo
             </span>
           </div>
@@ -892,7 +892,7 @@ export default function RelatoriosClient({
             <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Gasto com Entregas</p>
             {entregas.apuradas > 0 ? (
               <>
-                <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#DC2626" }}>{fmtR(entregas.custo)}</p>
+                <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#C92E09" }}>{fmtR(entregas.custo)}</p>
                 <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
                   {fmtR(entregas.medio)} por entrega · o que a loja paga ao entregador
                   {entregas.semCusto > 0 && (
@@ -919,9 +919,9 @@ export default function RelatoriosClient({
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(139,92,246,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <ShoppingBag size={18} color="#8B5CF6" />
+              <ShoppingBag size={18} color="#64748B" />
             </div>
-            <span style={{ fontSize: "0.7rem", color: "#8B5CF6", background: "rgba(139,92,246,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+            <span style={{ fontSize: "0.7rem", color: "#64748B", background: "rgba(139,92,246,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
               Movimentação
             </span>
           </div>
@@ -936,9 +936,9 @@ export default function RelatoriosClient({
         <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(245,158,11,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <TrendingUp size={18} color="#F59E0B" />
+              <TrendingUp size={18} color="#B45309" />
             </div>
-            <span style={{ fontSize: "0.7rem", color: "#F59E0B", background: "rgba(245,158,11,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+            <span style={{ fontSize: "0.7rem", color: "#B45309", background: "rgba(245,158,11,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
               Rentabilidade
             </span>
           </div>
@@ -958,7 +958,7 @@ export default function RelatoriosClient({
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: "1rem" }}>
           <div>
             <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
-              <Timer size={18} color="#3B82F6" /> Quanto tempo o pedido passa em cada tela
+              <Timer size={18} color="#1D4ED8" /> Quanto tempo o pedido passa em cada tela
             </h2>
             <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
               Conta só o pedido que passou pela etapa com hora registrada. O número grande é a mediana — o pedido do meio, que não se deixa distorcer por um pedido esquecido aberto.
@@ -994,7 +994,7 @@ export default function RelatoriosClient({
       <div style={CARD_SECAO}>
         <div style={{ marginBottom: "1rem" }}>
           <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
-            <Bike size={18} color="#16A34A" /> Como os pedidos saíram para entrega
+            <Bike size={18} color="#15803D" /> Como os pedidos saíram para entrega
           </h2>
           <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
             Quanto tempo ainda faltava para o prazo prometido na hora em que o pedido saiu.
@@ -1033,7 +1033,7 @@ export default function RelatoriosClient({
             <p style={{ margin: "10px 0 0", fontSize: "0.75rem", color: "#94A3B8" }}>
               {saidas.medidos} saída{saidas.medidos !== 1 ? "s" : ""} medida{saidas.medidos !== 1 ? "s" : ""} no período
               {saidas.folgaMedia !== null && (
-                <> · folga média na saída: <strong style={{ color: saidas.folgaMedia < 0 ? "#DC2626" : "#16A34A" }}>
+                <> · folga média na saída: <strong style={{ color: saidas.folgaMedia < 0 ? "#C92E09" : "#15803D" }}>
                   {saidas.folgaMedia < 0 ? `${fmtMin(Math.abs(saidas.folgaMedia))} depois do prazo` : `${fmtMin(saidas.folgaMedia)} antes do prazo`}
                 </strong></>
               )}
@@ -1045,7 +1045,7 @@ export default function RelatoriosClient({
       {/* ── DE ONDE VÊM OS PEDIDOS ── */}
       <div style={CARD_SECAO}>
         <h2 style={{ margin: "0 0 4px", fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
-          <PieChart size={18} color="#7C3AED" /> De onde vêm os pedidos
+          <PieChart size={18} color="#475569" /> De onde vêm os pedidos
         </h2>
         <p style={{ margin: "0 0 1rem", fontSize: "0.78rem", color: "#64748B" }}>
           Quantidade e porcentagem por plataforma, e quanto cada uma faturou.
@@ -1110,7 +1110,7 @@ export default function RelatoriosClient({
         {/* Horário de pico */}
         <div style={CARD_SECAO_INTERNO}>
           <h3 style={{ margin: "0 0 4px", fontWeight: 900, fontSize: "0.92rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 7 }}>
-            <Clock size={16} color="#F59E0B" /> Horários de pico
+            <Clock size={16} color="#B45309" /> Horários de pico
           </h3>
           <p style={{ margin: "0 0 1rem", fontSize: "0.76rem", color: "#64748B" }}>
             Pedidos por hora do dia. Pico às <strong>{String(movimento.picoHora.hora).padStart(2, "0")}h</strong> com {movimento.picoHora.count} pedidos.
@@ -1121,7 +1121,7 @@ export default function RelatoriosClient({
                 <div style={{
                   height: `${(h.count / movimento.maxHora) * 100}%`,
                   minHeight: h.count > 0 ? 3 : 0,
-                  background: h.hora === movimento.picoHora.hora ? "#F59E0B" : "#CBD5E1",
+                  background: h.hora === movimento.picoHora.hora ? "#B45309" : "#CBD5E1",
                   borderRadius: "3px 3px 0 0",
                 }} />
               </div>
@@ -1135,7 +1135,7 @@ export default function RelatoriosClient({
         {/* Dias da semana */}
         <div style={CARD_SECAO_INTERNO}>
           <h3 style={{ margin: "0 0 4px", fontWeight: 900, fontSize: "0.92rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 7 }}>
-            <Calendar size={16} color="#2563EB" /> Dias da semana
+            <Calendar size={16} color="#1D4ED8" /> Dias da semana
           </h3>
           <p style={{ margin: "0 0 1rem", fontSize: "0.76rem", color: "#64748B" }}>
             Dia mais forte: <strong>{DIAS_SEMANA[movimento.picoDia.dia]}</strong> com {movimento.picoDia.count} pedidos.
@@ -1145,7 +1145,7 @@ export default function RelatoriosClient({
               <div key={d.dia} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 34, fontSize: "0.74rem", fontWeight: 800, color: "#475569", flexShrink: 0 }}>{DIAS_SEMANA[d.dia]}</span>
                 <div style={{ flex: 1, background: "#F1F5F9", height: 16, borderRadius: 5, overflow: "hidden" }}>
-                  <div style={{ width: `${(d.count / movimento.maxDia) * 100}%`, height: "100%", background: d.dia === movimento.picoDia.dia ? "#2563EB" : "#93C5FD", borderRadius: 5 }} />
+                  <div style={{ width: `${(d.count / movimento.maxDia) * 100}%`, height: "100%", background: d.dia === movimento.picoDia.dia ? "#1D4ED8" : "#B2DDFF", borderRadius: 5 }} />
                 </div>
                 <span style={{ width: 74, textAlign: "right", fontSize: "0.72rem", color: "#64748B", flexShrink: 0 }}>
                   <strong style={{ color: "#0F172A" }}>{d.count}</strong> · {fmtR(d.total)}
@@ -1189,7 +1189,7 @@ export default function RelatoriosClient({
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
               <span style={{ color: "#64748B", fontWeight: 600 }}>Pedidos cancelados</span>
-              <strong style={{ color: movimento.taxaCancelamento > 5 ? "#DC2626" : "#0F172A" }}>
+              <strong style={{ color: movimento.taxaCancelamento > 5 ? "#C92E09" : "#0F172A" }}>
                 {movimento.cancelados} ({fmtPct(movimento.taxaCancelamento)})
               </strong>
             </div>
@@ -1242,11 +1242,11 @@ export default function RelatoriosClient({
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
                   <span style={{ color: "#64748B" }}>Faturamento Gerado:</span>
-                  <strong style={{ color: "#16A34A" }}>{fmtR(championProduct.revenue)}</strong>
+                  <strong style={{ color: "#15803D" }}>{fmtR(championProduct.revenue)}</strong>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
                   <span style={{ color: "#64748B" }}>Custo Total (CMV):</span>
-                  <strong style={{ color: "#DC2626" }}>{fmtR(championProduct.cost)}</strong>
+                  <strong style={{ color: "#C92E09" }}>{fmtR(championProduct.cost)}</strong>
                 </div>
                 <div style={{ height: "1px", background: "#E2E8F0", margin: "4px 0" }} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 800 }}>
@@ -1398,10 +1398,10 @@ export default function RelatoriosClient({
                       <td style={{ padding: "12px 1rem", textAlign: "right", fontWeight: 800, color: isZero ? "#94A3B8" : "#0F172A" }}>
                         {p.qty} u.
                       </td>
-                      <td style={{ padding: "12px 1rem", textAlign: "right", fontWeight: 700, color: isZero ? "#94A3B8" : "#16A34A" }}>
+                      <td style={{ padding: "12px 1rem", textAlign: "right", fontWeight: 700, color: isZero ? "#94A3B8" : "#15803D" }}>
                         {fmtR(p.revenue)}
                       </td>
-                      <td style={{ padding: "12px 1rem", textAlign: "right", color: isZero ? "#94A3B8" : "#DC2626" }}>
+                      <td style={{ padding: "12px 1rem", textAlign: "right", color: isZero ? "#94A3B8" : "#C92E09" }}>
                         {fmtR(p.cost)}
                       </td>
                       <td style={{ padding: "12px 1.25rem", textAlign: "right", fontWeight: 800, color: isZero ? "#94A3B8" : "#FF6B35" }}>
@@ -1436,7 +1436,7 @@ export default function RelatoriosClient({
                   <td style={{ padding: "14px 1rem", textAlign: "right", fontWeight: 900, color: "#15803D" }}>
                     {fmtR(totalDoRanking.revenue)}
                   </td>
-                  <td style={{ padding: "14px 1rem", textAlign: "right", fontWeight: 800, color: "#DC2626" }}>
+                  <td style={{ padding: "14px 1rem", textAlign: "right", fontWeight: 800, color: "#C92E09" }}>
                     {fmtR(totalDoRanking.cost)}
                   </td>
                   <td style={{ padding: "14px 1.25rem", textAlign: "right", fontWeight: 900, color: "#EA580C" }}>

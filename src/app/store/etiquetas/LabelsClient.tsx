@@ -870,7 +870,7 @@ ${printArea.innerHTML}
                   <input type="checkbox" checked={config.highFat} onChange={e => setConfig({...config, highFat: e.target.checked})} />
                   Alto em Gordura Sat.
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", color: "#D97706", fontWeight: "bold", fontSize: "0.85rem" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", color: "#B45309", fontWeight: "bold", fontSize: "0.85rem" }}>
                   <input type="checkbox" checked={config.transgenic} onChange={e => setConfig({...config, transgenic: e.target.checked})} />
                   Símbolo Transgênico (T)
                 </label>

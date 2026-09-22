@@ -32,13 +32,13 @@ export default async function ComprasLayout({ children }: { children: React.Reac
               <img src="/firehub-flame.png" alt="FireHub" style={{ width: 32, height: 32, borderRadius: 7, objectFit: "cover" }} />
               <div>
                 <span style={{ color: "#fff", fontWeight: 800, fontSize: "1.1rem", letterSpacing: "-0.3px" }}>Icebox</span>
-                <span style={{ color: "#93C5FD", fontWeight: 600, fontSize: "0.75rem", marginLeft: 6 }}>Distribuidora</span>
+                <span style={{ color: "#B2DDFF", fontWeight: 600, fontSize: "0.75rem", marginLeft: 6 }}>Distribuidora</span>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {isLoggedIn ? (
                 <>
-                  <span style={{ color: "#BFDBFE", fontSize: "0.82rem" }}>
+                  <span style={{ color: "#B2DDFF", fontSize: "0.82rem" }}>
                     Olá, <strong style={{ color: "#fff" }}>{session?.user?.name || "Cliente"}</strong>
                   </span>
                   <a href="/store/orders" style={{

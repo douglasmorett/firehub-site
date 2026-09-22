@@ -54,13 +54,13 @@ export default function TrocaDePagamentoPainel({
   const atual = pedido?.paymentMethod || "não informado";
   const trocoAtual = Number(pedido?.changeAmount || 0);
   const caixa: React.CSSProperties = {
-    marginBottom: 12, background: "#F9FAFB", padding: "8px 12px", borderRadius: 10, border: "1px solid #E5E7EB",
+    marginBottom: 12, background: "#F8FAFC", padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0",
   };
   const dinheiro = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 
   if (!podeEditarPedidos(operador)) {
     return (
-      <div style={{ ...caixa, fontSize: "0.8rem", color: "#374151" }}>
+      <div style={{ ...caixa, fontSize: "0.8rem", color: "#334155" }}>
         💳 <b>Pagamento:</b> {atual}
       </div>
     );
@@ -71,7 +71,7 @@ export default function TrocaDePagamentoPainel({
   if (!aberto) {
     return (
       <div style={{ ...caixa, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.8rem", color: "#374151" }}>
+        <span style={{ fontSize: "0.8rem", color: "#334155" }}>
           💳 <b>Pagamento:</b> {atual}
           {trocoAtual > 0 ? ` · troco para ${dinheiro(trocoAtual)}` : ""}
         </span>
@@ -79,12 +79,12 @@ export default function TrocaDePagamentoPainel({
           <button
             type="button"
             onClick={() => setAberto(true)}
-            style={{ padding: "4px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 700, border: "1.5px solid #E5E7EB", background: "#FFF", color: "#374151", cursor: "pointer", fontFamily: "inherit" }}
+            style={{ padding: "4px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 700, border: "1.5px solid #E2E8F0", background: "#FFF", color: "#334155", cursor: "pointer", fontFamily: "inherit" }}
           >
             Trocar
           </button>
         ) : (
-          <span style={{ fontSize: "0.7rem", color: "#9CA3AF" }}>{avaliacao.motivo}</span>
+          <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>{avaliacao.motivo}</span>
         )}
       </div>
     );
@@ -151,11 +151,11 @@ export default function TrocaDePagamentoPainel({
 
   const chip = (ativa: boolean): React.CSSProperties => ({
     padding: "6px 10px", borderRadius: 8, fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
-    border: `1.5px solid ${ativa ? "#B45309" : "#E5E7EB"}`, background: ativa ? "#FEF3C7" : "#FFF", color: ativa ? "#78350F" : "#374151",
+    border: `1.5px solid ${ativa ? "#B45309" : "#E2E8F0"}`, background: ativa ? "#FFF7E6" : "#FFF", color: ativa ? "#78350F" : "#334155",
   });
 
   return (
-    <div style={{ ...caixa, background: "#FFFBEB", border: "1.5px solid #FDE68A" }}>
+    <div style={{ ...caixa, background: "#FFF7E6", border: "1.5px solid #FDE68A" }}>
       <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#92400E", marginBottom: 6 }}>
         💳 Como o cliente pagou de verdade? <span style={{ fontWeight: 600, color: "#B45309" }}>(o pedido dizia: {atual})</span>
       </div>
@@ -189,7 +189,7 @@ export default function TrocaDePagamentoPainel({
               <select
                 value={p.method}
                 onChange={(e) => escolherForma(i, e.target.value)}
-                style={{ flex: 1, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #FDE68A", fontFamily: "inherit", fontSize: "0.78rem", background: "#FFF", color: "#374151" }}
+                style={{ flex: 1, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #FDE68A", fontFamily: "inherit", fontSize: "0.78rem", background: "#FFF", color: "#334155" }}
               >
                 <option value="">Escolha a forma…</option>
                 {FORMAS_DE_PAGAMENTO_NA_ENTREGA.map((f) => (
@@ -213,7 +213,7 @@ export default function TrocaDePagamentoPainel({
                   type="button"
                   onClick={() => setPartes((antes) => antes.filter((_, j) => j !== i))}
                   title="Tirar esta forma"
-                  style={{ border: "none", background: "none", color: "#B91C1C", cursor: "pointer", fontSize: "1rem", fontWeight: 800, lineHeight: 1, padding: "0 4px" }}
+                  style={{ border: "none", background: "none", color: "#B71C1C", cursor: "pointer", fontSize: "1rem", fontWeight: 800, lineHeight: 1, padding: "0 4px" }}
                 >
                   ×
                 </button>
@@ -230,7 +230,7 @@ export default function TrocaDePagamentoPainel({
               + Adicionar forma
             </button>
             {/* A conta feita pela tela: a pessoa lê, não calcula. */}
-            <span style={{ fontSize: "0.76rem", fontWeight: 800, color: fecha ? "#15803D" : falta > 0 ? "#B45309" : "#B91C1C" }}>
+            <span style={{ fontSize: "0.76rem", fontWeight: 800, color: fecha ? "#15803D" : falta > 0 ? "#B45309" : "#B71C1C" }}>
               {fecha
                 ? `✓ fecha em ${dinheiro(somado)}`
                 : falta > 0
@@ -255,13 +255,13 @@ export default function TrocaDePagamentoPainel({
         </label>
       )}
 
-      {erro && <div style={{ fontSize: "0.76rem", color: "#B91C1C", fontWeight: 700, marginBottom: 8 }}>{erro}</div>}
+      {erro && <div style={{ fontSize: "0.76rem", color: "#B71C1C", fontWeight: 700, marginBottom: 8 }}>{erro}</div>}
 
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
         <button
           type="button"
           onClick={() => { setAberto(false); setErro(null); }}
-          style={{ padding: "6px 12px", borderRadius: 8, fontSize: "0.78rem", fontWeight: 700, border: "1.5px solid #E5E7EB", background: "#FFF", color: "#6B7280", cursor: "pointer", fontFamily: "inherit" }}
+          style={{ padding: "6px 12px", borderRadius: 8, fontSize: "0.78rem", fontWeight: 700, border: "1.5px solid #E2E8F0", background: "#FFF", color: "#64748B", cursor: "pointer", fontFamily: "inherit" }}
         >
           Cancelar
         </button>
@@ -273,7 +273,7 @@ export default function TrocaDePagamentoPainel({
           onClick={salvar}
           style={{
             padding: "6px 14px", borderRadius: 8, fontSize: "0.78rem", fontWeight: 800, border: "none",
-            background: salvando || (dividido && !fecha) ? "#9CA3AF" : "#B45309",
+            background: salvando || (dividido && !fecha) ? "#94A3B8" : "#B45309",
             color: "#FFF", cursor: salvando || (dividido && !fecha) ? "default" : "pointer", fontFamily: "inherit",
           }}
         >

@@ -294,15 +294,15 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
       </div>
 
       {/* EXPLANATORY BANNER REQUESTED BY USER */}
-      <div style={{ background: "linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)", border: "1.5px solid #93C5FD", borderRadius: "1rem", padding: "1.25rem 1.5rem", marginBottom: "1.5rem", color: "#1E3A8A", boxShadow: "0 4px 12px rgba(37, 99, 235, 0.08)" }}>
+      <div style={{ background: "linear-gradient(135deg, #EFF6FF 0%, #EFF6FF 100%)", border: "1.5px solid #B2DDFF", borderRadius: "1rem", padding: "1.25rem 1.5rem", marginBottom: "1.5rem", color: "#1D4ED8", boxShadow: "0 4px 12px rgba(37, 99, 235, 0.08)" }}>
         <div style={{ display: "flex", gap: "14px", alignItems: "flex-start" }}>
-          <Info size={24} style={{ color: "#2563EB", flexShrink: 0, marginTop: "2px" }} />
+          <Info size={24} style={{ color: "#1D4ED8", flexShrink: 0, marginTop: "2px" }} />
           <div>
-            <h3 style={{ margin: "0 0 6px 0", fontSize: "1rem", fontWeight: 850, color: "#1E40AF" }}>💡 Como funciona a Antecipação de Produção:</h3>
-            <p style={{ margin: "0 0 8px 0", fontSize: "0.93rem", lineHeight: 1.55, color: "#1E3A8A" }}>
+            <h3 style={{ margin: "0 0 6px 0", fontSize: "1rem", fontWeight: 850, color: "#1D4ED8" }}>💡 Como funciona a Antecipação de Produção:</h3>
+            <p style={{ margin: "0 0 8px 0", fontSize: "0.93rem", lineHeight: 1.55, color: "#1D4ED8" }}>
               Este módulo é feito para que você possa <strong>preparar o lanche do seu cliente antes mesmo dele ser pedido</strong>. Fazemos uma média das últimas duas semanas (no mesmo dia da semana e no horário configurado) e te damos, no horário definido, quanto sai de cada produto do seu cardápio, <strong>ordenado do mais vendido para o menos vendido</strong>, seguindo o padrão dos seus clientes.
             </p>
-            <span style={{ fontSize: "0.83rem", color: "#3B82F6", fontStyle: "italic", display: "block" }}>
+            <span style={{ fontSize: "0.83rem", color: "#1D4ED8", fontStyle: "italic", display: "block" }}>
               ⚠️ <em>Lembrando que é uma média explicativa para auxiliar na previsibilidade da sua cozinha: a demanda real pode variar conforme o dia da semana, feriado, clima e comportamento do cliente. É uma ferramenta de apoio.</em>
             </span>
           </div>
@@ -462,7 +462,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
                   <div key={item.name} className={`prediction-card ${hasDemand ? "active-demand" : ""}`}>
                     <div className="card-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ background: index === 0 ? "linear-gradient(135deg, #F59E0B, #D97706)" : index === 1 ? "linear-gradient(135deg, #94A3B8, #64748B)" : index === 2 ? "linear-gradient(135deg, #B45309, #78350F)" : "#334155", color: "#FFF", padding: "2px 8px", borderRadius: "6px", fontWeight: 900, fontSize: "0.75rem" }}>
+                        <span style={{ background: index === 0 ? "linear-gradient(135deg, #B45309, #B45309)" : index === 1 ? "linear-gradient(135deg, #94A3B8, #64748B)" : index === 2 ? "linear-gradient(135deg, #B45309, #78350F)" : "#334155", color: "#FFF", padding: "2px 8px", borderRadius: "6px", fontWeight: 900, fontSize: "0.75rem" }}>
                           #{index + 1}
                         </span>
                         <h3 style={{ fontSize: "1.05rem", fontWeight: 800, margin: 0, color: "#0F172A", lineHeight: 1.3 }}>{item.name}</h3>
@@ -776,7 +776,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           display: inline-block;
           background: rgba(198, 40, 40, 0.2);
           border: 1px solid rgba(198, 40, 40, 0.4);
-          color: #f87171;
+          color: #E8360C;
           font-size: 0.72rem;
           font-weight: 700;
           padding: 0.25rem 0.65rem;
@@ -832,7 +832,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         }
 
         .no-shifts-alert {
-          background: #fef3c7;
+          background: #FFF7E6;
           border: 1px solid #fde68a;
           color: #b45309;
           border-radius: 0.75rem;
@@ -850,7 +850,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           gap: 0.75rem;
           background: #fff5f5;
           border: 1px solid rgba(198, 40, 40, 0.2);
-          color: #c62828;
+          color: #C92E09;
           border-radius: 0.85rem;
           padding: 1rem 1.25rem;
           margin-bottom: 1.5rem;
@@ -895,13 +895,13 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         }
 
         .shift-badge-btn.active {
-          border-color: #c62828;
+          border-color: #C92E09;
           background: #fff5f5;
           box-shadow: 0 4px 12px rgba(198, 40, 40, 0.12);
         }
 
         .shift-badge-btn.active .shift-name {
-          color: #c62828;
+          color: #C92E09;
         }
 
         .shift-name {
@@ -987,7 +987,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           left: 0;
           right: 0;
           height: 4px;
-          background: linear-gradient(to right, #c62828, #ef4444);
+          background: linear-gradient(to right, #C92E09, #C92E09);
         }
 
         .card-header {
@@ -1038,7 +1038,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         }
 
         .active-demand .suggested-box {
-          background: linear-gradient(135deg, #c62828, #e53935);
+          background: linear-gradient(135deg, #C92E09, #C92E09);
           color: white;
           border: none;
           box-shadow: 0 4px 10px rgba(198, 40, 40, 0.25);
@@ -1103,7 +1103,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
           width: 40px;
           height: 40px;
           border: 3.5px solid #f1f5f9;
-          border-top-color: #c62828;
+          border-top-color: #C92E09;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
           margin-bottom: 1.25rem;
@@ -1202,7 +1202,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
 
         .tab-btn.active {
           background: white;
-          color: #c62828;
+          color: #C92E09;
           box-shadow: 0 2px 4px rgba(0,0,0,0.06);
         }
 
@@ -1217,7 +1217,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
 
         .tab-btn.active .tab-badge {
           background: rgba(198, 40, 40, 0.1);
-          color: #c62828;
+          color: #C92E09;
         }
 
         .tab-content {
@@ -1272,7 +1272,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
 
         .time-col {
           font-weight: 800;
-          color: #c62828;
+          color: #C92E09;
         }
 
         .client-col {
@@ -1312,7 +1312,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         }
 
         .status-encerrado, .status-entregue, .status-concluido {
-          background: #dcfce7;
+          background: #ECFDF3;
           color: #15803d;
         }
 
@@ -1434,14 +1434,14 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         }
 
         .form-group input:focus {
-          border-color: #c62828;
+          border-color: #C92E09;
           background: white;
         }
 
         .btn-submit-shift {
           width: 100%;
           padding: 0.75rem;
-          background: linear-gradient(135deg, #c62828, #b71c1c);
+          background: linear-gradient(135deg, #C92E09, #b71c1c);
           color: white;
           font-weight: 800;
           font-size: 0.88rem;
@@ -1509,7 +1509,7 @@ export default function AntecipacaoClient({ userName, storeName }: AntecipacaoCl
         .btn-delete-shift {
           background: none;
           border: none;
-          color: #ef4444;
+          color: #C92E09;
           cursor: pointer;
           padding: 0.35rem;
           border-radius: 0.35rem;

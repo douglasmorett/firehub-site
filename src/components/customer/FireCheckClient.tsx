@@ -56,11 +56,11 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
     {
       id: "ponto",
       name: "Só Ponto IA",
-      icon: <Building2 size={28} color="#3B82F6" />,
+      icon: <Building2 size={28} color="#1D4ED8" />,
       price: billingCycle === "anual" ? "R$ 97" : "R$ 149",
       cycle: "/mês",
       note: billingCycle === "anual" ? "Faturado R$ 1.164/ano (Economiza R$ 624)" : "Cobrado mensalmente",
-      color: "#3B82F6",
+      color: "#1D4ED8",
       highlight: false,
       features: [
         "Reconhecimento Facial com IA",
@@ -130,7 +130,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
               gap: 6
             }}
           >
-            <Monitor size={16} color={activeTab === "app" ? "#3B82F6" : "#64748B"} /> Abrir FireCheck Direct
+            <Monitor size={16} color={activeTab === "app" ? "#1D4ED8" : "#64748B"} /> Abrir FireCheck Direct
           </button>
         </div>
       </div>
@@ -174,7 +174,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
             </div>
 
             <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 16, padding: "20px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, background: "#EFF6FF", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: "#EFF6FF", color: "#1D4ED8", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
                 <Smartphone size={22} />
               </div>
               <h3 style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 6px" }}>Ponto com Facial & GPS</h3>
@@ -184,7 +184,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
             </div>
 
             <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 16, padding: "20px", boxShadow: "0 4px 6px rgba(0,0,0,0.02)" }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, background: "#F0FDF4", color: "#16A34A", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: "#ECFDF3", color: "#15803D", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
                 <MessageSquare size={22} />
               </div>
               <h3 style={{ fontSize: "1.05rem", fontWeight: 800, color: "#0F172A", margin: "0 0 6px" }}>Bill IA no WhatsApp</h3>
@@ -283,7 +283,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
                   <div style={{ marginBottom: 16 }}>
                     <span style={{ fontSize: "2.2rem", fontWeight: 900, color: "#0F172A" }}>{plan.price}</span>
                     <span style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>{plan.cycle}</span>
-                    <div style={{ fontSize: "0.76rem", color: "#16A34A", fontWeight: 700, marginTop: 2 }}>{plan.note}</div>
+                    <div style={{ fontSize: "0.76rem", color: "#15803D", fontWeight: 700, marginTop: 2 }}>{plan.note}</div>
                   </div>
 
                   <hr style={{ border: "none", borderTop: "1px solid #F1F5F9", margin: "16px 0" }} />
@@ -291,7 +291,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
                   <ul style={{ listStyle: "none", padding: 0, margin: "0 0 24px", display: "flex", flexDirection: "column", gap: "10px" }}>
                     {plan.features.map((feat, idx) => (
                       <li key={idx} style={{ fontSize: "0.85rem", color: "#334155", display: "flex", alignItems: "flex-start", gap: 8, lineHeight: 1.4 }}>
-                        <Check size={16} color="#10B981" style={{ flexShrink: 0, marginTop: 2 }} />
+                        <Check size={16} color="#15803D" style={{ flexShrink: 0, marginTop: 2 }} />
                         <span>{feat}</span>
                       </li>
                     ))}
@@ -335,7 +335,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
               href="https://www.firecheckapp.com.br/login"
               target="_blank"
               rel="noreferrer"
-              style={{ color: "#3B82F6", fontWeight: 700, fontSize: "0.82rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
+              style={{ color: "#1D4ED8", fontWeight: 700, fontSize: "0.82rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
             >
               Abrir em Nova Aba <ExternalLink size={14} />
             </a>

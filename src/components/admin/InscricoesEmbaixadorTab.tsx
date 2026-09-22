@@ -24,10 +24,10 @@ interface Inscricao {
 }
 
 const CORES: Record<string, { bg: string; fg: string; borda: string; rotulo: string }> = {
-  NOVO:       { bg: "#EFF6FF", fg: "#1D4ED8", borda: "#BFDBFE", rotulo: "🆕 Novo" },
-  EM_ANALISE: { bg: "#FFFBEB", fg: "#B45309", borda: "#FDE68A", rotulo: "🔎 Em análise" },
-  APROVADO:   { bg: "#F0FDF4", fg: "#15803D", borda: "#BBF7D0", rotulo: "✅ Aprovado" },
-  RECUSADO:   { bg: "#FEF2F2", fg: "#991B1B", borda: "#FCA5A5", rotulo: "❌ Recusado" },
+  NOVO:       { bg: "#EFF6FF", fg: "#1D4ED8", borda: "#B2DDFF", rotulo: "🆕 Novo" },
+  EM_ANALISE: { bg: "#FFF7E6", fg: "#B45309", borda: "#FDE68A", rotulo: "🔎 Em análise" },
+  APROVADO:   { bg: "#ECFDF3", fg: "#15803D", borda: "#ABEFC6", rotulo: "✅ Aprovado" },
+  RECUSADO:   { bg: "#FEF2F2", fg: "#B71C1C", borda: "#FCA5A5", rotulo: "❌ Recusado" },
 };
 
 const ORDEM_STATUS = ["NOVO", "EM_ANALISE", "APROVADO", "RECUSADO"] as const;
@@ -113,7 +113,7 @@ export default function InscricoesEmbaixadorTab() {
       </div>
 
       {aviso && (
-        <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E", padding: "12px 15px", borderRadius: 12, fontSize: "0.85rem", marginBottom: 16, lineHeight: 1.55 }}>
+        <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", color: "#92400E", padding: "12px 15px", borderRadius: 12, fontSize: "0.85rem", marginBottom: 16, lineHeight: 1.55 }}>
           ⚠️ {aviso}
         </div>
       )}
@@ -203,7 +203,7 @@ export default function InscricoesEmbaixadorTab() {
                       onClick={() => apagar(i.id, i.fullName)}
                       disabled={salvando === i.id}
                       title="Apagar esta inscrição"
-                      style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#991B1B", fontWeight: 700, fontSize: "0.74rem", cursor: "pointer" }}
+                      style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#B71C1C", fontWeight: 700, fontSize: "0.74rem", cursor: "pointer" }}
                     >
                       🗑 Apagar
                     </button>

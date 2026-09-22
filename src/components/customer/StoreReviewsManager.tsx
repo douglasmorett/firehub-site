@@ -95,7 +95,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
       <div style={{ background: "#FFFFFF", borderRadius: 18, padding: "1.25rem 1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <Sparkles size={18} color="#D97706" />
+            <Sparkles size={18} color="#B45309" />
             <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#0F172A" }}>
               Exibir Avaliações no Cardápio Digital?
             </h3>
@@ -112,7 +112,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
           style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "8px 16px", borderRadius: 30, border: "none",
-            background: showOnMenu ? "#16A34A" : "#64748B", color: "#FFFFFF",
+            background: showOnMenu ? "#15803D" : "#64748B", color: "#FFFFFF",
             fontWeight: 800, fontSize: "0.88rem", cursor: "pointer",
             boxShadow: showOnMenu ? "0 4px 12px rgba(22,163,74,0.25)" : "none",
             transition: "all 0.2s ease"
@@ -133,9 +133,9 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
       </div>
 
       {/* Info Card: NPS Automático via WhatsApp */}
-      <div style={{ background: "#EFF6FF", borderRadius: 16, padding: "1rem 1.25rem", border: "1px solid #BFDBFE", display: "flex", alignItems: "flex-start", gap: 12 }}>
-        <Info size={20} color="#2563EB" style={{ marginTop: 2, flexShrink: 0 }} />
-        <div style={{ fontSize: "0.83rem", color: "#1E40AF", lineHeight: 1.5 }}>
+      <div style={{ background: "#EFF6FF", borderRadius: 16, padding: "1rem 1.25rem", border: "1px solid #B2DDFF", display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <Info size={20} color="#1D4ED8" style={{ marginTop: 2, flexShrink: 0 }} />
+        <div style={{ fontSize: "0.83rem", color: "#1D4ED8", lineHeight: 1.5 }}>
           <b>🤖 Disparo de NPS Pós-Entrega Ativo:</b> Toda vez que um pedido for alterado para <b>"ENTREGUE"</b>, o robô enviará automaticamente uma mensagem no WhatsApp do cliente agradecendo e solicitando a avaliação do pedido em 5 segundos.
         </div>
       </div>
@@ -149,13 +149,13 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.25rem", alignItems: "center" }}>
           
           {/* Média Grande */}
-          <div style={{ textAlign: "center", background: "#FEF3C7", borderRadius: 16, padding: "1.25rem", border: "1px solid #FDE68A" }}>
+          <div style={{ textAlign: "center", background: "#FFF7E6", borderRadius: 16, padding: "1.25rem", border: "1px solid #FDE68A" }}>
             <span style={{ fontSize: "2.8rem", fontWeight: 900, color: "#B45309", lineHeight: 1 }}>
               {stats.averageRating}
             </span>
             <div style={{ display: "flex", justifyContent: "center", gap: 4, margin: "6px 0 4px" }}>
               {[1, 2, 3, 4, 5].map((s) => (
-                <Star key={s} size={18} fill={s <= Math.round(stats.averageRating) ? "#F59E0B" : "none"} color={s <= Math.round(stats.averageRating) ? "#F59E0B" : "#CBD5E1"} />
+                <Star key={s} size={18} fill={s <= Math.round(stats.averageRating) ? "#B45309" : "none"} color={s <= Math.round(stats.averageRating) ? "#B45309" : "#CBD5E1"} />
               ))}
             </div>
             <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 700, color: "#92400E" }}>
@@ -172,7 +172,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
                 <div key={starNum} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.8rem" }}>
                   <span style={{ width: 28, fontWeight: 700, color: "#475569" }}>{starNum} ★</span>
                   <div style={{ flex: 1, height: 8, background: "#F1F5F9", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${pct}%`, background: starNum >= 4 ? "#16A34A" : starNum === 3 ? "#F59E0B" : "#EF4444", borderRadius: 4 }} />
+                    <div style={{ height: "100%", width: `${pct}%`, background: starNum >= 4 ? "#15803D" : starNum === 3 ? "#B45309" : "#C92E09", borderRadius: 4 }} />
                   </div>
                   <span style={{ width: 35, textAlign: "right", color: "#64748B", fontWeight: 600 }}>{count} ({pct}%)</span>
                 </div>
@@ -212,7 +212,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
                 onClick={() => setFilterRating(s)}
                 style={{
                   padding: "5px 8px", borderRadius: 8, border: "none", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer",
-                  background: filterRating === s ? "#D97706" : "#F1F5F9",
+                  background: filterRating === s ? "#B45309" : "#F1F5F9",
                   color: filterRating === s ? "#FFFFFF" : "#64748B"
                 }}
               >
@@ -257,7 +257,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
 
                     <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
                       {[1, 2, 3, 4, 5].map((s) => (
-                        <Star key={s} size={15} fill={s <= r.rating ? "#F59E0B" : "none"} color={s <= r.rating ? "#F59E0B" : "#CBD5E1"} />
+                        <Star key={s} size={15} fill={s <= r.rating ? "#B45309" : "none"} color={s <= r.rating ? "#B45309" : "#CBD5E1"} />
                       ))}
                       <span style={{ fontSize: "0.78rem", color: "#64748B", marginLeft: 6 }}>{dateStr}</span>
                     </div>
@@ -276,9 +276,9 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
 
                   {/* Existing Store Reply */}
                   {r.reply && (
-                    <div style={{ background: "#EFF6FF", borderRadius: 10, padding: "8px 12px", borderLeft: "4px solid #2563EB", marginTop: 8, fontSize: "0.82rem" }}>
-                      <span style={{ fontWeight: 800, color: "#1E40AF" }}>💬 Resposta da Loja:</span>
-                      <p style={{ margin: "2px 0 0", color: "#1E3A8A" }}>{r.reply}</p>
+                    <div style={{ background: "#EFF6FF", borderRadius: 10, padding: "8px 12px", borderLeft: "4px solid #1D4ED8", marginTop: 8, fontSize: "0.82rem" }}>
+                      <span style={{ fontWeight: 800, color: "#1D4ED8" }}>💬 Resposta da Loja:</span>
+                      <p style={{ margin: "2px 0 0", color: "#1D4ED8" }}>{r.reply}</p>
                     </div>
                   )}
 
@@ -291,7 +291,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
                           placeholder="Escreva sua resposta para o cliente..."
                           value={replyText}
                           onChange={(e) => setReplyText(e.target.value)}
-                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #2563EB", fontSize: "0.82rem", fontFamily: "inherit" }}
+                          style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #1D4ED8", fontSize: "0.82rem", fontFamily: "inherit" }}
                         />
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                           <button
@@ -305,7 +305,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
                             type="button"
                             onClick={() => handleSendReply(r.id)}
                             disabled={savingReply || !replyText.trim()}
-                            style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "#2563EB", color: "#FFFFFF", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                            style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "#1D4ED8", color: "#FFFFFF", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                           >
                             {savingReply ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />} Salvar Resposta
                           </button>
@@ -315,7 +315,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
                       <button
                         type="button"
                         onClick={() => { setReplyingId(r.id); setReplyText(r.reply || ""); }}
-                        style={{ background: "transparent", border: "none", color: "#2563EB", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}
+                        style={{ background: "transparent", border: "none", color: "#1D4ED8", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}
                       >
                         <MessageSquare size={13} /> {r.reply ? "Editar Resposta" : "Responder Avaliação"}
                       </button>

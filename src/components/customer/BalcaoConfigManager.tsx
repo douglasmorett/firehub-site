@@ -93,7 +93,7 @@ export default function BalcaoConfigManager() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <div style={{ background: "#FFFBEB", borderRadius: 16, padding: "1rem 1.25rem", border: "1px solid #FDE68A", display: "flex", alignItems: "flex-start", gap: 12 }}>
+      <div style={{ background: "#FFF7E6", borderRadius: 16, padding: "1rem 1.25rem", border: "1px solid #FDE68A", display: "flex", alignItems: "flex-start", gap: 12 }}>
         <BellRing size={20} color="#B45309" style={{ marginTop: 2, flexShrink: 0 }} />
         <div style={{ fontSize: "0.85rem", color: "#92400E", lineHeight: 1.55 }}>
           <b>O pager é o aparelhinho numerado</b> que a loja entrega a quem espera o pedido. O número digitado na venda aparece no card do painel e sai na comanda impressa, para o atendente saber quem chamar quando o pedido fica pronto.
@@ -138,12 +138,12 @@ export default function BalcaoConfigManager() {
       </div>
 
       {erro && (
-        <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: 12, padding: "0.75rem 1rem", fontSize: "0.85rem", fontWeight: 700 }}>
+        <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#B71C1C", borderRadius: 12, padding: "0.75rem 1rem", fontSize: "0.85rem", fontWeight: 700 }}>
           ❌ {erro}
         </div>
       )}
       {salvo && !erro && (
-        <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D", borderRadius: 12, padding: "0.75rem 1rem", fontSize: "0.85rem", fontWeight: 700 }}>
+        <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", color: "#15803D", borderRadius: 12, padding: "0.75rem 1rem", fontSize: "0.85rem", fontWeight: 700 }}>
           ✓ Salvo. Vale no próximo pedido lançado.
         </div>
       )}

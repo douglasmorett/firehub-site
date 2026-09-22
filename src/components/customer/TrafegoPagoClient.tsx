@@ -690,9 +690,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   const Banner = () => {
     if (!notification) return null;
     const cfg = {
-      success: { bg: "#F0FDF4", border: "#BBF7D0", color: "#166534", Icon: CheckCircle },
-      error: { bg: "#FEF2F2", border: "#FECACA", color: "#991B1B", Icon: AlertTriangle },
-      info: { bg: "#EFF6FF", border: "#BFDBFE", color: "#1E40AF", Icon: Zap },
+      success: { bg: "#ECFDF3", border: "#ABEFC6", color: "#15803D", Icon: CheckCircle },
+      error: { bg: "#FEF2F2", border: "#FECACA", color: "#B71C1C", Icon: AlertTriangle },
+      info: { bg: "#EFF6FF", border: "#B2DDFF", color: "#1D4ED8", Icon: Zap },
     }[notification.type];
     return (
       <div style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: 12, padding: "12px 16px", marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -723,8 +723,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
     <button type="button" onClick={handleConnectFacebook} disabled={needsSetup}
       title={needsSetup ? "Módulo não configurado neste servidor" : "Refazer a conexão com o Facebook"}
       style={{
-        background: needsSetup ? "#E5E7EB" : destaque ? "#1877F2" : "transparent",
-        color: needsSetup ? "#9CA3AF" : destaque ? "#fff" : "#1877F2",
+        background: needsSetup ? "#E2E8F0" : destaque ? "#1877F2" : "transparent",
+        color: needsSetup ? "#94A3B8" : destaque ? "#fff" : "#1877F2",
         border: destaque ? "none" : "1.5px solid #1877F2",
         borderRadius: 10, padding: destaque ? "11px 18px" : "8px 14px",
         fontSize: "0.82rem", fontWeight: 800, cursor: needsSetup ? "not-allowed" : "pointer",
@@ -738,7 +738,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
      descartava o aviso: o lojista percorria o funil inteiro e o botão Conectar
      devolvia uma página de erro 500 crua, sem explicação. */
   const AvisoDeConfiguracao = () => !needsSetup ? null : (
-    <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "1rem 1.15rem", marginBottom: "1.5rem" }}>
+    <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "1rem 1.15rem", marginBottom: "1.5rem" }}>
       <div style={{ fontWeight: 800, color: "#92400E", fontSize: "0.9rem", marginBottom: 4 }}>⚙️ Tráfego Pago ainda não está configurado neste servidor</div>
       <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
         Não é nada do seu lado — falta uma credencial da Meta na instalação do FireHub. Conectar o
@@ -753,8 +753,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   if (loading) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh" }}>
       <div style={{ textAlign: "center" }}>
-        <div style={{ width: 48, height: 48, border: "4px solid #E5E7EB", borderTopColor: "#2563EB", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
-        <p style={{ color: "#6B7280" }}>Carregando...</p>
+        <div style={{ width: 48, height: 48, border: "4px solid #E2E8F0", borderTopColor: "#1D4ED8", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+        <p style={{ color: "#64748B" }}>Carregando...</p>
       </div>
     </div>
   );
@@ -770,26 +770,26 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
     <div style={{ maxWidth: 560, margin: "0 auto", padding: "2rem 1rem 4rem", textAlign: "center" }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ textAlign: "left" }}><Banner /></div>
-      <AlertTriangle size={40} color="#EF4444" style={{ margin: "0 auto 12px" }} />
+      <AlertTriangle size={40} color="#C92E09" style={{ margin: "0 auto 12px" }} />
       <h2 style={{ fontSize: "1.25rem", fontWeight: 900, marginBottom: 8 }}>Não consegui carregar suas campanhas</h2>
-      <p style={{ color: "#6B7280", fontSize: "0.9rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
+      <p style={{ color: "#64748B", fontSize: "0.9rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
         Pode ter sido a internet ou uma instabilidade momentânea. <strong>Sua campanha não foi
         alterada</strong> — se ela estava rodando, continua rodando. Tente de novo para abrir o painel
         e poder pausar.
       </p>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
         <button onClick={() => { setLoading(true); void carregarCampanhas(true); }}
-          style={{ background: "#EF4444", color: "#fff", border: "none", padding: "12px 22px", borderRadius: 12, fontSize: "0.95rem", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>
+          style={{ background: "#C92E09", color: "#fff", border: "none", padding: "12px 22px", borderRadius: 12, fontSize: "0.95rem", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>
           <RefreshCw size={16} /> Tentar de novo
         </button>
         {campaigns.length > 0 && (
           <button onClick={() => setStep("dashboard")}
-            style={{ background: "#fff", border: "1.5px solid #E5E7EB", padding: "12px 22px", borderRadius: 12, fontSize: "0.95rem", fontWeight: 700, cursor: "pointer", color: "#374151" }}>
+            style={{ background: "#fff", border: "1.5px solid #E2E8F0", padding: "12px 22px", borderRadius: 12, fontSize: "0.95rem", fontWeight: 700, cursor: "pointer", color: "#334155" }}>
             Ver meu painel
           </button>
         )}
         <button onClick={() => window.open("https://wa.me/5522998851680?text=Oi%20nao%20consigo%20abrir%20o%20painel%20de%20trafego%20pago%20e%20preciso%20pausar%20minha%20campanha", "_blank")}
-          style={{ background: "#fff", border: "1.5px solid #E5E7EB", padding: "12px 22px", borderRadius: 12, fontSize: "0.95rem", fontWeight: 700, cursor: "pointer", color: "#374151", display: "inline-flex", alignItems: "center", gap: 8 }}>
+          style={{ background: "#fff", border: "1.5px solid #E2E8F0", padding: "12px 22px", borderRadius: 12, fontSize: "0.95rem", fontWeight: 700, cursor: "pointer", color: "#334155", display: "inline-flex", alignItems: "center", gap: 8 }}>
           💬 Preciso pausar agora <ExternalLink size={14} />
         </button>
       </div>
@@ -806,19 +806,19 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       {campaigns.length > 0 && (
         <div style={{ textAlign: "center", marginBottom: "1.25rem" }}>
           <button onClick={() => setStep("dashboard")}
-            style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 10, padding: "9px 18px", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer", color: "#374151" }}>
+            style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 10, padding: "9px 18px", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer", color: "#334155" }}>
             Já tenho campanha — ver meu painel
           </button>
         </div>
       )}
       <style>{`@keyframes marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}.social-track{display:flex;gap:.75rem;width:max-content;animation:marquee 28s linear infinite}.social-track:hover{animation-play-state:paused}@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse-glow{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.4)}50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}@media(max-width:640px){.hero-stats-grid{grid-template-columns:repeat(2,1fr)!important}.hero-live-row{flex-direction:column!important;gap:1rem!important}.hero-steps-grid{grid-template-columns:1fr!important}}`}</style>
       <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-        <span style={{ background: "#EF4444", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "4px 12px", borderRadius: 99, letterSpacing: 1 }}>TRÁFEGO PAGO + FIREHUB</span>
+        <span style={{ background: "#C92E09", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "4px 12px", borderRadius: 99, letterSpacing: 1 }}>TRÁFEGO PAGO + FIREHUB</span>
       </div>
       <h1 style={{ textAlign: "center", fontSize: "clamp(1.6rem,4vw,2.5rem)", fontWeight: 900, lineHeight: 1.2, marginBottom: "0.75rem", animation: "fadeInUp 0.6s ease" }}>
         Conecte, invista e a IA<br />cuida do resto
       </h1>
-      <p style={{ textAlign: "center", color: "#6B7280", fontSize: "1rem", marginBottom: "2rem", lineHeight: 1.6 }}>
+      <p style={{ textAlign: "center", color: "#64748B", fontSize: "1rem", marginBottom: "2rem", lineHeight: 1.6 }}>
         Anúncios no <strong>Facebook</strong> e <strong>Instagram</strong> 100% automáticos.<br />
         Você não precisa entender nada de marketing. <strong>Só receba os pedidos.</strong>
       </p>
@@ -827,14 +827,14 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <div className="hero-steps-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1rem", marginBottom: "2rem" }}>
         {[
           { step: "1", emoji: "📱", title: "Conecte o Facebook", desc: "Login em 1 clique. Sem complicação.", color: "#1877F2" },
-          { step: "2", emoji: "💰", title: "Escolha o investimento", desc: "A partir de R$100/semana. Você decide.", color: "#16A34A" },
-          { step: "3", emoji: "🤖", title: "IA faz tudo por você", desc: "Cria, publica e otimiza os anúncios.", color: "#EF4444" },
+          { step: "2", emoji: "💰", title: "Escolha o investimento", desc: "A partir de R$100/semana. Você decide.", color: "#15803D" },
+          { step: "3", emoji: "🤖", title: "IA faz tudo por você", desc: "Cria, publica e otimiza os anúncios.", color: "#C92E09" },
         ].map((s, i) => (
-          <div key={i} style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.25rem", textAlign: "center", position: "relative", animation: `fadeInUp ${0.4 + i * 0.15}s ease` }}>
+          <div key={i} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.25rem", textAlign: "center", position: "relative", animation: `fadeInUp ${0.4 + i * 0.15}s ease` }}>
             <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: s.color, color: "#fff", width: 24, height: 24, borderRadius: "50%", fontSize: "0.72rem", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.step}</div>
             <div style={{ fontSize: "2rem", marginBottom: 8, marginTop: 4 }}>{s.emoji}</div>
             <div style={{ fontWeight: 800, fontSize: "0.95rem", marginBottom: 4 }}>{s.title}</div>
-            <div style={{ fontSize: "0.78rem", color: "#6B7280", lineHeight: 1.4 }}>{s.desc}</div>
+            <div style={{ fontSize: "0.78rem", color: "#64748B", lineHeight: 1.4 }}>{s.desc}</div>
           </div>
         ))}
       </div>
@@ -852,17 +852,17 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           { label: "Gestão FireHub", value: "R$ 50/semana" },
           { label: "Fidelidade", value: "Sem contrato" },
         ].map(s => (
-          <div key={s.label} style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: "1rem", textAlign: "center" }}>
-            <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 4 }}>{s.label}</div>
+          <div key={s.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "1rem", textAlign: "center" }}>
+            <div style={{ fontSize: "0.72rem", color: "#64748B", marginBottom: 4 }}>{s.label}</div>
             <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#111" }}>{s.value}</div>
           </div>
         ))}
       </div>
       <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-        <button onClick={() => setStep("terms")} style={{ background: "#EF4444", color: "#fff", border: "none", padding: "16px 40px", borderRadius: 12, fontSize: "1.1rem", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, animation: "pulse-glow 2s infinite" }}>
+        <button onClick={() => setStep("terms")} style={{ background: "#C92E09", color: "#fff", border: "none", padding: "16px 40px", borderRadius: 12, fontSize: "1.1rem", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, animation: "pulse-glow 2s infinite" }}>
           Ativar para meu restaurante <ChevronRight size={20} />
         </button>
-        <p style={{ color: "#9CA3AF", fontSize: "0.8rem", marginTop: 8 }}>⚡ Configuração em menos de 5 minutos · Sem contrato</p>
+        <p style={{ color: "#94A3B8", fontSize: "0.8rem", marginTop: 8 }}>⚡ Configuração em menos de 5 minutos · Sem contrato</p>
       </div>
       {/* O carrossel de "depoimentos" mostrava 14 restaurantes que NÃO EXISTEM
           ("Burger Carioca investiu R$150 e faturou R$847"), com cinco estrelas
@@ -872,25 +872,25 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <div style={{ overflow: "hidden", marginBottom: "2rem", userSelect: "none" }}>
         <div className="social-track">
           {[...SOCIAL_PROOF, ...SOCIAL_PROOF].map((r, i) => (
-            <div key={i} style={{ flexShrink: 0, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: "0.85rem 1rem", minWidth: 200 }}>
-              <div style={{ display: "flex", gap: 2, marginBottom: 6 }}>{Array(r.stars).fill(0).map((_, j) => <Star key={j} size={12} fill="#F59E0B" color="#F59E0B" />)}</div>
+            <div key={i} style={{ flexShrink: 0, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "0.85rem 1rem", minWidth: 200 }}>
+              <div style={{ display: "flex", gap: 2, marginBottom: 6 }}>{Array(r.stars).fill(0).map((_, j) => <Star key={j} size={12} fill="#B45309" color="#B45309" />)}</div>
               <div style={{ fontWeight: 700, fontSize: "0.88rem", marginBottom: 4 }}>{r.name}</div>
-              <div style={{ fontSize: "0.78rem", color: "#6B7280" }}>Investiu <strong>R${r.invested}</strong> — Faturou <span style={{ color: "#16A34A", fontWeight: 800 }}>R${r.earned.toLocaleString("pt-BR")}</span></div>
+              <div style={{ fontSize: "0.78rem", color: "#64748B" }}>Investiu <strong>R${r.invested}</strong> — Faturou <span style={{ color: "#15803D", fontWeight: 800 }}>R${r.earned.toLocaleString("pt-BR")}</span></div>
             </div>
           ))}
         </div>
       </div>
       )}
       {false && (
-      <div className="hero-live-row" style={{ display: "flex", justifyContent: "center", gap: "3rem", borderTop: "1px solid #E5E7EB", paddingTop: "1.5rem" }}>
+      <div className="hero-live-row" style={{ display: "flex", justifyContent: "center", gap: "3rem", borderTop: "1px solid #E2E8F0", paddingTop: "1.5rem" }}>
         {[
           { label: "Receita Gerada", value: `R$ ${liveReceita.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
           { label: "Valor Investido", value: `R$ ${liveInvestido.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}` },
           { label: "Pedidos Gerados", value: livePedidos.toLocaleString("pt-BR") },
         ].map(s => (
           <div key={s.label} style={{ textAlign: "center" }}>
-            <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#16A34A", fontVariantNumeric: "tabular-nums", transition: "all 0.3s ease" }}>{s.value}</div>
-            <div style={{ fontSize: "0.72rem", color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{s.label}</div>
+            <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#15803D", fontVariantNumeric: "tabular-nums", transition: "all 0.3s ease" }}>{s.value}</div>
+            <div style={{ fontSize: "0.72rem", color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>{s.label}</div>
           </div>
         ))}
       </div>
@@ -908,20 +908,20 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
     return (
       <div style={{ maxWidth: 600, margin: "0 auto", padding: "0 1rem 4rem" }}>
         <Banner />
-        <button onClick={() => setStep("hero")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
+        <button onClick={() => setStep("hero")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#64748B", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
         <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
           <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>📜</div>
           <h2 style={{ fontSize: "1.5rem", fontWeight: 900, marginBottom: "0.25rem" }}>Termos do Tráfego Pago</h2>
-          <p style={{ color: "#6B7280", fontSize: "0.88rem" }}>Leia com atenção antes de prosseguir. Role até o final para aceitar.</p>
+          <p style={{ color: "#64748B", fontSize: "0.88rem" }}>Leia com atenção antes de prosseguir. Role até o final para aceitar.</p>
         </div>
 
-        <div ref={termsBoxRef} style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem", maxHeight: 400, overflowY: "auto", marginBottom: "1.5rem", fontSize: "0.88rem", lineHeight: 1.8, color: "#374151" }}>
+        <div ref={termsBoxRef} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem", maxHeight: 400, overflowY: "auto", marginBottom: "1.5rem", fontSize: "0.88rem", lineHeight: 1.8, color: "#334155" }}>
           <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.75rem" }}>1. Taxa de Gestão</h3>
           <p>O módulo de Tráfego Pago cobra <strong>R$ 50,00/semana</strong> pelo <strong>serviço de gestão de campanhas</strong> (criação, otimização e monitoramento dos seus anúncios).</p>
 
           <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 10, padding: "0.85rem", margin: "0.75rem 0" }}>
-            <strong style={{ color: "#991B1B" }}>🔴 IMPORTANTE:</strong>
-            <ul style={{ margin: "4px 0 0", paddingLeft: "1.2rem", color: "#991B1B" }}>
+            <strong style={{ color: "#B71C1C" }}>🔴 IMPORTANTE:</strong>
+            <ul style={{ margin: "4px 0 0", paddingLeft: "1.2rem", color: "#B71C1C" }}>
               <li><strong>Ativou a campanha = a semana inteira é cobrada.</strong> Se ativar e pausar no dia seguinte, os R$ 50,00 daquela semana são devidos do mesmo jeito</li>
               <li>A taxa é cobrada <strong>independente do retorno em vendas</strong></li>
               <li>O FireHub <strong>NÃO garante</strong> resultados específicos de vendas ou ROAS</li>
@@ -929,7 +929,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             </ul>
           </div>
 
-          <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "0.85rem", margin: "0.75rem 0" }}>
+          <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 10, padding: "0.85rem", margin: "0.75rem 0" }}>
             <strong style={{ color: "#92400E" }}>💡 Impostos do Facebook (não é cobrança do FireHub):</strong>
             <p style={{ margin: "4px 0 0", color: "#92400E" }}>
               Desde janeiro de 2026 a Meta repassa impostos ao anunciante — cerca de
@@ -967,7 +967,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           <p>Os primeiros dias são de <strong>aprendizado do algoritmo</strong>. Recomendamos manter a campanha ativa por pelo menos <strong>30 dias</strong> antes de avaliar os resultados.</p>
 
           <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.75rem", marginTop: "1.25rem" }}>5. Exemplos Práticos</h3>
-          <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "0.85rem" }}>
+          <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 10, padding: "0.85rem" }}>
             <ul style={{ margin: 0, paddingLeft: "1.2rem", color: "#92400E" }}>
               <li>Ativou campanha na segunda e pausou na quinta (4 dias) → <strong>R$50</strong></li>
               <li>Manteve campanha ativa por 3 semanas → <strong>R$150</strong></li>
@@ -980,7 +980,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
         </div>
 
         {!termsScrolled && (
-          <div style={{ textAlign: "center", fontSize: "0.82rem", color: "#9CA3AF", marginBottom: "0.75rem" }}>↓ Role até o final para aceitar os termos</div>
+          <div style={{ textAlign: "center", fontSize: "0.82rem", color: "#94A3B8", marginBottom: "0.75rem" }}>↓ Role até o final para aceitar os termos</div>
         )}
 
         {/* O <label> não tinha htmlFor nem input dentro, e o onClick vivia só no
@@ -1022,18 +1022,18 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             cursor: termsScrolled ? "pointer" : "not-allowed",
             opacity: termsScrolled ? 1 : 0.5,
             background: termsAccepted ? "#FEF2F2" : "#fff",
-            border: `2px solid ${termsAccepted || termsScrolled ? "#EF4444" : "#E5E7EB"}`,
+            border: `2px solid ${termsAccepted || termsScrolled ? "#C92E09" : "#E2E8F0"}`,
             borderRadius: 14, padding: "1.1rem", marginBottom: "1rem", userSelect: "none",
             transition: "background 0.2s, border-color 0.2s",
           }}
         >
-          <div aria-hidden style={{ width: 26, height: 26, borderRadius: 8, border: `2px solid ${termsScrolled || termsAccepted ? "#EF4444" : "#D1D5DB"}`, background: termsAccepted ? "#EF4444" : "#fff", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", marginTop: 1 }}>
+          <div aria-hidden style={{ width: 26, height: 26, borderRadius: 8, border: `2px solid ${termsScrolled || termsAccepted ? "#C92E09" : "#CBD5E1"}`, background: termsAccepted ? "#C92E09" : "#fff", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", marginTop: 1 }}>
             {termsAccepted && <Check size={16} color="#fff" />}
           </div>
           <div>
             <span style={{ fontSize: "0.88rem", lineHeight: 1.6 }}>Li e aceito os termos acima. Entendo que a <strong>taxa de R$50/semana é pelo serviço de gestão</strong>, não por resultados. O ROAS depende da qualidade do meu produto, atendimento e mercado local.</span>
             {termsScrolled && !termsAccepted && (
-              <div style={{ marginTop: 8, fontSize: "0.78rem", fontWeight: 800, color: "#EF4444" }}>👆 Toque aqui para marcar</div>
+              <div style={{ marginTop: 8, fontSize: "0.78rem", fontWeight: 800, color: "#C92E09" }}>👆 Toque aqui para marcar</div>
             )}
           </div>
         </div>
@@ -1041,9 +1041,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
         <button onClick={() => setStep("method")} disabled={!termsAccepted}
           style={{
             width: "100%",
-            background: termsAccepted ? "#EF4444" : "#F3F4F6",
-            color: termsAccepted ? "#fff" : "#6B7280",
-            border: termsAccepted ? "2px solid #EF4444" : "2px dashed #D1D5DB",
+            background: termsAccepted ? "#C92E09" : "#F1F5F9",
+            color: termsAccepted ? "#fff" : "#64748B",
+            border: termsAccepted ? "2px solid #C92E09" : "2px dashed #CBD5E1",
             padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800,
             cursor: termsAccepted ? "pointer" : "not-allowed",
             boxShadow: termsAccepted ? "0 6px 18px rgba(239,68,68,0.28)" : "none",
@@ -1059,10 +1059,10 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   if (step === "method") return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "0 1rem 4rem" }}>
       <Banner />
-      <button onClick={() => setStep("terms")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
-      <div style={{ textAlign: "center", marginBottom: "0.5rem" }}><span style={{ background: "#EF4444", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "4px 12px", borderRadius: 99 }}>TRÁFEGO PAGO + FIREHUB</span></div>
+      <button onClick={() => setStep("terms")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#64748B", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
+      <div style={{ textAlign: "center", marginBottom: "0.5rem" }}><span style={{ background: "#C92E09", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "4px 12px", borderRadius: 99 }}>TRÁFEGO PAGO + FIREHUB</span></div>
       <h2 style={{ textAlign: "center", fontSize: "1.8rem", fontWeight: 900, marginBottom: "0.5rem" }}>Como deseja configurar?</h2>
-      <p style={{ textAlign: "center", color: "#6B7280", marginBottom: "2rem" }}>Escolha a modalidade que funciona melhor pra você.</p>
+      <p style={{ textAlign: "center", color: "#64748B", marginBottom: "2rem" }}>Escolha a modalidade que funciona melhor pra você.</p>
       {/* O fio cinza de 1,5px em volta de cada caixa era a única separação da
           página — e o fundo da página também é claro, então as bordas ficavam
           duras e as caixas, chapadas: nada dizia que as duas de cima são
@@ -1070,8 +1070,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           claro, quem carrega o peso é a sombra, e o clicável reage: levanta,
           acende a borda e ganha anel de foco no teclado. */}
       <style>{`
-        .fh-opcao:hover{border-color:#EF4444!important;box-shadow:0 4px 8px rgba(239,68,68,.08),0 14px 28px rgba(239,68,68,.10)!important;transform:translateY(-2px)}
-        .fh-opcao:focus-visible{outline:3px solid #FCA5A5;outline-offset:2px;border-color:#EF4444!important}
+        .fh-opcao:hover{border-color:#C92E09!important;box-shadow:0 4px 8px rgba(239,68,68,.08),0 14px 28px rgba(239,68,68,.10)!important;transform:translateY(-2px)}
+        .fh-opcao:focus-visible{outline:3px solid #FCA5A5;outline-offset:2px;border-color:#C92E09!important}
         @media(prefers-reduced-motion:reduce){.fh-opcao:hover{transform:none}}
         @media(max-width:640px){.fh-metodos{grid-template-columns:1fr!important}.fh-beneficios{grid-template-columns:repeat(2,1fr)!important}}
       `}</style>
@@ -1084,8 +1084,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             onClick={() => opt.action ? opt.action() : window.open(opt.href, "_blank")}
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); opt.action ? opt.action() : window.open(opt.href, "_blank"); } }}
             style={{ border: "1px solid #E8EAEE", borderRadius: 16, padding: "1.25rem", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", boxShadow: "0 1px 2px rgba(16,24,40,0.04), 0 4px 12px rgba(16,24,40,0.04)", transition: "border-color 0.18s, box-shadow 0.18s, transform 0.18s" }}>
-            <div><div style={{ fontWeight: 800, fontSize: "1rem", marginBottom: 4 }}>{opt.title}</div><div style={{ fontSize: "0.82rem", color: "#6B7280" }}>{opt.desc}</div></div>
-            <ChevronRight size={18} color="#9CA3AF" style={{ flexShrink: 0, marginLeft: 8 }} />
+            <div><div style={{ fontWeight: 800, fontSize: "1rem", marginBottom: 4 }}>{opt.title}</div><div style={{ fontSize: "0.82rem", color: "#64748B" }}>{opt.desc}</div></div>
+            <ChevronRight size={18} color="#94A3B8" style={{ flexShrink: 0, marginLeft: 8 }} />
           </div>
         ))}
       </div>
@@ -1093,9 +1093,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
         {FEATURES.map(f => (
           <div key={f.label} style={{ background: "#fff", border: "1px solid #EEF0F4", borderRadius: 12, padding: "0.7rem 0.85rem", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 1px 2px rgba(16,24,40,0.03)" }}>
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "#FEF2F2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <f.icon size={15} color="#EF4444" />
+              <f.icon size={15} color="#C92E09" />
             </div>
-            <div><div style={{ fontSize: "0.78rem", fontWeight: 700 }}>{f.label}</div><div style={{ fontSize: "0.7rem", color: "#6B7280" }}>{f.desc}</div></div>
+            <div><div style={{ fontSize: "0.78rem", fontWeight: 700 }}>{f.label}</div><div style={{ fontSize: "0.7rem", color: "#64748B" }}>{f.desc}</div></div>
           </div>
         ))}
       </div>
@@ -1107,32 +1107,32 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
   if (step === "invest") return (
     <div style={{ maxWidth: 500, margin: "0 auto", padding: "0 1rem 4rem" }}>
       <Banner />
-      <button onClick={() => setStep("method")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
+      <button onClick={() => setStep("method")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#64748B", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
       <h2 style={{ fontSize: "1.4rem", fontWeight: 900, marginBottom: "0.25rem" }}>Investimento semanal</h2>
-      <p style={{ color: "#6B7280", marginBottom: "2rem" }}>Quanto você quer investir por semana? A IA otimiza cada real.</p>
-      <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "2rem", textAlign: "center", marginBottom: "1.5rem" }}>
-        <div style={{ marginBottom: "0.25rem", color: "#6B7280", fontSize: "0.85rem" }}>Investimento semanal em anúncios</div>
+      <p style={{ color: "#64748B", marginBottom: "2rem" }}>Quanto você quer investir por semana? A IA otimiza cada real.</p>
+      <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "2rem", textAlign: "center", marginBottom: "1.5rem" }}>
+        <div style={{ marginBottom: "0.25rem", color: "#64748B", fontSize: "0.85rem" }}>Investimento semanal em anúncios</div>
         <div style={{ fontSize: "3rem", fontWeight: 900, color: "#111", marginBottom: "1rem" }}>R$ <span>{investment}</span></div>
         {/* Presets rápidos */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginBottom: "1.25rem" }}>
           {BUDGET_PRESETS.map(v => (
             <button key={v} onClick={() => setInvestment(v)}
               style={{
-                padding: "6px 14px", borderRadius: 8, border: investment === v ? "2px solid #EF4444" : "1.5px solid #E5E7EB",
+                padding: "6px 14px", borderRadius: 8, border: investment === v ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
                 background: investment === v ? "#FEF2F2" : "#fff", fontWeight: 700, fontSize: "0.82rem",
-                cursor: "pointer", color: investment === v ? "#EF4444" : "#374151", transition: "all 0.15s",
+                cursor: "pointer", color: investment === v ? "#C92E09" : "#334155", transition: "all 0.15s",
                 position: "relative",
               }}>
               R${v}
-              {v === 150 && <span style={{ position: "absolute", top: -8, right: -4, background: "#16A34A", color: "#fff", fontSize: "0.55rem", fontWeight: 800, padding: "1px 5px", borderRadius: 6, whiteSpace: "nowrap" }}>⭐ Popular</span>}
+              {v === 150 && <span style={{ position: "absolute", top: -8, right: -4, background: "#15803D", color: "#fff", fontSize: "0.55rem", fontWeight: 800, padding: "1px 5px", borderRadius: 6, whiteSpace: "nowrap" }}>⭐ Popular</span>}
             </button>
           ))}
         </div>
-        <input type="range" min={100} max={2000} step={50} value={investment} onChange={e => setInvestment(Number(e.target.value))} style={{ width: "100%", accentColor: "#EF4444", height: 6, cursor: "pointer" }} />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#9CA3AF", marginTop: 6 }}><span>R$ 100</span><span>R$ 2.000</span></div>
+        <input type="range" min={100} max={2000} step={50} value={investment} onChange={e => setInvestment(Number(e.target.value))} style={{ width: "100%", accentColor: "#C92E09", height: 6, cursor: "pointer" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#94A3B8", marginTop: 6 }}><span>R$ 100</span><span>R$ 2.000</span></div>
       </div>
       {/* Estimativas */}
-      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "1rem", marginBottom: "0.75rem" }}>
+      <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: 12, padding: "1rem", marginBottom: "0.75rem" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", textAlign: "center" }}>
           {/* "Retorno estimado = investimento × 4,72" saiu daqui.
               Era promessa de resultado financeiro calculada sobre um ROAS
@@ -1143,23 +1143,23 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
               valor alcança), não de retorno — e é a conta que a própria Meta
               usa. Mesmo assim vai marcado como estimativa. */}
           <div>
-            <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 2 }}>Alcance estimado</div>
-            <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#3B82F6" }}>≈ {(investment * 85).toLocaleString("pt-BR")}</div>
-            <div style={{ fontSize: "0.65rem", color: "#9CA3AF" }}>pessoas na sua região</div>
+            <div style={{ fontSize: "0.72rem", color: "#64748B", marginBottom: 2 }}>Alcance estimado</div>
+            <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#1D4ED8" }}>≈ {(investment * 85).toLocaleString("pt-BR")}</div>
+            <div style={{ fontSize: "0.65rem", color: "#94A3B8" }}>pessoas na sua região</div>
           </div>
           <div>
-            <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 2 }}>Gestão FireHub</div>
+            <div style={{ fontSize: "0.72rem", color: "#64748B", marginBottom: 2 }}>Gestão FireHub</div>
             <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#111" }}>R$ 50<span style={{ fontSize: "0.8rem", fontWeight: 600 }}>/semana</span></div>
-            <div style={{ fontSize: "0.65rem", color: "#9CA3AF" }}>cobrado só enquanto ativo</div>
+            <div style={{ fontSize: "0.65rem", color: "#94A3B8" }}>cobrado só enquanto ativo</div>
           </div>
         </div>
-        <div style={{ fontSize: "0.68rem", color: "#9CA3AF", marginTop: 8, lineHeight: 1.4, borderTop: "1px solid #BBF7D0", paddingTop: 8, textAlign: "center" }}>
+        <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 8, lineHeight: 1.4, borderTop: "1px solid #ABEFC6", paddingTop: 8, textAlign: "center" }}>
           ⚠️ O alcance é uma estimativa e varia com concorrência e público. Não prometemos
           número de pedidos: o resultado depende das suas <strong>fotos</strong>, <strong>preços</strong> e
           <strong> mercado local</strong>. Você acompanha os números reais aqui no painel.
         </div>
       </div>
-      <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.5rem", fontSize: "0.82rem", color: "#991B1B", lineHeight: 1.6 }}>
+      <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.5rem", fontSize: "0.82rem", color: "#B71C1C", lineHeight: 1.6 }}>
         🔴 <strong>Taxa de gestão:</strong> R$ 50/semana pelo serviço de criação, otimização e monitoramento. <strong>Ativou = cobra</strong>, independente do retorno em vendas.
       </div>
       {/* Duas correções nesta porta:
@@ -1173,7 +1173,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
              próprio anúncio, voltava só para ajustar o valor e avançava, perdia
              o texto para uma sugestão nova da IA, sem aviso e sem desfazer. A
              auto-geração da primeira visita continua no useEffect. */}
-      <button onClick={() => conexaoUtilizavel ? (handleGenerateCopy(true), setStep("creative")) : setStep("connect")} style={{ width: "100%", background: "#EF4444", color: "#fff", border: "none", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+      <button onClick={() => conexaoUtilizavel ? (handleGenerateCopy(true), setStep("creative")) : setStep("connect")} style={{ width: "100%", background: "#C92E09", color: "#fff", border: "none", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
         Confirmar R$ {investment}/semana <ChevronRight size={18} />
       </button>
     </div>
@@ -1183,15 +1183,15 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
     <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 1rem 4rem" }}>
       <Banner />
       <AvisoDeConfiguracao />
-      <button onClick={() => setStep("invest")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
+      <button onClick={() => setStep("invest")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#64748B", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
       <h2 style={{ fontSize: "1.4rem", fontWeight: 900, marginBottom: "0.25rem" }}>{connected ? "Reconectar Facebook" : "Conectar Facebook"}</h2>
-      <p style={{ color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}>Conecte sua página do Facebook para que a IA crie os anúncios na <strong>sua conta</strong>.</p>
+      <p style={{ color: "#64748B", marginBottom: "1.5rem", fontSize: "0.9rem" }}>Conecte sua página do Facebook para que a IA crie os anúncios na <strong>sua conta</strong>.</p>
       {/* Este é o estado que travava o módulo no DIA UM: o callback grava o
           token e só depois volta com o erro, então a tela passava a achar que
           estava tudo conectado e nunca mais oferecia a conexão. O lojista cria o
           que falta no Facebook e volta aqui para refazer o OAuth. */}
       {connected && (!temContaDeAnuncios || !temPagina) && (
-        <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "0.9rem 1rem", marginBottom: "1rem", fontSize: "0.84rem", color: "#92400E", lineHeight: 1.55 }}>
+        <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "0.9rem 1rem", marginBottom: "1rem", fontSize: "0.84rem", color: "#92400E", lineHeight: 1.55 }}>
           Seu Facebook está conectado, mas falta o seguinte para o anúncio poder ser publicado:
           <ul style={{ margin: "6px 0 8px", paddingLeft: "1.2rem" }}>
             {!temContaDeAnuncios && (
@@ -1215,7 +1215,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           Depois de criar, volte aqui e conecte de novo — é o botão abaixo.
         </div>
       )}
-      <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem" }}>
+      <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem" }}>
         <div style={{ marginBottom: "1.5rem" }}>
           {[
             { n: "1", title: "Conecte sua página", desc: "Faça login no Facebook" },
@@ -1223,23 +1223,23 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             { n: "3", title: "Configure seu anúncio", desc: "Escolha imagem, confirme o texto e publique" },
           ].map((s, i) => (
             <div key={i} style={{ display: "flex", gap: "0.75rem", marginBottom: i < 2 ? "1rem" : 0 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#EF4444", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", fontWeight: 800, flexShrink: 0 }}>{s.n}</div>
-              <div><div style={{ fontWeight: 700, fontSize: "0.9rem" }}>{s.title}</div><div style={{ fontSize: "0.78rem", color: "#6B7280" }}>{s.desc}</div></div>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#C92E09", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", fontWeight: 800, flexShrink: 0 }}>{s.n}</div>
+              <div><div style={{ fontWeight: 700, fontSize: "0.9rem" }}>{s.title}</div><div style={{ fontSize: "0.78rem", color: "#64748B" }}>{s.desc}</div></div>
             </div>
           ))}
         </div>
-        <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "0.6rem 0.85rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#166534", fontWeight: 600 }}>
+        <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: 10, padding: "0.6rem 0.85rem", marginBottom: "1rem", fontSize: "0.82rem", color: "#15803D", fontWeight: 600 }}>
           ✅ O pagamento dos anúncios é feito direto pela sua conta do Meta
         </div>
         {/* `disabled` quando falta credencial no servidor: sem isto o clique
             levava a uma página de erro 500 crua do Next, sem explicação. */}
-        <button onClick={handleConnectFacebook} disabled={needsSetup} style={{ width: "100%", background: needsSetup ? "#E5E7EB" : "#1877F2", color: needsSetup ? "#9CA3AF" : "#fff", border: "none", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, cursor: needsSetup ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: "0.75rem" }}>
+        <button onClick={handleConnectFacebook} disabled={needsSetup} style={{ width: "100%", background: needsSetup ? "#E2E8F0" : "#1877F2", color: needsSetup ? "#94A3B8" : "#fff", border: "none", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, cursor: needsSetup ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: "0.75rem" }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
           {connected ? "Conectar de novo com o Facebook" : "Conectar com Facebook"}
         </button>
-        <div style={{ fontSize: "0.72rem", color: "#9CA3AF", textAlign: "center" }}>🔒 Seus dados são seguros. O FireHub nunca publica nada sem sua autorização.</div>
+        <div style={{ fontSize: "0.72rem", color: "#94A3B8", textAlign: "center" }}>🔒 Seus dados são seguros. O FireHub nunca publica nada sem sua autorização.</div>
       </div>
-      <div style={{ marginTop: "1.5rem", background: "#F9FAFB", borderRadius: 12, padding: "1rem" }}>
+      <div style={{ marginTop: "1.5rem", background: "#F8FAFC", borderRadius: 12, padding: "1rem" }}>
         <div style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.75rem" }}>Perguntas frequentes</div>
         {[
           { q: "Quem paga os anúncios?", a: "Você. O valor é cobrado pela Meta na sua conta. O FireHub cobra R$50/semana de gestão." },
@@ -1247,8 +1247,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           { q: "Posso pausar?", a: "Sim! Pause ou cancele direto pelo painel, sem multas." },
         ].map((faq, i) => (
           <div key={i} style={{ marginBottom: i < 2 ? "0.75rem" : 0 }}>
-            <div style={{ fontWeight: 600, fontSize: "0.82rem", color: "#374151" }}>{faq.q}</div>
-            <div style={{ fontSize: "0.78rem", color: "#6B7280", lineHeight: 1.5 }}>{faq.a}</div>
+            <div style={{ fontWeight: 600, fontSize: "0.82rem", color: "#334155" }}>{faq.q}</div>
+            <div style={{ fontSize: "0.78rem", color: "#64748B", lineHeight: 1.5 }}>{faq.a}</div>
           </div>
         ))}
       </div>
@@ -1261,9 +1261,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <Banner />
       {/* "commitment" está no union mas nunca teve tela: voltar para lá caía
           no dashboard vazio. O passo anterior real do criativo é o investimento. */}
-      <button onClick={() => setStep("invest")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#6B7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
+      <button onClick={() => setStep("invest")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#64748B", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
       <h2 style={{ fontSize: "1.6rem", fontWeight: 900, marginBottom: "0.25rem" }}>Configure seu anúncio</h2>
-      <p style={{ color: "#6B7280", marginBottom: "2rem", fontSize: "0.9rem" }}>Escolha a imagem e confirme o texto. A IA já sugeriu um texto otimizado para você.</p>
+      <p style={{ color: "#64748B", marginBottom: "2rem", fontSize: "0.9rem" }}>Escolha a imagem e confirme o texto. A IA já sugeriu um texto otimizado para você.</p>
 
       {/* ── A CONTA CONSEGUE VEICULAR? ────────────────────────────────────────
           Esta checagem só existia no painel — DEPOIS de publicar e DEPOIS de os
@@ -1274,10 +1274,10 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           cobra, com o caminho de conserto do lado. */}
       {bloqueioDaConta && (
         <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 14, padding: "1rem 1.15rem", marginBottom: "1.5rem" }}>
-          <div style={{ fontWeight: 800, color: "#991B1B", fontSize: "0.92rem", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontWeight: 800, color: "#B71C1C", fontSize: "0.92rem", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
             <AlertTriangle size={16} /> Sua conta do Facebook ainda não consegue veicular
           </div>
-          <div style={{ fontSize: "0.84rem", color: "#991B1B", lineHeight: 1.55, marginBottom: 10 }}>
+          <div style={{ fontSize: "0.84rem", color: "#B71C1C", lineHeight: 1.55, marginBottom: 10 }}>
             {bloqueioDaConta}
             <br />
             <strong>Nada foi cobrado.</strong> Publicar agora criaria uma campanha que não sairia no ar —
@@ -1287,12 +1287,12 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             {precisaReconectar && <BotaoReconectar destaque />}
             {!precisaReconectar && linkDaConta && (
               <a href={linkDaConta} target="_blank" rel="noopener noreferrer"
-                style={{ background: "#DC2626", color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: "0.85rem", fontWeight: 800, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 7 }}>
+                style={{ background: "#C92E09", color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: "0.85rem", fontWeight: 800, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 7 }}>
                 Resolver no Facebook <ExternalLink size={14} />
               </a>
             )}
             <button type="button" onClick={() => { void atualizarProntidao(); }}
-              style={{ background: "#fff", border: "1.5px solid #FCA5A5", color: "#991B1B", padding: "11px 18px", borderRadius: 10, fontSize: "0.85rem", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}>
+              style={{ background: "#fff", border: "1.5px solid #FCA5A5", color: "#B71C1C", padding: "11px 18px", borderRadius: 10, fontSize: "0.85rem", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}>
               <RefreshCw size={14} /> Já resolvi — verificar de novo
             </button>
           </div>
@@ -1300,9 +1300,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       )}
 
       {/* ── Imagem ── */}
-      <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
+      <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
         <div style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: 8 }}>
-          <ImageIcon size={18} color="#EF4444" /> Imagem do anúncio
+          <ImageIcon size={18} color="#C92E09" /> Imagem do anúncio
         </div>
 
         {/* Tabs */}
@@ -1329,44 +1329,44 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                 nenhuma — enquanto o Publicar exige imagem. Cardápio sem fotos é
                 o caso comum, não a exceção. */}
             {productImages.length === 0 && !generatingCopy && cardapioCarregado ? (
-              <div style={{ textAlign: "center", padding: "1.5rem 1rem", color: "#6B7280" }}>
-                <ImageIcon size={30} color="#D1D5DB" style={{ margin: "0 auto 10px" }} />
-                <div style={{ fontWeight: 700, color: "#374151", marginBottom: 4 }}>Seu cardápio ainda não tem fotos</div>
+              <div style={{ textAlign: "center", padding: "1.5rem 1rem", color: "#64748B" }}>
+                <ImageIcon size={30} color="#CBD5E1" style={{ margin: "0 auto 10px" }} />
+                <div style={{ fontWeight: 700, color: "#334155", marginBottom: 4 }}>Seu cardápio ainda não tem fotos</div>
                 <div style={{ fontSize: "0.82rem", lineHeight: 1.5, marginBottom: 14 }}>
                   O anúncio precisa de uma imagem. Envie uma foto do seu celular ou gere uma com IA —
                   as duas opções funcionam agora, sem mexer no cardápio.
                 </div>
                 <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
                   <button onClick={() => setImageTab("upload")}
-                    style={{ background: "#EF4444", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                    style={{ background: "#C92E09", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
                     📸 Enviar uma foto
                   </button>
                   <button onClick={() => setImageTab("ai")}
-                    style={{ background: "#fff", border: "1.5px solid #8B5CF6", color: "#8B5CF6", padding: "10px 18px", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                    style={{ background: "#fff", border: "1.5px solid #64748B", color: "#64748B", padding: "10px 18px", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
                     🤖 Gerar com IA
                   </button>
                 </div>
               </div>
             ) : productImages.length === 0 && !generatingCopy ? (
-              <div style={{ textAlign: "center", padding: "2rem", color: "#6B7280" }}>
-                <button onClick={() => handleGenerateCopy(true)} style={{ background: "#EF4444", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
+              <div style={{ textAlign: "center", padding: "2rem", color: "#64748B" }}>
+                <button onClick={() => handleGenerateCopy(true)} style={{ background: "#C92E09", color: "#fff", border: "none", padding: "10px 20px", borderRadius: 10, fontWeight: 700, cursor: "pointer" }}>
                   Carregar fotos do cardápio
                 </button>
               </div>
             ) : generatingCopy ? (
-              <div style={{ textAlign: "center", padding: "2rem", color: "#6B7280" }}>
-                <div style={{ width: 32, height: 32, border: "3px solid #E5E7EB", borderTopColor: "#EF4444", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
+              <div style={{ textAlign: "center", padding: "2rem", color: "#64748B" }}>
+                <div style={{ width: 32, height: 32, border: "3px solid #E2E8F0", borderTopColor: "#C92E09", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
                 Carregando fotos...
               </div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: 8 }}>
                 {productImages.map((p, i) => (
                   <div key={i} onClick={() => { setSelectedImage(p.imageUrl); setUploadPreview(""); }}
-                    style={{ border: `2px solid ${selectedImage === p.imageUrl ? "#EF4444" : "#E5E7EB"}`, borderRadius: 12, overflow: "hidden", cursor: "pointer", transition: "border-color 0.2s", position: "relative" }}>
+                    style={{ border: `2px solid ${selectedImage === p.imageUrl ? "#C92E09" : "#E2E8F0"}`, borderRadius: 12, overflow: "hidden", cursor: "pointer", transition: "border-color 0.2s", position: "relative" }}>
                     <img src={p.imageUrl} alt={p.name} style={{ width: "100%", height: 100, objectFit: "cover" }} />
                     <div style={{ padding: "6px 8px", fontSize: "0.72rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
                     {selectedImage === p.imageUrl && (
-                      <div style={{ position: "absolute", top: 6, right: 6, width: 22, height: 22, borderRadius: "50%", background: "#EF4444", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <div style={{ position: "absolute", top: 6, right: 6, width: 22, height: 22, borderRadius: "50%", background: "#C92E09", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <Check size={13} color="#fff" />
                       </div>
                     )}
@@ -1387,24 +1387,24 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                 O lojista achava que não funcionou e tocava de novo, disparando um
                 segundo envio concorrente. */}
             {enviandoImagem ? (
-              <div style={{ border: "2px dashed #EF4444", borderRadius: 12, padding: "2.5rem", textAlign: "center", background: "#FEF2F2" }}>
-                <div style={{ width: 32, height: 32, border: "3px solid #FECACA", borderTopColor: "#EF4444", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
-                <div style={{ fontWeight: 700, color: "#991B1B", marginBottom: 4 }}>Enviando imagem...</div>
-                <div style={{ fontSize: "0.78rem", color: "#B91C1C" }}>Estamos ajustando a foto para o formato do anúncio. Não feche a página.</div>
+              <div style={{ border: "2px dashed #C92E09", borderRadius: 12, padding: "2.5rem", textAlign: "center", background: "#FEF2F2" }}>
+                <div style={{ width: 32, height: 32, border: "3px solid #FECACA", borderTopColor: "#C92E09", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
+                <div style={{ fontWeight: 700, color: "#B71C1C", marginBottom: 4 }}>Enviando imagem...</div>
+                <div style={{ fontSize: "0.78rem", color: "#B71C1C" }}>Estamos ajustando a foto para o formato do anúncio. Não feche a página.</div>
               </div>
             ) : uploadPreview ? (
               <div style={{ textAlign: "center" }}>
-                <img src={uploadPreview} alt="Preview" style={{ maxHeight: 200, borderRadius: 12, marginBottom: 12, border: "2px solid #EF4444" }} />
+                <img src={uploadPreview} alt="Preview" style={{ maxHeight: 200, borderRadius: 12, marginBottom: 12, border: "2px solid #C92E09" }} />
                 <br />
                 <button onClick={() => fileInputRef.current?.click()} style={{ background: "#F1F5F9", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: "0.82rem", fontWeight: 600, cursor: "pointer" }}>Trocar imagem</button>
               </div>
             ) : (
               <div onClick={() => fileInputRef.current?.click()}
-                style={{ border: "2px dashed #D1D5DB", borderRadius: 12, padding: "2.5rem", textAlign: "center", cursor: "pointer", transition: "border-color 0.2s" }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = "#EF4444")} onMouseLeave={e => (e.currentTarget.style.borderColor = "#D1D5DB")}>
-                <Upload size={32} color="#9CA3AF" style={{ margin: "0 auto 8px" }} />
-                <div style={{ fontWeight: 700, color: "#374151", marginBottom: 4 }}>Clique para enviar uma imagem</div>
-                <div style={{ fontSize: "0.78rem", color: "#9CA3AF" }}>JPG, PNG ou WEBP — máx 5MB</div>
+                style={{ border: "2px dashed #CBD5E1", borderRadius: 12, padding: "2.5rem", textAlign: "center", cursor: "pointer", transition: "border-color 0.2s" }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = "#C92E09")} onMouseLeave={e => (e.currentTarget.style.borderColor = "#CBD5E1")}>
+                <Upload size={32} color="#94A3B8" style={{ margin: "0 auto 8px" }} />
+                <div style={{ fontWeight: 700, color: "#334155", marginBottom: 4 }}>Clique para enviar uma imagem</div>
+                <div style={{ fontSize: "0.78rem", color: "#94A3B8" }}>JPG, PNG ou WEBP — máx 5MB</div>
               </div>
             )}
           </div>
@@ -1412,13 +1412,13 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
         {/* Tab: IA — 10 gerações por semana incluídas no pacote */}
         {imageTab === "ai" && (
-          <div style={{ padding: "1.25rem", background: "#F9FAFB", borderRadius: 12 }}>
+          <div style={{ padding: "1.25rem", background: "#F8FAFC", borderRadius: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <Sparkles size={20} color="#8B5CF6" />
+              <Sparkles size={20} color="#64748B" />
               <div style={{ fontWeight: 700 }}>Criar imagem com IA</div>
             </div>
 
-            <div style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: 12, lineHeight: 1.5 }}>
+            <div style={{ fontSize: "0.8rem", color: "#64748B", marginBottom: 12, lineHeight: 1.5 }}>
               Descreva a cena que você quer. A IA cria uma foto de apresentação para o anúncio.
               <br />
               <strong style={{ color: "#B45309" }}>Importante:</strong> a imagem é ilustrativa. Para mostrar
@@ -1431,25 +1431,25 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
               onChange={(e) => setDescricaoIA(e.target.value.slice(0, 300))}
               placeholder="Ex.: hambúrguer artesanal com fritas, sobre tábua de madeira"
               rows={2}
-              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #E5E7EB", fontSize: "0.86rem", fontFamily: "inherit", resize: "vertical", marginBottom: 10 }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: "0.86rem", fontFamily: "inherit", resize: "vertical", marginBottom: 10 }}
             />
 
             <button
               onClick={handleGerarImagemIA}
               disabled={gerandoImagem || cotaRestante === 0}
-              style={{ width: "100%", background: (gerandoImagem || cotaRestante === 0) ? "#E5E7EB" : "#8B5CF6", color: (gerandoImagem || cotaRestante === 0) ? "#9CA3AF" : "#fff", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: (gerandoImagem || cotaRestante === 0) ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+              style={{ width: "100%", background: (gerandoImagem || cotaRestante === 0) ? "#E2E8F0" : "#64748B", color: (gerandoImagem || cotaRestante === 0) ? "#94A3B8" : "#fff", border: "none", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: "0.9rem", cursor: (gerandoImagem || cotaRestante === 0) ? "not-allowed" : "pointer", fontFamily: "inherit" }}
             >
               {gerandoImagem ? "Criando imagem..." : cotaRestante === 0 ? "Cota da semana esgotada" : "✨ Gerar imagem"}
             </button>
 
-            <div style={{ fontSize: "0.74rem", color: "#9CA3AF", marginTop: 8, textAlign: "center" }}>
+            <div style={{ fontSize: "0.74rem", color: "#94A3B8", marginTop: 8, textAlign: "center" }}>
               {cotaRestante === null
                 ? "10 imagens por semana incluídas no seu plano"
                 : `${cotaRestante} de 10 imagens restantes nesta semana`}
               {cotaRestante === 0 && " · a cota volta na segunda-feira"}
             </div>
 
-            <div style={{ fontSize: "0.74rem", color: "#6B7280", marginTop: 10, textAlign: "center" }}>
+            <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: 10, textAlign: "center" }}>
               Fotos do cardápio e imagens que você envia <strong>não têm limite</strong>.
             </div>
           </div>
@@ -1457,10 +1457,10 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       </div>
 
       {/* ── Texto do anúncio ── */}
-      <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
+      <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <div style={{ fontWeight: 800, fontSize: "1rem", display: "flex", alignItems: "center", gap: 8 }}>
-            <Edit3 size={18} color="#EF4444" /> Texto do anúncio
+            <Edit3 size={18} color="#C92E09" /> Texto do anúncio
           </div>
           {/* Aqui a sobrescrita é o que o lojista PEDIU — passa sem preservar.
               (Sem a arrow, o onClick entregaria o evento como primeiro argumento
@@ -1471,54 +1471,54 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           </button>
         </div>
         <div style={{ marginBottom: "1rem" }}>
-          <label style={{ fontSize: "0.78rem", color: "#6B7280", fontWeight: 600, display: "block", marginBottom: 4 }}>Texto principal</label>
+          <label style={{ fontSize: "0.78rem", color: "#64748B", fontWeight: 600, display: "block", marginBottom: 4 }}>Texto principal</label>
           <textarea value={adCopy} onChange={e => setAdCopy(e.target.value)} rows={3}
             placeholder="Ex: 🍔 Peça agora! Entrega rápida na sua região..."
-            style={{ width: "100%", border: "1px solid #E5E7EB", borderRadius: 10, padding: "10px 12px", fontSize: "0.9rem", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
+            style={{ width: "100%", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 12px", fontSize: "0.9rem", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
         </div>
         <div>
-          <label style={{ fontSize: "0.78rem", color: "#6B7280", fontWeight: 600, display: "block", marginBottom: 4 }}>Descrição curta</label>
+          <label style={{ fontSize: "0.78rem", color: "#64748B", fontWeight: 600, display: "block", marginBottom: 4 }}>Descrição curta</label>
           <input value={adDescription} onChange={e => setAdDescription(e.target.value)}
             placeholder="Ex: Delivery rápido com cardápio completo..."
-            style={{ width: "100%", border: "1px solid #E5E7EB", borderRadius: 10, padding: "10px 12px", fontSize: "0.9rem", fontFamily: "inherit", boxSizing: "border-box" }} />
+            style={{ width: "100%", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 12px", fontSize: "0.9rem", fontFamily: "inherit", boxSizing: "border-box" }} />
         </div>
       </div>
 
       {/* ── Preview do anúncio ── */}
       {(selectedImage || uploadPreview) && adCopy && (
-        <div style={{ background: "#fff", border: "1.5px solid #E5E7EB", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
+        <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
           <div style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: 8 }}>
-            <Eye size={18} color="#EF4444" /> Preview do anúncio
+            <Eye size={18} color="#C92E09" /> Preview do anúncio
           </div>
-          <div style={{ border: "1px solid #E5E7EB", borderRadius: 12, overflow: "hidden", maxWidth: 400, margin: "0 auto" }}>
+          <div style={{ border: "1px solid #E2E8F0", borderRadius: 12, overflow: "hidden", maxWidth: 400, margin: "0 auto" }}>
             <div style={{ padding: "10px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#EF4444", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: "0.8rem" }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#C92E09", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: "0.8rem" }}>
                 {(user.storeName || "R")[0]}
               </div>
               <div>
                 <div style={{ fontWeight: 700, fontSize: "0.85rem" }}>{user.storeName || "Restaurante"}</div>
-                <div style={{ fontSize: "0.7rem", color: "#6B7280" }}>Patrocinado · 🌐</div>
+                <div style={{ fontSize: "0.7rem", color: "#64748B" }}>Patrocinado · 🌐</div>
               </div>
             </div>
             <div style={{ padding: "0 12px 8px", fontSize: "0.85rem", lineHeight: 1.5 }}>{adCopy}</div>
             <img src={selectedImage || uploadPreview} alt="Ad preview" style={{ width: "100%", height: 200, objectFit: "cover" }} />
-            <div style={{ padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #E5E7EB" }}>
-              <div style={{ fontSize: "0.78rem", color: "#6B7280" }}>{adDescription || "Saiba mais"}</div>
-              <button style={{ background: "#EF4444", color: "#fff", border: "none", padding: "6px 16px", borderRadius: 6, fontSize: "0.78rem", fontWeight: 700 }}>Pedir agora</button>
+            <div style={{ padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: "0.78rem", color: "#64748B" }}>{adDescription || "Saiba mais"}</div>
+              <button style={{ background: "#C92E09", color: "#fff", border: "none", padding: "6px 16px", borderRadius: 6, fontSize: "0.78rem", fontWeight: 700 }}>Pedir agora</button>
             </div>
           </div>
         </div>
       )}
 
       {/* ── Resumo + Publicar ── */}
-      <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "1rem", marginBottom: "1rem", fontSize: "0.85rem" }}>
+      <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: 12, padding: "1rem", marginBottom: "1rem", fontSize: "0.85rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span>💰 Investimento semanal:</span><strong>R$ {investment}</strong></div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span>🔧 Taxa de gestão FireHub:</span><strong>R$ 50/semana</strong></div>
-        <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #BBF7D0", paddingTop: 8, marginTop: 4 }}><span style={{ fontWeight: 700 }}>Total semanal:</span><strong style={{ color: "#16A34A" }}>R$ {investment + 50}</strong></div>
+        <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #ABEFC6", paddingTop: 8, marginTop: 4 }}><span style={{ fontWeight: 700 }}>Total semanal:</span><strong style={{ color: "#15803D" }}>R$ {investment + 50}</strong></div>
         {/* O valor sai daqui direto para a Meta e para a fatura. Se o lojista
             chegou por "+ Nova campanha" e o número não é o que ele quer, o
             conserto tem que estar ao lado do total — não escondido no Voltar. */}
-        <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: 8, lineHeight: 1.5, borderTop: "1px solid #BBF7D0", paddingTop: 8 }}>
+        <div style={{ fontSize: "0.75rem", color: "#15803D", marginTop: 8, lineHeight: 1.5, borderTop: "1px solid #ABEFC6", paddingTop: 8 }}>
           Ao publicar, os R$ 50 de gestão desta semana entram na sua fatura.{" "}
           <button type="button" onClick={() => setStep("invest")}
             style={{ background: "none", border: "none", padding: 0, color: "#15803D", fontWeight: 800, textDecoration: "underline", cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit" }}>
@@ -1531,7 +1531,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           pode ficar clicável quando o servidor já respondeu que a conta não
           veicula — seria cobrar por um anúncio que nunca apareceria. */}
       <button onClick={handleCreateCampaign} disabled={creatingCampaign || Boolean(bloqueioDaConta) || (!selectedImage && !uploadPreview) || !adCopy.trim()}
-        style={{ width: "100%", background: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#E5E7EB" : "#EF4444", color: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#9CA3AF" : "#fff", border: "none", padding: "16px", borderRadius: 12, fontSize: "1.1rem", fontWeight: 800, cursor: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
+        style={{ width: "100%", background: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#E2E8F0" : "#C92E09", color: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#94A3B8" : "#fff", border: "none", padding: "16px", borderRadius: 12, fontSize: "1.1rem", fontWeight: 800, cursor: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
         {creatingCampaign ? (
           <><RefreshCw size={18} style={{ animation: "spin 1s linear infinite" }} /> Criando campanha...</>
         ) : bloqueioDaConta ? (
@@ -1559,7 +1559,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:640px){.dash-kpis{grid-template-columns:repeat(2,1fr)!important}.dash-campaign-metrics{grid-template-columns:repeat(2,1fr)!important}.dash-info-grid{grid-template-columns:1fr!important}}`}</style>
 
       {/* Header */}
-      <div style={{ background: activeCampaigns.length > 0 ? "linear-gradient(135deg,#EF4444,#DC2626)" : "linear-gradient(135deg,#F59E0B,#D97706)", borderRadius: 16, padding: "1.5rem", color: "#fff", marginBottom: "1.5rem" }}>
+      <div style={{ background: activeCampaigns.length > 0 ? "linear-gradient(135deg,#C92E09,#C92E09)" : "linear-gradient(135deg,#B45309,#B45309)", borderRadius: 16, padding: "1.5rem", color: "#fff", marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -1613,7 +1613,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           métricas congelavam mostrando "✅ Ativo", publicar falhava, pausar
           falhava, e a campanha seguia gastando na Meta. */}
       {(precisaReconectar || metricasVelhas) && (
-        <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "1rem 1.15rem", marginBottom: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "1rem 1.15rem", marginBottom: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 260px" }}>
             <div style={{ fontWeight: 800, color: "#92400E", fontSize: "0.88rem", marginBottom: 3 }}>
               {precisaReconectar ? "Sua conexão com o Facebook precisa ser refeita" : "Os números abaixo podem estar desatualizados"}
@@ -1631,15 +1631,15 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       {/* KPIs totais */}
       <div className="dash-kpis" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
         {[
-          { label: "Total investido", value: `R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#3B82F6", icon: DollarSign },
-          { label: "Pedidos gerados", value: totalOrders.toLocaleString("pt-BR"), color: "#10B981", icon: CheckCircle },
-          { label: "Receita atribuída", value: `R$ ${totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#8B5CF6", icon: TrendingUp },
-          { label: "ROAS geral", value: `${overallRoas}x`, color: "#EF4444", icon: BarChart2 },
+          { label: "Total investido", value: `R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#1D4ED8", icon: DollarSign },
+          { label: "Pedidos gerados", value: totalOrders.toLocaleString("pt-BR"), color: "#15803D", icon: CheckCircle },
+          { label: "Receita atribuída", value: `R$ ${totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#64748B", icon: TrendingUp },
+          { label: "ROAS geral", value: `${overallRoas}x`, color: "#C92E09", icon: BarChart2 },
         ].map(k => (
-          <div key={k.label} style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 14, padding: "1rem" }}>
+          <div key={k.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
               <k.icon size={14} color={k.color} />
-              <span style={{ fontSize: "0.7rem", color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{k.label}</span>
+              <span style={{ fontSize: "0.7rem", color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>{k.label}</span>
             </div>
             <div style={{ fontSize: "1.4rem", fontWeight: 900, color: k.color, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
           </div>
@@ -1648,21 +1648,21 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
       {/* ROAS visual bar */}
       {totalSpend > 0 && (
-        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: "1rem", marginBottom: "1.5rem" }}>
+        <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "1rem", marginBottom: "1.5rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#374151" }}>💰 Retorno sobre Investimento (ROAS)</span>
-            <span style={{ fontSize: "0.82rem", fontWeight: 800, color: roasNum >= 2 ? "#16A34A" : roasNum >= 1 ? "#F59E0B" : "#EF4444" }}>
+            <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>💰 Retorno sobre Investimento (ROAS)</span>
+            <span style={{ fontSize: "0.82rem", fontWeight: 800, color: roasNum >= 2 ? "#15803D" : roasNum >= 1 ? "#B45309" : "#C92E09" }}>
               {overallRoas}x {roasNum >= 3 ? "🔥" : roasNum >= 1 ? "📈" : "⏳"}
             </span>
           </div>
           <div style={{ background: "#F1F5F9", borderRadius: 8, height: 12, overflow: "hidden", position: "relative" }}>
             <div style={{
               width: `${roasBarPct}%`, height: "100%", borderRadius: 8,
-              background: roasNum >= 2 ? "linear-gradient(90deg,#22C55E,#16A34A)" : roasNum >= 1 ? "linear-gradient(90deg,#F59E0B,#D97706)" : "linear-gradient(90deg,#EF4444,#DC2626)",
+              background: roasNum >= 2 ? "linear-gradient(90deg,#15803D,#15803D)" : roasNum >= 1 ? "linear-gradient(90deg,#B45309,#B45309)" : "linear-gradient(90deg,#C92E09,#C92E09)",
               transition: "width 0.6s ease",
             }} />
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#9CA3AF", marginTop: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#94A3B8", marginTop: 4 }}>
             <span>0x</span>
             <span>Investiu R${totalSpend.toFixed(0)} → Faturou R${totalRevenue.toFixed(0)}</span>
             <span>6x+</span>
@@ -1676,8 +1676,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           ninguém. E o pior — a gestão de R$50/semana continua sendo cobrada. */}
       {contaMeta?.conectado && (
         <div style={{
-          background: contaMeta.pronto ? "#F0FDF4" : "#FEF2F2",
-          border: `1.5px solid ${contaMeta.pronto ? "#BBF7D0" : "#FCA5A5"}`,
+          background: contaMeta.pronto ? "#ECFDF3" : "#FEF2F2",
+          border: `1.5px solid ${contaMeta.pronto ? "#ABEFC6" : "#FCA5A5"}`,
           borderRadius: 14, padding: "1rem 1.15rem", marginBottom: "1.25rem",
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
@@ -1689,12 +1689,12 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                   procurar um problema que não era o dele. */}
               {contaMeta.carteira ? (
                 <>
-                  <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 2 }}>
+                  <div style={{ fontSize: "0.72rem", color: "#64748B", marginBottom: 2 }}>
                     {contaMeta.carteira.cobrancaAutomatica ? "Forma de pagamento" : "Crédito na sua conta do Facebook"}
                   </div>
                   {contaMeta.carteira.cobrancaAutomatica ? (
                     <>
-                      <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#166534" }}>
+                      <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#15803D" }}>
                         {contaMeta.carteira.formaDePagamento || "Cartão cadastrado"}
                       </div>
                       <div style={{ fontSize: "0.72rem", color: "#15803D" }}>
@@ -1703,12 +1703,12 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                     </>
                   ) : (
                     <>
-                      <div style={{ fontSize: "1.6rem", fontWeight: 900, color: contaMeta.pronto ? "#166534" : "#991B1B" }}>
+                      <div style={{ fontSize: "1.6rem", fontWeight: 900, color: contaMeta.pronto ? "#15803D" : "#B71C1C" }}>
                         {typeof contaMeta.carteira.saldoDisponivel === "number"
                           ? `R$ ${contaMeta.carteira.saldoDisponivel.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : "—"}
                       </div>
-                      <div style={{ fontSize: "0.72rem", color: contaMeta.pronto ? "#15803D" : "#991B1B" }}>
+                      <div style={{ fontSize: "0.72rem", color: contaMeta.pronto ? "#15803D" : "#B71C1C" }}>
                         {contaMeta.pronto ? "disponível para anúncios" : (ROTULO_DO_PROBLEMA[proximoPasso] || "os anúncios não vão rodar")}
                       </div>
                     </>
@@ -1716,15 +1716,15 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: "0.72rem", color: "#6B7280", marginBottom: 2 }}>Conta de anúncios</div>
-                  <div style={{ fontSize: "1.05rem", fontWeight: 900, color: contaMeta.pronto ? "#166534" : "#991B1B", lineHeight: 1.35 }}>
+                  <div style={{ fontSize: "0.72rem", color: "#64748B", marginBottom: 2 }}>Conta de anúncios</div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 900, color: contaMeta.pronto ? "#15803D" : "#B71C1C", lineHeight: 1.35 }}>
                     {contaMeta.pronto ? "Pronta para veicular" : (ROTULO_DO_PROBLEMA[proximoPasso] || "Pendência na sua conta do Facebook")}
                   </div>
                 </>
               )}
 
               {typeof contaMeta.carteira?.totalGasto === "number" && (
-                <div style={{ fontSize: "0.7rem", color: "#9CA3AF", marginTop: 6 }}>
+                <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginTop: 6 }}>
                   Total já investido em anúncios: R$ {contaMeta.carteira.totalGasto.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               )}
@@ -1740,7 +1740,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
             ) : linkDaConta ? (
               <a href={linkDaConta} target="_blank" rel="noopener noreferrer"
                 style={{
-                  background: contaMeta.pronto ? "#F1F5F9" : "#DC2626",
+                  background: contaMeta.pronto ? "#F1F5F9" : "#C92E09",
                   color: contaMeta.pronto ? "#334155" : "#fff",
                   border: "none", padding: "10px 16px", borderRadius: 10,
                   fontSize: "0.85rem", fontWeight: 800, textDecoration: "none",
@@ -1752,7 +1752,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           </div>
 
           {!contaMeta.pronto && contaMeta.mensagem && (
-            <div style={{ fontSize: "0.8rem", color: "#991B1B", marginTop: 10, lineHeight: 1.5, borderTop: "1px solid #FCA5A5", paddingTop: 10 }}>
+            <div style={{ fontSize: "0.8rem", color: "#B71C1C", marginTop: 10, lineHeight: 1.5, borderTop: "1px solid #FCA5A5", paddingTop: 10 }}>
               ⚠️ {contaMeta.mensagem}
               {/* Quem está nesse estado precisa saber que a cobrança da gestão
                   não para sozinha: pausar é o que interrompe. */}
@@ -1764,7 +1764,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
               )}
               <div style={{ marginTop: 8 }}>
                 <button type="button" onClick={() => { void atualizarProntidao(); }}
-                  style={{ background: "#fff", border: "1.5px solid #FCA5A5", color: "#991B1B", padding: "7px 14px", borderRadius: 9, fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  style={{ background: "#fff", border: "1.5px solid #FCA5A5", color: "#B71C1C", padding: "7px 14px", borderRadius: 9, fontSize: "0.78rem", fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <RefreshCw size={13} /> Já resolvi — verificar de novo
                 </button>
               </div>
@@ -1772,7 +1772,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           )}
 
           {!contaMeta.carteira?.cobrancaAutomatica && contaMeta.pronto && (
-            <div style={{ fontSize: "0.72rem", color: "#6B7280", marginTop: 8, lineHeight: 1.5, borderTop: "1px solid #BBF7D0", paddingTop: 8 }}>
+            <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 8, lineHeight: 1.5, borderTop: "1px solid #ABEFC6", paddingTop: 8 }}>
               💡 Você está no modo pré-pago: quando o crédito acabar, os anúncios param. Cadastrando
               um cartão, o Facebook cobra sozinho e você não precisa recarregar.
             </div>
@@ -1785,8 +1785,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
               errada, coisa que só aparece na fatura. Aparece apenas quando há
               mais de uma, para não virar pergunta desnecessária. */}
           {contasDisponiveis.length > 1 && (
-            <div style={{ marginTop: 12, borderTop: `1px solid ${contaMeta.pronto ? "#BBF7D0" : "#FCA5A5"}`, paddingTop: 10 }}>
-              <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#374151", marginBottom: 6 }}>
+            <div style={{ marginTop: 12, borderTop: `1px solid ${contaMeta.pronto ? "#ABEFC6" : "#FCA5A5"}`, paddingTop: 10 }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#334155", marginBottom: 6 }}>
                 Conta de anúncios usada nas suas campanhas
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -1797,7 +1797,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                   style={{
                     flex: 1, minWidth: 240, padding: "9px 12px", borderRadius: 10,
                     border: "1.5px solid #CBD5E1", fontSize: "0.85rem", fontWeight: 600,
-                    background: "#fff", color: "#111827",
+                    background: "#fff", color: "#0F172A",
                   }}
                 >
                   {contasDisponiveis.map((c: any) => (
@@ -1834,7 +1834,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                     }
                   }}
                   style={{
-                    background: trocandoConta ? "#9CA3AF" : "#111827", color: "#fff", border: "none",
+                    background: trocandoConta ? "#94A3B8" : "#0F172A", color: "#fff", border: "none",
                     padding: "10px 16px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 800,
                     cursor: trocandoConta ? "wait" : "pointer", whiteSpace: "nowrap",
                   }}
@@ -1842,7 +1842,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                   {trocandoConta ? "Trocando..." : "Usar esta conta"}
                 </button>
               </div>
-              <div style={{ fontSize: "0.72rem", color: "#6B7280", marginTop: 6, lineHeight: 1.5 }}>
+              <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 6, lineHeight: 1.5 }}>
                 É desta conta que o Facebook cobra o investimento em anúncios. Contas encerradas ou
                 desativadas aparecem na lista, mas não podem ser escolhidas.
               </div>
@@ -1855,8 +1855,8 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       <div style={{ marginBottom: "1.5rem" }}>
         <h3 style={{ fontSize: "1rem", fontWeight: 800, marginBottom: "0.75rem" }}>Suas campanhas</h3>
         {campaigns.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "3rem", background: "#F9FAFB", borderRadius: 14, color: "#6B7280" }}>
-            <Target size={40} color="#D1D5DB" style={{ margin: "0 auto 12px" }} />
+          <div style={{ textAlign: "center", padding: "3rem", background: "#F8FAFC", borderRadius: 14, color: "#64748B" }}>
+            <Target size={40} color="#CBD5E1" style={{ margin: "0 auto 12px" }} />
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Nenhuma campanha criada</div>
             <div style={{ fontSize: "0.85rem" }}>Crie sua primeira campanha de tráfego pago.</div>
           </div>
@@ -1871,7 +1871,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           const cpo = orders > 0 ? `R$ ${(spend / orders).toFixed(2)}` : "—";
 
           return (
-            <div key={c.id} style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 14, padding: "1.25rem", marginBottom: "0.75rem" }}>
+            <div key={c.id} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1.25rem", marginBottom: "0.75rem" }}>
               {/* Header campanha */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1883,15 +1883,15 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                         <Bot size={9} /> IA
                       </span>
                     </div>
-                    <div style={{ fontSize: "0.72rem", color: "#6B7280" }}>Criada em {c.createdAt ? new Date(c.createdAt).toLocaleDateString("pt-BR") : "—"}</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748B" }}>Criada em {c.createdAt ? new Date(c.createdAt).toLocaleDateString("pt-BR") : "—"}</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <span style={{
                     padding: "4px 10px", borderRadius: 99, fontSize: "0.72rem", fontWeight: 700,
-                    background: isActive ? "#F0FDF4" : isPaused ? "#FEF9C3" : "#F1F5F9",
-                    color: isActive ? "#166534" : isPaused ? "#92400E" : "#475569",
-                    border: `1px solid ${isActive ? "#BBF7D0" : isPaused ? "#FDE68A" : "#E2E8F0"}`,
+                    background: isActive ? "#ECFDF3" : isPaused ? "#FEF9C3" : "#F1F5F9",
+                    color: isActive ? "#15803D" : isPaused ? "#92400E" : "#475569",
+                    border: `1px solid ${isActive ? "#ABEFC6" : isPaused ? "#FDE68A" : "#E2E8F0"}`,
                   }}>
                     {/* O cron grava "ENDED" e a tela imprimia esse token cru, em
                         inglês, sem ação nenhuma ao lado. */}
@@ -1907,7 +1907,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                     // Retomar lança a semana de gestão na fatura e pausar depois
                     // não estorna: passa a pedir confirmação com o valor à vista.
                     <button onClick={() => confirmarRetomada(c)} disabled={actionLoading}
-                      style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "6px 12px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#166534", display: "flex", alignItems: "center", gap: 4 }}>
+                      style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: 8, padding: "6px 12px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#15803D", display: "flex", alignItems: "center", gap: 4 }}>
                       <Play size={12} /> Retomar
                     </button>
                   )}
@@ -1920,7 +1920,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                         if (c.weeklyBudget > 0) { setInvestment(c.weeklyBudget); setNewBudget(c.weeklyBudget); }
                         setStep("invest");
                       }}
-                      style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "6px 12px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#1D4ED8", display: "flex", alignItems: "center", gap: 4 }}>
+                      style={{ background: "#EFF6FF", border: "1px solid #B2DDFF", borderRadius: 8, padding: "6px 12px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#1D4ED8", display: "flex", alignItems: "center", gap: 4 }}>
                       <Play size={12} /> Criar nova campanha
                     </button>
                   )}
@@ -1937,18 +1937,18 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
                         style={{ width: 78, padding: "3px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.72rem" }}
                       />
                       <button onClick={() => handleAction(c.id, "update_budget", { weeklyBudget: newBudget })} disabled={actionLoading}
-                        style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "4px 8px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#1D4ED8" }}>
+                        style={{ background: "#EFF6FF", border: "1px solid #B2DDFF", borderRadius: 8, padding: "4px 8px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#1D4ED8" }}>
                         Salvar
                       </button>
                       <button onClick={() => setEditingBudget(null)}
-                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.8rem", color: "#6B7280" }}>
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.8rem", color: "#64748B" }}>
                         ✕
                       </button>
                     </div>
                   ) : (
                     <button onClick={() => { setEditingBudget(c.id); setNewBudget(c.weeklyBudget || 100); }} disabled={actionLoading}
                       title="Alterar o investimento semanal (mínimo R$ 70)"
-                      style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "4px 10px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#1D4ED8" }}>
+                      style={{ background: "#EFF6FF", border: "1px solid #B2DDFF", borderRadius: 8, padding: "4px 10px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#1D4ED8" }}>
                       💰 R$ {c.weeklyBudget || 100}/sem
                     </button>
                   )}
@@ -1958,14 +1958,14 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
               {/* Métricas */}
               <div className="dash-campaign-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: "0.5rem" }}>
                 {[
-                  { label: "Investido", value: `R$ ${spend.toFixed(2)}`, color: "#3B82F6" },
-                  { label: "Impressões", value: (c.impressions ?? 0).toLocaleString("pt-BR"), color: "#8B5CF6" },
-                  { label: "Cliques", value: (c.clicks ?? 0).toLocaleString("pt-BR"), color: "#F59E0B" },
-                  { label: "Pedidos", value: orders.toString(), color: "#10B981" },
-                  { label: "ROAS", value: `${roas}x`, color: "#EF4444" },
+                  { label: "Investido", value: `R$ ${spend.toFixed(2)}`, color: "#1D4ED8" },
+                  { label: "Impressões", value: (c.impressions ?? 0).toLocaleString("pt-BR"), color: "#64748B" },
+                  { label: "Cliques", value: (c.clicks ?? 0).toLocaleString("pt-BR"), color: "#B45309" },
+                  { label: "Pedidos", value: orders.toString(), color: "#15803D" },
+                  { label: "ROAS", value: `${roas}x`, color: "#C92E09" },
                 ].map(m => (
-                  <div key={m.label} style={{ background: "#F9FAFB", borderRadius: 8, padding: "8px", textAlign: "center" }}>
-                    <div style={{ fontSize: "0.65rem", color: "#6B7280", textTransform: "uppercase", marginBottom: 2 }}>{m.label}</div>
+                  <div key={m.label} style={{ background: "#F8FAFC", borderRadius: 8, padding: "8px", textAlign: "center" }}>
+                    <div style={{ fontSize: "0.65rem", color: "#64748B", textTransform: "uppercase", marginBottom: 2 }}>{m.label}</div>
                     <div style={{ fontSize: "1rem", fontWeight: 800, color: m.color, fontVariantNumeric: "tabular-nums" }}>{m.value}</div>
                   </div>
                 ))}
@@ -1973,9 +1973,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
               {/* Custo por pedido + Lucro estimado */}
               {orders > 0 && (
-                <div style={{ marginTop: 8, display: "flex", gap: "1rem", fontSize: "0.78rem", color: "#6B7280" }}>
+                <div style={{ marginTop: 8, display: "flex", gap: "1rem", fontSize: "0.78rem", color: "#64748B" }}>
                   <span>📊 Custo/pedido: <strong style={{ color: "#111" }}>{cpo}</strong></span>
-                  {revenue > spend && <span>💚 Lucro estimado: <strong style={{ color: "#16A34A" }}>R$ {(revenue - spend).toFixed(2)}</strong></span>}
+                  {revenue > spend && <span>💚 Lucro estimado: <strong style={{ color: "#15803D" }}>R$ {(revenue - spend).toFixed(2)}</strong></span>}
                 </div>
               )}
 
@@ -1994,15 +1994,15 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
       {/* Info cards */}
       <div className="dash-info-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-        <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, padding: "1rem" }}>
-          <div style={{ fontSize: "0.82rem", color: "#1E40AF", fontWeight: 700, marginBottom: 6 }}>💰 Taxa de gestão (serviço)</div>
-          <div style={{ fontSize: "0.78rem", color: "#3B82F6" }}>
+        <div style={{ background: "#EFF6FF", border: "1px solid #B2DDFF", borderRadius: 12, padding: "1rem" }}>
+          <div style={{ fontSize: "0.82rem", color: "#1D4ED8", fontWeight: 700, marginBottom: 6 }}>💰 Taxa de gestão (serviço)</div>
+          <div style={{ fontSize: "0.78rem", color: "#1D4ED8" }}>
             R$ 50/semana pelo serviço. Ativou campanha = cobra, independente do resultado.
           </div>
         </div>
-        <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "1rem" }}>
-          <div style={{ fontSize: "0.82rem", color: "#166534", fontWeight: 700, marginBottom: 6 }}>🤖 Tudo automático</div>
-          <div style={{ fontSize: "0.78rem", color: "#166534", lineHeight: 1.5 }}>
+        <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: 12, padding: "1rem" }}>
+          <div style={{ fontSize: "0.82rem", color: "#15803D", fontWeight: 700, marginBottom: 6 }}>🤖 Tudo automático</div>
+          <div style={{ fontSize: "0.78rem", color: "#15803D", lineHeight: 1.5 }}>
             A IA cria, otimiza e monitora seus anúncios 24h. Sem precisar fazer nada.
           </div>
         </div>
@@ -2010,7 +2010,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
       <div style={{ marginTop: "1rem", display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
         <button onClick={() => window.open("https://wa.me/5522998851680?text=Oi%20quero%20ajuda%20para%20configurar%20o%20trafego%20pago%20do%20firehub%20na%20minha%20loja", "_blank")}
-          style={{ background: "none", border: "1px solid #E5E7EB", borderRadius: 10, padding: "10px 20px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer", color: "#475569", display: "inline-flex", alignItems: "center", gap: 8 }}>
+          style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 20px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer", color: "#475569", display: "inline-flex", alignItems: "center", gap: 8 }}>
           💬 Falar com especialista <ExternalLink size={14} />
         </button>
         {/* Fica aqui SEMPRE, mesmo com tudo verde: o token da Meta vence sozinho

@@ -188,7 +188,7 @@ const ESTILO_TABLET = `
      não cabe na largura de um tablet, e quebrar linha empurraria o cardápio
      para fora da tela. */
   .mesa-quem-pede::-webkit-scrollbar { height: 4px; }
-  .mesa-quem-pede::-webkit-scrollbar-thumb { background: #DDD6FE; border-radius: 4px; }
+  .mesa-quem-pede::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 4px; }
 
   /* Uma linha de pagamento por vez em tela estreita: nome, forma e valor lado
      a lado viram três campos de 60px, impossíveis de acertar com o dedo. */
@@ -1387,7 +1387,7 @@ export default function MesasApp({
       }}>
         <div style={{ textAlign: "center" }}>
           <div style={{
-            width: 64, height: 64, borderRadius: 20, background: "#7C3AED",
+            width: 64, height: 64, borderRadius: 20, background: "#475569",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 32, margin: "0 auto 16px", boxShadow: "0 8px 32px rgba(124,58,237,0.3)",
           }}>🍽️</div>
@@ -1427,7 +1427,7 @@ export default function MesasApp({
         <style>{ESTILO_TABLET}</style>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{
-            padding: "14px 20px", background: "#7C3AED",
+            padding: "14px 20px", background: "#475569",
             display: "flex", alignItems: "center", gap: 12,
           }}>
             <button onClick={() => { setView("grid"); setCart([]); setMenuSearch(""); setMenuCat("Todos"); setComboProduct(null); }}
@@ -1464,7 +1464,7 @@ export default function MesasApp({
                 <button key={cat} onClick={() => setMenuCat(cat)} style={{
                   padding: "5px 12px", borderRadius: 20, border: "none", fontSize: 12, fontWeight: 700,
                   cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-                  background: menuCat === cat ? "#7C3AED" : "#F1F5F9",
+                  background: menuCat === cat ? "#475569" : "#F1F5F9",
                   color: menuCat === cat ? "#fff" : "#64748B",
                 }}>{cat}</button>
               ))}
@@ -1480,7 +1480,7 @@ export default function MesasApp({
                 onClick={() => setMostrarOcultos(v => !v)}
                 style={{
                   marginTop: 6, padding: "5px 10px", borderRadius: 8,
-                  border: "1px solid #E2E8F0", background: mostrarOcultos ? "#FEF3C7" : "#F8FAFC",
+                  border: "1px solid #E2E8F0", background: mostrarOcultos ? "#FFF7E6" : "#F8FAFC",
                   color: "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer",
                   fontFamily: "inherit", width: "100%", textAlign: "left",
                 }}
@@ -1491,7 +1491,7 @@ export default function MesasApp({
             )}
 
             {mostrarOcultos && menuOcultos.length > 0 && (
-              <div style={{ marginTop: 6, padding: "8px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8 }}>
+              <div style={{ marginTop: 6, padding: "8px 10px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8 }}>
                 {Array.from(new Set(menuOcultos.map(o => o.motivo))).map(motivo => {
                   const doMotivo = menuOcultos.filter(o => o.motivo === motivo);
                   const conserto =
@@ -1528,17 +1528,17 @@ export default function MesasApp({
               sem isso, na hora de rachar a conta ninguém lembra quem pediu o quê. */}
           <div className="mesa-quem-pede" style={{
             display: "flex", alignItems: "center", gap: 8, padding: "10px 16px",
-            background: "#F5F3FF", borderBottom: "1px solid #E9D5FF", overflowX: "auto",
+            background: "#F8FAFC", borderBottom: "1px solid #E9D5FF", overflowX: "auto",
           }}>
-            <span style={{ fontSize: 12, fontWeight: 800, color: "#6D28D9", whiteSpace: "nowrap", flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: "#334155", whiteSpace: "nowrap", flexShrink: 0 }}>
               Lançar para:
             </span>
 
             <button onClick={() => setPessoaAtiva(null)} className="mesa-chip" style={{
               padding: "8px 14px", borderRadius: 20, cursor: "pointer", flexShrink: 0,
               fontSize: 13, fontWeight: 700, whiteSpace: "nowrap",
-              border: pessoaAtiva === null ? "2px solid #7C3AED" : "1px solid #E2E8F0",
-              background: pessoaAtiva === null ? "#7C3AED" : "#fff",
+              border: pessoaAtiva === null ? "2px solid #475569" : "1px solid #E2E8F0",
+              background: pessoaAtiva === null ? "#475569" : "#fff",
               color: pessoaAtiva === null ? "#fff" : "#64748B",
             }}>🍽️ Mesa</button>
 
@@ -1546,8 +1546,8 @@ export default function MesasApp({
               <button key={pes.id} onClick={() => setPessoaAtiva(pes.id)} className="mesa-chip" style={{
                 padding: "8px 14px", borderRadius: 20, cursor: "pointer", flexShrink: 0,
                 fontSize: 13, fontWeight: 700, whiteSpace: "nowrap",
-                border: pessoaAtiva === pes.id ? "2px solid #7C3AED" : "1px solid #E2E8F0",
-                background: pessoaAtiva === pes.id ? "#7C3AED" : "#fff",
+                border: pessoaAtiva === pes.id ? "2px solid #475569" : "1px solid #E2E8F0",
+                background: pessoaAtiva === pes.id ? "#475569" : "#fff",
                 color: pessoaAtiva === pes.id ? "#fff" : "#64748B",
               }}>
                 {pes.name}
@@ -1560,7 +1560,7 @@ export default function MesasApp({
             <button onClick={() => adicionarPessoas(1)} className="mesa-chip" style={{
               padding: "8px 14px", borderRadius: 20, cursor: "pointer", flexShrink: 0,
               fontSize: 13, fontWeight: 800, whiteSpace: "nowrap",
-              border: "1.5px dashed #A78BFA", background: "#fff", color: "#7C3AED",
+              border: "1.5px dashed #94A3B8", background: "#fff", color: "#475569",
             }}>+ Pessoa</button>
           </div>
 
@@ -1574,11 +1574,11 @@ export default function MesasApp({
               const inCart = qtdNoCarrinho > 0;
               return (
                 <div key={p.id} onClick={() => handleProductClick(p)}
-                  style={{ background: "#fff", border: `2px solid ${inCart ? "#C62828" : "#E2E8F0"}`, borderRadius: 14, padding: 10, cursor: "pointer", transition: "all 0.15s", position: "relative", userSelect: "none" }}
+                  style={{ background: "#fff", border: `2px solid ${inCart ? "#C92E09" : "#E2E8F0"}`, borderRadius: 14, padding: 10, cursor: "pointer", transition: "all 0.15s", position: "relative", userSelect: "none" }}
                   onMouseEnter={e => { if (!inCart) e.currentTarget.style.borderColor = "#FCA5A5"; }}
                   onMouseLeave={e => { if (!inCart) e.currentTarget.style.borderColor = "#E2E8F0"; }}>
                   {inCart && (
-                    <div style={{ position: "absolute", top: 6, right: 6, width: 20, height: 20, background: "#C62828", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ position: "absolute", top: 6, right: 6, width: 20, height: 20, background: "#C92E09", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <span style={{ color: "#fff", fontSize: "0.65rem", fontWeight: 900 }}>{qtdNoCarrinho}</span>
                     </div>
                   )}
@@ -1590,7 +1590,7 @@ export default function MesasApp({
                   }
                   <div style={{ fontWeight: 700, fontSize: "0.8rem", marginBottom: 2, lineHeight: 1.2 }}>{p.name}</div>
                   <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginBottom: 4 }}>{p.isCombo ? "Combo" : p.category}</div>
-                  <div style={{ color: "#C62828", fontWeight: 800, fontSize: 14 }}>
+                  <div style={{ color: "#C92E09", fontWeight: 800, fontSize: 14 }}>
                     {(() => {
                       // Mesmo cálculo do cardápio: no "Nugget" (base R$ 0,00) o
                       // card anunciava "a partir de R$ 0,00".
@@ -1622,8 +1622,8 @@ export default function MesasApp({
           >
             <span>🛒 Carrinho ({cartCount} {cartCount === 1 ? "item" : "itens"})</span>
             <span className="mesa-comanda-acao" style={{
-              fontSize: 13, fontWeight: 800, color: "#7C3AED",
-              background: "#F5F3FF", padding: "6px 12px", borderRadius: 20,
+              fontSize: 13, fontWeight: 800, color: "#475569",
+              background: "#F8FAFC", padding: "6px 12px", borderRadius: 20,
               whiteSpace: "nowrap",
             }}>
               {comandaAberta ? "▼ Recolher" : "▲ Ver tudo"}
@@ -1648,11 +1648,11 @@ export default function MesasApp({
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>{c.item.name}</div>
                     {c.notes && (
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 6, padding: "2px 6px", marginTop: 2 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 6, padding: "2px 6px", marginTop: 2 }}>
                         📝 {c.notes}
                       </div>
                     )}
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#7C3AED" }}>{fmt((c.unitPrice ?? c.item.price) * c.qty)}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#475569" }}>{fmt((c.unitPrice ?? c.item.price) * c.qty)}</div>
                     {pessoas.length > 0 && (
                       <div style={{ fontSize: 11, color: c.guestId ? "#0369A1" : "#94A3B8", fontWeight: 700, marginTop: 2 }}>
                         {c.guestId
@@ -1681,12 +1681,12 @@ export default function MesasApp({
                       }}
                       onFocus={(e) => e.target.select()}
                       aria-label={`Quantidade de ${c.item.name}`}
-                      style={{ width: 46, height: 38, textAlign: "center", fontWeight: 900, fontSize: 16, color: "#1E293B", border: "1.5px solid #C4B5FD", borderRadius: 9, background: "#FAF5FF", outline: "none" }}
+                      style={{ width: 46, height: 38, textAlign: "center", fontWeight: 900, fontSize: 16, color: "#1E293B", border: "1.5px solid #CBD5E1", borderRadius: 9, background: "#FAF5FF", outline: "none" }}
                     />
                     <button onClick={() => setCart(prev => prev.map(x => x.uid === c.uid ? { ...x, qty: x.qty + 1 } : x))}
                       style={{
                         width: 38, height: 38, borderRadius: 9, border: "none",
-                        background: "#7C3AED", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 16,
+                        background: "#475569", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 16,
                         display: "flex", alignItems: "center", justifyContent: "center",
                       }}>+</button>
                   </div>
@@ -1702,10 +1702,10 @@ export default function MesasApp({
                 fontSize: 18, fontWeight: 900, color: "#1E293B",
               }}>
                 <span>Total</span>
-                <span style={{ color: "#7C3AED" }}>{fmt(cartTotal)}</span>
+                <span style={{ color: "#475569" }}>{fmt(cartTotal)}</span>
               </div>
               <button onClick={addOrderToSession} disabled={actionLoading} style={{
-                width: "100%", background: "#16A34A", color: "#fff", border: "none", borderRadius: 12,
+                width: "100%", background: "#15803D", color: "#fff", border: "none", borderRadius: 12,
                 padding: "14px 0", fontWeight: 800, fontSize: 15, cursor: "pointer",
                 opacity: actionLoading ? 0.6 : 1,
                 boxShadow: "0 4px 12px rgba(22,163,74,0.3)",
@@ -1741,7 +1741,7 @@ export default function MesasApp({
           abre, em vez de mandar ele abrir. */}
       {caixaAberto === false && (
         <div style={{
-          flexShrink: 0, padding: "10px 20px", background: "#B91C1C", color: "#fff",
+          flexShrink: 0, padding: "10px 20px", background: "#B71C1C", color: "#fff",
           display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
         }}>
           <span style={{ fontSize: 18 }}>🔒</span>
@@ -1754,7 +1754,7 @@ export default function MesasApp({
           </div>
           {!ehGarcom && (
             <a href={CAMINHO_DO_CAIXA} style={{
-              padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#B91C1C",
+              padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#B71C1C",
               fontWeight: 800, fontSize: "0.82rem", textDecoration: "none", whiteSpace: "nowrap",
             }}>Abrir o caixa →</a>
           )}
@@ -1778,16 +1778,16 @@ export default function MesasApp({
             }}>←<span className="mesa-voltar-texto"> Pedidos</span></button>
           )}
           <div className="mesa-topo-marca" style={{
-            width: 36, height: 36, borderRadius: 10, background: "#7C3AED",
+            width: 36, height: 36, borderRadius: 10, background: "#475569",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 18, boxShadow: "0 2px 8px rgba(124,58,237,0.2)",
           }}>🍽️</div>
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 800, color: "#0F172A", margin: 0 }}>Mesas</h1>
             <div className="mesa-topo-numeros" style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
-              <span style={{ color: "#16A34A", fontWeight: 700 }}>🟢 {freeTables.length} livres</span>
-              <span style={{ color: "#DC2626", fontWeight: 700 }}>🔴 {occupiedTables.length} ocupadas</span>
-              {totalConsumo > 0 && <span style={{ color: "#D97706", fontWeight: 700 }}>{fmt(totalConsumo)} em consumo</span>}
+              <span style={{ color: "#15803D", fontWeight: 700 }}>🟢 {freeTables.length} livres</span>
+              <span style={{ color: "#C92E09", fontWeight: 700 }}>🔴 {occupiedTables.length} ocupadas</span>
+              {totalConsumo > 0 && <span style={{ color: "#B45309", fontWeight: 700 }}>{fmt(totalConsumo)} em consumo</span>}
             </div>
           </div>
         </div>
@@ -1795,7 +1795,7 @@ export default function MesasApp({
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span title={garcom?.name} style={{
               display: "inline-block", maxWidth: 160,
-              background: "#F0EDFF", color: "#6D28D9", borderRadius: 999,
+              background: "#F0EDFF", color: "#334155", borderRadius: 999,
               padding: "6px 12px", fontWeight: 700, fontSize: 13,
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             }}>👤 {garcom?.name}</span>
@@ -1807,7 +1807,7 @@ export default function MesasApp({
         ) : (
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={() => setShowNewTableModal(true)} style={{
-              background: "#7C3AED", color: "#fff", border: "none", borderRadius: 10,
+              background: "#475569", color: "#fff", border: "none", borderRadius: 10,
               padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer",
               boxShadow: "0 2px 8px rgba(124,58,237,0.25)",
             }}>+ Nova Mesa</button>
@@ -1850,7 +1850,7 @@ export default function MesasApp({
                       fetchTables();
                     })();
                   }} style={{
-                    background: "#7C3AED", color: "#fff", border: "none", borderRadius: 12,
+                    background: "#475569", color: "#fff", border: "none", borderRadius: 12,
                     padding: "12px 24px", fontWeight: 700, fontSize: 15, cursor: "pointer",
                     boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
                   }}>Criar 10 mesas padrão</button>
@@ -1877,11 +1877,11 @@ export default function MesasApp({
                   className="mesa-cartao"
                   style={{
                     background: isSelected
-                      ? "linear-gradient(135deg, #7C3AED, #6D28D9)"
+                      ? "linear-gradient(135deg, #475569, #334155)"
                       : occupied
                         ? hasValue ? "#FEF2F2" : "#FFF7ED"
                         : "#fff",
-                    border: `2px solid ${isSelected ? "#7C3AED" : occupied ? (hasValue ? "#FECACA" : "#FED7AA") : "#E2E8F0"}`,
+                    border: `2px solid ${isSelected ? "#475569" : occupied ? (hasValue ? "#FECACA" : "#FED7AA") : "#E2E8F0"}`,
                     borderRadius: 16, padding: "14px 10px", cursor: "pointer",
                     display: "flex", flexDirection: "column", alignItems: "center",
                     gap: 4, transition: "all 0.15s",
@@ -1896,7 +1896,7 @@ export default function MesasApp({
                   {/* Number */}
                   <span className="mesa-cartao-numero" style={{
                     fontSize: 26, fontWeight: 900, letterSpacing: "-0.5px",
-                    color: isSelected ? "#fff" : occupied ? "#DC2626" : "#334155",
+                    color: isSelected ? "#fff" : occupied ? "#C92E09" : "#334155",
                   }}>
                     {table.label || table.number.toString().padStart(2, "0")}
                   </span>
@@ -1908,12 +1908,12 @@ export default function MesasApp({
                     <>
                       <span className="mesa-cartao-valor" style={{
                         fontSize: 14, fontWeight: 800,
-                        color: isSelected ? "#E9D5FF" : "#DC2626",
+                        color: isSelected ? "#E9D5FF" : "#C92E09",
                       }}>
                         {fmt(table.openSession!.totalAmount)}
                       </span>
                       <span className="mesa-cartao-linha" style={{
-                        fontSize: 10, color: isSelected ? "#C4B5FD" : "#9CA3AF",
+                        fontSize: 10, color: isSelected ? "#CBD5E1" : "#94A3B8",
                         fontWeight: 600,
                       }}>
                         {table.openSession!.orderCount} ped. · {elapsed(table.openSession!.openedAt)}
@@ -1921,7 +1921,7 @@ export default function MesasApp({
                       </span>
                     </>
                   ) : (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#16A34A" }}>Livre</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#15803D" }}>Livre</span>
                   )}
                 </button>
               );
@@ -1942,7 +1942,7 @@ export default function MesasApp({
           }}>
             {/* Panel Header */}
             <div style={{
-              padding: "14px 18px", background: "linear-gradient(135deg, #7C3AED, #6D28D9)",
+              padding: "14px 18px", background: "linear-gradient(135deg, #475569, #334155)",
               color: "#fff",
             }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1985,20 +1985,20 @@ export default function MesasApp({
             }}>
               <button onClick={() => { fetchMenu(); setView("order"); }} style={{
                 padding: "10px 0", borderRadius: 10, border: "none",
-                background: "#16A34A", color: "#fff", fontWeight: 800, fontSize: 13,
+                background: "#15803D", color: "#fff", fontWeight: 800, fontSize: 13,
                 cursor: "pointer", boxShadow: "0 2px 6px rgba(22,163,74,0.2)",
               }}>+ Novo Pedido</button>
               <button onClick={abrirFechamento} style={{
                 padding: "10px 0", borderRadius: 10, border: "none",
-                background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: 13,
+                background: "#C92E09", color: "#fff", fontWeight: 800, fontSize: 13,
                 cursor: "pointer", boxShadow: "0 2px 6px rgba(220,38,38,0.2)",
               }}>💰 Fechar Conta</button>
               {/* Lado a lado: no celular o painel tem 46vh e cada linha de botão
                   custa 44px; três linhas cheias empurravam o Total para fora. */}
               <button onClick={() => imprimirConta(taxaSugeridaDaMesa(selectedTable))} disabled={imprimindoConta}
                 title={`Imprime a comanda da mesa com a taxa de serviço de ${taxaSugeridaDaMesa(selectedTable)}%`} style={{
-                padding: "10px 4px", borderRadius: 10, border: "1.5px solid #C4B5FD",
-                background: "#F5F3FF", color: "#6D28D9", fontWeight: 800, fontSize: 13,
+                padding: "10px 4px", borderRadius: 10, border: "1.5px solid #CBD5E1",
+                background: "#F8FAFC", color: "#334155", fontWeight: 800, fontSize: 13,
                 cursor: "pointer", opacity: imprimindoConta ? 0.6 : 1,
               }}>{imprimindoConta ? "Enviando..." : "🧾 Imprimir comanda"}</button>
               <button onClick={() => setShowTransferModal(selectedTable)} disabled={freeTables.length === 0}
@@ -2010,8 +2010,8 @@ export default function MesasApp({
               }}>↔️ Mudar de mesa</button>
               {(selectedTable.openSession.totalAmount === 0) && (
                 <button onClick={() => setShowFreeConfirm(true)} style={{
-                  padding: "10px 0", borderRadius: 10, border: "1.5px solid #F59E0B",
-                  background: "#FFFBEB", color: "#D97706", fontWeight: 800, fontSize: 13,
+                  padding: "10px 0", borderRadius: 10, border: "1.5px solid #B45309",
+                  background: "#FFF7E6", color: "#B45309", fontWeight: 800, fontSize: 13,
                   cursor: "pointer", gridColumn: "1 / -1",
                 }}>🔓 Liberar Mesa</button>
               )}
@@ -2029,8 +2029,8 @@ export default function MesasApp({
                   <div style={{ display: "flex", gap: 4 }}>
                     {[2, 3, 4].map(n => (
                       <button key={n} onClick={() => adicionarPessoas(n)} className="mesa-chip" style={{
-                        padding: "4px 10px", borderRadius: 8, border: "1px solid #DDD6FE",
-                        background: "#F5F3FF", color: "#7C3AED", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        padding: "4px 10px", borderRadius: 8, border: "1px solid #E2E8F0",
+                        background: "#F8FAFC", color: "#475569", fontSize: 12, fontWeight: 700, cursor: "pointer",
                       }}>{n}p</button>
                     ))}
                   </div>
@@ -2071,7 +2071,7 @@ export default function MesasApp({
                           style={{ fontSize: 12, fontWeight: 700, color: "#334155", cursor: "pointer" }}>
                           {pes.name}
                           {pes.total > 0 && (
-                            <span style={{ color: "#7C3AED", marginLeft: 6 }}>{fmt(pes.total)}</span>
+                            <span style={{ color: "#475569", marginLeft: 6 }}>{fmt(pes.total)}</span>
                           )}
                         </span>
                       )}
@@ -2082,8 +2082,8 @@ export default function MesasApp({
                     </div>
                   ))}
                   <button onClick={() => adicionarPessoas(1)} className="mesa-chip" style={{
-                    padding: "5px 12px", borderRadius: 20, border: "1.5px dashed #A78BFA",
-                    background: "#fff", color: "#7C3AED", fontSize: 12, fontWeight: 800, cursor: "pointer",
+                    padding: "5px 12px", borderRadius: 20, border: "1.5px dashed #94A3B8",
+                    background: "#fff", color: "#475569", fontSize: 12, fontWeight: 800, cursor: "pointer",
                   }}>+</button>
                 </div>
               )}
@@ -2104,7 +2104,7 @@ export default function MesasApp({
                     onClick={() => novaPessoa.trim() && adicionarPessoas(undefined, novaPessoa.trim())}
                     disabled={!novaPessoa.trim()}
                     style={{
-                      padding: "6px 12px", borderRadius: 8, border: "none", background: "#7C3AED",
+                      padding: "6px 12px", borderRadius: 8, border: "none", background: "#475569",
                       color: "#fff", fontSize: 12, fontWeight: 700,
                       cursor: novaPessoa.trim() ? "pointer" : "default", opacity: novaPessoa.trim() ? 1 : 0.4,
                     }}>Add</button>
@@ -2131,11 +2131,11 @@ export default function MesasApp({
                     opacity: cancelado ? 0.75 : 1,
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, gap: 6 }}>
-                      <span style={{ fontWeight: 700, fontSize: 13, color: cancelado ? "#B91C1C" : "#334155", textDecoration: cancelado ? "line-through" : "none" }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: cancelado ? "#B71C1C" : "#334155", textDecoration: cancelado ? "line-through" : "none" }}>
                         Pedido #{order.dailyOrderNumber || "—"}{cancelado ? " (cancelado)" : ""}
                       </span>
                       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontWeight: 800, fontSize: 13, color: cancelado ? "#B91C1C" : "#7C3AED", textDecoration: cancelado ? "line-through" : "none" }}>
+                        <span style={{ fontWeight: 800, fontSize: 13, color: cancelado ? "#B71C1C" : "#475569", textDecoration: cancelado ? "line-through" : "none" }}>
                           {fmt(order.totalAmount)}
                         </span>
                         {!cancelado && (
@@ -2144,7 +2144,7 @@ export default function MesasApp({
                             disabled={!!editandoItem}
                             title="Cancelar este pedido inteiro (devolve o estoque)"
                             style={{
-                              border: "1px solid #FECACA", background: "#fff", color: "#DC2626",
+                              border: "1px solid #FECACA", background: "#fff", color: "#C92E09",
                               borderRadius: 7, padding: "2px 8px", fontSize: 11, fontWeight: 800,
                               cursor: editandoItem ? "wait" : "pointer",
                             }}
@@ -2198,7 +2198,7 @@ export default function MesasApp({
                               const escolhas = parseComboSelections(item.comboSelections, 1);
                               if (escolhas.length === 0) return null;
                               return (
-                                <span style={{ display: "block", fontSize: 11, color: "#7C3AED", fontWeight: 700, marginTop: 1 }}>
+                                <span style={{ display: "block", fontSize: 11, color: "#475569", fontWeight: 700, marginTop: 1 }}>
                                   {escolhas.map((e) => (e.quantity > 1 ? `${e.quantity}x ${e.name}` : e.name)).join(" · ")}
                                 </span>
                               );
@@ -2215,7 +2215,7 @@ export default function MesasApp({
                               onClick={() => removerItemPedido(order.id, item.id, item.menuProduct.name, order.items.length === 1)}
                               disabled={!!editandoItem}
                               title="Remover este item"
-                              style={{ marginLeft: "auto", border: "none", background: "none", color: "#DC2626", cursor: editandoItem ? "wait" : "pointer", fontSize: 13, flexShrink: 0, padding: "0 2px" }}
+                              style={{ marginLeft: "auto", border: "none", background: "none", color: "#C92E09", cursor: editandoItem ? "wait" : "pointer", fontSize: 13, flexShrink: 0, padding: "0 2px" }}
                             >🗑️</button>
                           )}
                         </div>
@@ -2247,17 +2247,17 @@ export default function MesasApp({
                   <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 12 }}>Lançado: {editorQtd.atual}x · {fmt(editorQtd.preco)} cada</div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
                     <button onClick={() => setEditorQtd({ ...editorQtd, novo: Math.max(0, editorQtd.novo - 1) })}
-                      style={{ width: 52, height: 52, borderRadius: 14, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: 26, fontWeight: 800, color: "#DC2626", cursor: "pointer" }}>−</button>
+                      style={{ width: 52, height: 52, borderRadius: 14, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: 26, fontWeight: 800, color: "#C92E09", cursor: "pointer" }}>−</button>
                     <input
                       type="number" inputMode="numeric" min={0} max={99} value={editorQtd.novo}
                       onChange={(e) => setEditorQtd({ ...editorQtd, novo: Math.max(0, Math.min(99, Math.floor(Number(e.target.value) || 0))) })}
                       onFocus={(e) => e.target.select()}
-                      style={{ width: 84, height: 56, textAlign: "center", fontSize: 28, fontWeight: 900, color: "#1E293B", border: "2px solid #7C3AED", borderRadius: 14, outline: "none" }}
+                      style={{ width: 84, height: 56, textAlign: "center", fontSize: 28, fontWeight: 900, color: "#1E293B", border: "2px solid #475569", borderRadius: 14, outline: "none" }}
                     />
                     <button onClick={() => setEditorQtd({ ...editorQtd, novo: Math.min(99, editorQtd.novo + 1) })}
-                      style={{ width: 52, height: 52, borderRadius: 14, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: 26, fontWeight: 800, color: "#16A34A", cursor: "pointer" }}>+</button>
+                      style={{ width: 52, height: 52, borderRadius: 14, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: 26, fontWeight: 800, color: "#15803D", cursor: "pointer" }}>+</button>
                   </div>
-                  <div style={{ textAlign: "center", marginTop: 10, fontSize: 13, color: editorQtd.novo === 0 ? "#DC2626" : "#475569", fontWeight: 700 }}>
+                  <div style={{ textAlign: "center", marginTop: 10, fontSize: 13, color: editorQtd.novo === 0 ? "#C92E09" : "#475569", fontWeight: 700 }}>
                     {editorQtd.novo === 0
                       ? (editorQtd.ultimoDoPedido ? "Zero remove o item e CANCELA o pedido inteiro" : "Zero remove o item deste pedido")
                       : editorQtd.novo === editorQtd.atual
@@ -2273,7 +2273,7 @@ export default function MesasApp({
                         if (e.novo === 0) removerItemPedido(e.orderId, e.itemId, e.nome, e.ultimoDoPedido);
                         else editarQtdItem(e.orderId, e.itemId, e.novo, e.nome, e.atual);
                       }}
-                      style={{ flex: 2, height: 46, borderRadius: 12, border: "none", background: editorQtd.novo === editorQtd.atual ? "#CBD5E1" : (editorQtd.novo === 0 ? "#DC2626" : "#7C3AED"), color: "#fff", fontWeight: 900, fontSize: 14, cursor: editorQtd.novo === editorQtd.atual ? "default" : "pointer" }}
+                      style={{ flex: 2, height: 46, borderRadius: 12, border: "none", background: editorQtd.novo === editorQtd.atual ? "#CBD5E1" : (editorQtd.novo === 0 ? "#C92E09" : "#475569"), color: "#fff", fontWeight: 900, fontSize: 14, cursor: editorQtd.novo === editorQtd.atual ? "default" : "pointer" }}
                     >{editorQtd.novo === 0 ? "Remover" : `Confirmar ${editorQtd.novo}x`}</button>
                   </div>
                 </div>
@@ -2299,7 +2299,7 @@ export default function MesasApp({
                   type="checkbox"
                   checked={useServiceFee}
                   onChange={e => setUseServiceFee(e.target.checked)}
-                  style={{ accentColor: "#7C3AED", width: 16, height: 16 }}
+                  style={{ accentColor: "#475569", width: 16, height: 16 }}
                 />
                 Taxa de serviço
                 <input
@@ -2315,7 +2315,7 @@ export default function MesasApp({
                     background: useServiceFee ? "#fff" : "#F1F5F9",
                   }}
                 />%
-                <span style={{ marginLeft: "auto", fontWeight: 700, color: useServiceFee ? "#D97706" : "#94A3B8" }}>
+                <span style={{ marginLeft: "auto", fontWeight: 700, color: useServiceFee ? "#B45309" : "#94A3B8" }}>
                   {useServiceFee ? fmt(sessionTotal * serviceFee / 100) : "sem taxa"}
                 </span>
               </label>
@@ -2335,7 +2335,7 @@ export default function MesasApp({
                   }}
                   style={{
                     marginTop: 6, width: "100%", padding: "6px", borderRadius: 8,
-                    border: "1px dashed #7C3AED", background: "#FAF5FF", color: "#7C3AED",
+                    border: "1px dashed #475569", background: "#FAF5FF", color: "#475569",
                     fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
                   }}
                 >
@@ -2348,7 +2348,7 @@ export default function MesasApp({
                 marginTop: 8, paddingTop: 8, borderTop: "1px solid #E2E8F0",
               }}>
                 <span>Total</span>
-                <span style={{ color: "#7C3AED" }}>
+                <span style={{ color: "#475569" }}>
                   {fmt(sessionTotal + (useServiceFee ? sessionTotal * serviceFee / 100 : 0))}
                 </span>
               </div>
@@ -2388,7 +2388,7 @@ export default function MesasApp({
                   setShowEditModal(confirmOpen);
                   setConfirmOpen(null);
                 }} style={{
-                  marginTop: 8, background: "none", border: "none", color: "#7C3AED",
+                  marginTop: 8, background: "none", border: "none", color: "#475569",
                   fontWeight: 700, fontSize: 13, cursor: "pointer", textDecoration: "underline",
                 }}>✏️ Editar número/nome da mesa</button>
               )}
@@ -2414,8 +2414,8 @@ export default function MesasApp({
                   </label>
                   <div style={{
                     width: "100%", padding: "10px 14px", borderRadius: 10, boxSizing: "border-box",
-                    border: "1.5px solid #DDD6FE", fontSize: 14, background: "#F5F3FF",
-                    color: "#4C1D95", fontWeight: 700,
+                    border: "1.5px solid #E2E8F0", fontSize: 14, background: "#F8FAFC",
+                    color: "#0F172A", fontWeight: 700,
                   }}>👤 {garcom?.name}</div>
                 </>
               ) : (
@@ -2434,7 +2434,7 @@ export default function MesasApp({
                       <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
                   </select>
-                  <a href="/store/garcons" target="_blank" style={{ fontSize: 12, color: "#3B82F6", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 600 }}>
+                  <a href="/store/garcons" target="_blank" style={{ fontSize: 12, color: "#1D4ED8", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 600 }}>
                     + adicionar garçom
                   </a>
                 </>
@@ -2451,7 +2451,7 @@ export default function MesasApp({
               <button onClick={openTable} disabled={actionLoading}
                 style={{
                   flex: 1, padding: "12px 0", borderRadius: 12, border: "none",
-                  background: "#7C3AED", color: "#fff", fontWeight: 800, fontSize: 14,
+                  background: "#475569", color: "#fff", fontWeight: 800, fontSize: 14,
                   cursor: "pointer", boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
                   opacity: actionLoading ? 0.6 : 1,
                 }}>
@@ -2514,7 +2514,7 @@ export default function MesasApp({
                   title={freeTables.filter(t => t.id !== showEditModal.id).length === 0 ? "Nenhuma mesa livre" : "Mover o cliente para uma mesa livre"}
                   style={{
                     width: "100%", padding: "11px 0", borderRadius: 10,
-                    border: "1.5px solid #C4B5FD", background: "#F5F3FF", color: "#6D28D9",
+                    border: "1.5px solid #CBD5E1", background: "#F8FAFC", color: "#334155",
                     fontWeight: 800, fontSize: 13, fontFamily: "inherit",
                     cursor: freeTables.filter(t => t.id !== showEditModal.id).length === 0 ? "not-allowed" : "pointer",
                     opacity: freeTables.filter(t => t.id !== showEditModal.id).length === 0 ? 0.5 : 1,
@@ -2535,7 +2535,7 @@ export default function MesasApp({
               <button onClick={updateTable} disabled={actionLoading}
                 style={{
                   flex: 1, padding: "12px 0", borderRadius: 12, border: "none",
-                  background: "#7C3AED", color: "#fff", fontWeight: 800, fontSize: 14,
+                  background: "#475569", color: "#fff", fontWeight: 800, fontSize: 14,
                   cursor: "pointer", boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
                   opacity: actionLoading ? 0.6 : 1,
                 }}>
@@ -2626,7 +2626,7 @@ export default function MesasApp({
                       ))}
                     </div>
                     {desconto.valor > 0 && problemaDoDesconto(desconto, consumoFechamento) && (
-                      <p style={{ margin: "7px 0 0", fontSize: 12, color: "#B91C1C", fontWeight: 700 }}>
+                      <p style={{ margin: "7px 0 0", fontSize: 12, color: "#B71C1C", fontWeight: 700 }}>
                         {problemaDoDesconto(desconto, consumoFechamento)}
                       </p>
                     )}
@@ -2640,12 +2640,12 @@ export default function MesasApp({
                   </div>
                 )}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, marginBottom: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={useServiceFee} onChange={e => setUseServiceFee(e.target.checked)} style={{ accentColor: "#7C3AED", width: 18, height: 18 }} />
+                  <input type="checkbox" checked={useServiceFee} onChange={e => setUseServiceFee(e.target.checked)} style={{ accentColor: "#475569", width: 18, height: 18 }} />
                   Taxa de serviço
                   <input type="number" value={serviceFee} onChange={e => setServiceFee(Number(e.target.value))}
                     style={{ width: 54, padding: "6px 8px", borderRadius: 6, border: "1px solid #E2E8F0", textAlign: "center", fontFamily: "inherit" }} />%
                   {useServiceFee && (
-                    <span style={{ marginLeft: "auto", fontWeight: 700, color: "#D97706" }}>{fmt(taxaFechamento)}</span>
+                    <span style={{ marginLeft: "auto", fontWeight: 700, color: "#B45309" }}>{fmt(taxaFechamento)}</span>
                   )}
                 </label>
                 <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 14, marginTop: 8, cursor: "pointer", color: "#64748B" }}>
@@ -2655,7 +2655,7 @@ export default function MesasApp({
                 </label>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 22, fontWeight: 900, marginTop: 12, paddingTop: 12, borderTop: "2px solid #E2E8F0" }}>
                   <span>TOTAL</span>
-                  <span style={{ color: "#7C3AED" }}>{fmt(totalFechamento)}</span>
+                  <span style={{ color: "#475569" }}>{fmt(totalFechamento)}</span>
                 </div>
               </div>
 
@@ -2669,7 +2669,7 @@ export default function MesasApp({
                     <span style={{ fontSize: 13, fontWeight: 800, color: "#334155" }}>
                       🧾 Conta por pessoa ({conta.pessoas.length})
                     </span>
-                    <span style={{ fontSize: 12, color: "#7C3AED", fontWeight: 700 }}>
+                    <span style={{ fontSize: 12, color: "#475569", fontWeight: 700 }}>
                       {verContaPorPessoa ? "ocultar" : "ver"}
                     </span>
                   </button>
@@ -2685,13 +2685,13 @@ export default function MesasApp({
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                             <span style={{ fontSize: 14, fontWeight: 700, color: "#1E293B" }}>👤 {pes.nome}</span>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 15, fontWeight: 800, color: "#7C3AED" }}>{fmt(pes.aPagar)}</span>
+                              <span style={{ fontSize: 15, fontWeight: 800, color: "#475569" }}>{fmt(pes.aPagar)}</span>
                               <button
                                 onClick={() => { setDonoPagamento(pes.id); setValorPagamento(paraCampo(faltaDaPessoa(pes))); }}
                                 title="Registrar o pagamento desta pessoa"
                                 className="mesa-chip"
                                 style={{
-                                  border: "1px solid #DDD6FE", background: "#F5F3FF", color: "#7C3AED",
+                                  border: "1px solid #E2E8F0", background: "#F8FAFC", color: "#475569",
                                   borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 800, cursor: "pointer",
                                 }}>+ pagar</button>
                             </div>
@@ -2753,7 +2753,7 @@ export default function MesasApp({
               <div style={{ fontSize: 13, fontWeight: 800, color: "#334155", marginBottom: 8 }}>
                 💳 Pagamentos recebidos
                 {pagamentosDaMesa.length > 0 && (
-                  <span style={{ marginLeft: 6, color: "#16A34A" }}>({fmt(totalRecebido)})</span>
+                  <span style={{ marginLeft: 6, color: "#15803D" }}>({fmt(totalRecebido)})</span>
                 )}
               </div>
 
@@ -2770,10 +2770,10 @@ export default function MesasApp({
                     <div key={p.uid} style={{
                       display: "flex", alignItems: "center", gap: 8, padding: "9px 12px",
                       borderBottom: i < pagamentosDaMesa.length - 1 ? "1px solid #F1F5F9" : "none",
-                      background: "#F0FDF4",
+                      background: "#ECFDF3",
                     }}>
                       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#15803D", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {p.guestName ? `👤 ${p.guestName}` : "🍽️ Da mesa"}
                         </span>
                         {p.por && (
@@ -2788,7 +2788,7 @@ export default function MesasApp({
                         onClick={() => apagarPagamento(p.uid)}
                         title="Apagar este pagamento"
                         style={{
-                          border: "none", background: "#FEF2F2", color: "#DC2626", borderRadius: 8,
+                          border: "none", background: "#FEF2F2", color: "#C92E09", borderRadius: 8,
                           width: 30, height: 30, fontSize: 13, cursor: "pointer", flexShrink: 0,
                         }}>✕</button>
                     </div>
@@ -2808,9 +2808,9 @@ export default function MesasApp({
                       className="mesa-chip"
                       style={{
                         padding: "8px 12px", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 800,
-                        border: donoPagamento === null ? "2px solid #7C3AED" : "1px solid #E2E8F0",
-                        background: donoPagamento === null ? "#F5F3FF" : "#fff",
-                        color: donoPagamento === null ? "#6D28D9" : "#475569",
+                        border: donoPagamento === null ? "2px solid #475569" : "1px solid #E2E8F0",
+                        background: donoPagamento === null ? "#F8FAFC" : "#fff",
+                        color: donoPagamento === null ? "#334155" : "#475569",
                       }}>
                       🍽️ A mesa toda
                     </button>
@@ -2826,9 +2826,9 @@ export default function MesasApp({
                           className="mesa-chip"
                           style={{
                             padding: "8px 12px", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 800,
-                            border: escolhida ? "2px solid #7C3AED" : "1px solid #E2E8F0",
-                            background: escolhida ? "#F5F3FF" : quitada ? "#F0FDF4" : "#fff",
-                            color: escolhida ? "#6D28D9" : quitada ? "#15803D" : "#475569",
+                            border: escolhida ? "2px solid #475569" : "1px solid #E2E8F0",
+                            background: escolhida ? "#F8FAFC" : quitada ? "#ECFDF3" : "#fff",
+                            color: escolhida ? "#334155" : quitada ? "#15803D" : "#475569",
                           }}>
                           👤 {pes.nome} {quitada ? "✓ pago" : fmt(restante)}
                         </button>
@@ -2866,7 +2866,7 @@ export default function MesasApp({
                       disabled={registrandoPagamento}
                       style={{
                         flex: "1 1 120px", padding: "12px 14px", borderRadius: 10, border: "none",
-                        background: "#16A34A", color: "#fff", fontSize: 13, fontWeight: 900,
+                        background: "#15803D", color: "#fff", fontSize: 13, fontWeight: 900,
                         cursor: registrandoPagamento ? "default" : "pointer", fontFamily: "inherit",
                         opacity: registrandoPagamento ? 0.6 : 1,
                       }}>
@@ -2895,7 +2895,7 @@ export default function MesasApp({
             {/* ─── Rodapé: o placar do que falta ─── */}
             <div style={{
               padding: "14px 24px 20px", borderTop: "2px solid #F1F5F9",
-              background: faltaPagar > 0.01 ? "#FFFBEB" : "#F0FDF4",
+              background: faltaPagar > 0.01 ? "#FFF7E6" : "#ECFDF3",
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#64748B", marginBottom: 4 }}>
                 <span>Total da conta</span>
@@ -2917,7 +2917,7 @@ export default function MesasApp({
               ) : (
                 <div style={{
                   display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 900,
-                  color: "#15803D", paddingTop: 8, borderTop: "1px solid #BBF7D0", marginBottom: 12,
+                  color: "#15803D", paddingTop: 8, borderTop: "1px solid #ABEFC6", marginBottom: 12,
                 }}>
                   <span>{troco > 0.01 ? "💵 Troco" : "✅ Conta fechada"}</span>
                   <span>{troco > 0.01 ? fmt(troco) : fmt(totalRecebido)}</span>
@@ -2926,14 +2926,14 @@ export default function MesasApp({
 
               <button onClick={() => imprimirConta(useServiceFee ? serviceFee : 0, Number(waiterTip) || 0)}
                 disabled={imprimindoConta} style={{
-                width: "100%", background: "#fff", color: "#6D28D9",
-                border: "1.5px solid #C4B5FD", borderRadius: 12, padding: "12px 0", fontWeight: 800, fontSize: 14,
+                width: "100%", background: "#fff", color: "#334155",
+                border: "1.5px solid #CBD5E1", borderRadius: 12, padding: "12px 0", fontWeight: 800, fontSize: 14,
                 cursor: "pointer", fontFamily: "inherit", marginBottom: 8, opacity: imprimindoConta ? 0.6 : 1,
               }}>
                 {imprimindoConta ? "Enviando conta..." : `🧾 Imprimir conta para o cliente${useServiceFee ? ` (taxa ${serviceFee}%)` : " (sem taxa)"}`}
               </button>
               <button onClick={closeSession} disabled={actionLoading || !podeFechar} style={{
-                width: "100%", background: podeFechar ? "#DC2626" : "#CBD5E1", color: "#fff",
+                width: "100%", background: podeFechar ? "#C92E09" : "#CBD5E1", color: "#fff",
                 border: "none", borderRadius: 12, padding: "16px 0", fontWeight: 800, fontSize: 16,
                 cursor: podeFechar ? "pointer" : "not-allowed", fontFamily: "inherit",
                 opacity: actionLoading ? 0.6 : 1,
@@ -2982,7 +2982,7 @@ export default function MesasApp({
                     opacity: actionLoading ? 0.6 : 1,
                   }}>
                     Mesa {t.number}
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#16A34A", marginTop: 2 }}>{t.label || "livre"}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#15803D", marginTop: 2 }}>{t.label || "livre"}</div>
                   </button>
                 ))}
               </div>
@@ -3019,7 +3019,7 @@ export default function MesasApp({
             <input placeholder="Nome/Label (ex: Varanda 1)" value={newTableLabel} onChange={e => setNewTableLabel(e.target.value)}
               style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, marginBottom: 16, fontFamily: "inherit" }} />
             <button onClick={createTable} disabled={actionLoading} style={{
-              width: "100%", background: "#7C3AED", color: "#fff", border: "none", borderRadius: 12,
+              width: "100%", background: "#475569", color: "#fff", border: "none", borderRadius: 12,
               padding: "12px 0", fontWeight: 800, fontSize: 15, cursor: "pointer",
               opacity: actionLoading ? 0.6 : 1,
               boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
@@ -3053,7 +3053,7 @@ export default function MesasApp({
                 }}>
                   <div>
                     <span style={{ fontWeight: 700, fontSize: 15 }}>Mesa {table.number}</span>
-                    {table.label && <span style={{ color: "#9CA3AF", fontSize: 13, marginLeft: 8 }}>({table.label})</span>}
+                    {table.label && <span style={{ color: "#94A3B8", fontSize: 13, marginLeft: 8 }}>({table.label})</span>}
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <button onClick={() => {
@@ -3062,15 +3062,15 @@ export default function MesasApp({
                       setShowEditModal(table);
                       setShowConfigModal(false);
                     }} style={{
-                      padding: "4px 10px", borderRadius: 6, border: "1px solid #DDD6FE",
-                      background: "#F5F3FF", color: "#7C3AED", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      padding: "4px 10px", borderRadius: 6, border: "1px solid #E2E8F0",
+                      background: "#F8FAFC", color: "#475569", fontSize: 12, fontWeight: 700, cursor: "pointer",
                     }}>✏️ Editar</button>
                     {table.openSession ? (
-                      <span style={{ fontSize: 12, color: "#D97706", fontWeight: 700 }}>🔴 Ocupada</span>
+                      <span style={{ fontSize: 12, color: "#B45309", fontWeight: 700 }}>🔴 Ocupada</span>
                     ) : (
                       <button onClick={() => deleteTable(table.id)} style={{
                         padding: "4px 10px", borderRadius: 6, border: "1px solid #FECACA",
-                        background: "#FEF2F2", color: "#DC2626", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        background: "#FEF2F2", color: "#C92E09", fontSize: 12, fontWeight: 700, cursor: "pointer",
                       }}>Remover</button>
                     )}
                   </div>
@@ -3092,7 +3092,7 @@ export default function MesasApp({
             padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", textAlign: "center",
           }}>
             <div style={{
-              width: 56, height: 56, borderRadius: 16, background: "#FEF3C7",
+              width: 56, height: 56, borderRadius: 16, background: "#FFF7E6",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 28, margin: "0 auto 14px",
             }}>🔓</div>
@@ -3110,7 +3110,7 @@ export default function MesasApp({
               }}>Cancelar</button>
               <button onClick={freeTable} disabled={actionLoading} style={{
                 flex: 1, padding: "12px 0", borderRadius: 12, border: "none",
-                background: "#F59E0B", color: "#fff", fontWeight: 800, fontSize: 14,
+                background: "#B45309", color: "#fff", fontWeight: 800, fontSize: 14,
                 cursor: "pointer", boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
                 opacity: actionLoading ? 0.6 : 1,
               }}>
@@ -3156,7 +3156,7 @@ export default function MesasApp({
                 setView("order");
               }}
               style={{
-                padding: "15px 16px", borderRadius: 12, border: "none", background: "#7C3AED",
+                padding: "15px 16px", borderRadius: 12, border: "none", background: "#475569",
                 color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer",
                 fontFamily: "inherit", textAlign: "left",
               }}>
@@ -3170,8 +3170,8 @@ export default function MesasApp({
                 abrirFechamento();
               }}
               style={{
-                padding: "15px 16px", borderRadius: 12, border: "1.5px solid #16A34A",
-                background: "#F0FDF4", color: "#15803D", fontSize: 15, fontWeight: 800,
+                padding: "15px 16px", borderRadius: 12, border: "1.5px solid #15803D",
+                background: "#ECFDF3", color: "#15803D", fontSize: 15, fontWeight: 800,
                 cursor: "pointer", fontFamily: "inherit", textAlign: "left",
               }}>
               💵 Receber o pagamento de {acaoPessoa.nome}
@@ -3191,7 +3191,7 @@ export default function MesasApp({
                 onClick={() => { removerPessoa(acaoPessoa.id); setAcaoPessoa(null); }}
                 style={{
                   flex: 1, padding: "13px 12px", borderRadius: 12, border: "1px solid #FECACA",
-                  background: "#FEF2F2", color: "#DC2626", fontSize: 13, fontWeight: 700,
+                  background: "#FEF2F2", color: "#C92E09", fontSize: 13, fontWeight: 700,
                   cursor: "pointer", fontFamily: "inherit",
                 }}>
                 🚪 Tirar da mesa

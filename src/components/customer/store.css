@@ -72,7 +72,7 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: #C62828;
+  background: #C92E09;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -128,13 +128,13 @@
 }
 
 .store-status.open {
-  background: #DCFCE7;
-  color: #16A34A;
+  background: #ECFDF3;
+  color: #15803D;
 }
 
 .store-status.closed {
   background: #FEE2E2;
-  color: #EF4444;
+  color: #C92E09;
 }
 
 .store-delivery-tag {
@@ -183,7 +183,7 @@
 }
 
 .store-search-input:focus {
-  border-color: #C62828;
+  border-color: #C92E09;
   background: #fff;
 }
 
@@ -250,13 +250,13 @@
 }
 
 .store-cat-btn:hover {
-  border-color: #C62828;
-  color: #C62828;
+  border-color: #C92E09;
+  color: #C92E09;
 }
 
 .store-cat-btn.active {
-  border: 2px solid #C62828;
-  background: #C62828;
+  border: 2px solid #C92E09;
+  background: #C92E09;
   color: #fff;
 }
 
@@ -280,7 +280,7 @@
   font-weight: 700;
   margin: 0 0 0.75rem;
   padding-bottom: 0.4rem;
-  border-bottom: 2px solid #C62828;
+  border-bottom: 2px solid #C92E09;
   display: inline-block;
   color: #0F172A;
 }
@@ -310,7 +310,7 @@
 }
 
 .product-card.in-cart {
-  border: 2px solid #C62828;
+  border: 2px solid #C92E09;
 }
 
 .product-img {
@@ -352,7 +352,7 @@
   font-weight: 800;
   background: #EFF6FF;
   color: #1D4ED8;
-  border: 1px solid #BFDBFE;
+  border: 1px solid #B2DDFF;
   letter-spacing: 0.02em;
   margin-left: 6px;
 }
@@ -371,7 +371,7 @@
 .product-price {
   font-weight: 800;
   font-size: 1rem;
-  color: #C62828;
+  color: #C92E09;
   margin-top: 4px;
 }
 
@@ -399,7 +399,7 @@
   border-radius: 50%;
   border: none;
   cursor: pointer;
-  background: linear-gradient(135deg, #C62828, #E53935);
+  background: linear-gradient(135deg, #C92E09, #C92E09);
   color: #fff;
   display: flex;
   align-items: center;
@@ -431,13 +431,13 @@
   aspect-ratio: 1 / 1;
   padding: 0;
   border-radius: 50%;
-  border: 1.5px solid #C62828;
+  border: 1.5px solid #C92E09;
   background: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #C62828;
+  color: #C92E09;
   flex-shrink: 0;
   box-sizing: border-box;
 }
@@ -453,7 +453,7 @@
   padding: 0;
   border-radius: 50%;
   border: none;
-  background: #C62828;
+  background: #C92E09;
   color: #fff;
   cursor: pointer;
   display: flex;
@@ -550,7 +550,7 @@
 .cart-item-price {
   font-weight: 700;
   font-size: 0.9rem;
-  color: #C62828;
+  color: #C92E09;
 }
 
 .cart-item-remove {
@@ -583,7 +583,7 @@
 .cart-total-value {
   font-weight: 800;
   font-size: 1.15rem;
-  color: #C62828;
+  color: #C92E09;
 }
 
 .cart-checkout-btn {
@@ -592,7 +592,7 @@
   border-radius: 14px;
   border: none;
   cursor: pointer;
-  background: linear-gradient(135deg, #C62828, #E53935);
+  background: linear-gradient(135deg, #C92E09, #C92E09);
   color: #fff;
   font-weight: 800;
   font-size: 1rem;
@@ -641,14 +641,14 @@
 }
 
 .coupon-input:focus {
-  border-color: #C62828;
+  border-color: #C92E09;
 }
 
 .coupon-btn {
   padding: 0.55rem 1rem;
   border-radius: 10px;
   border: none;
-  background: #C62828;
+  background: #C92E09;
   color: #fff;
   font-weight: 600;
   font-size: 0.82rem;
@@ -682,7 +682,7 @@
 }
 
 .checkout-input:focus {
-  border-color: #C62828;
+  border-color: #C92E09;
 }
 
 .checkout-type-row {
@@ -706,9 +706,9 @@
 }
 
 .checkout-type-btn.active {
-  border: 2px solid #C62828;
+  border: 2px solid #C92E09;
   background: #FFF4E5;
-  color: #C62828;
+  color: #C92E09;
 }
 
 .checkout-summary {
@@ -743,7 +743,7 @@
   padding: 0.9rem 1.25rem;
   border: none;
   cursor: pointer;
-  background: linear-gradient(135deg, #C62828, #E53935);
+  background: linear-gradient(135deg, #C92E09, #C92E09);
   color: #fff;
   border-radius: 14px;
   display: flex;
@@ -786,7 +786,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #C62828, #FF8A00);
+  background: linear-gradient(135deg, #C92E09, #FF8A00);
 }
 
 .order-success-card {
@@ -861,7 +861,7 @@
 /* HEADER CART BTN (MOBILE) */
 .header-cart-btn {
   position: relative;
-  background: #C62828;
+  background: #C92E09;
   border-radius: 12px;
   padding: 0.5rem 0.75rem;
   border: none;

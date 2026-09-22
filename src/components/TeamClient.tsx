@@ -8,10 +8,10 @@ import { UserPlus, Trash2, Shield, ShieldCheck } from "lucide-react";
 const PERM_COLORS: Record<string, string> = {
   dashboard: "#6366f1",
   products: "#0ea5e9",
-  franchisees: "#f59e0b",
-  orders: "#10b981",
-  routes: "#8b5cf6",
-  finance: "#ef4444",
+  franchisees: "#B45309",
+  orders: "#15803D",
+  routes: "#64748B",
+  finance: "#C92E09",
   payables: "#f97316",
   invoices: "#14b8a6", // Teal
 };

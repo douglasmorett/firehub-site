@@ -42,7 +42,7 @@ export default function ResetPasswordButton({ userId, storeName, email }: { user
 
   if (feito) {
     return (
-      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#15803D", background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "4px 8px", borderRadius: 6, whiteSpace: "nowrap" }} title="A loja entra com esta senha e troca depois em Minha Loja">
+      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#15803D", background: "#ECFDF3", border: "1px solid #ABEFC6", padding: "4px 8px", borderRadius: 6, whiteSpace: "nowrap" }} title="A loja entra com esta senha e troca depois em Minha Loja">
         ✅ Senha agora é <b>{feito}</b>
       </span>
     );
@@ -50,7 +50,7 @@ export default function ResetPasswordButton({ userId, storeName, email }: { user
 
   if (confirmando) {
     return (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FFFBEB", border: "1px solid #FDE68A", padding: "4px 8px", borderRadius: 6, fontSize: "0.75rem", color: "#92400E", fontWeight: 700, whiteSpace: "nowrap" }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FFF7E6", border: "1px solid #FDE68A", padding: "4px 8px", borderRadius: 6, fontSize: "0.75rem", color: "#92400E", fontWeight: 700, whiteSpace: "nowrap" }}>
         Redefinir a senha de <b>{storeName}</b>{email ? ` (${email})` : ""} para <b>123456</b>? Digite <b>redefinir</b>:
         <input
           autoFocus
@@ -63,7 +63,7 @@ export default function ResetPasswordButton({ userId, storeName, email }: { user
         <button
           onClick={redefinir}
           disabled={loading || !confirmado}
-          style={{ background: confirmado ? "#D97706" : "#E5E7EB", color: confirmado ? "#fff" : "#9CA3AF", border: "none", padding: "3px 8px", borderRadius: 5, fontWeight: 800, cursor: confirmado ? "pointer" : "not-allowed", fontSize: "0.72rem" }}
+          style={{ background: confirmado ? "#B45309" : "#E2E8F0", color: confirmado ? "#fff" : "#94A3B8", border: "none", padding: "3px 8px", borderRadius: 5, fontWeight: 800, cursor: confirmado ? "pointer" : "not-allowed", fontSize: "0.72rem" }}
         >
           {loading ? "Redefinindo..." : "Confirmar"}
         </button>

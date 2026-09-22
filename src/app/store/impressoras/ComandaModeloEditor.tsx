@@ -68,7 +68,7 @@ function ehMaisVelha(instalada?: string, minima?: string): boolean {
   return false;
 }
 
-const VERMELHO = "#C62828";
+const VERMELHO = "#C92E09";
 const BORDA = "1.5px solid #E2E8F0";
 
 /** As larguras que a prévia sabe mostrar — as mesmas três da bobina. */
@@ -241,7 +241,7 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
           quebrada. O papel continua saindo normal, que é o que importa; o que
           falta é só a atualização. */}
       {ehMaisVelha(versaoInstalada, versaoMinima) && (
-        <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "10px 13px", marginBottom: 14 }}>
+        <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "10px 13px", marginBottom: 14 }}>
           <p style={{ margin: 0, fontSize: "0.83rem", color: "#92400E", fontWeight: 700 }}>
             ⚠️ O Assistente desta máquina está na {versaoInstalada} e só lê o modelo a partir da {versaoMinima}.
           </p>
@@ -258,7 +258,7 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
           quem não usa o recurso é o jeito mais rápido de ensinar a loja a
           ignorar os nossos avisos. */}
       {temRotuloTrocado(atual) && ehMaisVelha(versaoInstalada, VERSAO_MINIMA_DOS_ROTULOS) && (
-        <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "10px 13px", marginBottom: 14 }}>
+        <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "10px 13px", marginBottom: 14 }}>
           <p style={{ margin: 0, fontSize: "0.83rem", color: "#92400E", fontWeight: 700 }}>
             ⚠️ As palavras que você trocou pedem o Assistente {VERSAO_MINIMA_DOS_ROTULOS} — esta máquina está na {versaoInstalada}.
           </p>
@@ -467,7 +467,7 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                                 </button>
                               ))}
                               <button type="button" title="Apagar esta linha" onClick={() => mexerNoBloco(i, { linhas: (bloco.linhas || []).filter((_, k) => k !== li) })}
-                                style={{ border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#B91C1C", borderRadius: 6, padding: "3px 8px", fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                                style={{ border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#B71C1C", borderRadius: 6, padding: "3px 8px", fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
                             </div>
 
                             {(ln.partes || []).map((parte, pi) => (
@@ -707,7 +707,7 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                       // loja não descobre o recurso: papel não parece botão.
                       borderBottom: editavel ? "1px dashed #CBD5E1" : undefined,
                       // A previa tem que mostrar a tarja invertida: e o ponto dela.
-                      ...(l.invertido ? { background: "#1F2937", color: "#fff" } : {}),
+                      ...(l.invertido ? { background: "#1E293B", color: "#fff" } : {}),
                     }}>
                       {editavel ? palavra : l.texto}
                     </span>

@@ -23,14 +23,14 @@ import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
 
 const STATUS_CONFIG: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
-  NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#3B82F6", bg: "#EFF6FF" },
-  CRIANDO_IA: { label: "🤖 IA criando pedido...", emoji: "🤖", color: "#7C3AED", bg: "#F3E8FF" },
-  ACEITO: { label: "Aceito", emoji: "✅", color: "#10B981", bg: "#ECFDF5" },
-  PREPARANDO: { label: "Em Preparo", emoji: "👨‍🍳", color: "#F59E0B", bg: "#FFFBEB" },
-  SAIU_ENTREGA: { label: "Em Transporte/Finalizados", emoji: "🛵", color: "#8B5CF6", bg: "#F5F3FF" },
-  ENTREGUE: { label: "Entregue", emoji: "📦", color: "#10B981", bg: "#ECFDF5" },
-  CANCELADO: { label: "Cancelado", emoji: "❌", color: "#EF4444", bg: "#FEF2F2" },
-  ENCERRADO: { label: "Encerrado", emoji: "🔒", color: "#6B7280", bg: "#F3F4F6" },
+  NOVO: { label: "Novos Pedidos", emoji: "🔔", color: "#1D4ED8", bg: "#EFF6FF" },
+  CRIANDO_IA: { label: "🤖 IA criando pedido...", emoji: "🤖", color: "#475569", bg: "#F3E8FF" },
+  ACEITO: { label: "Aceito", emoji: "✅", color: "#15803D", bg: "#ECFDF5" },
+  PREPARANDO: { label: "Em Preparo", emoji: "👨‍🍳", color: "#B45309", bg: "#FFF7E6" },
+  SAIU_ENTREGA: { label: "Em Transporte/Finalizados", emoji: "🛵", color: "#64748B", bg: "#F8FAFC" },
+  ENTREGUE: { label: "Entregue", emoji: "📦", color: "#15803D", bg: "#ECFDF5" },
+  CANCELADO: { label: "Cancelado", emoji: "❌", color: "#C92E09", bg: "#FEF2F2" },
+  ENCERRADO: { label: "Encerrado", emoji: "🔒", color: "#64748B", bg: "#F1F5F9" },
 };
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -382,7 +382,7 @@ const DashboardColumn = memo(function DashboardColumn({
         flex: "1 1 0px", minWidth: "180px",
         background: isOver ? "#EFF6FF" : "#F8FAFC",
         borderRadius: "14px",
-        border: isOver ? "2.5px dashed #3B82F6" : "1px solid #E2E8F0",
+        border: isOver ? "2.5px dashed #1D4ED8" : "1px solid #E2E8F0",
         display: "flex", flexDirection: "column",
         minHeight: "calc(100vh - 175px)", maxHeight: "calc(100vh - 175px)",
         boxShadow: isOver ? "0 0 24px rgba(59, 130, 246, 0.25)" : "0 1px 3px 0 rgba(0,0,0,0.05)",
@@ -396,7 +396,7 @@ const DashboardColumn = memo(function DashboardColumn({
               type="checkbox"
               checked={isAllSelected}
               onChange={() => onToggleSelectColumn && onToggleSelectColumn(columnOrders)}
-              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#3B82F6", flexShrink: 0 }}
+              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#1D4ED8", flexShrink: 0 }}
               title="Selecionar / Desmarcar todos desta coluna"
             />
           )}
@@ -422,7 +422,7 @@ const DashboardColumn = memo(function DashboardColumn({
           </div>
         ) : children}
         {count > 0 && isOver && (
-          <div style={{ textAlign: "center", padding: "1rem", color: "#3B82F6", fontWeight: 700, fontSize: "0.85rem", border: "2px dashed #93C5FD", borderRadius: "10px", margin: "0.5rem 0" }}>
+          <div style={{ textAlign: "center", padding: "1rem", color: "#1D4ED8", fontWeight: 700, fontSize: "0.85rem", border: "2px dashed #B2DDFF", borderRadius: "10px", margin: "0.5rem 0" }}>
             ↓ Solte aqui para mover ↓
           </div>
         )}
@@ -567,33 +567,33 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
       : ehMesa
         ? `🍽️ ${decorrido} na mesa`
         : decorrido;
-  const timerColor = isLate ? "#EF4444" : isUrgent ? "#F59E0B" : "#64748B";
+  const timerColor = isLate ? "#C92E09" : isUrgent ? "#B45309" : "#64748B";
 
   const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
 
   const isAiCreating = order.status === "CRIANDO_IA";
   const cardBackground = isDragging
-    ? "#DBEAFE"
+    ? "#EFF6FF"
     : isAiCreating
       ? "#FAF5FF"
       : isRedAlert
         ? "#FEF2F2"
         : isYellowAlert
-          ? "#FFFBEB"
+          ? "#FFF7E6"
           : "#fff";
 
   const cardBorder = isDragging
-    ? "2.5px solid #2563EB"
+    ? "2.5px solid #1D4ED8"
     : isAiCreating
       ? "2px dashed #A855F7"
       : isRedAlert
-        ? "2.5px solid #EF4444"
+        ? "2.5px solid #C92E09"
         : isYellowAlert
-          ? "2.5px solid #F59E0B"
+          ? "2.5px solid #B45309"
           : isLate
-            ? "1.5px solid #EF4444"
+            ? "1.5px solid #C92E09"
             : isUrgent
-              ? "1.5px solid #F59E0B"
+              ? "1.5px solid #B45309"
               : "1px solid #E2E8F0";
 
   const cardBoxShadow = isDragging
@@ -654,7 +654,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             type="checkbox"
             checked={selectedOrderIds?.has(order.id) || false}
             onChange={(e) => { e.stopPropagation(); onToggleSelectOrder && onToggleSelectOrder(order.id); }}
-            style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#3B82F6", flexShrink: 0, marginTop: "2px" }}
+            style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#1D4ED8", flexShrink: 0, marginTop: "2px" }}
             title="Selecionar pedido"
           />
           {canDrag && (
@@ -707,8 +707,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   marginLeft: 8,
                   padding: "2px 8px",
                   borderRadius: 6,
-                  background: "#FEF3C7",
-                  border: "1.5px solid #F59E0B",
+                  background: "#FFF7E6",
+                  border: "1.5px solid #B45309",
                   color: "#92400E",
                   fontWeight: 900,
                   fontSize: "0.8rem",
@@ -734,8 +734,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               em duas linhas dentro do cartão — e o nome do cliente, ao lado,
               mantém os 120 px mínimos dele. */}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 1, minWidth: 0, maxWidth: "100%", marginLeft: "auto", marginTop: "1px" }}>
-            {/* Brendi ganha roxo (violeta #EDE9FE/#6D28D9) — tom diferente do
-                lilás da IA (#F3E8FF/#7C3AED) de propósito: os dois convivem na
+            {/* Brendi ganha roxo (violeta #F1F5F9/#334155) — tom diferente do
+                lilás da IA (#F3E8FF/#475569) de propósito: os dois convivem na
                 mesma tela e o atendente distingue o canal pela cor.
 
                 O totem caía no default verde "Online", igual ao pedido do site.
@@ -822,8 +822,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             {deadline && !isFinished && (
               <span style={{
                 padding: "1px 7px", borderRadius: 6, fontWeight: 600, whiteSpace: "nowrap",
-                background: isLate ? "#FEE2E2" : isUrgent ? "#FEF3C7" : "#EFF6FF",
-                color: isLate ? "#B91C1C" : isUrgent ? "#B45309" : "#1D4ED8",
+                background: isLate ? "#FEE2E2" : isUrgent ? "#FFF7E6" : "#EFF6FF",
+                color: isLate ? "#B71C1C" : isUrgent ? "#B45309" : "#1D4ED8",
               }}>
                 🏁 {isTakeoutOrder ? "Retirar até" : "Entregar até"} <b style={{ fontWeight: 800 }}>{deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>
               </span>
@@ -837,7 +837,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               precisa gritar que é cancelado, senão vira "entregue" aos olhos
               de quem passa o olho na coluna. */}
           {destacarCancelado && order.status === "CANCELADO" && (
-            <div style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: "#FEE2E2", border: "1px solid #FCA5A5", color: "#B91C1C", fontWeight: 800, fontSize: "0.78rem" }}>
+            <div style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: "#FEE2E2", border: "1px solid #FCA5A5", color: "#B71C1C", fontWeight: 800, fontSize: "0.78rem" }}>
               🚫 Pedido cancelado
             </div>
           )}
@@ -869,7 +869,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           {/* Badge Pronto Cozinha / Botão Marcar como Pronto Cozinha */}
           {order.kdsStage === "FINISHED" || order.kdsStage === "READY" ? (
             <div style={{ marginBottom: "4px" }}>
-              <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#DCFCE7", color: "#15803D", display: "inline-block", border: "1px solid #86EFAC" }}>
+              <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 700, background: "#ECFDF3", color: "#15803D", display: "inline-block", border: "1px solid #ABEFC6" }}>
                 ✅ Pronto Cozinha
               </span>
             </div>
@@ -903,7 +903,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   borderRadius: "6px",
                   fontSize: "0.68rem",
                   fontWeight: 800,
-                  background: "#FEF3C7",
+                  background: "#FFF7E6",
                   color: "#B45309",
                   border: "1.5px solid #FCD34D",
                   cursor: "pointer",
@@ -934,7 +934,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           {(order.deliveryType === "RETIRADA" || order.deliveryType === "TAKEOUT" || order.deliveryType === "PICKUP") && (
             <div style={{
               color: "#92400E", fontWeight: 700, fontSize: "0.8rem",
-              background: "#FEF3C7", border: "1px solid #FCD34D",
+              background: "#FFF7E6", border: "1px solid #FCD34D",
               padding: "5px 10px", borderRadius: "8px", margin: "5px 0"
             }}>
               🏪 Retirada no local
@@ -942,8 +942,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           )}
           {order.deliveryType === "MESA" && (
             <div style={{
-              color: "#5B21B6", fontWeight: 800, fontSize: "0.8rem",
-              background: "#F5F3FF", border: "1px solid #DDD6FE",
+              color: "#334155", fontWeight: 800, fontSize: "0.8rem",
+              background: "#F8FAFC", border: "1px solid #E2E8F0",
               padding: "5px 10px", borderRadius: "8px", margin: "5px 0"
             }}>
               🍽️ {order.customerAddress || "Mesa"}
@@ -987,7 +987,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 fontSize: "0.72rem",
                 fontWeight: 700,
                 color: "#92400E",
-                background: "#FEF3C7",
+                background: "#FFF7E6",
                 border: "1px solid #FCD34D",
                 padding: "2px 8px",
                 borderRadius: "6px",
@@ -1009,7 +1009,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               <div style={{
                 marginTop: "6px", padding: "6px 10px", borderRadius: "8px",
                 background: "#FEF2F2", border: "1.5px solid #FCA5A5",
-                color: "#DC2626", fontWeight: 800, fontSize: "0.75rem",
+                color: "#C92E09", fontWeight: 800, fontSize: "0.75rem",
                 display: "flex", flexDirection: "column", gap: "4px"
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1019,12 +1019,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 {pInfo.pickupCode && (
                   <div style={{
                     marginTop: "2px", padding: "5px 10px", borderRadius: "6px",
-                    background: "#FFF", border: "2px dashed #7C3AED",
+                    background: "#FFF", border: "2px dashed #475569",
                     color: "#581C87", fontWeight: 800, fontSize: "0.85rem",
                     display: "flex", flexDirection: "column", alignItems: "center", gap: "2px"
                   }}>
                     <span>🔑 CÓDIGO DE COLETA P/ ENTREGADOR {pInfo.partnerName.toUpperCase()}:</span>
-                    <span style={{ fontSize: "1.1rem", color: "#7C3AED", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
+                    <span style={{ fontSize: "1.1rem", color: "#475569", fontWeight: 900, letterSpacing: "0.5px", background: "#F3E8FF", padding: "1px 8px", borderRadius: "4px" }}>
                       #{pInfo.pickupCode}
                     </span>
                   </div>
@@ -1072,10 +1072,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               </button>
             )}
             {order.status === "NOVO" && (
-              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
+              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ACEITO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#15803D", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Aceitar</button>
             )}
             {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType === "DELIVERY" && (
-              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#7C3AED", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🛵 Saiu</button>
+              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "SAIU_ENTREGA"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#475569", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🛵 Saiu</button>
             )}
             {/* ── RETIRADA: 'Pronto' É PRONTO, NÃO ENTREGUE ──────────────────
                 Este botão mandava o status ENTREGUE direto — e o robô avisava
@@ -1085,27 +1085,27 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 caindo em Finalizado no quadro (retirada + PRONTO já entra lá),
                 então nada muda para a loja. */}
             {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType !== "DELIVERY" && (
-              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "PRONTO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Pronto</button>
+              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "PRONTO"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#15803D", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>✅ Pronto</button>
             )}
             {order.status === "SAIU_ENTREGA" && (
-              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>📦 Entregue</button>
+              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#15803D", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>📦 Entregue</button>
             )}
             {order.status === "PRONTO" && (
-              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🤝 Entregue</button>
+              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ENTREGUE"); }} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#15803D", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.75rem", fontFamily: "inherit", whiteSpace: "nowrap" }}>🤝 Entregue</button>
             )}
             {order.status === "ENTREGUE" && (
-              <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#059669", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>
+              <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#15803D", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>
                 Entregue
               </span>
             )}
             {order.status === "CANCELADO" && (
-              <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#DC2626", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Cancelado</span>
+              <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#C92E09", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Cancelado</span>
             )}
             {(order as any).cancelDispute?.parcial === true && ["accepted_partial", "refund_proposed"].includes((order as any).cancelDispute?.resolved) && (
               <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#EA580C", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>✂️ Cancelamento parcial</span>
             )}
             {order.status === "ENCERRADO" && (
-              <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#6B7280", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
+              <span style={{ padding: "3px 10px", borderRadius: "5px", background: "#64748B", color: "#fff", fontSize: "0.72rem", fontWeight: 700 }}>Encerrado</span>
             )}
           </div>
 
@@ -1121,7 +1121,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   target="_blank" rel="noopener noreferrer"
                   onClick={e => e.stopPropagation()}
                   title="WhatsApp do Cliente"
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#059669", color: "#fff", textDecoration: "none" }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#15803D", color: "#fff", textDecoration: "none" }}
                 >
                   <MessageCircle size={15} />
                 </a>
@@ -1135,7 +1135,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 onOpenPrintModal && onOpenPrintModal(order.id);
               }}
               title="Imprimir"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#3B82F6", color: "#fff", border: "none", cursor: "pointer" }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#1D4ED8", color: "#fff", border: "none", cursor: "pointer" }}
             >
               <Printer size={15} />
             </button>
@@ -1169,7 +1169,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                     onOpenEditModal(order.id);
                   }}
                   title={ehMarketplace ? `Editar itens (o ${avaliacao.canal || "parceiro"} não muda)` : "Editar itens do pedido"}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: ehMarketplace ? "#D97706" : "#C62828", color: "#fff", border: "none", cursor: "pointer" }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: ehMarketplace ? "#B45309" : "#C92E09", color: "#fff", border: "none", cursor: "pointer" }}
                 >
                   <Pencil size={15} />
                 </button>
@@ -1184,7 +1184,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   onOpenDeliveryModal && onOpenDeliveryModal(order);
                 }}
                 title="Informações da Entrega e Rota no Mapa"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#8B5CF6", color: "#fff", border: "none", cursor: "pointer", fontSize: "0.9rem" }}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: "6px", background: "#64748B", color: "#fff", border: "none", cursor: "pointer", fontSize: "0.9rem" }}
               >
                 🛵
               </button>
@@ -1205,8 +1205,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                     await onAssignMotoboy && onAssignMotoboy(order.id, e.target.value);
                   }}
                   style={{
-                    padding: "4px 8px", borderRadius: "6px", border: "2px solid #EF4444",
-                    fontSize: "0.75rem", fontWeight: 800, color: "#DC2626",
+                    padding: "4px 8px", borderRadius: "6px", border: "2px solid #C92E09",
+                    fontSize: "0.75rem", fontWeight: 800, color: "#C92E09",
                     background: "#FEF2F2", fontFamily: "inherit",
                     // `maxWidth: 140px` cortava justamente o texto que mais
                     // importa aqui: "🛵 Motoboy 99Food" aparecia como
@@ -1238,9 +1238,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   onClick={e => e.stopPropagation()}
                   style={{
                     padding: "4px 8px", borderRadius: "6px",
-                    border: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "2px solid #EF4444" : (order.motoboyId ? "1.5px solid #059669" : "1.5px solid #94A3B8"),
+                    border: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "2px solid #C92E09" : (order.motoboyId ? "1.5px solid #15803D" : "1.5px solid #94A3B8"),
                     fontSize: "0.78rem", fontWeight: 700,
-                    color: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#991B1B" : (order.motoboyId ? "#047857" : "#1E293B"),
+                    color: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#B71C1C" : (order.motoboyId ? "#047857" : "#1E293B"),
                     background: (order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "#FEE2E2" : (order.motoboyId ? "#ECFDF5" : "#F8FAFC"),
                     fontFamily: "inherit",
                     // Mesmo motivo do seletor de parceiro acima: nome de motoboy
@@ -1292,34 +1292,34 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
       {expanded && (
         <div style={{ padding: "0 0.75rem 0.75rem", borderTop: "1px solid #E2E8F0" }}>
           {order.notes && (
-            <div style={{ padding: "8px 12px", background: "#F9FAFB", borderRadius: "8px", border: "1px solid #E5E7EB", fontSize: "0.8rem", color: "#374151", margin: "0.4rem 0" }}>
+            <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", fontSize: "0.8rem", color: "#334155", margin: "0.4rem 0" }}>
               {order.notes}
             </div>
           )}
 
-          <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E5E7EB", paddingTop: "0.5rem" }}>
+          <div style={{ fontSize: "0.82rem", margin: "0.5rem 0", borderTop: "1px solid #E2E8F0", paddingTop: "0.5rem" }}>
             {order.items?.map((item: any) => {
               const comboSels = parseComboSelections(item.comboSelections, item.quantity);
               const nameParts = nomeDoItem(item).split(" | ");
               const mainName = nameParts[0];
               const extras = nameParts.slice(1);
               return (
-                <div key={item.id} style={{ padding: "4px 0", borderBottom: "1px solid #F3F4F6" }}>
+                <div key={item.id} style={{ padding: "4px 0", borderBottom: "1px solid #F1F5F9" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ color: "#374151", fontWeight: 600 }}>{item.quantity}× {mainName}</span>
-                    <span style={{ fontWeight: 600, color: "#1F2937" }}>
+                    <span style={{ color: "#334155", fontWeight: 600 }}>{item.quantity}× {mainName}</span>
+                    <span style={{ fontWeight: 600, color: "#1E293B" }}>
                       R$ {(getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * item.quantity).toFixed(2)}
                     </span>
                   </div>
                   {comboSels.length > 0 && (
-                    <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
+                    <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#64748B", lineHeight: "1.5" }}>
                       {comboSels.map((sel: any, i: number) => (
                         <div key={i}>↳ {sel.quantity > 1 ? `${sel.quantity}x ` : ""}{sel.name}</div>
                       ))}
                     </div>
                   )}
                   {comboSels.length === 0 && extras.length > 0 && (
-                    <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#6B7280", lineHeight: "1.5" }}>
+                    <div style={{ paddingLeft: "16px", fontSize: "0.75rem", color: "#64748B", lineHeight: "1.5" }}>
                       {extras.map((ext: string, i: number) => (
                         <div key={i}>↳ {ext.trim()}</div>
                       ))}
@@ -1447,7 +1447,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       });
       if (!r.ok) throw new Error(String(r.status));
     } catch {
-      showToast("⚠️ Não consegui salvar a configuração do app dos motoboys", "#EF4444");
+      showToast("⚠️ Não consegui salvar a configuração do app dos motoboys", "#C92E09");
     } finally {
       setSalvandoAppMotoboy(false);
     }
@@ -1505,7 +1505,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       // "Prontos" não é status: é o selo de pronto na cozinha (ver handleDrop).
       if (bulkTargetStatus === "PRONTOS_COZINHA") {
         for (const orderId of ids) await marcarProntoCozinha(orderId);
-        showToast(`${ids.length} pedido(s) marcados como prontos na cozinha!`, "#10B981");
+        showToast(`${ids.length} pedido(s) marcados como prontos na cozinha!`, "#15803D");
         setSelectedOrderIds(new Set());
         setBulkTargetStatus("");
         return;
@@ -1522,12 +1522,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
 
       setOrders(prev => prev.map(o => selectedOrderIds.has(o.id) ? { ...o, status: bulkTargetStatus } : o));
-      showToast(`${successCount} pedido(s) atualizados com sucesso!`, "#10B981");
+      showToast(`${successCount} pedido(s) atualizados com sucesso!`, "#15803D");
       setSelectedOrderIds(new Set());
       setBulkTargetStatus("");
       router.refresh();
     } catch {
-      showToast("Erro ao atualizar pedidos em massa.", "#EF4444");
+      showToast("Erro ao atualizar pedidos em massa.", "#C92E09");
     } finally {
       setBulkUpdating(false);
     }
@@ -1609,7 +1609,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         body: JSON.stringify({ painelPedidosConfig: novo }),
       });
     } catch {
-      showToast("⚠️ Não consegui salvar a preferência", "#EF4444");
+      showToast("⚠️ Não consegui salvar a preferência", "#C92E09");
     } finally {
       setSalvandoBarra(false);
     }
@@ -1634,14 +1634,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         body: JSON.stringify({ allowScheduledOrders: newValue }),
       });
       if (res.ok) {
-        showToast(newValue ? "🟢 Agendamentos ATIVADOS no site próprio!" : "🔴 Agendamentos DESATIVADOS no site próprio!", newValue ? "#10B981" : "#EF4444");
+        showToast(newValue ? "🟢 Agendamentos ATIVADOS no site próprio!" : "🔴 Agendamentos DESATIVADOS no site próprio!", newValue ? "#15803D" : "#C92E09");
       } else {
         setAllowScheduledOrders(!newValue);
-        showToast("❌ Falha ao atualizar configuração de agendamentos", "#EF4444");
+        showToast("❌ Falha ao atualizar configuração de agendamentos", "#C92E09");
       }
     } catch {
       setAllowScheduledOrders(!newValue);
-      showToast("❌ Erro de conexão ao salvar", "#EF4444");
+      showToast("❌ Erro de conexão ao salvar", "#C92E09");
     }
   };
   const [scheduleLeadInput, setScheduleLeadInput] = useState("");
@@ -1652,7 +1652,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [abaDoRecibo, setAbaDoRecibo] = useState<"comanda" | "editar">("comanda");
   const [confirmarPagamentoOrder, setConfirmarPagamentoOrder] = useState<any | null>(null);
   const [deliveryInfoModalOrder, setDeliveryInfoModalOrder] = useState<any | null>(null);
-  const showToast = (text: string, color = "#10B981") => {
+  const showToast = (text: string, color = "#15803D") => {
     setToastMsg({ text, color });
     setTimeout(() => setToastMsg(null), 4000);
   };
@@ -1804,7 +1804,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false, semValores = false) => {
     if (!order) return;
     if (order.status === "CRIANDO_IA") {
-      showToast("⚠️ O pedido ainda está sendo montado pela IA no WhatsApp. Aguarde a finalização para imprimir.", "#F59E0B");
+      showToast("⚠️ O pedido ainda está sendo montado pela IA no WhatsApp. Aguarde a finalização para imprimir.", "#B45309");
       return;
     }
     const orderKey = order.id || order.ifoodReference || order.openDeliveryReference;
@@ -1932,7 +1932,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       const { printOrder } = await import("@/lib/print");
       const result = await printOrder(formattedOrder as any, storeName, activeConfig, {}, isManual, semValores);
       if (result.success) {
-        showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
+        showToast("✅ Comanda enviada para a impressora térmica!", "#15803D");
         printedLocally = true;
         // Avisa o servidor, para a fila da nuvem não mandar o Assistente
         // imprimir a mesma comanda 3 s depois. Mesmo endpoint do Assistente e
@@ -1975,13 +1975,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       });
 
       if (queueRes.ok) {
-        showToast("✅ Enviado para a fila de impressão da impressora!", "#10B981");
+        showToast("✅ Enviado para a fila de impressão da impressora!", "#15803D");
       } else {
-        showToast("⚠️ Falha ao enfileirar impressão na nuvem.", "#EF4444");
+        showToast("⚠️ Falha ao enfileirar impressão na nuvem.", "#C92E09");
       }
     } catch (err) {
       console.warn("[Print] Erro ao enviar para fila em nuvem:", err);
-      showToast("⚠️ Erro de conexão ao enviar para fila de impressão.", "#EF4444");
+      showToast("⚠️ Erro de conexão ao enviar para fila de impressão.", "#C92E09");
     } finally {
       setTimeout(() => {
         if (orderKey) printingInProgressRef.current.delete(orderKey);
@@ -2552,11 +2552,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const testarSom = useCallback(async () => {
     const ctx = await audioPronto();
     if (!ctx) {
-      showToast("O navegador está bloqueando o som. Clique em qualquer lugar da tela e teste de novo.", "#EF4444");
+      showToast("O navegador está bloqueando o som. Clique em qualquer lugar da tela e teste de novo.", "#C92E09");
       return;
     }
     playOrderChime();
-    showToast("Tocando o som de pedido novo. Não ouviu? Veja o volume do Windows e se esta aba está sem som (botão direito na aba).", "#2563EB");
+    showToast("Tocando o som de pedido novo. Não ouviu? Veja o volume do Windows e se esta aba está sem som (botão direito na aba).", "#1D4ED8");
   }, [audioPronto, playOrderChime]);
 
   /**
@@ -2661,10 +2661,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         // loja desconectada…). Antes isso morria no log do servidor e o lojista
         // só descobria pela reclamação do cliente.
         const data = await res.json().catch(() => ({}));
-        if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#F59E0B");
+        if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#B45309");
         // O mesmo aviso para o 99Food — antes o erro dele morria no log do
         // servidor e a tela dizia que estava tudo certo (Frangoso, 17/09/2026).
-        if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#F59E0B");
+        if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
 
         // 🖨️ Impressão Automática ao Aceitar Pedido (se autoprint estiver ativado)
         if (newStatus === "ACEITO" && printerConfig?.autoprint !== false) {
@@ -2678,11 +2678,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const errData = await res.json().catch(() => ({}));
         const msg = errData?.error || `Erro ${res.status}`;
         console.warn(`[updateStatus] ${orderId} → ${newStatus}: ${msg}`);
-        showToast(msg, "#EF4444");
+        showToast(msg, "#C92E09");
       }
     } catch (err: any) {
       console.warn("[updateStatus] network error:", err?.message);
-      showToast("Erro de conexão. Tente novamente.", "#EF4444");
+      showToast("Erro de conexão. Tente novamente.", "#C92E09");
     } finally { setLoadingId(null); }
   };
 
@@ -2716,13 +2716,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           ? { ...o, status: data.status || "NOVO", paymentPaidAt: new Date().toISOString() }
           : o));
         setConfirmarPagamentoOrder(null);
-        showToast(data.mensagem || "Pagamento confirmado! O pedido foi para a cozinha.", "#10B981");
+        showToast(data.mensagem || "Pagamento confirmado! O pedido foi para a cozinha.", "#15803D");
         router.refresh();
       } else {
-        showToast(data.error || `Erro ${res.status} ao confirmar o pagamento.`, "#EF4444");
+        showToast(data.error || `Erro ${res.status} ao confirmar o pagamento.`, "#C92E09");
       }
     } catch {
-      showToast("Erro de conexão ao confirmar o pagamento.", "#EF4444");
+      showToast("Erro de conexão ao confirmar o pagamento.", "#C92E09");
     } finally {
       setLoadingId(null);
     }
@@ -2789,8 +2789,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       if (res.ok) {
         setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA" } : o));
         router.refresh();
-      } else showToast("Erro ao cancelar.", "#EF4444");
-    } catch { showToast("Erro.", "#EF4444"); } finally {
+      } else showToast("Erro ao cancelar.", "#C92E09");
+    } catch { showToast("Erro.", "#C92E09"); } finally {
       setLoadingId(null);
       setCancelConfirmId(null);
       setCancelReason("");
@@ -2802,7 +2802,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const highlightCard = (el: HTMLElement) => {
     activeDragElRef.current = el;
-    el.style.borderColor = "#3B82F6";
+    el.style.borderColor = "#1D4ED8";
     el.style.borderWidth = "2.5px";
     el.style.boxShadow = "0 16px 32px -4px rgba(59, 130, 246, 0.4), 0 0 0 4px rgba(59, 130, 246, 0.15)";
     el.style.transform = "scale(1.02) translateY(-2px)";
@@ -2906,7 +2906,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       // Create/update ghost element
       if (!ghostRef.current) {
         const ghost = document.createElement("div");
-        ghost.style.cssText = `position:fixed;z-index:9999;pointer-events:none;padding:8px 16px;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.2);font-weight:700;font-size:0.85rem;border:2px solid #3B82F6;`;
+        ghost.style.cssText = `position:fixed;z-index:9999;pointer-events:none;padding:8px 16px;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.2);font-weight:700;font-size:0.85rem;border:2px solid #1D4ED8;`;
         ghost.textContent = `#${touchRef.current.orderId.slice(-6).toUpperCase()}`;
         document.body.appendChild(ghost);
         ghostRef.current = ghost;
@@ -3276,12 +3276,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "400px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ textAlign: "center", marginBottom: "16px" }}>
               <div style={{ fontSize: "2rem", marginBottom: "8px" }}>⚠️</div>
-              <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1F2937" }}>Tem certeza que deseja cancelar esse pedido?</div>
+              <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1E293B" }}>Tem certeza que deseja cancelar esse pedido?</div>
             </div>
             <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>Selecione o motivo do cancelamento:</label>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Selecione o motivo do cancelamento:</label>
               {loadingReasons ? (
-                <div style={{ fontSize: "0.82rem", color: "#6B7280", padding: "6px 0" }}>Carregando motivos do iFood...</div>
+                <div style={{ fontSize: "0.82rem", color: "#64748B", padding: "6px 0" }}>Carregando motivos do iFood...</div>
               ) : cancellationReasons.length > 0 ? (
                 <select
                   value={selectedCancelCode}
@@ -3291,7 +3291,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     const desc = cancellationReasons.find(r => r.cancelCodeId === code)?.description || "";
                     setCancelReason(desc);
                   }}
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #D1D5DB", fontSize: "0.85rem", fontFamily: "inherit", outline: "none", boxSizing: "border-box", background: "#fff", color: "#1F2937", marginBottom: "12px" }}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit", outline: "none", boxSizing: "border-box", background: "#fff", color: "#1E293B", marginBottom: "12px" }}
                 >
                   {cancellationReasons.map(r => (
                     <option key={r.cancelCodeId} value={r.cancelCodeId}>
@@ -3300,21 +3300,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   ))}
                 </select>
               ) : (
-                <div style={{ fontSize: "0.82rem", color: "#EF4444", padding: "6px 0" }}>Usando motivos padrão do sistema.</div>
+                <div style={{ fontSize: "0.82rem", color: "#C92E09", padding: "6px 0" }}>Usando motivos padrão do sistema.</div>
               )}
 
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>Detalhes do motivo (opcional):</label>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Detalhes do motivo (opcional):</label>
               <textarea
                 value={cancelReason}
                 onChange={e => setCancelReason(e.target.value)}
                 placeholder="Ex: Cliente desistiu, item indisponível..."
                 autoFocus
-                style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #D1D5DB", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", minHeight: "80px", outline: "none", boxSizing: "border-box" }}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", minHeight: "80px", outline: "none", boxSizing: "border-box" }}
               />
             </div>
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button onClick={() => { setCancelConfirmId(null); setCancelReason(""); setSelectedCancelCode(""); }} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#374151", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Não</button>
-              <button onClick={confirmCancel} disabled={!!loadingId} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>{loadingId ? "Cancelando..." : "Sim, cancelar"}</button>
+              <button onClick={() => { setCancelConfirmId(null); setCancelReason(""); setSelectedCancelCode(""); }} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#334155", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Não</button>
+              <button onClick={confirmCancel} disabled={!!loadingId} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "none", background: "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>{loadingId ? "Cancelando..." : "Sim, cancelar"}</button>
             </div>
           </div>
         </div>
@@ -3336,7 +3336,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     handlePrint(order, "cozinha", true, true);
                     setPrintSelectOrderId(null);
                   }}
-                  style={{ padding: "12px", borderRadius: "10px", border: "1px solid #D1D5DB", background: "#F8FAFC", color: "#374151", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
+                  style={{ padding: "12px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#334155", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
                 >
                   🍳 Cupom da Cozinha (Sem Valores)
                 </button>
@@ -3345,7 +3345,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     handlePrint(order, "completo", true);
                     setPrintSelectOrderId(null);
                   }}
-                  style={{ padding: "12px", borderRadius: "10px", border: "none", background: "#3B82F6", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
+                  style={{ padding: "12px", borderRadius: "10px", border: "none", background: "#1D4ED8", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
                 >
                   📄 Cupom Completo (Com Valores)
                 </button>
@@ -3479,9 +3479,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         style={{
                           padding: "10px 12px",
                           borderRadius: "8px",
-                          border: "2px solid #EF4444",
+                          border: "2px solid #C92E09",
                           background: "#FEF2F2",
-                          color: "#DC2626",
+                          color: "#C92E09",
                           fontWeight: 800,
                           fontSize: "0.88rem",
                           display: "flex",
@@ -3523,12 +3523,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 {/* Rota de Entrega */}
                 <div style={{ marginBottom: "14px" }}>
-                  <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#2563EB", marginBottom: "6px" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1D4ED8", marginBottom: "6px" }}>
                     Rota de entrega
                   </div>
                   <div style={{ fontSize: "0.84rem", color: "#334155", lineHeight: "1.5", background: "#F8FAFC", padding: "10px 12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                    <div><span style={{ color: "#2563EB", fontWeight: 700 }}>↗ De:</span> {originFull}</div>
-                    <div style={{ marginTop: "4px" }}><span style={{ color: "#059669", fontWeight: 700 }}>📍 Para:</span> {rawCustomerAddress}</div>
+                    <div><span style={{ color: "#1D4ED8", fontWeight: 700 }}>↗ De:</span> {originFull}</div>
+                    <div style={{ marginTop: "4px" }}><span style={{ color: "#15803D", fontWeight: 700 }}>📍 Para:</span> {rawCustomerAddress}</div>
                     {destFull !== rawCustomerAddress && (
                       <div style={{ marginTop: "4px", fontSize: "0.78rem", color: "#64748B" }}>
                         <span style={{ fontWeight: 700 }}>🗺️ Busca do Mapa:</span> {destFull}
@@ -3556,7 +3556,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     href={googleMapsDirUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ flex: 1, textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "9px 12px", borderRadius: "8px", background: "#2563EB", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}
+                    style={{ flex: 1, textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "9px 12px", borderRadius: "8px", background: "#1D4ED8", color: "#fff", fontWeight: 700, fontSize: "0.82rem" }}
                   >
                     🗺️ Abrir no Google Maps
                   </a>
@@ -3580,7 +3580,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </button>
                   <button
                     onClick={() => setDeliveryInfoModalOrder(null)}
-                    style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#2563EB", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
+                    style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#1D4ED8", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem" }}
                   >
                     Confirmar
                   </button>
@@ -3637,9 +3637,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         style={{
                           flex: 1, padding: "8px 10px", borderRadius: "10px", cursor: "pointer", fontFamily: "inherit",
                           fontSize: "0.82rem", fontWeight: 800,
-                          border: `1.5px solid ${abaDoRecibo === chave ? "#C62828" : "#E5E7EB"}`,
+                          border: `1.5px solid ${abaDoRecibo === chave ? "#C92E09" : "#E2E8F0"}`,
                           background: abaDoRecibo === chave ? "#C6282810" : "#FFF",
-                          color: abaDoRecibo === chave ? "#C62828" : "#6B7280",
+                          color: abaDoRecibo === chave ? "#C92E09" : "#64748B",
                         }}
                       >
                         {rotulo}
@@ -3659,7 +3659,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 pedido={order}
                 operador={{ role: user?.role, permissions: user?.permissions }}
                 aoSalvar={async (r) => {
-                  showToast(`Pagamento alterado para ${r.paymentMethod}.`, "#10B981");
+                  showToast(`Pagamento alterado para ${r.paymentMethod}.`, "#15803D");
                   await recarregarPedidos();
                 }}
               />
@@ -3676,7 +3676,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     setAbaDoRecibo("comanda");
                     if (resultado?.cancelado) {
                       setViewReceiptOrderId(null);
-                      showToast("Pedido cancelado e estoque devolvido.", "#DC2626");
+                      showToast("Pedido cancelado e estoque devolvido.", "#C92E09");
                       await recarregarPedidos();
                       return;
                     }
@@ -3685,10 +3685,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     if (resultado?.acrescimo) {
                       showToast(
                         `Acréscimo de ${(Number(resultado.acrescimo.valor) || 0).toFixed(2).replace(".", ",")} lançado em ${resultado.acrescimo.pagamento}.`,
-                        "#10B981"
+                        "#15803D"
                       );
                     } else {
-                      showToast("Pedido alterado. Reimprimindo a comanda...", "#10B981");
+                      showToast("Pedido alterado. Reimprimindo a comanda...", "#15803D");
                     }
                     if (atual) reimprimirAposEdicao(atual);
                   }}
@@ -3697,17 +3697,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <>
 
               {/* Toggle de Formato POS 80 / POS 58 */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", background: "#F9FAFB", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E5E7EB" }}>
-                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#374151" }}>🖨️ Bobina:</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", background: "#F8FAFC", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#334155" }}>🖨️ Bobina:</span>
                 <div style={{ display: "flex", gap: "6px" }}>
                   <button
                     type="button"
                     onClick={() => setReceiptPaperSize("80mm")}
                     style={{
                       padding: "4px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
-                      border: `1.5px solid ${receiptPaperSize === "80mm" ? "#C62828" : "#E5E7EB"}`,
+                      border: `1.5px solid ${receiptPaperSize === "80mm" ? "#C92E09" : "#E2E8F0"}`,
                       background: receiptPaperSize === "80mm" ? "#C6282810" : "#FFF",
-                      color: receiptPaperSize === "80mm" ? "#C62828" : "#6B7280", cursor: "pointer", fontFamily: "inherit"
+                      color: receiptPaperSize === "80mm" ? "#C92E09" : "#64748B", cursor: "pointer", fontFamily: "inherit"
                     }}
                   >
                     📄 POS 80 (80mm)
@@ -3717,9 +3717,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     onClick={() => setReceiptPaperSize("58mm")}
                     style={{
                       padding: "4px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
-                      border: `1.5px solid ${receiptPaperSize === "58mm" ? "#C62828" : "#E5E7EB"}`,
+                      border: `1.5px solid ${receiptPaperSize === "58mm" ? "#C92E09" : "#E2E8F0"}`,
                       background: receiptPaperSize === "58mm" ? "#C6282810" : "#FFF",
-                      color: receiptPaperSize === "58mm" ? "#C62828" : "#6B7280", cursor: "pointer", fontFamily: "inherit"
+                      color: receiptPaperSize === "58mm" ? "#C92E09" : "#64748B", cursor: "pointer", fontFamily: "inherit"
                     }}
                   >
                     🧾 POS 58 (58mm)
@@ -3757,7 +3757,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   const pInfo = getPartnerDeliveryInfo(order);
                   if (!pInfo.isPartner || !pInfo.pickupCode) return null;
                   return (
-                    <div style={{ border: "2px solid #7C3AED", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
+                    <div style={{ border: "2px solid #475569", background: "#F3E8FF", padding: "8px 10px", textAlign: "center", fontWeight: "bold", margin: "10px 0", borderRadius: "6px" }}>
                       <div style={{ fontSize: "11px", color: "#6B21A8", textTransform: "uppercase" }}>🔑 CÓDIGO DE COLETA P/ ENTREGADOR {pInfo.partnerName.toUpperCase()}</div>
                       <div style={{ fontSize: "20px", fontWeight: 900, color: "#581C87" }}>#{pInfo.pickupCode}</div>
                     </div>
@@ -3926,13 +3926,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       return (
                         <>
                           {loja > 0 && (
-                            <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", color: "#C92E09" }}>
                               <span>Desconto da loja:</span>
                               <span>-R$ {loja.toFixed(2).replace('.', ',')}</span>
                             </div>
                           )}
                           {plataforma > 0 && (
-                            <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
                               <span>Cupom {nomeDoCanal(order)} (pago por eles):</span>
                               <span>-R$ {plataforma.toFixed(2).replace('.', ',')}</span>
                             </div>
@@ -3942,7 +3942,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     }
                     if (total > 0) {
                       return (
-                        <div style={{ display: "flex", justifyContent: "space-between", color: "#EF4444" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#C92E09" }}>
                           {/* Mostra o cupom que gerou o desconto (ex.: "Cupom HAKIM10 (-10%)").
                               Antes dizia sempre "Cupom - Loja", sem dizer qual nem por quê. */}
                           <span>{(order as any).discountDetails?.[0]?.description || "Desconto (Cupom)"}:</span>
@@ -3972,7 +3972,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             <span style={{ textDecoration: "line-through", color: "#94A3B8" }}>
                               R$ {gratis.valor.toFixed(2).replace('.', ',')}
                             </span>{" "}
-                            <b style={{ color: "#16A34A" }}>GRÁTIS</b>
+                            <b style={{ color: "#15803D" }}>GRÁTIS</b>
                             <span style={{ display: "block", fontSize: "11px", color: "#64748B" }}>
                               {gratis.motivo}
                             </span>
@@ -4020,7 +4020,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     const plataforma = sep99 ? sep99.plataforma : Number((order as any).discountIfood) || 0;
                     if (!(plataforma > 0) || !Number.isFinite(recebe) || recebe <= 0) return null;
                     return (
-                      <div style={{ border: "1.5px dashed #7C3AED", background: "#F5F3FF", padding: "6px 10px", borderRadius: "4px", margin: "0 0 8px", fontSize: "12px", color: "#4C1D95" }}>
+                      <div style={{ border: "1.5px dashed #475569", background: "#F8FAFC", padding: "6px 10px", borderRadius: "4px", margin: "0 0 8px", fontSize: "12px", color: "#0F172A" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900 }}>
                           <span>A loja recebe ({nomeDoCanal(order)}):</span>
                           <span>R$ {recebe.toFixed(2).replace('.', ',')}</span>
@@ -4077,7 +4077,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                                 💵 Troco para: R$ {changeVal.toFixed(2).replace('.', ',')}
                               </div>
                               {changeToGive > 0 && (
-                                <div style={{ color: "#C62828", fontSize: "13px", fontWeight: 900, marginTop: "3px" }}>
+                                <div style={{ color: "#C92E09", fontSize: "13px", fontWeight: 900, marginTop: "3px" }}>
                                   👉 SEPARAR R$ {changeToGive.toFixed(2).replace('.', ',')} DE TROCO
                                 </div>
                               )}
@@ -4144,13 +4144,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {driverOrder && (
                 <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "0.82rem" }}>
                   <div><strong>Pedido:</strong> #{driverOrder.ifoodReference || driverOrder.openDeliveryReference || driverOrder.id.slice(-6).toUpperCase()}</div>
-                  {driverOrder.customerAddress && <div style={{ color: "#6B7280", marginTop: "2px" }}>{cleanAddress(driverOrder.customerAddress)}</div>}
+                  {driverOrder.customerAddress && <div style={{ color: "#64748B", marginTop: "2px" }}>{cleanAddress(driverOrder.customerAddress)}</div>}
                 </div>
               )}
 
               {/* Loading */}
               {ifoodDriverLoading && !ifoodDriverQuote && (
-                <div style={{ textAlign: "center", padding: "20px", color: "#6B7280" }}>
+                <div style={{ textAlign: "center", padding: "20px", color: "#64748B" }}>
                   <div style={{ fontSize: "1.5rem", marginBottom: "8px" }}>⏳</div>
                   Consultando disponibilidade...
                 </div>
@@ -4159,24 +4159,24 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {/* Error */}
               {ifoodDriverError && (
                 <div style={{ background: "#FEF2F2", borderRadius: "8px", padding: "12px", marginBottom: "12px", border: "1px solid #FECACA" }}>
-                  <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#DC2626" }}>❌ {ifoodDriverError}</div>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#C92E09" }}>❌ {ifoodDriverError}</div>
                 </div>
               )}
 
               {/* Quote */}
               {ifoodDriverQuote && (
-                <div style={{ background: "#EFF6FF", borderRadius: "12px", padding: "16px", marginBottom: "16px", border: "2px solid #BFDBFE" }}>
+                <div style={{ background: "#EFF6FF", borderRadius: "12px", padding: "16px", marginBottom: "16px", border: "2px solid #B2DDFF" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                     <div>
-                      <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Custo</div>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.04em" }}>Custo</div>
                       <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#1D4ED8" }}>R$ {Number(ifoodDriverQuote.price).toFixed(2).replace('.', ',')}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.04em" }}>Tempo estimado</div>
-                      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#059669" }}>~{ifoodDriverQuote.estimatedMinutes ?? "?"}min</div>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.04em" }}>Tempo estimado</div>
+                      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#15803D" }}>~{ifoodDriverQuote.estimatedMinutes ?? "?"}min</div>
                     </div>
                   </div>
-                  <div style={{ fontSize: "0.75rem", color: "#6B7280", borderTop: "1px solid #BFDBFE", paddingTop: "6px" }}>
+                  <div style={{ fontSize: "0.75rem", color: "#64748B", borderTop: "1px solid #B2DDFF", paddingTop: "6px" }}>
                     ⚠️ O valor será cobrado pela plataforma iFood.
                   </div>
                 </div>
@@ -4184,14 +4184,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
               {/* Buttons */}
               <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button onClick={() => { setIfoodDriverModalId(null); setIfoodDriverQuote(null); setIfoodDriverError(""); }} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "1px solid #D1D5DB", background: "#fff", color: "#374151", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Cancelar</button>
+                <button onClick={() => { setIfoodDriverModalId(null); setIfoodDriverQuote(null); setIfoodDriverError(""); }} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#334155", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Cancelar</button>
                 {ifoodDriverQuote && (
-                  <button onClick={requestIfoodDriver} disabled={ifoodDriverLoading} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #3B82F6, #1D4ED8)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
+                  <button onClick={requestIfoodDriver} disabled={ifoodDriverLoading} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #1D4ED8, #1D4ED8)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
                     {ifoodDriverLoading ? "Solicitando..." : "✅ Confirmar e Chamar"}
                   </button>
                 )}
                 {ifoodDriverError && !ifoodDriverQuote && (
-                  <button onClick={() => fetchIfoodDriverQuote(ifoodDriverModalId)} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: "#3B82F6", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
+                  <button onClick={() => fetchIfoodDriverQuote(ifoodDriverModalId)} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: "#1D4ED8", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
                     🔄 Tentar novamente
                   </button>
                 )}
@@ -4237,10 +4237,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 {/* Countdown banner */}
                 <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 14px", marginBottom: "16px" }}>
-                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#991B1B" }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#B71C1C" }}>
                     Você tem {timeLeftMin} minutos e {timeLeftSec} segundos para responder
                   </div>
-                  <div style={{ fontSize: "0.78rem", color: "#7F1D1D", marginTop: 2 }}>
+                  <div style={{ fontSize: "0.78rem", color: "#B71C1C", marginTop: 2 }}>
                     Caso não responda, {disputeOrder.customerName || "o cliente"} pode recorrer ao iFood
                   </div>
                 </div>
@@ -4328,7 +4328,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           if (d.ifoodOk === false) {
                             showToast("⚠️ O iFood não aceitou a nova previsão. Responda pelo app do iFood ou fale com o cliente.", "#B45309");
                           } else {
-                            showToast("✅ Previsão de entrega enviada ao iFood.", "#16A34A");
+                            showToast("✅ Previsão de entrega enviada ao iFood.", "#15803D");
                           }
                           router.refresh();
                         }
@@ -4359,7 +4359,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             d.ifoodOk === false
                               ? "⚠️ O iFood não aceitou a resposta. Responda pelo app do iFood."
                               : "Resposta enviada ao iFood.",
-                            d.ifoodOk === false ? "#B45309" : "#374151"
+                            d.ifoodOk === false ? "#B45309" : "#334155"
                           );
                           router.refresh();
                         }
@@ -4415,20 +4415,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           ? `O cliente pediu atualização do tempo de entrega pelo iFood.`
           : `O cliente solicitou o cancelamento ${(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : (disputeOrder as any).source === "BRENDI" ? "pela Brendi" : "pelo iFood"}`;
 
-        const boxBg = isParcial ? "#FFF7ED" : isResend ? "#EFF6FF" : isRefund ? "#ECFDF5" : "#FEF3C7";
-        const boxBorder = isParcial ? "#FDBA74" : isResend ? "#93C5FD" : isRefund ? "#A7F3D0" : "#FDE68A";
+        const boxBg = isParcial ? "#FFF7ED" : isResend ? "#EFF6FF" : isRefund ? "#ECFDF5" : "#FFF7E6";
+        const boxBorder = isParcial ? "#FDBA74" : isResend ? "#B2DDFF" : isRefund ? "#A7F3D0" : "#FDE68A";
         const boxTitleColor = isParcial ? "#C2410C" : isResend ? "#1D4ED8" : isRefund ? "#047857" : "#92400E";
-        const boxTextColor = isParcial ? "#7C2D12" : isResend ? "#1E40AF" : isRefund ? "#065F46" : "#78350F";
+        const boxTextColor = isParcial ? "#7C2D12" : isResend ? "#1D4ED8" : isRefund ? "#065F46" : "#78350F";
 
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10002, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "450px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: `3px solid ${isResend ? "#2563EB" : isRefund ? "#10B981" : "#F59E0B"}` }}>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "450px", boxShadow: "0 25px 60px rgba(0,0,0,0.35)", border: `3px solid ${isResend ? "#1D4ED8" : isRefund ? "#15803D" : "#B45309"}` }}>
               <div style={{ textAlign: "center", marginBottom: "16px" }}>
                 <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>{modalEmoji}</div>
-                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: isResend ? "#1E40AF" : "#92400E" }}>{modalTitle}</div>
-                <div style={{ fontSize: "0.82rem", color: "#4B5563", marginTop: "4px", fontWeight: 600 }}>{modalSubtitle}</div>
+                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: isResend ? "#1D4ED8" : "#92400E" }}>{modalTitle}</div>
+                <div style={{ fontSize: "0.82rem", color: "#475569", marginTop: "4px", fontWeight: 600 }}>{modalSubtitle}</div>
                 {timeLeftStr && (
-                  <div style={{ marginTop: "8px", padding: "4px 12px", display: "inline-block", background: timeLeft! < 60 ? "#FEE2E2" : "#FEF3C7", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, color: timeLeft! < 60 ? "#DC2626" : "#92400E" }}>
+                  <div style={{ marginTop: "8px", padding: "4px 12px", display: "inline-block", background: timeLeft! < 60 ? "#FEE2E2" : "#FFF7E6", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, color: timeLeft! < 60 ? "#C92E09" : "#92400E" }}>
                     ⏱ Tempo para responder no iFood: {timeLeftStr}
                   </div>
                 )}
@@ -4444,7 +4444,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </div>
                 )}
               </div>
-              <div style={{ background: "#F9FAFB", borderRadius: "8px", padding: "10px", marginBottom: "16px", fontSize: "0.8rem", color: "#4B5563" }}>
+              <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px", marginBottom: "16px", fontSize: "0.8rem", color: "#475569" }}>
                 <strong>Cliente:</strong> {disputeOrder.customerName} — {disputeOrder.customerPhone}<br/>
                 <strong>Valor:</strong> R$ {disputeOrder.totalAmount?.toFixed(2)}<br/>
                 {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? ((disputeOrder as any).source === "BRENDI" ? "Brendi" : "Jotajá") : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
@@ -4497,10 +4497,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                               if (r.ok) {
                                 setOrders(prev => prev.map(o => o.id === disputeOrder.id ? { ...o, cancelDispute: { ...dispute, pending: false, parcial: true, resolved: "refund_proposed", valorReembolsoProposto: amount } } : o));
                                 if (d.ifoodOk === false) showToast("⚠️ O iFood não aceitou a proposta: " + (d.ifoodErro || "responda pelo app do iFood."), "#B45309");
-                                else showToast("💰 Proposta de reembolso enviada ao cliente pelo iFood.", "#10B981");
+                                else showToast("💰 Proposta de reembolso enviada ao cliente pelo iFood.", "#15803D");
                                 router.refresh();
                               } else {
-                                showToast(d.error || "Não foi possível enviar a proposta.", "#DC2626");
+                                showToast(d.error || "Não foi possível enviar a proposta.", "#C92E09");
                               }
                             } catch {} finally { setLoadingId(null); }
                           }}
@@ -4516,12 +4516,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               )}
               {/* Campo de motivo para resposta */}
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: "6px" }}>Sua resposta ao cliente (opcional/obrigatório para recusar):</label>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: "6px" }}>Sua resposta ao cliente (opcional/obrigatório para recusar):</label>
                 <textarea
                   id="dispute-deny-reason"
                   placeholder={isResend ? "Ex: Reenviaremos o item em até 25 minutos..." : "Ex: O pedido já foi preparado e entregue corretamente..."}
                   rows={3}
-                  style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #D1D5DB", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                  style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
                 />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -4552,7 +4552,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       }
                     } catch {} finally { setLoadingId(null); }
                   }}
-                  style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#059669", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
+                  style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#15803D", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
                   {loadingId === disputeOrder.id ? "..." : (isResend ? "📦 Reenviar item — manter pedido" : isParcial ? "✋ Recusar — o pedido foi entregue corretamente" : "✋ Recusar cancelamento — manter pedido")}
                 </button>
@@ -4587,7 +4587,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       }
                     } catch {} finally { setLoadingId(null); }
                   }}
-                  style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: isParcial ? "#EA580C" : "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
+                  style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: isParcial ? "#EA580C" : "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
                   {loadingId === disputeOrder.id ? "..." : (isResend ? "❌ Recusar reenvio — cancelar pedido" : isParcial ? `✅ Aceitar cancelamento parcial — reembolsar ${fmtBR(reembolsoPedido)}` : "✅ Aceitar cancelamento")}
                 </button>
@@ -4614,8 +4614,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               { label: `CANCELADOS (${resumo.cancelados.length})`, val: sumVal(resumo.cancelados), bold: true, red: true },
             ].map((row, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>
-                <span style={{ fontWeight: row.bold ? 700 : 400, color: row.red ? "#EF4444" : "#1a1a2e" }}>{row.label}</span>
-                <span style={{ fontWeight: row.bold ? 700 : 400, color: row.red ? "#EF4444" : "#1a1a2e" }}>{fmtR(row.val)}</span>
+                <span style={{ fontWeight: row.bold ? 700 : 400, color: row.red ? "#C92E09" : "#1a1a2e" }}>{row.label}</span>
+                <span style={{ fontWeight: row.bold ? 700 : 400, color: row.red ? "#C92E09" : "#1a1a2e" }}>{fmtR(row.val)}</span>
               </div>
             ))}
             <div style={{ marginTop: "16px", padding: "10px", background: "#F8FAFC", borderRadius: "8px", fontSize: "0.78rem", color: "#64748B" }}>
@@ -4631,7 +4631,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         <div onClick={() => setShowAltaDemandaModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "32px", width: "420px", maxWidth: "95vw", boxShadow: "0 30px 80px rgba(0,0,0,0.3)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-              <div style={{ width: 44, height: 44, borderRadius: "12px", background: "linear-gradient(135deg,#EF4444,#F97316)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 44, height: 44, borderRadius: "12px", background: "linear-gradient(135deg,#C92E09,#F97316)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Zap size={22} color="#fff" />
               </div>
               <div>
@@ -4675,13 +4675,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </div>
               </div>
 
-              <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "12px", padding: "14px" }}>
-                <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#16A34A" }}>⏱️ Duração da Ativação</span>
+              <div style={{ background: "#ECFDF3", border: "1px solid #ABEFC6", borderRadius: "12px", padding: "14px" }}>
+                <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#15803D" }}>⏱️ Duração da Ativação</span>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "10px" }}>
                   {[30,60,90,120].map(d => (
                     <button key={d} onClick={() => setAdDuration(d)}
-                      style={{ padding: "6px 12px", borderRadius: "8px", border: `2px solid ${adDuration === d ? "#16A34A" : "#E2E8F0"}`,
-                        background: adDuration === d ? "#F0FDF4" : "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem", color: adDuration === d ? "#16A34A" : "#64748B" }}>
+                      style={{ padding: "6px 12px", borderRadius: "8px", border: `2px solid ${adDuration === d ? "#15803D" : "#E2E8F0"}`,
+                        background: adDuration === d ? "#ECFDF3" : "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem", color: adDuration === d ? "#15803D" : "#64748B" }}>
                       {d}min
                     </button>
                   ))}
@@ -4693,7 +4693,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
 
               <button onClick={activateAltaDemanda}
-                style={{ padding: "14px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg,#EF4444,#F97316)", color: "#fff", fontWeight: 800, fontSize: "1rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontFamily: "inherit" }}>
+                style={{ padding: "14px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg,#C92E09,#F97316)", color: "#fff", fontWeight: 800, fontSize: "1rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontFamily: "inherit" }}>
                 <Zap size={18} /> Ativar Alta Demanda
               </button>
 
@@ -4741,7 +4741,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         <div onClick={() => setShowAgendamentos(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "32px", width: "520px", maxWidth: "95vw", maxHeight: "85vh", boxShadow: "0 30px 80px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-              <div style={{ width: 44, height: 44, borderRadius: "12px", background: "linear-gradient(135deg,#8B5CF6,#6366F1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 44, height: 44, borderRadius: "12px", background: "linear-gradient(135deg,#64748B,#6366F1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <CalendarClock size={22} color="#fff" />
               </div>
               <div style={{ flex: 1 }}>
@@ -4752,12 +4752,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
 
             {/* Bloco de Ativar / Desativar Agendamentos */}
-            <div style={{ marginBottom: "16px", padding: "14px 16px", background: allowScheduledOrders ? "#F0FDF4" : "#FEF2F2", borderRadius: "14px", border: `1.5px solid ${allowScheduledOrders ? "#BBF7D0" : "#FECACA"}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+            <div style={{ marginBottom: "16px", padding: "14px 16px", background: allowScheduledOrders ? "#ECFDF3" : "#FEF2F2", borderRadius: "14px", border: `1.5px solid ${allowScheduledOrders ? "#ABEFC6" : "#FECACA"}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
               <div>
-                <div style={{ fontWeight: 800, fontSize: "0.9rem", color: allowScheduledOrders ? "#166534" : "#991B1B", display: "flex", alignItems: "center", gap: "6px" }}>
+                <div style={{ fontWeight: 800, fontSize: "0.9rem", color: allowScheduledOrders ? "#15803D" : "#B71C1C", display: "flex", alignItems: "center", gap: "6px" }}>
                   {allowScheduledOrders ? "🟢 Aceitar Agendamentos no Site" : "🔴 Agendamentos Desativados"}
                 </div>
-                <div style={{ fontSize: "0.76rem", color: allowScheduledOrders ? "#15803D" : "#B91C1C", marginTop: "2px" }}>
+                <div style={{ fontSize: "0.76rem", color: allowScheduledOrders ? "#15803D" : "#B71C1C", marginTop: "2px" }}>
                   {allowScheduledOrders ? "Clientes podem escolher data/horário para agendar no seu site próprio." : "Seu site próprio aceitará apenas pedidos para entrega imediata."}
                 </div>
               </div>
@@ -4769,7 +4769,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   width: "52px",
                   height: "28px",
                   borderRadius: "20px",
-                  background: allowScheduledOrders ? "#22C55E" : "#CBD5E1",
+                  background: allowScheduledOrders ? "#15803D" : "#CBD5E1",
                   border: "none",
                   cursor: "pointer",
                   transition: "all 0.25s ease",
@@ -4794,21 +4794,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
 
             {/* Configuração de antecedência */}
-            <div style={{ marginBottom: "16px", padding: "14px", background: "#F5F3FF", borderRadius: "12px", border: "1px solid #DDD6FE" }}>
-              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#6D28D9", display: "block", marginBottom: "8px" }}>
+            <div style={{ marginBottom: "16px", padding: "14px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: "8px" }}>
                 ⏰ Quantas horas antes do horário agendado você quer que o pedido vá para Novos Pedidos?
               </label>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                   {[0.5, 1, 1.5, 2, 3].map(h => (
                     <button key={h} onClick={() => { setScheduleLeadHours(h); localStorage.setItem("scheduleLeadHours", String(h)); }}
-                      style={{ padding: "6px 14px", borderRadius: "8px", border: `2px solid ${scheduleLeadHours === h ? "#7C3AED" : "#E2E8F0"}`, background: scheduleLeadHours === h ? "#EDE9FE" : "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem", color: scheduleLeadHours === h ? "#7C3AED" : "#64748B", fontFamily: "inherit" }}>
+                      style={{ padding: "6px 14px", borderRadius: "8px", border: `2px solid ${scheduleLeadHours === h ? "#475569" : "#E2E8F0"}`, background: scheduleLeadHours === h ? "#F1F5F9" : "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem", color: scheduleLeadHours === h ? "#475569" : "#64748B", fontFamily: "inherit" }}>
                       {h === 0.5 ? "30min" : `${h}h`}
                     </button>
                   ))}
                 </div>
               </div>
-              <p style={{ fontSize: "0.72rem", color: "#8B5CF6", margin: "8px 0 0" }}>
+              <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "8px 0 0" }}>
                 ✅ Configurado: pedidos entram em Novos Pedidos <strong>{scheduleLeadHours === 0.5 ? "30 minutos" : `${scheduleLeadHours} hora${scheduleLeadHours > 1 ? "s" : ""}`}</strong> antes do horário agendado.
               </p>
             </div>
@@ -4832,7 +4832,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     const dayLabel = isToday ? "Hoje" : isTomorrow ? "Amanhã" : dateStr;
 
                     return (
-                      <div key={order.id} style={{ padding: "16px", borderRadius: "14px", background: "linear-gradient(135deg,#F5F3FF,#EDE9FE)", border: "1.5px solid #C4B5FD" }}>
+                      <div key={order.id} style={{ padding: "16px", borderRadius: "14px", background: "linear-gradient(135deg,#F8FAFC,#F1F5F9)", border: "1.5px solid #CBD5E1" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                           <div>
                             <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1E1B4B" }}>#{order.id.slice(-6).toUpperCase()}</span>
@@ -4842,16 +4842,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                               </span>
                             </div>
                           </div>
-                          <span style={{ fontWeight: 800, fontSize: "1rem", color: "#7C3AED" }}>R$ {order.totalAmount.toFixed(2)}</span>
+                          <span style={{ fontWeight: 800, fontSize: "1rem", color: "#475569" }}>R$ {order.totalAmount.toFixed(2)}</span>
                         </div>
 
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", padding: "8px 12px", background: "#fff", borderRadius: "10px", border: "1px solid #DDD6FE" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", padding: "8px 12px", background: "#fff", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
                           <span style={{ fontSize: "1.3rem" }}>📅</span>
                           <div>
-                            <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#6D28D9" }}>{dayLabel}</div>
-                            <div style={{ fontWeight: 600, fontSize: "0.8rem", color: "#7C3AED" }}>🕐 {timeStr}</div>
+                            <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "#334155" }}>{dayLabel}</div>
+                            <div style={{ fontWeight: 600, fontSize: "0.8rem", color: "#475569" }}>🕐 {timeStr}</div>
                           </div>
-                          <span style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: "20px", background: isToday ? "#FEF3C7" : "#E0E7FF", fontSize: "0.72rem", fontWeight: 700, color: isToday ? "#B45309" : "#4338CA" }}>
+                          <span style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: "20px", background: isToday ? "#FFF7E6" : "#E0E7FF", fontSize: "0.72rem", fontWeight: 700, color: isToday ? "#B45309" : "#4338CA" }}>
                             {isToday ? "📢 Hoje" : isTomorrow ? "📆 Amanhã" : "📆 Futuro"}
                           </span>
                         </div>
@@ -4861,7 +4861,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                             {order.items.slice(0, 3).map((item: any, i: number) => (
                               <div key={i}>{item.quantity}x {nomeDoItem(item)}</div>
                             ))}
-                            {order.items.length > 3 && <div style={{ color: "#A78BFA" }}>+{order.items.length - 3} itens...</div>}
+                            {order.items.length > 3 && <div style={{ color: "#94A3B8" }}>+{order.items.length - 3} itens...</div>}
                           </div>
                         )}
 
@@ -4884,7 +4884,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                                 <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#F1F5F9", fontSize: "0.75rem", fontWeight: 600, color: "#475569" }}>
                                   💳 Pagamento: {method}
                                 </span>
-                                <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, background: isPaidOnline ? "#F0FDF4" : "#FFF7ED", border: `1px solid ${isPaidOnline ? "#BBF7D0" : "#FED7AA"}`, color: isPaidOnline ? "#15803D" : "#C2410C" }}>
+                                <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, background: isPaidOnline ? "#ECFDF3" : "#FFF7ED", border: `1px solid ${isPaidOnline ? "#ABEFC6" : "#FED7AA"}`, color: isPaidOnline ? "#15803D" : "#C2410C" }}>
                                   {isPaidOnline ? "✅ Pago Online" : "💰 Pagar na Entrega (Cobrar)"}
                                 </span>
                               </>
@@ -4907,15 +4907,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                                 ));
                                 setShowAgendamentos(false);
                               } else {
-                                showToast("Erro ao antecipar pedido.", "#EF4444");
+                                showToast("Erro ao antecipar pedido.", "#C92E09");
                               }
                             } catch {
-                              showToast("Erro de conexão.", "#EF4444");
+                              showToast("Erro de conexão.", "#C92E09");
                             }
                           }}
                           style={{
                             width: "100%", marginTop: "12px", padding: "10px", borderRadius: "10px", border: "none",
-                            background: "linear-gradient(135deg,#7C3AED,#6366F1)", color: "#fff",
+                            background: "linear-gradient(135deg,#475569,#6366F1)", color: "#fff",
                             fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
                             display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
                             fontFamily: "inherit", transition: "all 0.2s"
@@ -4938,7 +4938,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
       {/* ===== BANNER ALTA DEMANDA ATIVO ===== */}
       {altaDemanda.active && (
-        <div style={{ background: "linear-gradient(135deg,#EF4444,#F97316)", padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+        <div style={{ background: "linear-gradient(135deg,#C92E09,#F97316)", padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#fff" }}>
             <Zap size={18} />
             <span style={{ fontWeight: 800, fontSize: "0.92rem" }}>⚡ ALTA DEMANDA ATIVA</span>
@@ -5008,7 +5008,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     flexShrink: 0,
                     padding: "2px 6px",
                     borderRadius: "6px",
-                    border: selectedChannels.ifood ? "1.5px solid #EF4444" : "1.5px solid #CBD5E1",
+                    border: selectedChannels.ifood ? "1.5px solid #C92E09" : "1.5px solid #CBD5E1",
                     background: selectedChannels.ifood ? "#FFFFFF" : "#F1F5F9",
                     filter: selectedChannels.ifood ? "none" : "grayscale(100%) opacity(0.35)",
                     cursor: "pointer",
@@ -5032,7 +5032,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     flexShrink: 0,
                     padding: "2px 5px",
                     borderRadius: "6px",
-                    border: selectedChannels["99food"] ? "1.5px solid #F59E0B" : "1.5px solid #CBD5E1",
+                    border: selectedChannels["99food"] ? "1.5px solid #B45309" : "1.5px solid #CBD5E1",
                     background: selectedChannels["99food"] ? "#FFFFFF" : "#F1F5F9",
                     filter: selectedChannels["99food"] ? "none" : "grayscale(100%) opacity(0.35)",
                     cursor: "pointer",
@@ -5056,7 +5056,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     flexShrink: 0,
                     padding: "2px 5px",
                     borderRadius: "6px",
-                    border: selectedChannels.jotaja ? "1.5px solid #DC2626" : "1.5px solid #CBD5E1",
+                    border: selectedChannels.jotaja ? "1.5px solid #C92E09" : "1.5px solid #CBD5E1",
                     background: selectedChannels.jotaja ? "#FFFFFF" : "#F1F5F9",
                     filter: selectedChannels.jotaja ? "none" : "grayscale(100%) opacity(0.35)",
                     cursor: "pointer",
@@ -5083,9 +5083,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     flexShrink: 0,
                     padding: "2px 7px",
                     borderRadius: "6px",
-                    border: selectedChannels.brendi ? "1.5px solid #8B5CF6" : "1.5px solid #CBD5E1",
-                    background: selectedChannels.brendi ? "#F5F3FF" : "#F1F5F9",
-                    color: selectedChannels.brendi ? "#5B21B6" : "#64748B",
+                    border: selectedChannels.brendi ? "1.5px solid #64748B" : "1.5px solid #CBD5E1",
+                    background: selectedChannels.brendi ? "#F8FAFC" : "#F1F5F9",
+                    color: selectedChannels.brendi ? "#334155" : "#64748B",
                     filter: selectedChannels.brendi ? "none" : "grayscale(100%) opacity(0.35)",
                     cursor: "pointer",
                     display: "flex",
@@ -5141,7 +5141,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     flexShrink: 0,
                     padding: "2px 7px",
                     borderRadius: "6px",
-                    border: selectedChannels.retirada ? "1.5px solid #10B981" : "1.5px solid #CBD5E1",
+                    border: selectedChannels.retirada ? "1.5px solid #15803D" : "1.5px solid #CBD5E1",
                     background: selectedChannels.retirada ? "#ECFDF5" : "#F1F5F9",
                     color: selectedChannels.retirada ? "#065F46" : "#64748B",
                     filter: selectedChannels.retirada ? "none" : "grayscale(100%) opacity(0.35)",
@@ -5169,9 +5169,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     flexShrink: 0,
                     padding: "2px 7px",
                     borderRadius: "6px",
-                    border: selectedChannels.site ? "1.5px solid #3B82F6" : "1.5px solid #CBD5E1",
+                    border: selectedChannels.site ? "1.5px solid #1D4ED8" : "1.5px solid #CBD5E1",
                     background: selectedChannels.site ? "#EFF6FF" : "#F1F5F9",
-                    color: selectedChannels.site ? "#1E40AF" : "#64748B",
+                    color: selectedChannels.site ? "#1D4ED8" : "#64748B",
                     filter: selectedChannels.site ? "none" : "grayscale(100%) opacity(0.35)",
                     cursor: "pointer",
                     display: "flex",
@@ -5206,9 +5206,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               onClick={testarSom}
               style={{
                 alignSelf: "flex-end", height: "30px", padding: "0 9px", borderRadius: "8px",
-                border: somBloqueado ? "1.5px solid #B91C1C" : "1.5px solid #CBD5E1",
+                border: somBloqueado ? "1.5px solid #B71C1C" : "1.5px solid #CBD5E1",
                 background: somBloqueado ? "#FEE2E2" : "#F8FAFC",
-                color: somBloqueado ? "#B91C1C" : "#475569",
+                color: somBloqueado ? "#B71C1C" : "#475569",
                 cursor: "pointer", display: "flex", alignItems: "center", fontFamily: "inherit",
               }}
               title="Testar o som de pedido novo"
@@ -5267,8 +5267,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       style={{
                         padding: "8px 12px", border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
                         fontWeight: 800, fontSize: "0.82rem",
-                        color: abaConfig === id ? "#2563EB" : "#64748B",
-                        borderBottom: abaConfig === id ? "2px solid #2563EB" : "2px solid transparent",
+                        color: abaConfig === id ? "#1D4ED8" : "#64748B",
+                        borderBottom: abaConfig === id ? "2px solid #1D4ED8" : "2px solid transparent",
                         marginBottom: -1,
                       }}
                     >
@@ -5305,7 +5305,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       type="checkbox"
                       checked={naBarra(item.chave)}
                       onChange={(e) => salvarBarraConfig({ ...barraConfig, [item.chave]: e.target.checked })}
-                      style={{ width: 16, height: 16, accentColor: "#2563EB", cursor: "pointer", flexShrink: 0 }}
+                      style={{ width: 16, height: 16, accentColor: "#1D4ED8", cursor: "pointer", flexShrink: 0 }}
                     />
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: "block", fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>{item.rotulo}</span>
@@ -5324,7 +5324,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   >
                     Mostrar tudo
                   </button>
-                  <span style={{ fontSize: "0.75rem", color: salvandoBarra ? "#2563EB" : "#94A3B8" }}>
+                  <span style={{ fontSize: "0.75rem", color: salvandoBarra ? "#1D4ED8" : "#94A3B8" }}>
                     {salvandoBarra ? "Salvando..." : "Salvo automaticamente"}
                   </span>
                 </div>
@@ -5354,14 +5354,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           style={{
                             flexShrink: 0, padding: "5px 11px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
                             fontWeight: 900, fontSize: "0.68rem", letterSpacing: "0.04em",
-                            background: ligada ? "#DCFCE7" : "#F1F5F9", color: ligada ? "#15803D" : "#64748B",
+                            background: ligada ? "#ECFDF3" : "#F1F5F9", color: ligada ? "#15803D" : "#64748B",
                           }}
                         >
                           {ligada ? "LIGADA" : "DESLIGADA"}
                         </button>
                       </div>
                       {confirmando && (
-                        <div style={{ borderTop: "1px solid #FCD34D", background: "#FFFBEB", padding: "10px 12px" }}>
+                        <div style={{ borderTop: "1px solid #FCD34D", background: "#FFF7E6", padding: "10px 12px" }}>
                           <div style={{ fontWeight: 800, fontSize: "0.78rem", color: "#92400E", marginBottom: 6 }}>
                             {ligada ? "Se você desligar, é isto que muda:" : "Se você ligar, é isto que muda:"}
                           </div>
@@ -5396,7 +5396,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   >
                     Voltar ao painel padrão
                   </button>
-                  <span style={{ fontSize: "0.75rem", color: salvandoBarra ? "#2563EB" : "#94A3B8" }}>
+                  <span style={{ fontSize: "0.75rem", color: salvandoBarra ? "#1D4ED8" : "#94A3B8" }}>
                     {salvandoBarra ? "Salvando..." : "Salvo automaticamente"}
                   </span>
                 </div>
@@ -5416,7 +5416,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               style={{
                 padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
                 cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
-                background: altaDemanda.active ? "linear-gradient(135deg,#EF4444,#F97316)" : "#FFF7ED",
+                background: altaDemanda.active ? "linear-gradient(135deg,#C92E09,#F97316)" : "#FFF7ED",
                 color: altaDemanda.active ? "#fff" : "#EA580C",
                 outline: altaDemanda.active ? "none" : "1.5px solid #FED7AA",
                 animation: altaDemanda.active ? "pulse 1.5s infinite" : "none"
@@ -5431,16 +5431,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               style={{
                 padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
                 cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
-                background: scheduledOrders.length > 0 ? "linear-gradient(135deg,#8B5CF6,#6366F1)" : "#F5F3FF",
-                color: scheduledOrders.length > 0 ? "#fff" : "#7C3AED",
-                outline: scheduledOrders.length > 0 ? "none" : "1.5px solid #DDD6FE",
+                background: scheduledOrders.length > 0 ? "linear-gradient(135deg,#64748B,#6366F1)" : "#F8FAFC",
+                color: scheduledOrders.length > 0 ? "#fff" : "#475569",
+                outline: scheduledOrders.length > 0 ? "none" : "1.5px solid #E2E8F0",
                 position: "relative"
               }}
             >
               <CalendarClock size={14} /> Agendamentos
               <span style={{
-                background: scheduledOrders.length > 0 ? "#fff" : "#7C3AED",
-                color: scheduledOrders.length > 0 ? "#7C3AED" : "#fff",
+                background: scheduledOrders.length > 0 ? "#fff" : "#475569",
+                color: scheduledOrders.length > 0 ? "#475569" : "#fff",
                 borderRadius: "50%", minWidth: "18px", height: "18px",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: "0.68rem", fontWeight: 800, marginLeft: "2px"
@@ -5456,7 +5456,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               style={{
                 padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
                 cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
-                background: "#F0FDF4", color: "#16A34A", outline: "1.5px solid #BBF7D0",
+                background: "#ECFDF3", color: "#15803D", outline: "1.5px solid #ABEFC6",
                 textDecoration: "none"
               }}
             >
@@ -5470,7 +5470,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               style={{
                 padding: "5px 12px", border: "none", borderRadius: "8px", fontWeight: 700, fontSize: "0.78rem",
                 cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px",
-                background: "#F5F3FF", color: "#7C3AED", outline: "1.5px solid #DDD6FE",
+                background: "#F8FAFC", color: "#475569", outline: "1.5px solid #E2E8F0",
                 textDecoration: "none"
               }}
             >
@@ -5483,11 +5483,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <button
               onClick={() => setShowAlertModal(true)}
               style={{
-                padding: "5px 12px", border: "1.5px solid #F59E0B", borderRadius: "8px",
+                padding: "5px 12px", border: "1.5px solid #B45309", borderRadius: "8px",
                 fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
                 display: "flex", alignItems: "center", gap: "5px",
-                background: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#FFFBEB" : "#F8FAFC",
-                color: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#D97706" : "#64748B",
+                background: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#FFF7E6" : "#F8FAFC",
+                color: (timeAlertConfig.yellowEnabled || timeAlertConfig.redEnabled) ? "#B45309" : "#64748B",
               }}
               title="Configurar Alertas Visuais de Tempo Limite (Amarelo / Vermelho)"
             >
@@ -5506,7 +5506,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 if (!aba) setShowRoteirizacaoModal(true);
               }}
               style={{
-                padding: "5px 12px", border: "1.5px solid #2563EB", borderRadius: "8px",
+                padding: "5px 12px", border: "1.5px solid #1D4ED8", borderRadius: "8px",
                 fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
                 display: "flex", alignItems: "center", gap: "5px",
                 background: "#EFF6FF", color: "#1D4ED8",
@@ -5523,7 +5523,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <button
               onClick={() => setShowMotoboyLinkModal(true)}
               style={{
-                padding: "5px 12px", border: "1.5px solid #059669", borderRadius: "8px",
+                padding: "5px 12px", border: "1.5px solid #15803D", borderRadius: "8px",
                 fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
                 display: "flex", alignItems: "center", gap: "5px",
                 background: "#ECFDF5", color: "#047857",
@@ -5552,7 +5552,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem"
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <span style={{ background: "#3B82F6", padding: "4px 12px", borderRadius: "20px", fontSize: "0.85rem", fontWeight: 700 }}>
+              <span style={{ background: "#1D4ED8", padding: "4px 12px", borderRadius: "20px", fontSize: "0.85rem", fontWeight: 700 }}>
                 ✓ {selectedOrderIds.size} selecionado{selectedOrderIds.size > 1 ? "s" : ""}
               </span>
               <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Ações em Massa:</span>
@@ -5588,7 +5588,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onClick={handleBulkStatusUpdate}
                 disabled={!bulkTargetStatus || bulkUpdating}
                 style={{
-                  background: bulkTargetStatus ? "#3B82F6" : "#64748B",
+                  background: bulkTargetStatus ? "#1D4ED8" : "#64748B",
                   color: "#fff", border: "none", padding: "8px 18px",
                   borderRadius: "8px", fontWeight: 700, fontSize: "0.85rem",
                   cursor: bulkTargetStatus ? "pointer" : "not-allowed",
@@ -5663,7 +5663,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           {colNovos && (
           <DashboardColumn
             columnId="col-novos"
-            title="Novos Pedidos" emoji="🔔" color="#3B82F6" count={novos.length} columnOrders={novos}
+            title="Novos Pedidos" emoji="🔔" color="#1D4ED8" count={novos.length} columnOrders={novos}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-novos"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-novos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-novos")}
@@ -5681,7 +5681,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.4rem",
                   width: "100%", padding: "6px 0.85rem", border: "none", textAlign: "left",
                   borderBottom: "1px solid #E2E8F0", cursor: "pointer",
-                  background: autoAccept ? "#DCFCE7" : "#F8FAFC",
+                  background: autoAccept ? "#ECFDF3" : "#F8FAFC",
                   color: autoAccept ? "#15803D" : "#64748B",
                   transition: "all 0.2s"
                 }}
@@ -5727,14 +5727,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ))}
           </DashboardColumn>
           )}
-          <DashboardColumn columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color="#F59E0B" count={preparo.length} columnOrders={preparo}
+          <DashboardColumn columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color="#B45309" count={preparo.length} columnOrders={preparo}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-preparo"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-preparo")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-preparo")}
             headerBelow={aceiteObrigatorio ? (
               /* Com Novos oculta, o botão de aceite some junto com a coluna.
                  Esta faixa diz onde ele foi parar: ligado e travado. */
-              <div style={{ padding: "6px 0.85rem", borderBottom: "1px solid #E2E8F0", background: "#DCFCE7", color: "#15803D", fontSize: "0.72rem", fontWeight: 700 }}>
+              <div style={{ padding: "6px 0.85rem", borderBottom: "1px solid #E2E8F0", background: "#ECFDF3", color: "#15803D", fontSize: "0.72rem", fontWeight: 700 }}>
                 ✅ Aceite automático ligado e travado — a coluna Novos está oculta
               </div>
             ) : undefined}>
@@ -5772,7 +5772,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               o que hoje fica em Em Produção com o selo "Pronto Cozinha". O
               selo continua; só a coluna muda. */}
           {colProntos && (
-          <DashboardColumn columnId="col-prontos" title="Prontos" emoji="✅" color="#059669" count={prontos.length} columnOrders={prontos}
+          <DashboardColumn columnId="col-prontos" title="Prontos" emoji="✅" color="#15803D" count={prontos.length} columnOrders={prontos}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-prontos"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-prontos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-prontos")}>
@@ -5807,7 +5807,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ))}
           </DashboardColumn>
           )}
-          <DashboardColumn columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color="#7C3AED" count={transporte.length} columnOrders={transporte}
+          <DashboardColumn columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color="#475569" count={transporte.length} columnOrders={transporte}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-transporte"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-transporte")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-transporte")}>
@@ -5841,7 +5841,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               />
             ))}
           </DashboardColumn>
-          <DashboardColumn columnId="col-finalizado" title="Finalizado" emoji="✅" color="#10B981" count={finalizados.length} columnOrders={finalizados}
+          <DashboardColumn columnId="col-finalizado" title="Finalizado" emoji="✅" color="#15803D" count={finalizados.length} columnOrders={finalizados}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-finalizado"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-finalizado")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-finalizado")}>
@@ -5879,7 +5879,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           {/* A coluna Cancelado pode ser escondida pela engrenagem. Sem ela, o
               cancelado aparece em Finalizado com a faixa vermelha. */}
           {colCancelados && (
-          <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#EF4444" count={cancelados.length} columnOrders={cancelados}
+          <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color="#C92E09" count={cancelados.length} columnOrders={cancelados}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-cancelados"}
             dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-cancelados")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-cancelados")}>
@@ -5923,7 +5923,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "28px", width: "100%", maxWidth: "480px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ width: 42, height: 42, borderRadius: "12px", background: "linear-gradient(135deg, #F59E0B, #D97706)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>
+                <div style={{ width: 42, height: 42, borderRadius: "12px", background: "linear-gradient(135deg, #B45309, #B45309)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>
                   ⏱️
                 </div>
                 <div>
@@ -5940,7 +5940,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
 
             {/* 🟡 Alerta Amarelo */}
-            <div style={{ background: "#FFFBEB", border: "1.5px solid #FCD34D", borderRadius: "14px", padding: "16px", marginBottom: "16px" }}>
+            <div style={{ background: "#FFF7E6", border: "1.5px solid #FCD34D", borderRadius: "14px", padding: "16px", marginBottom: "16px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={{ fontSize: "1.2rem" }}>🟡</span>
@@ -5951,7 +5951,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     type="checkbox"
                     checked={timeAlertConfig.yellowEnabled}
                     onChange={e => setTimeAlertConfig(c => ({ ...c, yellowEnabled: e.target.checked }))}
-                    style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#F59E0B" }}
+                    style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#B45309" }}
                   />
                 </label>
               </div>
@@ -5964,7 +5964,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     max={120}
                     value={timeAlertConfig.yellowMinutes}
                     onChange={e => setTimeAlertConfig(c => ({ ...c, yellowMinutes: Math.max(0, Number(e.target.value)) }))}
-                    style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #F59E0B", fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
+                    style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #B45309", fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
                   />
                   <span style={{ fontSize: "0.82rem", color: "#78350F", fontWeight: 600 }}>minutos para o cliente</span>
                 </div>
@@ -5976,29 +5976,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={{ fontSize: "1.2rem" }}>🔴</span>
-                  <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#991B1B" }}>Alerta Vermelho (Urgente)</span>
+                  <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#B71C1C" }}>Alerta Vermelho (Urgente)</span>
                 </div>
                 <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
                   <input
                     type="checkbox"
                     checked={timeAlertConfig.redEnabled}
                     onChange={e => setTimeAlertConfig(c => ({ ...c, redEnabled: e.target.checked }))}
-                    style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#EF4444" }}
+                    style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#C92E09" }}
                   />
                 </label>
               </div>
               {timeAlertConfig.redEnabled && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "10px" }}>
-                  <span style={{ fontSize: "0.82rem", color: "#7F1D1D", fontWeight: 600 }}>Ativar quando faltarem</span>
+                  <span style={{ fontSize: "0.82rem", color: "#B71C1C", fontWeight: 600 }}>Ativar quando faltarem</span>
                   <input
                     type="number"
                     min={1}
                     max={120}
                     value={timeAlertConfig.redMinutes}
                     onChange={e => setTimeAlertConfig(c => ({ ...c, redMinutes: Math.max(0, Number(e.target.value)) }))}
-                    style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #EF4444", fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
+                    style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #C92E09", fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
                   />
-                  <span style={{ fontSize: "0.82rem", color: "#7F1D1D", fontWeight: 600 }}>minutos para o cliente</span>
+                  <span style={{ fontSize: "0.82rem", color: "#B71C1C", fontWeight: 600 }}>minutos para o cliente</span>
                 </div>
               )}
             </div>
@@ -6020,14 +6020,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       body: JSON.stringify(timeAlertConfig),
                     });
                     if (res.ok) {
-                      showToast("✅ Configurações de alerta salvas com sucesso!", "#10B981");
+                      showToast("✅ Configurações de alerta salvas com sucesso!", "#15803D");
                       setShowAlertModal(false);
                     }
                   } catch {
-                    showToast("Erro ao salvar alertas.", "#EF4444");
+                    showToast("Erro ao salvar alertas.", "#C92E09");
                   }
                 }}
-                style={{ flex: 2, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#FFF", fontWeight: 800, cursor: "pointer" }}
+                style={{ flex: 2, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#FFF", fontWeight: 800, cursor: "pointer" }}
               >
                 💾 Salvar Configurações
               </button>
@@ -6133,7 +6133,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     type="checkbox"
                     checked={appMotoboyCfg[op.chave]}
                     onChange={(e) => salvarAppMotoboy({ ...appMotoboyCfg, [op.chave]: e.target.checked })}
-                    style={{ marginTop: 3, width: 18, height: 18, accentColor: "#2563EB", flexShrink: 0 }}
+                    style={{ marginTop: 3, width: 18, height: 18, accentColor: "#1D4ED8", flexShrink: 0 }}
                   />
                   <span>
                     <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{op.rotulo}</span>
@@ -6152,7 +6152,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   setTimeout(() => setCopiedMotoboyLink(false), 3000);
                 }}
                 style={{
-                  width: "100%", padding: "14px", background: copiedMotoboyLink ? "#10B981" : "#2563EB",
+                  width: "100%", padding: "14px", background: copiedMotoboyLink ? "#15803D" : "#1D4ED8",
                   color: "#FFFFFF", border: "none", borderRadius: "10px", fontWeight: 900,
                   fontSize: "0.95rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                   boxShadow: "0 4px 12px rgba(37,99,235,0.25)"
@@ -6172,7 +6172,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           role="alert"
           style={{
             position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 99998,
-            background: "#B91C1C", color: "#fff", padding: "10px 18px", borderRadius: 999,
+            background: "#B71C1C", color: "#fff", padding: "10px 18px", borderRadius: 999,
             fontWeight: 800, fontSize: "0.85rem", boxShadow: "0 10px 25px rgba(0,0,0,0.25)",
             cursor: "pointer", maxWidth: "calc(100vw - 32px)", textAlign: "center",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap",
@@ -6192,7 +6192,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           display: "flex", alignItems: "center", gap: "8px", transition: "all 0.3s ease",
           animation: "pulse 2s infinite"
         }}>
-          {toastMsg.color === "#10B981" ? "✅" : "⚠️"} {toastMsg.text}
+          {toastMsg.color === "#15803D" ? "✅" : "⚠️"} {toastMsg.text}
         </div>
       )}
 

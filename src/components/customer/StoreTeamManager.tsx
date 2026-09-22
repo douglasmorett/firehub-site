@@ -63,7 +63,7 @@ export default function StoreTeamManager() {
 
   const [toastMsg, setToastMsg] = useState<{ text: string; bg: string } | null>(null);
 
-  function showToast(text: string, bg: string = "#10B981") {
+  function showToast(text: string, bg: string = "#15803D") {
     setToastMsg({ text, bg });
     setTimeout(() => setToastMsg(null), 4000);
   }
@@ -104,7 +104,7 @@ export default function StoreTeamManager() {
   const handleCreateMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !password.trim()) {
-      showToast("Preencha nome, e-mail e senha do funcionário.", "#EF4444");
+      showToast("Preencha nome, e-mail e senha do funcionário.", "#C92E09");
       return;
     }
 
@@ -134,7 +134,7 @@ export default function StoreTeamManager() {
       setShowAddForm(false);
       fetchMembers();
     } catch (err: any) {
-      showToast(err.message || "Erro ao salvar funcionário.", "#EF4444");
+      showToast(err.message || "Erro ao salvar funcionário.", "#C92E09");
     } finally {
       setSubmitting(false);
     }
@@ -174,7 +174,7 @@ export default function StoreTeamManager() {
       setEditingMember(null);
       fetchMembers();
     } catch (err: any) {
-      showToast(err.message || "Erro ao atualizar.", "#EF4444");
+      showToast(err.message || "Erro ao atualizar.", "#C92E09");
     } finally {
       setSubmitting(false);
     }
@@ -189,7 +189,7 @@ export default function StoreTeamManager() {
       showToast(`🗑️ Funcionário "${nameStr}" removido.`);
       fetchMembers();
     } catch (err: any) {
-      showToast(err.message || "Erro ao remover.", "#EF4444");
+      showToast(err.message || "Erro ao remover.", "#C92E09");
     }
   };
 
@@ -213,7 +213,7 @@ export default function StoreTeamManager() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h2 style={{ fontSize: "1.35rem", fontWeight: 800, color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
-              <Users size={22} color="#3B82F6" /> Equipe da Loja & Permissões
+              <Users size={22} color="#1D4ED8" /> Equipe da Loja & Permissões
             </h2>
             <p style={{ fontSize: "0.85rem", color: "#64748B", margin: "4px 0 0" }}>
               Crie contas de login e senha para seus funcionários e escolha quais módulos cada um pode acessar.
@@ -225,7 +225,7 @@ export default function StoreTeamManager() {
             style={{
               display: "flex", alignItems: "center", gap: "6px",
               padding: "9px 18px", borderRadius: "10px", border: "none",
-              background: showAddForm ? "#64748B" : "linear-gradient(135deg, #3B82F6, #1D4ED8)",
+              background: showAddForm ? "#64748B" : "linear-gradient(135deg, #1D4ED8, #1D4ED8)",
               color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
               boxShadow: "0 4px 12px rgba(59, 130, 246, 0.25)"
             }}
@@ -239,7 +239,7 @@ export default function StoreTeamManager() {
         {showAddForm && (
           <form onSubmit={handleCreateMember} style={{ background: "#F8FAFC", borderRadius: "14px", padding: "20px", border: "1.5px solid #CBD5E1", marginBottom: "24px" }}>
             <h3 style={{ fontSize: "1.05rem", fontWeight: 800, color: "#1E293B", margin: "0 0 16px", display: "flex", alignItems: "center", gap: "6px" }}>
-              <UserPlus size={18} color="#3B82F6" /> Novo Login de Funcionário
+              <UserPlus size={18} color="#1D4ED8" /> Novo Login de Funcionário
             </h3>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
@@ -300,7 +300,7 @@ export default function StoreTeamManager() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
                 <div>
                   <span style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A", display: "flex", alignItems: "center", gap: "6px" }}>
-                    <Shield size={16} color="#059669" /> Módulos Liberados para este Funcionário:
+                    <Shield size={16} color="#15803D" /> Módulos Liberados para este Funcionário:
                   </span>
                   <span style={{ fontSize: "0.75rem", color: "#64748B" }}>
                     (Por padrão, vem tudo liberado igual ao dono. Desmarque as caixinhas para tirar acesso)
@@ -318,7 +318,7 @@ export default function StoreTeamManager() {
                   <button
                     type="button"
                     onClick={() => toggleAllNewPermissions(false)}
-                    style={{ padding: "3px 8px", fontSize: "0.72rem", fontWeight: 700, borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FEF2F2", color: "#DC2626", cursor: "pointer" }}
+                    style={{ padding: "3px 8px", fontSize: "0.72rem", fontWeight: 700, borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FEF2F2", color: "#C92E09", cursor: "pointer" }}
                   >
                     Desmarcar Todos
                   </button>
@@ -334,7 +334,7 @@ export default function StoreTeamManager() {
                       onClick={() => toggleNewPermission(m.key)}
                       style={{
                         padding: "10px 12px", borderRadius: "8px", cursor: "pointer",
-                        border: isChecked ? "1.5px solid #10B981" : "1px solid #E2E8F0",
+                        border: isChecked ? "1.5px solid #15803D" : "1px solid #E2E8F0",
                         background: isChecked ? "#ECFDF5" : "#F8FAFC",
                         transition: "all 0.15s ease", display: "flex", alignItems: "flex-start", gap: "10px"
                       }}
@@ -343,7 +343,7 @@ export default function StoreTeamManager() {
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => {}} // tratado no onClick pai
-                        style={{ width: 17, height: 17, marginTop: "2px", accentColor: "#10B981", cursor: "pointer" }}
+                        style={{ width: 17, height: 17, marginTop: "2px", accentColor: "#15803D", cursor: "pointer" }}
                       />
                       <div>
                         <div style={{ fontSize: "0.82rem", fontWeight: 700, color: isChecked ? "#065F46" : "#475569" }}>
@@ -364,7 +364,7 @@ export default function StoreTeamManager() {
               disabled={submitting}
               style={{
                 width: "100%", padding: "11px", borderRadius: "10px", border: "none",
-                background: "linear-gradient(135deg, #059669, #047857)", color: "#fff",
+                background: "linear-gradient(135deg, #15803D, #047857)", color: "#fff",
                 fontWeight: 800, fontSize: "0.9rem", cursor: submitting ? "not-allowed" : "pointer"
               }}
             >
@@ -406,7 +406,7 @@ export default function StoreTeamManager() {
                       <span style={{ fontWeight: 800, fontSize: "0.98rem", color: "#0F172A" }}>
                         {m.name}
                       </span>
-                      <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "0.68rem", fontWeight: 700, background: "#DBEAFE", color: "#1D4ED8" }}>
+                      <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "0.68rem", fontWeight: 700, background: "#EFF6FF", color: "#1D4ED8" }}>
                         Funcionário
                       </span>
                     </div>
@@ -416,7 +416,7 @@ export default function StoreTeamManager() {
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "6px" }}>
-                      <Shield size={14} color="#059669" />
+                      <Shield size={14} color="#15803D" />
                       <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#334155" }}>
                         {activePermsList.length} de {STORE_MODULES.length} módulos liberados ({permsPct}%)
                       </span>
@@ -432,7 +432,7 @@ export default function StoreTeamManager() {
                         color: "#1E293B", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer"
                       }}
                     >
-                      <Edit size={14} color="#3B82F6" />
+                      <Edit size={14} color="#1D4ED8" />
                       Configurar Permissões
                     </button>
 
@@ -442,7 +442,7 @@ export default function StoreTeamManager() {
                       style={{
                         display: "flex", alignItems: "center", justifyContent: "center", width: 34, height: 34,
                         borderRadius: "8px", border: "1px solid #FECACA", background: "#FEF2F2",
-                        color: "#DC2626", cursor: "pointer"
+                        color: "#C92E09", cursor: "pointer"
                       }}
                     >
                       <Trash2 size={15} />
@@ -508,7 +508,7 @@ export default function StoreTeamManager() {
                       onClick={() => toggleEditPermission(m.key)}
                       style={{
                         padding: "10px 14px", borderRadius: "8px", cursor: "pointer",
-                        border: isChecked ? "1.5px solid #10B981" : "1px solid #CBD5E1",
+                        border: isChecked ? "1.5px solid #15803D" : "1px solid #CBD5E1",
                         background: isChecked ? "#ECFDF5" : "#F8FAFC",
                         display: "flex", alignItems: "center", justifyContent: "space-between"
                       }}
@@ -518,7 +518,7 @@ export default function StoreTeamManager() {
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => {}}
-                          style={{ width: 18, height: 18, accentColor: "#10B981", cursor: "pointer" }}
+                          style={{ width: 18, height: 18, accentColor: "#15803D", cursor: "pointer" }}
                         />
                         <div>
                           <div style={{ fontSize: "0.85rem", fontWeight: 700, color: isChecked ? "#065F46" : "#334155" }}>
@@ -530,7 +530,7 @@ export default function StoreTeamManager() {
                         </div>
                       </div>
 
-                      <span style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: "6px", background: isChecked ? "#D1FAE5" : "#F1F5F9", color: isChecked ? "#047857" : "#64748B" }}>
+                      <span style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: "6px", background: isChecked ? "#ECFDF3" : "#F1F5F9", color: isChecked ? "#047857" : "#64748B" }}>
                         {isChecked ? "LIBERADO" : "BLOQUEADO"}
                       </span>
                     </div>
@@ -549,7 +549,7 @@ export default function StoreTeamManager() {
               <button
                 onClick={handleSaveEdit}
                 disabled={submitting}
-                style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "none", background: "#10B981", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: submitting ? "not-allowed" : "pointer" }}
+                style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "none", background: "#15803D", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: submitting ? "not-allowed" : "pointer" }}
               >
                 {submitting ? "Salvando..." : "💾 Salvar Alterações"}
               </button>

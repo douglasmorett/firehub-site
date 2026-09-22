@@ -146,7 +146,7 @@ export default async function MetricasPrazosPage({
         </div>
 
         {erro && (
-          <div style={{ ...cartao, borderColor: "#FECACA", background: "#FEF2F2", color: "#991B1B", marginBottom: 18 }}>
+          <div style={{ ...cartao, borderColor: "#FECACA", background: "#FEF2F2", color: "#B71C1C", marginBottom: 18 }}>
             <b>Não deu para ler as visitas.</b> {erro}
           </div>
         )}
@@ -165,7 +165,7 @@ export default async function MetricasPrazosPage({
           </div>
           <div style={cartao}>
             <div style={rotulo}>Saíram em 10s</div>
-            <div style={{ ...numero, color: rejeicao / (total || 1) > 0.5 ? "#DC2626" : undefined }}>{pct(rejeicao, total)}</div>
+            <div style={{ ...numero, color: rejeicao / (total || 1) > 0.5 ? "#C92E09" : undefined }}>{pct(rejeicao, total)}</div>
             <div style={{ color: "#64748B", fontSize: ".85rem" }}>{rejeicao} visitas</div>
           </div>
           <div style={cartao}>
@@ -204,7 +204,7 @@ export default async function MetricasPrazosPage({
               <div key={marco} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 0" }}>
                 <div style={{ width: 230, fontSize: ".9rem", color: "#334155" }}>{nome}</div>
                 <div style={{ flex: 1, height: 12, background: "#F1F5F9", borderRadius: 999, overflow: "hidden" }}>
-                  <div style={{ width: `${p}%`, height: "100%", background: marco === "foi-ao-checkout" ? "#16A34A" : "#FF5722" }} />
+                  <div style={{ width: `${p}%`, height: "100%", background: marco === "foi-ao-checkout" ? "#15803D" : "#FF5722" }} />
                 </div>
                 <div style={{ width: 90, textAlign: "right", fontWeight: 800, fontSize: ".9rem" }}>
                   {n} · {pct(n, total)}
