@@ -122,6 +122,11 @@ function ehRetirada(o: any) {
   return t === "RETIRADA" || t === "TAKEOUT" || t.includes("RETIRADA");
 }
 
+/** Saiu para a rua. Mesa e balcão não contam como entrega. */
+function ehEntrega(o: any) {
+  return String(o.deliveryType || "").toUpperCase() === "DELIVERY";
+}
+
 function prazoDoPedido(o: any): number {
   const criado = new Date(o.createdAt).getTime();
   const agendado = o.scheduledDatetime ? new Date(o.scheduledDatetime).getTime() : 0;
@@ -384,6 +389,35 @@ export default function RelatoriosClient({
       })
       .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
   }, [dateFilteredOrders, products, categoriasMarcadas, produtosMarcados, searchQuery]);
+
+  // ── ENTREGAS E O QUE ELAS CUSTARAM ───────────────────────────────────────
+  //
+  // Dois números, e o segundo tem uma armadilha: o que a loja PAGA ao
+  // entregador não é a taxa que o cliente pagou (lib/repasse-do-entregador.ts).
+  // Em pedido de app a taxa é dinheiro do marketplace — o Lucas via "Taxa
+  // R$ 6,94" numa entrega que ele paga R$ 2,00. Por isso o custo vem calculado
+  // do servidor, pela mesma conta do fechamento de motoboys.
+  //
+  // Entrega SEM entregador atribuído chega com `custoDaEntrega: null` e é
+  // contada à parte, não como zero. Somar null como zero afirmaria que aquela
+  // entrega saiu de graça — e é justamente o contrário: é a que ninguém sabe
+  // quanto custou.
+  const entregas = useMemo(() => {
+    let quantidade = 0, custo = 0, semCusto = 0;
+    for (const o of dateFilteredOrders) {
+      if (!ehEntrega(o)) continue;
+      quantidade++;
+      const c = (o as any).custoDaEntrega;
+      if (typeof c === "number") custo += c; else semCusto++;
+    }
+    return {
+      quantidade,
+      custo: Math.round(custo * 100) / 100,
+      semCusto,
+      apuradas: quantidade - semCusto,
+      medio: quantidade - semCusto > 0 ? custo / (quantidade - semCusto) : 0,
+    };
+  }, [dateFilteredOrders]);
 
   // ── O TOTAL DO QUE ESTÁ LISTADO ──────────────────────────────────────────
   //
@@ -814,6 +848,70 @@ export default function RelatoriosClient({
             <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Quantidade de Itens</p>
             <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{processedData.unitsSold} u.</p>
             <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Unidades de produtos vendidas</p>
+          </div>
+        </div>
+
+        {/* ── ENTREGAS ───────────────────────────────────────────────────── */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(14,165,233,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Bike size={18} color="#0EA5E9" />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "#0EA5E9", background: "rgba(14,165,233,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+              Entregas
+            </span>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Pedidos Entregues</p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{entregas.quantidade}</p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
+              {movimento.totalValidos > 0
+                ? `${fmtPct((entregas.quantidade / movimento.totalValidos) * 100)} dos pedidos do período`
+                : "Pedidos que saíram para a rua"}
+            </p>
+          </div>
+        </div>
+
+        {/* ── GASTO COM ENTREGAS ─────────────────────────────────────────────
+            O que a LOJA paga ao entregador — não a taxa que o cliente pagou.
+            Em pedido de app a taxa é dinheiro do marketplace, e confundir as
+            duas foi reclamação real (ver lib/repasse-do-entregador.ts).
+
+            Quando não há entrega apurada, o cartão DIZ isso em vez de mostrar
+            R$ 0,00: zero é uma afirmação, e a afirmação estaria errada. */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(220,38,38,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Bike size={18} color="#DC2626" />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "#DC2626", background: "rgba(220,38,38,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+              Custo
+            </span>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Gasto com Entregas</p>
+            {entregas.apuradas > 0 ? (
+              <>
+                <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#DC2626" }}>{fmtR(entregas.custo)}</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
+                  {fmtR(entregas.medio)} por entrega · o que a loja paga ao entregador
+                  {entregas.semCusto > 0 && (
+                    <><br /><span style={{ color: "#B45309", fontWeight: 700 }}>
+                      {entregas.semCusto} {entregas.semCusto === 1 ? "entrega sem entregador atribuído" : "entregas sem entregador atribuído"} — fora desta conta
+                    </span></>
+                  )}
+                </p>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: "2px 0 0", fontSize: "1.1rem", fontWeight: 800, color: "#94A3B8" }}>Sem apuração</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#B45309", fontWeight: 600, lineHeight: 1.45 }}>
+                  {entregas.quantidade === 0
+                    ? "Nenhuma entrega no período."
+                    : `As ${entregas.quantidade} entregas do período não têm entregador atribuído, então não dá para saber quanto custaram. Atribua o entregador no pedido para este número aparecer.`}
+                </p>
+              </>
+            )}
           </div>
         </div>
 

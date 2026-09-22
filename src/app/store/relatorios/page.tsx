@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import RelatoriosClient from "./RelatoriosClient";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
+import { lerAcerto, ganhoDoPedido } from "@/lib/ganho-do-entregador";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+import { canalDoPedido } from "@/lib/canal-do-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -86,6 +89,49 @@ export default async function StoreRelatoriosPage() {
     console.error("[Relatorios] Erro ao carregar dados:", err);
   }
 
+  // ── QUANTO A LOJA PAGA POR CADA ENTREGA ──────────────────────────────────
+  //
+  // NÃO é `deliveryFee` (o que o cliente ou o app pagou) e NÃO é `motoboyFee`
+  // (que nunca chega a ser gravado: 0 de 11.388 entregas em 60 dias, medido em
+  // 22/09/2026). O valor real depende do acerto de CADA entregador — diária,
+  // por km, por entrega, escada própria — e a conta é a de
+  // lib/ganho-do-entregador.ts, a MESMA do fechamento de motoboys. Duas contas
+  // diferentes para o mesmo dinheiro é o que o lojista descobre discutindo com
+  // o entregador.
+  //
+  // Sai daqui, no servidor, porque precisa do acerto dos entregadores e das
+  // zonas da loja — dados que não devem viajar para o navegador.
+  let custoPorPedido = new Map<string, number | null>();
+  try {
+    const dono = await prisma.user.findUnique({
+      where: { id: targetFranchiseeId },
+      select: { deliveryConfig: true, deliveryZones: true },
+    });
+    const regraDeRepasse = lerRegraDeRepasse(dono?.deliveryConfig);
+    const entregadores = await prisma.motoboy.findMany({ where: { franchiseeId: targetFranchiseeId } });
+    const acertoDe = new Map(entregadores.map((m) => [m.id, lerAcerto(m as any)]));
+
+    for (const o of orders) {
+      // Entrega sem entregador atribuído fica como `null`, não como zero: o
+      // relatório precisa dizer "não dá para saber" em vez de afirmar que
+      // custou nada. Ver o cartão de entregas no cliente.
+      const acerto = o.motoboyId ? acertoDe.get(o.motoboyId) : null;
+      if (!acerto) { custoPorPedido.set(o.id, null); continue; }
+      custoPorPedido.set(o.id, ganhoDoPedido({
+        acerto,
+        pedido: o,
+        regraDaLoja: regraDeRepasse,
+        zonas: dono?.deliveryZones,
+        ehMarketplace: canalDoPedido(o).ehMarketplace,
+      }).valor);
+    }
+  } catch (err) {
+    // Sem o custo, o relatório mostra a CONTAGEM de entregas e diz que o gasto
+    // não pôde ser apurado. Nunca zero — zero é uma afirmação.
+    console.error("[Relatorios] Erro ao calcular o custo das entregas:", err);
+    custoPorPedido = new Map();
+  }
+
   // Serializa os pedidos para passar para o Client Component
   const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
@@ -105,6 +151,10 @@ export default async function StoreRelatoriosPage() {
     ifoodStoreMerchant: o.ifoodStoreMerchant || null,
     food99AppShopId: o.food99AppShopId || null,
     food99ShopId: o.food99ShopId || null,
+    // O que a LOJA paga ao entregador por este pedido. `null` = não dá para
+    // saber (sem entregador atribuído) — e null não é zero.
+    custoDaEntrega: custoPorPedido.has(o.id) ? custoPorPedido.get(o.id) : null,
+    temEntregador: Boolean(o.motoboyId),
     createdAt: o.createdAt.toISOString(),
     // Marcos da operação (ver src/lib/order-stages.ts). Nulos nos pedidos
     // anteriores à medição — o relatório conta só o que foi medido.
