@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import RelatoriosClient from "./RelatoriosClient";
+import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ export default async function StoreRelatoriosPage() {
       role: true,
       ownerId: true,
       timeAlertConfig: true,
+      // Para montar o filtro "de qual loja veio" (lib/lojas-de-origem-da-conta.ts).
+      accountGroupId: true,
     }
   }).catch((err) => {
     console.error("[Relatorios] Erro ao buscar usuário:", err);
@@ -94,6 +97,14 @@ export default async function StoreRelatoriosPage() {
     deliveryType: o.deliveryType,
     paymentMethod: o.paymentMethod || "Não informado",
     source: o.source || "ONLINE",
+    // ── DE QUAL LOJA VEIO ────────────────────────────────────────────────
+    // As chaves que lib/loja-de-origem.ts lê para dizer se este pedido é da
+    // Ragnar Pizza ou da Ragnar Burguer. São os MESMOS campos que o painel e
+    // o roteamento de impressão usam — nada exclusivo do relatório.
+    franchiseeId: o.franchiseeId,
+    ifoodStoreMerchant: o.ifoodStoreMerchant || null,
+    food99AppShopId: o.food99AppShopId || null,
+    food99ShopId: o.food99ShopId || null,
     createdAt: o.createdAt.toISOString(),
     // Marcos da operação (ver src/lib/order-stages.ts). Nulos nos pedidos
     // anteriores à medição — o relatório conta só o que foi medido.
@@ -126,12 +137,22 @@ export default async function StoreRelatoriosPage() {
     active: p.active,
   }));
 
+  // As lojas de origem da conta, com nome. Volta VAZIA quando não há o que
+  // separar (uma loja no iFood, uma no 99, sem grupo) — e aí o filtro por loja
+  // some da tela sozinho, em vez de oferecer uma opção só.
+  const lojasDeOrigem = await lojasDeOrigemDaConta(targetFranchiseeId, (user as any).accountGroupId || null)
+    .catch((err) => {
+      console.error("[Relatorios] Erro ao montar as lojas de origem:", err);
+      return [];
+    });
+
   return (
     <RelatoriosClient
       orders={serializedOrders}
       products={serializedProducts}
       storeName={user.storeName || "Minha Loja"}
       timeAlertConfig={(user as any).timeAlertConfig || null}
+      lojasDeOrigem={lojasDeOrigem}
     />
   );
 }
