@@ -277,6 +277,10 @@ export const ROTULOS_DO_BLOCO: Partial<Record<TipoDeBloco, RotuloDoBloco[]>> = {
   ],
   cliente: [
     { chave: "nome", padrao: "Nome:" },
+    // O "CPF na nota". Rótulo único para os dois documentos de propósito: se a
+    // palavra mudasse conforme o número ("CPF:" ou "CNPJ:"), a loja editaria
+    // uma das duas e a outra continuaria como veio de fábrica.
+    { chave: "documento", padrao: "CPF/CNPJ:", ajuda: "O documento que o cliente pediu na nota." },
     { chave: "telefone", padrao: "Telefone:" },
     { chave: "qtdPedidos", padrao: "Qtd Pedidos:" },
   ],
@@ -349,6 +353,7 @@ export const CAMPOS_DISPONIVEIS: { chave: string; rotulo: string }[] = [
   { chave: "codigoCanal", rotulo: "Número no canal" },
   { chave: "loja", rotulo: "Nome da loja" },
   { chave: "cliente", rotulo: "Nome do cliente" },
+  { chave: "documento", rotulo: "CPF/CNPJ do cliente" },
   { chave: "telefone", rotulo: "Telefone" },
   { chave: "endereco", rotulo: "Endereço de entrega" },
   { chave: "data", rotulo: "Data" },
@@ -603,6 +608,8 @@ export type PedidoParaComanda = {
   codigoCanal?: string | null;
   loja?: string | null;
   cliente?: string | null;
+  /** O "CPF na nota", já formatado (lib/documento-do-cliente.ts). */
+  documento?: string | null;
   telefone?: string | null;
   endereco?: string | null;
   data?: string | null;
@@ -633,6 +640,7 @@ export function preencherCampos(texto: string, p: PedidoParaComanda): string {
     codigoCanal: p.codigoCanal || "",
     loja: p.loja || "",
     cliente: p.cliente || "",
+    documento: p.documento || "",
     telefone: p.telefone || "",
     endereco: p.endereco || "",
     data: p.data || "",
@@ -736,9 +744,10 @@ export function montarComanda(
       }
 
       case "cliente":
-        if (!pedido.cliente && !pedido.telefone) break;
+        if (!pedido.cliente && !pedido.telefone && !pedido.documento) break;
         titulo(bloco, "CLIENTE");
         if (pedido.cliente) por(`${R("nome")} ${pedido.cliente}`.trim(), { negrito: N("nome"), rotulo: "nome" });
+        if (pedido.documento) por(`${R("documento")} ${pedido.documento}`.trim(), { negrito: N("documento"), rotulo: "documento" });
         if (pedido.telefone) por(`${R("telefone")} ${pedido.telefone}`.trim(), { negrito: N("telefone"), rotulo: "telefone" });
         por(`${R("qtdPedidos")} 1`.trim(), { negrito: N("qtdPedidos"), rotulo: "qtdPedidos" });
         break;
@@ -959,6 +968,9 @@ export function pedidoDeExemplo(nomeDaLoja = "Sua Loja"): PedidoParaComanda {
     codigoCanal: "#3523",
     loja: nomeDaLoja,
     cliente: "Larissa Moreira",
+    // O "CPF na nota": aparece na prévia para a loja ver a linha e poder
+    // reescrever o rótulo dela, mesmo antes de o primeiro cliente pedir.
+    documento: "529.982.247-25",
     telefone: "(22) 99999-1020",
     endereco: "Rua Dez, 59 - Costazul - Rio das Ostras",
     data: "12/09/2026",

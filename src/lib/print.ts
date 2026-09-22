@@ -98,7 +98,20 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.19";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.20";
+
+/**
+ * A partir daqui o Assistente imprime o "CPF na nota" em LINHA PRÓPRIA.
+ *
+ * Antes disso o documento saía colado no nome do cliente — a única forma de
+ * ele aparecer no papel de toda loja sem ninguém atualizar nada, igual ao
+ * pager (lib/documento-do-cliente.ts). O site continua mandando os dois: o
+ * nome com o sufixo, para quem está atrás, e o campo `customerCpfCnpj`. Quem
+ * tem esta versão tira o sufixo do nome sozinho, então o documento não sai
+ * duas vezes — a decisão é do Assistente, não do site, e por isso não há nada
+ * aqui para ligar ou desligar por loja.
+ */
+export const VERSAO_ASSISTENTE_COM_DOCUMENTO = "1.2.20";
 
 /**
  * A partir daqui o Assistente imprime a CONTA DA MESA com rodape proprio:

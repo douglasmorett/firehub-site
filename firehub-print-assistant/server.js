@@ -612,6 +612,52 @@ function cleanAscii(str) {
 }
 
 /**
+ * O CPF/CNPJ que o cliente pediu "na nota", pronto para o papel.
+ *
+ * Devolve "" quando nao veio nada ou quando o que veio nao tem tamanho de
+ * documento — comprimento e a unica conferencia aqui de proposito: quem valida
+ * digito verificador e o site (lib/documento-do-cliente.ts), antes de gravar.
+ * O Assistente nao recusa o que o servidor mandou; so nao inventa formatacao
+ * para um numero que nao e um.
+ */
+function documentoDoCliente(bruto) {
+  const d = String(bruto == null ? "" : bruto).toUpperCase().replace(/[^0-9A-Z]/g, "");
+  if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  return "";
+}
+
+/**
+ * Tira do nome o documento que o SITE embutiu ali.
+ *
+ * Ate a 1.2.19 o Assistente nao sabia imprimir o documento, entao o site o
+ * mandava colado no nome do cliente — "Joao . CPF 529.982.247-25" — que era a
+ * unica forma de ele sair no papel de TODA loja sem ninguem atualizar nada (o
+ * mesmo caminho do pager; ver lib/documento-do-cliente.ts no site).
+ *
+ * Desta versao em diante o documento sai em linha propria, e o site continua
+ * mandando os dois: o nome com o sufixo, para quem ainda nao atualizou, e o
+ * campo `customerCpfCnpj`. Se imprimisse os dois, o CPF sairia DUAS VEZES na
+ * mesma comanda. Entao quando o campo existe, o sufixo sai do nome.
+ *
+ * Nome que era SO o documento ("CPF 529.982.247-25", o balcao sem nome
+ * digitado) volta vazio, e a linha "Nome:" nem sai — o documento ja esta
+ * logo abaixo, na linha que e dele.
+ *
+ * O separador e casado como "qualquer coisa que nao seja letra ou numero":
+ * o site escreve um ponto-medio (·), e `cleanAscii` o apaga por ser fora do
+ * ASCII — dependendo de qual dos dois rodar primeiro, o que sobra e "· " ou
+ * "  ". As duas formas caem aqui.
+ */
+function nomeSemDocumento(nome) {
+  const limpo = String(nome == null ? "" : nome).trim();
+  if (!limpo) return "";
+  const semSufixo = limpo.replace(/[^0-9A-Za-z]*\b(?:CPF|CNPJ)\b[\s.:/-]*[0-9A-Za-z.\/-]*\s*$/i, "").trim();
+  // Sobrou so pontuacao (o nome era o proprio documento): nada a imprimir.
+  return /[0-9A-Za-z]/.test(semSufixo) ? semSufixo : "";
+}
+
+/**
  * `comboSelections` em lista, venha no formato que vier.
  *
  * O combo do cardapio online do FireHub e gravado como
@@ -1219,7 +1265,19 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   marcas.tituloCliente = res.length;
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
   marcas.cliente = res.length;
-  if (order.customerName) res += comNegrito(wrapLines(R("cliente", "nome", "Nome:") + " " + cleanAscii(order.customerName), 2), "cliente", "nome", false);
+  // ── "CPF NA NOTA" ──────────────────────────────────────────────────────
+  //
+  // Linha propria a partir da 1.2.20. Quando o campo vem, ele manda: o sufixo
+  // que o site embutiu no nome (para as versoes antigas) e retirado, senao o
+  // documento sairia duas vezes. Ver nomeSemDocumento().
+  const docDoCliente = documentoDoCliente(order.customerCpfCnpj);
+  const nomeDoCliente = docDoCliente
+    ? nomeSemDocumento(cleanAscii(order.customerName))
+    : cleanAscii(order.customerName || "");
+  if (nomeDoCliente) res += comNegrito(wrapLines(R("cliente", "nome", "Nome:") + " " + nomeDoCliente, 2), "cliente", "nome", false);
+  if (docDoCliente) {
+    res += comNegrito(wrapLines(R("cliente", "documento", "CPF/CNPJ:") + " " + docDoCliente, 2), "cliente", "documento", false);
+  }
   // Pedido de mesa nasce com telefone "00000000000" (campo obrigatorio no
   // banco): imprimir isso e ruido no papel.
   if (order.customerPhone && !/^0+$/.test(String(order.customerPhone).trim())) {

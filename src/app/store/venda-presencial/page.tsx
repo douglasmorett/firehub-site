@@ -334,10 +334,12 @@ export default function VendaPresencialPage() {
     setLoading(false);
     if (res.ok) {
       setMsg("✅ Pedido registrado!");
-      // O DOCUMENTO PRECISA SAIR DAQUI. Um CPF esquecido no campo vai parar na
-      // comanda do PRÓXIMO cliente — CPF de outra pessoa impresso na nota é o
-      // tipo de erro que ninguém percebe até alguém reclamar.
-      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange(""); setDocumento("");
+      // TUDO DO CLIENTE SAI DAQUI, inclusive pager e documento. O que fica no
+      // campo vai parar na comanda do PRÓXIMO cliente, e "PAGER 12" chamando a
+      // pessoa errada ou o CPF de outro impresso na nota é o tipo de erro que
+      // ninguém percebe até alguém reclamar. O pager já ficava para trás antes
+      // deste campo existir — mesma falha, consertada junto.
+      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento("");
       if (dividir) ligarDivisao(false);
     } else {
       const err = await res.json();
