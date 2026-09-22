@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
 import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
@@ -34,6 +34,14 @@ const getEffectiveComboGroups = (prod: any) => {
   } catch {}
   return [];
 };
+
+/** Onde o rascunho do balcão espera o atendente voltar. Ver o efeito que o lê. */
+const CHAVE_DO_RASCUNHO = "firehub_pdv_rascunho";
+/**
+ * Passado isso, o rascunho é de outro expediente: melhor a tela limpa do que um
+ * carrinho de ontem que alguém finaliza sem olhar.
+ */
+const VALIDADE_DO_RASCUNHO = 12 * 60 * 60 * 1000;
 
 export default function VendaPresencialPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -395,6 +403,77 @@ export default function VendaPresencialPage() {
       setMsg("❌ " + (err.error || "Erro ao registrar pedido."));
     }
   };
+
+  // ── O PEDIDO GRANDE QUE SUMIU ────────────────────────────────────────────
+  //
+  // O carrinho vivia SÓ em memória. Recarregar a aba, o Chrome do tablet
+  // descartar a página em segundo plano (ele faz isso o tempo todo — tela que
+  // apaga, troca de app, memória baixa), ou um toque sem querer no voltar, e o
+  // pedido inteiro ia embora. Na NIK, em 22/09/2026, foi com um pedido grande:
+  // o atendente lançou tudo, não achou o pagamento, mexeu na tela e voltou com
+  // "0 itens".
+  //
+  // Agora o rascunho fica no navegador e volta ao abrir. Vale só para ESTA
+  // máquina e este navegador — é rascunho de balcão, não pedido: pedido só
+  // existe depois do POST.
+  const rascunhoRestaurado = useRef(false);
+
+  useEffect(() => {
+    try {
+      const bruto = localStorage.getItem(CHAVE_DO_RASCUNHO);
+      if (!bruto) return;
+      const salvo = JSON.parse(bruto);
+      if (!salvo?.em || Date.now() - salvo.em > VALIDADE_DO_RASCUNHO) {
+        localStorage.removeItem(CHAVE_DO_RASCUNHO);
+        return;
+      }
+      if (Array.isArray(salvo.cart) && salvo.cart.length > 0) setCart(salvo.cart);
+      if (salvo.orderType) setOrderType(salvo.orderType);
+      if (salvo.customerName) setCustomerName(salvo.customerName);
+      if (salvo.customerPhone) setCustomerPhone(salvo.customerPhone);
+      if (salvo.address) setAddress(salvo.address);
+      if (salvo.tableNum) setTableNum(salvo.tableNum);
+      if (salvo.pager) setPager(salvo.pager);
+      if (salvo.documento) setDocumento(salvo.documento);
+      if (salvo.notes) setNotes(salvo.notes);
+    } catch {
+      // Navegador com armazenamento bloqueado: a tela funciona como sempre
+      // funcionou, sem rascunho. Nada quebra por causa disto.
+    } finally {
+      // Só a partir daqui o efeito de gravar pode escrever — senão o estado
+      // vazio do primeiro render apagaria o rascunho antes de restaurá-lo.
+      rascunhoRestaurado.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!rascunhoRestaurado.current) return;
+    try {
+      if (cart.length === 0) {
+        localStorage.removeItem(CHAVE_DO_RASCUNHO);
+        return;
+      }
+      localStorage.setItem(
+        CHAVE_DO_RASCUNHO,
+        JSON.stringify({
+          em: Date.now(),
+          cart,
+          orderType,
+          customerName,
+          customerPhone,
+          address,
+          tableNum,
+          pager,
+          documento,
+          notes,
+        })
+      );
+    } catch {
+      // Cota estourada ou armazenamento bloqueado: seguir sem rascunho é
+      // melhor do que derrubar a tela de venda.
+    }
+  }, [cart, orderType, customerName, customerPhone, address, tableNum, pager, documento, notes]);
 
   const cartQty = cart.reduce((s, i) => s + i.qty, 0);
 

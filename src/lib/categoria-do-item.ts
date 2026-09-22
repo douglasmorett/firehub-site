@@ -119,12 +119,21 @@ export type MapaDeCategorias = {
  * categoria "99Food" mas o do Wabiz pode carregar o nome do grupo, e só o
  * prefixo denuncia esse.
  */
-export function montarMapa(produtos: { id?: string | null; name?: string | null; category?: string | null }[]): MapaDeCategorias {
+export function montarMapa(
+  produtos: { id?: string | null; name?: string | null; category?: string | null; active?: boolean | null }[],
+): MapaDeCategorias {
   const porNome = new Map<string, string>();
   const categorias = new Set<string>();
   for (const p of produtos) {
     const id = String(p.id ?? "");
-    if (PREFIXOS_DE_ESPELHO.some((pre) => id.startsWith(pre))) continue;
+    // O prefixo condena o espelho que NINGUÉM ADOTOU — `active` false. Produto
+    // ativo com id de espelho não é espelho: é o cardápio da loja, importado
+    // com ids que nasceram de um pedido (Pastelaria da Paulista, ver
+    // lib/cardapio-interno.ts). Sem esta ressalva, numa loja assim o mapa sai
+    // VAZIO: nenhuma categoria é reconhecida como da loja, nenhum nome casa, e
+    // todo item de plataforma vira "sem categoria" — a cozinha inteira volta a
+    // ver tudo em todas as telas.
+    if (p.active !== true && PREFIXOS_DE_ESPELHO.some((pre) => id.startsWith(pre))) continue;
     if (ehCategoriaDeIntegracao(p.category)) continue;
     const categoria = String(p.category ?? "").trim();
     if (!categoria) continue;
@@ -138,7 +147,9 @@ export function montarMapa(produtos: { id?: string | null; name?: string | null;
 export type ItemComCategoria = {
   productName?: string | null;
   category?: string | null;
-  menuProduct?: { id?: string | null; name?: string | null; category?: string | null } | null;
+  // `active` é o que separa o espelho que ninguém adotou do cardápio que
+  // nasceu de um espelho (ver ehItemDeEspelho).
+  menuProduct?: { id?: string | null; active?: boolean | null; name?: string | null; category?: string | null } | null;
 };
 
 /**
@@ -159,7 +170,12 @@ function ehCategoriaDaLoja(categoria: string, mapa: MapaDeCategorias): boolean {
 
 function ehItemDeEspelho(item: ItemComCategoria): boolean {
   const id = String(item?.menuProduct?.id ?? "");
-  if (id && PREFIXOS_DE_ESPELHO.some((pre) => id.startsWith(pre))) return true;
+  // A MESMA ressalva de `montarMapa` e de lib/cardapio-interno.ts: o id diz
+  // como o registro NASCEU, não o que ele é hoje, e o cardápio importado
+  // reaproveita ids `ifood-`. Só o produto ATIVO escapa do prefixo — quem não
+  // trouxer `active` no select segue tratado como espelho, que é o lado que
+  // não perde pedido.
+  if (id && item?.menuProduct?.active !== true && PREFIXOS_DE_ESPELHO.some((pre) => id.startsWith(pre))) return true;
   return ehCategoriaDeIntegracao(item?.menuProduct?.category ?? item?.category);
 }
 
@@ -242,7 +258,7 @@ export async function resolverCategoriasDosPedidos<
   for (const lojaId of lojas) {
     const produtos = await prisma.menuProduct.findMany({
       where: { franchiseeId: lojaId },
-      select: { id: true, name: true, category: true },
+      select: { id: true, name: true, category: true, active: true },
     });
     mapas.set(lojaId, montarMapa(produtos));
   }

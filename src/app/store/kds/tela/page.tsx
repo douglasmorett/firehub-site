@@ -181,6 +181,11 @@ export default function KDSTelaPage() {
   const [allCategories, setAllCategories] = useState<
     { id: string; name: string; emoji: string; color: string }[]
   >([]);
+  /**
+   * As categorias que TÊM dono nesta etapa: a união dos filtros de todas as
+   * telas de KDS desta etapa. `null` = ainda não sei (ver o filtro abaixo).
+   */
+  const [categoriasComDono, setCategoriasComDono] = useState<Set<string> | null>(null);
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
 
   // ─── State ──────────────────────────────────────────────────────────────────
@@ -267,6 +272,58 @@ export default function KDSTelaPage() {
       })
       .catch(() => {});
   }, []);
+
+  /**
+   * AS OUTRAS TELAS DESTA ETAPA — para saber se um item tem onde aparecer.
+   *
+   * O filtro por categoria é uma divisão de trabalho: esta tela é a das
+   * esfihas, aquela é a das pizzas. Só que a divisão é feita à mão, e o
+   * cardápio muda depois: a loja cria "Sabores de Pizza", "Bebidas", "Sachês"
+   * — categorias que não estão na lista de NENHUMA tela. O item cai fora de
+   * todas e o pedido desaparece da cozinha inteira, em silêncio.
+   *
+   * Medido na NIK em 23/09/2026: um pedido Wabiz de duas pizzas ("Sabores de
+   * Pizza") e três pedidos de balcão só com bebida não apareciam em nenhuma
+   * das quatro telas da loja — e dois deles estavam parados desde 21/09.
+   *
+   * Por isso a regra deixa de ser "sem categoria aparece em toda tela" e passa
+   * a ser "categoria SEM DONO aparece em toda tela". O item com dono continua
+   * exatamente onde estava: quem pediu a tela de pizza não passa a ver esfiha.
+   *
+   * Recarrega a cada 5 min porque a tela da cozinha fica aberta o dia todo, e
+   * a configuração pode mudar no painel enquanto ela está lá.
+   */
+  useEffect(() => {
+    if (!stage) return;
+    let vivo = true;
+    const carregar = () => {
+      fetch("/api/store/kds-screens", { credentials: "include", cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((telas) => {
+          if (!vivo || !Array.isArray(telas)) return;
+          const comDono = new Set<string>();
+          for (const t of telas) {
+            if (t?.stage !== stage) continue;
+            for (const c of t?.categoryFilter || []) {
+              const nome = String(c || "").toLowerCase().trim();
+              if (nome) comDono.add(nome);
+            }
+          }
+          setCategoriasComDono(comDono);
+        })
+        .catch(() => {
+          // Sem resposta, `categoriasComDono` segue como está — e enquanto for
+          // null o filtro se comporta como sempre se comportou. Falha de rede
+          // não pode virar "todas as telas mostram tudo".
+        });
+    };
+    carregar();
+    const id = setInterval(carregar, 5 * 60 * 1000);
+    return () => {
+      vivo = false;
+      clearInterval(id);
+    };
+  }, [stage]);
   const lastJsonRef = useRef<string>("");
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -539,28 +596,52 @@ export default function KDSTelaPage() {
       const activeNormalized = activeCategories.map((c) =>
         c.toLowerCase().trim(),
       );
+      const categoriaDoItem = (item: any) =>
+        (item.menuProduct?.category || item.category || "").toLowerCase().trim();
+
       result = result
-        .map((order) => ({
-          ...order,
-          items: order.items.filter((item: any) => {
-            const cat = (item.menuProduct?.category || item.category || "")
-              .toLowerCase()
-              .trim();
-            // Sem categoria = aparece em TODA tela filtrada. É a rede de
-            // segurança, e a API garante que o item de plataforma chega assim
-            // quando não dá para saber a categoria real dele: o espelho do
-            // iFood tem categoria "iFood", que aqui nunca casaria com nada, e
-            // era por isso que a pizza do iFood sumia da tela de pizza da NIK
-            // (16/09/2026). Ver lib/categoria-do-item.ts.
-            if (!cat) return true;
-            return activeNormalized.includes(cat);
-          }),
-        }))
+        .map((order) => {
+          const cats = order.items.map(categoriaDoItem);
+          // Algum item deste pedido é produzido em ALGUMA tela desta etapa?
+          const temItemComDono = categoriasComDono
+            ? cats.some((c) => c && categoriasComDono.has(c))
+            : true;
+          // …e algum item dele é desta tela aqui?
+          const ehTelaDestePedido = cats.some((c) => !c || activeNormalized.includes(c));
+
+          return {
+            ...order,
+            items: order.items.filter((item: any) => {
+              const cat = categoriaDoItem(item);
+              // Sem categoria = aparece em TODA tela filtrada. É a rede de
+              // segurança, e a API garante que o item de plataforma chega assim
+              // quando não dá para saber a categoria real dele: o espelho do
+              // iFood tem categoria "iFood", que aqui nunca casaria com nada, e
+              // era por isso que a pizza do iFood sumia da tela de pizza da NIK
+              // (16/09/2026). Ver lib/categoria-do-item.ts.
+              if (!cat) return true;
+              if (activeNormalized.includes(cat)) return true;
+              if (!categoriasComDono) return false; // ainda não sei quem é dono do quê
+              if (categoriasComDono.has(cat)) return false; // é de outra tela, e ela mostra
+              // ── ÓRFÃO: nenhuma tela desta etapa pediu esta categoria ──────
+              //
+              // Se o pedido inteiro é órfão (a comanda só de Coca-Cola), ele
+              // aparece em TODA tela — senão não apareceria em nenhuma, que é
+              // o pior desfecho possível para a cozinha.
+              //
+              // Se o pedido tem dono em algum lugar, o órfão vai JUNTO com ele:
+              // a bebida do pedido de esfiha sai na tela da esfiha, e a tela da
+              // pizza não ganha um card só com a bebida de um pedido que ela
+              // não produz.
+              return !temItemComDono || ehTelaDestePedido;
+            }),
+          };
+        })
         .filter((order) => order.items.length > 0);
     }
 
     return result;
-  }, [orders, filter, activeCategories]);
+  }, [orders, filter, activeCategories, categoriasComDono]);
 
   const exitingOrderIdsRef = useRef<Set<string>>(new Set());
   const completedOrderIdsRef = useRef<Set<string>>(new Set());

@@ -165,7 +165,13 @@ export async function GET(req: NextRequest) {
                   // "Bebidas"). Sem ele, resolverCategoriasDosPedidos deixa a
                   // categoria da Wabiz passar direto para o filtro da tela e o
                   // pedido não aparece em cozinha nenhuma — lib/categoria-do-item.ts.
+                  //
+                  // `active` vem junto porque o id sozinho acusa demais: numa
+                  // loja cujo cardápio foi IMPORTADO, o produto de verdade
+                  // carrega id `ifood-` e continua sendo cardápio. Ativo não é
+                  // espelho (lib/cardapio-interno.ts).
                   id: true,
+                  active: true,
                   name: true,
                   category: true,
                 },

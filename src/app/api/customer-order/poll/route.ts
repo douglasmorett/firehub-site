@@ -522,6 +522,24 @@ async function pollIfoodEvents(sessionUserId?: string) {
                 totalAmount: total,
                 deliveryFee: deliveryFeeValue,
                 status: initialStatus,
+                // ── O PEDIDO NASCE NA PRODUÇÃO, COMO NOS OUTROS TRÊS CAMINHOS ──
+                //
+                // O mesmo pedido do iFood pode entrar por quatro portas: o
+                // webhook, o cron de polling, o resgate manual — e esta, o poll
+                // que cada painel aberto dispara. As três primeiras gravam
+                // `kdsStage: "PRODUCTION"` e `kdsProductionAt`; esta era a única
+                // que não gravava nada, e o pedido ficava com a etapa NULA.
+                //
+                // Ele até aparecia na tela de produção (que aceita etapa nula
+                // de propósito, para não esconder pedido nenhum), mas:
+                //   • o cronômetro da cozinha não tinha de quando contar;
+                //   • o relatório de tempo de produção ficava cego para ele;
+                //   • e quem liga "imprimir só no fim do KDS" dependia de uma
+                //     etapa que o pedido nunca teve.
+                // Na NIK, em 21 e 22/09/2026, três pedidos do iFood ficaram
+                // assim — justamente os que chegaram com o painel aberto.
+                kdsStage: "PRODUCTION",
+                kdsProductionAt: new Date(),
                 notes: notesArr,
                 createdAt: new Date(), // Entra no final da fila com o próximo número sequencial
                 items: { create: items },
