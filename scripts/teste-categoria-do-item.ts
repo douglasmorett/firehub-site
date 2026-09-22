@@ -24,6 +24,11 @@ const CARDAPIO = [
   { id: "cmt3", name: "Pizza Tradicional + Guaraná Mineiro 1,5L", category: "Pizza Tradicional + Guaraná Mineiro 1,5L por R$59,90" },
   { id: "cmt4", name: "Guaraná Mineiro 1,5l", category: "Bebidas" },
   { id: "cmt5", name: "Combo 3", category: "Combos Esfihas" },
+  // O sabor solto vive em "Sabores de Pizza" — categoria que NÃO está no
+  // filtro da tela de pizza da NIK. É a armadilha do pedido #3.
+  { id: "cmt7", name: "Bauru", category: "Sabores de Pizza" },
+  // ...e a promoção, cujo nome de categoria a Wabiz repete como nome de grupo.
+  { id: "cmt8", name: "Pizza Tradicional + Guaraná Mineiro 1,5L", category: "Pizza Tradicional + Guaraná Mineiro 1,5L por R$59,90" },
   // Espelhos: nunca entram no mapa, nem pelo prefixo nem pela categoria.
   { id: "ifood-aaa", name: "Esfiha Carne e Bacon", category: "iFood" },
   { id: "ifood-bbb", name: "PIZZA TRADICIONAL + GUARANÁ MINEIRO 1,5L 2 SABORES (8 PEDAÇOS)", category: "iFood" },
@@ -45,10 +50,10 @@ confere("Pizzas Tradicionais NÃO é", ehCategoriaDeIntegracao("Pizzas Tradicion
 confere("vazio NÃO é", ehCategoriaDeIntegracao(""), false);
 
 console.log("\n── o mapa só tem produto real ──");
-confere("espelho ifood- fica fora", mapa.has(chaveDoNome("PIZZA TRADICIONAL + GUARANÁ MINEIRO 1,5L 2 SABORES (8 PEDAÇOS)")), false);
-confere("espelho wabiz- fica fora mesmo com categoria 'normal'", [...mapa.entries()].some(([, c]) => c === "Esfihas"), false);
-confere("produto sem categoria fica fora", mapa.has(chaveDoNome("Sachê")), false);
-confere("produto real entra", mapa.get(chaveDoNome("Esfiha Carne e Bacon")), "Esfihas Especiais");
+confere("espelho ifood- fica fora", mapa.porNome.has(chaveDoNome("PIZZA TRADICIONAL + GUARANÁ MINEIRO 1,5L 2 SABORES (8 PEDAÇOS)")), false);
+confere("espelho wabiz- fica fora mesmo com categoria 'normal'", [...mapa.porNome.entries()].some(([, c]) => c === "Esfihas"), false);
+confere("produto sem categoria fica fora", mapa.porNome.has(chaveDoNome("Sachê")), false);
+confere("produto real entra", mapa.porNome.get(chaveDoNome("Esfiha Carne e Bacon")), "Esfihas Especiais");
 
 // ── O PEDIDO #2 DA WABIZ NA NIK (22/09/2026) ──────────────────────────────
 //
@@ -67,6 +72,33 @@ const daWabiz = (nome: string) => ({
   menuProduct: { id: `wabiz-cmtn5q78c00ebte01zsqrggqx-${nome.toLowerCase().replace(/\s+/g, "-")}`, name: nome, category: "Esfihas" },
 });
 confere("Esfiha Calabresa → Esfihas Tradicionais", categoriaResolvida(daWabiz("Esfiha Calabresa"), mapa), "Esfihas Tradicionais");
+
+// ── E O PEDIDO #3, QUE DIZ O CONTRÁRIO ────────────────────────────────────
+//
+// Os dois pedidos da NIK se contradizem, e é isso que faz a regra.
+//
+// No #3 o grupo da Wabiz se chama igual a uma categoria DA LOJA ("Pizza
+// Tradicional + Guaraná Mineiro 1,5L por R$49,90 (Segunda a Quinta)", que no
+// cardápio real tem produto). Essa está no filtro da tela de pizza, e o
+// pedido aparecia certo. Casar pelo NOME levaria "Bauru" para "Sabores de
+// Pizza", que NÃO está no filtro — o #3 sumiria da cozinha justamente por
+// causa da correção do #2.
+//
+// Por isso: categoria de espelho que EXISTE no cardápio da loja manda; a que
+// não existe é nome de grupo do parceiro e cai fora.
+confere(
+  "grupo que É categoria da loja fica como está (o #3, 'Bauru')",
+  categoriaResolvida(
+    { productName: "Bauru | Guaraná Mineiro 1,5l", menuProduct: { id: "wabiz-x-bauru", name: "Bauru", category: "Pizza Tradicional + Guaraná Mineiro 1,5L por R$59,90" } },
+    mapa,
+  ),
+  "Pizza Tradicional + Guaraná Mineiro 1,5L por R$59,90",
+);
+confere(
+  "sem essa regra, 'Bauru' iria parar em Sabores de Pizza",
+  mapa.porNome.get(chaveDoNome("Bauru")),
+  "Sabores de Pizza",
+);
 confere(
   "grupo 'Bebidas' da Wabiz vira a categoria real da loja",
   categoriaResolvida({ productName: "Guaraná Mineiro 1,5l", menuProduct: { id: "wabiz-x-guarana", name: "Guaraná Mineiro 1,5l", category: "Bebidas" } }, mapa),
@@ -110,7 +142,7 @@ confere(
   "'por R$59,90' no pedido casa com 'por R$49,90' no cadastro (o combo de esfihas da NIK)",
   categoriaResolvida(
     { productName: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5l por R$59,90", menuProduct: { name: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5l por R$59,90", category: "iFood" } },
-    montarMapa([...CARDAPIO, { id: "cmt7", name: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L por R$49,90", category: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L por R$49,90" }]),
+    montarMapa([...CARDAPIO, { id: "cmt9", name: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L por R$49,90", category: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L por R$49,90" }]),
   ),
   "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L por R$49,90",
 );

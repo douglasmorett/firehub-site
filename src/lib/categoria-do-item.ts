@@ -84,7 +84,7 @@ const PREFIXO_MINIMO = 15;
  */
 function porPrefixo(chave: string, mapa: MapaDeCategorias): string | null {
   let melhor: { tamanho: number; categoria: string } | null = null;
-  for (const [nomeReal, categoria] of mapa) {
+  for (const [nomeReal, categoria] of mapa.porNome) {
     if (nomeReal.length < PREFIXO_MINIMO || nomeReal.length >= chave.length) continue;
     if (!chave.startsWith(nomeReal + " ")) continue;
     if (!melhor || nomeReal.length > melhor.tamanho) melhor = { tamanho: nomeReal.length, categoria };
@@ -92,28 +92,47 @@ function porPrefixo(chave: string, mapa: MapaDeCategorias): string | null {
   return melhor?.categoria ?? null;
 }
 
-export type MapaDeCategorias = Map<string, string>;
+/**
+ * O cardápio REAL da loja, dos dois jeitos que esta lib precisa consultar:
+ *
+ *   porNome    — nome normalizado → categoria. Só o PRIMEIRO produto de cada
+ *                nome entra (dois produtos reais com o mesmo nome em
+ *                categorias diferentes é ambiguidade da loja, não daqui).
+ *   categorias — TODAS as categorias do cardápio, normalizadas.
+ *
+ * Os dois existem porque não dá para derivar um do outro. `porNome.values()`
+ * traz só a categoria do primeiro produto de cada nome — e foi exatamente
+ * assim que o pedido #3 da NIK se perdeu: a categoria dele existe no cardápio
+ * (no produto "Pizza Tradicional + Guaraná Mineiro 1,5L"), mas outro produto
+ * de mesmo nome entrou antes no mapa e essa categoria nunca apareceu nos
+ * valores. Perguntar "esta categoria é da loja?" para `values()` respondia
+ * não, e a categoria certa era jogada fora.
+ */
+export type MapaDeCategorias = {
+  porNome: Map<string, string>;
+  categorias: Set<string>;
+};
 
 /**
- * O mapa nome → categoria dos produtos REAIS de uma loja. Espelho fica de fora
- * duas vezes: pela categoria de integração e pelo prefixo do id — porque o
- * espelho do 99Food tem categoria "99Food" mas o do Wabiz pode carregar o nome
- * do grupo, e só o prefixo denuncia esse.
+ * O cardápio real de uma loja. Espelho fica de fora duas vezes: pela categoria
+ * de integração e pelo prefixo do id — porque o espelho do 99Food tem
+ * categoria "99Food" mas o do Wabiz pode carregar o nome do grupo, e só o
+ * prefixo denuncia esse.
  */
 export function montarMapa(produtos: { id?: string | null; name?: string | null; category?: string | null }[]): MapaDeCategorias {
-  const mapa: MapaDeCategorias = new Map();
+  const porNome = new Map<string, string>();
+  const categorias = new Set<string>();
   for (const p of produtos) {
     const id = String(p.id ?? "");
     if (PREFIXOS_DE_ESPELHO.some((pre) => id.startsWith(pre))) continue;
     if (ehCategoriaDeIntegracao(p.category)) continue;
     const categoria = String(p.category ?? "").trim();
     if (!categoria) continue;
+    categorias.add(categoria.toLowerCase());
     const chave = chaveDoNome(p.name);
-    // O primeiro que aparecer vence: dois produtos reais com o mesmo nome em
-    // categorias diferentes é ambiguidade da loja, não deste código.
-    if (chave && !mapa.has(chave)) mapa.set(chave, categoria);
+    if (chave && !porNome.has(chave)) porNome.set(chave, categoria);
   }
-  return mapa;
+  return { porNome, categorias };
 }
 
 export type ItemComCategoria = {
@@ -133,6 +152,11 @@ export type ItemComCategoria = {
  * `montarMapa` já sabia disso desde o começo; `categoriaResolvida` não, e era
  * exatamente aí que a NIK perdia pedido (ver o comentário da função abaixo).
  */
+/** Esta categoria é uma categoria DE VERDADE desta loja? */
+function ehCategoriaDaLoja(categoria: string, mapa: MapaDeCategorias): boolean {
+  return mapa.categorias.has(categoria.toLowerCase().trim());
+}
+
 function ehItemDeEspelho(item: ItemComCategoria): boolean {
   const id = String(item?.menuProduct?.id ?? "");
   if (id && PREFIXOS_DE_ESPELHO.some((pre) => id.startsWith(pre))) return true;
@@ -164,12 +188,30 @@ function ehItemDeEspelho(item: ItemComCategoria): boolean {
 export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategorias): string {
   const atual = String(item?.menuProduct?.category ?? item?.category ?? "").trim();
   if (!ehItemDeEspelho(item)) return atual;
+
+  // ── A CATEGORIA DO ESPELHO VALE QUANDO ELA É DA LOJA ────────────────────
+  //
+  // O grupo da Wabiz às vezes se chama exatamente como uma categoria do
+  // cardápio, porque a loja batizou os dois igual. Aí ela manda: foi a loja
+  // que escolheu, e nenhum casamento por nome sabe mais do que isso.
+  //
+  // Medido nos dois pedidos da NIK, e é o que separa um do outro:
+  //   #3  "Pizza Tradicional + Guaraná... (Segunda a Quinta)" → 1 produto real
+  //       tem essa categoria. É da loja: fica. (Casar por nome levaria "Bauru"
+  //       para "Sabores de Pizza", que NÃO está no filtro da tela de pizza —
+  //       o pedido sumiria, que é o oposto do que esta correção quer.)
+  //   #2  "Esfihas" → NENHUM produto real tem essa categoria. É nome de grupo
+  //       da Wabiz: cai fora, e o nome acha "Esfihas Tradicionais".
+  //
+  // Espelho de iFood/99Food nunca entra aqui: a categoria dele é o nome da
+  // plataforma, que `ehCategoriaDeIntegracao` barra.
+  if (atual && !ehCategoriaDeIntegracao(atual) && ehCategoriaDaLoja(atual, mapa)) return atual;
   // O nome do dia (productName) vem antes do nome do espelho: é o que o
   // parceiro mandou neste pedido, e é o que bate com o cadastro da loja.
   const nomes = [item?.productName, item?.menuProduct?.name];
   for (const n of nomes) {
     const chave = chaveDoNome(n);
-    if (chave && mapa.has(chave)) return mapa.get(chave)!;
+    if (chave && mapa.porNome.has(chave)) return mapa.porNome.get(chave)!;
   }
   // Nome exato não existe: o real como início do nome do item.
   for (const n of nomes) {
