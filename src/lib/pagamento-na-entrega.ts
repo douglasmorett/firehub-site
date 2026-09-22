@@ -116,9 +116,21 @@ export function podeTrocarPagamento(
   if (String(pedido.status || "").toUpperCase().startsWith("CANCEL")) {
     return { pode: false, motivo: "Este pedido foi cancelado." };
   }
-  const tipo = String(pedido.deliveryType || "").toUpperCase();
-  if (tipo === "MESA" || pedido.kind === "CONTA_DA_MESA" || pedido.tableSessionId) {
-    return { pode: false, motivo: "Pedido de mesa: a forma de pagamento é da conta da mesa, no painel de Mesas." };
+  // ── MESA SEM CONTA DE MESA TROCA COMO QUALQUER OUTRO ───────────────────
+  //
+  // O bloqueio era por `deliveryType === "MESA"`, e isso barrava demais: no
+  // balcão, "Mesa 6" é só onde o cliente sentou. O pedido sai do PDV com a
+  // forma de pagamento gravada NELE, vai direto para o fechamento do caixa e
+  // não existe conta de mesa nenhuma para acertar — a mensagem mandava o
+  // lojista para um painel onde não há nada. Medido na NIK em 22/09/2026: os
+  // 12 pedidos de mesa dos últimos dois dias, todos do PDV, todos com
+  // `tableSessionId` nulo, e o lápis do painel recusando a troca em todos.
+  //
+  // Quem manda é a CONTA: se o pedido pertence a uma sessão de mesa aberta
+  // (ou é a própria conta), o acerto é lá — trocar aqui descolaria o pedido do
+  // fechamento dela. Sem sessão, é um pedido como qualquer outro.
+  if (pedido.kind === "CONTA_DA_MESA" || pedido.tableSessionId) {
+    return { pode: false, motivo: "Conta de mesa aberta: a forma de pagamento se acerta no painel de Mesas." };
   }
   if (ehPagoOnline(pedido)) {
     return { pode: false, motivo: "Pagamento online já confirmado — não dá para trocar." };

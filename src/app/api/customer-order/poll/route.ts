@@ -1023,6 +1023,10 @@ export async function GET(req: NextRequest) {
         // campo novo não chega sozinho — e sem ele o selo "puxou 19:42" não
         // teria de onde sair.
         motoboyPuxadoEm: true,
+        // `tableSessionId` é o que impede a troca de pagamento — não o rótulo
+        // "Mesa": mesa sem conta aberta é pedido de balcão com o número da mesa
+        // junto, e o pagamento dele se acerta no próprio pedido
+        // (lib/pagamento-na-entrega.ts).
         isRoutePriority: true, routeId: true, tableSessionId: true,
         ifoodOrderId: true, ifoodReference: true, ifoodPickupCode: true,
         ifoodStoreName: true, ifoodStoreMerchant: true,

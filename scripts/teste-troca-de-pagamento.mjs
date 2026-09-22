@@ -61,8 +61,12 @@ igual("pago online: NÃO", podeTrocarPagamento({ status: "ENTREGUE", paymentMeth
 igual("gateway: NÃO", podeTrocarPagamento({ status: "ENTREGUE", paymentMethod: "Pix", gatewayPaymentId: "x", deliveryType: "DELIVERY" }).pode, false);
 igual("cancelado: NÃO", podeTrocarPagamento({ status: "CANCELADO", paymentMethod: "Dinheiro", deliveryType: "DELIVERY" }).pode, false);
 igual("CANCELLED (grafia do parceiro): NÃO", podeTrocarPagamento({ status: "CANCELLED", paymentMethod: "Dinheiro", deliveryType: "DELIVERY" }).pode, false);
-igual("mesa: NÃO", podeTrocarPagamento({ status: "ACEITO", paymentMethod: "N/A", deliveryType: "MESA" }).pode, false);
-igual("pedido de mesa por tableSessionId: NÃO", podeTrocarPagamento({ status: "ACEITO", paymentMethod: "Dinheiro", deliveryType: "DELIVERY", tableSessionId: "t1" }).pode, false);
+// Mesa SEM conta de mesa é pedido de balcão com o número da mesa junto: o
+// pagamento está no próprio pedido e vai direto para o caixa, então troca como
+// qualquer outro. Quem bloqueia é a CONTA (o caso logo abaixo), não o rótulo.
+igual("mesa sem conta aberta: pode", podeTrocarPagamento({ status: "ACEITO", paymentMethod: "Cartão Crédito", deliveryType: "MESA" }).pode, true);
+igual("conta da mesa: NÃO", podeTrocarPagamento({ status: "ACEITO", paymentMethod: "N/A", deliveryType: "MESA", kind: "CONTA_DA_MESA" }).pode, false);
+igual("pedido preso a uma conta de mesa: NÃO", podeTrocarPagamento({ status: "ACEITO", paymentMethod: "Dinheiro", deliveryType: "DELIVERY", tableSessionId: "t1" }).pode, false);
 igual("sem pedido: NÃO", podeTrocarPagamento(null).pode, false);
 
 console.log("\n4) cobrancaNaEntrega continua a mesma depois da refatoração");
