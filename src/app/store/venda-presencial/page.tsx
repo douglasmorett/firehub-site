@@ -420,6 +420,58 @@ export default function VendaPresencialPage() {
           gap: 10px;
         }
 
+        /* ── ALTURA: O CARRINHO NÃO PODE SER O ÚNICO A CEDER ────────────────
+           O painel adaptava a LARGURA e ignorava a ALTURA. A lista de itens
+           era flex:1 sem piso nenhum, então ela era a única coisa elástica
+           entre um cabeçalho fixo (tipo, nome, telefone, pager, CPF) e um
+           rodapé fixo (pagamento, troco, observação, desconto, total, botão).
+           Em monitor baixo — ou navegador em janela, que é como a loja usa —
+           sobrava uma faixa de uns 40px: o atendente via "R$ 62,90" e não via
+           O QUE estava no pedido. Foto da NIK, 22/09/2026.
+
+           Agora quem cede é o RODAPÉ, que é preenchido uma vez por pedido, e
+           não a lista, que é consultada o tempo todo. A lista ganha piso; o
+           rodapé rola; e o TOTAL + botão ficam grudados embaixo, sempre à
+           vista. Ninguém precisa caçar o botão de finalizar. */
+        /* A ordem de quem cede, quando a tela não dá para tudo:
+             1º o RODAPÉ (rola por dentro; o total e o botão ficam grudados)
+             2º o CABEÇALHO (rola por dentro; é preenchido uma vez)
+             3º a LISTA DE ITENS — e ela tem piso, então nunca some.
+           O botão de finalizar nunca é empurrado para fora: é o que o
+           min-height do rodapé garante. */
+        .pdv-itens {
+          flex: 1 1 auto;
+          min-height: clamp(96px, 20vh, 240px);
+          overflow-y: auto;
+        }
+        .pdv-rodape {
+          /* Encolhe TRÊS VEZES mais rápido que os outros dois. É o bloco mais
+             alto e o menos consultado: o atendente escolhe a forma de
+             pagamento uma vez e não olha mais. Sem este peso, o aperto era
+             dividido em partes iguais e o cabeçalho encolhia junto — com o
+             pager obrigatório, o campo que ele PRECISA preencher ficava
+             escondido atrás de rolagem. */
+          flex: 0 3 auto;
+          /* Cabe o TOTAL e o botão inteiro. Abaixo disto o botão começaria a
+             sair da tela, e aí não há pedido nenhum para lançar. */
+          min-height: 132px;
+          overflow-y: auto;
+        }
+        .pdv-cabecalho {
+          flex: 0 1 auto;
+          min-height: 0;
+          overflow-y: auto;
+        }
+        .pdv-acao {
+          position: sticky;
+          bottom: 0;
+          background: #FAFAFA;
+          padding-top: 6px;
+          /* Sem a sombra, o conteúdo que rola por baixo encosta no total e os
+             dois viram um bloco só. */
+          box-shadow: 0 -6px 10px -8px rgba(15,23,42,0.35);
+        }
+
         /* Tablet deitado e telas médias */
         @media (max-width: 1180px) {
           .pdv-layout { grid-template-columns: 1fr 300px; }
@@ -436,8 +488,31 @@ export default function VendaPresencialPage() {
           .pdv-carrinho {
             border-left: none !important;
             border-top: 2px solid #E2E8F0;
-            max-height: 42vh;
+            /* Era 42vh. Com o cabeçalho que cresceu (pager e CPF), 42vh de um
+               tablet em pé não cabia lista NENHUMA depois do rodapé — e a
+               lista é o motivo de o painel existir. */
+            max-height: 52vh;
           }
+          /* Aqui o painel inteiro já é curto: a lista se contenta com menos,
+             senão ela empurraria o rodapé para fora. */
+          .pdv-itens { min-height: 76px; }
+        }
+
+        /* Tela baixa: o cabeçalho encolhe ANTES de a lista encolher.
+           1366x768 com barra do Windows e do navegador dá ~600px úteis — é o
+           monitor da maioria das lojas, não um caso raro. */
+        @media (max-height: 820px) {
+          .pdv-tipo { margin-bottom: 8px !important; }
+          .pdv-tipo button { padding: 5px 4px !important; font-size: 0.74rem !important; }
+          .pdv-tipo-emoji { font-size: 14px !important; margin-bottom: 0 !important; }
+          .pdv-cabecalho { padding: 8px 12px !important; }
+        }
+        @media (max-height: 680px) {
+          /* Aqui o emoji vira enfeite caro: são 18px de altura vezes a linha
+             inteira. O rótulo ("Balcão", "Mesa", "Delivery") já diz tudo. */
+          .pdv-tipo-emoji { display: none !important; }
+          .pdv-itens { min-height: 88px; }
+          .pdv-aviso-caixa-texto { display: none; }
         }
 
         /* Alvo de toque: dedo não acerta botão de 24px com precisão.
@@ -530,8 +605,8 @@ export default function VendaPresencialPage() {
       {/* ===== RIGHT: PEDIDO ===== */}
       <div className="pdv-carrinho" style={{ display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
         {/* Tipo de pedido */}
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
+        <div className="pdv-cabecalho" style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
+          <div className="pdv-tipo" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
             {([
               { value: "BALCAO", label: "Balcão", icon: "🏠", color: "#3B82F6" },
               { value: "MESA", label: "Mesa", icon: "🍽️", color: "#8B5CF6" },
@@ -542,7 +617,7 @@ export default function VendaPresencialPage() {
                   background: orderType === t.value ? t.color : "#F8FAFC",
                   color: orderType === t.value ? "#fff" : "#64748B",
                   fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
-                <div style={{ fontSize: 18, marginBottom: 2 }}>{t.icon}</div>
+                <div className="pdv-tipo-emoji" style={{ fontSize: 18, marginBottom: 2 }}>{t.icon}</div>
                 {t.label}
               </button>
             ))}
@@ -628,7 +703,7 @@ export default function VendaPresencialPage() {
         </div>
 
         {/* Carrinho */}
-        <div style={{ flex: 1, overflow: "auto", padding: "10px 16px" }}>
+        <div className="pdv-itens" style={{ padding: "10px 16px" }}>
           {cart.length === 0 ? (
             <div style={{ textAlign: "center", padding: "2rem 1rem", color: "#CBD5E1" }}>
               <ShoppingCart size={40} style={{ margin: "0 auto 10px" }} />
@@ -673,8 +748,12 @@ export default function VendaPresencialPage() {
           ))}
         </div>
 
-        {/* Footer: pagamento + total */}
-        <div style={{ padding: "10px 14px 75px 14px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA", position: "relative", zIndex: 50, flexShrink: 0 }}>
+        {/* Footer: pagamento + total.
+            O espaço morto de 75px embaixo saiu: ele existia para o carrinho
+            não ficar atrás do widget flutuante de contato, e esse widget já é
+            escondido dentro do PDV pelo CSS lá de cima. Eram 75px roubados da
+            lista de itens em toda tela, todo dia. */}
+        <div className="pdv-rodape" style={{ padding: "10px 14px 10px 14px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA", position: "relative", zIndex: 50 }}>
           {/* Forma de pagamento */}
           <div style={{ marginBottom: 6 }}>
             <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 3 }}>Pagamento</label>
@@ -861,6 +940,12 @@ export default function VendaPresencialPage() {
             </div>
           )}
 
+          {/* ── O QUE NUNCA SAI DA VISTA ─────────────────────────────────────
+              Total, aviso e botão ficam grudados no pé do painel enquanto o
+              resto do rodapé rola por baixo. São as três coisas que o
+              atendente precisa alcançar em qualquer altura de tela: quanto
+              deu, o que está errado, e finalizar. */}
+          <div className="pdv-acao">
           {/* Total */}
           {cart.length > 0 && (
             <div style={{ marginBottom: 6 }}>
@@ -891,18 +976,23 @@ export default function VendaPresencialPage() {
               Traz o atalho para abrir o caixa em outra aba — o carrinho fica
               montado aqui, e ao voltar é só finalizar. Nada se perde. */}
           {caixaAberto === false && (
-            <div style={{ padding: "12px 14px", borderRadius: 12, marginBottom: 8, background: "#FEF2F2", border: "1.5px solid #FECACA" }}>
-              <div style={{ fontWeight: 900, fontSize: "0.9rem", color: "#B91C1C", marginBottom: 4 }}>
-                🔒 Seu caixa está fechado
-              </div>
-              <div style={{ fontSize: "0.78rem", color: "#7F1D1D", lineHeight: 1.5, marginBottom: 8 }}>
-                Abra o caixa primeiro para poder lançar pedidos — sem ele o dinheiro desta venda não entra no fechamento do dia. O que você já montou aqui não se perde.
+            <div className="pdv-aviso-caixa" style={{ padding: "10px 12px", borderRadius: 12, marginBottom: 8, background: "#FEF2F2", border: "1.5px solid #FECACA", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 170 }}>
+                <div style={{ fontWeight: 900, fontSize: "0.86rem", color: "#B91C1C" }}>
+                  🔒 Seu caixa está fechado
+                </div>
+                {/* Some em tela baixa: esta faixa mora no bloco fixo do pé, e
+                    cada linha dela é uma linha a menos da lista de itens. O
+                    título e o botão já dizem o que fazer. */}
+                <div className="pdv-aviso-caixa-texto" style={{ fontSize: "0.75rem", color: "#7F1D1D", lineHeight: 1.45, marginTop: 2 }}>
+                  Abra o caixa para lançar pedidos. O que você já montou aqui não se perde.
+                </div>
               </div>
               <a
                 href={CAMINHO_DO_CAIXA}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ display: "inline-block", padding: "8px 14px", borderRadius: 10, background: "#B91C1C", color: "#fff", fontWeight: 800, fontSize: "0.82rem", textDecoration: "none" }}
+                style={{ display: "inline-block", padding: "8px 14px", borderRadius: 10, background: "#B91C1C", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none", whiteSpace: "nowrap" }}
               >
                 Abrir o caixa →
               </a>
@@ -915,6 +1005,7 @@ export default function VendaPresencialPage() {
               {caixaAberto === false ? "🔒 Abra o caixa para lançar" : loading ? "Registrando..." : <><Check size={20} style={{ pointerEvents: "none" }} /> Finalizar Pedido</>}
             </span>
           </button>
+          </div>
         </div>
       </div>
 
