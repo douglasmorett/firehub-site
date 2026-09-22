@@ -315,9 +315,22 @@ const pedidoComObs = {
   items: [{ name: "Esfirra Duo", qty: 1, price: 7.98, notes: "bem passada" }],
 };
 const comObs = buildEscPos(pedidoComObs, "Salz Burgueria", 48, "safe").toString("binary");
-const linhaObsEntrega = comObs.split("\n").find((l) => l.includes("Sem cebola"));
-const linhaObsItem = comObs.split("\n").find((l) => l.includes("bem passada"));
-conferir("a observacao da entrega sai destacada", !!linhaObsEntrega && linhaObsEntrega.includes("\x1D!") && linhaObsEntrega.includes(NEGRITO));
+const linhasComObs = comObs.split("\n");
+const linhaObsEntrega = linhasComObs.find((l) => l.includes("Sem cebola"));
+const linhaObsItem = linhasComObs.find((l) => l.includes("bem passada"));
+// A OBSERVACAO DO CLIENTE MUDOU DE FORMA, nao de importancia. Ela era um
+// "Obs:" ampliado e em negrito dentro do bloco ENTREGA; virou uma TARJA
+// INVERTIDA ("!! OBSERVACAO DO CLIENTE !!", GS B 1) logo antes dos itens, com
+// o texto embaixo — mais visivel que o negrito, e nao some em pedido que nao
+// e delivery. A assercao antiga procurava os bytes de ampliacao na linha do
+// texto e passou a falhar sem que nada tivesse piorado no papel.
+const TARJA_INVERTIDA = "\x1DB\x01";
+const iFaixaDaObs = linhasComObs.findIndex((l) => l.includes(TARJA_INVERTIDA) && l.includes("OBSERVACAO DO CLIENTE"));
+const iTextoDaObs = linhasComObs.findIndex((l) => l.includes("Sem cebola"));
+conferir(
+  "a observacao do cliente sai na tarja invertida, com o texto logo abaixo",
+  iFaixaDaObs >= 0 && iTextoDaObs > iFaixaDaObs && iTextoDaObs - iFaixaDaObs <= 2,
+);
 conferir("a observacao do item sai destacada", !!linhaObsItem && linhaObsItem.includes("\x1D!") && linhaObsItem.includes(NEGRITO));
 const linhaData = comObs.split("\n").find((l) => l.includes("Data:"));
 conferir("a data continua miuda", !!linhaData && !linhaData.includes("\x1D!\x11") && !linhaData.includes("\x1D!\x22"));
