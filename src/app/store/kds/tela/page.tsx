@@ -326,9 +326,12 @@ export default function KDSTelaPage() {
           // certa (a URL antiga não a tem) e ao mesmo tempo deixava de ser
           // órfã, então também não aparecia nas outras. O pedido caía no vão
           // entre as duas regras. Na NIK, 22/09/2026, foi "Sabores de Pizza".
-          const minha = telas.find(
-            (t: any) => t?.stage === stage && String(t?.name || "") === screenName,
-          );
+          // Pelo id da tela quando o link o traz (`&tela=`), que é o que não
+          // muda quando o lojista renomeia a tela; pelo nome nos links antigos,
+          // salvos antes de o id existir.
+          const minha =
+            (chaveDaTela && telas.find((t: any) => String(t?.id || "") === chaveDaTela)) ||
+            telas.find((t: any) => t?.stage === stage && String(t?.name || "") === screenName);
           if (minha && !filtroMexidoAqui.current) {
             const doPainel = (minha.categoryFilter || []).map((c: any) => String(c));
             setActiveCategories((atual) =>
@@ -350,7 +353,7 @@ export default function KDSTelaPage() {
       vivo = false;
       clearInterval(id);
     };
-  }, [stage, screenName]);
+  }, [stage, screenName, chaveDaTela]);
   const lastJsonRef = useRef<string>("");
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

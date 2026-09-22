@@ -164,6 +164,45 @@ export default function KDSHubClient() {
         </div>
       )}
 
+      {/* ── ACOMPANHAMENTOS: O QUE NÃO É DE TELA NENHUMA ──────────────────────
+          A borda é feita junto com a pizza, o sachê vai na mesma sacola. Quem
+          divide as telas por categoria acaba deixando essas de fora — e o
+          lojista, vendo a bebida aparecer em toda tela, tenta "consertar"
+          colocando Bebidas numa delas. Isso faz o contrário do que ele quer:
+          a categoria passa a ter dono e some das outras. Este aviso existe
+          para que a regra seja lida antes de alguém consertar o que funciona. */}
+      {(() => {
+        const comFiltro = screens.filter((t) => (t.categoryFilter || []).length > 0);
+        if (comFiltro.length === 0 || allCategories.length === 0) return null;
+        const emAlgumaTela = new Set<string>();
+        for (const t of comFiltro) {
+          for (const c of t.categoryFilter || []) emAlgumaTela.add(String(c).toLowerCase().trim());
+        }
+        const acompanhamentos = allCategories
+          .map((c) => c.name)
+          .filter((nome) => !emAlgumaTela.has(String(nome).toLowerCase().trim()));
+        if (acompanhamentos.length === 0) return null;
+        return (
+          <div style={{
+            background: "#1a1a2e", border: "1px solid #2a2a4a", borderLeft: "4px solid #38bdf8",
+            borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem",
+          }}>
+            <div style={{ color: "#38bdf8", fontWeight: 800, fontSize: "0.85rem", marginBottom: 6 }}>
+              🥤 Acompanhamentos
+            </div>
+            <div style={{ color: "#cbd5e1", fontSize: "0.82rem", lineHeight: 1.5 }}>
+              <b style={{ color: "#fff" }}>{acompanhamentos.join(", ")}</b> não {acompanhamentos.length === 1 ? "está" : "estão"} em nenhuma tela — e não some{acompanhamentos.length === 1 ? "" : "m"} por isso.
+              Categoria sem tela própria acompanha o pedido em <b>toda tela onde ele aparece</b>, na produção e na finalização.
+              É o certo para borda, bebida e sachê: são feitos junto com o pedido, não separados.
+              <br />
+              <span style={{ color: "#94a3b8" }}>
+                Se você incluir uma delas numa tela, ela passa a ser produzida <b>só ali</b> — e deixa de acompanhar o resto do pedido.
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Screen cards */}
       {screens.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
