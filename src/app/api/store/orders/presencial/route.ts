@@ -7,6 +7,9 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { lerPager } from "@/lib/pager";
 import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
 import { normalizarDocumento, problemaDoDocumento, lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
+import { problemaDoPagerObrigatorio } from "@/lib/balcao-config";
+import { MENSAGEM_CAIXA_FECHADO, ERRO_CAIXA_FECHADO } from "@/lib/caixa-aberto";
+import { caixaEstaAberto } from "@/lib/caixa-aberto-servidor";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -55,6 +58,43 @@ export async function POST(req: Request) {
   if (!dbUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+
+  // ── SEM CAIXA ABERTO NÃO SE LANÇA VENDA PRESENCIAL ───────────────────────
+  //
+  // Vale para as TRÊS abas do PDV — balcão, mesa e delivery lançado aqui —,
+  // porque todas são dinheiro que entra pela mão do atendente e precisa de
+  // uma sessão de caixa para ser registrado. Só o que o lojista digita: o
+  // pedido do site, do WhatsApp e das integrações continua entrando, que é o
+  // certo (ver lib/caixa-aberto.ts).
+  //
+  // Vem ANTES de tudo o que grava: nada de número de pedido queimado nem de
+  // baixa de estoque por uma venda que não vai existir.
+  if (!(await caixaEstaAberto(targetFranchiseeId))) {
+    return NextResponse.json(
+      { error: MENSAGEM_CAIXA_FECHADO, codigo: ERRO_CAIXA_FECHADO },
+      { status: 409 },
+    );
+  }
+
+  // ── PAGER OBRIGATÓRIO, SE A LOJA MARCOU ──────────────────────────────────
+  //
+  // A trava mora AQUI, não na tela: o PDV pode estar com uma aba velha aberta
+  // desde antes de o dono marcar a caixinha, e é por esta rota que todo
+  // lançamento presencial passa. A tela faz a mesma conferência só para o
+  // atendente ver antes de montar o carrinho.
+  //
+  // A aba do PDV chega traduzida em `deliveryType`: Balcão vira RETIRADA (é o
+  // que vai para o banco), Mesa e Delivery vêm com o próprio nome. Aqui a
+  // tradução é desfeita, porque o que a loja marcou foi a ABA. Falha ao ler a
+  // config não trava venda: `lerBalcaoConfig` cai no padrão, nada obrigatório.
+  const tipoDeLancamento = deliveryType === "MESA" ? "MESA"
+    : deliveryType === "DELIVERY" ? "DELIVERY"
+    : "BALCAO";
+  const configDaLoja = await prisma.user
+    .findUnique({ where: { id: targetFranchiseeId }, select: { balcaoConfig: true } as any })
+    .catch(() => null);
+  const problemaNoPager = problemaDoPagerObrigatorio((configDaLoja as any)?.balcaoConfig, tipoDeLancamento, pagerNumber);
+  if (problemaNoPager) return NextResponse.json({ error: problemaNoPager }, { status: 400 });
 
   // ISOLAMENTO ENTRE LOJAS: so aceita produto DESTA loja.
   // O corpo vinha cru — um menuProductId de outra loja entrava no pedido e a

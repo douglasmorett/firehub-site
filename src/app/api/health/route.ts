@@ -71,6 +71,10 @@ export async function GET() {
       ["User", "onboardingData"], ["User", "metaIaSemanaReferencia"],
       ["User", "metaIaGeracoesUsadas"], ["User", "showAddressOnMenu"],
       ["User", "printQueueEstado"], ["CustomerOrder", "printedAt"], ["PrintRequest", "printedAt"],
+      // Regras do PDV que a loja liga sozinha (lib/balcao-config.ts). A coluna
+      // ausente não trava venda — `lerBalcaoConfig` cai no padrão — mas a loja
+      // marcaria a caixinha e a marcação não gravaria, calada.
+      ["User", "balcaoConfig"],
       ["CustomerOrder", "gaClientId"], ["CustomerOrder", "gaSessionId"],
       ["CustomerOrder", "acceptedAt"], ["CustomerOrder", "readyAt"],
       ["CustomerOrder", "dispatchedAt"], ["CustomerOrder", "deliveredAt"],

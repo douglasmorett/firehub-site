@@ -216,6 +216,11 @@ model User {
   // === MULTI IFOOD ===
   ifoodIntegrations IfoodIntegration[]
 
+  // === LANÇAMENTO PRESENCIAL (PDV) ===
+  // { pagerObrigatorioBalcao, pagerObrigatorioMesa } — lib/balcao-config.ts.
+  // Nulo = nada obrigatório, que é como toda loja nasce.
+  balcaoConfig        Json?
+
   // === CONTA FUNCIONÁRIO (FIADO) ===
   employeeAccountEnabled Boolean @default(false)
   storeEmployees        StoreEmployee[]

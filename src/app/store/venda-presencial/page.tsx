@@ -10,6 +10,10 @@ import {
 import {
   lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento, tipoDoDocumento,
 } from "@/lib/documento-do-cliente";
+import {
+  BALCAO_CONFIG_PADRAO, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
+} from "@/lib/balcao-config";
+import { MENSAGEM_CAIXA_FECHADO, CAMINHO_DO_CAIXA } from "@/lib/caixa-aberto";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -43,6 +47,16 @@ export default function VendaPresencialPage() {
   const [pager, setPager] = useState("");
   /** "CPF na nota": sai impresso na comanda e já preenche a NFC-e depois. */
   const [documento, setDocumento] = useState("");
+  /** O que a loja marcou em Minha Loja › Balcão & Pager (lib/balcao-config.ts). */
+  const [balcaoConfig, setBalcaoConfig] = useState<BalcaoConfig>({ ...BALCAO_CONFIG_PADRAO });
+  /**
+   * Tem caixa aberto? `null` = ainda perguntando.
+   *
+   * Começa como null e NÃO como false: mostrar "caixa fechado" no meio segundo
+   * até a resposta chegar faria o atendente correr abrir um caixa que já
+   * estava aberto.
+   */
+  const [caixaAberto, setCaixaAberto] = useState<boolean | null>(null);
   const [address, setAddress] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Dinheiro");
   const [notes, setNotes] = useState("");
@@ -70,6 +84,32 @@ export default function VendaPresencialPage() {
     fetch("/api/store-settings/payment").then(r => r.ok ? r.json() : null).then(d => d && setPaymentConfig(d.paymentFees));
     fetch("/api/store-settings/employee-account").then(r => r.ok ? r.json() : null).then(d => d && setEmployeeAccountEnabled(Boolean(d.employeeAccountEnabled)));
     fetch("/api/store/employees").then(r => r.ok ? r.json() : null).then(d => d?.employees && setEmployees(d.employees));
+    // Falha aqui deixa a tela no padrão (nada obrigatório): a venda não pode
+    // parar porque uma configuração não carregou. Quem tem a palavra final é
+    // a rota do pedido, que lê a mesma regra do banco.
+    fetch("/api/store-settings/balcao").then(r => r.ok ? r.json() : null)
+      .then(d => d && setBalcaoConfig({ pagerObrigatorioBalcao: d.pagerObrigatorioBalcao === true, pagerObrigatorioMesa: d.pagerObrigatorioMesa === true }))
+      .catch(() => { /* fica no padrão */ });
+  }, []);
+
+  // ── O CAIXA PRECISA ESTAR ABERTO (lib/caixa-aberto.ts) ───────────────────
+  //
+  // Pergunta ao abrir a tela e DE NOVO a cada 30s: o atendente costuma abrir o
+  // caixa noutra aba e voltar para cá, e sem reperguntar ele ficaria olhando o
+  // aviso vermelho num caixa já aberto, sem entender por quê. Também volta a
+  // perguntar quando a aba ganha foco, que é o caminho mais comum.
+  useEffect(() => {
+    let vivo = true;
+    const conferir = () => {
+      fetch("/api/store/caixa-aberto")
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => { if (vivo && d) setCaixaAberto(d.aberto === true); })
+        .catch(() => { /* mantém o que já sabia; quem barra de verdade é a API do pedido */ });
+    };
+    conferir();
+    const relogio = setInterval(conferir, 30_000);
+    window.addEventListener("focus", conferir);
+    return () => { vivo = false; clearInterval(relogio); window.removeEventListener("focus", conferir); };
   }, []);
 
   const getDisplayPrice = (p: any) => {
@@ -266,6 +306,10 @@ export default function VendaPresencialPage() {
   };
 
   const handleSubmit = async () => {
+    // O caixa é a primeira pergunta: de nada adianta conferir o carrinho de um
+    // pedido que não vai poder ser registrado. Quem barra de verdade é a API
+    // (lib/caixa-aberto.ts) — aqui é para o atendente não perder a viagem.
+    if (caixaAberto === false) return setMsg(`❌ ${MENSAGEM_CAIXA_FECHADO}`);
     if (cart.length === 0) return setMsg("❌ Adicione pelo menos um produto.");
     if (orderType === "MESA" && !tableNum) return setMsg("❌ Informe o número da mesa.");
     if (orderType === "DELIVERY" && !address) return setMsg("❌ Informe o endereço de entrega.");
@@ -276,6 +320,11 @@ export default function VendaPresencialPage() {
     // destinatário da NFC-e depois (lib/documento-do-cliente.ts).
     const problemaNoDocumento = problemaDoDocumento(documento);
     if (problemaNoDocumento) return setMsg(`❌ ${problemaNoDocumento}`);
+    // Pager obrigatório, se a loja marcou (lib/balcao-config.ts). A mesma
+    // função roda na rota do pedido — aqui é para o atendente ver antes de
+    // montar o carrinho inteiro, não é a trava.
+    const problemaNoPager = problemaDoPagerObrigatorio(balcaoConfig, orderType, pager);
+    if (problemaNoPager) return setMsg(`❌ ${problemaNoPager}`);
 
     if (dividir) {
       const validas = partes.filter(p => valorDaParte(p) > 0);
@@ -522,15 +571,27 @@ export default function VendaPresencialPage() {
               Fica vazio por padrão — loja que não usa pager não digita nada e
               nada muda. Quem digita vê o número no card do painel e na
               comanda impressa. */}
-          {(orderType === "BALCAO" || orderType === "MESA") && (
-            <input
-              placeholder="Pager (opcional) — ex: 12"
-              value={pager}
-              onChange={e => setPager(e.target.value.slice(0, 10))}
-              maxLength={10}
-              style={{ width: "100%", marginTop: 6, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${pager.trim() ? "#F59E0B" : "#E2E8F0"}`, background: pager.trim() ? "#FFFBEB" : "#FFF", fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: pager.trim() ? 800 : 400 }}
-            />
-          )}
+          {(orderType === "BALCAO" || orderType === "MESA") && (() => {
+            // A loja pode ter marcado o pager como OBRIGATÓRIO aqui
+            // (Minha Loja › Balcão & Pager). Quando está, o campo tem que
+            // dizer isso sozinho — borda vermelha e "obrigatório" no lugar de
+            // "opcional" —, senão o atendente só descobre ao tentar finalizar,
+            // com o cliente na frente dele.
+            const pagerObrigatorio = pagerEhObrigatorio(balcaoConfig, orderType);
+            const faltando = pagerObrigatorio && pager.trim() === "";
+            return (
+              <input
+                placeholder={pagerObrigatorio ? "Pager * — obrigatório, ex: 12" : "Pager (opcional) — ex: 12"}
+                value={pager}
+                onChange={e => setPager(e.target.value.slice(0, 10))}
+                maxLength={10}
+                style={{ width: "100%", marginTop: 6, padding: "7px 10px", borderRadius: 8,
+                  border: `1.5px solid ${faltando ? "#DC2626" : pager.trim() ? "#F59E0B" : "#E2E8F0"}`,
+                  background: faltando ? "#FEF2F2" : pager.trim() ? "#FFFBEB" : "#FFF",
+                  fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: pager.trim() ? 800 : 400 }}
+              />
+            );
+          })()}
 
           {/* ── "CPF NA NOTA" ────────────────────────────────────────────────
               Só no BALCÃO: é ali que o cliente está na frente do atendente e
@@ -822,10 +883,36 @@ export default function VendaPresencialPage() {
 
           {msg && <div style={{ padding: "6px 10px", borderRadius: 8, marginBottom: 6, background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", color: msg.startsWith("✅") ? "#16a34a" : "#dc2626", fontSize: "0.8rem", fontWeight: 700 }}>{msg}</div>}
 
-          <button type="button" data-btn="finalizar" onClick={handleSubmit} disabled={loading || cart.length === 0}
-            style={{ width: "100%", padding: "14px", background: cart.length === 0 ? "#CBD5E1" : "linear-gradient(135deg, #C62828, #E53935)", color: cart.length === 0 ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: cart.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: cart.length > 0 ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 9999 }}>
+          {/* ── CAIXA FECHADO ────────────────────────────────────────────────
+              Fica logo ACIMA do botão, que é onde o atendente vai clicar, e
+              não no topo da tela: o carrinho rola, e um aviso lá em cima
+              sumiria justamente no momento de finalizar.
+
+              Traz o atalho para abrir o caixa em outra aba — o carrinho fica
+              montado aqui, e ao voltar é só finalizar. Nada se perde. */}
+          {caixaAberto === false && (
+            <div style={{ padding: "12px 14px", borderRadius: 12, marginBottom: 8, background: "#FEF2F2", border: "1.5px solid #FECACA" }}>
+              <div style={{ fontWeight: 900, fontSize: "0.9rem", color: "#B91C1C", marginBottom: 4 }}>
+                🔒 Seu caixa está fechado
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "#7F1D1D", lineHeight: 1.5, marginBottom: 8 }}>
+                Abra o caixa primeiro para poder lançar pedidos — sem ele o dinheiro desta venda não entra no fechamento do dia. O que você já montou aqui não se perde.
+              </div>
+              <a
+                href={CAMINHO_DO_CAIXA}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: "inline-block", padding: "8px 14px", borderRadius: 10, background: "#B91C1C", color: "#fff", fontWeight: 800, fontSize: "0.82rem", textDecoration: "none" }}
+              >
+                Abrir o caixa →
+              </a>
+            </div>
+          )}
+
+          <button type="button" data-btn="finalizar" onClick={handleSubmit} disabled={loading || cart.length === 0 || caixaAberto === false}
+            style={{ width: "100%", padding: "14px", background: (cart.length === 0 || caixaAberto === false) ? "#CBD5E1" : "linear-gradient(135deg, #C62828, #E53935)", color: (cart.length === 0 || caixaAberto === false) ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: (cart.length === 0 || caixaAberto === false) ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: (cart.length > 0 && caixaAberto !== false) ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 9999 }}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
-              {loading ? "Registrando..." : <><Check size={20} style={{ pointerEvents: "none" }} /> Finalizar Pedido</>}
+              {caixaAberto === false ? "🔒 Abra o caixa para lançar" : loading ? "Registrando..." : <><Check size={20} style={{ pointerEvents: "none" }} /> Finalizar Pedido</>}
             </span>
           </button>
         </div>

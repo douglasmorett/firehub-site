@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
+import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 
 export async function GET(req: NextRequest) {
   try {
@@ -71,6 +72,19 @@ export async function POST(req: NextRequest) {
     const operador = await resolverOperadorDaMesa();
     if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const targetFranchiseeId = operador.franchiseeId;
+
+    // ── SEM CAIXA ABERTO NÃO SE ABRE MESA ────────────────────────────────
+    //
+    // O dinheiro da mesa entra no caixa quando ela FECHA (a regra está em
+    // api/cash-session: o turno soma as mesas fechadas depois da abertura).
+    // Mesa aberta com o caixa fechado é consumo que vai existir e não vai ter
+    // onde cair — o caixa fecha errado depois, que foi exatamente como o dono
+    // descreveu em 22/09/2026.
+    //
+    // Barrar na ABERTURA é o ponto mais barato para todo mundo: o garçom
+    // descobre antes de a mesa consumir, e não com a conta na mão.
+    const semCaixa = await recusaSeCaixaFechado(targetFranchiseeId, "abrir a mesa");
+    if (semCaixa) return semCaixa;
 
     const data = await req.json();
     const { tableId, customerName, waiterName, waiterId } = data;

@@ -98,7 +98,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.20";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.21";
 
 /**
  * A partir daqui o Assistente imprime o "CPF na nota" em LINHA PRÓPRIA.

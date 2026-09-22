@@ -3,6 +3,10 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import RelatoriosClient from "./RelatoriosClient";
+import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
+import { lerAcerto, ganhoDoPedido } from "@/lib/ganho-do-entregador";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+import { canalDoPedido } from "@/lib/canal-do-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +28,8 @@ export default async function StoreRelatoriosPage() {
       role: true,
       ownerId: true,
       timeAlertConfig: true,
+      // Para montar o filtro "de qual loja veio" (lib/lojas-de-origem-da-conta.ts).
+      accountGroupId: true,
     }
   }).catch((err) => {
     console.error("[Relatorios] Erro ao buscar usuário:", err);
@@ -83,6 +89,49 @@ export default async function StoreRelatoriosPage() {
     console.error("[Relatorios] Erro ao carregar dados:", err);
   }
 
+  // ── QUANTO A LOJA PAGA POR CADA ENTREGA ──────────────────────────────────
+  //
+  // NÃO é `deliveryFee` (o que o cliente ou o app pagou) e NÃO é `motoboyFee`
+  // (que nunca chega a ser gravado: 0 de 11.388 entregas em 60 dias, medido em
+  // 22/09/2026). O valor real depende do acerto de CADA entregador — diária,
+  // por km, por entrega, escada própria — e a conta é a de
+  // lib/ganho-do-entregador.ts, a MESMA do fechamento de motoboys. Duas contas
+  // diferentes para o mesmo dinheiro é o que o lojista descobre discutindo com
+  // o entregador.
+  //
+  // Sai daqui, no servidor, porque precisa do acerto dos entregadores e das
+  // zonas da loja — dados que não devem viajar para o navegador.
+  let custoPorPedido = new Map<string, number | null>();
+  try {
+    const dono = await prisma.user.findUnique({
+      where: { id: targetFranchiseeId },
+      select: { deliveryConfig: true, deliveryZones: true },
+    });
+    const regraDeRepasse = lerRegraDeRepasse(dono?.deliveryConfig);
+    const entregadores = await prisma.motoboy.findMany({ where: { franchiseeId: targetFranchiseeId } });
+    const acertoDe = new Map(entregadores.map((m) => [m.id, lerAcerto(m as any)]));
+
+    for (const o of orders) {
+      // Entrega sem entregador atribuído fica como `null`, não como zero: o
+      // relatório precisa dizer "não dá para saber" em vez de afirmar que
+      // custou nada. Ver o cartão de entregas no cliente.
+      const acerto = o.motoboyId ? acertoDe.get(o.motoboyId) : null;
+      if (!acerto) { custoPorPedido.set(o.id, null); continue; }
+      custoPorPedido.set(o.id, ganhoDoPedido({
+        acerto,
+        pedido: o,
+        regraDaLoja: regraDeRepasse,
+        zonas: dono?.deliveryZones,
+        ehMarketplace: canalDoPedido(o).ehMarketplace,
+      }).valor);
+    }
+  } catch (err) {
+    // Sem o custo, o relatório mostra a CONTAGEM de entregas e diz que o gasto
+    // não pôde ser apurado. Nunca zero — zero é uma afirmação.
+    console.error("[Relatorios] Erro ao calcular o custo das entregas:", err);
+    custoPorPedido = new Map();
+  }
+
   // Serializa os pedidos para passar para o Client Component
   const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
@@ -94,6 +143,18 @@ export default async function StoreRelatoriosPage() {
     deliveryType: o.deliveryType,
     paymentMethod: o.paymentMethod || "Não informado",
     source: o.source || "ONLINE",
+    // ── DE QUAL LOJA VEIO ────────────────────────────────────────────────
+    // As chaves que lib/loja-de-origem.ts lê para dizer se este pedido é da
+    // Ragnar Pizza ou da Ragnar Burguer. São os MESMOS campos que o painel e
+    // o roteamento de impressão usam — nada exclusivo do relatório.
+    franchiseeId: o.franchiseeId,
+    ifoodStoreMerchant: o.ifoodStoreMerchant || null,
+    food99AppShopId: o.food99AppShopId || null,
+    food99ShopId: o.food99ShopId || null,
+    // O que a LOJA paga ao entregador por este pedido. `null` = não dá para
+    // saber (sem entregador atribuído) — e null não é zero.
+    custoDaEntrega: custoPorPedido.has(o.id) ? custoPorPedido.get(o.id) : null,
+    temEntregador: Boolean(o.motoboyId),
     createdAt: o.createdAt.toISOString(),
     // Marcos da operação (ver src/lib/order-stages.ts). Nulos nos pedidos
     // anteriores à medição — o relatório conta só o que foi medido.
@@ -126,12 +187,22 @@ export default async function StoreRelatoriosPage() {
     active: p.active,
   }));
 
+  // As lojas de origem da conta, com nome. Volta VAZIA quando não há o que
+  // separar (uma loja no iFood, uma no 99, sem grupo) — e aí o filtro por loja
+  // some da tela sozinho, em vez de oferecer uma opção só.
+  const lojasDeOrigem = await lojasDeOrigemDaConta(targetFranchiseeId, (user as any).accountGroupId || null)
+    .catch((err) => {
+      console.error("[Relatorios] Erro ao montar as lojas de origem:", err);
+      return [];
+    });
+
   return (
     <RelatoriosClient
       orders={serializedOrders}
       products={serializedProducts}
       storeName={user.storeName || "Minha Loja"}
       timeAlertConfig={(user as any).timeAlertConfig || null}
+      lojasDeOrigem={lojasDeOrigem}
     />
   );
 }

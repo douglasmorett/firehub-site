@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
+import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
@@ -17,6 +18,12 @@ export async function POST(
     const operador = await resolverOperadorDaMesa();
     if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const targetFranchiseeId = operador.franchiseeId;
+    // Mesa aberta ANTES de o caixa fechar continuaria recebendo item a noite
+    // toda. O consumo é o que vira dinheiro no fechamento — e o fechamento só
+    // soma mesa fechada depois da abertura do caixa (ver lib/caixa-aberto.ts).
+    const semCaixa = await recusaSeCaixaFechado(targetFranchiseeId, "lançar o item");
+    if (semCaixa) return semCaixa;
+
     const hojeNaLoja = diaDaSemanaDaLoja(await fusoDaLoja(targetFranchiseeId));
 
     const { id } = await params;

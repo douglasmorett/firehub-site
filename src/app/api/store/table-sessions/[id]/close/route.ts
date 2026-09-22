@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { valorDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
+import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 
 export async function POST(
@@ -13,6 +14,18 @@ export async function POST(
     const operador = await resolverOperadorDaMesa();
     if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const targetFranchiseeId = operador.franchiseeId;
+
+    // ── ESTE É O MOMENTO DO DINHEIRO ─────────────────────────────────────
+    //
+    // O fechamento de caixa soma as mesas FECHADAS depois da abertura do
+    // turno. Fechar mesa sem caixa aberto é consumo que não cai em turno
+    // nenhum: some da conferência e reaparece como diferença.
+    //
+    // Sim, isto prende a mesa até alguém abrir o caixa — e é o certo. O
+    // dinheiro já existe; o que falta é onde registrá-lo. Abrir o caixa
+    // destrava e a mesma conta fecha normalmente, nada se perde.
+    const semCaixa = await recusaSeCaixaFechado(targetFranchiseeId, "fechar a conta");
+    if (semCaixa) return semCaixa;
 
     const { id } = await params;
     if (!id) return NextResponse.json({ error: "Session ID is required" }, { status: 400 });

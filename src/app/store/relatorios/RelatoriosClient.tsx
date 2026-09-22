@@ -1,6 +1,9 @@
 "use client";
 import React, { useState, useMemo } from "react";
 import { minutosEntre } from "@/lib/order-stages";
+import FiltroMultiplo from "@/components/customer/FiltroMultiplo";
+import { chaveDaOrigem, origensDosPedidos, type PedidoDoRelatorio } from "@/lib/origem-do-relatorio";
+import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import {
   TrendingUp,
   TrendingDown,
@@ -119,6 +122,11 @@ function ehRetirada(o: any) {
   return t === "RETIRADA" || t === "TAKEOUT" || t.includes("RETIRADA");
 }
 
+/** Saiu para a rua. Mesa e balcão não contam como entrega. */
+function ehEntrega(o: any) {
+  return String(o.deliveryType || "").toUpperCase() === "DELIVERY";
+}
+
 function prazoDoPedido(o: any): number {
   const criado = new Date(o.createdAt).getTime();
   const agendado = o.scheduledDatetime ? new Date(o.scheduledDatetime).getTime() : 0;
@@ -164,19 +172,34 @@ export default function RelatoriosClient({
   products,
   storeName,
   timeAlertConfig,
+  lojasDeOrigem,
 }: {
   orders: any[];
   products: any[];
   storeName: string;
+  /** Vazia quando a conta não tem o que separar (lib/lojas-de-origem-da-conta.ts). */
+  lojasDeOrigem?: LojaDeOrigem[];
   timeAlertConfig?: { yellowEnabled?: boolean; yellowMinutes?: number; redEnabled?: boolean; redMinutes?: number } | null;
 }) {
   const [preset, setPreset] = useState(2); // 7 dias padrão
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState("all");
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  // ── OS FILTROS SÃO LISTAS ────────────────────────────────────────────────
+  //
+  // Lista VAZIA = todos, e não "nenhum". É o estado em que a tela abre e o
+  // único que o lojista alcança sem querer (desmarcando o último item) — e um
+  // relatório que zerasse por isso pareceria quebrado. Ver FiltroMultiplo.
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedOrigens, setSelectedOrigens] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Set é o que a conta usa: o filtro roda dentro do laço de TODO item de TODO
+  // pedido do período (365 dias), e `array.includes` ali dentro é quadrático.
+  const produtosMarcados = useMemo(() => new Set(selectedProducts), [selectedProducts]);
+  const categoriasMarcadas = useMemo(() => new Set(selectedCategories), [selectedCategories]);
+  const origensMarcadas = useMemo(() => new Set(selectedOrigens), [selectedOrigens]);
 
   // Categorias únicas
   const categories = useMemo(() => {
@@ -186,6 +209,21 @@ export default function RelatoriosClient({
     });
     return Array.from(list).sort();
   }, [products]);
+
+  // ── AS OPÇÕES DE CADA FILTRO ─────────────────────────────────────────────
+  //
+  // O produto leva a categoria como detalhe à direita: o cardápio tem "Esfiha
+  // Calabresa" em Tradicionais e em Combos, e sem a categoria ao lado são duas
+  // linhas iguais na lista.
+  const opcoesDeProduto = useMemo(
+    () => products.map((p) => ({ valor: p.id, rotulo: p.name, detalhe: p.category || "Outros" })),
+    [products],
+  );
+
+  const opcoesDeCategoria = useMemo(
+    () => categories.map((c) => ({ valor: c, rotulo: c })),
+    [categories],
+  );
 
   // Intervalo de datas selecionado
   const { from, to } = useMemo(() => {
@@ -199,12 +237,41 @@ export default function RelatoriosClient({
   }, [preset, useCustom, customFrom, customTo]);
 
   // 1. Filtrar pedidos por data
-  const dateFilteredOrders = useMemo(() => {
+  const noPeriodo = useMemo(() => {
     return orders.filter((o) => {
       const d = new Date(o.createdAt);
       return d >= from && d <= to && o.status !== "CANCELADO";
     });
   }, [orders, from, to]);
+
+  // ── DE QUAL LOJA / CANAL ─────────────────────────────────────────────────
+  //
+  // As opções saem dos pedidos DO PERÍODO, antes do filtro de origem: se
+  // saíssem dos já filtrados, marcar uma loja apagaria as outras da lista e
+  // não haveria como voltar sem limpar tudo.
+  const origensDisponiveis = useMemo(
+    () => origensDosPedidos(noPeriodo as PedidoDoRelatorio[], lojasDeOrigem, normalizaPlataforma, plataformaDe),
+    [noPeriodo, lojasDeOrigem],
+  );
+
+  // A contagem de pedidos entra como detalhe: numa conta com três lojas no
+  // iFood, é o que diz de cara qual é a grande.
+  const opcoesDeOrigem = useMemo(
+    () => origensDisponiveis.map((o) => ({
+      valor: o.chave, rotulo: o.rotulo, cor: o.cor,
+      detalhe: `${o.quantidade} ${o.quantidade === 1 ? "pedido" : "pedidos"}`,
+    })),
+    [origensDisponiveis],
+  );
+
+  // O filtro de origem vale para o RELATÓRIO INTEIRO — faturamento, ranking,
+  // tempos, cancelamentos —, porque "quanto vendi na Ragnar Pizza" é uma
+  // pergunta sobre o relatório todo, não sobre um cartão dele.
+  const dateFilteredOrders = useMemo(() => {
+    if (origensMarcadas.size === 0) return noPeriodo;
+    return noPeriodo.filter((o) =>
+      origensMarcadas.has(chaveDaOrigem(o as PedidoDoRelatorio, lojasDeOrigem, normalizaPlataforma)));
+  }, [noPeriodo, origensMarcadas, lojasDeOrigem]);
 
   // 2. Filtrar itens dos pedidos baseados no filtro de produto e categoria
   const processedData = useMemo(() => {
@@ -217,8 +284,11 @@ export default function RelatoriosClient({
 
     dateFilteredOrders.forEach((o) => {
       o.items.forEach((item: any) => {
-        const matchesProduct = selectedProduct === "all" || item.productId === selectedProduct;
-        const matchesCategory = selectedCategory === "all" || item.productCategory === selectedCategory;
+        // Lista vazia = todos. Marcar três categorias soma as três: dentro de
+        // cada filtro as marcas são OU, e entre filtros é E — "Bebidas ou
+        // Sobremesas, dos produtos X e Y".
+        const matchesProduct = produtosMarcados.size === 0 || produtosMarcados.has(item.productId);
+        const matchesCategory = categoriasMarcadas.size === 0 || categoriasMarcadas.has(item.productCategory);
 
         if (matchesProduct && matchesCategory) {
           rawRevenue += item.price * item.quantity;
@@ -243,7 +313,7 @@ export default function RelatoriosClient({
       ordersCount: totalOrders,
       ticketMedio,
     };
-  }, [dateFilteredOrders, selectedProduct, selectedCategory]);
+  }, [dateFilteredOrders, produtosMarcados, categoriasMarcadas]);
 
   // 3. Gerar Ranking de Produtos no período selecionado
   const productRanking = useMemo(() => {
@@ -304,14 +374,73 @@ export default function RelatoriosClient({
 
     return Object.values(counts)
       .filter((p) => {
-        const matchesCategory = selectedCategory === "all" || p.category === selectedCategory;
+        const matchesCategory = categoriasMarcadas.size === 0 || categoriasMarcadas.has(p.category);
+        // O FILTRO DE PRODUTO PASSOU A VALER AQUI TAMBÉM.
+        //
+        // Antes o produto mexia só nos cartões de cima: marcar "Coca Cola 2l"
+        // dava o faturamento dela e uma tabela com o cardápio inteiro embaixo
+        // — e o "Produto Campeão", que sai desta lista, mostrava outro
+        // produto. Com três produtos marcados o desencontro ficaria gritante.
+        const matchesProduct = produtosMarcados.size === 0 || produtosMarcados.has(p.id);
         const matchesSearch =
           searchQuery.trim() === "" ||
           p.name.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesCategory && matchesSearch;
+        return matchesCategory && matchesProduct && matchesSearch;
       })
       .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
-  }, [dateFilteredOrders, products, selectedCategory, searchQuery]);
+  }, [dateFilteredOrders, products, categoriasMarcadas, produtosMarcados, searchQuery]);
+
+  // ── ENTREGAS E O QUE ELAS CUSTARAM ───────────────────────────────────────
+  //
+  // Dois números, e o segundo tem uma armadilha: o que a loja PAGA ao
+  // entregador não é a taxa que o cliente pagou (lib/repasse-do-entregador.ts).
+  // Em pedido de app a taxa é dinheiro do marketplace — o Lucas via "Taxa
+  // R$ 6,94" numa entrega que ele paga R$ 2,00. Por isso o custo vem calculado
+  // do servidor, pela mesma conta do fechamento de motoboys.
+  //
+  // Entrega SEM entregador atribuído chega com `custoDaEntrega: null` e é
+  // contada à parte, não como zero. Somar null como zero afirmaria que aquela
+  // entrega saiu de graça — e é justamente o contrário: é a que ninguém sabe
+  // quanto custou.
+  const entregas = useMemo(() => {
+    let quantidade = 0, custo = 0, semCusto = 0;
+    for (const o of dateFilteredOrders) {
+      if (!ehEntrega(o)) continue;
+      quantidade++;
+      const c = (o as any).custoDaEntrega;
+      if (typeof c === "number") custo += c; else semCusto++;
+    }
+    return {
+      quantidade,
+      custo: Math.round(custo * 100) / 100,
+      semCusto,
+      apuradas: quantidade - semCusto,
+      medio: quantidade - semCusto > 0 ? custo / (quantidade - semCusto) : 0,
+    };
+  }, [dateFilteredOrders]);
+
+  // ── O TOTAL DO QUE ESTÁ LISTADO ──────────────────────────────────────────
+  //
+  // Soma a coluna do ranking COMO ELE ESTÁ na tela — com os filtros e a busca
+  // aplicados. É o que responde "quantas esfihas eu vendi": marca a categoria
+  // Esfihas e o rodapé dá o total delas, sem calculadora e sem exportar.
+  //
+  // Não é a mesma conta dos cartões lá de cima e não deve ser: lá o total é do
+  // PEDIDO (faturamento com taxa de entrega, desconto, pedidos contados uma
+  // vez); aqui é a soma dos ITENS listados. Por isso o rodapé diz "dos X
+  // produtos listados" — o número tem que carregar o próprio recorte, senão
+  // vira mais um total para o lojista conferir contra os outros.
+  const totalDoRanking = useMemo(() => {
+    let qty = 0, revenue = 0, cost = 0, profit = 0, comVenda = 0;
+    for (const p of productRanking) {
+      qty += p.qty;
+      revenue += p.revenue;
+      cost += p.cost;
+      profit += p.profit;
+      if (p.qty > 0) comVenda++;
+    }
+    return { qty, revenue, cost, profit, comVenda, listados: productRanking.length };
+  }, [productRanking]);
 
   // Produto Campeão (Top 1)
   const championProduct = useMemo(() => {
@@ -480,11 +609,15 @@ export default function RelatoriosClient({
     });
 
     // Cancelados ficam de fora de dateFilteredOrders -- para a taxa, contamos
-    // de novo direto do periodo.
+    // de novo direto do periodo. O filtro de LOJA vale aqui também: sem ele,
+    // marcar uma loja mostraria o faturamento dela com a taxa de cancelamento
+    // da conta inteira, lado a lado, como se fossem do mesmo recorte.
     let cancelados = 0, brutoNoPeriodo = 0;
     orders.forEach((o) => {
       const d = new Date(o.createdAt);
       if (d < from || d > to) return;
+      if (origensMarcadas.size > 0
+        && !origensMarcadas.has(chaveDaOrigem(o as PedidoDoRelatorio, lojasDeOrigem, normalizaPlataforma))) return;
       brutoNoPeriodo++;
       if (o.status === "CANCELADO") cancelados++;
     });
@@ -503,7 +636,7 @@ export default function RelatoriosClient({
       brutoNoPeriodo,
       taxaCancelamento: brutoNoPeriodo > 0 ? (cancelados / brutoNoPeriodo) * 100 : 0,
     };
-  }, [dateFilteredOrders, orders, from, to]);
+  }, [dateFilteredOrders, orders, from, to, origensMarcadas, lojasDeOrigem]);
 
   // Exportar dados como CSV
   const handleExportCSV = () => {
@@ -630,69 +763,45 @@ export default function RelatoriosClient({
 
         <div style={{ height: "1px", background: "#F1F5F9" }} />
 
-        {/* Filtros de Produto / Categoria */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-          <div>
-            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: 6 }}>🔍 Filtrar por Produto</label>
-            <div style={{ position: "relative" }}>
-              <select
-                value={selectedProduct}
-                onChange={(e) => setSelectedProduct(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "9px 30px 9px 12px",
-                  borderRadius: 10,
-                  border: "1.5px solid #E2E8F0",
-                  fontSize: "0.85rem",
-                  color: "#0F172A",
-                  background: "#fff",
-                  outline: "none",
-                  cursor: "pointer",
-                  appearance: "none",
-                  fontFamily: "inherit"
-                }}
-              >
-                <option value="all"> Todos os produtos ({products.length})</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#64748B", pointerEvents: "none" }} />
-            </div>
-          </div>
+        {/* ── FILTROS: marcar vários em cada um ────────────────────────────
+            Dentro de um filtro as marcas somam (OU); entre filtros, restringem
+            (E). "Bebidas ou Sobremesas" × "só na Ragnar Pizza".
 
-          <div>
-            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#475569", marginBottom: 6 }}>🍔 Filtrar por Categoria</label>
-            <div style={{ position: "relative" }}>
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "9px 30px 9px 12px",
-                  borderRadius: 10,
-                  border: "1.5px solid #E2E8F0",
-                  fontSize: "0.85rem",
-                  color: "#0F172A",
-                  background: "#fff",
-                  outline: "none",
-                  cursor: "pointer",
-                  appearance: "none",
-                  fontFamily: "inherit"
-                }}
-              >
-                <option value="all">Todas as categorias ({categories.length})</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#64748B", pointerEvents: "none" }} />
-            </div>
-          </div>
+            O de LOJA só aparece quando a conta tem o que separar — mais de uma
+            loja no iFood, no 99Food, ou um grupo de lojas. Numa loja só, o
+            filtro ofereceria uma opção que não filtra nada. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
+          <FiltroMultiplo
+            rotulo="🔍 Filtrar por Produto"
+            nomeDoTipo="produtos"
+            placeholderBusca="buscar produto…"
+            textoTodos={`Todos os produtos (${products.length})`}
+            opcoes={opcoesDeProduto}
+            selecionados={selectedProducts}
+            onChange={setSelectedProducts}
+          />
+
+          <FiltroMultiplo
+            rotulo="🍔 Filtrar por Categoria"
+            nomeDoTipo="categorias"
+            placeholderBusca="buscar categoria…"
+            textoTodos={`Todas as categorias (${categories.length})`}
+            opcoes={opcoesDeCategoria}
+            selecionados={selectedCategories}
+            onChange={setSelectedCategories}
+          />
+
+          {origensDisponiveis.length > 1 && (
+            <FiltroMultiplo
+              rotulo="🏪 Filtrar por Loja / Origem"
+              nomeDoTipo="lojas"
+              placeholderBusca="buscar loja ou canal…"
+              textoTodos={`Todas as lojas (${origensDisponiveis.length})`}
+              opcoes={opcoesDeOrigem}
+              selecionados={selectedOrigens}
+              onChange={setSelectedOrigens}
+            />
+          )}
         </div>
 
       </div>
@@ -739,6 +848,70 @@ export default function RelatoriosClient({
             <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Quantidade de Itens</p>
             <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{processedData.unitsSold} u.</p>
             <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Unidades de produtos vendidas</p>
+          </div>
+        </div>
+
+        {/* ── ENTREGAS ───────────────────────────────────────────────────── */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(14,165,233,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Bike size={18} color="#0EA5E9" />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "#0EA5E9", background: "rgba(14,165,233,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+              Entregas
+            </span>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Pedidos Entregues</p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{entregas.quantidade}</p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
+              {movimento.totalValidos > 0
+                ? `${fmtPct((entregas.quantidade / movimento.totalValidos) * 100)} dos pedidos do período`
+                : "Pedidos que saíram para a rua"}
+            </p>
+          </div>
+        </div>
+
+        {/* ── GASTO COM ENTREGAS ─────────────────────────────────────────────
+            O que a LOJA paga ao entregador — não a taxa que o cliente pagou.
+            Em pedido de app a taxa é dinheiro do marketplace, e confundir as
+            duas foi reclamação real (ver lib/repasse-do-entregador.ts).
+
+            Quando não há entrega apurada, o cartão DIZ isso em vez de mostrar
+            R$ 0,00: zero é uma afirmação, e a afirmação estaria errada. */}
+        <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(220,38,38,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Bike size={18} color="#DC2626" />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "#DC2626", background: "rgba(220,38,38,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
+              Custo
+            </span>
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Gasto com Entregas</p>
+            {entregas.apuradas > 0 ? (
+              <>
+                <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#DC2626" }}>{fmtR(entregas.custo)}</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
+                  {fmtR(entregas.medio)} por entrega · o que a loja paga ao entregador
+                  {entregas.semCusto > 0 && (
+                    <><br /><span style={{ color: "#B45309", fontWeight: 700 }}>
+                      {entregas.semCusto} {entregas.semCusto === 1 ? "entrega sem entregador atribuído" : "entregas sem entregador atribuído"} — fora desta conta
+                    </span></>
+                  )}
+                </p>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: "2px 0 0", fontSize: "1.1rem", fontWeight: 800, color: "#94A3B8" }}>Sem apuração</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#B45309", fontWeight: 600, lineHeight: 1.45 }}>
+                  {entregas.quantidade === 0
+                    ? "Nenhuma entrega no período."
+                    : `As ${entregas.quantidade} entregas do período não têm entregador atribuído, então não dá para saber quanto custaram. Atribua o entregador no pedido para este número aparecer.`}
+                </p>
+              </>
+            )}
           </div>
         </div>
 
@@ -1239,6 +1412,39 @@ export default function RelatoriosClient({
                 })
               )}
             </tbody>
+
+            {/* ── O TOTAL, NO FIM DA LISTA ────────────────────────────────
+                Gruda no rodapé da tabela porque é onde o olho chega depois de
+                ler a última linha — e porque a soma é DESTA lista, com os
+                filtros que estão valendo. Some quando não há o que somar. */}
+            {productRanking.length > 0 && (
+              <tfoot>
+                <tr style={{ background: "#FFF7ED", borderTop: "2px solid #FED7AA" }}>
+                  <td colSpan={3} style={{ padding: "14px 1.25rem", fontWeight: 900, color: "#9A3412", fontSize: "0.86rem" }}>
+                    TOTAL
+                    <span style={{ display: "block", fontWeight: 600, fontSize: "0.72rem", color: "#C2410C", marginTop: 2 }}>
+                      {totalDoRanking.listados} {totalDoRanking.listados === 1 ? "produto listado" : "produtos listados"}
+                      {totalDoRanking.comVenda !== totalDoRanking.listados && ` · ${totalDoRanking.comVenda} com venda no período`}
+                    </span>
+                  </td>
+                  <td style={{ padding: "14px 1rem", textAlign: "right", color: "#C2410C", fontSize: "0.78rem", fontWeight: 700 }}>
+                    —
+                  </td>
+                  <td style={{ padding: "14px 1rem", textAlign: "right", fontWeight: 900, color: "#9A3412", fontSize: "0.95rem" }}>
+                    {totalDoRanking.qty} u.
+                  </td>
+                  <td style={{ padding: "14px 1rem", textAlign: "right", fontWeight: 900, color: "#15803D" }}>
+                    {fmtR(totalDoRanking.revenue)}
+                  </td>
+                  <td style={{ padding: "14px 1rem", textAlign: "right", fontWeight: 800, color: "#DC2626" }}>
+                    {fmtR(totalDoRanking.cost)}
+                  </td>
+                  <td style={{ padding: "14px 1.25rem", textAlign: "right", fontWeight: 900, color: "#EA580C" }}>
+                    {fmtR(totalDoRanking.profit)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 
