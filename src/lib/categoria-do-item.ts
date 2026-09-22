@@ -119,8 +119,25 @@ export function montarMapa(produtos: { id?: string | null; name?: string | null;
 export type ItemComCategoria = {
   productName?: string | null;
   category?: string | null;
-  menuProduct?: { name?: string | null; category?: string | null } | null;
+  menuProduct?: { id?: string | null; name?: string | null; category?: string | null } | null;
 };
+
+/**
+ * Este item aponta para um ESPELHO de plataforma?
+ *
+ * Duas provas, e a do id é a que importa: o espelho do iFood e do 99Food se
+ * denuncia pela categoria ("iFood", "99Food"), mas o da Wabiz carrega o NOME
+ * DO GRUPO dela como categoria — "Esfihas", "Bebidas", "Sachês" — que é texto
+ * comum e não denuncia nada. Só o prefixo do id (`wabiz-`) denuncia esse.
+ *
+ * `montarMapa` já sabia disso desde o começo; `categoriaResolvida` não, e era
+ * exatamente aí que a NIK perdia pedido (ver o comentário da função abaixo).
+ */
+function ehItemDeEspelho(item: ItemComCategoria): boolean {
+  const id = String(item?.menuProduct?.id ?? "");
+  if (id && PREFIXOS_DE_ESPELHO.some((pre) => id.startsWith(pre))) return true;
+  return ehCategoriaDeIntegracao(item?.menuProduct?.category ?? item?.category);
+}
 
 /**
  * A categoria que este item deve ter para quem separa por categoria.
@@ -128,10 +145,25 @@ export type ItemComCategoria = {
  *   - item de produto real → a categoria dele, intocada;
  *   - item de espelho com nome casado → a categoria do produto real;
  *   - item de espelho sem casamento → "" (sem categoria: aparece em toda tela).
+ *
+ * ── PEDIDO DA WABIZ QUE NÃO CHEGOU NA COZINHA ─────────────────────────────
+ *
+ * NIK Esfihas, pedido #2 da Wabiz em 22/09/2026 (ref 3672): três esfihas,
+ * gravadas, impressas — e invisíveis nas duas telas do KDS. O espelho da Wabiz
+ * nasce com `category` = o nome do grupo DELA ("Esfihas"), e a NIK filtra as
+ * telas por "Esfihas Tradicionais", "Esfihas Doces", "Esfihas Especiais".
+ * "Esfihas" não casa com nenhuma, e a tela esconde pedido sem item seu.
+ *
+ * A regra de cima só reescrevia quando a categoria ERA de integração, então
+ * "Esfihas" passava batido e ia inteira para o filtro. Agora quem decide é o
+ * id do espelho: `wabiz-...` é espelho, venha a categoria que vier, e o nome
+ * ("Esfiha Calabresa") acha a categoria real da loja. Sem casar ninguém,
+ * devolve "" — que aparece em TODA tela. Comida parada é mais cara que
+ * carimbo adiantado.
  */
 export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategorias): string {
   const atual = String(item?.menuProduct?.category ?? item?.category ?? "").trim();
-  if (!ehCategoriaDeIntegracao(atual)) return atual;
+  if (!ehItemDeEspelho(item)) return atual;
   // O nome do dia (productName) vem antes do nome do espelho: é o que o
   // parceiro mandou neste pedido, e é o que bate com o cadastro da loja.
   const nomes = [item?.productName, item?.menuProduct?.name];
@@ -157,9 +189,10 @@ export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategoria
 export async function resolverCategoriasDosPedidos<
   T extends { franchiseeId?: string | null; items?: ItemComCategoria[] | null },
 >(pedidos: T[]): Promise<T[]> {
-  const precisa = pedidos.filter((p) =>
-    (p.items || []).some((i) => ehCategoriaDeIntegracao(i?.menuProduct?.category ?? i?.category)),
-  );
+  // `ehItemDeEspelho` e não `ehCategoriaDeIntegracao`: o espelho da Wabiz traz
+  // o nome do grupo dela como categoria, e por esta porta o pedido inteiro
+  // saía sem ser resolvido — era o que sumia da cozinha da NIK.
+  const precisa = pedidos.filter((p) => (p.items || []).some(ehItemDeEspelho));
   if (precisa.length === 0) return pedidos;
 
   const lojas = Array.from(new Set(precisa.map((p) => p.franchiseeId).filter(Boolean))) as string[];
@@ -178,7 +211,7 @@ export async function resolverCategoriasDosPedidos<
     return {
       ...p,
       items: (p.items || []).map((i) => {
-        if (!ehCategoriaDeIntegracao(i?.menuProduct?.category ?? i?.category)) return i;
+        if (!ehItemDeEspelho(i)) return i;
         const categoria = categoriaResolvida(i, mapa);
         return { ...i, menuProduct: { ...(i.menuProduct || {}), category: categoria } };
       }),

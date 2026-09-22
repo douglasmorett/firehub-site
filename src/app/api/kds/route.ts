@@ -160,6 +160,12 @@ export async function GET(req: NextRequest) {
               prontoEm: true,
               menuProduct: {
                 select: {
+                  // O `id` é o que prova que o item é espelho de plataforma
+                  // quando a categoria não entrega (o da Wabiz vem "Esfihas",
+                  // "Bebidas"). Sem ele, resolverCategoriasDosPedidos deixa a
+                  // categoria da Wabiz passar direto para o filtro da tela e o
+                  // pedido não aparece em cozinha nenhuma — lib/categoria-do-item.ts.
+                  id: true,
                   name: true,
                   category: true,
                 },
@@ -279,7 +285,7 @@ export async function PUT(req: NextRequest) {
       // `productName` entra porque o item de plataforma aponta para o espelho
       // (categoria literal "iFood") e a categoria real é resolvida pelo nome —
       // a mesma regra do GET, em lib/categoria-do-item.ts.
-      items: { select: { id: true, prontoEm: true, productName: true, menuProduct: { select: { name: true, category: true } } } },
+      items: { select: { id: true, prontoEm: true, productName: true, menuProduct: { select: { id: true, name: true, category: true } } } },
       // De qual loja do 99Food é o pedido: o "pronto" sai com o token DELA
       // primeiro (lib/food99-status.ts), em vez de tentar o da conta e só
       // depois os das outras — que numa conta com três lojas estourava o

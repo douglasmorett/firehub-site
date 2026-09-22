@@ -50,6 +50,39 @@ confere("espelho wabiz- fica fora mesmo com categoria 'normal'", [...mapa.entrie
 confere("produto sem categoria fica fora", mapa.has(chaveDoNome("Sachê")), false);
 confere("produto real entra", mapa.get(chaveDoNome("Esfiha Carne e Bacon")), "Esfihas Especiais");
 
+// ── O PEDIDO #2 DA WABIZ NA NIK (22/09/2026) ──────────────────────────────
+//
+// Três esfihas gravadas, impressas e invisíveis nas QUATRO telas do KDS —
+// medido no banco: "0 de 3 itens" em cada uma. O espelho da Wabiz nasce com a
+// categoria igual ao nome do GRUPO dela ("Esfihas"), e a NIK filtra as telas
+// por "Esfihas Tradicionais". "Esfihas" não casa com nada, e a tela esconde
+// pedido sem item seu.
+//
+// A regra antiga só reescrevia categoria que FOSSE de integração, então
+// "Esfihas" passava batido. Agora o prefixo `wabiz-` do id é a prova, e o nome
+// acha a categoria real — que é exatamente a que a tela filtra.
+console.log("\n── o item da Wabiz, cuja categoria NÃO se denuncia (pedido #2 da NIK) ──");
+const daWabiz = (nome: string) => ({
+  productName: nome,
+  menuProduct: { id: `wabiz-cmtn5q78c00ebte01zsqrggqx-${nome.toLowerCase().replace(/\s+/g, "-")}`, name: nome, category: "Esfihas" },
+});
+confere("Esfiha Calabresa → Esfihas Tradicionais", categoriaResolvida(daWabiz("Esfiha Calabresa"), mapa), "Esfihas Tradicionais");
+confere(
+  "grupo 'Bebidas' da Wabiz vira a categoria real da loja",
+  categoriaResolvida({ productName: "Guaraná Mineiro 1,5l", menuProduct: { id: "wabiz-x-guarana", name: "Guaraná Mineiro 1,5l", category: "Bebidas" } }, mapa),
+  "Bebidas",
+);
+confere(
+  "sabor que a loja não tem cadastrado fica SEM categoria (aparece em toda tela)",
+  categoriaResolvida({ productName: "Esfiha de Jaca", menuProduct: { id: "wabiz-x-jaca", name: "Esfiha de Jaca", category: "Esfihas" } }, mapa),
+  "",
+);
+confere(
+  "produto REAL chamado 'Esfihas' não é confundido com espelho",
+  categoriaResolvida({ productName: "Esfiha Calabresa", menuProduct: { id: "cmt2", name: "Esfiha Calabresa", category: "Esfihas Tradicionais" } }, mapa),
+  "Esfihas Tradicionais",
+);
+
 console.log("\n── o item do iFood herda a categoria do produto real ──");
 confere(
   "esfiha do iFood → Esfihas Especiais (o caso do #6 da NIK)",
