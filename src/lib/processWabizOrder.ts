@@ -125,6 +125,23 @@ export async function processWabizOrder(
     console.error("[Wabiz] Erro ao enfileirar a impressão:", e?.message);
   }
 
-  console.log(`[Wabiz] ✅ Pedido #${orderNumber} gravado para ${loja.storeName || loja.id} (${status})`);
-  return { action: "created", pedidoId: criado.id, status };
+  // ── `status` NÃO É VARIÁVEL DESTE ARQUIVO ────────────────────────────────
+  //
+  // Era, literalmente, `${status}` — e o TypeScript não reclamou porque o
+  // tsconfig carrega a lib "dom", que declara um `status` global (o
+  // `window.status`). No Node ele não existe: estas duas linhas estouravam com
+  // `ReferenceError: status is not defined` DEPOIS de o pedido já estar
+  // gravado, com o estoque baixado e a comanda enfileirada.
+  //
+  // O que o lojista via: a comanda saía da impressora e, junto, o alerta
+  // "🚨 FireHub — pedido não entrou · Motivo: #3683: status is not defined".
+  // O evento não era confirmado à Wabiz, ela reenviava no minuto seguinte e só
+  // então a idempotência lá de cima respondia "exists" e fechava o ciclo. Um
+  // minuto de atraso na confirmação e um susto por pedido.
+  //
+  // O status de verdade é o que foi GRAVADO, e ele está em `dados` (o
+  // tradutor decide ACEITO ou NOVO pelo aceite automático da loja).
+  const statusGravado = String(dados.status ?? "");
+  console.log(`[Wabiz] ✅ Pedido #${orderNumber} gravado para ${loja.storeName || loja.id} (${statusGravado})`);
+  return { action: "created", pedidoId: criado.id, status: statusGravado };
 }
