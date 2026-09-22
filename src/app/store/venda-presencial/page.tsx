@@ -10,6 +10,9 @@ import {
 import {
   lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento, tipoDoDocumento,
 } from "@/lib/documento-do-cliente";
+import {
+  BALCAO_CONFIG_PADRAO, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
+} from "@/lib/balcao-config";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -43,6 +46,8 @@ export default function VendaPresencialPage() {
   const [pager, setPager] = useState("");
   /** "CPF na nota": sai impresso na comanda e já preenche a NFC-e depois. */
   const [documento, setDocumento] = useState("");
+  /** O que a loja marcou em Minha Loja › Balcão & Pager (lib/balcao-config.ts). */
+  const [balcaoConfig, setBalcaoConfig] = useState<BalcaoConfig>({ ...BALCAO_CONFIG_PADRAO });
   const [address, setAddress] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Dinheiro");
   const [notes, setNotes] = useState("");
@@ -70,6 +75,12 @@ export default function VendaPresencialPage() {
     fetch("/api/store-settings/payment").then(r => r.ok ? r.json() : null).then(d => d && setPaymentConfig(d.paymentFees));
     fetch("/api/store-settings/employee-account").then(r => r.ok ? r.json() : null).then(d => d && setEmployeeAccountEnabled(Boolean(d.employeeAccountEnabled)));
     fetch("/api/store/employees").then(r => r.ok ? r.json() : null).then(d => d?.employees && setEmployees(d.employees));
+    // Falha aqui deixa a tela no padrão (nada obrigatório): a venda não pode
+    // parar porque uma configuração não carregou. Quem tem a palavra final é
+    // a rota do pedido, que lê a mesma regra do banco.
+    fetch("/api/store-settings/balcao").then(r => r.ok ? r.json() : null)
+      .then(d => d && setBalcaoConfig({ pagerObrigatorioBalcao: d.pagerObrigatorioBalcao === true, pagerObrigatorioMesa: d.pagerObrigatorioMesa === true }))
+      .catch(() => { /* fica no padrão */ });
   }, []);
 
   const getDisplayPrice = (p: any) => {
@@ -276,6 +287,11 @@ export default function VendaPresencialPage() {
     // destinatário da NFC-e depois (lib/documento-do-cliente.ts).
     const problemaNoDocumento = problemaDoDocumento(documento);
     if (problemaNoDocumento) return setMsg(`❌ ${problemaNoDocumento}`);
+    // Pager obrigatório, se a loja marcou (lib/balcao-config.ts). A mesma
+    // função roda na rota do pedido — aqui é para o atendente ver antes de
+    // montar o carrinho inteiro, não é a trava.
+    const problemaNoPager = problemaDoPagerObrigatorio(balcaoConfig, orderType, pager);
+    if (problemaNoPager) return setMsg(`❌ ${problemaNoPager}`);
 
     if (dividir) {
       const validas = partes.filter(p => valorDaParte(p) > 0);
@@ -522,15 +538,27 @@ export default function VendaPresencialPage() {
               Fica vazio por padrão — loja que não usa pager não digita nada e
               nada muda. Quem digita vê o número no card do painel e na
               comanda impressa. */}
-          {(orderType === "BALCAO" || orderType === "MESA") && (
-            <input
-              placeholder="Pager (opcional) — ex: 12"
-              value={pager}
-              onChange={e => setPager(e.target.value.slice(0, 10))}
-              maxLength={10}
-              style={{ width: "100%", marginTop: 6, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${pager.trim() ? "#F59E0B" : "#E2E8F0"}`, background: pager.trim() ? "#FFFBEB" : "#FFF", fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: pager.trim() ? 800 : 400 }}
-            />
-          )}
+          {(orderType === "BALCAO" || orderType === "MESA") && (() => {
+            // A loja pode ter marcado o pager como OBRIGATÓRIO aqui
+            // (Minha Loja › Balcão & Pager). Quando está, o campo tem que
+            // dizer isso sozinho — borda vermelha e "obrigatório" no lugar de
+            // "opcional" —, senão o atendente só descobre ao tentar finalizar,
+            // com o cliente na frente dele.
+            const pagerObrigatorio = pagerEhObrigatorio(balcaoConfig, orderType);
+            const faltando = pagerObrigatorio && pager.trim() === "";
+            return (
+              <input
+                placeholder={pagerObrigatorio ? "Pager * — obrigatório, ex: 12" : "Pager (opcional) — ex: 12"}
+                value={pager}
+                onChange={e => setPager(e.target.value.slice(0, 10))}
+                maxLength={10}
+                style={{ width: "100%", marginTop: 6, padding: "7px 10px", borderRadius: 8,
+                  border: `1.5px solid ${faltando ? "#DC2626" : pager.trim() ? "#F59E0B" : "#E2E8F0"}`,
+                  background: faltando ? "#FEF2F2" : pager.trim() ? "#FFFBEB" : "#FFF",
+                  fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: pager.trim() ? 800 : 400 }}
+              />
+            );
+          })()}
 
           {/* ── "CPF NA NOTA" ────────────────────────────────────────────────
               Só no BALCÃO: é ali que o cliente está na frente do atendente e

@@ -3,16 +3,17 @@ import { useState, useEffect } from "react";
 import {
   Store, Clock, Truck, CreditCard, Tag, Gift, ArrowLeft,
   Settings, Image, Phone, MapPin, ChevronRight,
-  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users, UtensilsCrossed, Star
+  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users, UtensilsCrossed, Star, BellRing
 } from "lucide-react";
 import StoreSettingsForm from "@/components/customer/StoreSettingsForm";
+import BalcaoConfigManager from "@/components/customer/BalcaoConfigManager";
 import LoyaltyConfigForm from "@/components/LoyaltyConfigForm";
 import StoreTeamManager from "@/components/customer/StoreTeamManager";
 import StoreReviewsManager from "@/components/customer/StoreReviewsManager";
 import { StoreApiManager } from "@/components/customer/StoreApiManager";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe" | "api";
+type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe" | "api" | "balcao";
 
 const SECTIONS = [
   {
@@ -55,6 +56,14 @@ const SECTIONS = [
     bg: "#F3E5F5",
     title: "Pagamentos",
     desc: "PIX, cartão, dinheiro — taxas por bandeira",
+  },
+  {
+    id: "balcao" as Section,
+    icon: <BellRing size={28} />,
+    color: "#B45309",
+    bg: "#FFFBEB",
+    title: "Balcão & Pager",
+    desc: "Exigir o número do pager no lançamento do balcão e da mesa",
   },
   {
     id: "equipe" as Section,
@@ -132,6 +141,8 @@ const HASH_TO_SECTION: Record<string, Section> = {
   reviews: "reviews",
   equipe: "equipe",
   conta: "conta",
+  balcao: "balcao",
+  pager: "balcao",
 };
 
 export default function MinhaLojaClient({ user }: { user: any }) {
@@ -235,6 +246,16 @@ export default function MinhaLojaClient({ user }: { user: any }) {
           initialConfig={user.storeLoyalty || {}}
           onSave={saveLoyalty}
         />
+      </div>
+    );
+  }
+
+  // ── Seção Balcão & Pager ────────────────────────────────────────────────────
+  if (section === "balcao") {
+    return (
+      <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="🔔 Balcão & Pager" />
+        <BalcaoConfigManager />
       </div>
     );
   }

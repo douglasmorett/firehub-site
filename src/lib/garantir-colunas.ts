@@ -814,6 +814,10 @@ const INSTRUCOES_MESA = [
   // É o que deixa o painel dizer "3 comandas não saíram na ELGIN i8" em vez
   // de a loja descobrir pelo cliente (06/09/2026).
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "printQueueEstado" JSONB`,
+  // Regras do lançamento presencial que a loja liga sozinha — hoje só o pager
+  // obrigatório no balcão e na mesa (lib/balcao-config.ts). Nulo = nada
+  // obrigatório, que é como toda loja nasce e continua até marcar a caixinha.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "balcaoConfig" JSONB`,
   // "Esta comanda saiu": o Assistente confirma (POST print-queue/ack) e a fila
   // da nuvem nunca mais devolve o pedido — o fim do "reinstalou/reiniciou e
   // imprimiu tudo de novo" (Brasa Burguer, 06/09/2026).
