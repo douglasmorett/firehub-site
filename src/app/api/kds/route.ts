@@ -48,12 +48,22 @@ export async function GET(req: NextRequest) {
     let user: any = null;
 
     if (email) {
+      // ── BANCO FORA DO AR NÃO É "COZINHA VAZIA" ──────────────────────────
+      //
+      // Isto respondia `null` quando o banco falhava, e aí `userStoreIds`
+      // ficava vazio: a consulta abaixo procurava pedidos de loja NENHUMA e
+      // devolvia 200 com lista vazia. A tela apagava todos os cards e escrevia
+      // "Nenhum pedido na fila" — o lojista lê isso como "o pedido do iFood
+      // não chegou" e vai procurar defeito na integração. Um 503 faz a tela
+      // dizer "reconectando" e SEGURAR os cards que já estão lá.
       user = await withRetry(() =>
         prisma.user.findUnique({
           where: { email },
           select: { id: true, ownerId: true, isFranqueadoHakim: true, storeTimezone: true },
         })
-      ).catch(() => null);
+      ).catch((err) => {
+        throw new Error(`banco indisponível ao identificar a loja: ${err?.message || err}`, { cause: err });
+      });
 
       if (user) {
         if (user.id) userStoreIds.push(user.id);
@@ -185,7 +195,11 @@ export async function GET(req: NextRequest) {
         ],
         take: 100,
       })
-    ).catch(() => []);
+    );
+    // Sem `.catch(() => [])` aqui, e é de propósito: lista vazia por falha de
+    // banco é indistinguível de cozinha vazia para quem olha a TV. O erro sobe
+    // para o catch do fim, que responde 503 — e a tela mantém o que está na
+    // tela e avisa que está reconectando (ver o fetch em store/kds/tela).
 
     // ── A CATEGORIA REAL DO ITEM DE PLATAFORMA ───────────────────────────
     //
@@ -243,7 +257,13 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("[KDS GET Error]:", err?.message || err);
-    return NextResponse.json({ error: err?.message || String(err), stack: err?.stack }, { status: 500 });
+    // 503 e não 500: é a resposta de "tente de novo em 3 segundos", que é
+    // exatamente o que a tela da cozinha faz. O corpo vai sem `stack` porque
+    // esta resposta aparece numa TV no salão.
+    return NextResponse.json(
+      { error: err?.message || String(err) },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
 

@@ -182,6 +182,61 @@ function ehItemDeEspelho(item: ItemComCategoria): boolean {
 }
 
 /**
+ * Os pedaços de um nome composto, sem a fração.
+ *
+ * "1/2 Costela com Catupiry + 1/2 Frango Catupiry" → ["Costela com Catupiry",
+ * "Frango Catupiry"]. É como a Wabiz escreve meia a meia, e como o iFood
+ * escreve promoção ("Pizza + Guaraná").
+ */
+function pedacosDoNome(nome: unknown): string[] {
+  return String(nome ?? "")
+    .split(/\s*[+|]\s*/)
+    .map((p) => p.replace(/^\s*\d+\s*\/\s*\d+\s*/, "").trim())
+    .filter(Boolean);
+}
+
+/**
+ * A categoria de uma pizza que o parceiro mandou só com o SABOR.
+ *
+ * ── O item que nenhuma regra acima alcança ──────────────────────────────────
+ *
+ * A Wabiz manda "1/2 Costela com Catupiry + 1/2 Frango Catupiry" e guarda as
+ * metades DENTRO do nome — não há `comboSelections` para ler. O cardápio da
+ * loja, por sua vez, chama o produto de "Pizza Costela com Catupiry": o tipo
+ * vem na frente do sabor. Então nada casa, e o item cai em curinga — aparece
+ * em toda tela, que foi a queixa da pizza na tela das esfihas.
+ *
+ * O tipo que falta está na CATEGORIA DO ESPELHO, que é o nome do grupo no
+ * cardápio do parceiro: "Pizzas Grande" → "pizza". Com ele na frente, o sabor
+ * vira o nome que a loja cadastrou e o casamento acontece.
+ *
+ * Só a primeira palavra do grupo, no singular, e só como PREFIXO de um nome
+ * que já tem que casar inteiro. É estreito de propósito: casar "Costela com
+ * Catupiry" por semelhança acharia a ESFIHA de costela e mandaria a pizza para
+ * a tela das esfihas — o erro que esta função existe para evitar.
+ */
+function porTipoDoGrupo(item: ItemComCategoria, mapa: MapaDeCategorias): string | null {
+  const grupo = String(item?.menuProduct?.category ?? "").trim();
+  if (!grupo || ehCategoriaDeIntegracao(grupo)) return null;
+  const tipo = chaveDoNome(grupo).split(" ")[0]?.replace(/s$/, "");
+  if (!tipo || tipo.length < 4) return null;
+
+  const votos = new Map<string, number>();
+  const ordem: string[] = [];
+  for (const pedaco of pedacosDoNome(item?.productName ?? item?.menuProduct?.name)) {
+    const chave = chaveDoNome(`${tipo} ${pedaco}`);
+    const categoria = chave ? mapa.porNome.get(chave) : undefined;
+    if (!categoria) continue;
+    if (!votos.has(categoria)) ordem.push(categoria);
+    votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
+  }
+  if (votos.size === 0) return null;
+  let melhor = ordem[0];
+  for (const c of ordem) if ((votos.get(c) ?? 0) > (votos.get(melhor) ?? 0)) melhor = c;
+  return melhor;
+}
+
+/**
  * A categoria pelo que o cliente ESCOLHEU dentro do combo.
  *
  * ── A pizza que apareceu na tela das esfihas ────────────────────────────────
@@ -294,6 +349,10 @@ export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategoria
   // dentro dele diz. É a última chance antes do curinga.
   const pelaOpcao = porOpcaoDoCombo(item, mapa);
   if (pelaOpcao) return pelaOpcao;
+  // Nem opção o item tem: o sabor está no próprio nome e o tipo, na categoria
+  // do grupo do parceiro. É a última tentativa antes do curinga.
+  const peloTipo = porTipoDoGrupo(item, mapa);
+  if (peloTipo) return peloTipo;
   return "";
 }
 
