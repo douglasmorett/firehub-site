@@ -1799,62 +1799,70 @@ export default function MenuProductManager({
                   <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Preço de Venda (R$)</label>
                 </div>
                 <input className="input-field" style={{ height: "44px", boxSizing: "border-box" }} type="number" step="0.01" placeholder="Ex: 9.90" value={price} onChange={e => setPrice(e.target.value)} />
+              </div>
 
-                {/* ─── PREÇO PROMOCIONAL ──────────────────────────────────
-                    Fica COLADO no preço de venda de propósito: os dois são o
-                    "de R$ 54,90 por R$ 44,90" que o cliente vê, e separá-los
-                    em cantos diferentes da tela é o que faz alguém cadastrar
-                    promoção mais cara que o preço normal sem perceber.
+              {/* ─── PREÇO PROMOCIONAL ────────────────────────────────────
+                  Uma FAIXA de uma linha, logo abaixo do preço de venda: os dois
+                  são o "de R$ 54,90 por R$ 44,90" que o cliente vê, e separá-los
+                  em cantos diferentes da tela é o que faz alguém cadastrar
+                  promoção mais cara que o preço normal sem perceber.
 
-                    Vazio = sem promoção, e é assim que ela se encerra. */}
-                <div
-                  style={{
-                    marginTop: 10, padding: "10px 12px", borderRadius: 12,
-                    border: `1.5px solid ${promoDigitada.cara ? "#FCA5A5" : promoDigitada.ok ? "#FDBA74" : "#E2E8F0"}`,
-                    background: promoDigitada.cara ? "#FEF2F2" : promoDigitada.ok ? "linear-gradient(90deg, #FFF7ED 0%, #FFF 100%)" : "#F8FAFC",
-                  }}
-                >
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, color: "#9A3412", fontSize: "0.8rem", marginBottom: 6 }}>
-                    🏷️ Preço promocional (R$)
-                    <span style={{ fontWeight: 600, color: "#94A3B8", fontSize: "0.7rem" }}>opcional</span>
-                  </label>
+                  Largura inteira e uma linha só de propósito — dentro da célula
+                  do preço, ela empurrava o formulário para baixo e deixava a
+                  metade esquerda em branco. A explicação longa virou o
+                  `placeholder` e a prévia do "de/por", que só aparece quando há
+                  o que mostrar.
 
-                  <input
-                    className="input-field"
-                    style={{ height: "42px", boxSizing: "border-box", background: "#FFF" }}
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder={promoDigitada.venda ? `menor que ${promoDigitada.venda.toFixed(2)}` : "Ex: 44.90"}
-                    value={precoPromocional}
-                    onChange={e => setPrecoPromocional(e.target.value)}
-                  />
+                  Vazio = sem promoção, e é assim que ela se encerra. */}
+              <div
+                className="input-group"
+                style={{
+                  gridColumn: "1 / -1",
+                  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                  padding: "8px 12px", borderRadius: 12,
+                  border: `1.5px solid ${promoDigitada.cara ? "#FCA5A5" : promoDigitada.ok ? "#FDBA74" : "#E2E8F0"}`,
+                  background: promoDigitada.cara ? "#FEF2F2" : promoDigitada.ok ? "linear-gradient(90deg, #FFF7ED 0%, #FFF 100%)" : "#F8FAFC",
+                }}
+              >
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, color: "#9A3412", fontSize: "0.82rem", margin: 0, whiteSpace: "nowrap" }}>
+                  🏷️ Preço promocional (R$)
+                  <span style={{ fontWeight: 600, color: "#94A3B8", fontSize: "0.7rem" }}>opcional</span>
+                </label>
 
-                  {promoDigitada.cara ? (
-                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", fontWeight: 700, color: "#DC2626", lineHeight: 1.4 }}>
-                      ⚠️ A promoção tem que ser MENOR que o preço de venda
-                      {promoDigitada.venda ? ` (R$ ${promoDigitada.venda.toFixed(2).replace(".", ",")})` : ""}. Assim não dá para salvar.
-                    </p>
-                  ) : promoDigitada.ok ? (
-                    <p style={{ margin: "6px 0 0", fontSize: "0.76rem", color: "#475569", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ color: "#94A3B8", fontWeight: 600 }}>No cardápio:</span>
-                      <span style={{ textDecoration: "line-through", color: "#94A3B8", fontWeight: 700 }}>
-                        R$ {promoDigitada.venda!.toFixed(2).replace(".", ",")}
-                      </span>
-                      <strong style={{ color: "#DC2626", fontWeight: 900, fontSize: "0.95rem" }}>
-                        R$ {promoDigitada.valor!.toFixed(2).replace(".", ",")}
-                      </strong>
-                      <span style={{ background: "#DC2626", color: "#FFF", fontWeight: 800, fontSize: "0.68rem", padding: "2px 7px", borderRadius: 999 }}>
-                        -{Math.round(((promoDigitada.venda! - promoDigitada.valor!) / promoDigitada.venda!) * 100)}%
-                      </span>
-                    </p>
-                  ) : (
-                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#94A3B8", lineHeight: 1.4 }}>
-                      Em branco, o produto vende pelo preço normal. Preenchido, o cardápio
-                      mostra o preço de venda riscado e este em destaque.
-                    </p>
-                  )}
-                </div>
+                <input
+                  className="input-field"
+                  style={{ height: "38px", width: 150, flexShrink: 0, boxSizing: "border-box", background: "#FFF" }}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder={promoDigitada.venda ? `menor que ${promoDigitada.venda.toFixed(2)}` : "Ex: 44.90"}
+                  value={precoPromocional}
+                  onChange={e => setPrecoPromocional(e.target.value)}
+                />
+
+                {promoDigitada.cara ? (
+                  <span style={{ fontSize: "0.74rem", fontWeight: 700, color: "#DC2626" }}>
+                    ⚠️ Tem que ser MENOR que o preço de venda
+                    {promoDigitada.venda ? ` (R$ ${promoDigitada.venda.toFixed(2).replace(".", ",")})` : ""} — assim não salva.
+                  </span>
+                ) : promoDigitada.ok ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", flexWrap: "wrap" }}>
+                    <span style={{ color: "#94A3B8", fontWeight: 600 }}>No cardápio:</span>
+                    <span style={{ textDecoration: "line-through", color: "#94A3B8", fontWeight: 700 }}>
+                      R$ {promoDigitada.venda!.toFixed(2).replace(".", ",")}
+                    </span>
+                    <strong style={{ color: "#DC2626", fontWeight: 900, fontSize: "0.95rem" }}>
+                      R$ {promoDigitada.valor!.toFixed(2).replace(".", ",")}
+                    </strong>
+                    <span style={{ background: "#DC2626", color: "#FFF", fontWeight: 800, fontSize: "0.68rem", padding: "2px 7px", borderRadius: 999 }}>
+                      -{Math.round(((promoDigitada.venda! - promoDigitada.valor!) / promoDigitada.venda!) * 100)}%
+                    </span>
+                  </span>
+                ) : (
+                  <span style={{ fontSize: "0.74rem", color: "#94A3B8" }}>
+                    Em branco, vende pelo preço normal. Preenchido, o cardápio risca o preço de venda e destaca este.
+                  </span>
+                )}
               </div>
 
               {/* ─── PREÇOS POR CANAL ──────────────────────────────────────
