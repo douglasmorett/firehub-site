@@ -417,6 +417,10 @@ export const ROTULOS_DO_BLOCO: Partial<Record<TipoDeBloco, RotuloDoBloco[]>> = {
   ],
   cliente: [
     { chave: "nome", padrao: "Nome:" },
+    // O "CPF na nota". Rótulo único para os dois documentos de propósito: se a
+    // palavra mudasse conforme o número ("CPF:" ou "CNPJ:"), a loja editaria
+    // uma das duas e a outra continuaria como veio de fábrica.
+    { chave: "documento", padrao: "CPF/CNPJ:", ajuda: "O documento que o cliente pediu na nota." },
     { chave: "telefone", padrao: "Telefone:" },
     { chave: "qtdPedidos", padrao: "Qtd Pedidos:" },
   ],
@@ -489,6 +493,7 @@ export const CAMPOS_DISPONIVEIS: { chave: string; rotulo: string }[] = [
   { chave: "codigoCanal", rotulo: "Número no canal" },
   { chave: "loja", rotulo: "Nome da loja" },
   { chave: "cliente", rotulo: "Nome do cliente" },
+  { chave: "documento", rotulo: "CPF/CNPJ do cliente" },
   { chave: "telefone", rotulo: "Telefone" },
   { chave: "endereco", rotulo: "Endereço de entrega" },
   { chave: "data", rotulo: "Data" },
@@ -659,7 +664,10 @@ export const DESTAQUE_DO_AVISO_DE_BEBIDA: Tamanho = 2;
  * errado: o Assistente antigo ignora a chave que não conhece. A tela usa isto
  * para avisar a loja em vez de prometer o que não vai acontecer.
  */
-export const VERSAO_COM_CORPO_DO_AVISO = "1.2.20";
+// 1.2.21 e NAO 1.2.20: a 1.2.20 ja foi publicada, com o CPF na nota, e o
+// codigo da faixa de bebida entrou DEPOIS dela. Apontar para a 1.2.20 diria
+// a loja que ja atualizou que o recurso funciona, e o papel sairia igual.
+export const VERSAO_COM_CORPO_DO_AVISO = "1.2.21";
 
 /**
  * Catálogo das linhas com corpo configurável. Leia `Bloco.corpos` antes de
@@ -901,6 +909,8 @@ export type PedidoParaComanda = {
   codigoCanal?: string | null;
   loja?: string | null;
   cliente?: string | null;
+  /** O "CPF na nota", já formatado (lib/documento-do-cliente.ts). */
+  documento?: string | null;
   telefone?: string | null;
   endereco?: string | null;
   data?: string | null;
@@ -985,6 +995,7 @@ function mapaDeCampos(p: PedidoParaComanda): Record<string, string> {
     codigoCanal: p.codigoCanal || "",
     loja: p.loja || "",
     cliente: p.cliente || "",
+    documento: p.documento || "",
     telefone: p.telefone || "",
     endereco: p.endereco || "",
     data: p.data || "",
@@ -1102,9 +1113,10 @@ export function montarComanda(
       }
 
       case "cliente":
-        if (!pedido.cliente && !pedido.telefone) break;
+        if (!pedido.cliente && !pedido.telefone && !pedido.documento) break;
         titulo(bloco, "CLIENTE");
         if (pedido.cliente) por(`${R("nome")} ${pedido.cliente}`.trim(), { negrito: N("nome"), rotulo: "nome" });
+        if (pedido.documento) por(`${R("documento")} ${pedido.documento}`.trim(), { negrito: N("documento"), rotulo: "documento" });
         if (pedido.telefone) por(`${R("telefone")} ${pedido.telefone}`.trim(), { negrito: N("telefone"), rotulo: "telefone" });
         por(`${R("qtdPedidos")} 1`.trim(), { negrito: N("qtdPedidos"), rotulo: "qtdPedidos" });
         break;
@@ -1362,6 +1374,9 @@ export function pedidoDeExemplo(nomeDaLoja = "Sua Loja"): PedidoParaComanda {
     codigoCanal: "#3523",
     loja: nomeDaLoja,
     cliente: "Larissa Moreira",
+    // O "CPF na nota": aparece na prévia para a loja ver a linha e poder
+    // reescrever o rótulo dela, mesmo antes de o primeiro cliente pedir.
+    documento: "529.982.247-25",
     telefone: "(22) 99999-1020",
     endereco: "Rua Dez, 59 - Costazul - Rio das Ostras",
     data: "12/09/2026",

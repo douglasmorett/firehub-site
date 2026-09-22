@@ -7,6 +7,9 @@ import {
   MOTIVOS_COMUNS, SEM_DESCONTO, notaDoDesconto, problemaDoDesconto, valorDoDesconto,
   type DescontoManual,
 } from "@/lib/desconto-manual";
+import {
+  lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento, tipoDoDocumento,
+} from "@/lib/documento-do-cliente";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -38,6 +41,8 @@ export default function VendaPresencialPage() {
   const [customerPhone, setCustomerPhone] = useState("");
   /** Número do pager entregue a quem espera no balcão. Vazio = a loja não usa. */
   const [pager, setPager] = useState("");
+  /** "CPF na nota": sai impresso na comanda e já preenche a NFC-e depois. */
+  const [documento, setDocumento] = useState("");
   const [address, setAddress] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Dinheiro");
   const [notes, setNotes] = useState("");
@@ -267,6 +272,10 @@ export default function VendaPresencialPage() {
     if (paymentMethod === "Conta Funcionário" && !selectedEmployeeId) {
       return setMsg("❌ Selecione o funcionário responsável pela conta.");
     }
+    // O CPF na nota é opcional, mas digitado errado não passa: este número é o
+    // destinatário da NFC-e depois (lib/documento-do-cliente.ts).
+    const problemaNoDocumento = problemaDoDocumento(documento);
+    if (problemaNoDocumento) return setMsg(`❌ ${problemaNoDocumento}`);
 
     if (dividir) {
       const validas = partes.filter(p => valorDaParte(p) > 0);
@@ -293,6 +302,8 @@ export default function VendaPresencialPage() {
         : customerName || (orderType === "MESA" ? `Mesa ${tableNum}` : orderType === "BALCAO" ? "Balcão" : "Cliente"),
       customerPhone: customerPhone || "00000000000",
       pagerNumber: pager.trim() || null,
+      // "CPF na nota". Vai só com os dígitos; a máscara é coisa da tela.
+      customerCpfCnpj: lerDocumentoDoCliente(documento),
       customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? `Mesa ${tableNum}` : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
       paymentMethod,
@@ -323,7 +334,12 @@ export default function VendaPresencialPage() {
     setLoading(false);
     if (res.ok) {
       setMsg("✅ Pedido registrado!");
-      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange("");
+      // TUDO DO CLIENTE SAI DAQUI, inclusive pager e documento. O que fica no
+      // campo vai parar na comanda do PRÓXIMO cliente, e "PAGER 12" chamando a
+      // pessoa errada ou o CPF de outro impresso na nota é o tipo de erro que
+      // ninguém percebe até alguém reclamar. O pager já ficava para trás antes
+      // deste campo existir — mesma falha, consertada junto.
+      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento("");
       if (dividir) ligarDivisao(false);
     } else {
       const err = await res.json();
@@ -514,6 +530,39 @@ export default function VendaPresencialPage() {
               maxLength={10}
               style={{ width: "100%", marginTop: 6, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${pager.trim() ? "#F59E0B" : "#E2E8F0"}`, background: pager.trim() ? "#FFFBEB" : "#FFF", fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: pager.trim() ? 800 : 400 }}
             />
+          )}
+
+          {/* ── "CPF NA NOTA" ────────────────────────────────────────────────
+              Só no BALCÃO: é ali que o cliente está na frente do atendente e
+              pede. Em mesa e delivery o pedido é lançado sem a pessoa por
+              perto, e um campo a mais só atrasaria quem digita endereço.
+
+              Vazio por padrão — quem não pede, não digita, e nada muda. Quem
+              digita vê o documento sair na comanda impressa, e o pedido chega
+              na emissão da NFC-e com o destinatário já preenchido. */}
+          {orderType === "BALCAO" && (
+            <div style={{ marginTop: 6 }}>
+              <input
+                placeholder="CPF/CNPJ na nota (opcional)"
+                value={documento}
+                onChange={e => setDocumento(mascararDocumentoDigitado(e.target.value))}
+                inputMode="numeric"
+                style={{ width: "100%", padding: "7px 10px", borderRadius: 8,
+                  border: `1.5px solid ${problemaDoDocumento(documento) ? "#DC2626" : documento.trim() ? "#0EA5E9" : "#E2E8F0"}`,
+                  background: problemaDoDocumento(documento) ? "#FEF2F2" : documento.trim() ? "#F0F9FF" : "#FFF",
+                  fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: documento.trim() ? 800 : 400 }}
+              />
+              {/* O campo diz sozinho em que pé está: erro em vermelho enquanto
+                  o número não fecha, confirmação em verde quando fecha. Sem
+                  isso o atendente só descobriria o dígito trocado ao tentar
+                  finalizar — com o cliente já indo embora. */}
+              {documento.trim() !== "" && (
+                <div style={{ fontSize: "0.72rem", marginTop: 3, fontWeight: 700,
+                  color: problemaDoDocumento(documento) ? "#B91C1C" : "#15803D" }}>
+                  {problemaDoDocumento(documento) || `✓ ${tipoDoDocumento(documento)} válido — sai na comanda`}
+                </div>
+              )}
+            </div>
           )}
         </div>
 

@@ -13,6 +13,7 @@ import { blocosDoPedido } from "@/lib/comanda-modelo";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 import { nomeComPager } from "@/lib/pager";
+import { nomeComDocumento } from "@/lib/documento-do-cliente";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -384,7 +385,13 @@ export async function GET(req: NextRequest) {
         // Se só o navegador soubesse do pager, a mesma loja imprimiria com ou
         // sem o número dependendo de haver uma aba aberta — a classe de
         // divergência que o modelo da comanda já documenta neste arquivo.
-        customerName: nomeComPager(pedidoDoBanco.customerName, (pedidoDoBanco as any).pagerNumber) || pedidoDoBanco.customerName,
+        // O "CPF NA NOTA" entra pelo mesmo caminho, e DEPOIS do pager: nome e
+        // pager são como a loja chama o cliente; o documento é o que ele
+        // confere. Ver lib/documento-do-cliente.ts.
+        customerName: nomeComDocumento(
+          nomeComPager(pedidoDoBanco.customerName, (pedidoDoBanco as any).pagerNumber),
+          (pedidoDoBanco as any).customerCpfCnpj,
+        ) || pedidoDoBanco.customerName,
         items: (pedidoDoBanco.items || []).map((i: any) => ({
           ...i,
           // O 2º argumento é o produto: é com os `comboGroups` dele que o preço

@@ -6,6 +6,7 @@ import { telefoneDeVerdade } from "@/lib/telefone";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { lerPager } from "@/lib/pager";
 import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
+import { normalizarDocumento, problemaDoDocumento, lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -15,6 +16,18 @@ export async function POST(req: Request) {
   const { customerName, customerPhone, customerAddress, deliveryType, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change, discountTotal, discountMerchant } = data;
   // Número do pager entregue a quem espera no balcão (lib/pager.ts). Opcional.
   const pagerNumber = lerPager(data.pagerNumber);
+  // ── "CPF NA NOTA" ────────────────────────────────────────────────────────
+  //
+  // Opcional: campo vazio segue a venda normalmente. Mas o que vier tem que
+  // ser um documento de verdade — esta coluna é o destinatário da NFC-e
+  // (lib/fiscal-automatico.ts), e número inválido só aparece lá na frente,
+  // como rejeição da SEFAZ, com a fila esperando o cupom. A tela já barra;
+  // aqui é a trava que vale para qualquer cliente desta rota.
+  if (normalizarDocumento(data.customerCpfCnpj)) {
+    const problema = problemaDoDocumento(data.customerCpfCnpj);
+    if (problema) return NextResponse.json({ error: problema }, { status: 400 });
+  }
+  const customerCpfCnpj = lerDocumentoDoCliente(data.customerCpfCnpj);
   let paymentMethod: string = data.paymentMethod;
 
   // ── PAGAMENTO DIVIDIDO ──────────────────────────────────────────────────
@@ -91,6 +104,10 @@ export async function POST(req: Request) {
       // Assistente pode passar a imprimi-lo como linha dedicada. Quem junta os
       // dois é só a montagem da comanda (lib/pager.ts).
       ...(pagerNumber ? { pagerNumber } : {}),
+      // O documento fica em campo PRÓPRIO, limpo, sem máscara: é dele que a
+      // emissão fiscal lê o destinatário. Quem junta documento e nome é só a
+      // montagem da comanda (lib/documento-do-cliente.ts).
+      ...(customerCpfCnpj ? { customerCpfCnpj } : {}),
       totalAmount: totalAmount || 0,
       // ── DESCONTO DADO NO BALCÃO/MESA ─────────────────────────────────
       //

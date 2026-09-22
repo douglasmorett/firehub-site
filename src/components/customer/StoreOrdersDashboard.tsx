@@ -16,6 +16,7 @@ import { isStoreOpen } from "@/lib/store-hours";
 import { avaliarEdicao } from "@/lib/edicao-de-pedido";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { lerPager, nomeComPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
+import { lerDocumentoDoCliente, nomeComDocumento } from "@/lib/documento-do-cliente";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
@@ -1869,11 +1870,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       // funciona em toda versão hoje, sem ninguém atualizar nada. No balcão o
       // pager É como o atendente identifica quem vai buscar, então o lugar
       // também faz sentido, não é só contorno.
-      customerName: nomeComPager(order.customerName, order.pagerNumber) || "Cliente",
+      // O "CPF na nota" entra no mesmo lugar e pelo mesmo motivo, depois do
+      // pager (lib/documento-do-cliente.ts). Os dois trilhos de impressão —
+      // este e a fila da nuvem — montam o nome igual, senão a mesma loja
+      // imprimiria diferente conforme houvesse uma aba aberta.
+      customerName: nomeComDocumento(nomeComPager(order.customerName, order.pagerNumber), order.customerCpfCnpj) || "Cliente",
       // Vai TAMBÉM em campo próprio: o Assistente de hoje ignora, e quando o
       // parque estiver atualizado ele passa a imprimir o pager em linha
       // dedicada sem precisar mexer em nada aqui.
       pagerNumber: lerPager(order.pagerNumber),
+      // Idem: campo próprio para o Assistente do futuro imprimir a linha
+      // "CPF/CNPJ:" sem depender de ninguém mexer aqui de novo.
+      customerCpfCnpj: lerDocumentoDoCliente(order.customerCpfCnpj),
       customerPhone: order.customerPhone,
       customerAddress: order.customerAddress,
       deliveryType: order.deliveryType || "DELIVERY",

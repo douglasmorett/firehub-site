@@ -36,7 +36,10 @@ function recortar(nome) {
   return fonte.slice(inicio, i + 1);
 }
 
-const codigo = [recortar("cleanAscii"), recortar("normalizarCombo"), recortar("buildEscPos")].join("\n\n");
+// documentoDoCliente/nomeSemDocumento entram no recorte desde a 1.2.20 (o
+// "CPF na nota" em linha propria): buildEscPos as chama, e sem elas aqui o
+// harness quebra com ReferenceError antes de testar qualquer coisa.
+const codigo = [recortar("cleanAscii"), recortar("documentoDoCliente"), recortar("nomeSemDocumento"), recortar("normalizarCombo"), recortar("buildEscPos")].join("\n\n");
 // eslint-disable-next-line no-new-func
 const { buildEscPos } = new Function(`${codigo}\n return { buildEscPos };`)();
 
