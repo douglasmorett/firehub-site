@@ -147,6 +147,8 @@ export function montarMapa(
 export type ItemComCategoria = {
   productName?: string | null;
   category?: string | null;
+  /** O que o cliente escolheu dentro do combo — ver `porOpcaoDoCombo`. */
+  comboSelections?: unknown;
   // `active` é o que separa o espelho que ninguém adotou do cardápio que
   // nasceu de um espelho (ver ehItemDeEspelho).
   menuProduct?: { id?: string | null; active?: boolean | null; name?: string | null; category?: string | null } | null;
@@ -177,6 +179,59 @@ function ehItemDeEspelho(item: ItemComCategoria): boolean {
   // não perde pedido.
   if (id && item?.menuProduct?.active !== true && PREFIXOS_DE_ESPELHO.some((pre) => id.startsWith(pre))) return true;
   return ehCategoriaDeIntegracao(item?.menuProduct?.category ?? item?.category);
+}
+
+/**
+ * A categoria pelo que o cliente ESCOLHEU dentro do combo.
+ *
+ * ── A pizza que apareceu na tela das esfihas ────────────────────────────────
+ *
+ * O nome do combo do iFood não é nome de produto: "GRANDE 2 SABORES (8
+ * PEDAÇOS)". Não casa com nada do cardápio, e o item caía em "" — que aparece
+ * em TODA tela. Na NIK, 22/09/2026 19:11, era uma pizza na tela "Produção
+ * Esfiha", filtrada só por esfiha. Sem categoria não é neutro: é curinga.
+ *
+ * Mas as opções dizem exatamente o que é: "1/2 Moda do Chefe", "1/2
+ * Portuguesa" — e esses são produtos REAIS da loja, com categoria de verdade.
+ *
+ * VENCE A MAIS FREQUENTE. Uma pizza meio a meio traz também a borda e a massa,
+ * e "Borda Tradicional" casaria com a categoria "Bordas": ficar com a primeira
+ * opção que casa mandaria a pizza para a tela das bordas. Duas metades contra
+ * uma borda resolvem isso sozinhas.
+ *
+ * A fração sai do nome antes de comparar ("1/2 Moda do Chefe" → "Moda do
+ * Chefe"): é como o parceiro escreve meia pizza, e o cadastro não tem isso.
+ */
+function porOpcaoDoCombo(item: ItemComCategoria, mapa: MapaDeCategorias): string | null {
+  const bruto = item?.comboSelections;
+  if (!bruto) return null;
+  let selecoes: unknown;
+  try {
+    selecoes = typeof bruto === "string" ? JSON.parse(bruto) : bruto;
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(selecoes)) return null;
+
+  const votos = new Map<string, number>();
+  const ordem: string[] = [];
+  for (const s of selecoes) {
+    const nomeBruto = String((s as any)?.name ?? (s as any)?.nome ?? "").replace(/^\s*\d+\s*\/\s*\d+\s*/, "");
+    const chave = chaveDoNome(nomeBruto);
+    if (!chave) continue;
+    const categoria = mapa.porNome.get(chave) ?? porPrefixo(chave, mapa);
+    if (!categoria) continue;
+    if (!votos.has(categoria)) ordem.push(categoria);
+    votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
+  }
+  if (votos.size === 0) return null;
+  // Empate fica com a que apareceu primeiro — a ordem das opções é a ordem em
+  // que o cliente montou o item, e o principal vem antes do adicional.
+  let melhor = ordem[0];
+  for (const categoria of ordem) {
+    if ((votos.get(categoria) ?? 0) > (votos.get(melhor) ?? 0)) melhor = categoria;
+  }
+  return melhor;
 }
 
 /**
@@ -235,6 +290,10 @@ export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategoria
     const categoria = chave ? porPrefixo(chave, mapa) : null;
     if (categoria) return categoria;
   }
+  // O nome do combo não diz nada ("GRANDE 2 SABORES"), mas o que foi escolhido
+  // dentro dele diz. É a última chance antes do curinga.
+  const pelaOpcao = porOpcaoDoCombo(item, mapa);
+  if (pelaOpcao) return pelaOpcao;
   return "";
 }
 

@@ -186,6 +186,13 @@ export default function KDSTelaPage() {
    * telas de KDS desta etapa. `null` = ainda não sei (ver o filtro abaixo).
    */
   const [categoriasComDono, setCategoriasComDono] = useState<Set<string> | null>(null);
+  /**
+   * O cozinheiro mexeu no filtro AQUI? Enquanto não mexeu, a tela obedece ao
+   * painel (ver o efeito que lê `/api/store/kds-screens`). Depois que mexeu, a
+   * escolha dele manda até a tela ser recarregada — ninguém gosta de ver o
+   * filtro voltar sozinho no meio do movimento.
+   */
+  const filtroMexidoAqui = useRef(false);
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
 
   // ─── State ──────────────────────────────────────────────────────────────────
@@ -310,6 +317,26 @@ export default function KDSTelaPage() {
             }
           }
           setCategoriasComDono(comDono);
+
+          // ── A TELA DA TV SEGUE O PAINEL ────────────────────────────────
+          //
+          // O filtro vinha só na URL, montada quando a tela foi ABERTA. A TV
+          // da cozinha fica ligada o dia todo, então mudar o filtro no painel
+          // não chegava nela — e pior: a categoria recém-incluída sumia da tela
+          // certa (a URL antiga não a tem) e ao mesmo tempo deixava de ser
+          // órfã, então também não aparecia nas outras. O pedido caía no vão
+          // entre as duas regras. Na NIK, 22/09/2026, foi "Sabores de Pizza".
+          const minha = telas.find(
+            (t: any) => t?.stage === stage && String(t?.name || "") === screenName,
+          );
+          if (minha && !filtroMexidoAqui.current) {
+            const doPainel = (minha.categoryFilter || []).map((c: any) => String(c));
+            setActiveCategories((atual) =>
+              atual.length === doPainel.length && atual.every((c, i) => c === doPainel[i])
+                ? atual
+                : doPainel,
+            );
+          }
         })
         .catch(() => {
           // Sem resposta, `categoriasComDono` segue como está — e enquanto for
@@ -323,7 +350,7 @@ export default function KDSTelaPage() {
       vivo = false;
       clearInterval(id);
     };
-  }, [stage]);
+  }, [stage, screenName]);
   const lastJsonRef = useRef<string>("");
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1096,7 +1123,7 @@ export default function KDSTelaPage() {
             >
               {activeCategories.length > 0 && (
                 <button
-                  onClick={() => setActiveCategories([])}
+                  onClick={() => { filtroMexidoAqui.current = true; setActiveCategories([]); }}
                   style={{
                     padding: "6px 12px",
                     borderRadius: 10,
@@ -1186,7 +1213,7 @@ export default function KDSTelaPage() {
                     </span>
                     {activeCategories.length > 0 && (
                       <button
-                        onClick={() => setActiveCategories([])}
+                        onClick={() => { filtroMexidoAqui.current = true; setActiveCategories([]); }}
                         style={{
                           background: "none",
                           border: "none",
@@ -1233,6 +1260,7 @@ export default function KDSTelaPage() {
                             type="checkbox"
                             checked={selected}
                             onChange={() => {
+                              filtroMexidoAqui.current = true;
                               setActiveCategories((prev) =>
                                 selected
                                   ? prev.filter((c) => c !== cat.name)
