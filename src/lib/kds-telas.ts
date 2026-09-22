@@ -86,9 +86,38 @@ export function telaMostraItem(tela: TelaDoKds, item: ItemParaTela): boolean {
 }
 
 /**
- * As telas do estágio dado que têm pelo menos um item deste pedido.
+ * A tela PRECISA dar baixa por causa deste item?
  *
- * É a lista de quem PRECISA dar baixa para o pedido andar.
+ * ── Por que não é a mesma pergunta de `telaMostraItem` ──────────────────────
+ *
+ * Mostrar é generoso de propósito: item sem categoria aparece em TODA tela,
+ * para nunca sumir da cozinha. Exigir baixa tem que ser o contrário —
+ * conservador — e confundir as duas travava o pedido.
+ *
+ * O caso real: o item de plataforma cuja categoria não casa com nada do
+ * cardápio fica sem categoria. Pela regra de mostrar, ele aparecia nas três
+ * telas da loja; pela regra de exigir, ele passava a exigir baixa das TRÊS.
+ * Basta a loja ter uma tela que ninguém abre e o pedido nunca chega na
+ * finalização — comida pronta, esperando um clique que não vem.
+ *
+ * Aqui só prende quem casa DE VERDADE: filtro que bate com a categoria, ou
+ * tela sem filtro nenhum (que é a tela que vê tudo e por isso responde por
+ * tudo). Item órfão não prende ninguém — ele continua aparecendo, mas não
+ * segura o pedido.
+ */
+export function telaPrecisaDarBaixa(tela: TelaDoKds, item: ItemParaTela): boolean {
+  const filtros = (tela.categoryFilter || []).map(texto).filter(Boolean);
+  if (filtros.length === 0) return true;
+  const cat = texto(item?.menuProduct?.category ?? item?.category);
+  if (!cat) return false;
+  return filtros.includes(cat);
+}
+
+/**
+ * As telas do estágio dado que PRECISAM dar baixa neste pedido.
+ *
+ * Usa `telaPrecisaDarBaixa`, não `telaMostraItem`: mostrar é generoso e
+ * exigir é conservador. A diferença é o que impede o pedido de travar.
  */
 export function telasComItem(
   telas: TelaDoKds[] | null | undefined,
@@ -101,7 +130,7 @@ export function telasComItem(
   for (const t of doEstagio) {
     const chave = chaveDaTela(t);
     if (!chave || chaves.includes(chave)) continue;
-    if (lista.some((i) => telaMostraItem(t, i))) chaves.push(chave);
+    if (lista.some((i) => telaPrecisaDarBaixa(t, i))) chaves.push(chave);
   }
   return chaves;
 }
@@ -129,4 +158,26 @@ export function faltaTelaDarBaixa(
   if (precisam.length <= 1) return false;
   const jaDeram = lerTelasProntas(prontas);
   return precisam.some((c) => !jaDeram.includes(c));
+}
+
+/**
+ * Os NOMES das telas que ainda precisam dar baixa neste pedido.
+ *
+ * Serve para a tela que acabou de dar baixa dizer por quem está esperando.
+ * Pedido que some sem explicação é pedido que a cozinha para de procurar: se
+ * ele não foi para a finalização, alguém tem que saber de quem é a vez.
+ */
+export function nomesDasTelasQueFaltam(
+  telas: TelaDoKds[] | null | undefined,
+  itens: ItemParaTela[] | null | undefined,
+  estagio: string,
+  prontas: unknown
+): string[] {
+  const precisam = telasComItem(telas, itens, estagio);
+  const jaDeram = lerTelasProntas(prontas);
+  const faltando = precisam.filter((c) => !jaDeram.includes(c));
+  return faltando.map((chave) => {
+    const t = (telas || []).find((x) => chaveDaTela(x) === chave);
+    return String(t?.name ?? "").trim() || "outra tela";
+  });
 }

@@ -17,7 +17,7 @@ const jiti = createJiti(__filename, {
   esmResolve: true,
 });
 
-const { telasComItem, faltaTelaDarBaixa, chaveDaTela, telaMostraItem } =
+const { telasComItem, faltaTelaDarBaixa, chaveDaTela, telaMostraItem, telaPrecisaDarBaixa } =
   jiti(path.resolve(__dirname, "..", "src", "lib", "kds-telas.ts"));
 
 let ok = 0;
@@ -59,9 +59,29 @@ conferir("uma tela so, sem filtro -> avanca", faltaTelaDarBaixa([FINAL], pedidoM
 console.log("\nas telas do OUTRO estagio nao seguram");
 conferir("producao nao espera a finalizacao", faltaTelaDarBaixa(TELAS, pedidoMisto, "production", ["t-esfirra", "t-pizza"]), false);
 
-console.log("\nitem sem categoria aparece em toda tela (rede de seguranca)");
+console.log("\nitem sem categoria: MOSTRA em toda tela, mas nao PRENDE nenhuma");
 const semCategoria = [{ menuProduct: { category: null } }];
-conferir("sem categoria -> as duas de producao", telasComItem(TELAS, semCategoria, "production"), ["t-esfirra", "t-pizza"]);
+conferir("mostra na tela de esfirra", telaMostraItem(ESFIRRA, semCategoria[0]), true);
+conferir("mostra na tela de pizza", telaMostraItem(PIZZA, semCategoria[0]), true);
+conferir("NAO exige baixa da esfirra", telaPrecisaDarBaixa(ESFIRRA, semCategoria[0]), false);
+conferir("NAO exige baixa da pizza", telaPrecisaDarBaixa(PIZZA, semCategoria[0]), false);
+conferir("orfao sozinho nao prende ninguem", telasComItem(TELAS, semCategoria, "production"), []);
+conferir("orfao nao trava o pedido", faltaTelaDarBaixa(TELAS, semCategoria, "production", []), false);
+
+// O caso que o dono levantou (21/09/2026): a loja tem uma tela que ninguem
+// abre. Um item orfao nao pode transformar essa tela em refem do pedido.
+const ESQUECIDA = { id: "t-abandonada", name: "Sobremesas", stage: "production", categoryFilter: ["Sobremesas"] };
+const TRES_TELAS = [ESFIRRA, PIZZA, ESQUECIDA];
+const esfirraMaisOrfao = [{ menuProduct: { category: "Esfihas" } }, semCategoria[0]];
+conferir("esfirra + orfao: so a esfirra prende", telasComItem(TRES_TELAS, esfirraMaisOrfao, "production"), ["t-esfirra"]);
+conferir("a baixa da esfirra libera o pedido", faltaTelaDarBaixa(TRES_TELAS, esfirraMaisOrfao, "production", ["t-esfirra"]), false);
+
+// A bebida do exemplo do dono: nenhuma tela a mostra.
+const BEBIDA = { menuProduct: { category: "Bebidas" } };
+const esfirraMaisBebida = [{ menuProduct: { category: "Esfihas" } }, BEBIDA];
+conferir("bebida nao aparece na tela de esfirra", telaMostraItem(ESFIRRA, BEBIDA), false);
+conferir("esfirra + bebida: so a esfirra prende", telasComItem(TELAS, esfirraMaisBebida, "production"), ["t-esfirra"]);
+conferir("e o pedido anda com a baixa da esfirra", faltaTelaDarBaixa(TELAS, esfirraMaisBebida, "production", ["t-esfirra"]), false);
 conferir("tela com filtro mostra item sem categoria", telaMostraItem(ESFIRRA, { menuProduct: { category: "" } }), true);
 conferir("tela com filtro NAO mostra categoria alheia", telaMostraItem(ESFIRRA, { menuProduct: { category: "Pizzas" } }), false);
 

@@ -616,7 +616,27 @@ export default function KDSTelaPage() {
               body: JSON.stringify({ orderId: order.id, action, tela: chaveDaTela }),
             });
             clearTimeout(timeoutId);
-            if (res.ok) return true;
+            if (res.ok) {
+              // ── POR QUEM O PEDIDO ESTÁ ESPERANDO ─────────────────────────
+              //
+              // Quando outra tela ainda tem item deste pedido, ele sai DAQUI e
+              // NÃO vai para a finalização. Sem dizer isso, o pedido some da
+              // vista e a cozinha para de procurar — que é o jeito de comida
+              // pronta ficar esquecida no balcão.
+              const corpo = await res.json().catch(() => null);
+              if (corpo?.aguardandoOutraTela) {
+                const quem = Array.isArray(corpo.faltando) && corpo.faltando.length
+                  ? corpo.faltando.join(", ")
+                  : "outra tela";
+                setToast({
+                  orderId: order.id,
+                  label: `#${getDisplayOrderNumber(order)} · aguardando ${quem}`,
+                });
+                if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+              }
+              return true;
+            }
           } catch (err) {
             clearTimeout(timeoutId);
             if (attempt < retries) {

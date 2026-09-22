@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { faltaTelaDarBaixa, lerTelasProntas, type TelaDoKds } from "@/lib/kds-telas";
+import { faltaTelaDarBaixa, lerTelasProntas, nomesDasTelasQueFaltam, type TelaDoKds } from "@/lib/kds-telas";
 
 /**
  * GET /api/kds?stage=production|finishing
@@ -275,7 +275,7 @@ export async function PUT(req: NextRequest) {
   // item de plataforma (categoria literal "iFood") contaria numa tela na hora
   // de mostrar e noutra na hora de dar baixa.
   const baixaDaTela = async (estagio: "production" | "finishing") => {
-    if (!chaveDaTelaQueDeuBaixa) return { falta: false, prontas: null as string[] | null };
+    if (!chaveDaTelaQueDeuBaixa) return { falta: false, prontas: null as string[] | null, faltando: [] as string[] };
     const dono = await prisma.user
       .findUnique({ where: { id: order.franchiseeId! }, select: { kdsScreens: true } })
       .catch(() => null);
@@ -290,7 +290,13 @@ export async function PUT(req: NextRequest) {
       // Sem o resolvedor, vale a categoria crua do produto: pior filtro, nunca
       // pedido preso. Comida parada na cozinha é mais caro que baixa adiantada.
     }
-    return { falta: faltaTelaDarBaixa(telas, itens, estagio, prontas), prontas };
+    return {
+      falta: faltaTelaDarBaixa(telas, itens, estagio, prontas),
+      prontas,
+      // Quem ainda nao deu baixa, pelo nome. A tela mostra isso no aviso: pedido
+      // que sai da vista sem explicacao e pedido que a cozinha para de procurar.
+      faltando: nomesDasTelasQueFaltam(telas, itens, estagio, prontas),
+    };
   };
 
   if (action === "start_production") {
@@ -308,7 +314,7 @@ export async function PUT(req: NextRequest) {
   }
 
   if (action === "finish_production") {
-    const { falta, prontas } = await baixaDaTela("production");
+    const { falta, prontas, faltando } = await baixaDaTela("production");
     if (falta) {
       // Outra tela de produção ainda tem item deste pedido. Grava só a baixa
       // desta: ela para de ver o pedido, a outra continua vendo, e o estágio
@@ -317,7 +323,7 @@ export async function PUT(req: NextRequest) {
         where: { id: orderId },
         data: { kdsTelasProntas: prontas as any },
       });
-      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true });
+      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true, faltando });
     }
     // Production done → move to finishing stage
     await prisma.customerOrder.update({
@@ -334,7 +340,7 @@ export async function PUT(req: NextRequest) {
   }
 
   if (action === "finish_order") {
-    const { falta, prontas } = await baixaDaTela("finishing");
+    const { falta, prontas, faltando } = await baixaDaTela("finishing");
     if (falta) {
       // Mesma regra da produção: o pedido sai da tela de quem deu baixa e
       // continua nas outras. Sem `kdsFinishedAt` e sem `readyAt`, porque o
@@ -343,7 +349,7 @@ export async function PUT(req: NextRequest) {
         where: { id: orderId },
         data: { kdsTelasProntas: prontas as any },
       });
-      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true });
+      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true, faltando });
     }
     const isPickup = order.deliveryType !== "DELIVERY";
     const updateData: any = {
