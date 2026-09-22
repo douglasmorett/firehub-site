@@ -246,21 +246,34 @@ export function tudoPronto(itens: { prontoEm?: Date | string | null }[] | null |
 /**
  * Ainda falta alguma tela de FINALIZAÇÃO dar a baixa dela?
  *
- * Aqui não entra item: a finalização não pergunta "a comida ficou pronta",
- * pergunta "esta estação fez a parte dela". Por isso é por tela, e por isso
- * uma não fala pela outra.
+ * O pronto aqui não é do item: a finalização não pergunta "a comida ficou
+ * pronta", pergunta "esta estação fez a parte dela". Por isso é por tela, e
+ * por isso uma não fala pela outra.
+ *
+ * Mas só pode prender quem ENXERGA o pedido — nos dois sentidos:
+ *
+ *   • o filtro de ímpar/par/entrega, senão a tela de par travaria todo pedido
+ *     ímpar, que ela nunca vai ver;
+ *   • o filtro de CATEGORIA, pela mesma razão. A NIK tem "Finalização Esfihas"
+ *     e "Finalização Pizza" com listas de categoria separadas: um pedido só de
+ *     esfiha não aparece na tela de pizza (a tela esconde pedido sem item seu),
+ *     e exigir a baixa dela deixaria o pedido parado para sempre entre a
+ *     produção e o finalizado. É o mesmo buraco que o dono apontou na bebida
+ *     filtrada para fora de todas as telas.
+ *
+ * Sem `itens` a régua de categoria não roda — quem chama sem eles trata só do
+ * filtro de número.
  */
 export function faltaFinalizacao(
   telas: TelaDoKds[] | null | undefined,
   prontas: unknown,
-  pedido?: { numero?: unknown; deliveryType?: string | null } | null
+  pedido?: { numero?: unknown; deliveryType?: string | null } | null,
+  itens?: ItemParaTela[] | null
 ): boolean {
   const deFinalizacao = (telas || [])
     .filter((t) => texto(t?.stage) === "finishing")
-    // So conta quem MOSTRA este pedido: com uma tela em impar e outra em par,
-    // exigir baixa das duas travaria o pedido — a outra nunca vai ver aquele
-    // numero.
     .filter((t) => !pedido || telaMostraPedido(t as any, pedido))
+    .filter((t) => !itens || itens.length === 0 || itensDaTela(t, itens).length > 0)
     .map(chaveDaTela)
     .filter(Boolean);
   const unicas = [...new Set(deFinalizacao)];

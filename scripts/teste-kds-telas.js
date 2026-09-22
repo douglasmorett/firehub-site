@@ -104,6 +104,17 @@ conferir("8825: so a de impar precisa fechar", faltaFinalizacao([IMPAR, PAR], ["
 conferir("8824: so a de par precisa fechar", faltaFinalizacao([IMPAR, PAR], ["f-p"], PAR_8824), false);
 conferir("8825 sem ninguem fechar -> falta", faltaFinalizacao([IMPAR, PAR], [], IMPAR_8825), false);
 
+console.log("\nFINALIZACAO por categoria: a tela que nao ve o pedido nao prende (NIK)");
+const FIM_ESF = { id: "fe", name: "Finalizacao Esfihas", stage: "finishing", filter: "all", categoryFilter: ["Esfihas"] };
+const FIM_PIZ = { id: "fp", name: "Finalizacao Pizza",   stage: "finishing", filter: "all", categoryFilter: ["Pizzas"] };
+const SO_ESFIRRA = [carimbado(umaEsfirra)];
+const OS_DOIS = [carimbado(umaEsfirra), carimbado(umaPizza)];
+conferir("so esfirra: a de esfirra fecha sozinha", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, SO_ESFIRRA), false);
+conferir("esfirra + pizza: a de pizza ainda falta", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, OS_DOIS), true);
+conferir("esfirra + pizza: as duas deram -> acabou", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe", "fp"], PEDIDO, OS_DOIS), false);
+conferir("item sem categoria aparece nas duas, entao prende as duas", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, [carimbado(ORFAO)]), true);
+conferir("sem itens a regra antiga vale", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, null), true);
+
 console.log("\nfiltro de entrega e retirada");
 conferir("tela de delivery mostra delivery", telaMostraPedido({ filter: "delivery" }, { deliveryType: "DELIVERY" }), true);
 conferir("tela de delivery nao mostra retirada", telaMostraPedido({ filter: "delivery" }, { deliveryType: "RETIRADA" }), false);

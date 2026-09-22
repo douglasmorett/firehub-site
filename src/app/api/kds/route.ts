@@ -414,14 +414,17 @@ export async function PUT(req: NextRequest) {
     // da produção, onde o carimbo é do item e sai de todas as telas de uma
     // vez. (decisão do dono, 22/09/2026)
     //
-    // E só conta a tela que MOSTRA este pedido: com uma em ímpar e outra em
-    // par, exigir as duas travaria o pedido para sempre.
+    // E só conta a tela que MOSTRA este pedido — pelo filtro de número E pelo
+    // de categoria. A NIK tem "Finalização Esfihas" e "Finalização Pizza"
+    // separadas: um pedido só de esfiha nem aparece na tela de pizza, e cobrar
+    // a baixa dela deixaria o pedido preso entre a produção e o finalizado.
     const telasFim = await telasDaLoja();
     const prontas = chaveDaTelaQueDeuBaixa
       ? [...new Set([...lerTelasProntas(order.kdsTelasProntas), chaveDaTelaQueDeuBaixa])]
       : null;
     const pedidoParaFiltro = { numero: (order as any).dailyOrderNumber, deliveryType: order.deliveryType };
-    if (prontas && faltaFinalizacao(telasFim, prontas, pedidoParaFiltro)) {
+    const itensParaFiltro = await itensResolvidos();
+    if (prontas && faltaFinalizacao(telasFim, prontas, pedidoParaFiltro, itensParaFiltro)) {
       // Outra tela de finalização ainda tem que fazer a parte dela. O pedido
       // sai DESTA e continua lá; nada de FINISHED, de readyAt nem de avisar
       // a plataforma, porque a expedição ainda não acabou.

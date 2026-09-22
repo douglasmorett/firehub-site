@@ -864,6 +864,22 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const CORPO_DO_NUMERO_NO_APP = 2;
   const CORPO_DA_OBSERVACAO = 1.5;
 
+  /**
+   * Como o canal se ESCREVE no papel.
+   *
+   * `order.source` e a chave do banco ("99FOOD", "JOTAJA"); o que a loja le no
+   * telefone e outra coisa. Sem este mapa o papel saia "99FOOD" e "JOTAJA",
+   * e o pedido pago da Wabiz saia "(Pago via Online)" — que nao diz onde
+   * procurar o pedido. O par disto e canalDoPedido() em src/lib.
+   */
+  const NOME_DO_CANAL = {
+    IFOOD: "iFood",
+    "99FOOD": "99Food",
+    JOTAJA: "JotaJa",
+    BRENDI: "Brendi",
+    WABIZ: "Wabiz",
+  };
+
   // rightAlign e makeBoxLine eram byte-a-byte identicas: viram uma so.
   // Em vez de TRUNCAR o rotulo (o que comia o fim do nome do produto), quebra
   // em linhas e alinha o valor a direita na ultima.
@@ -1181,8 +1197,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
         // no topo do papel e ruido em toda comanda da loja que so vende pelo
         // site — que e a maioria.
         case "canal": {
-          const MARKETPLACES = ["IFOOD", "99FOOD", "JOTAJA", "BRENDI", "WABIZ"];
-          const c = cleanAscii(lojaOrigem || (MARKETPLACES.includes(srcStr) ? srcStr : ""));
+          const c = cleanAscii(lojaOrigem || (NOME_DO_CANAL[srcStr] ? NOME_DO_CANAL[srcStr] : ""));
           if (c) out += linha(c.toUpperCase(), f);
           break;
         }
@@ -1438,10 +1453,25 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // colunas em 3x, entao "(79) DELIVERY #3523" quebra em duas linhas, que e o
   // que o iFood tambem faz. O par disto esta em modeloPadrao() no site.
   res += ampliado(headerLine, 3, { centro: true, negrito: N("numeroPedido", "delivery", true) });
-  // Logo abaixo do numero, em destaque: e a primeira coisa que a cozinha
-  // precisa saber quando a mesma impressora recebe tres marcas.
-  if (lojaOrigem) {
-    res += DOUBLE_HEIGHT + BOLD_ON + centerLine(cleanAscii(lojaOrigem).toUpperCase()) + BOLD_OFF + DOUBLE_OFF;
+  // ── DE ONDE VEIO ESTE PEDIDO ─────────────────────────────────────────
+  //
+  // A MARCA quando a conta tem varias no mesmo iFood (Ragnar Pizza x Ragnar
+  // Burguer) — e, na falta dela, o NOME DO MARKETPLACE. E a primeira coisa
+  // que a cozinha precisa saber quando a mesma impressora recebe tres
+  // origens: a loja pega o papel e ja sabe em qual app procurar o pedido.
+  //
+  // O modelo padrao da comanda ja tem esse bloco ("canal", em modeloPadrao()
+  // no site) e a previa da tela "Personalizar notinha" ja o desenhava — mas
+  // ele so chegava ao papel na loja que PERSONALIZOU o modelo, porque so ai
+  // o servidor manda `order.blocos`. Na loja de modelo padrao o papel saia
+  // sem origem nenhuma. Medido na NIK Esfihas em 22/09/2026, ligando a
+  // Wabiz: a previa mostrava "WABIZ", o papel nao. Agora as duas vias
+  // imprimem a mesma coisa. Pedido do proprio site nao ganha linha aqui:
+  // "SITE" em corpo dobrado e ruido em toda comanda de quem so vende pelo
+  // site, que e a maioria.
+  const origemDoPedido = cleanAscii(lojaOrigem || NOME_DO_CANAL[srcStr] || "");
+  if (origemDoPedido) {
+    res += DOUBLE_HEIGHT + BOLD_ON + centerLine(origemDoPedido.toUpperCase()) + BOLD_OFF + DOUBLE_OFF;
   }
   marcas.avisoEntrega = res.length;
   if (isPartnerDriver) {
@@ -2006,7 +2036,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     .trim();
   if (!baseMethodName || baseMethodName.toUpperCase() === "OTHER") baseMethodName = "Cartao";
 
-  const onlineSource = order.source === "IFOOD" ? "iFood" : order.source === "JOTAJA" ? "JotaJa" : "Online";
+  // "(Pago via Online)" nao diz em qual app o dinheiro entrou. Com o nome do
+  // canal, quem confere o caixa sabe onde procurar. Cai em "Online" so no
+  // pedido do proprio site, que e onde a palavra ja basta.
+  const onlineSource = NOME_DO_CANAL[srcStr] || "Online";
 
   if (isOnlinePayment) {
     res += comNegrito(wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2), "pagamento", "formaDePagamento", true);
