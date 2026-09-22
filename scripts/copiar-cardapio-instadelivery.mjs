@@ -73,7 +73,8 @@
  *
  * Depois de gravar, as fotos ainda apontam para o CDN do InstaDelivery — o
  * cron /api/admin/internalizar-imagens traz cada uma para o volume da loja.
- * `instadelivery` está na lista ORIGENS_DE_FORA de lá.
+ * Não precisa cadastrar o host em lugar nenhum: o cron pega qualquer URL
+ * absoluta que não seja nossa.
  */
 import { readFileSync } from "fs";
 import { neon } from "@neondatabase/serverless";

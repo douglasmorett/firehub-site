@@ -54,7 +54,8 @@
  *
  * Depois de gravar, as fotos ainda apontam para assets.menuintegrado.com — o
  * cron /api/admin/internalizar-imagens (a cada 6 h) traz cada uma para o volume
- * da loja. `menuintegrado` está na lista ORIGENS_DE_FORA de lá.
+ * da loja. Não precisa cadastrar o host em lugar nenhum: o cron pega
+ * qualquer URL absoluta que não seja nossa.
  */
 import { readFileSync } from "fs";
 import { neon } from "@neondatabase/serverless";

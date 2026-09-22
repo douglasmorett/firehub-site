@@ -17,9 +17,29 @@ export async function PUT(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
   const targetId = user.ownerId || user.id;
 
+  // ── MESCLA POR CHAVE, NÃO SUBSTITUI O OBJETO ────────────────────────────
+  //
+  // Esta rota trocava o `printerConfig` inteiro, e DUAS telas mandam o objeto
+  // completo: /store/impressoras (as impressoras) e /store/impressoras/comanda
+  // (o modelo). Cada uma carrega a config no render do servidor e nunca relê —
+  // então, com as duas abertas, quem salvar por último apaga o trabalho da
+  // outra, sem erro nenhum na tela. Já era frágil quando só o modelo morava do
+  // outro lado; passa a ser perda real agora que a impressora guarda QUAL
+  // modelo usa e a lista de modelos mora na outra página.
+  //
+  // A mescla é RASA, de propósito: chave que a tela mandou vence inteira
+  // (`printers` substitui o array, senão não daria para apagar impressora), e
+  // chave que ela não mandou fica como estava.
+  const atual = (await prisma.user.findUnique({
+    where: { id: targetId },
+    select: { printerConfig: true },
+  }))?.printerConfig;
+  const anterior = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
+  const mesclado = { ...(anterior as Record<string, unknown>), ...(config as Record<string, unknown>) };
+
   await prisma.user.update({
     where: { id: targetId },
-    data: { printerConfig: config },
+    data: { printerConfig: mesclado },
   });
 
   return NextResponse.json({ ok: true });

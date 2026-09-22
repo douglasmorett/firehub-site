@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchAssistente } from "@/lib/print";
 import ComandaModeloEditor from "../ComandaModeloEditor";
-import { VERSAO_MINIMA_DO_MODELO, type ModeloDeComanda } from "@/lib/comanda-modelo";
+import { VERSAO_MINIMA_DO_MODELO, lerModelo, modeloPadrao, type ModeloDeComanda, type ModeloNomeado } from "@/lib/comanda-modelo";
 
 /**
  * A bancada de edição da comanda.
@@ -26,6 +26,79 @@ export default function ComandaModeloClient({
   const [salvo, setSalvo] = useState(false);
   const [erro, setErro] = useState("");
   const [versaoInstalada, setVersaoInstalada] = useState<string>("");
+
+  // ── QUAL MODELO ESTÁ SENDO EDITADO ─────────────────────────────────────
+  //
+  // "" é o modelo PADRÃO da loja (as chaves `cozinha`/`completo` da raiz), que
+  // é o que toda impressora usa enquanto não escolher outro. Os demais são os
+  // modelos nomeados, que a impressora aponta pelo id na tela de Impressoras.
+  //
+  // O editor abaixo não sabe de nada disso: ele recebe UM modelo com as duas
+  // vias e devolve o modelo alterado. Quem sabe em qual gaveta guardar é esta
+  // tela — assim o editor continua com uma responsabilidade só.
+  const [editando, setEditando] = useState<string>("");
+
+  const modeloCompleto: ModeloDeComanda = lerModelo(config?.comandaModelo);
+  const extras: ModeloNomeado[] = modeloCompleto.modelos || [];
+  const emEdicao = editando ? extras.find(m => m.id === editando) : null;
+  // Modelo apagado noutra aba: volta para o padrão em vez de editar o nada.
+  const viasEmEdicao: ModeloDeComanda = emEdicao
+    ? { versao: 1, cozinha: emEdicao.cozinha, completo: emEdicao.completo }
+    : { versao: 1, cozinha: modeloCompleto.cozinha, completo: modeloCompleto.completo };
+
+  /** Grava o que o editor devolveu na gaveta certa. */
+  const aoEditar = (novo: ModeloDeComanda) => {
+    setConfig((c: any) => {
+      const atual = lerModelo(c?.comandaModelo);
+      if (!editando) {
+        return { ...c, comandaModelo: { ...atual, cozinha: novo.cozinha, completo: novo.completo } };
+      }
+      return {
+        ...c,
+        comandaModelo: {
+          ...atual,
+          modelos: (atual.modelos || []).map(m =>
+            m.id === editando ? { ...m, cozinha: novo.cozinha, completo: novo.completo } : m
+          ),
+        },
+      };
+    });
+  };
+
+  const mexerNaLista = (f: (lista: ModeloNomeado[], atual: ModeloDeComanda) => ModeloNomeado[]) => {
+    setConfig((c: any) => {
+      const atual = lerModelo(c?.comandaModelo);
+      return { ...c, comandaModelo: { ...atual, modelos: f(atual.modelos || [], atual) } };
+    });
+  };
+
+  const novoModelo = (copiarDoAtual: boolean) => {
+    const nome = prompt(copiarDoAtual ? "Nome da cópia:" : "Nome do novo modelo:", copiarDoAtual ? `${emEdicao?.nome || "Padrão"} (cópia)` : "Cozinha");
+    if (!nome || !nome.trim()) return;
+    // Id derivado do relógio: só precisa ser estável e único dentro da loja,
+    // porque é ele que fica gravado na impressora.
+    const id = `m${Date.now().toString(36)}`;
+    const base = copiarDoAtual ? viasEmEdicao : modeloPadrao();
+    mexerNaLista(lista => [...lista, { id, nome: nome.trim().slice(0, 40), cozinha: base.cozinha, completo: base.completo }]);
+    setEditando(id);
+  };
+
+  const renomear = () => {
+    if (!emEdicao) return;
+    const nome = prompt("Novo nome:", emEdicao.nome);
+    if (!nome || !nome.trim()) return;
+    mexerNaLista(lista => lista.map(m => (m.id === emEdicao.id ? { ...m, nome: nome.trim().slice(0, 40) } : m)));
+  };
+
+  const excluir = () => {
+    if (!emEdicao) return;
+    // A impressora que apontava para ele volta sozinha ao padrão da loja
+    // (`viaDoModelo` cai no padrão quando o id não existe mais), então não há
+    // impressora muda — mas o lojista precisa saber disso antes de apagar.
+    if (!confirm(`Apagar o modelo "${emEdicao.nome}"?\n\nA impressora que estiver usando ele volta a imprimir o modelo padrão da loja.`)) return;
+    mexerNaLista(lista => lista.filter(m => m.id !== emEdicao.id));
+    setEditando("");
+  };
 
   // Pergunta ao Assistente desta máquina em que versão ele está, para a tela
   // avisar quando o modelo ainda não vai ser lido. Falha em silêncio: sem
@@ -108,8 +181,79 @@ export default function ComandaModeloClient({
         )}
 
         <div style={{ background: "#fff", borderRadius: 16, border: "1.5px solid #E2E8F0", padding: "1.25rem" }}>
+          {/* ── OS MODELOS DA LOJA ────────────────────────────────────────
+              Antes havia um modelo só e ele saía igual em toda impressora. A
+              cozinha não precisa de preço e o caixa precisa — então a loja cria
+              quantos quiser aqui e aponta um em cada impressora, na tela de
+              Impressoras. Quem nunca criar nenhum continua com o modelo padrão,
+              exatamente como hoje. */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: "1rem", paddingBottom: "1rem", borderBottom: "1.5px solid #F1F5F9" }}>
+            <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.04em", marginRight: 4 }}>
+              Modelo
+            </span>
+            {[{ id: "", nome: "Padrão da loja" }, ...extras].map(m => {
+              const ativo = editando === m.id;
+              return (
+                <button
+                  key={m.id || "padrao"}
+                  type="button"
+                  onClick={() => setEditando(m.id)}
+                  style={{
+                    padding: "7px 14px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+                    fontSize: "0.82rem", fontWeight: 800,
+                    border: `1.5px solid ${ativo ? "#C62828" : "#E2E8F0"}`,
+                    background: ativo ? "#C62828" : "#fff",
+                    color: ativo ? "#fff" : "#475569",
+                  }}
+                >
+                  {m.nome}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => novoModelo(false)}
+              style={{ padding: "7px 12px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit", fontSize: "0.82rem", fontWeight: 800, border: "1.5px dashed #CBD5E1", background: "#fff", color: "#64748B" }}
+            >
+              + Novo
+            </button>
+            <div style={{ flex: 1 }} />
+            <button
+              type="button"
+              onClick={() => novoModelo(true)}
+              style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: "0.76rem", fontWeight: 700, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569" }}
+            >
+              Duplicar
+            </button>
+            {emEdicao && (
+              <>
+                <button
+                  type="button"
+                  onClick={renomear}
+                  style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: "0.76rem", fontWeight: 700, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569" }}
+                >
+                  Renomear
+                </button>
+                <button
+                  type="button"
+                  onClick={excluir}
+                  style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: "0.76rem", fontWeight: 700, border: "1.5px solid #FCA5A5", background: "#FEF2F2", color: "#B91C1C" }}
+                >
+                  Apagar
+                </button>
+              </>
+            )}
+          </div>
+
+          <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 1rem", lineHeight: 1.5 }}>
+            {emEdicao
+              ? <>Editando <strong>{emEdicao.nome}</strong>. Para uma impressora usar este modelo, escolha ele no cartão dela em <strong>Impressoras</strong>.</>
+              : <>Editando o <strong>modelo padrão</strong> — o que sai em toda impressora que não escolher outro.</>}
+          </p>
+
           <ComandaModeloEditor
-            modelo={config.comandaModelo}
+            key={editando || "padrao"}
+            modelo={viasEmEdicao}
             nomeDaLoja={storeName}
             versaoInstalada={versaoInstalada || undefined}
             versaoMinima={VERSAO_MINIMA_DO_MODELO}
@@ -117,7 +261,7 @@ export default function ComandaModeloClient({
               (config.printers || []).find((p: any) => p?.name)?.columns
               ?? ((config.printers || []).find((p: any) => p?.name)?.paperWidth === "58mm" ? 32 : 48)
             }
-            onChange={(comandaModelo: ModeloDeComanda) => setConfig((c: any) => ({ ...c, comandaModelo }))}
+            onChange={aoEditar}
           />
         </div>
       </div>

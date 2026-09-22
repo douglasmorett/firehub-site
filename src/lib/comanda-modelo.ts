@@ -130,8 +130,51 @@ export type TipoDeBloco =
   | "qrMotoboy"
   | "qrCliente"
   | "textoLivre"
+  | "textoRico"
   | "separador"
   | "espaco";
+
+/**
+ * UM PEDAÇO DE UMA LINHA DE TEXTO RICO.
+ *
+ * É aqui que mora a diferença para o `textoLivre` de hoje. No texto livre a
+ * variável é trocada dentro de uma string: `"Ref: {referencia}"` com a
+ * referência vazia imprime `"Ref:"` sozinho, uma palavra órfã no papel.
+ *
+ * Aqui o RÓTULO viaja colado à variável. Quando a variável não tem valor, o
+ * pedaço inteiro some — rótulo junto. É o mesmo desenho que a Saipos usa
+ * (`label` dentro do `replaceableAttribute`), e é o que permite escrever uma
+ * comanda que se dobra sozinha conforme o pedido tem ou não endereço,
+ * referência, entregador, troco.
+ *
+ * Pedaço só com `texto` é literal: sai sempre.
+ */
+export type ParteDaLinha = {
+  /** Texto fixo. Sozinho, sai sempre. Com `campo`, é o rótulo que some junto. */
+  texto?: string;
+  /** Chave de CAMPOS_DISPONIVEIS. Vazia no pedido = o pedaço inteiro some. */
+  campo?: string;
+};
+
+/** Uma linha do bloco de texto rico, com formato próprio. */
+export type LinhaRica = {
+  partes: ParteDaLinha[];
+  negrito?: boolean;
+  /**
+   * Tarja de fundo preto com letra branca, na largura inteira.
+   *
+   * É o destaque que o lojista chama de "marcado de preto". Existe porque
+   * negrito sozinho se perde num papel térmico cheio de texto: as linhas que
+   * a loja precisa achar de relance — o tipo do pedido, o nome do cliente, o
+   * "PAGO ONLINE" — pedem contraste, não peso de fonte.
+   *
+   * Precisa do Assistente 1.2.19 (VERSAO_COM_DESTAQUE_INVERTIDO). Em versão
+   * anterior a linha sai normal, sem tarja — some o destaque, nunca o texto.
+   */
+  invertido?: boolean;
+  tamanho?: Tamanho;
+  alinhamento?: Alinhamento;
+};
 
 export type Bloco = {
   tipo: TipoDeBloco;
@@ -141,7 +184,28 @@ export type Bloco = {
   titulo?: string;
   /** Só para `textoLivre`: aceita {cliente}, {endereco}, {total}… */
   texto?: string;
+  /**
+   * Só para `textoRico`: as linhas, cada uma com o seu formato.
+   *
+   * Campo NOVO ao lado do velho, nunca no lugar dele. Se `texto` virasse
+   * `linhas`, o Assistente 1.2.11–1.2.17 cairia no `case "textoLivre"`, leria
+   * `bl.texto` undefined e o bloco sumiria do papel: o lojista configuraria o
+   * cabeçalho e não sairia nada.
+   */
+  linhas?: LinhaRica[];
   negrito?: boolean;
+  /**
+   * Tarja de fundo preto com letra branca, na largura inteira.
+   *
+   * É o destaque que o lojista chama de "marcado de preto". Existe porque
+   * negrito sozinho se perde num papel térmico cheio de texto: as linhas que
+   * a loja precisa achar de relance — o tipo do pedido, o nome do cliente, o
+   * "PAGO ONLINE" — pedem contraste, não peso de fonte.
+   *
+   * Precisa do Assistente 1.2.19 (VERSAO_COM_DESTAQUE_INVERTIDO). Em versão
+   * anterior a linha sai normal, sem tarja — some o destaque, nunca o texto.
+   */
+  invertido?: boolean;
   /** Um degrau de TAMANHOS: 1, 1.5, 2 ou 3. Ausente = 1. */
   tamanho?: Tamanho;
   alinhamento?: Alinhamento;
@@ -178,6 +242,21 @@ export type Bloco = {
    */
   negritos?: Record<string, boolean>;
   /**
+   * O CORPO de linhas específicas desta seção, por chave de `CORPOS_DO_BLOCO`.
+   *
+   * Leia o parágrafo acima antes de acrescentar chave aqui: corpo por linha é
+   * perigoso justamente porque muda quantas letras cabem, e as seções chegam
+   * do Assistente já quebradas na largura da bobina. Só entra aqui a linha que
+   * satisfaz as TRÊS condições:
+   *
+   *   1. é uma frase FIXA, que não vem do pedido;
+   *   2. ocupa a linha inteira, sozinha;
+   *   3. quem calcula a largura dela é o mesmo código que a amplia.
+   *
+   * Hoje só o aviso de bebida atende. Chave ausente = o padrão de fábrica.
+   */
+  corpos?: Record<string, Tamanho>;
+  /**
    * Só no bloco `totais`: a linha "Taxa de Entrega" não sai no papel.
    *
    * O TOTAL não muda — ele vem de `totalAmount`, que já inclui a taxa. Some a
@@ -192,6 +271,36 @@ export type ModeloDeComanda = {
   /** A via que vai para a cozinha: sem valores, sem pagamento. */
   cozinha: Bloco[];
   /** A via completa: entrega, valores, pagamento. */
+  completo: Bloco[];
+  /**
+   * MODELOS EXTRAS, escolhidos por impressora.
+   *
+   * `cozinha`/`completo` acima continuam sendo o modelo PADRÃO da loja — a
+   * impressora que não escolher nada usa eles, e é o que o Assistente antigo
+   * recebe em `order.blocos`. Esta lista é aditiva: quem nunca criar um
+   * modelo extra tem exatamente o comportamento de sempre.
+   *
+   * Não trocar isto por um mapa que elimine `completo`: `modeloFoiPersonalizado`
+   * decide se a loja recebe `blocos` testando `Array.isArray(bruto.completo)`,
+   * e sem esse campo TODA loja que já personalizou volta ao layout de fábrica,
+   * em silêncio, no primeiro pedido depois do deploy.
+   */
+  modelos?: ModeloNomeado[];
+};
+
+/**
+ * Um modelo com nome, para a impressora apontar.
+ *
+ * Tem as MESMAS duas vias do padrão porque o botão "cozinha/completo" do
+ * painel continua existindo: a impressora escolhe o modelo, o clique escolhe
+ * a via. Fundir as duas coisas tiraria do lojista a via sem preço que ele já
+ * usa hoje.
+ */
+export type ModeloNomeado = {
+  /** Estável: é o que fica gravado na impressora. Nunca reaproveitar. */
+  id: string;
+  nome: string;
+  cozinha: Bloco[];
   completo: Bloco[];
 };
 
@@ -210,9 +319,40 @@ export const BLOCOS_DE_SECAO: TipoDeBloco[] = [
   "avisoEntrega", "cliente", "entrega", "itens", "totais", "pagamento", "qrMotoboy", "qrCliente",
 ];
 
+/**
+ * A partir de qual Assistente o bloco `textoRico` sai no papel.
+ *
+ * Constante PRÓPRIA, como VERSAO_ASSISTENTE_COM_TAXA_SEPARADA em print.ts.
+ * Subir VERSAO_MINIMA_DO_MODELO no lugar faria a tela acusar atraso em loja
+ * que já lê o modelo perfeitamente bem.
+ */
+export const VERSAO_COM_TEXTO_RICO = "1.2.18";
+
+/**
+ * A partir de qual Assistente cada IMPRESSORA pode ter o seu modelo.
+ *
+ * Vale só para a fila da nuvem: no trilho do navegador o modelo já viaja por
+ * chamada (um POST /print por impressora), então ali funciona desde a 1.2.11.
+ * Na fila, o Assistente precisa saber ler `destino.blocos` — antes disso ele
+ * usa `job.order.blocos` para todas as impressoras.
+ */
+export const VERSAO_COM_MODELO_POR_IMPRESSORA = "1.2.18";
+
+/**
+ * A partir de qual Assistente a tarja "marcada de preto" sai no papel.
+ *
+ * Constante PRÓPRIA, pelo mesmo motivo das duas acima: subir a versão mínima
+ * do modelo faria a tela acusar atraso em loja que lê o modelo perfeitamente.
+ * Em Assistente anterior a linha sai normal — some o destaque, nunca o texto.
+ */
+export const VERSAO_COM_DESTAQUE_INVERTIDO = "1.2.19";
+
 /** Blocos que aceitam negrito, tamanho e alinhamento. */
 export function aceitaFormato(tipo: TipoDeBloco): boolean {
-  return !BLOCOS_DE_SECAO.includes(tipo) && tipo !== "separador" && tipo !== "espaco";
+  // `textoRico` fica de fora porque o formato dele é POR LINHA, dentro do
+  // bloco. Oferecer também um formato de bloco daria dois controles para a
+  // mesma coisa, e o lojista não teria como saber qual vence.
+  return !BLOCOS_DE_SECAO.includes(tipo) && tipo !== "separador" && tipo !== "espaco" && tipo !== "textoRico";
 }
 
 /** Blocos que têm um título editável em cima. */
@@ -357,6 +497,16 @@ export const CAMPOS_DISPONIVEIS: { chave: string; rotulo: string }[] = [
   { chave: "taxaEntrega", rotulo: "Taxa de entrega" },
   { chave: "pagamento", rotulo: "Forma de pagamento" },
   { chave: "entregador", rotulo: "Entregador" },
+  { chave: "observacao", rotulo: "Observação do pedido" },
+  { chave: "subtotal", rotulo: "Subtotal" },
+  { chave: "desconto", rotulo: "Desconto" },
+  { chave: "troco", rotulo: "Troco" },
+  { chave: "localizador", rotulo: "Localizador (nº no suporte do parceiro)" },
+  { chave: "previsao", rotulo: "Previsão de entrega" },
+  { chave: "taxaServico", rotulo: "Taxa de serviço do parceiro" },
+  { chave: "bandeira", rotulo: "Bandeira do cartão" },
+  { chave: "quantidadeDeItens", rotulo: "Quantidade de itens" },
+  { chave: "impressoEm", rotulo: "Impresso em (data e hora)" },
 ];
 
 /** Como cada bloco se chama na tela de edição. */
@@ -374,6 +524,7 @@ export const NOME_DO_BLOCO: Record<TipoDeBloco, string> = {
   qrMotoboy: "QR do entregador",
   qrCliente: "QR do cupom do cliente",
   textoLivre: "Texto livre",
+  textoRico: "Texto com variáveis",
   separador: "Linha separadora",
   espaco: "Linha em branco",
 };
@@ -393,6 +544,9 @@ export const AJUDA_DO_BLOCO: Record<TipoDeBloco, string> = {
   qrMotoboy: "O código que o ENTREGADOR escaneia para puxar o pedido no app.",
   qrCliente: "O cupom da campanha de trazer o cliente do iFood/99 para o seu site.",
   textoLivre: "O que você quiser escrever. Clique num campo para trazer dado do pedido.",
+  textoRico:
+    "Linhas com texto e campos do pedido misturados. O rótulo some junto com o campo vazio: " +
+    '"Ref: {referência}" não imprime nada quando o pedido não tem referência.',
   separador: "Uma linha de tracinhos para separar seções.",
   espaco: "Um espaço em branco.",
 };
@@ -478,6 +632,72 @@ function saneiaNegritos(tipo: TipoDeBloco, bruto: unknown): Record<string, boole
   return Object.keys(limpo).length ? limpo : undefined;
 }
 
+/**
+ * A faixa preta "CONTEM BEBIDA", no fim da lista de itens.
+ *
+ * Saía no corpo do resto do papel, e a reclamação veio da loja (NIK, 21/09/2026):
+ * na pilha de comandas do balcão a faixa se perde, que é exatamente o que ela
+ * existe para não deixar acontecer — bebida esquecida volta como entrega
+ * refeita. Agora nasce em 2x.
+ *
+ * É a ÚNICA linha com corpo configurável, e isso é de propósito. O comentário
+ * de `Bloco.negritos` explica por que tamanho por linha é perigoso: as seções
+ * chegam do Assistente já quebradas na largura da bobina, e reformatá-las por
+ * fora faz a impressora quebrar onde quiser ("Rua Ma / cae"). Aqui não há esse
+ * risco: é uma frase FIXA, sozinha na linha, e quem calcula a largura da faixa
+ * é o mesmo código que a amplia.
+ *
+ * Mora aqui, e não junto de DESTAQUE_DO_NUMERO_NO_APP, porque o catálogo
+ * abaixo lê o valor na hora em que o módulo carrega.
+ */
+export const DESTAQUE_DO_AVISO_DE_BEBIDA: Tamanho = 2;
+
+/**
+ * Versão do Assistente que entende `Bloco.corpos`.
+ *
+ * Abaixo dela o papel sai como sempre saiu, no corpo normal, em vez de sair
+ * errado: o Assistente antigo ignora a chave que não conhece. A tela usa isto
+ * para avisar a loja em vez de prometer o que não vai acontecer.
+ */
+export const VERSAO_COM_CORPO_DO_AVISO = "1.2.20";
+
+/**
+ * Catálogo das linhas com corpo configurável. Leia `Bloco.corpos` antes de
+ * acrescentar chave: a lista é curta de propósito.
+ */
+export const CORPOS_DO_BLOCO: Partial<Record<TipoDeBloco, { chave: string; rotulo: string; ajuda: string; padrao: Tamanho }[]>> = {
+  itens: [
+    {
+      chave: "avisoDeBebida",
+      rotulo: "Faixa CONTÉM BEBIDA",
+      ajuda: "A tarja preta no fim da lista, quando o pedido tem bebida. Maior = mais difícil de passar batido na pilha de comandas.",
+      padrao: DESTAQUE_DO_AVISO_DE_BEBIDA,
+    },
+  ],
+};
+
+export function corpoPadrao(tipo: TipoDeBloco, chave: string): Tamanho {
+  return (CORPOS_DO_BLOCO[tipo] || []).find((c) => c.chave === chave)?.padrao ?? 1;
+}
+
+/** O corpo que a loja escolheu para esta linha, ou o de fábrica. */
+export function corpoDoBloco(bloco: Bloco, chave: string): Tamanho {
+  const meu = bloco.corpos?.[chave];
+  return meu != null ? tamanhoValido(meu) : corpoPadrao(bloco.tipo, chave);
+}
+
+function saneiaCorpos(tipo: TipoDeBloco, bruto: unknown): Record<string, Tamanho> | undefined {
+  if (!bruto || typeof bruto !== "object") return undefined;
+  const conhecidas = new Set((CORPOS_DO_BLOCO[tipo] || []).map((c) => c.chave));
+  const limpo: Record<string, Tamanho> = {};
+  for (const [chave, valor] of Object.entries(bruto as Record<string, unknown>)) {
+    if (conhecidas.has(chave) && TAMANHOS.includes(Number(valor) as Tamanho)) {
+      limpo[chave] = Number(valor) as Tamanho;
+    }
+  }
+  return Object.keys(limpo).length ? limpo : undefined;
+}
+
 /** Lê o que está gravado, completando o que faltar com o padrão. */
 export function lerModelo(bruto: unknown): ModeloDeComanda {
   const padrao = modeloPadrao();
@@ -495,6 +715,7 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
         tamanho: x.tamanho ? tamanhoValido(x.tamanho) : undefined,
         rotulos: saneiaRotulos(x.tipo, x.rotulos),
         negritos: saneiaNegritos(x.tipo, x.negritos),
+        corpos: saneiaCorpos(x.tipo, x.corpos),
       }));
     // Bloco obrigatório que sumiu do modelo salvo volta para o fim. Some por
     // edição manual, por versão antiga, ou por um bug meu — e em qualquer um
@@ -506,11 +727,53 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
     }
     return limpos;
   };
+  // ── OS MODELOS EXTRAS PASSAM PELA MESMA VALIDAÇÃO ─────────────────────
+  //
+  // Cada um por `valida`, senão um modelo de cozinha "só itens" criado na mão
+  // perde a garantia de BLOCOS_OBRIGATORIOS — e o aviso de entrega parceira
+  // some do papel. Sem ele a loja manda o próprio motoboy num pedido que não é
+  // dela e paga a corrida duas vezes.
+  //
+  // E esta função PRECISA devolver os extras: o editor salva com
+  // `onChange({ ...lerModelo(atual), [via]: nova })`, então uma chave que
+  // `lerModelo` não conheça é apagada no primeiro Salvar da tela antiga.
+  const extras = Array.isArray(m.modelos)
+    ? m.modelos
+        .filter((x): x is ModeloNomeado => !!x && typeof x === "object" && typeof (x as ModeloNomeado).id === "string" && !!(x as ModeloNomeado).id)
+        .map((x): ModeloNomeado => ({
+          id: String(x.id),
+          nome: String(x.nome || "Modelo").slice(0, 40),
+          cozinha: valida(x.cozinha, padrao.cozinha),
+          completo: valida(x.completo, padrao.completo),
+        }))
+    : [];
+
   return {
     versao: 1,
     cozinha: valida(m.cozinha, padrao.cozinha),
     completo: valida(m.completo, padrao.completo),
+    ...(extras.length > 0 ? { modelos: extras } : {}),
   };
+}
+
+/**
+ * O modelo que ESTA impressora usa, já pela via pedida.
+ *
+ * `modeloId` vazio, apontando para modelo apagado, ou impressora sintética de
+ * resgate (a `{id:"default"}` que o painel monta quando a loja não cadastrou
+ * nada) caem todos no modelo PADRÃO da loja. A regra é a mesma de
+ * `modulo-do-pedido.ts`: ausente significa "o de sempre", nunca "nenhum" —
+ * ninguém acorda com a impressora muda porque um campo novo apareceu.
+ */
+export function viaDoModelo(
+  modelo: ModeloDeComanda,
+  opcoes: { modeloId?: string | null; semValores?: boolean } = {},
+): Bloco[] {
+  const escolhido = opcoes.modeloId
+    ? (modelo.modelos || []).find((x) => x.id === opcoes.modeloId)
+    : null;
+  const fonte = escolhido || modelo;
+  return opcoes.semValores ? fonte.cozinha : fonte.completo;
 }
 
 /**
@@ -527,6 +790,7 @@ export function blocosParaOAssistente(lista: Bloco[]): Bloco[] {
       if (x.titulo != null) saida.titulo = x.titulo;
       if (x.texto) saida.texto = x.texto;
       if (x.negrito) saida.negrito = true;
+      if (x.invertido) saida.invertido = true;
       if (x.ocultarTaxaEntrega) saida.ocultarTaxaEntrega = true;
       if (x.tamanho && x.tamanho !== 1) saida.tamanho = x.tamanho;
       if (x.alinhamento && x.alinhamento !== "esquerda") saida.alinhamento = x.alinhamento;
@@ -538,6 +802,31 @@ export function blocosParaOAssistente(lista: Bloco[]): Bloco[] {
         ([chave, valor]) => String(valor ?? "").trim() !== "" && String(valor) !== rotuloPadrao(x.tipo, chave),
       );
       if (trocados.length) saida.rotulos = Object.fromEntries(trocados);
+      // ── O NEGRITO POR LINHA ────────────────────────────────────────────
+      //
+      // FALTAVA AQUI. O botão "N" da tela gravava `Bloco.negritos`, o
+      // Assistente sabia ler (`negritosPorTipo` em server.js), e no meio do
+      // caminho esta cópia não mandava: a loja marcava a linha em negrito, a
+      // prévia mostrava, e o papel saía igual. É exatamente a armadilha que o
+      // comentário da lista branca abaixo descreve.
+      //
+      // Só viaja o que DIFERE do padrão, e o `false` explícito é significativo:
+      // é como se TIRA o negrito de "Total:", que já nasce marcado.
+      const negritosMudados = Object.entries(x.negritos || {}).filter(
+        ([chave, valor]) => typeof valor === "boolean" && valor !== negritoPadrao(x.tipo, chave),
+      );
+      if (negritosMudados.length) saida.negritos = Object.fromEntries(negritosMudados);
+      // Campo do bloco de texto rico. Esta cópia é LISTA BRANCA: campo novo
+      // esquecido aqui some do payload sem erro nenhum, e quem for depurar vai
+      // olhar o Assistente e não achar nada errado.
+      if (Array.isArray(x.linhas) && x.linhas.length > 0) saida.linhas = x.linhas;
+      // O CORPO de linha específica (hoje só a faixa de bebida). Mesma regra
+      // dos rótulos: só viaja o que a loja MUDOU, para o padrão de fábrica
+      // continuar podendo mudar sem congelar em quem nunca tocou na tela.
+      const corposMudados = Object.entries(x.corpos || {}).filter(
+        ([chave, valor]) => Number(valor) !== Number(corpoPadrao(x.tipo, chave)),
+      );
+      if (corposMudados.length) saida.corpos = Object.fromEntries(corposMudados);
       return saida;
     });
 }
@@ -560,12 +849,12 @@ export function modeloFoiPersonalizado(bruto: unknown): boolean {
  */
 export function blocosDoPedido(
   printerConfig: unknown,
-  opcoes: { semValores?: boolean } = {},
+  opcoes: { semValores?: boolean; modeloId?: string | null } = {},
 ): Bloco[] | undefined {
   const bruto = (printerConfig as { comandaModelo?: unknown } | null)?.comandaModelo;
   if (!modeloFoiPersonalizado(bruto)) return undefined;
   const modelo = lerModelo(bruto);
-  return blocosParaOAssistente(opcoes.semValores ? modelo.cozinha : modelo.completo);
+  return blocosParaOAssistente(viaDoModelo(modelo, opcoes));
 }
 
 // ── Prévia ──────────────────────────────────────────────────────────────────
@@ -574,6 +863,8 @@ export function blocosDoPedido(
 export type LinhaDaComanda = {
   texto: string;
   negrito?: boolean;
+  /** Tarja de fundo preto, na largura inteira. */
+  invertido?: boolean;
   tamanho?: Tamanho;
   alinhamento?: Alinhamento;
   /** Marca a linha como QR: o papel mostra o código, não o texto. */
@@ -597,6 +888,13 @@ export type LinhaDaComanda = {
 export const DESTAQUE_DO_NUMERO_NO_APP: Tamanho = 2;
 export const DESTAQUE_DA_OBSERVACAO: Tamanho = 1.5;
 
+/**
+ * O corpo da faixa "CONTEM BEBIDA" e irmao destes dois, mas mora la em cima,
+ * junto de `CORPOS_DO_BLOCO`, com o nome `DESTAQUE_DO_AVISO_DE_BEBIDA`: o
+ * catalogo le o valor na hora em que o modulo carrega, e declarado aqui
+ * embaixo daria ReferenceError antes de qualquer tela abrir.
+ */
+
 export type PedidoParaComanda = {
   numero?: string | number | null;
   canal?: string | null;
@@ -615,6 +913,23 @@ export type PedidoParaComanda = {
   troco?: number | null;
   entregador?: string | null;
   observacao?: string | null;
+  // ── Campos que a notinha do Frangoso (ex-Saipos) pede ────────────────
+  //
+  // Todos já existiam no pedido; só não tinham como ser escritos no papel
+  // pelo editor de modelo. Eram o que faltava para reproduzir a notinha que
+  // a loja usava antes de vir para o FireHub.
+  /** O número que o cliente informa ao suporte do marketplace. */
+  localizador?: string | null;
+  /** "19:43 - 19:53": a janela que o parceiro prometeu ao cliente. */
+  previsao?: string | null;
+  /** Taxa de serviço cobrada pelo parceiro (o 99Food e o iFood cobram). */
+  taxaServico?: number | null;
+  /** "VISA", "MASTER", "OTHER" — a bandeira do cartão, quando o parceiro manda. */
+  bandeira?: string | null;
+  /** Quantas unidades o pedido tem ao todo. */
+  quantidadeDeItens?: number | null;
+  /** Data e hora em que o papel saiu (não é a do pedido). */
+  impressoEm?: string | null;
   /** Entrega do parceiro: o aviso de não mandar motoboy da loja. */
   entregaParceira?: { parceiro: string; codigoDeColeta?: string | null } | null;
   itens?: { quantidade: number; nome: string; preco?: number | null; observacao?: string | null; complementos?: string[] }[];
@@ -625,8 +940,45 @@ export type PedidoParaComanda = {
 
 const dinheiro = (v?: number | null) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
 
+/**
+ * UMA LINHA DE TEXTO RICO, RESOLVIDA CONTRA O PEDIDO.
+ *
+ * A regra que justifica o bloco existir: pedaço com `campo` vazio some
+ * INTEIRO, levando o rótulo junto. `{texto:"Ref: ", campo:"referencia"}` num
+ * pedido sem referência não imprime "Ref:" órfão — não imprime nada.
+ *
+ * Devolve string vazia quando sobrou só espaço em branco: a linha inteira sai
+ * do papel, em vez de virar uma linha vazia no meio da comanda.
+ *
+ * Esta função tem um GÊMEO no Assistente (firehub-print-assistant/server.js,
+ * dentro de `aplicarModelo`). Mudou aqui, mude lá: a prévia da tela e o papel
+ * resolvem a variável em dois lugares diferentes, e é assim que a tela começa
+ * a mentir.
+ */
+export function resolverLinhaRica(linha: LinhaRica, p: PedidoParaComanda): string {
+  const campos = mapaDeCampos(p);
+  let saida = "";
+  for (const parte of linha.partes || []) {
+    if (parte.campo) {
+      const v = (campos[parte.campo] ?? "").trim();
+      // Vazio: o pedaço inteiro some, rótulo incluído.
+      if (!v) continue;
+      saida += (parte.texto || "") + v;
+    } else if (parte.texto) {
+      saida += parte.texto;
+    }
+  }
+  return saida.trim();
+}
+
 /** Substitui {campo} pelo valor do pedido. Campo desconhecido sai vazio. */
 export function preencherCampos(texto: string, p: PedidoParaComanda): string {
+  const campos = mapaDeCampos(p);
+  return String(texto || "").replace(/\{(\w+)\}/g, (_, campo) => campos[campo] ?? "");
+}
+
+/** O valor de cada `{campo}`. Um mapa só, para o texto livre e o rico nunca divergirem. */
+function mapaDeCampos(p: PedidoParaComanda): Record<string, string> {
   const campos: Record<string, string> = {
     numero: String(p.numero ?? ""),
     canal: p.canal || "",
@@ -641,8 +993,21 @@ export function preencherCampos(texto: string, p: PedidoParaComanda): string {
     taxaEntrega: dinheiro(p.taxaEntrega),
     pagamento: p.pagamento || "",
     entregador: p.entregador || "",
+    // Campos que só o texto rico usa hoje. Entram aqui (e não num mapa
+    // separado) porque o texto livre também passa a alcançá-los — dois mapas
+    // seriam duas verdades sobre o que "{troco}" significa.
+    observacao: p.observacao || "",
+    subtotal: p.subtotal != null ? dinheiro(p.subtotal) : "",
+    desconto: p.desconto ? dinheiro(p.desconto) : "",
+    troco: p.troco ? dinheiro(p.troco) : "",
+    localizador: p.localizador || "",
+    previsao: p.previsao || "",
+    taxaServico: p.taxaServico ? dinheiro(p.taxaServico) : "",
+    bandeira: p.bandeira || "",
+    quantidadeDeItens: p.quantidadeDeItens != null ? String(p.quantidadeDeItens) : "",
+    impressoEm: p.impressoEm || "",
   };
-  return String(texto || "").replace(/\{(\w+)\}/g, (_, campo: string) => campos[campo] ?? "");
+  return campos;
 }
 
 /**
@@ -685,6 +1050,7 @@ export function montarComanda(
     if (!bloco.ligado) continue;
     const formato: Partial<LinhaDaComanda> = {
       negrito: bloco.negrito,
+      invertido: bloco.invertido,
       tamanho: bloco.tamanho,
       alinhamento: bloco.alinhamento,
     };
@@ -822,6 +1188,22 @@ export function montarComanda(
         break;
       }
 
+      case "textoRico": {
+        // Uma LinhaDaComanda por linha configurada, cada uma com o formato
+        // dela. Linha que resolveu vazia (todos os campos em branco) não vira
+        // linha em branco no papel: some.
+        for (const linha of bloco.linhas || []) {
+          const t = resolverLinhaRica(linha, pedido);
+          if (!t) continue;
+          por(t, {
+            negrito: linha.negrito,
+            tamanho: linha.tamanho,
+            alinhamento: linha.alinhamento,
+          });
+        }
+        break;
+      }
+
       case "separador":
         por("-".repeat(colunas));
         break;
@@ -855,6 +1237,8 @@ export type LinhaRenderizada = {
   texto: string;
   tamanho: Tamanho;
   negrito?: boolean;
+  /** Tarja de fundo preto, na largura inteira. */
+  invertido?: boolean;
   /** Linha de QR: quem desenha mostra o código, não o texto. */
   qr?: string;
   /** De qual bloco esta linha saiu, e que palavra ela escreve (ver LinhaDaComanda). */
@@ -906,6 +1290,25 @@ export function linhasDoPapel(linhas: LinhaDaComanda[], colunas: number): LinhaR
         l.alinhamento === "centro" ? Math.floor(sobra / 2)
           : l.alinhamento === "direita" ? sobra
           : 0;
+      // A tarja invertida ocupa a LARGURA INTEIRA: o recuo entra DENTRO dela,
+      // senão o fundo preto sai deslocado do texto que ele deveria marcar.
+      if (l.invertido) {
+        const vaos = Math.max(0, larguraDoTamanho(colunas, n) - p.length);
+        const antes =
+          l.alinhamento === "centro" ? Math.floor(vaos / 2)
+            : l.alinhamento === "direita" ? vaos
+            : 0;
+        out.push({
+          ...origem,
+          recuo: 0,
+          texto: " ".repeat(antes) + p + " ".repeat(Math.max(0, vaos - antes)),
+          tamanho: n,
+          negrito: l.negrito,
+          invertido: true,
+          parte,
+        });
+        return;
+      }
       out.push({ ...origem, recuo, texto: p, tamanho: n, negrito: l.negrito, parte });
     });
   }
@@ -971,6 +1374,14 @@ export function pedidoDeExemplo(nomeDaLoja = "Sua Loja"): PedidoParaComanda {
     troco: 0,
     entregador: "Jefim Bahia",
     observacao: "Sem cebola, por favor",
+    // Os campos da notinha do Frangoso: sem valor no exemplo, a prévia mostra
+    // o bloco vazio e o lojista acha que o campo não funciona.
+    localizador: "95610470",
+    previsao: "23:43 - 23:53",
+    taxaServico: 1.72,
+    bandeira: "MASTER",
+    quantidadeDeItens: 2,
+    impressoEm: "12/09/2026 23:23:41",
     entregaParceira: null,
     itens: [
       { quantidade: 1, nome: "Esfirra Duo", preco: 7.98 },

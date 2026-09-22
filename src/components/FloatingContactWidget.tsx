@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { ehTelaSemWidget } from "@/lib/telas-sem-widget";
+import { useArrastavel } from "@/lib/useArrastavel";
 
 const WA_URL = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20FireHub";
 
@@ -15,6 +16,11 @@ export default function FloatingContactWidget({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(true);
+
+  // Arrastar tira a bolinha de cima do que está embaixo dela. Como todo hook
+  // deste arquivo, mora ANTES do `return null` de `escondido` — ver o comentário
+  // logo abaixo sobre "rendered fewer hooks than expected".
+  const arraste = useArrastavel();
 
   // A lista morava aqui e não incluía a MESA — o widget sumia no balcão e
   // continuava tapando o Total e o "Fechar Conta" da mesa do garçom. Virou
@@ -81,7 +87,7 @@ export default function FloatingContactWidget({
         />
       )}
 
-      <div className="fcw-container" id="floating-contact-widget">
+      <div className="fcw-container" id="floating-contact-widget" style={arraste.estiloDoContainer}>
         {/* Channel options */}
         <div className={`fcw-menu ${open ? "fcw-menu-open" : ""}`}>
           <div className="fcw-menu-header">
@@ -140,7 +146,16 @@ export default function FloatingContactWidget({
         {/* Main FAB button */}
         <button
           className={`fcw-fab ${open ? "fcw-fab-active" : ""} ${pulse ? "fcw-fab-pulse" : ""}`}
-          onClick={() => setOpen(!open)}
+          {...arraste.alca}
+          onClick={() => {
+            // Arrastou para tirar da frente: não é para abrir o menu de canais.
+            if (arraste.arrastou()) return;
+            setOpen(!open);
+          }}
+          // `touch-action: none` para o tablet não tratar o arraste como
+          // rolagem; `cursor: grab` é o único aviso de que dá para mover — um
+          // `title` aqui viraria justamente o balãozinho que tapa os pedidos.
+          style={{ touchAction: "none", cursor: "grab" }}
           aria-label={open ? "Fechar menu de contato" : "Abrir menu de contato"}
           aria-expanded={open}
           id="contact-widget-fab"

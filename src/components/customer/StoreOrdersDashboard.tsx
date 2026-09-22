@@ -1812,6 +1812,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       return;
     }
 
+    // ── O CARIMBO DO SERVIDOR: QUEM JÁ IMPRIMIU, IMPRIMIU ──────────────────
+    //
+    // `printedAt` é gravado quando a comanda sai de verdade, por qualquer
+    // caminho e em qualquer máquina. `isAutoPrinted` acima só conhece ESTE
+    // navegador, então o Assistente podia ter impresso pela fila da nuvem 3 s
+    // antes e este painel imprimia de novo — a segunda via da NIK
+    // (21/09/2026), que ainda dobrava porque ela tem duas impressoras.
+    //
+    // SÓ o automático. O botão Imprimir continua reimprimindo quando a pessoa
+    // pede: `printedAt` diz "já saiu uma vez", não "nunca mais".
+    if (!isManual && (order as any)?.printedAt) {
+      console.log(`[Print] 🖨️ ${orderKey}: já impresso (carimbo do servidor). Não reimprime sozinho.`);
+      if (orderKey) printingInProgressRef.current.delete(orderKey);
+      return;
+    }
+
     // A loja pediu para segurar a comanda até a cozinha finalizar no KDS
     // (lib/momento-da-impressao.ts). Terceiro e último caminho que imprime
     // sozinho — os outros dois são a fila da nuvem e o GlobalPrintListener.
@@ -1910,6 +1926,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#10B981");
         printedLocally = true;
+        // Avisa o servidor, para a fila da nuvem não mandar o Assistente
+        // imprimir a mesma comanda 3 s depois. Mesmo endpoint do Assistente e
+        // idempotente; falhar aqui não pode derrubar o que já foi impresso.
+        if (!isManual && order?.id) {
+          fetch("/api/store/print-queue/ack", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ franchiseeId: order.franchiseeId, ids: [order.id] }),
+          }).catch(() => {});
+        }
       }
     } catch (err) {
       console.warn("[Print] Erro na impressão local:", err);

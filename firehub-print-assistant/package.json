@@ -22,11 +22,18 @@
   "build": {
     "appId": "com.firehub.print-assistant",
     "productName": "FireHub Assistente de Impressao",
+    "files": [
+      "main.js",
+      "server.js",
+      "package.json",
+      "assets/**/*"
+    ],
     "win": {
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -34,7 +41,10 @@
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "FireHub Assistente de Impressao",
-      "artifactName": "FireHub-Assistente-Impressao-Setup.exe"
+      "artifactName": "FireHub-Assistente-Impressao-Setup.exe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     },
     "portable": {
       "artifactName": "FireHub-Assistente-Impressao.exe"

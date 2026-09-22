@@ -31,6 +31,8 @@ export type ImpressoraConfigurada = {
   escposProfile?: string | null;
   modulos?: ModuloDePedido[] | null;
   somenteBebidas?: boolean | null;
+  /** true = uma linha por unidade no papel desta impressora. */
+  separarItens?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
   qrPuxar?: boolean | null;
   /** De quais lojas recebe (chaves de lib/loja-de-origem.ts). Vazio = todas. */

@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { empilharEdicao, podeEditarPedidos, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
+import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
 
 /**
  * PATCH /api/store/orders/[id]/pagamento   { paymentMethod, changeAmount? }
@@ -57,8 +58,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
 
   const corpo = await req.json().catch(() => ({} as any));
-  const forma = String(corpo?.paymentMethod || "").trim();
-  if (!(FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(forma)) {
+
+  // ── PAGAMENTO DIVIDIDO ────────────────────────────────────────────────
+  //
+  // "O cliente bota dinheiro e aí chega lá paga metade no débito e metade no
+  // crédito" (pedido do dono, 20/09/2026). Antes só cabia UMA forma aqui, e
+  // pior: a rota APAGAVA as partes de um pedido que já vinha dividido do
+  // balcão. O operador escolhia uma forma só, e o fechamento cobrava da gaveta
+  // um valor que tinha passado na maquininha.
+  //
+  // As partes têm que fechar com o total — quem confere isso é
+  // `validarDivisao`, a MESMA função que o balcão usa, para as duas telas
+  // nunca aceitarem coisas diferentes.
+  const querDividir = Array.isArray(corpo?.paymentMethods) && corpo.paymentMethods.length > 0;
+  let divisao: ParteDoPagamento[] | null = null;
+  let forma = String(corpo?.paymentMethod || "").trim();
+
+  if (querDividir) {
+    const r = validarDivisao(corpo.paymentMethods, order.totalAmount || 0);
+    if (!r.ok) return NextResponse.json({ error: r.erro }, { status: 400 });
+    divisao = r.partes;
+    forma = r.resumo;
+  } else if (!(FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(forma)) {
     return NextResponse.json(
       { error: "Forma de pagamento inválida.", formas: FORMAS_DE_PAGAMENTO_NA_ENTREGA },
       { status: 400 },
@@ -72,8 +93,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Troco é conta de dinheiro. `changeAmount` é a NOTA que o cliente entrega
   // (mesma convenção do app do motoboy), não o troco.
-  const trocoPara = forma === "Dinheiro" && Number(corpo?.changeAmount) > 0 ? Number(corpo.changeAmount) : null;
-  if (order.paymentMethod === forma && (order.changeAmount ?? null) === trocoPara) {
+  // Numa divisão, o troco é da PARTE em dinheiro — não do pedido inteiro.
+  const parteEmDinheiro = divisao?.find((p) => p.method === "Dinheiro")?.amount ?? null;
+  const aceitaTroco = divisao ? parteEmDinheiro != null : forma === "Dinheiro";
+  const trocoPara = aceitaTroco && Number(corpo?.changeAmount) > 0 ? Number(corpo.changeAmount) : null;
+
+  if (!divisao && order.paymentMethod === forma && (order.changeAmount ?? null) === trocoPara) {
     return NextResponse.json({ success: true, semMudanca: true, paymentMethod: forma, changeAmount: trocoPara });
   }
 
@@ -93,13 +118,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     data: {
       paymentMethod: forma,
       changeAmount: trocoPara,
-      // Pagamento dividido do balcão vira uma forma só: é o que a loja acabou
-      // de dizer que aconteceu.
-      ...(order.paymentMethods != null ? { paymentMethods: Prisma.DbNull } : {}),
+      // Dividiu: as partes ficam gravadas e o fechamento de caixa manda cada
+      // uma para a SUA linha da conferência. Escolheu uma forma só: as partes
+      // antigas saem, porque é o que a loja acabou de dizer que aconteceu.
+      ...(divisao
+        ? { paymentMethods: divisao as any }
+        : order.paymentMethods != null
+          ? { paymentMethods: Prisma.DbNull }
+          : {}),
       editHistory: empilharEdicao(order.editHistory, registro) as any,
     },
   });
 
   console.log(`[Pagamento] pedido ${order.id}: ${order.paymentMethod} → ${forma} por ${registro.quem}`);
-  return NextResponse.json({ success: true, paymentMethod: forma, changeAmount: trocoPara });
+  return NextResponse.json({ success: true, paymentMethod: forma, changeAmount: trocoPara, paymentMethods: divisao });
 }

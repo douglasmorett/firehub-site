@@ -122,6 +122,8 @@ export type PrinterEntry = {
   escposProfile?: EscPosProfile;
   /* So bebida: mesmo dentro de combo, so a bebida sai nesta impressora. */
   somenteBebidas?: boolean;
+  /** true = uma linha por unidade ("1x X-Bacon" cinco vezes). Ausente = agrupado. */
+  separarItens?: boolean;
   /* Quais mundos esta impressora atende: salao, delivery, ou os dois.
      Ausente ou vazio = os dois, que e como toda loja configurada antes
      desta opcao existir continua funcionando. */
@@ -136,6 +138,12 @@ export type PrinterEntry = {
      integracao (tres marcas no iFood, duas no 99Food). Chaves de
      lib/loja-de-origem.ts. Ausente ou vazio = de todas. */
   lojas?: string[];
+  /* QUAL MODELO DE COMANDA sai nesta impressora (lib/comanda-modelo.ts,
+     `modelos[].id`). Ausente, vazio, ou apontando para modelo apagado = o
+     modelo PADRAO da loja — a mesma regra de `modulos`: ausente significa "o
+     de sempre", nunca "nenhum". Ninguem acorda com a impressora muda porque
+     um campo novo apareceu. */
+  modeloId?: string;
 };
 
 type PrinterConfig = {
@@ -175,9 +183,13 @@ export function printersParaAssistente(printers: Array<Pick<PrinterEntry, "name"
     // que vem pela fila da nuvem.
     modulos: pr.modulos || [],
     somenteBebidas: pr.somenteBebidas === true,
+    separarItens: pr.separarItens === true,
     qrPuxar: pr.qrPuxar !== false,
     contaDaMesa: contaSaiNestaImpressora(pr as any, lista as any),
     lojas: pr.lojas || [],
+    // Qual modelo de comanda esta impressora usa. Esta lista e BRANCA: campo
+    // esquecido aqui simplesmente nao existe para o Assistente.
+    modeloId: pr.modeloId || "",
   }));
 }
 
@@ -251,6 +263,8 @@ async function printToDevice(
   escposProfile?: EscPosProfile,
   semValores = false,
   somenteBebidas = false,
+  /** true = uma linha por unidade no papel desta impressora. Ausente = agrupado. */
+  separarItens = false,
   /** ESTA impressora imprime o QR do motoboy? Decidido por impressora, la no printOrder. */
   qrPuxar = true,
   /** O bloco da campanha "converter" para ESTA impressora (ausente = nao sai). */
@@ -369,6 +383,8 @@ async function printToDevice(
           // (com as do lojista) mora la, e duplica-la aqui criaria duas
           // verdades que divergem no dia em que alguem editar so uma.
           somenteBebidas,
+          // Campo ADITIVO: Assistente que nao conhece ignora e agrupa, como sempre.
+          separarItens,
           notes: order.notes,
           createdAt: order.createdAt,
           printerConfig: {
@@ -429,9 +445,9 @@ export async function printOrder(
   // Categoria nunca soube de onde o pedido veio: a impressora do balcao
   // cuspia a comanda do iFood no meio do salao, e nao havia como dizer
   // "esta aqui e so para o delivery".
-  // O modelo da loja, resolvido UMA vez para todas as impressoras deste
-  // pedido: a comanda da cozinha (semValores) tem a própria lista de blocos.
-  const blocos = blocosDoPedido(printerConfig, { semValores });
+  // (O modelo de comanda NÃO é resolvido aqui: ele é por IMPRESSORA, e sai
+  //  dentro do laço lá embaixo. Resolver uma vez só entregava o modelo da
+  //  primeira impressora para todas, e o defeito só aparece em loja com duas.)
 
   const modulo = moduloDoPedido((order as any).source);
   const doModulo = printersToUse.filter(p => impressoraAtendeModulo(p.modulos, modulo));
@@ -523,9 +539,17 @@ export async function printOrder(
       printer.escposProfile,
       semValores,
       printer.somenteBebidas === true,
+      printer.separarItens === true,
       qrLigadoNaImpressora(printer, printerConfig as any),
       campanha,
-      blocos
+      // ── O MODELO DESTA IMPRESSORA ───────────────────────────────────────
+      //
+      // A cozinha pode ter um modelo e o caixa outro. Resolvido AQUI, dentro
+      // do laço, e não uma vez para o pedido todo: a versão anterior entregava
+      // o mesmo modelo para todas as impressoras, e o defeito só aparecia em
+      // loja com mais de uma. Impressora sem `modeloId` (inclusive a sintética
+      // de resgate, que não tem cadastro) cai no modelo padrão da loja.
+      blocosDoPedido(printerConfig, { semValores, modeloId: (printer as any).modeloId })
     );
     if (result.ok) printed++;
     if (result.aguardando) aguardando = true;
@@ -583,6 +607,8 @@ export async function printTestReceipt(
     escposProfile,
     false,
     false,
+    // Impressao de teste sai agrupada: ela existe para conferir o LAYOUT.
+    entrada?.separarItens === true,
     qrLigadoNaImpressora(entrada, printerConfig as any),
     undefined,
     // O teste tem que sair com o MODELO da loja, senão o lojista aperta

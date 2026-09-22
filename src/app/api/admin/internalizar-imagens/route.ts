@@ -37,41 +37,51 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 54 fotos a ~1s cada cabem com folga
 
 /**
- * De onde um cardápio importado pode ter ficado dependendo. Cada importação
- * nova (MenuDino, iFood...) entra aqui, e o cron cuida do resto.
+ * QUANDO uma imagem precisa virar nossa.
+ *
+ * Isto já foi uma LISTA de hosts de concorrente, e a lista errou cinco vezes,
+ * sempre do mesmo jeito: o host novo não estava nela e ninguém percebia. O
+ * Storage do Frangoso (61 fotos, 12/09/2026), o bucket do Cardápio Web na
+ * Delicias de Casa (55, 14/09), o Menu Integrado no R&D (110, 17/09), o
+ * SEGUNDO CDN do iFood (7 da Brazza, nove dias no ar) e a JotaJá, que nunca
+ * entrou na lista (102 fotos em 19 lojas, desde julho).
+ *
+ * A regra agora é ao contrário, e não tem host para manter: foto nossa mora em
+ * caminho relativo (`/uploads/...`), então qualquer `http(s)://` é de fora e
+ * tem que ser baixada — não importa de quem seja o servidor. Foi assim que a
+ * logo e o banner da Hakim Unamar apareceram, servidos por `static.saipos.com`:
+ * host de PDV concorrente, que lista nenhuma iria adivinhar.
+ *
+ * Uma URL que não baixa mantém a original e entra em `falhas`, e é tentada de
+ * novo na rodada seguinte. Custa um timeout por rodada — é o preço de não
+ * precisar mais adivinhar host, e some assim que a foto for trocada ou tirada.
  */
-// `firebasestorage.googleapis.com` entrou em 12/09/2026, com a cópia do
-// cardápio do Frangoso vindo da Brendi: as 61 fotos apontavam para o Storage
-// DELES, com token de leitura que eles podem revogar a qualquer momento. Foto
-// de cardápio hospedada no concorrente é cardápio que some sem aviso.
-// `prod-cardapio-web` é o bucket do Cardápio Web. Entrou com a cópia do
-// cardápio da Delicias de Casa (14/09/2026): 55 fotos que ficaram apontando
-// para o storage deles. Vai o caminho do BUCKET, não `storage.googleapis.com`
-// puro — aquele host serve bucket de meio mundo, e o cron não tem o que fazer
-// com foto que não é de cardápio importado.
-// `menuintegrado` é a plataforma dos sites próprios de delivery (rdpizza.com.br
-// e irmãos). Entrou com a cópia do cardápio do R&D Pizzaria (17/09/2026): 110
-// imagens no total, entre fotos de produto, capas de categoria, logo e banner.
-const ORIGENS_DE_FORA = [
-  "menudino",
-  "static-images.ifood.com.br",
-  "firebasestorage.googleapis.com",
-  "prod-cardapio-web",
-  "menuintegrado",
-  // InstaDelivery serve as fotos de um bucket da DigitalOcean; o nome da
-  // plataforma está no host (instadelivery-public.nyc3.cdn.digitaloceanspaces.com),
-  // então basta ele — casar "digitaloceanspaces" pegaria bucket de terceiro.
-  "instadelivery",
-  // O iFood tem DOIS CDNs, e a lista só conhecia um. `static-images` é o das
-  // fotos de prato; `ifood-static` é o das fotos de catálogo (bebida de marca,
-  // principalmente) — são as 7 da Brazza, que ficaram de fora por nove dias
-  // sem ninguém perceber, porque o host não casava com nada aqui.
-  "ifood-static",
-  // JotaJá: 102 fotos em 19 lojas (48 só na Hakim Centro), do cardápio que a
-  // integração trouxe em julho. Nunca entrou nesta lista — não é que falhava,
-  // é que ninguém olhava para ela.
-  "imagens.jotaja.com",
-];
+function hostsNossos(req: NextRequest): string[] {
+  // Mesma ideia de `hostsProprios` em src/lib/imagem-enviada.ts: NEXTAUTH_URL
+  // cobre produção e o header Host cobre dev e preview, sem variável nova.
+  const hosts = new Set<string>();
+  const configurado = (process.env.NEXTAUTH_URL || "").trim();
+  if (configurado.startsWith("http")) {
+    try {
+      hosts.add(new URL(configurado).host.toLowerCase());
+    } catch {
+      // NEXTAUTH_URL mal formada não pode derrubar a rodada.
+    }
+  }
+  const doPedido = req.headers.get("host");
+  if (doPedido) hosts.add(doPedido.toLowerCase());
+  return [...hosts];
+}
+
+/** Absoluto e não é nosso. URL relativa e coluna vazia ficam de fora sozinhas. */
+function ehDeFora(campo: string, nossos: string[]) {
+  return {
+    AND: [
+      { [campo]: { startsWith: "http" } },
+      ...nossos.map((h) => ({ NOT: { [campo]: { contains: h } } })),
+    ],
+  };
+}
 
 /**
  * TODA coluna de imagem que uma importação pode preencher com URL de fora.
@@ -204,15 +214,16 @@ async function internalizar(req: NextRequest) {
   }
 
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-  // Sem `dominio` no corpo, cobre TODAS as origens conhecidas — é assim que o
-  // cron (GET, sem corpo) chama. O padrão era só "menudino", e as 193 fotos
-  // do Taurus, importadas do iFood em 09/09/2026, ficaram apontando para
+  // Sem `dominio` no corpo, cobre TUDO que não é nosso — é assim que o cron
+  // (GET, sem corpo) chama. O padrão já foi só "menudino", e as 193 fotos do
+  // Taurus, importadas do iFood em 09/09/2026, ficaram apontando para
   // static-images.ifood.com.br por seis horas a fio sem nunca entrar aqui.
+  // `dominio` continua existindo para a rodada cirúrgica, de uma origem só.
   const q = req.nextUrl.searchParams;
   const dePara = (chave: string) => (body as any)?.[chave] ?? q.get(chave) ?? null;
 
   const escolhido = dePara("dominio");
-  const dominios: string[] = escolhido ? [String(escolhido)] : ORIGENS_DE_FORA;
+  const nossos = hostsNossos(req);
   const franchiseeId = dePara("franchiseeId") ? String(dePara("franchiseeId")) : null;
 
   // ── POR QUE ESTA RODADA TEM HORA PARA ACABAR ───────────────────────────
@@ -245,7 +256,9 @@ async function internalizar(req: NextRequest) {
     try {
       linhas = await delegate.findMany({
         where: {
-          OR: dominios.map((d) => ({ [alvo.campo]: { contains: d } })),
+          ...(escolhido
+            ? { [alvo.campo]: { contains: String(escolhido) } }
+            : ehDeFora(alvo.campo, nossos)),
           ...(franchiseeId ? alvo.filtroDaLoja(franchiseeId) : {}),
         },
         select: { id: true, [alvo.campo]: true, ...(alvo.rotulo ? { [alvo.rotulo]: true } : {}) },

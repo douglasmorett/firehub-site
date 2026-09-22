@@ -153,6 +153,16 @@ export default function KDSTelaPage() {
   const router = useRouter();
 
   const stage = searchParams.get("stage") as "production" | "finishing" | null;
+  // ── QUEM SOU EU, PARA A BAIXA ───────────────────────────────────────────
+  //
+  // O mesmo pedido aparece na tela de esfirra e na de pizza. Mandando a chave
+  // da tela junto com a baixa, o servidor sabe QUAL delas terminou: o pedido
+  // sai daqui e continua na outra, e o KDS só o manda para a finalização
+  // quando a última terminar (lib/kds-telas.ts).
+  //
+  // Vazio = tela aberta por link antigo ou loja de uma tela só. Aí a baixa
+  // vale para o pedido inteiro, como sempre valeu.
+  const chaveDaTela = (searchParams.get("tela") || "").trim();
   const screenName =
     searchParams.get("name") ||
     (stage === "production" ? "Produção" : "Finalização");
@@ -339,7 +349,7 @@ export default function KDSTelaPage() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout prevents stalled requests
     try {
-      const res = await fetch(`/api/kds?stage=${stage}&t=${Date.now()}`, {
+      const res = await fetch(`/api/kds?stage=${stage}&t=${Date.now()}${chaveDaTela ? `&tela=${encodeURIComponent(chaveDaTela)}` : ""}`, {
         credentials: "include",
         cache: "no-store",
         headers: {
@@ -603,7 +613,7 @@ export default function KDSTelaPage() {
               },
               credentials: "include",
               signal: controller.signal,
-              body: JSON.stringify({ orderId: order.id, action }),
+              body: JSON.stringify({ orderId: order.id, action, tela: chaveDaTela }),
             });
             clearTimeout(timeoutId);
             if (res.ok) return true;
@@ -657,6 +667,7 @@ export default function KDSTelaPage() {
         body: JSON.stringify({
           orderId: lastCompletedOrder.order.id,
           action: targetAction,
+          tela: chaveDaTela,
         }),
       });
 

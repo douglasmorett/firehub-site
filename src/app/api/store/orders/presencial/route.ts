@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { telefoneDeVerdade } from "@/lib/telefone";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { lerPager } from "@/lib/pager";
+import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -24,20 +25,15 @@ export async function POST(req: Request) {
   // diferença de caixa que ninguém vai achar. O `paymentMethod` (texto) vira o
   // resumo "Dividido: Pix R$ 20,00 + Dinheiro R$ 15,00" — é o que a comanda e
   // o painel mostram; o caixa lê as partes.
-  let paymentMethods: { method: string; amount: number }[] | null = null;
+  // A conferência mora em lib/pagamento-dividido.ts, junto com a da troca de
+  // pagamento do painel: duas telas que aceitassem divisões diferentes
+  // gravariam pedidos que o fechamento de caixa lê de jeitos diferentes.
+  let paymentMethods: ParteDoPagamento[] | null = null;
   if (Array.isArray(data.paymentMethods) && data.paymentMethods.length > 0) {
-    const partes = data.paymentMethods
-      .map((p: any) => ({ method: String(p?.method || p?.metodo || "").trim(), amount: Math.round((Number(p?.amount ?? p?.valor) || 0) * 100) / 100 }))
-      .filter((p: { method: string; amount: number }) => p.method && p.amount > 0);
-    if (partes.length < 2) {
-      return NextResponse.json({ error: "Para dividir o pagamento, informe pelo menos duas formas com valor." }, { status: 400 });
-    }
-    const soma = Math.round(partes.reduce((s: number, p: { amount: number }) => s + p.amount, 0) * 100) / 100;
-    if (Math.abs(soma - (Number(totalAmount) || 0)) > 0.02) {
-      return NextResponse.json({ error: `A soma das formas (R$ ${soma.toFixed(2).replace(".", ",")}) não bate com o total do pedido (R$ ${(Number(totalAmount) || 0).toFixed(2).replace(".", ",")}).` }, { status: 400 });
-    }
-    paymentMethods = partes;
-    paymentMethod = "Dividido: " + partes.map((p: { method: string; amount: number }) => `${p.method} R$ ${p.amount.toFixed(2).replace(".", ",")}`).join(" + ");
+    const r = validarDivisao(data.paymentMethods, Number(totalAmount) || 0);
+    if (!r.ok) return NextResponse.json({ error: r.erro }, { status: 400 });
+    paymentMethods = r.partes;
+    paymentMethod = r.resumo;
   }
 
   if (!items || items.length === 0) return NextResponse.json({ error: "Nenhum item informado" }, { status: 400 });

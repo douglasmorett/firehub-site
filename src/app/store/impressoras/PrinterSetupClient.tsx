@@ -9,7 +9,7 @@ import {
 } from "@/lib/modulo-do-pedido";
 import ComandaModeloEditor from "./ComandaModeloEditor";
 import AvisoDownloadWindows from "@/components/AvisoDownloadWindows";
-import type { ModeloDeComanda } from "@/lib/comanda-modelo";
+import { VERSAO_COM_MODELO_POR_IMPRESSORA, type ModeloDeComanda } from "@/lib/comanda-modelo";
 import {
   contaSaiNestaImpressora,
   impressorasDaContaDaMesa,
@@ -57,6 +57,14 @@ type PrinterEntry = {
   // Ausente = automatico: vale o palpite de lib/impressao-da-conta.ts (a
   // impressora do caixa) ate a loja marcar as que quer.
   contaDaMesa?: boolean;
+  // QUAL MODELO DE COMANDA sai nesta impressora (lib/comanda-modelo.ts).
+  // Ausente = o modelo padrao da loja, que e como toda impressora ja
+  // cadastrada continua imprimindo.
+  modeloId?: string;
+  // AGRUPADOS ou SEPARADOS: 5 X-Bacon saem como "5x X-Bacon" (padrao) ou
+  // como cinco linhas de "1x X-Bacon". Ausente = agrupado, que e como toda
+  // impressora ja cadastrada imprime hoje.
+  separarItens?: boolean;
   // De quais LOJAS recebe pedido, quando a conta tem mais de uma na mesma
   // integracao (tres marcas no iFood). Chaves de lib/loja-de-origem.ts.
   // Ausente ou vazio = de todas.
@@ -88,6 +96,9 @@ export default function PrinterSetupClient({
 }) {
   const [status, setStatus] = useState<AssistantStatus>("checking");
   const [availablePrinters, setAvailablePrinters] = useState<DetectedPrinter[]>([]);
+  // Os modelos que a loja criou na tela do modelo da comanda. Vazio = a loja
+  // ainda não criou nenhum, e aí nem aparece o seletor: um campo que só
+  // oferece 'padrão' é ruído no cartão da impressora.
   const [config, setConfig] = useState<PrinterConfig>(() => {
     if (!initialConfig) return { autoprint: true, printers: [] };
     // A primeira versão do QR do motoboy tinha um interruptor único da loja
@@ -100,6 +111,9 @@ export default function PrinterSetupClient({
     );
     return { ...resto, printers, autoprint: resto.autoprint !== undefined ? resto.autoprint : true };
   });
+  /** Os modelos que a loja criou (tela do modelo da comanda). */
+  const modelosDaLoja = (config.comandaModelo?.modelos || []).filter(m => m && m.id);
+
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testingPrinter, setTestingPrinter] = useState<string | null>(null);
@@ -984,6 +998,70 @@ export default function PrinterSetupClient({
               </p>
             </div>
 
+            {/* ── COMO OS ITENS SAEM NESTA IMPRESSORA ──
+
+                Cinco X-Bacon viram "5x X-Bacon" ou cinco linhas de "1x
+                X-Bacon". Não é gosto: é como a cozinha trabalha. Quem monta
+                lanche a lanche risca UMA linha por unidade e usa o papel como
+                checklist — com "5x" numa linha só o cozinheiro perde a conta
+                no meio do movimento e manda quatro. Quem embala junto prefere
+                agrupado, que gasta menos bobina.
+
+                Por isso a escolha é POR IMPRESSORA: a cozinha separa, o caixa
+                agrupa. O padrão é agrupar, que é como toda loja já configurada
+                imprime hoje. */}
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", letterSpacing: "0.4px", display: "block", marginBottom: 6 }}>
+                COMO OS ITENS SAEM NO PAPEL
+              </label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {[
+                  {
+                    separa: false,
+                    nome: "Agrupados",
+                    exemplo: "5x X-Bacon",
+                    explica: "Uma linha por item, com a quantidade na frente. Gasta menos papel.",
+                  },
+                  {
+                    separa: true,
+                    nome: "Separados",
+                    exemplo: "1x X-Bacon\n1x X-Bacon\n1x X-Bacon…",
+                    explica: "Uma linha por unidade. A cozinha risca um a um e não perde a conta.",
+                  },
+                ].map(op => {
+                  const ligado = (printer.separarItens === true) === op.separa;
+                  return (
+                    <button
+                      key={op.nome}
+                      onClick={() => updatePrinter(printer.id, { separarItens: op.separa })}
+                      style={{
+                        flex: "1 1 200px", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                        padding: "10px 12px", borderRadius: 12,
+                        border: ligado ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                        background: ligado ? "#FEF2F2" : "#fff",
+                        color: ligado ? "#B71C1C" : "#64748B",
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                        {ligado ? "✓" : "○"} {op.nome}
+                      </div>
+                      {/* O exemplo em fonte de máquina: a pessoa vê o papel, não lê sobre ele. */}
+                      <div style={{ fontFamily: "ui-monospace, Consolas, monospace", fontSize: "0.72rem", whiteSpace: "pre-line", background: ligado ? "#fff" : "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, padding: "6px 8px", margin: "6px 0 4px", color: "#334155", lineHeight: 1.4 }}>
+                        {op.exemplo}
+                      </div>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.35, opacity: 0.85 }}>
+                        {op.explica}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0", lineHeight: 1.4 }}>
+                💡 Só muda o desenho das linhas. Os valores e o total do pedido saem iguais nos dois.
+                Precisa do <strong>Assistente 1.2.19</strong> — em versão anterior sai agrupado.
+              </p>
+            </div>
+
             {/* ── De qual loja ──
                 Só aparece quando a conta tem mais de uma loja na mesma
                 integração (três marcas no iFood, duas no 99Food) ou é um grupo
@@ -1015,6 +1093,42 @@ export default function PrinterSetupClient({
                   💡 Três marcas no iFood na mesma conta: a impressora da cozinha da pizza marca só a loja da pizza.
                   Pedido de uma loja que nenhuma impressora marcou sai em todas, para não ficar sem comanda.
                 </p>
+              </div>
+            )}
+
+            {/* ── Modelo de comanda desta impressora ──
+
+                A cozinha não precisa de preço e o caixa precisa. Antes havia
+                UM modelo por loja e ele saía igual em todas as impressoras;
+                agora a loja cria quantos quiser na tela do modelo e aponta um
+                aqui. Sem escolher nada, continua saindo o modelo padrão — que
+                é o que toda impressora já cadastrada faz hoje. */}
+            {modelosDaLoja.length > 0 && (
+              <div style={{ marginBottom: "1rem" }}>
+                <label style={{ fontSize: "0.78rem", fontWeight: 800, color: "#334155", display: "block", marginBottom: 6 }}>
+                  🧾 Modelo de comanda
+                </label>
+                <select
+                  className="input-field"
+                  value={printer.modeloId || ""}
+                  onChange={e => updatePrinter(printer.id, { modeloId: e.target.value || undefined })}
+                  style={{ width: "100%" }}
+                >
+                  <option value="">Modelo padrão da loja</option>
+                  {modelosDaLoja.map(m => (
+                    <option key={m.id} value={m.id}>{m.nome}</option>
+                  ))}
+                </select>
+                <p style={{ fontSize: "0.74rem", color: "#64748B", margin: "6px 0 0", lineHeight: 1.45 }}>
+                  Crie e edite os modelos em <strong>Modelo da comanda</strong>. Cada impressora
+                  pode usar um: a da cozinha sem preço, a do caixa completa.
+                </p>
+                {printer.modeloId && versaoDesatualizada && (
+                  <p style={{ fontSize: "0.74rem", color: "#B45309", margin: "6px 0 0", fontWeight: 700 }}>
+                    Com o painel fechado, o modelo por impressora só vale a partir do
+                    Assistente {VERSAO_COM_MODELO_POR_IMPRESSORA}. Até atualizar, sai o modelo padrão da loja.
+                  </p>
+                )}
               </div>
             )}
 

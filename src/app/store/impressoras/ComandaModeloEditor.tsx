@@ -20,6 +20,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AJUDA_DO_BLOCO,
+  CORPOS_DO_BLOCO,
+  corpoDoBloco,
   BLOCOS_OBRIGATORIOS,
   CAMPOS_DISPONIVEIS,
   NOME_DO_BLOCO,
@@ -41,6 +43,8 @@ import {
   temRotuloTrocado,
   type Alinhamento,
   type Bloco,
+  type LinhaRica,
+  type ParteDaLinha,
   type ModeloDeComanda,
   type TipoDeBloco,
 } from "@/lib/comanda-modelo";
@@ -204,6 +208,23 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
     trocar(nova);
   };
 
+  /** Mexe numa LINHA do bloco de texto rico. */
+  const mexerNaLinha = (iBloco: number, iLinha: number, patch: Partial<LinhaRica>) =>
+    trocar(lista.map((b, k) => (k !== iBloco ? b : {
+      ...b,
+      linhas: (b.linhas || []).map((ln, j) => (j === iLinha ? { ...ln, ...patch } : ln)),
+    })));
+
+  /** Mexe num PEDAÇO de uma linha. */
+  const mexerNaParte = (iBloco: number, iLinha: number, iParte: number, patch: Partial<ParteDaLinha>) =>
+    trocar(lista.map((b, k) => (k !== iBloco ? b : {
+      ...b,
+      linhas: (b.linhas || []).map((ln, j) => (j !== iLinha ? ln : {
+        ...ln,
+        partes: (ln.partes || []).map((p, q) => (q === iParte ? { ...p, ...patch } : p)),
+      })),
+    })));
+
   return (
     <div>
       <p style={{ fontSize: "0.84rem", color: "#64748B", margin: "0 0 14px", maxWidth: "62ch", lineHeight: 1.5 }}>
@@ -322,6 +343,21 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                           style={{ flex: "1 1 140px", minWidth: 110, padding: "5px 8px", borderRadius: 7, border: BORDA, fontSize: "0.78rem", fontWeight: 700, fontFamily: "inherit" }}
                         />
                         {stepper(tamanhoValido(bloco.tamanho), (t) => mexerNoBloco(i, { tamanho: t }))}
+                        {/* ── LINHAS COM CORPO PRÓPRIO (CORPOS_DO_BLOCO) ──────────
+                            Hoje só a faixa CONTÉM BEBIDA. Ela nasce em 2x porque
+                            bebida esquecida volta como entrega refeita, e no corpo
+                            do resto do papel a tarja se perdia na pilha de comandas
+                            (NIK, 21/09/2026). Fica AQUI, ao lado do tamanho do
+                            bloco, porque é a mesma pergunta: "que tamanho isto sai?"
+                            — e não num menu separado que ninguém acha. */}
+                        {(CORPOS_DO_BLOCO[bloco.tipo] || []).map((c) => (
+                          <span key={c.chave} title={c.ajuda} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 700 }}>{c.rotulo}</span>
+                            {stepper(corpoDoBloco(bloco, c.chave), (t) =>
+                              mexerNoBloco(i, { corpos: { ...(bloco.corpos || {}), [c.chave]: t } }),
+                            )}
+                          </span>
+                        ))}
                       </div>
                     )}
 
@@ -401,10 +437,87 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                       </>
                     )}
 
+                    {/* ── TEXTO COM VARIÁVEIS ────────────────────────────
+
+                        Uma linha por vez, e cada pedaço da linha é OU texto
+                        fixo OU um campo com o seu rótulo colado. É essa
+                        colagem que faz "Ref: {endereço}" sumir inteiro num
+                        pedido sem endereço, em vez de imprimir "Ref:" órfão
+                        — que é o que o texto livre faz hoje. */}
+                    {bloco.tipo === "textoRico" && (
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                        {(bloco.linhas || []).map((ln, li) => (
+                          <div key={li} style={{ border: BORDA, borderRadius: 10, padding: "8px 9px", background: "#FAFAFA" }}>
+                            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+                              <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94A3B8" }}>LINHA {li + 1}</span>
+                              <div style={{ flex: 1 }} />
+                              <button type="button" title="Negrito" onClick={() => mexerNaLinha(i, li, { negrito: !ln.negrito })}
+                                style={{ ...botao(!!ln.negrito), padding: "3px 9px", fontSize: "0.72rem", fontWeight: 900 }}>N</button>
+                              {/* Tarja preta: o destaque que negrito não dá num papel térmico cheio de texto. */}
+                              <button type="button" title="Marcar de preto (fundo preto, letra branca)" onClick={() => mexerNaLinha(i, li, { invertido: !ln.invertido })}
+                                style={{ ...botao(!!ln.invertido), padding: "3px 9px", fontSize: "0.72rem", fontWeight: 900 }}>⬛</button>
+                              {TAMANHOS.map((t) => (
+                                <button key={t} type="button" title={`Tamanho ${t}x`} onClick={() => mexerNaLinha(i, li, { tamanho: t })}
+                                  style={{ ...botao((ln.tamanho || 1) === t), padding: "3px 8px", fontSize: "0.72rem" }}>{t}x</button>
+                              ))}
+                              {(["esquerda", "centro", "direita"] as const).map((a) => (
+                                <button key={a} type="button" title={a} onClick={() => mexerNaLinha(i, li, { alinhamento: a })}
+                                  style={{ ...botao((ln.alinhamento || "esquerda") === a), padding: "3px 8px", fontSize: "0.72rem" }}>
+                                  {a === "esquerda" ? "⬅" : a === "centro" ? "↔" : "➡"}
+                                </button>
+                              ))}
+                              <button type="button" title="Apagar esta linha" onClick={() => mexerNoBloco(i, { linhas: (bloco.linhas || []).filter((_, k) => k !== li) })}
+                                style={{ border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#B91C1C", borderRadius: 6, padding: "3px 8px", fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                            </div>
+
+                            {(ln.partes || []).map((parte, pi) => (
+                              <div key={pi} style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 4 }}>
+                                <input
+                                  value={parte.texto ?? ""}
+                                  onChange={(e) => mexerNaParte(i, li, pi, { texto: e.target.value })}
+                                  placeholder={parte.campo ? "rótulo (some junto)" : "texto fixo"}
+                                  style={{ flex: 1, minWidth: 0, padding: "5px 8px", borderRadius: 7, border: BORDA, fontSize: "0.78rem", fontFamily: "inherit" }}
+                                />
+                                <select
+                                  value={parte.campo ?? ""}
+                                  onChange={(e) => mexerNaParte(i, li, pi, { campo: e.target.value || undefined })}
+                                  style={{ padding: "5px 6px", borderRadius: 7, border: BORDA, fontSize: "0.74rem", fontFamily: "inherit", maxWidth: 170 }}
+                                >
+                                  <option value="">— só texto —</option>
+                                  {CAMPOS_DISPONIVEIS.map((c) => (<option key={c.chave} value={c.chave}>{c.rotulo}</option>))}
+                                </select>
+                                <button type="button" title="Apagar este pedaço" onClick={() => mexerNaLinha(i, li, { partes: (ln.partes || []).filter((_, k) => k !== pi) })}
+                                  style={{ border: "1px solid #E2E8F0", background: "#fff", color: "#94A3B8", borderRadius: 6, padding: "3px 7px", fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                              </div>
+                            ))}
+
+                            <button type="button" onClick={() => mexerNaLinha(i, li, { partes: [...(ln.partes || []), { texto: "" }] })}
+                              style={{ border: "1px dashed #CBD5E1", background: "transparent", color: "#64748B", borderRadius: 6, padding: "3px 9px", fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit", marginTop: 2 }}>
+                              + pedaço
+                            </button>
+                          </div>
+                        ))}
+
+                        <button type="button" onClick={() => mexerNoBloco(i, { linhas: [...(bloco.linhas || []), { partes: [{ texto: "" }] }] })}
+                          style={{ ...botao(false), alignSelf: "flex-start", padding: "5px 11px", fontSize: "0.78rem" }}>
+                          + Linha
+                        </button>
+
+                        <p style={{ fontSize: "0.73rem", color: "#64748B", margin: 0, lineHeight: 1.45 }}>
+                          O <strong>rótulo</strong> só sai quando o campo tem valor. Escreva
+                          <code style={{ background: "#F1F5F9", padding: "0 4px", borderRadius: 4 }}>Ref: </code>
+                          no rótulo e escolha o campo ao lado: pedido sem aquele dado não imprime a linha.
+                        </p>
+                      </div>
+                    )}
+
                     {formatavel && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7, alignItems: "center" }}>
                         <button type="button" onClick={() => mexerNoBloco(i, { negrito: !bloco.negrito })} style={chip(!!bloco.negrito)}>
                           <b>N</b> negrito
+                        </button>
+                        <button type="button" title="Fundo preto com letra branca, na largura inteira" onClick={() => mexerNoBloco(i, { invertido: !bloco.invertido })} style={chip(!!bloco.invertido)}>
+                          ⬛ marcado de preto
                         </button>
                         {stepper(tamanhoValido(bloco.tamanho), (t) => mexerNoBloco(i, { tamanho: t }))}
                         {(["esquerda", "centro", "direita"] as Alinhamento[]).map((a) => (
@@ -593,6 +706,8 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                       // pista de que o papel responde ao clique. Sem ele, a
                       // loja não descobre o recurso: papel não parece botão.
                       borderBottom: editavel ? "1px dashed #CBD5E1" : undefined,
+                      // A previa tem que mostrar a tarja invertida: e o ponto dela.
+                      ...(l.invertido ? { background: "#1F2937", color: "#fff" } : {}),
                     }}>
                       {editavel ? palavra : l.texto}
                     </span>

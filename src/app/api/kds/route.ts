@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { faltaTelaDarBaixa, lerTelasProntas, type TelaDoKds } from "@/lib/kds-telas";
 
 /**
  * GET /api/kds?stage=production|finishing
@@ -129,6 +130,9 @@ export async function GET(req: NextRequest) {
           kdsStationId: true,
           kdsProductionAt: true,
           kdsFinishingAt: true,
+          // Quais telas ja deram baixa: e o que permite esconder o pedido de
+          // quem ja terminou sem tira-lo das outras (lib/kds-telas.ts).
+          kdsTelasProntas: true,
           createdAt: true,
           updatedAt: true,
           items: {
@@ -173,7 +177,18 @@ export async function GET(req: NextRequest) {
       orders.map((o) => ({ ...o, franchiseeId: (o as any).franchiseeId ?? userStoreIds[0] })),
     ).catch(() => orders);
 
-    return NextResponse.json(ordersWithDailyNum, {
+    // ── O PEDIDO SOME DA TELA QUE JA DEU BAIXA ──────────────────────────
+    //
+    // Nao do KDS inteiro: as outras telas continuam com ele ate a ultima
+    // terminar. Sem `tela` na URL (link antigo, loja de uma tela so) nada muda.
+    const daTela = String(req.nextUrl.searchParams.get("tela") || "").trim();
+    const visiveis = daTela
+      ? (ordersWithDailyNum as any[]).filter(
+          (o) => !lerTelasProntas((o as any)?.kdsTelasProntas).includes(daTela),
+        )
+      : ordersWithDailyNum;
+
+    return NextResponse.json(visiveis, {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
         "Pragma": "no-cache",
@@ -191,7 +206,11 @@ export async function PUT(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
   const body = await req.json();
-  const { orderId, action, stationId } = body;
+  // `tela` é a chave da tela que está dando baixa (ver lib/kds-telas.ts).
+  // Ausente = tela aberta por link antigo ou loja de uma tela só: a baixa
+  // continua valendo para o pedido inteiro, como sempre valeu.
+  const { orderId, action, stationId, tela } = body;
+  const chaveDaTelaQueDeuBaixa = String(tela ?? "").trim();
 
   if (!orderId || !action) {
     return NextResponse.json({ error: "orderId e action obrigatórios" }, { status: 400 });
@@ -214,6 +233,15 @@ export async function PUT(req: NextRequest) {
       id: true, kdsStage: true, status: true, deliveryType: true, franchiseeId: true,
       ifoodOrderId: true, ifoodStoreMerchant: true, openDeliveryOrderId: true,
       openDeliveryChannel: true, source: true, deliveryBy: true, openDeliveryReference: true,
+      // A baixa por tela precisa saber QUAIS telas já terminaram e QUAIS itens
+      // o pedido tem — é o cruzamento com `User.kdsScreens` que diz se ainda
+      // falta alguém (ver lib/kds-telas.ts).
+      kdsTelasProntas: true,
+      // `CustomerOrderItem` não tem coluna de categoria: ela vem do produto.
+      // `productName` entra porque o item de plataforma aponta para o espelho
+      // (categoria literal "iFood") e a categoria real é resolvida pelo nome —
+      // a mesma regra do GET, em lib/categoria-do-item.ts.
+      items: { select: { productName: true, menuProduct: { select: { name: true, category: true } } } },
       // De qual loja do 99Food é o pedido: o "pronto" sai com o token DELA
       // primeiro (lib/food99-status.ts), em vez de tentar o da conta e só
       // depois os das outras — que numa conta com três lojas estourava o
@@ -232,6 +260,39 @@ export async function PUT(req: NextRequest) {
   }
 
 
+  // ── A BAIXA QUANDO O PEDIDO ESTÁ EM MAIS DE UMA TELA ────────────────────
+  //
+  // Cozinha separada por categoria: o mesmo pedido aparece na tela de esfirra
+  // e na de pizza, cada uma com os itens dela. `kdsStage` é um campo só, então
+  // a baixa de uma finalizava o pedido INTEIRO e ele sumia da outra, que nem
+  // tinha começado (NIK, 21/09/2026).
+  //
+  // Aqui a baixa vira "esta TELA terminou". O estágio só avança quando a
+  // última tela que tem item no pedido terminar; até lá o pedido some só da
+  // tela de quem deu baixa e NÃO entra na finalização.
+  //
+  // A categoria dos itens passa pelo MESMO resolvedor que o GET usa, senão o
+  // item de plataforma (categoria literal "iFood") contaria numa tela na hora
+  // de mostrar e noutra na hora de dar baixa.
+  const baixaDaTela = async (estagio: "production" | "finishing") => {
+    if (!chaveDaTelaQueDeuBaixa) return { falta: false, prontas: null as string[] | null };
+    const dono = await prisma.user
+      .findUnique({ where: { id: order.franchiseeId! }, select: { kdsScreens: true } })
+      .catch(() => null);
+    const telas = (Array.isArray(dono?.kdsScreens) ? dono!.kdsScreens : []) as TelaDoKds[];
+    const prontas = [...new Set([...lerTelasProntas(order.kdsTelasProntas), chaveDaTelaQueDeuBaixa])];
+    let itens: any[] = (order as any).items || [];
+    try {
+      const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
+      const [resolvido] = await resolverCategoriasDosPedidos([order as any]);
+      if (resolvido?.items) itens = resolvido.items;
+    } catch {
+      // Sem o resolvedor, vale a categoria crua do produto: pior filtro, nunca
+      // pedido preso. Comida parada na cozinha é mais caro que baixa adiantada.
+    }
+    return { falta: faltaTelaDarBaixa(telas, itens, estagio, prontas), prontas };
+  };
+
   if (action === "start_production") {
     // Mark order as being worked on in production
     await prisma.customerOrder.update({
@@ -247,6 +308,17 @@ export async function PUT(req: NextRequest) {
   }
 
   if (action === "finish_production") {
+    const { falta, prontas } = await baixaDaTela("production");
+    if (falta) {
+      // Outra tela de produção ainda tem item deste pedido. Grava só a baixa
+      // desta: ela para de ver o pedido, a outra continua vendo, e o estágio
+      // fica onde está — nada de mandar para a finalização pela metade.
+      await prisma.customerOrder.update({
+        where: { id: orderId },
+        data: { kdsTelasProntas: prontas as any },
+      });
+      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true });
+    }
     // Production done → move to finishing stage
     await prisma.customerOrder.update({
       where: { id: orderId },
@@ -255,14 +327,27 @@ export async function PUT(req: NextRequest) {
         kdsFinishingAt: new Date(),
         kdsStationId: null, // Reset station for finishing team to pick up
         status: order.status === "ACEITO" ? "PREPARANDO" : undefined,
+        ...(prontas ? { kdsTelasProntas: prontas as any } : {}),
       },
     });
     return NextResponse.json({ success: true, stage: "FINISHING" });
   }
 
   if (action === "finish_order") {
+    const { falta, prontas } = await baixaDaTela("finishing");
+    if (falta) {
+      // Mesma regra da produção: o pedido sai da tela de quem deu baixa e
+      // continua nas outras. Sem `kdsFinishedAt` e sem `readyAt`, porque o
+      // pedido NÃO está pronto — ainda tem item em outra tela.
+      await prisma.customerOrder.update({
+        where: { id: orderId },
+        data: { kdsTelasProntas: prontas as any },
+      });
+      return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true });
+    }
     const isPickup = order.deliveryType !== "DELIVERY";
     const updateData: any = {
+      ...(prontas ? { kdsTelasProntas: prontas } : {}),
       kdsStage: "FINISHED",
       kdsFinishingAt: new Date(),
       // A HORA EM QUE A COZINHA DEU O PEDIDO POR PRONTO.
@@ -384,6 +469,9 @@ export async function PUT(req: NextRequest) {
       data: {
         kdsStage: "PRODUCTION",
         kdsFinishingAt: null,
+        // Voltar atrás apaga as baixas por tela: sem isto, a tela que já
+        // tinha terminado nunca mais veria o pedido que voltou para ela.
+        kdsTelasProntas: [] as any,
       },
     });
     return NextResponse.json({ success: true, stage: "PRODUCTION" });
@@ -393,6 +481,9 @@ export async function PUT(req: NextRequest) {
     const isPickup = order.deliveryType !== "DELIVERY";
     const updateData: any = {
       kdsStage: "FINISHING",
+      // Mesma razão do revert de produção: quem já deu baixa precisa
+      // voltar a enxergar o pedido.
+      kdsTelasProntas: [] as any,
     };
     if (isPickup && order.status === "SAIU_ENTREGA") {
       updateData.status = "PREPARANDO";

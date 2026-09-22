@@ -178,7 +178,20 @@ export async function GET(req: NextRequest) {
     //
     // Só a via completa: a comanda da cozinha (sem valores) é decidida por
     // impressora no navegador e não existe neste trilho.
+    //
+    // Este é o modelo PADRÃO da loja, e ele continua viajando em
+    // `order.blocos` para TODO mundo: é o que o Assistente antigo lê, e é o
+    // que a impressora sem modelo próprio usa. O modelo de cada impressora vai
+    // à parte, dentro de `destinos[]` — ver o `blocos` de cada destino abaixo.
     const blocosDaComanda = blocosDoPedido(pc);
+
+    /** O modelo DESTA impressora, só quando difere do padrão da loja. */
+    const blocosDaImpressora = (impressora: { modeloId?: string } | null | undefined) => {
+      const id = impressora?.modeloId;
+      if (!id) return null;
+      const lista = blocosDoPedido(pc, { modeloId: id });
+      return lista && lista.length > 0 ? lista : null;
+    };
 
     // ── O ATRASO: o que chegou enquanto o Assistente estava desligado ──────
     //
@@ -468,11 +481,20 @@ export async function GET(req: NextRequest) {
         columns: d.impressora.columns ?? undefined,
         escposProfile: d.impressora.escposProfile ?? undefined,
         somenteBebidas: d.impressora.somenteBebidas === true,
+        // Campo ADITIVO: Assistente < 1.2.19 ignora e agrupa, como sempre.
+        separarItens: d.impressora.separarItens === true,
         items: d.itens,
         // O QR desta impressora (vazio = esta não imprime QR).
         ...(qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
         // O bloco da campanha desta impressora (vazio = não é a escolhida).
         ...camposDaCampanha(order as any, owner?.storeLoyalty, slugDaLoja, d.impressora.name),
+        // ── O MODELO DESTA IMPRESSORA ─────────────────────────────────────
+        //
+        // Campo ADITIVO, como `destinos` inteiro: o Assistente que não souber
+        // lê `order.blocos` e imprime o modelo padrão da loja, exatamente como
+        // fazia antes. Só vai quando a impressora escolheu um modelo próprio —
+        // mandar o padrão de novo aqui seria peso de rede sem efeito.
+        ...(blocosDaImpressora(d.impressora as any) ? { blocos: blocosDaImpressora(d.impressora as any) } : {}),
       })),
       createdAt: order.createdAt.toISOString(),
       };
@@ -547,6 +569,7 @@ export async function GET(req: NextRequest) {
           columns: d.impressora.columns ?? undefined,
           escposProfile: d.impressora.escposProfile ?? undefined,
           somenteBebidas: d.impressora.somenteBebidas === true,
+          separarItens: d.impressora.separarItens === true,
           items: d.itens,
           // Reimpressão sai igual à original: com o bloco da campanha onde ele
           // saiu da primeira vez.
@@ -579,6 +602,7 @@ export async function GET(req: NextRequest) {
           columns: d.columns ?? undefined,
           escposProfile: d.escposProfile ?? undefined,
           somenteBebidas: false,
+          separarItens: (d as any).separarItens === true,
           items: Array.isArray(order?.items) ? order.items : [],
         })),
         createdAt: pedido.createdAt.toISOString(),

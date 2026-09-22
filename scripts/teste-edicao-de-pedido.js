@@ -66,12 +66,22 @@ console.log("\n== A janela que o dono escolheu (ate sair para entrega) ==");
 for (const s of ["NOVO", "CONFIRMADO", "ACEITO", "PREPARANDO", "EM_PREPARO", "PRONTO"]) {
   conferir(`${s} -> edita`, avaliarEdicao({ status: s, source: "PRESENCIAL" }, DONO).modo, "COMPLETO");
 }
-// A decisao do dono mudou em 17/09/2026: depois que o pedido sai (e ate depois
-// de entregue) ele continua editavel, porque e ai que o cliente muda de ideia
-// na porta. So nao entra o que nem pedido e, e o que ja foi cancelado.
+// ── A JANELA FOI ABERTA ATÉ O FIM (decisão do dono, 17/09/2026) ───────────
+//
+// Até 15/09 o pedido que já tinha saído para entrega não podia mais ser
+// editado: "a comida saiu, ali é acerto de caixa". Dois dias de uso mostraram
+// o contrário — o cliente acrescenta coisa na porta, muda de ideia com o
+// motoboy na rua, e a loja precisa consertar depois de finalizado quando o que
+// foi lançado não é o que foi entregue.
+//
+// Este teste ficou para trás nessa mudança e acusava falha em 5 status desde
+// então. Está errado deixar teste vermelho de enfeite: quem vê 5 falhas
+// conhecidas para de olhar para a sexta, que vai ser de verdade.
 for (const s of ["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "EM_ROTA", "ENTREGUE", "ENCERRADO"]) {
-  conferir(`${s} -> edita`, avaliarEdicao({ status: s, source: "PRESENCIAL" }, DONO).modo, "COMPLETO");
+  conferir(`${s} -> edita (janela aberta em 17/09)`, avaliarEdicao({ status: s, source: "PRESENCIAL" }, DONO).modo, "COMPLETO");
 }
+// Cancelado e "pedido que ainda não é pedido" continuam fora — e status novo
+// que ninguém classificou entra FECHADO, que é o lado seguro.
 for (const s of ["CANCELADO", "CANCELLED", "CANCELED", "AGUARDANDO_PAGAMENTO", "CRIANDO_IA", "STATUS_QUE_NAO_EXISTE"]) {
   conferir(`${s} -> bloqueado`, avaliarEdicao({ status: s, source: "PRESENCIAL" }, DONO).modo, "BLOQUEADO");
 }

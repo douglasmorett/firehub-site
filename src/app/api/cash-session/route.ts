@@ -10,6 +10,7 @@ import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 // Só o fechamento imprime sozinho. O cupom de abertura continua em
 // lib/cupom-do-caixa, para o botão "imprimir de novo" do histórico.
 import { cupomDeFechamentoDeCaixa } from "@/lib/cupom-do-caixa";
+import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { enfileirarCupomDoCaixa } from "@/lib/imprimir-caixa";
 
 async function getUser(session: any) {
@@ -62,6 +63,19 @@ async function calcularEsperadoDoTurno(
   let pendentesQuantidade = 0;
   let movimentacaoEntradas = 0;
   let movimentacaoSaidas = 0;
+  // ── O RETRATO DO TURNO ───────────────────────────────────────────────────
+  //
+  // Nada disto entra em conta nenhuma: é o que o papel do fechamento precisa
+  // para o lojista entender o turno sem abrir o sistema. Venda por canal,
+  // quantos pedidos, ticket médio, taxa de entrega, desconto que a LOJA deu,
+  // sangria/reforço um a um e o que foi cancelado.
+  const porCanal = new Map<string, { qtd: number; valor: number }>();
+  let qtdPedidos = 0;
+  let vendaBruta = 0;
+  let taxaEntregaTotal = 0;
+  let descontoDaLoja = 0;
+  let movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date }[] = [];
+  let cancelados = { qtd: 0, valor: 0 };
   if (openSession) {
     const orders = await prisma.customerOrder.findMany({
       where: {
@@ -73,8 +87,25 @@ async function calcularEsperadoDoTurno(
         status: { notIn: ["CANCELADO", "CRIANDO_IA"] },
         createdAt: { gte: openSession.openedAt },
       },
-      select: { status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true, openDeliveryChannel: true, discountDetails: true },
+      // Os campos de identificação de canal (ifood*, openDelivery*) entram
+      // porque `chaveDoCanal` lê todos eles: sem um deles, o pedido do parceiro
+      // cai em "Outro canal" no papel do fechamento.
+      select: { status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true, openDeliveryChannel: true, discountDetails: true,
+        ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true },
     });
+
+    // ── DE ONDE VEIO A VENDA DO TURNO ──────────────────────────────────────
+    //
+    // A conferência responde "quanto tem na gaveta". Não responde "o turno
+    // vendeu quanto, e por onde" — e é isso que o lojista quer saber quando
+    // olha o papel do fechamento no dia seguinte. Some aqui, no mesmo laço que
+    // já lê os pedidos, para não custar uma segunda varredura.
+    const contarNoCanal = (chave: string, valor: number) => {
+      const atual = porCanal.get(chave) || { qtd: 0, valor: 0 };
+      atual.qtd += 1;
+      atual.valor += valor;
+      porCanal.set(chave, atual);
+    };
 
     // Uma parte de pagamento (do balcão dividido ou da baixa da mesa) na sua
     // forma. A mesma régua do laço abaixo, para as duas nunca divergirem.
@@ -95,6 +126,20 @@ async function calcularEsperadoDoTurno(
     for (const o of orders) {
       const pm = (o.paymentMethod || "").toLowerCase();
       const src = ((o as any).source || "").toUpperCase();
+
+      // Antes de qualquer `continue`: o retrato do turno conta TODO pedido,
+      // inclusive o de mesa e o que sai da conferência. Contar depois dos
+      // desvios faria o papel dizer que o turno vendeu menos do que vendeu.
+      qtdPedidos += 1;
+      vendaBruta += o.totalAmount || 0;
+      taxaEntregaTotal += o.deliveryFee || 0;
+      descontoDaLoja += Number((o as any).discountMerchant || 0);
+      // Mesa não tem `tableNumber` selecionado aqui — quem prova que é mesa é
+      // a sessão vinculada.
+      contarNoCanal(
+        (o as any).tableSessionId ? "Mesa" : canalDoPedido(o as any).nome,
+        o.totalAmount || 0
+      );
 
       // ── PEDIDO DE MESA: O DINHEIRO ESTÁ NA MESA, NÃO NO PEDIDO ──────────
       //
@@ -355,16 +400,37 @@ async function calcularEsperadoDoTurno(
       if (await temEstruturaDeCaixa()) {
         const movs = await prisma.cashMovement.findMany({
           where: { cashSessionId: openSession.id, franchiseeId: targetId },
-          select: { tipo: true, valor: true },
+          // `descricao` e `createdAt` entram para o papel do fechamento poder
+          // listar sangria por sangria, com hora e motivo. O total sozinho
+          // ("Sangrias R$ 800,00") não deixa ninguém conferir nada.
+          select: { tipo: true, valor: true, descricao: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
         });
         for (const m of movs) {
           if (m.tipo === "ENTRADA") { movimentacaoEntradas += m.valor; expected.cash += m.valor; }
           else { movimentacaoSaidas += m.valor; expected.cash -= m.valor; }
+          movimentacoes.push({ tipo: m.tipo, valor: m.valor, descricao: m.descricao || null, hora: m.createdAt });
         }
         expected.total += movimentacaoEntradas - movimentacaoSaidas;
       }
     } catch (e: any) {
       console.error("[Caixa] Não consegui somar as movimentações do turno:", e?.message);
+    }
+
+    // ── O QUE FOI CANCELADO NO TURNO ──────────────────────────────────────
+    //
+    // Cancelado não entra em conta nenhuma — e é justamente por isso que
+    // precisa aparecer. "Sumiram R$ 300 de venda" quase sempre é cancelamento,
+    // e sem a linha no papel o lojista vai procurar o dinheiro na gaveta.
+    try {
+      const cancel = await prisma.customerOrder.aggregate({
+        where: { franchiseeId: targetId, status: "CANCELADO", createdAt: { gte: openSession.openedAt } },
+        _count: { _all: true },
+        _sum: { totalAmount: true },
+      });
+      cancelados = { qtd: cancel._count._all || 0, valor: Number(cancel._sum.totalAmount || 0) };
+    } catch (e: any) {
+      console.error("[Caixa] Não consegui somar os cancelados do turno:", e?.message);
     }
   }
 
@@ -375,6 +441,19 @@ async function calcularEsperadoDoTurno(
     pendentesQuantidade,
     movimentacaoEntradas,
     movimentacaoSaidas,
+    // O retrato do turno — só informação, não entra em conta nenhuma.
+    detalhe: {
+      qtdPedidos,
+      vendaBruta: Number(vendaBruta.toFixed(2)),
+      ticketMedio: qtdPedidos > 0 ? Number((vendaBruta / qtdPedidos).toFixed(2)) : 0,
+      taxaEntregaTotal: Number(taxaEntregaTotal.toFixed(2)),
+      descontoDaLoja: Number(descontoDaLoja.toFixed(2)),
+      porCanal: [...porCanal.entries()]
+        .map(([nome, v]) => ({ nome, qtd: v.qtd, valor: Number(v.valor.toFixed(2)) }))
+        .sort((a, b) => b.valor - a.valor),
+      movimentacoes,
+      cancelados,
+    },
   };
 }
 
@@ -661,6 +740,9 @@ export async function PUT(req: Request) {
   let paraOCupom: {
     esperado: { cash: number; debit: number; credit: number; pix: number; voucher: number; total: number };
     abertoEm: Date; trocoInicial: number;
+    // O retrato do turno vai junto: é o servidor que apura, no mesmo instante
+    // em que grava o fechamento, para o papel não poder divergir do banco.
+    doServidor: Awaited<ReturnType<typeof calcularEsperadoDoTurno>>;
   } | null = null;
   if (openSession) {
     // ── O ESPERADO É RECALCULADO AQUI, NO SERVIDOR ─────────────────────────
@@ -689,6 +771,7 @@ export async function PUT(req: Request) {
       esperado: { cash: expectedCash, debit: expectedDebit, credit: expectedCredit, pix: expectedPix, voucher: expectedVoucher, total: expectedTotal },
       abertoEm: openSession.openedAt,
       trocoInicial: Number(openSession.openingAmount || 0),
+      doServidor,
     };
 
     // Tela velha não é erro — é aviso. Se a divergência for grande, o operador
@@ -774,7 +857,17 @@ export async function PUT(req: Request) {
   // começar a procurar (foi a dúvida do dono no caixa da Hakim, 19/09/2026).
   // Sai depois da finalização dos pedidos da rua, para o papel poder dizer
   // quantos foram dados como entregues junto com o caixa.
-  if (openSession && paraOCupom) {
+  //
+  // ── QUEM DECIDE SE IMPRIME É QUEM ESTÁ FECHANDO ────────────────────────
+  //
+  // O papel saía sempre. Numa loja que fecha o caixa três vezes por dia (troca
+  // de turno) isso é bobina gasta sem ninguém pedir, e numa loja sem
+  // impressora de caixa é fila de impressão enchendo com papel que não sai.
+  // Agora a tela pergunta antes. `imprimir` ausente continua imprimindo: é o
+  // que toda versão anterior do painel manda, e sumir com o papel de quem já
+  // conta com ele seria pior do que gastar bobina.
+  const querImprimir = body?.imprimir !== false;
+  if (openSession && paraOCupom && querImprimir) {
     try {
       await enfileirarCupomDoCaixa(user.targetId, cupomDeFechamentoDeCaixa({
         sessionId: openSession.id,
@@ -793,6 +886,20 @@ export async function PUT(req: Request) {
           },
           diferenca: difference,
           online: { ifood: Number(closingIfoodOnline || 0), food99: Number(closingFood99Online || 0) },
+          cuponsDaPlataforma: {
+            ifood: Number(paraOCupom.doServidor.expected.ifoodCoupons || 0),
+            food99: Number(paraOCupom.doServidor.expected.food99Coupons || 0),
+          },
+          movimentacoes: {
+            entradas: paraOCupom.doServidor.movimentacaoEntradas,
+            saidas: paraOCupom.doServidor.movimentacaoSaidas,
+          },
+          foraDaConferencia: paraOCupom.doServidor.foraDaConferencia,
+          pendentes: {
+            valor: paraOCupom.doServidor.pendentesValor,
+            quantidade: paraOCupom.doServidor.pendentesQuantidade,
+          },
+          detalhe: paraOCupom.doServidor.detalhe,
           finalizadosNoFechamento,
           justificativa: justification || null,
         },

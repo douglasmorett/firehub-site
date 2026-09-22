@@ -853,6 +853,16 @@ model CustomerOrder {
   /// que demorou na cozinha sairia da janela antes de ser finalizado — a
   /// comanda nunca sairia, justamente nos pedidos que mais demoram.
   kdsFinishedAt     DateTime?
+  /// QUAIS TELAS DO KDS já deram baixa neste pedido (ver lib/kds-telas.ts).
+  ///
+  /// `kdsStage` é um campo só, e com a cozinha separada em telas por categoria
+  /// isso fazia a baixa da tela de esfirra finalizar o pedido inteiro: ele
+  /// sumia também da tela de pizza, que nem tinha começado (NIK, 21/09/2026).
+  ///
+  /// Guardando as chaves das telas que já terminaram, o pedido sai só da tela
+  /// de quem deu baixa e o `kdsStage` avança quando a última delas terminar.
+  /// Nulo/vazio = ninguém deu baixa ainda, que é como todo pedido nasce.
+  kdsTelasProntas   Json?
   // === MARCOS DA OPERACAO (base dos relatorios de tempo) ===
   // O pedido so guardava createdAt e updatedAt, e updatedAt e sobrescrito por
   // qualquer edicao — nao dava para saber quanto tempo ele ficou em cada tela

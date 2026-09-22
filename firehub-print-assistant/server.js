@@ -763,6 +763,24 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const comNegrito = (texto, tipo, chave, padrao) =>
     N(tipo, chave, padrao) ? BOLD_ON + texto + BOLD_OFF : texto;
 
+  // ── O CORPO QUE A LOJA ESCOLHEU (Bloco.corpos) ────────────────────────
+  //
+  // Mesmo contrato dos rotulos e dos negritos. A lista de chaves e CURTA de
+  // proposito: corpo por linha muda quantas letras cabem, e secao ja quebrada
+  // na largura da bobina nao pode ser reformatada por fora (ver o comentario
+  // de `Bloco.negritos` em src/lib/comanda-modelo.ts). So entra a linha que e
+  // frase FIXA, sozinha na linha, e cuja largura e calculada por quem a amplia.
+  // Hoje: a faixa de bebida.
+  const TAMANHOS_OK = [1, 1.5, 2, 3];
+  const corposPorTipo = {};
+  for (const bl of (Array.isArray(order.blocos) ? order.blocos : [])) {
+    if (bl && bl.tipo && bl.corpos && typeof bl.corpos === "object") corposPorTipo[bl.tipo] = bl.corpos;
+  }
+  const C = (tipo, chave, padrao) => {
+    const v = Number(corposPorTipo[tipo] && corposPorTipo[tipo][chave]);
+    return TAMANHOS_OK.includes(v) ? v : padrao;
+  };
+
   // ── TEXTO AMPLIADO FORA DO aplicarModelo ──────────────────────────────
   //
   // O layout embutido so tinha DOUBLE_HEIGHT (altura dobrada, largura igual).
@@ -846,6 +864,34 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     const total = Math.max(0, columns - t.length);
     const left = Math.floor(total / 2);
     return " ".repeat(left) + t + " ".repeat(total - left);
+  };
+
+  /**
+   * A mesma faixa, no corpo pedido, JA com o fundo preto e a quebra de linha.
+   *
+   * A largura vira `columns / n` porque em corpo ampliado cabem menos letras:
+   * com a largura cheia a faixa transborda, a impressora quebra sozinha e a
+   * segunda linha sai preta e vazia — pior que a faixa pequena.
+   *
+   * Em 1x devolve exatamente o que `banner()` devolvia, para a loja que
+   * diminuir o aviso receber o papel de sempre, byte a byte.
+   */
+  const bannerNoCorpo = (long, short, mult) => {
+    // Os bytes do preto invertido vao repetidos aqui de proposito: INVERSE_ON
+    // so e declarado la embaixo, junto do desenho dos itens, e depender dele
+    // daqui seria uma armadilha de ordem de declaracao para quem mover a
+    // funcao um dia.
+    const ON = "\x1d\x42\x01", OFF = "\x1d\x42\x00";
+    const n = Number(mult) || 1;
+    const larg = Math.max(8, Math.floor(columns / n));
+    const t = (long.length + 4 <= larg) ? long : short;
+    const total = Math.max(0, larg - t.length);
+    const left = Math.floor(total / 2);
+    const linha = " ".repeat(left) + t + " ".repeat(total - left);
+    if (n <= 1) return ON + linha + OFF + LF;
+    const cmd = GS + "!" + String.fromCharCode(n >= 3 ? 0x22 : n >= 1.5 ? 0x11 : 0x00);
+    const reset = GS + "!" + String.fromCharCode(0);
+    return cmd + ON + linha + OFF + reset + LF;
   };
 
   // Separador horizontal sólido entre itens
@@ -977,16 +1023,44 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     //
     // Emitindo os espacos ANTES do comando de tamanho, sobram 10 colunas e da
     // 5 de cada lado: centro exato. Mesma conta de lib/comanda-modelo.ts.
+    /* ── DESTAQUE MARCADO DE PRETO ──────────────────────────────────────
+     *
+     * Fundo preto com letra branca (GS B 1). É o recurso que a notinha da
+     * Saipos usa para as três linhas que a loja precisa achar de relance no
+     * meio do papel: o tipo do pedido, o nome do cliente e o "PAGO ONLINE".
+     * Negrito sozinho não faz esse trabalho — num papel térmico cheio de
+     * texto ele se perde.
+     *
+     * A tarja ocupa a LARGURA INTEIRA: invertido só no tamanho do texto vira
+     * um retângulo torto no meio da linha. E o recuo entra DENTRO da tarja,
+     * senão o alinhamento centraliza o texto e deixa a faixa deslocada. */
+    const INV_ON = "\x1d\x42\x01";
+    const INV_OFF = "\x1d\x42\x00";
+
     const linha = (texto, f) => {
       const n = Math.min(3, Math.max(1, Number(f.tamanho) || 1));
       const partes = wrap(texto, larguraDe(f.tamanho));
       if (!partes.length) return LF;
       let s = "";
       for (const p of partes) {
+        const largura = larguraDe(f.tamanho);
         const sobra = Math.max(0, columns - Math.round(p.length * n));
         const recuo = f.alinhamento === "centro" ? Math.floor(sobra / 2)
                     : f.alinhamento === "direita" ? sobra
                     : 0;
+        if (f.invertido) {
+          // Em corpo ampliado o recuo é contado em colunas do PRÓPRIO corpo,
+          // porque a tarja inteira sai ampliada — diferente do caminho normal,
+          // em que os espaços saem antes do comando de tamanho.
+          const vaos = Math.max(0, largura - p.length);
+          const antes = f.alinhamento === "centro" ? Math.floor(vaos / 2)
+                      : f.alinhamento === "direita" ? vaos
+                      : 0;
+          const faixa = " ".repeat(antes) + p + " ".repeat(Math.max(0, vaos - antes));
+          s += formatoDe(f.tamanho) + (f.negrito ? BOLD_ON : "") + INV_ON
+             + faixa + INV_OFF + (f.negrito ? BOLD_OFF : "") + RESET + LF;
+          continue;
+        }
         s += " ".repeat(recuo) + formatoDe(f.tamanho) + (f.negrito ? BOLD_ON : "")
            + p + (f.negrito ? BOLD_OFF : "") + RESET + LF;
       }
@@ -1016,13 +1090,41 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       taxaEntrega: "R$ " + Number(order.deliveryFee || 0).toFixed(2).replace(".", ","),
       pagamento: cleanAscii(order.paymentMethod || ""),
       entregador: cleanAscii(order.motoboyName || order.entregador || ""),
+      // Campos que o texto rico oferece na tela. O GEMEO e mapaDeCampos em
+      // src/lib/comanda-modelo.ts: variavel que existe so aqui nao aparece
+      // na previa, e variavel que existe so la imprime vazio no papel.
+      observacao: cleanAscii(order.notes || ""),
+      subtotal: order.subtotal != null ? "R$ " + Number(order.subtotal).toFixed(2).replace(".", ",") : "",
+      desconto: Number(order.discountTotal || 0) > 0 ? "R$ " + Number(order.discountTotal).toFixed(2).replace(".", ",") : "",
+      troco: Number(order.changeAmount || 0) > 0 ? "R$ " + Number(order.changeAmount).toFixed(2).replace(".", ",") : "",
+      // ── Campos da notinha do Frangoso (o layout que ele usava na Saipos) ──
+      //
+      // O GEMEO e mapaDeCampos em src/lib/comanda-modelo.ts: campo que exista
+      // so aqui nao aparece na previa, e campo que exista so la imprime vazio
+      // no papel. Os nomes tem varias grafias porque cada integracao batiza o
+      // seu de um jeito — a ordem e da mais especifica para a mais generica.
+      localizador: cleanAscii(
+        order.localizador || order.ifoodLocalizer || order.ifoodOrderId ||
+        order.openDeliveryReference || order.ifoodReference || ""
+      ),
+      previsao: cleanAscii(order.previsao || order.deliveryWindow || ""),
+      taxaServico: Number(order.serviceFee || 0) > 0
+        ? "R$ " + Number(order.serviceFee).toFixed(2).replace(".", ",") : "",
+      bandeira: cleanAscii(order.bandeira || order.cardBrand || ""),
+      quantidadeDeItens: String(
+        (order.items || []).reduce((s, it) => s + (Number(it.qty || it.quantity || 1) || 1), 0)
+      ),
+      impressoEm: new Date().toLocaleString("pt-BR", {
+        day: "2-digit", month: "2-digit", year: "numeric",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      }),
     };
     const preencher = (t) => String(t || "").replace(/\{(\w+)\}/g, (_, c) => campos[c] || "");
 
     let out = "";
     for (const bl of blocos) {
       if (!bl || bl.ligado === false) continue;
-      const f = { negrito: bl.negrito, tamanho: bl.tamanho, alinhamento: bl.alinhamento };
+      const f = { negrito: bl.negrito, tamanho: bl.tamanho, alinhamento: bl.alinhamento, invertido: bl.invertido };
       switch (bl.tipo) {
         case "numeroPedido":
           if (headerLine) out += linha(headerLine, f);
@@ -1087,6 +1189,44 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           if (t) out += linha(t, f);
           break;
         }
+        // ── TEXTO COM VARIAVEL NO MEIO DA FRASE ──────────────────────────
+        //
+        // A diferenca para o textoLivre acima: la a variavel e trocada dentro
+        // de uma string, entao "Ref: {referencia}" num pedido sem referencia
+        // imprime "Ref:" sozinho — uma palavra orfa no papel.
+        //
+        // Aqui o ROTULO viaja colado a variavel ({texto, campo}) e, quando a
+        // variavel nao tem valor, o pedaco inteiro some, rotulo junto. Linha
+        // que resolveu vazia nao vira linha em branco: sai do papel.
+        //
+        // GEMEO em src/lib/comanda-modelo.ts (resolverLinhaRica), que desenha
+        // a previa da tela. Mudou aqui, mude la — senao a tela passa a mentir
+        // sobre o que vai sair no papel.
+        case "textoRico": {
+          for (const ln of Array.isArray(bl.linhas) ? bl.linhas : []) {
+            let textoDaLinha = "";
+            for (const parte of Array.isArray(ln && ln.partes) ? ln.partes : []) {
+              if (!parte) continue;
+              if (parte.campo) {
+                const v = String(campos[parte.campo] || "").trim();
+                if (!v) continue; // o rotulo some junto
+                textoDaLinha += String(parte.texto || "") + v;
+              } else if (parte.texto) {
+                textoDaLinha += String(parte.texto);
+              }
+            }
+            textoDaLinha = cleanAscii(textoDaLinha).trim();
+            if (textoDaLinha) {
+              out += linha(textoDaLinha, {
+                negrito: ln.negrito,
+                tamanho: ln.tamanho,
+                alinhamento: ln.alinhamento,
+                invertido: ln.invertido,
+              });
+            }
+          }
+          break;
+        }
         case "separador":
           out += RESET + divider;
           break;
@@ -1108,6 +1248,75 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // numero de pedido, "Qtd Pedidos", taxa de entrega nem etiqueta de bebida —
   // e papel que vai para a mao do cliente.
   const ehConta = order.kind === "CONTA_DA_MESA";
+
+  /* ── O PAPEL DO CAIXA NAO E UM PEDIDO ──────────────────────────────────
+   *
+   * Abertura e fechamento de caixa vinham montados COMO pedido (titulo no
+   * lugar do numero, cada linha da conferencia como item), porque era o unico
+   * formato que toda versao instalada sabia imprimir. O contorno funcionou,
+   * mas cobrou caro:
+   *
+   *   - o rodape do fechamento (TOTAL ESPERADO, DIFERENCA, justificativa)
+   *     viajava em `order.notes`, e `notes` so e impresso dentro da secao
+   *     ENTREGA — que exige deliveryType DELIVERY e endereco. Num cupom de
+   *     caixa (BALCAO, sem endereco) ele era descartado em silencio: a linha
+   *     mais importante do fechamento nunca chegou ao papel;
+   *   - o rodape de pedido imprimia "Subtotal", "Desconto" e "Taxa de
+   *     Entrega" num relatorio de caixa, com numeros que nao significam nada
+   *     ali;
+   *   - "CLIENTE / Nome: 19/09/2026 14:32 — Fulano" e "Qtd Pedidos: 1" saiam
+   *     em todo fechamento.
+   *
+   * Agora o servidor manda `relatorio`: uma lista de linhas ja decidida la
+   * (src/lib/cupom-do-caixa.ts), que este bloco imprime como relatorio, sem
+   * passar por nada de pedido. Assistente antigo ignora o campo e continua
+   * imprimindo o formato de pedido de sempre — ninguem fica sem papel por
+   * estar atrasado na versao. */
+  const ehCaixa = String(order.kind || "").startsWith("CAIXA_");
+  if (ehCaixa && Array.isArray(order.relatorio) && order.relatorio.length) {
+    const titulo = cleanAscii(order.dailyOrderNumber || "CAIXA");
+    res += DOUBLE_HEIGHT + BOLD_ON + centerLine(titulo) + BOLD_OFF + DOUBLE_OFF;
+    res += LEFT + divider;
+    if (storeName) res += wrapLines("Estabelecimento: " + cleanAscii(storeName).toUpperCase(), 2);
+    if (order.caixaQuando) res += wrapLines("Emitido em: " + cleanAscii(order.caixaQuando), 2);
+    if (order.caixaOperador) res += wrapLines("Operador: " + cleanAscii(order.caixaOperador), 2);
+    res += divider;
+
+    for (const bruta of order.relatorio) {
+      // String solta vale como linha de texto: e o formato mais simples de o
+      // servidor mandar, e nao quero um cupom em branco se um dia vier assim.
+      const l = typeof bruta === "string" ? { tipo: "texto", texto: bruta } : (bruta || {});
+      const texto = cleanAscii(l.texto == null ? "" : String(l.texto));
+      const valor = l.valor == null ? "" : cleanAscii(String(l.valor));
+
+      if (l.tipo === "separador") { res += divider; continue; }
+      if (l.tipo === "titulo") {
+        res += LF + BOLD_ON + makeHeaderTitle(texto) + BOLD_OFF;
+        res += divider;
+        continue;
+      }
+      if (l.tipo === "destaque") {
+        // Dobrada e em negrito: e a linha que a pessoa procura no papel
+        // (DIFERENCA, TOTAL CONTADO). Em 58 mm o dobrado nao cabe com valor,
+        // entao ali ela sai so em negrito, mas ainda destacada.
+        if (columns >= 42) res += DOUBLE_HEIGHT + BOLD_ON + padLine(texto, valor) + BOLD_OFF + DOUBLE_OFF;
+        else res += BOLD_ON + padLine(texto, valor) + BOLD_OFF;
+        if (l.nota) res += makeBoxText(String(l.nota));
+        continue;
+      }
+      if (l.tipo === "linha") {
+        res += padLine(texto, valor);
+        if (l.nota) res += makeBoxText(cleanAscii(String(l.nota)));
+        continue;
+      }
+      res += wrapLines(texto, 2);
+    }
+
+    res += divider;
+    res += LEFT + FEED + CUT;
+    return Buffer.from(res, "binary");
+  }
+
   const seqNumStr = order.dailyOrderNumber || order.orderSeqNumber || (order.id ? order.id.slice(-4) : "");
   // A palavra ao lado do numero. A loja pode troca-la (bloco numeroPedido,
   // chave "delivery"); trocada, vale para os tres tipos — quem escreve
@@ -1234,20 +1443,54 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     res += LF + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LF;
     marcas.entrega = res.length;
     res += comNegrito(wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2), "entrega", "endereco", false);
-    if (order.notes) {
-      const cleanObs = cleanAscii(order.notes)
-        .replace(/Pedido iFood #[A-Z0-9]+/gi, "")
-        .replace(/🏷️?\s*Desconto R\$[\d.,]+\s*\([^)]*\)/gi, "")
-        .replace(/\|\s*\|/g, "|")
-        .replace(/^[\s|]+|[\s|]+$/g, "")
-        .trim();
-      // A OBSERVACAO EM DESTAQUE: e o que o cliente pediu e o que a loja erra.
-      // Saia do mesmo corpo do endereco, recuada dois espacos, e passava
-      // despercebida. Ver CORPO_DA_OBSERVACAO.
-      if (cleanObs) {
-        res += ampliado(R("entrega", "observacao", "Obs:") + " " + cleanObs, CORPO_DA_OBSERVACAO, { negrito: N("entrega", "observacao", true) });
-      }
-    }
+  }
+
+  /* ── O RECADO DO CLIENTE ────────────────────────────────────────────────
+   *
+   * "Sem queijo por favor", "tirar cebola e pimentao", "bem passado". Ele
+   * viaja em `order.notes`, e ATÉ 20/09/2026 era impresso DENTRO do bloco
+   * acima — o que exigia `deliveryType === "DELIVERY"` E endereço. Em pedido
+   * de RETIRADA, o recado simplesmente não saía: ficava no banco, aparecia no
+   * painel, e a cozinha nunca via.
+   *
+   * Foi a queixa do Frangoso (Salzburg, 19-20/09/2026), que é loja de balcão:
+   * medido no banco, 4 dos 4 pedidos de retirada com recado nos últimos 15
+   * dias imprimiram sem ele — "OBS: Trocar o molho barbecue por molho de
+   * bacon" e "OBS: Tirar cebola e pimentao" entre eles. Não era a Brendi que
+   * deixava de mandar: era o papel que deixava de imprimir.
+   *
+   * Agora sai sempre, em tarja invertida logo antes dos itens, que é onde a
+   * cozinha lê. Fica preso ao bloco ITENS de propósito: é o único bloco que
+   * não pode ser desligado no editor de modelo, então nenhuma loja consegue
+   * ficar sem o recado por causa de um modelo personalizado antigo. */
+  function recadoDoCliente() {
+    if (!order.notes) return "";
+    const linhas = String(order.notes).split("\n");
+
+    // O servidor marca o recado do cliente com 📝 (processBrendiEvent e os
+    // outros tradutores). Quando a marca existe, ela é a resposta exata —
+    // nada de adivinhar por formato. A filtragem acontece ANTES do
+    // cleanAscii, que é quem apaga o emoji.
+    const marcadas = linhas.filter((l) => l.includes("📝"));
+
+    const uteis = (marcadas.length ? marcadas : linhas).filter((l) => {
+      const t = l.trim();
+      if (!t) return false;
+      // Desconto e cupom já saem no bloco de valores; repetir como "recado do
+      // cliente" é confundir a cozinha com contabilidade.
+      if (/-\s*R\$\s*[\d.,]/.test(t)) return false;
+      if (/^🏷️?\s*(Desconto|Cupom)\b/i.test(t)) return false;
+      // "Pedido Brendi #6011" sozinho numa linha é referência interna. Era
+      // por isso que a observação da Brendi começava com o número dela.
+      if (/^Pedido\s+\S+\s*#\S+\s*$/i.test(t)) return false;
+      return true;
+    });
+
+    return cleanAscii(uteis.join(" | "))
+      .replace(/Pedido\s+(iFood|Brendi|99Food|Jotaja|JotaJá|Wabiz)\s*#\S+/gi, "")
+      .replace(/\|\s*\|/g, "|")
+      .replace(/^[\s|]+|[\s|]+$/g, "")
+      .trim();
   }
 
   function getItemEffectivePrice(item, allItems, orderTotalAmount, deliveryFee = 0, discountTotal = 0) {
@@ -1355,6 +1598,36 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // Nada de bebida neste pedido: esta impressora nao cospe papel em branco.
   if (somenteBebidas && itensParaImprimir.length === 0) return null;
 
+  /* ── AGRUPADOS OU SEPARADOS ─────────────────────────────────────────────
+   *
+   * Cinco X-Bacon saem como "5x X-Bacon" (agrupado, o padrao de sempre) ou
+   * como cinco linhas de "1x X-Bacon" (separado).
+   *
+   * Nao e preferencia de estilo: e como a cozinha trabalha. Quem monta lanche
+   * a lanche risca UMA linha por unidade e usa o papel como checklist — com
+   * "5x" numa linha so, o cozinheiro perde a conta no meio do movimento e
+   * manda quatro. Quem embala junto prefere agrupado, que ocupa menos papel.
+   *
+   * A escolha e POR IMPRESSORA (a cozinha separa, o caixa agrupa), vem em
+   * `separarItens` no destino, e o padrao e agrupar — toda loja ja configurada
+   * continua imprimindo exatamente como imprimia.
+   *
+   * Os VALORES nao mudam: o total vem de `order.totalAmount` e o subtotal e
+   * somado de `order.items`, a lista ORIGINAL. Separar so muda o desenho das
+   * linhas. */
+  const itensDesenhados = (() => {
+    if (order.separarItens !== true) return itensParaImprimir;
+    const saida = [];
+    for (const item of itensParaImprimir) {
+      const q = Number(item.qty || item.quantity || 1) || 1;
+      // Fracao (0,5 pizza) e quantidade que nao seja inteira positiva ficam
+      // como estao: repetir "0.5x" cinco vezes nao significaria nada.
+      if (!Number.isInteger(q) || q < 2) { saida.push(item); continue; }
+      for (let i = 0; i < q; i++) saida.push({ ...item, qty: 1, quantity: 1 });
+    }
+    return saida;
+  })();
+
   const INVERSE_ON = "\x1d\x42\x01";
   const INVERSE_OFF = "\x1d\x42\x00";
 
@@ -1383,6 +1656,15 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   res += LF + DOUBLE_HEIGHT + makeHeaderTitle(ehConta ? "CONTA DA MESA" : "RESUMO DO PEDIDO") + DOUBLE_OFF + LF;
   marcas.itens = res.length;
 
+  // O recado vem ANTES da lista: é o que muda o modo de fazer o prato, e
+  // quem lê a comanda de cima para baixo precisa saber disso antes de montar.
+  const recado = ehConta ? "" : recadoDoCliente();
+  if (recado) {
+    res += LF + INVERSE_ON + banner("!! OBSERVACAO DO CLIENTE !!", "!! OBSERVACAO !!") + INVERSE_OFF + LF;
+    res += wrapLines(recado, 2);
+    res += LF;
+  }
+
   if (somenteBebidas) {
     res += LF + INVERSE_ON + banner("!! SO BEBIDAS DESTE PEDIDO !!", "!! SO BEBIDAS !!") + INVERSE_OFF + LF;
   }
@@ -1390,9 +1672,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // A lista de itens e a filtrada; `order.items` continua sendo o segundo
   // argumento de getItemEffectivePrice porque o rateio do desconto so fecha
   // olhando o pedido INTEIRO, nao o pedaco que esta sendo impresso.
-  if (itensParaImprimir.length) {
+  if (itensDesenhados.length) {
     res += boxBorder;
-    itensParaImprimir.forEach((item, idx) => {
+    itensDesenhados.forEach((item, idx) => {
       const qty = item.qty || item.quantity || 1;
       const unitPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
       const price = unitPrice * qty;
@@ -1468,7 +1750,15 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   }
 
   if (hasBeverages && !ehConta) {
-    res += INVERSE_ON + banner("!! ATENCAO: POSSUI BEBIDA NESTE PEDIDO !!", "!! CONTEM BEBIDA !!") + INVERSE_OFF + LF;
+    // Nasce em 2x (DESTAQUE_DO_AVISO_DE_BEBIDA em src/lib/comanda-modelo.ts).
+    // A loja aumenta ou diminui em Impressoras > Personalizar notinha; bebida
+    // esquecida volta como entrega refeita, e a faixa no corpo do resto do
+    // papel se perdia na pilha de comandas do balcao (NIK, 21/09/2026).
+    res += bannerNoCorpo(
+      "!! ATENCAO: POSSUI BEBIDA NESTE PEDIDO !!",
+      "!! CONTEM BEBIDA !!",
+      C("itens", "avisoDeBebida", 2)
+    );
     res += boxBorder;
   }
 
@@ -2440,6 +2730,16 @@ setInterval(async () => {
               // Idem para o bloco da campanha "converter": so no destino da
               // impressora que a loja escolheu.
               campanha: destino.campanha || undefined,
+              // ── O MODELO DE COMANDA DESTA IMPRESSORA ───────────────────
+              //
+              // A loja pode ter varios modelos e apontar um em cada impressora
+              // (a cozinha sem preco, o caixa completo). O servidor manda o
+              // modelo escolhido dentro do destino; quando o destino nao traz
+              // nenhum, vale o job.order.blocos, que e o modelo PADRAO da
+              // loja — exatamente o que este Assistente ja fazia para todas.
+              blocos: Array.isArray(destino.blocos) && destino.blocos.length
+                ? destino.blocos
+                : job.order?.blocos,
             },
             storeName: job.storeName || "FIREHUB",
             copies: Number(destino.copies) > 0 ? Number(destino.copies) : perfil.copies,
@@ -2500,6 +2800,18 @@ app.get("/status", (req, res) => {
     config: currentConfig
   });
 });
+/* Procurar atualizacao AGORA, sem esperar o ciclo de 6 h.
+ *
+ * Serve ao item da bandeja e ao suporte a distancia: quando a loja liga
+ * dizendo "esta imprimindo errado", a primeira pergunta e "qual versao?" e a
+ * segunda e "atualiza". Antes so restava mandar o instalador por WhatsApp. */
+app.post("/atualizar-agora", (req, res) => {
+  // A janela calma nao vale aqui: se alguem pediu, e porque pode.
+  ultimaImpressaoEm = 0;
+  setImmediate(() => { try { verificarAtualizacao(); } catch (e) { logUpdate(`Falha ao procurar atualizacao a pedido: ${e?.message}`); } });
+  res.json({ ok: true, versao: VERSAO_ASSISTENTE, mensagem: "Procurando atualizacao agora. Se houver versao nova, ele instala e volta sozinho." });
+});
+
 // ?fresh=1 refaz a deteccao ignorando o cache — e o que o botao "Atualizar" da
 // tela de Impressoras precisa depois de plugar uma impressora nova.
 app.get("/printers", (req, res) => res.json(listPrintersCached(req.query.fresh === "1")));
@@ -2697,7 +3009,19 @@ async function haOutroAssistenteAntes() {
   return null;
 }
 
+/* Dentro do Electron quem decide isto e o main.js, e a regra dele e melhor:
+ * a copia que RESPONDE fica, e a travada e derrubada. Esta funcao so sabe
+ * "alguem respondeu numa porta anterior, entao eu saio" — e, rodando junto
+ * com a trava do Electron, as duas se anulavam: a nova matava a antiga e a
+ * antiga mandava a nova sair. Dependendo de quem ganhasse a corrida a loja
+ * ficava SEM Assistente nenhum, no meio do movimento. Aqui ela continua
+ * valendo so no `node server.js` solto (harness, diagnostico). */
+function rodandoDentroDoElectron() {
+  return Boolean(process.versions && process.versions.electron);
+}
+
 async function sairSeForDuplicata(momento) {
+  if (rodandoDentroDoElectron()) return;
   const porta = await haOutroAssistenteAntes();
   if (!porta) return;
   console.error(`[PrintServer] Ja existe um Assistente na porta ${porta}; esta copia (porta ${portaAtiva}, ${momento}) sai para nao imprimir em dobro.`);
@@ -2796,6 +3120,25 @@ function primeiroAvistamento(versao) {
   return agora;
 }
 
+/* ── SEM INTERNET NÃO É "DESISTE ATÉ DAQUI A 6 HORAS" ────────────────────
+ *
+ * A checagem acontecia 90 s depois de ligar e depois a cada 6 h. Num PC de
+ * loja isso quase sempre cai na hora errada: o computador liga, o Windows
+ * ainda está subindo a rede, a consulta falha — e o Assistente ficava seis
+ * horas parado numa versão velha com internet perfeita o tempo todo. Era esse
+ * o "ele não atualiza sozinho" das lojas.
+ *
+ * Agora a falha de rede reagenda em 10 min. O flag evita empilhar timers:
+ * sem ele, cada tentativa frustrada deixaria mais um relógio andando. */
+const RETENTAR_SEM_REDE_MS = 10 * 60_000;
+let retomadaAgendada = false;
+function tentarDeNovoQuandoAInternetVoltar(motivo) {
+  if (retomadaAgendada || atualizacaoEmAndamento) return;
+  retomadaAgendada = true;
+  logUpdate(`${motivo} — tento de novo em ${Math.round(RETENTAR_SEM_REDE_MS / 60_000)} min.`);
+  setTimeout(() => { retomadaAgendada = false; verificarAtualizacao(); }, RETENTAR_SEM_REDE_MS);
+}
+
 async function verificarAtualizacao() {
   if (atualizacaoEmAndamento) return;
   let versaoAlvo = null;
@@ -2803,9 +3146,9 @@ async function verificarAtualizacao() {
     const fetchFn = globalThis.fetch || (await import("node-fetch")).default;
     const domain = currentConfig.domain || "firehubfood.com.br";
     const res = await fetchFn(`https://${domain}/api/assistente/versao`, { signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return;
+    if (!res.ok) { tentarDeNovoQuandoAInternetVoltar(`O servidor respondeu HTTP ${res.status} ao perguntar a versão`); return; }
     const info = await res.json();
-    if (!info?.versao || !info?.url) return;
+    if (!info?.versao || !info?.url) { tentarDeNovoQuandoAInternetVoltar("Resposta da versão veio sem versão/url"); return; }
 
     versaoAlvo = info.versao;
     if (!versaoRemotaEhMaisNova(info.versao, VERSAO_LOCAL_UPDATE)) return;
@@ -2916,13 +3259,25 @@ async function verificarAtualizacao() {
     }, 1500);
   } catch (e) {
     logUpdate(`Falha na atualização: ${e?.message}`);
+    atualizacaoEmAndamento = false;
+    if (!versaoAlvo) {
+      // Nem chegou a saber qual é a versão nova: isto é rede, não instalador
+      // ruim. Marcar 24 h aqui era o que congelava a loja numa versão velha
+      // por causa de um PC que ligou antes de o Wi-Fi conectar.
+      tentarDeNovoQuandoAInternetVoltar("Não consegui falar com o servidor para saber a versão");
+      return;
+    }
     // A versão que falhou fica marcada e não é tentada de novo por 24h —
     // sem isso, um instalador corrompido no site viraria download em loop.
-    tentativasDeVersao.set(versaoAlvo || "ultima", Date.now());
-    atualizacaoEmAndamento = false;
+    tentativasDeVersao.set(versaoAlvo, Date.now());
   }
 }
 
-// 90s depois de ligar (deixa a impressão subir primeiro) e a cada 6 horas.
+/* Cadência da checagem.
+ *
+ * 90 s depois de ligar (deixa a impressão subir primeiro) e a cada 6 horas —
+ * mais o reagendamento curto de `tentarDeNovoQuandoAInternetVoltar`, que é
+ * quem cobre o PC de loja que liga sem rede pronta. Sem ele, o primeiro
+ * "sem internet" custava 6 horas de versão velha. */
 setTimeout(verificarAtualizacao, 90_000);
 setInterval(verificarAtualizacao, 6 * 3600_000);

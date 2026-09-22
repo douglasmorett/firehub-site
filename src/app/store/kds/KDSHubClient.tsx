@@ -172,7 +172,11 @@ export default function KDSHubClient() {
             const accent = isProd ? "#f97316" : "#8b5cf6";
             const cats = screen.categoryFilter || [];
             const catParam = cats.length > 0 ? ("&categories=" + encodeURIComponent(cats.join(","))) : "";
-            const telaUrl = "/store/kds/tela?stage=" + screen.stage + "&filter=" + screen.filter + "&name=" + encodeURIComponent(screen.name) + catParam;
+            // `tela` e a identidade da tela na baixa: e ela que permite o
+            // pedido sair DESTA tela e continuar nas outras ate a ultima
+            // terminar (lib/kds-telas.ts). Link salvo antes disto segue
+            // funcionando, com a baixa valendo para o pedido inteiro.
+            const telaUrl = "/store/kds/tela?stage=" + screen.stage + "&filter=" + screen.filter + "&name=" + encodeURIComponent(screen.name) + catParam + "&tela=" + encodeURIComponent(screen.id);
             return (
               <div key={screen.id} style={{
                 background: "#1a1a2e", borderRadius: "14px", padding: "1.5rem",

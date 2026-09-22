@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { ehTelaSemWidget } from "@/lib/telas-sem-widget";
+import { useArrastavel } from "@/lib/useArrastavel";
 import { MessageSquare, X, Send, User, CheckCircle2, Bot, ShieldCheck } from "lucide-react";
 
 export default function HumanSupportFloatingWidget() {
@@ -169,6 +170,10 @@ export default function HumanSupportFloatingWidget() {
     if (min < 60) return `${min} min`;
     return `${Math.floor(min / 60)} h`;
   };
+  // Arrastar tira a bolinha de cima dos botões do pedido sem escondê-la. Fica
+  // aqui em cima, junto dos outros hooks: o `return null` de `escondido` vem
+  // depois, e hook que não roda em toda renderização derruba a tela.
+  const arraste = useArrastavel();
 
   const fetchChats = async () => {
     try {
@@ -253,7 +258,7 @@ export default function HumanSupportFloatingWidget() {
     //
     // Este sobe 76px e ganha um rótulo, para os dois conviverem e cada um dizer
     // o que é. z-index 10000 porque o outro já ocupa 9999.
-    <div style={{ position: "fixed", bottom: "100px", right: "clamp(8px, 4vw, 24px)", zIndex: 10000, fontFamily: "sans-serif" }}>
+    <div style={{ position: "fixed", bottom: "100px", right: "clamp(8px, 4vw, 24px)", zIndex: 10000, fontFamily: "sans-serif", ...arraste.estiloDoContainer }}>
       {/* JANELA DO CHAT DE SUPORTE */}
       {open && (
         <div
@@ -644,7 +649,13 @@ export default function HumanSupportFloatingWidget() {
         />
       )}
       <button
-        onClick={() => { const abrindo = !open; setOpen(abrindo); if (abrindo) { conversaAbertaRef.current = null; setConversaAberta(null); setSelectedChatJid(null); setReplyText(""); setErroDoEnvio(""); if (totalUnread > 0) setAba("fila"); } }}
+        {...arraste.alca}
+        onClick={() => {
+          // Quem acabou de arrastar a bolinha para o lado nao quer a janela de
+          // conversas abrindo em cima do que estava tentando alcancar.
+          if (arraste.arrastou()) return;
+          const abrindo = !open; setOpen(abrindo); if (abrindo) { conversaAbertaRef.current = null; setConversaAberta(null); setSelectedChatJid(null); setReplyText(""); setErroDoEnvio(""); if (totalUnread > 0) setAba("fila"); }
+        }}
         style={{
           width: "56px",
           height: "56px",
@@ -656,9 +667,12 @@ export default function HumanSupportFloatingWidget() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          cursor: "pointer",
+          cursor: "grab",
           position: "relative",
           transition: "transform 0.2s",
+          // Sem isto, no tablet o navegador trata o arraste como rolagem da
+          // página e a bolinha não sai do lugar.
+          touchAction: "none",
         }}
       >
         <MessageSquare size={26} />

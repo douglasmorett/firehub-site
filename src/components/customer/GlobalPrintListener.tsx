@@ -25,6 +25,21 @@ function chavesDoPedido(order: any): string[] {
 
 function isOrderPrinted(order: any): boolean {
   if (!order) return true;
+
+  // ── O CARIMBO DO SERVIDOR VALE PARA TODO MUNDO ──────────────────────────
+  //
+  // `printedAt` é gravado pelo Assistente no POST /api/store/print-queue/ack:
+  // a comanda saiu de verdade, naquela loja, em qualquer máquina. Enquanto
+  // esta linha não existia, a reivindicação daqui morava só no localStorage
+  // DESTE navegador — então o Assistente imprimia pela fila da nuvem, o
+  // navegador não sabia, e imprimia de novo. Como os dois caminhos mandam
+  // para TODAS as impressoras configuradas, a NIK (21/09/2026), que tem duas,
+  // recebia quatro papéis por pedido.
+  //
+  // Vem antes do localStorage de propósito: é a fonte que atravessa reinício
+  // de navegador, troca de PC e aba nova.
+  if (order.printedAt) return true;
+
   if (typeof window === "undefined") return false;
 
   const memorySet = (window as any).__FIREHUB_PRINTED_IDS__ as Set<string> | undefined;
@@ -307,6 +322,31 @@ export default function GlobalPrintListener() {
 
                   if (result.success) {
                     tentativasPorPedido.delete(chavesDoPedido(order)[0] || "");
+                    // ── AVISA O SERVIDOR QUE ESTA COMANDA JÁ SAIU ──────────
+                    //
+                    // Sem isto o carimbo `printedAt` só existia quando quem
+                    // imprimia era o Assistente pela fila da nuvem. Imprimindo
+                    // por aqui, a fila continuava achando o pedido pendente e
+                    // o Assistente imprimia tudo de novo, 3 s depois — a
+                    // segunda via da NIK (21/09/2026).
+                    //
+                    // É o mesmo endpoint que o Assistente usa, e ele é
+                    // idempotente (`printedAt: null` no where): chamar duas
+                    // vezes não faz nada na segunda. Falhar aqui não pode
+                    // derrubar a impressão, que já aconteceu — daí o catch
+                    // mudo.
+                    try {
+                      await fetch("/api/store/print-queue/ack", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          franchiseeId: order.franchiseeId
+                            || (session.user as any)?.ownerId
+                            || (session.user as any)?.id,
+                          ids: [order.id],
+                        }),
+                      });
+                    } catch {}
                   } else if (result.aguardando) {
                     // O Assistente assumiu: o pedido está pendente lá, em
                     // disco, e ele insiste até a impressora responder. A

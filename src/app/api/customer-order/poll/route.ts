@@ -981,6 +981,20 @@ export async function GET(req: NextRequest) {
         totalAmount: true, changeAmount: true,
         discountTotal: true, discountIfood: true, discountMerchant: true, discountDetails: true,
         status: true, source: true, notes: true, kdsStage: true,
+        // ── QUEM JÁ IMPRIMIU, IMPRIMIU: O CARIMBO DO SERVIDOR ─────────────
+        //
+        // Existem DOIS caminhos que imprimem sozinhos e não se conheciam: o
+        // Assistente, que puxa a fila da nuvem a cada 3 s e carimba `printedAt`
+        // no POST /ack, e o NAVEGADOR (GlobalPrintListener), que marcava só no
+        // localStorage da própria máquina. Dois cadernos separados, e os dois
+        // mandam para TODAS as impressoras configuradas — então a mesma comanda
+        // saía duas vezes em cada impressora. Foi a queixa da NIK (21/09/2026),
+        // que tem duas impressoras: quatro papéis por pedido.
+        //
+        // Mandando o carimbo do servidor no feed, o navegador passa a enxergar
+        // o que o Assistente já fez e para de reimprimir. O contrário não
+        // precisa: a fila da nuvem já filtra por `printedAt`.
+        printedAt: true,
         createdAt: true, updatedAt: true, scheduledDatetime: true,
         cancelledBy: true, cancelReason: true, cancelDispute: true,
         motoboyId: true, motoboyFee: true,

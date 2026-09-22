@@ -197,6 +197,8 @@ export default function StoreTopNav({
   const [avisoAbertura, setAvisoAbertura] = useState<{ esperadoTotal: number; esperadoCash: number; abertoEm: string } | null>(null);
   const [closing, setClosing]   = useState(false);
   const [closeWarn, setCloseWarn] = useState(false);
+  // A última caixinha antes de encerrar: imprime o fechamento ou não.
+  const [perguntarImpressao, setPerguntarImpressao] = useState(false);
   const [showPendingWarn, setShowPendingWarn] = useState(false);
   const [pendingDeliveryCount, setPendingDeliveryCount] = useState(0);
   const [diff, setDiff]         = useState(0);
@@ -363,10 +365,13 @@ export default function StoreTopNav({
     const d = totalActual - expected.total;
     setDiff(d);
     if (Math.abs(d) > 0.01) { setCloseWarn(true); return; }
-    doClose();
+    // Último passo antes de encerrar: perguntar se imprime. Vem depois dos
+    // avisos de propósito — quem voltou para corrigir não precisa responder
+    // duas vezes a mesma pergunta.
+    setPerguntarImpressao(true);
   };
 
-  const doClose = async () => {
+  const doClose = async (imprimir: boolean) => {
     setClosing(true);
     await fetch("/api/cash-session", {
       method: "PUT",
@@ -391,6 +396,7 @@ export default function StoreTopNav({
         closingFood99Online: expected.food99Online || 0,
         closingFood99Coupons: expected.food99Coupons || 0,
         difference: diff,
+        imprimir,
       }),
     });
     setClosing(false);
@@ -399,6 +405,7 @@ export default function StoreTopNav({
     setCloseWarn(false);
     setShowPendingWarn(false);
     setShowBlankWarn(false);
+    setPerguntarImpressao(false);
     setActual({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
     startTransition(() => router.refresh());
   };
@@ -532,11 +539,11 @@ export default function StoreTopNav({
   useEffect(() => {
     if (!showCloseModal) return;
     const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !closeWarn && !showPendingWarn && !showBlankWarn) setShowCloseModal(false);
+      if (e.key === "Escape" && !closeWarn && !showPendingWarn && !showBlankWarn && !perguntarImpressao) setShowCloseModal(false);
     };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
-  }, [showCloseModal, closeWarn, showPendingWarn, showBlankWarn]);
+  }, [showCloseModal, closeWarn, showPendingWarn, showBlankWarn, perguntarImpressao]);
 
   return (
     <>
@@ -836,9 +843,49 @@ export default function StoreTopNav({
       )}
 
       {showCloseModal && (
-        <div style={overlay} onClick={() => !closeWarn && !showPendingWarn && setShowCloseModal(false)}>
+        <div style={overlay} onClick={() => !closeWarn && !showPendingWarn && !perguntarImpressao && setShowCloseModal(false)}>
           <div style={{ ...card, maxWidth: 560 }} onClick={e => e.stopPropagation()}>
-            {showPendingWarn ? (
+            {perguntarImpressao ? (
+              /* ── IMPRIME O FECHAMENTO? ──────────────────────────────────
+                 Antes o papel saía sempre, sem perguntar. Loja que troca de
+                 turno três vezes por dia gastava bobina sem pedir, e loja sem
+                 impressora de caixa enchia a fila de impressão com papel que
+                 nunca ia sair. */
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:"2.6rem", marginBottom:8 }}>🧾</div>
+                <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#0F172A" }}>
+                  Deseja imprimir o fechamento desse caixa?
+                </h2>
+                <p style={{ margin:"0 0 14px", fontSize:"0.9rem", color:"#475569", lineHeight:1.5 }}>
+                  Sai o relatório completo do turno: conferência forma por forma, a diferença,
+                  venda por canal, sangrias e reforços e tudo que não passou pela gaveta.
+                </p>
+                <div style={{ background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:12, padding:"12px 14px", margin:"0 0 14px", textAlign:"left", fontSize:"0.84rem", color:"#475569", lineHeight:1.6 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between" }}>
+                    <span>Esperado</span><strong style={{ color:"#0F172A" }}>{fmt(expected.total)}</strong>
+                  </div>
+                  <div style={{ display:"flex", justifyContent:"space-between" }}>
+                    <span>Contado</span><strong style={{ color:"#0F172A" }}>{fmt(totalActual)}</strong>
+                  </div>
+                  <div style={{ display:"flex", justifyContent:"space-between", borderTop:"1px dashed #E2E8F0", marginTop:6, paddingTop:6 }}>
+                    <span>Diferença</span>
+                    <strong style={{ color: Math.abs(diff) < 0.01 ? "#16A34A" : diff < 0 ? "#DC2626" : "#D97706" }}>{fmt(diff)}</strong>
+                  </div>
+                </div>
+                <p style={{ margin:"0 0 1rem", fontSize:"0.76rem", color:"#94A3B8", lineHeight:1.5 }}>
+                  Não imprimindo agora, o caixa encerra do mesmo jeito — e o papel pode sair
+                  depois pelo <strong>Histórico</strong>.
+                </p>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => doClose(false)} disabled={closing} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    {closing ? "Encerrando..." : "Encerrar sem imprimir"}
+                  </button>
+                  <button onClick={() => doClose(true)} disabled={closing} style={{ flex:1, padding:"11px", background:"#16A34A", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    {closing ? "Encerrando..." : "🖨️ Imprimir e encerrar"}
+                  </button>
+                </div>
+              </div>
+            ) : showPendingWarn ? (
               /* ── AVISO: PEDIDOS PENDENTES EM SAIU_ENTREGA ── */
               <div style={{ textAlign:"center" }}>
                 <div style={{ fontSize:"3rem", marginBottom:8 }}>🛵</div>
@@ -1145,7 +1192,7 @@ export default function StoreTopNav({
                   <button onClick={() => setCloseWarn(false)} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     ← Corrigir
                   </button>
-                  <button onClick={doClose} disabled={closing} style={{ flex:1, padding:"11px", background:"#DC2626", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => { setCloseWarn(false); setPerguntarImpressao(true); }} disabled={closing} style={{ flex:1, padding:"11px", background:"#DC2626", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     {closing ? "Encerrando..." : "Encerrar assim mesmo"}
                   </button>
                 </div>
