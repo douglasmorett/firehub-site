@@ -517,7 +517,13 @@ async function montarItensNovos(
 
   const produtos = await prisma.menuProduct.findMany({
     where: { id: { in: pedidos.map((p) => p.menuProductId) }, franchiseeId: lojaId },
-    select: { id: true, name: true, price: true, priceDelivery: true, priceSalao: true, priceTotem: true },
+    select: {
+      id: true, name: true, price: true,
+      priceDelivery: true, priceSalao: true, priceTotem: true,
+      // Sem esta coluna o item trocado sairia pelo preço de tabela enquanto
+      // a vitrine anunciava a promoção.
+      promoPrice: true,
+    },
   });
   const porId = new Map(produtos.map((p) => [p.id, p]));
   const invasores = pedidos.filter((p) => !porId.has(p.menuProductId));

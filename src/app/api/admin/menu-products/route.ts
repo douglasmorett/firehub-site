@@ -290,6 +290,44 @@ export async function GET(req: NextRequest) {
 }
 
 /**
+ * PREÇO PROMOCIONAL: grava só o que é promoção de verdade.
+ *
+ * A regra do campo é uma só — tem que ser MENOR que o preço de venda. Vazio,
+ * zero, negativo e lixo apagam a promoção (é assim que o lojista a encerra:
+ * limpando o campo). Já um número MAIOR OU IGUAL ao preço de venda é recusado
+ * com 400, não zerado em silêncio: a tela impede o caso, então quem chega aqui
+ * assim é uma integração ou um dedo errado — e uma promoção que some sozinha é
+ * pior do que um erro que explica o motivo.
+ *
+ * `precoAtual` é o preço já gravado, para o PUT que muda só a promoção e não
+ * manda `price` no corpo.
+ *
+ * Devolve a mensagem do erro, ou null quando está tudo certo.
+ */
+function saneiaPromocao(dados: any, precoAtual?: number | null): string | null {
+  if (!("promoPrice" in dados)) return null;
+
+  const promo = Number(dados.promoPrice);
+  if (!Number.isFinite(promo) || promo <= 0) {
+    dados.promoPrice = null;
+    return null;
+  }
+
+  const preco = Number(dados.price ?? precoAtual);
+  if (!Number.isFinite(preco) || preco <= 0) {
+    dados.promoPrice = null;
+    return null;
+  }
+
+  if (promo >= preco) {
+    return `O preço promocional (R$ ${promo.toFixed(2)}) precisa ser MENOR que o preço de venda (R$ ${preco.toFixed(2)}).`;
+  }
+
+  dados.promoPrice = promo;
+  return null;
+}
+
+/**
  * Impede que imagem em base64 volte a ser gravada dentro do banco.
  *
  * Era assim que o cardapio publico chegou a 18,7 MB (18,5 MB só de 10 fotos):
@@ -326,6 +364,9 @@ export async function POST(req: NextRequest) {
     ? (bodyFranchiseeId || scope.adminStoreId || scope.storeId)
     : scope.storeId;
 
+  const erroPromo = saneiaPromocao(rest);
+  if (erroPromo) return NextResponse.json({ error: erroPromo }, { status: 400 });
+
   await normalizarImagem(rest);
   const safeComboGroups = await keepOwnComboItems(comboGroups, franchiseeId);
 
@@ -357,12 +398,18 @@ export async function PUT(req: NextRequest) {
 
   const existing = await prisma.menuProduct.findUnique({
     where: { id },
-    select: { id: true, franchiseeId: true },
+    // `price` entra para a conferência da promoção: o PUT que muda só o preço
+    // promocional não manda o preço de venda no corpo, e sem ele não há com o
+    // que comparar.
+    select: { id: true, franchiseeId: true, price: true },
   });
   if (!existing) return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 });
   if (!canTouch(scope, existing.franchiseeId)) {
     return NextResponse.json({ error: "Sem permissão para alterar este produto" }, { status: 403 });
   }
+
+  const erroPromo = saneiaPromocao(updateData, existing.price);
+  if (erroPromo) return NextResponse.json({ error: erroPromo }, { status: 400 });
 
   if (updateData.tags) {
     updateData.tags = JSON.stringify(updateData.tags);

@@ -5,7 +5,7 @@ import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja, idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
-import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
+import { precoMinimoDoProduto, precoVariaPorEscolha, precoMinimoAntesDaPromocao } from "@/lib/preco-combo";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       orderBy: await orderByCardapio(),
       select: {
         id: true, name: true, description: true, price: true, priceTotem: true, imageUrl: true,
-        apenasEmCombo: true, priceSalao: true, priceDelivery: true,
+        apenasEmCombo: true, priceSalao: true, priceDelivery: true, promoPrice: true,
         category: true, isCombo: true, isBeverage: true, tags: true, availableDays: true,
         comboConfig: true,
         comboGroups: {
@@ -91,6 +91,11 @@ export async function GET(req: NextRequest) {
         precoMinimo: minimo,
         // "a partir de" só quando a escolha do cliente pode mudar o valor.
         precoAPartirDe: precoVariaPorEscolha(p as any),
+        // O preço RISCADO, quando o produto está em promoção. Calculado aqui
+        // pela mesma função do cardápio online: num combo o card anuncia o
+        // mínimo, e riscar o preço base ao lado dele compararia dois números
+        // diferentes. Null = sem promoção, e a tela nem desenha o riscado.
+        precoMinimoDe: precoMinimoAntesDaPromocao(p as any),
       };
     });
 

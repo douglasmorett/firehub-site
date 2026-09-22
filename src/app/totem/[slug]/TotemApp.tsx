@@ -208,6 +208,11 @@ type Produto = {
   /** Calculados pela rota do cardápio com a mesma conta do PDV e do delivery. */
   precoMinimo?: number;
   precoAPartirDe?: boolean;
+  /**
+   * PROMOÇÃO: o preço riscado. Vem null quando não há promoção neste canal —
+   * `precoMinimo` já é o promocional, que é o que o totem cobra.
+   */
+  precoMinimoDe?: number | null;
 };
 
 /** Escolhas na tela: { grupoId: { opcaoId: quantidade } }. */
@@ -2368,7 +2373,20 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                       {p.precoAPartirDe && (
                         <span style={{ fontSize: 13, color: "#64748B", fontWeight: 700, textTransform: "uppercase" }}>a partir de</span>
                       )}
-                      <span style={{ fontSize: 24, fontWeight: 800, color: "#16A34A" }}>{formatarPreco(preco)}</span>
+                      {/* Em promoção, o preço de tabela riscado por cima do que o
+                          totem cobra. Quem decide se há promoção é a rota do
+                          cardápio (src/lib/preco-por-canal.ts). */}
+                      {typeof p.precoMinimoDe === "number" && p.precoMinimoDe > preco && (
+                        <span style={{ fontSize: 15, color: "#94A3B8", fontWeight: 700, textDecoration: "line-through" }}>
+                          {formatarPreco(p.precoMinimoDe)}
+                        </span>
+                      )}
+                      <span style={{
+                        fontSize: 24, fontWeight: 800,
+                        color: typeof p.precoMinimoDe === "number" && p.precoMinimoDe > preco ? "#DC2626" : "#16A34A",
+                      }}>
+                        {formatarPreco(preco)}
+                      </span>
                     </div>
 
                     {indisponivel ? (

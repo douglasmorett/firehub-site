@@ -216,7 +216,7 @@ export async function processChatbotAI(
         AND: [{ NOT: { apenasEmCombo: true } }, SEM_PRODUTO_DE_INTEGRACAO],
       },
       select: {
-        id: true, name: true, description: true, price: true, priceDelivery: true, category: true,
+        id: true, name: true, description: true, price: true, priceDelivery: true, promoPrice: true, category: true,
         isCombo: true, isBeverage: true, availableDays: true, tags: true,
         // Sem os grupos, o robô não sabe que o "Nugget" custa R$ 0,00 de base e
         // tem o valor todo nas opções — e acabava lançando o pedido por zero.
@@ -583,6 +583,11 @@ export async function processChatbotAI(
     // fora — o nome vem do canal e classificaria errado.
     const temTagPromo = /promo|promoção|promocao|oferta/i.test(tagsNotice);
     const isPromoItem = !isChannelImport && (
+      // `precoDe` é a promoção DE VERDADE: o preço promocional cadastrado no
+      // produto, já resolvido para o delivery (src/lib/preco-por-canal.ts). O
+      // resto da regra continua valendo para quem marca promoção por etiqueta,
+      // categoria ou nome, que era a única forma antes do campo existir.
+      Number(p.precoDe) > 0 ||
       temTagPromo ||
       /promo|promoção|promocao|oferta do dia|do dia/i.test(rawCleanName) ||
       /promo|promoção|promocao|oferta/i.test(p.category || "")

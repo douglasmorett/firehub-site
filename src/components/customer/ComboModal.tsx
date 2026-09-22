@@ -246,6 +246,14 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
   const unitFinalPrice = basePrice + extraSum;
   const grandTotal = unitFinalPrice * comboQty;
 
+  /**
+   * Produto em promoção? Quem responde é o servidor: `precoDe` (o preço de
+   * tabela, para riscar) só vem quando a promoção vale naquele canal, e
+   * `product.price` já é o promocional — que é o número somado aqui em cima,
+   * então o total do modal sai promocional sem nenhuma conta extra.
+   */
+  const emPromocao = Number((product as any).precoDe) > basePrice;
+
   const handleSubmit = () => {
     if (!allComplete) {
       setAttemptedSubmit(true);
@@ -342,7 +350,17 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               </p>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "#059669" }}>
+              {/* PROMOÇÃO: o preço de tabela vem RISCADO na frente do que vai ser
+                  cobrado, na mesma ordem em que a loja anuncia ("de R$ 54,90 por
+                  R$ 44,90"). `precoDe` chega resolvido do servidor
+                  (src/lib/preco-por-canal.ts) e só existe quando a promoção vale —
+                  o modal não decide nada, repete o par que o card já mostrou. */}
+              {emPromocao && (
+                <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#94A3B8", textDecoration: "line-through" }}>
+                  R$ {Number((product as any).precoDe).toFixed(2).replace(".", ",")}
+                </span>
+              )}
+              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: emPromocao ? "#DC2626" : "#059669" }}>
                 {/* Com preço base 0, o "a partir de" é o MÍNIMO do produto, não a
                     base crua — senão um pastel cujo valor inteiro está no tamanho
                     (Baby R$ 15,90) anuncia "A partir de R$ 0,00" no topo do modal,
@@ -352,6 +370,11 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   ? `R$ ${product.price.toFixed(2).replace(".", ",")}`
                   : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
               </span>
+              {emPromocao && (
+                <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#FFF", background: "#DC2626", padding: "2px 8px", borderRadius: "12px" }}>
+                  🏷️ PROMOÇÃO
+                </span>
+              )}
               {extraSum > 0 && (
                 <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", padding: "2px 8px", borderRadius: "12px" }}>
                   + R$ {extraSum.toFixed(2).replace(".", ",")} adicionais

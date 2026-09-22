@@ -498,6 +498,22 @@ model MenuProduct {
   priceSalao      Float?
   priceDelivery   Float?
   priceTotem      Float?
+  /// PREÇO PROMOCIONAL — o "de R$ 54,90 por R$ 44,90".
+  ///
+  /// Nulo = sem promoção, que é como todo produto já cadastrado continua. Vale
+  /// sobre o preço do CANAL e só quando é MENOR que ele: promoção que sobe o
+  /// preço não é promoção, e um campo apagado pela metade não pode virar
+  /// produto mais caro (nem de graça — zero também não conta). A vitrine
+  /// mostra o preço de tabela riscado e este em evidência.
+  ///
+  /// Quem resolve é src/lib/preco-por-canal.ts, na ORIGEM: o `price` que chega
+  /// às telas já é o promocional, então carrinho, total, comanda, KDS e pedido
+  /// gravado cobram o mesmo número sem ninguém precisar lembrar da promoção.
+  ///
+  /// A COLUNA EXISTE NO BANCO ANTES deste campo: src/lib/garantir-colunas.ts
+  /// roda no boot. Campo no schema com coluna ausente é 500 no cardápio
+  /// inteiro — foi assim que /loja caiu em 24/08/2026.
+  promoPrice      Float?
   cost            Float?
   tags            String?             // JSON array: ["Novo","Mais Vendido","Promoção","Esgotado","Vegano","Picante"]
   availableDays   String?             // JSON array: ["SEG","TER","QUA","QUI","SEX","SAB","DOM"] (null/empty = todos os dias)

@@ -32,7 +32,7 @@ import dynamic from "next/dynamic";
 const ComboModal = dynamic(() => import("./ComboModal"), { ssr: false });
 const PaymentGateway = dynamic(() => import("./PaymentGateway"), { ssr: false });
 import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
-import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
+import { precoMinimoDoProduto, precoVariaPorEscolha, precoMinimoAntesDaPromocao } from "@/lib/preco-combo";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
 import { isStoreOpen } from "@/lib/store-hours";
@@ -48,6 +48,12 @@ type MenuProduct = {
   name: string;
   description: string;
   price: number;
+  /**
+   * PROMOÇÃO: o preço de tabela, para riscar. Vem resolvido do servidor
+   * (src/lib/preco-por-canal.ts) e só existe quando a promoção vale neste
+   * canal — `price` já é o promocional, que é o que o cliente paga.
+   */
+  precoDe?: number | null;
   imageUrl: string | null;
   category: string;
   isCombo?: boolean;
@@ -73,6 +79,46 @@ type CartItem = MenuProduct & {
 // só para sacola gravada no localStorage antes desta correção (vale 6 horas).
 const idDoProduto = (item: { id: string; productId?: string }): string =>
   item.productId || String(item.id).replace(/_\d{13}(?:_\d+)?$/, "");
+
+const emReais = (n: number) => n.toFixed(2).replace(".", ",");
+
+/**
+ * O PREÇO DO CARD — com o "de R$ 54,90 por R$ 44,90" quando há promoção.
+ *
+ * A tela NUNCA decide se o produto está em promoção: ela desenha a que chegou.
+ * Quem resolve é o servidor (src/lib/preco-por-canal.ts), e é por isso que o
+ * riscado nunca pode divergir do que vai ser cobrado — `price` já é o preço
+ * promocional, e o riscado é só enfeite honesto do que ele era.
+ *
+ * Os três lugares que mostram preço no cardápio passam por aqui de propósito:
+ * enquanto cada um desenhava o seu, bastava alguém mexer num para o mesmo
+ * produto aparecer com dois preços em duas telas da mesma loja.
+ */
+function PrecoDoCard({ produto, tamanho, cor }: { produto: any; tamanho: string; cor: string }) {
+  const de = precoMinimoAntesDaPromocao(produto);
+  const agora = precoMinimoDoProduto(produto);
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
+      {precoVariaPorEscolha(produto) && (
+        <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>a partir de</span>
+      )}
+      {de !== null && (
+        <span style={{ fontSize: "0.8rem", color: "#94A3B8", fontWeight: 700, textDecoration: "line-through" }}>
+          R$ {emReais(de)}
+        </span>
+      )}
+      <span style={{ fontWeight: 900, fontSize: tamanho, color: de !== null ? "#DC2626" : cor }}>
+        R$ {emReais(agora)}
+      </span>
+      {de !== null && (
+        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: "#DC2626", borderRadius: "999px", padding: "1px 6px" }}>
+          -{Math.round(((de - agora) / de) * 100)}%
+        </span>
+      )}
+    </span>
+  );
+}
 
 type Franchisee = {
   id: string;
@@ -405,6 +451,10 @@ export default function CustomerStorePage({
       const tags = (p as any).tags || "";
       const name = p.name.toLowerCase();
       const cat = (p.category || "").toLowerCase();
+      // `precoDe` é a promoção DE VERDADE, cadastrada no preço promocional do
+      // produto. O resto continua valendo para quem marca promoção por etiqueta
+      // ou pelo nome da categoria, que é como a loja fazia antes do campo existir.
+      if (Number((p as any).precoDe) > 0) return true;
       return tags.includes("Promoção") || tags.includes("Oferta") || name.includes("promo") || cat.includes("promo");
     });
   }, [activeTodayProducts]);
@@ -3141,10 +3191,7 @@ export default function CustomerStorePage({
                           </div>
                         )}
                         <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "8px" }}>
-                          <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#059669" }}>
-                            {precoVariaPorEscolha(p as any) && <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
-                            R$ {precoMinimoDoProduto(p as any).toFixed(2).replace(".", ",")}
-                          </span>
+                          <PrecoDoCard produto={p} tamanho="1.05rem" cor="#059669" />
                           <button
                             type="button"
                             onClick={e => {
@@ -3237,8 +3284,7 @@ export default function CustomerStorePage({
                           </div>
                         )}
                         <p className="product-price">
-                          {precoVariaPorEscolha(p as any) && <span className="product-price-from">A partir de </span>}
-                          R$ {precoMinimoDoProduto(p as any).toFixed(2).replace(".", ",")}
+                          <PrecoDoCard produto={p} tamanho="1rem" cor="#C62828" />
                         </p>
                       </div>
                       <div className="product-actions">
@@ -3742,10 +3788,7 @@ export default function CustomerStorePage({
                         </span>
                         <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginTop: "2px" }}>{p.name}</div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
-                          <span style={{ fontWeight: 900, fontSize: "0.95rem", color: "#059669" }}>
-                            {precoVariaPorEscolha(p as any) && <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>a partir de </span>}
-                            R$ {precoMinimoDoProduto(p as any).toFixed(2).replace(".", ",")}
-                          </span>
+                          <PrecoDoCard produto={p} tamanho="0.95rem" cor="#059669" />
                         </div>
                       </div>
                     </div>

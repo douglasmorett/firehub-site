@@ -31,7 +31,7 @@ import { aplicarPrecoNoCardapio, type CanalDePreco } from "./preco-por-canal";
  */
 export const SELECT_DO_CARDAPIO = {
   id: true, name: true, price: true, category: true,
-  priceSalao: true, priceDelivery: true, priceTotem: true,
+  priceSalao: true, priceDelivery: true, priceTotem: true, promoPrice: true,
   imageUrl: true, active: true, isCombo: true, isBeverage: true,
   activePDV: true, activeDelivery: true, activeTotem: true, activeGarcom: true,
   // Opcao que so existe dentro de combo: a tela de cadastro precisa do campo

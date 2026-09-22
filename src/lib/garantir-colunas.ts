@@ -32,6 +32,11 @@ const INSTRUCOES = [
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceSalao" DOUBLE PRECISION`,
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceDelivery" DOUBLE PRECISION`,
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceTotem" DOUBLE PRECISION`,
+  // PREÇO PROMOCIONAL: o "de R$ 54,90 por R$ 44,90". Nulo = sem promoção, que
+  // é o estado de todo produto já cadastrado. Vale sobre o preço do canal e só
+  // quando é MENOR que ele — promoção que aumenta o preço não é promoção
+  // (src/lib/preco-por-canal.ts).
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "promoPrice" DOUBLE PRECISION`,
   // A OPÇÃO do combo também tem preço por canal. Quem modela o cardápio como o
   // iFood e o Anota AI põe o preço na opção de tamanho, e o produto fica com
   // preço base zero — nessas lojas as três colunas acima não alcançam nada.
@@ -65,6 +70,7 @@ const ESPERADAS = [
   "MenuProduct.priceSalao",
   "MenuProduct.priceDelivery",
   "MenuProduct.priceTotem",
+  "MenuProduct.promoPrice",
   "MenuProduct.apenasEmCombo",
   "ComboGroup.priceRule",
   "ComboGroupItem.additionalPriceSalao",

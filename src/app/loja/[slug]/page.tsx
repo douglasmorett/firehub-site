@@ -137,6 +137,8 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
         // Consumido logo abaixo por aplicarPrecoNoCardapio e REMOVIDO do
         // payload: o HTML público mostra um preço só, já resolvido.
         priceDelivery: true,
+        // Idem: vira `price` + `precoDe` (o riscado) e some do payload.
+        promoPrice: true,
         imageUrl: true,
         category: true,
         isCombo: true,

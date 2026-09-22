@@ -38,6 +38,23 @@
  * `additionalPriceSalao/Delivery/Totem`. Quem consome o cardápio continua vendo
  * um número só, e o cálculo de combo (src/lib/preco-combo.ts) segue igual: ele
  * soma `price` + `additionalPrice`, e ambos já chegam no preço do canal.
+ *
+ * O PREÇO PROMOCIONAL VEM POR CIMA DE TUDO ISSO
+ *
+ * `promoPrice` é o "de R$ 54,90 por R$ 44,90". Ele não é um quarto canal: é um
+ * desconto sobre o preço daquele canal, e por isso é resolvido DEPOIS — a loja
+ * que cobra R$ 49,90 no delivery e põe promoção de R$ 44,90 tem os dois números
+ * respeitados, na ordem certa.
+ *
+ * A regra é uma só: **só vale se for MENOR que o preço do canal**. Promoção que
+ * sobe o preço não é promoção, e o campo apagado pela metade (zero, negativo,
+ * lixo) não pode virar produto de graça nem produto mais caro. Isso também é o
+ * que faz a promoção nunca ENCARECER um canal que já tinha preço mais baixo que
+ * ela — nesse canal simplesmente não há promoção.
+ *
+ * Quem aplica devolve `precoDe`: o preço de tabela daquele canal, para a
+ * vitrine riscar. Ele só existe quando há promoção ativa — sem ela o campo nem
+ * aparece no payload, e nenhuma tela precisa perguntar se tem promoção.
  */
 
 /** Os canais que podem ter preço próprio. */
@@ -49,16 +66,17 @@ export type ProdutoComPrecos = {
   priceSalao?: number | null;
   priceDelivery?: number | null;
   priceTotem?: number | null;
+  promoPrice?: number | null;
 };
 
 /**
- * O preço deste produto neste canal.
+ * O preço de TABELA deste produto neste canal — antes de qualquer promoção.
  *
  * Zero e negativo NÃO contam como preço cadastrado: um campo apagado pela metade
  * viraria produto de graça no cardápio, e o único jeito de vender algo por zero
  * de propósito continua sendo o `price` normal — que é onde alguém repara.
  */
-export function precoDoCanal(produto: ProdutoComPrecos, canal: CanalDePreco): number {
+export function precoDeTabelaDoCanal(produto: ProdutoComPrecos, canal: CanalDePreco): number {
   const base = Number(produto?.price) || 0;
 
   const doCanal =
@@ -68,6 +86,27 @@ export function precoDoCanal(produto: ProdutoComPrecos, canal: CanalDePreco): nu
 
   const n = Number(doCanal);
   return Number.isFinite(n) && n > 0 ? n : base;
+}
+
+/**
+ * O preço promocional VÁLIDO deste produto neste canal, ou null.
+ *
+ * Válido = número positivo E menor que o preço de tabela do canal. Vazio, zero,
+ * negativo, lixo e "promoção" mais cara que o preço normal viram null — em
+ * nenhum desses casos o cliente deve pagar diferente do que a loja cadastrou.
+ */
+export function promocaoDoCanal(produto: ProdutoComPrecos, canal: CanalDePreco): number | null {
+  const tabela = precoDeTabelaDoCanal(produto, canal);
+  const promo = Number(produto?.promoPrice);
+  return Number.isFinite(promo) && promo > 0 && promo < tabela ? promo : null;
+}
+
+/**
+ * O preço que o cliente PAGA neste canal: a promoção quando ela vale, senão o
+ * preço de tabela do canal.
+ */
+export function precoDoCanal(produto: ProdutoComPrecos, canal: CanalDePreco): number {
+  return promocaoDoCanal(produto, canal) ?? precoDeTabelaDoCanal(produto, canal);
 }
 
 /** Só os campos de preço interessam — qualquer objeto de opção de combo serve. */
@@ -120,13 +159,23 @@ export function aplicarPrecoDaOpcao<T extends OpcaoComPrecos>(
  * saber que existe preço por canal — recebe `price` e pronto. As colunas
  * específicas saem do objeto para não sobrar no payload duas versões do mesmo
  * número, que é como alguém acaba somando a errada.
+ *
+ * Em promoção, `price` é o preço promocional (é o que se paga) e `precoDe`
+ * traz o de tabela, só para a vitrine riscar. Nunca o contrário: quem somar
+ * `price` sem olhar a promoção cobra o valor certo de qualquer jeito.
  */
 export function aplicarPrecoDoCanal<T extends ProdutoComPrecos>(
   produto: T,
   canal: CanalDePreco
-): Omit<T, "priceSalao" | "priceDelivery" | "priceTotem"> & { price: number } {
-  const { priceSalao: _s, priceDelivery: _d, priceTotem: _t, ...resto } = produto as any;
-  return { ...resto, price: precoDoCanal(produto, canal) };
+): Omit<T, "priceSalao" | "priceDelivery" | "priceTotem" | "promoPrice"> & { price: number; precoDe?: number } {
+  const { priceSalao: _s, priceDelivery: _d, priceTotem: _t, promoPrice: _p, ...resto } = produto as any;
+
+  // Sem promoção o campo `precoDe` nem existe: quem desenha a vitrine só
+  // precisa perguntar "tem precoDe?" para saber se risca o preço.
+  const promo = promocaoDoCanal(produto, canal);
+  if (promo === null) return { ...resto, price: precoDeTabelaDoCanal(produto, canal) };
+
+  return { ...resto, price: promo, precoDe: precoDeTabelaDoCanal(produto, canal) };
 }
 
 /**

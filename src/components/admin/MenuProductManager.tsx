@@ -714,6 +714,10 @@ export default function MenuProductManager({
   const [precoDelivery, setPrecoDelivery] = useState("");
   const [precoTotem, setPrecoTotem] = useState("");
   const [abaPrecos, setAbaPrecos] = useState(false);
+  // ─── PREÇO PROMOCIONAL ─────────────────────────────────────────────────
+  // Vazio = sem promoção. Preenchido, TEM QUE SER MENOR que o preço de venda:
+  // é o que a vitrine mostra em evidência, com o preço normal riscado ao lado.
+  const [precoPromocional, setPrecoPromocional] = useState("");
   const [category, setCategory] = useState("Esfihas Salgadas");
   const [imageUrl, setImageUrl] = useState("");
   const [active, setActive] = useState(true);
@@ -849,6 +853,7 @@ export default function MenuProductManager({
   const resetForm = () => {
     setName(""); setDescription(""); setPrice(""); setCost(""); setTags([]);
     setPrecoSalao(""); setPrecoDelivery(""); setPrecoTotem(""); setAbaPrecos(false);
+    setPrecoPromocional("");
     setCategory(dynCategories[0]?.name || "");
     setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setComboGroups([]);
     setPrecosCanalNoCombo(false);
@@ -871,6 +876,9 @@ export default function MenuProductManager({
     // Abre a aba já aberta quando há algo lá dentro — senão o preço diferente
     // fica escondido atrás de um clique e alguém edita o produto sem ver.
     setAbaPrecos(!!(pSalao || pDelivery || pTotem));
+    // Mesma regra: só vira texto o que é promoção de verdade. Zero e nulo
+    // deixam o campo vazio, que é o produto sem promoção.
+    setPrecoPromocional(soSeTiver(p.promoPrice));
     setCost(p.cost != null && p.cost > 0 ? String(p.cost) : "");
     try { setTags(p.tags ? JSON.parse(p.tags) : []); } catch { setTags([]); }
     
@@ -930,8 +938,35 @@ export default function MenuProductManager({
     setEditingId(p.id); setShowForm(true);
   };
 
+  /**
+   * A PROMOÇÃO DIGITADA AGORA — usada pela tela e pelo salvamento.
+   *
+   * A regra é uma só: promoção tem que ser MENOR que o preço de venda. Aqui
+   * ela vira três respostas (tem?, é válida?, está cara demais?) para a tela
+   * não repetir a conta em cada lugar e acabar com duas versões da regra.
+   */
+  const promoDigitada = (() => {
+    const promo = parseFloat(String(precoPromocional).replace(",", "."));
+    const venda = parseFloat(String(price).replace(",", "."));
+    const temPromo = Number.isFinite(promo) && promo > 0;
+    const temVenda = Number.isFinite(venda) && venda > 0;
+    return {
+      valor: temPromo ? promo : null,
+      venda: temVenda ? venda : null,
+      /** Promoção que não é desconto nenhum: igual ou mais cara que o normal. */
+      cara: temPromo && temVenda && promo >= venda,
+      ok: temPromo && temVenda && promo < venda,
+    };
+  })();
+
   const handleSubmit = async () => {
     if (!name || !description || !price) { alert("Preencha nome, descrição e preço."); return; }
+    // O servidor recusa isto com 400 de qualquer jeito (api/admin/menu-products);
+    // aqui o lojista descobre antes de perder o resto do formulário.
+    if (promoDigitada.cara) {
+      alert("O preço promocional precisa ser MENOR que o preço de venda. Corrija ou deixe o campo em branco.");
+      return;
+    }
     if (dynCategories.length === 0) { alert("Cadastre pelo menos uma categoria antes de salvar."); return; }
     if (!category || category.trim() === "") { alert("Selecione uma categoria válida."); return; }
     setLoading(true);
@@ -949,6 +984,8 @@ export default function MenuProductManager({
           priceSalao: precoSalao.trim() ? parseFloat(precoSalao.replace(",", ".")) : null,
           priceDelivery: precoDelivery.trim() ? parseFloat(precoDelivery.replace(",", ".")) : null,
           priceTotem: precoTotem.trim() ? parseFloat(precoTotem.replace(",", ".")) : null,
+          // Campo vazio vira NULO: é assim que a loja ENCERRA a promoção.
+          promoPrice: promoDigitada.ok ? promoDigitada.valor : null,
           cost: cost ? parseFloat(cost) : 0,
           tags: tags.length > 0 ? tags : null,
           availableDays: availableDaysPayload,
@@ -958,7 +995,13 @@ export default function MenuProductManager({
           comboGroups: isCombo ? comboGroups : undefined
         })
       });
-      if (res.ok) { resetForm(); router.refresh(); } else alert("Erro ao salvar.");
+      if (res.ok) { resetForm(); router.refresh(); }
+      else {
+        // A rota diz o motivo (promoção mais cara que o preço de venda, por
+        // exemplo). Engolir a mensagem deixava o lojista sem o que corrigir.
+        const erro = await res.json().catch(() => null);
+        alert(erro?.error || "Erro ao salvar.");
+      }
     } catch { alert("Erro."); }
     finally { setLoading(false); }
   };
@@ -1756,6 +1799,62 @@ export default function MenuProductManager({
                   <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Preço de Venda (R$)</label>
                 </div>
                 <input className="input-field" style={{ height: "44px", boxSizing: "border-box" }} type="number" step="0.01" placeholder="Ex: 9.90" value={price} onChange={e => setPrice(e.target.value)} />
+
+                {/* ─── PREÇO PROMOCIONAL ──────────────────────────────────
+                    Fica COLADO no preço de venda de propósito: os dois são o
+                    "de R$ 54,90 por R$ 44,90" que o cliente vê, e separá-los
+                    em cantos diferentes da tela é o que faz alguém cadastrar
+                    promoção mais cara que o preço normal sem perceber.
+
+                    Vazio = sem promoção, e é assim que ela se encerra. */}
+                <div
+                  style={{
+                    marginTop: 10, padding: "10px 12px", borderRadius: 12,
+                    border: `1.5px solid ${promoDigitada.cara ? "#FCA5A5" : promoDigitada.ok ? "#FDBA74" : "#E2E8F0"}`,
+                    background: promoDigitada.cara ? "#FEF2F2" : promoDigitada.ok ? "linear-gradient(90deg, #FFF7ED 0%, #FFF 100%)" : "#F8FAFC",
+                  }}
+                >
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, color: "#9A3412", fontSize: "0.8rem", marginBottom: 6 }}>
+                    🏷️ Preço promocional (R$)
+                    <span style={{ fontWeight: 600, color: "#94A3B8", fontSize: "0.7rem" }}>opcional</span>
+                  </label>
+
+                  <input
+                    className="input-field"
+                    style={{ height: "42px", boxSizing: "border-box", background: "#FFF" }}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder={promoDigitada.venda ? `menor que ${promoDigitada.venda.toFixed(2)}` : "Ex: 44.90"}
+                    value={precoPromocional}
+                    onChange={e => setPrecoPromocional(e.target.value)}
+                  />
+
+                  {promoDigitada.cara ? (
+                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", fontWeight: 700, color: "#DC2626", lineHeight: 1.4 }}>
+                      ⚠️ A promoção tem que ser MENOR que o preço de venda
+                      {promoDigitada.venda ? ` (R$ ${promoDigitada.venda.toFixed(2).replace(".", ",")})` : ""}. Assim não dá para salvar.
+                    </p>
+                  ) : promoDigitada.ok ? (
+                    <p style={{ margin: "6px 0 0", fontSize: "0.76rem", color: "#475569", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ color: "#94A3B8", fontWeight: 600 }}>No cardápio:</span>
+                      <span style={{ textDecoration: "line-through", color: "#94A3B8", fontWeight: 700 }}>
+                        R$ {promoDigitada.venda!.toFixed(2).replace(".", ",")}
+                      </span>
+                      <strong style={{ color: "#DC2626", fontWeight: 900, fontSize: "0.95rem" }}>
+                        R$ {promoDigitada.valor!.toFixed(2).replace(".", ",")}
+                      </strong>
+                      <span style={{ background: "#DC2626", color: "#FFF", fontWeight: 800, fontSize: "0.68rem", padding: "2px 7px", borderRadius: 999 }}>
+                        -{Math.round(((promoDigitada.venda! - promoDigitada.valor!) / promoDigitada.venda!) * 100)}%
+                      </span>
+                    </p>
+                  ) : (
+                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#94A3B8", lineHeight: 1.4 }}>
+                      Em branco, o produto vende pelo preço normal. Preenchido, o cardápio
+                      mostra o preço de venda riscado e este em destaque.
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* ─── PREÇOS POR CANAL ──────────────────────────────────────
@@ -1813,6 +1912,17 @@ export default function MenuProductManager({
                       Deixe em branco o que não quiser mudar — o canal em branco usa o
                       <strong> Preço de Venda</strong> ali de cima{price ? ` (R$ ${price})` : ""}.
                     </p>
+
+                    {/* A promoção não é um quarto canal: ela desconta o preço DE CADA
+                        canal, e só onde for mais barata que ele. Dito aqui porque é
+                        exatamente onde alguém se pergunta qual dos dois vale. */}
+                    {promoDigitada.ok && (
+                      <p style={{ margin: "-4px 0 12px", fontSize: "0.76rem", color: "#9A3412", background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 8, padding: "8px 10px", lineHeight: 1.45 }}>
+                        🏷️ A promoção de <strong>R$ {promoDigitada.valor!.toFixed(2).replace(".", ",")}</strong> vale em
+                        todo canal cujo preço seja maior que ela. O canal que já cobrar menos
+                        continua com o preço dele.
+                      </p>
+                    )}
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
                       {[
@@ -2953,9 +3063,27 @@ export default function MenuProductManager({
 
                               {/* Preço e Botões */}
                               <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
-                                <span style={{ fontSize: "1rem", fontWeight: 900, color: "#E8360C", whiteSpace: "nowrap", marginRight: "6px" }}>
-                                  R$ {p.price.toFixed(2).replace(".", ",")}
-                                </span>
+                                {/* Em promoção a lista mostra o mesmo par que o cliente vê:
+                                    o preço de venda riscado e o promocional em destaque.
+                                    Sem isso, o lojista olha a lista, lê o preço cheio e
+                                    não tem como saber que o item está em oferta. */}
+                                {Number(p.promoPrice) > 0 && Number(p.promoPrice) < Number(p.price) ? (
+                                  <span style={{ display: "flex", alignItems: "center", gap: "5px", whiteSpace: "nowrap", marginRight: "6px" }}>
+                                    <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#94A3B8", textDecoration: "line-through" }}>
+                                      R$ {p.price.toFixed(2).replace(".", ",")}
+                                    </span>
+                                    <span style={{ fontSize: "1rem", fontWeight: 900, color: "#DC2626" }}>
+                                      R$ {Number(p.promoPrice).toFixed(2).replace(".", ",")}
+                                    </span>
+                                    <span style={{ fontSize: "0.6rem", fontWeight: 800, color: "#FFF", background: "#DC2626", borderRadius: 999, padding: "1px 6px" }}>
+                                      PROMO
+                                    </span>
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: "1rem", fontWeight: 900, color: "#E8360C", whiteSpace: "nowrap", marginRight: "6px" }}>
+                                    R$ {p.price.toFixed(2).replace(".", ",")}
+                                  </span>
+                                )}
 
                                 <button
                                   onClick={() => handleToggleDestaque(p)}

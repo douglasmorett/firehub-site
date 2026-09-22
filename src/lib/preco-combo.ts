@@ -99,6 +99,12 @@ export type ProdutoComCombo = {
   price: number;
   isCombo?: boolean | null;
   comboGroups?: GrupoDeCombo[] | null;
+  /**
+   * Preço de tabela, quando o produto chega em PROMOÇÃO. Posto por
+   * src/lib/preco-por-canal.ts, e só existe quando a promoção vale naquele
+   * canal — `price` já é o promocional.
+   */
+  precoDe?: number | null;
 };
 
 /**
@@ -316,6 +322,23 @@ export function precoVariaPorEscolha(produto: ProdutoComCombo): boolean {
     }
   }
   return false;
+}
+
+/**
+ * O "de R$ X" RISCADO deste card, ou null quando não há promoção.
+ *
+ * Não basta mostrar `precoDe` cru: num combo o card anuncia o MÍNIMO (base +
+ * a opção mais barata de cada pergunta obrigatória), e riscar o preço base ao
+ * lado de um mínimo que inclui opções compararia dois números diferentes — a
+ * loja pareceria estar dando um desconto que não existe, ou escondendo um que
+ * existe. O desconto é o mesmo (`precoDe - price`), então o riscado é o mínimo
+ * de antes da promoção.
+ */
+export function precoMinimoAntesDaPromocao(produto: ProdutoComCombo): number | null {
+  const agora = Number(produto?.price) || 0;
+  const de = Number(produto?.precoDe);
+  if (!Number.isFinite(de) || de <= agora) return null;
+  return arredondar(precoMinimoDoProduto(produto) + (de - agora));
 }
 
 function arredondar(n: number): number {
