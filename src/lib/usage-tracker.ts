@@ -14,9 +14,6 @@ const PRICING = {
   WHATSAPP_UTILITY:   0.08,   // Conversa de utilidade (notificação)
   WHATSAPP_FREE:      0.00,   // Primeiras 1000/mês grátis
 
-  // Gemini 2.5 Flash (R$ — cotação ~5.5)
-  GEMINI_INPUT_PER_1M:  3.30,  // ~$0.60/1M input tokens
-  GEMINI_OUTPUT_PER_1M: 13.20, // ~$2.40/1M output tokens
   GEMINI_VISION_CALL:   0.08,  // Custo médio por chamada vision
 
   // Storage (Vercel Blob)
@@ -62,16 +59,46 @@ export function trackWhatsAppMessage(
 }
 
 // ── Gemini AI Token Tracking ───────────────────────────────────────
+//
+// Preço por modelo em US$ por 1 milhão de tokens (página oficial de preços em
+// 23/09/2026), convertido na mesma cotação ~5.5 do resto do arquivo.
+//
+// A conta antiga cobrava tudo como Gemini 2.5 e não via duas coisas que pesam:
+// - o "pensamento" (`thoughtsTokenCount`), cobrado pelo Google como SAÍDA, não
+//   entrava em lugar nenhum — no robô é de 100 a 1.700 tokens por mensagem,
+//   contra ~60 da resposta;
+// - o pedaço do prompt que veio do cache (`cachedContentTokenCount`, que já está
+//   DENTRO de `promptTokenCount`) custa 10% da entrada, e era cobrado cheio.
+//
+// ⚠️ O gemini-3.6-flash DOBRA em 01/01/2027 (1,50 / 7,50 / 0,15): atualizar aqui.
+const COTACAO_DOLAR = 5.5;
+const PRECO_GEMINI_USD: Record<string, { entrada: number; saida: number; cache: number }> = {
+  "gemini-3.6-flash": { entrada: 0.75, saida: 3.75, cache: 0.075 },
+  "gemini-2.5-flash": { entrada: 0.3, saida: 2.5, cache: 0.03 },
+};
+
+function precoDoModelo(model: string) {
+  // "gemini-2.5-flash-mini" é o rótulo do prompt mínimo, que roda no 2.5.
+  const chave = Object.keys(PRECO_GEMINI_USD).find((k) => model.startsWith(k));
+  // Modelo desconhecido cobra como o mais caro da lista: melhor o painel
+  // mostrar a mais do que esconder custo.
+  return PRECO_GEMINI_USD[chave || "gemini-3.6-flash"];
+}
 
 export function trackGeminiUsage(
   franchiseeId: string,
   model: string,
   inputTokens: number,
   outputTokens: number,
-  metadata?: Record<string, any>
+  metadata?: Record<string, any>,
+  extra?: { thoughtsTokens?: number; cachedTokens?: number }
 ) {
-  const inputCost = (inputTokens / 1_000_000) * PRICING.GEMINI_INPUT_PER_1M;
-  const outputCost = (outputTokens / 1_000_000) * PRICING.GEMINI_OUTPUT_PER_1M;
+  const preco = precoDoModelo(model);
+  const thoughtsTokens = Math.max(0, Number(extra?.thoughtsTokens) || 0);
+  const cachedTokens = Math.min(Math.max(0, Number(extra?.cachedTokens) || 0), inputTokens);
+  const inputCost =
+    (((inputTokens - cachedTokens) * preco.entrada + cachedTokens * preco.cache) / 1_000_000) * COTACAO_DOLAR;
+  const outputCost = (((outputTokens + thoughtsTokens) * preco.saida) / 1_000_000) * COTACAO_DOLAR;
   const totalCost = inputCost + outputCost;
 
   prisma.usageLog.create({
@@ -79,9 +106,9 @@ export function trackGeminiUsage(
       franchiseeId,
       category: "GEMINI_CHAT",
       subCategory: model,
-      quantity: inputTokens + outputTokens,
+      quantity: inputTokens + outputTokens + thoughtsTokens,
       estimatedCost: Math.round(totalCost * 10000) / 10000, // 4 casas decimais
-      metadata: { model, inputTokens, outputTokens, inputCost, outputCost, ...(metadata || {}) },
+      metadata: { model, inputTokens, outputTokens, thoughtsTokens, cachedTokens, inputCost, outputCost, ...(metadata || {}) },
       yearMonth: getYearMonth(),
     },
   }).catch((err) => console.error("[UsageTracker] Gemini log error:", err));

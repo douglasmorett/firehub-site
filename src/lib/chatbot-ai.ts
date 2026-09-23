@@ -8,7 +8,7 @@ import { hojeDaLoja } from "@/lib/cupons-no-banco";
 import fs from "fs";
 
 import { generateDailyOrderNumber } from "@/lib/order-number";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { trackGeminiUsage, trackDivergenciaDePreco } from "@/lib/usage-tracker";
 import { conferirPrecosDitos, extrairPrecosDoTexto, compararTotalDitoComGravado } from "@/lib/precos-ditos";
 import { normalizeStoreHours } from "@/lib/store-hours";
@@ -666,8 +666,14 @@ export async function processChatbotAI(
       if (!seenProductKeys.has(uniqueKey)) {
         seenProductKeys.add(uniqueKey);
 
+        // A promoção de hoje vai por NOME e PREÇO: a linha inteira, com
+        // descrição e opções, já está em COMBOS ou em PRODUTOS logo abaixo.
+        // Repetida aqui, custava o item duas vezes em toda mensagem — na R&D,
+        // 8 mil caracteres de 64 mil.
         if (isPromoItem) {
-          todayPromotions.push(line);
+          todayPromotions.push(
+            `- "${rawCleanName}" ➔ ${varia ? "a partir de " : ""}R$ ${priceFormatted} (descrição e opções na lista de ${isCombo ? "COMBOS" : "PRODUTOS"}, abaixo)`
+          );
         }
         if (isCombo) {
           availableCombos.push(line);
@@ -913,9 +919,9 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
 
   let phoneInstruction = "";
   if (clientPhoneDigits && !clientPhoneDigits.startsWith("55") && !clientPhoneDigits.startsWith("0800")) {
-    phoneInstruction = `\n11. ALERTA DE TELEFONE (MUITO IMPORTANTE): O cliente atual está usando um número de WhatsApp estrangeiro ou virtual (não começa com 55 do Brasil). VOCÊ É OBRIGADO A PEDIR UM NÚMERO DE TELEFONE LOCAL (BRASIL COM DDD) ANTES DE FECHAR O PEDIDO, senão o motoboy não conseguirá ligar para ele na hora da entrega! (Ex: "Como seu número não é do Brasil, me passa um telefone de contato daqui com DDD para o entregador te ligar se precisar?")`;
+    phoneInstruction = `ALERTA DE TELEFONE (MUITO IMPORTANTE): O cliente atual está usando um número de WhatsApp estrangeiro ou virtual (não começa com 55 do Brasil). VOCÊ É OBRIGADO A PEDIR UM NÚMERO DE TELEFONE LOCAL (BRASIL COM DDD) ANTES DE FECHAR O PEDIDO, senão o motoboy não conseguirá ligar para ele na hora da entrega! (Ex: "Como seu número não é do Brasil, me passa um telefone de contato daqui com DDD para o entregador te ligar se precisar?")`;
   } else if (!clientPhoneDigits || clientPhoneDigits.length < 10) {
-    phoneInstruction = `\n11. ALERTA DE TELEFONE (MUITO IMPORTANTE): O sistema não conseguiu capturar o telefone do cliente automaticamente (pode ser uma integração de Instagram/Facebook). SUA PRIMEIRA AÇÃO, ANTES DE QUALQUER OUTRA COISA (ANOTAR PEDIDO OU MANDAR LINK), DEVE SER PERGUNTAR O TELEFONE DE WHATSAPP COM DDD DO CLIENTE! (Ex: "Oi! Pra começarmos o seu atendimento, qual é o seu WhatsApp de contato com DDD para colocarmos no seu pedido?")`;
+    phoneInstruction = `ALERTA DE TELEFONE (MUITO IMPORTANTE): O sistema não conseguiu capturar o telefone do cliente automaticamente (pode ser uma integração de Instagram/Facebook). SUA PRIMEIRA AÇÃO, ANTES DE QUALQUER OUTRA COISA (ANOTAR PEDIDO OU MANDAR LINK), DEVE SER PERGUNTAR O TELEFONE DE WHATSAPP COM DDD DO CLIENTE! (Ex: "Oi! Pra começarmos o seu atendimento, qual é o seu WhatsApp de contato com DDD para colocarmos no seu pedido?")`;
   }
   // MODO DONO: só com o número IGUAL ao cadastrado, DDD incluído.
   //
@@ -956,6 +962,22 @@ ${resumoEmTexto(resumo, user.storeTimezone)}
   }
 
   try {
+    // ── A ORDEM DO PROMPT É DINHEIRO ─────────────────────────────────────────
+    //
+    // O Gemini cobra 10% do preço pelo COMEÇO do prompt que ele viu há pouco
+    // (cache implícito, a partir de 4.096 tokens). Então o que é igual para todo
+    // cliente da loja — regras, dados da loja, cardápio — vem primeiro, e o que
+    // muda a cada conversa — cliente, pedidos, rascunho, endereço — fica no fim.
+    //
+    // Até 23/09/2026 os dados do cliente ficavam no meio, antes do cardápio, e
+    // cada cliente novo pagava o cardápio inteiro de novo — o maior pedaço de
+    // um prompt de 11 a 33 mil tokens. 62% das chamadas chegam menos de 5
+    // minutos depois da anterior da mesma loja (14 dias medidos até 23/09).
+    //
+    // Regra para quem mexer aqui: nada que dependa do cliente ou da mensagem
+    // entra antes da linha "DAQUI PARA BAIXO: ESTA CONVERSA". Nem um número.
+    // (O topo pode mudar com o estado da loja — aberta, fechada, modo dono —,
+    // que dura horas.)
     const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n${ownerContext ? "" : instrucaoDeHorario(estadoAtualDaLoja)}\n\n${identidade}
 
 REGRAS ABSOLUTAS:
@@ -1041,7 +1063,7 @@ ${prazoDaLoja.regra}
     - QUANDO CITAR QUALQUER COMBO OU PRODUTO, VOCÊ É OBRIGADO A COPIAR O VALOR EXATO QUE CONSTA NO BANCO!
     - É PROIBIDO DIVIDIR, SOMAR, CALCULAR OU CHUTAR QUALQUER PREÇO! O valor do item é EXATAMENTE o que está no banco. É PROIBIDO inventar valores diferentes!
     - VOCÊ SÓ PODE OFERECER E REGISTRAR O QUE ESTÁ NA LISTA OFICIAL FORNECIDA. SE O CLIENTE PEDIR UM PRODUTO OU SABOR QUE NÃO EXISTE AQUI, NEGUE COM EDUCAÇÃO E OFEREÇA AS OPÇÕES DISPONÍVEIS.
-    - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.${phoneInstruction}
+    - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
     - Cite APENAS itens/combos reais cadastrados no cardápio abaixo com o seu preço exato oficial e envie o link (${storeLink}). NUNCA invente ou chute um produto ou preço que não seja o cadastrado no banco!
 12. Quando informar preços, fale de forma natural (ex: "24,90 reais").
@@ -1107,7 +1129,7 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
          falta — nunca confirme "por educação".
       d) A tag vai SEMPRE no FINAL da resposta, depois do texto, em uma única linha, sem
          cercas de código (nada de crases) e sem quebrar o JSON em várias linhas.
-    - CAMPO "customerPhone": se o sistema NÃO capturou o WhatsApp do cliente (regra 11) e você
+    - CAMPO "customerPhone": se o sistema NÃO capturou o WhatsApp do cliente (ALERTA DE TELEFONE, no fim) e você
       perguntou o número, coloque o que ele respondeu em "customerPhone" (só dígitos, com DDD).
       Sem esse campo, nesses casos, o pedido NÃO é gravado e o cliente fica esperando comida
       que ninguém está preparando.
@@ -1199,10 +1221,6 @@ ${regraDoPedidoMinimo(fatosDoMinimo)}
     - Você DEVE OBRIGATORIAMENTE responder usando EXATAMENTE a seguinte estrutura de justificativa e postura:
 30. QUANDO O CLIENTE FIZER UMA LIGAÇÃO DE VOZ OU PERGUNTAR POR QUE NÃO ATENDEU A CHAMADA:
     - Responda educadamente com exatamente este tom carinhoso: "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?" (SEM MANDAR LINK!).
-${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS (MUITO IMPORTANTE!):
-    - O pedido rascunho anterior do cliente foi cancelado por ter ficado mais de 20 minutos sem resposta.
-    - Na PRIMEIRA mensagem de retorno do cliente agora, diga neste tom carinhoso e curto: "Que bom que voltou! Como ficou um tempo parado, cancelei aquele pedido. Quer montar de novo? 😊"
-    - Reinicie o atendimento com toda a simpatia!` : ""}
 32. CONSULTAS SOBRE PROMOÇÃO DE AMANHÃ OU DOS DIAS DA SEMANA ("amanhã vai ter promoção?", "quais dias tem?", "é todo dia?"):
     - Você TEM essa informação no cardápio abaixo. É PROIBIDO responder "não sei a de amanhã", "ainda não tenho essa informação" ou qualquer frase de incerteza.
     - SOBRE AMANHÃ: consulte a seção "PROMOÇÕES DE AMANHÃ (${tomorrowDayName})".
@@ -1210,14 +1228,6 @@ ${wasInactivityCancelled ? `31. REGRA DE RETORNO APÓS INATIVIDADE DE 20 MINUTOS
       b) Se a seção estiver vazia, diga com naturalidade que para amanhã não há promoção cadastrada e ofereça o que está disponível hoje. NUNCA invente item ou preço promocional.
     - SOBRE OS DIAS DA SEMANA: consulte "CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA" e informe exatamente os dias que constam ali para ESTA loja. Se não houver cronograma, diga que as promoções variam e ofereça as de hoje.
 
-
-DADOS DO CLIENTE CONVERSANDO AGORA:
-- Primeiro Nome: ${customerFirstName || "NÃO INFORMADO"}
-- Telefone: ${clientPhoneDigits || "Não informado"}
-
-REGRAS CRÍTICAS DE NOME E IDENTIFICAÇÃO DO CLIENTE:
-1. ${customerFirstName ? `O nome CONFIRMADO deste cliente no banco da loja é "${customerFirstName}". Cumprimente-o com simpatia pelo nome!` : `O nome deste cliente NÃO FOI INFORMADO e NÃO CONSTA no cadastro. Você está RIGOROSAMENTE PROIBIDO de inventar, supor ou usar qualquer nome! Cumprimente SEMPRE usando apenas "Oi!", "Olá!", "Boa noite!", "Tudo bem?". NUNCA chame por nenhum nome se ele não estiver confirmado!`}
-2. PROIBIÇÃO ABSOLUTA DE ATRIBUIR PEDIDOS DE OUTROS: Se o cliente veio de um anúncio (ex: "Olá! Posso ter mais informações sobre isso?"), pergunta "quero fazer pedido" ou se não possui pedido cadastrado no seu número de telefone hoje, NUNCA diga que ele tem um pedido em preparação ou em entrega! Acolha a pessoa com simpatia, ofereça ajuda e ENVIE O LINK DO CARDÁPIO DIGITAL DA LOJA: ${storeLink}
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
@@ -1281,16 +1291,27 @@ ${(() => {
 CUPONS VÁLIDOS CADASTRADOS NA LOJA:
 ${availableCouponsText || "NENHUM CUPOM DISPONÍVEL NO MOMENTO."}
 
-PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
-${recentOrdersSummary}
-${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}
 NOSSO CARDÁPIO COMPLETO DA LOJA:
 ${catalogSummary}
+${customPrompt ? `\nINSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}\n` : ""}
+════════ DAQUI PARA BAIXO: ESTA CONVERSA ════════
 
-CARDÁPIO DA SEMANA (para responder "que dia tem X"):
-${weeklyScheduleSummary || "- Promoções diárias conforme cardápio ativo da loja!"}
-${customPrompt ? `INSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}` : ""}
-${addressValidationText}
+DADOS DO CLIENTE CONVERSANDO AGORA:
+- Primeiro Nome: ${customerFirstName || "NÃO INFORMADO"}
+- Telefone: ${clientPhoneDigits || "Não informado"}
+
+REGRAS CRÍTICAS DE NOME E IDENTIFICAÇÃO DO CLIENTE:
+1. ${customerFirstName ? `O nome CONFIRMADO deste cliente no banco da loja é "${customerFirstName}". Cumprimente-o com simpatia pelo nome!` : `O nome deste cliente NÃO FOI INFORMADO e NÃO CONSTA no cadastro. Você está RIGOROSAMENTE PROIBIDO de inventar, supor ou usar qualquer nome! Cumprimente SEMPRE usando apenas "Oi!", "Olá!", "Boa noite!", "Tudo bem?". NUNCA chame por nenhum nome se ele não estiver confirmado!`}
+2. PROIBIÇÃO ABSOLUTA DE ATRIBUIR PEDIDOS DE OUTROS: Se o cliente veio de um anúncio (ex: "Olá! Posso ter mais informações sobre isso?"), pergunta "quero fazer pedido" ou se não possui pedido cadastrado no seu número de telefone hoje, NUNCA diga que ele tem um pedido em preparação ou em entrega! Acolha a pessoa com simpatia, ofereça ajuda e ENVIE O LINK DO CARDÁPIO DIGITAL DA LOJA: ${storeLink}
+${phoneInstruction ? `\n${phoneInstruction}\n` : ""}${wasInactivityCancelled ? `
+RETORNO APÓS INATIVIDADE DE 20 MINUTOS (MUITO IMPORTANTE!):
+    - O pedido rascunho anterior do cliente foi cancelado por ter ficado mais de 20 minutos sem resposta.
+    - Na PRIMEIRA mensagem de retorno do cliente agora, diga neste tom carinhoso e curto: "Que bom que voltou! Como ficou um tempo parado, cancelei aquele pedido. Quer montar de novo? 😊"
+    - Reinicie o atendimento com toda a simpatia!
+` : ""}
+PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
+${recentOrdersSummary}
+${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}${addressValidationText}
 
 Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma ideia só, até uns 150 caracteres, sem repetir o que já foi dito e sem oferta de ajuda no final. Só o resumo do pedido e a lista de preços que o cliente pediu podem ser maiores.`;
 
@@ -1373,27 +1394,44 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
               temperature: 0.35,
               topP: 0.9,
               maxOutputTokens: 3000,
+              // ── O "PENSAMENTO" FICA NO MÉDIO, DE PROPÓSITO ────────────────
+              //
+              // O Gemini 3 pensa antes de responder, e cada token pensado custa
+              // o preço da SAÍDA — cinco vezes o da entrada. No nível MÉDIO (o
+              // padrão) são ~750 tokens por mensagem, contra ~100 da resposta.
+              // Parece o lugar óbvio para economizar, e NÃO é: no A/B de
+              // 23/09/2026 (scratch/ab-do-robo, 45 respostas por braço) o LOW
+              // quase zerou o pensamento, mas errou preço (somou a borda duas
+              // vezes), pediu endereço com a loja fechada e voltou a escrever
+              // em vários parágrafos, com mais de um emoji e oferta de ajuda no
+              // fim. O MÉDIO manteve tudo isso certo. Fica explícito para ninguém
+              // trocar sem repetir o teste. O 2.5 de reserva não aceita
+              // `thinkingLevel` — fica no padrão dele.
+              ...(mName.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM } } : {}),
               abortSignal: controller.signal,
             }
           });
           
           clearTimeout(timeoutId);
           
+          // O custo é registrado mesmo quando a resposta vem VAZIA: o Google
+          // cobra a entrada e o pensamento do mesmo jeito. Fire-and-forget.
+          try {
+            const usage = (response as any)?.usageMetadata;
+            if (usage) {
+              trackGeminiUsage(
+                userId,
+                mName,
+                usage.promptTokenCount || usage.inputTokens || 0,
+                usage.candidatesTokenCount || usage.outputTokens || 0,
+                response?.text ? { remoteJid } : { remoteJid, respostaVazia: true },
+                { thoughtsTokens: usage.thoughtsTokenCount, cachedTokens: usage.cachedContentTokenCount }
+              );
+            }
+          } catch (_) { /* tracking should never break chatbot */ }
+
           if (response && response.text) {
             generatedText = response.text;
-            // Track token usage (fire-and-forget)
-            try {
-              const usage = (response as any).usageMetadata;
-              if (usage) {
-                trackGeminiUsage(
-                  userId,
-                  mName,
-                  usage.promptTokenCount || usage.inputTokens || 0,
-                  usage.candidatesTokenCount || usage.outputTokens || 0,
-                  { remoteJid }
-                );
-              }
-            } catch (_) { /* tracking should never break chatbot */ }
             break;
           }
           // Respondeu sem texto (bloqueio de segurança, resposta vazia): também é falha.
@@ -1667,7 +1705,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
             // ── DE QUEM É ESTE PEDIDO ───────────────────────────────────────
             //
             // Sem telefone no JID (LID não resolvido, Instagram/Facebook), a
-            // regra 11 do prompt manda a IA PEDIR o número — e o que o cliente
+            // o ALERTA DE TELEFONE do prompt manda a IA PEDIR o número — e o que o cliente
             // responde entra aqui pelo payload.
             const telefoneDitoPeloCliente = String(
               orderPayload?.customerPhone || orderPayload?.phone || ""
@@ -1685,7 +1723,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                 console.error(
                   "[Chatbot AI] 🛑 Pedido NÃO gravado: sem telefone utilizável. " +
                     `Loja=${targetFranchiseeId} itens=${orderPayload.items.length}. ` +
-                    "A IA precisa perguntar o WhatsApp do cliente (regra 11)."
+                    "A IA precisa perguntar o WhatsApp do cliente (ALERTA DE TELEFONE do prompt)."
                 );
               } else {
                 resultadoDoSync = await syncAiOrderToDatabase({
@@ -1814,7 +1852,8 @@ REGRA ABSOLUTA E INEGOCIÁVEL: você está sem acesso ao cardápio agora. É PRO
                 "gemini-2.5-flash-mini",
                 usage.promptTokenCount || usage.inputTokens || 0,
                 usage.candidatesTokenCount || usage.outputTokens || 0,
-                { remoteJid, fallback: true }
+                { remoteJid, fallback: true },
+                { thoughtsTokens: usage.thoughtsTokenCount, cachedTokens: usage.cachedContentTokenCount }
               );
             }
           } catch (_) { /* tracking should never break chatbot */ }
