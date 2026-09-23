@@ -92,12 +92,26 @@ export default async function StoreRelatoriosPage() {
         active: true,
         // O que `idsSoDeOpcaoDeCombo` precisa para dizer quem é complemento
         // (borda, adicional): o carimbo, os preços por canal e quem aparece
-        // dentro da pergunta de algum combo.
+        // dentro da pergunta de algum combo. E o preço de cada opção no grupo:
+        // é o valor da borda do balcão e do site, que não o gravam no pedido
+        // (lib/itens-do-relatorio.ts, opcoesDoItem).
         apenasEmCombo: true,
         priceSalao: true,
         priceDelivery: true,
         priceTotem: true,
-        comboGroups: { select: { items: { select: { menuProductId: true } } } },
+        comboGroups: {
+          select: {
+            items: {
+              select: {
+                menuProductId: true,
+                additionalPrice: true,
+                additionalPriceSalao: true,
+                additionalPriceDelivery: true,
+                additionalPriceTotem: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ category: "asc" }, { name: "asc" }]
     });
@@ -193,7 +207,9 @@ export default async function StoreRelatoriosPage() {
     scheduledDatetime: iso(o.scheduledDatetime),
     items: o.items.map((i: any) => {
       const mapas = mapasDe(o.franchiseeId);
-      const opcoes = opcoesDoItem(i, mapas);
+      // O canal decide em que coluna de preço a opção sem preço no pedido
+      // (balcão, site, totem) foi cobrada.
+      const opcoes = opcoesDoItem(i, mapas, chaveDoCanal(o));
       return {
         id: i.id,
         quantity: i.quantity,
