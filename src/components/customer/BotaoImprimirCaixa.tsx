@@ -41,7 +41,7 @@ export default function BotaoImprimirCaixa({ sessionId }: { sessionId: string })
   };
 
   if (estado === "ok") {
-    return <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "#16A34A" }}>✅ Enviado para a impressora</span>;
+    return <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "#0F766E" }}>✅ Enviado para a impressora</span>;
   }
 
   return (
@@ -52,7 +52,7 @@ export default function BotaoImprimirCaixa({ sessionId }: { sessionId: string })
       <button type="button" style={botao} disabled={estado === "enviando"} onClick={() => imprimir("ABERTURA")}>
         🖨️ Abertura
       </button>
-      {erro && <span style={{ fontSize: "0.74rem", color: "#B91C1C", fontWeight: 700 }}>{erro}</span>}
+      {erro && <span style={{ fontSize: "0.74rem", color: "#B71C1C", fontWeight: 700 }}>{erro}</span>}
     </div>
   );
 }

@@ -451,7 +451,7 @@ const ESTILO = `
   transition:background .12s ease, color .12s ease;
 }
 .fh-menu-item:hover{ background:rgba(255,255,255,.07); color:#fff; }
-.fh-menu-item.ativo{ background:#C62828; color:#fff; font-weight:800; }
+.fh-menu-item.ativo{ background:#C92E09; color:#fff; font-weight:800; }
 .fh-menu-item.ativo .fh-menu-icone{ color:#fff; }
 .fh-menu-icone{ flex-shrink:0; color:#94A3B8; }
 .fh-menu-item:hover .fh-menu-icone{ color:#fff; }
@@ -475,14 +475,14 @@ const ESTILO = `
   font-size:.755rem; font-weight:600; line-height:1.3; }
 .fh-menu-filho:hover{ color:#fff; background:rgba(255,255,255,.06); }
 .fh-menu-filho.ativo{ color:#fff; background:rgba(198,40,40,.35); font-weight:800; }
-.fh-menu-ponto{ width:7px; height:7px; border-radius:50%; background:#EF4444; flex-shrink:0; }
+.fh-menu-ponto{ width:7px; height:7px; border-radius:50%; background:#C92E09; flex-shrink:0; }
 .fh-menu-item.ativo .fh-menu-ponto{ background:#fff; }
 .fh-menu-selo{
   font-size:.54rem; font-weight:900; padding:2px 5px; border-radius:4px; flex-shrink:0;
   align-self:center;
-  background:#FEE2E2; color:#991B1B; letter-spacing:.03em;
+  background:#FEE2E2; color:#B71C1C; letter-spacing:.03em;
 }
-.fh-menu-selo.teste{ background:#FEF08A; color:#854D0E; }
+.fh-menu-selo.teste{ background:#FEF08A; color:#92400E; }
 .fh-menu.recolhida .fh-menu-item{ justify-content:center; padding:10px 0; }
 .fh-menu.recolhida .fh-menu-grupo{ margin-bottom:6px; border-top:1px solid #1F2731; padding-top:6px; }
 .fh-menu.recolhida .fh-menu-grupo:first-child{ border-top:none; }
@@ -507,7 +507,7 @@ const ESTILO = `
   background:#fff; border:1px solid #CBD5E1; color:#334155; cursor:pointer;
   box-shadow:0 2px 10px rgba(0,0,0,.25); z-index:61; font-family:inherit;
 }
-.fh-menu-recolher:hover{ background:#C62828; border-color:#C62828; color:#fff; }
+.fh-menu-recolher:hover{ background:#C92E09; border-color:#C92E09; color:#fff; }
 /* No rail de 64px não cabe logo e seta lado a lado: a seta desce. */
 .fh-menu.recolhida .fh-menu-recolher{ top:60px; right:18px; }
 /* O nome da loja não passa por baixo da seta. */

@@ -39,9 +39,9 @@ export default function GrantDaysButton({ userId, storeName }: { userId: string;
       onClick={handleGrant}
       disabled={loading}
       style={{
-        background: "rgba(16,185,129,0.1)",
-        color: "#10B981",
-        border: "1px solid rgba(16,185,129,0.3)",
+        background: "rgba(15, 118, 110,0.1)",
+        color: "#0F766E",
+        border: "1px solid rgba(15, 118, 110,0.3)",
         padding: "4px 8px",
         borderRadius: "6px",
         fontSize: "0.75rem",

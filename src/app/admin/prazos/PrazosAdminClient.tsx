@@ -22,9 +22,9 @@ type Conta = {
 const ZIP = "https://firehubfood.com.br/downloads/FireHub-Prazos-Extensao.zip";
 
 const COR_DO_STATUS: Record<string, { bg: string; fg: string }> = {
-  PILOTO: { bg: "#EFF6FF", fg: "#1D4ED8" },
-  ATIVO: { bg: "#F0FDF4", fg: "#15803D" },
-  BLOQUEADO: { bg: "#FEF2F2", fg: "#B91C1C" },
+  PILOTO: { bg: "#FAF6F2", fg: "#1C1917" },
+  ATIVO: { bg: "#F0FDFA", fg: "#0F766E" },
+  BLOQUEADO: { bg: "#FEF2F2", fg: "#B71C1C" },
   CANCELADO: { bg: "#F1F5F9", fg: "#475569" },
 };
 
@@ -125,7 +125,7 @@ export default function PrazosAdminClient() {
       </a>
 
       {/* ── Como instalar / o que dizer ao piloto ───────────────────────── */}
-      <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: "1.25rem", fontSize: ".85rem", lineHeight: 1.6 }}>
+      <div style={{ background: "#FFF4EF", border: "1px solid #FFD3C2", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: "1.25rem", fontSize: ".85rem", lineHeight: 1.6 }}>
         <div style={{ fontWeight: 800, color: "#9A3412", marginBottom: 4 }}>Como o lojista instala (quem compra pela Cakto recebe isto por e-mail, com dois botões)</div>
         <ol style={{ margin: 0, paddingLeft: "1.2rem", color: "#7C2D12" }}>
           <li>
@@ -163,12 +163,12 @@ export default function PrazosAdminClient() {
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
           <input style={{ ...input, flex: 1 }} placeholder="observações (sistema que usa, quem indicou…)" value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} />
-          <button onClick={criar} disabled={salvando} style={{ ...botao("#FF5722"), padding: "9px 16px", fontSize: ".85rem" }}>
+          <button onClick={criar} disabled={salvando} style={{ ...botao("#E8590C"), padding: "9px 16px", fontSize: ".85rem" }}>
             {salvando ? "Criando…" : "Criar conta"}
           </button>
         </div>
         <div style={{ color: "#94A3B8", fontSize: ".72rem", marginTop: 4 }}>Colunas numéricas: motoboys · lojas incluídas no plano (por plataforma).</div>
-        {erro && <div style={{ color: "#B91C1C", fontWeight: 700, marginTop: 8, fontSize: ".85rem" }}>{erro}</div>}
+        {erro && <div style={{ color: "#B71C1C", fontWeight: 700, marginTop: 8, fontSize: ".85rem" }}>{erro}</div>}
       </div>
 
       {/* ── Lista ───────────────────────────────────────────────────────── */}
@@ -207,7 +207,7 @@ export default function PrazosAdminClient() {
                   </td>
                   <td style={{ padding: "10px 12px" }}>
                     <span style={{ background: cor.bg, color: cor.fg, fontWeight: 800, padding: "3px 8px", borderRadius: 8, fontSize: ".74rem" }}>{c.status}</span>
-                    <div style={{ color: c.config?.roboLigado ? "#15803D" : "#B45309", fontSize: ".72rem", marginTop: 4, fontWeight: 700 }}>
+                    <div style={{ color: c.config?.roboLigado ? "#0F766E" : "#B45309", fontSize: ".72rem", marginTop: 4, fontWeight: 700 }}>
                       {c.config?.roboLigado ? "🤖 robô ligado" : "⏸️ robô desligado"}
                     </div>
                     <div style={{ color: "#64748B", fontSize: ".72rem" }}>modo {c.config?.modo || "auto"}{receitas.length ? ` · painel: ${receitas.join(", ")}` : " · nenhuma coluna marcada"}</div>
@@ -229,13 +229,13 @@ export default function PrazosAdminClient() {
                     <div style={{ fontSize: ".74rem", color: "#475569" }}>
                       🛵 {lojasIfood.length ? lojasIfood.map((l) => {
                         const r = relatoIfood.find((x) => x.id === l.uuid);
-                        return <span key={l.uuid} title={r?.erro || ""} style={{ color: r ? (r.ok ? "#15803D" : "#B91C1C") : "#475569" }}>{l.nome}{r ? (r.ok ? ` ✓${r.minutos}` : " ✗") : ""}</span>;
+                        return <span key={l.uuid} title={r?.erro || ""} style={{ color: r ? (r.ok ? "#0F766E" : "#B71C1C") : "#475569" }}>{l.nome}{r ? (r.ok ? ` ✓${r.minutos}` : " ✗") : ""}</span>;
                       }).reduce((acc: any[], el, i) => (i ? [...acc, " · ", el] : [el]), []) : <span style={{ color: "#94A3B8" }}>nenhuma iFood</span>}
                     </div>
                     <div style={{ fontSize: ".74rem", color: "#475569" }}>
                       🟡 {lojas99.length ? lojas99.map((l) => {
                         const r = relato99.find((x) => x.id === l.shopId);
-                        return <span key={l.shopId} title={r?.erro || ""} style={{ color: r ? (r.ok ? "#15803D" : "#B91C1C") : "#475569" }}>{l.nome}{r ? (r.ok ? ` ✓${r.minutos}` : " ✗") : ""}</span>;
+                        return <span key={l.shopId} title={r?.erro || ""} style={{ color: r ? (r.ok ? "#0F766E" : "#B71C1C") : "#475569" }}>{l.nome}{r ? (r.ok ? ` ✓${r.minutos}` : " ✗") : ""}</span>;
                       }).reduce((acc: any[], el, i) => (i ? [...acc, " · ", el] : [el]), []) : <span style={{ color: "#94A3B8" }}>nenhuma 99Food</span>}
                     </div>
                   </td>
@@ -245,8 +245,8 @@ export default function PrazosAdminClient() {
                         <div><b>{haQuanto(u.visto)}</b>{u.host ? ` · ${u.host}` : ""}{u.versao ? ` · v${u.versao}` : ""}{u.lendo === false ? " · painel sem leitura" : ""}</div>
                         <div>{typeof u.pedidos === "number" ? `${u.pedidos} pedidos → iFood ${u.minutos} min${u.pausar ? " + PAUSAR" : ""}${typeof u.preparo99 === "number" ? ` · 99 preparo ${u.preparo99} min` : ""}` : "sem leitura"}</div>
                         {colunas && <div style={{ color: "#64748B", fontSize: ".75rem" }}>{colunas}</div>}
-                        {u.aplicadoEm && <div style={{ color: u.aplicadoOk === false ? "#B91C1C" : "#15803D", fontSize: ".75rem" }}>aplicado {u.aplicadoOk === false ? "com falha" : "ok"} {haQuanto(u.aplicadoEm)}</div>}
-                        {u.erro && <div style={{ color: "#B91C1C", fontSize: ".75rem" }}>⚠️ {u.erro}</div>}
+                        {u.aplicadoEm && <div style={{ color: u.aplicadoOk === false ? "#B71C1C" : "#0F766E", fontSize: ".75rem" }}>aplicado {u.aplicadoOk === false ? "com falha" : "ok"} {haQuanto(u.aplicadoEm)}</div>}
+                        {u.erro && <div style={{ color: "#B71C1C", fontSize: ".75rem" }}>⚠️ {u.erro}</div>}
                       </>
                     ) : (
                       <span style={{ color: "#94A3B8" }}>extensão nunca conectou</span>
@@ -254,9 +254,9 @@ export default function PrazosAdminClient() {
                   </td>
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {c.status !== "ATIVO" && <button style={botao("#16A34A")} onClick={() => alterar(c.id, { status: "ATIVO" })}>Ativar</button>}
-                      {c.status !== "PILOTO" && <button style={botao("#2563EB")} onClick={() => alterar(c.id, { status: "PILOTO" })}>Piloto</button>}
-                      {c.status !== "BLOQUEADO" && <button style={botao("#DC2626")} onClick={() => alterar(c.id, { status: "BLOQUEADO" })}>Bloquear</button>}
+                      {c.status !== "ATIVO" && <button style={botao("#0F766E")} onClick={() => alterar(c.id, { status: "ATIVO" })}>Ativar</button>}
+                      {c.status !== "PILOTO" && <button style={botao("#1C1917")} onClick={() => alterar(c.id, { status: "PILOTO" })}>Piloto</button>}
+                      {c.status !== "BLOQUEADO" && <button style={botao("#C92E09")} onClick={() => alterar(c.id, { status: "BLOQUEADO" })}>Bloquear</button>}
                       <button style={botao("#475569")} onClick={() => novaSenha(c)}>Nova senha</button>
                     </div>
                   </td>

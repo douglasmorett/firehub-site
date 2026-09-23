@@ -200,8 +200,8 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
   const renderForm = () => {
     if (!editing) return null;
     return (
-      <div style={{ background: "#fff", border: "1.5px solid #C62828", borderRadius: 16, padding: 20, marginBottom: 12, boxShadow: "0 4px 12px rgba(198, 40, 40, 0.08)" }}>
-        <h3 style={{ fontWeight: 800, marginBottom: 16, color: "#C62828", display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ background: "#fff", border: "1.5px solid #C92E09", borderRadius: 16, padding: 20, marginBottom: 12, boxShadow: "0 4px 12px rgba(198, 40, 40, 0.08)" }}>
+        <h3 style={{ fontWeight: 800, marginBottom: 16, color: "#C92E09", display: "flex", alignItems: "center", gap: 8 }}>
           {editingId ? "✏️ Editar Motoboy" : "➕ Novo Motoboy"}
         </h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
@@ -224,12 +224,12 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             Fica ANTES do tipo de pagamento porque é o caminho curto: quem
             já tem a tabela pronta escolhe o nome e não olha mais para
             baixo. Quem está montando a primeira ignora e segue. */}
-        <div style={{ marginBottom: 14, padding: "12px 14px", background: "#F5F3FF", border: "1.5px solid #DDD6FE", borderRadius: 12 }}>
+        <div style={{ marginBottom: 14, padding: "12px 14px", background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3, flexWrap: "wrap" }}>
-            <Bookmark size={15} style={{ color: "#6D28D9" }} />
-            <b style={{ fontSize: "0.9rem", color: "#5B21B6" }}>Acertos salvos</b>
+            <Bookmark size={15} style={{ color: "#334155" }} />
+            <b style={{ fontSize: "0.9rem", color: "#334155" }}>Acertos salvos</b>
           </div>
-          <p style={{ margin: "0 0 10px", fontSize: "0.76rem", color: "#7C3AED", lineHeight: 1.5 }}>
+          <p style={{ margin: "0 0 10px", fontSize: "0.76rem", color: "#475569", lineHeight: 1.5 }}>
             {modelos.length > 0
               ? "Toque no acerto que este entregador vai receber. Os valores entram preenchidos abaixo."
               : "Você ainda não salvou nenhum. Monte o pagamento abaixo e toque em “Salvar este acerto” — aí ele aparece aqui, com nome, para os próximos entregadores."}
@@ -247,21 +247,21 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                       style={{
                         flex: 1, minWidth: 0, textAlign: "left", cursor: "pointer",
                         padding: "10px 12px", borderRadius: 10, fontFamily: "inherit",
-                        border: escolhido ? "2px solid #7C3AED" : "1.5px solid #DDD6FE",
-                        background: escolhido ? "#EDE9FE" : "#fff",
+                        border: escolhido ? "2px solid #475569" : "1.5px solid #E2E8F0",
+                        background: escolhido ? "#F1F5F9" : "#fff",
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: "0.88rem", fontWeight: 800, color: "#4C1D95" }}>{m.nome}</span>
-                        {escolhido && <span style={{ fontSize: "0.68rem", fontWeight: 900, color: "#fff", background: "#7C3AED", borderRadius: 999, padding: "2px 7px" }}>EM USO</span>}
+                        <span style={{ fontSize: "0.88rem", fontWeight: 800, color: "#0F172A" }}>{m.nome}</span>
+                        {escolhido && <span style={{ fontSize: "0.68rem", fontWeight: 900, color: "#fff", background: "#475569", borderRadius: 999, padding: "2px 7px" }}>EM USO</span>}
                       </div>
-                      <div style={{ fontSize: "0.75rem", color: "#6D28D9", marginTop: 2, lineHeight: 1.4 }}>{explicarModelo(m)}</div>
+                      <div style={{ fontSize: "0.75rem", color: "#334155", marginTop: 2, lineHeight: 1.4 }}>{explicarModelo(m)}</div>
                     </button>
                     <button
                       type="button"
                       onClick={() => apagarModelo(m.id)}
                       title={`Apagar o acerto "${m.nome}" da lista`}
-                      style={{ width: 40, borderRadius: 10, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                      style={{ width: 40, borderRadius: 10, border: "1px solid #FCA5A5", background: "#fff", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -275,7 +275,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                 <button
                   type="button"
                   onClick={() => usarModelo("")}
-                  style={{ alignSelf: "flex-start", background: "none", border: "none", color: "#6D28D9", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: "2px 0", fontFamily: "inherit" }}
+                  style={{ alignSelf: "flex-start", background: "none", border: "none", color: "#334155", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: "2px 0", fontFamily: "inherit" }}
                 >
                   Não usar acerto salvo (montar na mão)
                 </button>
@@ -343,7 +343,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
           });
           const problemas = problemasDasFaixas(faixas);
           return (
-            <div style={{ margin: "0 0 12px", padding: "12px 14px", background: "#FFFBF5", borderRadius: 12, border: "1.5px solid #FED7AA" }}>
+            <div style={{ margin: "0 0 12px", padding: "12px 14px", background: "#FFFBF5", borderRadius: 12, border: "1.5px solid #FFD3C2" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
                 <b style={{ fontSize: "0.88rem", color: "#9A3412" }}>🛵 Quanto pagar por faixa de distância</b>
               </div>
@@ -363,9 +363,9 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                     <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#64748B", whiteSpace: "nowrap" }}>km  →  o entregador recebe R$</span>
                     <input type="number" min="0" step="0.5" placeholder="5,00" value={f.valor || ""}
                       onChange={e => mudarFaixa(i, "valor", parseFloat(e.target.value) || 0)}
-                      style={{ width: 86, padding: "7px 8px", borderRadius: 8, border: "1.5px solid #FED7AA", background: "#fff", color: "#9A3412", fontSize: "0.88rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }} />
+                      style={{ width: 86, padding: "7px 8px", borderRadius: 8, border: "1.5px solid #FFD3C2", background: "#fff", color: "#9A3412", fontSize: "0.88rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }} />
                     <button type="button" onClick={() => remover(i)} title="Remover esta faixa"
-                      style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#EF4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", marginLeft: "auto" }}>
+                      style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#C92E09", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", marginLeft: "auto" }}>
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -373,24 +373,24 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
               </div>
 
               <button type="button" onClick={adicionar}
-                style={{ width: "100%", marginTop: 9, padding: "9px", borderRadius: 10, border: "1.5px dashed #FDBA74", background: "#fff", color: "#C2410C", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                style={{ width: "100%", marginTop: 9, padding: "9px", borderRadius: 10, border: "1.5px dashed #FFD3C2", background: "#fff", color: "#9A3412", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <Plus size={14} /> Adicionar faixa de km
               </button>
 
               {faixas.some(f => Number(f.ate) > 0) && problemas.length === 0 && (
-                <p style={{ margin: "9px 0 0", fontSize: "0.74rem", color: "#166534", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
+                <p style={{ margin: "9px 0 0", fontSize: "0.74rem", color: "#0F766E", background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 8, padding: "7px 10px", lineHeight: 1.45 }}>
                   {explicarFaixas(lerFaixasDoMotoboy(faixas))}
                 </p>
               )}
               {problemas.map((x, i) => (
-                <p key={i} style={{ margin: "7px 0 0", fontSize: "0.76rem", color: "#B91C1C", fontWeight: 700 }}>{x}</p>
+                <p key={i} style={{ margin: "7px 0 0", fontSize: "0.76rem", color: "#B71C1C", fontWeight: 700 }}>{x}</p>
               ))}
             </div>
           );
         })()}
 
         {editing.paymentType === "DAILY_PLUS_FEE" && (
-          <div style={{ margin: "0 0 12px", padding: "10px 14px", background: "#EFF6FF", borderRadius: 10, border: "1.5px solid #93C5FD", fontSize: "0.82rem", color: "#1D4ED8" }}>
+          <div style={{ margin: "0 0 12px", padding: "10px 14px", background: "#FAF6F2", borderRadius: 10, border: "1.5px solid #E7DDD3", fontSize: "0.82rem", color: "#1C1917" }}>
             💡 <strong>Diária + Taxa:</strong> O motoboy recebe a diária fixa + o valor da taxa de entrega de cada pedido (iFood ou site). As taxas são somadas automaticamente.
           </div>
         )}
@@ -416,7 +416,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
           const faltaParaSalvar = problemasDoModelo(modeloDoAcerto("x", acerto)).filter((s) => !/nome/i.test(s))[0] || null;
           if (igualAoModelo) {
             return (
-              <p style={{ margin: "0 0 12px", fontSize: "0.76rem", color: "#5B21B6", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 9, padding: "8px 11px" }}>
+              <p style={{ margin: "0 0 12px", fontSize: "0.76rem", color: "#334155", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 9, padding: "8px 11px" }}>
                 🔖 Este entregador está no acerto <b>{daLista!.nome}</b>.
               </p>
             );
@@ -442,8 +442,8 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                   title={faltaParaSalvar || "Guarda este pagamento com um nome, para escolher nos próximos entregadores"}
                   style={{
                     width: "100%", padding: "11px", borderRadius: 10, fontFamily: "inherit",
-                    border: "1.5px dashed #C4B5FD", background: "#fff",
-                    color: faltaParaSalvar ? "#A1A1AA" : "#6D28D9", fontWeight: 800, fontSize: "0.84rem",
+                    border: "1.5px dashed #CBD5E1", background: "#fff",
+                    color: faltaParaSalvar ? "#A1A1AA" : "#334155", fontWeight: 800, fontSize: "0.84rem",
                     cursor: faltaParaSalvar ? "not-allowed" : "pointer",
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
                   }}
@@ -459,11 +459,11 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                   )}
                 </>
               ) : (
-                <div style={{ padding: "12px 13px", borderRadius: 11, border: "1.5px solid #C4B5FD", background: "#F5F3FF" }}>
-                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#4C1D95", marginBottom: 3 }}>
+                <div style={{ padding: "12px 13px", borderRadius: 11, border: "1.5px solid #CBD5E1", background: "#F8FAFC" }}>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#0F172A", marginBottom: 3 }}>
                     Que nome dar a este acerto?
                   </label>
-                  <p style={{ margin: "0 0 8px", fontSize: "0.74rem", color: "#6D28D9", lineHeight: 1.45 }}>
+                  <p style={{ margin: "0 0 8px", fontSize: "0.74rem", color: "#334155", lineHeight: 1.45 }}>
                     É por ele que você vai escolher nos próximos entregadores.
                   </p>
                   <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
@@ -474,20 +474,20 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); salvarComoModelo(); } }}
                       placeholder="Ex.: Tabela padrão"
                       maxLength={40}
-                      style={{ flex: "1 1 160px", minWidth: 0, padding: "10px 11px", borderRadius: 9, border: "1.5px solid #C4B5FD", fontSize: "0.88rem", fontWeight: 700, outline: "none", fontFamily: "inherit" }}
+                      style={{ flex: "1 1 160px", minWidth: 0, padding: "10px 11px", borderRadius: 9, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", fontWeight: 700, outline: "none", fontFamily: "inherit" }}
                     />
                     <button
                       type="button"
                       onClick={salvarComoModelo}
                       disabled={salvandoModelo || !nomeDoAcerto.trim()}
-                      style={{ padding: "10px 18px", borderRadius: 9, border: "none", background: nomeDoAcerto.trim() ? "#7C3AED" : "#C4B5FD", color: "#fff", fontWeight: 800, fontSize: "0.84rem", cursor: nomeDoAcerto.trim() ? "pointer" : "not-allowed", fontFamily: "inherit" }}
+                      style={{ padding: "10px 18px", borderRadius: 9, border: "none", background: nomeDoAcerto.trim() ? "#475569" : "#CBD5E1", color: "#fff", fontWeight: 800, fontSize: "0.84rem", cursor: nomeDoAcerto.trim() ? "pointer" : "not-allowed", fontFamily: "inherit" }}
                     >
                       {salvandoModelo ? "Salvando…" : "Salvar"}
                     </button>
                     <button
                       type="button"
                       onClick={() => { setDandoNome(false); setNomeDoAcerto(""); }}
-                      style={{ padding: "10px 14px", borderRadius: 9, border: "1.5px solid #DDD6FE", background: "#fff", color: "#6D28D9", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer", fontFamily: "inherit" }}
+                      style={{ padding: "10px 14px", borderRadius: 9, border: "1.5px solid #E2E8F0", background: "#fff", color: "#334155", fontWeight: 700, fontSize: "0.84rem", cursor: "pointer", fontFamily: "inherit" }}
                     >
                       Cancelar
                     </button>
@@ -497,7 +497,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                     {["Tabela padrão", "Turno da noite", "Fim de semana", "Moto própria"].map((s) => (
                       <button
                         key={s} type="button" onClick={() => setNomeDoAcerto(s)}
-                        style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #DDD6FE", background: nomeDoAcerto === s ? "#7C3AED" : "#fff", color: nomeDoAcerto === s ? "#fff" : "#6D28D9", fontSize: "0.71rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                        style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #E2E8F0", background: nomeDoAcerto === s ? "#475569" : "#fff", color: nomeDoAcerto === s ? "#fff" : "#334155", fontSize: "0.71rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
                       >{s}</button>
                     ))}
                   </div>
@@ -517,7 +517,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             onChange={e => setEditing(p => ({ ...p, password: e.target.value }))}
             placeholder={editingId ? "Deixe em branco para manter a senha atual" : "Mínimo 6 caracteres (padrão: 123456)"}
           />
-          <div style={{ fontSize: "0.72rem", color: "#6B7280", marginTop: 4 }}>
+          <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 4 }}>
             A senha fica guardada criptografada e não pode mais ser consultada — nem por você. Se o
             entregador esquecer, defina uma nova aqui.
           </div>
@@ -546,7 +546,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
 
   return (
     <div style={{ maxWidth: 700 }}>
-      {msg && <div style={{ padding: "10px 14px", borderRadius: 8, marginBottom: 12, background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", color: msg.startsWith("✅") ? "#16a34a" : "#dc2626", border: `1px solid ${msg.startsWith("✅") ? "#bbf7d0" : "#fecaca"}`, fontSize: "0.85rem" }}>{msg}</div>}
+      {msg && <div style={{ padding: "10px 14px", borderRadius: 8, marginBottom: 12, background: msg.startsWith("✅") ? "#F0FDFA" : "#fef2f2", color: msg.startsWith("✅") ? "#0F766E" : "#C92E09", border: `1px solid ${msg.startsWith("✅") ? "#99F6E4" : "#fecaca"}`, fontSize: "0.85rem" }}>{msg}</div>}
 
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -564,7 +564,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: "100%", padding: "12px 14px 12px 40px", borderRadius: 12, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: "0.95rem", outline: "none", transition: "border 0.2s" }}
-            onFocus={(e) => e.target.style.border = "1px solid #3B82F6"}
+            onFocus={(e) => e.target.style.border = "1px solid #1C1917"}
             onBlur={(e) => e.target.style.border = "1px solid #E2E8F0"}
           />
         </div>
@@ -595,11 +595,11 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
           return (
             <div key={mb.id} style={{ background: "#fff", border: `1.5px solid ${mb.active ? "#E2E8F0" : "#FEE2E2"}`, borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, opacity: mb.active ? 1 : 0.7 }}>
               <div style={{ width: 42, height: 42, borderRadius: 12, background: mb.active ? "#FEF3E2" : "#FEE2E2", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Bike size={20} color={mb.active ? "#C62828" : "#EF4444"} />
+                <Bike size={20} color={mb.active ? "#C92E09" : "#C92E09"} />
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>{mb.name}
-                  {!mb.active && <span style={{ marginLeft: 8, fontSize: "0.7rem", background: "#FEE2E2", color: "#EF4444", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>Inativo</span>}
+                  {!mb.active && <span style={{ marginLeft: 8, fontSize: "0.7rem", background: "#FEE2E2", color: "#C92E09", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>Inativo</span>}
                 </div>
                 <div style={{ fontSize: "0.78rem", color: "#64748B", display: "flex", gap: 12, marginTop: 2, flexWrap: "wrap" }}>
                   {mb.phone && <span><Phone size={11} style={{ marginRight: 3 }} />{mb.phone}</span>}
@@ -613,22 +613,22 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                   {usaPorEntrega(mb.paymentType) && mb.perDeliveryRate ? <span>R${mb.perDeliveryRate.toFixed(2)}/entrega</span> : null}
                   {usaPorKm(mb.paymentType) && mb.perKmRate ? <span>R${mb.perKmRate.toFixed(2)}/km</span> : null}
                   {mb.paymentType === "FAIXA_KM" && (mb.faixasDeKm?.length || 0) > 0 ? <span>{mb.faixasDeKm!.length} faixas de km</span> : null}
-                  {mb.paymentType === "DAILY_PLUS_FEE" && <span style={{ color: "#0369A1" }}>💰 Recebe taxa do pedido</span>}
+                  {mb.paymentType === "DAILY_PLUS_FEE" && <span style={{ color: "#1C1917" }}>💰 Recebe taxa do pedido</span>}
                 </div>
                 {/* Resumo do dia */}
                 {mb.active && (mb.todayDeliveryCount ?? 0) >= 0 && (
                   <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: "0.75rem", flexWrap: "wrap" }}>
-                    <span style={{ background: "#ECFDF5", color: "#059669", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>📦 Hoje: {mb.todayDeliveryCount ?? 0} entregas</span>
-                    {(mb.todayDailyRate ?? 0) > 0 && <span style={{ background: "#EFF6FF", color: "#2563EB", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>📅 Diária: R${(mb.todayDailyRate ?? 0).toFixed(2)}</span>}
-                    {(mb.todayDeliveryFees ?? 0) > 0 && <span style={{ background: "#FFF7ED", color: "#D97706", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>🛵 Taxas: R${(mb.todayDeliveryFees ?? 0).toFixed(2)}</span>}
-                    <span style={{ background: "#F0FDF4", color: "#16A34A", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>💰 Total: R${(mb.todayTotalEarnings ?? 0).toFixed(2)}</span>
+                    <span style={{ background: "#F0FDFA", color: "#0F766E", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>📦 Hoje: {mb.todayDeliveryCount ?? 0} entregas</span>
+                    {(mb.todayDailyRate ?? 0) > 0 && <span style={{ background: "#FAF6F2", color: "#1C1917", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>📅 Diária: R${(mb.todayDailyRate ?? 0).toFixed(2)}</span>}
+                    {(mb.todayDeliveryFees ?? 0) > 0 && <span style={{ background: "#FFF4EF", color: "#B45309", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>🛵 Taxas: R${(mb.todayDeliveryFees ?? 0).toFixed(2)}</span>}
+                    <span style={{ background: "#F0FDFA", color: "#0F766E", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>💰 Total: R${(mb.todayTotalEarnings ?? 0).toFixed(2)}</span>
                   </div>
                 )}
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => toggle(mb)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, color: mb.active ? "#EF4444" : "#16A34A" }}>{mb.active ? "Pausar" : "Ativar"}</button>
-                <button onClick={() => openEdit(mb)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Edit2 size={14} color="#3B82F6" /></button>
-                <button onClick={() => remove(mb.id)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} color="#EF4444" /></button>
+                <button onClick={() => toggle(mb)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, color: mb.active ? "#C92E09" : "#0F766E" }}>{mb.active ? "Pausar" : "Ativar"}</button>
+                <button onClick={() => openEdit(mb)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Edit2 size={14} color="#1C1917" /></button>
+                <button onClick={() => remove(mb.id)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} color="#C92E09" /></button>
               </div>
             </div>
           );

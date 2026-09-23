@@ -32,9 +32,9 @@ const formatDate = (d: string) =>
   new Date(d).toLocaleDateString("pt-BR");
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  PENDING_PAYMENT: { label: "Aguardando Pgto.", color: "#f59e0b" },
-  PAID: { label: "Pago", color: "#10b981" },
-  CANCELLED: { label: "Cancelado", color: "#ef4444" },
+  PENDING_PAYMENT: { label: "Aguardando Pgto.", color: "#B45309" },
+  PAID: { label: "Pago", color: "#0F766E" },
+  CANCELLED: { label: "Cancelado", color: "#C92E09" },
 };
 
 export default function DashboardClient({
@@ -100,15 +100,15 @@ export default function DashboardClient({
           value={formatCurrency(asaasData?.received?.value || 0)}
           subtitle={`${asaasData?.received?.count || 0} cobranças pagas`}
           icon={<TrendingUp size={22} />}
-          color="#10b981"
-          bg="rgba(16,185,129,0.1)"
+          color="#0F766E"
+          bg="rgba(15, 118, 110,0.1)"
         />
         <StatCard
           title="Pendente a Receber"
           value={formatCurrency(asaasData?.pending?.value || 0)}
           subtitle={`${asaasData?.pending?.count || 0} cobranças em aberto`}
           icon={<Clock size={22} />}
-          color="#f59e0b"
+          color="#B45309"
           bg="rgba(245,158,11,0.1)"
         />
         <StatCard
@@ -116,7 +116,7 @@ export default function DashboardClient({
           value={formatCurrency(asaasData?.overdue?.value || 0)}
           subtitle={`${asaasData?.overdue?.count || 0} lojistas inadimplentes`}
           icon={<AlertTriangle size={22} />}
-          color="#ef4444"
+          color="#C92E09"
           bg="rgba(239,68,68,0.1)"
         />
       </div>
@@ -131,15 +131,15 @@ export default function DashboardClient({
           value={String(totalFranchisees)}
           subtitle="Cadastrados no sistema"
           icon={<Users size={22} />}
-          color="#6366f1"
-          bg="rgba(99,102,241,0.1)"
+          color="#1C1917"
+          bg="rgba(28, 25, 23,0.1)"
         />
         <StatCard
           title="Total de Pedidos"
           value={String(totalOrders)}
           subtitle="Desde o início"
           icon={<ShoppingBag size={22} />}
-          color="#0ea5e9"
+          color="#44403C"
           bg="rgba(14,165,233,0.1)"
         />
         <StatCard
@@ -147,15 +147,15 @@ export default function DashboardClient({
           value={formatCurrency(totalPayablesToday)}
           subtitle={overduePayables > 0 ? `⚠️ ${overduePayables} conta(s) atrasada(s)!` : "Sem atrasos"}
           icon={<CalendarCheck size={22} />}
-          color={overduePayables > 0 ? "#ef4444" : "#10b981"}
-          bg={overduePayables > 0 ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)"}
+          color={overduePayables > 0 ? "#C92E09" : "#0F766E"}
+          bg={overduePayables > 0 ? "rgba(239,68,68,0.1)" : "rgba(15, 118, 110,0.1)"}
         />
         <StatCard
           title="Contas Futuras Pendentes"
           value={String(pendingPayables)}
           subtitle="Ainda não pagas"
           icon={<DollarSign size={22} />}
-          color="#f59e0b"
+          color="#B45309"
           bg="rgba(245,158,11,0.1)"
         />
       </div>

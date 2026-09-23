@@ -109,13 +109,13 @@ export default function ProductsClient({ products }: { products: any[] }) {
             alignItems: "center", 
             gap: "0.5rem", 
             padding: "0.6rem 1.2rem", 
-            backgroundColor: "rgba(99, 102, 241, 0.1)", 
-            color: "#6366f1", 
+            backgroundColor: "rgba(28, 25, 23, 0.1)", 
+            color: "#1C1917", 
             borderRadius: "10px",
             fontWeight: "bold",
             fontSize: "0.9rem",
             textDecoration: "none",
-            border: "1px solid rgba(99, 102, 241, 0.2)"
+            border: "1px solid rgba(28, 25, 23, 0.2)"
           }}
         >
           <ExternalLink size={18} />
@@ -189,7 +189,7 @@ export default function ProductsClient({ products }: { products: any[] }) {
                   <>
                     <img src={preview} alt="Preview" style={{ maxHeight: "100px", maxWidth: "100%", borderRadius: "8px", objectFit: "contain" }} />
                     {uploading && <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Enviando imagem...</p>}
-                    {uploadedUrl && <p style={{ fontSize: "0.75rem", color: "#10b981" }}>✓ Imagem pronta!</p>}
+                    {uploadedUrl && <p style={{ fontSize: "0.75rem", color: "#0F766E" }}>✓ Imagem pronta!</p>}
                   </>
                 ) : (
                   <>
@@ -221,7 +221,7 @@ export default function ProductsClient({ products }: { products: any[] }) {
             <button
               type="submit"
               className="btn btn-primary mt-4"
-              style={{ width: "100%", backgroundColor: editingId ? "#10b981" : undefined }}
+              style={{ width: "100%", backgroundColor: editingId ? "#0F766E" : undefined }}
               disabled={submitting || uploading}
             >
               {editingId ? <Save size={18} style={{ marginRight: "0.5rem" }} /> : <Plus size={18} style={{ marginRight: "0.5rem" }} />}
@@ -259,7 +259,7 @@ export default function ProductsClient({ products }: { products: any[] }) {
                       <button 
                         onClick={() => startEdit(product)}
                         className="btn" 
-                        style={{ padding: "0.4rem", color: "#6366f1", backgroundColor: "rgba(99,102,241,0.1)", borderRadius: "8px" }}
+                        style={{ padding: "0.4rem", color: "#1C1917", backgroundColor: "rgba(28, 25, 23,0.1)", borderRadius: "8px" }}
                         title="Editar Produto"
                       >
                         <Edit size={18} />

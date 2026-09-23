@@ -24,10 +24,10 @@ interface Inscricao {
 }
 
 const CORES: Record<string, { bg: string; fg: string; borda: string; rotulo: string }> = {
-  NOVO:       { bg: "#EFF6FF", fg: "#1D4ED8", borda: "#BFDBFE", rotulo: "🆕 Novo" },
-  EM_ANALISE: { bg: "#FFFBEB", fg: "#B45309", borda: "#FDE68A", rotulo: "🔎 Em análise" },
-  APROVADO:   { bg: "#F0FDF4", fg: "#15803D", borda: "#BBF7D0", rotulo: "✅ Aprovado" },
-  RECUSADO:   { bg: "#FEF2F2", fg: "#991B1B", borda: "#FCA5A5", rotulo: "❌ Recusado" },
+  NOVO:       { bg: "#FAF6F2", fg: "#1C1917", borda: "#E7DDD3", rotulo: "🆕 Novo" },
+  EM_ANALISE: { bg: "#FFF7E6", fg: "#B45309", borda: "#FDE68A", rotulo: "🔎 Em análise" },
+  APROVADO:   { bg: "#F0FDFA", fg: "#0F766E", borda: "#99F6E4", rotulo: "✅ Aprovado" },
+  RECUSADO:   { bg: "#FEF2F2", fg: "#B71C1C", borda: "#FCA5A5", rotulo: "❌ Recusado" },
 };
 
 const ORDEM_STATUS = ["NOVO", "EM_ANALISE", "APROVADO", "RECUSADO"] as const;
@@ -113,7 +113,7 @@ export default function InscricoesEmbaixadorTab() {
       </div>
 
       {aviso && (
-        <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E", padding: "12px 15px", borderRadius: 12, fontSize: "0.85rem", marginBottom: 16, lineHeight: 1.55 }}>
+        <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", color: "#92400E", padding: "12px 15px", borderRadius: 12, fontSize: "0.85rem", marginBottom: 16, lineHeight: 1.55 }}>
           ⚠️ {aviso}
         </div>
       )}
@@ -156,7 +156,7 @@ export default function InscricoesEmbaixadorTab() {
                         href={`https://instagram.com/${i.instagram}`}
                         target="_blank"
                         rel="noreferrer"
-                        style={{ color: "#DB2777", fontWeight: 800, textDecoration: "none" }}
+                        style={{ color: "#C92E09", fontWeight: 800, textDecoration: "none" }}
                       >
                         @{i.instagram}
                       </a>
@@ -168,7 +168,7 @@ export default function InscricoesEmbaixadorTab() {
                           href={`https://wa.me/55${i.whatsapp}`}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ color: "#15803D", fontWeight: 700, textDecoration: "none" }}
+                          style={{ color: "#0F766E", fontWeight: 700, textDecoration: "none" }}
                         >
                           💬 {i.whatsapp}
                         </a>
@@ -203,7 +203,7 @@ export default function InscricoesEmbaixadorTab() {
                       onClick={() => apagar(i.id, i.fullName)}
                       disabled={salvando === i.id}
                       title="Apagar esta inscrição"
-                      style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#991B1B", fontWeight: 700, fontSize: "0.74rem", cursor: "pointer" }}
+                      style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#B71C1C", fontWeight: 700, fontSize: "0.74rem", cursor: "pointer" }}
                     >
                       🗑 Apagar
                     </button>

@@ -6,13 +6,13 @@ import { ALL_PERMISSIONS } from "@/lib/permissions";
 import { UserPlus, Trash2, Shield, ShieldCheck } from "lucide-react";
 
 const PERM_COLORS: Record<string, string> = {
-  dashboard: "#6366f1",
-  products: "#0ea5e9",
-  franchisees: "#f59e0b",
-  orders: "#10b981",
-  routes: "#8b5cf6",
-  finance: "#ef4444",
-  payables: "#f97316",
+  dashboard: "#1C1917",
+  products: "#44403C",
+  franchisees: "#B45309",
+  orders: "#0F766E",
+  routes: "#64748B",
+  finance: "#C92E09",
+  payables: "#E8590C",
   invoices: "#14b8a6", // Teal
 };
 
@@ -126,7 +126,7 @@ export default function TeamClient({ staffUsers }: { staffUsers: any[] }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <ShieldCheck size={20} style={{ color: "#6366f1" }} />
+                      <ShieldCheck size={20} style={{ color: "#1C1917" }} />
                       <h3 className="font-bold" style={{ fontSize: "1.1rem" }}>{user.name}</h3>
                     </div>
                     <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>{user.email}</p>

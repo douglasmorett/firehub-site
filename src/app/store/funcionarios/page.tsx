@@ -311,13 +311,13 @@ export default function FuncionariosPage() {
             display: "flex",
             alignItems: "center",
             gap: 12,
-            background: enabled ? "#F0FDF4" : "#F8FAFC",
-            border: `1.5px solid ${enabled ? "#BBF7D0" : "#E2E8F0"}`,
+            background: enabled ? "#F0FDFA" : "#F8FAFC",
+            border: `1.5px solid ${enabled ? "#99F6E4" : "#E2E8F0"}`,
             padding: "8px 16px",
             borderRadius: 12,
           }}
         >
-          <span style={{ fontSize: "0.85rem", fontWeight: 700, color: enabled ? "#15803D" : "#64748B" }}>
+          <span style={{ fontSize: "0.85rem", fontWeight: 700, color: enabled ? "#0F766E" : "#64748B" }}>
             {enabled ? "🟢 Módulo Ativo no Balcão" : "⚪ Módulo Desativado"}
           </span>
           <button
@@ -326,7 +326,7 @@ export default function FuncionariosPage() {
               width: 44,
               height: 24,
               borderRadius: 12,
-              background: enabled ? "#16A34A" : "#CBD5E1",
+              background: enabled ? "#0F766E" : "#CBD5E1",
               border: "none",
               cursor: "pointer",
               position: "relative",
@@ -355,23 +355,23 @@ export default function FuncionariosPage() {
         {/* Card 1: Dívida Acumulada */}
         <div style={{ background: "linear-gradient(135deg, #FEF2F2, #FFF1F2)", border: "1.5px solid #FECACA", borderRadius: 14, padding: "16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#991B1B", textTransform: "uppercase" }}>Dívida Acumulada Total</span>
+            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#B71C1C", textTransform: "uppercase" }}>Dívida Acumulada Total</span>
             <AlertTriangle size={18} color="#EA1D2C" />
           </div>
-          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#991B1B" }}>{fmt(totalDebtSum)}</div>
-          <div style={{ fontSize: "0.75rem", color: "#B91C1C", marginTop: 4 }}>
+          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#B71C1C" }}>{fmt(totalDebtSum)}</div>
+          <div style={{ fontSize: "0.75rem", color: "#B71C1C", marginTop: 4 }}>
             {debtorCount} {debtorCount === 1 ? "cliente com débito" : "clientes com débito"}
           </div>
         </div>
 
         {/* Card 2: Abatimentos no Período */}
-        <div style={{ background: "linear-gradient(135deg, #F0FDF4, #DCFCE7)", border: "1.5px solid #BBF7D0", borderRadius: 14, padding: "16px" }}>
+        <div style={{ background: "linear-gradient(135deg, #F0FDFA, #F0FDFA)", border: "1.5px solid #99F6E4", borderRadius: 14, padding: "16px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#166534", textTransform: "uppercase" }}>Abatidos / Pagos (Período)</span>
-            <DollarSign size={18} color="#16A34A" />
+            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#0F766E", textTransform: "uppercase" }}>Abatidos / Pagos (Período)</span>
+            <DollarSign size={18} color="#0F766E" />
           </div>
-          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#15803D" }}>{fmt(periodAbatedSum)}</div>
-          <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: 4 }}>Baixas registradas no extrato</div>
+          <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F766E" }}>{fmt(periodAbatedSum)}</div>
+          <div style={{ fontSize: "0.75rem", color: "#0F766E", marginTop: 4 }}>Baixas registradas no extrato</div>
         </div>
 
         {/* Card 3: Total Funcionários */}
@@ -445,14 +445,14 @@ export default function FuncionariosPage() {
               um botão "Personalizado", e quem não achava concluía que não dava
               para escolher a data. Mexer numa delas já vira período personalizado. */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, background: dateRange === "custom" ? "#FEF2F2" : "#F8FAFC", padding: "4px 8px", borderRadius: 8, border: `1px solid ${dateRange === "custom" ? "#FECACA" : "#E2E8F0"}` }}>
-            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: dateRange === "custom" ? "#991B1B" : "#64748B" }}>De:</span>
+            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: dateRange === "custom" ? "#B71C1C" : "#64748B" }}>De:</span>
             <input
               type="date"
               value={fromDate}
               onChange={(e) => { setFromDate(e.target.value); setDateRange("custom"); }}
               style={{ padding: "4px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", outline: "none", fontFamily: "inherit" }}
             />
-            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: dateRange === "custom" ? "#991B1B" : "#64748B" }}>Até:</span>
+            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: dateRange === "custom" ? "#B71C1C" : "#64748B" }}>Até:</span>
             <input
               type="date"
               value={toDate}
@@ -534,10 +534,10 @@ export default function FuncionariosPage() {
 
                     {/* Badge Dívida */}
                     <div style={{ textAlign: "right" }}>
-                      <span style={{ fontSize: "0.7rem", fontWeight: 700, color: hasDebt ? "#991B1B" : "#166534", textTransform: "uppercase" }}>
+                      <span style={{ fontSize: "0.7rem", fontWeight: 700, color: hasDebt ? "#B71C1C" : "#0F766E", textTransform: "uppercase" }}>
                         {hasDebt ? "Débito Pendente" : "Quitado"}
                       </span>
-                      <div style={{ fontSize: "1.25rem", fontWeight: 900, color: hasDebt ? "#DC2626" : "#16A34A" }}>
+                      <div style={{ fontSize: "1.25rem", fontWeight: 900, color: hasDebt ? "#C92E09" : "#0F766E" }}>
                         {fmt(emp.currentDebt)}
                       </div>
                     </div>
@@ -549,10 +549,10 @@ export default function FuncionariosPage() {
                       Consumo Período: <strong style={{ color: "#334155" }}>{fmt(emp.periodOrdersAmount)}</strong> ({emp.periodOrdersCount}x)
                     </div>
                     <div>
-                      Abatido Período: <strong style={{ color: "#16A34A" }}>{fmt(emp.periodPaymentsAmount)}</strong>
+                      Abatido Período: <strong style={{ color: "#0F766E" }}>{fmt(emp.periodPaymentsAmount)}</strong>
                     </div>
                     {emp.creditLimit && (
-                      <div style={{ gridColumn: "1/-1", color: emp.currentDebt > emp.creditLimit ? "#DC2626" : "#64748B" }}>
+                      <div style={{ gridColumn: "1/-1", color: emp.currentDebt > emp.creditLimit ? "#C92E09" : "#64748B" }}>
                         Limite Crédito: <strong>{fmt(emp.creditLimit)}</strong>
                       </div>
                     )}
@@ -572,7 +572,7 @@ export default function FuncionariosPage() {
                       padding: "8px 10px",
                       borderRadius: 8,
                       border: "none",
-                      background: "#16A34A",
+                      background: "#0F766E",
                       color: "#fff",
                       fontWeight: 700,
                       fontSize: "0.78rem",
@@ -742,15 +742,15 @@ export default function FuncionariosPage() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
           <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 420, padding: 20, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.1rem", color: "#166534" }}>💸 Registar Abatimento / Baixa</h3>
+              <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.1rem", color: "#0F766E" }}>💸 Registar Abatimento / Baixa</h3>
               <button onClick={() => setAbateEmp(null)} style={{ border: "none", background: "none", cursor: "pointer", color: "#64748B" }}>
                 <X size={20} />
               </button>
             </div>
 
-            <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
-              <div style={{ fontSize: "0.82rem", color: "#166534" }}>Colaborador: <strong>{abateEmp.name}</strong></div>
-              <div style={{ fontSize: "0.95rem", fontWeight: 800, color: "#15803D", marginTop: 2 }}>Dívida Atual: {fmt(abateEmp.currentDebt)}</div>
+            <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
+              <div style={{ fontSize: "0.82rem", color: "#0F766E" }}>Colaborador: <strong>{abateEmp.name}</strong></div>
+              <div style={{ fontSize: "0.95rem", fontWeight: 800, color: "#0F766E", marginTop: 2 }}>Dívida Atual: {fmt(abateEmp.currentDebt)}</div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -762,10 +762,10 @@ export default function FuncionariosPage() {
                   value={abateAmount}
                   onChange={(e) => setAbateAmount(e.target.value)}
                   placeholder="Ex: 300.00"
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "2px solid #16A34A", fontSize: "1.1rem", fontWeight: 800, outline: "none" }}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "2px solid #0F766E", fontSize: "1.1rem", fontWeight: 800, outline: "none" }}
                 />
                 {abateAmount && Number(abateAmount) > 0 && (
-                  <div style={{ fontSize: "0.75rem", color: "#15803D", fontWeight: 700, marginTop: 4 }}>
+                  <div style={{ fontSize: "0.75rem", color: "#0F766E", fontWeight: 700, marginTop: 4 }}>
                     Novo Saldo Restante: {fmt(Math.max(0, abateEmp.currentDebt - Number(abateAmount)))}
                   </div>
                 )}
@@ -792,7 +792,7 @@ export default function FuncionariosPage() {
               <button
                 onClick={handleAbate}
                 disabled={savingAbate}
-                style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#16A34A", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                style={{ flex: 1, padding: "10px", borderRadius: 10, border: "none", background: "#0F766E", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
               >
                 {savingAbate ? "Confirmando..." : "Confirmar Baixa"}
               </button>
@@ -827,15 +827,15 @@ export default function FuncionariosPage() {
                     style={{
                       padding: "10px 12px",
                       borderRadius: 10,
-                      border: `1.5px solid ${item.type === "ORDER" ? "#FECACA" : "#BBF7D0"}`,
-                      background: item.type === "ORDER" ? "#FFF1F2" : "#F0FDF4",
+                      border: `1.5px solid ${item.type === "ORDER" ? "#FECACA" : "#99F6E4"}`,
+                      background: item.type === "ORDER" ? "#FFF1F2" : "#F0FDFA",
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
                     }}
                   >
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: "0.85rem", color: item.type === "ORDER" ? "#991B1B" : "#15803D" }}>
+                      <div style={{ fontWeight: 700, fontSize: "0.85rem", color: item.type === "ORDER" ? "#B71C1C" : "#0F766E" }}>
                         {item.title}
                       </div>
                       {item.itemsSummary && <div style={{ fontSize: "0.72rem", color: "#475569", marginTop: 2 }}>{item.itemsSummary}</div>}
@@ -845,7 +845,7 @@ export default function FuncionariosPage() {
                       </div>
                     </div>
 
-                    <div style={{ fontWeight: 900, fontSize: "0.95rem", color: item.type === "ORDER" ? "#DC2626" : "#16A34A" }}>
+                    <div style={{ fontWeight: 900, fontSize: "0.95rem", color: item.type === "ORDER" ? "#C92E09" : "#0F766E" }}>
                       {item.type === "ORDER" ? `+ ${fmt(item.amount)}` : `- ${fmt(item.amount)}`}
                     </div>
                   </div>
@@ -872,7 +872,7 @@ export default function FuncionariosPage() {
               <AlertTriangle color="#EA1D2C" size={20} /> Incluir Dívida Manual
             </h2>
             <p style={{ margin: "0 0 20px", fontSize: "0.85rem", color: "#64748B" }}>
-              Adicione um débito para <strong style={{ color: "#334155" }}>{addDebtEmp.name}</strong>. Saldo atual: <strong style={{ color: "#DC2626" }}>{fmt(addDebtEmp.currentDebt)}</strong>
+              Adicione um débito para <strong style={{ color: "#334155" }}>{addDebtEmp.name}</strong>. Saldo atual: <strong style={{ color: "#C92E09" }}>{fmt(addDebtEmp.currentDebt)}</strong>
             </p>
 
             <div style={{ marginBottom: 16 }}>

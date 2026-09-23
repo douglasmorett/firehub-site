@@ -233,7 +233,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
 function ErrorPanel({ message }: { message?: string }) {
   return (
     <div style={{ padding: "2rem", textAlign: "center" }}>
-      <h2 style={{ color: "#DC2626", fontSize: "1.2rem", fontWeight: 800 }}>
+      <h2 style={{ color: "#C92E09", fontSize: "1.2rem", fontWeight: 800 }}>
         ⚠️ Erro ao carregar o painel
       </h2>
       <p style={{ color: "#64748b", margin: "0.5rem 0" }}>
@@ -241,7 +241,7 @@ function ErrorPanel({ message }: { message?: string }) {
       </p>
       <a href="/store" style={{
         display: "inline-block", marginTop: "1rem",
-        padding: "10px 24px", background: "#DC2626", color: "#fff",
+        padding: "10px 24px", background: "#C92E09", color: "#fff",
         borderRadius: 10, fontWeight: 700, textDecoration: "none"
       }}>
         🔄 Recarregar

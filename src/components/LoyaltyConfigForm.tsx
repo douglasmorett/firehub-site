@@ -217,7 +217,7 @@ export default function LoyaltyConfigForm({
       <div
         style={{
           padding: "1.25rem 1.5rem",
-          background: "linear-gradient(135deg, #6D28D9, #4C1D95)",
+          background: "linear-gradient(135deg, #334155, #0F172A)",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -261,10 +261,10 @@ export default function LoyaltyConfigForm({
               padding: "10px 14px",
               borderRadius: "10px",
               border: "none",
-              background: activeTab === tab.key ? "#EDE9FE" : "transparent",
+              background: activeTab === tab.key ? "#F1F5F9" : "transparent",
               fontSize: "0.85rem",
               fontWeight: activeTab === tab.key ? 800 : 600,
-              color: activeTab === tab.key ? "#6D28D9" : "#64748B",
+              color: activeTab === tab.key ? "#334155" : "#64748B",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
@@ -275,7 +275,7 @@ export default function LoyaltyConfigForm({
           >
             {tab.label}
             {tab.badge && (
-              <span style={{ fontSize: "0.65rem", padding: "1px 6px", borderRadius: 10, background: tab.badgeRoxo ? "#EDE9FE" : "#DCFCE7", color: tab.badgeRoxo ? "#6D28D9" : "#15803D", fontWeight: 800 }}>
+              <span style={{ fontSize: "0.65rem", padding: "1px 6px", borderRadius: 10, background: tab.badgeRoxo ? "#F1F5F9" : "#F0FDFA", color: tab.badgeRoxo ? "#334155" : "#0F766E", fontWeight: 800 }}>
                 {tab.badge}
               </span>
             )}
@@ -314,8 +314,8 @@ export default function LoyaltyConfigForm({
                   padding: "6px 14px",
                   borderRadius: 20,
                   border: "none",
-                  background: conv.active ? "#DCFCE7" : "#F1F5F9",
-                  color: conv.active ? "#15803D" : "#64748B",
+                  background: conv.active ? "#F0FDFA" : "#F1F5F9",
+                  color: conv.active ? "#0F766E" : "#64748B",
                   fontWeight: 800,
                   fontSize: "0.78rem",
                   cursor: "pointer",
@@ -327,7 +327,7 @@ export default function LoyaltyConfigForm({
             </div>
 
             {erroConv && (
-              <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: "0.82rem", color: "#B91C1C", fontWeight: 700, display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: "0.82rem", color: "#B71C1C", fontWeight: 700, display: "flex", gap: 8, alignItems: "center" }}>
                 <AlertCircle size={16} /> {erroConv}
               </div>
             )}
@@ -339,10 +339,10 @@ export default function LoyaltyConfigForm({
               </div>
             ) : !assistenteJaConectou ? (
               <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 14, padding: 16, marginBottom: 20 }}>
-                <strong style={{ color: "#B91C1C", fontSize: "0.95rem", display: "block", marginBottom: 6 }}>
+                <strong style={{ color: "#B71C1C", fontSize: "0.95rem", display: "block", marginBottom: 6 }}>
                   🖨️ Antes de configurar: instale o Assistente de Impressão FireHub no PC da loja
                 </strong>
-                <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: "#7F1D1D", lineHeight: 1.5 }}>
+                <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: "#B71C1C", lineHeight: 1.5 }}>
                   O prêmio sai <strong>impresso na comanda</strong>, e quem imprime é o Assistente. Ele nunca se conectou a esta
                   loja: instale no PC do caixa, com a impressora ligada, e volte aqui para escolher onde o prêmio sai.
                 </p>
@@ -350,14 +350,14 @@ export default function LoyaltyConfigForm({
                   <a
                     href="/downloads/FireHub-Assistente-Impressao-Setup.exe"
                     download
-                    style={{ padding: "8px 14px", borderRadius: 10, background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none" }}
+                    style={{ padding: "8px 14px", borderRadius: 10, background: "#C92E09", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none" }}
                   >
                     ⬇️ Baixar o Assistente (Windows)
                   </a>
                   <button
                     type="button"
                     onClick={verificarAssistente}
-                    style={{ padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#B91C1C", border: "1.5px solid #FECACA", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                    style={{ padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#B71C1C", border: "1.5px solid #FECACA", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
                   >
                     🔄 Já instalei — verificar de novo
                   </button>
@@ -365,7 +365,7 @@ export default function LoyaltyConfigForm({
                 <AvisoDownloadWindows compacto />
               </div>
             ) : !versaoOk ? (
-              <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: 16, marginBottom: 20 }}>
+              <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 14, padding: 16, marginBottom: 20 }}>
                 <strong style={{ color: "#92400E", fontSize: "0.95rem", display: "block", marginBottom: 6 }}>
                   ⬆️ Atualize o Assistente de Impressão para a versão {VERSAO_ASSISTENTE_COM_CAMPANHA}
                 </strong>
@@ -378,7 +378,7 @@ export default function LoyaltyConfigForm({
                   <a
                     href="/downloads/FireHub-Assistente-Impressao-Setup.exe"
                     download
-                    style={{ padding: "8px 14px", borderRadius: 10, background: "#D97706", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none" }}
+                    style={{ padding: "8px 14px", borderRadius: 10, background: "#B45309", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none" }}
                   >
                     ⬇️ Baixar a versão {VERSAO_ASSISTENTE_COM_CAMPANHA}
                   </a>
@@ -392,7 +392,7 @@ export default function LoyaltyConfigForm({
                 </div>
               </div>
             ) : !assistenteOnline ? (
-              <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "12px 14px", marginBottom: 20, fontSize: "0.82rem", color: "#78350F", lineHeight: 1.5 }}>
+              <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "12px 14px", marginBottom: 20, fontSize: "0.82rem", color: "#78350F", lineHeight: 1.5 }}>
                 <strong style={{ color: "#92400E", display: "block", marginBottom: 4 }}>
                   ⏸️ O Assistente {assistente?.versaoAssistente} está fechado agora (última conexão há {Math.max(1, Math.round((assistente?.paradoHaSegundos || 0) / 60))} min)
                 </strong>
@@ -403,10 +403,10 @@ export default function LoyaltyConfigForm({
                 </button>
               </div>
             ) : (
-              <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: 14, padding: "10px 14px", marginBottom: 20, fontSize: "0.82rem", color: "#166534", fontWeight: 700, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ background: "#F0FDFA", border: "1.5px solid #99F6E4", borderRadius: 14, padding: "10px 14px", marginBottom: 20, fontSize: "0.82rem", color: "#0F766E", fontWeight: 700, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Check size={16} /> Assistente {assistente?.versaoAssistente} conectado no PC da loja
                 {impressoras.length > 0 ? ` · ${impressoras.length} impressora${impressoras.length > 1 ? "s" : ""} encontrada${impressoras.length > 1 ? "s" : ""}` : ""}
-                <button type="button" onClick={verificarAssistente} style={{ marginLeft: "auto", background: "none", border: "none", color: "#15803D", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>
+                <button type="button" onClick={verificarAssistente} style={{ marginLeft: "auto", background: "none", border: "none", color: "#0F766E", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>
                   🔄 verificar de novo
                 </button>
               </div>
@@ -415,7 +415,7 @@ export default function LoyaltyConfigForm({
             {/* ── Como funciona, sem letra miúda ── */}
             <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 14, padding: 16, marginBottom: 20 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <HelpCircle size={20} color="#7C3AED" />
+                <HelpCircle size={20} color="#475569" />
                 <strong style={{ color: "#0F172A", fontSize: "0.92rem" }}>Como funciona</strong>
               </div>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.8rem", color: "#475569", lineHeight: 1.6 }}>
@@ -439,7 +439,7 @@ export default function LoyaltyConfigForm({
                           key={tipo}
                           type="button"
                           onClick={() => setConv({ tipo })}
-                          style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${conv.tipo === tipo ? "#7C3AED" : "#E2E8F0"}`, background: conv.tipo === tipo ? "#EDE9FE" : "#fff", color: conv.tipo === tipo ? "#6D28D9" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
+                          style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${conv.tipo === tipo ? "#475569" : "#E2E8F0"}`, background: conv.tipo === tipo ? "#F1F5F9" : "#fff", color: conv.tipo === tipo ? "#334155" : "#475569", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}
                         >
                           {rotulo}
                         </button>
@@ -483,7 +483,7 @@ export default function LoyaltyConfigForm({
                           key={String(so)}
                           type="button"
                           onClick={() => setConv({ somentePrimeiroPedido: so })}
-                          style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${conv.somentePrimeiroPedido === so ? "#7C3AED" : "#E2E8F0"}`, background: conv.somentePrimeiroPedido === so ? "#EDE9FE" : "#fff", color: conv.somentePrimeiroPedido === so ? "#6D28D9" : "#475569", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}
+                          style={{ flex: 1, padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${conv.somentePrimeiroPedido === so ? "#475569" : "#E2E8F0"}`, background: conv.somentePrimeiroPedido === so ? "#F1F5F9" : "#fff", color: conv.somentePrimeiroPedido === so ? "#334155" : "#475569", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}
                         >
                           {rotulo}
                         </button>
@@ -513,7 +513,7 @@ export default function LoyaltyConfigForm({
                       <select
                         value={conv.impressora}
                         onChange={e => { setConv({ impressora: e.target.value }); setErroConv(""); }}
-                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${conv.impressora ? "#CBD5E1" : "#F59E0B"}`, fontSize: "0.9rem", fontWeight: 700, background: "#fff" }}
+                        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${conv.impressora ? "#CBD5E1" : "#B45309"}`, fontSize: "0.9rem", fontWeight: 700, background: "#fff" }}
                       >
                         <option value="">Escolha a impressora…</option>
                         {impressoras.map(nome => (
@@ -521,7 +521,7 @@ export default function LoyaltyConfigForm({
                         ))}
                       </select>
                     ) : (
-                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#B45309", fontWeight: 700, background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 10px" }}>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#B45309", fontWeight: 700, background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 10px" }}>
                         O Assistente ainda não informou as impressoras deste PC. Atualize-o para a versão {VERSAO_ASSISTENTE_COM_CAMPANHA} ou cadastre a impressora em Impressoras e clique em “verificar de novo”.
                       </p>
                     )}
@@ -581,8 +581,8 @@ export default function LoyaltyConfigForm({
                   padding: "6px 14px",
                   borderRadius: 20,
                   border: "none",
-                  background: config.cashbackActive ? "#DCFCE7" : "#F1F5F9",
-                  color: config.cashbackActive ? "#15803D" : "#64748B",
+                  background: config.cashbackActive ? "#F0FDFA" : "#F1F5F9",
+                  color: config.cashbackActive ? "#0F766E" : "#64748B",
                   fontWeight: 800,
                   fontSize: "0.78rem",
                   cursor: "pointer",
@@ -596,8 +596,8 @@ export default function LoyaltyConfigForm({
             {/* Simulation Card */}
             <div
               style={{
-                background: config.cashbackActive ? "#F5F3FF" : "#F8FAFC",
-                border: `1.5px solid ${config.cashbackActive ? "#DDD6FE" : "#CBD5E1"}`,
+                background: config.cashbackActive ? "#F8FAFC" : "#F8FAFC",
+                border: `1.5px solid ${config.cashbackActive ? "#E2E8F0" : "#CBD5E1"}`,
                 borderRadius: 14,
                 padding: "14px 16px",
                 marginBottom: 20,
@@ -606,11 +606,11 @@ export default function LoyaltyConfigForm({
                 gap: 14,
               }}
             >
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: config.cashbackActive ? "#7C3AED" : "#94A3B8", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: config.cashbackActive ? "#475569" : "#94A3B8", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <TrendingUp size={22} color="#fff" />
               </div>
               <div>
-                <strong style={{ fontSize: "0.9rem", color: config.cashbackActive ? "#5B21B6" : "#475569", display: "block" }}>
+                <strong style={{ fontSize: "0.9rem", color: config.cashbackActive ? "#334155" : "#475569", display: "block" }}>
                   Simulador de Exemplo: Pedido de R$ {exampleOrder},00
                 </strong>
                 <span style={{ fontSize: "0.78rem", color: "#64748B" }}>
@@ -638,7 +638,7 @@ export default function LoyaltyConfigForm({
                     onChange={e => update("rate", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                     style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                   />
-                  <span style={{ fontWeight: 800, color: "#7C3AED" }}>%</span>
+                  <span style={{ fontWeight: 800, color: "#475569" }}>%</span>
                 </div>
               </div>
 
@@ -669,7 +669,7 @@ export default function LoyaltyConfigForm({
                     onChange={e => update("maxRedeemPercent", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
                     style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                   />
-                  <span style={{ fontWeight: 800, color: "#7C3AED" }}>%</span>
+                  <span style={{ fontWeight: 800, color: "#475569" }}>%</span>
                 </div>
               </div>
 
@@ -692,7 +692,7 @@ export default function LoyaltyConfigForm({
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Crown size={20} color="#CA8A04" />
+                    <Crown size={20} color="#B45309" />
                     <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: "#0F172A" }}>
                       👑 Níveis VIP & Bônus Extra de Cashback
                     </h4>
@@ -709,8 +709,8 @@ export default function LoyaltyConfigForm({
                     padding: "6px 14px",
                     borderRadius: 20,
                     border: "none",
-                    background: config.vipActive ? "#DCFCE7" : "#F1F5F9",
-                    color: config.vipActive ? "#15803D" : "#64748B",
+                    background: config.vipActive ? "#F0FDFA" : "#F1F5F9",
+                    color: config.vipActive ? "#0F766E" : "#64748B",
                     fontWeight: 800,
                     fontSize: "0.78rem",
                     cursor: "pointer",
@@ -723,21 +723,21 @@ export default function LoyaltyConfigForm({
               {/* Tabela Comparativa de Cashback Base + VIP Bônus */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
                 {/* Bronze */}
-                <div style={{ background: "#FFF7ED", border: "1.5px solid #FFEDD5", borderRadius: 12, padding: "12px" }}>
+                <div style={{ background: "#FFF4EF", border: "1.5px solid #FFF4EF", borderRadius: 12, padding: "12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <strong style={{ color: "#C2410C", fontSize: "0.86rem" }}>🥉 Nível Bronze</strong>
-                    <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#C2410C", background: "#FFEDD5", padding: "1px 6px", borderRadius: 4 }}>Iniciante</span>
+                    <strong style={{ color: "#9A3412", fontSize: "0.86rem" }}>🥉 Nível Bronze</strong>
+                    <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#9A3412", background: "#FFF4EF", padding: "1px 6px", borderRadius: 4 }}>Iniciante</span>
                   </div>
                   <span style={{ fontSize: "0.72rem", color: "#64748B", display: "block", marginBottom: 8 }}>
                     Gasto até {fmt(config.silverMinSpend)}/mês
                   </span>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, fontSize: "0.76rem" }}>
                     <span style={{ color: "#475569" }}>Bônus Extra:</span>
-                    <strong style={{ color: "#C2410C" }}>+{config.bronzeCashback}%</strong>
+                    <strong style={{ color: "#9A3412" }}>+{config.bronzeCashback}%</strong>
                   </div>
-                  <div style={{ background: "#FFFFFF", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #FED7AA" }}>
+                  <div style={{ background: "#FFFFFF", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #FFD3C2" }}>
                     <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#475569" }}>Cashback Total:</span>
-                    <strong style={{ fontSize: "0.85rem", color: "#C2410C" }}>{config.rate + config.bronzeCashback}%</strong>
+                    <strong style={{ fontSize: "0.85rem", color: "#9A3412" }}>{config.rate + config.bronzeCashback}%</strong>
                   </div>
                 </div>
 
@@ -771,7 +771,7 @@ export default function LoyaltyConfigForm({
                 </div>
 
                 {/* Ouro */}
-                <div style={{ background: "#FEF3C7", border: "1.5px solid #FCD34D", borderRadius: 12, padding: "12px" }}>
+                <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <strong style={{ color: "#92400E", fontSize: "0.86rem" }}>🥇 Nível Ouro</strong>
                     <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#92400E", background: "#FDE68A", padding: "1px 6px", borderRadius: 4 }}>Top VIP</span>
@@ -788,12 +788,12 @@ export default function LoyaltyConfigForm({
                         placeholder="2"
                         value={config.goldCashback === 0 ? "" : config.goldCashback}
                         onChange={e => update("goldCashback", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
-                        style={{ width: "45px", padding: "2px 4px", borderRadius: 4, border: "1px solid #FCD34D", fontSize: "0.8rem", fontWeight: 800, textAlign: "center" }}
+                        style={{ width: "45px", padding: "2px 4px", borderRadius: 4, border: "1px solid #FDE68A", fontSize: "0.8rem", fontWeight: 800, textAlign: "center" }}
                       />
                       <span style={{ fontWeight: 800, color: "#92400E" }}>%</span>
                     </div>
                   </div>
-                  <div style={{ background: "#FFFFFF", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #FCD34D" }}>
+                  <div style={{ background: "#FFFFFF", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #FDE68A" }}>
                     <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#78350F" }}>Cashback Total:</span>
                     <strong style={{ fontSize: "0.85rem", color: "#92400E" }}>{config.rate + config.goldCashback}%</strong>
                   </div>
@@ -823,8 +823,8 @@ export default function LoyaltyConfigForm({
                   padding: "6px 14px",
                   borderRadius: 20,
                   border: "none",
-                  background: config.stampsActive ? "#DCFCE7" : "#F1F5F9",
-                  color: config.stampsActive ? "#15803D" : "#64748B",
+                  background: config.stampsActive ? "#F0FDFA" : "#F1F5F9",
+                  color: config.stampsActive ? "#0F766E" : "#64748B",
                   fontWeight: 800,
                   fontSize: "0.78rem",
                   cursor: "pointer",
@@ -847,8 +847,8 @@ export default function LoyaltyConfigForm({
                       width: 44,
                       height: 44,
                       borderRadius: "50%",
-                      background: idx < 4 ? "#7C3AED" : "#fff",
-                      border: `2px ${idx < 4 ? "solid #7C3AED" : "dashed #CBD5E1"}`,
+                      background: idx < 4 ? "#475569" : "#fff",
+                      border: `2px ${idx < 4 ? "solid #475569" : "dashed #CBD5E1"}`,
                       color: idx < 4 ? "#fff" : "#94A3B8",
                       display: "flex",
                       alignItems: "center",
@@ -860,7 +860,7 @@ export default function LoyaltyConfigForm({
                     {idx < 4 ? <Award size={20} /> : idx + 1}
                   </div>
                 ))}
-                <div style={{ marginLeft: "auto", background: "#FEF3C7", border: "1.5px solid #FCD34D", padding: "8px 14px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 800, color: "#92400E" }}>
+                <div style={{ marginLeft: "auto", background: "#FFF7E6", border: "1.5px solid #FDE68A", padding: "8px 14px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 800, color: "#92400E" }}>
                   🎁 Prêmio Final: {fmt(config.stampRewardValue)} OFF
                 </div>
               </div>
@@ -935,8 +935,8 @@ export default function LoyaltyConfigForm({
                   padding: "6px 14px",
                   borderRadius: 20,
                   border: "none",
-                  background: config.referralActive ? "#DCFCE7" : "#F1F5F9",
-                  color: config.referralActive ? "#15803D" : "#64748B",
+                  background: config.referralActive ? "#F0FDFA" : "#F1F5F9",
+                  color: config.referralActive ? "#0F766E" : "#64748B",
                   fontWeight: 800,
                   fontSize: "0.78rem",
                   cursor: "pointer",
@@ -947,7 +947,7 @@ export default function LoyaltyConfigForm({
             </div>
 
             {/* Flow Banner */}
-            <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: 14, padding: "14px 16px", marginBottom: 20, fontSize: "0.82rem", color: "#1E40AF" }}>
+            <div style={{ background: "#FAF6F2", border: "1.5px solid #E7DDD3", borderRadius: 14, padding: "14px 16px", marginBottom: 20, fontSize: "0.82rem", color: "#1C1917" }}>
               <strong>Como Funciona o Fluxo de Indicação:</strong>
               <ol style={{ margin: "6px 0 0", paddingLeft: 18, lineHeight: 1.5 }}>
                 <li>O cliente copia o link único no cardápio digital (ex: <code>loja.com.br?ref=CARLOS10</code>).</li>
@@ -1022,8 +1022,8 @@ export default function LoyaltyConfigForm({
                   padding: "6px 14px",
                   borderRadius: 20,
                   border: "none",
-                  background: config.birthdayActive ? "#DCFCE7" : "#F1F5F9",
-                  color: config.birthdayActive ? "#15803D" : "#64748B",
+                  background: config.birthdayActive ? "#F0FDFA" : "#F1F5F9",
+                  color: config.birthdayActive ? "#0F766E" : "#64748B",
                   fontWeight: 800,
                   fontSize: "0.78rem",
                   cursor: "pointer",
@@ -1034,7 +1034,7 @@ export default function LoyaltyConfigForm({
             </div>
 
             <div style={{ background: "#FDF2F8", border: "1.5px solid #FBCFE8", borderRadius: 14, padding: "14px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#DB2777", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#C92E09", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <Cake size={24} color="#fff" />
               </div>
               <div>
@@ -1113,8 +1113,8 @@ export default function LoyaltyConfigForm({
                   padding: "6px 14px",
                   borderRadius: 20,
                   border: "none",
-                  background: config.vipActive ? "#DCFCE7" : "#F1F5F9",
-                  color: config.vipActive ? "#15803D" : "#64748B",
+                  background: config.vipActive ? "#F0FDFA" : "#F1F5F9",
+                  color: config.vipActive ? "#0F766E" : "#64748B",
                   fontWeight: 800,
                   fontSize: "0.78rem",
                   cursor: "pointer",
@@ -1127,7 +1127,7 @@ export default function LoyaltyConfigForm({
             {/* Box Didático Explicativo de Como Funciona o Nível VIP */}
             <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: "14px", padding: "16px", marginBottom: "20px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                <HelpCircle size={20} color="#7C3AED" />
+                <HelpCircle size={20} color="#475569" />
                 <strong style={{ color: "#0F172A", fontSize: "0.92rem" }}>
                   Como funciona a medalha e o cálculo dos Níveis VIP?
                 </strong>
@@ -1136,15 +1136,15 @@ export default function LoyaltyConfigForm({
                 O sistema calcula <strong>automaticamente todo dia a soma dos gastos que cada cliente realizou nos últimos 30 dias (último mês)</strong> com a sua loja:
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "0.78rem" }}>
-                <div style={{ background: "#FFF7ED", border: "1px solid #FFEDD5", borderRadius: "10px", padding: "10px" }}>
-                  <strong style={{ color: "#C2410C", display: "block", marginBottom: "3px" }}>🥉 Nível Bronze (Iniciante)</strong>
+                <div style={{ background: "#FFF4EF", border: "1px solid #FFF4EF", borderRadius: "10px", padding: "10px" }}>
+                  <strong style={{ color: "#9A3412", display: "block", marginBottom: "3px" }}>🥉 Nível Bronze (Iniciante)</strong>
                   <span>Cliente que gastou até <strong>{fmt(config.silverMinSpend)}</strong> no mês. Recebe o cashback padrão da categoria.</span>
                 </div>
                 <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", borderRadius: "10px", padding: "10px" }}>
                   <strong style={{ color: "#475569", display: "block", marginBottom: "3px" }}>🥈 Nível Prata (Frequente)</strong>
                   <span>Cliente que somou entre <strong>{fmt(config.silverMinSpend)}</strong> e <strong>{fmt(config.goldMinSpend)}</strong> no mês. Ganha mais cashback!</span>
                 </div>
-                <div style={{ background: "#FEF3C7", border: "1px solid #FCD34D", borderRadius: "10px", padding: "10px" }}>
+                <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px" }}>
                   <strong style={{ color: "#92400E", display: "block", marginBottom: "3px" }}>🥇 Nível Ouro / VIP (Top Clientes)</strong>
                   <span>Cliente que superou <strong>{fmt(config.goldMinSpend)}</strong> no mês. Ganha a medalha de Ouro e o maior benefício!</span>
                 </div>
@@ -1157,8 +1157,8 @@ export default function LoyaltyConfigForm({
             {/* VIP Tiers Config Grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
               {/* Bronze */}
-              <div style={{ background: "#FFF7ED", border: "1.5px solid #FFEDD5", borderRadius: 12, padding: "14px" }}>
-                <strong style={{ color: "#C2410C", fontSize: "0.9rem", display: "block" }}>🥉 Nível Bronze</strong>
+              <div style={{ background: "#FFF4EF", border: "1.5px solid #FFF4EF", borderRadius: 12, padding: "14px" }}>
+                <strong style={{ color: "#9A3412", fontSize: "0.9rem", display: "block" }}>🥉 Nível Bronze</strong>
                 <span style={{ fontSize: "0.75rem", color: "#64748B", display: "block", marginBottom: 10 }}>
                   Gasto acumulado no mês até {fmt(config.silverMinSpend)}
                 </span>
@@ -1202,7 +1202,7 @@ export default function LoyaltyConfigForm({
               </div>
 
               {/* Ouro */}
-              <div style={{ background: "#FEF3C7", border: "1.5px solid #FCD34D", borderRadius: 12, padding: "14px" }}>
+              <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "14px" }}>
                 <strong style={{ color: "#92400E", fontSize: "0.9rem", display: "block" }}>🥇 Nível Ouro / VIP</strong>
                 <span style={{ fontSize: "0.75rem", color: "#78350F", display: "block", marginBottom: 6 }}>
                   Gasto mensal acima de {fmt(config.goldMinSpend)}
@@ -1241,7 +1241,7 @@ export default function LoyaltyConfigForm({
             marginTop: 24,
             width: "100%",
             padding: "13px",
-            background: saved ? "#16A34A" : "linear-gradient(135deg, #7C3AED, #6D28D9)",
+            background: saved ? "#0F766E" : "linear-gradient(135deg, #475569, #334155)",
             color: "#fff",
             border: "none",
             borderRadius: 12,

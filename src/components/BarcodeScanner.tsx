@@ -76,7 +76,7 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
         </div>
         
         {errorMsg && (
-          <div style={{ padding: "1rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "8px", marginBottom: "1rem", textAlign: "center" }}>
+          <div style={{ padding: "1rem", backgroundColor: "#fee2e2", color: "#B71C1C", borderRadius: "8px", marginBottom: "1rem", textAlign: "center" }}>
             {errorMsg}
           </div>
         )}

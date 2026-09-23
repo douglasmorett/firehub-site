@@ -95,11 +95,11 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
   ];
 
   return (
-    <div style={{ border: "1.5px solid #FED7AA", background: "#FFFBF5", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
+    <div style={{ border: "1.5px solid #FFD3C2", background: "#FFFBF5", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
         <b style={{ fontSize: "0.95rem", color: "#9A3412" }}>🔴 Pedido de iFood, 99Food e outros apps</b>
         {salvando && <span style={{ fontSize: "0.74rem", color: "#94A3B8" }}>salvando…</span>}
-        {aviso && <span style={{ fontSize: "0.74rem", fontWeight: 700, color: aviso === "Salvo." ? "#16A34A" : "#B91C1C" }}>{aviso}</span>}
+        {aviso && <span style={{ fontSize: "0.74rem", fontWeight: 700, color: aviso === "Salvo." ? "#0F766E" : "#B71C1C" }}>{aviso}</span>}
       </div>
       <p style={{ margin: "0 0 11px", fontSize: "0.8rem", color: "#64748B", lineHeight: 1.5 }}>
         Nesses pedidos, o que o entregador recebe é:
@@ -114,8 +114,8 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
             onClick={() => escolher(op.v)}
             style={{
               textAlign: "left", padding: "11px 13px", borderRadius: 11, cursor: carregando ? "wait" : "pointer",
-              border: `2px solid ${valor === op.v ? "#C2410C" : "#E2E8F0"}`,
-              background: valor === op.v ? "#FFF7ED" : "#fff", fontFamily: "inherit",
+              border: `2px solid ${valor === op.v ? "#9A3412" : "#E2E8F0"}`,
+              background: valor === op.v ? "#FFF4EF" : "#fff", fontFamily: "inherit",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: "0.85rem", fontWeight: 800, color: valor === op.v ? "#9A3412" : "#334155" }}>
@@ -129,7 +129,7 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
       {valor === "FIXO" && (
         <div style={{
           marginTop: 10, padding: "11px 13px", borderRadius: 11,
-          background: "#fff", border: "2px solid #C2410C",
+          background: "#fff", border: "2px solid #9A3412",
           display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
         }}>
           <label htmlFor="repasse-fixo-app" style={{ fontSize: "0.83rem", fontWeight: 800, color: "#9A3412" }}>
@@ -148,7 +148,7 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
               style={{
                 width: 100, padding: "8px 11px", borderRadius: 9,
-                border: "1.5px solid #FDBA74", fontSize: "0.9rem", fontWeight: 800,
+                border: "1.5px solid #FFD3C2", fontSize: "0.9rem", fontWeight: 800,
                 fontFamily: "monospace", outline: "none",
               }}
             />
@@ -162,7 +162,7 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
       <p style={{
         margin: "10px 0 0", fontSize: "0.76rem", lineHeight: 1.5,
         color: valor === "APP" ? "#334155" : "#92400E",
-        background: valor === "APP" ? "#F8FAFC" : "#FFFBEB",
+        background: valor === "APP" ? "#F8FAFC" : "#FFF7E6",
         border: `1px solid ${valor === "APP" ? "#E2E8F0" : "#FDE68A"}`,
         borderRadius: 9, padding: "8px 11px",
       }}>

@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Phone, MapPin, Clock, User, Package } from "lucide-react";
 
 const STATUS_MAP: Record<string, { label: string, color: string }> = {
-  "NOVO": { label: "🔔 Novo", color: "#3B82F6" },
-  "ACEITO": { label: "✅ Aceito", color: "#10B981" },
-  "PREPARANDO": { label: "👨‍🍳 Preparando", color: "#F59E0B" },
-  "SAIU_ENTREGA": { label: "🛵 Saiu para Entrega", color: "#8B5CF6" },
-  "ENTREGUE": { label: "📦 Entregue", color: "#10B981" },
-  "CANCELADO": { label: "❌ Cancelado", color: "#EF4444" },
+  "NOVO": { label: "🔔 Novo", color: "#1C1917" },
+  "ACEITO": { label: "✅ Aceito", color: "#0F766E" },
+  "PREPARANDO": { label: "👨‍🍳 Preparando", color: "#B45309" },
+  "SAIU_ENTREGA": { label: "🛵 Saiu para Entrega", color: "#64748B" },
+  "ENTREGUE": { label: "📦 Entregue", color: "#0F766E" },
+  "CANCELADO": { label: "❌ Cancelado", color: "#C92E09" },
 };
 
 export default function CustomerOrdersList({ orders, isAdmin = false }: { orders: any[], isAdmin?: boolean }) {

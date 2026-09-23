@@ -34,12 +34,12 @@ export default async function StoreOrdersPage() {
   if (Object.keys(ajustes).length > 0) orders = await prisma.order.findMany(consulta);
 
   const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; border: string }> = {
-    PENDING_PAYMENT: { label: "Aguardando Pagamento", bg: "#FEF3C7", color: "#92400E", border: "#FDE68A" },
-    PAGO:            { label: "Pago",                  bg: "#DCFCE7", color: "#166534", border: "#BBF7D0" },
-    PAID:            { label: "Pago",                  bg: "#DCFCE7", color: "#166534", border: "#BBF7D0" },
-    AGUARDANDO_ENTREGA: { label: "Aguardando Entrega", bg: "#DBEAFE", color: "#1E40AF", border: "#BFDBFE" },
-    FINALIZADO:      { label: "Finalizado",            bg: "#F0FDF4", color: "#16A34A", border: "#BBF7D0" },
-    CANCELADO:       { label: "Cancelado",             bg: "#FEE2E2", color: "#DC2626", border: "#FECACA" },
+    PENDING_PAYMENT: { label: "Aguardando Pagamento", bg: "#FFF7E6", color: "#92400E", border: "#FDE68A" },
+    PAGO:            { label: "Pago",                  bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" },
+    PAID:            { label: "Pago",                  bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" },
+    AGUARDANDO_ENTREGA: { label: "Aguardando Entrega", bg: "#FAF6F2", color: "#1C1917", border: "#E7DDD3" },
+    FINALIZADO:      { label: "Finalizado",            bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" },
+    CANCELADO:       { label: "Cancelado",             bg: "#FEE2E2", color: "#C92E09", border: "#FECACA" },
   };
 
   return (
@@ -70,7 +70,7 @@ export default async function StoreOrdersPage() {
           <Link href="/store/compras" style={{
             display: "inline-flex", alignItems: "center", gap: 5,
             padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem",
-            background: "linear-gradient(135deg, #1565C0, #1976D2)", color: "#fff",
+            background: "linear-gradient(135deg, #1C1917, #1C1917)", color: "#fff",
             textDecoration: "none", boxShadow: "0 3px 10px rgba(21,101,192,0.25)",
             whiteSpace: "nowrap",
           }}>
@@ -89,7 +89,7 @@ export default async function StoreOrdersPage() {
           <p style={{ color: "#94A3B8", fontWeight: 600 }}>Nenhum pedido realizado ainda.</p>
           <Link href="/store/compras" style={{
             display: "inline-flex", marginTop: "1rem", padding: "10px 24px", borderRadius: 10,
-            background: "linear-gradient(135deg, #1565C0, #1976D2)", color: "#fff",
+            background: "linear-gradient(135deg, #1C1917, #1C1917)", color: "#fff",
             fontWeight: 700, textDecoration: "none",
           }}>
             🛒 Fazer Primeiro Pedido
@@ -158,7 +158,7 @@ export default async function StoreOrdersPage() {
                           borderBottom: idx < order.items.length - 1 ? "1px solid #F8FAFC" : "none",
                         }}>
                           <td style={{ padding: "5px 0", color: "#475569" }}>
-                            <span style={{ fontWeight: 700, color: "#1565C0", marginRight: 6 }}>
+                            <span style={{ fontWeight: 700, color: "#1C1917", marginRight: 6 }}>
                               {item.quantity}x
                             </span>
                             {item.product.name}
@@ -200,7 +200,7 @@ export default async function StoreOrdersPage() {
                   <div style={{ padding: "0 1.25rem 0.5rem" }}>
                     <span style={{
                       fontSize: "0.7rem", padding: "3px 10px", borderRadius: 6,
-                      background: "#FEF2F2", color: "#DC2626", fontWeight: 700,
+                      background: "#FEF2F2", color: "#C92E09", fontWeight: 700,
                       border: "1px solid #FECACA",
                     }}>
                       🚨 PEDIDO EMERGENCIAL
@@ -211,7 +211,7 @@ export default async function StoreOrdersPage() {
                 {/* ── Motivo de reprovação ── */}
                 {order.isEmergency && order.emergencyStatus === "REJECTED" && order.rejectionReason && (
                   <div style={{ margin: "0 1.25rem 0.75rem", padding: "10px 14px", background: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
-                    <p style={{ color: "#DC2626", fontSize: "0.8rem", fontWeight: 600, margin: 0 }}>
+                    <p style={{ color: "#C92E09", fontSize: "0.8rem", fontWeight: 600, margin: 0 }}>
                       ❌ Motivo: {order.rejectionReason}
                     </p>
                   </div>
@@ -223,9 +223,9 @@ export default async function StoreOrdersPage() {
                     <a href={order.boletoUrl} target="_blank" rel="noreferrer" style={{
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                       width: "100%", padding: "11px", borderRadius: 10,
-                      background: "linear-gradient(135deg, #16A34A, #22C55E)", color: "#fff",
+                      background: "linear-gradient(135deg, #0F766E, #0F766E)", color: "#fff",
                       fontWeight: 800, fontSize: "0.9rem", textDecoration: "none",
-                      boxShadow: "0 3px 10px rgba(22,163,74,0.25)",
+                      boxShadow: "0 3px 10px rgba(15, 118, 110,0.25)",
                     }}>
                       💳 Pagar Agora
                     </a>
@@ -245,9 +245,9 @@ export default async function StoreOrdersPage() {
                     <div style={{
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                       width: "100%", padding: "11px", borderRadius: 10,
-                      background: "#DCFCE7", color: "#166534",
+                      background: "#F0FDFA", color: "#0F766E",
                       fontWeight: 800, fontSize: "0.9rem",
-                      border: "1.5px solid #BBF7D0",
+                      border: "1.5px solid #99F6E4",
                     }}>
                       ✅ Pagamento Confirmado
                     </div>

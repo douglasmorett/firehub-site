@@ -1549,13 +1549,13 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           margin: 0;
           font-size: 1.25rem;
           font-weight: 800;
-          background: linear-gradient(to right, #60a5fa, #a78bfa);
+          background: linear-gradient(to right, #1C1917, #94A3B8);
           -webkit-background-clip: text;
           color: transparent;
         }
 
         .onboarding-icon {
-          color: #a78bfa;
+          color: #94A3B8;
         }
 
         .onboarding-text {
@@ -1636,7 +1636,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           right: -10%;
           width: 300px;
           height: 300px;
-          background: radial-gradient(circle, rgba(37, 99, 235, 0.4) 0%, rgba(0,0,0,0) 70%);
+          background: radial-gradient(circle, rgba(28, 25, 23, 0.4) 0%, rgba(0,0,0,0) 70%);
           pointer-events: none;
         }
 
@@ -1666,9 +1666,9 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
 
         .badge-exclusive {
           display: inline-block;
-          background: rgba(37, 99, 235, 0.2);
-          border: 1px solid rgba(37, 99, 235, 0.4);
-          color: #60a5fa;
+          background: rgba(28, 25, 23, 0.2);
+          border: 1px solid rgba(28, 25, 23, 0.4);
+          color: #1C1917;
           font-size: 0.72rem;
           font-weight: 700;
           padding: 0.25rem 0.65rem;
@@ -1706,7 +1706,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           display: inline-flex;
           align-items: center;
           gap: 0.5rem;
-          background: linear-gradient(135deg, #2563eb, #1d4ed8);
+          background: linear-gradient(135deg, #1C1917, #1C1917);
           color: white;
           font-weight: 700;
           font-size: 0.88rem;
@@ -1715,12 +1715,12 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           border-radius: 0.75rem;
           cursor: pointer;
           transition: all 0.2s ease;
-          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+          box-shadow: 0 4px 12px rgba(28, 25, 23, 0.35);
         }
 
         .btn-primary:hover {
           transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
+          box-shadow: 0 6px 16px rgba(28, 25, 23, 0.45);
           filter: brightness(1.1);
         }
         
@@ -1800,7 +1800,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
            que estavam aqui não existiam em nenhuma outra tela do painel — eram
            um dialeto de um arquivo só, e é isso que fazia o módulo parecer
            colado de outro sistema. Os tons novos também passam no contraste
-           mínimo, o que #d97706 e #9333ea não faziam. */
+           mínimo, o que #B45309 e #44403C não faziam. */
         .kpi-icon-wrapper.blue { background: var(--fh-neutro-claro); color: var(--fh-neutro-tinta); }
         .kpi-icon-wrapper.yellow { background: var(--fh-atencao-claro); color: var(--fh-atencao-tinta); }
         .kpi-icon-wrapper.red { background: var(--fh-grave-claro); color: var(--fh-grave-tinta); }
@@ -1912,17 +1912,17 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
 
         .tab-link.active {
           background: white;
-          color: #2563eb;
+          color: #1C1917;
           box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
         }
 
         .tab-link.nfe-tab {
-          background: linear-gradient(to right, #fdf4ff, #faf5ff);
-          color: #9333ea;
+          background: linear-gradient(to right, #fdf4ff, #FAF6F2);
+          color: #44403C;
         }
         .tab-link.active.nfe-tab {
           background: white;
-          border-bottom: 2px solid #a855f7;
+          border-bottom: 2px solid #57534E;
         }
 
         /* SEARCH BAR & FILTERS */
@@ -1951,7 +1951,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         }
 
         .search-bar input:focus {
-          border-color: #2563eb;
+          border-color: #1C1917;
         }
 
         .filter-controls {
@@ -2031,7 +2031,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           border-bottom: none;
         }
 
-        .items-table tr.low-stock-tr { background: #fffbeb; }
+        .items-table tr.low-stock-tr { background: #FFF7E6; }
         .items-table tr.negative-stock-tr { background: #fef2f2; }
 
         .name-col {
@@ -2050,8 +2050,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           font-style: italic;
         }
 
-        .text-green { color: #16a34a; }
-        .text-red { color: #dc2626; }
+        .text-green { color: #0F766E; }
+        .text-red { color: #C92E09; }
 
         /* STATUS BADGES */
         .status-label {
@@ -2064,11 +2064,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           border-radius: 9999px;
         }
 
-        .status-ok { background: #dcfce7; color: #15803d; }
-        .status-low { background: #fef3c7; color: #b45309; }
+        .status-ok { background: #F0FDFA; color: #0F766E; }
+        .status-low { background: #FFF7E6; color: #b45309; }
         .status-negative { 
           background: #fee2e2; 
-          color: #b91c1c;
+          color: #B71C1C;
           animation: pulse-red 2s infinite;
         }
 
@@ -2081,11 +2081,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           text-transform: uppercase;
         }
 
-        .badge-success { background: #dcfce7; color: #15803d; }
-        .badge-error { background: #fee2e2; color: #b91c1c; }
-        .badge-warning { background: #fef3c7; color: #b45309; }
-        .badge-sale { background: #eff6ff; color: #1d4ed8; }
-        .badge-nfe { background: #f3e8ff; color: #9333ea; border: 1px solid #d8b4fe; }
+        .badge-success { background: #F0FDFA; color: #0F766E; }
+        .badge-error { background: #fee2e2; color: #B71C1C; }
+        .badge-warning { background: #FFF7E6; color: #b45309; }
+        .badge-sale { background: #FAF6F2; color: #1C1917; }
+        .badge-nfe { background: #FAF6F2; color: #44403C; border: 1px solid #E7DDD3; }
 
         /* ACTION BUTTONS */
         .action-buttons {
@@ -2104,9 +2104,9 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           transition: all 0.2s;
         }
 
-        .btn-move { background: #eff6ff; color: #2563eb; }
-        .btn-move:hover { background: #dbeafe; }
-        .btn-delete { background: #fee2e2; color: #dc2626; display: flex; align-items: center; justify-content: center; padding: 0.45rem; }
+        .btn-move { background: #FAF6F2; color: #1C1917; }
+        .btn-move:hover { background: #FAF6F2; }
+        .btn-delete { background: #fee2e2; color: #C92E09; display: flex; align-items: center; justify-content: center; padding: 0.45rem; }
         .btn-delete:hover { background: #fecaca; }
 
         /* NFE TAB CSS */
@@ -2129,8 +2129,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         }
 
         .nfe-upload-zone:hover {
-          border-color: #3b82f6;
-          background: #eff6ff;
+          border-color: #1C1917;
+          background: #FAF6F2;
         }
 
         .upload-icons {
@@ -2139,7 +2139,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           margin-bottom: 1.5rem;
         }
         
-        .text-blue-500 { color: #3b82f6; }
+        .text-blue-500 { color: #1C1917; }
         .text-slate-400 { color: #94a3b8; }
 
         .nfe-upload-zone h3 { margin: 0 0 0.5rem 0; color: #0f172a; font-size: 1.25rem; font-weight: 800; }
@@ -2244,8 +2244,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         }
         
         .linking-col select.unlinked {
-          border-color: #fbbf24;
-          background: #fffbeb;
+          border-color: #B45309;
+          background: #FFF7E6;
           color: #b45309;
         }
         
@@ -2258,7 +2258,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         .new-item-inline input {
           flex: 1;
           padding: 0.4rem;
-          border: 1px dashed #3b82f6;
+          border: 1px dashed #1C1917;
           border-radius: 0.25rem;
           font-size: 0.8rem;
         }
@@ -2303,7 +2303,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         
         .coverage-fill {
           height: 100%;
-          background: linear-gradient(to right, #3b82f6, #10b981);
+          background: linear-gradient(to right, #1C1917, #0F766E);
           border-radius: 9999px;
           transition: width 1s ease-out;
         }
@@ -2352,7 +2352,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           transition: all 0.2s;
         }
 
-        .btn-configure:hover { border-color: #2563eb; color: #2563eb; }
+        .btn-configure:hover { border-color: #1C1917; color: #1C1917; }
 
         .card-body-recipe { padding: 1.25rem; flex: 1; }
         .card-body-recipe h4 { margin: 0 0 0.75rem 0; font-size: 0.78rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.025em; }
@@ -2395,7 +2395,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           width: 40px;
           height: 40px;
           border: 3.5px solid #f1f5f9;
-          border-top-color: #2563eb;
+          border-top-color: #1C1917;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
           margin-bottom: 1.25rem;
@@ -2485,30 +2485,30 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           background: #f8fafc;
         }
 
-        .form-group input:focus, .form-group select:focus { border-color: #2563eb; background: white; }
+        .form-group input:focus, .form-group select:focus { border-color: #1C1917; background: white; }
 
         .btn-submit {
           width: 100%;
           padding: 0.85rem;
-          background: linear-gradient(135deg, #2563eb, #1d4ed8);
+          background: linear-gradient(135deg, #1C1917, #1C1917);
           color: white;
           font-weight: 800;
           font-size: 0.95rem;
           border: none;
           border-radius: 0.65rem;
           cursor: pointer;
-          box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+          box-shadow: 0 4px 10px rgba(28, 25, 23, 0.2);
           transition: all 0.2s;
         }
 
         .btn-submit:hover:not(:disabled) {
           filter: brightness(1.08);
-          box-shadow: 0 6px 14px rgba(37, 99, 235, 0.3);
+          box-shadow: 0 6px 14px rgba(28, 25, 23, 0.3);
         }
 
         .item-summary-badge {
-          background: #eff6ff;
-          border: 1px solid #bfdbfe;
+          background: #FAF6F2;
+          border: 1px solid #E7DDD3;
           border-radius: 0.65rem;
           padding: 0.75rem 1rem;
           font-size: 0.85rem;
@@ -2517,8 +2517,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           margin-bottom: 1.25rem;
         }
 
-        .item-summary-badge span { color: #1e40af; }
-        .item-summary-badge strong { color: #1e3a8a; }
+        .item-summary-badge span { color: #1C1917; }
+        .item-summary-badge strong { color: #1C1917; }
 
         .radio-group-types { display: flex; gap: 0.5rem; flex-wrap: wrap; }
         .radio-label {
@@ -2528,7 +2528,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           background: #f8fafc; justify-content: center;
         }
         .radio-label input { display: none; }
-        .radio-label.selected { border-color: #2563eb; background: #eff6ff; color: #2563eb; }
+        .radio-label.selected { border-color: #1C1917; background: #FAF6F2; color: #1C1917; }
 
         /* RECIPE EDITOR */
         .recipe-rows-container {
@@ -2550,18 +2550,18 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         .unit-label { position: absolute; right: 0.6rem; font-size: 0.75rem; font-weight: 800; color: #64748b; pointer-events: none; }
 
         .btn-remove-row {
-          background: none; border: none; color: #dc2626; cursor: pointer;
+          background: none; border: none; color: #C92E09; cursor: pointer;
           padding: 0.4rem; border-radius: 0.38rem; display: flex; align-items: center; justify-content: center;
         }
         .btn-remove-row:hover { background: #fee2e2; }
 
         .recipe-footer-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
         .btn-add-ingredient {
-          border: 1.5px dashed #2563eb; background: none; color: #2563eb;
+          border: 1.5px dashed #1C1917; background: none; color: #1C1917;
           font-weight: 700; font-size: 0.82rem; padding: 0.55rem 1.1rem; border-radius: 0.5rem;
           cursor: pointer; transition: all 0.2s;
         }
-        .btn-add-ingredient:hover { background: #eff6ff; }
+        .btn-add-ingredient:hover { background: #FAF6F2; }
 
         .footer-right-buttons { display: flex; gap: 0.5rem; }
         
@@ -2573,15 +2573,15 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         .btn-secondary:hover, .btn-secondary.active { background: #e2e8f0; }
         
         .btn-secondary.active {
-          background: #e0e7ff;
-          color: #4f46e5;
+          background: #FAF6F2;
+          color: #1C1917;
         }
 
         .btn-submit-recipe {
-          background: #2563eb; color: white; border: none; padding: 0.6rem 1.25rem;
+          background: #1C1917; color: white; border: none; padding: 0.6rem 1.25rem;
           border-radius: 0.5rem; font-weight: 700; font-size: 0.85rem; cursor: pointer;
         }
-        .btn-submit-recipe:hover { background: #1d4ed8; }
+        .btn-submit-recipe:hover { background: #1C1917; }
 
         @media (max-width: 768px) {
           .header-content { flex-direction: column; align-items: flex-start; }

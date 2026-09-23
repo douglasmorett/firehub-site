@@ -67,7 +67,7 @@ export default function AdminOrderStatusSelect({ orderId, currentStatus }: { ord
         padding: "0.5rem",
         borderRadius: "var(--radius-sm)",
         border: `1px solid ${isPaid ? "var(--success)" : "var(--border-color)"}`,
-        backgroundColor: isPaid ? "rgba(22, 163, 74, 0.1)" : "var(--bg-card)",
+        backgroundColor: isPaid ? "rgba(15, 118, 110, 0.1)" : "var(--bg-card)",
         color: isPaid ? "var(--success)" : "var(--text-main)",
         fontWeight: "bold",
         fontSize: "0.85rem",

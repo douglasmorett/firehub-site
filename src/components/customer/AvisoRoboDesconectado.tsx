@@ -80,9 +80,9 @@ export default function AvisoRoboDesconectado() {
           alignItems: "center",
           gap: "0.9rem",
           flexWrap: "wrap",
-          background: "#F0FDF4",
-          border: "1px solid #A7F3D0",
-          borderLeft: "6px solid #16A34A",
+          background: "#F0FDFA",
+          border: "1px solid #99F6E4",
+          borderLeft: "6px solid #0F766E",
           borderRadius: 12,
           padding: "0.9rem 1.1rem",
         }}
@@ -92,10 +92,10 @@ export default function AvisoRoboDesconectado() {
         </span>
 
         <div style={{ flex: 1, minWidth: 240 }}>
-          <div style={{ fontWeight: 800, color: "#166534", fontSize: "1rem" }}>
+          <div style={{ fontWeight: 800, color: "#0F766E", fontSize: "1rem" }}>
             Seu robô de WhatsApp desconectou {haQuantoTempo}
           </div>
-          <div style={{ color: "#15803D", fontSize: "0.88rem", marginTop: 2 }}>
+          <div style={{ color: "#0F766E", fontSize: "0.88rem", marginTop: 2 }}>
             Enquanto ele estiver fora, as mensagens dos seus clientes não são respondidas.
             Clique aqui e leia o QR Code de novo.
           </div>
@@ -103,7 +103,7 @@ export default function AvisoRoboDesconectado() {
 
         <span
           style={{
-            background: "#16A34A",
+            background: "#0F766E",
             color: "#fff",
             fontWeight: 800,
             fontSize: "0.9rem",
@@ -114,7 +114,7 @@ export default function AvisoRoboDesconectado() {
         >
           Religar agora
         </span>
-        <BotaoNaoVerMais onClick={naoVerMais.ocultar} cor="#166534" borda="#86EFAC" />
+        <BotaoNaoVerMais onClick={naoVerMais.ocultar} cor="#0F766E" borda="#99F6E4" />
       </div>
     </Link>
   );

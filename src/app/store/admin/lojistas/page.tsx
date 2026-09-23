@@ -77,7 +77,7 @@ export default async function AdminLojistasPage() {
         <h1 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>
           🏪 Gestão de Lojistas
         </h1>
-        <span style={{ background: "#EF4444", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "3px 10px", borderRadius: 99 }}>
+        <span style={{ background: "#C92E09", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "3px 10px", borderRadius: 99 }}>
           ADMIN
         </span>
       </div>
@@ -85,11 +85,11 @@ export default async function AdminLojistasPage() {
       {/* KPI Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
         {[
-          { label: "Total Lojistas", value: totalLojistas, color: "#2563EB", icon: "🏪" },
-          { label: "Em Trial / Benefício", value: emTrial, color: "#F59E0B", icon: "🎁" },
-          { label: "Assinantes", value: ativos, color: "#10B981", icon: "✅" },
-          { label: "Com Mercado Pago", value: comMP, color: "#8B5CF6", icon: "💳" },
-          { label: "Com Pendência", value: comPendencia, color: "#EF4444", icon: "⚠️" },
+          { label: "Total Lojistas", value: totalLojistas, color: "#1C1917", icon: "🏪" },
+          { label: "Em Trial / Benefício", value: emTrial, color: "#B45309", icon: "🎁" },
+          { label: "Assinantes", value: ativos, color: "#0F766E", icon: "✅" },
+          { label: "Com Mercado Pago", value: comMP, color: "#64748B", icon: "💳" },
+          { label: "Com Pendência", value: comPendencia, color: "#C92E09", icon: "⚠️" },
         ].map(k => (
           <div key={k.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "1rem", textAlign: "center" }}>
             <div style={{ fontSize: "1.5rem", marginBottom: 4 }}>{k.icon}</div>
@@ -103,7 +103,7 @@ export default async function AdminLojistasPage() {
       <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
         <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>Todos os Lojistas ({totalLojistas})</span>
-          <a href="/store/admin/lojistas/novo" style={{ background: "#EF4444", color: "#fff", padding: "6px 16px", borderRadius: 8, fontWeight: 700, fontSize: "0.8rem", textDecoration: "none" }}>
+          <a href="/store/admin/lojistas/novo" style={{ background: "#C92E09", color: "#fff", padding: "6px 16px", borderRadius: 8, fontWeight: 700, fontSize: "0.8rem", textDecoration: "none" }}>
             + Novo Lojista
           </a>
         </div>
@@ -136,24 +136,24 @@ export default async function AdminLojistasPage() {
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: "10px 12px", color: "#374151" }}>{l.email}</td>
+                    <td style={{ padding: "10px 12px", color: "#334155" }}>{l.email}</td>
                     <td style={{ padding: "10px 12px", color: "#64748B" }}>{l.city || "—"}</td>
                     <td style={{ padding: "10px 12px", color: "#64748B", whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
                     <td style={{ padding: "10px 12px" }}>
                       {l.isFranqueadoHakim ? (
-                        <span style={{ background: "#EEF2FF", color: "#4F46E5", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
+                        <span style={{ background: "#FAF6F2", color: "#1C1917", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
                           🛡️ Isento (Hakim)
                         </span>
                       ) : pendencia > 0 ? (
-                        <span style={{ background: "#FEF2F2", color: "#DC2626", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
+                        <span style={{ background: "#FEF2F2", color: "#C92E09", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
                           ⚠️ {fmt(pendencia)}
                         </span>
                       ) : emTrialL ? (
-                        <span style={{ background: "#FEF9C3", color: "#92400E", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
+                        <span style={{ background: "#FFF7E6", color: "#92400E", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
                           🎁 Trial {diasRestantes}d
                         </span>
                       ) : (
-                        <span style={{ background: "#F0FDF4", color: "#16A34A", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
+                        <span style={{ background: "#F0FDFA", color: "#0F766E", padding: "3px 8px", borderRadius: 6, fontWeight: 700, fontSize: "0.75rem" }}>
                           ✅ Ativo
                         </span>
                       )}
@@ -169,7 +169,7 @@ export default async function AdminLojistasPage() {
                     <td style={{ padding: "10px 12px" }}>
                       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                         {l.slug && (
-                          <a href={`/loja/${l.slug}`} target="_blank" style={{ fontSize: "0.75rem", color: "#2563EB", fontWeight: 600, textDecoration: "none" }} title="Ver loja">🔗 Cardápio</a>
+                          <a href={`/loja/${l.slug}`} target="_blank" style={{ fontSize: "0.75rem", color: "#1C1917", fontWeight: 600, textDecoration: "none" }} title="Ver loja">🔗 Cardápio</a>
                         )}
                         <ImpersonateButton id={l.id} />
                         <GrantDaysButton userId={l.id} storeName={l.storeName || l.name} />

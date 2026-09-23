@@ -496,7 +496,7 @@ export default function StoreTopNav({
       color: "#fff", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer",
       opacity: disabled ? 0.6 : 1, fontFamily: "inherit",
     }}>
-      <span style={{ display:"inline-block", width:28, height:15, borderRadius:8, background: isOn ? "#4ADE80" : "#64748B", position:"relative" }}>
+      <span style={{ display:"inline-block", width:28, height:15, borderRadius:8, background: isOn ? "#5EEAD4" : "#64748B", position:"relative" }}>
         <span style={{ position:"absolute", top:2, left: isOn ? 15 : 2, width:11, height:11, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
       </span>
       {label}{label === "Loja" ? (isOn ? " aberta" : " fechada") : (isOn ? " aberto" : " fechado")}
@@ -555,24 +555,24 @@ export default function StoreTopNav({
             <h2 style={{ margin:"0 0 6px", fontSize:"1.15rem", fontWeight:900 }}>Agendar uma nova pausa</h2>
 
             {/* Preview */}
-            <div style={{ background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:12, padding:"10px 14px", marginBottom:"1rem", fontSize:"0.82rem", color:"#1E40AF", fontWeight:600 }}>
+            <div style={{ background:"#FAF6F2", border:"1px solid #E7DDD3", borderRadius:12, padding:"10px 14px", marginBottom:"1rem", fontSize:"0.82rem", color:"#1C1917", fontWeight:600 }}>
               Pausa de <strong>{fmtDate(new Date())}</strong> até <strong>{fmtDate(pauseEnd)}</strong>
             </div>
 
             {/* Escopo: site só ou site + iFood */}
-            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#374151", margin:"0 0 8px" }}>O que pausar?</p>
+            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#334155", margin:"0 0 8px" }}>O que pausar?</p>
             <div style={{ display:"flex", gap:8, marginBottom:"1rem" }}>
               {(["site", "site+ifood"] as const).map(scope => {
                 const active = pauseScope === scope;
                 return (
                   <button key={scope} onClick={() => setPauseScope(scope)} style={{
                     flex:1, padding:"10px 12px", borderRadius:12, cursor:"pointer", fontFamily:"inherit",
-                    border: active ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                    border: active ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
                     background: active ? "#FEF2F2" : "#fff",
-                    color: active ? "#C62828" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.82rem",
+                    color: active ? "#C92E09" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.82rem",
                   }}>
                     <div style={{ display:"flex", alignItems:"center", gap:6, justifyContent:"center" }}>
-                      <span style={{ width:16, height:16, borderRadius:"50%", border: active ? "5px solid #C62828" : "2px solid #CBD5E1", display:"inline-block", flexShrink:0 }} />
+                      <span style={{ width:16, height:16, borderRadius:"50%", border: active ? "5px solid #C92E09" : "2px solid #CBD5E1", display:"inline-block", flexShrink:0 }} />
                       {scope === "site" ? "Pausar só o site" : "Pausar site + iFood"}
                     </div>
                   </button>
@@ -582,30 +582,30 @@ export default function StoreTopNav({
 
             {/* iFood stores - se tem iFood conectado e escopo inclui iFood */}
             {pauseScope === "site+ifood" && ifoodStore && (
-              <div style={{ background:"#FFF7ED", border:"1px solid #FED7AA", borderRadius:10, padding:"10px 14px", marginBottom:"1rem", fontSize:"0.8rem" }}>
+              <div style={{ background:"#FFF4EF", border:"1px solid #FFD3C2", borderRadius:10, padding:"10px 14px", marginBottom:"1rem", fontSize:"0.8rem" }}>
                 <p style={{ margin:"0 0 6px", fontWeight:700, color:"#92400E", fontSize:"0.75rem" }}>LOJAS IFOOD QUE SERÃO PAUSADAS</p>
                 <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }}>
-                  <input type="checkbox" checked disabled style={{ width:16, height:16, accentColor:"#C62828" }} />
+                  <input type="checkbox" checked disabled style={{ width:16, height:16, accentColor:"#C92E09" }} />
                   <span style={{ fontWeight:600, color:"#0F172A" }}>{ifoodStore.name || "Loja iFood"}</span>
-                  <span style={{ fontSize:"0.7rem", color: ifoodAvailable ? "#16A34A" : "#94A3B8", fontWeight:600 }}>{ifoodAvailable ? "(aberta)" : "(fechada)"}</span>
+                  <span style={{ fontSize:"0.7rem", color: ifoodAvailable ? "#0F766E" : "#94A3B8", fontWeight:600 }}>{ifoodAvailable ? "(aberta)" : "(fechada)"}</span>
                 </label>
               </div>
             )}
 
             {/* Duração */}
-            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#374151", margin:"0 0 8px" }}>Por quanto tempo a loja será fechada?</p>
+            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#334155", margin:"0 0 8px" }}>Por quanto tempo a loja será fechada?</p>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom: pauseDuration === "custom" ? 8 : 16 }}>
               {PAUSE_DURATIONS.map(d => {
                 const active = pauseDuration === d.key;
                 return (
                   <button key={d.key} onClick={() => setPauseDuration(d.key)} style={{
                     padding:"7px 14px", borderRadius:20, cursor:"pointer", fontFamily:"inherit",
-                    border: active ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                    border: active ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
                     background: active ? "#C6282810" : "#fff",
-                    color: active ? "#C62828" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.78rem",
+                    color: active ? "#C92E09" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.78rem",
                   }}>
                     <span style={{ display:"flex", alignItems:"center", gap:5 }}>
-                      <span style={{ width:14, height:14, borderRadius:"50%", border: active ? "4px solid #C62828" : "2px solid #CBD5E1", display:"inline-block" }} />
+                      <span style={{ width:14, height:14, borderRadius:"50%", border: active ? "4px solid #C92E09" : "2px solid #CBD5E1", display:"inline-block" }} />
                       {d.label}
                     </span>
                   </button>
@@ -618,19 +618,19 @@ export default function StoreTopNav({
             )}
 
             {/* Motivo */}
-            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#374151", margin:"0 0 8px" }}>Qual o motivo da pausa?</p>
+            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#334155", margin:"0 0 8px" }}>Qual o motivo da pausa?</p>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:"1.25rem" }}>
               {PAUSE_REASONS.map(r => {
                 const active = pauseReason === r;
                 return (
                   <button key={r} onClick={() => setPauseReason(r)} style={{
                     padding:"7px 14px", borderRadius:20, cursor:"pointer", fontFamily:"inherit",
-                    border: active ? "2px solid #C62828" : "1.5px solid #E2E8F0",
+                    border: active ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
                     background: active ? "#C6282810" : "#fff",
-                    color: active ? "#C62828" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.78rem",
+                    color: active ? "#C92E09" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.78rem",
                   }}>
                     <span style={{ display:"flex", alignItems:"center", gap:5 }}>
-                      <span style={{ width:14, height:14, borderRadius:"50%", border: active ? "4px solid #C62828" : "2px solid #CBD5E1", display:"inline-block" }} />
+                      <span style={{ width:14, height:14, borderRadius:"50%", border: active ? "4px solid #C92E09" : "2px solid #CBD5E1", display:"inline-block" }} />
                       {r}
                     </span>
                   </button>
@@ -640,7 +640,7 @@ export default function StoreTopNav({
 
             {/* Confirmar */}
             <button onClick={confirmPause} disabled={pausing} style={{
-              width:"100%", padding:"13px", background:"linear-gradient(135deg,#B71C1C,#C62828)", color:"#fff",
+              width:"100%", padding:"13px", background:"linear-gradient(135deg,#B71C1C,#C92E09)", color:"#fff",
               border:"none", borderRadius:14, fontWeight:900, fontSize:"1rem", cursor:"pointer", fontFamily:"inherit",
               opacity: pausing ? 0.7 : 1,
             }}>
@@ -659,12 +659,12 @@ export default function StoreTopNav({
             <h2 style={{ margin:"0 0 4px", fontSize:"1.1rem", fontWeight:900 }}>Abrir Caixa</h2>
             <p style={{ margin:"0 0 1.2rem", fontSize:"0.85rem", color:"#64748B" }}>Informe o valor de troco disponível para abertura do caixa.</p>
             {ultimoFechamento && (ultimoFechamento.cash || 0) > 0 && (
-              <div style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:10, padding:"10px 12px", marginBottom:"0.9rem", textAlign:"left", fontSize:"0.8rem", color:"#15803D", lineHeight:1.5 }}>
+              <div style={{ background:"#F0FDFA", border:"1px solid #99F6E4", borderRadius:10, padding:"10px 12px", marginBottom:"0.9rem", textAlign:"left", fontSize:"0.8rem", color:"#0F766E", lineHeight:1.5 }}>
                 No último fechamento foram contados <strong>{fmt(ultimoFechamento.cash)}</strong> em dinheiro.
                 Se esse dinheiro continua na gaveta, abra o caixa com ele — senão o fechamento de hoje vai acusar sobra.
               </div>
             )}
-            <label style={{ fontSize:"0.78rem", fontWeight:700, color:"#374151", display:"block", marginBottom:6 }}>Valor de abertura (troco em caixa)</label>
+            <label style={{ fontSize:"0.78rem", fontWeight:700, color:"#334155", display:"block", marginBottom:6 }}>Valor de abertura (troco em caixa)</label>
             <input
               type="number" min="0" step="0.01" placeholder="Ex: 50,00"
               value={openingAmount} onChange={e => setOpeningAmount(e.target.value)}
@@ -673,7 +673,7 @@ export default function StoreTopNav({
               style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"2px solid #E2E8F0", fontSize:"1rem", outline:"none", marginBottom:"1rem", fontFamily:"inherit" }}
             />
             <button onClick={handleOpenCash} disabled={opening} style={{
-              width:"100%", padding:"12px", background:"#16A34A", color:"#fff",
+              width:"100%", padding:"12px", background:"#0F766E", color:"#fff",
               border:"none", borderRadius:12, fontWeight:900, fontSize:"1rem", cursor:"pointer", fontFamily:"inherit",
             }}>
               {opening ? "Abrindo..." : "✅ Confirmar Abertura"}
@@ -688,11 +688,11 @@ export default function StoreTopNav({
           <div style={card} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:"2rem", marginBottom:8 }}>🕐</div>
             <h2 style={{ margin:"0 0 6px", fontSize:"1.05rem", fontWeight:900, color:"#B45309" }}>Havia um caixa aberto</h2>
-            <p style={{ margin:"0 0 10px", fontSize:"0.86rem", color:"#374151", lineHeight:1.55 }}>
+            <p style={{ margin:"0 0 10px", fontSize:"0.86rem", color:"#334155", lineHeight:1.55 }}>
               O turno aberto em <strong>{new Date(avisoAbertura.abertoEm).toLocaleString("pt-BR")}</strong> foi encerrado
               agora para este caixa poder abrir. <strong>Ninguém conferiu a gaveta dele</strong>.
             </p>
-            <div style={{ background:"#FFFBEB", border:"1px solid #FDE68A", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left", fontSize:"0.84rem", color:"#92400E", lineHeight:1.5 }}>
+            <div style={{ background:"#FFF7E6", border:"1px solid #FDE68A", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left", fontSize:"0.84rem", color:"#92400E", lineHeight:1.5 }}>
               Aquele turno esperava <strong>{fmt(avisoAbertura.esperadoTotal)}</strong> no total,
               sendo <strong>{fmt(avisoAbertura.esperadoCash)}</strong> em dinheiro.
               Esse dinheiro continua na gaveta — inclua no troco de abertura, ou o fechamento de hoje vai acusar sobra.
@@ -727,10 +727,10 @@ export default function StoreTopNav({
             {!movTipo ? (
               <div style={{ padding:"18px 24px", display:"flex", flexDirection:"column", gap:10 }}>
                 <button onClick={() => { setMovTipo("ENTRADA"); setMovErro(""); }}
-                        style={{ display:"flex", alignItems:"center", gap:12, padding:"16px 18px", borderRadius:14, border:"1px solid #ABEFC6", background:"#ECFDF3", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
-                  <div style={{ width:40, height:40, borderRadius:12, background:"#15803D", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:"#fff", fontSize:"1.3rem", fontWeight:900, lineHeight:1 }}>+</div>
+                        style={{ display:"flex", alignItems:"center", gap:12, padding:"16px 18px", borderRadius:14, border:"1px solid #99F6E4", background:"#F0FDFA", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+                  <div style={{ width:40, height:40, borderRadius:12, background:"#0F766E", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:"#fff", fontSize:"1.3rem", fontWeight:900, lineHeight:1 }}>+</div>
                   <div>
-                    <div style={{ fontWeight:800, fontSize:"0.95rem", color:"#15803D" }}>Informar entrada</div>
+                    <div style={{ fontWeight:800, fontSize:"0.95rem", color:"#0F766E" }}>Informar entrada</div>
                     <div style={{ fontSize:"0.78rem", color:"#475569", marginTop:2 }}>Reforço de troco, devolução, dinheiro que voltou</div>
                   </div>
                 </button>
@@ -770,7 +770,7 @@ export default function StoreTopNav({
                 <div style={{ display:"flex", alignItems:"center", gap:9 }}>
                   <button onClick={() => { setMovTipo(null); setMovErro(""); }}
                           style={{ background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:"0.82rem", fontWeight:700, padding:0, fontFamily:"inherit" }}>← voltar</button>
-                  <div style={{ fontWeight:900, fontSize:"1rem", color: movTipo === "ENTRADA" ? "#15803D" : "#D14300" }}>
+                  <div style={{ fontWeight:900, fontSize:"1rem", color: movTipo === "ENTRADA" ? "#0F766E" : "#D14300" }}>
                     {movTipo === "ENTRADA" ? "Entrada de dinheiro" : "Saída de dinheiro"}
                   </div>
                 </div>
@@ -802,7 +802,7 @@ export default function StoreTopNav({
                 )}
 
                 <button onClick={salvarMov} disabled={movSalvando}
-                        style={{ height:58, borderRadius:14, border:"none", background: movTipo === "ENTRADA" ? "#15803D" : "#D14300", color:"#fff", fontWeight:900, fontSize:"1rem", cursor: movSalvando ? "default" : "pointer", opacity: movSalvando ? 0.7 : 1, fontFamily:"inherit" }}>
+                        style={{ height:58, borderRadius:14, border:"none", background: movTipo === "ENTRADA" ? "#0F766E" : "#D14300", color:"#fff", fontWeight:900, fontSize:"1rem", cursor: movSalvando ? "default" : "pointer", opacity: movSalvando ? 0.7 : 1, fontFamily:"inherit" }}>
                   {movSalvando ? "Registrando..." : movTipo === "ENTRADA" ? "Registrar entrada" : "Registrar saída"}
                 </button>
               </div>
@@ -812,9 +812,9 @@ export default function StoreTopNav({
             <div style={{ padding:"0 24px 22px" }}>
               <div style={{ borderTop:"1px solid #F1F5F9", paddingTop:16 }}>
                 <div style={{ display:"flex", gap:10, marginBottom:12 }}>
-                  <div style={{ flex:1, background:"#ECFDF3", border:"1px solid #ABEFC6", borderRadius:12, padding:"10px 12px" }}>
-                    <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.06em", color:"#15803D", textTransform:"uppercase" }}>Entrou</div>
-                    <div style={{ fontSize:"1.05rem", fontWeight:900, color:"#15803D", marginTop:2 }}>{fmt(movTotais.entradas)}</div>
+                  <div style={{ flex:1, background:"#F0FDFA", border:"1px solid #99F6E4", borderRadius:12, padding:"10px 12px" }}>
+                    <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.06em", color:"#0F766E", textTransform:"uppercase" }}>Entrou</div>
+                    <div style={{ fontSize:"1.05rem", fontWeight:900, color:"#0F766E", marginTop:2 }}>{fmt(movTotais.entradas)}</div>
                   </div>
                   <div style={{ flex:1, background:"#FFF1E8", border:"1px solid #FFD3C2", borderRadius:12, padding:"10px 12px" }}>
                     <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.06em", color:"#D14300", textTransform:"uppercase" }}>Saiu</div>
@@ -830,7 +830,7 @@ export default function StoreTopNav({
                   <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                     {movs.map((m: any) => (
                       <div key={m.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 11px", borderRadius:10, background:"#F8FAFC" }}>
-                        <div style={{ width:24, height:24, borderRadius:7, background: m.tipo === "ENTRADA" ? "#15803D" : "#D14300", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:"0.9rem", flexShrink:0, lineHeight:1 }}>
+                        <div style={{ width:24, height:24, borderRadius:7, background: m.tipo === "ENTRADA" ? "#0F766E" : "#D14300", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:"0.9rem", flexShrink:0, lineHeight:1 }}>
                           {m.tipo === "ENTRADA" ? "+" : "−"}
                         </div>
                         <div style={{ flex:1, minWidth:0 }}>
@@ -881,7 +881,7 @@ export default function StoreTopNav({
                   </div>
                   <div style={{ display:"flex", justifyContent:"space-between", borderTop:"1px dashed #E2E8F0", marginTop:6, paddingTop:6 }}>
                     <span>Diferença</span>
-                    <strong style={{ color: Math.abs(diff) < 0.01 ? "#16A34A" : diff < 0 ? "#DC2626" : "#D97706" }}>{fmt(diff)}</strong>
+                    <strong style={{ color: Math.abs(diff) < 0.01 ? "#0F766E" : diff < 0 ? "#C92E09" : "#B45309" }}>{fmt(diff)}</strong>
                   </div>
                 </div>
                 <p style={{ margin:"0 0 1rem", fontSize:"0.76rem", color:"#94A3B8", lineHeight:1.5 }}>
@@ -897,10 +897,10 @@ export default function StoreTopNav({
                   <button onClick={() => setPerguntarImpressao(false)} disabled={closing} style={{ padding:"11px 14px", background:"#FFF", color:"#64748B", border:"1.5px solid #E2E8F0", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     ← Voltar
                   </button>
-                  <button onClick={() => doClose(false)} disabled={closing} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => doClose(false)} disabled={closing} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     {closing ? "Encerrando..." : "Encerrar sem imprimir"}
                   </button>
-                  <button onClick={() => doClose(true)} disabled={closing} style={{ flex:1, padding:"11px", background:"#16A34A", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => doClose(true)} disabled={closing} style={{ flex:1, padding:"11px", background:"#0F766E", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     {closing ? "Encerrando..." : "🖨️ Imprimir e encerrar"}
                   </button>
                 </div>
@@ -910,10 +910,10 @@ export default function StoreTopNav({
               <div style={{ textAlign:"center" }}>
                 <div style={{ fontSize:"3rem", marginBottom:8 }}>🛵</div>
                 <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#92400E" }}>Atenção! Pedidos em entrega</h2>
-                <p style={{ margin:"0 0 8px", fontSize:"0.9rem", color:"#374151", lineHeight: 1.5 }}>
-                  Ainda {pendingDeliveryCount === 1 ? "existe" : "existem"} <strong style={{ color:"#DC2626" }}>{pendingDeliveryCount} {pendingDeliveryCount === 1 ? "pedido" : "pedidos"}</strong> que {pendingDeliveryCount === 1 ? "saiu" : "saíram"} para entrega e {pendingDeliveryCount === 1 ? "não foi finalizado" : "não foram finalizados"}.
+                <p style={{ margin:"0 0 8px", fontSize:"0.9rem", color:"#334155", lineHeight: 1.5 }}>
+                  Ainda {pendingDeliveryCount === 1 ? "existe" : "existem"} <strong style={{ color:"#C92E09" }}>{pendingDeliveryCount} {pendingDeliveryCount === 1 ? "pedido" : "pedidos"}</strong> que {pendingDeliveryCount === 1 ? "saiu" : "saíram"} para entrega e {pendingDeliveryCount === 1 ? "não foi finalizado" : "não foram finalizados"}.
                 </p>
-                <div style={{ background:"#FFF7ED", border:"1px solid #FDE68A", borderRadius:12, padding:"14px", margin:"12px 0", fontSize:"0.88rem", color:"#92400E", lineHeight: 1.6 }}>
+                <div style={{ background:"#FFF4EF", border:"1px solid #FDE68A", borderRadius:12, padding:"14px", margin:"12px 0", fontSize:"0.88rem", color:"#92400E", lineHeight: 1.6 }}>
                   <strong>Deseja encerrar o caixa?</strong><br/>
                   Todos os pedidos que já saíram para entrega serão <strong>finalizados automaticamente</strong>.
                 </div>
@@ -921,10 +921,10 @@ export default function StoreTopNav({
                   ⚠️ Pedidos ainda em preparo <strong>não serão</strong> afetados.
                 </p>
                 <div style={{ display:"flex", gap:8 }}>
-                  <button onClick={() => { setShowPendingWarn(false); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => { setShowPendingWarn(false); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     ← Voltar
                   </button>
-                  <button onClick={() => { setShowPendingWarn(false); tryClose(); }} disabled={closing} style={{ flex:1, padding:"11px", background:"#DC2626", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => { setShowPendingWarn(false); tryClose(); }} disabled={closing} style={{ flex:1, padding:"11px", background:"#C92E09", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     Encerrar mesmo assim
                   </button>
                 </div>
@@ -934,11 +934,11 @@ export default function StoreTopNav({
               <div style={{ textAlign:"center" }}>
                 <div style={{ fontSize:"3rem", marginBottom:8 }}>✋</div>
                 <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#B45309" }}>Faltou preencher</h2>
-                <p style={{ margin:"0 0 10px", fontSize:"0.9rem", color:"#374151", lineHeight:1.5 }}>
+                <p style={{ margin:"0 0 10px", fontSize:"0.9rem", color:"#334155", lineHeight:1.5 }}>
                   {linhasEmBranco.length === 1 ? "Uma forma de pagamento ficou" : `${linhasEmBranco.length} formas de pagamento ficaram`} em branco,
                   mas o sistema esperava dinheiro {linhasEmBranco.length === 1 ? "nela" : "nelas"}.
                 </p>
-                <div style={{ background:"#FFFBEB", border:"1px solid #FDE68A", borderRadius:12, padding:"12px 14px", margin:"0 0 12px", textAlign:"left" }}>
+                <div style={{ background:"#FFF7E6", border:"1px solid #FDE68A", borderRadius:12, padding:"12px 14px", margin:"0 0 12px", textAlign:"left" }}>
                   {linhasEmBranco.map(m => (
                     <div key={m.key} style={{ display:"flex", justifyContent:"space-between", fontSize:"0.86rem", padding:"4px 0", color:"#92400E" }}>
                       <span style={{ fontWeight:700 }}>{m.label}</span>
@@ -953,10 +953,10 @@ export default function StoreTopNav({
                   Campo vazio é lido como <strong>R$ 0,00 contado</strong>. Se de fato não passou nada nessa forma, digite 0.
                 </p>
                 <div style={{ display:"flex", gap:8 }}>
-                  <button onClick={() => setShowBlankWarn(false)} style={{ flex:1, padding:"11px", background:"#16A34A", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => setShowBlankWarn(false)} style={{ flex:1, padding:"11px", background:"#0F766E", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     ← Voltar e preencher
                   </button>
-                  <button onClick={() => { setShowBlankWarn(false); tryClose(); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => { setShowBlankWarn(false); tryClose(); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     Fechar assim mesmo
                   </button>
                 </div>
@@ -974,11 +974,11 @@ export default function StoreTopNav({
                     está na gaveta e o sistema não tem como saber disso — é
                     daqui que sai a "sobra" que ninguém explicava. */}
                 {foraDoTurno.valor > 0 && (
-                  <div style={{ background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left" }}>
-                    <div style={{ fontSize:"0.8rem", fontWeight:800, color:"#1D4ED8", marginBottom:6 }}>
+                  <div style={{ background:"#FAF6F2", border:"1px solid #E7DDD3", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left" }}>
+                    <div style={{ fontSize:"0.8rem", fontWeight:800, color:"#1C1917", marginBottom:6 }}>
                       ℹ️ {foraDoTurno.quantidade} {foraDoTurno.quantidade === 1 ? "pedido feito" : "pedidos feitos"} antes deste caixa abrir
                     </div>
-                    <div style={{ fontSize:"0.84rem", color:"#1E40AF", lineHeight:1.5 }}>
+                    <div style={{ fontSize:"0.84rem", color:"#1C1917", lineHeight:1.5 }}>
                       Somam <strong>{fmt(foraDoTurno.valor)}</strong>
                       {foraDoTurno.dinheiro > 0 && <> — sendo <strong>{fmt(foraDoTurno.dinheiro)}</strong> em dinheiro</>}.
                       Não entram no que o sistema espera abaixo, mas o dinheiro pode estar na gaveta:
@@ -991,8 +991,8 @@ export default function StoreTopNav({
                     dinheiro que veio de antes. Sem dizer isso, o operador vê um
                     "esperado" negativo e não entende nada. */}
                 {(expected.cash || 0) < 0 && (
-                  <div style={{ background:"#FFF7ED", border:"1px solid #FED7AA", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left" }}>
-                    <div style={{ fontSize:"0.8rem", fontWeight:800, color:"#C2410C", marginBottom:6 }}>⚠️ Saiu mais dinheiro do que entrou neste turno</div>
+                  <div style={{ background:"#FFF4EF", border:"1px solid #FFD3C2", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left" }}>
+                    <div style={{ fontSize:"0.8rem", fontWeight:800, color:"#9A3412", marginBottom:6 }}>⚠️ Saiu mais dinheiro do que entrou neste turno</div>
                     <div style={{ fontSize:"0.84rem", color:"#9A3412", lineHeight:1.5 }}>
                       As sangrias passaram do dinheiro vendido desde a abertura, então o sistema espera
                       <strong> {fmt(expected.cash || 0)}</strong> na gaveta. Isso quase sempre quer dizer que
@@ -1010,7 +1010,7 @@ export default function StoreTopNav({
                     <div style={{ display:"flex", gap:16 }}>
                       <div style={{ fontSize:"0.85rem" }}>
                         <span style={{ color:"#64748B" }}>Entrou </span>
-                        <strong style={{ color:"#15803D" }}>{fmt(movTotais.entradas)}</strong>
+                        <strong style={{ color:"#0F766E" }}>{fmt(movTotais.entradas)}</strong>
                       </div>
                       <div style={{ fontSize:"0.85rem" }}>
                         <span style={{ color:"#64748B" }}>Saiu </span>
@@ -1025,15 +1025,15 @@ export default function StoreTopNav({
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"0.85rem", marginBottom:"1rem" }}>
                   <thead>
                     <tr style={{ background:"#F8FAFC" }}>
-                      <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#374151", borderBottom:"2px solid #E2E8F0" }}>Pagamento</th>
-                      <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#374151", borderBottom:"2px solid #E2E8F0" }}>Sistema espera</th>
-                      <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#374151", borderBottom:"2px solid #E2E8F0" }}>Você contou</th>
+                      <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#334155", borderBottom:"2px solid #E2E8F0" }}>Pagamento</th>
+                      <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#334155", borderBottom:"2px solid #E2E8F0" }}>Sistema espera</th>
+                      <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#334155", borderBottom:"2px solid #E2E8F0" }}>Você contou</th>
                     </tr>
                   </thead>
                   <tbody>
                     {METHODS.map(m => (
                       <tr key={m.key} style={{ borderBottom:"1px solid #F1F5F9" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#374151" }}>{m.label}</td>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#334155" }}>{m.label}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", color:"#64748B" }}>{fmt(expected[m.key] || 0)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right" }}>
                           <input
@@ -1047,20 +1047,20 @@ export default function StoreTopNav({
                       </tr>
                     ))}
                     {(expected.ifoodOnline || 0) > 0 && (
-                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#F0F9FF" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#0284C7" }}>🔴 iFood (Pago Online)</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#0284C7", fontWeight:700 }}>{fmt(expected.ifoodOnline)}</td>
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF6F2" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#1C1917" }}>🔴 iFood (Pago Online)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#1C1917", fontWeight:700 }}>{fmt(expected.ifoodOnline)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right" }}>
-                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#BAE6FD", border:"1.5px solid #7DD3FC", fontSize:"0.78rem", textAlign:"center", color:"#0369A1", fontWeight:700 }}>
+                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#E7DDD3", border:"1.5px solid #7DD3FC", fontSize:"0.78rem", textAlign:"center", color:"#1C1917", fontWeight:700 }}>
                             🔒 {fmt(expected.ifoodOnline)}
                           </span>
                         </td>
                       </tr>
                     )}
                     {(expected.ifoodCoupons || 0) > 0 && (
-                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF7ED" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#EA580C" }}>🔴 iFood (Cupons)</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#EA580C", fontWeight:700 }}>{fmt(expected.ifoodCoupons)}</td>
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF4EF" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#E8590C" }}>🔴 iFood (Cupons)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#E8590C", fontWeight:700 }}>{fmt(expected.ifoodCoupons)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#9A3412" }}>—</td>
                       </tr>
                     )}
@@ -1076,10 +1076,10 @@ export default function StoreTopNav({
                         bancou (lib/cupom-do-parceiro.ts). */}
                     {(expected.food99Online || 0) > 0 && (
                       <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#A16207" }}>🟡 99Food (Pago Online)</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#A16207", fontWeight:700 }}>{fmt(expected.food99Online)}</td>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#B45309" }}>🟡 99Food (Pago Online)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#B45309", fontWeight:700 }}>{fmt(expected.food99Online)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right" }}>
-                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#FEF08A", border:"1.5px solid #FDE047", fontSize:"0.78rem", textAlign:"center", color:"#854D0E", fontWeight:700 }}>
+                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#FEF08A", border:"1.5px solid #FDE047", fontSize:"0.78rem", textAlign:"center", color:"#92400E", fontWeight:700 }}>
                             🔒 {fmt(expected.food99Online)}
                           </span>
                         </td>
@@ -1087,14 +1087,14 @@ export default function StoreTopNav({
                     )}
                     {(expected.food99Coupons || 0) > 0 && (
                       <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#A16207" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#B45309" }}>
                           🟡 99Food (Cupons do 99)
-                          <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#A16207", opacity:0.8 }}>
+                          <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#B45309", opacity:0.8 }}>
                             Desconto que o 99Food bancou — não passou pela loja
                           </span>
                         </td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#A16207", fontWeight:700 }}>{fmt(expected.food99Coupons)}</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#854D0E" }}>—</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#B45309", fontWeight:700 }}>{fmt(expected.food99Coupons)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#92400E" }}>—</td>
                       </tr>
                     )}
                     {/* Pedidos que ninguém pagou (totem abandonado, cartão
@@ -1105,29 +1105,29 @@ export default function StoreTopNav({
                         sistema esconde é pendência que ninguém cobra. */}
                     {(pendentes.quantidade || 0) > 0 && (
                       <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#A16207" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#B45309" }}>
                           ⏳ Aguardando pagamento
-                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#A16207", opacity:0.85 }}>
+                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#B45309", opacity:0.85 }}>
                             {pendentes.quantidade} pedido{pendentes.quantidade > 1 ? "s" : ""} — fora da conferência
                           </div>
                         </td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#A16207", fontWeight:700 }}>{fmt(pendentes.valor)}</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#A16207" }}>—</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#B45309", fontWeight:700 }}>{fmt(pendentes.valor)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#B45309" }}>—</td>
                       </tr>
                     )}
                     {/* Fiado da equipe: virava DINHEIRO esperado e o operador
                         procurava na gaveta uma cedula que nunca existiu. Sai da
                         conferencia, fica na tela. */}
                     {(foraConf.fiadoQtd || 0) > 0 && (
-                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF5FF" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#7E22CE" }}>
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF6F2" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#1C1917" }}>
                           📝 Fiado / conta da equipe
-                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#7E22CE", opacity:0.85 }}>
+                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#1C1917", opacity:0.85 }}>
                             {foraConf.fiadoQtd} pedido{foraConf.fiadoQtd > 1 ? "s" : ""} — fora da conferência
                           </div>
                         </td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#7E22CE", fontWeight:700 }}>{fmt(foraConf.fiado)}</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#7E22CE" }}>—</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#1C1917", fontWeight:700 }}>{fmt(foraConf.fiado)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#1C1917" }}>—</td>
                       </tr>
                     )}
                     {/* Mesas ainda abertas: conta em andamento, ninguém pagou.
@@ -1136,15 +1136,15 @@ export default function StoreTopNav({
                         da sessão. Antes tudo isso caía em "não identificada":
                         26 pedidos e R$ 1.416,69 no fechamento da Paulista. */}
                     {(foraConf.mesasAbertasQtd || 0) > 0 && (
-                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF7ED" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#C2410C" }}>
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF4EF" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#9A3412" }}>
                           🍽️ Mesas ainda abertas
-                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#C2410C", opacity:0.85 }}>
+                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#9A3412", opacity:0.85 }}>
                             {foraConf.mesasAbertasQtd} pedido{(foraConf.mesasAbertasQtd || 0) > 1 ? "s" : ""} — entram no caixa quando a mesa fechar
                           </div>
                         </td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#C2410C", fontWeight:700 }}>{fmt(foraConf.mesasAbertas || 0)}</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#C2410C" }}>—</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#9A3412", fontWeight:700 }}>{fmt(foraConf.mesasAbertas || 0)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#9A3412" }}>—</td>
                       </tr>
                     )}
                     {(foraConf.naoIdentificadoQtd || 0) > 0 && (
@@ -1161,18 +1161,18 @@ export default function StoreTopNav({
                     )}
                   </tbody>
                   <tfoot>
-                    <tr style={{ background: Math.abs(totalActual - expected.total) < 0.01 ? "#F0FDF4" : "#FEF2F2" }}>
+                    <tr style={{ background: Math.abs(totalActual - expected.total) < 0.01 ? "#F0FDFA" : "#FEF2F2" }}>
                       <td style={{ padding:"10px", fontWeight:900, fontSize:"0.95rem" }}>TOTAL</td>
-                      <td style={{ padding:"10px", textAlign:"right", fontWeight:700, color:"#374151" }}>{fmt(expected.total)}</td>
+                      <td style={{ padding:"10px", textAlign:"right", fontWeight:700, color:"#334155" }}>{fmt(expected.total)}</td>
                       <td style={{ padding:"10px", textAlign:"right", fontWeight:900, fontSize:"1rem",
-                        color: Math.abs(totalActual - expected.total) < 0.01 ? "#16A34A" : "#DC2626" }}>
+                        color: Math.abs(totalActual - expected.total) < 0.01 ? "#0F766E" : "#C92E09" }}>
                         {fmt(totalActual)}
                       </td>
                     </tr>
                     {Math.abs(totalActual - expected.total) >= 0.01 && (
                       <tr>
                         <td colSpan={3} style={{ padding:"6px 10px", textAlign:"center", fontSize:"0.78rem",
-                          color: totalActual < expected.total ? "#DC2626" : "#D97706", fontWeight:700 }}>
+                          color: totalActual < expected.total ? "#C92E09" : "#B45309", fontWeight:700 }}>
                           {totalActual < expected.total
                             ? `⚠️ Faltam ${fmt(expected.total - totalActual)} em caixa`
                             : `⚠️ Sobram ${fmt(totalActual - expected.total)} em caixa`}
@@ -1188,10 +1188,10 @@ export default function StoreTopNav({
                               // Sticky para dentro do padding do cartão: sem isto a linha
                               // de baixo da tabela aparecia por uma fresta embaixo dos botões.
                               marginBottom:"-1.5rem", paddingBottom:"1.5rem" }}>
-                  <a href="/store/caixa/historico" style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.85rem", cursor:"pointer", textAlign:"center", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                  <a href="/store/caixa/historico" style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.85rem", cursor:"pointer", textAlign:"center", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                     <History size={15} /> Histórico
                   </a>
-                  <button onClick={tryClose} disabled={closing} style={{ flex:2, padding:"11px", background:"#DC2626", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.95rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={tryClose} disabled={closing} style={{ flex:2, padding:"11px", background:"#C92E09", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.95rem", cursor:"pointer", fontFamily:"inherit" }}>
                     {closing ? "Encerrando..." : "🔒 Encerrar Caixa"}
                   </button>
                 </div>
@@ -1199,20 +1199,20 @@ export default function StoreTopNav({
             ) : (
               /* ── AVISO: TOTAL DIVERGENTE ── */
               <div style={{ textAlign:"center" }}>
-                <AlertTriangle size={48} color="#D97706" style={{ margin:"0 auto 12px" }} />
+                <AlertTriangle size={48} color="#B45309" style={{ margin:"0 auto 12px" }} />
                 <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#92400E" }}>Atenção! Caixa com diferença</h2>
-                <p style={{ margin:"0 0 6px", fontSize:"0.9rem", color:"#374151" }}>
+                <p style={{ margin:"0 0 6px", fontSize:"0.9rem", color:"#334155" }}>
                   O sistema esperava <strong>{fmt(expected.total)}</strong> mas você informou <strong>{fmt(totalActual)}</strong>.
                 </p>
-                <div style={{ background: diff < 0 ? "#FEF2F2" : "#FFFBEB", border:`1px solid ${diff < 0 ? "#FECACA" : "#FDE68A"}`, borderRadius:12, padding:"12px", margin:"12px 0", fontSize:"1.1rem", fontWeight:900, color: diff < 0 ? "#DC2626" : "#D97706" }}>
+                <div style={{ background: diff < 0 ? "#FEF2F2" : "#FFF7E6", border:`1px solid ${diff < 0 ? "#FECACA" : "#FDE68A"}`, borderRadius:12, padding:"12px", margin:"12px 0", fontSize:"1.1rem", fontWeight:900, color: diff < 0 ? "#C92E09" : "#B45309" }}>
                   {diff < 0 ? `Faltando ${fmt(Math.abs(diff))}` : `Sobrando ${fmt(diff)}`}
                 </div>
                 <p style={{ margin:"0 0 1.2rem", fontSize:"0.82rem", color:"#64748B" }}>Deseja encerrar o caixa assim mesmo?</p>
                 <div style={{ display:"flex", gap:8 }}>
-                  <button onClick={() => setCloseWarn(false)} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => setCloseWarn(false)} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     ← Corrigir
                   </button>
-                  <button onClick={() => { setCloseWarn(false); setPerguntarImpressao(true); }} disabled={closing} style={{ flex:1, padding:"11px", background:"#DC2626", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => { setCloseWarn(false); setPerguntarImpressao(true); }} disabled={closing} style={{ flex:1, padding:"11px", background:"#C92E09", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     {closing ? "Encerrando..." : "Encerrar assim mesmo"}
                   </button>
                 </div>
@@ -1224,14 +1224,14 @@ export default function StoreTopNav({
 
       {/* ── BARRA DE LOJA FECHADA ──────────────────────────── */}
       {!storeOpen && (
-        <div style={{ background:"#EF4444", color:"#fff", textAlign:"center", padding:"6px", fontSize:"0.78rem", fontWeight:700 }}>
+        <div style={{ background:"#C92E09", color:"#fff", textAlign:"center", padding:"6px", fontSize:"0.78rem", fontWeight:700 }}>
           🔴 LOJA FECHADA — Clientes não conseguem fazer pedidos
         </div>
       )}
 
       {/* ── TOP BAR ────────────────────────────────────────── */}
       <div style={{
-        background: isCompras ? "linear-gradient(135deg,#0D47A1,#1565C0)" : "linear-gradient(135deg,#B71C1C,#C62828)",
+        background: isCompras ? "linear-gradient(135deg,#1C1917,#1C1917)" : "linear-gradient(135deg,#B71C1C,#C92E09)",
         padding:"0.45rem 0.85rem", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"0.4rem",
       }}>
         <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", flexWrap:"wrap" }}>
@@ -1282,16 +1282,16 @@ export default function StoreTopNav({
                     <div style={{ padding:"0.75rem 1rem", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
                       <div style={{ flex: 1 }}>
                         <p style={{ margin:"0 0 2px", fontWeight:700, fontSize:"0.82rem", color:"#0F172A" }}>{ifoodStore.name || "Loja iFood"}</p>
-                        <p style={{ margin:0, fontSize:"0.70rem", color: ifoodAvailable ? "#16A34A" : "#DC2626", fontWeight:600 }}>
+                        <p style={{ margin:0, fontSize:"0.70rem", color: ifoodAvailable ? "#0F766E" : "#C92E09", fontWeight:600 }}>
                           {ifoodAvailable === null ? "Verificando..." : ifoodAvailable ? "Aberta" : "Fechada"}
                         </p>
                       </div>
                       <button
                         onClick={toggleIfood}
                         disabled={ifoodToggling || ifoodAvailable === null}
-                        style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:20, border:`1.5px solid ${ifoodAvailable ? "rgba(22,163,74,0.4)" : "rgba(100,116,139,0.4)"}`, background: ifoodAvailable ? "rgba(22,163,74,0.12)" : "rgba(0,0,0,0.07)", color: ifoodAvailable ? "#16A34A" : "#64748B", fontWeight:700, fontSize:"0.75rem", cursor: ifoodToggling ? "not-allowed" : "pointer", fontFamily:"inherit", opacity: ifoodToggling ? 0.6 : 1, transition:"all 0.2s" }}
+                        style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:20, border:`1.5px solid ${ifoodAvailable ? "rgba(15, 118, 110,0.4)" : "rgba(100,116,139,0.4)"}`, background: ifoodAvailable ? "rgba(15, 118, 110,0.12)" : "rgba(0,0,0,0.07)", color: ifoodAvailable ? "#0F766E" : "#64748B", fontWeight:700, fontSize:"0.75rem", cursor: ifoodToggling ? "not-allowed" : "pointer", fontFamily:"inherit", opacity: ifoodToggling ? 0.6 : 1, transition:"all 0.2s" }}
                       >
-                        <span style={{ display:"inline-block", width:28, height:15, borderRadius:8, background: ifoodAvailable ? "#4ADE80" : "#64748B", position:"relative", flexShrink:0, transition:"background 0.2s" }}>
+                        <span style={{ display:"inline-block", width:28, height:15, borderRadius:8, background: ifoodAvailable ? "#5EEAD4" : "#64748B", position:"relative", flexShrink:0, transition:"background 0.2s" }}>
                           <span style={{ position:"absolute", top:2, left: ifoodAvailable ? 15 : 2, width:11, height:11, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
                         </span>
                         {ifoodToggling ? "Aguarde..." : ifoodAvailable ? "Fechar loja" : "Abrir loja"}
@@ -1318,7 +1318,7 @@ export default function StoreTopNav({
             🔌 Integrações
           </a>
           {showCompras && (
-            <a href="/store/compras" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.8rem", borderRadius:8, background: isCompras ? "rgba(255,255,255,0.2)" : "#FF8A00", color:"#fff", fontWeight:700, fontSize:"0.78rem", textDecoration:"none", whiteSpace:"nowrap" }}>
+            <a href="/store/compras" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.8rem", borderRadius:8, background: isCompras ? "rgba(255,255,255,0.2)" : "#E8590C", color:"#fff", fontWeight:700, fontSize:"0.78rem", textDecoration:"none", whiteSpace:"nowrap" }}>
               <ShoppingBag size={13} /> {isCompras ? "Comprando..." : "Fazer Compras"}
             </a>
           )}
@@ -1328,7 +1328,7 @@ export default function StoreTopNav({
             </a>
           )}
           {isAdmin && (
-            <a href="/store/admin/lojistas" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.65rem", borderRadius:8, background:"#EF4444", color:"#fff", fontWeight:700, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap" }}>
+            <a href="/store/admin/lojistas" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.65rem", borderRadius:8, background:"#C92E09", color:"#fff", fontWeight:700, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap" }}>
               🏪 Lojistas
             </a>
           )}
@@ -1363,11 +1363,11 @@ export default function StoreTopNav({
             const Icon = item.icon;
             const active = item.href === "/store" ? pathname === "/store" : pathname?.startsWith(item.href);
             return (
-              <a key={item.href} href={item.href} className="store-nav-link" style={{ display:"flex", alignItems:"center", gap:3, padding:"0.5rem 0.38rem", fontSize:"0.73rem", fontWeight: active ? 700 : 500, color: active ? "#C62828" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C62828" : "3px solid transparent", whiteSpace:"nowrap" }}>
+              <a key={item.href} href={item.href} className="store-nav-link" style={{ display:"flex", alignItems:"center", gap:3, padding:"0.5rem 0.38rem", fontSize:"0.73rem", fontWeight: active ? 700 : 500, color: active ? "#C92E09" : "#475569", textDecoration:"none", borderBottom: active ? "3px solid #C92E09" : "3px solid transparent", whiteSpace:"nowrap" }}>
                 <Icon size={13} /> {item.label}
-                {item.highlight && <span style={{ width:6, height:6, borderRadius:"50%", background:"#C62828", display:"inline-block" }} />}
+                {item.highlight && <span style={{ width:6, height:6, borderRadius:"50%", background:"#C92E09", display:"inline-block" }} />}
                 {item.badge && (
-                  <span className="store-nav-badge" style={{ fontSize:"0.55rem", fontWeight:900, background: item.badge === "EM TESTES" ? "#FEF08A" : "#FEE2E2", color: item.badge === "EM TESTES" ? "#854D0E" : "#991B1B", padding:"2px 4px", borderRadius:4, marginLeft:2 }}>
+                  <span className="store-nav-badge" style={{ fontSize:"0.55rem", fontWeight:900, background: item.badge === "EM TESTES" ? "#FEF08A" : "#FEE2E2", color: item.badge === "EM TESTES" ? "#92400E" : "#B71C1C", padding:"2px 4px", borderRadius:4, marginLeft:2 }}>
                     {item.badge}
                   </span>
                 )}

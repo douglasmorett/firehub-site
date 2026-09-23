@@ -387,7 +387,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   R$ {Number((product as any).precoDe).toFixed(2).replace(".", ",")}
                 </span>
               )}
-              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: emPromocao ? "#DC2626" : "#059669" }}>
+              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: emPromocao ? "#C92E09" : "#0F766E" }}>
                 {/* Com preço base 0, o "a partir de" é o MÍNIMO do produto, não a
                     base crua — senão um pastel cujo valor inteiro está no tamanho
                     (Baby R$ 15,90) anuncia "A partir de R$ 0,00" no topo do modal,
@@ -398,12 +398,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
               </span>
               {emPromocao && (
-                <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#FFF", background: "#DC2626", padding: "2px 8px", borderRadius: "12px" }}>
+                <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#FFF", background: "#C92E09", padding: "2px 8px", borderRadius: "12px" }}>
                   🏷️ PROMOÇÃO
                 </span>
               )}
               {extraSum > 0 && (
-                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#D97706", backgroundColor: "#FEF3C7", padding: "2px 8px", borderRadius: "12px" }}>
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#B45309", backgroundColor: "#FFF7E6", padding: "2px 8px", borderRadius: "12px" }}>
                   + R$ {extraSum.toFixed(2).replace(".", ",")} adicionais
                 </span>
               )}
@@ -430,7 +430,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   style={{
                     backgroundColor: "#FFFFFF",
                     borderRadius: "14px",
-                    border: isMissing ? "1.5px solid #EF4444" : "1px solid #E2E8F0",
+                    border: isMissing ? "1.5px solid #C92E09" : "1px solid #E2E8F0",
                     overflow: "hidden",
                     boxShadow: "0 2px 6px rgba(0,0,0,0.02)",
                     transition: "border-color 0.2s ease",
@@ -440,7 +440,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   <div
                     style={{
                       padding: "0.75rem 1rem",
-                      backgroundColor: complete && total > 0 ? "#F0FDF4" : isMissing ? "#FEF2F2" : "#F8FAFC",
+                      backgroundColor: complete && total > 0 ? "#F0FDFA" : isMissing ? "#FEF2F2" : "#F8FAFC",
                       borderBottom: "1px solid #E2E8F0",
                       display: "flex",
                       alignItems: "center",
@@ -466,9 +466,9 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                           style={{
                             fontSize: "0.72rem",
                             fontWeight: 700,
-                            color: "#166534",
-                            backgroundColor: "#F0FDF4",
-                            border: "1px solid #BBF7D0",
+                            color: "#0F766E",
+                            backgroundColor: "#F0FDFA",
+                            border: "1px solid #99F6E4",
                             borderRadius: "6px",
                             padding: "3px 7px",
                             marginTop: "5px",
@@ -502,8 +502,8 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                           fontWeight: 700,
                           padding: "3px 9px",
                           borderRadius: "20px",
-                          backgroundColor: complete && total > 0 ? "#DCFCE7" : isMissing ? "#FEE2E2" : "#FEF3C7",
-                          color: complete && total > 0 ? "#16A34A" : isMissing ? "#DC2626" : "#D97706",
+                          backgroundColor: complete && total > 0 ? "#F0FDFA" : isMissing ? "#FEE2E2" : "#FFF7E6",
+                          color: complete && total > 0 ? "#0F766E" : isMissing ? "#C92E09" : "#B45309",
                           display: "inline-flex",
                           alignItems: "center",
                           gap: "3px",
@@ -546,8 +546,8 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                             justifyContent: "space-between",
                             padding: "0.65rem 0.85rem",
                             borderRadius: "10px",
-                            backgroundColor: isSelected ? "#F0FDF4" : "#FFFFFF",
-                            border: isSelected ? "1.5px solid #86EFAC" : "1px solid #F1F5F9",
+                            backgroundColor: isSelected ? "#F0FDFA" : "#FFFFFF",
+                            border: isSelected ? "1.5px solid #99F6E4" : "1px solid #F1F5F9",
                             cursor: "pointer",
                             transition: "all 0.15s ease",
                             minHeight: "56px",
@@ -575,7 +575,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                 </div>
                               )}
                               {addPrice > 0 ? (
-                                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#059669", marginTop: "2px" }}>
+                                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#0F766E", marginTop: "2px" }}>
                                   + R$ {addPrice.toFixed(2).replace(".", ",")}
                                 </div>
                               ) : (
@@ -601,7 +601,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                 minHeight: "24px",
                                 aspectRatio: "1 / 1",
                                 borderRadius: "50%",
-                                border: isSelected ? "7px solid #10B981" : "2px solid #CBD5E1",
+                                border: isSelected ? "7px solid #0F766E" : "2px solid #CBD5E1",
                                 backgroundColor: "#FFFFFF",
                                 flexShrink: 0,
                                 boxSizing: "border-box",
@@ -661,13 +661,13 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                   padding: 0,
                                   borderRadius: "50%",
                                   border: "none",
-                                  backgroundColor: grupoCheio || qty >= tetoDoItem ? "#E2E8F0" : "#10B981",
+                                  backgroundColor: grupoCheio || qty >= tetoDoItem ? "#E2E8F0" : "#0F766E",
                                   color: grupoCheio || qty >= tetoDoItem ? "#94A3B8" : "#FFFFFF",
                                   cursor: grupoCheio || qty >= tetoDoItem ? "not-allowed" : "pointer",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
-                                  boxShadow: grupoCheio || qty >= tetoDoItem ? "none" : "0 2px 6px rgba(16, 185, 129, 0.3)",
+                                  boxShadow: grupoCheio || qty >= tetoDoItem ? "none" : "0 2px 6px rgba(15, 118, 110, 0.3)",
                                   flexShrink: 0,
                                   boxSizing: "border-box",
                                   lineHeight: 1,
@@ -691,7 +691,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                 <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
                   📝 Alguma observação?
                 </span>
-                <span style={{ fontSize: "0.72rem", color: notes.length > 120 ? "#DC2626" : "#94A3B8" }}>
+                <span style={{ fontSize: "0.72rem", color: notes.length > 120 ? "#C92E09" : "#94A3B8" }}>
                   {notes.length}/140
                 </span>
               </div>
@@ -803,7 +803,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               borderRadius: "12px",
               border: "none",
               cursor: "pointer",
-              backgroundColor: allComplete ? "#059669" : "#E2E8F0",
+              backgroundColor: allComplete ? "#0F766E" : "#E2E8F0",
               color: allComplete ? "#FFFFFF" : "#64748B",
               fontWeight: 800,
               fontSize: "0.95rem",
@@ -811,7 +811,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               alignItems: "center",
               justifyContent: "space-between",
               gap: "8px",
-              boxShadow: allComplete ? "0 4px 14px rgba(5, 150, 105, 0.35)" : "none",
+              boxShadow: allComplete ? "0 4px 14px rgba(15, 118, 110, 0.35)" : "none",
               transition: "all 0.2s ease",
             }}
           >

@@ -19,7 +19,7 @@ import { Loader, Plus, RefreshCw, Image as ImageIcon, Pause, Play, Tag, Check } 
 
 // ── paleta usada no resto da tela ──────────────────────────
 const LARANJA = "#E8360C";
-const VERDE = "#16A34A";
+const VERDE = "#0F766E";
 const TINTA = "#0F172A";
 const CINZA = "#64748B";
 const LINHA = "#E2E8F0";
@@ -36,7 +36,7 @@ type Chamada = {
 const agora = () => new Date().toLocaleTimeString("pt-BR");
 
 const corDoStatus = (s: number) =>
-  s >= 200 && s < 300 ? VERDE : s >= 400 && s < 500 ? "#D97706" : "#DC2626";
+  s >= 200 && s < 300 ? VERDE : s >= 400 && s < 500 ? "#B45309" : "#C92E09";
 
 export default function TabCardapio() {
   const [chamadas, setChamadas] = useState<Chamada[]>([]);
@@ -283,7 +283,7 @@ export default function TabCardapio() {
       {/* ── coluna dos cenários ── */}
       <div>
         {erro && (
-          <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", color: "#991B1B",
+          <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", color: "#B71C1C",
             borderRadius: 10, padding: "10px 13px", marginBottom: "1rem", fontSize: "0.85rem" }}>
             {erro}
           </div>
@@ -476,11 +476,11 @@ function LinhaPatch({
           style={{ width: 92, padding: "7px 9px", border: `1.5px solid ${LINHA}`, borderRadius: 8, fontSize: "0.83rem", fontFamily: "inherit" }}
         />
         <button onClick={() => aoPreco(novo)}
-          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 11px", background: "#0EA5E9", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 11px", background: "#44403C", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
           <Tag size={12} /> Novo preço
         </button>
         <button onClick={aoPausar}
-          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 11px", background: "#D97706", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 11px", background: "#B45309", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
           <Pause size={12} /> Pausar
         </button>
         <button onClick={aoReativar}

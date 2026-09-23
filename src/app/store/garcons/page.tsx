@@ -234,20 +234,20 @@ export default function GarconsPage() {
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#1E293B", display: "flex", alignItems: "center", gap: 10 }}>
-              <Users size={28} color="#7C3AED" /> Gestão de Garçons
+              <Users size={28} color="#475569" /> Gestão de Garçons
             </h1>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {/* O relatório da LOJA (todas as mesas, todos os garçons), pedido
                   pelo dono em 17/09/2026. O botão "Relatório" de cada linha da
                   tabela continua sendo o de UM garçom. */}
               <button onClick={() => setVerRelatorioDeMesas(true)} style={{
-                background: "#fff", color: "#6D28D9", border: "1.5px solid #C4B5FD", padding: "10px 16px", borderRadius: 8,
+                background: "#fff", color: "#334155", border: "1.5px solid #CBD5E1", padding: "10px 16px", borderRadius: 8,
                 fontWeight: 700, display: "flex", alignItems: "center", gap: 6, cursor: "pointer"
               }}>
                 <FileText size={18} /> Relatório de Mesas
               </button>
               <button onClick={openNew} style={{
-                background: "#7C3AED", color: "#fff", border: "none", padding: "10px 16px", borderRadius: 8,
+                background: "#475569", color: "#fff", border: "none", padding: "10px 16px", borderRadius: 8,
                 fontWeight: 700, display: "flex", alignItems: "center", gap: 6, cursor: "pointer"
               }}>
                 <Plus size={18} /> Novo Garçom
@@ -256,27 +256,27 @@ export default function GarconsPage() {
           </div>
 
           {/* ─── LINK DE ACESSO DO GARÇOM ─── */}
-          <div style={{ background: "linear-gradient(135deg, #F5F3FF, #EEF2FF)", border: "1px solid #DDD6FE", borderRadius: 14, padding: 18, marginBottom: 20 }}>
+          <div style={{ background: "linear-gradient(135deg, #F8FAFC, #FAF6F2)", border: "1px solid #E2E8F0", borderRadius: 14, padding: 18, marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <Link2 size={18} color="#7C3AED" />
-              <strong style={{ color: "#4C1D95", fontSize: 15 }}>Link de acesso do garçom</strong>
+              <Link2 size={18} color="#475569" />
+              <strong style={{ color: "#0F172A", fontSize: 15 }}>Link de acesso do garçom</strong>
             </div>
-            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#5B21B6", lineHeight: 1.5 }}>
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
               Mande este link para a equipe. O garçom entra com o login e a senha que você define no cadastro dele
               e vê só o módulo de mesas — nada mais do painel.
             </p>
             {linkDoGarcom ? (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <input id="link-do-garcom" readOnly value={linkDoGarcom} onFocus={e => e.target.select()}
-                  style={{ flex: 1, minWidth: 220, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #C4B5FD", background: "#fff", fontSize: 13, fontFamily: "inherit", color: "#1E293B" }} />
+                  style={{ flex: 1, minWidth: 220, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#fff", fontSize: 13, fontFamily: "inherit", color: "#1E293B" }} />
                 <button type="button" onClick={copiarLink} style={{
-                  background: copiado ? "#16A34A" : "#7C3AED", color: "#fff", border: "none", padding: "10px 14px",
+                  background: copiado ? "#0F766E" : "#475569", color: "#fff", border: "none", padding: "10px 14px",
                   borderRadius: 10, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
                 }}>
                   {copiado ? <Check size={16} /> : <Copy size={16} />} {copiado ? "Copiado!" : "Copiar link"}
                 </button>
                 <a href={linkDoGarcom} target="_blank" rel="noreferrer" style={{
-                  background: "#fff", color: "#6D28D9", border: "1.5px solid #C4B5FD", padding: "10px 14px",
+                  background: "#fff", color: "#334155", border: "1.5px solid #CBD5E1", padding: "10px 14px",
                   borderRadius: 10, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6,
                 }}>
                   <ExternalLink size={16} /> Abrir
@@ -310,7 +310,7 @@ export default function GarconsPage() {
                     <tr key={w.id} style={{ borderBottom: "1px solid #E2E8F0", cursor: "pointer" }} onClick={() => openReport(w)}>
                       <td style={{ padding: "14px 16px", fontWeight: 600, color: "#1E293B" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#F0EDFF", color: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#FAF6F2", color: "#475569", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>
                             {w.name.charAt(0).toUpperCase()}
                           </div>
                           {w.name}
@@ -319,7 +319,7 @@ export default function GarconsPage() {
                       <td style={{ padding: "14px 16px", color: "#64748B" }}>{w.phone || "-"}</td>
                       <td style={{ padding: "14px 16px" }}>
                         {w.login ? (
-                          <span title={w.lastLoginAt ? `Último acesso: ${fmtDate(w.lastLoginAt)}` : "Nunca entrou"} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#F5F3FF", color: "#6D28D9", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>
+                          <span title={w.lastLoginAt ? `Último acesso: ${fmtDate(w.lastLoginAt)}` : "Nunca entrou"} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#F8FAFC", color: "#334155", padding: "4px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>
                             <KeyRound size={12} /> {w.login}
                           </span>
                         ) : (
@@ -328,8 +328,8 @@ export default function GarconsPage() {
                       </td>
                       <td style={{ padding: "14px 16px" }}>
                         <span style={{
-                          background: w.active ? "#DCFCE7" : "#FEE2E2",
-                          color: w.active ? "#16A34A" : "#EF4444",
+                          background: w.active ? "#F0FDFA" : "#FEE2E2",
+                          color: w.active ? "#0F766E" : "#C92E09",
                           padding: "4px 8px", borderRadius: 20, fontSize: 12, fontWeight: 700
                         }}>
                           {w.active ? "Ativo" : "Inativo"}
@@ -340,8 +340,8 @@ export default function GarconsPage() {
                           <FileText size={14} style={{ display: "inline", verticalAlign: "middle", marginRight: 4 }} />
                           Relatório
                         </button>
-                        <button onClick={() => openEdit(w)} style={{ background: "none", border: "none", color: "#3B82F6", cursor: "pointer", marginRight: 8 }}><Edit2 size={18} /></button>
-                        <button onClick={() => handleDelete(w.id)} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer" }}><Trash2 size={18} /></button>
+                        <button onClick={() => openEdit(w)} style={{ background: "none", border: "none", color: "#1C1917", cursor: "pointer", marginRight: 8 }}><Edit2 size={18} /></button>
+                        <button onClick={() => handleDelete(w.id)} style={{ background: "none", border: "none", color: "#C92E09", cursor: "pointer" }}><Trash2 size={18} /></button>
                       </td>
                     </tr>
                   ))}
@@ -361,16 +361,16 @@ export default function GarconsPage() {
               <ArrowLeft size={20} color="#475569" />
             </button>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#1E293B", display: "flex", alignItems: "center", gap: 10 }}>
-              Desempenho: <span style={{ color: "#7C3AED" }}>{viewingWaiter.name}</span>
+              Desempenho: <span style={{ color: "#475569" }}>{viewingWaiter.name}</span>
             </h1>
           </div>
 
           <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #E2E8F0", padding: 24, marginBottom: 24 }}>
             <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", marginBottom: 24 }}>
               <div style={{ display: "flex", gap: 8, background: "#F8FAFC", padding: 4, borderRadius: 10, border: "1px solid #E2E8F0" }}>
-                <button onClick={() => setDateFilter("hoje")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "hoje" ? "#fff" : "transparent", color: dateFilter === "hoje" ? "#7C3AED" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "hoje" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Hoje</button>
-                <button onClick={() => setDateFilter("ontem")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "ontem" ? "#fff" : "transparent", color: dateFilter === "ontem" ? "#7C3AED" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "ontem" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Ontem</button>
-                <button onClick={() => setDateFilter("periodo")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "periodo" ? "#fff" : "transparent", color: dateFilter === "periodo" ? "#7C3AED" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "periodo" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Período</button>
+                <button onClick={() => setDateFilter("hoje")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "hoje" ? "#fff" : "transparent", color: dateFilter === "hoje" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "hoje" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Hoje</button>
+                <button onClick={() => setDateFilter("ontem")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "ontem" ? "#fff" : "transparent", color: dateFilter === "ontem" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "ontem" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Ontem</button>
+                <button onClick={() => setDateFilter("periodo")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "periodo" ? "#fff" : "transparent", color: dateFilter === "periodo" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "periodo" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Período</button>
               </div>
 
               {dateFilter === "periodo" && (
@@ -384,9 +384,9 @@ export default function GarconsPage() {
 
             {/* Metrics */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
-              <div style={{ background: "#F0EDFF", padding: 20, borderRadius: 12, border: "1px solid #E0D4FF" }}>
-                <div style={{ fontSize: 13, color: "#6D28D9", fontWeight: 700, marginBottom: 4 }}>Mesas Atendidas</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "#4C1D95" }}>{reportTotals.totalTables}</div>
+              <div style={{ background: "#FAF6F2", padding: 20, borderRadius: 12, border: "1px solid #E0D4FF" }}>
+                <div style={{ fontSize: 13, color: "#334155", fontWeight: 700, marginBottom: 4 }}>Mesas Atendidas</div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#0F172A" }}>{reportTotals.totalTables}</div>
               </div>
               <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Total Gasto nas Mesas</div>
@@ -400,9 +400,9 @@ export default function GarconsPage() {
                 <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Gorjetas Extras</div>
                 <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.totalTip)}</div>
               </div>
-              <div style={{ background: "#ECFDF5", padding: 20, borderRadius: 12, border: "1px solid #A7F3D0" }}>
-                <div style={{ fontSize: 13, color: "#047857", fontWeight: 900, marginBottom: 4 }}>Comissão Final (A Receber)</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "#065F46" }}>{fmt(reportTotals.totalCommission)}</div>
+              <div style={{ background: "#F0FDFA", padding: 20, borderRadius: 12, border: "1px solid #99F6E4" }}>
+                <div style={{ fontSize: 13, color: "#0F766E", fontWeight: 900, marginBottom: 4 }}>Comissão Final (A Receber)</div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#134E4A" }}>{fmt(reportTotals.totalCommission)}</div>
               </div>
             </div>
           </div>
@@ -435,19 +435,19 @@ export default function GarconsPage() {
                       <td style={{ padding: "14px 16px", fontWeight: 600, color: "#1E293B" }}>{fmt(s.totalPaid)}</td>
                       <td style={{ padding: "14px 16px" }}>
                         {s.serviceFee > 0 ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#16A34A", fontWeight: 700, fontSize: 14 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#0F766E", fontWeight: 700, fontSize: 14 }}>
                             <CheckCircle2 size={16} /> {fmt(s.serviceFee)}
                           </div>
                         ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#EF4444", fontWeight: 600, fontSize: 14 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#C92E09", fontWeight: 600, fontSize: 14 }}>
                             <XCircle size={16} /> Não pagou
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: "14px 16px", color: "#D97706", fontWeight: 700 }}>
+                      <td style={{ padding: "14px 16px", color: "#B45309", fontWeight: 700 }}>
                         {s.waiterTip > 0 ? `+ ${fmt(s.waiterTip)}` : "-"}
                       </td>
-                      <td style={{ padding: "14px 16px", fontWeight: 800, color: "#059669" }}>
+                      <td style={{ padding: "14px 16px", fontWeight: 800, color: "#0F766E" }}>
                         {fmt(s.waiterCommission)}
                       </td>
                     </tr>
@@ -480,7 +480,7 @@ export default function GarconsPage() {
 
               {/* Acesso pelo link do garçom */}
               <div style={{ marginBottom: 16, padding: 14, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, fontSize: 13, fontWeight: 800, color: "#4C1D95" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, fontSize: 13, fontWeight: 800, color: "#0F172A" }}>
                   <KeyRound size={14} /> Acesso pelo link do garçom
                 </div>
                 <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, color: "#475569" }}>Login</label>
@@ -509,13 +509,13 @@ export default function GarconsPage() {
 
               <div style={{ marginBottom: 24 }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={formData.active} onChange={e => setFormData({ ...formData, active: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#7C3AED" }} />
+                  <input type="checkbox" checked={formData.active} onChange={e => setFormData({ ...formData, active: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#475569" }} />
                   <span style={{ fontSize: 14, fontWeight: 600 }}>Ativo no sistema</span>
                 </label>
               </div>
 
               {erroDoForm && (
-                <div role="alert" style={{ background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
+                <div role="alert" style={{ background: "#FEF2F2", color: "#B71C1C", border: "1px solid #FECACA", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
                   {erroDoForm}
                 </div>
               )}
@@ -526,7 +526,7 @@ export default function GarconsPage() {
                   Cancelar
                 </button>
                 <button type="submit" disabled={salvando}
-                  style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "#7C3AED", color: "#fff", cursor: "pointer", fontWeight: 800, opacity: salvando ? 0.7 : 1 }}>
+                  style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "#475569", color: "#fff", cursor: "pointer", fontWeight: 800, opacity: salvando ? 0.7 : 1 }}>
                   {salvando ? "Salvando..." : "Salvar"}
                 </button>
               </div>

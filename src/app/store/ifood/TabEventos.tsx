@@ -16,14 +16,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { RefreshCw, Radio, Webhook, PlugZap, Loader } from "lucide-react";
 
-const VERDE = "#16A34A";
+const VERDE = "#0F766E";
 const TINTA = "#0F172A";
 const CINZA = "#64748B";
 const LINHA = "#E2E8F0";
 
 const agora = () => new Date().toLocaleTimeString("pt-BR");
 const horaLocal = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR");
-const corDoStatus = (s: number) => (s >= 200 && s < 300 ? VERDE : s >= 400 && s < 500 ? "#D97706" : "#DC2626");
+const corDoStatus = (s: number) => (s >= 200 && s < 300 ? VERDE : s >= 400 && s < 500 ? "#B45309" : "#C92E09");
 
 type Rodada = {
   hora: string;

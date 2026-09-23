@@ -40,7 +40,7 @@ export default function AmbassadorLoginForm() {
     <div
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(135deg, #B91C1C 0%, #DC2626 50%, #991B1B 100%)",
+        background: "linear-gradient(135deg, #B71C1C 0%, #C92E09 50%, #B71C1C 100%)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -73,14 +73,14 @@ export default function AmbassadorLoginForm() {
           margin-bottom: 18px;
         }
         .amb-input:focus {
-          border-color: #DC2626;
+          border-color: #C92E09;
           background: #FFFFFF;
           box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
         }
         .amb-btn {
           width: 100%;
           padding: 14px;
-          background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+          background: linear-gradient(135deg, #C92E09 0%, #B71C1C 100%);
           color: #FFF;
           border: none;
           border-radius: 10px;
@@ -112,11 +112,11 @@ export default function AmbassadorLoginForm() {
           <div style={{ display: "inline-flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
             <img src="/firehub-flame.png" alt="FireHub" style={{ width: 38, height: 38, borderRadius: "8px" }} />
             <div style={{ fontSize: "1.7rem", fontWeight: 900, letterSpacing: "-0.5px" }}>
-              <span style={{ color: "#DC2626" }}>FIRE</span><span style={{ color: "#0F172A" }}>HUB</span>
+              <span style={{ color: "#C92E09" }}>FIRE</span><span style={{ color: "#0F172A" }}>HUB</span>
             </div>
           </div>
           <div>
-            <span style={{ display: "inline-block", background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA", padding: "4px 14px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
+            <span style={{ display: "inline-block", background: "#FEF2F2", color: "#C92E09", border: "1px solid #FECACA", padding: "4px 14px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
               🤝 Portal do Embaixador
             </span>
           </div>
@@ -130,7 +130,7 @@ export default function AmbassadorLoginForm() {
             style={{
               background: "#FEF2F2",
               border: "1px solid #FECACA",
-              color: "#DC2626",
+              color: "#C92E09",
               padding: "12px 14px",
               borderRadius: "10px",
               fontSize: "0.85rem",
@@ -202,7 +202,7 @@ export default function AmbassadorLoginForm() {
           <a
             href="/login"
             style={{
-              color: "#DC2626",
+              color: "#C92E09",
               fontSize: "0.85rem",
               fontWeight: 700,
               textDecoration: "none",

@@ -147,7 +147,7 @@ export default function KDSHubClient() {
           style={{
             padding: "10px 24px", border: "none", borderRadius: "10px", fontWeight: 800,
             fontSize: "0.95rem", cursor: "pointer", fontFamily: "inherit",
-            background: "linear-gradient(135deg, #f97316, #ef4444)", color: "#fff",
+            background: "linear-gradient(135deg, #E8590C, #C92E09)", color: "#fff",
             boxShadow: "0 4px 20px rgba(249,115,22,0.3)", transition: "transform 0.15s",
           }}
         >
@@ -161,8 +161,8 @@ export default function KDSHubClient() {
       {/* Empty state */}
       {screens.length === 0 && (
         <div style={{
-          background: "#1a1a2e", borderRadius: "16px", padding: "3rem 2rem",
-          border: "1px dashed #3a3a5a", textAlign: "center", maxWidth: "500px",
+          background: "#1C1917", borderRadius: "16px", padding: "3rem 2rem",
+          border: "1px dashed #44403C", textAlign: "center", maxWidth: "500px",
         }}>
           <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📺</div>
           <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#fff", marginBottom: "0.5rem" }}>
@@ -176,7 +176,7 @@ export default function KDSHubClient() {
             style={{
               padding: "10px 28px", border: "none", borderRadius: "10px", fontWeight: 700,
               fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
-              background: "linear-gradient(135deg, #f97316, #ef4444)", color: "#fff",
+              background: "linear-gradient(135deg, #E8590C, #C92E09)", color: "#fff",
             }}
           >
             + Adicionar Tela
@@ -217,10 +217,10 @@ export default function KDSHubClient() {
         const nomes = acompanhamentos.map((c) => c.name);
         return (
           <div style={{
-            background: "#1a1a2e", border: "1px solid #2a2a4a", borderLeft: "4px solid #38bdf8",
+            background: "#1C1917", border: "1px solid #292524", borderLeft: "4px solid #A8A29E",
             borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem",
           }}>
-            <div style={{ color: "#38bdf8", fontWeight: 800, fontSize: "0.85rem", marginBottom: 6 }}>
+            <div style={{ color: "#A8A29E", fontWeight: 800, fontSize: "0.85rem", marginBottom: 6 }}>
               🥤 Acompanhamentos
             </div>
             <div style={{ color: "#cbd5e1", fontSize: "0.82rem", lineHeight: 1.5 }}>
@@ -246,13 +246,13 @@ export default function KDSHubClient() {
                       display: "inline-flex", alignItems: "center", gap: "6px",
                       padding: "6px 12px", borderRadius: "999px", cursor: "pointer", fontFamily: "inherit",
                       fontSize: "0.78rem", fontWeight: 700,
-                      border: `1px solid ${fora ? "#8b5cf6" : "#2a2a4a"}`,
+                      border: `1px solid ${fora ? "#64748B" : "#292524"}`,
                       background: fora ? "rgba(139,92,246,0.18)" : "#12122a",
-                      color: fora ? "#c4b5fd" : "#cbd5e1",
+                      color: fora ? "#CBD5E1" : "#cbd5e1",
                     }}
                   >
                     <span>{c.emoji} {c.name}</span>
-                    <span style={{ color: fora ? "#a78bfa" : "#64748b", fontWeight: 600 }}>
+                    <span style={{ color: fora ? "#94A3B8" : "#64748b", fontWeight: 600 }}>
                       {fora ? "só na finalização" : "produção e finalização"}
                     </span>
                   </button>
@@ -268,7 +268,7 @@ export default function KDSHubClient() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
           {screens.map((screen) => {
             const isProd = screen.stage === "production";
-            const accent = isProd ? "#f97316" : "#8b5cf6";
+            const accent = isProd ? "#E8590C" : "#64748B";
             const cats = screen.categoryFilter || [];
             const catParam = cats.length > 0 ? ("&categories=" + encodeURIComponent(cats.join(","))) : "";
             // `tela` e a identidade da tela na baixa: e ela que permite o
@@ -278,8 +278,8 @@ export default function KDSHubClient() {
             const telaUrl = "/store/kds/tela?stage=" + screen.stage + "&filter=" + screen.filter + "&name=" + encodeURIComponent(screen.name) + catParam + "&tela=" + encodeURIComponent(screen.id);
             return (
               <div key={screen.id} style={{
-                background: "#1a1a2e", borderRadius: "14px", padding: "1.5rem",
-                border: "1px solid #2a2a4a", position: "relative",
+                background: "#1C1917", borderRadius: "14px", padding: "1.5rem",
+                border: "1px solid #292524", position: "relative",
                 borderLeft: `4px solid ${accent}`,
               }}>
                 <button
@@ -305,7 +305,7 @@ export default function KDSHubClient() {
                   </span>
                   <span style={{
                     padding: "3px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
-                    background: "#374151", color: "#d1d5db",
+                    background: "#334155", color: "#CBD5E1",
                   }}>
                     {filterLabel(screen.filter)}
                   </span>
@@ -331,7 +331,7 @@ export default function KDSHubClient() {
                     style={{
                       flex: 1, padding: "11px", border: "none", borderRadius: "10px", fontWeight: 800,
                       fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", textAlign: "center",
-                      background: `linear-gradient(135deg, ${accent}, ${isProd ? "#ea580c" : "#6366f1"})`,
+                      background: `linear-gradient(135deg, ${accent}, ${isProd ? "#E8590C" : "#1C1917"})`,
                       color: "#fff", textDecoration: "none",
                     }}
                   >
@@ -340,8 +340,8 @@ export default function KDSHubClient() {
                   <button
                     onClick={() => openForm(screen)}
                     style={{
-                      padding: "11px 14px", border: "1px solid #3a3a5a", borderRadius: "10px",
-                      background: "#2a2a4a", color: "#d1d5db", fontSize: "0.85rem", fontWeight: 600,
+                      padding: "11px 14px", border: "1px solid #44403C", borderRadius: "10px",
+                      background: "#292524", color: "#CBD5E1", fontSize: "0.85rem", fontWeight: 600,
                       cursor: "pointer", fontFamily: "inherit",
                     }}
                   >
@@ -356,7 +356,7 @@ export default function KDSHubClient() {
 
       {/* Tip */}
       <div style={{
-        background: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "12px",
+        background: "#1C1917", border: "1px solid #292524", borderRadius: "12px",
         padding: "1rem 1.5rem", color: "#94a3b8", fontSize: "0.85rem",
         marginTop: "2rem", display: "flex", alignItems: "center", gap: "0.5rem",
       }}>
@@ -376,8 +376,8 @@ export default function KDSHubClient() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: "#1a1a2e", borderRadius: "16px", padding: "2rem",
-              border: "1px solid #2a2a4a", width: "100%", maxWidth: "420px",
+              background: "#1C1917", borderRadius: "16px", padding: "2rem",
+              border: "1px solid #292524", width: "100%", maxWidth: "420px",
               boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
             }}
           >
@@ -395,7 +395,7 @@ export default function KDSHubClient() {
               placeholder="Ex: Produção 1"
               style={{
                 width: "100%", padding: "10px 14px", borderRadius: "8px",
-                border: "1px solid #3a3a5a", background: "#0f0f1a", color: "#fff",
+                border: "1px solid #44403C", background: "#0f0f1a", color: "#fff",
                 fontSize: "0.95rem", fontFamily: "inherit", marginBottom: "1.25rem",
                 outline: "none", boxSizing: "border-box",
               }}
@@ -407,8 +407,8 @@ export default function KDSHubClient() {
             </label>
             <div style={{ display: "flex", gap: "8px", marginBottom: "1.25rem" }}>
               {([
-                { value: "production" as const, label: "🔥 Produção", desc: "Montar e preparar", color: "#f97316" },
-                { value: "finishing" as const, label: "📦 Finalização", desc: "Embalar e conferir", color: "#8b5cf6" },
+                { value: "production" as const, label: "🔥 Produção", desc: "Montar e preparar", color: "#E8590C" },
+                { value: "finishing" as const, label: "📦 Finalização", desc: "Embalar e conferir", color: "#64748B" },
               ]).map((opt) => (
                 <button
                   key={opt.value}
@@ -416,7 +416,7 @@ export default function KDSHubClient() {
                   style={{
                     flex: 1, padding: "12px", borderRadius: "10px", cursor: "pointer",
                     fontFamily: "inherit", textAlign: "center", transition: "all 0.15s",
-                    border: formStage === opt.value ? `2px solid ${opt.color}` : "2px solid #3a3a5a",
+                    border: formStage === opt.value ? `2px solid ${opt.color}` : "2px solid #44403C",
                     background: formStage === opt.value ? `${opt.color}15` : "#0f0f1a",
                     color: formStage === opt.value ? opt.color : "#94a3b8",
                   }}
@@ -444,9 +444,9 @@ export default function KDSHubClient() {
                     flex: 1, padding: "10px", borderRadius: "8px", cursor: "pointer",
                     fontFamily: "inherit", fontWeight: 700, fontSize: "0.85rem",
                     transition: "all 0.15s",
-                    border: formFilter === opt.value ? "2px solid #f97316" : "2px solid #3a3a5a",
+                    border: formFilter === opt.value ? "2px solid #E8590C" : "2px solid #44403C",
                     background: formFilter === opt.value ? "#f9731615" : "#0f0f1a",
-                    color: formFilter === opt.value ? "#f97316" : "#94a3b8",
+                    color: formFilter === opt.value ? "#E8590C" : "#94a3b8",
                   }}
                 >
                   {opt.label}
@@ -473,7 +473,7 @@ export default function KDSHubClient() {
                           padding: "7px 14px", borderRadius: "20px", cursor: "pointer",
                           fontFamily: "inherit", fontWeight: 700, fontSize: "0.8rem",
                           transition: "all 0.15s",
-                          border: selected ? `2px solid ${cat.color}` : "2px solid #3a3a5a",
+                          border: selected ? `2px solid ${cat.color}` : "2px solid #44403C",
                           background: selected ? `${cat.color}20` : "#0f0f1a",
                           color: selected ? cat.color : "#94a3b8",
                         }}
@@ -497,7 +497,7 @@ export default function KDSHubClient() {
                 style={{
                   flex: 1, padding: "12px", borderRadius: "10px", fontWeight: 700,
                   fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
-                  border: "1px solid #3a3a5a", background: "#0f0f1a", color: "#94a3b8",
+                  border: "1px solid #44403C", background: "#0f0f1a", color: "#94a3b8",
                 }}
               >
                 Cancelar
@@ -507,7 +507,7 @@ export default function KDSHubClient() {
                 style={{
                   flex: 1, padding: "12px", borderRadius: "10px", fontWeight: 800,
                   fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
-                  border: "none", background: "linear-gradient(135deg, #f97316, #ef4444)", color: "#fff",
+                  border: "none", background: "linear-gradient(135deg, #E8590C, #C92E09)", color: "#fff",
                 }}
               >
                 {editId ? "Salvar" : "Criar Tela"}

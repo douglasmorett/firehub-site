@@ -126,13 +126,13 @@ export default function IntegracoesHubClient({
         }),
       });
       if (res.ok) {
-        showToast("✅ Google Analytics configurado com sucesso!", "#10B981");
+        showToast("✅ Google Analytics configurado com sucesso!", "#0F766E");
         setOpenModal(null);
       } else {
-        showToast("⚠️ Erro ao salvar configuração do Google", "#EF4444");
+        showToast("⚠️ Erro ao salvar configuração do Google", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão ao salvar", "#EF4444");
+      showToast("⚠️ Erro de conexão ao salvar", "#C92E09");
     } finally {
       setGaSaving(false);
     }
@@ -238,7 +238,7 @@ export default function IntegracoesHubClient({
 
   // Toast alert
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
-  const showToast = (msg: string, color = "#10B981") => {
+  const showToast = (msg: string, color = "#0F766E") => {
     setToast({ msg, color });
     setTimeout(() => setToast(null), 4000);
   };
@@ -251,7 +251,7 @@ export default function IntegracoesHubClient({
         .then(data => {
           if (data.success && data.merchantId) {
             setIfMerchant(data.merchantId);
-            showToast(`🔍 Loja iFood descoberta: ${data.storeName || data.merchantId}${data.importedOrders > 0 ? ` — ${data.importedOrders} pedido(s) importado(s)!` : ""}`, "#10B981");
+            showToast(`🔍 Loja iFood descoberta: ${data.storeName || data.merchantId}${data.importedOrders > 0 ? ` — ${data.importedOrders} pedido(s) importado(s)!` : ""}`, "#0F766E");
             setTimeout(() => window.location.reload(), 1500);
           } else if (data.precisaEscolher && Array.isArray(data.candidatos)) {
             // Mais de uma loja do iFood nesta conta: a tela pergunta em vez de
@@ -349,14 +349,14 @@ export default function IntegracoesHubClient({
         setJjClientSecret("");
         showToast(
           data.autenticou ? "✅ Integração JotaJá salva e ativada!" : `⚠️ ${data.message}`,
-          data.autenticou ? "#10B981" : "#F59E0B"
+          data.autenticou ? "#0F766E" : "#B45309"
         );
         if (data.autenticou) setOpenModal(null);
       } else {
-        showToast(`⚠️ ${data.error || "Erro ao salvar JotaJá"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "Erro ao salvar JotaJá"}`, "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão ao salvar JotaJá", "#EF4444");
+      showToast("⚠️ Erro de conexão ao salvar JotaJá", "#C92E09");
     } finally {
       setJjSaving(false);
     }
@@ -387,14 +387,14 @@ export default function IntegracoesHubClient({
         setBrClientSecret("");
         showToast(
           data.autenticou ? "✅ Integração Brendi salva e ativada!" : `⚠️ ${data.message}`,
-          data.autenticou ? "#10B981" : "#F59E0B"
+          data.autenticou ? "#0F766E" : "#B45309"
         );
         if (data.autenticou) setOpenModal(null);
       } else {
-        showToast(`⚠️ ${data.error || "Erro ao salvar Brendi"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "Erro ao salvar Brendi"}`, "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão ao salvar Brendi", "#EF4444");
+      showToast("⚠️ Erro de conexão ao salvar Brendi", "#C92E09");
     } finally {
       setBrSaving(false);
     }
@@ -414,13 +414,13 @@ export default function IntegracoesHubClient({
         setWbConnected(!!data.autenticou);
         setWbHasPassword(true);
         setWbPassword("");
-        showToast(data.autenticou ? "✅ Wabiz conectada!" : `⚠️ ${data.message}`, data.autenticou ? "#10B981" : "#F59E0B");
+        showToast(data.autenticou ? "✅ Wabiz conectada!" : `⚠️ ${data.message}`, data.autenticou ? "#0F766E" : "#B45309");
         if (data.autenticou) setOpenModal(null);
       } else {
-        showToast(`⚠️ ${data.error || "Erro ao salvar Wabiz"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "Erro ao salvar Wabiz"}`, "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão ao salvar Wabiz", "#EF4444");
+      showToast("⚠️ Erro de conexão ao salvar Wabiz", "#C92E09");
     } finally {
       setWbSaving(false);
     }
@@ -437,10 +437,10 @@ export default function IntegracoesHubClient({
         showToast("Wabiz desconectada.", "#64748B");
         setOpenModal(null);
       } else {
-        showToast(`⚠️ ${data.error || "Erro ao desconectar"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "Erro ao desconectar"}`, "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão ao desconectar Wabiz", "#EF4444");
+      showToast("⚠️ Erro de conexão ao desconectar Wabiz", "#C92E09");
     } finally {
       setWbSaving(false);
     }
@@ -503,15 +503,15 @@ export default function IntegracoesHubClient({
         setFood99PedirId(false);
         setFood99Aguardando(false);
         setFood99Aviso("");
-        showToast("✅ " + data.mensagem, "#10B981");
+        showToast("✅ " + data.mensagem, "#0F766E");
         // Recarrega para a lista trazer a loja que acabou de entrar — com duas
         // lojas, o card só a mostra depois de ler o banco de novo.
         await carregar99Food();
       } else {
-        showToast(`⚠️ ${data.error || "Não consegui conectar essa loja"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "Não consegui conectar essa loja"}`, "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão", "#EF4444");
+      showToast("⚠️ Erro de conexão", "#C92E09");
     } finally {
       setFood99Saving(false);
     }
@@ -549,14 +549,14 @@ export default function IntegracoesHubClient({
         else window.location.href = data.url; // popup bloqueado: vai na mesma aba
         food99EsperadasRef.current = outraLoja ? Math.max(food99Lojas.length, 1) + 1 : 1;
         setFood99Aguardando(true);
-        showToast("🔗 Autorize na aba que abriu — esta tela conecta sozinha", "#F59E0B");
+        showToast("🔗 Autorize na aba que abriu — esta tela conecta sozinha", "#B45309");
       } else {
         janela?.close();
-        showToast(`⚠️ ${data.error || "O 99Food não devolveu a página de autorização"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "O 99Food não devolveu a página de autorização"}`, "#C92E09");
       }
     } catch {
       janela?.close();
-      showToast("⚠️ Erro de conexão ao falar com o 99Food", "#EF4444");
+      showToast("⚠️ Erro de conexão ao falar com o 99Food", "#C92E09");
     } finally {
       setFood99Saving(false);
     }
@@ -620,7 +620,7 @@ export default function IntegracoesHubClient({
             data.lojaNova?.nome
               ? `✅ Loja "${data.lojaNova.nome}" conectada ao 99Food! Os pedidos chegam automaticamente.`
               : "✅ 99Food conectado! Os pedidos chegam automaticamente.",
-            "#10B981"
+            "#0F766E"
           );
           return;
         }
@@ -675,13 +675,13 @@ export default function IntegracoesHubClient({
       const res = await fetch(`/api/99food/conectar?appShopId=${encodeURIComponent(appShopId)}`, { method: "DELETE" });
       const data = await res.json();
       if (res.ok && data.ok) {
-        showToast(`✅ "${data.desligada}" desligada`, "#10B981");
+        showToast(`✅ "${data.desligada}" desligada`, "#0F766E");
         await carregar99Food();
       } else {
-        showToast(`⚠️ ${data.error || "Não consegui desligar"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "Não consegui desligar"}`, "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão", "#EF4444");
+      showToast("⚠️ Erro de conexão", "#C92E09");
     } finally {
       setFood99Saving(false);
     }
@@ -717,10 +717,10 @@ export default function IntegracoesHubClient({
           : data.conectado
           ? "✅ 99Food conectado! Os pedidos chegam automaticamente."
           : `⏳ ${data.mensagem}`,
-        nova || (data.conectado && !data.aviso) ? "#10B981" : "#F59E0B"
+        nova || (data.conectado && !data.aviso) ? "#0F766E" : "#B45309"
       );
     } catch {
-      showToast("⚠️ Erro de conexão", "#EF4444");
+      showToast("⚠️ Erro de conexão", "#C92E09");
     } finally {
       setFood99Saving(false);
     }
@@ -758,17 +758,17 @@ export default function IntegracoesHubClient({
         setFood99Aguardando(false);
         showToast(
           data.aviso ? `⚠️ ${data.aviso}` : "✅ 99Food desconectado com sucesso",
-          data.aviso ? "#F59E0B" : "#10B981"
+          data.aviso ? "#B45309" : "#0F766E"
         );
         // Sobrando loja, a conta continua conectada — a tela relê em vez de
         // assumir "desconectado".
         await carregar99Food();
         setOpenModal(null);
       } else {
-        showToast(`⚠️ ${data.error || "Não consegui desconectar"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "Não consegui desconectar"}`, "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão", "#EF4444");
+      showToast("⚠️ Erro de conexão", "#C92E09");
     } finally {
       setFood99Saving(false);
     }
@@ -786,13 +786,13 @@ export default function IntegracoesHubClient({
         })
       });
       if (res.ok) {
-        showToast("✅ Configurações do iFood salvas!", "#10B981");
+        showToast("✅ Configurações do iFood salvas!", "#0F766E");
         setOpenModal(null);
       } else {
-        showToast("⚠️ Erro ao salvar configurações iFood", "#EF4444");
+        showToast("⚠️ Erro ao salvar configurações iFood", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão", "#EF4444");
+      showToast("⚠️ Erro de conexão", "#C92E09");
     } finally {
       setIfSaving(false);
     }
@@ -827,13 +827,13 @@ export default function IntegracoesHubClient({
         setUserCodeData({ userCode: data.userCode, verificationUrl: targetUrl, expiraEm: Date.now() + segundos * 1000 });
         setAgoraCodigo(Date.now());
         try { navigator.clipboard.writeText(data.userCode); } catch {}
-        showToast("📋 Código copiado! Redirecionando para o iFood...", "#10B981");
+        showToast("📋 Código copiado! Redirecionando para o iFood...", "#0F766E");
         window.open(targetUrl, "_blank");
       } else {
-        showToast(data.error || "Erro ao gerar código iFood", "#EF4444");
+        showToast(data.error || "Erro ao gerar código iFood", "#C92E09");
       }
     } catch {
-      showToast("Erro ao conectar com o iFood", "#EF4444");
+      showToast("Erro ao conectar com o iFood", "#C92E09");
     } finally {
       setLoadingUserCode(false);
     }
@@ -868,16 +868,16 @@ export default function IntegracoesHubClient({
     setEscopoTrazendo(true);
     try {
       const d = await fetch("/api/ifood/integration/escopo", { method: "POST" }).then(r => r.json());
-      showToast(d?.message || "Lojas conectadas!", "#10B981");
+      showToast(d?.message || "Lojas conectadas!", "#0F766E");
       setTimeout(() => window.location.reload(), 1200);
     } catch {
-      showToast("⚠️ Erro ao conectar as lojas", "#EF4444");
+      showToast("⚠️ Erro ao conectar as lojas", "#C92E09");
     } finally { setEscopoTrazendo(false); }
   };
 
   const handleLinkAuthorizationCode = async () => {
     if (!authCodeInput.trim()) {
-      showToast("⚠️ Digite o código de autorização gerado no iFood", "#EF4444");
+      showToast("⚠️ Digite o código de autorização gerado no iFood", "#C92E09");
       return;
     }
     setConnectingAuthCode(true);
@@ -889,7 +889,7 @@ export default function IntegracoesHubClient({
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast(data.message || "🎉 Loja iFood vinculada com sucesso!", "#10B981");
+        showToast(data.message || "🎉 Loja iFood vinculada com sucesso!", "#0F766E");
 
         // Lojas autorizadas que ele ainda não trouxe para cá: a lista aparece
         // para ele MARCAR as que quer. Nada entra sozinho — cada adicional
@@ -918,10 +918,10 @@ export default function IntegracoesHubClient({
 
         setAuthCodeInput("");
       } else {
-        showToast(data.error || "Código de autorização inválido ou expirado", "#EF4444");
+        showToast(data.error || "Código de autorização inválido ou expirado", "#C92E09");
       }
     } catch {
-      showToast("Erro ao conectar com o iFood", "#EF4444");
+      showToast("Erro ao conectar com o iFood", "#C92E09");
     } finally {
       setConnectingAuthCode(false);
     }
@@ -955,15 +955,15 @@ export default function IntegracoesHubClient({
       }
 
       if (res.ok && (data.success ?? true)) {
-        showToast(`🎉 ${nome || "Loja"} vinculada! Os pedidos vão começar a chegar.`, "#10B981");
+        showToast(`🎉 ${nome || "Loja"} vinculada! Os pedidos vão começar a chegar.`, "#0F766E");
         setCandidatosIfood([]);
         setIfMerchant(merchantId);
         setTimeout(() => window.location.reload(), 900);
       } else {
-        showToast(data.error || "Não consegui vincular esta loja", "#EF4444");
+        showToast(data.error || "Não consegui vincular esta loja", "#C92E09");
       }
     } catch {
-      showToast("Erro de rede ao vincular a loja", "#EF4444");
+      showToast("Erro de rede ao vincular a loja", "#C92E09");
     } finally {
       setConnectingAuthCode(false);
     }
@@ -972,7 +972,7 @@ export default function IntegracoesHubClient({
   const handleSubmitMerchantId = async () => {
     const uuid = merchantIdInput.trim();
     if (!uuid || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
-      showToast("⚠️ Cole o Merchant ID no formato UUID (ex: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", "#EF4444");
+      showToast("⚠️ Cole o Merchant ID no formato UUID (ex: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", "#C92E09");
       return;
     }
     setConnectingAuthCode(true);
@@ -984,7 +984,7 @@ export default function IntegracoesHubClient({
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast("🎉 Loja iFood vinculada com sucesso!", "#10B981");
+        showToast("🎉 Loja iFood vinculada com sucesso!", "#0F766E");
         setIfMerchant(uuid);
         setIfoodIntegrations(prev => [
           { id: "main", label: "Loja Principal", merchantId: uuid, connected: true, active: true, createdAt: new Date().toISOString() },
@@ -994,10 +994,10 @@ export default function IntegracoesHubClient({
         setOpenModal(null);
         setTimeout(() => { window.location.reload(); }, 600);
       } else {
-        showToast(data.error || "Erro ao vincular Merchant ID", "#EF4444");
+        showToast(data.error || "Erro ao vincular Merchant ID", "#C92E09");
       }
     } catch {
-      showToast("Erro ao conectar com o iFood", "#EF4444");
+      showToast("Erro ao conectar com o iFood", "#C92E09");
     } finally {
       setConnectingAuthCode(false);
     }
@@ -1015,7 +1015,7 @@ export default function IntegracoesHubClient({
   const handleAddIfoodIntegration = async (confirmarCnpjDiferente = false) => {
     const uuid = newIfMerchantId.trim();
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
-      showToast("⚠️ Cole o Merchant ID no formato UUID (ex: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", "#EF4444");
+      showToast("⚠️ Cole o Merchant ID no formato UUID (ex: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", "#C92E09");
       return;
     }
     setIfAdding(true);
@@ -1039,14 +1039,14 @@ export default function IntegracoesHubClient({
       }
 
       if (res.ok && (data.success ?? true)) {
-        showToast(data.message || `🎉 ${data.storeName || "Loja"} vinculada!`, "#10B981");
+        showToast(data.message || `🎉 ${data.storeName || "Loja"} vinculada!`, "#0F766E");
         setNewIfLabel(""); setNewIfMerchantId(""); setNewIfWidgetId("");
         setShowAddIfoodForm(false);
         setTimeout(() => window.location.reload(), 900);
       } else {
-        showToast(`⚠️ ${data.error || "Erro ao adicionar"}`, "#EF4444");
+        showToast(`⚠️ ${data.error || "Erro ao adicionar"}`, "#C92E09");
       }
-    } catch { showToast("⚠️ Erro de conexão", "#EF4444"); }
+    } catch { showToast("⚠️ Erro de conexão", "#C92E09"); }
     finally { setIfAdding(false); }
   };
 
@@ -1060,11 +1060,11 @@ export default function IntegracoesHubClient({
       const res = await fetch(`/api/ifood/integration/delete?id=${id}`, { method: "DELETE" });
       if (res.ok) {
         setIfoodIntegrations(prev => prev.filter(i => i.id !== id));
-        showToast("✅ Integração removida", "#10B981");
+        showToast("✅ Integração removida", "#0F766E");
       } else {
-        showToast("⚠️ Erro ao remover", "#EF4444");
+        showToast("⚠️ Erro ao remover", "#C92E09");
       }
-    } catch { showToast("⚠️ Erro de conexão", "#EF4444"); }
+    } catch { showToast("⚠️ Erro de conexão", "#C92E09"); }
   };
 
   const handleSavePixel = async () => {
@@ -1083,13 +1083,13 @@ export default function IntegracoesHubClient({
         })
       });
       if (res.ok) {
-        showToast("✅ Pixel do Meta configurado com sucesso!", "#10B981");
+        showToast("✅ Pixel do Meta configurado com sucesso!", "#0F766E");
         setOpenModal(null);
       } else {
-        showToast("⚠️ Erro ao salvar Pixel do Meta", "#EF4444");
+        showToast("⚠️ Erro ao salvar Pixel do Meta", "#C92E09");
       }
     } catch {
-      showToast("⚠️ Erro de conexão ao salvar Pixel", "#EF4444");
+      showToast("⚠️ Erro de conexão ao salvar Pixel", "#C92E09");
     } finally {
       setPixelSaving(false);
     }
@@ -1104,7 +1104,7 @@ export default function IntegracoesHubClient({
       subtitle: "Facebook / Instagram Ads",
       icon: "🎯",
       gradient: "linear-gradient(135deg, #1877F2, #0052CC)",
-      badge: pixelId ? { text: `🟢 Pixel Ativo (${pixelId})`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Configurado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      badge: pixelId ? { text: `🟢 Pixel Ativo (${pixelId})`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Configurado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Rastreie PageView, Adicionar ao Carrinho e Vendas no seu cardápio via Pixel do Meta.",
     },
     {
@@ -1115,7 +1115,7 @@ export default function IntegracoesHubClient({
       icon: "📊",
       gradient: "linear-gradient(135deg, #F9AB00, #E37400)",
       badge: (gaMedicao || gtmId)
-        ? { text: `🟢 Ativo (${gaMedicao || gtmId})`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" }
+        ? { text: `🟢 Ativo (${gaMedicao || gtmId})`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
         : { text: "⚪ Não Configurado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Meça visitas, carrinho e vendas do seu cardápio no GA4 — e mande a venda pelo servidor, como no Meta.",
     },
@@ -1125,8 +1125,8 @@ export default function IntegracoesHubClient({
       title: "WhatsApp IA & Notificações",
       subtitle: "Robô Atendente 24/7 & Avisos",
       icon: "💬",
-      gradient: "linear-gradient(135deg, #10B981, #059669)",
-      badge: waConnected ? { text: `🟢 Conectado (${waPhone || "Ativo"})`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚡ Pendente QR Code", bg: "#FEF3C7", color: "#B45309", border: "#FDE68A" },
+      gradient: "linear-gradient(135deg, #0F766E, #0F766E)",
+      badge: waConnected ? { text: `🟢 Conectado (${waPhone || "Ativo"})`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚡ Pendente QR Code", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" },
       description: "Robô inteligente com Gemini IA, envia avisos de entrega e aceita pedidos automaticamente.",
     },
     {
@@ -1135,8 +1135,8 @@ export default function IntegracoesHubClient({
       title: "JotaJá (Open Delivery)",
       subtitle: "API Oficial OpenDelivery",
       icon: "🛵",
-      gradient: "linear-gradient(135deg, #2563EB, #1D4ED8)",
-      badge: jjConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      gradient: "linear-gradient(135deg, #1C1917, #1C1917)",
+      badge: jjConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Sincronização de pedidos e cardápio direto do seu painel JotaJá para o FireHub.",
     },
     {
@@ -1145,8 +1145,8 @@ export default function IntegracoesHubClient({
       title: "iFood Merchant API",
       subtitle: "Loja Oficial iFood",
       icon: "🔴",
-      gradient: "linear-gradient(135deg, #EA580C, #C2410C)",
-      badge: (ifoodIntegrations.length > 0 || ifMerchant || initialIfoodConnected) ? { text: `🟢 ${ifoodIntegrations.length || 1} Integração(ões)`, bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      gradient: "linear-gradient(135deg, #E8590C, #9A3412)",
+      badge: (ifoodIntegrations.length > 0 || ifMerchant || initialIfoodConnected) ? { text: `🟢 ${ifoodIntegrations.length || 1} Integração(ões)`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Gerencie suas integrações iFood. Conecte múltiplas lojas e acompanhe o status.",
     },
     {
@@ -1156,7 +1156,7 @@ export default function IntegracoesHubClient({
       subtitle: "PIX Instantâneo & Cartão Online",
       icon: "💙",
       gradient: "linear-gradient(135deg, #009EE3, #0072B1)",
-      badge: mpConnected || pagarmeRecipientId ? { text: "🟢 Mercado Pago Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "🟢 PIX / Cartão Ativos", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" },
+      badge: mpConnected || pagarmeRecipientId ? { text: "🟢 Mercado Pago Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "🟢 PIX / Cartão Ativos", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" },
       description: "Processamento seguro de PIX instantâneo e Cartão de Crédito via Mercado Pago / Mercado Livre com repasse para sua conta.",
     },
     {
@@ -1165,8 +1165,8 @@ export default function IntegracoesHubClient({
       title: "99Food Delivery",
       subtitle: "Integração Open Delivery",
       icon: "🟡",
-      gradient: "linear-gradient(135deg, #F59E0B, #D97706)",
-      badge: food99Connected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      gradient: "linear-gradient(135deg, #B45309, #B45309)",
+      badge: food99Connected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Integração direta com o 99Food para captura e gerenciamento automático de pedidos.",
     },
     {
@@ -1178,8 +1178,8 @@ export default function IntegracoesHubClient({
       // Logo oficial no lugar do emoji: o lojista reconhece a marca antes de
       // ler o nome, e é assim que ele vê a Brendi no painel dela.
       logo: "/images/logos/brendi.webp",
-      gradient: "linear-gradient(135deg, #8B5CF6, #6D28D9)",
-      badge: brConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      gradient: "linear-gradient(135deg, #64748B, #334155)",
+      badge: brConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Pedidos do cardápio e da IA da Brendi caem direto no FireHub via Open Delivery, com status sincronizado.",
     },
     {
@@ -1188,8 +1188,8 @@ export default function IntegracoesHubClient({
       title: "Wabiz",
       subtitle: "App de delivery com a marca da sua loja",
       icon: "📱",
-      gradient: "linear-gradient(135deg, #84CC16, #4D7C0F)",
-      badge: wbConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      gradient: "linear-gradient(135deg, #0D9488, #4D7C0F)",
+      badge: wbConnected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Pedidos do seu app Wabiz entram no FireHub sozinhos a cada 30 segundos, e o cliente acompanha o status no app.",
     },
   ];
@@ -1212,7 +1212,7 @@ export default function IntegracoesHubClient({
       <div style={{ background: "linear-gradient(135deg, #0F172A, #1E293B)", borderRadius: "24px", padding: "32px", color: "#fff", marginBottom: "28px", boxShadow: "0 12px 32px rgba(15,23,42,0.15)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
           <div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.25)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, color: "#38BDF8", marginBottom: "12px" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.25)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, color: "#A8A29E", marginBottom: "12px" }}>
               🔌 Central de Integrações
             </div>
             <h1 style={{ fontSize: "1.85rem", fontWeight: 900, margin: "0 0 8px 0" }}>
@@ -1224,10 +1224,10 @@ export default function IntegracoesHubClient({
           </div>
 
           <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", padding: "12px 18px", borderRadius: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <ShieldCheck size={26} color="#10B981" />
+            <ShieldCheck size={26} color="#0F766E" />
             <div>
               <div style={{ fontSize: "0.72rem", opacity: 0.7 }}>Conta Registrada</div>
-              <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#38BDF8" }}>{userEmail}</div>
+              <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#A8A29E" }}>{userEmail}</div>
             </div>
           </div>
         </div>
@@ -1236,25 +1236,25 @@ export default function IntegracoesHubClient({
         <div style={{ display: "flex", gap: "8px", marginTop: "24px", flexWrap: "wrap" }}>
           <button
             onClick={() => setActiveTab("all")}
-            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "all" ? "#38BDF8" : "rgba(255,255,255,0.08)", color: activeTab === "all" ? "#0F172A" : "#fff", transition: "all 0.2s" }}
+            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "all" ? "#A8A29E" : "rgba(255,255,255,0.08)", color: activeTab === "all" ? "#0F172A" : "#fff", transition: "all 0.2s" }}
           >
             Todas as Integrações ({INTEGRATIONS.length})
           </button>
           <button
             onClick={() => setActiveTab("channels")}
-            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "channels" ? "#3B82F6" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
+            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "channels" ? "#1C1917" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
           >
             🛵 Canais de Venda & Delivery
           </button>
           <button
             onClick={() => setActiveTab("marketing")}
-            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "marketing" ? "#10B981" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
+            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "marketing" ? "#0F766E" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
           >
             🎯 Marketing & Tráfego
           </button>
           <button
             onClick={() => setActiveTab("payments")}
-            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "payments" ? "#8B5CF6" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
+            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "payments" ? "#64748B" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
           >
             💳 Pagamentos & PIX
           </button>
@@ -1425,9 +1425,9 @@ export default function IntegracoesHubClient({
                   {capiResultado && (
                     <div style={{
                       marginTop: "12px", padding: "12px 14px", borderRadius: "10px", fontSize: "0.8rem", lineHeight: 1.5,
-                      background: capiResultado.ok ? "#ECFDF3" : "#FEF2F2",
-                      border: `1px solid ${capiResultado.ok ? "#ABEFC6" : "#FECACA"}`,
-                      color: capiResultado.ok ? "#15803D" : "#B71C1C",
+                      background: capiResultado.ok ? "#F0FDFA" : "#FEF2F2",
+                      border: `1px solid ${capiResultado.ok ? "#99F6E4" : "#FECACA"}`,
+                      color: capiResultado.ok ? "#0F766E" : "#B71C1C",
                       fontWeight: 700,
                     }}>
                       {capiResultado.msg}
@@ -1435,7 +1435,7 @@ export default function IntegracoesHubClient({
                   )}
                 </div>
 
-                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#1E40AF", marginBottom: "24px" }}>
+                <div style={{ background: "#FAF6F2", border: "1px solid #E7DDD3", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#1C1917", marginBottom: "24px" }}>
                   <strong>💡 Eventos Rastreados Automáticos:</strong>
                   <ul style={{ margin: "4px 0 0 0", paddingLeft: "16px" }}>
                     <li><code>PageView</code>: Sempre que alguém abre seu cardápio</li>
@@ -1506,7 +1506,7 @@ export default function IntegracoesHubClient({
                 <div style={{ background: "#F8FAFC", borderRadius: "14px", padding: "16px", border: "1px solid #E2E8F0", marginBottom: "20px" }}>
                   <label style={{ fontSize: "0.8rem", fontWeight: 800, color: "#1E293B", display: "block", marginBottom: "6px" }}>
                     Segredo do Measurement Protocol <span style={{ fontWeight: 600, color: "#64748B" }}>— opcional, mas muda muito</span>
-                    {gaHasApiSecret && <span style={{ marginLeft: 8, fontWeight: 700, color: "#15803D" }}>· já configurado</span>}
+                    {gaHasApiSecret && <span style={{ marginLeft: 8, fontWeight: 700, color: "#0F766E" }}>· já configurado</span>}
                   </label>
                   <input
                     type="password"
@@ -1537,9 +1537,9 @@ export default function IntegracoesHubClient({
                   {gaResultado && (
                     <div style={{
                       marginTop: "12px", padding: "12px 14px", borderRadius: "10px", fontSize: "0.8rem", lineHeight: 1.5,
-                      background: gaResultado.ok ? "#ECFDF3" : "#FEF2F2",
-                      border: `1px solid ${gaResultado.ok ? "#ABEFC6" : "#FECACA"}`,
-                      color: gaResultado.ok ? "#15803D" : "#B71C1C",
+                      background: gaResultado.ok ? "#F0FDFA" : "#FEF2F2",
+                      border: `1px solid ${gaResultado.ok ? "#99F6E4" : "#FECACA"}`,
+                      color: gaResultado.ok ? "#0F766E" : "#B71C1C",
                       fontWeight: 700,
                     }}>
                       {gaResultado.msg}
@@ -1565,7 +1565,7 @@ export default function IntegracoesHubClient({
                 </div>
 
                 {gaMedicao && gtmId && (
-                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#92400E", marginBottom: "20px", lineHeight: 1.5 }}>
+                  <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#92400E", marginBottom: "20px", lineHeight: 1.5 }}>
                     <strong>⚠️ Atenção com os dois preenchidos ao mesmo tempo:</strong> se dentro do seu container do Tag
                     Manager já existe uma tag do GA4 medindo este site, cada venda será contada <strong>duas vezes</strong> —
                     uma pelo ID acima e outra pela tag do container. Nesse caso, deixe o ID de métrica em branco e meça só
@@ -1573,7 +1573,7 @@ export default function IntegracoesHubClient({
                   </div>
                 )}
 
-                <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#1E40AF", marginBottom: "24px" }}>
+                <div style={{ background: "#FAF6F2", border: "1px solid #E7DDD3", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#1C1917", marginBottom: "24px" }}>
                   <strong>💡 Eventos Rastreados Automáticos:</strong>
                   <ul style={{ margin: "4px 0 0 0", paddingLeft: "16px" }}>
                     <li><code>page_view</code>: Sempre que alguém abre seu cardápio</li>
@@ -1609,7 +1609,7 @@ export default function IntegracoesHubClient({
             {openModal === "whatsapp" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #10B981, #059669)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #0F766E, #0F766E)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
                     💬
                   </div>
                   <div>
@@ -1618,16 +1618,16 @@ export default function IntegracoesHubClient({
                   </div>
                 </div>
 
-                <div style={{ background: waConnected ? "#F0FDF4" : "#FEF3C7", border: `1px solid ${waConnected ? "#BBF7D0" : "#FDE68A"}`, padding: "14px", borderRadius: "14px", marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ background: waConnected ? "#F0FDFA" : "#FFF7E6", border: `1px solid ${waConnected ? "#99F6E4" : "#FDE68A"}`, padding: "14px", borderRadius: "14px", marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
-                    <div style={{ fontSize: "0.75rem", opacity: 0.8, color: waConnected ? "#15803D" : "#B45309" }}>Status da Conexão:</div>
-                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: waConnected ? "#15803D" : "#B45309" }}>
+                    <div style={{ fontSize: "0.75rem", opacity: 0.8, color: waConnected ? "#0F766E" : "#B45309" }}>Status da Conexão:</div>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: waConnected ? "#0F766E" : "#B45309" }}>
                       {waConnected ? `🟢 Conectado (${waPhone || "Ativo"})` : "⚡ Aguardando QR Code"}
                     </div>
                   </div>
                   <a
                     href="/store/chatbot"
-                    style={{ padding: "8px 14px", background: "#10B981", color: "#fff", textDecoration: "none", borderRadius: "10px", fontWeight: 800, fontSize: "0.8rem" }}
+                    style={{ padding: "8px 14px", background: "#0F766E", color: "#fff", textDecoration: "none", borderRadius: "10px", fontWeight: 800, fontSize: "0.8rem" }}
                   >
                     Abrir QR Code / Robô &rarr;
                   </a>
@@ -1646,7 +1646,7 @@ export default function IntegracoesHubClient({
                   </button>
                   <a
                     href="/store/chatbot"
-                    style={{ padding: "10px 20px", borderRadius: "10px", background: "linear-gradient(135deg, #10B981, #059669)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", textDecoration: "none", display: "flex", alignItems: "center", gap: "6px" }}
+                    style={{ padding: "10px 20px", borderRadius: "10px", background: "linear-gradient(135deg, #0F766E, #0F766E)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", textDecoration: "none", display: "flex", alignItems: "center", gap: "6px" }}
                   >
                     Configurar Robô no Chatbot &rarr;
                   </a>
@@ -1658,7 +1658,7 @@ export default function IntegracoesHubClient({
             {openModal === "jotaja" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #2563EB, #1D4ED8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #1C1917, #1C1917)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
                     🛵
                   </div>
                   <div>
@@ -1674,7 +1674,7 @@ export default function IntegracoesHubClient({
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <Key size={14} color="#2563EB" /> Client ID (JotaJá)
+                      <Key size={14} color="#1C1917" /> Client ID (JotaJá)
                     </label>
                     <input
                       type="text"
@@ -1687,7 +1687,7 @@ export default function IntegracoesHubClient({
 
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <ShieldCheck size={14} color="#2563EB" /> Client Secret (JotaJá)
+                      <ShieldCheck size={14} color="#1C1917" /> Client Secret (JotaJá)
                     </label>
                     <input
                       type="password"
@@ -1705,7 +1705,7 @@ export default function IntegracoesHubClient({
 
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <Store size={14} color="#2563EB" /> Store ID / Merchant ID (Código da Loja)
+                      <Store size={14} color="#1C1917" /> Store ID / Merchant ID (Código da Loja)
                     </label>
                     <input
                       type="text"
@@ -1727,7 +1727,7 @@ export default function IntegracoesHubClient({
                   <button
                     onClick={handleSaveJotaja}
                     disabled={jjSaving}
-                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(37,99,235,0.3)", opacity: jjSaving ? 0.7 : 1 }}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #1C1917, #1C1917)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(28, 25, 23,0.3)", opacity: jjSaving ? 0.7 : 1 }}
                   >
                     <Save size={16} /> {jjSaving ? "Salvando..." : "Salvar e Ativar JotaJá"}
                   </button>
@@ -1739,7 +1739,7 @@ export default function IntegracoesHubClient({
             {openModal === "ifood" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #EA580C, #C2410C)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #E8590C, #9A3412)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
                     🔴
                   </div>
                   <div>
@@ -1764,11 +1764,11 @@ export default function IntegracoesHubClient({
                     {/* Integração conectada (do banco User.ifoodConnected / ifoodMerchantId) */}
                     {(ifMerchant || initialIfoodConnected) && (
                       <div style={{
-                        padding: "14px 16px", borderRadius: 14, border: "1.5px solid #BBF7D0",
-                        background: "#F0FDF4", display: "flex", alignItems: "center", gap: 12,
+                        padding: "14px 16px", borderRadius: 14, border: "1.5px solid #99F6E4",
+                        background: "#F0FDFA", display: "flex", alignItems: "center", gap: 12,
                       }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 10, background: "#DCFCE7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <CheckCircle2 size={18} color="#16A34A" />
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: "#F0FDFA", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <CheckCircle2 size={18} color="#0F766E" />
                         </div>
                         <div style={{ flex: 1 }}>
                           {/* Mostra o NOME da loja no iFood em vez de um rótulo
@@ -1806,7 +1806,7 @@ export default function IntegracoesHubClient({
                             );
                           })()}
                         </div>
-                        <span style={{ fontSize: "0.7rem", background: "#DCFCE7", color: "#15803D", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Ativa</span>
+                        <span style={{ fontSize: "0.7rem", background: "#F0FDFA", color: "#0F766E", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Ativa</span>
                         <button
                           onClick={async () => {
                             // O merchant vai na URL de propósito: sem ele a rota
@@ -1830,12 +1830,12 @@ export default function IntegracoesHubClient({
                                 `/api/ifood/auth?step=disconnect${ifMerchant ? `&merchantId=${encodeURIComponent(ifMerchant)}` : ""}`
                               );
                               if (r.ok) {
-                                showToast("🔌 iFood desconectado com sucesso", "#F59E0B");
+                                showToast("🔌 iFood desconectado com sucesso", "#B45309");
                                 setTimeout(() => window.location.reload(), 500);
                               }
-                            } catch { showToast("Erro ao desconectar", "#EF4444"); }
+                            } catch { showToast("Erro ao desconectar", "#C92E09"); }
                           }}
-                          style={{ background: "none", border: "1px solid #FCA5A5", cursor: "pointer", padding: "4px 8px", borderRadius: 8, color: "#EF4444", fontSize: "0.72rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}
+                          style={{ background: "none", border: "1px solid #FCA5A5", cursor: "pointer", padding: "4px 8px", borderRadius: 8, color: "#C92E09", fontSize: "0.72rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}
                           title="Desconectar iFood"
                         >
                           <X size={14} /> Desconectar
@@ -1847,12 +1847,12 @@ export default function IntegracoesHubClient({
                     {ifoodIntegrations.filter(i => i.merchantId !== ifMerchant).map((integ, idx) => (
                       <div key={integ.id} style={{
                         padding: "14px 16px", borderRadius: 14,
-                        border: integ.active ? "1.5px solid #BBF7D0" : "1.5px solid #E2E8F0",
-                        background: integ.active ? "#F0FDF4" : "#F8FAFC",
+                        border: integ.active ? "1.5px solid #99F6E4" : "1.5px solid #E2E8F0",
+                        background: integ.active ? "#F0FDFA" : "#F8FAFC",
                         display: "flex", alignItems: "center", gap: 12,
                       }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 10, background: integ.active ? "#DCFCE7" : "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          {integ.active ? <CheckCircle2 size={18} color="#16A34A" /> : <X size={18} color="#94A3B8" />}
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: integ.active ? "#F0FDFA" : "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {integ.active ? <CheckCircle2 size={18} color="#0F766E" /> : <X size={18} color="#94A3B8" />}
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{integ.label || `Loja iFood (${integ.merchantId.slice(0, 6)})`}</div>
@@ -1865,20 +1865,20 @@ export default function IntegracoesHubClient({
                             quer saber olhando aqui: se ela está recebendo. */}
                         <span style={{
                           fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
-                          background: integ.active ? "#DCFCE7" : "#F1F5F9",
-                          color: integ.active ? "#15803D" : "#64748B",
+                          background: integ.active ? "#F0FDFA" : "#F1F5F9",
+                          color: integ.active ? "#0F766E" : "#64748B",
                         }}>
                           {integ.active ? "🟢 Ativa" : "⚪ Inativa"}
                         </span>
                         <span style={{
                           fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
-                          background: "#FEF3C7", color: "#92400E",
+                          background: "#FFF7E6", color: "#92400E",
                         }}>
                           💰 +R$50/mês
                         </span>
                         <button
                           onClick={() => handleRemoveIfoodIntegration(integ.id)}
-                          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "#EF4444" }}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "#C92E09" }}
                           title="Remover integração"
                         >
                           <Trash2 size={16} />
@@ -1895,11 +1895,11 @@ export default function IntegracoesHubClient({
                     com o preço na frente, e o nome de cada uma se corrige no
                     primeiro pedido dela. */}
                 {escopoPendentes > 0 && (
-                  <div style={{ padding: "14px 16px", borderRadius: 14, background: "#EFF6FF", border: "1.5px solid #93C5FD", marginBottom: "16px" }}>
-                    <div style={{ fontSize: "0.88rem", fontWeight: 800, color: "#1E40AF", marginBottom: 4 }}>
+                  <div style={{ padding: "14px 16px", borderRadius: 14, background: "#FAF6F2", border: "1.5px solid #E7DDD3", marginBottom: "16px" }}>
+                    <div style={{ fontSize: "0.88rem", fontWeight: 800, color: "#1C1917", marginBottom: 4 }}>
                       Você tem {escopoPendentes} loja{escopoPendentes > 1 ? "s" : ""} do iFood autorizada{escopoPendentes > 1 ? "s" : ""} fora do FireHub
                     </div>
-                    <div style={{ fontSize: "0.78rem", color: "#1D4ED8", marginBottom: 12, lineHeight: 1.5 }}>
+                    <div style={{ fontSize: "0.78rem", color: "#1C1917", marginBottom: 12, lineHeight: 1.5 }}>
                       {escopoPendentes > 1 ? "Elas já estão" : "Ela já está"} autorizada{escopoPendentes > 1 ? "s" : ""} no
                       seu iFood, mas {escopoPendentes > 1 ? "não recebem" : "não recebe"} pedido aqui.
                       Conectando, {escopoPendentes > 1 ? "os pedidos delas caem" : "os pedidos dela caem"} neste
@@ -1912,7 +1912,7 @@ export default function IntegracoesHubClient({
                       disabled={escopoTrazendo}
                       style={{
                         padding: "10px 16px", borderRadius: 10, border: "none",
-                        background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff",
+                        background: "linear-gradient(135deg, #1C1917, #1C1917)", color: "#fff",
                         fontWeight: 800, fontSize: "0.85rem", cursor: escopoTrazendo ? "wait" : "pointer",
                         fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6,
                         opacity: escopoTrazendo ? 0.7 : 1,
@@ -1949,7 +1949,7 @@ export default function IntegracoesHubClient({
 
                     {/* Aviso de cobrança */}
                     {(ifoodIntegrations.length > 0 || ifMerchant) && (
-                      <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: "#FFF7ED", border: "1px solid #FDBA74", fontSize: "0.78rem", color: "#92400E" }}>
+                      <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: "#FFF4EF", border: "1px solid #FFD3C2", fontSize: "0.78rem", color: "#92400E" }}>
                         💰 <strong>+R$50,00/mês</strong> — Cada integração iFood adicional é cobrada R$50,00 por mês na sua fatura.
                       </div>
                     )}
@@ -1961,7 +1961,7 @@ export default function IntegracoesHubClient({
                       >Cancelar</button>
                       <button
                         onClick={() => handleAddIfoodIntegration()} disabled={ifAdding}
-                        style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #EA580C, #C2410C)", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", opacity: ifAdding ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                        style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #E8590C, #9A3412)", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit", opacity: ifAdding ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}
                       >
                         {ifAdding ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Adicionando...</> : <><Plus size={14} /> Adicionar</>}
                       </button>
@@ -1975,7 +1975,7 @@ export default function IntegracoesHubClient({
                       disabled={loadingUserCode}
                       style={{
                         width: "100%", padding: "14px", borderRadius: 14,
-                        border: "none", background: "linear-gradient(135deg, #EA580C 0%, #C2410C 100%)",
+                        border: "none", background: "linear-gradient(135deg, #E8590C 0%, #9A3412 100%)",
                         color: "#fff", fontWeight: 800, fontSize: "0.9rem",
                         cursor: "pointer", fontFamily: "inherit",
                         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -2002,10 +2002,10 @@ export default function IntegracoesHubClient({
                       return (
                         <div style={{
                           padding: "12px 14px", borderRadius: 12,
-                          background: venceu ? "#FEF2F2" : "#FFF7ED",
-                          border: `1.5px solid ${venceu ? "#FCA5A5" : "#FED7AA"}`,
+                          background: venceu ? "#FEF2F2" : "#FFF4EF",
+                          border: `1.5px solid ${venceu ? "#FCA5A5" : "#FFD3C2"}`,
                         }}>
-                          <div style={{ fontSize: "0.78rem", fontWeight: 800, color: venceu ? "#B91C1C" : "#9A3412", marginBottom: 6 }}>
+                          <div style={{ fontSize: "0.78rem", fontWeight: 800, color: venceu ? "#B71C1C" : "#9A3412", marginBottom: 6 }}>
                             {venceu ? "⏰ O prazo para autorizar expirou" : `⏱️ Você tem mais ${mm}:${String(ss).padStart(2, "0")} para autorizar no iFood`}
                           </div>
                           {/* ── Por que o código de ativação NÃO aparece grande aqui ──────────
@@ -2040,7 +2040,7 @@ export default function IntegracoesHubClient({
                                 <button
                                   type="button"
                                   onClick={() => window.open(userCodeData.verificationUrl, "_blank")}
-                                  style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "#EA580C", color: "#fff", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                                  style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "#E8590C", color: "#fff", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
                                 >
                                   Abrir o iFood de novo ↗
                                 </button>
@@ -2050,7 +2050,7 @@ export default function IntegracoesHubClient({
                                 <code style={{ fontWeight: 800, letterSpacing: "0.06em" }}>{userCodeData.userCode}</code>{" "}
                                 <button
                                   type="button"
-                                  onClick={() => { try { navigator.clipboard.writeText(userCodeData.userCode); showToast("📋 Código copiado", "#10B981"); } catch {} }}
+                                  onClick={() => { try { navigator.clipboard.writeText(userCodeData.userCode); showToast("📋 Código copiado", "#0F766E"); } catch {} }}
                                   style={{ border: "none", background: "none", color: "#9A3412", fontWeight: 800, fontSize: "0.7rem", cursor: "pointer", textDecoration: "underline", padding: 0, fontFamily: "inherit" }}
                                 >
                                   copiar
@@ -2060,7 +2060,7 @@ export default function IntegracoesHubClient({
                           )}
                           {venceu && (
                             <>
-                              <div style={{ fontSize: "0.76rem", color: "#7F1D1D", lineHeight: 1.5, marginBottom: 8 }}>
+                              <div style={{ fontSize: "0.76rem", color: "#B71C1C", lineHeight: 1.5, marginBottom: 8 }}>
                                 O iFood dá 10 minutos para digitar o código. Passou disso, ele deixa de valer —
                                 não é problema da sua internet nem do FireHub. Gere outro e autorize em seguida.
                               </div>
@@ -2068,7 +2068,7 @@ export default function IntegracoesHubClient({
                                 type="button"
                                 onClick={handleGenerateUserCode}
                                 disabled={loadingUserCode}
-                                style={{ width: "100%", padding: "10px", borderRadius: 10, border: "none", background: "#DC2626", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}
+                                style={{ width: "100%", padding: "10px", borderRadius: 10, border: "none", background: "#C92E09", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}
                               >
                                 🔄 Gerar um código novo
                               </button>
@@ -2096,7 +2096,7 @@ export default function IntegracoesHubClient({
                     ainda são oferecidas pelo bloco de baixo, com uma
                     confirmação só. */}
                 {candidatosIfood.filter(c => c.nome?.trim()).length > 1 && (
-                  <div style={{ padding: "16px", borderRadius: 14, background: "#FFFBEB", border: "2px solid #FCD34D", marginBottom: "16px" }}>
+                  <div style={{ padding: "16px", borderRadius: 14, background: "#FFF7E6", border: "2px solid #FDE68A", marginBottom: "16px" }}>
                     <div style={{ fontSize: "0.9rem", fontWeight: 800, color: "#92400E", marginBottom: 4 }}>
                       ⚠️ Achamos {candidatosIfood.length} lojas do iFood nesta conta
                     </div>
@@ -2127,7 +2127,7 @@ export default function IntegracoesHubClient({
                           style={{
                             display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
                             padding: "12px 14px", borderRadius: 10, cursor: connectingAuthCode ? "wait" : "pointer",
-                            border: "1.5px solid #FCD34D", background: "#FFF", textAlign: "left", fontFamily: "inherit",
+                            border: "1.5px solid #FDE68A", background: "#FFF", textAlign: "left", fontFamily: "inherit",
                           }}
                         >
                           <span style={{ minWidth: 0 }}>
@@ -2148,11 +2148,11 @@ export default function IntegracoesHubClient({
                 )}
 
                 {/* Campo para colar o Código de Autorização ou Merchant UUID */}
-                <div style={{ padding: "16px", borderRadius: 14, background: "#F0FDF4", border: "1.5px solid #86EFAC", marginBottom: "16px" }}>
-                  <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#166534", marginBottom: 4 }}>
+                <div style={{ padding: "16px", borderRadius: 14, background: "#F0FDFA", border: "1.5px solid #99F6E4", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F766E", marginBottom: 4 }}>
                     🔑 2. Cole o Código de Autorização OU Merchant ID do iFood:
                   </div>
-                  <div style={{ fontSize: "0.75rem", color: "#15803D", marginBottom: 10 }}>
+                  <div style={{ fontSize: "0.75rem", color: "#0F766E", marginBottom: 10 }}>
                     Cole aqui o código que <strong>o iFood mostrou</strong> na janela
                     "Integração autorizada" (ex: <code>HSXD-CWHG</code>) — não o do passo 1.
                     O <strong>Merchant UUID</strong> da sua loja também serve
@@ -2166,7 +2166,7 @@ export default function IntegracoesHubClient({
                       onChange={e => setAuthCodeInput(e.target.value.trim())}
                       style={{
                         flex: 1, padding: "10px 14px", borderRadius: 10,
-                        border: "1.5px solid #86EFAC", fontSize: "0.88rem",
+                        border: "1.5px solid #99F6E4", fontSize: "0.88rem",
                         fontWeight: 700, fontFamily: "monospace",
                         outline: "none"
                       }}
@@ -2176,7 +2176,7 @@ export default function IntegracoesHubClient({
                       disabled={connectingAuthCode}
                       style={{
                         padding: "10px 18px", borderRadius: 10, border: "none",
-                        background: "linear-gradient(135deg, #16A34A, #15803D)",
+                        background: "linear-gradient(135deg, #0F766E, #0F766E)",
                         color: "#fff", fontWeight: 800, fontSize: "0.85rem",
                         cursor: "pointer", fontFamily: "inherit",
                         display: "flex", alignItems: "center", gap: 6,
@@ -2195,7 +2195,7 @@ export default function IntegracoesHubClient({
 
                 {/* Passo 3: Merchant ID manual (aparece quando auth OK mas merchantId não detectado) */}
                 {needsMerchantId && (
-                  <div style={{ padding: "16px", borderRadius: 14, background: "#FFFBEB", border: "2px solid #F59E0B", marginBottom: "16px", animation: "fadeIn 0.3s ease-in" }}>
+                  <div style={{ padding: "16px", borderRadius: 14, background: "#FFF7E6", border: "2px solid #B45309", marginBottom: "16px", animation: "fadeIn 0.3s ease-in" }}>
                     <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#92400E", marginBottom: 4 }}>
                       🆔 3. Cole o Merchant ID (UUID) da sua loja no iFood:
                     </div>
@@ -2211,7 +2211,7 @@ export default function IntegracoesHubClient({
                         onChange={e => setMerchantIdInput(e.target.value.trim())}
                         style={{
                           flex: 1, padding: "10px 14px", borderRadius: 10,
-                          border: "2px solid #F59E0B", fontSize: "0.88rem",
+                          border: "2px solid #B45309", fontSize: "0.88rem",
                           fontWeight: 700, fontFamily: "monospace",
                           outline: "none", background: "#FFFEF5"
                         }}
@@ -2221,7 +2221,7 @@ export default function IntegracoesHubClient({
                         disabled={connectingAuthCode}
                         style={{
                           padding: "10px 18px", borderRadius: 10, border: "none",
-                          background: "linear-gradient(135deg, #F59E0B, #D97706)",
+                          background: "linear-gradient(135deg, #B45309, #B45309)",
                           color: "#fff", fontWeight: 800, fontSize: "0.85rem",
                           cursor: "pointer", fontFamily: "inherit",
                           display: "flex", alignItems: "center", gap: 6,
@@ -2240,7 +2240,7 @@ export default function IntegracoesHubClient({
                 )}
 
                 {/* Info de cobrança */}
-                <div style={{ padding: "12px 14px", borderRadius: 12, background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: "0.78rem", color: "#1E40AF", lineHeight: 1.5, marginBottom: 16 }}>
+                <div style={{ padding: "12px 14px", borderRadius: 12, background: "#FAF6F2", border: "1px solid #E7DDD3", fontSize: "0.78rem", color: "#1C1917", lineHeight: 1.5, marginBottom: 16 }}>
                   ℹ️ A <strong>1ª integração iFood é gratuita</strong> e já está inclusa no seu plano FireHub.
                   Cada integração adicional custa <strong>+R$50,00/mês</strong> na sua fatura mensal.
                 </div>
@@ -2270,9 +2270,9 @@ export default function IntegracoesHubClient({
                   </div>
                 </div>
 
-                <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
-                  <div style={{ fontSize: "0.75rem", color: "#15803D" }}>Status da Integração:</div>
-                  <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#15803D" }}>
+                <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                  <div style={{ fontSize: "0.75rem", color: "#0F766E" }}>Status da Integração:</div>
+                  <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F766E" }}>
                     🟢 Recebimento PIX Instantâneo e Cartão de Crédito Ativos no Cardápio
                   </div>
                 </div>
@@ -2296,7 +2296,7 @@ export default function IntegracoesHubClient({
             {openModal === "99food" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #F59E0B, #D97706)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #B45309, #B45309)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
                     🟡
                   </div>
                   <div>
@@ -2310,21 +2310,21 @@ export default function IntegracoesHubClient({
                     <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#475569" }}>Consultando o 99Food…</div>
                   </div>
                 ) : food99Connected ? (
-                  <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
-                    <div style={{ fontSize: "0.75rem", color: "#15803D" }}>Status da Conexão:</div>
+                  <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#0F766E" }}>Status da Conexão:</div>
                     {/* Dizer QUAL loja está ligada. "Loja autorizada" sozinho não
                         deixa o lojista conferir se ligou a loja certa — e o erro
                         só apareceria com pedido caindo na cozinha errada. */}
-                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#15803D" }}>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F766E" }}>
                       🟢 {food99Loja?.nome ? `${food99Loja.nome} — autorizada no 99Food` : "Loja autorizada no 99Food"}
                     </div>
                     {(food99Loja?.shopId || food99Loja?.endereco) && (
-                      <div style={{ fontSize: "0.73rem", color: "#166534", marginTop: 3, opacity: 0.9 }}>
+                      <div style={{ fontSize: "0.73rem", color: "#0F766E", marginTop: 3, opacity: 0.9 }}>
                         {food99Loja.endereco ? `${food99Loja.endereco} · ` : ""}
                         <span style={{ fontFamily: "monospace" }}>ID {food99Loja.shopId}</span>
                       </div>
                     )}
-                    <div style={{ fontSize: "0.78rem", color: "#166534", marginTop: 4 }}>
+                    <div style={{ fontSize: "0.78rem", color: "#0F766E", marginTop: 4 }}>
                       Os pedidos chegam sozinhos no painel. Não é preciso fazer mais nada.
                     </div>
 
@@ -2335,17 +2335,17 @@ export default function IntegracoesHubClient({
                         pedidos (order_confirm_method = BAPP). Agora o FireHub
                         confirma sozinho, e a tela precisa dizer: senao o
                         habito continua. */}
-                    <div style={{ background: "#fff", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 12px", marginTop: 10 }}>
-                      <div style={{ fontSize: "0.83rem", fontWeight: 800, color: "#15803D" }}>
+                    <div style={{ background: "#fff", border: "1px solid #99F6E4", borderRadius: 10, padding: "10px 12px", marginTop: 10 }}>
+                      <div style={{ fontSize: "0.83rem", fontWeight: 800, color: "#0F766E" }}>
                         🔓 Você não precisa deixar o app do 99Food aberto
                       </div>
-                      <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: 4, lineHeight: 1.5 }}>
+                      <div style={{ fontSize: "0.75rem", color: "#0F766E", marginTop: 4, lineHeight: 1.5 }}>
                         Os pedidos chegam aqui sozinhos, pela internet — o computador da loja nem
                         precisa estar ligado. Com o <strong>aceite automático ligado</strong>, a gente aceita e
                         confirma no 99Food na hora. Com ele desligado, o pedido fica tocando aqui
                         esperando você aceitar, como sempre foi.
                       </div>
-                      <div style={{ fontSize: "0.72rem", color: "#166534", marginTop: 6, opacity: 0.85, lineHeight: 1.5 }}>
+                      <div style={{ fontSize: "0.72rem", color: "#0F766E", marginTop: 6, opacity: 0.85, lineHeight: 1.5 }}>
                         Se você <strong>pausar ou fechar a loja no app do 99Food</strong>, a gente respeita e não
                         reabre por conta própria. E quem abre e fecha no horário é a agenda cadastrada
                         <strong> no 99Food</strong> — o horário do FireHub abre e fecha só o seu cardápio digital.
@@ -2355,13 +2355,13 @@ export default function IntegracoesHubClient({
                     {/* A lista só aparece com 2+ lojas: com uma, o cabeçalho
                         acima já diz qual é, e repetir vira ruído. */}
                     {food99Lojas.length > 1 && (
-                      <div style={{ marginTop: 12, borderTop: "1px solid #BBF7D0", paddingTop: 10 }}>
-                        <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#15803D", marginBottom: 8 }}>
+                      <div style={{ marginTop: 12, borderTop: "1px solid #99F6E4", paddingTop: 10 }}>
+                        <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#0F766E", marginBottom: 8 }}>
                           {food99Lojas.length} lojas do 99Food nesta conta
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                           {food99Lojas.map((l) => (
-                            <div key={l.appShopId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: "#fff", border: "1px solid #D1FAE5", borderRadius: 10, padding: "8px 10px" }}>
+                            <div key={l.appShopId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: "#fff", border: "1px solid #F0FDFA", borderRadius: 10, padding: "8px 10px" }}>
                               <div style={{ minWidth: "fit-content" }}>
                                 <div style={{ fontSize: "0.83rem", fontWeight: 800, color: "#0F172A" }}>{l.label || "Loja 99Food"}</div>
                                 {l.shopId && <div style={{ fontSize: "0.7rem", color: "#64748B", fontFamily: "monospace" }}>ID {l.shopId}</div>}
@@ -2369,14 +2369,14 @@ export default function IntegracoesHubClient({
                               <button
                                 onClick={() => handleDesligarLoja99(l.appShopId, l.label || "esta loja")}
                                 disabled={food99Saving}
-                                style={{ minWidth: "fit-content", padding: "5px 12px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#991B1B", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}
+                                style={{ minWidth: "fit-content", padding: "5px 12px", borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", color: "#B71C1C", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}
                               >
                                 Desligar
                               </button>
                             </div>
                           ))}
                         </div>
-                        <div style={{ fontSize: "0.72rem", color: "#166534", marginTop: 8, lineHeight: 1.5 }}>
+                        <div style={{ fontSize: "0.72rem", color: "#0F766E", marginTop: 8, lineHeight: 1.5 }}>
                           A 1ª loja é gratuita. Cada loja adicional custa <strong>+R$50,00/mês</strong> na sua fatura.
                         </div>
                       </div>
@@ -2387,7 +2387,7 @@ export default function IntegracoesHubClient({
                         sistema". Antes isso ia para food99Msg, que este card não
                         mostra — e o lojista ficava olhando um card verde mudo. */}
                     {food99Aviso && (
-                      <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 12px", marginTop: 10, fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
+                      <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 12px", marginTop: 10, fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
                         ⏳ {food99Aviso}
                       </div>
                     )}
@@ -2398,7 +2398,7 @@ export default function IntegracoesHubClient({
                       <button
                         onClick={() => handleConectar99Food(true)}
                         disabled={food99Saving || !food99Disponivel}
-                        style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px dashed #15803D", background: "#fff", color: "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
+                        style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px dashed #0F766E", background: "#fff", color: "#0F766E", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
                       >
                         ➕ Conectar outra loja do 99Food
                       </button>
@@ -2410,14 +2410,14 @@ export default function IntegracoesHubClient({
                       <button
                         onClick={handleVerificar99Food}
                         disabled={food99Saving || !food99Disponivel}
-                        style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #15803D", background: "#fff", color: "#15803D", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
+                        style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid #0F766E", background: "#fff", color: "#0F766E", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", minWidth: "fit-content" }}
                       >
                         {food99Saving ? "Verificando…" : "🔍 Já autorizei outra loja — verificar agora"}
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                  <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
                     <div style={{ fontSize: "0.75rem", color: "#B45309" }}>Status da Conexão:</div>
                     <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#B45309" }}>
                       ⚪ Loja ainda não autorizada
@@ -2456,7 +2456,7 @@ export default function IntegracoesHubClient({
                 {/* Sem isto o laço automático seria invisível e o lojista ficaria
                     olhando uma tela parada, achando que precisa fazer algo. */}
                 {food99Aguardando && (
-                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", padding: "12px 14px", borderRadius: "12px", marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "12px 14px", borderRadius: "12px", marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <span style={{ fontSize: "1.1rem" }}>⏳</span>
                       <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
@@ -2467,7 +2467,7 @@ export default function IntegracoesHubClient({
                     <button
                       onClick={handleVerificar99Food}
                       disabled={food99Saving}
-                      style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #D97706", background: "#fff", color: "#B45309", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}
+                      style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #B45309", background: "#fff", color: "#B45309", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}
                     >
                       {food99Saving ? "Verificando…" : "🔍 Verificar agora"}
                     </button>
@@ -2480,11 +2480,11 @@ export default function IntegracoesHubClient({
                 {/* Mais de uma loja autorizada nesta conta do 99Food.
                     Aceita o ID ou o NOME da loja (ex.: Salz Burgueria). */}
                 {(food99PedirId || food99Candidatos.length > 0) && (
-                  <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
-                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1E3A8A", marginBottom: 6 }}>
+                  <div style={{ background: "#FAF6F2", border: "1px solid #E7DDD3", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1C1917", marginBottom: 6 }}>
                       Qual é o nome ou ID da sua loja no 99Food?
                     </div>
-                    <div style={{ fontSize: "0.76rem", color: "#1E40AF", marginBottom: 10, lineHeight: 1.5 }}>
+                    <div style={{ fontSize: "0.76rem", color: "#1C1917", marginBottom: 10, lineHeight: 1.5 }}>
                       Digite o nome da loja (ex.: Salz) ou o número de ID que aparece no painel do 99Food.
                     </div>
                     <form
@@ -2496,12 +2496,12 @@ export default function IntegracoesHubClient({
                         onChange={(e) => setFood99IdDigitado(e.target.value)}
                         placeholder="ex.: Salz Burgueria ou 4253"
                         disabled={food99Saving}
-                        style={{ flex: "1 1 180px", minWidth: 0, padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #93C5FD", fontSize: "0.88rem" }}
+                        style={{ flex: "1 1 180px", minWidth: 0, padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #E7DDD3", fontSize: "0.88rem" }}
                       />
                       <button
                         type="submit"
                         disabled={food99Saving || !food99IdDigitado.trim()}
-                        style={{ padding: "10px 18px", borderRadius: "10px", border: "none", background: food99IdDigitado.trim() ? "#1D4ED8" : "#CBD5E1", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: food99IdDigitado.trim() ? "pointer" : "default" }}
+                        style={{ padding: "10px 18px", borderRadius: "10px", border: "none", background: food99IdDigitado.trim() ? "#1C1917" : "#CBD5E1", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: food99IdDigitado.trim() ? "pointer" : "default" }}
                       >
                         {food99Saving ? "Conectando…" : "Conectar esta loja"}
                       </button>
@@ -2510,7 +2510,7 @@ export default function IntegracoesHubClient({
                 )}
 
                 {!food99Disponivel && (
-                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "12px", borderRadius: "12px", marginBottom: "16px", fontSize: "0.8rem", color: "#991B1B" }}>
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "12px", borderRadius: "12px", marginBottom: "16px", fontSize: "0.8rem", color: "#B71C1C" }}>
                     A integração 99Food ainda não foi habilitada no servidor. Fale com o suporte do FireHub.
                   </div>
                 )}
@@ -2520,7 +2520,7 @@ export default function IntegracoesHubClient({
                     <button
                       onClick={handleDisconnect99Food}
                       disabled={food99Saving}
-                      style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#991B1B", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                      style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#B71C1C", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
                     >
                       {/* Nomear o que o botão desliga. "Desconectar 99Food" não
                           diz QUAL loja sai — e desligar a loja errada só se
@@ -2539,7 +2539,7 @@ export default function IntegracoesHubClient({
                     <button
                       onClick={handleVerificar99Food}
                       disabled={food99Saving}
-                      style={{ padding: "10px 18px", borderRadius: "10px", border: "1.5px solid #D97706", background: "#fff", color: "#B45309", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
+                      style={{ padding: "10px 18px", borderRadius: "10px", border: "1.5px solid #B45309", background: "#fff", color: "#B45309", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
                     >
                       {food99Saving ? "Verificando…" : "Verificar manual"}
                     </button>
@@ -2548,7 +2548,7 @@ export default function IntegracoesHubClient({
                     <button
                       onClick={() => handleConectar99Food()}
                       disabled={food99Saving || !food99Disponivel}
-                      style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: food99Disponivel ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(245,158,11,0.3)", opacity: food99Saving || !food99Disponivel ? 0.7 : 1 }}
+                      style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: food99Disponivel ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(245,158,11,0.3)", opacity: food99Saving || !food99Disponivel ? 0.7 : 1 }}
                     >
                       <Save size={16} /> {food99Saving ? "Abrindo…" : "Conectar com o 99Food"}
                     </button>
@@ -2578,7 +2578,7 @@ export default function IntegracoesHubClient({
                 {/* O webhook acelera a chegada do pedido, mas não é obrigatório:
                     o FireHub busca sozinho a cada minuto. Dizer isso aqui evita
                     o lojista achar que errou algo quando pular este passo. */}
-                <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#5B21B6", lineHeight: 1.5, marginBottom: "20px" }}>
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#334155", lineHeight: 1.5, marginBottom: "20px" }}>
                   <strong>📡 No painel da Brendi, cadastre este webhook:</strong>
                   <div style={{ fontFamily: "monospace", fontSize: "0.76rem", wordBreak: "break-all", margin: "4px 0" }}>
                     https://firehubfood.com.br/api/brendi/webhook
@@ -2598,7 +2598,7 @@ export default function IntegracoesHubClient({
                     parceiro continuar com o mesmo nome. Só aparece para quem
                     TEM o canal ligado aqui — para os outros seria ruído. */}
                 {(initialIfoodConnected || food99Connected) && (
-                  <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#92400E", lineHeight: 1.55, marginBottom: "20px" }}>
+                  <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#92400E", lineHeight: 1.55, marginBottom: "20px" }}>
                     <strong>⚠️ Antes de ativar: desligue o repasse na Brendi</strong>
                     <p style={{ margin: "6px 0 0" }}>
                       No painel da Brendi, em <strong>Integrações &rarr; FireHub</strong>, deixe marcados
@@ -2619,7 +2619,7 @@ export default function IntegracoesHubClient({
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <Key size={14} color="#8B5CF6" /> Client ID (Brendi)
+                      <Key size={14} color="#64748B" /> Client ID (Brendi)
                     </label>
                     <input
                       type="text"
@@ -2632,7 +2632,7 @@ export default function IntegracoesHubClient({
 
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <ShieldCheck size={14} color="#8B5CF6" /> Client Secret (Brendi)
+                      <ShieldCheck size={14} color="#64748B" /> Client Secret (Brendi)
                     </label>
                     <input
                       type="password"
@@ -2650,7 +2650,7 @@ export default function IntegracoesHubClient({
 
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <Store size={14} color="#8B5CF6" /> Merchant ID (opcional)
+                      <Store size={14} color="#64748B" /> Merchant ID (opcional)
                     </label>
                     <input
                       type="text"
@@ -2679,7 +2679,7 @@ export default function IntegracoesHubClient({
                   <button
                     onClick={handleSaveBrendi}
                     disabled={brSaving}
-                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #8B5CF6, #6D28D9)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(139,92,246,0.3)", opacity: brSaving ? 0.7 : 1 }}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #64748B, #334155)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(139,92,246,0.3)", opacity: brSaving ? 0.7 : 1 }}
                   >
                     <Save size={16} /> {brSaving ? "Salvando..." : "Salvar e Ativar Brendi"}
                   </button>
@@ -2691,7 +2691,7 @@ export default function IntegracoesHubClient({
             {openModal === "wabiz" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #84CC16, #4D7C0F)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #0D9488, #4D7C0F)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.5rem" }}>
                     📱
                   </div>
                   <div>
@@ -2705,7 +2705,7 @@ export default function IntegracoesHubClient({
                   Assim que a Wabiz aceitar o login, os pedidos do app entram no FireHub sozinhos.
                 </p>
 
-                <div style={{ background: "#F7FEE7", border: "1px solid #D9F99D", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#3F6212", lineHeight: 1.5, marginBottom: "20px" }}>
+                <div style={{ background: "#F0FDFA", border: "1px solid #D9F99D", borderRadius: "12px", padding: "12px", fontSize: "0.78rem", color: "#134E4A", lineHeight: 1.5, marginBottom: "20px" }}>
                   Os itens entram com o <strong>nome, os adicionais e o preço</strong> que estão no seu app Wabiz, e o FireHub
                   busca pedidos novos a cada 30 segundos. Cada mudança de status aqui avisa o cliente no app.
                 </div>
@@ -2713,7 +2713,7 @@ export default function IntegracoesHubClient({
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <Key size={14} color="#65A30D" /> Usuário da API (Wabiz)
+                      <Key size={14} color="#0F766E" /> Usuário da API (Wabiz)
                     </label>
                     <input
                       type="text"
@@ -2727,7 +2727,7 @@ export default function IntegracoesHubClient({
 
                   <div>
                     <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <ShieldCheck size={14} color="#65A30D" /> Senha da API (Wabiz)
+                      <ShieldCheck size={14} color="#0F766E" /> Senha da API (Wabiz)
                     </label>
                     <input
                       type="password"
@@ -2745,7 +2745,7 @@ export default function IntegracoesHubClient({
                     <button
                       onClick={handleDisconnectWabiz}
                       disabled={wbSaving}
-                      style={{ marginRight: "auto", padding: "10px 18px", borderRadius: "10px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#B91C1C", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                      style={{ marginRight: "auto", padding: "10px 18px", borderRadius: "10px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#B71C1C", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
                     >
                       Desconectar
                     </button>
@@ -2759,7 +2759,7 @@ export default function IntegracoesHubClient({
                   <button
                     onClick={handleSaveWabiz}
                     disabled={wbSaving}
-                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #84CC16, #4D7C0F)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(101,163,13,0.3)", opacity: wbSaving ? 0.7 : 1 }}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #0D9488, #4D7C0F)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(101,163,13,0.3)", opacity: wbSaving ? 0.7 : 1 }}
                   >
                     <Save size={16} /> {wbSaving ? "Conectando..." : "Salvar e Conectar Wabiz"}
                   </button>

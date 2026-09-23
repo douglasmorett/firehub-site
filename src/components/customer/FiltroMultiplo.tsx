@@ -113,7 +113,7 @@ export default function FiltroMultiplo({
           width: "100%", padding: "9px 30px 9px 12px", borderRadius: 10,
           border: `1.5px solid ${selecionados.length > 0 ? "#E8360C" : "#E2E8F0"}`,
           fontSize: "0.85rem", color: "#0F172A",
-          background: selecionados.length > 0 ? "#FFF7ED" : "#fff",
+          background: selecionados.length > 0 ? "#FFF4EF" : "#fff",
           outline: "none", cursor: "pointer", fontFamily: "inherit",
           textAlign: "left", fontWeight: selecionados.length > 0 ? 800 : 400,
           display: "block", position: "relative", whiteSpace: "nowrap",
@@ -150,7 +150,7 @@ export default function FiltroMultiplo({
               onClick={() => onChange([])}
               style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 8,
-                padding: "9px 12px", border: "none", background: selecionados.length === 0 ? "#FFF7ED" : "#fff",
+                padding: "9px 12px", border: "none", background: selecionados.length === 0 ? "#FFF4EF" : "#fff",
                 cursor: "pointer", fontFamily: "inherit", fontSize: "0.83rem",
                 fontWeight: 800, color: "#0F172A", textAlign: "left",
                 borderBottom: "1px solid #F1F5F9",
@@ -175,7 +175,7 @@ export default function FiltroMultiplo({
                   onClick={() => alternar(o.valor)}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", gap: 8,
-                    padding: "8px 12px", border: "none", background: marcado ? "#FFF7ED" : "#fff",
+                    padding: "8px 12px", border: "none", background: marcado ? "#FFF4EF" : "#fff",
                     cursor: "pointer", fontFamily: "inherit", fontSize: "0.83rem",
                     color: "#0F172A", textAlign: "left",
                   }}
@@ -220,15 +220,15 @@ export default function FiltroMultiplo({
             <span key={o.valor} style={{
               display: "inline-flex", alignItems: "center", gap: 4,
               padding: "3px 6px 3px 8px", borderRadius: 999,
-              background: "#FFF7ED", border: "1px solid #FED7AA",
-              fontSize: "0.72rem", fontWeight: 700, color: "#C2410C", maxWidth: "100%",
+              background: "#FFF4EF", border: "1px solid #FFD3C2",
+              fontSize: "0.72rem", fontWeight: 700, color: "#9A3412", maxWidth: "100%",
             }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.rotulo}</span>
               <button
                 type="button"
                 aria-label={`Tirar ${o.rotulo} do filtro`}
                 onClick={() => alternar(o.valor)}
-                style={{ border: "none", background: "none", padding: 0, display: "flex", cursor: "pointer", color: "#C2410C" }}
+                style={{ border: "none", background: "none", padding: 0, display: "flex", cursor: "pointer", color: "#9A3412" }}
               >
                 <X size={12} />
               </button>

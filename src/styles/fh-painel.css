@@ -1,0 +1,129 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   src/styles/fh-painel.css — a regra de cor DO PAINEL.
+
+   Tudo aqui vive dentro de `.fh-painel` (a raiz de src/app/store/layout.tsx).
+   As classes .btn/.btn-primary/.btn-outline são compartilhadas com o site
+   público em src/app/page.tsx, e lá o vermelho grande é a identidade da
+   página de vendas. No painel não: o lojista passa o dia aqui, e um botão
+   colorido a cada 3cm é o que ele chamou de "muito colorido".
+
+   A REGRA, em uma linha:
+     cor cheia = a ação principal (vermelho da marca) ou navegação (preto).
+     Todo o resto é branco com borda. Verde/âmbar/vermelho existem, mas só
+     como ETIQUETA DE ESTADO em fundo claro — nunca como botão.
+
+   Os hex daqui saem de src/styles/fh-tokens.css. Nenhum é novo.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── PALETA BRASA (aprovada pelo dono em 23/09/2026) ──────────────────────
+   Dentro do painel, o "deu certo" é o verde-azulado e a "informação" é
+   carvão/areia — o azul e o verde-bandeira saíram (ver src/lib/paleta-brasa.ts
+   e scripts/aplicar-paleta-brasa.js). Os tokens globais ficam como estão: o
+   site público continua lendo os de src/styles/fh-tokens.css. */
+.fh-painel {
+  --fh-ok: #0F766E; --fh-ok-claro: #F0FDFA; --fh-ok-borda: #99F6E4; --fh-ok-tinta: #0F766E;
+  --fh-info: #1C1917; --fh-info-claro: #FAF6F2; --fh-info-borda: #E7DDD3; --fh-info-tinta: #44403C;
+}
+
+/* ── AÇÃO PRINCIPAL ────────────────────────────────────────────────────────
+   Um por tela. Era #EF4444 (o vermelho genérico do Tailwind) com sombra
+   colorida de 24px e um salto de 2px no hover — peso de botão de landing. */
+.fh-painel .btn-primary,
+.fh-painel .btn.btn-primary {
+  background: var(--fh-marca, #C92E09);
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: var(--fh-r3, 14px);
+  padding: 10px 18px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  box-shadow: none;
+}
+.fh-painel .btn-primary:hover,
+.fh-painel .btn.btn-primary:hover {
+  background: var(--fh-marca-hv, #B22908);
+  transform: none;
+  box-shadow: none;
+}
+
+/* ── AÇÃO SECUNDÁRIA — branco com borda que se enxerga ─────────────────────
+   A borda era #E5E7EB (1,25:1 com o branco): sumia. --fh-contorno dá 3,38:1,
+   que é o mínimo da WCAG 1.4.11 para controle sem preenchimento. */
+.fh-painel .btn-outline,
+.fh-painel .btn.btn-outline {
+  background: #fff;
+  color: var(--fh-t2, #334155);
+  border: 1px solid var(--fh-contorno, #7C8DA5);
+  border-radius: var(--fh-r3, 14px);
+  padding: 10px 18px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  box-shadow: none;
+}
+.fh-painel .btn-outline:hover,
+.fh-painel .btn.btn-outline:hover {
+  border-color: var(--fh-contorno-hv, #5D6E86);
+  background: var(--fh-n3, #F8FAFC);
+  color: var(--fh-t1, #0F172A);
+  transform: none;
+}
+
+/* A barra lateral usa .btn.btn-outline como link de navegação: fundo escuro,
+   texto claro. A regra acima a deixaria branca. Ela manda no próprio estilo. */
+.fh-painel .btn-outline.sidebar-link,
+.fh-painel .btn.btn-outline.sidebar-link {
+  background: inherit;
+  color: inherit;
+  border-color: transparent;
+}
+
+/* ── BOTÃO NEUTRO ──────────────────────────────────────────────────────────  */
+.fh-painel .btn {
+  border-radius: var(--fh-r3, 14px);
+  padding: 10px 18px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+/* ── ETIQUETA DE ESTADO — o verde/âmbar/vermelho que SOBRA ─────────────────
+   Não é botão: é informação. Fundo claro, texto escuro, borda da família.
+   Usar como <span class="fh-estado fh-estado-ok">✓ Ativo</span>. */
+.fh-painel .fh-estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--fh-r-pill, 9999px);
+  font-size: 0.72rem;
+  font-weight: 800;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.fh-painel .fh-estado-ok      { background: var(--fh-ok-claro, #ECFDF3);      color: var(--fh-ok, #15803D);      border-color: var(--fh-ok-borda, #ABEFC6); }
+.fh-painel .fh-estado-atencao { background: var(--fh-atencao-claro, #FFF7E6); color: var(--fh-atencao, #B45309); border-color: var(--fh-atencao-borda, #FDE68A); }
+.fh-painel .fh-estado-grave   { background: var(--fh-grave-claro, #FEF2F2);   color: var(--fh-grave, #B71C1C);   border-color: var(--fh-grave-borda, #FECACA); }
+.fh-painel .fh-estado-info    { background: var(--fh-info-claro, #EFF6FF);    color: var(--fh-info, #1D4ED8);    border-color: var(--fh-info-borda, #B2DDFF); }
+.fh-painel .fh-estado-neutro  { background: var(--fh-neutro-claro, #F1F5F9);  color: var(--fh-neutro-tinta, #475569); border-color: var(--fh-neutro-borda, #E2E8F0); }
+
+/* ── CAMPO ─────────────────────────────────────────────────────────────────
+   Mesma história da borda do botão de contorno: num input a borda é o ÚNICO
+   sinal de que ali se digita. */
+.fh-painel .input-field,
+.fh-painel input[type="text"],
+.fh-painel input[type="number"],
+.fh-painel input[type="email"],
+.fh-painel input[type="tel"],
+.fh-painel select,
+.fh-painel textarea {
+  border-color: var(--fh-contorno, #7C8DA5);
+  border-radius: var(--fh-r2, 10px);
+}
+.fh-painel .input-field:focus,
+.fh-painel input:focus,
+.fh-painel select:focus,
+.fh-painel textarea:focus {
+  outline: 2px solid var(--fh-marca-topo, #E8360C);
+  outline-offset: 1px;
+  border-color: var(--fh-marca-topo, #E8360C);
+}

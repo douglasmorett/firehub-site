@@ -59,7 +59,7 @@ export default function NewStoreModal({ open, onClose }: { open: boolean; onClos
       >
         {/* Header */}
         <div style={{
-          background: "linear-gradient(135deg, #B71C1C, #C62828)",
+          background: "linear-gradient(135deg, #B71C1C, #C92E09)",
           padding: "1.5rem 1.5rem 1.25rem", position: "relative",
         }}>
           <button onClick={onClose} style={{
@@ -93,11 +93,11 @@ export default function NewStoreModal({ open, onClose }: { open: boolean; onClos
           <div style={{ padding: "3rem 2rem", textAlign: "center" }}>
             <div style={{
               width: 64, height: 64, borderRadius: "50%",
-              background: "#DCFCE7", display: "flex",
+              background: "#F0FDFA", display: "flex",
               alignItems: "center", justifyContent: "center",
               margin: "0 auto 1rem",
             }}>
-              <CheckCircle2 size={32} color="#16A34A" />
+              <CheckCircle2 size={32} color="#0F766E" />
             </div>
             <h3 style={{ margin: "0 0 6px", fontWeight: 900, fontSize: "1.2rem", color: "#0F172A" }}>
               Loja cadastrada com sucesso! 🎉
@@ -124,7 +124,7 @@ export default function NewStoreModal({ open, onClose }: { open: boolean; onClos
                     border: "1.5px solid #E2E8F0", fontSize: "0.88rem", fontFamily: "inherit",
                     outline: "none", transition: "border 0.2s",
                   }}
-                  onFocus={e => e.target.style.borderColor = "#C62828"}
+                  onFocus={e => e.target.style.borderColor = "#C92E09"}
                   onBlur={e => e.target.style.borderColor = "#E2E8F0"}
                 />
               </div>
@@ -185,10 +185,10 @@ export default function NewStoreModal({ open, onClose }: { open: boolean; onClos
             {/* Aviso de cobrança */}
             <div style={{
               marginTop: "1.25rem", padding: "0.85rem 1rem", borderRadius: 12,
-              background: "#FFF7ED", border: "1.5px solid #FDBA74",
+              background: "#FFF4EF", border: "1.5px solid #FFD3C2",
               display: "flex", alignItems: "flex-start", gap: 10,
             }}>
-              <AlertTriangle size={18} color="#D97706" style={{ flexShrink: 0, marginTop: 1 }} />
+              <AlertTriangle size={18} color="#B45309" style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
                 <strong>Cobrança Mensal</strong><br />
                 Uma cobrança mensal FireHub será gerada para esta unidade, baseada no faturamento dela.
@@ -200,7 +200,7 @@ export default function NewStoreModal({ open, onClose }: { open: boolean; onClos
               <div style={{
                 marginTop: "0.75rem", padding: "8px 12px", borderRadius: 8,
                 background: "#FEF2F2", border: "1px solid #FECACA",
-                color: "#DC2626", fontSize: "0.8rem", fontWeight: 600,
+                color: "#C92E09", fontSize: "0.8rem", fontWeight: 600,
               }}>
                 ❌ {error}
               </div>
@@ -212,7 +212,7 @@ export default function NewStoreModal({ open, onClose }: { open: boolean; onClos
               style={{
                 marginTop: "1.25rem", width: "100%", padding: "12px",
                 borderRadius: 12, border: "none", cursor: loading ? "not-allowed" : "pointer",
-                background: loading ? "#94A3B8" : "linear-gradient(135deg, #B71C1C, #C62828)",
+                background: loading ? "#94A3B8" : "linear-gradient(135deg, #B71C1C, #C92E09)",
                 color: "#fff", fontWeight: 900, fontSize: "0.95rem", fontFamily: "inherit",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 boxShadow: loading ? "none" : "0 6px 20px rgba(183,28,28,0.3)",

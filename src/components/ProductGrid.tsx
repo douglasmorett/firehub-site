@@ -75,7 +75,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
       <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 style={{ fontWeight: 700, fontSize: "1.05rem", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
           <ShoppingCart size={18} /> Carrinho
-          {itemCount > 0 && <span style={{ background: "#1565C0", color: "#fff", borderRadius: "20px", padding: "1px 8px", fontSize: "0.75rem" }}>{itemCount}</span>}
+          {itemCount > 0 && <span style={{ background: "#1C1917", color: "#fff", borderRadius: "20px", padding: "1px 8px", fontSize: "0.75rem" }}>{itemCount}</span>}
         </h3>
       </div>
 
@@ -92,7 +92,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
               <div key={item.id} style={{ background: "#fff", borderRadius: "10px", padding: "0.75rem", border: "1px solid #F1F5F9" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.4rem" }}>
                   <span style={{ fontWeight: 600, fontSize: "0.85rem", flex: 1 }}>{item.name}</span>
-                  <button onClick={() => removeFromCart(item.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "#EF4444" }}>
+                  <button onClick={() => removeFromCart(item.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "#C92E09" }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -102,11 +102,11 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
                       <Minus size={13} />
                     </button>
                     <span style={{ fontWeight: 700, fontSize: "0.9rem", minWidth: "24px", textAlign: "center" }}>{item.quantity}</span>
-                    <button onClick={() => addToCart({ id: item.id, name: item.name, price: item.price }, 1)} style={{ width: "28px", height: "28px", borderRadius: "8px", border: "1.5px solid #1565C0", background: "#1565C010", color: "#1565C0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <button onClick={() => addToCart({ id: item.id, name: item.name, price: item.price }, 1)} style={{ width: "28px", height: "28px", borderRadius: "8px", border: "1.5px solid #1C1917", background: "#1565C010", color: "#1C1917", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <Plus size={13} />
                     </button>
                   </div>
-                  <span style={{ fontWeight: 700, color: "#1565C0", fontSize: "0.9rem" }}>R$ {(item.price * item.quantity).toFixed(2)}</span>
+                  <span style={{ fontWeight: 700, color: "#1C1917", fontSize: "0.9rem" }}>R$ {(item.price * item.quantity).toFixed(2)}</span>
                 </div>
               </div>
             ))}
@@ -120,7 +120,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
           <div style={{ marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
               <span style={{ fontWeight: 600, color: "#64748B", fontSize: "0.82rem" }}>Total</span>
-              <span style={{ fontWeight: 800, fontSize: "1.05rem", color: total >= MIN_ORDER ? "#16A34A" : "#1565C0" }}>
+              <span style={{ fontWeight: 800, fontSize: "1.05rem", color: total >= MIN_ORDER ? "#0F766E" : "#1C1917" }}>
                 R$ {total.toFixed(2)}
               </span>
             </div>
@@ -129,7 +129,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
             {total < MIN_ORDER && (
               <>
                 <div style={{ width: "100%", height: "6px", background: "#E2E8F0", borderRadius: "3px", overflow: "hidden", marginBottom: "6px" }}>
-                  <div style={{ width: `${Math.min((total / MIN_ORDER) * 100, 100)}%`, height: "100%", background: "linear-gradient(90deg, #F59E0B, #EF4444)", borderRadius: "3px", transition: "width 0.3s" }} />
+                  <div style={{ width: `${Math.min((total / MIN_ORDER) * 100, 100)}%`, height: "100%", background: "linear-gradient(90deg, #B45309, #C92E09)", borderRadius: "3px", transition: "width 0.3s" }} />
                 </div>
                 <p style={{ fontSize: "0.75rem", color: "#B45309", margin: 0, textAlign: "center" }}>
                   Faltam <strong>R$ {(MIN_ORDER - total).toFixed(2)}</strong> para o mínimo de R$ {MIN_ORDER},00
@@ -138,8 +138,8 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
             )}
 
             {total >= MIN_ORDER && (
-              <div style={{ background: "#F0FDF4", borderRadius: 8, padding: "6px 10px", textAlign: "center" }}>
-                <span style={{ fontSize: "0.78rem", color: "#16A34A", fontWeight: 700 }}>✅ Pedido mínimo atingido!</span>
+              <div style={{ background: "#F0FDFA", borderRadius: 8, padding: "6px 10px", textAlign: "center" }}>
+                <span style={{ fontSize: "0.78rem", color: "#0F766E", fontWeight: 700 }}>✅ Pedido mínimo atingido!</span>
               </div>
             )}
           </div>
@@ -147,10 +147,10 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
           {/* Alerta vermelho ao tentar finalizar sem atingir o mínimo */}
           {showMinError && total < MIN_ORDER && (
             <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: 10, padding: "10px 12px", marginBottom: "0.75rem", display: "flex", gap: 8, alignItems: "flex-start", animation: "shake 0.4s ease" }}>
-              <AlertCircle size={16} color="#DC2626" style={{ flexShrink: 0, marginTop: 1 }} />
+              <AlertCircle size={16} color="#C92E09" style={{ flexShrink: 0, marginTop: 1 }} />
               <div>
-                <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#DC2626", margin: "0 0 2px" }}>Pedido mínimo não atingido</p>
-                <p style={{ fontSize: "0.75rem", color: "#B91C1C", margin: 0 }}>Adicione mais <strong>R$ {(MIN_ORDER - total).toFixed(2)}</strong> em produtos para finalizar.</p>
+                <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#C92E09", margin: "0 0 2px" }}>Pedido mínimo não atingido</p>
+                <p style={{ fontSize: "0.75rem", color: "#B71C1C", margin: 0 }}>Adicione mais <strong>R$ {(MIN_ORDER - total).toFixed(2)}</strong> em produtos para finalizar.</p>
               </div>
             </div>
           )}
@@ -160,7 +160,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
             style={{
               display: "block", width: "100%", padding: "0.7rem", borderRadius: "10px",
               background: total >= MIN_ORDER
-                ? "linear-gradient(135deg, #1565C0, #1976D2)"
+                ? "linear-gradient(135deg, #1C1917, #1C1917)"
                 : "linear-gradient(135deg, #94A3B8, #64748B)",
               color: "#fff", fontWeight: 700, fontSize: "0.92rem", textAlign: "center",
               border: "none", cursor: "pointer",
@@ -186,7 +186,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
               <Link href="/store/orders" style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "8px 14px", borderRadius: 10, fontWeight: 700, fontSize: "0.82rem",
-                background: "linear-gradient(135deg, #1565C0, #1976D2)", color: "#fff",
+                background: "linear-gradient(135deg, #1C1917, #1C1917)", color: "#fff",
                 textDecoration: "none", boxShadow: "0 3px 10px rgba(21,101,192,0.25)",
                 transition: "opacity 0.2s", whiteSpace: "nowrap",
               }}>
@@ -314,12 +314,12 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
       {itemCount > 0 && (
         <button onClick={() => setShowMobileCart(true)} className="cart-mobile-btn" style={{
           position: "fixed", bottom: "1.25rem", right: "1.25rem", width: "60px", height: "60px",
-          borderRadius: "50%", background: "linear-gradient(135deg, #1565C0, #1976D2)", color: "#fff",
+          borderRadius: "50%", background: "linear-gradient(135deg, #1C1917, #1C1917)", color: "#fff",
           border: "none", cursor: "pointer", boxShadow: "0 6px 20px rgba(21,101,192,0.4)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100
         }}>
           <ShoppingCart size={24} />
-          <span style={{ position: "absolute", top: "-4px", right: "-4px", background: "#FF8A00", color: "#fff", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 800 }}>{itemCount}</span>
+          <span style={{ position: "absolute", top: "-4px", right: "-4px", background: "#E8590C", color: "#fff", borderRadius: "50%", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 800 }}>{itemCount}</span>
         </button>
       )}
 

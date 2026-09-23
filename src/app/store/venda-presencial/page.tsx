@@ -712,7 +712,7 @@ export default function VendaPresencialPage() {
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar produto..."
                 style={{ width: "100%", padding: "8px 12px 8px 32px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", outline: "none" }} />
             </div>
-            <div style={{ background: "#C62828", color: "#fff", borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: "0.85rem", display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ background: "#C92E09", color: "#fff", borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: "0.85rem", display: "flex", alignItems: "center", gap: 6 }}>
               <ShoppingCart size={15} /> {cartQty} {cartQty === 1 ? "item" : "itens"}
             </div>
           </div>
@@ -721,7 +721,7 @@ export default function VendaPresencialPage() {
             {categories.map(cat => (
               <button key={cat} onClick={() => setSelectedCategory(cat)}
                 style={{ padding: "5px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem", whiteSpace: "nowrap", fontFamily: "inherit",
-                  background: selectedCategory === cat ? "#C62828" : "#F1F5F9",
+                  background: selectedCategory === cat ? "#C92E09" : "#F1F5F9",
                   color: selectedCategory === cat ? "#fff" : "#64748B" }}>
                 {cat}
               </button>
@@ -736,11 +736,11 @@ export default function VendaPresencialPage() {
               const inCart = cart.find(i => i.product.id === p.id);
               return (
                 <div key={p.id} onClick={() => handleProductClick(p)}
-                  style={{ background: "#fff", border: `2px solid ${inCart ? "#C62828" : "#E2E8F0"}`, borderRadius: 14, padding: 10, cursor: "pointer", transition: "all 0.15s", position: "relative", userSelect: "none" }}
+                  style={{ background: "#fff", border: `2px solid ${inCart ? "#C92E09" : "#E2E8F0"}`, borderRadius: 14, padding: 10, cursor: "pointer", transition: "all 0.15s", position: "relative", userSelect: "none" }}
                   onMouseEnter={e => { if (!inCart) e.currentTarget.style.borderColor = "#FCA5A5"; }}
                   onMouseLeave={e => { if (!inCart) e.currentTarget.style.borderColor = "#E2E8F0"; }}>
                   {inCart && (
-                    <div style={{ position: "absolute", top: 6, right: 6, width: 20, height: 20, background: "#C62828", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ position: "absolute", top: 6, right: 6, width: 20, height: 20, background: "#C92E09", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <span style={{ color: "#fff", fontSize: "0.65rem", fontWeight: 900 }}>{inCart.qty}</span>
                     </div>
                   )}
@@ -752,7 +752,7 @@ export default function VendaPresencialPage() {
                   }
                   <div style={{ fontWeight: 700, fontSize: "0.8rem", marginBottom: 2, lineHeight: 1.2 }}>{p.name}</div>
                   <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginBottom: 4 }}>{p.isCombo ? "Combo" : p.category}</div>
-                  <div style={{ color: "#C62828", fontWeight: 800, fontSize: "0.88rem" }}>{getDisplayPrice(p)}</div>
+                  <div style={{ color: "#C92E09", fontWeight: 800, fontSize: "0.88rem" }}>{getDisplayPrice(p)}</div>
                 </div>
               );
             })}
@@ -769,9 +769,9 @@ export default function VendaPresencialPage() {
         <div className="pdv-cabecalho" style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
           <div className="pdv-tipo" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
             {([
-              { value: "BALCAO", label: "Balcão", icon: "🏠", color: "#3B82F6" },
-              { value: "MESA", label: "Mesa", icon: "🍽️", color: "#8B5CF6" },
-              { value: "DELIVERY", label: "Delivery", icon: "🛵", color: "#C62828" },
+              { value: "BALCAO", label: "Balcão", icon: "🏠", color: "#1C1917" },
+              { value: "MESA", label: "Mesa", icon: "🍽️", color: "#64748B" },
+              { value: "DELIVERY", label: "Delivery", icon: "🛵", color: "#C92E09" },
             ] as const).map(t => (
               <button key={t.value} onClick={() => setOrderType(t.value)}
                 style={{ padding: "10px 4px", borderRadius: 10, border: `2px solid ${orderType === t.value ? t.color : "#E2E8F0"}`,
@@ -787,12 +787,12 @@ export default function VendaPresencialPage() {
           {/* Campos por tipo */}
           {orderType === "MESA" && (
             <input placeholder="Número da mesa *" value={tableNum} onChange={e => setTableNum(e.target.value)}
-              style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #8B5CF6", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
+              style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #64748B", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
           )}
           {orderType === "DELIVERY" && (
             <>
               <input placeholder="Endereço de entrega *" value={address} onChange={e => setAddress(e.target.value)}
-                style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #C62828", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
+                style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #C92E09", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
 
               {/* A taxa que a área de entrega da loja manda — e que o atendente
                   pode trocar quando combinar outra coisa com o cliente. */}
@@ -806,13 +806,13 @@ export default function VendaPresencialPage() {
                       placeholder={cotandoTaxa ? "calculando..." : "0,00"}
                       value={taxaEntrega}
                       onChange={e => { setTaxaNaMao(true); setTaxaEntrega(e.target.value); }}
-                      style={{ width: "100%", padding: "7px 10px 7px 32px", borderRadius: 8, border: `1.5px solid ${taxaNaMao ? "#C2410C" : "#E2E8F0"}`, fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: 800, textAlign: "right" }}
+                      style={{ width: "100%", padding: "7px 10px 7px 32px", borderRadius: 8, border: `1.5px solid ${taxaNaMao ? "#9A3412" : "#E2E8F0"}`, fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: 800, textAlign: "right" }}
                     />
                   </div>
                   {taxaNaMao && (
                     <button type="button" onClick={() => setTaxaNaMao(false)}
                       title="Voltar para a taxa calculada pela área de entrega da loja"
-                      style={{ background: "none", border: "none", color: "#2563EB", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", whiteSpace: "nowrap" }}>
+                      style={{ background: "none", border: "none", color: "#1C1917", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", whiteSpace: "nowrap" }}>
                       recalcular
                     </button>
                   )}
@@ -820,7 +820,7 @@ export default function VendaPresencialPage() {
                 {taxaAviso && !taxaNaMao && (
                   <div style={{
                     marginTop: 4, fontSize: "0.72rem", fontWeight: 600, lineHeight: 1.35,
-                    color: taxaAviso.tom === "ok" ? "#15803D" : taxaAviso.tom === "alerta" ? "#B45309" : "#B91C1C",
+                    color: taxaAviso.tom === "ok" ? "#0F766E" : taxaAviso.tom === "alerta" ? "#B45309" : "#B71C1C",
                   }}>
                     {taxaAviso.tom === "ok" ? "✅" : taxaAviso.tom === "alerta" ? "⚠️" : "❌"} {taxaAviso.texto}
                   </div>
@@ -857,8 +857,8 @@ export default function VendaPresencialPage() {
                 onChange={e => setPager(e.target.value.slice(0, 10))}
                 maxLength={10}
                 style={{ width: "100%", marginTop: 6, padding: "7px 10px", borderRadius: 8,
-                  border: `1.5px solid ${faltando ? "#DC2626" : pager.trim() ? "#F59E0B" : "#E2E8F0"}`,
-                  background: faltando ? "#FEF2F2" : pager.trim() ? "#FFFBEB" : "#FFF",
+                  border: `1.5px solid ${faltando ? "#C92E09" : pager.trim() ? "#B45309" : "#E2E8F0"}`,
+                  background: faltando ? "#FEF2F2" : pager.trim() ? "#FFF7E6" : "#FFF",
                   fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: pager.trim() ? 800 : 400 }}
               />
             );
@@ -880,8 +880,8 @@ export default function VendaPresencialPage() {
                 onChange={e => setDocumento(mascararDocumentoDigitado(e.target.value))}
                 inputMode="numeric"
                 style={{ width: "100%", padding: "7px 10px", borderRadius: 8,
-                  border: `1.5px solid ${problemaDoDocumento(documento) ? "#DC2626" : documento.trim() ? "#0EA5E9" : "#E2E8F0"}`,
-                  background: problemaDoDocumento(documento) ? "#FEF2F2" : documento.trim() ? "#F0F9FF" : "#FFF",
+                  border: `1.5px solid ${problemaDoDocumento(documento) ? "#C92E09" : documento.trim() ? "#44403C" : "#E2E8F0"}`,
+                  background: problemaDoDocumento(documento) ? "#FEF2F2" : documento.trim() ? "#FAF6F2" : "#FFF",
                   fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: documento.trim() ? 800 : 400 }}
               />
               {/* O campo diz sozinho em que pé está: erro em vermelho enquanto
@@ -890,7 +890,7 @@ export default function VendaPresencialPage() {
                   finalizar — com o cliente já indo embora. */}
               {documento.trim() !== "" && (
                 <div style={{ fontSize: "0.72rem", marginTop: 3, fontWeight: 700,
-                  color: problemaDoDocumento(documento) ? "#B91C1C" : "#15803D" }}>
+                  color: problemaDoDocumento(documento) ? "#B71C1C" : "#0F766E" }}>
                   {problemaDoDocumento(documento) || `✓ ${tipoDoDocumento(documento)} válido — sai na comanda`}
                 </div>
               )}
@@ -925,18 +925,18 @@ export default function VendaPresencialPage() {
                   placeholder="📝 obs. do item (ex.: sem cebola)"
                   maxLength={140}
                   onChange={e => { const v = e.target.value; setCart(prev => prev.map((c, idx) => idx === index ? { ...c, notes: v } : c)); }}
-                  style={{ width: "100%", marginTop: 4, padding: "4px 8px", borderRadius: 6, border: `1px solid ${item.notes ? "#F59E0B" : "#E2E8F0"}`, background: item.notes ? "#FFFBEB" : "#fff", fontSize: "0.74rem", outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
+                  style={{ width: "100%", marginTop: 4, padding: "4px 8px", borderRadius: 6, border: `1px solid ${item.notes ? "#B45309" : "#E2E8F0"}`, background: item.notes ? "#FFF7E6" : "#fff", fontSize: "0.74rem", outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
                 />
-                <div style={{ fontSize: "0.78rem", color: "#C62828", fontWeight: 700, marginTop: 2 }}>{fmt((item.unitPrice ?? item.product.price) * item.qty)}</div>
+                <div style={{ fontSize: "0.78rem", color: "#C92E09", fontWeight: 700, marginTop: 2 }}>{fmt((item.unitPrice ?? item.product.price) * item.qty)}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <button onClick={() => updateQtyByIndex(index, item.qty - 1)}
                   style={{ width: 26, height: 26, borderRadius: "50%", border: "1.5px solid #E2E8F0", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>
-                  {item.qty === 1 ? <Trash2 size={12} color="#EF4444" /> : <Minus size={12} />}
+                  {item.qty === 1 ? <Trash2 size={12} color="#C92E09" /> : <Minus size={12} />}
                 </button>
                 <span style={{ width: 22, textAlign: "center", fontWeight: 800, fontSize: "0.9rem" }}>{item.qty}</span>
                 <button onClick={() => updateQtyByIndex(index, item.qty + 1)}
-                  style={{ width: 26, height: 26, borderRadius: "50%", border: "1.5px solid #C62828", background: "#C62828", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  style={{ width: 26, height: 26, borderRadius: "50%", border: "1.5px solid #C92E09", background: "#C92E09", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Plus size={12} />
                 </button>
               </div>
@@ -956,8 +956,8 @@ export default function VendaPresencialPage() {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {[...PAYMENT_METHODS, ...(employeeAccountEnabled ? ["Conta Funcionário"] : [])].map(m => (
                 <button key={m} type="button" onClick={() => setPaymentMethod(m)}
-                  style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${paymentMethod === m ? "#C62828" : "#CBD5E1"}`,
-                    background: paymentMethod === m ? "#C62828" : "#fff",
+                  style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${paymentMethod === m ? "#C92E09" : "#CBD5E1"}`,
+                    background: paymentMethod === m ? "#C92E09" : "#fff",
                     color: paymentMethod === m ? "#fff" : "#334155",
                     fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}>
                   {m === "Conta Funcionário" ? "👤 Conta Funcionário" : m}
@@ -965,8 +965,8 @@ export default function VendaPresencialPage() {
               ))}
               {/* Dividir entre formas, igual à mesa: metade no Pix, metade em dinheiro. */}
               <button type="button" onClick={() => ligarDivisao(!dividir)}
-                style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${dividir ? "#7C3AED" : "#CBD5E1"}`,
-                  background: dividir ? "#7C3AED" : "#fff", color: dividir ? "#fff" : "#334155",
+                style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${dividir ? "#475569" : "#CBD5E1"}`,
+                  background: dividir ? "#475569" : "#fff", color: dividir ? "#fff" : "#334155",
                   fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}
                 title="Receber em mais de uma forma (ex.: parte no Pix, parte em dinheiro)">
                 ➗ Dividir
@@ -975,26 +975,26 @@ export default function VendaPresencialPage() {
           </div>
 
           {dividir && (
-            <div style={{ marginBottom: 6, background: "#F5F3FF", border: "1.5px solid #DDD6FE", borderRadius: 8, padding: "8px" }}>
-              <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#5B21B6", marginBottom: 6 }}>
+            <div style={{ marginBottom: 6, background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 8, padding: "8px" }}>
+              <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#334155", marginBottom: 6 }}>
                 Pagamento dividido — cada parte entra no caixa na sua forma
               </div>
               {partes.map((p, idx) => (
                 <div key={idx} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}>
                   <select value={p.metodo} onChange={e => setParte(idx, { metodo: e.target.value })}
-                    style={{ flex: "1 1 90px", padding: "5px 6px", borderRadius: 6, border: "1px solid #C4B5FD", fontSize: "0.78rem", fontFamily: "inherit", background: "#fff" }}>
+                    style={{ flex: "1 1 90px", padding: "5px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", fontFamily: "inherit", background: "#fff" }}>
                     {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <input type="number" inputMode="decimal" step="0.01" min="0" placeholder="0,00" value={p.valor}
                     onChange={e => setParte(idx, { valor: e.target.value })}
-                    style={{ width: 84, padding: "5px 6px", borderRadius: 6, border: "1px solid #C4B5FD", fontSize: "0.82rem", fontWeight: 700, fontFamily: "inherit" }} />
+                    style={{ width: 84, padding: "5px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", fontWeight: 700, fontFamily: "inherit" }} />
                   <button type="button" onClick={() => completarParte(idx)} title="Preencher com o que falta"
-                    style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #C4B5FD", background: "#fff", color: "#5B21B6", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                    style={{ padding: "5px 7px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", color: "#334155", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
                     resto
                   </button>
                   {partes.length > 2 && (
                     <button type="button" onClick={() => setPartes(prev => prev.filter((_, i) => i !== idx))} title="Remover esta forma"
-                      style={{ padding: "5px 7px", borderRadius: 6, border: "none", background: "#FEE2E2", color: "#DC2626", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                      style={{ padding: "5px 7px", borderRadius: 6, border: "none", background: "#FEE2E2", color: "#C92E09", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
                       ✕
                     </button>
                   )}
@@ -1002,10 +1002,10 @@ export default function VendaPresencialPage() {
               ))}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, marginTop: 4 }}>
                 <button type="button" onClick={() => setPartes(prev => [...prev, { metodo: "Cartão Crédito", valor: "" }])}
-                  style={{ padding: "4px 8px", borderRadius: 6, border: "1px dashed #A78BFA", background: "#fff", color: "#5B21B6", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  style={{ padding: "4px 8px", borderRadius: 6, border: "1px dashed #94A3B8", background: "#fff", color: "#334155", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                   + outra forma
                 </button>
-                <span style={{ fontSize: "0.76rem", fontWeight: 800, color: Math.abs(faltaDividir) <= 0.01 ? "#15803D" : "#B45309" }}>
+                <span style={{ fontSize: "0.76rem", fontWeight: 800, color: Math.abs(faltaDividir) <= 0.01 ? "#0F766E" : "#B45309" }}>
                   {Math.abs(faltaDividir) <= 0.01 ? `✓ fecha ${fmt(total)}` : faltaDividir > 0 ? `faltam ${fmt(faltaDividir)}` : `sobram ${fmt(-faltaDividir)}`}
                 </span>
               </div>
@@ -1015,12 +1015,12 @@ export default function VendaPresencialPage() {
           {/* Seleção do Funcionário quando forma for Conta Funcionário */}
           {paymentMethod === "Conta Funcionário" && (
             <div style={{ marginBottom: 6, background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 8, padding: "8px" }}>
-              <label style={{ fontSize: "0.72rem", fontWeight: 800, color: "#991B1B", display: "block", marginBottom: 4 }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 800, color: "#B71C1C", display: "block", marginBottom: 4 }}>
                 Selecione o Funcionário *
               </label>
               {employees.length === 0 ? (
-                <div style={{ fontSize: "0.75rem", color: "#7F1D1D" }}>
-                  Nenhum funcionário cadastrado. Cadastre em <a href="/store/funcionarios" style={{ color: "#C62828", fontWeight: 700 }}>Funcionários</a>.
+                <div style={{ fontSize: "0.75rem", color: "#B71C1C" }}>
+                  Nenhum funcionário cadastrado. Cadastre em <a href="/store/funcionarios" style={{ color: "#C92E09", fontWeight: 700 }}>Funcionários</a>.
                 </div>
               ) : (
                 <select
@@ -1031,7 +1031,7 @@ export default function VendaPresencialPage() {
                     const found = employees.find(emp => emp.id === empId);
                     setSelectedEmployeeName(found ? found.name : "");
                   }}
-                  style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1.5px solid #C62828", fontSize: "0.85rem", fontWeight: 700, color: "#1E293B", outline: "none" }}
+                  style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1.5px solid #C92E09", fontSize: "0.85rem", fontWeight: 700, color: "#1E293B", outline: "none" }}
                 >
                   <option value="">-- Escolha um colaborador --</option>
                   {employees.map(emp => (
@@ -1046,7 +1046,7 @@ export default function VendaPresencialPage() {
 
           {/* Acréscimo voucher */}
           {isVoucher && (
-            <div style={{ marginBottom: 6, fontSize: "0.72rem", color: "#D97706", background: "#FFFBEB", padding: "4px 8px", borderRadius: 6, border: "1px solid #FDE68A" }}>
+            <div style={{ marginBottom: 6, fontSize: "0.72rem", color: "#B45309", background: "#FFF7E6", padding: "4px 8px", borderRadius: 6, border: "1px solid #FDE68A" }}>
               Taxa de vale ({voucherRate}%): <strong>+{fmt(voucherFee)}</strong>
             </div>
           )}
@@ -1057,7 +1057,7 @@ export default function VendaPresencialPage() {
               style={{ width: "100%", marginBottom: 6, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.82rem", outline: "none", fontFamily: "inherit" }} />
           )}
           {(paymentMethod === "Dinheiro" || (dividir && parteDinheiro > 0)) && change && Number(change) > 0 && (
-            <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "4px 8px", marginBottom: 6, fontSize: "0.75rem", color: "#16A34A", fontWeight: 700 }}>
+            <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 8, padding: "4px 8px", marginBottom: 6, fontSize: "0.75rem", color: "#0F766E", fontWeight: 700 }}>
               💵 Troco: {fmt(Math.max(0, Number(change) - (dividir ? parteDinheiro : total)))}
             </div>
           )}
@@ -1077,7 +1077,7 @@ export default function VendaPresencialPage() {
                   🏷️ Dar desconto
                 </button>
               ) : (
-                <div style={{ border: "1.5px solid #FED7AA", background: "#FFFBF5", borderRadius: 11, padding: "9px 10px" }}>
+                <div style={{ border: "1.5px solid #FFD3C2", background: "#FFFBF5", borderRadius: 11, padding: "9px 10px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
                     <b style={{ fontSize: "0.8rem", color: "#9A3412" }}>🏷️ Desconto</b>
                     <button type="button" onClick={limparDesconto}
@@ -1094,8 +1094,8 @@ export default function VendaPresencialPage() {
                       <button key={op.t} type="button" onClick={() => setDesconto(d => ({ ...d, tipo: op.t }))}
                         style={{
                           padding: "7px 14px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
-                          border: desconto.tipo === op.t ? "2px solid #C2410C" : "1.5px solid #E2E8F0",
-                          background: desconto.tipo === op.t ? "#FFF7ED" : "#fff",
+                          border: desconto.tipo === op.t ? "2px solid #9A3412" : "1.5px solid #E2E8F0",
+                          background: desconto.tipo === op.t ? "#FFF4EF" : "#fff",
                           color: desconto.tipo === op.t ? "#9A3412" : "#64748B",
                           fontWeight: 800, fontSize: "0.84rem",
                         }}>
@@ -1107,7 +1107,7 @@ export default function VendaPresencialPage() {
                       placeholder={desconto.tipo === "percent" ? "10" : "5,00"}
                       value={desconto.valor === 0 ? "" : desconto.valor}
                       onChange={e => setDesconto(d => ({ ...d, valor: parseFloat(e.target.value) || 0 }))}
-                      style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 9, border: "1.5px solid #FED7AA", background: "#fff", fontSize: "0.9rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }}
+                      style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 9, border: "1.5px solid #FFD3C2", background: "#fff", fontSize: "0.9rem", fontWeight: 800, textAlign: "center", outline: "none", fontFamily: "inherit" }}
                     />
                   </div>
 
@@ -1120,14 +1120,14 @@ export default function VendaPresencialPage() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                     {MOTIVOS_COMUNS.map(m => (
                       <button key={m} type="button" onClick={() => setDesconto(d => ({ ...d, motivo: m }))}
-                        style={{ padding: "4px 9px", borderRadius: 999, border: "1px solid #E2E8F0", background: desconto.motivo === m ? "#FFF7ED" : "#fff", color: desconto.motivo === m ? "#9A3412" : "#64748B", fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        style={{ padding: "4px 9px", borderRadius: 999, border: "1px solid #E2E8F0", background: desconto.motivo === m ? "#FFF4EF" : "#fff", color: desconto.motivo === m ? "#9A3412" : "#64748B", fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                         {m}
                       </button>
                     ))}
                   </div>
 
                   {problemaDoDesconto(desconto, subtotal) && desconto.valor > 0 && (
-                    <p style={{ margin: "7px 0 0", fontSize: "0.74rem", color: "#B91C1C", fontWeight: 700 }}>
+                    <p style={{ margin: "7px 0 0", fontSize: "0.74rem", color: "#B71C1C", fontWeight: 700 }}>
                       {problemaDoDesconto(desconto, subtotal)}
                     </p>
                   )}
@@ -1157,18 +1157,18 @@ export default function VendaPresencialPage() {
                 </div>
               )}
               {descontoEmReais > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#C2410C", fontWeight: 800, marginBottom: 2 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#9A3412", fontWeight: 800, marginBottom: 2 }}>
                   <span>Desconto{desconto.motivo ? ` (${desconto.motivo})` : ""}</span>
                   <span>- {fmt(descontoEmReais)}</span>
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "1.05rem" }}>
-                <span>TOTAL</span><span style={{ color: "#C62828" }}>{fmt(total)}</span>
+                <span>TOTAL</span><span style={{ color: "#C92E09" }}>{fmt(total)}</span>
               </div>
             </div>
           )}
 
-          {msg && <div style={{ padding: "6px 10px", borderRadius: 8, marginBottom: 6, background: msg.startsWith("✅") ? "#f0fdf4" : "#fef2f2", color: msg.startsWith("✅") ? "#16a34a" : "#dc2626", fontSize: "0.8rem", fontWeight: 700 }}>{msg}</div>}
+          {msg && <div style={{ padding: "6px 10px", borderRadius: 8, marginBottom: 6, background: msg.startsWith("✅") ? "#F0FDFA" : "#fef2f2", color: msg.startsWith("✅") ? "#0F766E" : "#C92E09", fontSize: "0.8rem", fontWeight: 700 }}>{msg}</div>}
 
           {/* ── CAIXA FECHADO ────────────────────────────────────────────────
               Fica logo ACIMA do botão, que é onde o atendente vai clicar, e
@@ -1180,13 +1180,13 @@ export default function VendaPresencialPage() {
           {caixaAberto === false && (
             <div className="pdv-aviso-caixa" style={{ padding: "10px 12px", borderRadius: 12, marginBottom: 8, background: "#FEF2F2", border: "1.5px solid #FECACA", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 170 }}>
-                <div style={{ fontWeight: 900, fontSize: "0.86rem", color: "#B91C1C" }}>
+                <div style={{ fontWeight: 900, fontSize: "0.86rem", color: "#B71C1C" }}>
                   🔒 Seu caixa está fechado
                 </div>
                 {/* Some em tela baixa: esta faixa mora no bloco fixo do pé, e
                     cada linha dela é uma linha a menos da lista de itens. O
                     título e o botão já dizem o que fazer. */}
-                <div className="pdv-aviso-caixa-texto" style={{ fontSize: "0.75rem", color: "#7F1D1D", lineHeight: 1.45, marginTop: 2 }}>
+                <div className="pdv-aviso-caixa-texto" style={{ fontSize: "0.75rem", color: "#B71C1C", lineHeight: 1.45, marginTop: 2 }}>
                   Abra o caixa para lançar pedidos. O que você já montou aqui não se perde.
                 </div>
               </div>
@@ -1194,7 +1194,7 @@ export default function VendaPresencialPage() {
                 href={CAMINHO_DO_CAIXA}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ display: "inline-block", padding: "8px 14px", borderRadius: 10, background: "#B91C1C", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none", whiteSpace: "nowrap" }}
+                style={{ display: "inline-block", padding: "8px 14px", borderRadius: 10, background: "#B71C1C", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none", whiteSpace: "nowrap" }}
               >
                 Abrir o caixa →
               </a>
@@ -1202,7 +1202,7 @@ export default function VendaPresencialPage() {
           )}
 
           <button type="button" data-btn="finalizar" onClick={handleSubmit} disabled={loading || cart.length === 0 || caixaAberto === false}
-            style={{ width: "100%", padding: "14px", background: (cart.length === 0 || caixaAberto === false) ? "#CBD5E1" : "linear-gradient(135deg, #C62828, #E53935)", color: (cart.length === 0 || caixaAberto === false) ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: (cart.length === 0 || caixaAberto === false) ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: (cart.length > 0 && caixaAberto !== false) ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 9999 }}>
+            style={{ width: "100%", padding: "14px", background: (cart.length === 0 || caixaAberto === false) ? "#CBD5E1" : "linear-gradient(135deg, #C92E09, #C92E09)", color: (cart.length === 0 || caixaAberto === false) ? "#64748B" : "#fff", border: "none", borderRadius: 14, fontWeight: 900, fontSize: "1.05rem", cursor: (cart.length === 0 || caixaAberto === false) ? "not-allowed" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: (cart.length > 0 && caixaAberto !== false) ? "0 4px 14px rgba(198,40,40,0.4)" : "none", position: "relative", zIndex: 9999 }}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
               {caixaAberto === false ? "🔒 Abra o caixa para lançar" : loading ? "Registrando..." : <><Check size={20} style={{ pointerEvents: "none" }} /> Finalizar Pedido</>}
             </span>

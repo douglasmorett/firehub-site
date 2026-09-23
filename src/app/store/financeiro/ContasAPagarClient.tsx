@@ -136,7 +136,7 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
               disabled={ocupado === p.id}
               title="Dar baixa: marca esta conta como paga e tira ela da lista de pendentes"
               style={{
-                background: "#059669", color: "#fff", border: "none", borderRadius: 10,
+                background: "#0F766E", color: "#fff", border: "none", borderRadius: 10,
                 padding: "8px 14px", fontWeight: 800, fontSize: "0.8rem",
                 cursor: ocupado === p.id ? "wait" : "pointer", whiteSpace: "nowrap",
               }}
@@ -162,11 +162,11 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
           <div style={{
             flexBasis: "100%", display: "flex", gap: 8, alignItems: "center",
             background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10,
-            padding: "10px 12px", fontSize: "0.82rem", color: "#991B1B",
+            padding: "10px 12px", fontSize: "0.82rem", color: "#B71C1C",
           }}>
             <span style={{ flex: 1 }}>Excluir <strong>{p.supplierName}</strong>? Isso apaga o lançamento de vez.</span>
             <button onClick={() => excluir(p.id)}
-              style={{ background: "#DC2626", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontWeight: 800, cursor: "pointer", fontSize: "0.78rem" }}>
+              style={{ background: "#C92E09", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontWeight: 800, cursor: "pointer", fontSize: "0.78rem" }}>
               Sim, excluir
             </button>
             <button onClick={() => setConfirmarExclusao(null)}
@@ -249,13 +249,13 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
       {/* ── RESUMO ────────────────────────────────────────────────────────── */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
         <Kpi rotulo="ATRASADAS" valor={soma(atrasadas)} qtd={atrasadas.length}
-             cor="#DC2626" fundo="#FEF2F2"
+             cor="#C92E09" fundo="#FEF2F2"
              dica="Contas cujo vencimento já passou. Pague o quanto antes para evitar juros e multa." />
         <Kpi rotulo="VENCEM HOJE" valor={soma(hojeLista)} qtd={hojeLista.length}
-             cor="#D97706" fundo="#FFFBEB"
+             cor="#B45309" fundo="#FFF7E6"
              dica="Contas que vencem hoje. Se o boleto não for pago até o fim do dia, amanhã ele entra em atrasadas." />
         <Kpi rotulo="FUTURAS" valor={soma(futuras)} qtd={futuras.length}
-             cor="#059669" fundo="#F0FDF4"
+             cor="#0F766E" fundo="#F0FDFA"
              dica="Contas já lançadas que ainda vão vencer. Servem para você se programar." />
         <Kpi rotulo="TOTAL EM ABERTO" valor={totalAberto} qtd={atrasadas.length + hojeLista.length + futuras.length}
              cor="#334155" fundo="#F8FAFC"
@@ -302,7 +302,7 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
       {/* ── AS TRÊS FILAS ─────────────────────────────────────────────────── */}
       <Bloco
         titulo="🔴 Atrasadas"
-        cor="#DC2626" fundo="#FEF2F2"
+        cor="#C92E09" fundo="#FEF2F2"
         explicacao="O vencimento já passou. São as que costumam gerar juros e multa — resolva estas primeiro."
         lista={atrasadas}
         vazio="Nenhuma conta atrasada. Sua loja está em dia. 🎉"
@@ -310,7 +310,7 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
 
       <Bloco
         titulo="🟡 Vencem hoje"
-        cor="#D97706" fundo="#FFFBEB"
+        cor="#B45309" fundo="#FFF7E6"
         explicacao="Precisam ser pagas até o fim do dia de hoje. Amanhã elas passam para a fila das atrasadas."
         lista={hojeLista}
         vazio="Nada vencendo hoje."
@@ -318,7 +318,7 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
 
       <Bloco
         titulo="🟢 Futuras"
-        cor="#059669" fundo="#F0FDF4"
+        cor="#0F766E" fundo="#F0FDFA"
         explicacao="Ainda vão vencer. Use esta lista para se programar e saber quanto vai sair do caixa nos próximos dias."
         lista={futuras}
         vazio="Nenhuma conta futura lançada ainda."

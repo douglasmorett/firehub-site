@@ -72,16 +72,16 @@ export default function AvisoCaixaAberto24h() {
       role="status"
       style={{
         display: "flex", alignItems: "center", gap: "0.9rem", flexWrap: "wrap",
-        background: "#FAF5FF", border: "1px solid #E9D5FF", borderLeft: "6px solid #7E22CE",
+        background: "#FAF6F2", border: "1px solid #E7DDD3", borderLeft: "6px solid #1C1917",
         borderRadius: 12, padding: "0.9rem 1.1rem", margin: "0 0 1rem",
       }}
     >
       <span style={{ fontSize: "1.5rem", lineHeight: 1 }}>🕒</span>
       <div style={{ flex: "1 1 260px", minWidth: 0 }}>
-        <div style={{ fontWeight: 800, color: "#6B21A8", fontSize: "0.95rem" }}>
+        <div style={{ fontWeight: 800, color: "#1C1917", fontSize: "0.95rem" }}>
           Seu caixa está aberto há {tempo}
         </div>
-        <div style={{ color: "#7E22CE", fontSize: "0.85rem", lineHeight: 1.5 }}>
+        <div style={{ color: "#1C1917", fontSize: "0.85rem", lineHeight: 1.5 }}>
           Aconselhamos fechar e abrir de novo. Enquanto ele fica aberto, o fechamento vai somando
           as vendas de todos esses dias — e aí o valor esperado não bate com o dinheiro da gaveta.
         </div>
@@ -90,14 +90,14 @@ export default function AvisoCaixaAberto24h() {
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent("firehub:abrir-menu-caixa"))}
         style={{
-          background: "#7E22CE", color: "#fff", border: "none", borderRadius: 10,
+          background: "#1C1917", color: "#fff", border: "none", borderRadius: 10,
           padding: "10px 18px", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer",
           fontFamily: "inherit", whiteSpace: "nowrap",
         }}
       >
         Abrir o caixa →
       </button>
-      <BotaoNaoVerMais onClick={naoVerMais.ocultar} cor="#6B21A8" borda="#D8B4FE" />
+      <BotaoNaoVerMais onClick={naoVerMais.ocultar} cor="#1C1917" borda="#E7DDD3" />
     </div>
   );
 }

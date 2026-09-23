@@ -82,7 +82,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
     <button
       key={chave}
       onClick={() => setFiltro(chave)}
-      style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: filtro === chave ? "#fff" : "transparent", color: filtro === chave ? "#7C3AED" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: filtro === chave ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}
+      style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: filtro === chave ? "#fff" : "transparent", color: filtro === chave ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: filtro === chave ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}
     >
       {rotulo}
     </button>
@@ -95,7 +95,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
           <ArrowLeft size={20} color="#475569" />
         </button>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#1E293B", display: "flex", alignItems: "center", gap: 10 }}>
-          <UtensilsCrossed size={26} color="#7C3AED" /> Relatório de Mesas
+          <UtensilsCrossed size={26} color="#475569" /> Relatório de Mesas
         </h1>
       </div>
 
@@ -120,24 +120,24 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
         </div>
 
         {erro && (
-          <div role="alert" style={{ background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
+          <div role="alert" style={{ background: "#FEF2F2", color: "#B71C1C", border: "1px solid #FECACA", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
             {erro}
           </div>
         )}
 
         {/* ── Números das mesas ── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
-          <div style={{ background: "#F0EDFF", padding: 20, borderRadius: 12, border: "1px solid #E0D4FF" }}>
-            <div style={{ fontSize: 13, color: "#6D28D9", fontWeight: 700, marginBottom: 4 }}>Mesas fechadas</div>
-            <div style={{ fontSize: 28, fontWeight: 900, color: "#4C1D95" }}>{carregando ? "…" : dados?.mesas.fechadas ?? 0}</div>
+          <div style={{ background: "#FAF6F2", padding: 20, borderRadius: 12, border: "1px solid #E0D4FF" }}>
+            <div style={{ fontSize: 13, color: "#334155", fontWeight: 700, marginBottom: 4 }}>Mesas fechadas</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: "#0F172A" }}>{carregando ? "…" : dados?.mesas.fechadas ?? 0}</div>
           </div>
           <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
             <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Consumo nas mesas</div>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{carregando ? "…" : fmt(dados?.mesas.consumo || 0)}</div>
           </div>
-          <div style={{ background: "#ECFDF5", padding: 20, borderRadius: 12, border: "1px solid #A7F3D0" }}>
-            <div style={{ fontSize: 13, color: "#047857", fontWeight: 900, marginBottom: 4 }}>Taxa de serviço arrecadada</div>
-            <div style={{ fontSize: 28, fontWeight: 900, color: "#065F46" }}>{carregando ? "…" : fmt(dados?.mesas.taxaServico || 0)}</div>
+          <div style={{ background: "#F0FDFA", padding: 20, borderRadius: 12, border: "1px solid #99F6E4" }}>
+            <div style={{ fontSize: 13, color: "#0F766E", fontWeight: 900, marginBottom: 4 }}>Taxa de serviço arrecadada</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: "#134E4A" }}>{carregando ? "…" : fmt(dados?.mesas.taxaServico || 0)}</div>
           </div>
           <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
             <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Gorjetas extras</div>
@@ -170,7 +170,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                   <tr key={g.waiterId || "__sem__"} style={{ borderBottom: "1px solid #E2E8F0" }}>
                     <td style={{ padding: "14px 16px", fontWeight: 700, color: g.waiterId ? "#1E293B" : "#94A3B8", fontStyle: g.waiterId ? "normal" : "italic" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 30, height: 30, borderRadius: "50%", background: g.waiterId ? "#F0EDFF" : "#F1F5F9", color: g.waiterId ? "#7C3AED" : "#94A3B8", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>
+                        <div style={{ width: 30, height: 30, borderRadius: "50%", background: g.waiterId ? "#FAF6F2" : "#F1F5F9", color: g.waiterId ? "#475569" : "#94A3B8", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>
                           {g.nome.charAt(0).toUpperCase()}
                         </div>
                         {g.nome}
@@ -178,15 +178,15 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                     </td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569", fontWeight: 600 }}>{g.mesas}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569" }}>{fmt(g.consumo)}</td>
-                    <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#059669" }}>{fmt(g.taxaServico)}</td>
-                    <td style={{ padding: "14px 16px", textAlign: "right", color: "#D97706", fontWeight: 700 }}>{g.gorjetas > 0 ? fmt(g.gorjetas) : "—"}</td>
+                    <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#0F766E" }}>{fmt(g.taxaServico)}</td>
+                    <td style={{ padding: "14px 16px", textAlign: "right", color: "#B45309", fontWeight: 700 }}>{g.gorjetas > 0 ? fmt(g.gorjetas) : "—"}</td>
                   </tr>
                 ))}
                 <tr style={{ background: "#F8FAFC", borderTop: "2px solid #E2E8F0" }}>
                   <td style={{ padding: "14px 16px", fontWeight: 900, color: "#1E293B" }}>Total</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{dados.mesas.fechadas}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{fmt(dados.mesas.consumo)}</td>
-                  <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 900, color: "#065F46" }}>{fmt(dados.mesas.taxaServico)}</td>
+                  <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 900, color: "#134E4A" }}>{fmt(dados.mesas.taxaServico)}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#B45309" }}>{dados.mesas.gorjetas > 0 ? fmt(dados.mesas.gorjetas) : "—"}</td>
                 </tr>
               </>
@@ -213,10 +213,10 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
             ) : (
               <>
                 {([
-                  ["BALCAO", "Balcão", <Store key="b" size={16} color="#4338CA" />, "#E0E7FF"],
-                  ["MESA", "Mesa", <UtensilsCrossed key="m" size={16} color="#C2410C" />, "#FFEDD5"],
-                  ["DELIVERY", "Delivery", <Bike key="d" size={16} color="#1D4ED8" />, "#DBEAFE"],
-                  ["RETIRADA", "Retirada (site / app)", <ShoppingBag key="r" size={16} color="#15803D" />, "#DCFCE7"],
+                  ["BALCAO", "Balcão", <Store key="b" size={16} color="#4338CA" />, "#FAF6F2"],
+                  ["MESA", "Mesa", <UtensilsCrossed key="m" size={16} color="#9A3412" />, "#FFF4EF"],
+                  ["DELIVERY", "Delivery", <Bike key="d" size={16} color="#1C1917" />, "#FAF6F2"],
+                  ["RETIRADA", "Retirada (site / app)", <ShoppingBag key="r" size={16} color="#0F766E" />, "#F0FDFA"],
                 ] as const).map(([chave, rotulo, icone, fundo]) => (
                   <tr key={chave} style={{ borderBottom: "1px solid #E2E8F0" }}>
                     <td style={{ padding: "14px 16px", fontWeight: 700, color: "#1E293B" }}>

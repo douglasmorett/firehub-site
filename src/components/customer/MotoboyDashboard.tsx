@@ -11,8 +11,8 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
   const TAB_STYLE = (active: boolean) => ({
     padding: "10px 20px", border: "none", cursor: "pointer", fontWeight: active ? 700 : 500,
     fontSize: "0.9rem", fontFamily: "inherit", background: "transparent",
-    color: active ? "#C62828" : "#64748B",
-    borderBottom: active ? "3px solid #C62828" : "3px solid transparent",
+    color: active ? "#C92E09" : "#64748B",
+    borderBottom: active ? "3px solid #C92E09" : "3px solid transparent",
     transition: "all 0.15s",
   });
 

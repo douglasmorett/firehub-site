@@ -19,8 +19,8 @@ const SECTIONS = [
   {
     id: "cardapio" as Section,
     icon: <UtensilsCrossed size={28} />,
-    color: "#D97706",
-    bg: "#FEF3C7",
+    color: "#B45309",
+    bg: "#FFF7E6",
     title: "Cardápio & Produtos",
     desc: "Gerencie as categorias, produtos, fotos, adicionais e combos do cardápio",
     link: "/store/cardapio",
@@ -28,7 +28,7 @@ const SECTIONS = [
   {
     id: "info" as Section,
     icon: <Store size={28} />,
-    color: "#C62828",
+    color: "#C92E09",
     bg: "#FFF5F5",
     title: "Informações",
     desc: "Nome, telefone, endereço, logo e banner da loja",
@@ -36,8 +36,8 @@ const SECTIONS = [
   {
     id: "hours" as Section,
     icon: <Clock size={28} />,
-    color: "#1565C0",
-    bg: "#E3F2FD",
+    color: "#1C1917",
+    bg: "#FAF6F2",
     title: "Horários",
     desc: "Configure os horários de funcionamento e pausas",
   },
@@ -61,22 +61,22 @@ const SECTIONS = [
     id: "balcao" as Section,
     icon: <BellRing size={28} />,
     color: "#B45309",
-    bg: "#FFFBEB",
+    bg: "#FFF7E6",
     title: "Balcão & Pager",
     desc: "Exigir o número do pager no lançamento do balcão e da mesa",
   },
   {
     id: "equipe" as Section,
     icon: <Users size={28} />,
-    color: "#2563EB",
-    bg: "#EFF6FF",
+    color: "#1C1917",
+    bg: "#FAF6F2",
     title: "Cadastrar Equipe",
     desc: "Crie logins para a equipe e escolha quais módulos cada um pode acessar",
   },
   {
     id: "coupons" as Section,
     icon: <Tag size={28} />,
-    color: "#E65100",
+    color: "#E8590C",
     bg: "#FFF3E0",
     title: "Cupons",
     desc: "Crie e gerencie cupons de desconto para clientes",
@@ -92,16 +92,16 @@ const SECTIONS = [
   {
     id: "reviews" as Section,
     icon: <Star size={28} />,
-    color: "#D97706",
-    bg: "#FEF3C7",
+    color: "#B45309",
+    bg: "#FFF7E6",
     title: "Avaliações & NPS",
     desc: "Feedback dos clientes, respostas e visibilidade no cardápio digital",
   },
   {
     id: "api" as Section,
     icon: <ShieldCheck size={28} />,
-    color: "#4F46E5",
-    bg: "#EEF2FF",
+    color: "#1C1917",
+    bg: "#FAF6F2",
     title: "API Aberta & Webhooks",
     desc: "Chaves de API para conectar PDV/ERP e webhooks de saída em tempo real",
   },
@@ -189,7 +189,7 @@ export default function MinhaLojaClient({ user }: { user: any }) {
             href={`/loja/${user.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "#FFF5F5", border: "1px solid #FFCDD2", borderRadius: 12, textDecoration: "none", color: "#C62828", fontWeight: 700, fontSize: "0.875rem", marginBottom: "1.5rem" }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "#FFF5F5", border: "1px solid #FFCDD2", borderRadius: 12, textDecoration: "none", color: "#C92E09", fontWeight: 700, fontSize: "0.875rem", marginBottom: "1.5rem" }}
           >
             <Store size={16} />
             Ver minha loja ao vivo
@@ -476,7 +476,7 @@ function ContaSection({ user }: { user: any }) {
               Somente Admin altera
             </span>
           ) : accountSuccess ? (
-            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: "#16A34A", fontWeight: 700 }}>
+            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: "#0F766E", fontWeight: 700 }}>
               <CheckCircle size={14} /> Salvo!
             </span>
           ) : null}
@@ -503,17 +503,17 @@ function ContaSection({ user }: { user: any }) {
           ) : (
             <>
               {accountError && (
-                <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", padding: "8px 12px", borderRadius: 8, fontSize: "0.82rem", fontWeight: 600 }}>
+                <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#C92E09", padding: "8px 12px", borderRadius: 8, fontSize: "0.82rem", fontWeight: 600 }}>
                   ⚠️ {accountError}
                 </div>
               )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Nome do Responsável</label>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Nome do Responsável</label>
                   <input type="text" value={name} onChange={e => setName(e.target.value)} style={inp} placeholder="Ex: João da Silva" />
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Cidade</label>
+                  <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Cidade</label>
                   <input
                     type="text"
                     list="cidades-list"
@@ -526,7 +526,7 @@ function ContaSection({ user }: { user: any }) {
                 </div>
               </div>
               <div>
-                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>E-mail de Acesso</label>
+                <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>E-mail de Acesso</label>
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} style={inp} placeholder="seu.email@exemplo.com" />
               </div>
               <button
@@ -551,21 +551,21 @@ function ContaSection({ user }: { user: any }) {
       {/* ── Dados Editáveis ── */}
       <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #E2E8F0", boxShadow: "0 1px 6px rgba(0,0,0,0.05)", overflow: "hidden" }}>
         <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: 8 }}>
-          <Store size={18} color="#C62828" />
+          <Store size={18} color="#C92E09" />
           <span style={{ fontWeight: 800, color: "#0F172A", fontSize: "0.92rem" }}>Dados da Minha Loja</span>
           {profileSuccess && (
-            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: "#16A34A", fontWeight: 700 }}>
+            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: "#0F766E", fontWeight: 700 }}>
               <CheckCircle size={14} /> Salvo!
             </span>
           )}
         </div>
         <div style={{ padding: "1.25rem", display: "grid", gap: "1rem" }}>
           <div>
-            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Nome da Loja</label>
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Nome da Loja</label>
             <input type="text" value={storeName} onChange={e => setStoreName(e.target.value)} style={inp} placeholder="Ex: Pizzaria do João" />
           </div>
           <div>
-            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>CNPJ / CPF</label>
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>CNPJ / CPF</label>
             <input type="text" value={cpfCnpj} onChange={e => setCpfCnpj(e.target.value)} style={inp} placeholder="00.000.000/0000-00" />
           </div>
           <button
@@ -573,7 +573,7 @@ function ContaSection({ user }: { user: any }) {
             disabled={profileLoading}
             style={{
               width: "100%", padding: "11px", borderRadius: 10,
-              background: "linear-gradient(135deg,#C62828,#B71C1C)",
+              background: "linear-gradient(135deg,#C92E09,#B71C1C)",
               color: "#fff", border: "none", fontWeight: 800,
               fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
@@ -593,18 +593,18 @@ function ContaSection({ user }: { user: any }) {
         </div>
         <div style={{ padding: "1.25rem" }}>
           {passSuccess && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#16A34A", padding: "10px 14px", borderRadius: 10, marginBottom: "1rem", fontWeight: 700, fontSize: "0.88rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F0FDFA", border: "1px solid #99F6E4", color: "#0F766E", padding: "10px 14px", borderRadius: 10, marginBottom: "1rem", fontWeight: 700, fontSize: "0.88rem" }}>
               <CheckCircle size={16} /> Senha atualizada com sucesso!
             </div>
           )}
           {passError && (
-            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", padding: "10px 14px", borderRadius: 10, marginBottom: "1rem", fontWeight: 700, fontSize: "0.88rem" }}>
+            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#C92E09", padding: "10px 14px", borderRadius: 10, marginBottom: "1rem", fontWeight: 700, fontSize: "0.88rem" }}>
               ⚠️ {passError}
             </div>
           )}
           <form onSubmit={handlePasswordSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Senha Atual</label>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Senha Atual</label>
               <div style={{ position: "relative" }}>
                 <input
                   type={showCurrentPass ? "text" : "password"}
@@ -620,7 +620,7 @@ function ContaSection({ user }: { user: any }) {
               </div>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Nova Senha</label>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Nova Senha</label>
               <div style={{ position: "relative" }}>
                 <input
                   type={showPass ? "text" : "password"}
@@ -636,7 +636,7 @@ function ContaSection({ user }: { user: any }) {
               </div>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#374151", marginBottom: 5 }}>Confirmar Nova Senha</label>
+              <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 5 }}>Confirmar Nova Senha</label>
               <div style={{ position: "relative" }}>
                 <input
                   type={showConfirm ? "text" : "password"}
@@ -644,14 +644,14 @@ function ContaSection({ user }: { user: any }) {
                   onChange={e => setConfirmPassword(e.target.value)}
                   placeholder="Repita a senha"
                   required
-                  style={{ ...inp, paddingRight: 42, borderColor: confirmPassword && confirmPassword !== password ? "#EF4444" : undefined }}
+                  style={{ ...inp, paddingRight: 42, borderColor: confirmPassword && confirmPassword !== password ? "#C92E09" : undefined }}
                 />
                 <button type="button" onClick={() => setShowConfirm(p => !p)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94A3B8", padding: 0 }}>
                   {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
               {confirmPassword && confirmPassword !== password && (
-                <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "#EF4444", fontWeight: 600 }}>As senhas não coincidem</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.75rem", color: "#C92E09", fontWeight: 600 }}>As senhas não coincidem</p>
               )}
             </div>
             <button

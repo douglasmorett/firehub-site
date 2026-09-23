@@ -212,13 +212,13 @@ interface RoteirizacaoModalProps {
 }
 
 const ROUTE_COLORS = [
-  "#22C55E", // Verde
-  "#3B82F6", // Azul
-  "#EAB308", // Amarelo
-  "#06B6D4", // Ciano
-  "#EC4899", // Rosa
-  "#8B5CF6", // Roxo
-  "#F97316", // Laranja
+  "#0F766E", // Verde
+  "#1C1917", // Azul
+  "#B45309", // Amarelo
+  "#0D9488", // Ciano
+  "#C92E09", // Rosa
+  "#64748B", // Roxo
+  "#E8590C", // Laranja
   "#14B8A6"  // Verde Água
 ];
 
@@ -511,7 +511,7 @@ export default function RoteirizacaoModal({
             motoboyName: r.motoboy?.name || "Aguardando Motoboy",
             motoboyPhone: r.motoboy?.phone || "",
             motoboyId: r.motoboyId || null,
-            color: r.color || "#3B82F6",
+            color: r.color || "#1C1917",
             orders: (r.orders || []).map((o: any) => ({
               id: o.id,
               dailyOrderNumber: o.dailyOrderNumber,
@@ -1239,9 +1239,9 @@ export default function RoteirizacaoModal({
     if (temPontoDaLoja) {
       const storeHtml = `
         <div style="
-          background: #2563EB; color: #fff; width: 38px; height: 38px; borderRadius: 50%;
+          background: #1C1917; color: #fff; width: 38px; height: 38px; borderRadius: 50%;
           display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 4px 12px rgba(37,99,235,0.5); border: 3px solid #fff;
+          box-shadow: 0 4px 12px rgba(28, 25, 23,0.5); border: 3px solid #fff;
           font-size: 1.2rem; cursor: pointer;
         " title="Sua Loja - ${storeAddress || storeCity}">
           🏠
@@ -1294,7 +1294,7 @@ export default function RoteirizacaoModal({
       const estadoDoPino = recemEntregue ? "entregue" : jaDespachado ? "rota" : prontoNaCozinha ? "pronto" : "cozinha";
       if (!estadosNoMapa[estadoDoPino as keyof typeof estadosNoMapa]) return;
 
-      let bgColor = recemEntregue ? "#16A34A" : jaDespachado ? "#2563EB" : prontoNaCozinha ? "#7C3AED" : "#EF4444";
+      let bgColor = recemEntregue ? "#0F766E" : jaDespachado ? "#1C1917" : prontoNaCozinha ? "#475569" : "#C92E09";
       let labelText = getOrderDisplayNumber(order);
       let borderColor = "#ffffff";
       let scaleCss = "scale(1)";
@@ -1302,19 +1302,19 @@ export default function RoteirizacaoModal({
       let shadowCss = "0 4px 10px rgba(0,0,0,0.3)";
 
       if (isHovered) {
-        bgColor = "#2563EB";
-        borderColor = "#93C5FD";
+        bgColor = "#1C1917";
+        borderColor = "#E7DDD3";
         scaleCss = "scale(1.4)";
-        shadowCss = "0 0 20px rgba(37,99,235,0.8)";
+        shadowCss = "0 0 20px rgba(28, 25, 23,0.8)";
         zIdx = 999;
       } else if (isSelected) {
-        bgColor = "#2563EB"; // Bright blue for active route selection
+        bgColor = "#1C1917"; // Bright blue for active route selection
         labelText = `${selectedIndex + 1}`; // Sequence 1, 2, 3
-        borderColor = "#93C5FD";
+        borderColor = "#E7DDD3";
         scaleCss = "scale(1.2)";
         zIdx = 900;
       } else if (assignedRoute) {
-        bgColor = assignedRoute.color || "#10B981"; // Route specific color
+        bgColor = assignedRoute.color || "#0F766E"; // Route specific color
         borderColor = "#ffffff";
         zIdx = 500;
       }
@@ -1440,8 +1440,8 @@ export default function RoteirizacaoModal({
         return s !== "ENTREGUE" && s !== "ENCERRADO" && !s.includes("CANCEL");
       }).length;
       const emEntrega = entregasNaRua > 0;
-      const corCapacete = !recente ? "#94A3B8" : emEntrega ? "#DC2626" : "#16A34A";
-      const corNome = !recente ? "#64748B" : emEntrega ? "#B91C1C" : "#15803D";
+      const corCapacete = !recente ? "#94A3B8" : emEntrega ? "#C92E09" : "#0F766E";
+      const corNome = !recente ? "#64748B" : emEntrega ? "#B71C1C" : "#0F766E";
 
       // Nome ABAIXO do capacete: em cima ele brigava com o pino de entrega
       // que costuma ficar logo acima, e o dono pediu embaixo.
@@ -1485,7 +1485,7 @@ export default function RoteirizacaoModal({
         : null;
       const mbMarker = L.marker([mbLat, mbLng], { icon: mbIcon, zIndexOffset: 950 })
         .addTo(map)
-        .bindPopup(`<b>🛵 Entregador ${mb.name}</b> <span style="color:${emEntrega ? "#B91C1C" : "#15803D"};font-weight:700;">${emEntrega ? `${entregasNaRua} entrega(s) na rua` : "livre"}</span><br/>📍 ${
+        .bindPopup(`<b>🛵 Entregador ${mb.name}</b> <span style="color:${emEntrega ? "#B71C1C" : "#0F766E"};font-weight:700;">${emEntrega ? `${entregasNaRua} entrega(s) na rua` : "livre"}</span><br/>📍 ${
           minAtras === null ? "Localização GPS"
             : minAtras <= 1 ? "Atualizado agora"
             : recente ? `Atualizado há ${minAtras} min`
@@ -1512,7 +1512,7 @@ export default function RoteirizacaoModal({
 
       if (routePoints.length > 1) {
         const polyline = L.polyline(routePoints, {
-          color: "#2563EB",
+          color: "#1C1917",
           weight: 4,
           dashArray: "8, 8",
           opacity: 0.95,
@@ -1533,7 +1533,7 @@ export default function RoteirizacaoModal({
 
         if (points.length > 1) {
           const routePoly = L.polyline(points, {
-            color: route.color || "#10B981",
+            color: route.color || "#0F766E",
             weight: 4,
             opacity: 0.8,
           }).addTo(map);
@@ -1845,7 +1845,7 @@ export default function RoteirizacaoModal({
           display: "flex", alignItems: "center", justifyContent: "space-between"
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-            <div style={{ background: "#EFF6FF", color: "#2563EB", padding: "8px 12px", borderRadius: "10px", display: "flex", alignItems: "center", gap: 8, fontWeight: 800 }}>
+            <div style={{ background: "#FAF6F2", color: "#1C1917", padding: "8px 12px", borderRadius: "10px", display: "flex", alignItems: "center", gap: 8, fontWeight: 800 }}>
               <MapPin size={20} />
               <span style={{ fontSize: "1.1rem" }}>Módulo de Roteirização</span>
             </div>
@@ -1862,8 +1862,8 @@ export default function RoteirizacaoModal({
                 rel="noopener"
                 title="Abre a roteirização numa aba só dela, para ficar aberta a noite toda separada da aba de pedidos"
                 style={{
-                  padding: "8px 14px", background: "#F0FDF4", border: "1px solid #86EFAC",
-                  borderRadius: "8px", fontSize: "0.85rem", fontWeight: 800, color: "#15803D",
+                  padding: "8px 14px", background: "#F0FDFA", border: "1px solid #99F6E4",
+                  borderRadius: "8px", fontSize: "0.85rem", fontWeight: 800, color: "#0F766E",
                   cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none"
                 }}
               >
@@ -1874,8 +1874,8 @@ export default function RoteirizacaoModal({
             <button
               onClick={() => setShowConfigModal(true)}
               style={{
-                padding: "8px 14px", background: "#EFF6FF", border: "1px solid #93C5FD",
-                borderRadius: "8px", fontSize: "0.85rem", fontWeight: 800, color: "#1D4ED8",
+                padding: "8px 14px", background: "#FAF6F2", border: "1px solid #E7DDD3",
+                borderRadius: "8px", fontSize: "0.85rem", fontWeight: 800, color: "#1C1917",
                 cursor: "pointer", display: "flex", alignItems: "center", gap: 6
               }}
             >
@@ -1886,7 +1886,7 @@ export default function RoteirizacaoModal({
               onClick={onClose}
               style={{
                 padding: "8px 12px", background: "#FEF2F2", border: "1px solid #FCA5A5",
-                borderRadius: "8px", fontSize: "0.85rem", fontWeight: 800, color: "#DC2626",
+                borderRadius: "8px", fontSize: "0.85rem", fontWeight: 800, color: "#C92E09",
                 cursor: "pointer", display: "flex", alignItems: "center", gap: 4
               }}
             >
@@ -1910,8 +1910,8 @@ export default function RoteirizacaoModal({
                 onClick={() => setActiveTab("PENDING")}
                 style={{
                   padding: "12px 16px", border: "none", background: activeTab === "PENDING" ? "#FFFFFF" : "#F8FAFC",
-                  borderBottom: activeTab === "PENDING" ? "3px solid #2563EB" : "none",
-                  fontWeight: 800, fontSize: "0.88rem", color: activeTab === "PENDING" ? "#2563EB" : "#64748B",
+                  borderBottom: activeTab === "PENDING" ? "3px solid #1C1917" : "none",
+                  fontWeight: 800, fontSize: "0.88rem", color: activeTab === "PENDING" ? "#1C1917" : "#64748B",
                   cursor: "pointer", transition: "all 0.2s"
                 }}
               >
@@ -1922,8 +1922,8 @@ export default function RoteirizacaoModal({
                 onClick={() => setActiveTab("ROTAS")}
                 style={{
                   padding: "12px 16px", border: "none", background: activeTab === "ROTAS" ? "#FFFFFF" : "#F8FAFC",
-                  borderBottom: activeTab === "ROTAS" ? "3px solid #2563EB" : "none",
-                  fontWeight: 800, fontSize: "0.88rem", color: activeTab === "ROTAS" ? "#2563EB" : "#64748B",
+                  borderBottom: activeTab === "ROTAS" ? "3px solid #1C1917" : "none",
+                  fontWeight: 800, fontSize: "0.88rem", color: activeTab === "ROTAS" ? "#1C1917" : "#64748B",
                   cursor: "pointer", transition: "all 0.2s"
                 }}
               >
@@ -1962,11 +1962,11 @@ export default function RoteirizacaoModal({
                       onClick={() => handleToggleOnlyPronto(true)}
                       style={{
                         flex: 1, padding: "6px 10px", borderRadius: "7px", border: "none",
-                        background: onlyProntoOrders ? "linear-gradient(135deg, #16A34A, #15803D)" : "transparent",
+                        background: onlyProntoOrders ? "linear-gradient(135deg, #0F766E, #0F766E)" : "transparent",
                         color: onlyProntoOrders ? "#FFFFFF" : "#64748B",
                         fontWeight: onlyProntoOrders ? 900 : 700,
                         fontSize: "0.78rem", cursor: "pointer",
-                        boxShadow: onlyProntoOrders ? "0 2px 6px rgba(22,163,74,0.3)" : "none",
+                        boxShadow: onlyProntoOrders ? "0 2px 6px rgba(15, 118, 110,0.3)" : "none",
                         transition: "all 0.15s ease",
                         display: "flex", alignItems: "center", justifyContent: "center", gap: "6px"
                       }}
@@ -1996,11 +1996,11 @@ export default function RoteirizacaoModal({
                       onClick={handleAutoClusterRoutes}
                       style={{
                         width: "100%", padding: "10px 14px",
-                        background: "linear-gradient(135deg, #10B981 0%, #059669 100%)",
+                        background: "linear-gradient(135deg, #0F766E 0%, #0F766E 100%)",
                         border: "none",
                         borderRadius: "10px", fontSize: "0.85rem", fontWeight: 900, color: "#FFFFFF",
                         cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                        boxShadow: "0 4px 12px rgba(16, 185, 129, 0.35)",
+                        boxShadow: "0 4px 12px rgba(15, 118, 110, 0.35)",
                         transition: "transform 0.1s ease"
                       }}
                       onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
@@ -2015,7 +2015,7 @@ export default function RoteirizacaoModal({
                 <div style={{ flex: 1, overflowY: "auto", padding: "0.75rem" }}>
 
                   {geocodingLoading && (
-                    <div style={{ background: "#EFF6FF", color: "#1D4ED8", padding: "8px 12px", borderRadius: "8px", fontSize: "0.78rem", fontWeight: 600, marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ background: "#FAF6F2", color: "#1C1917", padding: "8px 12px", borderRadius: "8px", fontSize: "0.78rem", fontWeight: 600, marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: 6 }}>
                       <Loader2 size={14} className="animate-spin" /> Mapeando endereços no GPS...
                     </div>
                   )}
@@ -2043,9 +2043,9 @@ export default function RoteirizacaoModal({
                           onMouseEnter={() => setHoveredOrderId(order.id)}
                           onMouseLeave={() => setHoveredOrderId(null)}
                           style={{
-                            border: isHovered ? "2px solid #3B82F6" : isSelected ? "2px solid #2563EB" : "1px solid #E2E8F0",
-                            background: isHovered ? "#E0E7FF" : isSelected ? "#F0F6FF" : "#FFFFFF",
-                            boxShadow: isHovered ? "0 4px 14px rgba(59,130,246,0.25)" : "none",
+                            border: isHovered ? "2px solid #1C1917" : isSelected ? "2px solid #1C1917" : "1px solid #E2E8F0",
+                            background: isHovered ? "#FAF6F2" : isSelected ? "#F0F6FF" : "#FFFFFF",
+                            boxShadow: isHovered ? "0 4px 14px rgba(28, 25, 23,0.25)" : "none",
                             transform: isHovered ? "translateX(4px)" : "none",
                             borderRadius: "10px", padding: "0.75rem 0.85rem", marginBottom: "0.6rem",
                             cursor: "pointer", transition: "all 0.15s ease", position: "relative"
@@ -2056,10 +2056,10 @@ export default function RoteirizacaoModal({
                             {/* Sequence Badge / Checkbox */}
                             <div style={{
                               width: "30px", height: "30px", borderRadius: "50%",
-                              background: isSelected ? "linear-gradient(135deg, #2563EB, #1D4ED8)" : "#F1F5F9",
+                              background: isSelected ? "linear-gradient(135deg, #1C1917, #1C1917)" : "#F1F5F9",
                               color: isSelected ? "#FFFFFF" : "#64748B",
                               border: isSelected ? "none" : "1.5px solid #CBD5E1",
-                              boxShadow: isSelected ? "0 3px 8px rgba(37,99,235,0.4)" : "none",
+                              boxShadow: isSelected ? "0 3px 8px rgba(28, 25, 23,0.4)" : "none",
                               display: "flex", alignItems: "center", justifyContent: "center",
                               fontWeight: 900, fontSize: "0.82rem", flexShrink: 0, marginTop: 2
                             }}>
@@ -2089,7 +2089,7 @@ export default function RoteirizacaoModal({
                                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
                                       {neighborhood ? (
                                         <span style={{
-                                          background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A",
+                                          background: "#FFF7E6", color: "#92400E", border: "1px solid #FDE68A",
                                           padding: "2px 7px", borderRadius: "5px", fontWeight: 800, fontSize: "0.78rem"
                                         }}>
                                           🏘️ Bairro: {neighborhood}
@@ -2098,7 +2098,7 @@ export default function RoteirizacaoModal({
 
                                       {!isMapped && (
                                         <span style={{
-                                          background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE",
+                                          background: "#FAF6F2", color: "#1C1917", border: "1px solid #E7DDD3",
                                           padding: "2px 7px", borderRadius: "5px", fontWeight: 700, fontSize: "0.72rem"
                                         }}>
                                           📍 Localizando GPS...
@@ -2127,7 +2127,7 @@ export default function RoteirizacaoModal({
                                 {prontoNaCozinha ? (
                                   <span style={{
                                     display: "inline-flex", alignItems: "center", gap: 5,
-                                    background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE",
+                                    background: "#F8FAFC", color: "#334155", border: "1px solid #E2E8F0",
                                     padding: "3px 9px", borderRadius: "6px", fontWeight: 800, fontSize: "0.74rem"
                                   }}>
                                     <CheckCircle2 size={13} /> Pronto na cozinha
@@ -2140,12 +2140,12 @@ export default function RoteirizacaoModal({
                                     title="Marca o pedido como pronto na cozinha e avisa o cliente e o marketplace — o mesmo botão do painel de pedidos"
                                     style={{
                                       display: "inline-flex", alignItems: "center", gap: 6,
-                                      background: marcandoEste ? "#86EFAC" : "linear-gradient(135deg, #16A34A, #15803D)",
+                                      background: marcandoEste ? "#99F6E4" : "linear-gradient(135deg, #0F766E, #0F766E)",
                                       color: "#FFFFFF", border: "none", borderRadius: "7px",
                                       padding: "5px 11px", fontWeight: 800, fontSize: "0.76rem",
                                       fontFamily: "inherit",
                                       cursor: marcandoEste ? "wait" : "pointer",
-                                      boxShadow: marcandoEste ? "none" : "0 2px 6px rgba(22,163,74,0.30)",
+                                      boxShadow: marcandoEste ? "none" : "0 2px 6px rgba(15, 118, 110,0.30)",
                                       transition: "all 0.15s ease"
                                     }}
                                   >
@@ -2171,7 +2171,7 @@ export default function RoteirizacaoModal({
                 <div style={{ padding: "0.75rem 1rem", borderTop: "1px solid #E2E8F0", background: "#F8FAFC" }}>
                   <div style={{ fontSize: "0.75rem", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span>ROTEIRIZAÇÃO FIREHUB</span>
-                    <span style={{ fontWeight: 800, color: "#16A34A" }}>ILIMITADO</span>
+                    <span style={{ fontWeight: 800, color: "#0F766E" }}>ILIMITADO</span>
                   </div>
                 </div>
 
@@ -2194,8 +2194,8 @@ export default function RoteirizacaoModal({
                       <div
                         key={route.id}
                         style={{
-                          border: isDispatched ? "1.5px solid #BBF7D0" : "1.5px solid #FED7AA",
-                          background: isDispatched ? "#F0FDF4" : "#FFFBEB",
+                          border: isDispatched ? "1.5px solid #99F6E4" : "1.5px solid #FFD3C2",
+                          background: isDispatched ? "#F0FDFA" : "#FFF7E6",
                           borderRadius: "12px", padding: "0.85rem", marginBottom: "0.75rem",
                           boxShadow: "0 2px 6px rgba(0,0,0,0.03)"
                         }}
@@ -2215,12 +2215,12 @@ export default function RoteirizacaoModal({
 
                           <span style={{
                             fontSize: "0.74rem",
-                            color: isDispatched ? "#15803D" : "#D97706",
+                            color: isDispatched ? "#0F766E" : "#B45309",
                             fontWeight: 900,
-                            background: isDispatched ? "#DCFCE7" : "#FEF3C7",
+                            background: isDispatched ? "#F0FDFA" : "#FFF7E6",
                             padding: "3px 8px",
                             borderRadius: "6px",
-                            border: isDispatched ? "1px solid #86EFAC" : "1px solid #FDE68A",
+                            border: isDispatched ? "1px solid #99F6E4" : "1px solid #FDE68A",
                           }}>
                             {route.status || (isDispatched ? "🚀 Despachada" : "⏳ Aguardando Despacho")}
                           </span>
@@ -2299,10 +2299,10 @@ export default function RoteirizacaoModal({
                               disabled={isDispatching}
                               style={{
                                 flex: 2, padding: "8px", border: "none",
-                                borderRadius: "8px", background: "linear-gradient(135deg, #16A34A, #15803D)",
+                                borderRadius: "8px", background: "linear-gradient(135deg, #0F766E, #0F766E)",
                                 color: "#FFFFFF", fontWeight: 900, fontSize: "0.82rem", cursor: "pointer",
                                 display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                                boxShadow: "0 2px 8px rgba(22,163,74,0.3)"
+                                boxShadow: "0 2px 8px rgba(15, 118, 110,0.3)"
                               }}
                             >
                               <Navigation size={14} /> 🚀 Despachar Rota
@@ -2312,9 +2312,9 @@ export default function RoteirizacaoModal({
                           <button
                             onClick={() => handleCopyRouteText(route)}
                             style={{
-                              flex: 1, padding: "8px", border: "1.5px solid #2563EB",
-                              borderRadius: "8px", background: copiedRouteId === route.id ? "#DCFCE7" : "#FFFFFF",
-                              color: copiedRouteId === route.id ? "#15803D" : "#2563EB",
+                              flex: 1, padding: "8px", border: "1.5px solid #1C1917",
+                              borderRadius: "8px", background: copiedRouteId === route.id ? "#F0FDFA" : "#FFFFFF",
+                              color: copiedRouteId === route.id ? "#0F766E" : "#1C1917",
                               fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                               display: "flex", alignItems: "center", justifyContent: "center", gap: 4
                             }}
@@ -2366,7 +2366,7 @@ export default function RoteirizacaoModal({
                   }}
                   title="Centralizar visão em todos os pinos de entrega"
                 >
-                  <Navigation size={15} style={{ transform: "rotate(45deg)", color: "#2563EB" }} />
+                  <Navigation size={15} style={{ transform: "rotate(45deg)", color: "#1C1917" }} />
                   Centralizar Visão
                 </button>
 
@@ -2386,7 +2386,7 @@ export default function RoteirizacaoModal({
                     type="checkbox"
                     checked={mostrarMotoboys}
                     onChange={(e) => setMostrarMotoboys(e.target.checked)}
-                    style={{ width: 15, height: 15, accentColor: "#2563EB", cursor: "pointer" }}
+                    style={{ width: 15, height: 15, accentColor: "#1C1917", cursor: "pointer" }}
                   />
                   ⛑️ Motoboys
                 </label>
@@ -2437,7 +2437,7 @@ export default function RoteirizacaoModal({
             {!temPontoDaLoja && (
               <div style={{
                 position: "absolute", top: "16px", left: "16px", zIndex: 999, maxWidth: "340px",
-                background: "#FFFBEB", border: "1.5px solid #F59E0B", borderRadius: "10px",
+                background: "#FFF7E6", border: "1.5px solid #B45309", borderRadius: "10px",
                 padding: "10px 12px", boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
                 fontSize: "0.8rem", color: "#92400E", fontWeight: 600, lineHeight: 1.45,
               }}>
@@ -2473,10 +2473,10 @@ export default function RoteirizacaoModal({
                 O que aparece no mapa
               </div>
               {([
-                { chave: "cozinha" as const, cor: "#EF4444", rotulo: "Na cozinha" },
-                { chave: "pronto" as const, cor: "#7C3AED", rotulo: "Pronto" },
-                { chave: "rota" as const, cor: "#2563EB", rotulo: "Saiu para entrega" },
-                { chave: "entregue" as const, cor: "#16A34A", rotulo: "Entregue agora" },
+                { chave: "cozinha" as const, cor: "#C92E09", rotulo: "Na cozinha" },
+                { chave: "pronto" as const, cor: "#475569", rotulo: "Pronto" },
+                { chave: "rota" as const, cor: "#1C1917", rotulo: "Saiu para entrega" },
+                { chave: "entregue" as const, cor: "#0F766E", rotulo: "Entregue agora" },
               ]).map((e) => {
                 const quantos = deliveryOrders.filter((o: any) => {
                   const pronto = estaPronto(o);
@@ -2549,10 +2549,10 @@ export default function RoteirizacaoModal({
                     type="button"
                     onClick={handleOptimizeSelectedRoute}
                     style={{
-                      background: "linear-gradient(135deg, #059669, #10B981)", color: "#FFFFFF", border: "none",
+                      background: "linear-gradient(135deg, #0F766E, #0F766E)", color: "#FFFFFF", border: "none",
                       padding: "8px 14px", borderRadius: "20px", fontWeight: 800,
                       fontSize: "0.82rem", cursor: "pointer", display: "flex",
-                      alignItems: "center", gap: 6, boxShadow: "0 4px 12px rgba(16,185,129,0.3)"
+                      alignItems: "center", gap: 6, boxShadow: "0 4px 12px rgba(15, 118, 110,0.3)"
                     }}
                     title="Reordenar sequência pela menor distância a partir da loja sem idas e voltas"
                   >
@@ -2563,10 +2563,10 @@ export default function RoteirizacaoModal({
                 <button
                   onClick={handleOpenDispatch}
                   style={{
-                    background: "#2563EB", color: "#FFFFFF", border: "none",
+                    background: "#1C1917", color: "#FFFFFF", border: "none",
                     padding: "8px 18px", borderRadius: "20px", fontWeight: 800,
                     fontSize: "0.88rem", cursor: "pointer", display: "flex",
-                    alignItems: "center", gap: 6, boxShadow: "0 4px 12px rgba(37,99,235,0.4)"
+                    alignItems: "center", gap: 6, boxShadow: "0 4px 12px rgba(28, 25, 23,0.4)"
                   }}
                 >
                   <Navigation size={16} /> Criar rota
@@ -2612,12 +2612,12 @@ export default function RoteirizacaoModal({
                   return (
                     <div key={id} style={{ fontSize: "0.8rem", color: "#1E293B", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ background: "#2563EB", color: "#fff", width: "18px", height: "18px", borderRadius: "50%", fontSize: "0.7rem", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                        <span style={{ background: "#1C1917", color: "#fff", width: "18px", height: "18px", borderRadius: "50%", fontSize: "0.7rem", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
                           {idx + 1}
                         </span>
                         <b>#{o.orderNumber || o.displayId || o.id.slice(-4)}</b> — {o.customerName} ({o.neighborhood || "Centro"})
                       </div>
-                      <span style={{ fontSize: "0.72rem", fontWeight: 700, color: pInfo.isCash ? "#DC2626" : pInfo.isCardOnDelivery ? "#2563EB" : "#16A34A" }}>
+                      <span style={{ fontSize: "0.72rem", fontWeight: 700, color: pInfo.isCash ? "#C92E09" : pInfo.isCardOnDelivery ? "#1C1917" : "#0F766E" }}>
                         {pInfo.isCash ? `💵 Troco: R$ ${pInfo.changeNeeded.toFixed(2)}` : pInfo.isCardOnDelivery ? "💳 Cartão" : "✅ Pago Online"}
                       </span>
                     </div>
@@ -2627,20 +2627,20 @@ export default function RoteirizacaoModal({
             </div>
 
             {/* Resumo de Logística de Pagamento (Troco & Maquininha) */}
-            <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "10px", padding: "0.85rem", marginBottom: "1.25rem" }}>
-              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#166534", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "6px" }}>
+            <div style={{ background: "#F0FDFA", border: "1.5px solid #99F6E4", borderRadius: "10px", padding: "0.85rem", marginBottom: "1.25rem" }}>
+              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#0F766E", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "6px" }}>
                 💼 RESUMO DE LOGÍSTICA DE PAGAMENTO:
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.82rem", color: "#15803D" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.82rem", color: "#0F766E" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>💵 Troco Total a Levar no Caixa:</span>
-                  <b style={{ fontSize: "0.95rem", color: routePaymentSummary.totalChangeToCarry > 0 ? "#DC2626" : "#166534" }}>
+                  <b style={{ fontSize: "0.95rem", color: routePaymentSummary.totalChangeToCarry > 0 ? "#C92E09" : "#0F766E" }}>
                     {routePaymentSummary.totalChangeToCarry > 0 ? `R$ ${routePaymentSummary.totalChangeToCarry.toFixed(2)}` : "Sem troco (R$ 0,00)"}
                   </b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>💳 Levar Maquininha de Cartão:</span>
-                  <b style={{ color: routePaymentSummary.needsCardMachine ? "#2563EB" : "#475569" }}>
+                  <b style={{ color: routePaymentSummary.needsCardMachine ? "#1C1917" : "#475569" }}>
                     {routePaymentSummary.needsCardMachine ? "✅ SIM (Cobrar Cartão na Entrega)" : "❌ NÃO (Pago Online / Dinheiro)"}
                   </b>
                 </div>
@@ -2701,7 +2701,7 @@ export default function RoteirizacaoModal({
                   type="checkbox"
                   checked={sendWhatsAppToMotoboy}
                   onChange={(e) => setSendWhatsAppToMotoboy(e.target.checked)}
-                  style={{ width: 16, height: 16, accentColor: "#2563EB" }}
+                  style={{ width: 16, height: 16, accentColor: "#1C1917" }}
                 />
                 📱 Disparar rota automaticamente no WhatsApp do Motoboy
               </label>
@@ -2723,7 +2723,7 @@ export default function RoteirizacaoModal({
                 onClick={handleConfirmDispatch}
                 disabled={isDispatching}
                 style={{
-                  flex: 2, padding: "10px", background: "#2563EB", border: "none",
+                  flex: 2, padding: "10px", background: "#1C1917", border: "none",
                   borderRadius: "8px", fontWeight: 800, fontSize: "0.88rem", color: "#FFFFFF",
                   cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6
                 }}
@@ -2772,8 +2772,8 @@ export default function RoteirizacaoModal({
                   value={routeMode}
                   onChange={(e: any) => setRouteMode(e.target.value)}
                   style={{
-                    width: "100%", padding: "10px", borderRadius: "8px", border: "1.5px solid #2563EB",
-                    fontSize: "0.9rem", fontWeight: 800, color: "#1D4ED8", background: "#EFF6FF"
+                    width: "100%", padding: "10px", borderRadius: "8px", border: "1.5px solid #1C1917",
+                    fontSize: "0.9rem", fontWeight: 800, color: "#1C1917", background: "#FAF6F2"
                   }}
                 >
                   <option value="Manual">Manual</option>
@@ -2837,7 +2837,7 @@ export default function RoteirizacaoModal({
                     <select
                       value={onlyProntoOrders ? "PRONTOS" : "TODOS"}
                       onChange={(e) => setOnlyProntoOrders(e.target.value === "PRONTOS")}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #2563EB", background: "#EFF6FF", fontWeight: 800, color: "#1E40AF" }}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #1C1917", background: "#FAF6F2", fontWeight: 800, color: "#1C1917" }}
                     >
                       <option value="TODOS">Todos os pedidos pendentes (Cozinha, Aceito, Pronto)</option>
                       <option value="PRONTOS">Roteirizar APENAS pedidos com status "Pronto"</option>
@@ -2863,7 +2863,7 @@ export default function RoteirizacaoModal({
               {routeMode === "Inteligente" && (
                 <>
                   <div>
-                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#1D4ED8", marginBottom: 4 }}>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#1C1917", marginBottom: 4 }}>
                       Número máximo de pedidos a serem inseridos em uma mesma rota:
                     </label>
                     <input
@@ -2872,12 +2872,12 @@ export default function RoteirizacaoModal({
                       max={10}
                       value={maxOrdersPerRoute}
                       onChange={(e) => setMaxOrdersPerRoute(Number(e.target.value))}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #93C5FD", background: "#EFF6FF", fontWeight: 800 }}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #E7DDD3", background: "#FAF6F2", fontWeight: 800 }}
                     />
                   </div>
 
                   <div>
-                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#1D4ED8", marginBottom: 4 }}>
+                    <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#1C1917", marginBottom: 4 }}>
                       Distância máxima entre pedidos de uma mesma rota (em quilômetros):
                     </label>
                     <input
@@ -2886,7 +2886,7 @@ export default function RoteirizacaoModal({
                       max={30}
                       value={maxDistanceKm}
                       onChange={(e) => setMaxDistanceKm(Number(e.target.value))}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #93C5FD", background: "#EFF6FF", fontWeight: 800 }}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1.5px solid #E7DDD3", background: "#FAF6F2", fontWeight: 800 }}
                     />
                   </div>
                 </>
@@ -2912,7 +2912,7 @@ export default function RoteirizacaoModal({
               <button
                 onClick={handleSaveConfig}
                 style={{
-                  padding: "10px 20px", background: "#2563EB", color: "#FFFFFF",
+                  padding: "10px 20px", background: "#1C1917", color: "#FFFFFF",
                   border: "none", borderRadius: "8px", fontWeight: 800, fontSize: "0.9rem",
                   cursor: "pointer"
                 }}

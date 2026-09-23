@@ -32,13 +32,13 @@ export default function ToggleFranqueadoHakim({ userId, initialValue }: { userId
       cursor: loading ? "wait" : "pointer", userSelect: "none",
       padding: "0.35rem 0.75rem", borderRadius: "8px",
       background: checked ? "rgba(198,40,40,0.08)" : "rgba(0,0,0,0.03)",
-      border: checked ? "1.5px solid #C62828" : "1.5px solid #E2E8F0",
+      border: checked ? "1.5px solid #C92E09" : "1.5px solid #E2E8F0",
       transition: "all 0.2s"
     }}>
       <div style={{
         width: "18px", height: "18px", borderRadius: "4px",
-        border: checked ? "2px solid #C62828" : "2px solid #CBD5E1",
-        background: checked ? "#C62828" : "#fff",
+        border: checked ? "2px solid #C92E09" : "2px solid #CBD5E1",
+        background: checked ? "#C92E09" : "#fff",
         display: "flex", alignItems: "center", justifyContent: "center",
         transition: "all 0.2s"
       }} onClick={handleToggle}>
@@ -50,12 +50,12 @@ export default function ToggleFranqueadoHakim({ userId, initialValue }: { userId
       </div>
       <span style={{
         fontSize: "0.82rem", fontWeight: checked ? 700 : 500,
-        color: checked ? "#C62828" : "#64748B"
+        color: checked ? "#C92E09" : "#64748B"
       }} onClick={handleToggle}>
         Lojista Hakim
       </span>
       {checked && (
-        <span style={{ fontSize: "0.65rem", background: "#C62828", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
+        <span style={{ fontSize: "0.65rem", background: "#C92E09", color: "#fff", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
           HK
         </span>
       )}

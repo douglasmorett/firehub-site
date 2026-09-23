@@ -82,7 +82,7 @@ export default function ExtensaoIfoodPage() {
     <div style={{ minHeight: "100vh", background: "#F8FAFC", color: "#0F172A", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
       
       {/* Top Header Bar */}
-      <div style={{ background: "linear-gradient(90deg, #E8360C 0%, #FF5722 100%)", color: "#FFF", padding: "0.85rem 1.5rem", boxShadow: "0 4px 12px rgba(232, 54, 12, 0.25)" }}>
+      <div style={{ background: "linear-gradient(90deg, #E8360C 0%, #E8590C 100%)", color: "#FFF", padding: "0.85rem 1.5rem", boxShadow: "0 4px 12px rgba(232, 54, 12, 0.25)" }}>
         <div style={{ maxWidth: "1100px", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Link
             href="/store/pedidos-clientes"
@@ -102,7 +102,7 @@ export default function ExtensaoIfoodPage() {
         {/* HERO SECTION */}
         <div style={{ background: "#FFF", borderRadius: 24, padding: "2.5rem", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(0,0,0,0.05)", marginBottom: "2rem", display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "2rem", alignItems: "center" }}>
           <div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", fontSize: "0.75rem", fontWeight: 900, padding: "4px 12px", borderRadius: 20, marginBottom: 12 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#FEF2F2", border: "1px solid #FECACA", color: "#C92E09", fontSize: "0.75rem", fontWeight: 900, padding: "4px 12px", borderRadius: 20, marginBottom: 12 }}>
               <Sparkles size={14} /> INOVAÇÃO EXCLUSIVA FIREHUB
             </div>
 
@@ -127,7 +127,7 @@ export default function ExtensaoIfoodPage() {
                     gap: 10,
                     padding: "14px 24px",
                     borderRadius: 14,
-                    background: "linear-gradient(135deg, #EA1D2C 0%, #B91C1C 100%)",
+                    background: "linear-gradient(135deg, #EA1D2C 0%, #B71C1C 100%)",
                     color: "#FFF",
                     fontWeight: 900,
                     fontSize: "1.02rem",
@@ -148,9 +148,9 @@ export default function ExtensaoIfoodPage() {
                       gap: 10,
                       padding: "14px 20px",
                       borderRadius: 14,
-                      background: "#F0FDF4",
-                      border: "1.5px solid #86EFAC",
-                      color: "#166534",
+                      background: "#F0FDFA",
+                      border: "1.5px solid #99F6E4",
+                      color: "#0F766E",
                       fontWeight: 900,
                       fontSize: "0.92rem",
                     }}
@@ -204,13 +204,13 @@ export default function ExtensaoIfoodPage() {
 
               {userCodeData && (
                 <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 16, padding: "1.25rem", marginTop: 8 }}>
-                  <div style={{ fontSize: "0.9rem", fontWeight: 900, color: "#991B1B", marginBottom: 6 }}>
+                  <div style={{ fontSize: "0.9rem", fontWeight: 900, color: "#B71C1C", marginBottom: 6 }}>
                     🔑 SEU CÓDIGO DE AUTORIZAÇÃO IFOOD:
                   </div>
                   <div style={{ fontSize: "2rem", fontWeight: 900, letterSpacing: 4, color: "#EA1D2C", background: "#FFF", padding: "8px 16px", borderRadius: 10, textAlign: "center", border: "1px solid #FECACA", display: "inline-block", margin: "4px 0" }}>
                     {userCodeData.userCode}
                   </div>
-                  <p style={{ fontSize: "0.85rem", color: "#7F1D1D", margin: "8px 0 12px", lineHeight: 1.4 }}>
+                  <p style={{ fontSize: "0.85rem", color: "#B71C1C", margin: "8px 0 12px", lineHeight: 1.4 }}>
                     1. Acesse <b>portal.ifood.com.br/apps/code</b> <br />
                     2. Digite o código acima para autorizar o FireHub na sua loja. <br />
                     3. Assim que autorizar, a conexão fica ativa automaticamente!
@@ -229,7 +229,7 @@ export default function ExtensaoIfoodPage() {
               )}
 
               <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 14px", fontSize: "0.8rem", color: "#475569", fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-                <ShieldCheck size={16} color="#16A34A" />
+                <ShieldCheck size={16} color="#0F766E" />
                 <span>
                   Instalação oficial pelo Google: <b>1 clique, sem baixar arquivo</b> e sem modo do desenvolvedor.
                   A extensão se atualiza sozinha quando lançamos melhorias.
@@ -253,7 +253,7 @@ export default function ExtensaoIfoodPage() {
           
           {/* A Dor do Lojista */}
           <div style={{ background: "#FFF", border: "1.5px solid #FCA5A5", borderRadius: 20, padding: "1.5rem", boxShadow: "0 4px 14px rgba(239, 68, 68, 0.06)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#DC2626", fontWeight: 900, fontSize: "1.1rem", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#C92E09", fontWeight: 900, fontSize: "1.1rem", marginBottom: 12 }}>
               <AlertTriangle size={20} /> O Problema no Seu Dia a Dia (Antes)
             </div>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10, fontSize: "0.88rem", color: "#475569" }}>
@@ -265,8 +265,8 @@ export default function ExtensaoIfoodPage() {
           </div>
 
           {/* A Revolução FireHub */}
-          <div style={{ background: "#FFF", border: "1.5px solid #86EFAC", borderRadius: 20, padding: "1.5rem", boxShadow: "0 4px 14px rgba(34, 197, 94, 0.06)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#166534", fontWeight: 900, fontSize: "1.1rem", marginBottom: 12 }}>
+          <div style={{ background: "#FFF", border: "1.5px solid #99F6E4", borderRadius: 20, padding: "1.5rem", boxShadow: "0 4px 14px rgba(15, 118, 110, 0.06)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#0F766E", fontWeight: 900, fontSize: "1.1rem", marginBottom: 12 }}>
               <CheckCircle size={20} /> A Solução Inteligente FireHub (Agora)
             </div>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10, fontSize: "0.88rem", color: "#475569" }}>
@@ -320,24 +320,24 @@ export default function ExtensaoIfoodPage() {
           {/* Cards da Faixa Calculada */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem" }}>
             
-            <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 16, padding: "1.2rem", textAlign: "center" }}>
-              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#166534" }}>38 min</div>
-              <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#15803D", marginTop: 4 }}>
+            <div style={{ background: "#F0FDFA", border: "1.5px solid #99F6E4", borderRadius: 16, padding: "1.2rem", textAlign: "center" }}>
+              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#0F766E" }}>38 min</div>
+              <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#0F766E", marginTop: 4 }}>
                 Até {activeRanges.max38} Pedidos
               </div>
               <div style={{ fontSize: "0.7rem", color: "#475569", marginTop: 4 }}>Cozinha Leve</div>
             </div>
 
             <div style={{ background: "#FEFCE8", border: "1.5px solid #FDE047", borderRadius: 16, padding: "1.2rem", textAlign: "center" }}>
-              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#CA8A04" }}>58 min</div>
-              <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#A16207", marginTop: 4 }}>
+              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#B45309" }}>58 min</div>
+              <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#B45309", marginTop: 4 }}>
                 Até {activeRanges.max58} Pedidos
               </div>
               <div style={{ fontSize: "0.7rem", color: "#475569", marginTop: 4 }}>Cozinha Moderada</div>
             </div>
 
-            <div style={{ background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: 16, padding: "1.2rem", textAlign: "center" }}>
-              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#C2410C" }}>78 min</div>
+            <div style={{ background: "#FFF4EF", border: "1.5px solid #FFD3C2", borderRadius: 16, padding: "1.2rem", textAlign: "center" }}>
+              <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#9A3412" }}>78 min</div>
               <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#9A3412", marginTop: 4 }}>
                 Até {activeRanges.max78} Pedidos
               </div>
@@ -345,11 +345,11 @@ export default function ExtensaoIfoodPage() {
             </div>
 
             <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: 16, padding: "1.2rem", textAlign: "center" }}>
-              <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#DC2626", marginTop: 4 }}>⚠️ PAUSAR 40m</div>
-              <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#991B1B", marginTop: 4 }}>
+              <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "#C92E09", marginTop: 4 }}>⚠️ PAUSAR 40m</div>
+              <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#B71C1C", marginTop: 4 }}>
                 Acima de {activeRanges.max78} Pedidos
               </div>
-              <div style={{ fontSize: "0.7rem", color: "#DC2626", fontWeight: 700, marginTop: 4 }}>Trava de Segurança</div>
+              <div style={{ fontSize: "0.7rem", color: "#C92E09", fontWeight: 700, marginTop: 4 }}>Trava de Segurança</div>
             </div>
 
           </div>
@@ -360,7 +360,7 @@ export default function ExtensaoIfoodPage() {
           
           <div style={{ background: "#FFF", borderRadius: 20, padding: "1.75rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 14px rgba(0,0,0,0.04)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: "#EFF6FF", color: "#2563EB", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: "#FAF6F2", color: "#1C1917", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Bot size={20} />
               </div>
               <div>
@@ -375,7 +375,7 @@ export default function ExtensaoIfoodPage() {
 
           <div style={{ background: "#FFF", borderRadius: 20, padding: "1.75rem", border: "1px solid #E2E8F0", boxShadow: "0 4px 14px rgba(0,0,0,0.04)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: "#FFF7ED", color: "#EA580C", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: "#FFF4EF", color: "#E8590C", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Layers size={20} />
               </div>
               <div>
@@ -415,7 +415,7 @@ export default function ExtensaoIfoodPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{
-                    background: "#EFF6FF", border: "1px solid #93C5FD", color: "#1D4ED8",
+                    background: "#FAF6F2", border: "1px solid #E7DDD3", color: "#1C1917",
                     padding: "5px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 800,
                     textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4
                   }}
@@ -430,7 +430,7 @@ export default function ExtensaoIfoodPage() {
             </div>
 
             <div style={{ background: "#F8FAFC", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0" }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: "#2563EB", color: "#FFF", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: "#1C1917", color: "#FFF", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
                 2
               </div>
               <h4 style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F172A", margin: "0 0 6px" }}>Fixe o Ícone 🔥</h4>
@@ -452,9 +452,9 @@ export default function ExtensaoIfoodPage() {
           </div>
 
           {extensaoInstalada && (
-            <div style={{ marginTop: "1.25rem", background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-              <CheckCircle2 size={18} color="#16A34A" />
-              <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#166534" }}>
+            <div style={{ marginTop: "1.25rem", background: "#F0FDFA", border: "1.5px solid #99F6E4", borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+              <CheckCircle2 size={18} color="#0F766E" />
+              <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F766E" }}>
                 Detectamos a extensão v{versaoInstalada} instalada neste computador. Só falta abrir o ícone 🔥 e entrar com sua loja.
               </span>
             </div>
@@ -462,14 +462,14 @@ export default function ExtensaoIfoodPage() {
         </div>
 
         {/* ORIENTAÇÃO AO LOJISTA */}
-        <div style={{ background: "linear-gradient(135deg, #FEF3C7 0%, #FFFBEB 100%)", border: "1.5px solid #F59E0B", borderRadius: 20, padding: "1.5rem", display: "flex", gap: 16, alignItems: "center" }}>
+        <div style={{ background: "linear-gradient(135deg, #FFF7E6 0%, #FFF7E6 100%)", border: "1.5px solid #B45309", borderRadius: 20, padding: "1.5rem", display: "flex", gap: 16, alignItems: "center" }}>
           <div style={{ fontSize: "2rem" }}>💡</div>
           <div>
             <h3 style={{ fontSize: "1.05rem", fontWeight: 900, color: "#92400E", margin: "0 0 4px" }}>
               Dica de Ouro de Operação
             </h3>
             <p style={{ fontSize: "0.88rem", color: "#78350F", lineHeight: 1.5, margin: 0 }}>
-              Mantenha a aba do <b>Portal do Parceiro iFood (<a href="https://portal.ifood.com.br" target="_blank" rel="noopener noreferrer" style={{ color: "#D97706", textDecoration: "underline" }}>portal.ifood.com.br</a>)</b> aberta no computador do caixa. Se por acaso a aba for fechada por engano, a extensão abrirá a página automaticamente no Chrome para garantir que sua loja nunca fique desatualizada!
+              Mantenha a aba do <b>Portal do Parceiro iFood (<a href="https://portal.ifood.com.br" target="_blank" rel="noopener noreferrer" style={{ color: "#B45309", textDecoration: "underline" }}>portal.ifood.com.br</a>)</b> aberta no computador do caixa. Se por acaso a aba for fechada por engano, a extensão abrirá a página automaticamente no Chrome para garantir que sua loja nunca fique desatualizada!
             </p>
           </div>
         </div>
@@ -477,7 +477,7 @@ export default function ExtensaoIfoodPage() {
         {/* BOTTOM CTA */}
         <div style={{ textAlign: "center", marginTop: "3rem", paddingBottom: "2rem" }}>
           {extensaoInstalada ? (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 36px", borderRadius: 16, background: "#F0FDF4", border: "2px solid #86EFAC", color: "#166534", fontWeight: 900, fontSize: "1.05rem" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "16px 36px", borderRadius: 16, background: "#F0FDFA", border: "2px solid #99F6E4", color: "#0F766E", fontWeight: 900, fontSize: "1.05rem" }}>
               <CheckCircle2 size={22} /> Extensão instalada e pronta neste computador
             </div>
           ) : STORE_URL ? (
@@ -492,7 +492,7 @@ export default function ExtensaoIfoodPage() {
                   gap: 10,
                   padding: "16px 36px",
                   borderRadius: 16,
-                  background: "linear-gradient(135deg, #E8360C 0%, #FF5722 100%)",
+                  background: "linear-gradient(135deg, #E8360C 0%, #E8590C 100%)",
                   color: "#FFF",
                   fontWeight: 900,
                   fontSize: "1.1rem",

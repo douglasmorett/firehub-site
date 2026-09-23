@@ -151,7 +151,7 @@ export default function EditarPedidoPainel({
     return (
       <div style={{ padding: "18px", textAlign: "center" }}>
         <div style={{ fontSize: "2rem", marginBottom: "8px" }}>🔒</div>
-        <div style={{ fontWeight: 700, color: "#B91C1C", fontSize: "0.95rem", marginBottom: "6px" }}>
+        <div style={{ fontWeight: 700, color: "#B71C1C", fontSize: "0.95rem", marginBottom: "6px" }}>
           Este pedido não pode ser editado
         </div>
         <div style={{ color: "#475569", fontSize: "0.86rem", lineHeight: 1.5 }}>{avaliacao.motivo}</div>
@@ -243,12 +243,12 @@ export default function EditarPedidoPainel({
       {ehMarketplace && (
         <div
           style={{
-            background: totalAcompanha ? "#FFFBEB" : "#FEF2F2",
+            background: totalAcompanha ? "#FFF7E6" : "#FEF2F2",
             border: `1px solid ${totalAcompanha ? "#FDE68A" : "#FECACA"}`,
             borderRadius: "10px",
             padding: "10px 12px",
             fontSize: "0.82rem",
-            color: totalAcompanha ? "#92400E" : "#7F1D1D",
+            color: totalAcompanha ? "#92400E" : "#B71C1C",
             lineHeight: 1.5,
             marginBottom: "12px",
           }}
@@ -334,8 +334,8 @@ export default function EditarPedidoPainel({
                   title={fora ? "Voltar item ao pedido" : "Tirar item do pedido"}
                   style={{
                     border: "none",
-                    background: fora ? "#DCFCE7" : "#FEE2E2",
-                    color: fora ? "#15803D" : "#B91C1C",
+                    background: fora ? "#F0FDFA" : "#FEE2E2",
+                    color: fora ? "#0F766E" : "#B71C1C",
                     borderRadius: "6px",
                     width: 30,
                     height: 30,
@@ -366,15 +366,15 @@ export default function EditarPedidoPainel({
                 gap: "8px",
                 padding: "8px 10px",
                 borderRadius: "8px",
-                border: "1px solid #BBF7D0",
-                background: "#F0FDF4",
+                border: "1px solid #99F6E4",
+                background: "#F0FDFA",
               }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: "0.86rem", color: "#14532D", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div style={{ fontWeight: 600, fontSize: "0.86rem", color: "#134E4A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {a.produto.name}
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "#15803D" }}>{fmt(a.produto.price)} cada</div>
+                <div style={{ fontSize: "0.75rem", color: "#0F766E" }}>{fmt(a.produto.price)} cada</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                 <button
@@ -406,7 +406,7 @@ export default function EditarPedidoPainel({
               <button
                 type="button"
                 onClick={() => setAcrescimos((lista) => lista.filter((_, i) => i !== idx))}
-                style={{ border: "none", background: "#FEE2E2", color: "#B91C1C", borderRadius: "6px", width: 30, height: 30, cursor: "pointer" }}
+                style={{ border: "none", background: "#FEE2E2", color: "#B71C1C", borderRadius: "6px", width: 30, height: 30, cursor: "pointer" }}
                 aria-label="Tirar este acréscimo"
               >
                 🗑️
@@ -467,7 +467,7 @@ export default function EditarPedidoPainel({
                 }}
               >
                 <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#1E293B" }}>{p.name}</span>
-                <span style={{ fontWeight: 700, color: "#15803D" }}>{fmt(p.price)}</span>
+                <span style={{ fontWeight: 700, color: "#0F766E" }}>{fmt(p.price)}</span>
               </button>
             ))}
             {cardapio.length > 0 && produtosFiltrados.length === 0 && (
@@ -482,7 +482,7 @@ export default function EditarPedidoPainel({
 
       {/* ── Como o cliente paga o acréscimo (só marketplace) ───────────── */}
       {ehMarketplace && acrescimos.length > 0 && (
-        <div style={{ marginTop: "12px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px 12px" }}>
+        <div style={{ marginTop: "12px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px 12px" }}>
           <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#92400E", marginBottom: "2px" }}>
             Como o cliente vai pagar os {fmt(totalPrevisto)}?
           </div>
@@ -552,7 +552,7 @@ export default function EditarPedidoPainel({
       </div>
 
       {erro && (
-        <div style={{ marginTop: "10px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: "8px", padding: "8px 10px", fontSize: "0.82rem" }}>
+        <div style={{ marginTop: "10px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#B71C1C", borderRadius: "8px", padding: "8px 10px", fontSize: "0.82rem" }}>
           {erro}
         </div>
       )}
@@ -570,7 +570,7 @@ export default function EditarPedidoPainel({
             padding: "10px",
             borderRadius: "10px",
             border: "none",
-            background: !mudouAlgo ? "#CBD5E1" : "#C62828",
+            background: !mudouAlgo ? "#CBD5E1" : "#C92E09",
             color: "#FFF",
             fontWeight: 800,
             fontSize: "0.88rem",
@@ -602,7 +602,7 @@ function Linha({ rotulo, valor, destaque }: { rotulo: string; valor: string; des
       }}
     >
       <span style={{ color: destaque ? "#1E293B" : "#64748B", fontWeight: destaque ? 800 : 500 }}>{rotulo}</span>
-      <span style={{ color: destaque ? "#C62828" : "#475569", fontWeight: destaque ? 900 : 600, whiteSpace: "nowrap" }}>{valor}</span>
+      <span style={{ color: destaque ? "#C92E09" : "#475569", fontWeight: destaque ? 900 : 600, whiteSpace: "nowrap" }}>{valor}</span>
     </div>
   );
 }

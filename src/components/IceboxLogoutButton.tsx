@@ -7,7 +7,7 @@ export default function IceboxLogoutButton() {
       onClick={() => signOut({ callbackUrl: "/icebox/compras" })}
       style={{
         background: "rgba(255,255,255,0.1)",
-        color: "#93C5FD",
+        color: "#E7DDD3",
         padding: "6px 12px",
         borderRadius: 8,
         fontSize: "0.78rem",
@@ -28,7 +28,7 @@ export default function IceboxLogoutButton() {
       onMouseLeave={e => {
         (e.target as HTMLElement).style.background = "rgba(255,255,255,0.1)";
         (e.target as HTMLElement).style.borderColor = "rgba(255,255,255,0.2)";
-        (e.target as HTMLElement).style.color = "#93C5FD";
+        (e.target as HTMLElement).style.color = "#E7DDD3";
       }}
     >
       ↪ Sair

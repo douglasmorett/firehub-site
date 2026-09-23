@@ -324,7 +324,7 @@ export default function StoreDashboardMap({
         if (pontoDaLoja) {
           const casinha = Leaflet.divIcon({
             className: "",
-            html: `<div style="background:#2563EB;color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 4px 12px rgba(37,99,235,0.5);font-size:1rem;">🏠</div>`,
+            html: `<div style="background:#1C1917;color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 4px 12px rgba(28, 25, 23,0.5);font-size:1rem;">🏠</div>`,
             iconSize: [32, 32],
             iconAnchor: [16, 16],
           });
@@ -342,7 +342,7 @@ export default function StoreDashboardMap({
           const isIfood = (o.source || "").toUpperCase() === "IFOOD" || Boolean(o.ifoodReference);
           const isJotaja = (o.source || "").toUpperCase() === "JOTAJA" || Boolean(o.openDeliveryReference);
 
-          const pinBg = isIfood ? "#EA1D2C" : isJotaja ? "#FF6C00" : "#10B981";
+          const pinBg = isIfood ? "#EA1D2C" : isJotaja ? "#FF6C00" : "#0F766E";
           const displayNum = o.ifoodReference ? `#${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : `#${o.id.slice(-4).toUpperCase()}`;
 
           const popupContent = `
@@ -360,7 +360,7 @@ export default function StoreDashboardMap({
                 🏠 ${o.customerAddress || "Endereço não informado"}
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #E2E8F0; padding-top: 6px; margin-top: 6px;">
-                <span style="font-size: 12px; font-weight: 800; color: #059669;">R$ ${o.totalAmount.toFixed(2)}</span>
+                <span style="font-size: 12px; font-weight: 800; color: #0F766E;">R$ ${o.totalAmount.toFixed(2)}</span>
                 <span style="font-size: 10px; font-weight: 700; color: #475569; background: #F1F5F9; padding: 2px 6px; border-radius: 4px;">${o.status}</span>
               </div>
             </div>
@@ -440,7 +440,7 @@ export default function StoreDashboardMap({
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <div style={{
             background: "rgba(239, 68, 68, 0.2)",
-            color: "#EF4444",
+            color: "#C92E09",
             padding: "8px",
             borderRadius: "10px",
             display: "flex",
@@ -465,7 +465,7 @@ export default function StoreDashboardMap({
         {/* Resumo Rápido Geográfico */}
         <div style={{ display: "flex", alignItems: "center", gap: "1.25rem", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            {resolvendo ? <Loader2 size={16} color="#38BDF8" className="animate-spin" /> : <Navigation size={16} color="#38BDF8" />}
+            {resolvendo ? <Loader2 size={16} color="#A8A29E" className="animate-spin" /> : <Navigation size={16} color="#A8A29E" />}
             <span style={{ fontSize: "0.85rem", color: "#CBD5E1" }}>
               {/* "Mapeados: 40 pedidos" com 12 no desenho era mentira silenciosa.
                   Agora o número é o que está NO mapa, e o resto aparece ao lado. */}
@@ -488,8 +488,8 @@ export default function StoreDashboardMap({
               alignItems: "center",
               gap: "6px"
             }}>
-              <Flame size={15} color="#F59E0B" />
-              <span style={{ fontSize: "0.8rem", color: "#FCD34D", fontWeight: 700 }}>
+              <Flame size={15} color="#B45309" />
+              <span style={{ fontSize: "0.8rem", color: "#FDE68A", fontWeight: 700 }}>
                 Bairro nº 1: {stats.topNeighborhood} ({stats.topCount})
               </span>
             </div>
@@ -518,7 +518,7 @@ export default function StoreDashboardMap({
                 display: "flex", alignItems: "center", gap: "6px",
               }}
             >
-              <Navigation size={14} style={{ transform: "rotate(45deg)", color: "#2563EB" }} />
+              <Navigation size={14} style={{ transform: "rotate(45deg)", color: "#1C1917" }} />
               Centralizar
             </button>
           )}
@@ -606,7 +606,7 @@ export default function StoreDashboardMap({
               </>
             ) : (
               <>
-                <MapPin size={32} color="#F59E0B" style={{ marginBottom: "8px" }} />
+                <MapPin size={32} color="#B45309" style={{ marginBottom: "8px" }} />
                 <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#92400E" }}>Falta dizer onde fica sua loja</span>
                 <span style={{ fontSize: "0.82rem" }}>
                   Abra <a href="/store/minha-loja" style={{ color: "#B45309", fontWeight: 800 }}>Minha loja → Área de entrega</a>, marque o ponto e salve. Sem ele o mapa não consegue localizar os endereços.

@@ -39,15 +39,15 @@ export default function StoreError({
       textAlign: "center",
     }}>
       <div style={{
-        background: recarregando ? "rgba(59,130,246,0.08)" : "rgba(239,68,68,0.08)",
-        border: `1px solid ${recarregando ? "rgba(59,130,246,0.2)" : "rgba(239,68,68,0.2)"}`,
+        background: recarregando ? "rgba(28, 25, 23,0.08)" : "rgba(239,68,68,0.08)",
+        border: `1px solid ${recarregando ? "rgba(28, 25, 23,0.2)" : "rgba(239,68,68,0.2)"}`,
         borderRadius: 16,
         padding: "2rem",
         maxWidth: 500,
       }}>
         {recarregando ? (
           <>
-            <h2 style={{ color: "#2563EB", fontSize: "1.3rem", fontWeight: 800, marginBottom: "0.5rem" }}>
+            <h2 style={{ color: "#1C1917", fontSize: "1.3rem", fontWeight: 800, marginBottom: "0.5rem" }}>
               🔄 Atualizando o sistema
             </h2>
             <p style={{ color: "#64748b", fontSize: "0.9rem" }}>
@@ -56,7 +56,7 @@ export default function StoreError({
           </>
         ) : (
           <>
-            <h2 style={{ color: "#EF4444", fontSize: "1.3rem", fontWeight: 800, marginBottom: "0.5rem" }}>
+            <h2 style={{ color: "#C92E09", fontSize: "1.3rem", fontWeight: 800, marginBottom: "0.5rem" }}>
               ⚠️ Erro ao carregar a loja
             </h2>
             <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: "1rem" }}>
@@ -74,7 +74,7 @@ export default function StoreError({
               // `reset()` remonta o componente que pede o arquivo que sumiu.
               onClick={() => (chunk ? window.location.reload() : reset())}
               style={{
-                background: "linear-gradient(135deg, #EF4444, #DC2626)",
+                background: "linear-gradient(135deg, #C92E09, #C92E09)",
                 color: "#fff",
                 border: "none",
                 padding: "10px 24px",

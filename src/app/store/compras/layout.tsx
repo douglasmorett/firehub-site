@@ -20,7 +20,7 @@ export default async function ComprasLayout({ children }: { children: React.Reac
         {/* Top bar Icebox — só aparece quando acessado pelo domínio Icebox OU quando não logado */}
         {(isIcebox || !isLoggedIn) && (
           <nav style={{
-            background: "linear-gradient(135deg, #0D47A1, #1565C0)",
+            background: "linear-gradient(135deg, #1C1917, #1C1917)",
             padding: "12px 1.5rem",
             display: "flex",
             alignItems: "center",
@@ -32,13 +32,13 @@ export default async function ComprasLayout({ children }: { children: React.Reac
               <img src="/firehub-flame.png" alt="FireHub" style={{ width: 32, height: 32, borderRadius: 7, objectFit: "cover" }} />
               <div>
                 <span style={{ color: "#fff", fontWeight: 800, fontSize: "1.1rem", letterSpacing: "-0.3px" }}>Icebox</span>
-                <span style={{ color: "#93C5FD", fontWeight: 600, fontSize: "0.75rem", marginLeft: 6 }}>Distribuidora</span>
+                <span style={{ color: "#E7DDD3", fontWeight: 600, fontSize: "0.75rem", marginLeft: 6 }}>Distribuidora</span>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {isLoggedIn ? (
                 <>
-                  <span style={{ color: "#BFDBFE", fontSize: "0.82rem" }}>
+                  <span style={{ color: "#E7DDD3", fontSize: "0.82rem" }}>
                     Olá, <strong style={{ color: "#fff" }}>{session?.user?.name || "Cliente"}</strong>
                   </span>
                   <a href="/store/orders" style={{
@@ -57,7 +57,7 @@ export default async function ComprasLayout({ children }: { children: React.Reac
               ) : (
                 <a href="/login?callbackUrl=/store/compras" style={{
                   background: "#fff",
-                  color: "#0D47A1",
+                  color: "#1C1917",
                   padding: "8px 20px",
                   borderRadius: 10,
                   fontSize: "0.88rem",
@@ -78,30 +78,30 @@ export default async function ComprasLayout({ children }: { children: React.Reac
       </div>
       <style>{`
         .icebox-theme {
-          --primary: #1565C0;
-          --primary-hover: #0D47A1;
-          --primary-light: #E3F2FD;
+          --primary: #1C1917;
+          --primary-hover: #1C1917;
+          --primary-light: #FAF6F2;
           --shadow-primary: 0 8px 20px -6px rgba(21, 101, 192, 0.4);
         }
         .icebox-theme .gradient-text {
-          background: linear-gradient(135deg, #1565C0 0%, #42A5F5 100%) !important;
+          background: linear-gradient(135deg, #1C1917 0%, #42A5F5 100%) !important;
           -webkit-background-clip: text !important;
           -webkit-text-fill-color: transparent !important;
         }
         .icebox-theme .btn-primary {
-          background: linear-gradient(135deg, #1565C0 0%, #1976D2 100%) !important;
+          background: linear-gradient(135deg, #1C1917 0%, #1C1917 100%) !important;
           box-shadow: 0 8px 20px -6px rgba(21, 101, 192, 0.4) !important;
         }
         .icebox-theme .btn-primary:hover:not(:disabled) {
-          background: linear-gradient(135deg, #0D47A1 0%, #1565C0 100%) !important;
+          background: linear-gradient(135deg, #1C1917 0%, #1C1917 100%) !important;
         }
         .icebox-theme .btn-outline:hover {
-          border-color: #1565C0 !important;
-          color: #1565C0 !important;
-          background-color: #E3F2FD !important;
+          border-color: #1C1917 !important;
+          color: #1C1917 !important;
+          background-color: #FAF6F2 !important;
         }
         .icebox-theme .input-field:focus {
-          border-color: #1565C0 !important;
+          border-color: #1C1917 !important;
         }
       `}</style>
     </>

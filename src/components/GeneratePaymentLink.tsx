@@ -37,9 +37,9 @@ export default function GeneratePaymentLink({ orderId, shortId }: { orderId: str
       <a href={url} target="_blank" rel="noreferrer" style={{
         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         width: "100%", padding: "11px", borderRadius: 10,
-        background: "linear-gradient(135deg, #16A34A, #22C55E)", color: "#fff",
+        background: "linear-gradient(135deg, #0F766E, #0F766E)", color: "#fff",
         fontWeight: 800, fontSize: "0.9rem", textDecoration: "none",
-        boxShadow: "0 3px 10px rgba(22,163,74,0.25)",
+        boxShadow: "0 3px 10px rgba(15, 118, 110,0.25)",
       }}>
         💳 Pagar Agora
       </a>
@@ -52,7 +52,7 @@ export default function GeneratePaymentLink({ orderId, shortId }: { orderId: str
         <div style={{
           padding: "10px 14px", borderRadius: 8,
           background: "#FEF2F2", border: "1px solid #FECACA",
-          fontSize: "0.8rem", color: "#DC2626", fontWeight: 600, textAlign: "center",
+          fontSize: "0.8rem", color: "#C92E09", fontWeight: 600, textAlign: "center",
         }}>
           ❌ {errorMsg}
         </div>
@@ -70,7 +70,7 @@ export default function GeneratePaymentLink({ orderId, shortId }: { orderId: str
   return (
     <div style={{
       padding: "11px", borderRadius: 10,
-      background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#fff",
+      background: "linear-gradient(135deg, #B45309, #B45309)", color: "#fff",
       fontWeight: 700, fontSize: "0.85rem", textAlign: "center",
       display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
     }}>

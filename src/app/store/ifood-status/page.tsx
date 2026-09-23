@@ -14,8 +14,8 @@ function StatusBadge({ value, trueLabel = "Sim", falseLabel = "Não" }: { value:
   return (
     <span style={{
       display: "inline-block", padding: "3px 12px", borderRadius: 20, fontSize: "0.8rem", fontWeight: 700,
-      background: value ? "#DCFCE7" : "#FEE2E2", color: value ? "#16A34A" : "#DC2626",
-      border: `1px solid ${value ? "#86EFAC" : "#FCA5A5"}`
+      background: value ? "#F0FDFA" : "#FEE2E2", color: value ? "#0F766E" : "#C92E09",
+      border: `1px solid ${value ? "#99F6E4" : "#FCA5A5"}`
     }}>
       {value ? `✅ ${trueLabel}` : `❌ ${falseLabel}`}
     </span>
@@ -92,7 +92,7 @@ export default function IfoodStatusDashboard() {
       )}
 
       {data?.error && (
-        <div style={{ padding: "1rem", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 10, color: "#DC2626", marginBottom: "1.5rem" }}>
+        <div style={{ padding: "1rem", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 10, color: "#C92E09", marginBottom: "1.5rem" }}>
           ❌ Erro ao buscar dados: {data.error}
         </div>
       )}
@@ -109,9 +109,9 @@ export default function IfoodStatusDashboard() {
                   <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#64748B", marginBottom: 4 }}>Estado</div>
                   <span style={{
                     display: "inline-block", padding: "5px 16px", borderRadius: 20, fontWeight: 800, fontSize: "0.9rem",
-                    background: s.available ? "#DCFCE7" : "#FEE2E2",
-                    color: s.available ? "#16A34A" : "#DC2626",
-                    border: `2px solid ${s.available ? "#86EFAC" : "#FCA5A5"}`
+                    background: s.available ? "#F0FDFA" : "#FEE2E2",
+                    color: s.available ? "#0F766E" : "#C92E09",
+                    border: `2px solid ${s.available ? "#99F6E4" : "#FCA5A5"}`
                   }}>
                     {s.available ? "🟢 ABERTA" : "🔴 FECHADA"}
                   </span>
@@ -126,12 +126,12 @@ export default function IfoodStatusDashboard() {
           </div>
 
           {/* Pausas/Interrupções */}
-          <div style={{ background: "#fff", border: `1.5px solid ${activeInterruption ? "#FCD34D" : "#E2E8F0"}`, borderRadius: 14, padding: "1.25rem" }}>
+          <div style={{ background: "#fff", border: `1.5px solid ${activeInterruption ? "#FDE68A" : "#E2E8F0"}`, borderRadius: 14, padding: "1.25rem" }}>
             <h2 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "1rem", color: "#1E293B" }}>⏸️ Pausas Programadas</h2>
             {Array.isArray(interruptions) && interruptions.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {interruptions.map((i: any, idx: number) => (
-                  <div key={idx} style={{ padding: "10px 14px", background: i.active ? "#FFFBEB" : "#F8FAFC", borderRadius: 10, border: `1px solid ${i.active ? "#FCD34D" : "#E2E8F0"}` }}>
+                  <div key={idx} style={{ padding: "10px 14px", background: i.active ? "#FFF7E6" : "#F8FAFC", borderRadius: 10, border: `1px solid ${i.active ? "#FDE68A" : "#E2E8F0"}` }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>{i.description ?? "Pausa"}</span>
                       <StatusBadge value={i.active ?? false} trueLabel="Ativa" falseLabel="Inativa" />
@@ -156,9 +156,9 @@ export default function IfoodStatusDashboard() {
                       {h.dayOfWeek ?? h.day ?? `Dia ${idx + 1}`}
                     </div>
                     {h.shifts?.map((shift: any, si: number) => (
-                      <div key={si} style={{ fontSize: "0.8rem", color: "#3B82F6" }}>🕐 {shift.startTime} → {shift.endTime}</div>
+                      <div key={si} style={{ fontSize: "0.8rem", color: "#1C1917" }}>🕐 {shift.startTime} → {shift.endTime}</div>
                     ))}
-                    {!h.shifts && <div style={{ fontSize: "0.8rem", color: "#3B82F6" }}>🕐 {h.startTime} → {h.endTime}</div>}
+                    {!h.shifts && <div style={{ fontSize: "0.8rem", color: "#1C1917" }}>🕐 {h.startTime} → {h.endTime}</div>}
                   </div>
                 ))}
               </div>

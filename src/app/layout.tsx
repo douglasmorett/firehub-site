@@ -5,6 +5,10 @@ import type { Metadata, Viewport } from "next";
 import "../styles/fh-tokens.css";
 import "../styles/fh-componentes.css";
 import "./globals.css";
+// DEPOIS do globals: a regra de cor do painel precisa vencer o .btn-primary de
+// lá, que é o botão da landing. Tudo dentro dele vive sob `.fh-painel`, então
+// o site público não enxerga nada disto.
+import "../styles/fh-painel.css";
 
 export const viewport: Viewport = {
   width: "device-width",

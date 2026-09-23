@@ -275,14 +275,14 @@ export default function AvisoImpressaoParada() {
       role="status"
       style={{
         display: "flex", alignItems: "center", gap: "0.9rem", flexWrap: "wrap",
-        background: "#FFF7ED", border: "1px solid #FED7AA", borderLeft: "6px solid #EA580C",
+        background: "#FFF4EF", border: "1px solid #FFD3C2", borderLeft: "6px solid #E8590C",
         borderRadius: 12, padding: "0.9rem 1.1rem", margin: "0 0 1rem",
       }}
     >
       <span style={{ fontSize: "1.5rem", lineHeight: 1 }}>🖨️</span>
       <div style={{ flex: "1 1 260px", minWidth: 0 }}>
         <div style={{ fontWeight: 800, color: "#9A3412", fontSize: "0.95rem" }}>{titulo}</div>
-        <div style={{ color: "#C2410C", fontSize: "0.85rem", lineHeight: 1.5 }}>
+        <div style={{ color: "#9A3412", fontSize: "0.85rem", lineHeight: 1.5 }}>
           {acabouDeVincular ? "Vinculado. Conferindo a fila da nuvem… esta faixa some sozinha em instantes." : texto}
         </div>
       </div>
@@ -293,7 +293,7 @@ export default function AvisoImpressaoParada() {
             onClick={vincular}
             disabled={vinculando}
             style={{
-              background: "#EA580C", color: "#fff", border: "none", borderRadius: 10,
+              background: "#E8590C", color: "#fff", border: "none", borderRadius: 10,
               padding: "10px 18px", fontWeight: 800, fontSize: "0.85rem", whiteSpace: "nowrap",
               cursor: vinculando ? "wait" : "pointer", fontFamily: "inherit", opacity: vinculando ? 0.7 : 1,
             }}
@@ -304,16 +304,16 @@ export default function AvisoImpressaoParada() {
         <a
           href="/store/impressoras"
           style={{
-            background: botaoVincular ? "none" : "#EA580C",
+            background: botaoVincular ? "none" : "#E8590C",
             color: botaoVincular ? "#9A3412" : "#fff",
-            border: botaoVincular ? "1px solid #FDBA74" : "none",
+            border: botaoVincular ? "1px solid #FFD3C2" : "none",
             textDecoration: "none", borderRadius: 10,
             padding: "10px 18px", fontWeight: 800, fontSize: "0.85rem", whiteSpace: "nowrap",
           }}
         >
           Abrir Impressoras →
         </a>
-        <BotaoNaoVerMais onClick={naoVerMais} cor="#9A3412" borda="#FDBA74" />
+        <BotaoNaoVerMais onClick={naoVerMais} cor="#9A3412" borda="#FFD3C2" />
       </div>
     </div>
   );

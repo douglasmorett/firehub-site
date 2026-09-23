@@ -131,7 +131,7 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
             >
               <span style={{
                 width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                background: store.storeOpen ? "#22C55E" : "#94A3B8",
+                background: store.storeOpen ? "#0F766E" : "#94A3B8",
               }} />
               <div style={{ flex: 1 }}>
                 <p style={{
@@ -140,7 +140,7 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
                   {store.storeName || "Loja"}
                   {store.isPrimaryStore && (
                     <span style={{
-                      fontSize: "0.6rem", background: "#DBEAFE", color: "#1D4ED8",
+                      fontSize: "0.6rem", background: "#FAF6F2", color: "#1C1917",
                       padding: "1px 6px", borderRadius: 6, marginLeft: 6, fontWeight: 600,
                     }}>PRINCIPAL</span>
                   )}
@@ -151,7 +151,7 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
                 </p>
               </div>
               {store.id === activeStoreId && (
-                <span style={{ color: "#DC2626", fontWeight: 900, fontSize: "0.75rem" }}>✓</span>
+                <span style={{ color: "#C92E09", fontWeight: 900, fontSize: "0.75rem" }}>✓</span>
               )}
             </button>
           ))}
@@ -171,7 +171,7 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
               📋 Todas as Lojas
             </span>
             {activeStoreId === "all" && (
-              <span style={{ color: "#DC2626", fontWeight: 900, fontSize: "0.75rem", marginLeft: "auto" }}>✓</span>
+              <span style={{ color: "#C92E09", fontWeight: 900, fontSize: "0.75rem", marginLeft: "auto" }}>✓</span>
             )}
           </button>
 
@@ -187,8 +187,8 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
               background: "#fff", cursor: "pointer", fontFamily: "inherit", textAlign: "left",
             }}
           >
-            <Plus size={14} style={{ color: "#16A34A" }} />
-            <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "#16A34A" }}>
+            <Plus size={14} style={{ color: "#0F766E" }} />
+            <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "#0F766E" }}>
               ➕ Cadastrar Nova Loja
             </span>
           </button>

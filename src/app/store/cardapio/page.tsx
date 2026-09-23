@@ -124,8 +124,8 @@ export default async function StoreCardapioPage() {
       {/* BANNER DE DICA DE ALTA CONVERSÃO: DESTAQUES DA CASA */}
       <div
         style={{
-          background: "linear-gradient(135deg, #FFFBEB, #FEF3C7)",
-          border: "1.5px solid #FCD34D",
+          background: "linear-gradient(135deg, #FFF7E6, #FFF7E6)",
+          border: "1.5px solid #FDE68A",
           borderRadius: 16,
           padding: "14px 18px",
           marginTop: "1rem",

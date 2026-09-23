@@ -103,7 +103,7 @@ export default function ProfileClient({ user }: { user: any }) {
       <div className="card mb-6">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", paddingBottom: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>
           <h2 className="font-bold" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}><Edit3 size={18} /> Dados da Minha Loja</h2>
-          {profileSuccess && <span style={{ fontSize: "0.8rem", color: "#10B981", fontWeight: 600 }}>✅ Salvo!</span>}
+          {profileSuccess && <span style={{ fontSize: "0.8rem", color: "#0F766E", fontWeight: 600 }}>✅ Salvo!</span>}
         </div>
         <div style={{ display: "grid", gap: "1rem" }}>
           <div>
@@ -127,7 +127,7 @@ export default function ProfileClient({ user }: { user: any }) {
         </h2>
 
         {success && (
-          <div style={{ backgroundColor: "rgba(16,185,129,0.1)", color: "#10b981", padding: "1rem", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem", fontWeight: "bold" }}>
+          <div style={{ backgroundColor: "rgba(15, 118, 110,0.1)", color: "#0F766E", padding: "1rem", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem", fontWeight: "bold" }}>
             <CheckCircle size={20} /> Senha atualizada com sucesso!
           </div>
         )}

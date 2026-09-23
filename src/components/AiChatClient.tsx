@@ -108,7 +108,7 @@ export default function AiChatClient() {
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div style={{ 
             width: "48px", height: "48px", borderRadius: "16px",
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            background: "linear-gradient(135deg, #44403C 0%, #764ba2 100%)",
             display: "flex", alignItems: "center", justifyContent: "center",
             boxShadow: "0 4px 15px rgba(102, 126, 234, 0.4)"
           }}>
@@ -125,7 +125,7 @@ export default function AiChatClient() {
           onClick={handleClear}
           style={{ 
             background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)",
-            color: "#ef4444", padding: "8px 16px", borderRadius: "8px", cursor: "pointer",
+            color: "#C92E09", padding: "8px 16px", borderRadius: "8px", cursor: "pointer",
             display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem"
           }}
         >
@@ -151,8 +151,8 @@ export default function AiChatClient() {
               width: "36px", height: "36px", borderRadius: "12px", flexShrink: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
               background: msg.role === "user" 
-                ? "linear-gradient(135deg, #f97316, #ef4444)" 
-                : "linear-gradient(135deg, #667eea, #764ba2)",
+                ? "linear-gradient(135deg, #E8590C, #C92E09)" 
+                : "linear-gradient(135deg, #44403C, #764ba2)",
             }}>
               {msg.role === "user" ? <User size={18} color="white" /> : <Bot size={18} color="white" />}
             </div>
@@ -176,7 +176,7 @@ export default function AiChatClient() {
             <div style={{ 
               width: "36px", height: "36px", borderRadius: "12px", flexShrink: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
-              background: "linear-gradient(135deg, #667eea, #764ba2)",
+              background: "linear-gradient(135deg, #44403C, #764ba2)",
             }}>
               <Bot size={18} color="white" />
             </div>
@@ -242,7 +242,7 @@ export default function AiChatClient() {
           disabled={loading || !input.trim()}
           style={{ 
             width: "48px", height: "48px", borderRadius: "12px", border: "none",
-            background: input.trim() ? "linear-gradient(135deg, #667eea, #764ba2)" : "var(--border-color)",
+            background: input.trim() ? "linear-gradient(135deg, #44403C, #764ba2)" : "var(--border-color)",
             color: "white", cursor: input.trim() ? "pointer" : "default",
             display: "flex", alignItems: "center", justifyContent: "center",
             transition: "all 0.2s", flexShrink: 0

@@ -64,10 +64,10 @@ export default function ProfileClient() {
 
       {success && (
         <div style={{
-          background: "#F0FDF4", border: "1.5px solid #BBF7D0",
+          background: "#F0FDFA", border: "1.5px solid #99F6E4",
           borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1rem",
           display: "flex", alignItems: "center", gap: 8,
-          color: "#166534", fontSize: "0.88rem", fontWeight: 600,
+          color: "#0F766E", fontSize: "0.88rem", fontWeight: 600,
         }}>
           <CheckCircle size={18} /> Senha alterada com sucesso!
         </div>
@@ -77,7 +77,7 @@ export default function ProfileClient() {
         <div style={{
           background: "#FEF2F2", border: "1.5px solid #FECACA",
           borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1rem",
-          color: "#DC2626", fontSize: "0.85rem", fontWeight: 600,
+          color: "#C92E09", fontSize: "0.85rem", fontWeight: 600,
         }}>
           ❌ {error}
         </div>
@@ -86,7 +86,7 @@ export default function ProfileClient() {
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
         {/* Senha Atual */}
         <div>
-          <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+          <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#334155", marginBottom: 4 }}>
             Senha Atual
           </label>
           <div style={{ position: "relative" }}>
@@ -118,7 +118,7 @@ export default function ProfileClient() {
 
         {/* Nova Senha */}
         <div>
-          <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+          <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#334155", marginBottom: 4 }}>
             Nova Senha
           </label>
           <div style={{ position: "relative" }}>
@@ -150,7 +150,7 @@ export default function ProfileClient() {
 
         {/* Confirmar Senha */}
         <div>
-          <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+          <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#334155", marginBottom: 4 }}>
             Confirmar Nova Senha
           </label>
           <input
@@ -166,7 +166,7 @@ export default function ProfileClient() {
             }}
           />
           {confirmPassword && newPassword && confirmPassword !== newPassword && (
-            <p style={{ color: "#DC2626", fontSize: "0.75rem", marginTop: 4, fontWeight: 600 }}>
+            <p style={{ color: "#C92E09", fontSize: "0.75rem", marginTop: 4, fontWeight: 600 }}>
               As senhas não coincidem
             </p>
           )}
@@ -180,7 +180,7 @@ export default function ProfileClient() {
             borderRadius: 12, border: "none",
             background: loading || !currentPassword || !newPassword || !confirmPassword
               ? "#94A3B8"
-              : "linear-gradient(135deg, #1565C0, #1976D2)",
+              : "linear-gradient(135deg, #1C1917, #1C1917)",
             color: "#fff", fontWeight: 800, fontSize: "0.95rem",
             cursor: loading ? "not-allowed" : "pointer",
             fontFamily: "inherit", marginTop: "0.25rem",

@@ -134,7 +134,7 @@ export default async function MetricasPrazosPage({
               href={`/admin/prazos/metricas?dias=${d}`}
               style={{
                 padding: "7px 14px", borderRadius: 999, textDecoration: "none", fontWeight: 800, fontSize: ".85rem",
-                background: d === dias ? "#FF5722" : "#F1F5F9", color: d === dias ? "#fff" : "#334155",
+                background: d === dias ? "#E8590C" : "#F1F5F9", color: d === dias ? "#fff" : "#334155",
               }}
             >
               {d === 1 ? "hoje" : `${d} dias`}
@@ -146,7 +146,7 @@ export default async function MetricasPrazosPage({
         </div>
 
         {erro && (
-          <div style={{ ...cartao, borderColor: "#FECACA", background: "#FEF2F2", color: "#991B1B", marginBottom: 18 }}>
+          <div style={{ ...cartao, borderColor: "#FECACA", background: "#FEF2F2", color: "#B71C1C", marginBottom: 18 }}>
             <b>Não deu para ler as visitas.</b> {erro}
           </div>
         )}
@@ -165,7 +165,7 @@ export default async function MetricasPrazosPage({
           </div>
           <div style={cartao}>
             <div style={rotulo}>Saíram em 10s</div>
-            <div style={{ ...numero, color: rejeicao / (total || 1) > 0.5 ? "#DC2626" : undefined }}>{pct(rejeicao, total)}</div>
+            <div style={{ ...numero, color: rejeicao / (total || 1) > 0.5 ? "#C92E09" : undefined }}>{pct(rejeicao, total)}</div>
             <div style={{ color: "#64748B", fontSize: ".85rem" }}>{rejeicao} visitas</div>
           </div>
           <div style={cartao}>
@@ -175,7 +175,7 @@ export default async function MetricasPrazosPage({
           </div>
           <div style={cartao}>
             <div style={rotulo}>Clicaram em assinar</div>
-            <div style={{ ...numero, color: "#15803D" }}>{pct(comCta, total)}</div>
+            <div style={{ ...numero, color: "#0F766E" }}>{pct(comCta, total)}</div>
             <div style={{ color: "#64748B", fontSize: ".85rem" }}>{comCta} foram ao checkout</div>
           </div>
           <div style={cartao}>
@@ -204,7 +204,7 @@ export default async function MetricasPrazosPage({
               <div key={marco} style={{ display: "flex", alignItems: "center", gap: 12, padding: "5px 0" }}>
                 <div style={{ width: 230, fontSize: ".9rem", color: "#334155" }}>{nome}</div>
                 <div style={{ flex: 1, height: 12, background: "#F1F5F9", borderRadius: 999, overflow: "hidden" }}>
-                  <div style={{ width: `${p}%`, height: "100%", background: marco === "foi-ao-checkout" ? "#16A34A" : "#FF5722" }} />
+                  <div style={{ width: `${p}%`, height: "100%", background: marco === "foi-ao-checkout" ? "#0F766E" : "#E8590C" }} />
                 </div>
                 <div style={{ width: 90, textAlign: "right", fontWeight: 800, fontSize: ".9rem" }}>
                   {n} · {pct(n, total)}
@@ -231,7 +231,7 @@ export default async function MetricasPrazosPage({
                     <tr key={k}>
                       <td style={td}>{k}</td>
                       <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{v.visitas}</td>
-                      <td style={{ ...td, textAlign: "right", color: v.cta ? "#15803D" : "#94A3B8", fontWeight: 800 }}>
+                      <td style={{ ...td, textAlign: "right", color: v.cta ? "#0F766E" : "#94A3B8", fontWeight: 800 }}>
                         {v.cta} · {pct(v.cta, v.visitas)}
                       </td>
                     </tr>
@@ -270,8 +270,8 @@ export default async function MetricasPrazosPage({
                     <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{tempo(l.segundos)}</td>
                     <td style={{ ...td, textAlign: "right" }}>{l.rolagem}%</td>
                     <td style={{ ...td, fontSize: ".82rem", color: "#475569" }}>
-                      {l.cliquesCta > 0 && <b style={{ color: "#15803D" }}>foi ao checkout · </b>}
-                      {l.cliquesZap > 0 && <b style={{ color: "#15803D" }}>chamou no zap · </b>}
+                      {l.cliquesCta > 0 && <b style={{ color: "#0F766E" }}>foi ao checkout · </b>}
+                      {l.cliquesZap > 0 && <b style={{ color: "#0F766E" }}>chamou no zap · </b>}
                       {(l.marcos || []).filter((m) => m !== "foi-ao-checkout" && m !== "chamou-no-zap").join(" · ") || "—"}
                       {l.planoVisto ? ` · olhou ${l.planoVisto} loja(s)` : ""}
                     </td>

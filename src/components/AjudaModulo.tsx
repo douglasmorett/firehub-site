@@ -61,7 +61,7 @@ export default function AjudaModulo({
 
           {aviso && (
             <div style={{
-              marginTop: 10, background: "#FFFBEB", border: "1px solid #FDE68A",
+              marginTop: 10, background: "#FFF7E6", border: "1px solid #FDE68A",
               borderRadius: 10, padding: "9px 12px", fontSize: "0.79rem",
               color: "#92400E", lineHeight: 1.5,
             }}>
@@ -75,7 +75,7 @@ export default function AjudaModulo({
                 onClick={() => setAberto((v) => !v)}
                 style={{
                   marginTop: 10, background: "none", border: "none", padding: 0,
-                  color: "#2563EB", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer",
+                  color: "#1C1917", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer",
                 }}
               >
                 {aberto ? "Ocultar o passo a passo ▲" : "Como usar, passo a passo ▼"}
