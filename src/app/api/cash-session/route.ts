@@ -11,7 +11,7 @@ import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 // lib/cupom-do-caixa, para o botão "imprimir de novo" do histórico.
 import { cupomDeFechamentoDeCaixa } from "@/lib/cupom-do-caixa";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
-import { enfileirarCupomDoCaixa } from "@/lib/imprimir-caixa";
+import { enfileirarCupomDoCaixa, assistenteOuvindoAFila } from "@/lib/imprimir-caixa";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -915,5 +915,11 @@ export async function PUT(req: Request) {
     sendEvolutionMessage(user.targetId, ownerInfo.notificationPhone, msg).catch(() => {});
   }
 
-  return NextResponse.json({ success: true, difference });
+  // A tela precisa saber se o papel vai sair de verdade: sem o Assistente
+  // puxando a fila, o fechamento fica parado nela (ver assistenteOuvindoAFila).
+  const impressao = openSession && paraOCupom && querImprimir
+    ? { assistenteOuvindo: await assistenteOuvindoAFila(user.targetId) }
+    : undefined;
+
+  return NextResponse.json({ success: true, difference, ...(impressao ? { impressao } : {}) });
 }

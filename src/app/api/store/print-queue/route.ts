@@ -2,7 +2,7 @@ import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { destinosDoPedido } from "@/lib/roteamento-de-impressao";
-import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
+import { impressorasDaContaDaMesa, impressoraDoCaixa, impressoraUnicaDoPc } from "@/lib/impressao-da-conta";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
@@ -542,7 +542,12 @@ export async function GET(req: NextRequest) {
     // Conta da mesa e reimpressão de comanda dividem a mesma tabela e o mesmo
     // ack, mas não as mesmas impressoras: a conta é papel do caixa, a comanda
     // reimpressa tem que sair onde a original sairia (cozinha, bar, balcão).
-    const contas = avulsas.filter((a) => a.kind !== KIND_REIMPRESSAO);
+    // O papel do CAIXA (abertura, fechamento, 2ª via) tem regra própria
+    // (lib/impressao-da-conta.ts → impressoraDoCaixa): não herda o "ninguém"
+    // da conta da mesa e sai numa impressora só.
+    const ehDoCaixa = (a: { kind?: string }) => String(a.kind || "").startsWith("CAIXA_");
+    const contas = avulsas.filter((a) => a.kind !== KIND_REIMPRESSAO && !ehDoCaixa(a));
+    const doCaixa = avulsas.filter(ehDoCaixa);
     const reimpressoes = avulsas.filter((a) => a.kind === KIND_REIMPRESSAO);
 
     const jobsReimpressos = reimpressoes.map((pedida) => {
@@ -616,7 +621,52 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ jobs: [...jobs, ...jobsAvulsos, ...jobsReimpressos] });
+    // ── PAPEL DO CAIXA ────────────────────────────────────────────────────
+    // Uma impressora cadastrada → nela; várias → a da conta da mesa, senão a
+    // que tira a comanda inteira; nenhuma cadastrada → a única de verdade que o
+    // Windows do PC enxerga; várias no PC → sem destino (a padrão do Assistente).
+    const impressorasNoPc: string[] = Array.isArray((owner as any)?.printQueueEstado?.impressoras)
+      ? (owner as any).printQueueEstado.impressoras.map((n: unknown) => String(n))
+      : [];
+    const cadastradaDoCaixa = impressoraDoCaixa(printers, impressorasNoPc);
+    const unicaDoPc = cadastradaDoCaixa ? null : impressoraUnicaDoPc(impressorasNoPc);
+    const destinoDoCaixa: any = cadastradaDoCaixa || (unicaDoPc ? { name: unicaDoPc } : null);
+
+    const jobsDoCaixa = doCaixa.map((pedido) => {
+      const order: any = pedido.payload;
+      return {
+        id: "job_" + pedido.id,
+        order,
+        storeName: owner?.storeName || owner?.name || "FIREHUB",
+        paperWidth: destinoDoCaixa?.paperWidth || printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",
+        columns: destinoDoCaixa?.columns ?? printers[0]?.columns,
+        escposProfile: destinoDoCaixa?.escposProfile ?? printers[0]?.escposProfile,
+        printerConfig: {
+          autoprint: pc?.autoprint !== false,
+          autoBeverageTag: pc?.autoBeverageTag !== false,
+          customBeverageKeywords: pc?.customBeverageKeywords || "",
+          defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
+          printers,
+        },
+        destinos: destinoDoCaixa
+          ? [{
+              printer: destinoDoCaixa.name,
+              // Papel de dinheiro sai UMA vez, ainda que a impressora esteja
+              // configurada com duas vias para as comandas.
+              copies: 1,
+              paperWidth: destinoDoCaixa.paperWidth || pc?.defaultPaperWidth || "80mm",
+              columns: destinoDoCaixa.columns ?? undefined,
+              escposProfile: destinoDoCaixa.escposProfile ?? undefined,
+              somenteBebidas: false,
+              separarItens: false,
+              items: Array.isArray(order?.items) ? order.items : [],
+            }]
+          : [],
+        createdAt: pedido.createdAt.toISOString(),
+      };
+    });
+
+    return NextResponse.json({ jobs: [...jobs, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos] });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.

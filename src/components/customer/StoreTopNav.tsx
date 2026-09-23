@@ -373,7 +373,7 @@ export default function StoreTopNav({
 
   const doClose = async (imprimir: boolean) => {
     setClosing(true);
-    await fetch("/api/cash-session", {
+    const resposta = await fetch("/api/cash-session", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -399,6 +399,20 @@ export default function StoreTopNav({
         imprimir,
       }),
     });
+    // O papel do fechamento só existe na fila da nuvem. Se o Assistente desta
+    // loja não está puxando a fila, ele NÃO vai sair — e a tela fechava calada,
+    // como se tivesse impresso (Frangoso, 20 a 23/09/2026). Agora diz o que
+    // fazer. `null`/ausente = não deu para saber: não acusa nada.
+    if (imprimir) {
+      const r = await resposta.json().catch(() => null);
+      if (r?.impressao?.assistenteOuvindo === false) {
+        alert(
+          "Caixa fechado. Mas o fechamento NÃO vai sair no papel agora: o Assistente de Impressão desta loja não está consultando a fila.\n\n" +
+          "No computador do caixa, abra o painel e clique em \"Vincular agora\" no aviso laranja do topo (ou abra Impressoras e salve). " +
+          "Depois, imprima de novo em Caixa → Histórico de caixas."
+        );
+      }
+    }
     setClosing(false);
     setCashOpen(false);
     setShowCloseModal(false);

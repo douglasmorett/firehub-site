@@ -35,8 +35,10 @@ import { BotaoNaoVerMais, gravarNaoVerMais, lerNaoVerMais } from "./NaoVerMais";
  *   6. Comanda presa (pendente) → impressora desligada/sem papel/em erro.
  *   7. Assistente antigo no PC do caixa → comanda em dobro a cada reinício.
  *
- * Só aparece para loja com impressora cadastrada: quem não imprime pelo
- * Assistente não tem o que consertar.
+ * Para loja com impressora cadastrada, todos os casos. Para loja SEM
+ * impressora cadastrada, só o caso 1 (e o vínculo é feito sozinho quando o
+ * Assistente deste PC não tem loja nenhuma): ela também depende da fila para
+ * o fechamento de caixa — o Frangoso ficou quatro noites sem ele (23/09/2026).
  */
 const TOLERANCIA_S = 3 * 60;
 
@@ -131,12 +133,18 @@ export default function AvisoImpressaoParada() {
   // Sonda o Assistente deste PC só quando a fila está muda — é aí que o
   // diagnóstico muda de figura. Uma sondagem por situação: com a fila muda o
   // carimbo não muda, então o efeito não reexecuta a cada conferência.
+  // Sonda MESMO sem impressora cadastrada (desde 23/09/2026): o papel do caixa
+  // só existe na fila, e a loja que imprime as comandas pelo navegador sem
+  // cadastro nenhum ficava sem o fechamento e sem aviso — o Frangoso fechou
+  // quatro noites assim. Não abre pergunta nova do Chrome: o printOrder do
+  // navegador já sonda o mesmo localhost para imprimir comanda.
+  const temEstado = !!estado;
   useEffect(() => {
-    if (!estado?.temImpressora || !filaMuda) { setLocal(undefined); return; }
+    if (!temEstado || !filaMuda) { setLocal(undefined); return; }
     let ativo = true;
     sondarAssistenteLocal().then((a) => { if (ativo) setLocal(a); });
     return () => { ativo = false; };
-  }, [estado?.temImpressora, filaMuda, estado?.ultimoPoll]);
+  }, [temEstado, filaMuda, estado?.ultimoPoll]);
 
   const vincular = async () => {
     if (!local || !meuId || vinculando) return;
@@ -172,15 +180,32 @@ export default function AvisoImpressaoParada() {
     }
   };
 
+  // ── VÍNCULO AUTOMÁTICO ──────────────────────────────────────────────────
+  // Assistente neste PC SEM loja nenhuma: é a instalação que ficou sem o
+  // "Salvar" de Impressoras. Vincular à loja deste painel não tem o que
+  // decidir — é a loja que está aberta aqui. Vinculado a OUTRA loja, não: pode
+  // ser um PC que atende duas casas, e aí quem decide é o botão.
+  const tentouAutomatico = useRef(false);
+  useEffect(() => {
+    if (tentouAutomatico.current || !meuId || !local || local.franchiseeId) return;
+    tentouAutomatico.current = true;
+    vincular();
+    // `vincular` muda a cada render; o ref já garante uma tentativa só.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [local, meuId]);
+
   // /store/compras é módulo à parte (o HideOnCompras esconde tudo lá).
   if (pathname?.startsWith("/store/compras")) return null;
-  if (!estado || !estado.temImpressora) return null;
+  if (!estado) return null;
   if (calada === undefined) return null;
   // Fila muda e a sondagem de localhost ainda correndo: espera, para a faixa
   // não trocar de frase na cara da loja segundos depois de aparecer.
   if (filaMuda && local === undefined) return null;
 
   const naoVinculado = filaMuda && !!local && local.franchiseeId !== meuId;
+  // Sem impressora cadastrada, a faixa só fala do vínculo: os outros avisos
+  // (parada, impressora ausente, comanda presa) são de quem imprime pela fila.
+  if (!estado.temImpressora && !naoVinculado) return null;
   const vinculadoMasMudo = filaMuda && !!local && local.franchiseeId === meuId;
   const ausentes = estado.impressorasAusentes || [];
   const presas = !filaMuda ? Math.max(0, Number(estado.pendentes) || 0) : 0;
@@ -220,8 +245,8 @@ export default function AvisoImpressaoParada() {
     ocorrencia = "nao-vinculado";
     titulo = `O Assistente de Impressão deste computador (v${local!.versao}) não está vinculado a esta loja`;
     texto = local!.franchiseeId
-      ? "Ele está vinculado a outra loja. Se este é o PC do caixa desta loja, vincule agora: as comandas de mesa, balcão, iFood e 99Food passam a sair por ele mesmo com o painel fechado."
-      : "Sem o vínculo ele não consulta a fila da nuvem: comanda só sai enquanto este painel estiver aberto e acordado nesta aba. Vincular é um clique — e as comandas passam a sair mesmo com o painel fechado.";
+      ? "Ele está vinculado a outra loja. Se este é o PC do caixa desta loja, vincule agora: as comandas de mesa, balcão, iFood e 99Food e o fechamento de caixa passam a sair por ele mesmo com o painel fechado."
+      : "Sem o vínculo ele não consulta a fila da nuvem: o fechamento de caixa não sai, e comanda só sai enquanto este painel estiver aberto e acordado nesta aba. Vincular é um clique.";
   } else if (vinculadoMasMudo && nuncaConsultou) {
     ocorrencia = "vinculado-e-mudo";
     titulo = "O Assistente está vinculado a esta loja, mas a fila da nuvem nunca o viu";

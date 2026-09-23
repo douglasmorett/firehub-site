@@ -67,6 +67,75 @@ export function impressorasDaContaDaMesa<T extends ImpressoraDaConta>(
   return palpiteDoCaixa(validas);
 }
 
+// ── PAPEL DO CAIXA (abertura, fechamento e 2ª via) ────────────────────────
+//
+// Até 23/09/2026 o caixa ia pela MESMA escolha da conta da mesa — e herdava os
+// dois buracos dela: loja que desmarcou a conta em todas as impressoras (porque
+// não tem mesa) ficava sem o papel do caixa, e loja sem impressora do salão
+// caía na impressora padrão do Windows, que às vezes nem é a térmica. O
+// Frangoso ficou quatro noites sem o fechamento no papel.
+//
+// A regra do dono, com os dois buracos fechados:
+//   1. UMA impressora cadastrada → nela;
+//   2. duas ou mais → na da conta da mesa (a primeira: papel de dinheiro sai
+//      uma vez só, mesmo com duas marcadas);
+//   3. ninguém marcou a conta, ou desmarcaram todas → na que tira a comanda
+//      INTEIRA (sem filtro de categoria, sem ser só de bebida), senão a primeira;
+//   4. nenhuma cadastrada → quem chama olha o PC (impressoraUnicaDoPc).
+// Diferente da conta da mesa, o caixa NUNCA fica sem destino por escolha de
+// impressora: é a conferência do dinheiro.
+
+/** O nome do Windows, sem caixa nem espaço sobrando, para comparar. */
+function nomeComparavel(nome: unknown): string {
+  return String(nome || "").trim().toLowerCase();
+}
+
+/**
+ * A impressora que recebe o papel do caixa, entre as cadastradas na loja.
+ * `impressorasNoPc` (o que o Windows do PC do caixa enxerga, contado pelo
+ * Assistente) serve para não escolher uma impressora que não existe lá: se a
+ * lista vier, as ausentes saem da disputa — a não ser que TODAS estejam
+ * ausentes, e aí a regra segue com o cadastro (o aviso de impressora ausente
+ * já está na tela).
+ */
+export function impressoraDoCaixa<T extends ImpressoraDaConta>(
+  printers: T[] | null | undefined,
+  impressorasNoPc?: string[] | null
+): T | null {
+  let validas = (printers || []).filter((p) => p && String(p.name || "").trim());
+  const noPc = new Set((impressorasNoPc || []).map(nomeComparavel).filter(Boolean));
+  if (noPc.size > 0) {
+    const presentes = validas.filter((p) => noPc.has(nomeComparavel(p.name)));
+    if (presentes.length > 0) validas = presentes;
+  }
+  if (validas.length === 0) return null;
+  if (validas.length === 1) return validas[0];
+
+  const daConta = impressorasDaContaDaMesa(validas);
+  if (daConta && daConta.length > 0) return daConta[0];
+
+  const inteiras = validas.filter(
+    (p) => !(Array.isArray(p.categories) && p.categories.length > 0) && p.somenteBebidas !== true
+  );
+  return inteiras[0] || validas[0];
+}
+
+/** Impressoras que o Windows lista mas não põem tinta em papel. */
+const IMPRESSORA_VIRTUAL =
+  /pdf|xps|onenote|one note|fax|document writer|send to|enviar para|anydesk|teamviewer|remote|remota|redirecionad|snagit|foxit|nitro|bullzip|cutepdf|dopdf|primopdf/i;
+
+/**
+ * Loja sem impressora cadastrada no FireHub: se o PC do caixa tem UMA impressora
+ * de verdade, é nela que o papel sai. Com duas ou mais (ou nenhuma), `null` —
+ * o Assistente usa a padrão dele, como sempre fez.
+ */
+export function impressoraUnicaDoPc(impressorasNoPc: string[] | null | undefined): string | null {
+  const reais = (impressorasNoPc || [])
+    .map((n) => String(n || "").trim())
+    .filter((n) => n && !IMPRESSORA_VIRTUAL.test(n));
+  return reais.length === 1 ? reais[0] : null;
+}
+
 /**
  * ESTA impressora sai na conta? Para a tela de Impressoras mostrar o mesmo que
  * o papel faz — inclusive o palpite, enquanto a loja não tiver escolhido.

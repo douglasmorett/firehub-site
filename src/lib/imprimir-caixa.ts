@@ -17,6 +17,28 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import type { CupomDoCaixa } from "@/lib/cupom-do-caixa";
 
+/**
+ * O Assistente desta loja está puxando a fila da nuvem agora? (consultou nos
+ * últimos 3 min — a mesma tolerância da faixa AvisoImpressaoParada.)
+ *
+ * O papel do caixa só existe na fila. Quando ninguém a consulta, "enviado para
+ * a impressora" era mentira: o Frangoso fechou quatro noites seguidas, a tela
+ * respondeu que estava tudo certo, e nenhum fechamento saiu (23/09/2026).
+ * `null` = não deu para saber (coluna ausente); quem chama não acusa nada.
+ */
+export async function assistenteOuvindoAFila(franchiseeId: string): Promise<boolean | null> {
+  try {
+    const dono = await prisma.user.findUnique({
+      where: { id: franchiseeId },
+      select: { printQueuePolledAt: true },
+    });
+    const em = dono?.printQueuePolledAt ? new Date(dono.printQueuePolledAt).getTime() : 0;
+    return em > 0 && Date.now() - em < 3 * 60 * 1000;
+  } catch {
+    return null;
+  }
+}
+
 export async function enfileirarCupomDoCaixa(
   franchiseeId: string,
   cupom: CupomDoCaixa,

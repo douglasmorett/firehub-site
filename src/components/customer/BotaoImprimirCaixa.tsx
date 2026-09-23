@@ -13,7 +13,7 @@ import { useState } from "react";
  * aberto ou não.
  */
 export default function BotaoImprimirCaixa({ sessionId }: { sessionId: string }) {
-  const [estado, setEstado] = useState<"parado" | "enviando" | "ok" | "erro">("parado");
+  const [estado, setEstado] = useState<"parado" | "enviando" | "ok" | "semAssistente" | "erro">("parado");
   const [erro, setErro] = useState("");
 
   const imprimir = async (tipo: "ABERTURA" | "FECHAMENTO") => {
@@ -27,6 +27,8 @@ export default function BotaoImprimirCaixa({ sessionId }: { sessionId: string })
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { setErro(j.error || "Não consegui imprimir."); setEstado("erro"); return; }
+      // Na fila, mas sem ninguém puxando a fila: não é "enviado", é "parado".
+      if (j.assistenteOuvindo === false) { setEstado("semAssistente"); return; }
       setEstado("ok");
       setTimeout(() => setEstado("parado"), 3000);
     } catch {
@@ -42,6 +44,14 @@ export default function BotaoImprimirCaixa({ sessionId }: { sessionId: string })
 
   if (estado === "ok") {
     return <span style={{ fontSize: "0.76rem", fontWeight: 800, color: "#0F766E" }}>✅ Enviado para a impressora</span>;
+  }
+  if (estado === "semAssistente") {
+    return (
+      <span style={{ fontSize: "0.76rem", fontWeight: 700, color: "#B45309", lineHeight: 1.4 }}>
+        ⚠️ Ficou na fila, mas não vai sair agora: o Assistente de Impressão desta loja não está consultando.
+        No computador do caixa, clique em &quot;Vincular agora&quot; no aviso do topo e imprima de novo.
+      </span>
+    );
   }
 
   return (

@@ -18,7 +18,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FUSO_PADRAO } from "@/lib/fuso";
 import { cupomDeAberturaDeCaixa, cupomDeFechamentoDeCaixa } from "@/lib/cupom-do-caixa";
-import { enfileirarCupomDoCaixa } from "@/lib/imprimir-caixa";
+import { enfileirarCupomDoCaixa, assistenteOuvindoAFila } from "@/lib/imprimir-caixa";
 
 export const dynamic = "force-dynamic";
 
@@ -95,5 +95,5 @@ export async function POST(req: Request) {
   const ok = await enfileirarCupomDoCaixa(lojaId, marcado, session.user?.name || session.user?.email || "");
   if (!ok) return NextResponse.json({ error: "Não consegui enviar para a impressora." }, { status: 500 });
 
-  return NextResponse.json({ ok: true, tipo });
+  return NextResponse.json({ ok: true, tipo, assistenteOuvindo: await assistenteOuvindoAFila(lojaId) });
 }
