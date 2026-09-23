@@ -14,6 +14,7 @@ import AvisoCaixaAberto24h from "@/components/customer/AvisoCaixaAberto24h";
 import AvisoImpressaoParada from "@/components/customer/AvisoImpressaoParada";
 import { AvisoDispensavel, BotaoNaoVerMais } from "@/components/customer/NaoVerMais";
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
+import AvisosDoDia from "@/components/customer/AvisosDoDia";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
 
 export const dynamic = "force-dynamic";
@@ -122,6 +123,9 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   return (
     <CartProvider>
       <GlobalPrintListener />
+      {/* Cancelamento e disputa do dia: janela e som em QUALQUER tela do
+          painel (lib/avisos-do-dia.ts tem as regras). */}
+      <AvisosDoDia />
       {/* ── BARRA LATERAL + CONTEÚDO ─────────────────────────────────────
           O menu era uma barra horizontal com 16 itens que encolhiam a fonte
           até 0,58rem para caber. Em pé, cada item tem a largura inteira e o

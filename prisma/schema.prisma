@@ -816,6 +816,16 @@ model CustomerOrder {
   cancelledBy         String?            // Cen4: quem cancelou: RESTAURANT | IFOOD | CUSTOMER
   cancelReason        String?            // Motivo do cancelamento
   cancelDispute       Json?              // Negociação: { pending, reason, code, requestedAt }
+  /// Quando o pedido virou CANCELADO. Carimbado pela extensão do Prisma
+  /// (lib/order-stages.ts) em toda gravação desse status, venha de onde vier.
+  /// É o relógio do aviso de cancelamento, que só toca no dia
+  /// (lib/avisos-do-dia.ts). `updatedAt` não serve: a impressão e qualquer
+  /// edição o reescrevem.
+  cancelledAt         DateTime?
+  /// O "Ciente" do aviso de cancelamento: quando e quem. Um clique vale para
+  /// todas as telas da loja (decisão do dono, 23/09/2026).
+  cancelCienteEm      DateTime?
+  cancelCientePor     String?
   // === EMISSÃO FISCAL (NFC-e / NF-e) ===
   fiscalStatus        String?   @default("PENDING") // PENDING | EMITTED | FAILED | CANCELED
   fiscalInfo          Json?              // { nfceKey, nfceNumber, emittedAt, xmlUrl, pdfUrl, fiscalItems: [...] }

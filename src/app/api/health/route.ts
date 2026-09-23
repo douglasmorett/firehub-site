@@ -94,6 +94,10 @@ export async function GET() {
       ["CustomerOrder", "posOrderId"], ["CustomerOrder", "posTerminalId"],
       ["CustomerOrder", "posStatus"], ["CustomerOrder", "posDadosTransacao"],
       ["CustomerOrder", "posTentativas"], ["CustomerOrder", "tableSessionId"],
+      // Aviso de cancelamento: sem elas, todo cancelamento (que a extensão do
+      // Prisma carimba) daria 500.
+      ["CustomerOrder", "cancelledAt"], ["CustomerOrder", "cancelCienteEm"],
+      ["CustomerOrder", "cancelCientePor"],
       ["CustomerOrderItem", "notes"], ["CustomerOrderItem", "tableGuestId"],
       ["MenuProduct", "sortOrder"], ["ComboGroup", "minQty"],
       ["ComboGroupItem", "maxPerItem"], ["ComboGroupItem", "optionNote"],

@@ -749,6 +749,12 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "posDadosTransacao" JSONB`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "posTentativas" INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "tableSessionId" TEXT`,
+  // Aviso de cancelamento (lib/avisos-do-dia.ts): quando cancelou — o
+  // `updatedAt` é reescrito pela impressão e não serve de relógio — e o
+  // "Ciente" de quem viu, que vale para todas as telas da loja.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelledAt" TIMESTAMP(3)`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelCienteEm" TIMESTAMP(3)`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelCientePor" TEXT`,
 
   // ── Item do pedido ──
   `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "notes" TEXT`,

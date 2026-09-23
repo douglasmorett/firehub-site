@@ -13,6 +13,7 @@ import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido
 import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
+import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { avaliarEdicao } from "@/lib/edicao-de-pedido";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { lerPager, nomeComPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
@@ -1487,7 +1488,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         (p.items?.length || 0) !== (n.items?.length || 0) ||
         p.ifoodDriverStatus !== n.ifoodDriverStatus ||
         p.ifoodDriverName !== n.ifoodDriverName ||
-        p.kdsStage !== n.kdsStage
+        p.kdsStage !== n.kdsStage ||
+        // A disputa chega SÓ no cancelDispute: nenhum dos campos acima muda.
+        // Sem estas linhas a lista era dada como igual, a tela não redesenhava
+        // e o modal de resposta só abria quando outro dado do pedido mudasse —
+        // com o prazo do iFood correndo. O mesmo valia para a disputa já
+        // respondida em outro aparelho, que ficava aberta aqui.
+        p.cancelDispute?.pending !== n.cancelDispute?.pending ||
+        p.cancelDispute?.disputeId !== n.cancelDispute?.disputeId ||
+        p.cancelDispute?.requestedAt !== n.cancelDispute?.requestedAt
       ) {
         return false;
       }
@@ -4301,8 +4310,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         // 09/09 as 12 disputas pendentes do banco estavam TODAS vencidas, e
         // abriam uma atrás da outra ao entrar na conta, com o contador zerado
         // em "0 minutos e 00 segundos para responder".
+        //
+        // E só as do DIA (regra do dono, 23/09/2026 — a mesma do aviso com som
+        // em lib/avisos-do-dia.ts): disputa sem prazo gravado nunca vencia, e
+        // a loja que abria no dia seguinte caía numa janela de ontem. Pedido já
+        // cancelado também não abre: não há mais o que negociar.
+        const inicioDoDia = inicioDoExpedienteDaLoja(user.storeTimezone, now);
         const disputeOrder = orders.find((o: any) => {
           if (o.cancelDispute?.pending !== true) return false;
+          if (o.status === "CANCELADO") return false;
+          const aberta = o.cancelDispute?.requestedAt ? new Date(o.cancelDispute.requestedAt) : null;
+          if (!aberta || Number.isNaN(aberta.getTime()) || aberta < inicioDoDia) return false;
           const exp = o.cancelDispute?.expiresAt ? new Date(o.cancelDispute.expiresAt) : null;
           if (exp && !Number.isNaN(exp.getTime()) && exp.getTime() <= now.getTime()) return false;
           return true;
@@ -4331,7 +4349,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 {/* Countdown banner */}
                 <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 14px", marginBottom: "16px" }}>
-                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#B71C1C" }}>
+                  {/* O servidor desenha um segundo, o navegador outro: sem isto a
+                      contagem quebrava a hidratação da tela de pedidos inteira. */}
+                  <div suppressHydrationWarning style={{ fontWeight: 800, fontSize: "0.85rem", color: "#B71C1C" }}>
                     Você tem {timeLeftMin} minutos e {timeLeftSec} segundos para responder
                   </div>
                   <div style={{ fontSize: "0.78rem", color: "#B71C1C", marginTop: 2 }}>
@@ -4522,7 +4542,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <div style={{ fontWeight: 800, fontSize: "1.15rem", color: isResend ? "#1C1917" : "#92400E" }}>{modalTitle}</div>
                 <div style={{ fontSize: "0.82rem", color: "#475569", marginTop: "4px", fontWeight: 600 }}>{modalSubtitle}</div>
                 {timeLeftStr && (
-                  <div style={{ marginTop: "8px", padding: "4px 12px", display: "inline-block", background: timeLeft! < 60 ? "#FEE2E2" : "#FFF7E6", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, color: timeLeft! < 60 ? "#C92E09" : "#92400E" }}>
+                  <div suppressHydrationWarning style={{ marginTop: "8px", padding: "4px 12px", display: "inline-block", background: timeLeft! < 60 ? "#FEE2E2" : "#FFF7E6", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 700, color: timeLeft! < 60 ? "#C92E09" : "#92400E" }}>
                     ⏱ Tempo para responder no iFood: {timeLeftStr}
                   </div>
                 )}

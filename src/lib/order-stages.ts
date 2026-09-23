@@ -13,7 +13,7 @@
  * qualquer integração nova entra carimbada sem ninguém lembrar de fazer nada.
  */
 
-export type MarcoDoPedido = "acceptedAt" | "readyAt" | "dispatchedAt" | "deliveredAt";
+export type MarcoDoPedido = "acceptedAt" | "readyAt" | "dispatchedAt" | "deliveredAt" | "cancelledAt";
 
 /**
  * Em qual campo cada status cai. Os sinônimos existem porque as plataformas e
@@ -30,6 +30,14 @@ export const MARCO_POR_STATUS: Record<string, MarcoDoPedido> = {
   SAIU_ENTREGA:      "dispatchedAt",
   SAIU_PARA_ENTREGA: "dispatchedAt",
   ENTREGUE:          "deliveredAt",
+  // O cancelamento chega por uns quinze caminhos (webhook e poll do iFood,
+  // 99Food, Brendi, Jotajá, painel, robô, API de parceiro). Carimbar aqui é o
+  // único jeito de todos gravarem a hora sem ninguém lembrar — e o aviso de
+  // cancelamento (lib/avisos-do-dia.ts) só toca no dia por causa dela.
+  // As grafias em inglês existem no banco (API de parceiro, linhas antigas).
+  CANCELADO:         "cancelledAt",
+  CANCELLED:         "cancelledAt",
+  CANCELED:          "cancelledAt",
 };
 
 /**
