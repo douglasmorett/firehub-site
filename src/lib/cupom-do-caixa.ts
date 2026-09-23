@@ -33,8 +33,14 @@
 // "R$ 12345,67" num papel de 48 colunas e lido errado por quem esta com
 // pressa. O resto da comanda nao usa milhar porque la os valores sao de um
 // item so.
-const reais = (v: number | null | undefined) =>
-  `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+//
+// O sinal vem ANTES do "R$": a sangria já saía "-R$ 150,00" e a diferença
+// saía "R$ -10,00" no mesmo papel — dois jeitos de escrever falta.
+const reais = (v: number | null | undefined) => {
+  const n = Number(v || 0);
+  const abs = Math.abs(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n <= -0.005 ? "-" : ""}R$ ${abs}`;
+};
 
 export type LinhaDoCaixa = { name: string; qty: number; price: number; notes?: string };
 
@@ -54,16 +60,54 @@ export type LinhaDoRelatorio =
   | { tipo: "linha"; texto: string; valor: string; nota?: string }
   | { tipo: "destaque"; texto: string; valor: string; nota?: string };
 
-/** O retrato do turno. Nada aqui entra em conta — é tudo informação. */
+/** Uma linha somada do retrato: "Pix (12) R$ 600,00". */
+export type ParteDoRetrato = { nome: string; qtd: number; valor: number };
+
+/**
+ * O retrato do turno. Nada aqui entra em conta — é tudo informação.
+ *
+ * Apurado em lib/esperado-do-turno.ts na MESMA varredura da conferência, com a
+ * mesma base: a soma das formas, a dos canais e a dos tipos dão o mesmo total
+ * faturado. É o que deixa o papel ser conferido contra ele mesmo.
+ */
 export type DetalheDoTurno = {
-  qtdPedidos: number;
-  vendaBruta: number;
-  ticketMedio: number;
-  taxaEntregaTotal: number;
-  descontoDaLoja: number;
-  porCanal: { nome: string; qtd: number; valor: number }[];
+  /** Pedidos sem mesa já pagos (ou fiados) + contas de mesa fechadas no turno. */
+  vendas: { qtd: number; valor: number };
+  porForma: ParteDoRetrato[];
+  porCanal: (ParteDoRetrato & { formas: ParteDoRetrato[] })[];
+  porTipo: ParteDoRetrato[];
+  /** Desconto que saiu do bolso da loja — cupom da casa, desconto no balcão. */
+  cupomDaLoja: { qtd: number; valor: number; porCanal: ParteDoRetrato[] };
+  /** Cupom que a plataforma pagou, por canal. Ela repassa: é venda da loja. */
+  cupomDaPlataforma: ParteDoRetrato[];
+  /** O pago online da conferência, por canal (já com o cupom da plataforma). */
+  onlinePorCanal: ParteDoRetrato[];
+  taxaDeEntrega: { qtd: number; valor: number };
+  mesas: { servico: number; servicoQtd: number; gorjeta: number };
+  gaveta: { vendasEmDinheiro: number; reforcosQtd: number; sangriasQtd: number };
   movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date | string }[];
-  cancelados: { qtd: number; valor: number };
+  fiado: { hora: Date | string; numero: string; nome: string; valor: number }[];
+  cancelados: {
+    qtd: number;
+    valor: number;
+    lista: { hora: Date | string; numero: string; canal: string; referencia: string | null; valor: number; motivo: string | null; quem: string | null }[];
+  };
+  entregadores: {
+    nome: string;
+    entregas: number;
+    dinheiro: number;
+    cartao: number;
+    pix: number;
+    online: number;
+    outros: number;
+    taxas: number;
+    diaria: number;
+    semDistancia: number;
+    pelaTaxaDoCliente: number;
+  }[];
+  entregaParceira: { qtd: number; valor: number };
+  semEntregador: { qtd: number; valor: number };
+  maisVendidos: ParteDoRetrato[];
 };
 
 export type ValoresDoFechamento = {
@@ -72,8 +116,18 @@ export type ValoresDoFechamento = {
   diferenca: number;
   /** Vendas já pagas fora da gaveta — entram no total, não na conferência. */
   online?: { ifood?: number; food99?: number };
-  /** Cupom bancado pela plataforma: nunca entrou na gaveta, mas explica venda. */
-  cuponsDaPlataforma?: { ifood?: number; food99?: number };
+  /**
+   * O pago online que o SERVIDOR esperava. `online` é o que a tela mandou (a
+   * linha é travada lá); os dois só divergem com a tela desatualizada, e aí o
+   * papel precisa mostrar os dois, como faz com as outras formas.
+   */
+  onlineEsperado?: number;
+  /**
+   * Caixa encerrado sozinho quando outro foi aberto: não há contado nem
+   * diferença (a sessão grava `difference` nulo). Imprimir "confere" ali seria
+   * mentira.
+   */
+  semConferencia?: boolean;
   movimentacoes?: { entradas: number; saidas: number };
   /** Venda do turno que sai da conferência de propósito (fiado, mesa aberta…). */
   foraDaConferencia?: { fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas?: number; mesasAbertasQtd?: number };
@@ -155,6 +209,11 @@ export function cupomDeFechamentoDeCaixa(entrada: {
   fechadoEm: Date;
   trocoInicial: number;
   valores: ValoresDoFechamento;
+  /**
+   * Presente só na 2ª via: quem pediu e quando. O `operador` da 2ª via é quem
+   * FECHOU (a sessão grava), para o cabeçalho dizer o mesmo que o original.
+   */
+  segundaVia?: { por: string; em: Date } | null;
 }) {
   const c = cabecalho("FECHAMENTO DE CAIXA", entrada.loja, entrada.fechadoEm, entrada.fuso, entrada.operador);
   const v = entrada.valores;
@@ -173,6 +232,11 @@ export function cupomDeFechamentoDeCaixa(entrada: {
   const items: LinhaDoCaixa[] = [];
   for (const [nome, esperado, contado] of formas) {
     if (Math.abs(esperado) < 0.01 && Math.abs(contado) < 0.01) continue;
+    // Sem conferência não há contado: o item leva o esperado, dito como tal.
+    if (v.semConferencia) {
+      items.push({ name: nome, qty: 1, price: esperado, notes: "esperado | ninguem conferiu" });
+      continue;
+    }
     const d = Number((contado - esperado).toFixed(2));
     items.push({
       name: nome,
@@ -218,13 +282,17 @@ export function cupomDeFechamentoDeCaixa(entrada: {
   // Entram na lista de itens também, para o Assistente antigo — que não sabe
   // ler `relatorio` — passar a imprimi-las a partir de hoje.
   items.push({ name: "TOTAL ESPERADO", qty: 1, price: Number(v.esperado.total.toFixed(2)) });
-  items.push({ name: "TOTAL CONTADO", qty: 1, price: Number(contadoTotal.toFixed(2)) });
-  items.push({
-    name: `DIFERENCA ${rotuloDaDiferenca(v.diferenca)}`,
-    qty: 1,
-    price: Number(v.diferenca.toFixed(2)),
-    notes: v.justificativa ? `Justificativa: ${v.justificativa}` : undefined,
-  });
+  if (v.semConferencia) {
+    items.push({ name: "SEM CONFERENCIA", qty: 1, price: 0, notes: "Caixa encerrado sozinho quando outro foi aberto" });
+  } else {
+    items.push({ name: "TOTAL CONTADO", qty: 1, price: Number(contadoTotal.toFixed(2)) });
+    items.push({
+      name: `DIFERENCA ${rotuloDaDiferenca(v.diferenca)}`,
+      qty: 1,
+      price: Number(v.diferenca.toFixed(2)),
+      notes: v.justificativa ? `Justificativa: ${v.justificativa}` : undefined,
+    });
+  }
 
   return montar({
     id: `caixa_fechamento_${entrada.sessionId}`,
@@ -238,6 +306,28 @@ export function cupomDeFechamentoDeCaixa(entrada: {
   });
 }
 
+// A ordem das formas é FIXA, a mesma da conferência: quem compara o
+// faturamento com a gaveta procura o dinheiro sempre na primeira linha, e
+// ordenar por valor mudava a posição de cada forma a cada turno.
+const ORDEM_DAS_FORMAS = ["Dinheiro", "Debito", "Credito", "Pix", "Vale-refeicao"];
+function posicaoDaForma(nome: string): number {
+  const i = ORDEM_DAS_FORMAS.indexOf(nome);
+  if (i >= 0) return i;
+  if (nome.startsWith("Pago online")) return 10;
+  if (nome === "Cupom da plataforma") return 20;
+  if (nome === "Fiado") return 30;
+  return 40;
+}
+const naOrdemDasFormas = (l: ParteDoRetrato[]) =>
+  [...l].sort((a, b) => posicaoDaForma(a.nome) - posicaoDaForma(b.nome) || b.valor - a.valor);
+
+const ORDEM_DOS_TIPOS = ["Entrega", "Retirada", "Balcao", "Mesa", "Totem"];
+const naOrdemDosTipos = (l: ParteDoRetrato[]) =>
+  [...l].sort((a, b) => {
+    const pa = ORDEM_DOS_TIPOS.indexOf(a.nome), pb = ORDEM_DOS_TIPOS.indexOf(b.nome);
+    return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
+  });
+
 function rotuloDaDiferenca(d: number) {
   return d < -0.01 ? "(FALTA)" : d > 0.01 ? "(SOBRA)" : "(confere)";
 }
@@ -250,9 +340,21 @@ function hhmm(d: Date, fuso: string) {
  * O relatório do fechamento, na ordem em que o lojista confere.
  *
  * Primeiro a gaveta (é o que trava o operador na hora), depois o resultado da
- * conferência, e só então o retrato do turno — venda por canal, movimentações
- * uma a uma e tudo que NÃO passa pela gaveta. A ordem importa: quem está
+ * conferência, e só então o retrato do turno. A ordem importa: quem está
  * fechando quer a diferença nas primeiras linhas, não no fim de um relatório.
+ *
+ * ── O QUE O RETRATO RESPONDE ────────────────────────────────────────────────
+ *
+ * O papel era só a conferência mais uma lista de "não passa pela gaveta". O
+ * dono comparou com o fechamento da Saipos (23/09/2026) e pediu tudo o que
+ * estava lá e mais: quantos fiados e de quem, quanto cada integração vendeu e
+ * em qual forma ("Brendi: tantos pedidos, tanto de cada pagamento"), e quanto
+ * de cupom foi da loja, do iFood e do 99Food. Cada seção abaixo responde uma
+ * dessas perguntas sem o lojista precisar abrir o sistema no dia seguinte.
+ *
+ * Tudo sai da mesma apuração (lib/esperado-do-turno.ts): faturamento por
+ * forma, por canal e por tipo somam o mesmo total — se um dia não somarem, o
+ * defeito aparece no próprio papel.
  */
 function relatorioDoFechamento(
   entrada: {
@@ -261,15 +363,30 @@ function relatorioDoFechamento(
     fechadoEm: Date;
     trocoInicial: number;
     valores: ValoresDoFechamento;
+    segundaVia?: { por: string; em: Date } | null;
   },
   contadoTotal: number,
   online: number
 ): LinhaDoRelatorio[] {
   const v = entrada.valores;
   const d = entrada.valores.detalhe;
+  const fuso = entrada.fuso;
   const L: LinhaDoRelatorio[] = [];
+  const linha = (texto: string, valor: string, nota?: string) => L.push({ tipo: "linha", texto, valor, nota });
+  const titulo = (texto: string) => L.push({ tipo: "titulo", texto });
+  const texto = (t: string) => L.push({ tipo: "texto", texto: t });
+  const hora = (h: Date | string) =>
+    new Date(h).toLocaleTimeString("pt-BR", { timeZone: fuso, hour: "2-digit", minute: "2-digit" });
+  const vezes = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
-  L.push({ tipo: "titulo", texto: "Conferencia da gaveta" });
+  // ── O TURNO ─────────────────────────────────────────────────────────────
+  linha("Aberto em", hhmm(entrada.abertoEm, fuso));
+  linha("Fechado em", hhmm(entrada.fechadoEm, fuso));
+  const minutos = Math.max(0, Math.round((entrada.fechadoEm.getTime() - entrada.abertoEm.getTime()) / 60000));
+  linha("Duracao", `${Math.floor(minutos / 60)}h${String(minutos % 60).padStart(2, "0")}`);
+
+  // ── CONFERÊNCIA ─────────────────────────────────────────────────────────
+  titulo("Conferencia da gaveta");
   const formas: [string, number, number][] = [
     ["Dinheiro", v.esperado.cash, v.contado.cash],
     ["Debito", v.esperado.debit, v.contado.debit],
@@ -277,107 +394,265 @@ function relatorioDoFechamento(
     ["Pix", v.esperado.pix, v.contado.pix],
     ["Vale-refeicao", v.esperado.voucher, v.contado.voucher],
   ];
-  for (const [nome, esperado, contado] of formas) {
-    if (Math.abs(esperado) < 0.01 && Math.abs(contado) < 0.01) continue;
-    const dif = Number((contado - esperado).toFixed(2));
-    L.push({
-      tipo: "linha",
-      texto: nome,
-      valor: reais(contado),
-      nota:
+  const onlineEsperado = v.onlineEsperado ?? online;
+  if (v.semConferencia) {
+    // Não houve contagem: só o que o sistema esperava. Sem "confere", sem
+    // diferença — zero ali seria dizer que alguém conferiu e bateu.
+    texto("Ninguem conferiu esta gaveta: o caixa foi encerrado sozinho quando outro caixa foi aberto. Abaixo, so o que o sistema esperava.");
+    for (const [nome, esperado] of formas) {
+      if (Math.abs(esperado) >= 0.01) linha(nome, reais(esperado), "esperado");
+    }
+    if (onlineEsperado > 0.01) linha("Pago online", reais(onlineEsperado), "esperado | nao se conta na gaveta");
+    L.push({ tipo: "separador" });
+    L.push({ tipo: "destaque", texto: "ESPERADO", valor: reais(v.esperado.total), nota: "sem contagem, sem diferenca" });
+  } else {
+    for (const [nome, esperado, contado] of formas) {
+      if (Math.abs(esperado) < 0.01 && Math.abs(contado) < 0.01) continue;
+      const dif = Number((contado - esperado).toFixed(2));
+      linha(
+        nome,
+        reais(contado),
         `esperado ${reais(esperado)}` +
-        (Math.abs(dif) > 0.01 ? ` | ${dif > 0 ? "sobra" : "falta"} ${reais(Math.abs(dif))}` : " | confere"),
+          (Math.abs(dif) > 0.01 ? ` | ${dif > 0 ? "sobra" : "falta"} ${reais(Math.abs(dif))}` : " | confere")
+      );
+    }
+    // O pago online entra no total dos dois lados — e por isso precisa estar
+    // na lista: sem ele, as linhas de cima não somam o total de baixo.
+    if (online > 0.01 || onlineEsperado > 0.01) {
+      const dif = Number((online - onlineEsperado).toFixed(2));
+      linha(
+        "Pago online (nao se conta)",
+        reais(online),
+        `esperado ${reais(onlineEsperado)}` +
+          (Math.abs(dif) > 0.01 ? ` | ${dif > 0 ? "sobra" : "falta"} ${reais(Math.abs(dif))}` : " | confere")
+      );
+      // Um canal por linha: cada um se confere contra o extrato DELE. O valor
+      // já leva o cupom que a plataforma pagou — é o que ela repassa.
+      if (d && d.onlinePorCanal.length > 0) {
+        for (const c of d.onlinePorCanal) linha(`- ${c.nome} (${c.qtd})`, reais(c.valor));
+        if (d.cupomDaPlataforma.length > 0) texto("Online ja com o cupom que a plataforma paga.");
+      }
+    }
+    // Sem o retrato, o troco não aparece na gaveta lá embaixo: fica aqui,
+    // como sempre ficou. O operador conta a gaveta inteira e precisa saber
+    // que aquela parte não é venda.
+    if (!d) {
+      linha("Troco deixado na abertura", reais(entrada.trocoInicial), "ja esta somado dentro do esperado em dinheiro");
+    }
+
+    L.push({ tipo: "separador" });
+    linha("Total esperado", reais(v.esperado.total));
+    linha("Total contado", reais(contadoTotal));
+    L.push({
+      tipo: "destaque",
+      texto: `DIFERENCA ${rotuloDaDiferenca(v.diferenca)}`,
+      valor: reais(v.diferenca),
+      nota: v.justificativa ? `Justificativa: ${v.justificativa}` : undefined,
     });
   }
-  // O troco de abertura JÁ está dentro do esperado em dinheiro. Ele aparece
-  // aqui porque o operador conta a gaveta inteira e precisa saber que aquela
-  // parte não é venda — foi ele que deixou ali na abertura.
-  L.push({
-    tipo: "linha",
-    texto: "Troco deixado na abertura",
-    valor: reais(entrada.trocoInicial),
-    nota: "ja esta somado dentro do esperado em dinheiro",
-  });
 
-  L.push({ tipo: "separador" });
-  L.push({ tipo: "linha", texto: "Total esperado", valor: reais(v.esperado.total) });
-  L.push({ tipo: "linha", texto: "Total contado", valor: reais(contadoTotal) });
-  L.push({
-    tipo: "destaque",
-    texto: `DIFERENCA ${rotuloDaDiferenca(v.diferenca)}`,
-    valor: reais(v.diferenca),
-    nota: v.justificativa ? `Justificativa: ${v.justificativa}` : undefined,
-  });
-
-  // ── O TURNO ─────────────────────────────────────────────────────────────
-  L.push({ tipo: "titulo", texto: "O turno" });
-  L.push({ tipo: "linha", texto: "Aberto em", valor: hhmm(entrada.abertoEm, entrada.fuso) });
-  L.push({ tipo: "linha", texto: "Fechado em", valor: hhmm(entrada.fechadoEm, entrada.fuso) });
-  const minutos = Math.max(0, Math.round((entrada.fechadoEm.getTime() - entrada.abertoEm.getTime()) / 60000));
-  L.push({ tipo: "linha", texto: "Duracao", valor: `${Math.floor(minutos / 60)}h${String(minutos % 60).padStart(2, "0")}` });
-  if (d) {
-    L.push({ tipo: "linha", texto: `Pedidos no turno`, valor: String(d.qtdPedidos) });
-    L.push({ tipo: "linha", texto: "Venda bruta", valor: reais(d.vendaBruta) });
-    L.push({ tipo: "linha", texto: "Ticket medio", valor: reais(d.ticketMedio) });
-    if (d.taxaEntregaTotal > 0.01) L.push({ tipo: "linha", texto: "Taxa de entrega cobrada", valor: reais(d.taxaEntregaTotal) });
-    if (d.descontoDaLoja > 0.01) {
-      L.push({ tipo: "linha", texto: "Desconto bancado pela loja", valor: reais(d.descontoDaLoja), nota: "cupom da casa: saiu do seu bolso" });
-    }
-  }
-
-  if (d && d.porCanal.length > 0) {
-    L.push({ tipo: "titulo", texto: "Venda por canal" });
-    for (const c of d.porCanal) {
-      L.push({ tipo: "linha", texto: `${c.nome} (${c.qtd})`, valor: reais(c.valor) });
-    }
-  }
-
-  if (d && d.movimentacoes.length > 0) {
-    L.push({ tipo: "titulo", texto: "Sangrias e reforcos" });
-    for (const m of d.movimentacoes) {
-      const hora = new Date(m.hora).toLocaleTimeString("pt-BR", { timeZone: entrada.fuso, hour: "2-digit", minute: "2-digit" });
-      const entrada_ = m.tipo === "ENTRADA";
-      L.push({
-        tipo: "linha",
-        texto: `${hora} ${entrada_ ? "Reforco" : "Sangria"}`,
-        valor: `${entrada_ ? "" : "-"}${reais(m.valor)}`,
-        nota: m.descricao || undefined,
-      });
-    }
-    const saldo = (v.movimentacoes?.entradas || 0) - (v.movimentacoes?.saidas || 0);
-    L.push({ tipo: "linha", texto: "Saldo das movimentacoes", valor: reais(saldo) });
-  }
-
-  // ── O QUE NÃO PASSA PELA GAVETA ─────────────────────────────────────────
+  // ── DINHEIRO NA GAVETA ──────────────────────────────────────────────────
   //
-  // Tudo aqui é venda do turno que o operador NÃO conta em cédula. Sem esta
-  // lista, "vendi R$ 3.500 e só tem R$ 1.200 na gaveta" parece rombo.
-  const foraDaGaveta: LinhaDoRelatorio[] = [];
-  const empurrar = (texto: string, valor: number, nota?: string) => {
-    if (Math.abs(valor) > 0.01) foraDaGaveta.push({ tipo: "linha", texto, valor: reais(valor), nota });
-  };
-  empurrar("iFood pago online", v.online?.ifood || 0, "confira no extrato do iFood");
-  empurrar("99Food pago online", v.online?.food99 || 0, "confira no extrato do 99Food");
-  empurrar("Cupom bancado pelo iFood", v.cuponsDaPlataforma?.ifood || 0, "desconto que o iFood pagou");
-  empurrar("Cupom bancado pelo 99Food", v.cuponsDaPlataforma?.food99 || 0, "desconto que o 99Food pagou");
-  const f = v.foraDaConferencia;
-  if (f) {
-    empurrar(`Conta funcionario / fiado (${f.fiadoQtd})`, f.fiado, "acertado fora do caixa");
-    empurrar(`Mesas ainda abertas (${f.mesasAbertasQtd || 0})`, f.mesasAbertas || 0, "ninguem pagou ainda");
-    empurrar(`Forma nao identificada (${f.naoIdentificadoQtd})`, f.naoIdentificado, "vale conferir o que e");
-  }
-  if (v.pendentes) empurrar(`Aguardando pagamento (${v.pendentes.quantidade})`, v.pendentes.valor);
-  if (d?.cancelados) empurrar(`Cancelados (${d.cancelados.qtd})`, d.cancelados.valor, "nao entra em conta nenhuma");
-  if (foraDaGaveta.length > 0) {
-    L.push({ tipo: "titulo", texto: "Nao passa pela gaveta" });
-    L.push(...foraDaGaveta);
+  // De onde saiu o esperado em dinheiro, parcela por parcela. "Faltam R$ 50"
+  // só vira pista quando o lojista vê a sangria de R$ 50 sem descrição logo
+  // abaixo.
+  const entradas = v.movimentacoes?.entradas || 0;
+  const saidas = v.movimentacoes?.saidas || 0;
+  if (d) {
+    titulo("Dinheiro na gaveta");
+    linha("Troco de abertura", reais(entrada.trocoInicial));
+    linha("+ Vendas em dinheiro", reais(d.gaveta.vendasEmDinheiro));
+    if (entradas > 0.01) linha(`+ Reforcos (${d.gaveta.reforcosQtd})`, reais(entradas));
+    if (saidas > 0.01) linha(`- Sangrias (${d.gaveta.sangriasQtd})`, reais(saidas));
+    const somaDasParcelas = Number((entrada.trocoInicial + d.gaveta.vendasEmDinheiro + entradas - saidas).toFixed(2));
+    // Na 2ª via as parcelas são apuradas de novo; o esperado é o gravado. Se
+    // alguém mexeu num pedido do turno depois do fechamento, os dois divergem
+    // — e o papel diz isso em vez de imprimir uma conta que não fecha.
+    linha(
+      "= Dinheiro esperado",
+      reais(v.esperado.cash),
+      Math.abs(somaDasParcelas - v.esperado.cash) > 0.01
+        ? `as parcelas acima somam ${reais(somaDasParcelas)} hoje: algum pedido do turno mudou depois do fechamento`
+        : undefined
+    );
+    if (!v.semConferencia) linha("Contado na gaveta", reais(v.contado.cash));
+    for (const m of d.movimentacoes) {
+      const ehReforco = m.tipo === "ENTRADA";
+      linha(`${hora(m.hora)} ${ehReforco ? "Reforco" : "Sangria"}`, `${ehReforco ? "" : "-"}${reais(m.valor)}`, m.descricao || undefined);
+    }
   }
 
+  if (!d) {
+    // Sem retrato (não deveria acontecer): o mínimo que o papel antigo dava.
+    if (v.pendentes && v.pendentes.quantidade > 0) linha(`Aguardando pagamento (${v.pendentes.quantidade})`, reais(v.pendentes.valor));
+    return fechar(L, v, entrada.segundaVia, fuso);
+  }
+
+  // ── FATURAMENTO ─────────────────────────────────────────────────────────
+  if (d.vendas.qtd > 0) {
+    titulo("Faturamento");
+    for (const f of naOrdemDasFormas(d.porForma)) {
+      const nota = f.nome === "Fiado" ? "acertado fora do caixa" : f.nome === "Forma nao identificada" ? "vale conferir o que e" : undefined;
+      linha(`${f.nome} (${f.qtd})`, reais(f.valor), nota);
+    }
+    const cuponsDasPlataformas = d.cupomDaPlataforma.reduce((s, c) => ({ qtd: s.qtd + c.qtd, valor: s.valor + c.valor }), { qtd: 0, valor: 0 });
+    if (cuponsDasPlataformas.valor > 0.01) {
+      linha(`Cupom pago pelas plataformas (${cuponsDasPlataformas.qtd})`, reais(cuponsDasPlataformas.valor), "elas repassam para a loja");
+    }
+    L.push({ tipo: "separador" });
+    L.push({
+      tipo: "destaque",
+      texto: "TOTAL FATURADO",
+      valor: reais(d.vendas.valor),
+      nota: `${vezes(d.vendas.qtd, "venda", "vendas")} | ticket medio ${reais(d.vendas.valor / d.vendas.qtd)}`,
+    });
+    if (d.taxaDeEntrega.valor > 0.01) linha(`Incluso: taxa de entrega (${d.taxaDeEntrega.qtd})`, reais(d.taxaDeEntrega.valor));
+    if (d.mesas.servico > 0.01) linha(`Incluso: taxa de servico (${vezes(d.mesas.servicoQtd, "mesa", "mesas")})`, reais(d.mesas.servico));
+    if (d.mesas.gorjeta > 0.01) linha("Incluso: gorjeta", reais(d.mesas.gorjeta));
+  } else {
+    titulo("Faturamento");
+    texto("Nenhuma venda paga neste turno.");
+  }
+
+  // ── POR TIPO DE VENDA ───────────────────────────────────────────────────
+  if (d.porTipo.length > 0) {
+    titulo("Por tipo de venda");
+    for (const t of naOrdemDosTipos(d.porTipo)) {
+      const pct = d.vendas.valor > 0 ? Math.round((t.valor / d.vendas.valor) * 100) : 0;
+      linha(`${t.nome} (${t.qtd})`, reais(t.valor), `${pct}% do faturado | ticket medio ${reais(t.qtd > 0 ? t.valor / t.qtd : 0)}`);
+    }
+  }
+
+  // ── POR CANAL, COM O PAGAMENTO DE CADA UM ───────────────────────────────
+  if (d.porCanal.length > 0) {
+    titulo("Vendas por canal");
+    for (const c of d.porCanal) {
+      linha(`${c.nome} (${c.qtd})`, reais(c.valor));
+      for (const f of naOrdemDasFormas(c.formas)) linha(`- ${f.nome} (${f.qtd})`, reais(f.valor));
+    }
+  }
+
+  // ── CUPONS E DESCONTOS ──────────────────────────────────────────────────
+  //
+  // Sempre impresso quando houve venda, mesmo zerado: "quanto foi de cupom da
+  // loja e quanto do iFood" é pergunta que o dono faz todo dia, e linha que
+  // some quando é zero obriga a adivinhar se foi zero ou se não foi contado.
+  if (d.vendas.qtd > 0) {
+    titulo("Cupons e descontos");
+    linha(`Pago pela loja (${d.cupomDaLoja.qtd})`, reais(d.cupomDaLoja.valor), d.cupomDaLoja.valor > 0.01 ? "saiu do bolso da loja" : undefined);
+    if (d.cupomDaLoja.porCanal.length > 1) {
+      for (const c of d.cupomDaLoja.porCanal) linha(`- ${c.nome} (${c.qtd})`, reais(c.valor));
+    }
+    // O iFood e o 99Food aparecem sempre que venderam no turno; outra
+    // plataforma, só quando pagou algum cupom.
+    const plataformas = new Map(d.cupomDaPlataforma.map((c) => [c.nome, c]));
+    for (const nome of ["iFood", "99Food"]) {
+      if (!plataformas.has(nome) && d.porCanal.some((c) => c.nome === nome)) plataformas.set(nome, { nome, qtd: 0, valor: 0 });
+    }
+    for (const p of plataformas.values()) {
+      const artigo = p.nome === "iFood" || p.nome === "99Food" ? "pelo" : "por";
+      linha(`Pago ${artigo} ${p.nome} (${p.qtd})`, reais(p.valor), p.valor > 0.01 ? `o ${p.nome} repassa este valor` : undefined);
+    }
+  }
+
+  // ── FIADO ───────────────────────────────────────────────────────────────
+  if (d.fiado.length > 0) {
+    titulo("Fiado / conta funcionario");
+    for (const f of d.fiado) linha(`${hora(f.hora)} ${f.numero} ${f.nome}`.replace(/\s+/g, " ").trim(), reais(f.valor));
+    const total = d.fiado.reduce((s, f) => s + f.valor, 0);
+    linha(`Total fiado (${d.fiado.length})`, reais(total), "acertado fora do caixa");
+    // Quem comprou mais de uma vez: o total da pessoa poupa a soma de cabeça
+    // na hora de anotar na ficha.
+    const porPessoa = new Map<string, number>();
+    for (const f of d.fiado) porPessoa.set(f.nome, (porPessoa.get(f.nome) || 0) + f.valor);
+    if (porPessoa.size < d.fiado.length) {
+      texto(`Por pessoa: ${[...porPessoa.entries()].sort((a, b) => b[1] - a[1]).map(([n, val]) => `${n} ${reais(val)}`).join(" | ")}`);
+    }
+  }
+
+  // ── ENTREGADORES ────────────────────────────────────────────────────────
+  if (d.entregadores.length > 0 || d.entregaParceira.qtd > 0 || d.semEntregador.qtd > 0) {
+    titulo("Entregadores");
+    for (const m of d.entregadores) {
+      linha(m.nome, vezes(m.entregas, "entrega", "entregas"));
+      if (m.dinheiro > 0.01) linha("- Dinheiro recebido", reais(m.dinheiro), "prestar contas no caixa");
+      if (m.cartao > 0.01) linha("- Cartao na maquininha", reais(m.cartao));
+      if (m.pix > 0.01) linha("- Pix", reais(m.pix));
+      if (m.online > 0.01) linha("- Ja pago online", reais(m.online));
+      if (m.outros > 0.01) linha("- Outras formas", reais(m.outros));
+      const avisos: string[] = [];
+      if (m.semDistancia > 0) avisos.push(`${vezes(m.semDistancia, "entrega", "entregas")} sem distancia medida, taxa zero`);
+      if (m.pelaTaxaDoCliente > 0) avisos.push(`${vezes(m.pelaTaxaDoCliente, "entrega", "entregas")} pela taxa que o cliente pagou`);
+      linha("- Taxas das entregas", reais(m.taxas), avisos.length ? avisos.join(" | ") : undefined);
+      if (m.diaria > 0.01) linha("- Diaria (do cadastro)", reais(m.diaria));
+      linha("= A pagar ao entregador", reais(m.taxas + m.diaria));
+    }
+    if (d.entregaParceira.qtd > 0) {
+      linha(`Entrega parceira iFood/99 (${d.entregaParceira.qtd})`, reais(d.entregaParceira.valor), "entregador da plataforma: nada a acertar");
+    }
+    if (d.semEntregador.qtd > 0) {
+      linha(`Sem entregador marcado (${d.semEntregador.qtd})`, reais(d.semEntregador.valor), "entrega da loja sem motoboy no sistema");
+    }
+  }
+
+  // ── CANCELADOS ──────────────────────────────────────────────────────────
+  //
+  // Um a um, com o número do parceiro: é por ele que o lojista acha o pedido
+  // no portal do iFood quando o cliente liga reclamando.
+  if (d.cancelados.qtd > 0) {
+    titulo("Cancelados");
+    const LIMITE = 40;
+    for (const c of d.cancelados.lista.slice(0, LIMITE)) {
+      const ref = c.referencia ? ` #${c.referencia}` : "";
+      const quem = c.quem ? (c.quem === "loja" ? "pela loja" : c.quem === "cliente" ? "pelo cliente" : `pelo ${c.quem}`) : "";
+      const nota = [quem, c.motivo].filter(Boolean).join(": ");
+      linha(`${hora(c.hora)} ${c.numero} ${c.canal}${ref}`.replace(/\s+/g, " ").trim(), reais(c.valor), nota ? `cancelado ${nota}` : undefined);
+    }
+    if (d.cancelados.lista.length > LIMITE) texto(`e mais ${d.cancelados.lista.length - LIMITE} cancelados`);
+    linha(`Total cancelado (${d.cancelados.qtd})`, reais(d.cancelados.valor), "nao entra em conta nenhuma");
+  }
+
+  // ── FICOU DE FORA DO FATURAMENTO ────────────────────────────────────────
+  const f = v.foraDaConferencia;
+  const deFora: LinhaDoRelatorio[] = [];
+  if (v.pendentes && v.pendentes.quantidade > 0) {
+    deFora.push({ tipo: "linha", texto: `Aguardando pagamento (${v.pendentes.quantidade})`, valor: reais(v.pendentes.valor), nota: "ninguem pagou ainda" });
+  }
+  if (f && (f.mesasAbertasQtd || 0) > 0) {
+    deFora.push({ tipo: "linha", texto: `Mesas ainda abertas (${vezes(f.mesasAbertasQtd || 0, "pedido", "pedidos")})`, valor: reais(f.mesasAbertas || 0), nota: "a conta ainda nao foi fechada" });
+  }
+  if (deFora.length > 0) {
+    titulo("Ficou de fora do faturamento");
+    L.push(...deFora);
+  }
+
+  // ── MAIS VENDIDOS ───────────────────────────────────────────────────────
+  if (d.maisVendidos.length > 0) {
+    titulo("Mais vendidos");
+    for (const i of d.maisVendidos) linha(`${i.qtd}x ${i.nome}`, reais(i.valor));
+  }
+
+  return fechar(L, v, entrada.segundaVia, fuso);
+}
+
+/** O rodapé: pedidos dados como entregues e a marca da 2ª via. */
+function fechar(
+  L: LinhaDoRelatorio[],
+  v: ValoresDoFechamento,
+  segundaVia: { por: string; em: Date } | null | undefined,
+  fuso: string
+): LinhaDoRelatorio[] {
   if (v.finalizadosNoFechamento && v.finalizadosNoFechamento > 0) {
     L.push({ tipo: "separador" });
     L.push({ tipo: "texto", texto: `${v.finalizadosNoFechamento} pedido(s) que estavam na rua foram dados como entregues junto com este fechamento.` });
   }
-
+  if (segundaVia) {
+    L.push({ tipo: "separador" });
+    L.push({
+      tipo: "texto",
+      texto: `2a via impressa em ${hhmm(segundaVia.em, fuso)}${segundaVia.por ? ` por ${segundaVia.por}` : ""}. Conferencia como foi gravada no fechamento; o resto foi apurado de novo agora.`,
+    });
+  }
   return L;
 }
 
