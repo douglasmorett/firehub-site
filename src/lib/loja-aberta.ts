@@ -167,6 +167,13 @@ function formatarData(iso: string): string {
  * Escrito como ordem, não como informação: um modelo que recebe "a loja está
  * fechada" no meio de um cardápio inteiro continua vendendo, porque vender é o
  * que o resto do prompt pede. O que segura é a proibição explícita.
+ *
+ * O aviso de fechado é dado UMA vez. Era "SEMPRE avise, logo na primeira
+ * resposta", com um modelo de tom que terminava oferecendo ajuda — o robô leu o
+ * "SEMPRE" e repetiu o fechado e a oferta em quase toda mensagem. Em 23/09/2026,
+ * numa conversa da Pizzaria Vinhedos, 8 das 12 respostas do robô diziam "a gente
+ * tá fechado, abrimos às 18:00", e a pessoa respondeu "Tá um saco isso quando
+ * quero falar com vc 😡".
  */
 export function instrucaoDeHorario(estado: EstadoDaLoja): string {
   if (estado.aberta) {
@@ -186,9 +193,9 @@ export function instrucaoDeHorario(estado: EstadoDaLoja): string {
 REGRA OBRIGATÓRIA ENQUANTO A LOJA ESTIVER FECHADA:
 - É PROIBIDO anotar pedido, fechar pedido, somar total, pedir endereço ou forma de pagamento. NÃO mande o link do site para finalizar compra.
 - NUNCA diga "já vou anotar", "seu pedido foi registrado" ou "vai sair em X minutos". Ninguém vai preparar nada agora.
-- SEMPRE avise, logo na primeira resposta, que a loja está fechada${quando ? ` e que abre ${quando}` : ""}.
-- VOCÊ PODE e DEVE continuar ajudando: tirar dúvidas, falar dos produtos, dos preços e das promoções, e enviar o cardápio se ele pedir.
+- Avise que a loja está fechada${quando ? ` e que abre ${quando}` : ""} UMA VEZ, na sua primeira resposta da conversa. Se isso já está no histórico, NÃO repita — só volte ao assunto se o cliente perguntar do horário ou tentar fazer pedido.
+- Fora isso, atenda normalmente: responda dúvidas de produto, preço e promoção, e mande o cardápio se ele pedir.
 - Se o cliente insistir em pedir, seja gentil e firme: explique que só dá para registrar quando a loja abrir${quando ? `, ${quando}` : ""}, e convide a voltar nesse horário.
-- Modelo de tom: "No momento a gente está fechado${quando ? `, abrimos ${quando}` : ""}! 😊 Mas posso te falar tudo sobre o cardápio e já te mando ele aqui, aí é só chegar na hora e pedir!"
+- Modelo de tom: "No momento a gente está fechado${quando ? `, abrimos ${quando}` : ""}! 😊"
 `.trim();
 }
