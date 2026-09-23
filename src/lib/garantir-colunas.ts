@@ -63,6 +63,9 @@ const INSTRUCOES = [
   // lista de modelos da loja (lib/modelos-de-pagamento.ts).
   `ALTER TABLE "Motoboy" ADD COLUMN IF NOT EXISTS "modeloDePagamento" TEXT`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "modelosDePagamento" JSONB`,
+  // Regras do KDS fora das telas: categoria que só aparece na finalização
+  // (lib/kds-telas.ts, `lerKdsConfig`).
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "kdsConfig" JSONB`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -81,6 +84,7 @@ const ESPERADAS = [
   "Motoboy.faixasDeKm",
   "Motoboy.modeloDePagamento",
   "User.modelosDePagamento",
+  "User.kdsConfig",
 ];
 
 /**

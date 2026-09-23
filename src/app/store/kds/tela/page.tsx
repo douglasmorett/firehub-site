@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
+import { categoriaSoNaFinalizacao, lerKdsConfig, type KdsConfig } from "@/lib/kds-telas";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -187,6 +188,12 @@ export default function KDSTelaPage() {
    */
   const [categoriasComDono, setCategoriasComDono] = useState<Set<string> | null>(null);
   /**
+   * As regras da LOJA que não são de tela nenhuma — hoje, quais categorias
+   * ficam fora da produção (a bebida da NIK). Vem de `/api/store/kds-config`
+   * junto com as telas; `null` = ainda não carregou, e aí nada é escondido.
+   */
+  const [kdsConfig, setKdsConfig] = useState<KdsConfig | null>(null);
+  /**
    * O cozinheiro mexeu no filtro AQUI? Enquanto não mexeu, a tela obedece ao
    * painel (ver o efeito que lê `/api/store/kds-screens`). Depois que mexeu, a
    * escolha dele manda até a tela ser recarregada — ninguém gosta de ver o
@@ -304,6 +311,16 @@ export default function KDSTelaPage() {
     if (!stage) return;
     let vivo = true;
     const carregar = () => {
+      // A regra "só na finalização" só importa na produção — e falha de rede
+      // deixa o estado como está, pelo mesmo motivo do filtro abaixo.
+      if (stage === "production") {
+        fetch("/api/store/kds-config", { credentials: "include", cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((cfg) => {
+            if (vivo && cfg) setKdsConfig(lerKdsConfig(cfg));
+          })
+          .catch(() => {});
+      }
       fetch("/api/store/kds-screens", { credentials: "include", cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
         .then((telas) => {
@@ -658,19 +675,39 @@ export default function KDSTelaPage() {
           // NA PRODUÇÃO, só o que é desta tela — mais o que não é de tela
           // nenhuma, que senão não é feito por ninguém. O cozinheiro das
           // esfihas não precisa ler a pizza que o outro está fazendo.
+          //
+          // Menos o que a loja mandou deixar SÓ para a finalização: a bebida
+          // acompanha o pedido, mas ninguém a produz, e a NIK não quer lê-la
+          // na tela de pizza nem na de esfiha (22/09/2026). A comanda que é
+          // SÓ disso continua aparecendo inteira — esconder tudo seria
+          // pedido invisível, e isso já custou pedido perdido.
+          if (pedidoTodoSemDono) return order;
           return {
             ...order,
             items: order.items.filter((item: any) => {
               const cat = categoriaDoItem(item);
-              return activeNormalized.includes(cat) || semDono(cat);
+              if (activeNormalized.includes(cat)) return true;
+              if (!semDono(cat)) return false;
+              return !categoriaSoNaFinalizacao(kdsConfig, cat, activeNormalized);
             }),
           };
         })
         .filter((order): order is Order => order !== null && order.items.length > 0);
+    } else if (stage === "production" && kdsConfig && kdsConfig.soNaFinalizacao.length > 0) {
+      // Tela de produção SEM filtro mostra tudo — mas "tudo" também não inclui
+      // o que a loja tirou da produção. Pedido só de bebida segue inteiro.
+      const categoriaDoItem = (item: any) =>
+        (item.menuProduct?.category || item.category || "").toLowerCase().trim();
+      result = result.map((order) => {
+        const restantes = order.items.filter(
+          (item: any) => !categoriaSoNaFinalizacao(kdsConfig, categoriaDoItem(item)),
+        );
+        return restantes.length === 0 ? order : { ...order, items: restantes };
+      });
     }
 
     return result;
-  }, [orders, filter, activeCategories, categoriasComDono, stage]);
+  }, [orders, filter, activeCategories, categoriasComDono, kdsConfig, stage]);
 
   const exitingOrderIdsRef = useRef<Set<string>>(new Set());
   const completedOrderIdsRef = useRef<Set<string>>(new Set());

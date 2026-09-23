@@ -65,6 +65,11 @@ model User {
   timeAlertConfig Json?           // Config de alertas visuais de tempo: { yellowEnabled, yellowMinutes, redEnabled, redMinutes }
   etaConfig       Json?           // Config do ETA dinamico por loja: { motoboysCount, updatedAt, updatedBy }. Persiste ate alguem mudar (nao reseta diariamente).
   kdsScreens      Json?           // Telas KDS configuradas da loja: [{id, name, stage, filter, categoryFilter}]
+  /// Regras do KDS que não são de uma tela: `{ soNaFinalizacao: ["Bebidas"] }` —
+  /// categorias que ninguém produz e por isso não aparecem na produção, só na
+  /// finalização, onde a sacola é montada (lib/kds-telas.ts). Ausente = tudo
+  /// acompanha o pedido em toda tela, como sempre foi.
+  kdsConfig       Json?
   chatbotConfig   Json?           // Config do Chatbot IA WhatsApp: { active, connected, phone, pairingCode, qrCode, personality, customPrompt, autoOrderLink }
   fixedCosts      Json?           // Custos fixos mensais: [{id, label, value}] ex: aluguel, funcionários
   financialGoals  Json?           // Metas financeiras mensais: { faturamento, margemLiquida, cmvPct, pedidos, ticketMedio }

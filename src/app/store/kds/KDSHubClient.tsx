@@ -22,6 +22,11 @@ export default function KDSHubClient() {
   // Categorias disponíveis (carregadas da API)
   const [allCategories, setAllCategories] = useState<{ id: string; name: string; emoji: string; color: string }[]>([]);
 
+  // Acompanhamentos que a loja tirou da produção (só aparecem na finalização).
+  // É regra da LOJA, não de uma tela: a bebida não é produzida em lugar nenhum,
+  // e uma tela nova não pode trazê-la de volta. Vive em `User.kdsConfig`.
+  const [soNaFinalizacao, setSoNaFinalizacao] = useState<string[]>([]);
+
   // Form state
   const [formName, setFormName] = useState("");
   const [formStage, setFormStage] = useState<"production" | "finishing">("production");
@@ -67,7 +72,22 @@ export default function KDSHubClient() {
       .then(r => r.json())
       .then(data => { if (Array.isArray(data)) setAllCategories(data); })
       .catch(() => {});
+
+    // Regras da loja fora das telas
+    fetch("/api/store/kds-config")
+      .then(r => r.ok ? r.json() : null)
+      .then(cfg => { if (cfg && Array.isArray(cfg.soNaFinalizacao)) setSoNaFinalizacao(cfg.soNaFinalizacao.map(String)); })
+      .catch(() => {});
   }, []);
+
+  const saveSoNaFinalizacao = (lista: string[]) => {
+    setSoNaFinalizacao(lista);
+    fetch("/api/store/kds-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ soNaFinalizacao: lista }),
+    }).catch(() => {});
+  };
 
   const save = (s: KDSScreenConfig[]) => {
     setScreens(s);
@@ -170,7 +190,12 @@ export default function KDSHubClient() {
           lojista, vendo a bebida aparecer em toda tela, tenta "consertar"
           colocando Bebidas numa delas. Isso faz o contrário do que ele quer:
           a categoria passa a ter dono e some das outras. Este aviso existe
-          para que a regra seja lida antes de alguém consertar o que funciona. */}
+          para que a regra seja lida antes de alguém consertar o que funciona.
+
+          A exceção é a bebida: acompanha, mas ninguém a produz. A NIK pediu
+          (22/09/2026) que ela não aparecesse na tela de pizza nem na de
+          esfiha — só na finalização. Por isso cada acompanhamento tem aqui a
+          escolha "produção e finalização" ou "só na finalização". */}
       {(() => {
         const comFiltro = screens.filter((t) => (t.categoryFilter || []).length > 0);
         if (comFiltro.length === 0 || allCategories.length === 0) return null;
@@ -179,9 +204,17 @@ export default function KDSHubClient() {
           for (const c of t.categoryFilter || []) emAlgumaTela.add(String(c).toLowerCase().trim());
         }
         const acompanhamentos = allCategories
-          .map((c) => c.name)
-          .filter((nome) => !emAlgumaTela.has(String(nome).toLowerCase().trim()));
+          .filter((c) => !emAlgumaTela.has(String(c.name).toLowerCase().trim()));
         if (acompanhamentos.length === 0) return null;
+        const norm = (s: string) => String(s || "").toLowerCase().trim();
+        const foraDaProducao = (nome: string) => soNaFinalizacao.some((c) => norm(c) === norm(nome));
+        const alternar = (nome: string) => {
+          const lista = foraDaProducao(nome)
+            ? soNaFinalizacao.filter((c) => norm(c) !== norm(nome))
+            : [...soNaFinalizacao, nome];
+          saveSoNaFinalizacao(lista);
+        };
+        const nomes = acompanhamentos.map((c) => c.name);
         return (
           <div style={{
             background: "#1a1a2e", border: "1px solid #2a2a4a", borderLeft: "4px solid #38bdf8",
@@ -191,13 +224,40 @@ export default function KDSHubClient() {
               🥤 Acompanhamentos
             </div>
             <div style={{ color: "#cbd5e1", fontSize: "0.82rem", lineHeight: 1.5 }}>
-              <b style={{ color: "#fff" }}>{acompanhamentos.join(", ")}</b> não {acompanhamentos.length === 1 ? "está" : "estão"} em nenhuma tela — e não some{acompanhamentos.length === 1 ? "" : "m"} por isso.
+              <b style={{ color: "#fff" }}>{nomes.join(", ")}</b> não {nomes.length === 1 ? "está" : "estão"} em nenhuma tela — e não some{nomes.length === 1 ? "" : "m"} por isso.
               Categoria sem tela própria acompanha o pedido em <b>toda tela onde ele aparece</b>, na produção e na finalização.
-              É o certo para borda, bebida e sachê: são feitos junto com o pedido, não separados.
+              É o certo para borda e sachê: são feitos junto com o pedido, não separados.
               <br />
               <span style={{ color: "#94a3b8" }}>
+                O que ninguém produz (a bebida, por exemplo) pode ficar <b>só na finalização</b>: some das telas de produção e continua na montagem da sacola.
                 Se você incluir uma delas numa tela, ela passa a ser produzida <b>só ali</b> — e deixa de acompanhar o resto do pedido.
               </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "0.75rem" }}>
+              {acompanhamentos.map((c) => {
+                const fora = foraDaProducao(c.name);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => alternar(c.name)}
+                    title={fora ? "Clique para voltar a mostrar na produção" : "Clique para tirar das telas de produção"}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: "6px",
+                      padding: "6px 12px", borderRadius: "999px", cursor: "pointer", fontFamily: "inherit",
+                      fontSize: "0.78rem", fontWeight: 700,
+                      border: `1px solid ${fora ? "#8b5cf6" : "#2a2a4a"}`,
+                      background: fora ? "rgba(139,92,246,0.18)" : "#12122a",
+                      color: fora ? "#c4b5fd" : "#cbd5e1",
+                    }}
+                  >
+                    <span>{c.emoji} {c.name}</span>
+                    <span style={{ color: fora ? "#a78bfa" : "#64748b", fontWeight: 600 }}>
+                      {fora ? "só na finalização" : "produção e finalização"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         );

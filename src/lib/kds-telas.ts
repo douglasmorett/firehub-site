@@ -307,3 +307,52 @@ export function telaMostraPedido(
   }
   return true;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   O QUE NÃO VAI PARA A PRODUÇÃO: A BEBIDA
+
+   Categoria sem tela acompanha o pedido em toda tela (é a borda, feita junto
+   com a pizza). Mas a NIK pediu, em 22/09/2026, que a BEBIDA não aparecesse
+   nas telas de produção — nem na de pizza, nem na de esfiha — porque ninguém
+   produz Coca-Cola: ela só importa na finalização, quando a sacola é montada.
+
+   Isso não cabe no filtro da tela. Pôr "Bebidas" numa tela dá dono a ela e
+   ela some das outras; tirar de todas faz acompanhar todas. O que falta é
+   uma terceira posição — "só na finalização" — e ela é da LOJA, não da tela:
+   a bebida não é produzida em tela nenhuma, e uma tela nova não pode
+   trazê-la de volta.
+
+   Mora em `User.kdsConfig.soNaFinalizacao`, por NOME de categoria, como o
+   `categoryFilter` das telas.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export type KdsConfig = {
+  /** Nomes de categoria que não aparecem na produção, só na finalização. */
+  soNaFinalizacao: string[];
+};
+
+/** Lê `User.kdsConfig` sem confiar no formato. Ausente = nada escondido. */
+export function lerKdsConfig(bruto: unknown): KdsConfig {
+  const obj = bruto && typeof bruto === "object" && !Array.isArray(bruto) ? (bruto as any) : {};
+  const lista = Array.isArray(obj.soNaFinalizacao) ? obj.soNaFinalizacao : [];
+  return {
+    soNaFinalizacao: [...new Set(lista.map((v: unknown) => String(v ?? "").trim()).filter(Boolean))] as string[],
+  };
+}
+
+/**
+ * Esta categoria fica fora da produção?
+ *
+ * O filtro explícito da tela vence: se o lojista listou a categoria numa tela
+ * de produção, ele quer vê-la ali, e a regra da loja não a esconde.
+ */
+export function categoriaSoNaFinalizacao(
+  config: KdsConfig | null | undefined,
+  categoria: string | null | undefined,
+  filtroDaTela?: string[] | null
+): boolean {
+  const cat = texto(categoria);
+  if (!cat || !config) return false;
+  if ((filtroDaTela || []).map(texto).includes(cat)) return false;
+  return config.soNaFinalizacao.map(texto).includes(cat);
+}
