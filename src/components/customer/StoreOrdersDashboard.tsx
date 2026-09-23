@@ -1341,13 +1341,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  // ── DOIS FILTROS, LADO A LADO, EM "E" ────────────────────────────────────
+  //
+  // "Integrações" diz DE ONDE o pedido veio (iFood, 99Food, Jotajá, Brendi,
+  // Wabiz, ou a própria loja). "Pedidos" diz O QUE ele é (delivery, retirada,
+  // balcão, mesa). Eram um filtro só, com "Retirada" no meio dos logos — e aí
+  // não dava para ver "só os deliveries do iFood" nem "só as mesas". Pedido
+  // aparece quando passa nos DOIS (Hakim Centro, 22/09/2026).
   const [selectedChannels, setSelectedChannels] = useState<{
     ifood: boolean;
     "99food": boolean;
     jotaja: boolean;
     brendi: boolean;
     wabiz: boolean;
-    retirada: boolean;
     site: boolean;
   }>({
     ifood: true,
@@ -1355,11 +1361,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     jotaja: true,
     brendi: true,
     wabiz: true,
-    retirada: true,
     site: true,
   });
+  const [selectedTypes, setSelectedTypes] = useState<{
+    delivery: boolean;
+    retirada: boolean;
+    balcao: boolean;
+    mesa: boolean;
+  }>({ delivery: true, retirada: true, balcao: true, mesa: true });
+  const toggleType = (t: "delivery" | "retirada" | "balcao" | "mesa") => {
+    setSelectedTypes(prev => ({ ...prev, [t]: !prev[t] }));
+  };
 
-  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "brendi" | "wabiz" | "retirada" | "site") => {
+  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "brendi" | "wabiz" | "site") => {
     setSelectedChannels(prev => ({
       ...prev,
       [ch]: !prev[ch]
@@ -2993,23 +3007,38 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // dela no MESMO campo, o pedido dela cairia aqui e o filtro Brendi do
     // usuário não teria efeito nenhum. Canal decide; presença de campo não.
     const isJotaja = !isBrendi && !isWabiz && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
-    const isRetirada = o.deliveryType === "PICKUP" || o.deliveryType === "TAKEOUT" || o.deliveryType === "BALCAO" || o.source === "PDV" || Boolean(o.tableNumber);
-    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isJotaja && !isRetirada;
+    // "Loja" é tudo que não veio de marketplace: site, robô do WhatsApp,
+    // balcão, mesa, totem. Retirada saiu daqui — ela é TIPO, não origem, e
+    // mora no filtro ao lado.
+    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isJotaja;
 
     if (isIfood && selectedChannels.ifood) return true;
     if (is99Food && selectedChannels["99food"]) return true;
     if (isBrendi && selectedChannels.brendi) return true;
     if (isWabiz && selectedChannels.wabiz) return true;
     if (isJotaja && selectedChannels.jotaja) return true;
-    if (isRetirada && selectedChannels.retirada) return true;
     if (isSite && selectedChannels.site) return true;
 
     return false;
   };
 
+  // Cada pedido tem UM tipo, decidido nesta ordem — mesa antes de tudo (pedido
+  // de mesa lançado no balcão continua sendo mesa), delivery antes de balcão
+  // (delivery lançado no balcão é delivery), e o que sobra é retirada.
+  const tipoDoPedido = (o: any): "mesa" | "delivery" | "balcao" | "retirada" => {
+    const dt = String(o.deliveryType || "").toUpperCase();
+    if (dt === "MESA" || o.tableSessionId) return "mesa";
+    if (dt === "DELIVERY") return "delivery";
+    const src = String(o.source || "").toUpperCase();
+    if (src === "PRESENCIAL" || src === "PDV" || src === "TOTEM") return "balcao";
+    return "retirada";
+  };
+  const matchesTypeFilter = (o: any) => selectedTypes[tipoDoPedido(o)];
+
   const filteredOrders = orders.filter(o => {
     if (o.status === "ENCERRADO") return false;
     if (!matchesChannelFilter(o)) return false;
+    if (!matchesTypeFilter(o)) return false;
     
     // ── O QUE ATRAVESSA A MEIA-NOITE ───────────────────────────────────
     //
@@ -4981,11 +5010,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <input type="datetime-local" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
             </div>
 
-            {/* Filtro de pedidos por canais / integrações */}
+            {/* Filtro por integração (de onde o pedido veio) */}
             {naBarra("filtroCanais") && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
               <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
-                Filtro de pedidos
+                Filtro de integrações
               </span>
               {/* ── O FILTRO NÃO PODE SER ESPREMIDO ATÉ SUMIR ───────────────
                   Faltando espaço na barra, o flex encolhia os botões — e os
@@ -5131,39 +5160,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </button>
                 )}
 
-                {/* Retirada / Balcão */}
-                <button
-                  type="button"
-                  onClick={() => toggleChannel("retirada")}
-                  title={selectedChannels.retirada ? "Retirada: Ativo (Clique para filtrar)" : "Retirada: Oculto (Clique para exibir)"}
-                  style={{
-                    height: "26px",
-                    flexShrink: 0,
-                    padding: "2px 7px",
-                    borderRadius: "6px",
-                    border: selectedChannels.retirada ? "1.5px solid #10B981" : "1.5px solid #CBD5E1",
-                    background: selectedChannels.retirada ? "#ECFDF5" : "#F1F5F9",
-                    color: selectedChannels.retirada ? "#065F46" : "#64748B",
-                    filter: selectedChannels.retirada ? "none" : "grayscale(100%) opacity(0.35)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "3px",
-                    fontSize: "0.72rem",
-                    fontWeight: 800,
-                    boxShadow: selectedChannels.retirada ? "0 1px 3px rgba(16,185,129,0.15)" : "none",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <span style={{ fontSize: "0.82rem" }}>🛍️</span>
-                  <span>Retirada</span>
-                </button>
-
                 {/* Loja / Site */}
                 <button
                   type="button"
                   onClick={() => toggleChannel("site")}
-                  title={selectedChannels.site ? "Cardápio/WhatsApp: Ativo (Clique para filtrar)" : "Cardápio/WhatsApp: Oculto (Clique para exibir)"}
+                  title={selectedChannels.site ? "Loja (site, WhatsApp, balcão, mesa, totem): Ativo (Clique para filtrar)" : "Loja (site, WhatsApp, balcão, mesa, totem): Oculto (Clique para exibir)"}
                   style={{
                     height: "26px",
                     flexShrink: 0,
@@ -5184,9 +5185,57 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }}
                 >
                   <span style={{ fontSize: "0.82rem" }}>🌐</span>
-                  <span>Site</span>
+                  <span>Loja</span>
                 </button>
 
+              </div>
+            </div>
+            )}
+
+            {/* Filtro por tipo de pedido (o que ele é) — mesmo jeito do de integrações */}
+            {naBarra("filtroCanais") && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
+              <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
+                Filtro de pedidos
+              </span>
+              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
+                {([
+                  { chave: "delivery", rotulo: "Delivery", emoji: "🛵", cor: "#7C3AED", fundo: "#F5F3FF", texto: "#5B21B6" },
+                  { chave: "retirada", rotulo: "Retirada", emoji: "🛍️", cor: "#10B981", fundo: "#ECFDF5", texto: "#065F46" },
+                  { chave: "balcao", rotulo: "Balcão", emoji: "🏪", cor: "#F59E0B", fundo: "#FFFBEB", texto: "#92400E" },
+                  { chave: "mesa", rotulo: "Mesa", emoji: "🍽️", cor: "#0EA5E9", fundo: "#F0F9FF", texto: "#075985" },
+                ] as const).map((t) => {
+                  const ativo = selectedTypes[t.chave];
+                  return (
+                    <button
+                      key={t.chave}
+                      type="button"
+                      onClick={() => toggleType(t.chave)}
+                      title={ativo ? `${t.rotulo}: Ativo (Clique para filtrar)` : `${t.rotulo}: Oculto (Clique para exibir)`}
+                      style={{
+                        height: "26px",
+                        flexShrink: 0,
+                        padding: "2px 7px",
+                        borderRadius: "6px",
+                        border: ativo ? `1.5px solid ${t.cor}` : "1.5px solid #CBD5E1",
+                        background: ativo ? t.fundo : "#F1F5F9",
+                        color: ativo ? t.texto : "#64748B",
+                        filter: ativo ? "none" : "grayscale(100%) opacity(0.35)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "3px",
+                        fontSize: "0.72rem",
+                        fontWeight: 800,
+                        boxShadow: ativo ? `0 1px 3px ${t.cor}26` : "none",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <span style={{ fontSize: "0.82rem" }}>{t.emoji}</span>
+                      <span>{t.rotulo}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             )}
@@ -5283,7 +5332,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </p>
 
                 {[
-                  { chave: "filtroCanais", rotulo: "Filtro de pedidos por canal", ajuda: "iFood, 99Food, Brendi, Retirada, Site" },
+                  { chave: "filtroCanais", rotulo: "Filtros de integrações e de pedidos", ajuda: "iFood, 99Food, Brendi, Wabiz, Loja · Delivery, Retirada, Balcão, Mesa" },
                   { chave: "botaoResumo", rotulo: "Resumo das vendas", ajuda: "" },
                   { chave: "botaoAltaDemanda", rotulo: "Alta Demanda", ajuda: "Aumenta o tempo de entrega no movimento" },
                   { chave: "botaoAgendamentos", rotulo: "Agendamentos", ajuda: "" },
