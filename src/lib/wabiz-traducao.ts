@@ -286,7 +286,14 @@ export function traduzirPedidoWabiz(
   const interna = servico.internalDelivery;
   const ehEntrega = !!entrega || tipo.includes("delivery") && !tipo.includes("internal");
   const ehEntregaInterna = !!interna || tipo.includes("internal");
-  const deliveryType = ehEntrega || ehEntregaInterna ? "DELIVERY" : "RETIRADA";
+  // ── MESA É MESA ──────────────────────────────────────────────────────────
+  // O pedido feito pelo app na mesa (`service.type = "table"`) caía em
+  // RETIRADA: só havia dois destinos. Aí o "pronto" da cozinha marcava SAIU_
+  // ENTREGA, o cliente sentado recebia "seu pedido está pronto para retirar"
+  // no WhatsApp, e o fechamento contava a mesa como balcão. O FireHub tem o
+  // tipo MESA desde o balcão e o painel de mesas; é ele que vale aqui.
+  const ehMesa = tipo === "table" || !!texto(servico.tableCode);
+  const deliveryType = ehEntrega || ehEntregaInterna ? "DELIVERY" : ehMesa ? "MESA" : "RETIRADA";
 
   const customerAddress = (() => {
     if (entrega) {

@@ -202,8 +202,23 @@ export async function pedidosPendentesWabiz(storeId: string): Promise<WabizPedid
   const texto = await res.text().catch(() => "");
   if (!res.ok) throw new Error(`orders/pending: HTTP ${res.status} — ${texto.slice(0, 200)}`);
   if (!texto.trim()) return [];
-  const data = JSON.parse(texto);
-  return Array.isArray(data) ? data : [data];
+  let data: unknown;
+  try {
+    data = JSON.parse(texto);
+  } catch {
+    // 200 com HTML (página de manutenção, proxy) chegava aqui como
+    // "Unexpected token <" — que não diz nada a quem lê o log do cron.
+    throw new Error(`orders/pending: resposta não é JSON — ${texto.slice(0, 120).replace(/\s+/g, " ")}`);
+  }
+  const lista = Array.isArray(data) ? data : [data];
+  // Só o que É pedido. Um `{ message: "..." }` com 200 virava "pedido sem
+  // internalKey", e o cron contava falha, alertava o lojista e tentava de novo
+  // a cada 30 s — por uma linha que nunca foi pedido.
+  const pedidos = lista.filter((p: any) => p && typeof p === "object" && p.internalKey && p.orderNumber != null);
+  if (pedidos.length !== lista.length) {
+    console.warn(`[Wabiz] ⚠️ orders/pending trouxe ${lista.length - pedidos.length} entrada(s) que não são pedido: ${JSON.stringify(lista.filter((p: any) => !pedidos.includes(p))).slice(0, 300)}`);
+  }
+  return pedidos as WabizPedido[];
 }
 
 export interface ResultadoWabiz {

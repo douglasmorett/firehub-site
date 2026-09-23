@@ -211,5 +211,49 @@ const comCupom: any = {
   confere("sem fidelidade nem cupom: rótulo genérico", (dados.notes || "").includes("Desconto: -R$50.00"), true);
 }
 
+// ── Combo com quantidade por opção (NIK, #3683, 22/09/2026) ──────────────
+// 12 esfihas obrigatórias chegaram como 8 opções de quantidade 1. A leitura
+// passou a aceitar a quantidade como campo (`qty`/`quantity`/`amount`/`qtd`)
+// e a somar quando o sabor vem repetido. Aqui os dois formatos misturados.
+{
+  const combo: any = {
+    ...delivery, orderNumber: 93, internalKey: "combo-1",
+    items: [{ groupName: "Combos de Esfiha", products: [{ pos: 1, qty: 1, price: 118.9, unity: "un", parts: [{
+      name: "Combo 4", price: 118.9, externalCode: "c4",
+      customization: { additionals: [], edge: {}, others: [
+        { name: "Tradicionais", options: [
+          { externalCode: "e1", name: "Esfiha Carne", price: 0, qty: 3 },
+          { externalCode: "e2", name: "Esfiha Calabresa", price: 0, quantity: "2" },
+        ] },
+        { name: "Especiais", options: [
+          { externalCode: "e3", name: "Esfiha Banoffe", price: 0 },
+          { externalCode: "e3", name: "Esfiha Banoffe", price: 0 },
+          { externalCode: "e3", name: "Esfiha Banoffe", price: 0, amount: 2 },
+        ] },
+      ] },
+      obs: null,
+    }] }] }],
+  };
+  const { items } = traduzirPedidoWabiz(combo, ctx);
+  const sel = JSON.parse(items[0].comboSelections);
+  confere("combo: quantidade por campo (qty=3)", sel.find((x: any) => x.name === "Esfiha Carne")?.quantity, 3);
+  confere("combo: quantidade por campo em texto (quantity='2')", sel.find((x: any) => x.name === "Esfiha Calabresa")?.quantity, 2);
+  confere("combo: repetição + campo somam (1+1+2)", sel.find((x: any) => x.name === "Esfiha Banoffe")?.quantity, 4);
+  confere("combo: o nome mostra a quantidade", items[0].productName.includes("3x Esfiha Carne"), true);
+  confere("combo: três sabores distintos, três opções", sel.length, 3);
+}
+
+// ── Mesa é MESA ───────────────────────────────────────────────────────────
+// `service.type = "table"` caía em RETIRADA e o "pronto" da cozinha avisava
+// "pode retirar" a um cliente sentado na mesa.
+{
+  const mesa: any = { ...delivery, orderNumber: 94, internalKey: "mesa-1", service: { type: "table", tableCode: "7", tablePassword: "1234" } };
+  const { dados } = traduzirPedidoWabiz(mesa, ctx);
+  confere("mesa: deliveryType MESA", dados.deliveryType, "MESA");
+  confere("mesa: número da mesa na comanda", (dados.notes || "").includes("MESA 7"), true);
+  const balcao: any = { ...delivery, orderNumber: 95, internalKey: "ret-1", service: { type: "pickup" } };
+  confere("retirada continua RETIRADA", traduzirPedidoWabiz(balcao, ctx).dados.deliveryType, "RETIRADA");
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

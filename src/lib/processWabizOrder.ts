@@ -20,7 +20,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
-import { generateDailyOrderNumber } from "@/lib/order-number";
+import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import type { WabizPedido } from "@/lib/wabiz-api";
 import { texto, traduzirPedidoWabiz } from "@/lib/wabiz-traducao";
 import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
@@ -114,7 +114,12 @@ export async function processWabizOrder(
     return { action: "error", message: `pedido ${orderNumber} veio sem itens` };
   }
 
-  dados.dailyOrderNumber = await generateDailyOrderNumber(loja.id);
+  // O número do dia sai DENTRO da transação que grava (abaixo). Gerado aqui
+  // fora, ele era consumido mesmo quando o create falhava — e o cron roda a
+  // cada 30 s com prazo de 55 s, então dois ciclos podem pegar o mesmo pedido
+  // pendente: o segundo cai no P2002 e devolve "já existe", mas o número que
+  // ele puxou não volta. É o buraco de numeração que o poll do iFood já teve
+  // (lib/order-number.ts): "#24 sumiu" e o lojista procurando o pedido.
 
   // Quantos km — só quando a Wabiz mandou o ponto do cliente. É o que a escada
   // de km do entregador compara no fechamento (lib/distancia-da-entrega.ts).
@@ -125,7 +130,10 @@ export async function processWabizOrder(
   let ultimoErro: any = null;
   for (let tentativa = 1; tentativa <= 3 && !criado; tentativa++) {
     try {
-      criado = await (prisma.customerOrder as any).create({ data: dados, select: { id: true } });
+      criado = await prisma.$transaction(async (tx) => {
+        dados.dailyOrderNumber = await generateDailyOrderNumberTx(tx, loja.id);
+        return (tx.customerOrder as any).create({ data: dados, select: { id: true } });
+      }, { timeout: 20000 });
     } catch (e: any) {
       ultimoErro = e;
       if (e?.code === "P2002") {
