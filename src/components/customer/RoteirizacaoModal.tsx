@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   MapPin,
   X,
@@ -66,6 +66,27 @@ export const getOrderDisplayNumber = (order: any): string => {
   if (order.orderNumber) return String(order.orderNumber);
   if (order.displayId) return String(order.displayId);
   return String(order.id || "").slice(-4).toUpperCase();
+};
+
+/**
+ * O pedido já saiu da cozinha?
+ *
+ * Quatro lugares desta tela precisavam da resposta — a contagem do botão
+ * "Mostrar Prontos", o filtro da lista, a cor do pino e o número da legenda —
+ * e cada um carregava a sua própria cópia da regra, com listas de status que
+ * já não batiam entre si. Agora a regra é uma só.
+ */
+export const pedidoJaEstaPronto = (order: any): boolean => {
+  const s = String(order?.status || "").toUpperCase().trim();
+  return (
+    s === "PRONTO" ||
+    s === "PRONTO_ENTREGA" ||
+    s === "PREPARADO" ||
+    s === "READY" ||
+    s === "FINISHED" ||
+    order?.kdsStage === "READY" ||
+    order?.kdsStage === "FINISHED"
+  );
 };
 
 /**
@@ -591,6 +612,81 @@ export default function RoteirizacaoModal({
     });
   }, [orders]);
 
+  // ── DAR O PEDIDO POR PRONTO SEM SAIR DO MAPA ──────────────────────────────
+  //
+  // Quem despacha à noite vive nesta aba, mas o "pronto" só existia no painel
+  // de pedidos. Então ou se abria a outra tela a cada pedido que a cozinha
+  // entregava no balcão, ou se montava rota com pedido que ninguém carimbou —
+  // e o filtro "Mostrar Prontos", que existe justamente para isso, ficava
+  // mentindo. O clique daqui é o MESMO do painel (/api/kds, `finish_order`):
+  // é ele que carimba `readyAt`, avisa iFood, 99Food, Brendi e Wabiz e chama o
+  // entregador do parceiro. Não há segundo caminho para o pronto.
+  //
+  // O feed volta a cada 8 s. Até ele voltar, o id espera aqui para o card e o
+  // pino mudarem no clique — senão o lojista clica de novo achando que não
+  // pegou, e o parceiro recebe dois "pronto". O valor é o prazo do palpite:
+  // passou dele sem o servidor confirmar, manda quem veio do servidor.
+  const [prontosOtimistas, setProntosOtimistas] = useState<Record<string, number>>({});
+  const [marcandoPronto, setMarcandoPronto] = useState<string | null>(null);
+
+  const estaPronto = useCallback(
+    (o: any) => pedidoJaEstaPronto(o) || (prontosOtimistas[o?.id] || 0) > Date.now(),
+    [prontosOtimistas]
+  );
+
+  // Palpite confirmado (ou vencido) sai da frente. Sem esta limpeza, desfazer
+  // o pronto pelo painel deixava o card verde aqui para sempre.
+  useEffect(() => {
+    setProntosOtimistas((atual) => {
+      const ids = Object.keys(atual);
+      if (ids.length === 0) return atual;
+      const agora = Date.now();
+      const proximo: Record<string, number> = {};
+      for (const id of ids) {
+        const doServidor = orders.find((o: any) => o.id === id);
+        if (doServidor && pedidoJaEstaPronto(doServidor)) continue;
+        if (atual[id] <= agora) continue;
+        proximo[id] = atual[id];
+      }
+      return Object.keys(proximo).length === ids.length ? atual : proximo;
+    });
+  }, [orders]);
+
+  const marcarPedidoPronto = async (order: any) => {
+    if (marcandoPronto) return;
+    const id = order?.id;
+    if (!id) return;
+
+    setMarcandoPronto(id);
+    setProntosOtimistas((a) => ({ ...a, [id]: Date.now() + 20000 }));
+    const desfazerPalpite = () =>
+      setProntosOtimistas((a) => {
+        const n = { ...a };
+        delete n[id];
+        return n;
+      });
+
+    try {
+      const res = await fetch("/api/kds", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: id, action: "finish_order" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        desfazerPalpite();
+        alert(err?.error || "Não consegui marcar este pedido como pronto. Tente de novo.");
+        return;
+      }
+      if (onRefreshOrders) onRefreshOrders();
+    } catch (err: any) {
+      desfazerPalpite();
+      alert("Não consegui marcar este pedido como pronto: " + (err?.message || err));
+    } finally {
+      setMarcandoPronto(null);
+    }
+  };
+
   // Contagem de todos os pedidos elegíveis de entrega
   // Só o que falta roteirizar. Os despachados agora vivem no mapa, mas
   // contá-los aqui fazia o botão dizer "Mostrar Todos (14)" com 5 linhas na
@@ -602,19 +698,8 @@ export default function RoteirizacaoModal({
 
   // Contagem de pedidos prontos na cozinha
   const prontoOrdersCount = useMemo(() => {
-    return baseDeliveryOrders.filter(naFilaDeRoteirizacao).filter((o: any) => {
-      const statusUpper = String(o.status || "").toUpperCase().trim();
-      return (
-        statusUpper === "PRONTO" ||
-        statusUpper === "PRONTO_ENTREGA" ||
-        statusUpper === "PREPARADO" ||
-        statusUpper === "READY" ||
-        statusUpper === "FINISHED" ||
-        o.kdsStage === "READY" ||
-        o.kdsStage === "FINISHED"
-      );
-    }).length;
-  }, [baseDeliveryOrders]);
+    return baseDeliveryOrders.filter(naFilaDeRoteirizacao).filter(estaPronto).length;
+  }, [baseDeliveryOrders, estaPronto]);
 
   // Filter Delivery Orders (Strictly exclude Pickup/Retirada, Dispatched/Out for delivery, and respect onlyProntoOrders setting)
   const deliveryOrders = useMemo(() => {
@@ -623,21 +708,10 @@ export default function RoteirizacaoModal({
       // Aplicado ao mapa, ele apagava justamente os pinos azuis que a loja
       // pediu para manter à vista.
       if (o.__jaDespachado || o.__recemEntregue) return true;
-      if (onlyProntoOrders) {
-        const statusUpper = String(o.status || "").toUpperCase().trim();
-        const isPronto =
-          statusUpper === "PRONTO" ||
-          statusUpper === "PRONTO_ENTREGA" ||
-          statusUpper === "PREPARADO" ||
-          statusUpper === "READY" ||
-          statusUpper === "FINISHED" ||
-          o.kdsStage === "READY" ||
-          o.kdsStage === "FINISHED";
-        if (!isPronto) return false;
-      }
+      if (onlyProntoOrders && !estaPronto(o)) return false;
       return true;
     });
-  }, [baseDeliveryOrders, onlyProntoOrders]);
+  }, [baseDeliveryOrders, onlyProntoOrders, estaPronto]);
 
   // Filtered Orders based on search term (ordenado do MENOR para o MAIOR número de pedido #137 -> #156)
   const filteredPendingOrders = useMemo(() => {
@@ -1205,10 +1279,7 @@ export default function RoteirizacaoModal({
       // motoboy. É a leitura que o lojista pediu, e é a mesma convenção que
       // ele já usa no outro sistema — trocar as cores só o obrigaria a
       // aprender duas.
-      const statusPino = String(order.status || "").toUpperCase().trim();
-      const prontoNaCozinha =
-        statusPino === "PRONTO" || statusPino === "PRONTO_ENTREGA" || statusPino === "PREPARADO" ||
-        (order as any).kdsStage === "READY" || (order as any).kdsStage === "FINISHED";
+      const prontoNaCozinha = estaPronto(order);
       const jaDespachado = Boolean((order as any).__jaDespachado);
       // Mesma razão do bloco acima: a marca não expira sozinha, o relógio sim.
       const carimboEntrega = (order as any).deliveredAt || (order as any).updatedAt;
@@ -1470,7 +1541,7 @@ export default function RoteirizacaoModal({
         }
       });
     }
-  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa]);
+  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto]);
 
   // O pino verde do recém-entregue precisa SUMIR sozinho ao completar os 10 s.
   // Sem um tique, ele só sairia no próximo evento que redesenhasse o mapa — e
@@ -1961,6 +2032,8 @@ export default function RoteirizacaoModal({
                       const isHovered = hoveredOrderId === order.id;
                       const seqIndex = selectedOrderIds.indexOf(order.id);
                       const displayNum = getOrderDisplayNumber(order);
+                      const prontoNaCozinha = estaPronto(order);
+                      const marcandoEste = marcandoPronto === order.id;
                       const addrText = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}` || "Endereço a confirmar";
 
                       return (
@@ -2043,6 +2116,46 @@ export default function RoteirizacaoModal({
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.76rem", color: "#64748B" }}>
                                 <span>👤 {order.customerName}</span>
                                 <span>{order.itemsCount || order.items?.length || 1} itens</span>
+                              </div>
+
+                              {/* ── O PRONTO MORA AQUI, AO LADO DO PEDIDO ────────────────
+                                  O clique no card monta rota; este botão não pode herdar
+                                  isso, senão dar pronto selecionava o pedido junto. Já
+                                  pronto vira selo — a mesma cor roxa do pino no mapa, para
+                                  a lista e o mapa contarem a mesma história. */}
+                              <div style={{ marginTop: 7 }} onClick={(e) => e.stopPropagation()}>
+                                {prontoNaCozinha ? (
+                                  <span style={{
+                                    display: "inline-flex", alignItems: "center", gap: 5,
+                                    background: "#F5F3FF", color: "#6D28D9", border: "1px solid #DDD6FE",
+                                    padding: "3px 9px", borderRadius: "6px", fontWeight: 800, fontSize: "0.74rem"
+                                  }}>
+                                    <CheckCircle2 size={13} /> Pronto na cozinha
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={marcandoEste}
+                                    onClick={() => marcarPedidoPronto(order)}
+                                    title="Marca o pedido como pronto na cozinha e avisa o cliente e o marketplace — o mesmo botão do painel de pedidos"
+                                    style={{
+                                      display: "inline-flex", alignItems: "center", gap: 6,
+                                      background: marcandoEste ? "#86EFAC" : "linear-gradient(135deg, #16A34A, #15803D)",
+                                      color: "#FFFFFF", border: "none", borderRadius: "7px",
+                                      padding: "5px 11px", fontWeight: 800, fontSize: "0.76rem",
+                                      fontFamily: "inherit",
+                                      cursor: marcandoEste ? "wait" : "pointer",
+                                      boxShadow: marcandoEste ? "none" : "0 2px 6px rgba(22,163,74,0.30)",
+                                      transition: "all 0.15s ease"
+                                    }}
+                                  >
+                                    {marcandoEste ? (
+                                      <><Loader2 size={13} className="animate-spin" /> Marcando...</>
+                                    ) : (
+                                      <><Check size={13} /> Dar como pronto</>
+                                    )}
+                                  </button>
+                                )}
                               </div>
                             </div>
 
@@ -2366,8 +2479,7 @@ export default function RoteirizacaoModal({
                 { chave: "entregue" as const, cor: "#16A34A", rotulo: "Entregue agora" },
               ]).map((e) => {
                 const quantos = deliveryOrders.filter((o: any) => {
-                  const s = String(o.status || "").toUpperCase().trim();
-                  const pronto = s === "PRONTO" || s === "PRONTO_ENTREGA" || s === "PREPARADO" || o.kdsStage === "READY" || o.kdsStage === "FINISHED";
+                  const pronto = estaPronto(o);
                   const estado = o.__recemEntregue ? "entregue" : o.__jaDespachado ? "rota" : pronto ? "pronto" : "cozinha";
                   return estado === e.chave;
                 }).length;
