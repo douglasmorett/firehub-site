@@ -161,7 +161,10 @@ export async function POST(req: Request) {
             discountMerchant: Math.round(Number(discountMerchant ?? discountTotal) * 100) / 100,
           }
         : {}),
-      deliveryFee: deliveryFee || 0,
+      // A taxa vem do PDV, que a cota em /api/delivery-fee (mesma regra do
+      // cardápio) e deixa o atendente ajustar. Aqui só o piso: entrega
+      // negativa não existe, e o campo alimenta o repasse do entregador.
+      deliveryFee: Math.max(0, Math.round((Number(deliveryFee) || 0) * 100) / 100),
       status: "ACEITO",
       source: "PRESENCIAL",
       items: {

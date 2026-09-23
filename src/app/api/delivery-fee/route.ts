@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 import { avaliarEntrega, raioMaximoKm, taxaFixaDaLoja } from "@/lib/area-de-entrega";
 
 /**
@@ -16,7 +18,7 @@ import { avaliarEntrega, raioMaximoKm, taxaFixaDaLoja } from "@/lib/area-de-entr
  *                    marcado para conferência (rota de pedido).
  */
 export async function GET(req: NextRequest) {
-  const franchiseeId = req.nextUrl.searchParams.get("franchiseeId");
+  let franchiseeId = req.nextUrl.searchParams.get("franchiseeId");
   const street = req.nextUrl.searchParams.get("street") || "";
   const number = req.nextUrl.searchParams.get("number") || "";
   const neighborhood = req.nextUrl.searchParams.get("neighborhood") || "";
@@ -24,7 +26,22 @@ export async function GET(req: NextRequest) {
   const latStr = req.nextUrl.searchParams.get("lat");
   const lngStr = req.nextUrl.searchParams.get("lng");
 
-  if (!franchiseeId) return NextResponse.json({ error: "Falta franchiseeId" }, { status: 400 });
+  // ── SEM `franchiseeId`: QUEM PERGUNTA É O BALCÃO ───────────────────────────
+  //
+  // O cardápio do cliente sabe o id da loja porque a página nasce dela. O PDV
+  // não: ele roda dentro do painel, onde a loja é a sessão. Mandar o id da loja
+  // para o navegador só para ele devolver aqui seria expor o que não precisa
+  // sair. A resolução é a MESMA de /api/store/orders/presencial (ownerId || id),
+  // para a taxa COTADA e a taxa GRAVADA saírem da mesma loja.
+  if (!franchiseeId) {
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email;
+    const daSessao = email
+      ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } })
+      : null;
+    if (!daSessao) return NextResponse.json({ error: "Falta franchiseeId" }, { status: 400 });
+    franchiseeId = daSessao.ownerId || daSessao.id;
+  }
 
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },

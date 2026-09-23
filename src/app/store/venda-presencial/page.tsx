@@ -244,13 +244,94 @@ export default function VendaPresencialPage() {
   const [desconto, setDesconto] = useState<DescontoManual>(SEM_DESCONTO);
   const [mostrarDesconto, setMostrarDesconto] = useState(false);
 
+  // ── A TAXA DE ENTREGA DO BALCÃO ──────────────────────────────────────────
+  //
+  // Ia ZERADA para o banco: `deliveryFee: 0` fixo no corpo. O pedido de
+  // delivery lançado no balcão — o que o cliente fez por telefone ou WhatsApp —
+  // não cobrava entrega, e o relatório do dia mostrava a mesma entrega
+  // valendo R$ 6,00 pelo site e R$ 0,00 pelo balcão.
+  //
+  // A cotação vem de /api/delivery-fee, que é a MESMA regra do cardápio, do
+  // robô e da rota de pedido (lib/area-de-entrega.ts): bairro cadastrado, raio
+  // em km ou área desenhada — a loja escolhe uma vez e vale em todo lugar.
+  //
+  // O campo fica EDITÁVEL: o balcão é onde se combina "hoje a entrega sai de
+  // graça" e "é longe, cobra 12". Editar na mão trava a cotação automática
+  // até o endereço mudar — senão a próxima resposta do servidor apagaria o
+  // que o atendente acabou de combinar com o cliente.
+  const [taxaEntrega, setTaxaEntrega] = useState("");
+  const [taxaNaMao, setTaxaNaMao] = useState(false);
+  const [taxaAviso, setTaxaAviso] = useState<{ tom: "ok" | "alerta" | "erro"; texto: string } | null>(null);
+  const [cotandoTaxa, setCotandoTaxa] = useState(false);
+
+  const taxaDeEntrega =
+    orderType === "DELIVERY"
+      ? Math.max(0, Math.round((parseFloat(String(taxaEntrega).replace(",", ".")) || 0) * 100) / 100)
+      : 0;
+
+  // Endereço novo = cotação nova. Inclusive quando o atendente tinha mexido na
+  // taxa: a combinação era com AQUELE endereço.
+  useEffect(() => { setTaxaNaMao(false); }, [address]);
+
+  useEffect(() => {
+    if (orderType !== "DELIVERY") { setTaxaAviso(null); setCotandoTaxa(false); return; }
+    const consulta = address.trim();
+    if (consulta.length < 6) {
+      setTaxaAviso(null);
+      setCotandoTaxa(false);
+      if (!taxaNaMao) setTaxaEntrega("");
+      return;
+    }
+    if (taxaNaMao) return;
+
+    let vivo = true;
+    setCotandoTaxa(true);
+    // Meio segundo de espera: o atendente digita o endereço inteiro de uma vez
+    // e não há por que geocodificar cada letra.
+    const agendado = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/delivery-fee?address=${encodeURIComponent(consulta)}`);
+        const d = await res.json().catch(() => null);
+        if (!vivo) return;
+        if (!res.ok || !d) {
+          setTaxaAviso({ tom: "erro", texto: "Não consegui calcular a taxa. Digite o valor na mão." });
+          return;
+        }
+        if (d.available) {
+          setTaxaEntrega(String(Number(d.fee || 0).toFixed(2)));
+          setTaxaAviso(
+            d.unknown
+              ? { tom: "alerta", texto: d.message || "Endereço não localizado no mapa — confira a taxa." }
+              : { tom: "ok", texto: d.message || "Taxa calculada pela área de entrega da loja." }
+          );
+        } else {
+          // FORA da área não bloqueia a venda: o balcão atende quem já está na
+          // linha, e o lojista pode decidir entregar assim mesmo. Só não
+          // inventa taxa — quem digita é ele.
+          setTaxaAviso({ tom: "alerta", texto: `${d.message || "Endereço fora da área de entrega."} Se for entregar, digite a taxa na mão.` });
+        }
+      } catch {
+        if (vivo) setTaxaAviso({ tom: "erro", texto: "Não consegui calcular a taxa. Digite o valor na mão." });
+      } finally {
+        if (vivo) setCotandoTaxa(false);
+      }
+    }, 500);
+
+    // Digitar de novo cancela a cotação em voo. Sem apagar o "calculando..."
+    // aqui, o `finally` daquela chamada não roda (ela já não está viva) e o
+    // campo ficava calculando para sempre.
+    return () => { vivo = false; clearTimeout(agendado); setCotandoTaxa(false); };
+  }, [orderType, address, taxaNaMao]);
+
   const isVoucher = paymentMethod === "Voucher/Vale";
   const subtotal = cart.reduce((s, i) => s + (i.unitPrice ?? i.product.price) * i.qty, 0);
   const voucherFee = isVoucher ? subtotal * (voucherRate / 100) : 0;
   // O desconto incide sobre os ITENS, antes da taxa do voucher: a taxa é o
   // custo da maquininha sobre o que foi cobrado, não sobre o que foi abatido.
   const descontoEmReais = valorDoDesconto(desconto, subtotal);
-  const total = Math.max(0, subtotal - descontoEmReais + voucherFee);
+  // A entrega entra no total, como entra no pedido do site (finalTotal em
+  // api/customer-order): é o que o cliente paga e o que o caixa recebe.
+  const total = Math.max(0, subtotal - descontoEmReais + voucherFee + taxaDeEntrega);
   const somaPartes = Math.round(partes.reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
   const faltaDividir = Math.round((total - somaPartes) * 100) / 100;
   const parteDinheiro = Math.round(partes.filter(p => p.metodo === "Dinheiro").reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
@@ -375,7 +456,7 @@ export default function VendaPresencialPage() {
       // Registrado, não só abatido: a mensalidade é sobre o bruto do pedido
       // (lib/billing.ts) e sem isto a base de cobrança encolheria junto.
       ...(descontoEmReais > 0 ? { discountTotal: descontoEmReais, discountMerchant: descontoEmReais } : {}),
-      deliveryFee: 0,
+      deliveryFee: taxaDeEntrega,
       items: cart.map(i => ({
         menuProductId: i.product.id,
         quantity: i.qty,
@@ -397,6 +478,7 @@ export default function VendaPresencialPage() {
       // ninguém percebe até alguém reclamar. O pager já ficava para trás antes
       // deste campo existir — mesma falha, consertada junto.
       setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento("");
+      setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null);
       if (dividir) ligarDivisao(false);
     } else {
       const err = await res.json();
@@ -708,8 +790,43 @@ export default function VendaPresencialPage() {
               style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #8B5CF6", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
           )}
           {orderType === "DELIVERY" && (
-            <input placeholder="Endereço de entrega *" value={address} onChange={e => setAddress(e.target.value)}
-              style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #C62828", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
+            <>
+              <input placeholder="Endereço de entrega *" value={address} onChange={e => setAddress(e.target.value)}
+                style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #C62828", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
+
+              {/* A taxa que a área de entrega da loja manda — e que o atendente
+                  pode trocar quando combinar outra coisa com o cliente. */}
+              <div style={{ marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", whiteSpace: "nowrap" }}>🛵 Taxa de entrega</span>
+                  <div style={{ position: "relative", flex: 1 }}>
+                    <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", fontSize: "0.82rem", color: "#94A3B8", fontWeight: 700, pointerEvents: "none" }}>R$</span>
+                    <input
+                      type="number" min="0" step="0.50" inputMode="decimal"
+                      placeholder={cotandoTaxa ? "calculando..." : "0,00"}
+                      value={taxaEntrega}
+                      onChange={e => { setTaxaNaMao(true); setTaxaEntrega(e.target.value); }}
+                      style={{ width: "100%", padding: "7px 10px 7px 32px", borderRadius: 8, border: `1.5px solid ${taxaNaMao ? "#C2410C" : "#E2E8F0"}`, fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: 800, textAlign: "right" }}
+                    />
+                  </div>
+                  {taxaNaMao && (
+                    <button type="button" onClick={() => setTaxaNaMao(false)}
+                      title="Voltar para a taxa calculada pela área de entrega da loja"
+                      style={{ background: "none", border: "none", color: "#2563EB", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", whiteSpace: "nowrap" }}>
+                      recalcular
+                    </button>
+                  )}
+                </div>
+                {taxaAviso && !taxaNaMao && (
+                  <div style={{
+                    marginTop: 4, fontSize: "0.72rem", fontWeight: 600, lineHeight: 1.35,
+                    color: taxaAviso.tom === "ok" ? "#15803D" : taxaAviso.tom === "alerta" ? "#B45309" : "#B91C1C",
+                  }}>
+                    {taxaAviso.tom === "ok" ? "✅" : taxaAviso.tom === "alerta" ? "⚠️" : "❌"} {taxaAviso.texto}
+                  </div>
+                )}
+              </div>
+            </>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             <input placeholder={orderType === "BALCAO" ? "Nome (opcional)" : "Nome do cliente"} value={customerName} onChange={e => setCustomerName(e.target.value)}
@@ -1028,11 +1145,17 @@ export default function VendaPresencialPage() {
           {/* Total */}
           {cart.length > 0 && (
             <div style={{ marginBottom: 6 }}>
-              {(isVoucher && voucherRate > 0) || descontoEmReais > 0 ? (
+              {(isVoucher && voucherRate > 0) || descontoEmReais > 0 || taxaDeEntrega > 0 ? (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "#64748B", marginBottom: 2 }}>
                   <span>Subtotal</span><span>{fmt(subtotal)}</span>
                 </div>
               ) : null}
+              {taxaDeEntrega > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#475569", fontWeight: 700, marginBottom: 2 }}>
+                  <span>🛵 Entrega</span>
+                  <span>+ {fmt(taxaDeEntrega)}</span>
+                </div>
+              )}
               {descontoEmReais > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#C2410C", fontWeight: 800, marginBottom: 2 }}>
                   <span>Desconto{desconto.motivo ? ` (${desconto.motivo})` : ""}</span>
