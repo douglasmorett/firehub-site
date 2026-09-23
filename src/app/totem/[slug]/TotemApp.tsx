@@ -21,7 +21,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { minimoExigidoDoGrupo, precoUnitarioDoItem } from "@/lib/preco-combo";
+import { minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo } from "@/lib/preco-combo";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TOTEM DE AUTOATENDIMENTO
@@ -2524,6 +2524,25 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                                 ? `Escolha ${teto} ${teto === 1 ? "opção" : "opções"}`
                                 : `Escolha de ${exigido} a ${teto} opções`}
                           </p>
+                          {teto >= 2 && regraDoGrupo(grupo) !== "SOMA" && (
+                            <p
+                              style={{
+                                fontSize: 17,
+                                fontWeight: 700,
+                                color: "#4ADE80",
+                                background: "rgba(22,163,74,0.14)",
+                                border: "1px solid rgba(74,222,128,0.35)",
+                                borderRadius: 10,
+                                padding: "8px 14px",
+                                margin: "10px 0 0",
+                                display: "inline-block",
+                              }}
+                            >
+                              {regraDoGrupo(grupo) === "MAIOR"
+                                ? "Escolhendo 2, vale o preço do sabor mais caro — não soma os dois."
+                                : "Escolhendo 2, o preço é a média dos dois sabores."}
+                            </p>
+                          )}
                         </div>
 
                         <div style={{ display: "grid", gap: 14 }}>

@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Minus, Check } from "lucide-react";
-import { precoMinimoDoProduto, somaDosAdicionais } from "@/lib/preco-combo";
+import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo } from "@/lib/preco-combo";
 
 export type ComboGroupData = {
   id: string;
@@ -9,6 +9,13 @@ export type ComboGroupData = {
   maxQty: number;
   /** Mínimo de escolhas. Nulo = regra antiga: exige exatamente `maxQty`. */
   minQty?: number | null;
+  /**
+   * Como o grupo cobra várias escolhas: "SOMA" (padrão), "MAIOR" ou "MEDIA".
+   *
+   * A tela precisa disto para DIZER a regra, não para aplicá-la — quem calcula
+   * é lib/preco-combo.ts. Ver `explicacaoDaRegra` abaixo.
+   */
+  priceRule?: string | null;
   items: {
     id: string;
     additionalPrice?: number;
@@ -42,6 +49,26 @@ export type Selections = Record<string, Record<string, number>>;
  * Só vale quando as opções cabem EXATAMENTE no teto do grupo — havendo
  * qualquer liberdade de escolha, quem decide é o cliente.
  */
+/**
+ * A frase que diz ao cliente COMO a conta vai ser feita, antes de ele escolher.
+ *
+ * Pizzaria do Costa, 35 cm, dois sabores: mussarela (R$ 49,90) e portuguesa
+ * (R$ 55,90) fecham em R$ 55,90, não em R$ 105,80. Quem só vê dois preços na
+ * lista supõe a soma, escolhe o barato para "economizar" e reclama do total —
+ * ou desiste no meio. O modal mostrava a regra só no fim, no preço; agora ela
+ * vem escrita no cabeçalho da pergunta.
+ *
+ * Só aparece quando há escolha múltipla de verdade: com max 1 não há duas
+ * metades para comparar e a frase seria ruído.
+ */
+function explicacaoDaRegra(group: ComboGroupData): string | null {
+  if (Math.max(1, group.maxQty || 1) < 2) return null;
+  const regra = regraDoGrupo(group);
+  if (regra === "MAIOR") return "Escolhendo 2, vale o preço do sabor mais caro — não soma os dois.";
+  if (regra === "MEDIA") return "Escolhendo 2, o preço é a média dos dois sabores.";
+  return null;
+}
+
 function preenchimentoForcado(group: ComboGroupData): Record<string, number> {
   const max = Math.max(1, group.maxQty || 1);
   const itens = (group.items || []).filter(i => i.menuProduct?.active !== false);
@@ -434,6 +461,23 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                             ? `Escolha de ${min} a ${max} itens`
                             : `Escolha até ${max} ${max === 1 ? "item" : "itens"}`}
                       </div>
+                      {explicacaoDaRegra(group) && (
+                        <div
+                          style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            color: "#166534",
+                            backgroundColor: "#F0FDF4",
+                            border: "1px solid #BBF7D0",
+                            borderRadius: "6px",
+                            padding: "3px 7px",
+                            marginTop: "5px",
+                            display: "inline-block",
+                          }}
+                        >
+                          {explicacaoDaRegra(group)}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
