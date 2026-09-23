@@ -1,62 +1,41 @@
 /**
- * De qual LOJA (ou canal) veio o pedido, para o filtro do relatório.
+ * De qual LOJA da conta veio o pedido, para o filtro "Loja" do relatório.
  *
- * ── Uma lista só, porque a pergunta do lojista é uma só ─────────────────────
+ * ── Loja e plataforma são dois filtros desde 23/09/2026 ─────────────────────
  *
- * "Quanto vendi na Ragnar Pizza?" e "quanto vendi no Brendi?" são a mesma
- * pergunta — de onde veio o dinheiro —, e dois filtros separados ("loja" e
- * "canal") obrigariam a entender a diferença antes de conseguir perguntar.
- * Então a lista mistura os dois de propósito, e cada pedido cai em UM item:
+ * Até essa data esta lista misturava as duas coisas de propósito — a loja
+ * quando havia identidade (iFood multi-loja), o canal quando não havia —, com
+ * a ideia de que "quanto vendi na Ragnar Pizza" e "quanto vendi no Brendi"
+ * eram a mesma pergunta. Na prática o lojista não achou a plataforma ali: numa
+ * loja só, o filtro se chamava "Loja / Origem · Todas as lojas (4)" e as
+ * quatro "lojas" eram iFood, 99Food, Wabiz e Balcão. O dono pediu a plataforma
+ * separada, com o nome dela, e é assim agora:
  *
- *   • tem identidade de loja (iFood multi-loja, 99Food multi-loja)?
- *     → o NOME daquela loja, resolvido por lib/loja-de-origem.ts, que é o
- *       mesmo mapa que o painel e a impressora usam.
- *   • não tem? → o CANAL (Brendi, Jotajá, Site, Balcão, WhatsApp…).
+ *   • Plataforma (iFood, 99Food, Site próprio, Balcão…) — lib/canal-do-pedido.ts,
+ *     a régua do sistema inteiro; o filtro mora no próprio relatório.
+ *   • Loja — ESTE arquivo, e só quando a conta tem mais de uma (três marcas no
+ *     iFood, duas lojas no 99Food, um grupo de lojas). Numa loja só ele some.
  *
- * ── Por que o Brendi cai no canal ───────────────────────────────────────────
- *
- * O pedido do Brendi não grava identidade de loja nenhuma: em 90 dias, 96
- * pedidos, zero com `ifoodStoreMerchant` ou `food99AppShopId` (medido em
- * 22/09/2026). Ele é hub e repassa iFood e 99Food, mas a origem vem em
- * `salesChannel`, não numa loja cadastrada deste lado. Enquanto for assim,
- * "Brendi" é o que dá para oferecer — e é honesto: é exatamente o que o dado
- * permite separar.
+ * Os dois se combinam: "iFood" × "Ragnar Pizza".
  *
  * ── A lista sai dos PEDIDOS, não do cadastro ────────────────────────────────
  *
- * Opção que não tem pedido nenhum no período não entra. Filtro que oferece
- * uma loja e devolve relatório zerado faz o lojista achar que o sistema
- * perdeu a venda dele.
+ * Loja que não tem pedido nenhum no período não entra. Filtro que oferece uma
+ * loja e devolve relatório zerado faz o lojista achar que o sistema perdeu a
+ * venda dele.
  */
 
 import { chavesDeLojaDoPedido, type LojaDeOrigem, type PedidoComOrigem } from "@/lib/loja-de-origem";
-
-export type OrigemDoPedido = {
-  /** O que o filtro guarda. `loja:<chave>` ou `canal:<SOURCE>`. */
-  chave: string;
-  rotulo: string;
-  /** Para a bolinha colorida do filtro. */
-  cor?: string;
-};
 
 /** O pedido como o relatório o conhece. */
 export type PedidoDoRelatorio = PedidoComOrigem & { source?: string | null };
 
 /**
- * A chave de origem DESTE pedido — a mesma string que o filtro guarda.
- *
- * Pedido cuja loja não está na lista de lojas conhecidas cai no canal: é o
- * caso da integração que foi desconectada depois, e o histórico dela não pode
- * sumir do relatório por causa disso.
+ * A chave que o filtro guarda para o pedido de integração cuja loja não está
+ * mais na lista — a integração desconectada depois. O histórico dela não pode
+ * sumir do relatório por isso: vira uma opção própria.
  */
-export function chaveDaOrigem(
-  pedido: PedidoDoRelatorio,
-  lojas: LojaDeOrigem[] | null | undefined,
-  normalizaCanal: (v: unknown) => string,
-): string {
-  const daLoja = lojaDoPedido(pedido, lojas);
-  return daLoja ? `loja:${daLoja.chave}` : `canal:${normalizaCanal(pedido.source)}`;
-}
+export const LOJA_NAO_IDENTIFICADA = "loja:?";
 
 /** A loja conhecida deste pedido, ou null. */
 export function lojaDoPedido(
@@ -73,40 +52,32 @@ export function lojaDoPedido(
   return null;
 }
 
+/** A chave de loja deste pedido — a mesma string que o filtro guarda. */
+export function chaveDaLoja(pedido: PedidoDoRelatorio, lojas: LojaDeOrigem[] | null | undefined): string {
+  const loja = lojaDoPedido(pedido, lojas);
+  return loja ? `loja:${loja.chave}` : LOJA_NAO_IDENTIFICADA;
+}
+
 /**
- * As origens presentes NESTES pedidos, com nome, ordenadas por quantidade.
- *
- * Ordena pelo que mais vende de propósito: numa conta com três lojas no iFood
- * e meia dúzia de canais, a que o lojista procura é quase sempre a maior.
+ * As lojas presentes NESTES pedidos, com nome, ordenadas por quantidade —
+ * numa conta com três marcas no iFood, a que o lojista procura é quase sempre
+ * a maior. Vazia quando a conta não tem o que separar.
  */
-export function origensDosPedidos(
+export function lojasDosPedidos(
   pedidos: PedidoDoRelatorio[],
   lojas: LojaDeOrigem[] | null | undefined,
-  normalizaCanal: (v: unknown) => string,
-  rotuloDoCanal: (chave: string) => { label: string; cor: string },
-): (OrigemDoPedido & { quantidade: number })[] {
-  const conta = new Map<string, { origem: OrigemDoPedido; quantidade: number }>();
-
+): { chave: string; rotulo: string; quantidade: number }[] {
+  if (!lojas || lojas.length === 0) return [];
+  const conta = new Map<string, { chave: string; rotulo: string; quantidade: number }>();
   for (const p of pedidos) {
-    const daLoja = lojaDoPedido(p, lojas);
-    const chave = daLoja ? `loja:${daLoja.chave}` : `canal:${normalizaCanal(p.source)}`;
+    const loja = lojaDoPedido(p, lojas);
+    const chave = loja ? `loja:${loja.chave}` : LOJA_NAO_IDENTIFICADA;
     let linha = conta.get(chave);
     if (!linha) {
-      if (daLoja) {
-        // "🍔 Ragnar Pizza · iFood" — o nome primeiro, porque é o que o
-        // lojista procura; a integração depois, para desempatar marca com
-        // nome parecido em dois marketplaces.
-        linha = { origem: { chave, rotulo: `${daLoja.emoji} ${daLoja.nome}`, cor: undefined }, quantidade: 0 };
-      } else {
-        const canal = rotuloDoCanal(normalizaCanal(p.source));
-        linha = { origem: { chave, rotulo: canal.label, cor: canal.cor }, quantidade: 0 };
-      }
+      linha = { chave, rotulo: loja ? `${loja.emoji} ${loja.nome}` : "❔ Loja que não está mais conectada", quantidade: 0 };
       conta.set(chave, linha);
     }
     linha.quantidade++;
   }
-
-  return Array.from(conta.values())
-    .sort((a, b) => b.quantidade - a.quantidade || a.origem.rotulo.localeCompare(b.origem.rotulo))
-    .map((l) => ({ ...l.origem, quantidade: l.quantidade }));
+  return Array.from(conta.values()).sort((a, b) => b.quantidade - a.quantidade || a.rotulo.localeCompare(b.rotulo));
 }

@@ -1,8 +1,9 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { minutosEntre } from "@/lib/order-stages";
 import FiltroMultiplo from "@/components/customer/FiltroMultiplo";
-import { chaveDaOrigem, origensDosPedidos, type PedidoDoRelatorio } from "@/lib/origem-do-relatorio";
+import { chaveDaLoja, lojasDosPedidos, type PedidoDoRelatorio } from "@/lib/origem-do-relatorio";
+import { itemEntra, opcoesQueEntram, somarVendas } from "@/lib/soma-do-relatorio";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import {
   TrendingUp,
@@ -82,33 +83,27 @@ const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 // dispatchedAt, deliveredAt...) gravados pela extensão do Prisma. Ver
 // src/lib/order-stages.ts.
 
+// A plataforma de cada pedido vem pronta do servidor (`canal`), decidida por
+// lib/canal-do-pedido.ts — a mesma régua do selo do painel e da comanda. Aqui
+// fica só o nome e a cor com que o RELATÓRIO mostra cada uma. Balcão e PDV são
+// o mesmo canal (a venda do caixa grava "PRESENCIAL"), e o site próprio é um só,
+// escreva a rota "SITE" ou "ONLINE".
 const PLATAFORMAS: Record<string, { label: string; cor: string }> = {
-  IFOOD:       { label: "iFood",           cor: "#EA1D2C" },
-  "99FOOD":    { label: "99Food",          cor: "#B45309" },
-  JOTAJA:      { label: "Jotajá",          cor: "#475569" },
-  BRENDI:      { label: "Brendi",          cor: "#44403C" },
-  WABIZ:       { label: "Wabiz",           cor: "#0F766E" },
-  TOTEM:       { label: "Totem",           cor: "#E8590C" },
-  PDV:         { label: "PDV",             cor: "#E8590C" },
-  PRESENCIAL:  { label: "Balcão",          cor: "#64748B" },
-  MESA:        { label: "Mesa",            cor: "#B45309" },
-  WHATSAPP_IA: { label: "WhatsApp (robô)", cor: "#25D366" },
-  ONLINE:      { label: "Site da loja",    cor: "#1C1917" },
-  SITE:        { label: "Site da loja",    cor: "#1C1917" },
-};
-
-// "SITE" e "ONLINE" sao o mesmo canal escrito de dois jeitos por rotas
-// diferentes (o pedido do cardápio próprio nasce ora com um, ora com outro).
-// Sem juntar, a rosca mostra duas fatias com o mesmo nome.
-const APELIDOS_DE_PLATAFORMA: Record<string, string> = { SITE: "ONLINE" };
-
-const normalizaPlataforma = (v: unknown) => {
-  const k = String(v || "ONLINE").toUpperCase();
-  return APELIDOS_DE_PLATAFORMA[k] || k;
+  IFOOD:        { label: "iFood",           cor: "#EA1D2C" },
+  "99FOOD":     { label: "99Food",          cor: "#B45309" },
+  JOTAJA:       { label: "Jotajá",          cor: "#475569" },
+  BRENDI:       { label: "Brendi",          cor: "#44403C" },
+  WABIZ:        { label: "Wabiz",           cor: "#0F766E" },
+  TOTEM:        { label: "Totem",           cor: "#E8590C" },
+  PDV:          { label: "Balcão",          cor: "#64748B" },
+  MESA:         { label: "Mesa",            cor: "#B45309" },
+  WHATSAPP_IA:  { label: "WhatsApp (robô)", cor: "#25D366" },
+  SITE:         { label: "Site próprio",    cor: "#1C1917" },
+  DESCONHECIDO: { label: "Outro canal",     cor: "#94A3B8" },
 };
 
 const plataformaDe = (chave: string) =>
-  PLATAFORMAS[String(chave || "").toUpperCase()] || { label: chave || "Outros", cor: "#94A3B8" };
+  PLATAFORMAS[String(chave || "").toUpperCase()] || { label: chave || "Outro canal", cor: "#94A3B8" };
 
 // Prazo do pedido — MESMA regra que pinta o card no painel de pedidos
 // (StoreOrdersDashboard): agendamento de verdade manda; senão, 40 min para
@@ -170,12 +165,15 @@ const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 export default function RelatoriosClient({
   orders,
   products,
+  categorias,
   storeName,
   timeAlertConfig,
   lojasDeOrigem,
 }: {
   orders: any[];
   products: any[];
+  /** As categorias do cardápio de verdade — sem "iFood"/"99Food" (page.tsx). */
+  categorias: string[];
   storeName: string;
   /** Vazia quando a conta não tem o que separar (lib/lojas-de-origem-da-conta.ts). */
   lojasDeOrigem?: LojaDeOrigem[];
@@ -192,23 +190,35 @@ export default function RelatoriosClient({
   // relatório que zerasse por isso pareceria quebrado. Ver FiltroMultiplo.
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [selectedOrigens, setSelectedOrigens] = useState<string[]>([]);
+  const [selectedPlataformas, setSelectedPlataformas] = useState<string[]>([]);
+  const [selectedLojas, setSelectedLojas] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Set é o que a conta usa: o filtro roda dentro do laço de TODO item de TODO
   // pedido do período (365 dias), e `array.includes` ali dentro é quadrático.
   const produtosMarcados = useMemo(() => new Set(selectedProducts), [selectedProducts]);
   const categoriasMarcadas = useMemo(() => new Set(selectedCategories), [selectedCategories]);
-  const origensMarcadas = useMemo(() => new Set(selectedOrigens), [selectedOrigens]);
+  const plataformasMarcadas = useMemo(() => new Set(selectedPlataformas), [selectedPlataformas]);
+  const lojasMarcadas = useMemo(() => new Set(selectedLojas), [selectedLojas]);
 
-  // Categorias únicas
-  const categories = useMemo(() => {
-    const list = new Set<string>();
-    products.forEach((p) => {
-      if (p.category) list.add(p.category);
-    });
-    return Array.from(list).sort();
-  }, [products]);
+  // O filtro de itens que a conta dos cartões e do ranking usa. A regra das
+  // opções (a borda dentro da pizza) mora em lib/soma-do-relatorio.ts.
+  const filtroDeItens = useMemo(
+    () => ({ produtos: produtosMarcados, categorias: categoriasMarcadas }),
+    [produtosMarcados, categoriasMarcadas],
+  );
+
+  // A linha do espelho do iFood/99 no ranking leva a categoria do ITEM vendido,
+  // que o servidor resolveu com as opções escolhidas ("GRANDE 2 SABORES" é
+  // pizza pelas metades que o cliente escolheu).
+  const idsDeEspelho = useMemo(
+    () => new Set(products.filter((p) => p.espelho).map((p) => p.id)),
+    [products],
+  );
+
+  // As categorias vêm do servidor, só as do cardápio de verdade: "iFood" e
+  // "99Food" são plataforma, e têm filtro próprio.
+  const categories = categorias;
 
   // ── AS OPÇÕES DE CADA FILTRO ─────────────────────────────────────────────
   //
@@ -244,76 +254,71 @@ export default function RelatoriosClient({
     });
   }, [orders, from, to]);
 
-  // ── DE QUAL LOJA / CANAL ─────────────────────────────────────────────────
+  // ── DE QUAL PLATAFORMA E DE QUAL LOJA ────────────────────────────────────
   //
-  // As opções saem dos pedidos DO PERÍODO, antes do filtro de origem: se
-  // saíssem dos já filtrados, marcar uma loja apagaria as outras da lista e
-  // não haveria como voltar sem limpar tudo.
-  const origensDisponiveis = useMemo(
-    () => origensDosPedidos(noPeriodo as PedidoDoRelatorio[], lojasDeOrigem, normalizaPlataforma, plataformaDe),
+  // Dois filtros desde 23/09/2026 (lib/origem-do-relatorio.ts conta o porquê):
+  // a PLATAFORMA — iFood, 99Food, Site próprio, Balcão… — e a LOJA, que só
+  // existe quando a conta tem mais de uma. As opções saem dos pedidos DO
+  // PERÍODO, antes destes filtros: se saíssem dos já filtrados, marcar o iFood
+  // apagaria as outras plataformas da lista e não haveria como voltar sem
+  // limpar tudo. A contagem de pedidos vai ao lado: diz de cara qual é a grande.
+  const opcoesDePlataforma = useMemo(() => {
+    const conta = new Map<string, number>();
+    for (const o of noPeriodo) conta.set(o.canal, (conta.get(o.canal) || 0) + 1);
+    return Array.from(conta.entries())
+      .sort((a, b) => b[1] - a[1] || plataformaDe(a[0]).label.localeCompare(plataformaDe(b[0]).label))
+      .map(([chave, quantidade]) => ({
+        valor: chave, rotulo: plataformaDe(chave).label, cor: plataformaDe(chave).cor,
+        detalhe: `${quantidade} ${quantidade === 1 ? "pedido" : "pedidos"}`,
+      }));
+  }, [noPeriodo]);
+
+  const opcoesDeLoja = useMemo(
+    () => lojasDosPedidos(noPeriodo as PedidoDoRelatorio[], lojasDeOrigem).map((l) => ({
+      valor: l.chave, rotulo: l.rotulo,
+      detalhe: `${l.quantidade} ${l.quantidade === 1 ? "pedido" : "pedidos"}`,
+    })),
     [noPeriodo, lojasDeOrigem],
   );
 
-  // A contagem de pedidos entra como detalhe: numa conta com três lojas no
-  // iFood, é o que diz de cara qual é a grande.
-  const opcoesDeOrigem = useMemo(
-    () => origensDisponiveis.map((o) => ({
-      valor: o.chave, rotulo: o.rotulo, cor: o.cor,
-      detalhe: `${o.quantidade} ${o.quantidade === 1 ? "pedido" : "pedidos"}`,
-    })),
-    [origensDisponiveis],
+  // Plataforma e loja valem para o RELATÓRIO INTEIRO — faturamento, ranking,
+  // tempos, cancelamentos —, porque "quanto vendi no iFood" é uma pergunta
+  // sobre o relatório todo, não sobre um cartão dele. Entre os dois é E.
+  const passaNaOrigem = useCallback(
+    (o: any) =>
+      (plataformasMarcadas.size === 0 || plataformasMarcadas.has(o.canal)) &&
+      (lojasMarcadas.size === 0 || lojasMarcadas.has(chaveDaLoja(o as PedidoDoRelatorio, lojasDeOrigem))),
+    [plataformasMarcadas, lojasMarcadas, lojasDeOrigem],
   );
 
-  // O filtro de origem vale para o RELATÓRIO INTEIRO — faturamento, ranking,
-  // tempos, cancelamentos —, porque "quanto vendi na Ragnar Pizza" é uma
-  // pergunta sobre o relatório todo, não sobre um cartão dele.
   const dateFilteredOrders = useMemo(() => {
-    if (origensMarcadas.size === 0) return noPeriodo;
-    return noPeriodo.filter((o) =>
-      origensMarcadas.has(chaveDaOrigem(o as PedidoDoRelatorio, lojasDeOrigem, normalizaPlataforma)));
-  }, [noPeriodo, origensMarcadas, lojasDeOrigem]);
+    if (plataformasMarcadas.size === 0 && lojasMarcadas.size === 0) return noPeriodo;
+    return noPeriodo.filter(passaNaOrigem);
+  }, [noPeriodo, plataformasMarcadas, lojasMarcadas, passaNaOrigem]);
 
-  // 2. Filtrar itens dos pedidos baseados no filtro de produto e categoria
+  // 2. Filtrar itens dos pedidos baseados no filtro de produto e categoria.
+  // Lista vazia = todos; dentro de cada filtro as marcas são OU, e entre
+  // filtros é E — "Bebidas ou Sobremesas, dos produtos X e Y". A borda que vem
+  // DENTRO da pizza entra quando a categoria dela é marcada, sem contar o
+  // dinheiro dela duas vezes (lib/soma-do-relatorio.ts).
   const processedData = useMemo(() => {
-    let rawRevenue = 0;
-    let rawCmv = 0;
-    let unitsSold = 0;
-    
-    // Contagem de pedidos contendo o filtro
-    const ordersWithFilter = new Set<string>();
-
-    dateFilteredOrders.forEach((o) => {
-      o.items.forEach((item: any) => {
-        // Lista vazia = todos. Marcar três categorias soma as três: dentro de
-        // cada filtro as marcas são OU, e entre filtros é E — "Bebidas ou
-        // Sobremesas, dos produtos X e Y".
-        const matchesProduct = produtosMarcados.size === 0 || produtosMarcados.has(item.productId);
-        const matchesCategory = categoriasMarcadas.size === 0 || categoriasMarcadas.has(item.productCategory);
-
-        if (matchesProduct && matchesCategory) {
-          rawRevenue += item.price * item.quantity;
-          rawCmv += item.productCost * item.quantity;
-          unitsSold += item.quantity;
-          ordersWithFilter.add(o.id);
-        }
-      });
-    });
-
-    const totalOrders = ordersWithFilter.size;
-    const totalProfit = rawRevenue - rawCmv;
-    const margin = rawRevenue > 0 ? (totalProfit / rawRevenue) * 100 : 0;
-    const ticketMedio = totalOrders > 0 ? rawRevenue / totalOrders : 0;
+    const soma = somarVendas(dateFilteredOrders, filtroDeItens);
+    const totalProfit = soma.receita - soma.cmv;
 
     return {
-      revenue: rawRevenue,
-      cmv: rawCmv,
+      revenue: soma.receita,
+      cmv: soma.cmv,
       profit: totalProfit,
-      margin,
-      unitsSold,
-      ordersCount: totalOrders,
-      ticketMedio,
+      margin: soma.receita > 0 ? (totalProfit / soma.receita) * 100 : 0,
+      unitsSold: soma.unidades,
+      // Quantas das unidades vieram como opção dentro de outro produto — é o
+      // que o cartão explica embaixo do número, para ninguém procurar a borda
+      // entre os itens do pedido.
+      unidadesDeOpcao: soma.unidadesDeOpcao,
+      ordersCount: soma.pedidos,
+      ticketMedio: soma.pedidos > 0 ? soma.receita / soma.pedidos : 0,
     };
-  }, [dateFilteredOrders, produtosMarcados, categoriasMarcadas]);
+  }, [dateFilteredOrders, filtroDeItens]);
 
   // 3. Gerar Ranking de Produtos no período selecionado
   const productRanking = useMemo(() => {
@@ -365,10 +370,32 @@ export default function RelatoriosClient({
         }
 
         const data = counts[item.productId];
+        // Espelho: a categoria que vale é a do item, resolvida no servidor.
+        if (idsDeEspelho.has(item.productId)) data.category = item.productCategory || data.category;
         data.qty += item.quantity;
         data.revenue += item.price * item.quantity;
         data.cost += item.productCost * item.quantity;
         data.profit = data.revenue - data.cost;
+
+        // As opções (borda, adicional) viram linha própria — a do complemento
+        // do cadastro, ou uma com o nome que o canal mandou quando só a
+        // categoria foi reconhecida. A MESMA regra dos cartões, da mesma lib:
+        // só quando o lojista perguntou por categoria ou produto, e o dinheiro
+        // só quando o item que carrega a opção ficou fora da conta.
+        for (const { opcao: op, valor } of opcoesQueEntram(item, filtroDeItens, itemEntra(item, filtroDeItens))) {
+          const chave = op.id || `opcao:${op.categoria}:${op.nome}`;
+          if (!counts[chave]) {
+            counts[chave] = {
+              id: chave, name: op.nome, category: op.categoria,
+              qty: 0, revenue: 0, cost: 0, profit: 0, price: op.preco || 0,
+            };
+          }
+          const linha = counts[chave];
+          linha.qty += op.quantidade;
+          linha.revenue += valor;
+          linha.cost += (op.custo || 0) * op.quantidade;
+          linha.profit = linha.revenue - linha.cost;
+        }
       });
     });
 
@@ -388,7 +415,7 @@ export default function RelatoriosClient({
         return matchesCategory && matchesProduct && matchesSearch;
       })
       .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
-  }, [dateFilteredOrders, products, categoriasMarcadas, produtosMarcados, searchQuery]);
+  }, [dateFilteredOrders, products, categoriasMarcadas, produtosMarcados, searchQuery, idsDeEspelho, filtroDeItens]);
 
   // ── ENTREGAS E O QUE ELAS CUSTARAM ───────────────────────────────────────
   //
@@ -455,7 +482,9 @@ export default function RelatoriosClient({
     let totalRevenue = 0;
 
     dateFilteredOrders.forEach((o) => {
-      const source = normalizaPlataforma(o.source);
+      // A mesma chave do filtro de plataforma: a fatia "iFood" da rosca e a
+      // opção "iFood" do filtro são os mesmos pedidos.
+      const source = o.canal || "DESCONHECIDO";
       if (!stats[source]) stats[source] = { count: 0, total: 0 };
       stats[source].count++;
       stats[source].total += o.totalAmount;
@@ -609,15 +638,15 @@ export default function RelatoriosClient({
     });
 
     // Cancelados ficam de fora de dateFilteredOrders -- para a taxa, contamos
-    // de novo direto do periodo. O filtro de LOJA vale aqui também: sem ele,
-    // marcar uma loja mostraria o faturamento dela com a taxa de cancelamento
-    // da conta inteira, lado a lado, como se fossem do mesmo recorte.
+    // de novo direto do periodo. Os filtros de PLATAFORMA e LOJA valem aqui
+    // também: sem eles, marcar o iFood mostraria o faturamento dele com a taxa
+    // de cancelamento da conta inteira, lado a lado, como se fossem do mesmo
+    // recorte.
     let cancelados = 0, brutoNoPeriodo = 0;
     orders.forEach((o) => {
       const d = new Date(o.createdAt);
       if (d < from || d > to) return;
-      if (origensMarcadas.size > 0
-        && !origensMarcadas.has(chaveDaOrigem(o as PedidoDoRelatorio, lojasDeOrigem, normalizaPlataforma))) return;
+      if (!passaNaOrigem(o)) return;
       brutoNoPeriodo++;
       if (o.status === "CANCELADO") cancelados++;
     });
@@ -636,7 +665,7 @@ export default function RelatoriosClient({
       brutoNoPeriodo,
       taxaCancelamento: brutoNoPeriodo > 0 ? (cancelados / brutoNoPeriodo) * 100 : 0,
     };
-  }, [dateFilteredOrders, orders, from, to, origensMarcadas, lojasDeOrigem]);
+  }, [dateFilteredOrders, orders, from, to, passaNaOrigem]);
 
   // Exportar dados como CSV
   const handleExportCSV = () => {
@@ -765,11 +794,12 @@ export default function RelatoriosClient({
 
         {/* ── FILTROS: marcar vários em cada um ────────────────────────────
             Dentro de um filtro as marcas somam (OU); entre filtros, restringem
-            (E). "Bebidas ou Sobremesas" × "só na Ragnar Pizza".
+            (E). "Bordas" × "iFood" = quantas bordas saíram no iFood.
 
-            O de LOJA só aparece quando a conta tem o que separar — mais de uma
-            loja no iFood, no 99Food, ou um grupo de lojas. Numa loja só, o
-            filtro ofereceria uma opção que não filtra nada. */}
+            A PLATAFORMA aparece sempre (abre em todas). A LOJA só aparece
+            quando a conta tem o que separar — mais de uma loja no iFood, no
+            99Food, ou um grupo de lojas. Numa loja só, o filtro ofereceria uma
+            opção que não filtra nada. */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
           <FiltroMultiplo
             rotulo="🔍 Filtrar por Produto"
@@ -791,15 +821,25 @@ export default function RelatoriosClient({
             onChange={setSelectedCategories}
           />
 
-          {origensDisponiveis.length > 1 && (
+          <FiltroMultiplo
+            rotulo="📱 Filtrar por Plataforma"
+            nomeDoTipo="plataformas"
+            placeholderBusca="buscar plataforma…"
+            textoTodos={`Todas as plataformas (${opcoesDePlataforma.length})`}
+            opcoes={opcoesDePlataforma}
+            selecionados={selectedPlataformas}
+            onChange={setSelectedPlataformas}
+          />
+
+          {opcoesDeLoja.length > 1 && (
             <FiltroMultiplo
-              rotulo="🏪 Filtrar por Loja / Origem"
+              rotulo="🏪 Filtrar por Loja"
               nomeDoTipo="lojas"
-              placeholderBusca="buscar loja ou canal…"
-              textoTodos={`Todas as lojas (${origensDisponiveis.length})`}
-              opcoes={opcoesDeOrigem}
-              selecionados={selectedOrigens}
-              onChange={setSelectedOrigens}
+              placeholderBusca="buscar loja…"
+              textoTodos={`Todas as lojas (${opcoesDeLoja.length})`}
+              opcoes={opcoesDeLoja}
+              selecionados={selectedLojas}
+              onChange={setSelectedLojas}
             />
           )}
         </div>
@@ -848,6 +888,14 @@ export default function RelatoriosClient({
             <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Quantidade de Itens</p>
             <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{processedData.unitsSold} u.</p>
             <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Unidades de produtos vendidas</p>
+            {processedData.unidadesDeOpcao > 0 && (
+              // A borda nunca é item do pedido: vem escolhida dentro da pizza.
+              // Sem esta linha o lojista procura as bordas entre os itens e
+              // não entende de onde saiu o número.
+              <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>
+                {processedData.unidadesDeOpcao === processedData.unitsSold ? "Todas" : processedData.unidadesDeOpcao} escolhidas dentro de outro produto (ex.: a borda da pizza)
+              </p>
+            )}
           </div>
         </div>
 

@@ -6,7 +6,10 @@ import RelatoriosClient from "./RelatoriosClient";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { lerAcerto, ganhoDoPedido } from "@/lib/ganho-do-entregador";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
-import { canalDoPedido } from "@/lib/canal-do-pedido";
+import { canalDoPedido, chaveDoCanal } from "@/lib/canal-do-pedido";
+import {
+  categoriaDoItem, categoriaDoProduto, categoriasDoFiltro, montarMapasDoRelatorio, opcoesDoItem,
+} from "@/lib/itens-do-relatorio";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +64,10 @@ export default async function StoreRelatoriosPage() {
                 name: true,
                 category: true,
                 cost: true,
+                // Sem `active`, todo produto de id `ifood-` seria tratado como
+                // espelho — inclusive o cardápio importado que nasceu de um
+                // pedido (lib/categoria-do-item.ts, ehItemDeEspelho).
+                active: true,
               }
             }
           }
@@ -77,11 +84,20 @@ export default async function StoreRelatoriosPage() {
       where: menuFilter,
       select: {
         id: true,
+        franchiseeId: true,
         name: true,
         category: true,
         price: true,
         cost: true,
         active: true,
+        // O que `idsSoDeOpcaoDeCombo` precisa para dizer quem é complemento
+        // (borda, adicional): o carimbo, os preços por canal e quem aparece
+        // dentro da pergunta de algum combo.
+        apenasEmCombo: true,
+        priceSalao: true,
+        priceDelivery: true,
+        priceTotem: true,
+        comboGroups: { select: { items: { select: { menuProductId: true } } } },
       },
       orderBy: [{ category: "asc" }, { name: "asc" }]
     });
@@ -132,6 +148,10 @@ export default async function StoreRelatoriosPage() {
     custoPorPedido = new Map();
   }
 
+  // A categoria de verdade de cada item e a borda que vem DENTRO da pizza —
+  // o porquê está em lib/itens-do-relatorio.ts. Um mapa por loja.
+  const mapasDe = montarMapasDoRelatorio(products);
+
   // Serializa os pedidos para passar para o Client Component
   const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
@@ -143,6 +163,10 @@ export default async function StoreRelatoriosPage() {
     deliveryType: o.deliveryType,
     paymentMethod: o.paymentMethod || "Não informado",
     source: o.source || "ONLINE",
+    // A plataforma pela régua do sistema inteiro (lib/canal-do-pedido.ts) — a
+    // mesma do selo do painel e da comanda. Só o `source` errava o pedido do
+    // Open Delivery antigo e o de iFood gravado com outro rótulo.
+    canal: chaveDoCanal(o),
     // ── DE QUAL LOJA VEIO ────────────────────────────────────────────────
     // As chaves que lib/loja-de-origem.ts lê para dizer se este pedido é da
     // Ragnar Pizza ou da Ragnar Burguer. São os MESMOS campos que o painel e
@@ -167,25 +191,36 @@ export default async function StoreRelatoriosPage() {
     // O prazo do pedido agendado não é createdAt + 45min; sem isto o relatório
     // acusaria atraso em pedido que o cliente marcou para dali a duas horas.
     scheduledDatetime: iso(o.scheduledDatetime),
-    items: o.items.map((i: any) => ({
-      id: i.id,
-      quantity: i.quantity,
-      price: i.price,
-      productId: i.menuProductId,
-      productName: i.menuProduct?.name || "Produto Removido",
-      productCategory: i.menuProduct?.category || "Outros",
-      productCost: i.menuProduct?.cost || 0,
-    })),
+    items: o.items.map((i: any) => {
+      const mapas = mapasDe(o.franchiseeId);
+      const opcoes = opcoesDoItem(i, mapas);
+      return {
+        id: i.id,
+        quantity: i.quantity,
+        price: i.price,
+        productId: i.menuProductId,
+        productName: i.menuProduct?.name || "Produto Removido",
+        productCategory: categoriaDoItem(i, mapas),
+        productCost: i.menuProduct?.cost || 0,
+        ...(opcoes.length > 0 ? { opcoes } : {}),
+      };
+    }),
   }));
 
-  const serializedProducts = products.map(p => ({
-    id: p.id,
-    name: p.name,
-    category: p.category,
-    price: p.price,
-    cost: p.cost || 0,
-    active: p.active,
-  }));
+  const serializedProducts = products.map(p => {
+    const { categoria, espelho } = categoriaDoProduto(p, mapasDe(p.franchiseeId));
+    return {
+      id: p.id,
+      name: p.name,
+      category: categoria,
+      price: p.price,
+      cost: p.cost || 0,
+      active: p.active,
+      espelho,
+    };
+  });
+
+  const categorias = categoriasDoFiltro(serializedProducts, serializedOrders.flatMap((o) => o.items));
 
   // As lojas de origem da conta, com nome. Volta VAZIA quando não há o que
   // separar (uma loja no iFood, uma no 99, sem grupo) — e aí o filtro por loja
@@ -200,6 +235,7 @@ export default async function StoreRelatoriosPage() {
     <RelatoriosClient
       orders={serializedOrders}
       products={serializedProducts}
+      categorias={categorias}
       storeName={user.storeName || "Minha Loja"}
       timeAlertConfig={(user as any).timeAlertConfig || null}
       lojasDeOrigem={lojasDeOrigem}
