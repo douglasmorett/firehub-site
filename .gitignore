@@ -64,3 +64,7 @@ scratch/
 tmp-*.js
 .firecrawl/
 .99food-docs/
+
+# Saídas de navegador e scripts de diagnóstico da sessão
+.playwright-mcp/
+.tmp-audit/
