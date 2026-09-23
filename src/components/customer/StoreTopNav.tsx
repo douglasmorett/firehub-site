@@ -877,6 +877,14 @@ export default function StoreTopNav({
                   depois pelo <strong>Histórico</strong>.
                 </p>
                 <div style={{ display:"flex", gap:8 }}>
+                  {/* Quem chegou aqui já passou pelos avisos e pela contagem, e
+                      é agora — vendo Esperado/Contado/Diferença lado a lado —
+                      que percebe o erro. Sem este botão a única saída era
+                      encerrar: o caixa fechava com o valor errado e a correção
+                      ia para o caderno. Volta para a contagem, sem encerrar. */}
+                  <button onClick={() => setPerguntarImpressao(false)} disabled={closing} style={{ padding:"11px 14px", background:"#FFF", color:"#64748B", border:"1.5px solid #E2E8F0", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    ← Voltar
+                  </button>
                   <button onClick={() => doClose(false)} disabled={closing} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#374151", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     {closing ? "Encerrando..." : "Encerrar sem imprimir"}
                   </button>
