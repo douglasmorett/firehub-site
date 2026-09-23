@@ -70,6 +70,42 @@ export async function processWabizOrder(
   const fuso = await fusoDaLoja(franchiseeId);
   const { dados, items } = traduzirPedidoWabiz(pedido, { lojaId: loja.id, fuso, autoAcceptOrders: !!loja.autoAcceptOrders });
 
+  // ── O FORMATO DAS OPÇÕES, NO LOG, ENQUANTO ELE NÃO FOR CERTEZA ───────────
+  //
+  // O Combo 4 da NIK (#3683, 22/09/2026) tem 12 esfihas obrigatórias e chegou
+  // com 8 opções de quantidade 1. Ou a Wabiz passou a mandar a quantidade num
+  // campo — é o que `quantidadeDaOpcao` agora lê —, ou ela deduplica do lado
+  // dela e a informação não vem. A doc não declara quantidade em opção, e
+  // pedido pendente só existe até o cron confirmar: quando alguém vai
+  // investigar, o payload já não está em lugar nenhum.
+  //
+  // Então ele fica aqui, uma linha por pedido com combo. É barato (a Wabiz faz
+  // poucas dezenas de pedidos por dia numa loja) e responde a pergunta na
+  // primeira ocorrência seguinte, em vez de mais uma noite de adivinhação.
+  try {
+    // `items` é a lista de GRUPOS do cardápio da Wabiz, e os produtos moram
+    // dentro de cada grupo — é assim que o tradutor também os percorre.
+    const produtos = (pedido?.items || []).flatMap((grupo: any) => grupo?.products || []);
+    const comCustomizacao = produtos.some((prod: any) =>
+      (prod?.parts || []).some((parte: any) => parte?.customization),
+    );
+    if (comCustomizacao) {
+      const cru = produtos.map((prod: any) => ({
+        qty: prod?.qty,
+        partes: (prod?.parts || []).map((parte: any) => ({ nome: parte?.name, customization: parte?.customization })),
+      }));
+      const lido = items.map((it: any) => ({
+        nome: it.productName,
+        opcoes: JSON.parse(String(it.comboSelections || "[]")).map((s: any) => `${s.quantity}x ${s.name}`),
+      }));
+      console.log(
+        `[Wabiz] 🔎 Opções do pedido ${orderNumber} — CRU: ${JSON.stringify(cru).slice(0, 1500)} | LIDO: ${JSON.stringify(lido).slice(0, 700)}`,
+      );
+    }
+  } catch {
+    // Diagnóstico nunca derruba a gravação do pedido.
+  }
+
   if (opts.apenasPrever) {
     return { action: existente ? "exists" : "created", traduzido: { ...dados, items } };
   }

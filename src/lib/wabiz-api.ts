@@ -272,6 +272,21 @@ export interface WabizOpcao {
   externalCode?: string | null;
   name?: string | null;
   price?: number | null;
+  /**
+   * QUANTAS vezes esta opção foi escolhida.
+   *
+   * A doc não declara, e nos pedidos de setembro/2026 o sabor repetido vinha
+   * REPETIDO (três "Esfiha Muçarela" como três opções). No Combo 4 da NIK, em
+   * 22/09/2026, não veio: 12 esfihas obrigatórias chegaram como 8 opções, uma
+   * de cada sabor — o que só fecha se a quantidade estiver num campo destes.
+   *
+   * Por isso os quatro nomes: o leitor aceita o que vier e continua somando as
+   * repetições quando não vier nenhum (ver `quantidadeDaOpcao`).
+   */
+  qty?: number | string | null;
+  quantity?: number | string | null;
+  amount?: number | string | null;
+  qtd?: number | string | null;
 }
 
 export interface WabizCustomizacao {

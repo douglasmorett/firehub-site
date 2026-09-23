@@ -104,31 +104,72 @@ type OpcaoDaParte = {
   daMetade: boolean;
 };
 
+/**
+ * Quantas unidades desta opção o cliente escolheu.
+ *
+ * ── O combo que chegou pela metade ──────────────────────────────────────────
+ *
+ * Combo 4 da NIK: 12 esfihas obrigatórias (5 tradicionais, 5 especiais, 2
+ * doces). O pedido #3683 (22/09/2026) gravou OITO opções, todas com
+ * quantidade 1 — e a cozinha recebeu a comanda com oito linhas para doze
+ * esfihas. O lojista escreveu "+1" à caneta em quatro delas para conseguir
+ * produzir. No mesmo pedido, "6 Esfihas Tradicionais + Guaraná" trouxe UMA
+ * esfiha.
+ *
+ * Este leitor assumia que a quantidade só existia por REPETIÇÃO — três
+ * "Esfiha Muçarela" chegando como três opções iguais, que era o formato
+ * medido em setembro. Quando a quantidade vem como campo, ela era ignorada e
+ * virava 1.
+ *
+ * Agora vale o campo quando ele existe, e a repetição continua valendo quando
+ * não existe. Os dois caminhos somam no mesmo lugar, então um sabor que venha
+ * repetido E com quantidade fecha a conta certa.
+ */
+function quantidadeDaOpcao(o: { qty?: unknown; quantity?: unknown; amount?: unknown; qtd?: unknown }): number {
+  for (const bruto of [o?.qty, o?.quantity, o?.amount, o?.qtd]) {
+    if (bruto === null || bruto === undefined || bruto === "") continue;
+    const n = Math.floor(Number(bruto));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 1;
+}
+
 /** Borda, adicionais e "outros" (sabores do combo, bebida grátis) de UMA parte. */
 function opcoesDaParte(parte: WabizParte): OpcaoDaParte[] {
   const c = parte.customization;
   const saida: OpcaoDaParte[] = [];
   const juntar = (
     rotulo: string | null,
-    ops: Array<{ externalCode?: string | null; name?: string | null; price?: number | null; acceptPartition?: boolean }> | null | undefined
+    ops: Array<{
+      externalCode?: string | null;
+      name?: string | null;
+      price?: number | null;
+      acceptPartition?: boolean;
+      qty?: unknown;
+      quantity?: unknown;
+      amount?: unknown;
+      qtd?: unknown;
+    }> | null | undefined
   ) => {
     for (const o of ops || []) {
       const nome = texto(o?.name);
       if (!nome) continue;
       const exibido = rotulo ? `${rotulo} ${nome}` : nome;
-      // ── Sabor repetido vem REPETIDO, sem quantidade ──────────────────────
+      const quantas = quantidadeDaOpcao(o);
+      // ── Sabor repetido vem REPETIDO, ou com quantidade ───────────────────
       // Medido no pedido real nº 4 (Combo 3 e "6 Esfihas"): 3 Esfihas Muçarela
       // chegam como três opções iguais. Sem agrupar, a comanda listava o mesmo
-      // sabor três vezes e a cozinha tinha de contar.
+      // sabor três vezes e a cozinha tinha de contar. Somar `quantas` (e não
+      // 1) faz os dois formatos caírem no mesmo total — ver quantidadeDaOpcao.
       const igual = saida.find((s) => s.nome === exibido);
       if (igual) {
-        igual.quantidade += 1;
+        igual.quantidade += quantas;
         continue;
       }
       saida.push({
         id: texto(o?.externalCode) || nome,
         nome: exibido,
-        quantidade: 1,
+        quantidade: quantas,
         preco: dinheiro(o?.price),
         daMetade: o?.acceptPartition !== false,
       });
