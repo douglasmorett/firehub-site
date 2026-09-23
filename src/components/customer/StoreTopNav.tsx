@@ -752,6 +752,18 @@ export default function StoreTopNav({
                     <div style={{ fontSize:"0.78rem", color:"#64748B", marginTop:2 }}>Contar o dinheiro e fechar o turno</div>
                   </div>
                 </button>
+
+                {/* O histórico só aparecia no rodapé do encerramento: para ver um
+                    caixa antigo com o turno aberto, o lojista tinha que começar a
+                    fechar o caixa. */}
+                <a href={`/store/caixa/historico?voltar=${encodeURIComponent(pathname || "/store")}`}
+                   style={{ display:"flex", alignItems:"center", gap:12, padding:"16px 18px", borderRadius:14, border:"1px solid #E2E8F0", background:"#fff", cursor:"pointer", fontFamily:"inherit", textAlign:"left", textDecoration:"none" }}>
+                  <div style={{ width:40, height:40, borderRadius:12, background:"#F1F5F9", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:"#475569" }}><History size={20} /></div>
+                  <div>
+                    <div style={{ fontWeight:800, fontSize:"0.95rem", color:"#0F172A" }}>Histórico de caixas</div>
+                    <div style={{ fontSize:"0.78rem", color:"#64748B", marginTop:2 }}>Ver os turnos já fechados e reimprimir o fechamento</div>
+                  </div>
+                </a>
               </div>
             ) : (
               <div style={{ padding:"18px 24px", display:"flex", flexDirection:"column", gap:14 }}>

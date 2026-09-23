@@ -15,7 +15,12 @@ const fmtDur = (open: Date, close: Date) => {
 
 export const metadata = { title: "Histórico de Caixas — FireHub" };
 
-export default async function CaixaHistoricoPage() {
+export default async function CaixaHistoricoPage({ searchParams }: { searchParams: Promise<{ voltar?: string }> }) {
+  // Volta para a tela de onde veio (o menu do caixa abre em qualquer tela da
+  // loja). Só caminho interno da loja, para o link não virar redirecionamento.
+  const { voltar: voltarParam } = await searchParams;
+  const voltar = voltarParam && /^\/store(\/|$)/.test(voltarParam) ? voltarParam : "/store/venda-presencial";
+
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
@@ -32,7 +37,7 @@ export default async function CaixaHistoricoPage() {
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "'Inter', sans-serif" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: "1.5rem" }}>
-        <a href="/store/venda-presencial" style={{ color: "#64748B", textDecoration: "none", fontSize: "0.85rem" }}>← Voltar</a>
+        <a href={voltar} style={{ color: "#64748B", textDecoration: "none", fontSize: "0.85rem" }}>← Voltar</a>
         <h1 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 900, color: "#0F172A" }}>🏦 Histórico de Caixas</h1>
       </div>
 
