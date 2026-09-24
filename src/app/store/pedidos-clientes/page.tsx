@@ -7,6 +7,7 @@ import StoreOrdersDashboard from "@/components/customer/StoreOrdersDashboard";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
+import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +115,9 @@ export default async function FranchiseeCustomerOrdersPage() {
           // o GlobalPrintListener e o /api/kds, cada um com seu próprio filtro.
         },
         include: {
+          // A mesa e o garçom da conta, como no feed (/api/customer-order/poll):
+          // a comanda impressa antes do primeiro poll sai igual à de depois.
+          tableSession: MESA_DA_COMANDA,
           items: {
             include: {
               menuProduct: {

@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
+import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -1028,6 +1029,9 @@ export async function GET(req: NextRequest) {
         // junto, e o pagamento dele se acerta no próprio pedido
         // (lib/pagamento-na-entrega.ts).
         isRoutePriority: true, routeId: true, tableSessionId: true,
+        // A mesa e o garçom da conta, para a comanda que ESTE painel imprime
+        // sair igual à da fila da nuvem (lib/mesa-na-comanda.ts).
+        tableSession: MESA_DA_COMANDA,
         ifoodOrderId: true, ifoodReference: true, ifoodPickupCode: true,
         ifoodStoreName: true, ifoodStoreMerchant: true,
         // De qual loja do 99Food veio: a impressora de uma marca filtra por isto.
@@ -1081,6 +1085,12 @@ export async function GET(req: NextRequest) {
           }
         }
       }
+    }
+
+    // A conta da mesa só existe no pedido de mesa: nos outros a chave viajaria
+    // como `"tableSession":null` em cada um dos 200, a cada rodada.
+    for (const o of orders as any[]) {
+      if (o.tableSession == null) delete o.tableSession;
     }
 
     // Apenas passamos os pedidos diretamente (A numeração será tratada no Client via getDisplayOrderNumber)

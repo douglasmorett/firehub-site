@@ -187,6 +187,37 @@ export function itensDaImpressora<T extends ItemDoPedido>(
 }
 
 /**
+ * O que ficou FORA desta impressora: quantos itens e quanto valem.
+ *
+ * A impressora que recebe só as suas categorias imprime o total do pedido
+ * inteiro, e a diferença caía na conta do desconto do Assistente como
+ * "Outros valores do pedido: R$ 36,00" — os dois sucos que foram para a outra
+ * cozinha, na comanda de mesa da Ragnar Burger (24/09/2026). Com isto o
+ * Assistente 1.2.24 imprime "Em outra impressora (2 itens): R$ 36,00" e a
+ * conta do papel volta a fechar. Assistente antigo ignora o campo.
+ *
+ * `desta` tem de ser um recorte de `todos` (os mesmos objetos), que é o que
+ * `itensParaImpressora` e o filtro do navegador devolvem. Nada ficou de fora
+ * (ou o que ficou não tem preço) = `undefined`, e o campo nem viaja.
+ */
+export function restoDoPedido(
+  todos: ReadonlyArray<unknown> | null | undefined,
+  desta: ReadonlyArray<unknown> | null | undefined
+): { itens: number; valor: number } | undefined {
+  const aqui = new Set(desta || []);
+  let itens = 0;
+  let centavos = 0;
+  for (const item of todos || []) {
+    if (aqui.has(item)) continue;
+    const i = (item || {}) as { quantity?: unknown; qty?: unknown; price?: unknown };
+    const qtd = Math.max(1, Math.round(Number(i.quantity ?? i.qty) || 1));
+    itens += qtd;
+    centavos += Math.round((Number(i.price) || 0) * qtd * 100);
+  }
+  return itens > 0 && centavos > 0 ? { itens, valor: centavos / 100 } : undefined;
+}
+
+/**
  * Para quais impressoras este pedido vai, já com os itens de cada uma.
  *
  * `impressoras` vazio devolve lista vazia: quem chama decide o que fazer sem

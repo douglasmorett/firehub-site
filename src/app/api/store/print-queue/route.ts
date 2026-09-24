@@ -1,7 +1,7 @@
 import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { destinosDoPedido } from "@/lib/roteamento-de-impressao";
+import { destinosDoPedido, restoDoPedido } from "@/lib/roteamento-de-impressao";
 import { impressorasDaContaDaMesa, impressoraDoCaixa, impressoraUnicaDoPc } from "@/lib/impressao-da-conta";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -12,8 +12,7 @@ import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-con
 import { avisosDoPedido, blocosDoPedido } from "@/lib/comanda-modelo";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
-import { nomeComPager } from "@/lib/pager";
-import { nomeComDocumento } from "@/lib/documento-do-cliente";
+import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -301,6 +300,9 @@ export async function GET(req: NextRequest) {
           franchisee: {
             select: { storeName: true, name: true }
           },
+          // A mesa e o garçom da conta aberta (lib/mesa-na-comanda.ts). Pedido
+          // que não é de mesa não tem conta, e o join volta vazio.
+          tableSession: MESA_DA_COMANDA,
           items: {
             include: {
               menuProduct: {
@@ -373,7 +375,7 @@ export async function GET(req: NextRequest) {
     const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
     const slugDaLoja = owner?.slug || "";
 
-    const jobs = recentOrders.map(pedidoDoBanco => {
+    const jobs = recentOrders.map(({ tableSession, ...pedidoDoBanco }) => {
       // O Assistente só sabe ler `comboSelections` em array, e o combo do
       // cardápio online é gravado como `{ grupoId: { nome: qtd } }`: o objeto
       // era descartado em silêncio e a comanda saía com o nome do combo e mais
@@ -381,22 +383,24 @@ export async function GET(req: NextRequest) {
       // impressão sem depender de a loja atualizar o Assistente, e vale para o
       // pedido inteiro e para cada destino (o roteamento parte deste mesmo
       // objeto).
+      const comMesa = { ...pedidoDoBanco, tableSession };
       const order = {
         ...pedidoDoBanco,
-        // O PAGER ENTRA PELO NOME, igual ao caminho do navegador (lib/pager.ts).
+        // O PAGER, O "CPF NA NOTA", A MESA E O GARÇOM ENTRAM PELO NOME, igual
+        // aos trilhos do navegador — a regra é uma só, em
+        // lib/mesa-na-comanda.ts (nomeDoClienteNaComanda).
         //
-        // Precisa estar NOS DOIS: esta fila é o trilho de quando o painel está
+        // Precisa estar em TODOS: esta fila é o trilho de quando o painel está
         // fechado, e uma loja de balcão costuma imprimir justamente por aqui.
         // Se só o navegador soubesse do pager, a mesma loja imprimiria com ou
         // sem o número dependendo de haver uma aba aberta — a classe de
         // divergência que o modelo da comanda já documenta neste arquivo.
-        // O "CPF NA NOTA" entra pelo mesmo caminho, e DEPOIS do pager: nome e
-        // pager são como a loja chama o cliente; o documento é o que ele
-        // confere. Ver lib/documento-do-cliente.ts.
-        customerName: nomeComDocumento(
-          nomeComPager(pedidoDoBanco.customerName, (pedidoDoBanco as any).pagerNumber),
-          (pedidoDoBanco as any).customerCpfCnpj,
-        ) || pedidoDoBanco.customerName,
+        customerName: nomeDoClienteNaComanda(comMesa as any) || pedidoDoBanco.customerName,
+        // Os mesmos dois em campo próprio: o Assistente 1.2.24 põe a mesa no
+        // topo ("(3) MESA 4") e o garçom logo abaixo, e tira do nome o que foi
+        // embutido acima. A conta (`tableSession`) não viaja inteira: só o que
+        // o papel usa.
+        ...camposDaMesaParaImpressao(comMesa as any),
         items: (pedidoDoBanco.items || []).map((i: any) => ({
           ...i,
           // O 2º argumento é o produto: é com os `comboGroups` dele que o preço
@@ -497,6 +501,12 @@ export async function GET(req: NextRequest) {
         // Campo ADITIVO: Assistente < 1.2.19 ignora e agrupa, como sempre.
         separarItens: d.impressora.separarItens === true,
         items: d.itens,
+        // O que foi para as OUTRAS impressoras (lib/roteamento-de-impressao.ts):
+        // o Assistente 1.2.24 imprime "Em outra impressora (2 itens)" no lugar
+        // do "Outros valores do pedido" que ninguém entendia.
+        ...(d.impressora.somenteBebidas !== true && restoDoPedido(order.items, d.itens)
+          ? { restoDoPedido: restoDoPedido(order.items, d.itens) }
+          : {}),
         // O QR desta impressora (vazio = esta não imprime QR).
         ...(qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
         // O bloco da campanha desta impressora (vazio = não é a escolhida).
@@ -598,6 +608,9 @@ export async function GET(req: NextRequest) {
           somenteBebidas: d.impressora.somenteBebidas === true,
           separarItens: d.impressora.separarItens === true,
           items: d.itens,
+          ...(d.impressora.somenteBebidas !== true && restoDoPedido(order.items, d.itens)
+            ? { restoDoPedido: restoDoPedido(order.items, d.itens) }
+            : {}),
           // Reimpressão sai igual à original: com o bloco da campanha onde ele
           // saiu da primeira vez.
           ...camposDaCampanha(order, owner?.storeLoyalty, slugDaLoja, d.impressora.name),

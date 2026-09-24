@@ -1174,7 +1174,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       canal: srcStr || "",
       codigoCanal: refTag || "",
       loja: cleanAscii(lojaOrigem || storeName || ""),
-      cliente: cleanAscii(order.customerName || ""),
+      cliente: ehPedidoDeMesa ? semMesaNoNome(cleanAscii(order.customerName || "")) : cleanAscii(order.customerName || ""),
       telefone: String(order.customerPhone || ""),
       endereco: cleanAscii(order.customerAddress || ""),
       data: dateStr || "",
@@ -1225,6 +1225,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           const temLinhaDoApp = blocos.some((b) => b && b.tipo === "dataHora" && b.ligado !== false);
           const topo = temLinhaDoApp ? headerLine : headerLineComRef;
           if (topo) out += linha(topo, f);
+          // O garcom anda com o numero da mesa, no mesmo corpo da linha do
+          // canal no layout padrao — nao some porque a loja montou modelo.
+          if (linhaDoGarcom) out += linha(linhaDoGarcom, { alinhamento: f.alinhamento || "centro", tamanho: 1.5, negrito: true });
           break;
         }
         // A MARCA quando a conta tem varias no mesmo painel (Ragnar Pizza x
@@ -1420,6 +1423,53 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // "PEDIDO" ali quer "PEDIDO" no papel inteiro, nao so na entrega.
   const deliveryTypeTag = R("numeroPedido", "delivery",
     order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : "RETIRADA");
+
+  // ── A MESA E O GARCOM ────────────────────────────────────────────────
+  //
+  // O topo do pedido de mesa saia "(3) MESA": o numero do PEDIDO, e de mesa
+  // nenhuma. O numero da mesa so viajava no endereco ("Mesa 4"), que o papel
+  // imprime apenas na entrega, e o garcom nem viajava. O dono, com a comanda
+  // da Ragnar Burger na mao (24/09/2026): "tem que sair pedido (3), o numero
+  // da MESA — era a 4 — e o nome do garcom".
+  //
+  // O servidor manda `mesa` e `garcom` (src/lib/mesa-na-comanda.ts no site).
+  // Quem nao manda `mesa` (servidor antigo, reimpressao guardada) ainda tem o
+  // rotulo "Mesa 4" no endereco, que todo pedido de mesa carrega. A conta da
+  // mesa (ehConta) tem topo proprio e fica como estava.
+  const ehPedidoDeMesa = !ehConta && order.deliveryType === "MESA";
+  const mesaDoPedido = (() => {
+    if (!ehPedidoDeMesa) return "";
+    const doCampo = cleanAscii(order.mesa == null ? "" : String(order.mesa)).replace(/\s+/g, " ").trim();
+    if (doCampo) return doCampo.slice(0, 12);
+    const m = cleanAscii(order.customerAddress || "").match(/^\s*mesa\s*[:#.\-]*\s*(\d{1,4}[A-Za-z]?)(?![0-9A-Za-z])/i);
+    return m ? m[1] : "";
+  })();
+  const garcomDaMesa = ehPedidoDeMesa ? cleanAscii(order.garcom || "").replace(/\s+/g, " ").trim().slice(0, 40) : "";
+  const linhaDoGarcom = garcomDaMesa ? ("GARCOM: " + garcomDaMesa).toUpperCase() : "";
+  // "(3) MESA 4". A loja que trocou a palavra do topo ("PEDIDO") ganha a mesa
+  // por extenso depois dela — "(3) PEDIDO 4" nao diria que o 4 e a mesa.
+  const tagDoTopo = !mesaDoPedido
+    ? deliveryTypeTag
+    : /(^|\s)MESA$/i.test(deliveryTypeTag)
+      ? `${deliveryTypeTag} ${mesaDoPedido}`
+      : `${deliveryTypeTag} MESA ${mesaDoPedido}`;
+  // O site embute a mesa e o garcom no NOME do cliente, para o Assistente
+  // antigo imprimi-los na linha "Nome:" (o mesmo caminho do pager e do CPF —
+  // nomeComMesa em src/lib/mesa-na-comanda.ts). Aqui eles ja estao no topo:
+  // no "Nome:" sairiam duas vezes. O nome que ERA so a mesa ("Mesa 4", mesa
+  // aberta sem nome) volta vazio, e a linha nem sai.
+  const semMesaNoNome = (nome) => {
+    let s = String(nome == null ? "" : nome);
+    const literal = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (garcomDaMesa) {
+      s = s.replace(new RegExp("[^0-9A-Za-z]*\\bGarcom:?\\s+" + literal(garcomDaMesa) + "(?![0-9A-Za-z])", "i"), "");
+    }
+    if (mesaDoPedido) {
+      s = s.replace(new RegExp("[^0-9A-Za-z]*\\bMesa\\s*[:#.\\-]*\\s*" + literal(mesaDoPedido) + "(?![0-9A-Za-z])", "i"), "");
+    }
+    s = s.trim();
+    return /[0-9A-Za-z]/.test(s) ? s : "";
+  };
   // ── O NUMERO DO PARCEIRO, E SO DO PARCEIRO ──────────────────────────
   //
   // Era `ifoodReference || openDeliveryReference || id.slice(-6)`: no pedido
@@ -1438,8 +1488,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // existe para o modelo que DESLIGOU essa linha (bloco dataHora): ali o
   // numero do app volta para o topo, senao some do papel.
   const headerLine = seqNumStr
-    ? `(${seqNumStr}) ${deliveryTypeTag}`
-    : deliveryTypeTag;
+    ? `(${seqNumStr}) ${tagDoTopo}`
+    : tagDoTopo;
   const headerLineComRef = `${headerLine}  ${refTag}`.trim();
   // "N. no iFood:" / "N. no 99Food:" — "N. do Pedido:" ao lado do nosso numero
   // grande no topo deixava a duvida de qual dos dois era o pedido.
@@ -1510,6 +1560,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // colunas em 3x, entao "(79) DELIVERY #3523" quebra em duas linhas, que e o
   // que o iFood tambem faz. O par disto esta em modeloPadrao() no site.
   res += ampliado(headerLine, 3, { centro: true, negrito: N("numeroPedido", "delivery", true) });
+  // O garcom logo abaixo da mesa: e a quem a cozinha entrega o prato pronto.
+  if (linhaDoGarcom) {
+    res += DOUBLE_HEIGHT + BOLD_ON + centerLine(linhaDoGarcom) + BOLD_OFF + DOUBLE_OFF;
+  }
   // ── DE ONDE VEIO ESTE PEDIDO ─────────────────────────────────────────
   //
   // A MARCA quando a conta tem varias no mesmo iFood (Ragnar Pizza x Ragnar
@@ -1558,28 +1612,35 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   marcas.fimCabecalho = res.length;
 
   // 2. CLIENTE SECTION
-  marcas.tituloCliente = res.length;
-  res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
-  marcas.cliente = res.length;
+  // O corpo e montado antes do titulo: secao vazia nao ganha "CLIENTE"
+  // sozinho no papel (a mesa aberta sem nome ja diz a mesa no topo). Mesma
+  // regra do comTitulo no modelo.
+  let corpoDoCliente = "";
   // ── "CPF NA NOTA" ──────────────────────────────────────────────────────
   //
   // Linha propria a partir da 1.2.20. Quando o campo vem, ele manda: o sufixo
   // que o site embutiu no nome (para as versoes antigas) e retirado, senao o
   // documento sairia duas vezes. Ver nomeSemDocumento().
   const docDoCliente = documentoDoCliente(order.customerCpfCnpj);
-  const nomeDoCliente = docDoCliente
+  const nomeComSufixos = docDoCliente
     ? nomeSemDocumento(cleanAscii(order.customerName))
     : cleanAscii(order.customerName || "");
-  if (nomeDoCliente) res += comNegrito(wrapLines(R("cliente", "nome", "Nome:") + " " + nomeDoCliente, 2), "cliente", "nome", false);
+  const nomeDoCliente = ehPedidoDeMesa ? semMesaNoNome(nomeComSufixos) : nomeComSufixos;
+  if (nomeDoCliente) corpoDoCliente += comNegrito(wrapLines(R("cliente", "nome", "Nome:") + " " + nomeDoCliente, 2), "cliente", "nome", false);
   if (docDoCliente) {
-    res += comNegrito(wrapLines(R("cliente", "documento", "CPF/CNPJ:") + " " + docDoCliente, 2), "cliente", "documento", false);
+    corpoDoCliente += comNegrito(wrapLines(R("cliente", "documento", "CPF/CNPJ:") + " " + docDoCliente, 2), "cliente", "documento", false);
   }
   // Pedido de mesa nasce com telefone "00000000000" (campo obrigatorio no
   // banco): imprimir isso e ruido no papel.
   if (order.customerPhone && !/^0+$/.test(String(order.customerPhone).trim())) {
-    res += comNegrito(wrapLines(R("cliente", "telefone", "Telefone:") + " " + cleanAscii(order.customerPhone), 2), "cliente", "telefone", false);
+    corpoDoCliente += comNegrito(wrapLines(R("cliente", "telefone", "Telefone:") + " " + cleanAscii(order.customerPhone), 2), "cliente", "telefone", false);
   }
-  if (!ehConta) res += comNegrito(R("cliente", "qtdPedidos", "Qtd Pedidos:") + " 1", "cliente", "qtdPedidos", false) + LF;
+  // "Qtd Pedidos: 1" na rodada da mesa nao conta nada a ninguem.
+  if (!ehConta && !ehPedidoDeMesa) corpoDoCliente += comNegrito(R("cliente", "qtdPedidos", "Qtd Pedidos:") + " 1", "cliente", "qtdPedidos", false) + LF;
+  marcas.tituloCliente = res.length;
+  if (corpoDoCliente) res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
+  marcas.cliente = res.length;
+  res += corpoDoCliente;
 
   // 3. ENTREGA SECTION
   marcas.fimCliente = res.length;
@@ -1938,7 +1999,26 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   }
 
   res += LF;
-  const subtotal = order.items?.reduce((sum, it) => sum + (getItemEffectivePrice(it, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
+  // ── O QUE SAIU EM OUTRA IMPRESSORA ─────────────────────────────────────
+  //
+  // A loja que separa a cozinha por categoria recebe aqui SO os itens desta
+  // impressora, mas o total e o do pedido inteiro. A diferenca caia na conta
+  // do desconto e saia "Outros valores do pedido: R$ 36,00" — os dois sucos
+  // que foram para a COZINHA PIZZA, na comanda de mesa da Ragnar Burger
+  // (24/09/2026). Quem le nao tinha como saber o que era aquilo.
+  //
+  // O site manda `restoDoPedido` ({ itens, valor }) com o que foi para as
+  // outras impressoras (src/lib/roteamento-de-impressao.ts). Aqui ele ganha
+  // linha propria e entra na conta, que volta a fechar: subtotal desta +
+  // outra impressora - descontos + entrega = total.
+  const resto = !ehConta && order.restoDoPedido && Number(order.restoDoPedido.valor) > 0
+    ? {
+        itens: Math.max(0, Math.round(Number(order.restoDoPedido.itens) || 0)),
+        valor: Math.round(Number(order.restoDoPedido.valor) * 100) / 100,
+      }
+    : null;
+  const valorDoResto = resto ? resto.valor : 0;
+  const subtotal = order.items?.reduce((sum, it) => sum + (getItemEffectivePrice(it, order.items, Number(order.totalAmount || 0) - valorDoResto, order.deliveryFee || 0, order.discountTotal || 0) * (it.qty || it.quantity || 1)), 0) || order.totalAmount || 0;
   // ── A CONTA DA MESA TEM SEU PROPRIO RODAPE ────────────────────────────
   //
   // Antes a taxa de servico e a gorjeta vinham como ITENS, misturadas aos
@@ -1973,6 +2053,13 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     if (gorjetaValor > 0) res += rightAlign("Gorjeta:", dinheiroConta(gorjetaValor));
   } else {
     res += comNegrito(rightAlign(R("totais", "subtotal", "Subtotal:"), "R$ " + Number(subtotal).toFixed(2).replace(".", ",")), "totais", "subtotal", false);
+    if (resto) {
+      // Em 58 mm a contagem nao cabe na linha com o valor.
+      const rotuloDoResto = columns >= 42 && resto.itens > 0
+        ? `Em outra impressora (${resto.itens} ${resto.itens === 1 ? "item" : "itens"}):`
+        : "Em outra impressora:";
+      res += rightAlign(rotuloDoResto, "R$ " + resto.valor.toFixed(2).replace(".", ","));
+    }
   }
 
   const dFee = typeof order.deliveryFee === "number" ? order.deliveryFee : 0;
@@ -2004,7 +2091,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // O servidor manda `serviceFee` (src/lib/desconto-99food.ts); servidor
   // antigo nao manda e tudo fica como era.
   const sFee = Number(order.serviceFee || 0) > 0 ? Number(order.serviceFee) : 0;
-  const descontoQueFecha = Math.round((Number(subtotal) + Number(dFee) + sFee - totalCobrado) * 100) / 100;
+  const descontoQueFecha = Math.round((Number(subtotal) + valorDoResto + Number(dFee) + sFee - totalCobrado) * 100) / 100;
 
   // A parte da PLATAFORMA: `discountIfood` e o campo historico do iFood; o
   // 99Food chega em `discountPlatform` com o rotulo junto, porque "Desconto
@@ -2047,7 +2134,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       res += rightAlign(dFeeLabel, dinheiro(Number(gratis.valor)) + " GRATIS");
       var motivoDaIsencao = String(gratis.motivo || "").trim();
       if (motivoDaIsencao) res += "  " + motivoDaIsencao.slice(0, 40) + "\n";
-    } else {
+    } else if (!(ehPedidoDeMesa && !(Number(dFee) > 0))) {
+      // Mesa nao tem entrega: "Taxa de Entrega: R$ 0,00" ali e so ruido.
       res += rightAlign(dFeeLabel, dinheiro(dFee));
     }
     // Taxa de servico do parceiro, na linha dela — e o que faz o total fechar
@@ -2104,9 +2192,22 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // pedido do proprio site, que e onde a palavra ja basta.
   const onlineSource = NOME_DO_CANAL[srcStr] || "Online";
 
+  // ── A RODADA DA MESA NAO SE PAGA SOZINHA ──────────────────────────────
+  //
+  // Cada rodada lancada na mesa e um pedido, e nenhum e pago por si: tudo
+  // entra na conta, que fecha no caixa (src/lib/conta-da-mesa.ts). O papel
+  // dizia "Forma de Pagamento: N/A", "(PAGAR NO CAIXA OU NA MESA)" e
+  // "!! TOTAL A PAGAR: R$ 128,70 !!" — o valor de UMA rodada, que nao e o
+  // que a mesa paga. Vale so para o pedido com conta aberta
+  // (`tableSessionId`); a "Mesa 20" lancada no PDV sem conta, com a forma de
+  // pagamento escolhida ali, segue como sempre.
+  const naContaDaMesa = ehPedidoDeMesa && !!order.tableSessionId;
+
   // Os avisos desta secao obedecem a aba Avisos — menos na CONTA DA MESA, que
   // e outro papel: "TOTAL A PAGAR" ali e a propria conta, nao um aviso.
-  if (isOnlinePayment) {
+  if (naContaDaMesa) {
+    res += comNegrito(wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " na conta da mesa", 2), "pagamento", "formaDePagamento", true);
+  } else if (isOnlinePayment) {
     res += comNegrito(wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2), "pagamento", "formaDePagamento", true);
     if (ehMesa || avisoLigado("pagoOnline")) {
       res += DOUBLE_HEIGHT + wrapLines("(Pago via " + onlineSource + " - NAO COBRAR)", 2) + DOUBLE_OFF;
@@ -2883,6 +2984,9 @@ setInterval(async () => {
               ...job.order,
               items: Array.isArray(destino.items) ? destino.items : job.order?.items,
               somenteBebidas: destino.somenteBebidas === true,
+              // O que deste pedido foi para as OUTRAS impressoras: vira a linha
+              // "Em outra impressora (2 itens)" no lugar de "Outros valores".
+              restoDoPedido: destino.restoDoPedido || undefined,
               // O QR do motoboy e POR IMPRESSORA: o servidor poe qrPuxarUrl
               // dentro do destino que deve imprimi-lo, e deixa de fora o da
               // cozinha. O que vier no job.order inteiro nao vale aqui — e o

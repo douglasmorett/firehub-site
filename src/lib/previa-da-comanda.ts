@@ -13,15 +13,16 @@ import { lerPapel, type LinhaDoPapel } from "@/lib/papel-da-impressora";
 import { blocosParaOAssistente, saneiaAvisos, type AvisosDesligados, type Bloco } from "@/lib/comanda-modelo";
 
 /**
- * Dois pedidos, porque um só não mostra todos os avisos: o pago na entrega
+ * Três pedidos, porque um só não mostra todos os avisos: o pago na entrega
  * mostra "COBRAR NA ENTREGA" e o troco; o do iFood mostra "NÃO COBRAR" e a
- * linha do número no app.
+ * linha do número no app; o da mesa mostra a mesa no topo e o garçom.
  */
-export type ExemploDaPrevia = "entrega" | "ifood";
+export type ExemploDaPrevia = "entrega" | "ifood" | "mesa";
 
 export const EXEMPLOS_DA_PREVIA: { chave: ExemploDaPrevia; nome: string }[] = [
   { chave: "entrega", nome: "Entrega paga na entrega" },
   { chave: "ifood", nome: "iFood pago online" },
+  { chave: "mesa", nome: "Mesa com garçom" },
 ];
 
 function pedidoDeExemplo(exemplo: ExemploDaPrevia) {
@@ -33,6 +34,28 @@ function pedidoDeExemplo(exemplo: ExemploDaPrevia) {
     { name: "Coca-Cola Lata", qty: 2, quantity: 2, price: 6 },
   ];
   const subtotal = 54.9 + 4 * 5.5 + 2 * 6;
+  if (exemplo === "mesa") {
+    // Uma rodada lançada na conta aberta: os campos são os que a fila e o
+    // painel mandam (lib/mesa-na-comanda.ts), e o pagamento fica para o
+    // fechamento da mesa.
+    return {
+      id: "exemplo_previa_mesa",
+      dailyOrderNumber: 8,
+      customerName: "Carlos",
+      customerPhone: "00000000000",
+      customerAddress: "Mesa 4",
+      deliveryType: "MESA",
+      source: "PRESENCIAL",
+      paymentMethod: "N/A",
+      tableSessionId: "exemplo_previa_conta",
+      mesa: "4",
+      garcom: "Rafaela",
+      items: itens,
+      deliveryFee: 0,
+      totalAmount: Math.round(subtotal * 100) / 100,
+      createdAt,
+    };
+  }
   if (exemplo === "ifood") {
     return {
       id: "exemplo_previa_ifood",

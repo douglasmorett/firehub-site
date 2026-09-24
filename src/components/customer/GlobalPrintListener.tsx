@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
+import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
+import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 
 const LOCK_PREFIX = "firehub_autoprinted_v4_";
 
@@ -264,7 +266,15 @@ export default function GlobalPrintListener() {
                   const formattedOrder = {
                     id: order.id,
                     dailyOrderNumber: order.dailyOrderNumber || order.orderSeqNumber || "—",
-                    customerName: order.customerName || "Cliente",
+                    // O nome ia CRU por aqui: o pager e o "CPF na nota", que a
+                    // fila da nuvem e a tela de pedidos embutem, sumiam do
+                    // papel sempre que quem imprimia era este ouvinte. A regra
+                    // agora é uma só para os três trilhos, com a mesa e o
+                    // garçom junto (lib/mesa-na-comanda.ts).
+                    customerName: nomeDoClienteNaComanda(order) || "Cliente",
+                    customerCpfCnpj: lerDocumentoDoCliente(order.customerCpfCnpj),
+                    ...camposDaMesaParaImpressao(order),
+                    tableSessionId: order.tableSessionId,
                     customerPhone: order.customerPhone,
                     customerAddress: order.customerAddress,
                     deliveryType: order.deliveryType || "DELIVERY",

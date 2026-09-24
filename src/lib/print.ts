@@ -3,7 +3,7 @@ import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
-import { categoriasPedidas, itensDaImpressora } from "./roteamento-de-impressao";
+import { categoriasPedidas, itensDaImpressora, restoDoPedido } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDoPedido, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
@@ -99,7 +99,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.23";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.24";
 
 /**
  * A partir daqui o Assistente imprime o "CPF na nota" em LINHA PRÓPRIA.
@@ -403,6 +403,13 @@ async function printToDevice(
           taxaServico: (order as any).taxaServico,
           gorjeta: (order as any).gorjeta,
           tableSessionId: (order as any).tableSessionId,
+          // A mesa e o garçom (lib/mesa-na-comanda.ts): o Assistente 1.2.24 põe
+          // "(3) MESA 4" no topo e o garçom logo abaixo. O antigo ignora — para
+          // ele os dois já vão embutidos no nome do cliente.
+          mesa: (order as any).mesa,
+          garcom: (order as any).garcom,
+          // O que desta comanda saiu em OUTRA impressora (ver printOrder).
+          restoDoPedido: (order as any).restoDoPedido,
           // Comanda da cozinha. Assistente antigo ignora campo que não conhece,
           // então mandar isto para uma loja que ainda não atualizou o Assistente
           // não muda nada: o cupom sai como sempre saiu, com valores.
@@ -535,7 +542,12 @@ export async function printOrder(
     if (daImpressora === null) continue;
     const itemsToPrint = daImpressora.map(i => i.item);
 
-    const filteredOrder = { ...order, items: itemsToPrint };
+    // O que foi para as outras impressoras, para o papel desta dizer "Em outra
+    // impressora (2 itens)" em vez de "Outros valores do pedido" (mesma regra
+    // da fila da nuvem, lib/roteamento-de-impressao.ts). A de bebida recebe o
+    // pedido inteiro e não imprime valores: não tem resto.
+    const resto = printer.somenteBebidas ? undefined : restoDoPedido(order.items, itemsToPrint);
+    const filteredOrder = { ...order, items: itemsToPrint, ...(resto ? { restoDoPedido: resto } : {}) };
 
     // ── CAMPANHA "CONVERTER PARA SITE PRÓPRIO" ────────────────────────────
     // Só em pedido do iFood/99Food, só na impressora que a loja escolheu,
