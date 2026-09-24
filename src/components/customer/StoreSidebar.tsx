@@ -45,6 +45,7 @@ export default function StoreSidebar({
   mostrarCompras = false,
   isAdmin = false,
   caixaAberto = false,
+  permissoesDoFuncionario = null,
 }: {
   nomeDaLoja: string;
   /** A logo que a loja cadastrou. Sem ela, vale a chama do FireHub. */
@@ -61,6 +62,12 @@ export default function StoreSidebar({
    * aqui custa um aviso a menos; não errar o logout, que é o que o botão faz.
    */
   caixaAberto?: boolean;
+  /**
+   * CSV de `User.permissions` quando quem entrou é FUNCIONÁRIO; `null` para o
+   * dono e o admin. O menu mostra só as telas que as caixinhas dele abrem —
+   * ver lib/permissao-da-tela.ts.
+   */
+  permissoesDoFuncionario?: string | null;
 }) {
   const pathname = usePathname();
   const [recolhida, setRecolhida] = useState(false);
@@ -154,7 +161,7 @@ export default function StoreSidebar({
     });
   };
 
-  const grupos = menuDaLoja({ antecipacao: mostrarAntecipacao, compras: mostrarCompras });
+  const grupos = menuDaLoja({ antecipacao: mostrarAntecipacao, compras: mostrarCompras, permissoesDoFuncionario });
 
   // O caminho COM o # — é o que distingue "Entrega" de "Pagamento", que são
   // a mesma rota. `usePathname` não enxerga hash, então vem do próprio

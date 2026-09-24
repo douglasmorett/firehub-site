@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { funcionarioAbre, primeiraTelaDoFuncionario } from "@/lib/permissao-da-tela";
 
 // ─── CORS: allowed origins (lista fixa aqui, sem import de config) ───
 const ALLOWED_ORIGINS = [
@@ -59,6 +60,35 @@ function safeUrl(path: string, base: string): URL {
     }
   } catch (e) {}
   return new URL(path, "https://firehubfood.com.br");
+}
+
+/**
+ * As permissões do funcionário AGORA, e não as do dia em que ele entrou.
+ *
+ * O cookie de login guarda `permissions` do momento do login e não se
+ * atualiza: o dono da Frangoso desmarcou as caixinhas às 20:11 e o caixa,
+ * logado desde antes, continuaria com o acesso antigo até sair e entrar de
+ * novo. Então lê do banco — só para STAFF, com 15 s de memória, para trocar
+ * de tela não virar uma consulta a cada clique. Se o banco falhar, vale o
+ * cookie: ele é o que o funcionário tinha, nunca mais do que isso.
+ */
+const PERMISSOES_EM_MEMORIA = new Map<string, { csv: string; ate: number }>();
+async function permissoesAtuais(token: Record<string, unknown>): Promise<string> {
+  const doCookie = String(token.permissions ?? "");
+  const id = String(token.id ?? token.sub ?? "");
+  if (!id) return doCookie;
+  const guardada = PERMISSOES_EM_MEMORIA.get(id);
+  if (guardada && guardada.ate > Date.now()) return guardada.csv;
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    const usuario = await prisma.user.findUnique({ where: { id }, select: { permissions: true } });
+    const csv = usuario?.permissions ?? "";
+    PERMISSOES_EM_MEMORIA.set(id, { csv, ate: Date.now() + 15_000 });
+    return csv;
+  } catch (e) {
+    console.error("[proxy] Não consegui ler as permissões do funcionário:", (e as Error)?.message);
+    return doCookie;
+  }
 }
 
 // Next 16 renomeou a convenção `middleware` para `proxy` (roda no runtime
@@ -184,6 +214,19 @@ export async function proxy(request: NextRequest) {
     }
 
     // Controle de role é feito server-side em cada page/layout
+
+    // ── FUNCIONÁRIO SÓ ABRE O QUE O DONO MARCOU ─────────────────────────
+    // As caixinhas de "Equipe & permissões" não eram lidas por tela nenhuma:
+    // o caixa da Frangoso abria o financeiro (lib/permissao-da-tela.ts).
+    // É aqui, e não no layout, porque o layout não roda de novo quando se
+    // troca de tela pelo menu; o proxy roda em toda navegação.
+    if ((token as any).role === "STAFF") {
+      const permissoes = await permissoesAtuais(token as Record<string, unknown>);
+      if (!funcionarioAbre(pathname, permissoes)) {
+        const destino = primeiraTelaDoFuncionario(permissoes);
+        if (destino !== pathname) return NextResponse.redirect(safeUrl(destino, request.url));
+      }
+    }
   }
 
   // ─── Build response with security headers ───

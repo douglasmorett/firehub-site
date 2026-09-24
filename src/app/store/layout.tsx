@@ -35,7 +35,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   try {
     user = await prisma.user.findUnique({
       where: { email: session.user?.email || "" },
-      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true, storeLogo: true },
+      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, permissions: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true, storeLogo: true },
     });
     console.log("[StoreLayout] Session Email:", session.user?.email, "| User Email from DB:", user?.email);
   } catch (err) {
@@ -145,6 +145,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           mostrarCompras={storeOwner?.isFranqueadoHakim === true}
           isAdmin={isAdmin}
           caixaAberto={storeOwner?.cashOpen ?? false}
+          permissoesDoFuncionario={user?.role === "STAFF" ? String(user?.permissions ?? "") : null}
         />
         {/* fh-conteudo: no celular o conteúdo começa ABAIXO da barra de
             aplicativo (a regra mora no CSS da StoreSidebar). Sem esta reserva,

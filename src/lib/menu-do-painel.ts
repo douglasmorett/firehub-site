@@ -13,6 +13,7 @@
  * depois ("Gestão"), quem trabalha com ele ("Equipe") e o que se configura uma
  * vez ("Configurações").
  */
+import { funcionarioAbre } from "@/lib/permissao-da-tela";
 
 export type ItemDoMenu = {
   href: string;
@@ -124,10 +125,27 @@ export function itemAtivo(pathname: string | null | undefined): ItemDoMenu | nul
   return achado;
 }
 
-/** O menu filtrado pelo que esta loja tem direito de ver. */
-export function menuDaLoja(opcoes: { antecipacao?: boolean; compras?: boolean }): GrupoDoMenu[] {
+/**
+ * O menu filtrado pelo que esta loja tem direito de ver — e, para
+ * funcionário, pelo que o dono marcou em "Equipe & permissões".
+ *
+ * `permissoesDoFuncionario` é o CSV de `User.permissions`, e só vem para
+ * `role === "STAFF"`; `null` (dono, admin) é o menu inteiro. Item que o
+ * funcionário não abre sai do menu: o proxy já o mandaria de volta, e um
+ * botão que não leva a lugar nenhum é pior que botão nenhum.
+ */
+export function menuDaLoja(opcoes: {
+  antecipacao?: boolean;
+  compras?: boolean;
+  permissoesDoFuncionario?: string | null;
+}): GrupoDoMenu[] {
+  const funcionario = opcoes.permissoesDoFuncionario;
+  const abre = (href: string) => funcionario == null || funcionarioAbre(href, funcionario);
   return MENU_DO_PAINEL.map((g) => ({
     titulo: g.titulo,
-    itens: g.itens.filter((i) => !i.somenteCom || opcoes[i.somenteCom] === true),
+    itens: g.itens
+      .filter((i) => !i.somenteCom || opcoes[i.somenteCom] === true)
+      .filter((i) => abre(i.href))
+      .map((i) => (i.filhos ? { ...i, filhos: i.filhos.filter((f) => abre(f.href)) } : i)),
   })).filter((g) => g.itens.length > 0);
 }
