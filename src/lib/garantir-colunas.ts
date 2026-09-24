@@ -66,6 +66,15 @@ const INSTRUCOES = [
   // Regras do KDS fora das telas: categoria que só aparece na finalização
   // (lib/kds-telas.ts, `lerKdsConfig`).
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "kdsConfig" JSONB`,
+  // ESTOQUE DISPONÍVEL do produto, o "acabou, fecha" do iFood
+  // (lib/estoque-do-cardapio.ts). Nulo = sem controle, que é como todo
+  // produto já cadastrado continua. O restante não é gravado: é a quantidade
+  // informada menos o que foi vendido desde `estoqueDesde`, então cancelamento
+  // devolve sozinho e pedido de qualquer canal conta.
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "estoqueQtd" INTEGER`,
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "estoqueDesde" TIMESTAMP(3)`,
+  // "Zerou o estoque, pausar o item?" — nulo conta como SIM.
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "estoquePausar" BOOLEAN`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -85,6 +94,9 @@ const ESPERADAS = [
   "Motoboy.modeloDePagamento",
   "User.modelosDePagamento",
   "User.kdsConfig",
+  "MenuProduct.estoqueQtd",
+  "MenuProduct.estoqueDesde",
+  "MenuProduct.estoquePausar",
 ];
 
 /**
@@ -160,12 +172,14 @@ export async function garantirColunasDePreco(): Promise<void> {
       // alarme que ninguém lê no dia em que a coluna faltar de verdade.
       const rows = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
-        WHERE table_name IN ('MenuProduct', 'ComboGroupItem', 'CustomerOrder', 'Motoboy', 'User')
+        WHERE table_name IN ('MenuProduct', 'ComboGroup', 'ComboGroupItem', 'CustomerOrder', 'Motoboy', 'User')
           AND column_name IN (
-            'priceSalao', 'priceDelivery', 'priceTotem', 'apenasEmCombo',
+            'priceSalao', 'priceDelivery', 'priceTotem', 'promoPrice', 'apenasEmCombo',
+            'priceRule',
             'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem',
             'trilhaPremio', 'entregaGratis', 'faixasDeKm',
-            'modeloDePagamento', 'modelosDePagamento'
+            'modeloDePagamento', 'modelosDePagamento', 'kdsConfig',
+            'estoqueQtd', 'estoqueDesde', 'estoquePausar'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));

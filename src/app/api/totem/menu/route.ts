@@ -5,6 +5,7 @@ import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja, idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
+import { aplicarEstoqueNaVitrine, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 import { precoMinimoDoProduto, precoVariaPorEscolha, precoMinimoAntesDaPromocao } from "@/lib/preco-combo";
 
 export const dynamic = "force-dynamic";
@@ -74,8 +75,12 @@ export async function GET(req: NextRequest) {
 
     // Canal TOTEM: o preço que o quiosque anuncia é o do canal, resolvido aqui
     // na origem — a coluna sai do payload e a tela segue vendo um `price` só.
+    // Esgotado (estoque disponível zerado) sai do quiosque como o fora do dia.
     const doDia = aplicarPrecoNoCardapio(
-      products.filter((p) => disponivelHoje(p.availableDays, hojeNaLoja)) as any[],
+      aplicarEstoqueNaVitrine(
+        products.filter((p) => disponivelHoje(p.availableDays, hojeNaLoja)),
+        await estoqueDaLojaOuVazio(lojaId)
+      ) as any[],
       "totem"
     );
 

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { orderByCardapio } from "@/lib/menu-order";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
+import { aplicarEstoqueNaVitrine, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 import { notFound, redirect } from "next/navigation";
 import { slugAtualDeUmAntigo } from "@/lib/slug-da-loja";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
@@ -234,7 +235,12 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   const hojeNaLoja = diaDaSemanaDaLoja(franchisee.storeTimezone);
   const menuDoDia = (menuProducts as any[]).filter((p) => disponivelHoje(p.availableDays, hojeNaLoja));
 
-  const menuComPrecoDoCanal = aplicarPrecoNoCardapio(menuDoDia as any[], "delivery");
+  // Estoque disponível: o que esgotou fecha, igual ao iFood. O que ainda tem
+  // leva o restante junto, para o carrinho não deixar pedir mais do que há —
+  // o servidor confere de novo na hora de gravar (esta página é cacheada).
+  const menuComEstoque = aplicarEstoqueNaVitrine(menuDoDia, await estoqueDaLojaOuVazio(franchisee.id));
+
+  const menuComPrecoDoCanal = aplicarPrecoNoCardapio(menuComEstoque as any[], "delivery");
 
   return (
     <CustomerStorePage
