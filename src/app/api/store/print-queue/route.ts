@@ -561,7 +561,12 @@ export async function GET(req: NextRequest) {
 
     const jobsReimpressos = reimpressoes.map((pedida) => {
       const order: any = pedida.payload || {};
-      const destinos = destinosDoPedido(printers, order);
+      // "Imprimir teste" de UMA impressora (PrinterSetupClient): sai só nela.
+      // Roteado como pedido, o item de teste — sem categoria — saía em todas.
+      const alvo = typeof order.impressoraAlvo === "string" ? order.impressoraAlvo.trim() : "";
+      const destinos = alvo
+        ? [{ impressora: printers.find((p) => String(p?.name || "").trim() === alvo) || { name: alvo }, itens: order.items || [] }]
+        : destinosDoPedido(printers, order);
       return {
         id: "job_" + pedida.id,
         order: {

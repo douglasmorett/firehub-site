@@ -8,6 +8,7 @@ import {
   type ModuloDePedido,
 } from "@/lib/modulo-do-pedido";
 import ComandaModeloEditor from "./ComandaModeloEditor";
+import { traduzErroDeImpressao } from "@/lib/erro-de-impressao";
 import AvisoDownloadWindows from "@/components/AvisoDownloadWindows";
 import { VERSAO_COM_MODELO_POR_IMPRESSORA, type ModeloDeComanda } from "@/lib/comanda-modelo";
 import {
@@ -395,11 +396,46 @@ export default function PrinterSetupClient({
     }
   };
 
+  // ── O TESTE É DESTA IMPRESSORA, E DIZ A VERDADE ──
+  //
+  // Mandava o teste para a fila da nuvem SEM dizer a impressora — o item de
+  // teste não tem categoria, então saía em TODAS — e, junto, direto nesta. E
+  // dizia "✅ enviada" sem olhar a resposta. Na Ragnar Burger (24/09/2026) a
+  // BALCAO estava recusada pelo Windows havia horas: a cada "Imprimir teste"
+  // dela saía papel no bar e nas cozinhas, a tela dizia ✅, e a loja concluía
+  // que a impressora estava boa.
   const testPrint = async (printerName: string, label: string) => {
     setTestingPrinter(printerName);
+    const nome = label || printerName || "Impressora";
     try {
-      // 1. Envia para a Fila de Impressão na Nuvem
-      await fetch("/api/store/print-queue", {
+      // 1. Direto no Assistente deste computador, respeitando a largura.
+      //    /print-test ignora "columns" no assistente instalado — printTestReceipt
+      //    vai por /print, que honra 58/80 e a calibracao fina hoje mesmo.
+      const entry = config.printers.find(p => p.name === printerName);
+      const { printTestReceipt } = await import("@/lib/print");
+      const r = await printTestReceipt(
+        printerName,
+        storeName,
+        entry?.paperWidth || config.defaultPaperWidth || "80mm",
+        entry?.columns,
+        // O slug entra só para a URL do QR de teste; não é gravado na config.
+        { ...config, storeSlug } as any,
+        entry?.escposProfile
+      );
+
+      if (r.ok) {
+        alert(`✅ O Windows aceitou o teste em "${nome}".\n\nSe o papel não sair em alguns segundos, a impressora está desligada, sem papel ou com o cabo solto.`);
+        return;
+      }
+      if (!r.semAssistente) {
+        const motivo = traduzErroDeImpressao(r.erro) || "o Windows recusou a impressora";
+        alert(`❌ O teste NÃO saiu em "${nome}" (${printerName}).\n\nMotivo: ${motivo}.`);
+        return;
+      }
+
+      // 2. Nenhum Assistente neste computador (painel no celular, PC que não
+      //    é o do caixa): vai pela fila da nuvem, SÓ para esta impressora.
+      const res = await fetch("/api/store/print-queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -413,27 +449,14 @@ export default function PrinterSetupClient({
             items: [{ name: "Item Teste Impressão FireHub", qty: 1, price: 10.00 }],
             totalAmount: 10.00,
             notes: "Teste de Impressão Direta",
+            impressoraAlvo: printerName,
           },
           storeName,
         }),
       });
+      if (!res.ok) throw new Error("a fila da nuvem não aceitou o teste");
 
-      // 2. Envio direto no assistente local, respeitando a largura configurada.
-      //    /print-test ignora "columns" no assistente instalado — printTestReceipt
-      //    vai por /print, que honra 58/80 e a calibracao fina hoje mesmo.
-      const entry = config.printers.find(p => p.name === printerName);
-      const { printTestReceipt } = await import("@/lib/print");
-      await printTestReceipt(
-        printerName,
-        storeName,
-        entry?.paperWidth || config.defaultPaperWidth || "80mm",
-        entry?.columns,
-        // O slug entra só para a URL do QR de teste; não é gravado na config.
-        { ...config, storeSlug } as any,
-        entry?.escposProfile
-      );
-
-      alert(`✅ Impressão de teste enviada para "${label || printerName || "Impressora"}"!\n\nA comanda sairá na impressora em poucos segundos.`);
+      alert(`📨 Este computador não está com o Assistente aberto.\n\nO teste foi pela internet e sai em "${nome}" quando o Assistente do computador do caixa buscar a fila (em segundos). Se não sair, veja o aviso de impressão no painel.`);
     } catch (e: any) {
       alert(`❌ Erro ao enviar teste: ${e.message}`);
     } finally {

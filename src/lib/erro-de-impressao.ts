@@ -14,6 +14,10 @@ const WIN32: Record<string, string> = {
   "1722": "o serviço de impressão do Windows (spooler) não está respondendo — reinicie o PC",
   "1727": "o serviço de impressão do Windows (spooler) não está respondendo — reinicie o PC",
   "1906": "a impressora está pausada ou em erro no Windows",
+  // Ragnar Burger, 24/09/2026: impressora ligada e com papel, 19 comandas
+  // presas. O Windows ainda lista o nome, mas a fila foi excluída (ou
+  // reinstalada com outro nome) e ficou "excluindo" com trabalhos dentro.
+  "1905": "essa impressora foi excluída do Windows — escolha na tela de Impressoras o nome que aparece hoje (ou reinicie o PC)",
   "2": "o Windows não encontrou o driver da impressora",
 };
 

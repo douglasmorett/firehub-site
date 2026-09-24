@@ -20,6 +20,7 @@
  */
 import { moduloDoPedido, impressoraAtendeModulo, type ModuloDePedido } from "./modulo-do-pedido";
 import { impressorasDaLoja, type PedidoComOrigem } from "./loja-de-origem";
+import { CATEGORIAS_DE_INTEGRACAO } from "./cardapio-interno";
 
 export type ImpressoraConfigurada = {
   name?: string | null;
@@ -47,6 +48,26 @@ type ItemDoPedido = {
 
 const texto = (v: unknown) => String(v ?? "").toLowerCase().trim();
 
+/** Sem acento: "Jotajá" no chip, "JOTAJA" no source do pedido. */
+const semAcento = (v: unknown) => texto(v).normalize("NFD").replace(/\p{M}/gu, "");
+
+const categoriaDoItem = (item: ItemDoPedido | null | undefined) =>
+  texto(item?.category ?? item?.menuProduct?.category);
+
+/**
+ * Categoria de ESPELHO de plataforma ("iFood", "99Food", "Brendi"...): diz de
+ * onde o item veio, não o que ele é. Mesma lista de lib/categoria-do-item.ts,
+ * que não dá para importar aqui porque puxa o Prisma e este arquivo roda
+ * também no navegador.
+ */
+const DE_INTEGRACAO = new Set([...CATEGORIAS_DE_INTEGRACAO, "BRENDI", "WABIZ"].map(semAcento));
+
+/** O nome não diz o que o item é: espelho de plataforma ou o próprio canal. */
+const ehCategoriaDeOrigem = (categoria: string, source: unknown) => {
+  const c = semAcento(categoria);
+  return DE_INTEGRACAO.has(c) || (c !== "" && c === semAcento(source));
+};
+
 /**
  * A impressora está marcada com o CANAL do pedido em vez de uma categoria?
  *
@@ -68,19 +89,63 @@ function casaComOCanal(impressora: ImpressoraConfigurada, source: unknown): bool
 }
 
 /**
+ * As categorias que alguma impressora DESTE pedido pediu pelo nome.
+ *
+ * `impressoras` são só as que vão receber o pedido (já filtradas por loja e
+ * por módulo): a cerveja de um pedido de delivery não é "do balcão" se o
+ * balcão só atende o salão.
+ *
+ * Não entram: a impressora sem filtro (recebe tudo, não pede nada), a de "só
+ * bebida" (recebe tudo e o Assistente separa) e o chip de PLATAFORMA. O item
+ * espelhado do iFood tem categoria "iFood" — se o chip "iFood" de uma
+ * impressora contasse como pedido, a cozinha deixaria de receber o pedido do
+ * iFood inteiro.
+ */
+export function categoriasPedidas(
+  impressoras: ImpressoraConfigurada[],
+  pedido: { source?: unknown }
+): Set<string> {
+  const pedidas = new Set<string>();
+  for (const imp of impressoras || []) {
+    if (!imp || imp.somenteBebidas === true) continue;
+    for (const c of imp.categories || []) {
+      const cat = texto(c);
+      if (cat && !ehCategoriaDeOrigem(cat, pedido?.source)) pedidas.add(cat);
+    }
+  }
+  return pedidas;
+}
+
+/**
  * Os itens que ESTA impressora deve imprimir deste pedido.
  *
- * Devolve `null` quando a impressora não deve imprimir NADA — hoje só acontece
- * quando ela não atende o módulo do pedido.
+ * Devolve `null` quando a impressora não deve imprimir NADA: não atende o
+ * módulo do pedido, ou o pedido não tem nada dela.
+ *
+ * `pedidas` (de `categoriasPedidas`) é o que as OUTRAS impressoras do pedido
+ * pediram. Sem ele, a regra é a antiga: nenhum item casou, imprime tudo.
  */
 export function itensParaImpressora<T extends ItemDoPedido>(
   impressora: ImpressoraConfigurada,
-  pedido: { source?: unknown; items?: T[] | null }
+  pedido: { source?: unknown; items?: T[] | null },
+  pedidas?: Set<string>
+): T[] | null {
+  const modulo: ModuloDePedido = moduloDoPedido(pedido?.source as any);
+  if (!impressoraAtendeModulo(impressora.modulos as any, modulo)) return null;
+  return itensDaImpressora(impressora, pedido, pedidas);
+}
+
+/**
+ * O filtro por categoria, sem olhar o módulo. É a parte que o navegador
+ * (lib/print.ts) usa: ele escolhe as impressoras do módulo por conta própria,
+ * com o resgate de "nenhuma impressora deste módulo = todas".
+ */
+export function itensDaImpressora<T extends ItemDoPedido>(
+  impressora: ImpressoraConfigurada,
+  pedido: { source?: unknown; items?: T[] | null },
+  pedidas?: Set<string>
 ): T[] | null {
   const itens = pedido?.items || [];
-  const modulo: ModuloDePedido = moduloDoPedido(pedido?.source as any);
-
-  if (!impressoraAtendeModulo(impressora.modulos as any, modulo)) return null;
 
   // Só bebida NÃO passa pelo filtro de categoria, e isso é o ponto: o combo tem
   // categoria "Combos", seria descartado, e a bebida de dentro dele nunca seria
@@ -94,14 +159,31 @@ export function itensParaImpressora<T extends ItemDoPedido>(
   if (casaComOCanal(impressora, pedido?.source)) return itens as T[];
 
   const filtrados = itens.filter((item) => {
-    const cat = texto(item?.category ?? item?.menuProduct?.category);
+    const cat = categoriaDoItem(item);
     return categorias.some((c) => texto(c) === cat);
   });
+  if (filtrados.length > 0) return filtrados as T[];
 
-  // Nenhum item casou — nome de categoria sutilmente diferente, item sem
-  // categoria, cardápio importado. Imprime tudo em vez de engolir o pedido:
-  // comanda que não sai é prejuízo, comanda a mais é papel.
-  return (filtrados.length > 0 ? filtrados : itens) as T[];
+  if (!pedidas) return itens as T[];
+
+  // ── NENHUM ITEM É DESTA IMPRESSORA ──
+  //
+  // Imprimia o pedido inteiro, sempre. Na Ragnar Burger (24/09/2026) isso
+  // punha na impressora do BAR (Drinks, Refrigerantes) a comanda inteira de
+  // todo pedido sem bebida — burger, batata, pastel —, e no balcão a de todo
+  // pedido sem cerveja: a divisão por categoria só valia quando o pedido
+  // tinha item daquela impressora.
+  //
+  // O resgate existe para o item que NENHUMA impressora pediu: o espelho do
+  // iFood (categoria "iFood"), a categoria criada depois de configurar as
+  // impressoras, o item sem categoria. Esse continua saindo aqui — comanda
+  // que não sai é prejuízo, comanda a mais é papel. O item que outra
+  // impressora já leva não vem para esta.
+  const deNinguem = itens.filter((item) => {
+    const cat = categoriaDoItem(item);
+    return !cat || ehCategoriaDeOrigem(cat, pedido?.source) || !pedidas.has(cat);
+  });
+  return deNinguem.length > 0 ? (deNinguem as T[]) : null;
 }
 
 /**
@@ -128,14 +210,24 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   // Deduplica pela impressora FÍSICA: duas linhas apontando para o mesmo nome
   // do Windows fariam o mesmo papel sair duas vezes.
   const vistas = new Set<string>();
-  const destinos: { impressora: ImpressoraConfigurada; itens: T[] }[] = [];
-
+  const unicas: ImpressoraConfigurada[] = [];
   for (const imp of validas) {
     const chave = texto(imp.name);
     if (vistas.has(chave)) continue;
     vistas.add(chave);
+    unicas.push(imp);
+  }
 
-    const itens = itensParaImpressora(imp, pedido);
+  // Quem pede o quê, entre as que de fato recebem este pedido.
+  const modulo = moduloDoPedido(pedido?.source as any);
+  const pedidas = categoriasPedidas(
+    unicas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo)),
+    pedido
+  );
+
+  const destinos: { impressora: ImpressoraConfigurada; itens: T[] }[] = [];
+  for (const imp of unicas) {
+    const itens = itensParaImpressora(imp, pedido, pedidas);
     if (itens === null) continue;
     destinos.push({ impressora: imp, itens });
   }

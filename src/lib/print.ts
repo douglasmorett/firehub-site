@@ -3,6 +3,7 @@ import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
+import { categoriasPedidas, itensDaImpressora } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDoPedido, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
@@ -288,8 +289,10 @@ async function printToDevice(
   blocos?: Bloco[],
   /** Os avisos que a loja desligou (aba Avisos). Ausente = todos ligados. */
   avisos?: AvisosDesligados
-): Promise<{ ok: boolean; aguardando: boolean }> {
-  const nao = { ok: false, aguardando: false };
+): Promise<{ ok: boolean; aguardando: boolean; semAssistente?: boolean; erro?: string }> {
+  // `semAssistente`: ninguém respondeu neste computador — diferente de o
+  // Assistente responder que a impressora falhou (aí vem `erro`).
+  const nao = { ok: false, aguardando: false, semAssistente: true };
   try {
     const baseUrl = await getAssistantUrl();
     if (!baseUrl) return nao;
@@ -426,7 +429,13 @@ async function printToDevice(
     // falhou nesta impressora e está PENDENTE lá: ele insiste sozinho até
     // sair. Não saiu ainda, mas ninguém precisa mandar de novo.
     if (data?.aguardando) console.warn(`[FireHub Print] ${targetPrinter}: ${data.message || "pendente no Assistente"}`);
-    return { ok: data.ok === true, aguardando: data?.aguardando === true };
+    return {
+      ok: data.ok === true,
+      aguardando: data?.aguardando === true,
+      // O /print responde 500 com { error: "Falha ao enviar dados para
+      // impressora 'X' (Win32 N)" } quando o Windows recusa.
+      erro: data?.ok === true ? undefined : String(data?.error || data?.message || "") || undefined,
+    };
   } catch (err) {
     console.error("[FireHub Print]", err);
     esquecerUrlDoAssistente();
@@ -504,39 +513,27 @@ export async function printOrder(
   // Alguma impressora respondeu "pendente no Assistente": ele vai insistir.
   let aguardando = false;
 
+  // ── CADA IMPRESSORA COM OS SEUS ITENS ──────────────────────────────────
+  // Mesma regra da fila da nuvem (roteamento-de-impressao.ts): só bebida leva
+  // o pedido inteiro e o Assistente separa; categoria leva o que é dela; e o
+  // que NENHUMA impressora pediu vai para as que ficariam sem nada. Aqui a
+  // categoria vem do cardápio aberto na tela (`itemCategories`), e o objeto
+  // do item segue intacto para o papel.
+  const itensComCategoria = order.items.map(item => ({
+    item,
+    category: itemCategories[item.name] || (item as any).category || "",
+  }));
+  const pedidoParaRotear = { source: (order as any).source, items: itensComCategoria };
+  const pedidas = categoriasPedidas(uniquePrinters, pedidoParaRotear);
+
   for (const printer of uniquePrinters) {
     if (!printer.name) continue;
 
-    // Filtra itens por categoria se configurado
-    let itemsToPrint = order.items;
-
-    // Impressora so de bebida NAO passa pelo filtro de categoria, e isso e o
-    // ponto: o "Combo 2 + Guaravita" tem categoria "Combos", entao o filtro o
-    // descartava — e caia no resgate de 'nenhum item casou, imprime tudo',
-    // que mandava o combo INTEIRO para a impressora do bar. Aqui vai o pedido
-    // completo e o Assistente extrai so as bebidas, inclusive as de dentro do
-    // combo. Sem bebida nenhuma, ele nao imprime nada.
-    if (printer.somenteBebidas) {
-      itemsToPrint = order.items;
-    } else if (printer.categories && printer.categories.length > 0) {
-      const matchesChannel = printer.categories.some(c => {
-        const cLower = c.toLowerCase().trim();
-        const srcLower = (order as any).source?.toLowerCase()?.trim() || "";
-        return cLower === srcLower || (cLower === "ifood" && srcLower === "ifood") || (cLower === "jotaja" && srcLower === "jotaja") || (cLower === "jotajá" && srcLower === "jotaja");
-      });
-
-      if (!matchesChannel) {
-        itemsToPrint = order.items.filter(item => {
-          const cat = (itemCategories[item.name] || (item as any).category || "").toLowerCase().trim();
-          return printer.categories.some(c => c.toLowerCase().trim() === cat);
-        });
-      }
-
-      // Se nenhum item foi filtrado (ex: nome da categoria sutilmente diferente), imprime tudo para não perder o pedido!
-      if (itemsToPrint.length === 0) {
-        itemsToPrint = order.items;
-      }
-    }
+    const daImpressora = itensDaImpressora(printer, pedidoParaRotear, pedidas);
+    // Nada deste pedido é desta impressora: o bar não recebe a comanda do
+    // burger. (Antes saía o pedido inteiro — ver roteamento-de-impressao.ts.)
+    if (daImpressora === null) continue;
+    const itemsToPrint = daImpressora.map(i => i.item);
 
     const filteredOrder = { ...order, items: itemsToPrint };
 
@@ -596,7 +593,7 @@ export async function printTestReceipt(
   columns?: number,
   printerConfig?: PrinterConfig,
   escposProfile?: EscPosProfile
-): Promise<boolean> {
+): Promise<{ ok: boolean; semAssistente: boolean; erro?: string }> {
   const larguraTxt = columns ? `${paperWidth} / ${columns} col` : paperWidth;
   const dummy = {
     /* id unico: evita a trava anti-duplo-clique de 5s do assistente */
@@ -642,7 +639,7 @@ export async function printTestReceipt(
     // layout de fábrica — e conclui que a tela não funciona.
     blocosDoPedido(printerConfig),
     avisosDoPedido(printerConfig)
-  ).then(r => r.ok);
+  ).then(r => ({ ok: r.ok, semAssistente: r.semAssistente === true, erro: r.erro }));
 }
 
 /* ─── Regua de calibracao de largura ───────────────────────
