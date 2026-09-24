@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.25), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.26), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -1231,6 +1231,18 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // na mão do cliente errado.
   const semValores = order?.semValores === true;
 
+  // ── A LETRA DOS ITENS (Bloco.corpos.linhaDoItem, 1.2.26) ─────────────────
+  //
+  // Pedido do dono (24/09/2026): "tem que dar para deixar os itens do pedido
+  // maior". A observacao ja saia ampliada e o item, que e o que a cozinha
+  // faz, ficava no corpo normal. Ampliado, o nome ocupa a linha inteira (e
+  // quebra em quantas precisar) e o preco desce para a linha de baixo, em
+  // corpo normal e alinhado a direita — em 2x nao cabe "2x X-Bacon Duplo" e
+  // "R$ 59,80" lado a lado numa bobina de 58 mm. Os complementos acompanham
+  // o corpo do item: "- sem cebola" pequeno embaixo de um item grande e o
+  // que a cozinha pula.
+  const corpoDoItem = C("itens", "linhaDoItem", 1);
+
   // 4. RESUMO DO PEDIDO SECTION (Inside Boxes!)
   marcas.fimEntrega = res.length;
   marcas.tituloItens = res.length;
@@ -1287,7 +1299,12 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       // e empurraria a coluna do preço para a esquerda — ou quebraria a linha no
       // meio. É por isso que a faixa "CONTEM BEBIDA" sempre funcionou: lá a
       // inversão envolve a linha inteira, já montada.
-      res += marcarBebida(makeBoxLine(`${qty}x ${itemLabel}`, priceStr), isItemBev);
+      if (corpoDoItem > 1) {
+        res += marcarBebida(ampliado(`${qty}x ${itemLabel}`, corpoDoItem, { negrito: true }), isItemBev);
+        if (priceStr) res += makeBoxLine("", priceStr);
+      } else {
+        res += marcarBebida(makeBoxLine(`${qty}x ${itemLabel}`, priceStr), isItemBev);
+      }
 
       if (comboSels.length > 0) {
         comboSels.forEach((sel) => {
@@ -1317,10 +1334,17 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
             : "";
 
           const rotulo = `  - ${qPrefix}${selName}${selBevTag}`;
-          res += marcarBebida(
-            addStr ? makeBoxLine(rotulo, addStr) : makeBoxText(rotulo),
-            isSelBev
-          );
+          if (corpoDoItem > 1) {
+            // Sem o recuo de dois espacos: em corpo ampliado ele come a
+            // coluna que falta para o nome (mesma regra da observacao).
+            res += marcarBebida(ampliado(`- ${qPrefix}${selName}${selBevTag}`, corpoDoItem), isSelBev);
+            if (addStr) res += makeBoxLine("", addStr);
+          } else {
+            res += marcarBebida(
+              addStr ? makeBoxLine(rotulo, addStr) : makeBoxText(rotulo),
+              isSelBev
+            );
+          }
         });
       }
 
@@ -1698,10 +1722,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.25";
-export const ASSINATURA_DO_CODIGO = "2240f279304157ac";
+export const VERSAO_DO_ASSISTENTE = "1.2.26";
+export const ASSINATURA_DO_CODIGO = "1146099da00b6bae";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.25 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.26 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }

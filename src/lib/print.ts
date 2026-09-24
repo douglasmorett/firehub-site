@@ -5,7 +5,7 @@ import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } 
 import { impressorasDaLoja } from "./loja-de-origem";
 import { categoriasPedidas, itensDaImpressora, restoDoPedido } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
-import { avisosDoPedido, blocosDoPedido, type AvisosDesligados, type Bloco } from "./comanda-modelo";
+import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -99,7 +99,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.25";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.26";
 
 /** "1.2.10" é mais nova que "1.2.9": compara por número, não por texto. */
 export function versaoAssistenteAoMenos(versao: string | null | undefined, minima: string): boolean {
@@ -592,7 +592,9 @@ export async function printOrder(
       printerConfig,
       resolveColumns(printer) ?? printerConfig?.defaultColumns,
       printer.escposProfile,
-      semValores,
+      // O botão "Cupom da cozinha" força sem valores em todas; o modelo da
+      // impressora ("Cozinha sem valores") força só nela.
+      semValores || semValoresDaImpressora(printerConfig, (printer as any).modeloId),
       printer.somenteBebidas === true,
       printer.separarItens === true,
       qrLigadoNaImpressora(printer, printerConfig as any),
@@ -604,7 +606,10 @@ export async function printOrder(
       // o mesmo modelo para todas as impressoras, e o defeito só aparecia em
       // loja com mais de uma. Impressora sem `modeloId` (inclusive a sintética
       // de resgate, que não tem cadastro) cai no modelo padrão da loja.
-      blocosDoPedido(printerConfig, { semValores, modeloId: (printer as any).modeloId }),
+      blocosDoPedido(printerConfig, {
+        semValores: semValores || semValoresDaImpressora(printerConfig, (printer as any).modeloId),
+        modeloId: (printer as any).modeloId,
+      }),
       avisosDoPedido(printerConfig, { modeloId: (printer as any).modeloId })
     );
     if (result.ok) printed++;
@@ -661,17 +666,22 @@ export async function printTestReceipt(
     printerConfig || ({ autoprint: true, autoBeverageTag: false, printers: [] } as PrinterConfig),
     columns,
     escposProfile,
-    false,
+    // O modelo DESTA impressora decide: com "Cozinha sem valores" o teste
+    // sai sem valores, que é o que o lojista quer conferir antes do pedido.
+    semValoresDaImpressora(printerConfig, (entrada as any)?.modeloId),
     false,
     // Impressao de teste sai agrupada: ela existe para conferir o LAYOUT.
     entrada?.separarItens === true,
     qrLigadoNaImpressora(entrada, printerConfig as any),
     undefined,
-    // O teste tem que sair com o MODELO da loja, senão o lojista aperta
-    // "Imprimir teste" para conferir o que acabou de montar e recebe o
-    // layout de fábrica — e conclui que a tela não funciona.
-    blocosDoPedido(printerConfig),
-    avisosDoPedido(printerConfig)
+    // O teste tem que sair com o MODELO da impressora, senão o lojista aperta
+    // "Imprimir teste" para conferir o que acabou de montar e recebe outro
+    // layout — e conclui que a tela não funciona.
+    blocosDoPedido(printerConfig, {
+      modeloId: (entrada as any)?.modeloId,
+      semValores: semValoresDaImpressora(printerConfig, (entrada as any)?.modeloId),
+    }),
+    avisosDoPedido(printerConfig, { modeloId: (entrada as any)?.modeloId })
   ).then(r => ({ ok: r.ok, semAssistente: r.semAssistente === true, erro: r.erro }));
 }
 

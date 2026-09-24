@@ -9,7 +9,7 @@ import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 import { comboParaImpressao } from "@/lib/parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
-import { avisosDoPedido, blocosDoPedido } from "@/lib/comanda-modelo";
+import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
@@ -549,6 +549,13 @@ export async function GET(req: NextRequest) {
         // Impressora com modelo próprio leva os avisos DELE — inclusive "nenhum
         // desligado" ({}), senão herdaria os do modelo padrão da loja.
         ...(avisosDaImpressora(d.impressora as any) ? { avisos: avisosDaImpressora(d.impressora as any) } : {}),
+        // ── SEM VALORES POR IMPRESSORA ────────────────────────────────────
+        // A cozinha com o modelo "Cozinha sem valores": nem preço de item nem
+        // total. O `blocos` acima já é a via da cozinha desse modelo; esta
+        // marca tira o preço da linha do item, que nenhum bloco controla.
+        // Campo ADITIVO: Assistente < 1.2.26 ignora e imprime com valores,
+        // como sempre imprimiu.
+        ...(semValoresDaImpressora(pc, (d.impressora as any)?.modeloId) ? { semValores: true } : {}),
       })),
       createdAt: order.createdAt.toISOString(),
       };

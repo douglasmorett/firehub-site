@@ -17,7 +17,10 @@ import {
 import ComandaModeloEditor from "./ComandaModeloEditor";
 import { traduzErroDeImpressao } from "@/lib/erro-de-impressao";
 import AvisoDownloadWindows from "@/components/AvisoDownloadWindows";
-import { VERSAO_COM_MODELO_POR_IMPRESSORA, type ModeloDeComanda } from "@/lib/comanda-modelo";
+import {
+  VERSAO_COM_MODELO_POR_IMPRESSORA, VERSAO_COM_SEM_VALORES_POR_IMPRESSORA, lerModelo, modelosDisponiveis, ehModeloPronto,
+  type ModeloDeComanda,
+} from "@/lib/comanda-modelo";
 import {
   contaSaiNestaImpressora,
   impressorasDaContaDaMesa,
@@ -119,8 +122,12 @@ export default function PrinterSetupClient({
     );
     return { ...resto, printers, autoprint: resto.autoprint !== undefined ? resto.autoprint : true };
   });
-  /** Os modelos que a loja criou (tela do modelo da comanda). */
-  const modelosDaLoja = (config.comandaModelo?.modelos || []).filter(m => m && m.id);
+  /**
+   * Os modelos que cada impressora pode escolher: os dois PRONTOS ("Comanda
+   * detalhada" e "Cozinha sem valores", ou a versão que a loja editou deles)
+   * e os que a loja criou em Personalizar impressão.
+   */
+  const modelosDaLoja = modelosDisponiveis(lerModelo(config.comandaModelo));
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -847,11 +854,16 @@ export default function PrinterSetupClient({
         )}
 
         {config.printers.map((printer, idx) => (
-          <div key={printer.id} style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: "1px solid #E2E8F0", marginBottom: "1rem" }}>
+          // ── A CAIXA DE CADA IMPRESSORA ──────────────────────────────────────
+          // Borda de 1 px cinza-clara sobre o fundo quase branco: com três
+          // impressoras não se via onde uma acabava e a outra começava (queixa
+          // do dono, 24/09/2026). Agora cada uma tem borda forte, sombra, uma
+          // faixa de cabeçalho com o número e espaço de sobra até a próxima.
+          <div key={printer.id} style={{ background: "#fff", borderRadius: 18, padding: "1.25rem 1.5rem", border: "2px solid #CBD5E1", boxShadow: "0 6px 18px rgba(15, 23, 42, 0.08)", marginBottom: "2rem" }}>
             {/* Nome e apelido */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1rem", flexWrap: "wrap" }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: "#FFF4EF", border: "1px solid #FFD3C2", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.85rem", color: "#9A3412", flexShrink: 0 }}>
-                {idx + 1}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "-1.25rem -1.5rem 1.25rem", padding: "0.9rem 1.5rem", background: "#FFF1EA", borderBottom: "2px solid #FFD3C2", borderRadius: "16px 16px 0 0" }}>
+              <div style={{ minWidth: 34, height: 34, padding: "0 10px", borderRadius: 10, background: "#C2410C", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "0.8rem", color: "#fff", flexShrink: 0, letterSpacing: "0.02em" }}>
+                IMPRESSORA {idx + 1}
               </div>
               <input
                 value={printer.label}
@@ -1154,7 +1166,7 @@ export default function PrinterSetupClient({
                 agora a loja cria quantos quiser na tela do modelo e aponta um
                 aqui. Sem escolher nada, continua saindo o modelo padrão — que
                 é o que toda impressora já cadastrada faz hoje. */}
-            {modelosDaLoja.length > 0 && (
+            {(
               <div style={{ marginBottom: "1rem" }}>
                 <label style={{ fontSize: "0.78rem", fontWeight: 800, color: "#334155", display: "block", marginBottom: 6 }}>
                   🧾 Modelo de comanda
@@ -1167,13 +1179,22 @@ export default function PrinterSetupClient({
                 >
                   <option value="">Modelo padrão da loja</option>
                   {modelosDaLoja.map(m => (
-                    <option key={m.id} value={m.id}>{m.nome}</option>
+                    <option key={m.id} value={m.id}>
+                      {m.nome}{ehModeloPronto(m.id) ? " (pronto)" : ""}{m.semValores ? " — sem valores" : ""}
+                    </option>
                   ))}
                 </select>
                 <p style={{ fontSize: "0.74rem", color: "#64748B", margin: "6px 0 0", lineHeight: 1.45 }}>
-                  Crie e edite os modelos em <strong>Modelo da comanda</strong>. Cada impressora
-                  pode usar um: a da cozinha sem preço, a do caixa completa.
+                  <strong>Comanda detalhada</strong>: tudo, com valores e pagamento. <strong>Cozinha sem valores</strong>:
+                  só o que a cozinha precisa para montar, com os itens em letra grande e sem nenhum preço.
+                  Ajuste os dois (ou crie outros) em <strong>Personalizar impressão</strong>.
                 </p>
+                {modelosDaLoja.find(m => m.id === printer.modeloId)?.semValores && (
+                  <p style={{ fontSize: "0.74rem", color: "#0F766E", margin: "6px 0 0", fontWeight: 700 }}>
+                    ✓ Esta impressora imprime sem valores: nem preço de item, nem total. Precisa do
+                    Assistente {VERSAO_COM_SEM_VALORES_POR_IMPRESSORA} ou mais novo (ele se atualiza sozinho).
+                  </p>
+                )}
                 {printer.modeloId && versaoDesatualizada && (
                   <p style={{ fontSize: "0.74rem", color: "#B45309", margin: "6px 0 0", fontWeight: 700 }}>
                     Com o painel fechado, o modelo por impressora só vale a partir do

@@ -356,6 +356,17 @@ export type ModeloNomeado = {
   completo: Bloco[];
   /** Os avisos andam com o modelo: a impressora do balcão pode querer outros. */
   avisos?: AvisosDesligados;
+  /**
+   * A impressora que usa este modelo imprime SEM VALORES: nem preço de item,
+   * nem de adicional, nem totais. É a comanda de quem monta o pedido.
+   *
+   * Não basta desligar os blocos de totais e pagamento: o preço de cada item
+   * sai na linha do item, e quem o tira é o `semValores` do pedido, que o
+   * Assistente lê (a partir da 1.2.26, por impressora — ver
+   * VERSAO_COM_SEM_VALORES_POR_IMPRESSORA). Com ele ligado, vale a via
+   * `cozinha` do modelo.
+   */
+  semValores?: boolean;
 };
 
 /**
@@ -666,6 +677,73 @@ export function modeloPadrao(): ModeloDeComanda {
   };
 }
 
+// ── MODELOS PRONTOS ─────────────────────────────────────────────────────────
+//
+// Pedido do dono (24/09/2026): "deixar 2 modelos pré-prontos, comanda
+// detalhada e cozinha sem valores, porque sai a comanda resumida só para
+// fazerem o pedido". Existem para toda loja sem ninguém criar nada: a tela de
+// Impressoras já oferece os dois no seletor de cada impressora.
+//
+// São VIRTUAIS: não ficam gravados até a loja editar um deles. Editou, o
+// modelo entra em `modelos[]` com o MESMO id e passa a valer a versão da loja
+// (`modelosDisponiveis` põe a da loja por cima). Apagar a versão da loja volta
+// ao pronto. O id nunca muda, então a impressora que escolheu o pronto segue
+// apontando para ele depois da edição.
+
+export const ID_MODELO_DETALHADA = "pronto-detalhada";
+export const ID_MODELO_COZINHA = "pronto-cozinha";
+
+/** Assistente que tira os valores POR IMPRESSORA (destino.semValores) e aumenta a letra dos itens. */
+export const VERSAO_COM_SEM_VALORES_POR_IMPRESSORA = "1.2.26";
+
+export function modelosProntos(): ModeloNomeado[] {
+  const padrao = modeloPadrao();
+  const cozinha: Bloco[] = [
+    b("numeroPedido", { tamanho: 3, negrito: true, alinhamento: "centro" }),
+    b("canal", { tamanho: 2, negrito: true, alinhamento: "centro" }),
+    b("avisoEntrega"),
+    b("separador"),
+    b("dataHora"),
+    b("cliente", { titulo: "CLIENTE" }),
+    b("itens", { titulo: "PEDIDO", corpos: { linhaDoItem: 2 } }),
+  ];
+  return [
+    {
+      id: ID_MODELO_DETALHADA,
+      nome: "Comanda detalhada",
+      completo: padrao.completo.map((x) => (x.tipo === "itens" ? { ...x, corpos: { linhaDoItem: 1.5 } } : x)),
+      cozinha: padrao.cozinha,
+    },
+    {
+      id: ID_MODELO_COZINHA,
+      nome: "Cozinha sem valores",
+      semValores: true,
+      cozinha,
+      completo: cozinha,
+    },
+  ];
+}
+
+export function ehModeloPronto(id: string | null | undefined): boolean {
+  return id === ID_MODELO_DETALHADA || id === ID_MODELO_COZINHA;
+}
+
+/**
+ * Todos os modelos que uma impressora pode escolher: os prontos (ou a versão
+ * que a loja editou deles) e os que a loja criou, nesta ordem.
+ */
+export function modelosDisponiveis(modelo: ModeloDeComanda): ModeloNomeado[] {
+  const daLoja = modelo.modelos || [];
+  const prontos = modelosProntos().map((p) => daLoja.find((x) => x.id === p.id) || p);
+  return [...prontos, ...daLoja.filter((x) => !ehModeloPronto(x.id))];
+}
+
+/** O modelo com este id (pronto ou da loja), ou null. */
+export function acharModelo(modelo: ModeloDeComanda, id: string | null | undefined): ModeloNomeado | null {
+  if (!id) return null;
+  return modelosDisponiveis(modelo).find((x) => x.id === id) || null;
+}
+
 /**
  * Guarda só rótulo de chave que existe, e corta o que for grande demais.
  *
@@ -736,6 +814,12 @@ export const VERSAO_COM_CORPO_DO_AVISO = "1.2.21";
  */
 export const CORPOS_DO_BLOCO: Partial<Record<TipoDeBloco, { chave: string; rotulo: string; ajuda: string; padrao: Tamanho }[]>> = {
   itens: [
+    {
+      chave: "linhaDoItem",
+      rotulo: "Letra dos itens",
+      ajuda: "A linha de cada item (\"2x X-Bacon\") e os complementos dele. Maior = a cozinha lê de longe. Precisa do Assistente 1.2.26.",
+      padrao: 1,
+    },
     {
       chave: "avisoDeBebida",
       rotulo: "Faixa CONTÉM BEBIDA",
@@ -817,6 +901,7 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
             cozinha: valida(x.cozinha, padrao.cozinha),
             completo: valida(x.completo, padrao.completo),
             ...(avisosDoExtra ? { avisos: avisosDoExtra } : {}),
+            ...(x.semValores === true ? { semValores: true } : {}),
           };
         })
     : [];
@@ -846,11 +931,19 @@ export function viaDoModelo(
   modelo: ModeloDeComanda,
   opcoes: { modeloId?: string | null; semValores?: boolean } = {},
 ): Bloco[] {
-  const escolhido = opcoes.modeloId
-    ? (modelo.modelos || []).find((x) => x.id === opcoes.modeloId)
-    : null;
+  const escolhido = acharModelo(modelo, opcoes.modeloId);
   const fonte = escolhido || modelo;
-  return opcoes.semValores ? fonte.cozinha : fonte.completo;
+  return opcoes.semValores || escolhido?.semValores ? fonte.cozinha : fonte.completo;
+}
+
+/**
+ * Esta impressora imprime sem valores pelo MODELO que escolheu? (O botão
+ * "Cupom da cozinha" do painel força sem valores por conta própria.)
+ */
+export function semValoresDaImpressora(printerConfig: unknown, modeloId: string | null | undefined): boolean {
+  if (!modeloId) return false;
+  const bruto = (printerConfig as { comandaModelo?: unknown } | null)?.comandaModelo;
+  return acharModelo(lerModelo(bruto), modeloId)?.semValores === true;
 }
 
 /**
@@ -932,8 +1025,11 @@ export function blocosDoPedido(
   opcoes: { semValores?: boolean; modeloId?: string | null } = {},
 ): Bloco[] | undefined {
   const bruto = (printerConfig as { comandaModelo?: unknown } | null)?.comandaModelo;
-  if (!modeloFoiPersonalizado(bruto)) return undefined;
   const modelo = lerModelo(bruto);
+  // Impressora com modelo escolhido (inclusive um PRONTO, que a loja nunca
+  // gravou) leva os blocos dele mesmo quando o padrão da loja é o de fábrica.
+  const temModelo = !!acharModelo(modelo, opcoes.modeloId);
+  if (!modeloFoiPersonalizado(bruto) && !temModelo) return undefined;
   return blocosParaOAssistente(viaDoModelo(modelo, opcoes));
 }
 
@@ -947,9 +1043,9 @@ export function avisosDoPedido(
   opcoes: { modeloId?: string | null } = {},
 ): AvisosDesligados | undefined {
   const bruto = (printerConfig as { comandaModelo?: unknown } | null)?.comandaModelo;
-  if (!modeloFoiPersonalizado(bruto)) return undefined;
   const modelo = lerModelo(bruto);
-  const escolhido = opcoes.modeloId ? (modelo.modelos || []).find((x) => x.id === opcoes.modeloId) : null;
+  const escolhido = acharModelo(modelo, opcoes.modeloId);
+  if (!modeloFoiPersonalizado(bruto) && !escolhido) return undefined;
   return (escolhido || modelo).avisos;
 }
 

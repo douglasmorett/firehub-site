@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchAssistente } from "@/lib/print";
 import ComandaModeloEditor from "../ComandaModeloEditor";
-import { VERSAO_MINIMA_DO_MODELO, lerModelo, modeloPadrao, type ModeloDeComanda, type ModeloNomeado } from "@/lib/comanda-modelo";
+import {
+  VERSAO_MINIMA_DO_MODELO, VERSAO_COM_SEM_VALORES_POR_IMPRESSORA, lerModelo, modeloPadrao, modelosDisponiveis, modelosProntos,
+  acharModelo, ehModeloPronto, type ModeloDeComanda, type ModeloNomeado,
+} from "@/lib/comanda-modelo";
 
 /**
  * A bancada de edição da comanda.
@@ -39,8 +42,12 @@ export default function ComandaModeloClient({
   const [editando, setEditando] = useState<string>("");
 
   const modeloCompleto: ModeloDeComanda = lerModelo(config?.comandaModelo);
-  const extras: ModeloNomeado[] = modeloCompleto.modelos || [];
-  const emEdicao = editando ? extras.find(m => m.id === editando) : null;
+  // Os dois PRONTOS ("Comanda detalhada" e "Cozinha sem valores") aparecem
+  // sempre, antes dos que a loja criou (lib/comanda-modelo.ts).
+  const extras: ModeloNomeado[] = modelosDisponiveis(modeloCompleto);
+  const emEdicao = editando ? acharModelo(modeloCompleto, editando) : null;
+  /** O pronto que a loja já editou (existe em `modelos[]` com o mesmo id). */
+  const prontoEditado = !!emEdicao && ehModeloPronto(emEdicao.id) && (modeloCompleto.modelos || []).some(m => m.id === emEdicao.id);
   // Modelo apagado noutra aba: volta para o padrão em vez de editar o nada.
   // Os avisos (aba Avisos) andam com o modelo, como as duas vias.
   const viasEmEdicao: ModeloDeComanda = emEdicao
@@ -54,13 +61,20 @@ export default function ComandaModeloClient({
       if (!editando) {
         return { ...c, comandaModelo: { ...atual, cozinha: novo.cozinha, completo: novo.completo, avisos: novo.avisos } };
       }
+      const lista = atual.modelos || [];
+      // Pronto nunca editado ainda não está gravado: a primeira edição grava
+      // a versão da loja com o MESMO id, e a impressora que o escolheu segue
+      // apontando para ele.
+      const base = lista.find(m => m.id === editando) || modelosProntos().find(m => m.id === editando);
+      if (!base) return c;
+      const editado = { ...base, cozinha: novo.cozinha, completo: novo.completo, avisos: novo.avisos };
       return {
         ...c,
         comandaModelo: {
           ...atual,
-          modelos: (atual.modelos || []).map(m =>
-            m.id === editando ? { ...m, cozinha: novo.cozinha, completo: novo.completo, avisos: novo.avisos } : m
-          ),
+          modelos: lista.some(m => m.id === editando)
+            ? lista.map(m => (m.id === editando ? editado : m))
+            : [...lista, editado],
         },
       };
     });
@@ -83,6 +97,8 @@ export default function ComandaModeloClient({
     mexerNaLista(lista => [...lista, {
       id, nome: nome.trim().slice(0, 40), cozinha: base.cozinha, completo: base.completo,
       ...(copiarDoAtual && viasEmEdicao.avisos ? { avisos: viasEmEdicao.avisos } : {}),
+      // A cópia do "Cozinha sem valores" continua sem valores.
+      ...(copiarDoAtual && emEdicao?.semValores ? { semValores: true } : {}),
     }]);
     setEditando(id);
   };
@@ -91,7 +107,19 @@ export default function ComandaModeloClient({
     if (!emEdicao) return;
     const nome = prompt("Novo nome:", emEdicao.nome);
     if (!nome || !nome.trim()) return;
-    mexerNaLista(lista => lista.map(m => (m.id === emEdicao.id ? { ...m, nome: nome.trim().slice(0, 40) } : m)));
+    const novoNome = nome.trim().slice(0, 40);
+    mexerNaLista(lista => lista.some(m => m.id === emEdicao.id)
+      ? lista.map(m => (m.id === emEdicao.id ? { ...m, nome: novoNome } : m))
+      : [...lista, { ...emEdicao, nome: novoNome }]);
+  };
+
+  /** Desfaz o que a loja mudou num modelo pronto: volta ao de fábrica. */
+  const restaurarPronto = () => {
+    if (!emEdicao || !prontoEditado) return;
+    if (!confirm(`Voltar "${emEdicao.nome}" ao modelo pronto original?
+
+O que você mudou nele se perde. As impressoras que usam este modelo continuam usando.`)) return;
+    mexerNaLista(lista => lista.filter(m => m.id !== emEdicao.id));
   };
 
   const excluir = () => {
@@ -210,7 +238,7 @@ export default function ComandaModeloClient({
                     color: ativo ? "#fff" : "#475569",
                   }}
                 >
-                  {m.nome}
+                  {m.nome}{ehModeloPronto(m.id) ? " ✦" : ""}
                 </button>
               );
             })}
@@ -229,7 +257,16 @@ export default function ComandaModeloClient({
             >
               Duplicar
             </button>
-            {emEdicao && (
+            {emEdicao && ehModeloPronto(emEdicao.id) && prontoEditado && (
+              <button
+                type="button"
+                onClick={restaurarPronto}
+                style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: "0.76rem", fontWeight: 700, border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569" }}
+              >
+                Restaurar original
+              </button>
+            )}
+            {emEdicao && !ehModeloPronto(emEdicao.id) && (
               <>
                 <button
                   type="button"
@@ -251,7 +288,8 @@ export default function ComandaModeloClient({
 
           <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 1rem", lineHeight: 1.5 }}>
             {emEdicao
-              ? <>Editando <strong>{emEdicao.nome}</strong>. Para uma impressora usar este modelo, escolha ele no cartão dela em <strong>Impressoras</strong>.</>
+              ? <>Editando <strong>{emEdicao.nome}</strong>{ehModeloPronto(emEdicao.id) ? " (modelo pronto ✦ — pode ajustar à vontade)" : ""}. Para uma impressora usar este modelo, escolha ele no cartão dela em <strong>Impressoras</strong>.
+                  {emEdicao.semValores && <> Este modelo sai <strong>sem nenhum valor</strong> no papel: nem preço de item, nem total (Assistente {VERSAO_COM_SEM_VALORES_POR_IMPRESSORA} ou mais novo).</>}</>
               : <>Editando o <strong>modelo padrão</strong> — o que sai em toda impressora que não escolher outro.</>}
           </p>
 
@@ -274,6 +312,7 @@ export default function ComandaModeloClient({
                 modeloId: p.modeloId,
               }))}
             modeloEmEdicao={editando}
+            soSemValores={emEdicao?.semValores === true}
             autoBeverageTag={config.autoBeverageTag}
             customBeverageKeywords={config.customBeverageKeywords}
             onChange={aoEditar}
