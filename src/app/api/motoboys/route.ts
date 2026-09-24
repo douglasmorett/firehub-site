@@ -4,10 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senha";
-import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
-import { ganhoDoPedido, lerAcerto } from "@/lib/ganho-do-entregador";
-import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
-import { canalDoPedido } from "@/lib/canal-do-pedido";
 
 // GET - listar motoboys do franqueado
 export async function GET() {
@@ -24,78 +20,28 @@ export async function GET() {
   // continua entrando com a padrão — a diferença é que ela é conferida no login
   // e gravada como hash naquele momento, em vez de ser semeada no banco.
 
-  // Expediente da loja. Com `setHours(0,0,0,0)` (fuso do container = UTC) as
-  // entregas e os ganhos do motoboy zeravam as 21:00 de Brasilia, no meio do
-  // turno dele — o painel dizia "0 entregas" para quem tinha acabado de rodar a
-  // noite inteira.
-  // Com o fuso DA LOJA: sem argumento a função cai em São Paulo, e fora de SP
-  // a tela da loja e o app do motoboy viravam o dia em instantes diferentes.
-  const today = inicioDoExpedienteDaLoja(user.storeTimezone);
-
-  // A tabela de repasse é do DONO da conta, como no fechamento — conta de
-  // funcionário não tem cadastro de entrega próprio.
-  const donoDaLoja = await prisma.user.findUnique({
-    where: { id: targetFranchiseeId },
-    select: { deliveryZones: true, deliveryConfig: true },
-  }).catch(() => null);
-  const regraDeRepasse = lerRegraDeRepasse(donoDaLoja?.deliveryConfig);
-
+  // ── SÓ O CADASTRO ──────────────────────────────────────────────────────
+  //
+  // Esta lista trazia também o "Hoje: N entregas / Total: R$ X" de cada
+  // entregador, e para isso lia os pedidos do dia de todos eles a cada
+  // abertura — da tela de cadastro, do painel de pedidos e da roteirização.
+  // No cadastro o número confundia (o dono, 23/09/2026: "aparece hoje 0 sempre,
+  // se é área de cadastro não precisa aparecer quanto ele fez hoje"), e as
+  // outras duas telas nunca o usaram. Quanto cada um fez e recebe mora no
+  // relatório de pagamentos (api/motoboy-report) e no fechamento do caixa.
   const motoboys = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId },
     orderBy: [{ active: "desc" }, { name: "asc" }],
-    include: {
-      orders: {
-        where: {
-          createdAt: { gte: today },
-          status: { notIn: ["CANCELADO"] },
-        },
-        // O canal sai de lib/canal-do-pedido.ts e precisa destes: sem eles todo
-        // pedido parece do site e a regra do app nunca se aplicaria.
-        select: {
-          id: true, totalAmount: true, deliveryType: true, deliveryFee: true,
-          motoboyFee: true, deliveryDistance: true, source: true,
-          ifoodOrderId: true, ifoodReference: true,
-          openDeliveryChannel: true, openDeliveryOrderId: true, openDeliveryReference: true,
-        },
-      },
-    },
   });
 
-  // Calculate earnings for each motoboy
-  const result = await Promise.all(motoboys.map(async (mb) => {
-    const todayOrders = mb.orders || [];
-    const deliveryCount = todayOrders.length;
-
-    // A MESMA conta do fechamento (lib/ganho-do-entregador.ts). Antes este
-    // cartão fazia a sua própria: ignorava a escada de km e multiplicava
-    // `perDeliveryRate × entregas` — inclusive o valor sobrando de um tipo de
-    // pagamento antigo. O lojista via aqui um número e no relatório outro.
-    const acerto = lerAcerto(mb as any);
-    const daily = acerto.dailyRate;
-    const deliveryFees =
-      acerto.tipo === "DAILY_PLUS_FEE"
-        ? todayOrders.reduce((sum, o) => sum + (o.deliveryFee || 0), 0)
-        : todayOrders.reduce(
-            (sum, o) => sum + ganhoDoPedido({ acerto, pedido: o, regraDaLoja: regraDeRepasse, zonas: donoDaLoja?.deliveryZones, ehMarketplace: canalDoPedido(o).ehMarketplace }).valor,
-            0,
-          );
-
-    const totalEarnings = Math.round((daily + deliveryFees) * 100) / 100;
-
-    return {
-      ...mb,
-      // A senha saía daqui em texto puro, para toda a lista, a cada carregamento
-      // da tela — bastava abrir a aba de rede do navegador. O painel não precisa
-      // dela: precisa saber quem ainda não trocou a padrão, e poder redefinir.
-      password: undefined,
-      senhaPadrao: await estaNaSenhaPadrao(mb.password),
-      orders: undefined,
-      todayDeliveryCount: deliveryCount,
-      todayDeliveryFees: deliveryFees,
-      todayDailyRate: daily,
-      todayTotalEarnings: totalEarnings,
-    };
-  }));
+  const result = await Promise.all(motoboys.map(async (mb) => ({
+    ...mb,
+    // A senha saía daqui em texto puro, para toda a lista, a cada carregamento
+    // da tela — bastava abrir a aba de rede do navegador. O painel não precisa
+    // dela: precisa saber quem ainda não trocou a padrão, e poder redefinir.
+    password: undefined,
+    senhaPadrao: await estaNaSenhaPadrao(mb.password),
+  })));
 
   return NextResponse.json(result);
 }

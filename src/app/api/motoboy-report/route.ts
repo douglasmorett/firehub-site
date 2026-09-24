@@ -217,8 +217,9 @@ export async function GET(req: Request) {
     // R$ 12,00 com R$ 11,00 abatidos pelo 99Food, e o relatório mostrava
     // "Taxa: R$ 1,00" — um valor que não existe em lugar nenhum do acerto
     // entre a loja e o entregador.
-    // A conta é da lib (lib/ganho-do-entregador.ts): a mesma que o cartão
-    // "Hoje: R$ X" da lista de entregadores usa, para os dois nunca divergirem.
+    // A conta é da lib (lib/ganho-do-entregador.ts): a mesma que o papel do
+    // fechamento de caixa usa (lib/esperado-do-turno.ts), para os dois nunca
+    // divergirem.
     const ganhoDoPedido = (o: { deliveryFee?: number | null; motoboyFee?: number | null; deliveryDistance?: number | null; source?: string | null; [k: string]: any }) =>
       calcularGanho({
         acerto,

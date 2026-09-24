@@ -20,7 +20,6 @@ type Motoboy = {
   faixasDeKm?: FaixaDoMotoboy[];
   /** Id do modelo de onde este acerto foi copiado (lib/modelos-de-pagamento.ts). */
   modeloDePagamento?: string | null;
-  todayDeliveryCount?: number; todayDeliveryFees?: number; todayDailyRate?: number; todayTotalEarnings?: number;
 };
 
 const PAYMENT_TYPES = [
@@ -615,15 +614,10 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
                   {mb.paymentType === "FAIXA_KM" && (mb.faixasDeKm?.length || 0) > 0 ? <span>{mb.faixasDeKm!.length} faixas de km</span> : null}
                   {mb.paymentType === "DAILY_PLUS_FEE" && <span style={{ color: "#1C1917" }}>💰 Recebe taxa do pedido</span>}
                 </div>
-                {/* Resumo do dia */}
-                {mb.active && (mb.todayDeliveryCount ?? 0) >= 0 && (
-                  <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: "0.75rem", flexWrap: "wrap" }}>
-                    <span style={{ background: "#F0FDFA", color: "#0F766E", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>📦 Hoje: {mb.todayDeliveryCount ?? 0} entregas</span>
-                    {(mb.todayDailyRate ?? 0) > 0 && <span style={{ background: "#FAF6F2", color: "#1C1917", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>📅 Diária: R${(mb.todayDailyRate ?? 0).toFixed(2)}</span>}
-                    {(mb.todayDeliveryFees ?? 0) > 0 && <span style={{ background: "#FFF4EF", color: "#B45309", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>🛵 Taxas: R${(mb.todayDeliveryFees ?? 0).toFixed(2)}</span>}
-                    <span style={{ background: "#F0FDFA", color: "#0F766E", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>💰 Total: R${(mb.todayTotalEarnings ?? 0).toFixed(2)}</span>
-                  </div>
-                )}
+                {/* Aqui era o "Hoje: N entregas / Total: R$ X". Tela de CADASTRO
+                    mostra o cadastro: o dono via "Hoje: 0" o dia inteiro e não
+                    sabia se era defeito (23/09/2026). Quanto cada um fez fica no
+                    Relatório de Pagamentos, a aba ao lado. */}
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => toggle(mb)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, color: mb.active ? "#C92E09" : "#0F766E" }}>{mb.active ? "Pausar" : "Ativar"}</button>

@@ -3,12 +3,16 @@
  *
  * ── Por que existe ──────────────────────────────────────────────────────────
  *
- * A mesma conta estava escrita em três lugares: no fechamento
- * (api/motoboy-report), no cartão "Hoje: R$ X" da lista (api/motoboys) e no
+ * A mesma conta estava escrita em três lugares: no relatório de pagamentos
+ * (api/motoboy-report), no cartão "Hoje: R$ X" da lista de cadastro e no
  * formulário, que decide quais campos mostrar. Elas já discordavam — o cartão
  * ignorava a escada de km e pagava `perDeliveryRate × entregas`, enquanto o
- * fechamento tentava a escada primeiro. Dois números para o mesmo dia é o tipo
+ * relatório tentava a escada primeiro. Dois números para o mesmo dia é o tipo
  * de coisa que o lojista descobre discutindo com o entregador.
+ *
+ * Hoje quem usa: o relatório de pagamentos, o papel do fechamento de caixa
+ * (lib/esperado-do-turno.ts) e o formulário. O cartão do cadastro saiu em
+ * 23/09/2026 — cadastro mostra o acerto, não o dia.
  *
  * ── A regra dos campos: só vale o que o tipo escolhido usa ──────────────────
  *
