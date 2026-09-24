@@ -306,8 +306,18 @@ const bruto = buildEscPos(PEDIDO, "Salz Burgueria", 48, "safe").toString("binary
 const TRIPLO = "\x1D!\x22", DOBRADO = "\x1D!\x11", NEGRITO = "\x1BE\x01";
 const linhaDoNumero = bruto.split("\n").find((l) => l.includes("(79)"));
 conferir("o numero do pedido sai em corpo triplo, na linha dele", !!linhaDoNumero && linhaDoNumero.includes(TRIPLO));
-const linhaDoApp = bruto.split("\n").find((l) => l.includes("N. do Pedido:"));
+// "N. no iFood:" desde 23/09/2026 — "N. do Pedido:" ao lado do nosso numero
+// grande deixava a duvida de qual dos dois era o pedido.
+const linhaDoApp = bruto.split("\n").find((l) => l.includes("N. no iFood:"));
 conferir("o numero no app sai ampliado", !!linhaDoApp && (linhaDoApp.includes(DOBRADO) || linhaDoApp.includes(TRIPLO)));
+// Em cima o nosso, embaixo o deles: o numero do iFood sai UMA vez so.
+conferir("o numero do iFood nao se repete no topo", !linhaDoNumero.includes("3523") && bruto.split("3523").length === 2);
+
+console.log("\n15) Pedido que nao e de app nao imprime pedaco do id (Pizzaria do Costa, 23/09/2026)");
+const doRobo = legivel(buildEscPos({ ...PEDIDO, id: "cmufotoxyz7xbq7u", source: "WHATSAPP_IA", ifoodReference: undefined, paymentMethod: "Pix" }, "Pizzaria do Costa", 32, "safe"));
+conferir("sem codigo do id no papel", !/7XBQ7U/i.test(doRobo));
+conferir("sem linha de numero no app", !doRobo.includes("N. no"));
+conferir("o nosso numero continua no topo", doRobo.includes("(79)"));
 
 const pedidoComObs = {
   ...PEDIDO,

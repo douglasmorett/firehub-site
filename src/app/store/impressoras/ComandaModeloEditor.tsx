@@ -5,21 +5,24 @@
  *
  * ── A régua é o ponto ───────────────────────────────────────────────────────
  *
- * O papel da direita não é ilustração: ele roda `montarComanda` +
- * `previaEmTexto` de lib/comanda-modelo.ts, as mesmas funções que decidem a
- * largura no papel de verdade. Mesma quebra por palavra, mesma conta de quantas
- * letras cabem em cada tamanho. É isso que separa esta tela do concorrente, onde
- * o lojista só descobre como ficou imprimindo e gastando bobina.
+ * O papel da direita é o papel: ele roda o MESMO código que o Assistente usa
+ * para imprimir (lib/gerado/comanda-do-assistente.ts, cópia do server.js) e
+ * desenha os bytes que sairiam para a impressora escolhida — largura da bobina,
+ * colunas, letra alta, letra larga, tarja preta, QR (lib/previa-da-comanda.ts).
  *
- * O que a prévia NÃO promete: o conteúdo exato de itens e totais. Aqueles
- * números saem do Assistente, com preço efetivo rateado, tarja de bebida e
- * rateio de mesa. Aqui roda um pedido de exemplo — e a tela diz isso, em vez de
- * deixar o lojista achar que o nome do cliente vai ser sempre "Larissa".
+ * Até 23/09/2026 a prévia era uma segunda implementação, e mentia: a Pizzaria do
+ * Costa escolheu 58 mm aqui, viu um papel comportado e recebeu o número do
+ * pedido em corpo triplo quebrando em três linhas, com a faixa da direita vazia.
+ *
+ * O que a prévia NÃO promete: o conteúdo de itens e totais. Aqui roda um pedido
+ * de exemplo — e a tela diz isso, em vez de deixar o lojista achar que o nome
+ * do cliente vai ser sempre "Larissa".
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AJUDA_DO_BLOCO,
+  AVISOS_DA_COMANDA,
   CORPOS_DO_BLOCO,
   corpoDoBloco,
   BLOCOS_OBRIGATORIOS,
@@ -27,27 +30,30 @@ import {
   NOME_DO_BLOCO,
   ROTULOS_DO_BLOCO,
   TAMANHOS,
+  VERSAO_MINIMA_DOS_AVISOS,
   VERSAO_MINIMA_DOS_ROTULOS,
   negritoDoBloco,
   negritoPadrao,
   aceitaFormato,
   aceitaTitulo,
   lerModelo,
-  linhasDoPapel,
   modeloPadrao,
-  montarComanda,
-  pedidoDeExemplo,
   rotuloDoBloco,
   rotuloPadrao,
   tamanhoValido,
   temRotuloTrocado,
   type Alinhamento,
   type Bloco,
+  type ChaveDeAviso,
   type LinhaRica,
   type ParteDaLinha,
   type ModeloDeComanda,
   type TipoDeBloco,
 } from "@/lib/comanda-modelo";
+import { EXEMPLOS_DA_PREVIA, papelDaPrevia, type ExemploDaPrevia } from "@/lib/previa-da-comanda";
+import { geometriaDaImpressora } from "@/lib/papel-da-impressora";
+import { PALETA } from "@/lib/paleta-brasa";
+import PapelDaComanda, { type AcaoDaLinha } from "./PapelDaComanda";
 
 /**
  * Compara versão NÚMERO a número.
@@ -71,12 +77,53 @@ function ehMaisVelha(instalada?: string, minima?: string): boolean {
 const VERMELHO = "#C92E09";
 const BORDA = "1.5px solid #E2E8F0";
 
-/** As larguras que a prévia sabe mostrar — as mesmas três da bobina. */
-const LARGURAS: { colunas: number; rotulo: string }[] = [
-  { colunas: 48, rotulo: "80 mm · 48 colunas" },
-  { colunas: 42, rotulo: "Bematech · 42 colunas" },
-  { colunas: 32, rotulo: "58 mm · 32 colunas" },
+/**
+ * A largura de reserva, para a loja que ainda não cadastrou impressora. Quem
+ * cadastrou vê a prévia DA impressora — o botão de largura solto mudava só a
+ * tela, e a loja achava que tinha configurado a impressora.
+ */
+const LARGURAS: { colunas: number; rotulo: string; paperWidth: "58mm" | "80mm" }[] = [
+  { colunas: 48, rotulo: "80 mm · 48 colunas", paperWidth: "80mm" },
+  { colunas: 42, rotulo: "Bematech · 42 colunas", paperWidth: "80mm" },
+  { colunas: 32, rotulo: "58 mm · 32 colunas", paperWidth: "58mm" },
 ];
+
+/** O que a prévia precisa saber de cada impressora cadastrada. */
+export type ImpressoraDaPrevia = {
+  id: string;
+  nome: string;
+  paperWidth?: string;
+  columns?: number;
+  modeloId?: string;
+};
+
+/** As colunas que o Assistente usa: a calibração, senão o padrão da bobina. */
+function colunasDaImpressora(p: { paperWidth?: string; columns?: number }): number {
+  const c = Number(p.columns);
+  if (Number.isFinite(c) && c >= 24 && c <= 64) return Math.floor(c);
+  return String(p.paperWidth || "").startsWith("58") ? 32 : 48;
+}
+
+/** Texto do jeito que o Assistente o põe no papel: sem acento, maiúsculo para comparar. */
+const noPapel = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+
+/** As frases de aviso, para o clique no papel abrir a aba Avisos no aviso certo. */
+const FRASES_DE_AVISO: { prefixo: string; chave: ChaveDeAviso }[] = [
+  { prefixo: "!! COBRAR DO CLIENTE", chave: "cobrarDoCliente" },
+  { prefixo: "(COBRAR NA ENTREGA)", chave: "cobrarNaEntrega" },
+  { prefixo: "(PAGO VIA", chave: "pagoOnline" },
+  { prefixo: "TROCO PARA", chave: "troco" },
+  { prefixo: "!! OBSERVACAO", chave: "faixaObservacao" },
+  { prefixo: "!! CONTEM BEBIDA", chave: "contemBebida" },
+  { prefixo: "!! ATENCAO: POSSUI BEBIDA", chave: "contemBebida" },
+  { prefixo: "OBRIGADO PELA PREFERENCIA", chave: "obrigado" },
+];
+
+type AlvoDaLinha =
+  | { tipo: "rotulo"; bloco: number; chave: string }
+  | { tipo: "bloco"; bloco: number }
+  | { tipo: "aviso"; chave: ChaveDeAviso };
 
 type Props = {
   modelo: unknown;
@@ -85,17 +132,41 @@ type Props = {
   versaoInstalada?: string;
   /** Versão em que o modelo passou a ser lido pelo Assistente. */
   versaoMinima: string;
-  /** Colunas da primeira impressora cadastrada, para a prévia abrir na largura certa. */
-  colunasDaLoja?: number;
+  /** As impressoras cadastradas (com nome), para a prévia sair na largura DELAS. */
+  impressoras?: ImpressoraDaPrevia[];
+  /** O modelo em edição ("" = padrão da loja): abre na impressora que o usa. */
+  modeloEmEdicao?: string;
+  /** A faixa de bebida segue a configuração da loja, como no papel. */
+  autoBeverageTag?: boolean;
+  customBeverageKeywords?: unknown;
   onChange: (modelo: ModeloDeComanda) => void;
 };
 
-export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalada, versaoMinima, colunasDaLoja, onChange }: Props) {
+export default function ComandaModeloEditor({
+  modelo, nomeDaLoja, versaoInstalada, versaoMinima, impressoras = [], modeloEmEdicao = "",
+  autoBeverageTag, customBeverageKeywords, onChange,
+}: Props) {
   const atual = useMemo(() => lerModelo(modelo), [modelo]);
   const [via, setVia] = useState<"completo" | "cozinha">("completo");
-  const [colunas, setColunas] = useState<number>(
-    LARGURAS.some((l) => l.colunas === colunasDaLoja) ? (colunasDaLoja as number) : 48,
+  // ── A IMPRESSORA DA PRÉVIA ─────────────────────────────────────────────
+  //
+  // Abre na impressora que usa o modelo em edição (a da cozinha, se o modelo é
+  // dela); sem nenhuma, na primeira. A largura, as colunas e o tamanho da
+  // letra saem dela — do mesmo cadastro que o Assistente lê.
+  const [impressoraId, setImpressoraId] = useState<string>(
+    () => (impressoras.find((p) => (p.modeloId || "") === modeloEmEdicao) || impressoras[0])?.id || "",
   );
+  const [larguraDeReserva, setLarguraDeReserva] = useState(LARGURAS[0]);
+  const [exemplo, setExemplo] = useState<ExemploDaPrevia>("entrega");
+  const [aba, setAba] = useState<"blocos" | "avisos">("blocos");
+  /** O aviso que o clique no papel apontou, para piscar na aba Avisos. */
+  const [avisoApontado, setAvisoApontado] = useState<ChaveDeAviso | null>(null);
+  /** A linha do papel que virou campo de edição. */
+  const [linhaEmEdicao, setLinhaEmEdicao] = useState<number | null>(null);
+  const impressora = impressoras.find((p) => p.id === impressoraId) || null;
+  const paperWidth = impressora ? impressora.paperWidth || "80mm" : larguraDeReserva.paperWidth;
+  const colunas = impressora ? colunasDaImpressora(impressora) : larguraDeReserva.colunas;
+  const geometria = geometriaDaImpressora(paperWidth, colunas);
   const [arrastando, setArrastando] = useState<number | null>(null);
   const [menuAberto, setMenuAberto] = useState(false);
 
@@ -133,11 +204,92 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
   }, [blocoApontado]);
 
   const lista = atual[via];
-  const exemplo = useMemo(() => pedidoDeExemplo(nomeDaLoja), [nomeDaLoja]);
+  // O papel que a impressora escolhida imprimiria, pelo código do Assistente.
   const papel = useMemo(
-    () => linhasDoPapel(montarComanda(lista, exemplo, { colunas, comValores: via === "completo" }), colunas),
-    [lista, exemplo, colunas, via],
+    () => papelDaPrevia({
+      lista, avisos: atual.avisos, via, exemplo, nomeDaLoja, colunas,
+      autoBeverageTag, customBeverageKeywords,
+    }),
+    [lista, atual.avisos, via, exemplo, nomeDaLoja, colunas, autoBeverageTag, customBeverageKeywords],
   );
+
+  // ── O QUE CADA LINHA DO PAPEL É ────────────────────────────────────────
+  //
+  // O papel agora vem dos BYTES do Assistente, que não dizem de qual bloco é
+  // cada linha. Para o clique continuar trocando a palavra (pedido do dono de
+  // 19/09/2026, "como na Saipos"), cada linha é reconhecida pelo texto: começa
+  // com uma palavra editável de algum bloco ligado ("Estabelecimento:",
+  // "Total:", o título "CLIENTE")? É ela. Frase de aviso? Abre a aba Avisos.
+  // O resto pertence ao bloco da última palavra reconhecida acima — o nome do
+  // cliente é do bloco Cliente, o item é da lista de itens.
+  const alvos = useMemo<(AlvoDaLinha | null)[]>(() => {
+    const nomeDoApp = exemplo === "ifood" ? "iFood" : "app";
+    const candidatos: { texto: string; bloco: number; chave: string; noMeio: boolean }[] = [];
+    lista.forEach((bl, i) => {
+      if (bl.ligado === false) return;
+      if (aceitaTitulo(bl.tipo) && bl.titulo) candidatos.push({ texto: noPapel(bl.titulo), bloco: i, chave: "@titulo", noMeio: false });
+      for (const r of ROTULOS_DO_BLOCO[bl.tipo] || []) {
+        const texto = noPapel(rotuloDoBloco(bl, r.chave).replace("{canal}", nomeDoApp));
+        // "DELIVERY" vem depois do número: "(12) DELIVERY".
+        if (texto) candidatos.push({ texto, bloco: i, chave: r.chave, noMeio: bl.tipo === "numeroPedido" });
+      }
+    });
+    candidatos.sort((a, b) => b.texto.length - a.texto.length);
+    const topo = lista.findIndex((b) => b.tipo === "numeroPedido" && b.ligado !== false);
+    let blocoAtual: number | null = topo >= 0 ? topo : null;
+    return papel.map((l) => {
+      const texto = noPapel(l.trechos.map((t) => t.texto).join(""));
+      if (!texto) return null;
+      const c = candidatos.find((x) =>
+        x.noMeio ? texto.includes(x.texto)
+          // A palavra grande que quebrou em duas linhas ("RESUMO DO" / "PEDIDO")
+          // ainda é reconhecida pela primeira metade.
+          : texto.startsWith(x.texto) || (texto.length >= 4 && x.texto.startsWith(texto)),
+      );
+      if (c) { blocoAtual = c.bloco; return { tipo: "rotulo", bloco: c.bloco, chave: c.chave }; }
+      const aviso = FRASES_DE_AVISO.find((a) => texto.startsWith(a.prefixo));
+      if (aviso) return { tipo: "aviso", chave: aviso.chave };
+      return blocoAtual != null ? { tipo: "bloco", bloco: blocoAtual } : null;
+    });
+  }, [papel, lista, exemplo]);
+
+  const acoes = useMemo<(AcaoDaLinha | null)[]>(() => alvos.map((a) => {
+    if (!a) return null;
+    if (a.tipo === "rotulo") return { clicavel: true, destaque: true, titulo: "Clique para mudar esta palavra" };
+    if (a.tipo === "aviso") return { clicavel: true, titulo: "Aviso — clique para ligar ou desligar na aba Avisos" };
+    return { clicavel: true, titulo: `Sai de: ${NOME_DO_BLOCO[lista[a.bloco]?.tipo]}` };
+  }), [alvos, lista]);
+
+  const clicarLinha = (i: number) => {
+    const a = alvos[i];
+    if (!a) return;
+    if (a.tipo === "rotulo") {
+      setLinhaEmEdicao(i);
+      abrirEdicao(a.bloco, a.chave);
+    } else if (a.tipo === "aviso") {
+      setAba("avisos");
+      setAvisoApontado(a.chave);
+    } else {
+      // A aba precisa aparecer antes de o card rolar para a vista.
+      setAba("blocos");
+      setTimeout(() => apontarBloco(a.bloco), 30);
+    }
+  };
+
+  // O aviso apontado pisca e apaga, como o card do bloco.
+  useEffect(() => {
+    if (!avisoApontado) return;
+    const t = setTimeout(() => setAvisoApontado(null), 1800);
+    return () => clearTimeout(t);
+  }, [avisoApontado]);
+
+  const alternarAviso = (chave: ChaveDeAviso) => {
+    const desligados = { ...(atual.avisos || {}) };
+    if (desligados[chave] === false) delete desligados[chave];
+    else desligados[chave] = false;
+    onChange({ ...atual, avisos: Object.keys(desligados).length ? desligados : undefined });
+  };
+  const avisosDesligados = AVISOS_DA_COMANDA.filter((a) => atual.avisos?.[a.chave] === false).length;
 
   const trocar = (novaLista: Bloco[]) => onChange({ ...atual, [via]: novaLista });
   const mexerNoBloco = (i: number, mudanca: Partial<Bloco>) =>
@@ -191,9 +343,12 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
     setRascunho(textoDoRotulo(iBloco, chave));
     setEdicao({ bloco: iBloco, rotulo: chave });
   };
+  /** Fecha a palavra aberta sem gravar: o papel vai mudar e a linha muda de lugar. */
+  const fecharEdicao = () => { setEdicao(null); setLinhaEmEdicao(null); };
   const confirmarEdicao = () => {
     if (edicao) gravarRotulo(edicao.bloco, edicao.rotulo, rascunho);
     setEdicao(null);
+    setLinhaEmEdicao(null);
   };
 
   /** Clique numa linha sem palavra editável: leva ao card que a desenha. */
@@ -232,7 +387,8 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
         <b style={{ color: "#0F172A" }}>Clique direto no papel ao lado para trocar uma palavra</b>{" "}
         — as que dão para mudar ficam com um tracinho embaixo. O botão <b>N</b> que aparece junto
         deixa aquela linha em negrito. Apague tudo e tecle Enter para voltar ao texto de fábrica.
-        A largura é exatamente a que vai sair da sua impressora.
+        O papel ao lado é desenhado pelo mesmo programa que imprime: largura, colunas e tamanho
+        das letras são os da impressora escolhida.
       </p>
 
       {/* ── O ASSISTENTE VELHO IGNORA O MODELO, E ISSO PRECISA ESTAR ESCRITO ──
@@ -278,28 +434,142 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
               { chave: "completo" as const, nome: "Completa (entrega)" },
               { chave: "cozinha" as const, nome: "Cozinha (sem valores)" },
             ]).map((v) => (
-              <button key={v.chave} type="button" onClick={() => setVia(v.chave)} style={botao(via === v.chave)}>
+              <button key={v.chave} type="button" onClick={() => { fecharEdicao(); setVia(v.chave); }} style={botao(via === v.chave)}>
                 {v.nome}
               </button>
             ))}
           </div>
         </div>
         <div>
-          <label style={rotuloStyle}>VER NA LARGURA DE</label>
+          <label style={rotuloStyle}>PRÉVIA DA IMPRESSORA</label>
+          {impressoras.length > 0 ? (
+            <select
+              value={impressoraId}
+              onChange={(e) => { fecharEdicao(); setImpressoraId(e.target.value); }}
+              style={{ padding: "8px 10px", borderRadius: 9, border: BORDA, fontSize: "0.82rem", fontWeight: 700, fontFamily: "inherit", background: "#fff", color: "#0F172A", maxWidth: "100%" }}
+            >
+              {impressoras.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome} — {String(p.paperWidth || "").startsWith("58") ? "58 mm" : "80 mm"} · {colunasDaImpressora(p)} colunas
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {LARGURAS.map((l) => (
+                <button key={l.colunas} type="button" onClick={() => setLarguraDeReserva(l)} style={botao(larguraDeReserva.colunas === l.colunas)}>
+                  {l.rotulo}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <label style={rotuloStyle}>PEDIDO DE EXEMPLO</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {LARGURAS.map((l) => (
-              <button key={l.colunas} type="button" onClick={() => setColunas(l.colunas)} style={botao(colunas === l.colunas)}>
-                {l.rotulo}
+            {EXEMPLOS_DA_PREVIA.map((x) => (
+              <button key={x.chave} type="button" onClick={() => { fecharEdicao(); setExemplo(x.chave); }} style={botao(exemplo === x.chave)}>
+                {x.nome}
               </button>
             ))}
           </div>
         </div>
       </div>
 
+      {/* ── COLUNAS A MENOS QUE A BOBINA ─────────────────────────────────
+          Foi o caso da Pizzaria do Costa: 24 colunas numa POS-58, que imprime
+          32. O papel sai em 3/4 da largura, com a faixa da direita vazia e o
+          título fora do centro — e a loja acha que é a impressora. */}
+      {impressora && geometria.estreitoDemais && (
+        <div style={{ background: PALETA.atencaoClaro, border: `1.5px solid ${PALETA.atencaoBorda}`, borderRadius: 12, padding: "10px 13px", marginBottom: 14 }}>
+          <p style={{ margin: 0, fontSize: "0.83rem", color: PALETA.atencao, fontWeight: 700 }}>
+            ⚠️ {impressora.nome} está com {colunas} colunas, mas papel de {String(paperWidth).startsWith("58") ? "58" : "80"} mm cabe {geometria.nativas}.
+          </p>
+          <p style={{ margin: "3px 0 0", fontSize: "0.78rem", color: PALETA.carvao2, lineHeight: 1.5 }}>
+            A nota sai estreita, com a faixa da direita vazia (veja o papel ao lado). Em <b>Impressoras</b>, apague o
+            número do campo &quot;colunas reais&quot; desta impressora ou use a régua para conferir.
+          </p>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 0.85fr)", gap: 18, alignItems: "start" }}
            className="comanda-grade">
         {/* ── A lista de blocos ────────────────────────────────────────── */}
         <div>
+          {/* ── AS ABAS: BLOCOS E AVISOS ─────────────────────────────────
+              A de Avisos nasce destacada, na cor da entrega: é recurso novo
+              (23/09/2026) e o lojista que procura "tirar o COBRAR NA ENTREGA"
+              precisa achar sem tutorial. */}
+          <div role="tablist" style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <button type="button" role="tab" aria-selected={aba === "blocos"} onClick={() => setAba("blocos")} style={botao(aba === "blocos")}>
+              Blocos
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={aba === "avisos"}
+              onClick={() => setAba("avisos")}
+              style={{
+                ...botao(aba === "avisos"),
+                ...(aba === "avisos"
+                  ? { background: PALETA.brasa, borderColor: PALETA.brasa, color: "#fff" }
+                  : { background: PALETA.brasaClaro, borderColor: PALETA.brasaBorda, color: PALETA.brasaTinta }),
+              }}
+            >
+              ⚠️ Avisos{avisosDesligados > 0 ? ` · ${avisosDesligados} desligado${avisosDesligados > 1 ? "s" : ""}` : ""}
+            </button>
+          </div>
+
+          {aba === "avisos" && (
+            <div>
+              <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "0 0 10px", lineHeight: 1.5 }}>
+                Os avisos que saem na comanda. <b style={{ color: "#0F172A" }}>Desmarque o que a sua loja não usa</b> — o papel ao lado muda na hora.
+                Vale para as duas vias deste modelo.
+              </p>
+              {avisosDesligados > 0 && ehMaisVelha(versaoInstalada, VERSAO_MINIMA_DOS_AVISOS) && (
+                <div style={{ background: PALETA.atencaoClaro, border: `1.5px solid ${PALETA.atencaoBorda}`, borderRadius: 10, padding: "8px 11px", marginBottom: 10, fontSize: "0.78rem", color: PALETA.atencao, lineHeight: 1.5 }}>
+                  ⚠️ O Assistente desta máquina está na {versaoInstalada}; os avisos desligados somem do papel a partir da {VERSAO_MINIMA_DOS_AVISOS}.
+                  Fica salvo — ele se atualiza sozinho.
+                </div>
+              )}
+              <div style={{ border: BORDA, borderRadius: 12, overflow: "hidden" }}>
+                {AVISOS_DA_COMANDA.map((a, i) => {
+                  const ligado = atual.avisos?.[a.chave] !== false;
+                  return (
+                    <label
+                      key={a.chave}
+                      style={{
+                        display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", cursor: "pointer",
+                        borderBottom: i === AVISOS_DA_COMANDA.length - 1 ? "none" : "1px solid #F1F5F9",
+                        background: avisoApontado === a.chave ? "#FFF7E6" : ligado ? "#fff" : "#F8FAFC",
+                        transition: "background 0.25s",
+                      }}
+                    >
+                      <input type="checkbox" checked={ligado} onChange={() => alternarAviso(a.chave)} style={{ marginTop: 3, width: 16, height: 16, accentColor: PALETA.marca }} />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontWeight: 700, fontSize: "0.86rem", color: ligado ? "#0F172A" : "#94A3B8" }}>{a.nome}</span>
+                        <span style={{ display: "block", fontFamily: "ui-monospace, Consolas, monospace", fontSize: "0.74rem", color: ligado ? PALETA.carvao2 : "#94A3B8", marginTop: 2, textDecoration: ligado ? "none" : "line-through", overflowWrap: "anywhere" }}>
+                          {a.exemplo}
+                        </span>
+                        {a.ajuda && <span style={{ display: "block", fontSize: "0.72rem", color: "#64748B", marginTop: 2 }}>{a.ajuda}</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", background: "#F8FAFC", borderTop: "1px solid #F1F5F9" }}>
+                  <span style={{ fontSize: "0.95rem" }}>🔒</span>
+                  <span>
+                    <span style={{ display: "block", fontWeight: 700, fontSize: "0.86rem", color: "#0F172A" }}>Entrega parceira — NÃO USAR MOTOBOY DA LOJA</span>
+                    <span style={{ display: "block", fontSize: "0.74rem", color: "#64748B", marginTop: 2, lineHeight: 1.45 }}>
+                      Sempre sai: evita mandar o seu motoboy num pedido que já tem entregador do iFood ou do 99 a caminho.
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: aba === "blocos" ? "block" : "none" }}>
           <div style={{ border: BORDA, borderRadius: 12, overflow: "hidden" }}>
             {lista.map((bloco, i) => {
               const fixo = BLOCOS_OBRIGATORIOS.includes(bloco.tipo);
@@ -342,7 +612,9 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
                           placeholder="(sem título)"
                           style={{ flex: "1 1 140px", minWidth: 110, padding: "5px 8px", borderRadius: 7, border: BORDA, fontSize: "0.78rem", fontWeight: 700, fontFamily: "inherit" }}
                         />
-                        {stepper(tamanhoValido(bloco.tamanho), (t) => mexerNoBloco(i, { tamanho: t }))}
+                        {/* Título sem tamanho escolhido sai em 1,5 no papel (é o
+                            padrão do Assistente) — o controle mostra o que sai. */}
+                        {stepper(bloco.tamanho ? tamanhoValido(bloco.tamanho) : 1.5, (t) => mexerNoBloco(i, { tamanho: t }))}
                         {/* ── LINHAS COM CORPO PRÓPRIO (CORPOS_DO_BLOCO) ──────────
                             Hoje só a faixa CONTÉM BEBIDA. Ela nasce em 2x porque
                             bebida esquecida volta como entrega refeita, e no corpo
@@ -588,142 +860,76 @@ export default function ComandaModeloEditor({ modelo, nomeDaLoja, versaoInstalad
               ))}
             </div>
           )}
+          </div>
         </div>
 
         {/* ── O papel ──────────────────────────────────────────────────── */}
         <div style={{ position: "sticky", top: 16 }}>
-          <div style={{ ...rotuloStyle, marginBottom: 6 }}>COMO VAI SAIR — {colunas} COLUNAS</div>
-          <div style={{ overflowX: "auto", background: "#F1F5F9", borderRadius: 12, padding: 12 }}>
-            {/* ── O PAPEL ────────────────────────────────────────────────
-                Desenhado linha a linha, e não como texto puro: texto puro não
-                sabe mostrar letra ampliada, e a prévia dizia que o número do
-                pedido em 2x tinha o tamanho do resto — o lojista pedia centro,
-                via o texto encostado à esquerda e não tinha como saber que era
-                a prévia mentindo, não a impressora.
-
-                O recuo sai em colunas NORMAIS e só o texto é ampliado, que é
-                exatamente o que o Assistente manda para a impressora. */}
-            <div style={{
-              margin: 0, background: "#FFFDF8", color: "#1A1512", padding: "16px 10px 22px",
-              fontFamily: "ui-monospace, 'Cascadia Mono', Consolas, monospace",
-              fontSize: colunas > 44 ? "11.5px" : colunas > 36 ? "12.5px" : "14px",
-              lineHeight: 1.42, whiteSpace: "pre", width: "max-content", minWidth: "100%",
-              boxShadow: "0 2px 10px rgba(60,40,25,0.12)",
-            }}>
-              {papel.length === 0 && <div style={{ color: "#94A3B8" }}>(nenhum bloco ligado)</div>}
-              {papel.map((l, i) => {
-                // ── O QUE DÁ PARA CLICAR, E O QUE ACONTECE ──────────────────
-                //
-                // Linha com palavra própria (e só no PRIMEIRO pedaço dela,
-                // quando a frase quebrou) abre a edição daquela palavra. Linha
-                // sem palavra — o nome do cliente, o item, o valor — não tem o
-                // que editar: ela vem do pedido de verdade. Clicar nela leva ao
-                // card que a desenha, que é a outra pergunta que o lojista faz
-                // olhando o papel ("de onde sai isto?").
-                const editavel = l.bloco != null && l.rotulo && (l.parte ?? 0) === 0;
-                const emEdicao = editavel && edicao?.bloco === l.bloco && edicao?.rotulo === l.rotulo;
-                const palavra = editavel ? textoDoRotulo(l.bloco as number, l.rotulo as string) : "";
-                // O resto da linha (o valor que vem do pedido) fica visível ao
-                // lado do campo: editar "Nome:" sem ver "Larissa Moreira" do
-                // lado tira a única referência do que se está mexendo.
-                const resto = palavra && l.texto.startsWith(palavra) ? l.texto.slice(palavra.length) : "";
-
-                if (emEdicao) {
-                  return (
-                    <div key={i} style={{ lineHeight: l.tamanho > 1 ? 1.18 : 1.42, minHeight: "1em" }}>
-                      {l.recuo > 0 ? " ".repeat(l.recuo) : ""}
-                      <input
-                        ref={campoRef}
-                        value={rascunho}
-                        onChange={(e) => setRascunho(e.target.value)}
-                        onBlur={confirmarEdicao}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") { e.preventDefault(); confirmarEdicao(); }
-                          if (e.key === "Escape") { e.preventDefault(); setEdicao(null); }
-                        }}
-                        maxLength={60}
+          <div style={{ ...rotuloStyle, marginBottom: 6 }}>
+            COMO VAI SAIR — {String(paperWidth).startsWith("58") ? "58 MM" : "80 MM"} · {colunas} COLUNAS
+          </div>
+          <div style={{ overflowX: "auto", background: "#F1F5F9", borderRadius: 12, padding: 12, display: "flex", justifyContent: "center" }}>
+            {papel.length === 0 ? (
+              <div style={{ color: "#94A3B8", fontSize: "0.85rem", padding: 12 }}>(nenhum bloco ligado)</div>
+            ) : (
+              <PapelDaComanda
+                linhas={papel}
+                pontos={geometria.pontos}
+                celula={geometria.celula}
+                escala={Math.min(0.85, 420 / geometria.pontos)}
+                acoes={acoes}
+                onClicarLinha={clicarLinha}
+                linhaEmEdicao={edicao ? linhaEmEdicao : null}
+                renderizarEdicao={() => edicao && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 6px", width: "100%" }}>
+                    <input
+                      ref={campoRef}
+                      value={rascunho}
+                      onChange={(e) => setRascunho(e.target.value)}
+                      onBlur={confirmarEdicao}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); confirmarEdicao(); }
+                        if (e.key === "Escape") { e.preventDefault(); setEdicao(null); setLinhaEmEdicao(null); }
+                      }}
+                      maxLength={60}
+                      style={{
+                        font: "inherit", fontSize: "0.85rem", fontWeight: 700, flex: 1, minWidth: 0,
+                        border: "none", borderBottom: `2px solid ${VERMELHO}`, background: "#FFF7E6",
+                        color: "#1A1512", padding: "3px 4px", outline: "none", borderRadius: 2,
+                      }}
+                    />
+                    {/* ── O NEGRITO FICA ONDE A PALAVRA ESTÁ ──────────────
+                        Pedido do dono (19/09/2026): "forma de pagamento e
+                        qualquer outra palavra tem que poder marcar em
+                        negrito". `onMouseDown` com preventDefault: o clique não
+                        pode tirar o foco do campo, senão o blur fecha a edição
+                        antes de o botão ser ouvido. */}
+                    {edicao.rotulo !== "@titulo" && (
+                      <button
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); alternarNegrito(edicao.bloco, edicao.rotulo); }}
+                        title={negritoDoBloco(lista[edicao.bloco], edicao.rotulo) ? "Tirar o negrito desta linha" : "Deixar esta linha em negrito"}
                         style={{
-                          font: "inherit", fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined,
-                          fontWeight: l.negrito ? 700 : 400,
-                          width: `${Math.max(4, rascunho.length + 1)}ch`,
-                          border: "none", borderBottom: `2px solid ${VERMELHO}`, background: "#FFF7E6",
-                          color: "inherit", padding: 0, outline: "none", borderRadius: 2,
+                          fontFamily: "inherit", fontSize: "0.7rem", fontWeight: 900,
+                          width: 22, height: 20, lineHeight: 1, padding: 0, borderRadius: 5, cursor: "pointer",
+                          border: `1.5px solid ${negritoDoBloco(lista[edicao.bloco], edicao.rotulo) ? VERMELHO : "#CBD5E1"}`,
+                          background: negritoDoBloco(lista[edicao.bloco], edicao.rotulo) ? VERMELHO : "#fff",
+                          color: negritoDoBloco(lista[edicao.bloco], edicao.rotulo) ? "#fff" : "#64748B",
+                          flexShrink: 0,
                         }}
-                      />
-                      <span style={{ fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined, fontWeight: l.negrito ? 700 : 400 }}>
-                        {resto}
-                      </span>
-                      {/* ── O NEGRITO FICA ONDE A PALAVRA ESTÁ ──────────────
-                          Pedido do dono (19/09/2026): "forma de pagamento e
-                          qualquer outra palavra tem que poder marcar em
-                          negrito". Mora aqui, dentro da edição, e não num menu
-                          da esquerda, porque a pergunta "esta linha destaca?"
-                          se faz olhando o papel. `onMouseDown` com
-                          preventDefault: o clique não pode tirar o foco do
-                          campo, senão o blur fecha a edição antes de o botão
-                          ser ouvido. */}
-                      {l.rotulo !== "@titulo" && (
-                        <button
-                          type="button"
-                          onMouseDown={(e) => { e.preventDefault(); alternarNegrito(l.bloco as number, l.rotulo as string); }}
-                          title={negritoDoBloco(lista[l.bloco as number], l.rotulo as string) ? "Tirar o negrito desta linha" : "Deixar esta linha em negrito"}
-                          style={{
-                            marginLeft: 8, fontFamily: "inherit", fontSize: "0.7rem", fontWeight: 900,
-                            width: 22, height: 20, lineHeight: 1, padding: 0, borderRadius: 5, cursor: "pointer",
-                            border: `1.5px solid ${negritoDoBloco(lista[l.bloco as number], l.rotulo as string) ? VERMELHO : "#CBD5E1"}`,
-                            background: negritoDoBloco(lista[l.bloco as number], l.rotulo as string) ? VERMELHO : "#fff",
-                            color: negritoDoBloco(lista[l.bloco as number], l.rotulo as string) ? "#fff" : "#64748B",
-                            verticalAlign: "middle",
-                          }}
-                        >
-                          N
-                        </button>
-                      )}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={i}
-                    onClick={() => {
-                      if (editavel) abrirEdicao(l.bloco as number, l.rotulo as string);
-                      else if (l.bloco != null) apontarBloco(l.bloco);
-                    }}
-                    title={editavel ? "Clique para mudar esta palavra" : l.bloco != null ? `Sai de: ${NOME_DO_BLOCO[lista[l.bloco]?.tipo]}` : undefined}
-                    className={l.bloco != null ? "linha-do-papel" : undefined}
-                    style={{
-                      lineHeight: l.tamanho > 1 ? 1.18 : 1.42, minHeight: "1em",
-                      cursor: l.bloco != null ? "pointer" : "default",
-                      borderRadius: 3,
-                    }}
-                  >
-                    {l.recuo > 0 ? " ".repeat(l.recuo) : ""}
-                    <span style={{
-                      fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined,
-                      fontWeight: l.negrito ? 700 : 400,
-                      // O tracejado embaixo da palavra editável é a única
-                      // pista de que o papel responde ao clique. Sem ele, a
-                      // loja não descobre o recurso: papel não parece botão.
-                      borderBottom: editavel ? "1px dashed #CBD5E1" : undefined,
-                      // A previa tem que mostrar a tarja invertida: e o ponto dela.
-                      ...(l.invertido ? { background: "#1E293B", color: "#fff" } : {}),
-                    }}>
-                      {editavel ? palavra : l.texto}
-                    </span>
-                    {editavel && (
-                      <span style={{ fontSize: l.tamanho > 1 ? `${l.tamanho}em` : undefined, fontWeight: l.negrito ? 700 : 400 }}>
-                        {resto}
-                      </span>
+                      >
+                        N
+                      </button>
                     )}
-                  </div>
-                );
-              })}
-            </div>
+                  </span>
+                )}
+              />
+            )}
           </div>
           <p style={{ fontSize: "0.74rem", color: "#94A3B8", margin: "8px 2px 0", lineHeight: 1.5 }}>
-            Pedido de exemplo. A ordem, a largura e o tamanho das letras são exatamente os do papel;
-            os itens e os valores vêm do pedido de verdade na hora de imprimir.
+            Pedido de exemplo, desenhado pelo mesmo programa que imprime, na largura da impressora escolhida.
+            Clique numa palavra com tracejado para trocá-la, num aviso para ligar ou desligar.
+            Os itens e os valores vêm do pedido de verdade na hora de imprimir.
           </p>
         </div>
       </div>

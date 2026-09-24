@@ -929,19 +929,28 @@ export default function PrinterSetupClient({
                 >
                   {rulerPrinter === printer.name ? "Imprimindo..." : "📏 Calibrar largura (régua)"}
                 </button>
+                {/* ── GRAVA AO SAIR DO CAMPO, NÃO A CADA TECLA ──────────────
+                    O campo corrigia o número para 24–64 a cada tecla: quem
+                    digitava "32" gravava 24 já no "3", e o papel passava a sair
+                    em 3/4 da bobina, com a faixa da direita vazia e o título
+                    torto — foi o que aconteceu na Pizzaria do Costa (23/09/2026).
+                    A `key` com o valor gravado faz o campo acompanhar os botões
+                    de largura acima. */}
                 <input
+                  key={`${printer.id}-${printer.columns ?? ""}`}
                   type="number"
                   min={24}
                   max={64}
                   placeholder={printer.paperWidth === "58mm" ? "32" : "48"}
                   title="Quantas letras cabem numa linha desta impressora. Vale mais que o botão acima."
-                  value={printer.columns ?? ""}
-                  onChange={e => {
-                    const v = Number(e.target.value);
-                    updatePrinter(printer.id, {
-                      columns: e.target.value && Number.isFinite(v) ? Math.max(24, Math.min(64, Math.floor(v))) : undefined,
-                    });
+                  defaultValue={printer.columns ?? ""}
+                  onBlur={e => {
+                    const bruto = e.target.value.trim();
+                    const v = Number(bruto);
+                    const columns = bruto && Number.isFinite(v) ? Math.max(24, Math.min(64, Math.floor(v))) : undefined;
+                    if (columns !== printer.columns) updatePrinter(printer.id, { columns });
                   }}
+                  onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                   style={{ width: 88, padding: "7px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, fontFamily: "inherit" }}
                 />
                 <span style={{ fontSize: "0.72rem", color: "#64748B" }}>

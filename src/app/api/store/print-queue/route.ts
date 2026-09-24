@@ -9,7 +9,7 @@ import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 import { comboParaImpressao } from "@/lib/parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
-import { blocosDoPedido } from "@/lib/comanda-modelo";
+import { avisosDoPedido, blocosDoPedido } from "@/lib/comanda-modelo";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 import { nomeComPager } from "@/lib/pager";
@@ -185,6 +185,8 @@ export async function GET(req: NextRequest) {
     // que a impressora sem modelo próprio usa. O modelo de cada impressora vai
     // à parte, dentro de `destinos[]` — ver o `blocos` de cada destino abaixo.
     const blocosDaComanda = blocosDoPedido(pc);
+    // Os avisos que a loja desligou (aba Avisos), pelo mesmo modelo padrão.
+    const avisosDaComanda = avisosDoPedido(pc);
 
     /** O modelo DESTA impressora, só quando difere do padrão da loja. */
     const blocosDaImpressora = (impressora: { modeloId?: string } | null | undefined) => {
@@ -193,6 +195,9 @@ export async function GET(req: NextRequest) {
       const lista = blocosDoPedido(pc, { modeloId: id });
       return lista && lista.length > 0 ? lista : null;
     };
+    /** Os avisos do modelo DESTA impressora, quando ela escolheu um. */
+    const avisosDaImpressora = (impressora: { modeloId?: string } | null | undefined) =>
+      impressora?.modeloId ? avisosDoPedido(pc, { modeloId: impressora.modeloId }) || {} : null;
 
     // ── O ATRASO: o que chegou enquanto o Assistente estava desligado ──────
     //
@@ -450,6 +455,7 @@ export async function GET(req: NextRequest) {
         ...(qrEmTodas ? qr : {}),
         ...campanhaSemDestino,
         ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
+        ...(avisosDaComanda ? { avisos: avisosDaComanda } : {}),
       },
       storeName: (order as any).franchisee?.storeName || (order as any).franchisee?.name || "FIREHUB",
       // Escalar compativel com o assistente ja instalado. Vale para instalacao
@@ -502,6 +508,9 @@ export async function GET(req: NextRequest) {
         // fazia antes. Só vai quando a impressora escolheu um modelo próprio —
         // mandar o padrão de novo aqui seria peso de rede sem efeito.
         ...(blocosDaImpressora(d.impressora as any) ? { blocos: blocosDaImpressora(d.impressora as any) } : {}),
+        // Impressora com modelo próprio leva os avisos DELE — inclusive "nenhum
+        // desligado" ({}), senão herdaria os do modelo padrão da loja.
+        ...(avisosDaImpressora(d.impressora as any) ? { avisos: avisosDaImpressora(d.impressora as any) } : {}),
       })),
       createdAt: order.createdAt.toISOString(),
       };
@@ -562,6 +571,7 @@ export async function GET(req: NextRequest) {
           // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
           ...camposDeDesconto99ParaImpressao(order),
           ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
+          ...(avisosDaComanda ? { avisos: avisosDaComanda } : {}),
         },
         storeName: order.storeName || owner?.storeName || owner?.name || "FIREHUB",
         paperWidth: order.paperWidth || printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",

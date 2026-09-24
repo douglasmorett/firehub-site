@@ -42,23 +42,24 @@ export default function ComandaModeloClient({
   const extras: ModeloNomeado[] = modeloCompleto.modelos || [];
   const emEdicao = editando ? extras.find(m => m.id === editando) : null;
   // Modelo apagado noutra aba: volta para o padrão em vez de editar o nada.
+  // Os avisos (aba Avisos) andam com o modelo, como as duas vias.
   const viasEmEdicao: ModeloDeComanda = emEdicao
-    ? { versao: 1, cozinha: emEdicao.cozinha, completo: emEdicao.completo }
-    : { versao: 1, cozinha: modeloCompleto.cozinha, completo: modeloCompleto.completo };
+    ? { versao: 1, cozinha: emEdicao.cozinha, completo: emEdicao.completo, avisos: emEdicao.avisos }
+    : { versao: 1, cozinha: modeloCompleto.cozinha, completo: modeloCompleto.completo, avisos: modeloCompleto.avisos };
 
   /** Grava o que o editor devolveu na gaveta certa. */
   const aoEditar = (novo: ModeloDeComanda) => {
     setConfig((c: any) => {
       const atual = lerModelo(c?.comandaModelo);
       if (!editando) {
-        return { ...c, comandaModelo: { ...atual, cozinha: novo.cozinha, completo: novo.completo } };
+        return { ...c, comandaModelo: { ...atual, cozinha: novo.cozinha, completo: novo.completo, avisos: novo.avisos } };
       }
       return {
         ...c,
         comandaModelo: {
           ...atual,
           modelos: (atual.modelos || []).map(m =>
-            m.id === editando ? { ...m, cozinha: novo.cozinha, completo: novo.completo } : m
+            m.id === editando ? { ...m, cozinha: novo.cozinha, completo: novo.completo, avisos: novo.avisos } : m
           ),
         },
       };
@@ -79,7 +80,10 @@ export default function ComandaModeloClient({
     // porque é ele que fica gravado na impressora.
     const id = `m${Date.now().toString(36)}`;
     const base = copiarDoAtual ? viasEmEdicao : modeloPadrao();
-    mexerNaLista(lista => [...lista, { id, nome: nome.trim().slice(0, 40), cozinha: base.cozinha, completo: base.completo }]);
+    mexerNaLista(lista => [...lista, {
+      id, nome: nome.trim().slice(0, 40), cozinha: base.cozinha, completo: base.completo,
+      ...(copiarDoAtual && viasEmEdicao.avisos ? { avisos: viasEmEdicao.avisos } : {}),
+    }]);
     setEditando(id);
   };
 
@@ -257,10 +261,21 @@ export default function ComandaModeloClient({
             nomeDaLoja={storeName}
             versaoInstalada={versaoInstalada || undefined}
             versaoMinima={VERSAO_MINIMA_DO_MODELO}
-            colunasDaLoja={
-              (config.printers || []).find((p: any) => p?.name)?.columns
-              ?? ((config.printers || []).find((p: any) => p?.name)?.paperWidth === "58mm" ? 32 : 48)
-            }
+            // A prévia sai NA impressora: largura e colunas do cadastro dela,
+            // as mesmas que o Assistente usa. Impressora sem nome não imprime
+            // (o roteamento a ignora), então também não entra aqui.
+            impressoras={(config.printers || [])
+              .filter((p: any) => p && String(p.name || "").trim())
+              .map((p: any) => ({
+                id: String(p.id || p.name),
+                nome: String(p.label || p.name),
+                paperWidth: p.paperWidth,
+                columns: p.columns,
+                modeloId: p.modeloId,
+              }))}
+            modeloEmEdicao={editando}
+            autoBeverageTag={config.autoBeverageTag}
+            customBeverageKeywords={config.customBeverageKeywords}
             onChange={aoEditar}
           />
         </div>

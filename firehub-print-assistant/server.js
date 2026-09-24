@@ -827,6 +827,20 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     return TAMANHOS_OK.includes(v) ? v : padrao;
   };
 
+  // ── OS AVISOS QUE A LOJA DESLIGOU (Personalizar impressao > Avisos) ────
+  //
+  // Pedido do dono (23/09/2026): "nao quero aviso de cobrar o cliente na
+  // entrega, por exemplo — ai o cara desmarca la". O servidor so manda a
+  // chave que a loja DESLIGOU (`false`); ausente e ligado, entao Assistente
+  // antigo e loja que nunca abriu a aba imprimem como sempre. A lista de
+  // chaves e a de AVISOS_DA_COMANDA em src/lib/comanda-modelo.ts.
+  //
+  // A entrega parceira ("NAO USAR MOTOBOY DA LOJA") nao tem chave de
+  // proposito: desligada, a loja manda o proprio motoboy num pedido que ja
+  // tem entregador do app a caminho.
+  const avisosDesligados = (order && order.avisos && typeof order.avisos === "object") ? order.avisos : {};
+  const avisoLigado = (chave) => avisosDesligados[chave] !== false;
+
   // ── TEXTO AMPLIADO FORA DO aplicarModelo ──────────────────────────────
   //
   // O layout embutido so tinha DOUBLE_HEIGHT (altura dobrada, largura igual).
@@ -944,15 +958,32 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     // daqui seria uma armadilha de ordem de declaracao para quem mover a
     // funcao um dia.
     const ON = "\x1d\x42\x01", OFF = "\x1d\x42\x00";
-    const n = Number(mult) || 1;
-    const larg = Math.max(8, Math.floor(columns / n));
+    // ── O CORPO QUE CABE ────────────────────────────────────────────────
+    //
+    // Em 58 mm (32 colunas) a faixa de fabrica em 2x nao cabia nem na forma
+    // curta: "!! CONTEM BEBIDA !!" tem 19 letras, 38 colunas em 2x. A
+    // impressora quebrava onde queria e a segunda linha saia preta pela
+    // metade. Agora o corpo desce (3 → 2 → 1,5 → 1) ate a forma curta caber.
+    // O 1,5 e a fonte B dobrada, igual ao resto da comanda (`formatoDe`); no
+    // perfil legacy nao ha fonte B, e 1,5 ocupa o mesmo que 2.
+    const pedido = Number(mult) || 1;
+    const larguraDe = (n) => (n > 1 && n < 2 ? (profile === "legacy" ? 2 : 1.5) : n);
+    let n = pedido;
+    for (const tentativa of [3, 2, 1.5, 1]) {
+      if (tentativa > pedido) continue;
+      n = tentativa;
+      if (short.length * larguraDe(n) <= columns) break;
+    }
+    const larg = Math.max(8, Math.floor(columns / larguraDe(n)));
     const t = (long.length + 4 <= larg) ? long : short;
     const total = Math.max(0, larg - t.length);
     const left = Math.floor(total / 2);
     const linha = " ".repeat(left) + t + " ".repeat(total - left);
     if (n <= 1) return ON + linha + OFF + LF;
-    const cmd = GS + "!" + String.fromCharCode(n >= 3 ? 0x22 : n >= 1.5 ? 0x11 : 0x00);
-    const reset = GS + "!" + String.fromCharCode(0);
+    const fonteB = n > 1 && n < 2 && profile !== "legacy";
+    const cmd = ESC + "M" + String.fromCharCode(fonteB ? 1 : 0)
+              + GS + "!" + String.fromCharCode(n >= 3 ? 0x22 : 0x11);
+    const reset = ESC + "M" + String.fromCharCode(0) + GS + "!" + String.fromCharCode(0);
     return cmd + ON + linha + OFF + reset + LF;
   };
 
@@ -1188,9 +1219,14 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       if (!bl || bl.ligado === false) continue;
       const f = { negrito: bl.negrito, tamanho: bl.tamanho, alinhamento: bl.alinhamento, invertido: bl.invertido };
       switch (bl.tipo) {
-        case "numeroPedido":
-          if (headerLine) out += linha(headerLine, f);
+        case "numeroPedido": {
+          // A linha "N. no iFood" mora no bloco dataHora. Desligado ele, o
+          // numero do app sobe para o topo — senao sumiria do papel.
+          const temLinhaDoApp = blocos.some((b) => b && b.tipo === "dataHora" && b.ligado !== false);
+          const topo = temLinhaDoApp ? headerLine : headerLineComRef;
+          if (topo) out += linha(topo, f);
           break;
+        }
         // A MARCA quando a conta tem varias no mesmo painel (Ragnar Pizza x
         // Ragnar Burguer); senao o nome do marketplace, e so dele. Pedido do
         // proprio site nao ganha linha nenhuma aqui: "SITE" em corpo dobrado
@@ -1210,7 +1246,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           // data segue o bloco, porque e conferencia. Mesma regra da previa do
           // site (DESTAQUE_DO_NUMERO_NO_APP em lib/comanda-modelo.ts).
           if (orderRef) {
-            out += linha(R("dataHora", "numeroNoParceiro", "N. do Pedido:") + " " + cleanAscii(orderRef),
+            out += linha(rotuloDoNumeroNoApp + " " + cleanAscii(orderRef),
               { ...f, negrito: N("dataHora", "numeroNoParceiro", true), tamanho: CORPO_DO_NUMERO_NO_APP });
           }
           if (dateStr) out += linha(R("dataHora", "data", "Data:") + " " + dateStr + " " + timeStr, { ...f, negrito: f.negrito || N("dataHora", "data", false) });
@@ -1384,12 +1420,33 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // "PEDIDO" ali quer "PEDIDO" no papel inteiro, nao so na entrega.
   const deliveryTypeTag = R("numeroPedido", "delivery",
     order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : "RETIRADA");
-  const orderRef = ehConta ? "" : (order.ifoodReference || order.openDeliveryReference || (order.id ? order.id.slice(-6).toUpperCase() : ""));
+  // ── O NUMERO DO PARCEIRO, E SO DO PARCEIRO ──────────────────────────
+  //
+  // Era `ifoodReference || openDeliveryReference || id.slice(-6)`: no pedido
+  // do site, do robo e do balcao — que nao existe em app nenhum — o papel
+  // imprimia o fim do id interno ("#7XBQ7U"), em corpo triplo no topo e de
+  // novo, dobrado, em "N. do Pedido". O dono, com a comanda da Pizzaria do
+  // Costa na mao (23/09/2026): "isso nao serve pra nada, nem sei o que e".
+  const orderRef = ehConta ? "" : String(order.ifoodReference || order.openDeliveryReference || "").trim();
   const refTag = orderRef ? `#${orderRef}` : "";
 
+  // ── EM CIMA O NOSSO, EMBAIXO O DELES ─────────────────────────────────
+  //
+  // O numero do parceiro saia duas vezes: no topo, colado ao nosso, e na
+  // linha "N. do Pedido". Decisao do dono (23/09/2026): o topo e so o nosso
+  // numero; o do app sai uma vez, na linha propria. `headerLineComRef` so
+  // existe para o modelo que DESLIGOU essa linha (bloco dataHora): ali o
+  // numero do app volta para o topo, senao some do papel.
   const headerLine = seqNumStr
-    ? `(${seqNumStr}) ${deliveryTypeTag}  ${refTag}`.trim()
-    : `${deliveryTypeTag}  ${refTag}`.trim();
+    ? `(${seqNumStr}) ${deliveryTypeTag}`
+    : deliveryTypeTag;
+  const headerLineComRef = `${headerLine}  ${refTag}`.trim();
+  // "N. no iFood:" / "N. no 99Food:" — "N. do Pedido:" ao lado do nosso numero
+  // grande no topo deixava a duvida de qual dos dois era o pedido.
+  const nomeDoApp = NOME_DO_CANAL[String(order.source || "").toUpperCase()]
+    || NOME_DO_CANAL[String(order.openDeliveryChannel || "").toUpperCase()]
+    || "app";
+  const rotuloDoNumeroNoApp = R("dataHora", "numeroNoParceiro", "N. no {canal}:").replace("{canal}", nomeDoApp);
 
   // DE QUAL loja iFood veio, quando a conta tem mais de uma no mesmo painel.
   // O servidor so manda `ifoodStoreName` nesse caso — numa loja so o campo vem
@@ -1493,7 +1550,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // aproximava do rosto. A DATA continua pequena — ela e conferencia, ninguem
   // a procura com o telefone na mao.
   if (orderRef) {
-    res += ampliado(R("dataHora", "numeroNoParceiro", "N. do Pedido:") + " " + cleanAscii(orderRef), CORPO_DO_NUMERO_NO_APP, { negrito: N("dataHora", "numeroNoParceiro", true) });
+    res += ampliado(rotuloDoNumeroNoApp + " " + cleanAscii(orderRef), CORPO_DO_NUMERO_NO_APP, { negrito: N("dataHora", "numeroNoParceiro", true) });
   }
   const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
   const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
@@ -1748,8 +1805,14 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // quem lê a comanda de cima para baixo precisa saber disso antes de montar.
   const recado = ehConta ? "" : recadoDoCliente();
   if (recado) {
-    res += LF + INVERSE_ON + banner("!! OBSERVACAO DO CLIENTE !!", "!! OBSERVACAO !!") + INVERSE_OFF + LF;
-    res += wrapLines(recado, 2);
+    // Sem a faixa, o recado ganha o rotulo na propria linha: texto solto no
+    // meio da comanda nao diz de quem e.
+    if (avisoLigado("faixaObservacao")) {
+      res += LF + INVERSE_ON + banner("!! OBSERVACAO DO CLIENTE !!", "!! OBSERVACAO !!") + INVERSE_OFF + LF;
+      res += wrapLines(recado, 2);
+    } else {
+      res += LF + wrapLines("Obs. do cliente: " + recado, 2);
+    }
     res += LF;
   }
 
@@ -1837,7 +1900,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     });
   }
 
-  if (hasBeverages && !ehConta) {
+  if (hasBeverages && !ehConta && avisoLigado("contemBebida")) {
     // Nasce em 2x (DESTAQUE_DO_AVISO_DE_BEBIDA em src/lib/comanda-modelo.ts).
     // A loja aumenta ou diminui em Impressoras > Personalizar notinha; bebida
     // esquecida volta como entrega refeita, e a faixa no corpo do resto do
@@ -2041,14 +2104,20 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // pedido do proprio site, que e onde a palavra ja basta.
   const onlineSource = NOME_DO_CANAL[srcStr] || "Online";
 
+  // Os avisos desta secao obedecem a aba Avisos — menos na CONTA DA MESA, que
+  // e outro papel: "TOTAL A PAGAR" ali e a propria conta, nao um aviso.
   if (isOnlinePayment) {
     res += comNegrito(wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2), "pagamento", "formaDePagamento", true);
-    res += DOUBLE_HEIGHT + wrapLines("(Pago via " + onlineSource + " - NAO COBRAR)", 2) + DOUBLE_OFF;
+    if (ehMesa || avisoLigado("pagoOnline")) {
+      res += DOUBLE_HEIGHT + wrapLines("(Pago via " + onlineSource + " - NAO COBRAR)", 2) + DOUBLE_OFF;
+    }
   } else {
     res += comNegrito(wrapLines(R("pagamento", "formaDePagamento", "Forma de Pagamento:") + " " + baseMethodName, 2), "pagamento", "formaDePagamento", true);
-    res += DOUBLE_HEIGHT + wrapLines(ehMesa ? "(PAGAR NO CAIXA OU NA MESA)" : "(COBRAR NA ENTREGA)", 2) + DOUBLE_OFF;
+    if (ehMesa || avisoLigado("cobrarNaEntrega")) {
+      res += DOUBLE_HEIGHT + wrapLines(ehMesa ? "(PAGAR NO CAIXA OU NA MESA)" : "(COBRAR NA ENTREGA)", 2) + DOUBLE_OFF;
+    }
 
-    if (order.changeAmount != null && Number(order.changeAmount) > 0) {
+    if (order.changeAmount != null && Number(order.changeAmount) > 0 && (ehMesa || avisoLigado("troco"))) {
       const changeFor = Number(order.changeAmount);
       const totalVal = Number(order.totalAmount || 0);
       const changeToReturn = Math.max(0, changeFor - totalVal);
@@ -2058,8 +2127,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       res += DOUBLE_HEIGHT + comNegrito(wrapLines(R("pagamento", "troco", "Troco para:") + " " + changeForStr + " (Levar " + changeToReturnStr + " de troco)", 2), "pagamento", "troco", true) + DOUBLE_OFF;
     }
 
-    res += divider;
-    res += DOUBLE_HEIGHT + BOLD_ON + wrapLines((ehMesa ? "!! TOTAL A PAGAR: " : "!! COBRAR DO CLIENTE NA ENTREGA: ") + totalValStr + " !!", 2) + BOLD_OFF + DOUBLE_OFF;
+    if (ehMesa || avisoLigado("cobrarDoCliente")) {
+      res += divider;
+      res += DOUBLE_HEIGHT + BOLD_ON + wrapLines((ehMesa ? "!! TOTAL A PAGAR: " : "!! COBRAR DO CLIENTE NA ENTREGA: ") + totalValStr + " !!", 2) + BOLD_OFF + DOUBLE_OFF;
+    }
   }
 
   marcas.fimPagamento = res.length;
@@ -2147,7 +2218,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   marcas.fimQrCliente = res.length;
 
   res = aplicarModelo();
-  res += LF + centerLine("Obrigado pela preferencia!") + LEFT + FEED + CUT;
+  res += LF + (avisoLigado("obrigado") ? centerLine("Obrigado pela preferencia!") : "") + LEFT + FEED + CUT;
   return Buffer.from(res, "binary");
 }
 
@@ -2831,6 +2902,11 @@ setInterval(async () => {
               blocos: Array.isArray(destino.blocos) && destino.blocos.length
                 ? destino.blocos
                 : job.order?.blocos,
+              // Os avisos desligados andam com o modelo: impressora com
+              // modelo proprio leva os avisos dele.
+              avisos: destino.avisos && typeof destino.avisos === "object"
+                ? destino.avisos
+                : job.order?.avisos,
             },
             storeName: job.storeName || "FIREHUB",
             copies: Number(destino.copies) > 0 ? Number(destino.copies) : perfil.copies,

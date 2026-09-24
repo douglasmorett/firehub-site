@@ -286,7 +286,59 @@ export type ModeloDeComanda = {
    * em silêncio, no primeiro pedido depois do deploy.
    */
   modelos?: ModeloNomeado[];
+  /** Os avisos que a loja DESLIGOU na aba Avisos (ver AVISOS_DA_COMANDA). */
+  avisos?: AvisosDesligados;
 };
+
+// ── OS AVISOS DA COMANDA (aba "Avisos" de Personalizar impressão) ───────────
+//
+// Pedido do dono (23/09/2026): "tem que ter opção de personalizar os avisos
+// também, uma aba destacada — não quero aviso de cobrar o cliente na entrega,
+// por exemplo, aí o cara desmarca lá". Cada chave é um `avisoLigado(chave)` no
+// Assistente (firehub-print-assistant/server.js), a partir da 1.2.23.
+//
+// Só viaja o que a loja DESLIGOU. Ausente é ligado: Assistente antigo e loja
+// que nunca abriu a aba imprimem como sempre.
+//
+// A entrega parceira ("NÃO USAR MOTOBOY DA LOJA") fica fora de propósito:
+// desligada, a loja manda o próprio motoboy num pedido que já tem entregador
+// do app a caminho, e paga a corrida duas vezes.
+export type ChaveDeAviso =
+  | "cobrarDoCliente"
+  | "cobrarNaEntrega"
+  | "pagoOnline"
+  | "troco"
+  | "faixaObservacao"
+  | "contemBebida"
+  | "obrigado";
+
+export type AvisosDesligados = Partial<Record<ChaveDeAviso, false>>;
+
+export const AVISOS_DA_COMANDA: { chave: ChaveDeAviso; nome: string; exemplo: string; ajuda?: string }[] = [
+  { chave: "cobrarDoCliente", nome: "Cobrar do cliente na entrega", exemplo: "!! COBRAR DO CLIENTE NA ENTREGA: R$ 65,90 !!" },
+  { chave: "cobrarNaEntrega", nome: "Cobrar na entrega (junto da forma de pagamento)", exemplo: "(COBRAR NA ENTREGA)" },
+  { chave: "pagoOnline", nome: "Pago online — não cobrar", exemplo: "(Pago via iFood - NAO COBRAR)" },
+  { chave: "troco", nome: "Troco para levar", exemplo: "Troco para: R$ 100,00 (Levar R$ 34,10 de troco)" },
+  {
+    chave: "faixaObservacao", nome: "Faixa da observação do cliente", exemplo: "!! OBSERVACAO DO CLIENTE !!",
+    ajuda: "Desligada, a observação continua saindo — numa linha comum, sem a faixa preta.",
+  },
+  { chave: "contemBebida", nome: "Contém bebida", exemplo: "!! CONTEM BEBIDA !!" },
+  { chave: "obrigado", nome: "Obrigado pela preferência (rodapé)", exemplo: "Obrigado pela preferencia!" },
+];
+
+/** O Assistente que obedece a aba Avisos. */
+export const VERSAO_MINIMA_DOS_AVISOS = "1.2.23";
+
+/** Só as chaves conhecidas, e só o `false`: o resto é "ligado". */
+export function saneiaAvisos(bruto: unknown): AvisosDesligados | undefined {
+  if (!bruto || typeof bruto !== "object") return undefined;
+  const limpo: AvisosDesligados = {};
+  for (const a of AVISOS_DA_COMANDA) {
+    if ((bruto as Record<string, unknown>)[a.chave] === false) limpo[a.chave] = false;
+  }
+  return Object.keys(limpo).length ? limpo : undefined;
+}
 
 /**
  * Um modelo com nome, para a impressora apontar.
@@ -302,6 +354,8 @@ export type ModeloNomeado = {
   nome: string;
   cozinha: Bloco[];
   completo: Bloco[];
+  /** Os avisos andam com o modelo: a impressora do balcão pode querer outros. */
+  avisos?: AvisosDesligados;
 };
 
 /**
@@ -406,7 +460,14 @@ export const ROTULOS_DO_BLOCO: Partial<Record<TipoDeBloco, RotuloDoBloco[]>> = {
   ],
   loja: [{ chave: "estabelecimento", padrao: "Estabelecimento:" }],
   dataHora: [
-    { chave: "numeroNoParceiro", padrao: "N. do Pedido:", negritoPadrao: true },
+    // "{canal}" vira o nome do app no papel ("N. no iFood:", "N. no 99Food:").
+    // Era "N. do Pedido:", e ao lado do nosso número grande no topo deixava a
+    // dúvida de qual dos dois era o pedido (23/09/2026). O Assistente troca o
+    // {canal} também no texto que a loja escrever.
+    {
+      chave: "numeroNoParceiro", padrao: "N. no {canal}:", negritoPadrao: true,
+      ajuda: "Só sai em pedido do iFood, 99Food e outros apps. {canal} vira o nome do app.",
+    },
     { chave: "data", padrao: "Data:" },
   ],
   avisoEntrega: [
@@ -748,19 +809,27 @@ export function lerModelo(bruto: unknown): ModeloDeComanda {
   const extras = Array.isArray(m.modelos)
     ? m.modelos
         .filter((x): x is ModeloNomeado => !!x && typeof x === "object" && typeof (x as ModeloNomeado).id === "string" && !!(x as ModeloNomeado).id)
-        .map((x): ModeloNomeado => ({
-          id: String(x.id),
-          nome: String(x.nome || "Modelo").slice(0, 40),
-          cozinha: valida(x.cozinha, padrao.cozinha),
-          completo: valida(x.completo, padrao.completo),
-        }))
+        .map((x): ModeloNomeado => {
+          const avisosDoExtra = saneiaAvisos(x.avisos);
+          return {
+            id: String(x.id),
+            nome: String(x.nome || "Modelo").slice(0, 40),
+            cozinha: valida(x.cozinha, padrao.cozinha),
+            completo: valida(x.completo, padrao.completo),
+            ...(avisosDoExtra ? { avisos: avisosDoExtra } : {}),
+          };
+        })
     : [];
+  // Mesma regra dos extras: chave que `lerModelo` não devolve é apagada no
+  // primeiro Salvar — e os avisos que a loja desligou voltariam ao papel.
+  const avisos = saneiaAvisos(m.avisos);
 
   return {
     versao: 1,
     cozinha: valida(m.cozinha, padrao.cozinha),
     completo: valida(m.completo, padrao.completo),
     ...(extras.length > 0 ? { modelos: extras } : {}),
+    ...(avisos ? { avisos } : {}),
   };
 }
 
@@ -800,7 +869,10 @@ export function blocosParaOAssistente(lista: Bloco[]): Bloco[] {
       if (x.negrito) saida.negrito = true;
       if (x.invertido) saida.invertido = true;
       if (x.ocultarTaxaEntrega) saida.ocultarTaxaEntrega = true;
-      if (x.tamanho && x.tamanho !== 1) saida.tamanho = x.tamanho;
+      // O título de seção nasce em 1,5 no Assistente (`bl.tamanho || 1.5`),
+      // então o 1 PRECISA viajar: omitido, a loja escolhia "1×" na tela e o
+      // papel continuava saindo em 1,5.
+      if (x.tamanho && (x.tamanho !== 1 || aceitaTitulo(x.tipo))) saida.tamanho = x.tamanho;
       if (x.alinhamento && x.alinhamento !== "esquerda") saida.alinhamento = x.alinhamento;
       // Só viaja a palavra que a loja REESCREVEU. Mandar o texto de fábrica
       // junto engordaria o payload de toda comanda e, pior, congelaria o
@@ -863,6 +935,22 @@ export function blocosDoPedido(
   if (!modeloFoiPersonalizado(bruto)) return undefined;
   const modelo = lerModelo(bruto);
   return blocosParaOAssistente(viaDoModelo(modelo, opcoes));
+}
+
+/**
+ * Os avisos que ESTA impressora desligou, para o `order.avisos` — ou
+ * `undefined` quando não há nenhum. Segue o mesmo modelo que `blocosDoPedido`
+ * escolhe: impressora com modelo próprio leva os avisos dele.
+ */
+export function avisosDoPedido(
+  printerConfig: unknown,
+  opcoes: { modeloId?: string | null } = {},
+): AvisosDesligados | undefined {
+  const bruto = (printerConfig as { comandaModelo?: unknown } | null)?.comandaModelo;
+  if (!modeloFoiPersonalizado(bruto)) return undefined;
+  const modelo = lerModelo(bruto);
+  const escolhido = opcoes.modeloId ? (modelo.modelos || []).find((x) => x.id === opcoes.modeloId) : null;
+  return (escolhido || modelo).avisos;
 }
 
 // ── Prévia ──────────────────────────────────────────────────────────────────

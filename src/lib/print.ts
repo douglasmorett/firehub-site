@@ -4,7 +4,7 @@ import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
-import { blocosDoPedido, type Bloco } from "./comanda-modelo";
+import { avisosDoPedido, blocosDoPedido, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -98,7 +98,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.22";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.23";
 
 /**
  * A partir daqui o Assistente imprime o "CPF na nota" em LINHA PRÓPRIA.
@@ -285,7 +285,9 @@ async function printToDevice(
   /** O bloco da campanha "converter" para ESTA impressora (ausente = nao sai). */
   campanha?: BlocoDaCampanha,
   /** O modelo de comanda da loja. Ausente = layout embutido no Assistente. */
-  blocos?: Bloco[]
+  blocos?: Bloco[],
+  /** Os avisos que a loja desligou (aba Avisos). Ausente = todos ligados. */
+  avisos?: AvisosDesligados
 ): Promise<{ ok: boolean; aguardando: boolean }> {
   const nao = { ok: false, aguardando: false };
   try {
@@ -379,6 +381,9 @@ async function printToDevice(
           // Assistente imprime o layout embutido; Assistente antigo ignora o
           // campo e faz a mesma coisa.
           ...(blocos && blocos.length ? { blocos } : {}),
+          // Os avisos desligados na aba Avisos (Assistente 1.2.23+). Só vai o
+          // que a loja desligou; Assistente antigo ignora e imprime todos.
+          ...(avisos ? { avisos } : {}),
           // Quem entrega, decidido AQUI. O payload não mandava `deliveryBy`:
           // no Assistente o campo chegava vazio e sobrava o código de coleta
           // para decidir, então todo pedido do iFood com código saía com
@@ -569,7 +574,8 @@ export async function printOrder(
       // o mesmo modelo para todas as impressoras, e o defeito só aparecia em
       // loja com mais de uma. Impressora sem `modeloId` (inclusive a sintética
       // de resgate, que não tem cadastro) cai no modelo padrão da loja.
-      blocosDoPedido(printerConfig, { semValores, modeloId: (printer as any).modeloId })
+      blocosDoPedido(printerConfig, { semValores, modeloId: (printer as any).modeloId }),
+      avisosDoPedido(printerConfig, { modeloId: (printer as any).modeloId })
     );
     if (result.ok) printed++;
     if (result.aguardando) aguardando = true;
@@ -634,7 +640,8 @@ export async function printTestReceipt(
     // O teste tem que sair com o MODELO da loja, senão o lojista aperta
     // "Imprimir teste" para conferir o que acabou de montar e recebe o
     // layout de fábrica — e conclui que a tela não funciona.
-    blocosDoPedido(printerConfig)
+    blocosDoPedido(printerConfig),
+    avisosDoPedido(printerConfig)
   ).then(r => r.ok);
 }
 

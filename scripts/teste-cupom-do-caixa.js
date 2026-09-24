@@ -56,6 +56,10 @@ function recortarFuncao(fonte, assinatura) {
 const servidor = fs.readFileSync(path.resolve(RAIZ, "firehub-print-assistant", "server.js"), "utf8");
 const pedacos = [
   recortarFuncao(servidor, "function cleanAscii("),
+  // As duas do "CPF na nota" (1.2.20): o papel do Assistente ANTIGO (sem
+  // relatorio) passa pelo caminho de pedido, que as chama.
+  recortarFuncao(servidor, "function documentoDoCliente("),
+  recortarFuncao(servidor, "function nomeSemDocumento("),
   recortarFuncao(servidor, "function normalizarCombo("),
   recortarFuncao(servidor, "function buildEscPos("),
   "return buildEscPos;",
@@ -102,29 +106,68 @@ const cupom = cupomDeFechamentoDeCaixa({
     contado: { cash: 480.6, debit: 320.0, credit: 210.5, pix: 180.0, voucher: 0 },
     diferenca: -12.0,
     online: { ifood: 900.0, food99: 100.0 },
-    cuponsDaPlataforma: { ifood: 80.0, food99: 25.0 },
+    onlineEsperado: 1000.0,
     movimentacoes: { entradas: 50, saidas: 200 },
     foraDaConferencia: { fiado: 90, fiadoQtd: 3, naoIdentificado: 40, naoIdentificadoQtd: 2, mesasAbertas: 70, mesasAbertasQtd: 1 },
     pendentes: { valor: 150, quantidade: 4 },
     finalizadosNoFechamento: 3,
     justificativa: "Faltou troco no fim da noite",
+    // O retrato no formato de lib/esperado-do-turno.ts (fechamento completo,
+    // 23/09/2026): faturamento por forma, canal com as formas, tipo de venda,
+    // cupons da loja x plataformas, fiado com nome, entregadores.
     detalhe: {
-      qtdPedidos: 42,
-      vendaBruta: 3500.0,
-      ticketMedio: 83.33,
-      taxaEntregaTotal: 210.0,
-      descontoDaLoja: 45.0,
+      vendas: { qtd: 42, valor: 3500.0 },
+      porForma: [
+        { nome: "Dinheiro", qtd: 10, valor: 542.6 },
+        { nome: "Debito", qtd: 6, valor: 320.0 },
+        { nome: "Credito", qtd: 5, valor: 210.5 },
+        { nome: "Pix", qtd: 4, valor: 180.0 },
+        { nome: "Pago online iFood", qtd: 12, valor: 820.0 },
+        { nome: "Pago online 99Food", qtd: 2, valor: 75.0 },
+        { nome: "Fiado", qtd: 3, valor: 90.0 },
+        { nome: "Forma nao identificada", qtd: 2, valor: 40.0 },
+      ],
       porCanal: [
-        { nome: "iFood", qtd: 12, valor: 1100.0 },
-        { nome: "Online", qtd: 18, valor: 1400.0 },
-        { nome: "PDV", qtd: 8, valor: 700.0 },
+        { nome: "iFood", qtd: 12, valor: 900.0, formas: [{ nome: "Pago online", qtd: 12, valor: 820.0 }, { nome: "Cupom da plataforma", qtd: 5, valor: 80.0 }] },
+        { nome: "Site", qtd: 18, valor: 1400.0, formas: [{ nome: "Pix", qtd: 4, valor: 180.0 }, { nome: "Dinheiro", qtd: 14, valor: 1220.0 }] },
+        { nome: "PDV", qtd: 8, valor: 700.0, formas: [{ nome: "Debito", qtd: 6, valor: 610.0 }, { nome: "Fiado", qtd: 2, valor: 90.0 }] },
+        { nome: "Mesa", qtd: 4, valor: 300.0, formas: [{ nome: "Credito", qtd: 4, valor: 300.0 }] },
+      ],
+      porTipo: [
+        { nome: "Entrega", qtd: 26, valor: 2200.0 },
+        { nome: "Balcao", qtd: 12, valor: 1000.0 },
         { nome: "Mesa", qtd: 4, valor: 300.0 },
       ],
+      cupomDaLoja: { qtd: 3, valor: 45.0, porCanal: [{ nome: "Site", qtd: 2, valor: 30.0 }, { nome: "iFood", qtd: 1, valor: 15.0 }] },
+      cupomDaPlataforma: [{ nome: "iFood", qtd: 5, valor: 80.0 }, { nome: "99Food", qtd: 2, valor: 25.0 }],
+      onlinePorCanal: [{ nome: "iFood", qtd: 12, valor: 900.0 }, { nome: "99Food", qtd: 2, valor: 100.0 }],
+      taxaDeEntrega: { qtd: 30, valor: 210.0 },
+      mesas: { servico: 30.0, servicoQtd: 4, gorjeta: 0 },
+      gaveta: { vendasEmDinheiro: 542.6, reforcosQtd: 1, sangriasQtd: 1 },
       movimentacoes: [
         { tipo: "ENTRADA", valor: 50, descricao: "troco extra", hora: new Date("2026-09-19T22:40:00-03:00") },
         { tipo: "SAIDA", valor: 200, descricao: "deposito no banco", hora: new Date("2026-09-20T01:10:00-03:00") },
       ],
-      cancelados: { qtd: 3, valor: 200.0 },
+      fiado: [
+        { hora: new Date("2026-09-19T22:05:00-03:00"), numero: "#12", nome: "Joao", valor: 30.0 },
+        { hora: new Date("2026-09-19T23:10:00-03:00"), numero: "#19", nome: "Maria", valor: 45.0 },
+        { hora: new Date("2026-09-20T00:30:00-03:00"), numero: "#27", nome: "Joao", valor: 15.0 },
+      ],
+      cancelados: {
+        qtd: 3,
+        valor: 200.0,
+        lista: [
+          { hora: new Date("2026-09-19T21:40:00-03:00"), numero: "#5", canal: "iFood", referencia: "4035", valor: 80.0, motivo: "Cliente desistiu", quem: "cliente" },
+          { hora: new Date("2026-09-19T22:15:00-03:00"), numero: "#9", canal: "99Food", referencia: "403012", valor: 70.0, motivo: null, quem: null },
+          { hora: new Date("2026-09-20T00:05:00-03:00"), numero: "#21", canal: "PDV", referencia: null, valor: 50.0, motivo: "Item em falta", quem: "loja" },
+        ],
+      },
+      entregadores: [
+        { nome: "Carlos", entregas: 8, dinheiro: 180.0, cartao: 95.5, pix: 0, online: 210.0, outros: 0, taxas: 40.0, diaria: 50.0, semDistancia: 0, pelaTaxaDoCliente: 0 },
+      ],
+      entregaParceira: { qtd: 4, valor: 300.0 },
+      semEntregador: { qtd: 1, valor: 45.0 },
+      maisVendidos: [{ nome: "Esfiha de carne", qtd: 40, valor: 200.0 }],
     },
   },
 });
@@ -151,7 +194,14 @@ exigir("o operador aparece", /Maria/.test(saida));
 if (!fingirAntigo) {
   exigir("venda por canal aparece", /iFood \(12\)/.test(saida));
   exigir("sangria com hora e motivo aparece", /deposito no banco/.test(saida));
-  exigir("cancelados aparecem", /Cancelados \(3\)/.test(saida));
+  exigir("cancelados aparecem, um a um", /Total cancelado \(3\)/.test(saida) && /#4035/.test(saida));
+  exigir("fiado com o nome de quem comprou", /#12 Joao/.test(saida) && /Joao R\$ 45,00/.test(saida));
+  exigir("cupom da loja, do iFood e do 99 separados",
+    /Pago pela loja \(3\)/.test(saida) && /Pago pelo iFood \(5\)/.test(saida) && /Pago pelo 99Food \(2\)/.test(saida));
+  exigir("canal com as formas de pagamento", /- Pago online \(12\)/.test(saida));
+  exigir("entregador com o que recebe", /A pagar ao entregador/.test(saida));
+  exigir("tipo de venda com ticket", /Entrega \(26\)/.test(saida) && /ticket medio/.test(saida));
+  exigir("total faturado", /TOTAL FATURADO/.test(saida));
   exigir("mesas abertas aparecem", /Mesas ainda abertas/.test(saida));
   exigir("nao imprime rodape de pedido", !/Subtotal:/.test(saida));
   exigir("nao imprime secao CLIENTE", !/Qtd Pedidos/.test(saida));
