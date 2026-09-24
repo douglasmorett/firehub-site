@@ -72,5 +72,49 @@ export async function cardapioDaLoja(franchiseeId: string, canal: CanalDePreco) 
   // qualquer jeito ao gravar.
   const estoque = await estoqueDaLojaOuVazio(franchiseeId);
   const comEstoque = estoque.size === 0 ? produtos : produtos.map((p) => comEstoqueAnotado(p, estoque));
-  return aplicarPrecoNoCardapio(comEstoque as any[], canal);
+  return ordenarComoALoja(aplicarPrecoNoCardapio(comEstoque as any[], canal), await ordemDasCategorias(franchiseeId));
+}
+
+/**
+ * A ORDEM DAS CATEGORIAS que a loja escolheu em "Reordenar Cardápio"
+ * (MenuCategory.sortOrder), como posição por nome.
+ *
+ * O `orderBy` do banco ordena por NOME da categoria (o produto guarda a
+ * categoria como texto), e as telas de venda ainda passavam um `.sort()`
+ * alfabético por cima. Na Ragnar Burger, "Adicionais Burger" — a última na
+ * ordem da loja — abria o balcão, com Bacon e as bordas no topo.
+ */
+export async function ordemDasCategorias(franchiseeId: string | null | undefined): Promise<Map<string, number>> {
+  if (!franchiseeId) return new Map();
+  const categorias = await prisma.menuCategory
+    .findMany({
+      where: { franchiseeId },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { name: true },
+    })
+    .catch(() => [] as { name: string }[]);
+  return new Map(categorias.map((c, i) => [chaveDaCategoria(c.name), i]));
+}
+
+const chaveDaCategoria = (nome: unknown) => String(nome ?? "").trim().toLowerCase();
+
+/**
+ * Reordena pela posição da categoria e anota `categoriaOrdem` em cada produto.
+ * A ordem DENTRO da categoria é a que veio do banco (sortOrder, nome): o sort
+ * do JavaScript é estável e só compara a categoria. Categoria sem cadastro vai
+ * para o fim, em ordem alfabética entre si.
+ */
+export function ordenarComoALoja<T extends { category?: string | null }>(
+  produtos: T[],
+  ordem: Map<string, number>
+): (T & { categoriaOrdem: number })[] {
+  const FIM = 100000;
+  const posicao = (p: T) => ordem.get(chaveDaCategoria(p.category)) ?? FIM;
+  return produtos
+    .map((p) => ({ ...p, categoriaOrdem: posicao(p) }))
+    .sort(
+      (a, b) =>
+        a.categoriaOrdem - b.categoriaOrdem ||
+        (a.categoriaOrdem === FIM ? String(a.category ?? "").localeCompare(String(b.category ?? ""), "pt-BR") : 0)
+    );
 }
