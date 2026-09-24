@@ -190,9 +190,17 @@ export default function VendaPresencialPage() {
     return HIDDEN_CATEGORIES.has(cat);
   };
 
+  // A loja tem uma categoria chamada "Combos"? Então a aba é ela, e a aba
+  // transversal de combos não é criada — na Ragnar Burger apareciam duas.
+  const temCategoriaCombos = useMemo(
+    () => products.some(p => (p.category || "").trim().toLowerCase() === "combos"),
+    [products]
+  );
+
   const categories = useMemo(() => {
     const activeTodayProducts = products.filter(p => {
       if (p.active === false || p.activePDV === false) return false;
+      if ((p as any).esgotado === true) return false;
       if (p.apenasOpcaoDeCombo === true) return false;
       if (!isAvailableToday(p, currentDayCode)) return false;
       if (isIntegrationItem(p)) return false;
@@ -201,11 +209,16 @@ export default function VendaPresencialPage() {
     // A categoria REAL, sempre — mesma correção da mesa. Combo virava "Combos"
     // e apagava a aba da categoria dele; numa loja de cardápio no molde iFood,
     // onde quase tudo é combo, sobrava uma aba só com o cardápio inteiro dentro.
-    const reais = Array.from(new Set(activeTodayProducts.map(p => p.category || "Outros"))).sort();
+    //
+    // A ORDEM é a da loja ("Reordenar Cardápio"): o servidor já entrega os
+    // produtos nela (lib/cardapio-da-loja.ts, `ordenarComoALoja`), e as abas
+    // saem na ordem em que as categorias aparecem. O `.sort()` alfabético que
+    // estava aqui abria o balcão da Ragnar por "Adicionais Burger", a última
+    // categoria da loja.
+    const reais = Array.from(new Set(activeTodayProducts.map(p => p.category || "Outros")));
     const temCombo = activeTodayProducts.some(p => p.isCombo);
-    const cats = [...(temCombo ? ["Combos"] : []), ...reais];
-    return ["Todos", ...cats.sort()];
-  }, [products, currentDayCode]);
+    return ["Todos", ...(temCombo && !temCategoriaCombos ? ["Combos"] : []), ...reais];
+  }, [products, currentDayCode, temCategoriaCombos]);
 
   const filtered = products.filter(p => {
     if (p.active === false) return false;
@@ -225,7 +238,9 @@ export default function VendaPresencialPage() {
     if (isIntegrationItem(p)) return false;
     // "Combos" é aba transversal: o item aparece na categoria dele e também lá.
     if (selectedCategory !== "Todos") {
-      const bate = selectedCategory === "Combos" ? !!p.isCombo : (p.category || "Outros") === selectedCategory;
+      const bate = selectedCategory === "Combos" && !temCategoriaCombos
+        ? !!p.isCombo
+        : (p.category || "Outros") === selectedCategory;
       if (!bate) return false;
     }
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;

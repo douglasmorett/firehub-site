@@ -7,7 +7,7 @@ import { authOptions } from "@/lib/auth";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO } from "@/lib/cardapio-interno";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
-import { SELECT_DO_CARDAPIO } from "@/lib/cardapio-da-loja";
+import { SELECT_DO_CARDAPIO, ordemDasCategorias, ordenarComoALoja } from "@/lib/cardapio-da-loja";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
@@ -288,8 +288,12 @@ export async function GET(req: NextRequest) {
     // Admin sem loja escolhida vê a rede inteira: aí não há um estoque só.
     const lojaDoCardapio = scope.isAdmin ? scope.adminStoreId : scope.storeId;
     const estoque = await estoqueDaLojaOuVazio(lojaDoCardapio);
+    // Na ordem que a loja escolheu em "Reordenar Cardápio", não na alfabética.
     return NextResponse.json(
-      comPreco.map((p: any) => comEstoqueAnotado({ ...p, apenasOpcaoDeCombo: soOpcao.has(String(p.id)) }, estoque))
+      ordenarComoALoja(
+        comPreco.map((p: any) => comEstoqueAnotado({ ...p, apenasOpcaoDeCombo: soOpcao.has(String(p.id)) }, estoque)),
+        await ordemDasCategorias(lojaDoCardapio)
+      )
     );
   }
 

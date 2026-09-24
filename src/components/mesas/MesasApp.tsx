@@ -607,10 +607,15 @@ export default function MesasApp({
           );
           // "Combos" é uma aba TRANSVERSAL: o combo aparece na categoria dele e
           // também aqui, para quem quer ver só os montados. Só entra na lista se
-          // a loja tiver algum.
-          const reais = Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros"))).sort();
+          // a loja tiver algum — e não tiver uma categoria chamada "Combos",
+          // senão apareciam duas abas iguais.
+          //
+          // A ORDEM é a da loja ("Reordenar Cardápio"): o servidor já entrega os
+          // produtos nela (lib/cardapio-da-loja.ts). Sem `.sort()` alfabético.
+          const reais = Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros")));
           const temCombo = items.some((i: MenuItem) => i.isCombo);
-          const cats = ["Todos", ...(temCombo ? ["Combos"] : []), ...reais];
+          const temCategoriaCombos = reais.some((c) => String(c).trim().toLowerCase() === "combos");
+          const cats = ["Todos", ...(temCombo && !temCategoriaCombos ? ["Combos"] : []), ...reais];
           setMenuCategories(cats as string[]);
         }
       }
@@ -1340,11 +1345,13 @@ export default function MesasApp({
   const totalConsumo = occupiedTables.reduce((s, t) => s + (t.openSession?.totalAmount || 0), 0);
 
   const filteredMenu = useMemo(() => {
+    // "Combos" só é a aba transversal quando a loja não tem categoria com esse nome.
+    const temCategoriaCombos = menuItems.some(m => (m.category || "").trim().toLowerCase() === "combos");
     return menuItems.filter(m => {
       const matchSearch = m.name.toLowerCase().includes(menuSearch.toLowerCase());
       const matchCat =
         menuCat === "Todos" ? true
-          : menuCat === "Combos" ? !!m.isCombo
+          : menuCat === "Combos" && !temCategoriaCombos ? !!m.isCombo
             : m.category === menuCat;
       return matchSearch && matchCat;
     });
