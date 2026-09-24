@@ -140,14 +140,16 @@ type Props = {
   autoBeverageTag?: boolean;
   customBeverageKeywords?: unknown;
   onChange: (modelo: ModeloDeComanda) => void;
+  /** O modelo sai sempre SEM VALORES (ex.: "Cozinha sem valores"): só existe a via da cozinha. */
+  soSemValores?: boolean;
 };
 
 export default function ComandaModeloEditor({
   modelo, nomeDaLoja, versaoInstalada, versaoMinima, impressoras = [], modeloEmEdicao = "",
-  autoBeverageTag, customBeverageKeywords, onChange,
+  autoBeverageTag, customBeverageKeywords, onChange, soSemValores = false,
 }: Props) {
   const atual = useMemo(() => lerModelo(modelo), [modelo]);
-  const [via, setVia] = useState<"completo" | "cozinha">("completo");
+  const [via, setVia] = useState<"completo" | "cozinha">(soSemValores ? "cozinha" : "completo");
   // ── A IMPRESSORA DA PRÉVIA ─────────────────────────────────────────────
   //
   // Abre na impressora que usa o modelo em edição (a da cozinha, se o modelo é
@@ -433,7 +435,7 @@ export default function ComandaModeloEditor({
             {([
               { chave: "completo" as const, nome: "Completa (entrega)" },
               { chave: "cozinha" as const, nome: "Cozinha (sem valores)" },
-            ]).map((v) => (
+            ]).filter((v) => !soSemValores || v.chave === "cozinha").map((v) => (
               <button key={v.chave} type="button" onClick={() => { fecharEdicao(); setVia(v.chave); }} style={botao(via === v.chave)}>
                 {v.nome}
               </button>
