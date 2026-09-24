@@ -864,7 +864,11 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   // Âncora, Remanso, Serra Mar): loja de outra cidade não ganhava nada com
   // isso, e "centro" é palavra comum demais — bastava o cliente escrever
   // "centro" numa frase qualquer para o sistema tratar como endereço.
-  const addressRegex = /\b(rua|r\.|avenida|av\.|bairro|estrada|est\.|alameda|travessa|praça|praca|rodovia|rod\.|quadra|qd|lote|lt|condomínio|condominio|loteamento|km)\b/i;
+  // "WE 62" / "SN 10": as ruas da Cidade Nova de Ananindeua vêm sem "Travessa"
+  // na boca do cliente. Sem este par, o robô da Ragnar Burger não validava o
+  // endereço na conversa, não cotava a taxa, e o pedido travava no fim
+  // (24/09/2026). O par dele mora em logradourosCandidatos (lib/geocoding.ts).
+  const addressRegex = /\b(rua|r\.|avenida|av\.|bairro|estrada|est\.|alameda|travessa|praça|praca|rodovia|rod\.|quadra|qd|lote|lt|condomínio|condominio|loteamento|km)\b|\b(we|sn)\s*-?\s*\d{1,4}\b/i;
 
   // A decisão é de `avaliarEntrega` (src/lib/area-de-entrega.ts) — a mesma do
   // site e da gravação do pedido, mais abaixo. O texto aqui só CONTA ao modelo

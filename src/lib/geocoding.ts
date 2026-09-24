@@ -1,5 +1,6 @@
 import { distanciaPorRotaKm, medicaoDaLoja } from "@/lib/distancia-por-rota";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
+import { nomeDeRuaParecido } from "@/lib/geocodificacao";
 
 // Calcula a distância exata em linha reta (KM) usando a fórmula Haversine
 // Alinhado 100% com os círculos de raio desenhados no mapa Leaflet de configurações da loja
@@ -47,7 +48,7 @@ export type DeliveryZoneCheckResult = {
 export async function geocodeAddress(
   addressQuery: string,
   storeCenter?: { lat: number; lng: number } | null
-): Promise<{ lat: number; lng: number; displayName: string } | null> {
+): Promise<{ lat: number; lng: number; displayName: string; rua?: string } | null> {
   if (!addressQuery || addressQuery.trim().length < 3) return null;
   try {
     const cleanQuery = addressQuery
@@ -71,10 +72,14 @@ export async function geocodeAddress(
     if (!res.ok) return null;
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
+      const a = data[0].address || {};
       return {
         lat: parseFloat(data[0].lat),
         lng: parseFloat(data[0].lon),
         displayName: data[0].display_name,
+        // A rua que o mapa entendeu — é por ela que se confere se ele achou a
+        // rua do cliente ou outra do mesmo bairro (ver verifyStoreDeliveryAddress).
+        rua: a.road || a.pedestrian || a.footway || a.residential || undefined,
       };
     }
   } catch (err: any) {
@@ -95,7 +100,7 @@ export async function geocodeStreetStructured(
   street: string,
   city: string,
   storeCenter?: { lat: number; lng: number } | null
-): Promise<Array<{ lat: number; lng: number; displayName: string; suburb: string }>> {
+): Promise<Array<{ lat: number; lng: number; displayName: string; suburb: string; rua: string }>> {
   if (!street || street.trim().length < 3 || !city) return [];
   try {
     let url = `https://nominatim.openstreetmap.org/search?format=json&street=${encodeURIComponent(street.trim())}&city=${encodeURIComponent(city.trim())}&country=Brasil&limit=5&addressdetails=1`;
@@ -115,6 +120,9 @@ export async function geocodeStreetStructured(
       lng: parseFloat(d.lon),
       displayName: String(d.display_name || ""),
       suburb: String(d.address?.suburb || d.address?.neighbourhood || d.address?.city_district || d.address?.quarter || ""),
+      // A busca por "WE 62" devolvia um comércio no número 62 da Travessa WE 13:
+      // quem chama confere a rua por este campo.
+      rua: String(d.address?.road || d.address?.pedestrian || d.address?.footway || ""),
     })).filter((d: any) => Number.isFinite(d.lat) && Number.isFinite(d.lng));
   } catch (err: any) {
     console.warn("[Geocoding] busca estruturada falhou:", err?.message);
@@ -134,8 +142,68 @@ export function extrairLogradouro(texto: string): string {
   return `${tipoCheio} ${m[2].trim().replace(/\s+(n[º°o]?|numero|número|casa|lote|lt|quadra|qd|s\/n)\b.*$/i, "").trim()}`;
 }
 
+// Algarismo romano sozinho vira n\u00famero para COMPARAR bairro: o cliente escreve
+// "Cidade Nova 5" e o mapa chama de "Cidade Nova V" (Ananindeua, 24/09/2026).
+const ROMANOS: Record<string, string> = {
+  i: "1", ii: "2", iii: "3", iv: "4", v: "5", vi: "6", vii: "7", viii: "8", ix: "9", x: "10", xi: "11", xii: "12",
+};
+
 function normalizarParaComparar(t: string): string {
-  return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  return String(t || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/\b(i{1,3}|iv|v|vi{1,3}|ix|x|xi{1,2})\b/g, (m) => ROMANOS[m] || m)
+    .replace(/\s+/g, " ").trim();
+}
+
+/**
+ * O endere\u00e7o sem o que \u00e9 REFER\u00caNCIA.
+ *
+ * "WE 62, 661 - Cidade Nova 5 (pr\u00f3ximo ao Colina)" n\u00e3o voltava NADA do mapa: o
+ * Nominatim tenta casar "pr\u00f3ximo ao Colina" como parte do endere\u00e7o e desiste.
+ * Refer\u00eancia ajuda o motoboy, n\u00e3o o mapa \u2014 sai o par\u00eantese inteiro e as frases
+ * de refer\u00eancia at\u00e9 a pr\u00f3xima v\u00edrgula ("perto do mercado", "em frente \u00e0
+ * igreja", "ref: port\u00e3o azul").
+ */
+export function semReferencias(texto: string): string {
+  return String(texto || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(pr[o\u00f3]x(imo|ima|\.)?|perto|ao lado|em frente|atr[a\u00e1]s|esquina|ponto de refer[e\u00ea]ncia|refer[e\u00ea]ncia|ref)\b[^,;\n]*/gi, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,;])/g, "$1")
+    // A referência no meio deixa ", ," para trás.
+    .replace(/([,;])(\s*[,;])+/g, "$1")
+    .replace(/[\s,;-]+$/g, "")
+    .trim();
+}
+
+/**
+ * As ruas que vale procurar pelo NOME (busca estruturada).
+ *
+ * Com o tipo escrito ("Rua Sol Nascente, 23"), \u00e9 ela e pronto. Sem o tipo, o
+ * rob\u00f4 n\u00e3o procurava rua nenhuma: em Ananindeua as travessas da Cidade Nova se
+ * chamam "WE 62", "SN 10" \u2014 e o cliente escreve assim, sem "Travessa". O mapa
+ * conhece como "Travessa WE 62". A\u00ed se tenta o nome com os tipos mais comuns;
+ * quem chama confere se a rua achada \u00e9 mesmo essa (`nomeDeRuaParecido`).
+ */
+export function logradourosCandidatos(texto: string): string[] {
+  const explicito = extrairLogradouro(texto);
+  if (explicito) return [explicito];
+  // O c\u00f3digo de rua da Cidade Nova de Ananindeua: WE (as travessas) e SN.
+  // Procurado em qualquer ponto do texto, porque no rob\u00f4 o endere\u00e7o chega no
+  // meio da conversa. Outros c\u00f3digos entram aqui quando aparecerem \u2014 lista
+  // aberta a esmo ("DE 10", "AS 20") acharia rua em frase comum.
+  const codigo = String(texto || "").match(/\b(WE|SN)\s*-?\s*(\d{1,4})\b/i);
+  if (codigo) {
+    const nome = `${codigo[1].toUpperCase()} ${codigo[2]}`;
+    return [`Travessa ${nome}`, `Rua ${nome}`];
+  }
+  return [];
+}
+
+/** A rua do resultado \u00e9 a que o cliente escreveu? Sem rua no resultado, n\u00e3o d\u00e1 para afirmar. */
+function ruaConfere(procurada: string, achada: string | undefined): boolean {
+  if (!achada) return false;
+  return nomeDeRuaParecido(procurada, achada);
 }
 
 // Verifica se um endereço está dentro dos raios de entrega da loja
@@ -213,11 +281,13 @@ export async function verifyStoreDeliveryAddress(
       candidateQueries.push(`${street}, ${neigh}, ${city}`);
     }
 
-    // Nível 3: Query completa fornecida
-    if (customerAddressText && customerAddressText.trim().length >= 4) {
-      const full = customerAddressText.toLowerCase().includes(city.toLowerCase())
-        ? customerAddressText
-        : `${customerAddressText}, ${city}`;
+    // Nível 3: Query completa fornecida — sem as referências ("(próximo ao
+    // Colina)"), que fazem o mapa não achar nada.
+    const textoParaOMapa = semReferencias(customerAddressText) || customerAddressText;
+    if (textoParaOMapa && textoParaOMapa.trim().length >= 4) {
+      const full = textoParaOMapa.toLowerCase().includes(city.toLowerCase())
+        ? textoParaOMapa
+        : `${textoParaOMapa}, ${city}`;
       if (!candidateQueries.includes(full)) candidateQueries.push(full);
     }
 
@@ -231,16 +301,37 @@ export async function verifyStoreDeliveryAddress(
       }
     }
 
+    // ── A RUA ACHADA TEM QUE SER A DO CLIENTE ────────────────────────────
+    //
+    // A busca livre é generosa: "WE 62, 661 - Cidade Nova 5" voltava como
+    // "Travessa We 35" — outra rua do mesmo bairro. Quando dá para saber qual
+    // rua o cliente escreveu, o resultado de outra rua fica só como reserva
+    // (`aproximado`): antes dele se tenta a busca pelo NOME da rua (nível 5).
+    // Se nada melhor aparecer, ele volta, marcado como aproximado — nunca pior
+    // do que era.
+    //
+    // Só no endereço em TEXTO LIVRE (robô, pedido digitado): o checkout do site
+    // manda rua, número e bairro separados e já ancora a busca no bairro — lá
+    // a conferência trocaria um resultado de rua pelo centro do bairro antes
+    // de tentar o nível 5, e ninguém reclamou desse caminho.
+    const ruasProcuradas = street ? [] : logradourosCandidatos(customerAddressText);
+    let aproximado: { lat: number; lng: number; displayName: string } | null = null;
+
     let foundGeo: { lat: number; lng: number; displayName: string } | null = null;
     for (let i = 0; i < candidateQueries.length; i++) {
-      foundGeo = await geocodeAddress(candidateQueries[i], storeCenter);
-      if (foundGeo) {
-        displayName = foundGeo.displayName;
-        // Quem consome precisa saber se a distância é do endereço ou só do
-        // bairro: o centro do bairro pode estar dentro do raio com a casa fora.
-        precisao = indiceDoFallbackDeBairro >= 0 && i >= indiceDoFallbackDeBairro ? "bairro" : "endereco";
-        break;
+      const achado = await geocodeAddress(candidateQueries[i], storeCenter);
+      if (!achado) continue;
+      const ehFallbackDeBairro = indiceDoFallbackDeBairro >= 0 && i >= indiceDoFallbackDeBairro;
+      if (!ehFallbackDeBairro && ruasProcuradas.length > 0 && !ruasProcuradas.some((r) => ruaConfere(r, achado.rua))) {
+        if (!aproximado) aproximado = achado;
+        continue;
       }
+      foundGeo = achado;
+      displayName = achado.displayName;
+      // Quem consome precisa saber se a distância é do endereço ou só do
+      // bairro: o centro do bairro pode estar dentro do raio com a casa fora.
+      precisao = ehFallbackDeBairro ? "bairro" : "endereco";
+      break;
     }
 
     // Nível 5: busca ESTRUTURADA pela rua, na cidade da loja. Acha o que a
@@ -250,10 +341,18 @@ export async function verifyStoreDeliveryAddress(
     // (taxa conservadora); se caem em lados diferentes, ninguém sabe — e
     // "não sei" é a resposta certa, não "atende".
     if (!foundGeo) {
-      const logradouro = street || extrairLogradouro(customerAddressText);
+      // A rua como veio (do formulário ou do texto) e, sem o tipo, os nomes
+      // candidatos ("WE 62" → "Travessa WE 62", "Rua WE 62").
+      const ruas = street
+        ? [street, ...logradourosCandidatos(street).filter((r) => r !== street)]
+        : ruasProcuradas;
       const cidadeDaBusca = city || storeCity || "";
-      if (logradouro && cidadeDaBusca) {
-        const trechos = await geocodeStreetStructured(logradouro, cidadeDaBusca, storeCenter);
+      for (const logradouro of cidadeDaBusca ? ruas : []) {
+        if (foundGeo) break;
+        const achados = await geocodeStreetStructured(logradouro, cidadeDaBusca, storeCenter);
+        // Só trecho da MESMA rua: "WE 62" sozinho devolvia um comércio no
+        // número 62 da Travessa WE 13, a 1,7 km dali.
+        const trechos = achados.filter((t) => ruaConfere(logradouro, t.rua));
         if (trechos.length > 0) {
           const texto = normalizarParaComparar(`${neigh} ${customerAddressText}`);
           const doBairro = trechos.filter((t) => t.suburb && texto.includes(normalizarParaComparar(t.suburb)));
@@ -275,6 +374,15 @@ export async function verifyStoreDeliveryAddress(
           }
         }
       }
+    }
+
+    // A reserva: a busca livre achou OUTRA rua do mesmo pedaço da cidade e a
+    // busca pela rua não achou a do cliente. É o que acontecia antes desta
+    // conferência — só que agora vai marcado como aproximado.
+    if (!foundGeo && aproximado) {
+      foundGeo = aproximado;
+      displayName = aproximado.displayName;
+      precisao = "bairro";
     }
 
     if (!foundGeo) {
