@@ -184,5 +184,21 @@ confere(
 confere("item sem categoria nenhuma continua vazio", categoriaResolvida({ productName: "Coisa", menuProduct: { name: "Coisa", category: "" } }, mapa), "");
 confere("item sem menuProduct não explode", categoriaResolvida({ productName: "Coisa" }, mapa), "");
 
+// ── Pizza da Wabiz: antes só o sabor, desde 24/09/2026 com "Pizza" na frente ──
+// O nome antigo ("1/2 Costela…") e o novo ("Pizza 1/2 Costela…") caem na
+// mesma categoria; o novo não pode virar "pizza pizza costela".
+{
+  const pizzas = montarMapa([
+    { id: "p1", name: "Pizza Costela com Catupiry", category: "Pizzas Especiais" },
+    { id: "p2", name: "Pizza Frango Catupiry", category: "Pizzas Especiais" },
+    { id: "p3", name: "Pizza Calabresa", category: "Pizzas Tradicionais" },
+    { id: "e1", name: "Esfiha Costela com Catupiry", category: "Esfihas Especiais" },
+  ]);
+  const espelho = (nome: string) => ({ productName: nome, menuProduct: { id: "wabiz-x", active: false, name: nome, category: "Pizzas Grande" } });
+  confere("Wabiz meio a meio, nome antigo", categoriaResolvida(espelho("1/2 Costela com Catupiry + 1/2 Frango Catupiry"), pizzas), "Pizzas Especiais");
+  confere("Wabiz meio a meio, nome novo", categoriaResolvida(espelho("Pizza 1/2 Costela com Catupiry + 1/2 Frango Catupiry"), pizzas), "Pizzas Especiais");
+  confere("Wabiz inteira, nome novo casa direto", categoriaResolvida(espelho("Pizza Calabresa"), pizzas), "Pizzas Tradicionais");
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

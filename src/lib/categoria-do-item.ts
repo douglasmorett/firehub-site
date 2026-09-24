@@ -187,11 +187,15 @@ function ehItemDeEspelho(item: ItemComCategoria): boolean {
  * "1/2 Costela com Catupiry + 1/2 Frango Catupiry" → ["Costela com Catupiry",
  * "Frango Catupiry"]. É como a Wabiz escreve meia a meia, e como o iFood
  * escreve promoção ("Pizza + Guaraná").
+ *
+ * A fração sai de onde estiver, não só do começo: desde 24/09/2026 a Wabiz
+ * chega "Pizza 1/2 Calabresa + 1/2 Muçarela" (lib/wabiz-traducao.ts,
+ * ehPizzaSemTipoNoNome), e o primeiro pedaço é "Pizza Calabresa".
  */
 function pedacosDoNome(nome: unknown): string[] {
   return String(nome ?? "")
     .split(/\s*[+|]\s*/)
-    .map((p) => p.replace(/^\s*\d+\s*\/\s*\d+\s*/, "").trim())
+    .map((p) => p.replace(/(^|\s)\d+\s*\/\s*\d+(?=\s|$)/g, " ").replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
 
@@ -224,7 +228,9 @@ function porTipoDoGrupo(item: ItemComCategoria, mapa: MapaDeCategorias): string 
   const votos = new Map<string, number>();
   const ordem: string[] = [];
   for (const pedaco of pedacosDoNome(item?.productName ?? item?.menuProduct?.name)) {
-    const chave = chaveDoNome(`${tipo} ${pedaco}`);
+    // O pedaço que já traz o tipo ("Pizza Calabresa") não ganha outro na frente.
+    const doPedaco = chaveDoNome(pedaco);
+    const chave = doPedaco.startsWith(`${tipo} `) ? doPedaco : chaveDoNome(`${tipo} ${pedaco}`);
     const categoria = chave ? mapa.porNome.get(chave) : undefined;
     if (!categoria) continue;
     if (!votos.has(categoria)) ordem.push(categoria);

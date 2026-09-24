@@ -73,7 +73,7 @@ function confere(rotulo: string, obtido: unknown, esperado: unknown) {
   confere("delivery: ids", [dados.openDeliveryOrderId, dados.openDeliveryReference, dados.source, dados.openDeliveryChannel], ["b32bb1f2-5ee7-702d-ef7c-7965db3f8923", "3378", "WABIZ", "WABIZ"]);
   confere("delivery: tipo, total e taxa", [dados.deliveryType, dados.totalAmount, dados.deliveryFee], ["DELIVERY", 62, 4]);
   confere("delivery: soma dos itens + taxa = total", items.reduce((s: number, i: any) => s + i.price * i.quantity, 0) + dados.deliveryFee, 62);
-  confere("delivery: nomes dos itens", items.map((i: any) => [i.productName, i.quantity, i.price]), [["Alho e Óleo (grande)", 1, 40], ["Coca-Cola Normal 2 Litros", 2, 9]]);
+  confere("delivery: nomes dos itens", items.map((i: any) => [i.productName, i.quantity, i.price]), [["Pizza Alho e Óleo (grande)", 1, 40], ["Coca-Cola Normal 2 Litros", 2, 9]]);
   confere("delivery: dinheiro com troco para 100", [dados.paymentMethod, dados.changeAmount], ["Dinheiro (Cobrar na Entrega)", 100]);
   confere("delivery: endereço completo", dados.customerAddress, "Rua Principal, 123 - Almerinda Chaves - Jundiaí/SP - CEP 12345678");
   confere("delivery: telefone com DDD", dados.customerPhone, "1199999999");
@@ -86,11 +86,11 @@ function confere(rotulo: string, obtido: unknown, esperado: unknown) {
   const { dados, items } = traduzirPedidoWabiz(retirada, ctx);
   confere("retirada: tipo e pagamento sem dados", [dados.deliveryType, dados.deliveryFee, dados.changeAmount], ["RETIRADA", 0, null]);
   confere("retirada: soma dos itens = total", items.reduce((s: number, i: any) => s + i.price * i.quantity, 0), 107.8);
-  confere("retirada: inteira com borda e adicional", items[0].productName, "Alho e Óleo (grande) | Borda Cheddar | Bacon");
+  confere("retirada: inteira com borda e adicional", items[0].productName, "Pizza Alho e Óleo (grande) | Borda Cheddar | Bacon");
   confere(
     "retirada: meio-a-meio diz de qual metade é cada opção",
     items[1].productName,
-    "1/2 Aliche + 1/2 Americana (grande) | Aliche: Bacon | Americana: Borda Catupiry | Americana: Grossa | Americana: Alho Frito | Americana: Bacon"
+    "Pizza 1/2 Aliche + 1/2 Americana (grande) | Aliche: Bacon | Americana: Borda Catupiry | Americana: Grossa | Americana: Alho Frito | Americana: Bacon"
   );
   confere("retirada: obs da metade vai para as notas", dados.notes.includes("📝 Americana: Sem cebola"), true);
   confere("retirada: comboSelections é JSON", JSON.parse(items[1].comboSelections).length, 5);
@@ -112,7 +112,7 @@ function confere(rotulo: string, obtido: unknown, esperado: unknown) {
 
 {
   const { dados, items } = traduzirPedidoWabiz(real1, ctx);
-  confere("real nº1: borda que vem em `others` sai com rótulo", items.map((i: any) => [i.productName, i.quantity, i.price]), [["Calabresa | Borda Catupiry Original", 1, 68.9]]);
+  confere("real nº1: borda que vem em `others` sai com rótulo", items.map((i: any) => [i.productName, i.quantity, i.price]), [["Pizza Calabresa | Borda Catupiry Original", 1, 68.9]]);
   confere("real nº1: item + taxa = total", items[0].price + dados.deliveryFee, 73.9);
   confere("real nº1: troco, telefone e referência", [dados.changeAmount, dados.customerPhone, dados.notes.includes("Referência: Pedido de teste")], [100, "11987654321", true]);
   confere("real nº1: hora local SP → UTC", traduzirPedidoWabiz({ ...real1, service: { type: "scheduleOrder_pickup", scheduleDatetime: "2026-09-12 20:25:54" } }, ctx).dados.scheduledDatetime.toISOString(), "2026-09-12T23:25:54.000Z");
@@ -122,7 +122,7 @@ function confere(rotulo: string, obtido: unknown, esperado: unknown) {
   // Pedido REAL nº 2: meio-a-meio com uma metade SEM código, 2 Cocas com código null, débito.
   const real2: any = {"orderNumber":2,"status":1,"internalKey":"916e6fd1-6071-5dd0-6d16-3aead462f8bb","dateTime":"2026-09-12 20:34:04","obs":"TESTE 2 FIREHUB - sera cancelado","customer":{"name":"Teste FireHub","email":null,"phoneCode":"11","phoneNumber":"987654321","document":null},"items":[{"groupName":"Pizzas Grande","groupExternalCode":"35265889","subGroupName":"Pizzas Tradicionais","sugGroupExternalCode":null,"products":[{"pos":1,"qty":1,"price":73.9,"unity":"un","parts":[{"name":"Portuguesa","price":57.9,"externalCode":"35265889.23734253","customization":{"additionals":[{"name":"Adicionais","options":[{"externalCode":"35265889.23734120","name":"Bacon","acceptPartition":true,"price":8.0}]}],"edge":{},"others":[]},"obs":null},{"name":"Muçarela","price":54.9,"externalCode":"","customization":{"additionals":[],"edge":{},"others":[{"name":"Bordas","options":[{"externalCode":"35265889.23734147","name":"Cheddar","acceptPartition":false,"price":12.0}]}]},"obs":"metade muçarela bem assada"}]}]},{"groupName":"Bebidas","groupExternalCode":null,"subGroupName":"Refrigerantes","sugGroupExternalCode":null,"products":[{"pos":1,"qty":2,"price":14.5,"unity":"un","parts":[{"name":"Coca Cola 2l","price":14.5,"externalCode":null,"customization":null,"obs":null}]}]}],"service":{"type":"delivery","delivery":{"address":"Rua Barão de Jundiaí","number":"100","compl":"Apto 12 - TESTE FIRE","region":"Centro","postalCode":"13201010","city":"Jundiaí","state":"SP","tax":5,"referencePoint":"Pedido de teste da integração","payment":{"type":3,"name":"Cartão (trazer maquininha)","value":107.9,"externalCode":"3","cardFlag":"Débito"}}},"priceRules":{"partitionPriceMode":"highest","extrasPriceMode":"proportionalToFinal"},"total":107.9,"discounts":0};
   const { dados, items } = traduzirPedidoWabiz(real2, ctx);
-  confere("real nº2: nomes", items.map((i: any) => [i.productName, i.quantity, i.price]), [["1/2 Portuguesa + 1/2 Muçarela | Portuguesa: Bacon | Borda Cheddar", 1, 73.9], ["Coca Cola 2l", 2, 14.5]]);
+  confere("real nº2: nomes", items.map((i: any) => [i.productName, i.quantity, i.price]), [["Pizza 1/2 Portuguesa + 1/2 Muçarela | Portuguesa: Bacon | Borda Cheddar", 1, 73.9], ["Coca Cola 2l", 2, 14.5]]);
   confere("real nº2: itens + taxa = total", items.reduce((s: number, i: any) => s + i.price * i.quantity, 0) + dados.deliveryFee, 107.9);
   confere("real nº2: espelho do meio-a-meio NÃO é o da Portuguesa inteira", items[0].menuProduct.connectOrCreate.where.id, "wabiz-loja-teste-35265889.23734253+mucarela");
   confere("real nº2: débito na maquininha, sem troco", [dados.paymentMethod, dados.changeAmount], ["Cartão Débito (Cobrar na Entrega)", null]);
@@ -148,9 +148,9 @@ function confere(rotulo: string, obtido: unknown, esperado: unknown) {
   const { dados, items } = traduzirPedidoWabiz(real5, ctx);
   confere("real nº5: nomes", items.map((i: any) => [i.productName, i.price]), [
     ["Na Compra de 2 Pizzas Especiais, Ganhe Grátis Uma Coca 2l | Pizza 4 Queijos | Borda Catupiry Original | Pizza Toscana | Coca Cola 2L", 151.81],
-    ["Brasiliense | Borda Chocolate | Coca Cola 1,5l", 78.9],
-    ["1/2 Lombinho + 1/2 Caipira | Coca Cola Zero 1,5l", 65.9],
-    ["Nik Uva", 69.9],
+    ["Pizza Brasiliense | Borda Chocolate | Coca Cola 1,5l", 78.9],
+    ["Pizza 1/2 Lombinho + 1/2 Caipira | Coca Cola Zero 1,5l", 65.9],
+    ["Pizza Nik Uva", 69.9],
   ]);
   confere("real nº5: itens + taxa = total", Math.round((items.reduce((s: number, i: any) => s + i.price * i.quantity, 0) + dados.deliveryFee) * 100) / 100, 371.51);
 }
@@ -253,6 +253,40 @@ const comCupom: any = {
   confere("mesa: número da mesa na comanda", (dados.notes || "").includes("MESA 7"), true);
   const balcao: any = { ...delivery, orderNumber: 95, internalKey: "ret-1", service: { type: "pickup" } };
   confere("retirada continua RETIRADA", traduzirPedidoWabiz(balcao, ctx).dados.deliveryType, "RETIRADA");
+}
+
+// ── Pizza só com o sabor (NIK, #3698, 23/09/2026) ─────────────────────────
+// A comanda saiu "1x Calabresa", "1x Portuguesa" ao lado de "1x Esfiha
+// Banoffe": a NIK faz os dois, e a cozinha não sabia qual. O tipo estava no
+// grupo da Wabiz ("Pizzas Grande"), fora do nome.
+{
+  const nik: any = {
+    ...delivery, orderNumber: 3698, internalKey: "nik-3698",
+    items: [
+      { groupName: "Esfihas", products: [{ pos: 1, qty: 1, price: 12.9, unity: "un", parts: [{ name: "Esfiha Banoffe", price: 12.9, externalCode: null, customization: null }] }] },
+      { groupName: "Pizzas Grande", products: [
+        { pos: 1, qty: 1, price: 56.9, unity: "un", parts: [{ name: "Calabresa", price: 56.9, externalCode: "35265889.23734216", customization: { additionals: [], edge: {}, others: [] } }] },
+        { pos: 2, qty: 1, price: 57.9, unity: "un", parts: [{ name: "Portuguesa", price: 57.9, externalCode: "35265889.23734253", customization: null }] },
+      ] },
+      { groupName: "Quarta com Borda Grátis", products: [{ pos: 1, qty: 1, price: 59.9, unity: "un", parts: [
+        { name: "Banana Nevada", price: 59.9, externalCode: "37724274.25228066", customization: null },
+        { name: "Portuguesa", price: 59.9, externalCode: "37724274.25227908", customization: null },
+      ] }] },
+      { groupName: "Combos de Esfiha", products: [{ pos: 1, qty: 1, price: 89.9, unity: "un", parts: [{ name: "Combo 3", price: 89.9, externalCode: "35265914", customization: null }] }] },
+      { groupName: "Bebidas", products: [{ pos: 1, qty: 1, price: 14.5, unity: "un", parts: [{ name: "Coca Cola 2l", price: 14.5, externalCode: null, customization: null }] }] },
+    ],
+  };
+  const { items } = traduzirPedidoWabiz(nik, ctx);
+  confere("NIK #3698: pizza diz que é pizza, o resto fica como veio", items.map((i: any) => i.productName), [
+    "Esfiha Banoffe",
+    "Pizza Calabresa",
+    "Pizza Portuguesa",
+    "Pizza 1/2 Banana Nevada + 1/2 Portuguesa",
+    "Combo 3",
+    "Coca Cola 2l",
+  ]);
+  confere("NIK #3698: o espelho nasce com o nome certo", items[1].menuProduct.connectOrCreate.create.name, "Pizza Calabresa");
+  confere("NIK #3698: o id do espelho não muda (o espelho antigo é o mesmo)", items[1].menuProduct.connectOrCreate.where.id, "wabiz-loja-teste-35265889.23734216");
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

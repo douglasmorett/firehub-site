@@ -187,6 +187,35 @@ function opcoesDaParte(parte: WabizParte): OpcaoDaParte[] {
 const comQuantidade = (o: OpcaoDaParte) => (o.quantidade > 1 ? `${o.quantidade}x ${o.nome}` : o.nome);
 
 /**
+ * A pizza chega só com o SABOR, e sabor sozinho não diz o que é.
+ *
+ * ── "1x Calabresa": pizza ou esfiha? ───────────────────────────────────────
+ *
+ * NIK, pedido Wabiz #3698 (23/09/2026): a comanda saiu com "1x Esfiha Banana
+ * Nevada", "1x Calabresa", "1x Portuguesa", "1x Esfiha Banoffe". A NIK faz
+ * esfiha E pizza de calabresa, de portuguesa, de banana nevada — a cozinha
+ * teve de adivinhar pelo preço. Nos outros canais o nome já vem "Pizza
+ * Calabresa".
+ *
+ * É o formato da Wabiz: o nome da pizza é o nome da `part` (o sabor), e o tipo
+ * fica no GRUPO do cardápio dela ("Pizzas Grande", "Pizza Tradicional +
+ * Guaraná"). A esfiha escapa porque a loja cadastrou o tipo no nome.
+ *
+ * É pizza quando o grupo diz ("pizza", ou a promoção "Quarta com Borda
+ * Grátis"), quando vem meio a meio (esfiha não tem metade) ou quando tem
+ * borda. Nome que já diz o tipo, combo e bebida ficam como vieram.
+ */
+function ehPizzaSemTipoNoNome(nomeDoGrupo: string, partes: WabizParte[], nomesDasPartes: string[]): boolean {
+  if (partes.length === 0) return false;
+  const nomes = nomesDasPartes.join(" ");
+  if (/pizz|esf[iy]r*h?a|calzone|combo/i.test(nomes)) return false;
+  if (isBeverageName(nomes)) return false;
+  if (partes.length > 1) return true;
+  if (/pizz|borda/i.test(nomeDoGrupo)) return true;
+  return partes.some((p) => (p.customization?.edge?.options || []).length > 0 ||(p.customization?.others || []).some((g) => /borda/i.test(texto(g?.name))));
+}
+
+/**
  * A tradução pura: pedido da Wabiz → dados do CustomerOrder, sem tocar no banco.
  * Separada para ser testável com os exemplos da doc (scripts/teste-traducao-wabiz.ts).
  */
@@ -213,7 +242,9 @@ export function traduzirPedidoWabiz(
       const frac = partes.length;
 
       const nomesDasPartes = partes.map((p) => texto(p.name) || "Item");
-      const nomeBase = frac > 1 ? nomesDasPartes.map((n) => `1/${frac} ${n}`).join(" + ") : nomesDasPartes[0] || texto(grupo?.groupName) || "Item";
+      const nomeDoSabor = frac > 1 ? nomesDasPartes.map((n) => `1/${frac} ${n}`).join(" + ") : nomesDasPartes[0] || texto(grupo?.groupName) || "Item";
+      // "Pizza Calabresa", "Pizza 1/2 Calabresa + 1/2 Muçarela" — ver ehPizzaSemTipoNoNome.
+      const nomeBase = ehPizzaSemTipoNoNome(texto(grupo?.groupName), partes, nomesDasPartes) ? `Pizza ${nomeDoSabor}` : nomeDoSabor;
       const unidade = texto(prod?.unity);
       const nomeComTamanho = unidade && unidade.toLowerCase() !== "un" ? `${nomeBase} (${unidade})` : nomeBase;
 
