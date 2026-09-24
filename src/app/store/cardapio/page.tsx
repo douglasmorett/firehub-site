@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import MenuProductManager from "@/components/admin/MenuProductManager";
+import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 import IfoodImportButton from "@/components/IfoodImportButton";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,14 @@ export default async function StoreCardapioPage() {
     products = [];
     availableItems = [];
     categories = [];
+  }
+
+  // Estoque disponível ao lado de cada item: o restante é calculado das vendas
+  // (lib/estoque-do-cardapio.ts), não é coluna — vem anotado daqui.
+  if (products.some((p: any) => p.estoqueQtd !== null && p.estoqueQtd !== undefined)) {
+    const lojas = [...new Set(products.map((p: any) => p.franchiseeId).filter(Boolean))] as string[];
+    const porLoja = new Map(await Promise.all(lojas.map(async (l) => [l, await estoqueDaLojaOuVazio(l)] as const)));
+    products = products.map((p: any) => comEstoqueAnotado(p, porLoja.get(p.franchiseeId) || new Map()));
   }
 
 

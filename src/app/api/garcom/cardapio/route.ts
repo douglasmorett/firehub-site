@@ -26,7 +26,7 @@ export async function GET() {
     // custo de compra e os interruptores dos outros canais não viajam para o
     // papel de menor confiança do sistema.
     const paraOGarcom = (produtos as any[])
-      .filter((p) => p.active !== false && p.activeGarcom !== false)
+      .filter((p) => p.active !== false && p.activeGarcom !== false && p.esgotado !== true)
       .map(({ cost, activePDV, activeDelivery, activeTotem, ...resto }) => resto);
     return NextResponse.json(paraOGarcom);
   } catch (err: any) {

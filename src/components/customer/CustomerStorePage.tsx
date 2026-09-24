@@ -705,11 +705,29 @@ export default function CustomerStorePage({
   const finalTotal = itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
+  // ── ESTOQUE DISPONÍVEL ─────────────────────────────────────────────────
+  // O produto controlado chega com `estoqueRestante` (lib/estoque-restante.ts)
+  // e a linha da sacola herda o campo. A sacola não passa do que resta — o
+  // servidor confere de novo ao gravar, porque esta página é cacheada.
+  const cabeNoEstoque = (produto: any, mais: number): boolean => {
+    const restante = Number(produto?.estoqueRestante);
+    if (!Number.isFinite(restante)) return true;
+    const pid = produto.productId || idDoProduto(produto);
+    const naSacola = cart.filter(i => idDoProduto(i) === pid).reduce((s, i) => s + i.quantity, 0);
+    if (naSacola + mais <= restante) return true;
+    alert(restante <= naSacola
+      ? `Você já pegou as últimas unidades de ${produto.name}.`
+      : `Só ${restante === 1 ? "resta 1 unidade" : `restam ${restante} unidades`} de ${produto.name}.`);
+    return false;
+  };
+
   const addToCart = (product: MenuProduct, cs?: any, extraSum: number = 0, qty: number = 1, itemNotes?: string) => {
     if (product.isCombo && (product.comboGroups?.length || product.comboConfig) && !cs) {
+      if (!cabeNoEstoque(product, 1)) return;
       setComboProduct(product);
       return;
     }
+    if (!cabeNoEstoque(product, qty || 1)) return;
     const finalPrice = product.price + extraSum;
     setCart(prev => {
       if (cs) {
@@ -765,8 +783,11 @@ export default function CustomerStorePage({
   // +1 numa linha JÁ existente da sacola. O "+" chamava addToCart de novo e,
   // para combo (ou item com observação), isso criava uma LINHA DUPLICADA em
   // vez de subir a quantidade.
-  const incrementInCart = (id: string) =>
+  const incrementInCart = (id: string) => {
+    const linha = cart.find(i => i.id === id);
+    if (linha && !cabeNoEstoque(linha, 1)) return;
     setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: i.quantity + 1 } : i));
+  };
 
   const deleteFromCart = (id: string) => setCart(prev => prev.filter(i => i.id !== id));
   const clearCart = () => setCart([]);

@@ -6,6 +6,7 @@ import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
+import { conferirEstoque } from "@/lib/estoque-restante";
 
 export const dynamic = "force-dynamic";
 
@@ -262,6 +263,20 @@ export async function POST(req: NextRequest) {
           error: "carrinho_desatualizado",
           mensagem: `Estes itens saíram do cardápio: ${recusados.join(", ")}. Refaça o pedido.`,
           itensRecusados: recusados,
+        },
+        { status: 409 }
+      );
+    }
+
+    // Estoque disponível: o cardápio do totem fica aberto na tela por horas, e
+    // o produto pode esgotar enquanto o cliente monta o carrinho.
+    const estoque = await conferirEstoque(licenca.franchiseeId, orderItems);
+    if (!estoque.ok) {
+      return NextResponse.json(
+        {
+          error: "carrinho_desatualizado",
+          mensagem: `${estoque.mensagem} Ajuste o pedido.`,
+          itensRecusados: estoque.faltas.map((f) => f.nome),
         },
         { status: 409 }
       );

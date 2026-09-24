@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { telefoneDeVerdade } from "@/lib/telefone";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { conferirEstoque } from "@/lib/estoque-restante";
 import { lerPager } from "@/lib/pager";
 import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
 import { normalizarDocumento, problemaDoDocumento, lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
@@ -118,6 +119,12 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+  }
+
+  // Estoque disponível: o balcão também vende o que a loja disse ter.
+  const estoque = await conferirEstoque(targetFranchiseeId, items || []);
+  if (!estoque.ok) {
+    return NextResponse.json({ error: `${estoque.mensagem} Ajuste a venda.` }, { status: 409 });
   }
 
   const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);

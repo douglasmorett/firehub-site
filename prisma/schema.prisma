@@ -523,6 +523,22 @@ model MenuProduct {
   /// roda no boot. Campo no schema com coluna ausente é 500 no cardápio
   /// inteiro — foi assim que /loja caiu em 24/08/2026.
   promoPrice      Float?
+  /// ESTOQUE DISPONÍVEL — o "acabou, fecha" do iFood. Nulo = sem controle.
+  ///
+  /// É a quantidade que a loja INFORMOU ter em `estoqueDesde`. O que resta não
+  /// é gravado em lugar nenhum: é esta quantidade menos o que os pedidos não
+  /// cancelados venderam desde então (src/lib/estoque-do-cardapio.ts). Assim o
+  /// cancelamento devolve sozinho — são mais de dez caminhos que cancelam
+  /// pedido — e a venda do iFood, da 99, do balcão e da mesa conta igual.
+  /// Chegou a zero, o produto some das telas de venda e os canais próprios
+  /// recusam pedir mais do que resta.
+  ///
+  /// A COLUNA EXISTE NO BANCO ANTES deste campo: src/lib/garantir-colunas.ts.
+  estoqueQtd      Int?
+  estoqueDesde    DateTime?
+  /// "Zerou o estoque, pausar o item?" Nulo conta como SIM. Com NÃO o número
+  /// continua abatendo só como controle e o item segue à venda.
+  estoquePausar   Boolean?
   cost            Float?
   tags            String?             // JSON array: ["Novo","Mais Vendido","Promoção","Esgotado","Vegano","Picante"]
   availableDays   String?             // JSON array: ["SEG","TER","QUA","QUI","SEX","SAB","DOM"] (null/empty = todos os dias)

@@ -6,6 +6,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
+import { conferirEstoque } from "@/lib/estoque-restante";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, descreverVeredicto, taxaFixaDaLoja, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
@@ -338,6 +339,15 @@ export async function POST(req: Request) {
         comboSelections: item.comboSelections || null,
       };
     });
+
+    // ── ESTOQUE DISPONÍVEL ("acabou, fecha") ─────────────────────────────
+    // O cardápio público é cacheado por 60 s: o cliente pode ter no carrinho
+    // o produto que acabou de esgotar. Soma por produto (a mesma costela em
+    // duas linhas) e recusa com a frase que o carrinho mostra.
+    const estoque = await conferirEstoque(franchisee.id, orderItems);
+    if (!estoque.ok) {
+      throw Object.assign(new Error(`${estoque.mensagem} Ajuste o carrinho e tente de novo.`), { statusCode: 409 });
+    }
 
     // Regra de Frete Grátis por valor mínimo da loja
     const delivConfig = (franchisee.deliveryConfig as any) || {};

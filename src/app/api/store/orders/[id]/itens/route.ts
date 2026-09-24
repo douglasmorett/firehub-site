@@ -53,6 +53,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { conferirEstoque } from "@/lib/estoque-restante";
 import { precoDoCanal, aplicarPrecoDoCanalComCombo, type CanalDePreco } from "@/lib/preco-por-canal";
 import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import {
@@ -242,6 +243,26 @@ async function editarPedidoProprio(entrada: {
 
   if (remover.length === 0 && mudar.length === 0 && novosItens.length === 0) {
     return NextResponse.json({ error: "Nenhum item válido para alterar" }, { status: 400 });
+  }
+
+  // Estoque disponível. O que o pedido JÁ tem já está contado como vendido,
+  // então o que se confere é a DIFERENÇA por produto: o acrescentado, mais o
+  // aumento de quantidade, menos o que foi tirado. Trocar uma costela por
+  // outra costela "sem cebola" com a última na prateleira tem que passar.
+  const diferenca: { menuProductId: string; quantity: number }[] = [];
+  for (const i of order.items as any[]) {
+    if (!i.menuProductId) continue;
+    if (remover.includes(i.id)) diferenca.push({ menuProductId: i.menuProductId, quantity: -i.quantity });
+    const m = mudar.find((x) => x.itemId === i.id);
+    if (m) diferenca.push({ menuProductId: i.menuProductId, quantity: m.quantity - i.quantity });
+  }
+  for (const n of novosItens) diferenca.push({ menuProductId: n.menuProductId, quantity: n.quantity });
+  const liquido = new Map<string, number>();
+  for (const d of diferenca) liquido.set(d.menuProductId, (liquido.get(d.menuProductId) || 0) + d.quantity);
+  const aumentos = [...liquido].filter(([, q]) => q > 0).map(([menuProductId, quantity]) => ({ menuProductId, quantity }));
+  if (aumentos.length > 0) {
+    const estoque = await conferirEstoque(lojaId, aumentos);
+    if (!estoque.ok) return NextResponse.json({ error: estoque.mensagem }, { status: 409 });
   }
 
   // O estado final é calculado ANTES de escrever, porque "sobrou zero item"
@@ -648,6 +669,9 @@ async function acrescentarColado(entrada: {
   const montados = await montarItensNovos(entrada.acrescentar, lojaId, order.deliveryType);
   if ("erro" in montados) return montados.erro;
   const novosItens = montados.itens;
+
+  const estoque = await conferirEstoque(lojaId, novosItens);
+  if (!estoque.ok) return NextResponse.json({ error: estoque.mensagem }, { status: 409 });
 
   const valorDoAcrescimo =
     Math.round(novosItens.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100;

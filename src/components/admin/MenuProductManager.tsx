@@ -36,6 +36,123 @@ function ChannelBadges({ product, onToggle }: { product: any; onToggle: (key: st
 const moeda = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
 
 /**
+ * ESTOQUE DISPONÍVEL ao lado de cada item — o "acabou, fecha" do iFood
+ * (src/lib/estoque-do-cardapio.ts).
+ *
+ * O número é o que RESTA: abate sozinho a cada venda, de qualquer canal, e
+ * volta quando um pedido é cancelado. Digitar um número novo é repor ("tenho
+ * 20 a partir de agora"). Ao lado, a pergunta: zerou, pausar o item? Com Sim o
+ * item sai de venda em todo canal até a reposição; com Não ele segue vendendo e
+ * o número fica só de controle.
+ */
+function EstoqueDoItem({ product, onSalvar }: {
+  product: any;
+  onSalvar: (dados: { estoque?: number | null; estoquePausar?: boolean }) => Promise<void>;
+}) {
+  const controla = product.estoqueQtd !== null && product.estoqueQtd !== undefined;
+  const restam: number = controla ? Number(product.estoqueRestante ?? product.estoqueQtd) : 0;
+  const pausa = product.estoquePausar !== false;
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  const salvar = async (dados: { estoque?: number | null; estoquePausar?: boolean }) => {
+    setSalvando(true);
+    try { await onSalvar(dados); } finally { setSalvando(false); setEditando(false); }
+  };
+  const confirmarNumero = () => {
+    const t = valor.trim();
+    if (t === "") { setEditando(false); return; }
+    const q = Math.floor(Number(t));
+    if (!Number.isFinite(q) || q < 0) { alert("Informe quantas unidades você tem (0 ou mais)."); return; }
+    salvar({ estoque: q });
+  };
+
+  if (!controla && !editando) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setValor(""); setEditando(true); }}
+        title="Controlar a quantidade disponível deste item: cada venda abate, e zerou pode pausar sozinho"
+        style={{ padding: "2px 8px", borderRadius: "20px", fontSize: "0.68rem", fontWeight: 700, border: "1.5px dashed #CBD5E1", background: "#F8FAFC", color: "#64748B", cursor: "pointer" }}
+      >
+        📦 Estoque
+      </button>
+    );
+  }
+
+  const zerado = controla && restam <= 0;
+  const cor = zerado ? "#DC2626" : restam <= 3 ? "#D97706" : "#16A34A";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", padding: "4px 8px", borderRadius: "10px", border: `1.5px solid ${cor}55`, background: `${cor}0D` }}>
+      <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#475569" }}>📦 Estoque</span>
+      {editando ? (
+        <input
+          autoFocus
+          type="number"
+          min={0}
+          inputMode="numeric"
+          value={valor}
+          disabled={salvando}
+          onChange={(e) => setValor(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") confirmarNumero(); if (e.key === "Escape") setEditando(false); }}
+          onBlur={confirmarNumero}
+          placeholder="qtd"
+          style={{ width: "62px", padding: "2px 6px", fontSize: "0.8rem", fontWeight: 800, borderRadius: "6px", border: "1.5px solid #94A3B8" }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => { setValor(String(restam)); setEditando(true); }}
+          title="Clique para repor: digite quantas unidades você tem agora"
+          style={{ fontSize: "0.85rem", fontWeight: 900, color: cor, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+        >
+          {restam} {restam === 1 ? "restante" : "restantes"}
+        </button>
+      )}
+      {controla && (
+        <>
+          <span style={{ fontSize: "0.66rem", fontWeight: 700, color: "#64748B" }}>Zerou, pausar?</span>
+          {[true, false].map((opcao) => (
+            <button
+              key={String(opcao)}
+              type="button"
+              disabled={salvando}
+              onClick={() => opcao !== pausa && salvar({ estoquePausar: opcao })}
+              style={{
+                padding: "1px 8px", borderRadius: "12px", fontSize: "0.66rem", fontWeight: 800, cursor: "pointer",
+                border: `1.5px solid ${opcao === pausa ? (opcao ? "#DC2626" : "#475569") : "#E2E8F0"}`,
+                background: opcao === pausa ? (opcao ? "#FEF2F2" : "#F1F5F9") : "#FFF",
+                color: opcao === pausa ? (opcao ? "#DC2626" : "#334155") : "#94A3B8",
+              }}
+            >
+              {opcao ? "Sim" : "Não"}
+            </button>
+          ))}
+          {zerado && pausa && (
+            <span style={{ fontSize: "0.64rem", fontWeight: 800, padding: "1px 6px", borderRadius: "6px", background: "#DC2626", color: "#FFF" }}>
+              ⏸️ PAUSADO — ESTOQUE ZEROU
+            </span>
+          )}
+          {zerado && !pausa && (
+            <span style={{ fontSize: "0.64rem", fontWeight: 800, color: "#DC2626" }}>zerado, segue vendendo</span>
+          )}
+          <button
+            type="button"
+            disabled={salvando}
+            onClick={() => { if (confirm(`Parar de controlar o estoque de "${product.name}"?`)) salvar({ estoque: null }); }}
+            title="Parar de controlar o estoque deste item"
+            style={{ fontSize: "0.7rem", color: "#94A3B8", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }}
+          >
+            ✕
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * As perguntas do combo abertas embaixo do card — o "Complementos" do portal
  * do iFood.
  *
@@ -1064,6 +1181,20 @@ export default function MenuProductManager({
     }
     setPausing(false);
     setPauseModal(null);
+    router.refresh();
+  };
+
+  // Estoque disponível direto na lista: repor, ligar/desligar o controle e
+  // responder "zerou, pausar?". O restante é recalculado no servidor.
+  const handleEstoque = async (id: string, dados: { estoque?: number | null; estoquePausar?: boolean }) => {
+    const r = await fetch("/api/admin/menu-products", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...dados })
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      alert(j.error || "Não consegui salvar o estoque.");
+    }
     router.refresh();
   };
 
@@ -3067,6 +3198,11 @@ export default function MenuProductManager({
                               {/* Canais */}
                               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                 <ChannelBadges product={p} onToggle={(key, val) => handleChannelToggle(p.id, key, val)} />
+                              </div>
+
+                              {/* Estoque disponível: abate a cada venda; zerou, pausa (ou não) */}
+                              <div style={{ display: "flex", alignItems: "center" }}>
+                                <EstoqueDoItem product={p} onSalvar={(dados) => handleEstoque(p.id, dados)} />
                               </div>
 
                               {/* Preço e Botões */}

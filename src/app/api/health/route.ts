@@ -55,6 +55,9 @@ export async function GET() {
       // O preço promocional. Coluna ausente é 500 em toda consulta de
       // MenuProduct feita com `include:` — cardápio, balcão e totem juntos.
       ["MenuProduct", "promoPrice"],
+      ["MenuProduct", "estoqueQtd"],
+      ["MenuProduct", "estoqueDesde"],
+      ["MenuProduct", "estoquePausar"],
       // O carimbo de complemento. Sem ele na lista, o monitor dizia `esquema: ok`
       // enquanto a coluna que decide o que aparece no cardapio podia nao existir —
       // e a regra cairia calada na heuristica, em todas as telas de venda.

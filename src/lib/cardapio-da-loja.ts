@@ -14,6 +14,7 @@ import { prisma } from "./prisma";
 import { orderByCardapio } from "./menu-order";
 import { SEM_PRODUTO_DE_INTEGRACAO } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio, type CanalDePreco } from "./preco-por-canal";
+import { estoqueDaLojaOuVazio, comEstoqueAnotado } from "./estoque-restante";
 
 /**
  * Colunas que as telas de venda e de cadastro usam.
@@ -65,5 +66,11 @@ export async function cardapioDaLoja(franchiseeId: string, canal: CanalDePreco) 
     orderBy: await orderByCardapio(),
     select: SELECT_DO_CARDAPIO,
   });
-  return aplicarPrecoNoCardapio(produtos as any[], canal);
+  // Estoque disponível (lib/estoque-do-cardapio.ts): quem controla leva o
+  // restante e a marca `esgotado`. Esta lista serve o balcão, a mesa, o garçom
+  // e a edição de pedido — cada tela decide esconder; o servidor recusa de
+  // qualquer jeito ao gravar.
+  const estoque = await estoqueDaLojaOuVazio(franchiseeId);
+  const comEstoque = estoque.size === 0 ? produtos : produtos.map((p) => comEstoqueAnotado(p, estoque));
+  return aplicarPrecoNoCardapio(comEstoque as any[], canal);
 }

@@ -210,6 +210,8 @@ export default function VendaPresencialPage() {
   const filtered = products.filter(p => {
     if (p.active === false) return false;
     if (p.activePDV === false) return false;
+    // Zerou o estoque disponível e a loja pediu para pausar (o servidor marca).
+    if ((p as any).esgotado === true) return false;
     // Complemento nunca é item avulso — vale aqui como vale na mesa. O
     // servidor decide e manda a bandeira (menu-products com `?canal=`),
     // porque só lá os quatro preços e o carimbo `apenasEmCombo` existem.

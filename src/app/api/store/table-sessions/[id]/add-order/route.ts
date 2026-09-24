@@ -8,6 +8,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
+import { conferirEstoque } from "@/lib/estoque-restante";
 
 export async function POST(
   req: NextRequest,
@@ -118,6 +119,13 @@ export async function POST(
         { error: `Estes itens não estão no cardápio da mesa: ${recusados.join(", ")}. Atualize a tela e lance de novo.` },
         { status: 400 }
       );
+    }
+
+    // Estoque disponível: o garçom lança do celular com o cardápio que abriu
+    // no começo do turno.
+    const estoque = await conferirEstoque(targetFranchiseeId, itensValidados);
+    if (!estoque.ok) {
+      return NextResponse.json({ error: `${estoque.mensagem} Ajuste o pedido e lance de novo.` }, { status: 409 });
     }
 
     const totalAmount = itensValidados.reduce((sum, i) => sum + i.price * i.quantity, 0);

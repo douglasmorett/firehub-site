@@ -22,6 +22,8 @@ import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmerge
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
+import { conferirEstoque, estoqueDaLojaOuVazio } from "./estoque-restante";
+import { STATUS_QUE_NAO_CONTAM } from "./estoque-do-cardapio";
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
 
@@ -548,9 +550,24 @@ export async function processChatbotAI(
   // Na lista crua os quatro preços ainda existem, e a regra decide certo.
   const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(produtosCrus as any[]);
 
+  // Estoque disponível (lib/estoque-do-cardapio.ts). O esgotado NÃO sai de
+  // `products`: é por ele que o nome pedido casa com o cadastro, e um item que
+  // não casa cai calado do pedido. Ele vai para a lista do proibido, e a tag
+  // final é conferida contra o estoque em syncAiOrderToDatabase.
+  const estoqueDoRobo = await estoqueDaLojaOuVazio(targetFranchiseeId);
+
   products.forEach((p: any) => {
     if (soOpcaoDeCombo.has(String(p.id))) return;
     const rawCleanName = (p.name || "").split("|")[0].trim();
+    const estoqueDoItem = estoqueDoRobo.get(String(p.id));
+    if (estoqueDoItem?.pausaAoZerar) {
+      const restam = estoqueDoItem.restam;
+      if (restam <= 0) {
+        unavailableTodayProducts.push(`- "${rawCleanName}" (${p.category}): [🚫 ESGOTADO — acabou o estoque de hoje. PROIBIDO OFERECER OU ANOTAR]`);
+        return;
+      }
+      p = { ...p, description: `${p.description ? `${p.description} ` : ""}[ÚLTIMAS ${restam} UNIDADE(S) — não anote mais que ${restam}]` };
+    }
     const uniqueKey = `${rawCleanName.toLowerCase()}_${p.price}`;
 
     const days = parseAvailableDays(p.availableDays);
@@ -2378,6 +2395,30 @@ async function syncAiOrderToDatabase({
   }
   const existingDraft =
     destino.acao === "reescrever" ? candidatosDoCliente.find((p) => p.id === destino.pedido.id) || null : null;
+
+  // ── ESTOQUE DISPONÍVEL ────────────────────────────────────────────────────
+  // O esgotado já sai do cardápio que o modelo lê; isto pega a QUANTIDADE
+  // ("quero 5 costelas" com 3 na prateleira) e o que esgotou no meio da
+  // conversa. Só na tag final: rascunho não é venda. Quando a tag reescreve um
+  // pedido JÁ ENVIADO, os itens dele já contam como vendidos — o que se confere
+  // é a diferença.
+  if (isFinal) {
+    const jaContados =
+      existingDraft && !(STATUS_QUE_NAO_CONTAM as readonly string[]).includes(String(existingDraft.status))
+        ? (existingDraft.items || []).map((i: any) => ({ menuProductId: i.menuProductId, quantity: -Number(i.quantity || 0) }))
+        : [];
+    const liquido = new Map<string, number>();
+    for (const i of [...orderItemsData, ...jaContados] as any[]) {
+      if (!i?.menuProductId) continue;
+      liquido.set(i.menuProductId, (liquido.get(i.menuProductId) || 0) + Number(i.quantity || 0));
+    }
+    const aumentos = [...liquido].filter(([, q]) => q > 0).map(([menuProductId, quantity]) => ({ menuProductId, quantity }));
+    const estoque = await conferirEstoque(franchiseeId, aumentos);
+    if (!estoque.ok) {
+      console.warn(`[Chatbot AI Order Sync] 📦 Pedido recusado por estoque: ${estoque.mensagem} Loja=${franchiseeId}`);
+      return { gravado: false, motivo: `estoque: ${estoque.mensagem}` };
+    }
+  }
 
   // ── RETIRADA NÃO É ENTREGA — E ENTREGA NÃO É RETIRADA ─────────────────────
   //

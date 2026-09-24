@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { STATUS_CANCELADOS } from "@/lib/status-pedido";
+import { conferirEstoque } from "@/lib/estoque-restante";
 
 async function contexto(req: NextRequest, params: Promise<{ id: string; orderId: string }>) {
   // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts):
@@ -50,7 +51,7 @@ async function contexto(req: NextRequest, params: Promise<{ id: string; orderId:
 
   const order = await prisma.customerOrder.findFirst({
     where: { id: orderId, tableSessionId: id, franchiseeId: lojaId },
-    include: { items: { select: { id: true, quantity: true, price: true } } },
+    include: { items: { select: { id: true, quantity: true, price: true, menuProductId: true } } },
   });
   if (!order) return { erro: NextResponse.json({ error: "Pedido não encontrado nesta mesa" }, { status: 404 }) };
   if ((STATUS_CANCELADOS as readonly string[]).includes(order.status)) {
@@ -111,6 +112,17 @@ export async function PATCH(
       // Removeu tudo = cancelou o pedido. Mesma via do DELETE, com devolução
       // de estoque — um pedido sem itens não pode continuar valendo dinheiro.
       return cancelarPedido(order.id);
+    }
+
+    // Estoque disponível: aumentar a quantidade é vender mais. Só o AUMENTO
+    // é conferido — o que o item já tinha já está contado como vendido.
+    const aumentos = order.items
+      .map((i: any) => ({ i, m: mudar.find((x) => x.itemId === i.id) }))
+      .filter(({ i, m }) => m && i.menuProductId && m.quantity > i.quantity)
+      .map(({ i, m }) => ({ menuProductId: i.menuProductId as string, quantity: m!.quantity - i.quantity }));
+    if (aumentos.length > 0) {
+      const estoque = await conferirEstoque(ctx.lojaId, aumentos);
+      if (!estoque.ok) return NextResponse.json({ error: estoque.mensagem }, { status: 409 });
     }
 
     const novoTotal = finais.reduce((s, i) => s + Number(i.price) * i.quantity, 0);

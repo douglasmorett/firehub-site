@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { orderByCardapio, podeOrdenarProdutos } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
@@ -7,6 +8,7 @@ import { isDataUrl, saveDataUrl } from "@/lib/storage";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO } from "@/lib/cardapio-interno";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { SELECT_DO_CARDAPIO } from "@/lib/cardapio-da-loja";
+import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -281,8 +283,13 @@ export async function GET(req: NextRequest) {
     // tela só precisa ler a bandeira.
     const soOpcao = idsSoDeOpcaoDeCombo(products as any[]);
     const comPreco = aplicarPrecoNoCardapio(products as any[], canal);
+    // Estoque disponível: a tela de venda esconde o `esgotado` e usa o
+    // restante para não deixar lançar mais do que há.
+    // Admin sem loja escolhida vê a rede inteira: aí não há um estoque só.
+    const lojaDoCardapio = scope.isAdmin ? scope.adminStoreId : scope.storeId;
+    const estoque = await estoqueDaLojaOuVazio(lojaDoCardapio);
     return NextResponse.json(
-      comPreco.map((p: any) => ({ ...p, apenasOpcaoDeCombo: soOpcao.has(String(p.id)) }))
+      comPreco.map((p: any) => comEstoqueAnotado({ ...p, apenasOpcaoDeCombo: soOpcao.has(String(p.id)) }, estoque))
     );
   }
 
@@ -350,6 +357,42 @@ async function normalizarImagem(rest: any) {
   }
 }
 
+/**
+ * ESTOQUE DISPONÍVEL (lib/estoque-do-cardapio.ts): o corpo traz `estoque` só
+ * quando o lojista MEXEU no campo — número = "tenho N a partir de agora",
+ * null = desligar o controle. Isso zera a contagem no instante do salvamento.
+ *
+ * As colunas nunca vêm cruas do corpo: salvar a descrição de um produto com o
+ * formulário aberto há meia hora regravaria o `estoqueDesde` antigo, ou o
+ * número que a tela leu antes das vendas desse meio tempo. O restante e a
+ * marca de esgotado que a tela de venda recebe também não voltam ao banco.
+ */
+function saneiaEstoque(dados: any): string | null {
+  const informado = dados?.estoque;
+  const pausar = dados?.estoquePausar;
+  delete dados.estoque;
+  delete dados.estoquePausaAoZerar;
+  // "Zerou, pausar?" é só a resposta Sim/Não; não zera contagem nenhuma.
+  if (pausar !== undefined) dados.estoquePausar = pausar === null ? null : pausar === true || pausar === "true";
+  delete dados.estoqueQtd;
+  delete dados.estoqueDesde;
+  delete dados.estoqueRestante;
+  delete dados.esgotado;
+  if (informado === undefined) return null;
+  if (informado === null || informado === "") {
+    dados.estoqueQtd = null;
+    dados.estoqueDesde = null;
+    return null;
+  }
+  const q = Number(informado);
+  if (!Number.isInteger(q) || q < 0 || q > 100000) {
+    return "Estoque disponível: informe um número inteiro de 0 a 100000, ou desligue o controle.";
+  }
+  dados.estoqueQtd = q;
+  dados.estoqueDesde = new Date();
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const { scope, error } = await resolveScope(req);
   if (!scope) return error;
@@ -366,6 +409,8 @@ export async function POST(req: NextRequest) {
 
   const erroPromo = saneiaPromocao(rest);
   if (erroPromo) return NextResponse.json({ error: erroPromo }, { status: 400 });
+  const erroEstoque = saneiaEstoque(rest);
+  if (erroEstoque) return NextResponse.json({ error: erroEstoque }, { status: 400 });
 
   await normalizarImagem(rest);
   const safeComboGroups = await keepOwnComboItems(comboGroups, franchiseeId);
@@ -410,6 +455,8 @@ export async function PUT(req: NextRequest) {
 
   const erroPromo = saneiaPromocao(updateData, existing.price);
   if (erroPromo) return NextResponse.json({ error: erroPromo }, { status: 400 });
+  const erroEstoque = saneiaEstoque(updateData);
+  if (erroEstoque) return NextResponse.json({ error: erroEstoque }, { status: 400 });
 
   if (updateData.tags) {
     updateData.tags = JSON.stringify(updateData.tags);
@@ -425,6 +472,15 @@ export async function PUT(req: NextRequest) {
     where: { id },
     data: updateData
   });
+
+  // Estoque reposto (ou "pausar" trocado): a vitrine é cacheada por 60 s e o
+  // item pausado ficaria fora do ar esse tempo depois da reposição.
+  if ("estoqueQtd" in updateData || "estoquePausar" in updateData) {
+    const loja = await prisma.user.findUnique({ where: { id: existing.franchiseeId || "" }, select: { slug: true } }).catch(() => null);
+    if (loja?.slug) {
+      try { revalidatePath(`/loja/${loja.slug}`); } catch {}
+    }
+  }
 
   if (comboGroups !== undefined) {
     const safeComboGroups = await keepOwnComboItems(comboGroups, existing.franchiseeId);

@@ -575,6 +575,7 @@ export default function MesasApp({
             // que ignorava o dela: o que a loja desligava para a mesa continuava
             // aparecendo aqui. Balcão já olha activePDV, totem já olha activeTotem.
             .filter((p: any) => p.activeGarcom !== false)
+            .filter((p: any) => p.esgotado !== true)
             .filter((p: any) => !soOpcaoDeCombo.has(String(p.id)))
             .map(paraItem);
           setMenuItems(items);
@@ -590,6 +591,7 @@ export default function MesasApp({
             if (isIntegration(p)) return null;
             if (p.active === false) return "pausado no cardápio";
             if (p.activeGarcom === false) return "desligado para o garçom no cadastro";
+            if (p.esgotado === true) return "estoque zerou — pausado até repor (Cardápio → 📦 Estoque)";
             if (p.apenasEmCombo === true) return "complemento de combo — aparece dentro da pergunta do combo";
             if (soOpcaoDeCombo.has(String(p.id))) return "sem preço em nenhum canal — não dá para lançar na comanda";
             return null;
