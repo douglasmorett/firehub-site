@@ -10,6 +10,13 @@ export function StoreApiManager() {
   const [keyName, setKeyName] = useState("");
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
+  // Para que serve a chave. A de avisos só abre /api/v1/avisos (e nenhuma
+  // rota de pedido ou cardápio), porque fica colada numa ferramenta de
+  // terceiro, como o ManyChat — ver lib/api-key.ts. O texto da permissão fica
+  // repetido aqui de propósito: importar lib/api-key traria o Prisma para o
+  // navegador.
+  const [keyTipo, setKeyTipo] = useState<"integracao" | "avisos">("integracao");
+  const [createdKeyTipo, setCreatedKeyTipo] = useState<"integracao" | "avisos">("integracao");
 
   const [creatingWebhook, setCreatingWebhook] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState("");
@@ -53,12 +60,17 @@ export function StoreApiManager() {
       const res = await fetch("/api/store/api-keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: keyName }),
+        body: JSON.stringify({
+          name: keyName,
+          ...(keyTipo === "avisos" ? { permissions: ["avisos:write"] } : {}),
+        }),
       });
       const data = await res.json();
       if (data.success) {
         setCreatedRawKey(data.rawSecretKey);
+        setCreatedKeyTipo(keyTipo);
         setKeyName("");
+        setKeyTipo("integracao");
         setCreatingKey(false);
         fetchData();
       } else {
@@ -193,6 +205,14 @@ export function StoreApiManager() {
               Fechar
             </button>
           </div>
+
+          {createdKeyTipo === "avisos" && (
+            <div style={{ marginTop: 12, fontSize: "0.82rem", color: "#166534", lineHeight: 1.55 }}>
+              <b>Como usar no ManyChat:</b> ação <i>Fazer uma consulta externa</i> → <code>POST https://firehubfood.com.br/api/v1/avisos</code>,
+              cabeçalho <code>Authorization: Bearer</code> + esta chave, corpo JSON com <code>titulo</code>, <code>mensagem</code>, <code>nome</code> e{" "}
+              <code>instagram</code>. O aviso chega pelo robô no WhatsApp do Proprietário desta loja.
+            </div>
+          )}
         </div>
       )}
 
@@ -242,6 +262,16 @@ export function StoreApiManager() {
                 Cancelar
               </button>
             </div>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12, fontSize: "0.86rem", color: "#334155" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="radio" name="tipoDaChave" checked={keyTipo === "integracao"} onChange={() => setKeyTipo("integracao")} />
+                Integração de pedidos e cardápio (PDV, ERP)
+              </label>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="radio" name="tipoDaChave" checked={keyTipo === "avisos"} onChange={() => setKeyTipo("avisos")} />
+                Avisos no WhatsApp do dono (ManyChat, Zapier)
+              </label>
+            </div>
           </form>
         )}
 
@@ -266,7 +296,12 @@ export function StoreApiManager() {
               <tbody>
                 {apiKeys.map((k) => (
                   <tr key={k.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                    <td style={{ padding: "12px", fontWeight: 700, color: "#0F172A" }}>{k.name}</td>
+                    <td style={{ padding: "12px", fontWeight: 700, color: "#0F172A" }}>
+                      {k.name}
+                      <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#64748B" }}>
+                        {Array.isArray(k.permissions) && k.permissions.includes("avisos:write") ? "Avisos no WhatsApp do dono" : "Pedidos e cardápio"}
+                      </span>
+                    </td>
                     <td style={{ padding: "12px", fontFamily: "monospace", color: "#1C1917" }}>{k.keyPrefix}</td>
                     <td style={{ padding: "12px", color: "#64748B" }}>{new Date(k.createdAt).toLocaleDateString("pt-BR")}</td>
                     <td style={{ padding: "12px", color: "#64748B" }}>

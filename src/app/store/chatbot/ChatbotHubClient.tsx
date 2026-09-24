@@ -1709,6 +1709,11 @@ export default function ChatbotHubClient() {
                 titulo: "Impressão automática parou",
                 detalhe: "O Assistente de Impressão do PC do caixa parou de responder com pedido entrando, ou há comanda presa na impressora (desligada, sem papel, nome trocado). Vem com o número dos pedidos que ficaram sem comanda. Um aviso por parada.",
               },
+              {
+                id: "aviso_externo",
+                titulo: "Avisos de fora do FireHub (Instagram, ManyChat)",
+                detalhe: "Quando uma ferramenta ligada pela API avisa que alguém pediu demonstração, palestra ou contato. Só chega se você criou uma chave de avisos em Minha Loja → API Aberta.",
+              },
             ];
             const alertas = config.alertas || {};
             const ligado = (id: string) => (typeof alertas[id] === "boolean" ? alertas[id] : true);

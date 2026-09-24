@@ -52,7 +52,15 @@ export type TipoDeAlerta =
    * parece atendimento. A loja precisa saber para atender na mão
    * (lib/falha-da-ia.ts).
    */
-  | "ia_fora_do_ar";
+  | "ia_fora_do_ar"
+  /**
+   * Aviso que vem de fora do FireHub: uma ferramenta ligada pela API Aberta
+   * (ManyChat, Zapier) chama /api/v1/avisos com uma chave de avisos da loja.
+   * Nasceu para o Instagram do Douglas em 24/09/2026 — pedido de demonstração
+   * e de palestra — porque o "Notificar responsáveis" do ManyChat só avisa por
+   * e-mail, e dono de restaurante não vive no e-mail: vive no WhatsApp.
+   */
+  | "aviso_externo";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -62,6 +70,9 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   "99food_desconectado": true,
   impressao_parada: true,
   ia_fora_do_ar: true,
+  // Ligado: só chega se a loja criou uma chave de avisos. Quem não criou,
+  // nunca recebe — não há o que calar.
+  aviso_externo: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -72,6 +83,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   "99food_desconectado": "Loja perdeu a conexão com o 99Food (pedidos de lá param de entrar)",
   impressao_parada: "Impressão automática parou, ou comanda não está saindo na impressora",
   ia_fora_do_ar: "A inteligência artificial do robô caiu (ele passa as conversas para a equipe até voltar)",
+  aviso_externo: "Aviso de uma ferramenta ligada pela API (ex.: pedido de demonstração ou de palestra no Instagram)",
 };
 
 /** O dono ligou este alerta? Sem config salva, vale o padrão. */

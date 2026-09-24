@@ -29,13 +29,26 @@ export function generateApiKeyPair(prefix = "fh_live_") {
   return { rawKey, keyPrefix, keyHash };
 }
 
+/** A chave que só manda avisos para o WhatsApp do dono (/api/v1/avisos). */
+export const PERMISSAO_AVISOS = "avisos:write";
+
 /**
  * Valida o cabeçalho de autorização em requisições de API pública.
  * Suporta os cabeçalhos:
  * - Authorization: Bearer fh_live_...
  * - X-FireHub-API-Key: fh_live_...
+ *
+ * ── `exige`: a permissão que a rota precisa ──────────────────────────────────
+ * As rotas de pedidos e cardápio nasceram antes de as permissões valerem e
+ * chamam sem `exige`: para elas, basta a chave ter alguma permissão de pedidos
+ * ou de cardápio — toda chave criada até 24/09/2026 tem as quatro, então nada
+ * muda para quem já integra.
+ *
+ * O que muda é a chave de AVISOS: ela fica colada numa ferramenta de terceiro
+ * (o ManyChat), e por isso só abre /api/v1/avisos. Sem esta regra, a mesma
+ * chave que manda "fulano pediu palestra" leria e alteraria os pedidos da loja.
  */
-export async function authenticateApiKey(req: NextRequest): Promise<AuthenticatedApiContext | null> {
+export async function authenticateApiKey(req: NextRequest, exige?: string): Promise<AuthenticatedApiContext | null> {
   const authHeader = req.headers.get("authorization");
   const xApiKey = req.headers.get("x-firehub-api-key");
 
@@ -63,18 +76,24 @@ export async function authenticateApiKey(req: NextRequest): Promise<Authenticate
 
   if (!apiKeyRecord || !apiKeyRecord.active) return null;
 
-  // Atualizar timestamp de último uso de forma não-bloqueante
+  let permissions: string[] = ["orders:read", "orders:write", "menu:read", "menu:write"];
+  if (Array.isArray(apiKeyRecord.permissions)) {
+    permissions = apiKeyRecord.permissions.map(String);
+  }
+
+  const pode = exige
+    ? permissions.includes(exige)
+    : permissions.some((p) => p.startsWith("orders:") || p.startsWith("menu:"));
+  if (!pode) return null;
+
+  // Atualizar timestamp de último uso de forma não-bloqueante — depois da
+  // checagem de permissão, para "último uso" não contar chamada recusada.
   prisma.apiKey
     .update({
       where: { id: apiKeyRecord.id },
       data: { lastUsedAt: new Date() },
     })
     .catch(() => {});
-
-  let permissions: string[] = ["orders:read", "orders:write", "menu:read", "menu:write"];
-  if (Array.isArray(apiKeyRecord.permissions)) {
-    permissions = apiKeyRecord.permissions.map(String);
-  }
 
   return {
     franchiseeId: apiKeyRecord.franchiseeId,
