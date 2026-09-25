@@ -10,7 +10,18 @@ const {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
+  // Opcionais: só para conferir os aparelhos da conta ao conectar. Se a versão
+  // instalada não exportar, a conferência é pulada e nada mais muda.
+  USyncQuery,
+  USyncUser,
 } = require("@whiskeysockets/baileys");
+const saude = require("./saude-do-vinculo");
+
+// Saúde do vínculo de cada loja (retransmissões pedidas por contatos, aparelho
+// hospedado, pareamento com número pessoal). Ver saude-do-vinculo.js.
+const monitorDoVinculo = saude.criarMonitorDoVinculo();
+/** Instância → quando saiu a última linha de "não decifrou" da PRÓPRIA conta (freio de log). */
+const ultimoLogDeStubProprio = new Map();
 
 const app = express();
 app.use(cors());
@@ -483,7 +494,7 @@ function registrarPedidoDeRetransmissao(instanceName, key) {
   const quemFalhou = String(key?.participant || key?.remoteJid || "");
   if (!quemFalhou || conversa.endsWith("@g.us")) return;
 
-  const numero = quemFalhou.split("@")[0].split(":")[0].replace(/\D/g, "");
+  const { usuario: numero, dispositivo } = saude.decodificarJid(quemFalhou);
   const ehAPropriaLoja = ehAPropriaConta(instanceName, numero);
 
   // Contador por INSTÂNCIA + contato. Antes era só o jid: o dono, que fala com
@@ -495,16 +506,102 @@ function registrarPedidoDeRetransmissao(instanceName, key) {
   const vezes = dentroDaJanela ? anterior.vezes + 1 : 1;
   pedidosDeRetransmissao.set(chave, { vezes, ultimoEm: agora });
 
+  // Da própria conta, O APARELHO importa: o :99 da Divinos era a API oficial
+  // hospedada (coexistência), e chamá-lo de "aparelho da própria loja" levou a
+  // religar e renovar chaves à toa — nada disso cura aparelho hospedado.
   console.warn(
     `[WhatsApp Gateway] 🔁 ${instanceName}: ${quemFalhou} não decifrou (pedido nº ${vezes})` +
-    (ehAPropriaLoja ? " ⚠️ É O APARELHO DA PRÓPRIA LOJA — a cópia de todas as conversas está quebrada" : "") +
+    (ehAPropriaLoja ? ` ⚠️ É ${saude.descreverAparelhoDaPropriaConta(dispositivo)}` : "") +
     (conversa && conversa !== quemFalhou ? ` [conversa: ${conversa}]` : "") +
     ". O Baileys renegocia a sessão sozinho; o gateway não apaga mais nada.",
   );
 
+  // ── O ALARME QUE FALTAVA ───────────────────────────────────────────────────
+  // Contatos EXTERNOS diferentes pedindo retransmissão numa hora é o vínculo
+  // da loja doente, não o celular de um cliente. Só a MUDANÇA de estado vai
+  // para o log alto e para o FireHub — não um aviso por pedido.
+  const { mudou, achouHospedado, estado } = monitorDoVinculo.registrarRetransmissao(
+    instanceName,
+    { contato: numero, ehPropriaConta: ehAPropriaLoja, dispositivo },
+    agora,
+  );
+  if (mudou) {
+    if (achouHospedado) {
+      console.error(`[WhatsApp Gateway] 🚨 ${instanceName}: a conta tem APARELHO HOSPEDADO (API oficial / coexistência). ${estado.avisos.find((a) => a.tipo === "aparelho-hospedado")?.mensagem || ""}`);
+    }
+    if (estado.vinculoDoente) {
+      console.error(`[WhatsApp Gateway] 🚨 ${instanceName}: VÍNCULO DOENTE — ${estado.motivo}`);
+    } else if (!achouHospedado) {
+      console.log(`[WhatsApp Gateway] 💚 ${instanceName}: pedidos de retransmissão de contatos voltaram ao normal.`);
+    }
+    avisarFireHubDaSaude(instanceName, estado);
+  }
+
   // Trava de memória: o Map só cresce com contato problemático, mas não fica solto.
   if (pedidosDeRetransmissao.size > 200) {
     pedidosDeRetransmissao.delete(pedidosDeRetransmissao.keys().next().value);
+  }
+}
+
+/** URL do webhook do FireHub. Uma só, para os avisos não divergirem. */
+function urlDoWebhook() {
+  return process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
+}
+
+/**
+ * Conta ao FireHub que a saúde do vínculo MUDOU (doente/sadio, aparelho
+ * hospedado descoberto). Sem telefone: só instância, estado e o texto do aviso.
+ * Falha de rede aqui não derruba nada — o estado continua exposto em
+ * GET /instance/connectionState.
+ */
+function avisarFireHubDaSaude(instanceName, estado) {
+  fetch(urlDoWebhook(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event: "SAUDE_DO_VINCULO",
+      instance: instanceName,
+      data: {
+        vinculoDoente: estado.vinculoDoente,
+        motivo: estado.motivo,
+        contatosQueNaoLeram: estado.contatosQueNaoLeram,
+        aparelhoHospedado: estado.aparelhoHospedado,
+        plataforma: estado.plataforma,
+        tipoDePlataforma: estado.tipoDePlataforma,
+        avisos: estado.avisos,
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  }).catch((err) => {
+    console.warn(`[WhatsApp Gateway] Aviso ao notificar a saúde do vínculo de ${instanceName}:`, err?.message || err);
+  });
+}
+
+/**
+ * Os aparelhos da conta pareada (consulta USync de dispositivos, a mesma que o
+ * Baileys faz antes de cada envio). É o que revela o aparelho hospedado — o
+ * Baileys 6.x lê o `is_hosted` e o descarta no caminho do envio.
+ *
+ * Nunca lança e nunca trava a conexão: sem as classes exportadas, sem
+ * `executeUSyncQuery` ou com a consulta falhando, simplesmente não há resposta.
+ */
+async function conferirAparelhosDaConta(instanceName, sock) {
+  try {
+    if (typeof USyncQuery !== "function" || typeof USyncUser !== "function") return null;
+    if (typeof sock?.executeUSyncQuery !== "function") return null;
+    const { usuario } = saude.decodificarJid(sock.user?.id);
+    if (!usuario) return null;
+    const consulta = new USyncQuery().withContext("message").withDeviceProtocol();
+    consulta.withUser(new USyncUser().withId(`${usuario}@s.whatsapp.net`));
+    const resultado = await Promise.race([
+      sock.executeUSyncQuery(consulta),
+      new Promise((resolve) => setTimeout(() => resolve(null), 10000)),
+    ]);
+    const deviceList = resultado?.list?.[0]?.devices?.deviceList;
+    return Array.isArray(deviceList) ? deviceList : null;
+  } catch (err) {
+    console.warn(`[WhatsApp Gateway] Aviso ao conferir os aparelhos da conta de ${instanceName}:`, err?.message || err);
+    return null;
   }
 }
 
@@ -574,6 +671,16 @@ setInterval(() => {
 if (global.gc) {
   setInterval(() => { try { global.gc(); } catch(e) {} }, 30000);
 }
+
+// Vínculo que SAROU porque a janela de uma hora passou sem pedido de
+// retransmissão: ninguém mais observaria essa mudança, e o FireHub ficaria com
+// a faixa de "vínculo doente" acesa. A varredura anuncia (uma vez) a volta.
+setInterval(() => {
+  for (const { instancia, estado } of monitorDoVinculo.varrer()) {
+    console.log(`[WhatsApp Gateway] ${estado.vinculoDoente ? "🚨" : "💚"} ${instancia}: vínculo ${estado.vinculoDoente ? "DOENTE" : "de volta ao normal"} (varredura).`);
+    avisarFireHubDaSaude(instancia, estado);
+  }
+}, 5 * 60 * 1000).unref?.();
 
 // Fix 3: Auto-health-check - reconecta sessões mortas a cada 5 minutos
 // Garante que o bot continue ativo na madrugada mesmo sem tráfego externo
@@ -724,23 +831,69 @@ async function criarSocket(instanceName) {
       const rawPhone = userJid.split(":")[0] || "";
       session.phone = rawPhone ? `+55 ${rawPhone.replace(/^55/, "")}` : "";
 
-      console.log(`[WhatsApp Gateway] ✅ Instância ${instanceName} conectada! Número: ${session.phone}`);
+      // ── QUAL APARELHO É O ROBÔ, E DE QUE APLICATIVO VEIO O QR ─────────────
+      //
+      // O gateway não guardava nada sobre o aparelho que ele próprio é: para
+      // descobrir que a Divinos tinha sido pareada com o WhatsApp PESSOAL do
+      // dono ("iphone" em vez de "smba"), foi preciso garimpar o pair-success
+      // no log. O Baileys guarda a plataforma em `creds.platform` no
+      // pareamento; o id do aparelho é o ":25" do `sock.user.id`.
+      const plataforma = sock.authState?.creds?.platform || null;
+      const { dispositivo: aparelhoId } = saude.decodificarJid(userJid);
+      const saudeAoAbrir = monitorDoVinculo.registrarAparelho(instanceName, { plataforma, aparelhoId });
+
+      console.log(
+        `[WhatsApp Gateway] ✅ Instância ${instanceName} conectada! Número: ${session.phone}` +
+        ` (aparelho :${aparelhoId ?? "?"}, plataforma ${plataforma || "?"})`,
+      );
+      if (saudeAoAbrir.tipoDePlataforma === "pessoal") {
+        console.warn(`[WhatsApp Gateway] ⚠️ ${instanceName}: pareada com WhatsApp COMUM (${plataforma}), não com o WhatsApp Business da loja.`);
+      }
 
       // Notifica o FireHub via Webhook
       try {
-        const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
+        const webhookUrl = urlDoWebhook();
         await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             event: "CONNECTION_UPDATE",
             instance: instanceName,
-            data: { state: "open", ownerJid: userJid, phone: session.phone },
+            data: {
+              state: "open",
+              ownerJid: userJid,
+              phone: session.phone,
+              plataforma,
+              tipoDePlataforma: saudeAoAbrir.tipoDePlataforma,
+              aparelhoId,
+              avisos: saudeAoAbrir.avisos,
+              // O estado do alarme também vai na abertura: numa religação
+              // rápida (500/503) ele sobrevive aqui, e o FireHub não pode
+              // apagar o "doente" só porque a conexão piscou.
+              vinculoDoente: saudeAoAbrir.vinculoDoente,
+              motivoDoVinculo: saudeAoAbrir.motivo,
+              contatosQueNaoLeram: saudeAoAbrir.contatosQueNaoLeram,
+              aparelhoHospedado: saudeAoAbrir.aparelhoHospedado,
+            },
           }),
         });
       } catch (err) {
         console.warn("[WhatsApp Gateway] Aviso ao notificar webhook de conexão:", err.message);
       }
+
+      // Aparelho HOSPEDADO (API oficial em coexistência) só aparece na lista de
+      // aparelhos da conta. Depois do aviso de conexão, sem segurá-lo: é uma
+      // consulta ao servidor e pode demorar.
+      conferirAparelhosDaConta(instanceName, sock).then((deviceList) => {
+        if (!deviceList || sessions.get(instanceName)?.sock !== sock) return;
+        const antes = monitorDoVinculo.estado(instanceName).aparelhoHospedado;
+        const depois = monitorDoVinculo.registrarAparelho(instanceName, { deviceList });
+        console.log(
+          `[WhatsApp Gateway] 📱 ${instanceName}: ${depois.aparelhosDaConta?.total ?? "?"} aparelho(s) na conta` +
+          ` [${(depois.aparelhosDaConta?.ids || []).join(", ")}]${depois.aparelhoHospedado ? " — ⚠️ inclui APARELHO HOSPEDADO (API oficial / coexistência)" : ""}`,
+        );
+        if (depois.aparelhoHospedado && !antes) avisarFireHubDaSaude(instanceName, depois);
+      });
     }
 
     if (connection === "close") {
@@ -818,6 +971,7 @@ async function criarSocket(instanceName) {
         console.log(`[WhatsApp Gateway] 🧹 ${instanceName}: QR não lido (status ${statusCode}). Nunca vinculou — encerrando sem reconectar nem avisar.`);
         sessions.delete(instanceName);
         reconnectCounters.delete(instanceName);
+        monitorDoVinculo.esquecer(instanceName);
         try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
       } else if (shouldReconnect) {
         // Reconexão infinita com backoff de 3s até no máximo 30s
@@ -832,6 +986,9 @@ async function criarSocket(instanceName) {
         console.log(`[WhatsApp Gateway] 🚪 Instância ${instanceName} desconectada pelo usuário (loggedOut). Limpando sessão...`);
         sessions.delete(instanceName);
         reconnectCounters.delete(instanceName);
+        // O próximo vínculo é outro aparelho (e talvez outro número): o alarme
+        // e os avisos do anterior não valem para ele.
+        monitorDoVinculo.esquecer(instanceName);
         try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
       } else {
         // Substituída (440). A credencial CONTINUA VÁLIDA — apagar a pasta aqui
@@ -846,23 +1003,57 @@ async function criarSocket(instanceName) {
     if (m.type !== "notify") return;
 
     for (const msg of m.messages) {
-      if (!msg.message) continue;
+      const remoteJid = msg.key?.remoteJid || "";
 
-      const remoteJid = msg.key.remoteJid || "";
-      if (remoteJid.endsWith("@g.us")) continue;
+      // Status, canal, lista de transmissão e grupo não são conversa de
+      // cliente: nem vão ao FireHub. Antes só o grupo era barrado aqui, e em
+      // 7 horas de 24/09 o webhook recebeu 201 status e ~30 posts de canal.
+      if (!saude.conversaVaiParaOWebhook(remoteJid)) continue;
+
+      if (!msg.message) {
+        // ── MENSAGEM QUE NÃO DECIFROU NÃO SOME CALADA ─────────────────────────
+        // Era um `continue` seco: o teste do dono da Divinos ("No session
+        // record") só foi achado garimpando o log cru. Agora sai uma linha com
+        // a instância e o motivo, e a contagem entra na saúde do vínculo.
+        const { ehCifrada, linha } = saude.descreverMensagemSemConteudo(instanceName, msg);
+        if (ehCifrada) {
+          const { usuario } = saude.decodificarJid(msg.key?.participant || remoteJid);
+          const daPropriaConta = Boolean(msg.key?.fromMe) || ehAPropriaConta(instanceName, usuario);
+          monitorDoVinculo.registrarMensagemQueNaoDecifrou(instanceName, { contato: usuario, ehPropriaConta: daPropriaConta });
+          // Da própria conta elas vêm em rajada (o celular da Divinos: ~115 a
+          // cada 10 min) e o Baileys já registra cada uma: uma linha por
+          // minuto basta. De CONTATO, toda linha — é mensagem de cliente.
+          const agoraDoStub = Date.now();
+          if (!daPropriaConta || agoraDoStub - (ultimoLogDeStubProprio.get(instanceName) || 0) > 60_000) {
+            if (daPropriaConta) ultimoLogDeStubProprio.set(instanceName, agoraDoStub);
+            console.warn(linha);
+          }
+        }
+        continue;
+      }
+
+      // O conteúdo de verdade, fora do envelope de mensagem temporária ou de
+      // visualização única — sem isto, quem usa mensagens temporárias falava
+      // sozinho: o texto estava em `ephemeralMessage.message` e não era lido.
+      const conteudo = saude.desembrulharMensagem(msg.message) || {};
 
       const isAudio = Boolean(
+        conteudo.audioMessage ||
+        conteudo.pttMessage ||
         msg.message.audioMessage ||
-        msg.message.pttMessage ||
-        msg.message.ephemeralMessage?.message?.audioMessage ||
-        msg.message.viewOnceMessage?.message?.audioMessage ||
-        msg.message.viewOnceMessageV2?.message?.audioMessage
+        msg.message.pttMessage
       );
 
+      // 📎 → Localização. Ia para o lixo aqui (não é texto nem áudio), e é o
+      // dado que decide a taxa de quem cobra por km.
+      const localizacao = saude.localizacaoDaMensagem(msg.message);
+
       const textMessage =
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text ||
-        msg.message.imageMessage?.caption ||
+        conteudo.conversation ||
+        conteudo.extendedTextMessage?.text ||
+        conteudo.imageMessage?.caption ||
+        conteudo.videoMessage?.caption ||
+        (localizacao ? `📍 localização (${localizacao.lat.toFixed(5)}, ${localizacao.lng.toFixed(5)})` : "") ||
         (isAudio ? "O cliente enviou a mensagem de áudio em anexo." : "");
 
       if (!textMessage.trim() && !isAudio) continue;
@@ -895,14 +1086,18 @@ async function criarSocket(instanceName) {
         // outra.
         const chaveDoCooldown = `${instanceName}|${remoteJid}`;
         const lastReply = replyCooldowns.get(chaveDoCooldown) || 0;
-        if (!isAudio && now - lastReply < 1000) {
+        // Localização também nunca é descartada: é um dado, não uma rajada.
+        if (!isAudio && !localizacao && now - lastReply < 1000) {
           console.log(`[WhatsApp Gateway] ⏳ Ignorando mensagem de ${remoteJid} (repetição em menos de 1s)`);
           continue;
         }
         replyCooldowns.set(chaveDoCooldown, now);
       }
 
-      let payloadMessage = JSON.parse(JSON.stringify(msg.message));
+      // Cópia para o webhook, sem a miniatura do mapa (Buffer que vira milhares
+      // de números no JSON) e com o conteúdo fora do envelope temporário: o
+      // FireHub lê `message.conversation`, `message.locationMessage` etc. direto.
+      let payloadMessage = saude.mensagemParaOWebhook(conteudo);
 
       if (isAudio) {
         try {
@@ -918,7 +1113,9 @@ async function criarSocket(instanceName) {
         }
       }
 
-      console.log(`[WhatsApp Gateway] 💬 Mensagem recebida de ${remoteJid}: "${textMessage}" (isAudio: ${isAudio})`);
+      // Com a instância e o fromMe: sem eles, "de qual loja é esta mensagem?"
+      // exigia cruzar o log com o banco.
+      console.log(`[WhatsApp Gateway] 💬 ${instanceName}: mensagem ${isFromMe ? "ENVIADA pelo aparelho da loja para" : "recebida de"} ${remoteJid}: "${textMessage}" (isAudio: ${isAudio})`);
 
       // Conversa endereçada por LID: descobrir o telefone AQUI e mandar junto.
       // O FireHub já procura `senderAlt` entre os candidatos e pontua telefone
@@ -968,6 +1165,9 @@ async function criarSocket(instanceName) {
               // É o sinal mais barato para o FireHub não entrar em conversa de
               // robô com robô.
               verifiedBizName: msg.verifiedBizName || "",
+              // A localização já lida (lat/lng/nome/endereço). A mensagem crua
+              // também vai em `message.locationMessage`, para quem ler de lá.
+              ...(localizacao ? { localizacao } : {}),
             },
           }),
         });
@@ -994,18 +1194,32 @@ async function criarSocket(instanceName) {
  */
 app.get("/", (req, res) => {
   const porEstado = { open: [], connecting: [], outros: [] };
+  // "Conectada" não é "funcionando": a Divinos ficou a noite toda em
+  // `lojasConectadas` com 100% das mensagens chegando ilegíveis. Quem está
+  // conectada mas doente aparece à parte — sem telefone de ninguém, só a
+  // instância e o motivo, porque esta rota é pública.
+  const vinculosDoentes = [];
+  const avisosDeAparelho = [];
   for (const [nome, s] of sessions.entries()) {
     if (s.state === "open") porEstado.open.push(nome);
     else if (s.state === "connecting") porEstado.connecting.push(nome);
     else porEstado.outros.push(`${nome}:${s.state}`);
+    if (s.state !== "open") continue;
+    const saudeDaLoja = monitorDoVinculo.estado(nome);
+    if (saudeDaLoja.vinculoDoente) {
+      vinculosDoentes.push({ instancia: nome, contatosQueNaoLeram: saudeDaLoja.contatosQueNaoLeram, motivo: saudeDaLoja.motivo });
+    }
+    for (const aviso of saudeDaLoja.avisos) avisosDeAparelho.push({ instancia: nome, tipo: aviso.tipo });
   }
   const foraDoAr = [...porEstado.connecting, ...porEstado.outros];
   return res.json({
-    status: foraDoAr.length === 0 ? "ok" : "degradado",
+    status: foraDoAr.length === 0 && vinculosDoentes.length === 0 ? "ok" : "degradado",
     conectadas: porEstado.open.length,
     totalDeInstancias: sessions.size,
     precisamDeQR: foraDoAr,
     lojasConectadas: porEstado.open,
+    vinculosDoentes,
+    avisosDeAparelho,
     uptime: process.uptime(),
   });
 });
@@ -1057,7 +1271,28 @@ app.get("/instance/connectionState/:instanceName", async (req, res) => {
   const session = sessions.get(instanceName);
 
   if (session && session.state === "open") {
-    return res.json({ instance: { state: "open", ownerJid: session.phone } });
+    // Além de "open": se o vínculo está DOENTE (contatos não conseguem ler o
+    // que o robô manda) e o que se sabe do aparelho — id, aplicativo do QR,
+    // aparelho hospedado na conta. `state` continua sendo o mesmo campo de
+    // sempre: quem só lê ele não muda de comportamento.
+    const saudeDaLoja = monitorDoVinculo.estado(instanceName);
+    return res.json({
+      instance: {
+        state: "open",
+        ownerJid: session.phone,
+        vinculoDoente: saudeDaLoja.vinculoDoente,
+        motivo: saudeDaLoja.motivo,
+        contatosQueNaoLeram: saudeDaLoja.contatosQueNaoLeram,
+        pedidosDaPropriaConta: saudeDaLoja.pedidosDaPropriaConta,
+        mensagensQueNaoDecifraram: saudeDaLoja.mensagensQueNaoDecifraram,
+        aparelhoId: saudeDaLoja.aparelhoId,
+        plataforma: saudeDaLoja.plataforma,
+        tipoDePlataforma: saudeDaLoja.tipoDePlataforma,
+        aparelhosDaConta: saudeDaLoja.aparelhosDaConta,
+        aparelhoHospedado: saudeDaLoja.aparelhoHospedado,
+        avisos: saudeDaLoja.avisos,
+      },
+    });
   }
 
   if (!session) {
@@ -1495,6 +1730,7 @@ app.delete("/instance/reset/:instanceName", async (req, res) => {
 
   sessions.delete(instanceName);
   reconnectCounters.delete(instanceName);
+  monitorDoVinculo.esquecer(instanceName);
 
   const authFolder = path.join(__dirname, "data", "sessions", instanceName);
   try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
@@ -1657,15 +1893,40 @@ app.post("/chat/getBase64FromMediaMessage/:instanceName", async (req, res) => {
 });
 
 // 5. Desconectar
-app.delete("/instance/logout/:instanceName", async (req, res) => {
-  const { instanceName } = req.params;
+//
+// ── UM LOGOUT POR VEZ ──────────────────────────────────────────────────────
+//
+// Em 24/09 às 23:16:26 o painel da Divinos disparou DOIS DELETE seguidos
+// (.369 e .781): o botão "Desconectar" chamava a rota duas vezes. O segundo
+// chegava com o primeiro ainda no `await logout()` — a sessão ainda estava no
+// Map — e deslogava de novo o aparelho que o lojista já ia reler. Agora o
+// segundo pedido espera o primeiro e devolve a mesma resposta; o app também
+// deixou de chamar duas vezes (lib/whatsapp-evolution.ts).
+const logoutsEmAndamento = new Map();
+
+async function deslogarInstancia(instanceName) {
   const session = sessions.get(instanceName);
   if (session && session.sock) {
     try { await session.sock.logout(); } catch {}
   }
   sessions.delete(instanceName);
+  reconnectCounters.delete(instanceName);
+  monitorDoVinculo.esquecer(instanceName);
   const authFolder = path.join(__dirname, "data", "sessions", instanceName);
   try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
+  console.log(`[WhatsApp Gateway] 🚪 Logout de ${instanceName} concluído.`);
+}
+
+app.delete("/instance/logout/:instanceName", async (req, res) => {
+  const { instanceName } = req.params;
+  let emAndamento = logoutsEmAndamento.get(instanceName);
+  if (emAndamento) {
+    console.log(`[WhatsApp Gateway] 🚪 Logout de ${instanceName} já em andamento — pedido repetido aguarda o mesmo.`);
+  } else {
+    emAndamento = deslogarInstancia(instanceName).finally(() => logoutsEmAndamento.delete(instanceName));
+    logoutsEmAndamento.set(instanceName, emAndamento);
+  }
+  await emAndamento;
   return res.json({ status: "logged_out" });
 });
 

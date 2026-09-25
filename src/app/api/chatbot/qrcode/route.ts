@@ -6,6 +6,17 @@ import { getEvolutionQRCode, disconnectEvolutionInstance } from "@/lib/whatsapp-
 
 export const dynamic = "force-dynamic";
 
+/**
+ * O config sem os avisos do vínculo ANTERIOR (aparelho hospedado, número
+ * pessoal, vínculo doente). Desconectou: o próximo QR é outro aparelho, e a
+ * faixa de "vínculo doente" não pode ficar acesa por causa do que já saiu. A
+ * abertura da próxima conexão grava os avisos novos (webhook do WhatsApp).
+ */
+function semAvisosDoVinculo(config: any) {
+  const { vinculoDoAparelho: _aparelho, saudeDoVinculo: _saude, ...resto } = config || {};
+  return resto;
+}
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
@@ -115,10 +126,14 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ success: true, connected: true, config: updatedConfig });
     } else if (action === "disconnect") {
+      // O painel chama o DELETE desta rota e, logo depois, este POST: os dois
+      // disparavam um logout no gateway (dois DELETE em 400 ms na Divinos,
+      // 24/09/2026). `disconnectEvolutionInstance` agora reaproveita o logout
+      // que acabou de sair, então o segundo não chega ao gateway.
       await disconnectEvolutionInstance(user.id);
 
       const updatedConfig = {
-        ...currentConfig,
+        ...semAvisosDoVinculo(currentConfig),
         connected: false,
         phone: "",
         connectedAt: null,
@@ -157,7 +172,7 @@ export async function DELETE() {
     await disconnectEvolutionInstance(user.id);
     const currentConfig = (user.chatbotConfig as any) || {};
     const updatedConfig = {
-      ...currentConfig,
+      ...semAvisosDoVinculo(currentConfig),
       connected: false,
       phone: "",
       connectedAt: null,

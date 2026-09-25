@@ -6,6 +6,7 @@ import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { clearLoopGuard, registerBotReply } from "@/lib/loop-guard";
 import { retomarRobo } from "@/lib/pausa-do-robo";
 import { registrarMensagemDaLoja } from "@/lib/memoria-da-conversa-no-banco";
+import { contaOficialDoWhatsApp } from "@/lib/contas-oficiais-whatsapp";
 
 export const dynamic = "force-dynamic";
 
@@ -155,6 +156,23 @@ export async function POST(req: NextRequest) {
         chat.unreadCount = 0;
       }
 
+      // ── CONTA OFICIAL DO WHATSAPP: FECHA SEM FALAR NADA ────────────────────
+      //
+      // Na noite de 24/09/2026 este botão foi clicado quatro vezes na conversa
+      // da Divinos com o Suporte do WhatsApp — e cada clique mandava
+      // "Atendimento humano finalizado" ao robô do Suporte, que respondia, e o
+      // laço recomeçava. Com conta oficial não há robô para religar (o webhook
+      // não responde a elas) e nenhuma mensagem para mandar.
+      const contaOficial = contaOficialDoWhatsApp({ jids: [jid] });
+      if (contaOficial) {
+        console.log(`[HumanSupport] Conversa com ${contaOficial.quem} encerrada sem mensagem (conta oficial do WhatsApp).`);
+        return NextResponse.json({
+          success: true,
+          semMensagem: true,
+          message: `Atendimento encerrado. Esta conversa é com ${contaOficial.quem}: o robô não responde a contas oficiais do WhatsApp, e nenhuma mensagem foi enviada.`,
+        });
+      }
+
       // Fechar aqui apagava só a fila em memória. Desde que problema no pedido
       // passou a marcar a conversa no BANCO (para a pausa sobreviver ao
       // restart), fechar sem limpar essa marca deixaria o cliente sem robô até
@@ -166,6 +184,19 @@ export async function POST(req: NextRequest) {
       // "nosso robô continuará te ajudando por aqui" e o robô seguia mudo por
       // até 12 horas (lib/pausa-do-robo.ts).
       retomarRobo(targetUserId, jid);
+
+      // Conversa que caiu na fila pelo ANTI-LOOP é, quase sempre, com outro
+      // robô (maquininha, banco, marketplace). Mandar "atendimento finalizado"
+      // é dar a ele o assunto que reabre o laço: o robô volta a atender, mas
+      // em silêncio, e só responde se o outro lado escrever.
+      if (chat?.motivo === "Loop suspeito") {
+        console.log(`[HumanSupport] Conversa ${jid} encerrada sem mensagem (tinha caído na fila por laço suspeito).`);
+        return NextResponse.json({
+          success: true,
+          semMensagem: true,
+          message: "Atendimento encerrado e robô reativado. Esta conversa tinha caído na fila por parecer um robô do outro lado, então nenhuma mensagem de encerramento foi enviada.",
+        });
+      }
 
       // Envia aviso ao cliente no WhatsApp
       const endMessage = "Atendimento humano finalizado com sucesso! Se precisar de mais alguma coisa, nosso robô continuará te ajudando por aqui. Obrigado! 😊";

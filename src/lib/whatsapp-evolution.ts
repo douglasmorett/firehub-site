@@ -44,6 +44,11 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
           phone: phone.startsWith("+") ? phone : `+55 ${phone.replace(/^55/, "")}`,
           battery: 99,
           status: "ONLINE",
+          // "Conectado" não é "funcionando": a Divinos ficou conectada a noite
+          // toda com o que o robô mandava chegando ilegível a 100% dos
+          // clientes. O gateway agora diz isso (e se a conta tem aparelho
+          // hospedado, ou se o QR foi lido num WhatsApp comum) — a tela recebe.
+          ...saudeDoVinculoNoGateway(stateData?.instance),
         };
       }
     }
@@ -350,8 +355,56 @@ export async function sendEvolutionAudioBase64(userIdOrInstance: string, toPhone
   }
 }
 
-export async function disconnectEvolutionInstance(userId: string) {
+/**
+ * O que o gateway sabe da saúde do vínculo, no formato da tela. Campos
+ * ausentes (gateway antigo, Evolution oficial) viram "nada a avisar".
+ */
+function saudeDoVinculoNoGateway(instancia: any) {
+  const avisos = Array.isArray(instancia?.avisos)
+    ? instancia.avisos
+        .filter((a: any) => a && typeof a.tipo === "string" && typeof a.mensagem === "string")
+        .slice(0, 5)
+        .map((a: any) => ({ tipo: String(a.tipo).slice(0, 40), mensagem: String(a.mensagem).slice(0, 600) }))
+    : [];
+  return {
+    vinculoDoente: instancia?.vinculoDoente === true,
+    motivoDoVinculo: typeof instancia?.motivo === "string" ? instancia.motivo.slice(0, 600) : null,
+    aparelhoHospedado: instancia?.aparelhoHospedado === true,
+    plataforma: typeof instancia?.plataforma === "string" ? instancia.plataforma.slice(0, 20) : null,
+    avisosDoVinculo: avisos as Array<{ tipo: string; mensagem: string }>,
+  };
+}
+
+/**
+ * Logouts em andamento (ou acabados de acontecer) por instância.
+ *
+ * Em 24/09/2026 às 23:16:26 o gateway recebeu DOIS `DELETE /instance/logout`
+ * da Divinos, com 400 ms de diferença: o botão "Desconectar" do painel chama
+ * o DELETE e o POST {action:"disconnect"} da rota do QR, e os dois caíam aqui.
+ * O segundo deslogava de novo um aparelho que o lojista já ia reler. Agora o
+ * segundo pedido, dentro de 15 s, reaproveita o primeiro em vez de disparar
+ * outro. (O processo do site é um só e vive muito; o Map basta.)
+ */
+const logoutsRecentes = new Map<string, { promessa: Promise<void>; em: number }>();
+const JANELA_DO_LOGOUT_REPETIDO_MS = 15_000;
+
+export async function disconnectEvolutionInstance(userId: string): Promise<void> {
   const instanceName = `firehub_${userId.slice(-10)}`;
+  const agora = Date.now();
+  const anterior = logoutsRecentes.get(instanceName);
+  if (anterior && agora - anterior.em < JANELA_DO_LOGOUT_REPETIDO_MS) {
+    console.log(`[Evolution API Gateway] Logout de ${instanceName} já disparado há ${agora - anterior.em} ms — não repito.`);
+    return anterior.promessa;
+  }
+  for (const [nome, registro] of logoutsRecentes) {
+    if (agora - registro.em >= JANELA_DO_LOGOUT_REPETIDO_MS) logoutsRecentes.delete(nome);
+  }
+  const promessa = deslogarNoGateway(userId, instanceName);
+  logoutsRecentes.set(instanceName, { promessa, em: agora });
+  return promessa;
+}
+
+async function deslogarNoGateway(userId: string, instanceName: string): Promise<void> {
   let baseUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
   let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
