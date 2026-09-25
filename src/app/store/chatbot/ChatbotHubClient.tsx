@@ -31,6 +31,38 @@ import {
   Calendar,
   Trash2
 } from "lucide-react";
+import FaixaDoVinculo from "./FaixaDoVinculo";
+import {
+  leituraAoVivoDaResposta,
+  momentoDaResposta,
+  saudeDoVinculoNaTela,
+  type LeituraAoVivo,
+} from "./saude-do-vinculo-na-tela";
+
+/**
+ * GET /api/chatbot/qrcode com a hora da resposta pelo relógio do SERVIDOR
+ * (cabeçalho `Date`): é com ela que a saúde lida ao vivo disputa com a que o
+ * webhook gravou — as duas precisam do mesmo relógio.
+ */
+async function lerQrCode(url: string): Promise<{ res: any; lidoEm: number }> {
+  const r = await fetch(url, { cache: "no-store" });
+  const lidoEm = momentoDaResposta(r.headers.get("date"));
+  const res = await r.json();
+  return { res, lidoEm };
+}
+
+/** Números (só dígitos) que o lojista disse serem da loja mesmo sendo WhatsApp comum. Só conveniência deste navegador. */
+const CHAVE_NUMERO_COMUM_DA_LOJA = "firehub:robo:numero-comum-da-loja";
+function lerNumerosComunsDaLoja(): string[] {
+  try {
+    const bruto = window.localStorage.getItem(CHAVE_NUMERO_COMUM_DA_LOJA);
+    const lista = bruto ? JSON.parse(bruto) : [];
+    return Array.isArray(lista) ? lista.filter((x) => typeof x === "string").slice(-10) : [];
+  } catch {
+    return [];
+  }
+}
+const soDigitos = (v: unknown) => String(v || "").replace(/\D/g, "");
 
 export default function ChatbotHubClient() {
   const [loading, setLoading] = useState(true);
@@ -203,6 +235,20 @@ export default function ChatbotHubClient() {
   const [qrTimer, setQrTimer] = useState<number>(60);
   const [isQrExpired, setIsQrExpired] = useState<boolean>(false);
 
+  // ── Saúde do vínculo ──────────────────────────────────────────────────────
+  // O que o gateway disse AO VIVO (resposta do GET do QR com a loja conectada).
+  // A outra metade — o que o webhook gravou — mora em config.saudeDoVinculo e
+  // config.vinculoDoAparelho. Quem decide a faixa é saudeDoVinculoNaTela.
+  const [saudeAoVivo, setSaudeAoVivo] = useState<LeituraAoVivo | null>(null);
+  const [numerosComunsDaLoja, setNumerosComunsDaLoja] = useState<string[]>([]);
+  useEffect(() => {
+    setNumerosComunsDaLoja(lerNumerosComunsDaLoja());
+  }, []);
+  // Guarda contra duplo disparo do "Desconectar": o botão fica desabilitado
+  // pelo estado, mas o estado só muda no próximo render — dois cliques rápidos
+  // passavam os dois.
+  const desconectandoRef = useRef(false);
+
   // ── Conectar SEM câmera ───────────────────────────────────────────────────
   // O QR pressupõe uma cena que muitas vezes não acontece: alguém na frente do
   // computador COM o telefone da loja na mão, dentro dos 60s de validade. Com o
@@ -260,10 +306,11 @@ export default function ChatbotHubClient() {
     try {
       setIsRefreshingQr(true);
       setIsQrExpired(false);
-      const res = await fetch("/api/chatbot/qrcode?force=true").then((r) => r.json());
+      const { res, lidoEm } = await lerQrCode("/api/chatbot/qrcode?force=true");
 
       if (res.connected) {
         setConfig((prev: any) => ({ ...prev, connected: true, phone: res.phone || prev.phone }));
+        setSaudeAoVivo(leituraAoVivoDaResposta(res, lidoEm));
         showToast("🎉 WhatsApp Conectado com Sucesso!", "#0F766E");
       } else if (res.qrCodeUrl && typeof res.qrCodeUrl === "string" && res.qrCodeUrl.length > 20) {
         setQrCodeUrl(res.qrCodeUrl);
@@ -305,10 +352,11 @@ export default function ChatbotHubClient() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [configRes, qrRes] = await Promise.all([
+      const [configRes, { res: qrRes, lidoEm: qrLidoEm }] = await Promise.all([
         fetch("/api/chatbot/config").then((r) => r.json()),
-        fetch("/api/chatbot/qrcode").then((r) => r.json()),
+        lerQrCode("/api/chatbot/qrcode"),
       ]);
+      setSaudeAoVivo(leituraAoVivoDaResposta(qrRes, qrLidoEm));
 
       if (configRes.config) {
         setConfig(configRes.config);
@@ -480,13 +528,17 @@ export default function ChatbotHubClient() {
 
     const interval = setInterval(async () => {
       try {
-        const qrRes = await fetch("/api/chatbot/qrcode").then((r) => r.json());
+        const { res: qrRes, lidoEm } = await lerQrCode("/api/chatbot/qrcode");
         if (qrRes.connected) {
           setConfig((prev: any) => ({
             ...prev,
             connected: true,
             phone: qrRes.phone || prev.phone,
           }));
+          // A resposta que confirma a conexão já traz a saúde do vínculo NOVO:
+          // se o QR foi lido no WhatsApp pessoal, o aviso aparece junto com o
+          // "conectado", não um minuto depois.
+          setSaudeAoVivo(leituraAoVivoDaResposta(qrRes, lidoEm));
           showToast("🎉 WhatsApp Conectado com Sucesso!", "#0F766E");
         } else if (qrRes.qrCodeUrl && qrRes.qrCodeUrl !== qrCodeUrl) {
           setQrCodeUrl(qrRes.qrCodeUrl);
@@ -496,6 +548,45 @@ export default function ChatbotHubClient() {
 
     return () => clearInterval(interval);
   }, [config.connected, qrCodeUrl]);
+
+  /**
+   * A saúde do vínculo muda com a tela ABERTA: o alarme de "clientes não
+   * conseguem ler" acende quando mais de 3 contatos diferentes pedem
+   * retransmissão numa hora — em geral no meio do movimento, com o painel
+   * aberto no balcão. O gateway avisa o webhook, que grava em
+   * config.saudeDoVinculo; aqui só se relê isso.
+   *
+   * Não usa o GET do QR para isso: aquele, se achar a instância fora, cria
+   * instância e pede QR (o porquê está em /api/chatbot/conexao-ao-vivo). E só
+   * os dois campos da saúde entram no estado — o resto do config pode ter
+   * edição do lojista ainda não salva.
+   */
+  useEffect(() => {
+    if (!config.connected) return;
+    let vivo = true;
+    const reler = async () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      try {
+        const r = await fetch("/api/chatbot/config", { cache: "no-store" });
+        if (!r.ok || !vivo) return;
+        const j = await r.json();
+        if (!vivo || !j?.config) return;
+        const saude = j.config.saudeDoVinculo ?? null;
+        const aparelho = j.config.vinculoDoAparelho ?? null;
+        setConfig((prev: any) => {
+          const igual =
+            JSON.stringify(prev.saudeDoVinculo ?? null) === JSON.stringify(saude) &&
+            JSON.stringify(prev.vinculoDoAparelho ?? null) === JSON.stringify(aparelho);
+          return igual ? prev : { ...prev, saudeDoVinculo: saude, vinculoDoAparelho: aparelho };
+        });
+      } catch {}
+    };
+    // A primeira releitura sai logo: o webhook grava o aparelho (e o aviso de
+    // "número do dono") segundos depois de a conexão abrir.
+    const primeira = setTimeout(reler, 8_000);
+    const t = setInterval(reler, 60_000);
+    return () => { vivo = false; clearTimeout(primeira); clearInterval(t); };
+  }, [config.connected]);
 
   // Salvar Configurações
   /**
@@ -615,25 +706,64 @@ export default function ChatbotHubClient() {
 
   // Desconectar Aparelho e Abrir Gerador de QR Code
   const handleToggleConnect = async () => {
+    if (desconectandoRef.current) return;
+    desconectandoRef.current = true;
     try {
       setIsRefreshingQr(true);
+      // UM pedido só. A tela mandava o DELETE e logo depois o POST
+      // {action:"disconnect"} — as duas rotas fazem a mesma coisa, e o gateway
+      // recebia dois logouts em 400 ms (Divinos, 24/09/2026). O servidor agora
+      // absorve o repetido, mas ele não precisa sair daqui.
       await fetch("/api/chatbot/qrcode", { method: "DELETE" }).catch(() => {});
-      await fetch("/api/chatbot/qrcode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "disconnect" })
-      }).catch(() => {});
 
-      setConfig((prev: any) => ({ ...prev, connected: false, phone: "" }));
+      // Os avisos eram do vínculo que acabou de sair (a rota também os apaga
+      // do banco): o próximo QR é outro aparelho e começa sem faixa.
+      setSaudeAoVivo(null);
+      setConfig((prev: any) => ({ ...prev, connected: false, phone: "", saudeDoVinculo: null, vinculoDoAparelho: null }));
       setQrCodeUrl(null);
       setIsQrExpired(false);
       showToast("📱 Aparelho desconectado! Gerando novo QR Code...", "#B45309");
-      handleFetchFreshQr();
+      // Esperado de propósito: sem o await, o `finally` reabilitava os botões
+      // enquanto o QR novo ainda estava sendo gerado.
+      await handleFetchFreshQr();
     } catch (err) {
       console.error("[ChatbotHub] Erro ao desconectar:", err);
     } finally {
+      desconectandoRef.current = false;
       setIsRefreshingQr(false);
     }
+  };
+
+  // ── Faixa da saúde do vínculo ─────────────────────────────────────────────
+  const numeroConectado = soDigitos(config.phone);
+  const saudeDoVinculo = saudeDoVinculoNaTela({
+    conectado: Boolean(config.connected),
+    aoVivo: saudeAoVivo,
+    saudeSalva: config.saudeDoVinculo,
+    aparelhoSalvo: config.vinculoDoAparelho,
+    numeroComumConfirmado: Boolean(numeroConectado) && numerosComunsDaLoja.includes(numeroConectado),
+  });
+  const vinculoComProblema = saudeDoVinculo.problemas.length > 0;
+
+  const relerQrPelaFaixa = () => {
+    if (desconectandoRef.current || isRefreshingQr) return;
+    const seguir = window.confirm(
+      "O robô vai parar de responder até alguém ler o QR Code de novo com o celular da loja.\n\n" +
+        "Faça antes o que o aviso pede (remover aparelhos estranhos / desligar o outro sistema). Continuar?",
+    );
+    if (!seguir) return;
+    setActiveTab("qr");
+    void handleToggleConnect();
+  };
+
+  // Só vale para ESTE número: se amanhã o QR for lido com outro, o aviso volta.
+  const numeroComumEhDaLoja = () => {
+    if (!numeroConectado) return;
+    const lista = Array.from(new Set([...numerosComunsDaLoja, numeroConectado])).slice(-10);
+    setNumerosComunsDaLoja(lista);
+    try {
+      window.localStorage.setItem(CHAVE_NUMERO_COMUM_DA_LOJA, JSON.stringify(lista));
+    } catch {}
   };
 
   // Enviar Mensagem no Simulador de Chat
@@ -737,6 +867,16 @@ export default function ChatbotHubClient() {
         </div>
       )}
 
+      {/* "Conectado" não é "funcionando": vínculo doente, outro sistema pela
+          API oficial, QR lido no número errado. Só com a loja conectada — a
+          faixa de cima já cobre o desconectado. */}
+      <FaixaDoVinculo
+        saude={saudeDoVinculo}
+        ocupado={isRefreshingQr}
+        onRelerQr={relerQrPelaFaixa}
+        onNumeroComumEhDaLoja={numeroConectado ? numeroComumEhDaLoja : undefined}
+      />
+
       {/* HEADER BANNER PRINCIPAL DO CHATBOT IA */}
       <div style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", borderRadius: "20px", padding: "28px", color: "#fff", marginBottom: "24px", boxShadow: "0 10px 30px rgba(0,0,0,0.15)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
@@ -753,13 +893,24 @@ export default function ChatbotHubClient() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", padding: "12px 18px", borderRadius: "16px" }}>
-            <div style={{ width: 44, height: 44, borderRadius: "12px", background: config.connected ? "#0F766E" : "#B45309", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {config.connected ? <CheckCircle2 size={24} color="#fff" /> : <Smartphone size={24} color="#fff" />}
+            <div style={{ width: 44, height: 44, borderRadius: "12px", background: config.connected && !vinculoComProblema ? "#0F766E" : "#B45309", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {!config.connected ? (
+                <Smartphone size={24} color="#fff" />
+              ) : vinculoComProblema ? (
+                <AlertCircle size={24} color="#fff" />
+              ) : (
+                <CheckCircle2 size={24} color="#fff" />
+              )}
             </div>
             <div>
               <div style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.5px", color: "#94A3B8", fontWeight: 700 }}>Status do WhatsApp</div>
               <div style={{ fontSize: "1.05rem", fontWeight: 800, color: "#fff" }}>
-                {config.connected ? "Conectado e Operacional" : "Desconectado / Pendente"}
+                {/* "Operacional" era justamente a mentira da noite de 24/09. */}
+                {!config.connected
+                  ? "Desconectado / Pendente"
+                  : vinculoComProblema
+                    ? "Conectado, com problema no vínculo"
+                    : "Conectado e Operacional"}
               </div>
               {config.phone && <div style={{ fontSize: "0.8rem", color: "#5EEAD4", fontWeight: 700 }}>📱 {config.phone}</div>}
             </div>
@@ -1023,8 +1174,24 @@ export default function ChatbotHubClient() {
                       WA
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F766E" }}>WhatsApp Vinculado com Sucesso!</div>
-                      <div style={{ fontSize: "0.8rem", color: "#0F766E" }}>A IA está pronta para responder mensagens no número {config.phone}.</div>
+                      {vinculoComProblema ? (
+                        <>
+                          <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F766E" }}>WhatsApp vinculado, mas com problema</div>
+                          <div style={{ fontSize: "0.8rem", color: "#0F766E" }}>Veja o aviso no topo da página: ele diz o que fazer.</div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F766E" }}>WhatsApp Vinculado com Sucesso!</div>
+                          <div style={{ fontSize: "0.8rem", color: "#0F766E" }}>A IA está pronta para responder mensagens no número {config.phone}.</div>
+                        </>
+                      )}
+                      {/* O aplicativo que leu o QR: é o que distingue o WhatsApp
+                          Business da loja do celular pessoal de alguém. */}
+                      {saudeDoVinculo.nomeDaPlataforma && (
+                        <div style={{ fontSize: "0.74rem", color: "#115E59", marginTop: 2 }}>
+                          QR lido pelo {saudeDoVinculo.nomeDaPlataforma}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <button
@@ -2684,6 +2851,7 @@ export default function ChatbotHubClient() {
                 {[
                   { label: "Atendimento Automático Ativo", ok: config.active },
                   { label: "Conexão com o WhatsApp da Loja", ok: config.connected },
+                  { label: "Vínculo do WhatsApp sem aviso (aparelhos, número, leitura dos clientes)", ok: config.connected && !vinculoComProblema },
                   { label: "Sincronização de Cardápio & Preços", ok: stats.productCount > 0 },
                   { label: "Robô de Atendimento IA (Gemini 2.5 Flash)", ok: true },
                   { label: "Servidor de Webhook & Notificações", ok: true },

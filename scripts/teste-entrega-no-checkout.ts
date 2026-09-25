@@ -12,6 +12,7 @@
 process.env.COTACAO_SECRET = "segredo-de-teste";
 import {
   assinaturaDaConsulta,
+  BOTAO_DO_GPS,
   carimboDoPonto,
   comoAbrirOMapa,
   consultaDaCotacao,
@@ -19,7 +20,9 @@ import {
   criarSequenciadorDeCotacoes,
   detalheDaEntrega,
   gpsEhPreciso,
+  gpsNoLugarDoMapa,
   lerCotacaoNoBalcao,
+  lerRecusaDoPedido,
   lerRespostaDaCotacao,
   oQueFaltaParaFechar,
   painelDaEntrega,
@@ -27,13 +30,20 @@ import {
   pontoValeParaEndereco,
   pontoValido,
   PRECISAO_MAXIMA_DO_GPS_M,
+  temOndeAbrirOMapa,
   temRuaOuBairro,
   textoLimpo,
   VALIDADE_DA_COTACAO_NA_TELA_MS,
+  avisoDoPontoSemEndereco,
+  enderecoDoReverso,
+  type EnderecoDigitado,
+  type Ponto,
 } from "../src/lib/entrega-no-checkout";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { chaveDoEndereco, VALIDADE_DA_COTACAO_MS } from "../src/lib/cotacao-de-entrega";
+import { entregaDoVeredicto, recusaDoSite } from "../src/lib/entrega-do-pedido";
+import type { VeredictoDeEntrega } from "../src/lib/area-de-entrega";
 
 let ok = 0, falhas = 0;
 function confere(nome: string, cond: boolean, detalhe?: unknown) {
@@ -132,6 +142,39 @@ function confere(nome: string, cond: boolean, detalhe?: unknown) {
   confere("sem precisão informada não vale", !gpsEhPreciso(undefined) && !gpsEhPreciso(null) && !gpsEhPreciso(NaN) && !gpsEhPreciso("12") && !gpsEhPreciso(-1));
 }
 
+// ── 1c2. O ENDEREÇO DO PONTO (REVERSE GEOCODE) ────────────────────────────
+{
+  // A resposta real do Nominatim no teste de ponta a ponta (25/09/2026, E6a):
+  // GPS de 20 m a ~1 km da Divinos, sem nome de rua e sem `suburb`.
+  const vilaEsperanca = { residential: "Vila Jardim Esperança", city: "Cabo Frio", state: "Rio de Janeiro", country: "Brasil" };
+  const lido = enderecoDoReverso(vilaEsperanca);
+  confere("bairro só em 'residential' (loteamento) vira o bairro", lido.bairro === "Vila Jardim Esperança" && lido.rua === "" && lido.numero === "", lido);
+  // O que a tela faz com isso: o GPS PRECISO vira o ponto do cliente (antes
+  // era jogado fora, com o alert "não consegui ler... agora").
+  const naTela = { street: lido.rua, number: lido.numero, neighborhood: lido.bairro };
+  confere("… e o endereço diz ONDE: o GPS não é descartado", temRuaOuBairro(naTela));
+  const carimbo = carimboDoPonto(naTela);
+  confere("… o cliente completa rua e número e o ponto continua valendo",
+    pontoValeParaEndereco(carimbo, { street: "Rua Abel Gomes dos Santos", number: "15", neighborhood: "Vila Jardim Esperança" }), carimbo);
+  confere("… mas trocar o bairro por outro derruba o ponto (casa ≠ trabalho)",
+    !pontoValeParaEndereco(carimbo, { street: "Rua X", number: "1", neighborhood: "Centro" }));
+  confere("'quarter' e 'hamlet' também valem de bairro",
+    enderecoDoReverso({ quarter: "Parque Burle" }).bairro === "Parque Burle" && enderecoDoReverso({ hamlet: "Boca do Mato" }).bairro === "Boca do Mato");
+  const completo = enderecoDoReverso({ road: "Rua Beira Alta", house_number: "100", suburb: "Vila Monte Alegre", residential: "Loteamento Tal" });
+  confere("com `suburb`, ele manda (a mesma ordem do servidor)", completo.bairro === "Vila Monte Alegre" && completo.rua === "Rua Beira Alta" && completo.numero === "100", completo);
+  confere("rua de pedestre/servidão também é rua", enderecoDoReverso({ pedestrian: "Servidão A" }).rua === "Servidão A" && enderecoDoReverso({ footway: "Beco B" }).rua === "Beco B");
+  confere("campo em branco não conta (vai para o próximo)", enderecoDoReverso({ suburb: "  ", residential: "Jardim Caiçara" }).bairro === "Jardim Caiçara");
+  const vazio = enderecoDoReverso(undefined);
+  confere("resposta sem `address` (erro do Nominatim) não quebra", vazio.rua === "" && vazio.bairro === "" && vazio.numero === "", vazio);
+  confere("sem rua e sem bairro nenhum, o ponto não vale para endereço (fica de palpite)",
+    !temRuaOuBairro({ street: enderecoDoReverso({ city: "Cabo Frio" }).rua, neighborhood: enderecoDoReverso({ city: "Cabo Frio" }).bairro }));
+  // O aviso: "agora" é para o mapa que não respondeu; o mapa que respondeu
+  // sem nome não melhora tentando de novo.
+  confere("mapa respondeu sem nome: o aviso NÃO diz 'agora'", !/agora/.test(avisoDoPontoSemEndereco(true)) && /não tem o nome da rua/.test(avisoDoPontoSemEndereco(true)), avisoDoPontoSemEndereco(true));
+  confere("mapa não respondeu: 'agora' (falha passageira)", /agora/.test(avisoDoPontoSemEndereco(false)), avisoDoPontoSemEndereco(false));
+  confere("os dois mandam digitar rua, número e bairro", [true, false].every((l) => /Digite rua, número e bairro/.test(avisoDoPontoSemEndereco(l))));
+}
+
 // ── 1d. ONDE O MAPA ABRE ──────────────────────────────────────────────────
 {
   const CASA = { lat: -22.8531, lng: -42.0301 };
@@ -200,6 +243,18 @@ confere("lixo não é ponto", pontoValido({ lat: "abc", lng: 1 }) === null && po
   confere("sem ponto, sem lat/lng", !semPonto.has("lat") && !semPonto.has("lng") && !semPonto.has("origem"));
   const semLoja = new URLSearchParams(consultaDaCotacao({ street: "R", number: "1", neighborhood: "B" }));
   confere("sem franchiseeId (balcão/painel) não manda o parâmetro", !semLoja.has("franchiseeId"));
+
+  // O GPS e o pino cotam antes de o cliente digitar número ou bairro: o texto
+  // ia "Estrada Nelore,  - Gamboa, Cabo Frio" (teste de ponta a ponta, E6/R4).
+  const gps = { lat: -22.8455, lng: -42.027, origem: "gps" as const };
+  const texto = (e: EnderecoDigitado) => new URLSearchParams(consultaDaCotacao({ franchiseeId: "l", cidade: "Cabo Frio", ...e, ponto: gps })).get("address");
+  confere("sem número: 'Estrada Nelore - Gamboa, Cabo Frio'", texto({ street: "Estrada Nelore", number: "", neighborhood: "Gamboa" }) === "Estrada Nelore - Gamboa, Cabo Frio", texto({ street: "Estrada Nelore", number: "", neighborhood: "Gamboa" }));
+  confere("sem número nem bairro: 'Rua Sete de Setembro, Cabo Frio'", texto({ street: "Rua Sete de Setembro", number: " ", neighborhood: "" }) === "Rua Sete de Setembro, Cabo Frio", texto({ street: "Rua Sete de Setembro", number: " ", neighborhood: "" }));
+  confere("só o bairro (o GPS sem nome de rua): 'Vila Jardim Esperança, Cabo Frio'", texto({ street: "", number: "", neighborhood: "Vila Jardim Esperança" }) === "Vila Jardim Esperança, Cabo Frio", texto({ street: "", neighborhood: "Vila Jardim Esperança" }));
+  confere("número sem rua não entra no texto", texto({ street: "", number: "15", neighborhood: "Gamboa" }) === "Gamboa, Cabo Frio", texto({ street: "", number: "15", neighborhood: "Gamboa" }));
+  confere("nada digitado: só a cidade (nada de ',  - ,')", texto({}) === "Cabo Frio", texto({}));
+  const semCidade = new URLSearchParams(consultaDaCotacao({ street: "Rua X", number: "", neighborhood: "" })).get("address");
+  confere("sem cidade, sem vírgula sobrando", semCidade === "Rua X", semCidade);
 }
 
 // ── 5. LENDO A RESPOSTA ───────────────────────────────────────────────────
@@ -443,6 +498,159 @@ async function corrida() {
     confere(`tela e servidor concordam: ${JSON.stringify(a)} × ${JSON.stringify(b)}`, servidorIgual === telaIgual, { servidorIgual, telaIgual });
   }
   confere("textoLimpo = limpo do servidor (acentos, pontuação)", textoLimpo("  Av. São  João,  nº 10 ") === "av sao joao n 10");
+}
+
+// ── 11. SEM ONDE ABRIR O MAPA: O GPS (pedirGps) ───────────────────────────
+// Loja por km SEM pino e endereço que o mapa não achou (nem palpite): o
+// servidor manda `pedirGps`. A tela mostrava "Marcar no mapa" obrigatório; o
+// toque dava "Não consegui abrir o mapa agora", e a recusa do pedido dava DOIS
+// alertas seguidos. Agora: UM aviso e o botão do GPS no lugar do mapa.
+{
+  const CASA: Ponto = { lat: -22.8531, lng: -42.0301 };
+  const PINO_DA_LOJA: Ponto = { lat: -22.8792, lng: -42.0187 };
+  // A resposta de /api/delivery-fee nesse caso (ramo `soGps` da rota).
+  const respostaSoGps = {
+    fee: 0, available: false, unknown: true, type: "radius", distanceKm: null, ponto: null,
+    precisaConfirmarNoMapa: true, podeConfirmarNoMapa: true, pedirGps: true,
+    message: `Não localizamos esse endereço no mapa. Toque em "${BOTAO_DO_GPS}" para calcular a entrega.`,
+  };
+  const c = lerRespostaDaCotacao(respostaSoGps);
+  confere("cotação: lê pedirGps (sem taxa, sem palpite, pede o ponto)",
+    c.pedirGps && c.precisaConfirmarNoMapa && c.pontoAproximado === null && c.taxa === null && c.cotacao === null, c);
+  confere("cotação: pedirGps sem pedido de mapa não vale (ATENDE)", !lerRespostaDaCotacao({ fee: 5, available: true, pedirGps: true }).pedirGps);
+  confere("cotação: sem a bandeira, pedirGps é false", !lerRespostaDaCotacao({ available: false, precisaConfirmarNoMapa: true }).pedirGps);
+
+  // ONDE ABRIR — a tela decide com o que ela tem; sem ela dizer, vale a bandeira.
+  confere("temOndeAbrirOMapa: nada que preste", !temOndeAbrirOMapa([null, undefined, { lat: 0, lng: 0 }, { lat: "x", lng: 1 }]));
+  confere("temOndeAbrirOMapa: um ponto basta", temOndeAbrirOMapa([null, CASA]));
+  confere("gpsNoLugarDoMapa: a bandeira, quando a tela não diz", gpsNoLugarDoMapa({ pedirGps: true }) && !gpsNoLugarDoMapa({}));
+  confere("gpsNoLugarDoMapa: com um ponto guardado na tela, o mapa abre ali (GPS de novo daria o mesmo ponto)",
+    !gpsNoLugarDoMapa({ pedirGps: true, temOndeAbrirOMapa: true }));
+  confere("gpsNoLugarDoMapa: sem onde abrir, GPS mesmo sem a bandeira (o mapa não abriria)",
+    gpsNoLugarDoMapa({ pedirGps: false, temOndeAbrirOMapa: false }));
+
+  // O PAINEL.
+  const base = {
+    bairroLocal: false, calculando: false, calculada: true, disponivel: c.disponivel, erro: false, taxaEfetiva: 0,
+    freteGratisPorMinimo: false, precisaConfirmarNoMapa: c.precisaConfirmarNoMapa, pedeConfirmacao: c.pedeConfirmacao,
+    podeConferirNoMapa: c.podeConferirNoMapa, temPontoDoCliente: false, distanciaKm: c.distanciaKm, medida: c.medida,
+    tempoMin: c.tempoMin, mensagem: c.mensagem,
+  };
+  const p = painelDaEntrega({ ...base, pedirGps: c.pedirGps, temOndeAbrirOMapa: false });
+  confere("painel com pedirGps e sem onde abrir: botão do GPS, NENHUM botão de mapa, a frase do servidor",
+    p.botaoDoGps && p.botaoDoMapa === null && p.tom === "alerta" && p.mensagem === respostaSoGps.message, p);
+  confere("…e a frase aponta para o botão que está na tela", p.mensagem.includes(`"${BOTAO_DO_GPS}"`), p.mensagem);
+  const pSoBandeira = painelDaEntrega({ ...base, pedirGps: true });
+  confere("painel só com a bandeira (a tela não disse): GPS", pSoBandeira.botaoDoGps && pSoBandeira.botaoDoMapa === null, pSoBandeira);
+  const pComPonto = painelDaEntrega({ ...base, pedirGps: true, temOndeAbrirOMapa: true });
+  confere("painel com a bandeira mas um ponto guardado: mapa obrigatório, sem a frase do GPS",
+    pComPonto.botaoDoMapa === "obrigatorio" && !pComPonto.botaoDoGps && !pComPonto.mensagem.includes(BOTAO_DO_GPS), pComPonto);
+  const pSemBandeira = painelDaEntrega({ ...base, mensagem: "Não localizamos. Confirme no mapa onde fica a sua casa.", temOndeAbrirOMapa: false });
+  confere("sem onde abrir e sem a bandeira: GPS, com a frase da tela (a do servidor mandava para o mapa)",
+    pSemBandeira.botaoDoGps && pSemBandeira.mensagem.includes(`"${BOTAO_DO_GPS}"`) && !/Confirme no mapa/.test(pSemBandeira.mensagem), pSemBandeira);
+  const pAprox = painelDaEntrega({ ...base, disponivel: true, precisaConfirmarNoMapa: false, pedeConfirmacao: true, taxaEfetiva: 10, temOndeAbrirOMapa: false });
+  confere("aproximado sem onde abrir: 'Taxa estimada' + GPS",
+    pAprox.titulo === "Taxa estimada: R$ 10,00" && pAprox.botaoDoGps && pAprox.botaoDoMapa === null && pAprox.mensagem.includes(BOTAO_DO_GPS), pAprox);
+  const pFora = painelDaEntrega({ ...base, precisaConfirmarNoMapa: false, mensagem: "Fora", temOndeAbrirOMapa: false });
+  confere("fora da área sem onde abrir: sem o 'conferir no mapa' que não abriria", pFora.botaoDoMapa === null && !pFora.botaoDoGps, pFora);
+  const pDepois = painelDaEntrega({
+    ...base, disponivel: true, precisaConfirmarNoMapa: false, taxaEfetiva: 5, temPontoDoCliente: true, temOndeAbrirOMapa: true,
+    distanciaKm: 0.84, medida: "rota", tempoMin: 30,
+  });
+  confere("depois do GPS (ATENDE pelo ponto do cliente): taxa em verde, sem o botão do GPS",
+    pDepois.tom === "ok" && pDepois.titulo === "Taxa de Entrega: R$ 5,00" && !pDepois.botaoDoGps && pDepois.botaoDoMapa === "opcional", pDepois);
+  // Nenhuma combinação mostra os dois botões — nem o de mapa quando não há onde abrir.
+  const b = [false, true];
+  let doisBotoes = 0, mapaSemOndeAbrir = 0;
+  for (const precisa of b) for (const pede of b) for (const disp of b) for (const ponto of b) for (const gps of b) for (const onde of b) {
+    const x = painelDaEntrega({ ...base, precisaConfirmarNoMapa: precisa, pedeConfirmacao: pede, disponivel: disp, temPontoDoCliente: ponto, pedirGps: gps, temOndeAbrirOMapa: onde });
+    if (x.botaoDoGps && x.botaoDoMapa) doisBotoes++;
+    if (!onde && x.botaoDoMapa) mapaSemOndeAbrir++;
+  }
+  confere("nenhum painel mostra o botão do GPS e o do mapa juntos", doisBotoes === 0, doisBotoes);
+  confere("nenhum painel oferece o mapa quando ele não tem onde abrir", mapaSemOndeAbrir === 0, mapaSemOndeAbrir);
+
+  // FINALIZAR.
+  const ass = assinaturaDaConsulta({ street: "R", number: "1", neighborhood: "B" });
+  const fechar = {
+    calculando: false, cotadaPeloServidor: true, assinaturaCotada: ass, assinaturaAtual: ass, idadeDaCotacaoMs: 1000,
+    erro: false, calculada: true, disponivel: false, precisaConfirmarNoMapa: true, pedeConfirmacao: false,
+    temPontoDoCliente: false, freteGratis: false, mensagem: respostaSoGps.message,
+  };
+  const f = oQueFaltaParaFechar({ ...fechar, pedirGps: true, temOndeAbrirOMapa: false });
+  confere("Finalizar com pedirGps: 'pedir-gps' (UM aviso, a frase do servidor), não 'abrir-mapa'",
+    f?.acao === "pedir-gps" && f.mensagem === respostaSoGps.message, f);
+  const fComPonto = oQueFaltaParaFechar({ ...fechar, pedirGps: true, temOndeAbrirOMapa: true });
+  confere("Finalizar com a bandeira e um ponto guardado: abre o mapa, sem a frase do GPS",
+    fComPonto?.acao === "abrir-mapa" && !fComPonto.mensagem.includes(BOTAO_DO_GPS), fComPonto);
+  const fAprox = oQueFaltaParaFechar({ ...fechar, disponivel: true, precisaConfirmarNoMapa: false, pedeConfirmacao: true, temOndeAbrirOMapa: false });
+  confere("Finalizar aproximado sem onde abrir: GPS", fAprox?.acao === "pedir-gps" && fAprox.mensagem.includes(BOTAO_DO_GPS), fAprox);
+  confere("sem as entradas novas, nada muda (abrir-mapa)", oQueFaltaParaFechar(fechar)?.acao === "abrir-mapa");
+
+  // A RECUSA DO POST — a de verdade (lib/entrega-do-pedido.ts, recusaDoSite).
+  const veredicto = (v: Partial<VeredictoDeEntrega>): VeredictoDeEntrega =>
+    ({ modo: "KM", resultado: "ATENDE", taxa: 5, tempoMin: 30, motivo: "teste", ...v }) as VeredictoDeEntrega;
+  const naoSei = entregaDoVeredicto(veredicto({ resultado: "DESCONHECIDO", taxa: null, motivo: "endereço não localizado no mapa" }), null);
+  const rs = recusaDoSite(naoSei, { temCoordenadaDoCliente: false, lojaTemPonto: false });
+  confere("(pré-condição) o servidor recusa com pedirGps", rs?.corpo.pedirGps === true, rs);
+  const telaVazia = [null, undefined, null, null, null];
+  const r = lerRecusaDoPedido(rs?.corpo, telaVazia);
+  confere("recusa com pedirGps e a tela sem onde abrir: o aviso é a frase do servidor, e depois o GPS (sem mapa)",
+    r?.depois === "mostrar-gps" && r.pedirGps && r.precisaConfirmarNoMapa && r.mensagem === rs?.corpo.error, r);
+  confere("…e a frase do servidor cita o botão da tela pelo nome", Boolean(rs?.corpo.error.includes(`"${BOTAO_DO_GPS}"`)), rs?.corpo.error);
+  const rComPonto = lerRecusaDoPedido(rs?.corpo, [null, CASA]);
+  confere("recusa com pedirGps mas um ponto guardado na tela: abre o mapa ali, com a frase do mapa",
+    rComPonto?.depois === "abrir-mapa" && !rComPonto.mensagem.includes(BOTAO_DO_GPS), rComPonto);
+  const comPalpite = entregaDoVeredicto(veredicto({
+    resultado: "DESCONHECIDO", taxa: null, distanciaKm: 5.4, pedeConfirmacao: true, aproximado: true,
+    ponto: { lat: -22.8801, lng: -42.0102, origem: "bairro" },
+  } as Partial<VeredictoDeEntrega>), null);
+  const recusaComPalpite = recusaDoSite(comPalpite, { temCoordenadaDoCliente: false, lojaTemPonto: false });
+  const rp = lerRecusaDoPedido(recusaComPalpite?.corpo, telaVazia);
+  confere("recusa com palpite: o mapa abre no palpite, mesmo com a tela vazia",
+    rp?.depois === "abrir-mapa" && rp.pontoAproximado?.lat === -22.8801 && !rp.pedirGps, rp);
+  const recusaComPino = recusaDoSite(naoSei, { temCoordenadaDoCliente: false, lojaTemPonto: true });
+  const rComPino = lerRecusaDoPedido(recusaComPino?.corpo, [PINO_DA_LOJA]);
+  confere("loja com pino: mapa, sem GPS", rComPino?.depois === "abrir-mapa" && !rComPino.pedirGps, rComPino);
+  confere("recusa sem a tela dizer: vale a bandeira", lerRecusaDoPedido(rs?.corpo)?.depois === "mostrar-gps");
+  confere("outra recusa (loja fechada, estoque) não é da entrega",
+    lerRecusaDoPedido({ error: "Loja fechada" }) === null && lerRecusaDoPedido(null) === null && lerRecusaDoPedido("x") === null);
+
+  // UM AVISO SÓ — a tela como ela é: o aviso da recusa e depois o mapa (que
+  // só avisa de novo se não tiver onde abrir) ou o painel do GPS. Para toda
+  // recusa da entrega e todo estado da tela, sai exatamente um aviso.
+  const corpos: unknown[] = [
+    rs?.corpo,
+    recusaComPalpite?.corpo,
+    recusaComPino?.corpo,
+    { error: "Achamos só aproximado. Confirme no mapa.", precisaConfirmarNoMapa: true },
+    { error: "x", pedeConfirmacao: true, pedirGps: true },
+  ];
+  const telas: (Ponto | null)[][] = [[], [null], [CASA], [PINO_DA_LOJA, null]];
+  let avisosErrados = 0;
+  for (const corpo of corpos) for (const t of telas) {
+    const rec = lerRecusaDoPedido(corpo, t);
+    if (!rec) { avisosErrados++; continue; }
+    let avisos = 1; // alert(recusa.mensagem)
+    // abrirMapaDeConfirmacao(palpite) avisa de novo quando o mapa não tem onde abrir.
+    if (rec.depois === "abrir-mapa" && !temOndeAbrirOMapa([...t, rec.pontoAproximado])) avisos++;
+    if (avisos !== 1) avisosErrados++;
+  }
+  confere("toda recusa da entrega dá UM aviso só (nunca o 'não consegui abrir o mapa' em seguida)", avisosErrados === 0, avisosErrados);
+
+  // As duas pontas usam o mesmo nome de botão.
+  const rotaDaCotacao = readFileSync(join(process.cwd(), "src/app/api/delivery-fee/route.ts"), "utf8");
+  confere("/api/delivery-fee cita o botão da tela pelo nome", rotaDaCotacao.includes(`Toque em "${BOTAO_DO_GPS}"`));
+
+  // A tela liga tudo (sem navegador: o texto do componente).
+  const tela = readFileSync(join(process.cwd(), "src/components/customer/CustomerStorePage.tsx"), "utf8");
+  confere("CustomerStorePage lê a recusa por lerRecusaDoPedido e só abre o mapa quando ele tem onde abrir",
+    /lerRecusaDoPedido\(d, ondeOMapaPodeAbrir\(\)\)/.test(tela) && /recusa\.depois === "abrir-mapa"/.test(tela));
+  confere("CustomerStorePage trata 'pedir-gps' no Finalizar", /falta\.acao === "pedir-gps"/.test(tela));
+  confere("CustomerStorePage mostra o botão do GPS no painel", /painel\.botaoDoGps && \(/.test(tela) && /onClick=\{handleUseGpsLocation\}/.test(tela));
+  confere("CustomerStorePage passa pedirGps e onde abrir ao painel e ao Finalizar",
+    /pedirGps,\s*temOndeAbrirOMapa: mapaPodeAbrir/.test(tela) && /pedirGps,\s*temOndeAbrirOMapa: temOndeAbrirOMapa\(ondeOMapaPodeAbrir\(\)\)/.test(tela));
+  confere("CustomerStorePage guarda a bandeira da cotação", /setPedirGps\(c\.pedirGps\)/.test(tela));
 }
 
 corrida().then(() => {

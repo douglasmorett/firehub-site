@@ -147,6 +147,21 @@ export type VeredictoDeEntrega = {
    * há palpite: sem pino da loja, o cliente ainda pode marcar a casa.
    */
   pontoDaLoja?: { lat: number; lng: number };
+  /**
+   * true = o "não sei" é da LOJA, não do cliente: ela não tem pino e o
+   * endereço dela não foi achado no mapa, então não há de onde medir (modo
+   * KM/ROTA). Nem o pino, nem o GPS, nem a localização do WhatsApp do cliente
+   * resolvem — o motor devolveria o mesmo DESCONHECIDO. Por isso quem lê trata
+   * à parte: o site aceita pela 1ª faixa e marca o pedido (recusaDoSite), o
+   * robô segura direto sem pedir o 📎 (faltaOPontoDaLoja) e a cotação não abre
+   * o "confirme no mapa".
+   *
+   * Antes isso era descoberto pelo TEXTO do `motivo` ("loja sem localização no
+   * mapa") em três lugares: reescrever a frase do log fechava a loja sem ponto
+   * para entrega sem nenhum erro de compilação. O texto segue só como reserva
+   * nos leitores, para veredito que chegue sem este campo.
+   */
+  semPontoDaLoja?: boolean;
 };
 
 export function normalizarTexto(texto: unknown): string {
@@ -543,7 +558,14 @@ export async function avaliarEntrega(
   }
 
   if (!check) {
-    return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: raioMaximoKm(loja) ?? undefined, motivo: "loja sem localização no mapa (storeLatLng)" };
+    // `verifyStoreDeliveryAddress` só devolve null quando a LOJA não tem ponto
+    // (sem pino e o endereço dela não achado; mapa fora é `falhaDoMapa`, não
+    // isto). Os leitores conferem o campo; o motivo é para o log e a nota.
+    return {
+      modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: raioMaximoKm(loja) ?? undefined,
+      semPontoDaLoja: true,
+      motivo: "loja sem localização no mapa (storeLatLng)",
+    };
   }
   // A loja sem pino mede do endereço dela achado no mapa: sem pino não há
   // "a loja" no mapa do checkout, e é este ponto que o abre.

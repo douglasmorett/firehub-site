@@ -68,3 +68,6 @@ tmp-*.js
 # Saídas de navegador e scripts de diagnóstico da sessão
 .playwright-mcp/
 .tmp-audit/
+
+# Saídas (capturas e logs) do teste de ponta a ponta da entrega
+scripts/e2e-entrega/saida/

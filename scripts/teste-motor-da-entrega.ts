@@ -239,7 +239,8 @@ async function main() {
   osrm.set(chave4(destinoFalha), { status: 503, corpo: { message: "fora" } });
   let antes = chamadas.length;
   const estimada = await avaliarEntrega(divinos, { endereco: "x", coords: destinoFalha });
-  const reta = geocoding.haversineDistanceKm(LOJA.lat, LOJA.lng, destinoFalha.lat, destinoFalha.lng);
+  // A reta EXATA: é ela que se multiplica pelo fator (arredondar uma vez só, R5).
+  const reta = geocoding.linhaRetaKm(LOJA.lat, LOJA.lng, destinoFalha.lat, destinoFalha.lng);
   conferir("perguntou 2 vezes (a primeira + 1 nova tentativa)", contar("osrm", antes) === 2, contar("osrm", antes));
   conferir("sem histórico, fator 1,4: distância = reta × 1,4, medida 'estimada'",
     estimada.medida === "estimada" && estimada.distanciaKm === Math.round(reta * 1.4 * 100) / 100, { d: estimada.distanciaKm, reta, medida: estimada.medida });
@@ -252,6 +253,27 @@ async function main() {
   conferir("com o disjuntor aberto, nem pergunta — e estima na hora", contar("osrm", antes) === 0 && comDisjuntor.medida === "estimada", comDisjuntor);
   conferir("o log avisou que o roteador caiu", avisos.some((a) => /roteador .* fora/.test(a)));
 
+  // R5 com o roteador fora: reta EXATA × fator, arredondada UMA vez. Caso do
+  // teste de ponta a ponta de 25/09/2026: 0,7375 km × 1,36 virava 0,74 × 1,36
+  // = 1,01 km — a faixa de 1,5 km (R$ 8) para quem está a 1,00 km (R$ 5).
+  zerar();
+  let noLimite: Ponto | null = null;
+  for (let m = 700; m <= 740 && !noLimite; m++) {
+    const p = aoSul(m / 1000);
+    const r = retaKm(LOJA, p);
+    if (Math.round(r * 1.4 * 100) === 100 && Math.round((Math.round(r * 100) / 100) * 1.4 * 100) === 101) noLimite = p;
+  }
+  conferir("(achado um ponto em que arredondar a reta antes sobe de faixa)", !!noLimite);
+  if (noLimite) {
+    osrm.set(chave4(noLimite), { status: 503, corpo: { message: "fora" } });
+    const umaVez = await avaliarEntrega(divinos, { endereco: "x", coords: noLimite });
+    conferir("estimada arredonda UMA vez: reta exata × 1,4 = 1,00 km → faixa de 1 km (R$ 5 • R$ 4), não 1,01 km → R$ 8",
+      umaVez.medida === "estimada" && umaVez.distanciaKm === 1 && umaVez.faixaKm === 1 && umaVez.taxa === 5 && umaVez.taxaDoEntregador === 4,
+      { umaVez, reta: retaKm(LOJA, noLimite) });
+    conferir("o log mostra a reta exata (0,715 km), não a arredondada (0,72)",
+      avisos.some((a) => /distância ESTIMADA \(0\.71\d km × 1\.4/.test(a)), avisos.filter((a) => /ESTIMADA/.test(a)));
+  }
+
   zerar();
   // Histórico da loja: 5 rotas com razão ~1,6 (Cabo Frio medido: mediana perto de 1,5–1,6).
   for (const [i, km] of [1.0, 1.5, 2.0, 2.5, 3.0].entries()) {
@@ -262,7 +284,7 @@ async function main() {
   const destinoHist = aoSul(2.0, -0.01);
   osrm.set(chave4(destinoHist), { status: 502, corpo: {} });
   const comHistorico = await avaliarEntrega(divinos, { endereco: "x", coords: destinoHist });
-  const retaHist = geocoding.haversineDistanceKm(LOJA.lat, LOJA.lng, destinoHist.lat, destinoHist.lng);
+  const retaHist = geocoding.linhaRetaKm(LOJA.lat, LOJA.lng, destinoHist.lat, destinoHist.lng);
   conferir("roteador fora: reta × 1,6 da loja (Gamboa não vira faixa de baixo)",
     comHistorico.medida === "estimada" && comHistorico.distanciaKm === Math.round(retaHist * 1.6 * 100) / 100, { d: comHistorico.distanciaKm, retaHist });
 
@@ -684,6 +706,32 @@ async function main() {
   conferir("loja sem pino, cliente não achado: DESCONHECIDO com o ponto da loja (onde o mapa abre)",
     semPinoNaoAchou.resultado === "DESCONHECIDO" && semPinoNaoAchou.pontoDaLoja?.lat === LOJA.lat, semPinoNaoAchou);
   conferir("… e a loja COM pino não manda ponto da loja (o checkout já tem o pino)", naoExiste.pontoDaLoja === undefined);
+
+  // ════════════════════════════════════════════════════════════════════════
+  console.log("\n== A LOJA sem ponto nenhum: o motor diz no CAMPO (semPontoDaLoja) ==");
+  // É o que o site (recusaDoSite), o robô (faltaOPontoDaLoja) e a cotação
+  // leem. Antes liam o TEXTO do motivo: reescrever a frase do log mandava a
+  // loja sem ponto para o "confirme no mapa", onde nem o pino do cliente mede.
+  zerar();
+  const semPontoNenhum = { ...divinos, storeLatLng: null, storeAddress: null };
+  const vSemPonto = await avaliarEntrega(semPontoNenhum, { endereco: "", coords: aoSul(0.5, 0.0011) });
+  conferir("loja sem pino e sem endereço: DESCONHECIDO com semPontoDaLoja: true (nem o GPS do cliente mede)",
+    vSemPonto.resultado === "DESCONHECIDO" && vSemPonto.semPontoDaLoja === true && vSemPonto.taxa === null, vSemPonto);
+  zerar();
+  const lojaNaoAchada = { ...divinos, storeLatLng: null, storeAddress: "Rua Que Some, 9" };
+  const partesAlecrin = { street: "Rua Alecrin", number: "30", neighborhood: "Centro", city: "Cabo Frio" };
+  const vNaoAchada = await avaliarEntrega(lojaNaoAchada, { endereco: "Rua Alecrin, 30 - Centro", partes: partesAlecrin });
+  conferir("loja sem pino e com endereço que o mapa responde 'nada': semPontoDaLoja: true",
+    vNaoAchada.resultado === "DESCONHECIDO" && vNaoAchada.semPontoDaLoja === true && vNaoAchada.falhaDoMapa === undefined, vNaoAchada);
+  zerar();
+  // O mapa FORA ao procurar a loja não é "a loja não existe no mapa": é
+  // falhaDoMapa, e o site pede o pino/GPS em vez de aceitar pela 1ª faixa.
+  nominatimPadrao = { status: 500, corpo: {} };
+  const vMapaFora = await avaliarEntrega(lojaNaoAchada, { endereco: "Rua Alecrin, 30 - Centro", partes: partesAlecrin });
+  conferir("… mas com o mapa FORA ao procurar a loja: falhaDoMapa, sem semPontoDaLoja",
+    vMapaFora.resultado === "DESCONHECIDO" && vMapaFora.semPontoDaLoja === undefined && vMapaFora.falhaDoMapa === "indisponivel", vMapaFora);
+  conferir("… e nenhum outro 'não sei' leva o campo (cliente não achado, mapa fora na casa, loja sem pino achável)",
+    naoExiste.semPontoDaLoja === undefined && semACasa.semPontoDaLoja === undefined && semPinoNaoAchou.semPontoDaLoja === undefined);
 
   if (process.argv.includes("--rede")) {
     console.log("\n== MANUAL (--rede): roteador e Nominatim de verdade ==");

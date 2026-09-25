@@ -21,6 +21,7 @@ import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
+import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
@@ -3772,6 +3773,39 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 operador={{ role: user?.role, permissions: user?.permissions }}
                 aoSalvar={async (r) => {
                   showToast(`Pagamento alterado para ${r.paymentMethod}.`, "#0F766E");
+                  await recarregarPedidos();
+                }}
+              />
+
+              {/* Corrigir a taxa de entrega — também acima das abas: vale em
+                  qualquer status menos cancelado, como a troca de pagamento.
+                  Nasceu dos quatro clientes da Divinos a 0,5–0,9 km cobrados
+                  na faixa de R$ 12 (25/09/2026): a loja não tinha onde
+                  acertar. Só aparece em pedido de entrega próprio — a mesma
+                  régua da rota /api/store/orders/[id]/taxa-de-entrega. O
+                  `key` zera o painel quando o modal passa a outro pedido. */}
+              <CorrigirTaxaDeEntregaPainel
+                key={order.id}
+                pedido={order}
+                operador={operadorDaEdicao}
+                aoSalvar={async (r) => {
+                  // A tela muda NA HORA com o que o servidor gravou; o poll
+                  // relido logo depois confirma. Se a releitura falhar, o
+                  // modal e o card já mostram a taxa e o total novos.
+                  setOrders(prev => prev.map(o => o.id === order.id
+                    ? {
+                        ...o,
+                        deliveryFee: r.deliveryFee,
+                        totalAmount: r.totalAmount,
+                        motoboyFee: r.motoboyFee,
+                        deliveryDistance: r.deliveryDistance,
+                        ...(r.paymentMethods ? { paymentMethods: r.paymentMethods, paymentMethod: r.paymentMethod } : {}),
+                      }
+                    : o));
+                  showToast(
+                    `Taxa de entrega corrigida: R$ ${r.taxaAntes.toFixed(2).replace(".", ",")} → R$ ${r.deliveryFee.toFixed(2).replace(".", ",")}.`,
+                    "#0F766E"
+                  );
                   await recarregarPedidos();
                 }}
               />

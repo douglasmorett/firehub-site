@@ -36,6 +36,7 @@ import {
   chavesDoPedido,
   coordenadaDoCorpo,
   cotacaoDoPedido,
+  distanciaNaFraseDeFora,
   distanciaParaGravar,
   entregaDaCotacao,
   entregaDoVeredicto,
@@ -293,19 +294,31 @@ conferir("KM/ROTA sem ponto → recusa e pede o pino (nunca 'faixa mais cara')",
     recusaDoSite(naoSei, { temCoordenadaDoCliente: false })?.corpo.pedirGps === undefined);
 
   // O único "não sei" aceito: o PONTO DA LOJA é desconhecido (sem pino e o
-  // endereço dela não achado). O motor diz isso pelo motivo.
+  // endereço dela não achado). O motor diz isso no campo `semPontoDaLoja`
+  // (o motivo em texto é só para o log). O veredicto aqui tem a forma que o
+  // motor devolve de verdade: o campo E o motivo.
+  const MOTIVO_SEM_PONTO = "loja sem localização no mapa (storeLatLng)";
   const lojaSemPonto = entregaDoVeredicto(veredicto({
-    resultado: "DESCONHECIDO", taxa: null, raioMaxKm: 5, motivo: "loja sem localização no mapa (storeLatLng)",
+    resultado: "DESCONHECIDO", taxa: null, raioMaxKm: 5, semPontoDaLoja: true, motivo: MOTIVO_SEM_PONTO,
   }), null, "KM");
-  conferir("pontoDaLojaDesconhecido reconhece o motivo do motor",
-    pontoDaLojaDesconhecido({ resultado: "DESCONHECIDO", motivo: "loja sem localização no mapa (storeLatLng)" }) &&
+  conferir("pontoDaLojaDesconhecido lê o CAMPO do motor",
+    pontoDaLojaDesconhecido({ resultado: "DESCONHECIDO", semPontoDaLoja: true, motivo: MOTIVO_SEM_PONTO }) &&
     !pontoDaLojaDesconhecido({ resultado: "DESCONHECIDO", motivo: "endereço não localizado no mapa" }) &&
-    !pontoDaLojaDesconhecido({ resultado: "ATENDE", motivo: "loja sem localização no mapa (storeLatLng)" }) &&
+    !pontoDaLojaDesconhecido({ resultado: "ATENDE", semPontoDaLoja: true, motivo: MOTIVO_SEM_PONTO }) &&
     !pontoDaLojaDesconhecido(null));
+  // O defeito que o campo fecha: a frase do log era a regra. Reescrita (ou
+  // traduzida), a loja sem ponto ia para o "confirme no mapa" e fechava.
+  conferir("…o campo decide mesmo com o motivo reescrito (a frase do log não é mais a regra)",
+    pontoDaLojaDesconhecido({ resultado: "DESCONHECIDO", semPontoDaLoja: true, motivo: "a loja não marcou o ponto" }));
+  conferir("…e semPontoDaLoja: false vence o texto (o campo presente é a palavra do motor)",
+    !pontoDaLojaDesconhecido({ resultado: "DESCONHECIDO", semPontoDaLoja: false, motivo: MOTIVO_SEM_PONTO }));
+  conferir("…sem o campo, o texto do motivo ainda vale (reserva)",
+    pontoDaLojaDesconhecido({ resultado: "DESCONHECIDO", motivo: MOTIVO_SEM_PONTO }) &&
+    entregaDoVeredicto(veredicto({ resultado: "DESCONHECIDO", taxa: null, motivo: MOTIVO_SEM_PONTO }), null, "KM").lojaSemPonto === true);
   conferir("loja sem ponto: lojaSemPonto true e o site ACEITA (fecharia a loja para entrega)",
     lojaSemPonto.lojaSemPonto === true && recusaDoSite(lojaSemPonto, SEM_PINO_DA_LOJA) === null);
   conferir("…mesmo com o GPS do cliente (sem a loja no mapa nem o GPS mede)",
-    recusaDoSite(entregaDoVeredicto(veredicto({ resultado: "DESCONHECIDO", taxa: null, motivo: "loja sem localização no mapa (storeLatLng)" }), gps, "KM"),
+    recusaDoSite(entregaDoVeredicto(veredicto({ resultado: "DESCONHECIDO", taxa: null, semPontoDaLoja: true, motivo: MOTIVO_SEM_PONTO }), gps, "KM"),
       { temCoordenadaDoCliente: true, lojaTemPonto: false }) === null);
   conferir("…e nada de distância, ponto de palpite ou repasse gravado",
     igual(camposDaEntrega(lojaSemPonto, SEPARADO, DIVINOS), { deliveryDistance: null, customerLatLng: null, motoboyFee: null }));
@@ -318,11 +331,17 @@ conferir("KM/ROTA sem ponto → recusa e pede o pino (nunca 'faixa mais cara')",
     taxaDaLojaSemPonto(DIVINOS, null) === 5 && taxaDaLojaSemPonto(DIVINOS_FORA_DE_ORDEM, 9) === 5 && taxaDaLojaSemPonto(JSON.stringify(DIVINOS), null) === 5);
   conferir("…sem faixas, a taxa fixa; sem nada, zero",
     taxaDaLojaSemPonto([], 7) === 7 && taxaDaLojaSemPonto(null, null) === 0 && taxaDaLojaSemPonto([], -3) === 0);
-  // O motivo é o contrato com o motor (lib/area-de-entrega.ts): se ele mudar o
-  // texto, a exceção some e a loja sem ponto fecha para entrega.
+  // O contrato com o motor (lib/area-de-entrega.ts) é o CAMPO: o retorno de
+  // "sem check" (verifyStoreDeliveryAddress devolveu null = a loja sem ponto)
+  // tem de levar `semPontoDaLoja: true`. O comportamento está provado com o
+  // motor de verdade em scripts/teste-motor-da-entrega.ts; aqui, sem rede nem
+  // banco, só a fonte.
   const motor = readFileSync(join(__dirname, "../src/lib/area-de-entrega.ts"), "utf8");
-  conferir("contrato: o motor ainda escreve 'loja sem localização no mapa' quando a loja não tem ponto",
-    /motivo: "loja sem localização no mapa \(storeLatLng\)"/.test(motor));
+  const semCheck = motor.match(/if \(!check\) \{[\s\S]*?\n  \}/)?.[0] ?? "";
+  conferir("contrato: o motor marca semPontoDaLoja: true quando a loja não tem ponto (sem check)",
+    /semPontoDaLoja: true/.test(semCheck), semCheck.slice(0, 200));
+  conferir("…e só ali (nenhum outro 'não sei' é da loja)",
+    (motor.match(/semPontoDaLoja: true/g) ?? []).length === 1);
 }
 const naoSeiComPino = entregaDoVeredicto(veredicto({ resultado: "DESCONHECIDO", taxa: null }), gps);
 const r2 = recusaDoSite(naoSeiComPino, { temCoordenadaDoCliente: true, lojaTemPonto: true });
@@ -370,8 +389,39 @@ conferir("cotação normal passa", recusaDoSite(daCotacao, COM_PINO_DA_LOJA) ===
 
 const fora = entregaDoVeredicto(veredicto({ resultado: "FORA", taxa: null, distanciaKm: 5.69, raioMaxKm: 5, medida: "rota" }), null);
 const r4 = recusaDoSite(fora, COM_PINO_DA_LOJA);
-conferir("FORA em ROTA explica 'pelas ruas' e deixa corrigir o pino",
-  r4?.status === 400 && /5,69 km pelas ruas/.test(r4.corpo.error) && r4.corpo.podeConfirmarNoMapa === true, r4);
+conferir("FORA em ROTA explica 'pela rua' e deixa corrigir o pino",
+  r4?.status === 400 && /5,69 km pela rua até a loja/.test(r4.corpo.error) && r4.corpo.podeConfirmarNoMapa === true, r4);
+// A recusa do pedido e a cotação (/api/delivery-fee) dizem a MESMA frase — a
+// rota importa distanciaNaFraseDeFora daqui; scripts/teste-rota-do-frete.ts
+// prova o lado da cotação ("(6,1 km pela rua até a loja; entregamos até 5
+// km)"). No E7 a recusa dizia "pelas ruas" e a cotação, "pela rua".
+conferir("FORA em ROTA: a recusa repete a frase da cotação, palavra por palavra",
+  r4?.corpo.error === "Endereço fora da área de entrega (5,69 km pela rua até a loja; entregamos até 5 km). Revise o endereço ou escolha retirar no balcão.",
+  r4?.corpo.error);
+{
+  // Roteador fora (R4): a distância é linha reta × desvio da loja. Chamá-la
+  // "pelas ruas" era apresentar estimativa como medida.
+  const foraEstimado = recusaDoSite(entregaDoVeredicto(veredicto({ resultado: "FORA", taxa: null, distanciaKm: 6.01, raioMaxKm: 5, medida: "estimada" }), null), COM_PINO_DA_LOJA);
+  conferir("FORA com distância ESTIMADA: '~6,01 km estimados até a loja', sem 'pela rua'",
+    /\(~6,01 km estimados até a loja; entregamos até 5 km\)/.test(String(foraEstimado?.corpo.error)) && !/pela(s)? rua/.test(String(foraEstimado?.corpo.error)),
+    foraEstimado?.corpo.error);
+  const foraReta = recusaDoSite(entregaDoVeredicto(veredicto({ resultado: "FORA", taxa: null, distanciaKm: 5.2, raioMaxKm: 5, medida: "linha-reta" }), null), COM_PINO_DA_LOJA);
+  conferir("FORA em linha reta (modo KM): '5,2 km até a loja', sem 'rua'",
+    /\(5,2 km até a loja; entregamos até 5 km\)/.test(String(foraReta?.corpo.error)) && !/rua/.test(String(foraReta?.corpo.error)),
+    foraReta?.corpo.error);
+  conferir("distanciaNaFraseDeFora: as três medidas",
+    distanciaNaFraseDeFora({ distanciaKm: 6.014, medida: "rota" }) === "6,01 km pela rua até a loja"
+      && distanciaNaFraseDeFora({ distanciaKm: 6.01, medida: "estimada" }) === "~6,01 km estimados até a loja"
+      && distanciaNaFraseDeFora({ distanciaKm: 5.2, medida: "linha-reta" }) === "5,2 km até a loja"
+      && distanciaNaFraseDeFora({ distanciaKm: 5.2, medida: null }) === "5,2 km até a loja");
+}
+{
+  // A rota da cotação não pode voltar a ter a sua cópia da frase.
+  const rotaDaCotacao = readFileSync(join(__dirname, "../src/app/api/delivery-fee/route.ts"), "utf8");
+  conferir("a cotação usa a frase do pedido (import, sem cópia local)",
+    /import \{[^}]*\bdistanciaNaFraseDeFora\b[^}]*\} from "@\/lib\/entrega-do-pedido"/.test(rotaDaCotacao)
+      && !/function distanciaNaFraseDeFora/.test(rotaDaCotacao));
+}
 conferir("FORA por área de risco não fala em km",
   /não entrega nesse endereço/.test(recusaDoSite(entregaDoVeredicto(veredicto({ resultado: "FORA", taxa: null, distanciaKm: 0.9, raioMaxKm: 5, areaDeRisco: "Morro" }), null), COM_PINO_DA_LOJA)!.corpo.error));
 conferir("bairro não localizado segue a regra antiga (sem recusa)",

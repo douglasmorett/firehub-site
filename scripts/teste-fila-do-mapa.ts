@@ -294,6 +294,28 @@ async function main() {
   conferir("o mesmo par falhando há mais de 2 h: estimada (linha reta × fator), sem esperar o roteador", depoisDe2h?.medida === "estimada" && (depoisDe2h?.km ?? 0) > 2, depoisDe2h);
   conferir("… e distanciaDaEntregaKm (o cron) recebe o número", (await distancia.distanciaDaEntregaKm("divinos", destinoFora)) === depoisDe2h?.km);
 
+  // A medida do pedido arredonda UMA vez, como a cotação (R5): a reta exata ×
+  // fator. Arredondada antes, 0,715 km virava 0,72 × 1,4 = 1,01 km — a faixa
+  // seguinte no repasse do motoboy.
+  zerar(0);
+  const retaExata = (p: Ponto) => {
+    const dLat = ((p.lat - LOJA.lat) * Math.PI) / 180, dLng = ((p.lng - LOJA.lng) * Math.PI) / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos((LOJA.lat * Math.PI) / 180) * Math.cos((p.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  };
+  let noLimite: Ponto | null = null;
+  for (let m = 700; m <= 740 && !noLimite; m++) {
+    const p = aoSul(m / 1000);
+    const r = retaExata(p);
+    if (Math.round(r * 1.4 * 100) === 100 && Math.round((Math.round(r * 100) / 100) * 1.4 * 100) === 101) noLimite = p;
+  }
+  conferir("(achado um ponto em que arredondar a reta antes sobe de faixa)", !!noLimite);
+  if (noLimite) {
+    osrmFalha.add(chave4(noLimite));
+    const umaVez = await distancia.medirEntrega("divinos", noLimite, { estimarSeORoteadorCair: true });
+    conferir("medida estimada do pedido: reta exata × 1,4 = 1,00 km (não 1,01)", umaVez?.medida === "estimada" && umaVez?.km === 1, { umaVez, reta: retaExata(noLimite) });
+  }
+
   console.warn = warnOriginal;
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exitCode = falhou ? 1 : 0;

@@ -362,11 +362,19 @@ export async function avaliarEntregaDoRobo(
  * mapa (sem pino e sem endereço que o mapa ache). A localização do cliente não
  * resolve isso — com ela o motor devolve o mesmo DESCONHECIDO.
  *
- * O veredito não tem campo próprio para isso (o tipo é do motor, cluster A);
- * o motivo é a frase fixa de lib/area-de-entrega.ts.
+ * Quem diz é o campo `semPontoDaLoja` do veredito (lib/area-de-entrega.ts):
+ * quando ele vem (true OU false), decide. A frase fixa do motivo ("loja sem
+ * localização no mapa") ficou só como reserva, para veredito sem o campo —
+ * antes ela era a regra, e reescrever o log trocava o que o robô fazia.
+ * Mesma leitura de `pontoDaLojaDesconhecido` (lib/entrega-do-pedido.ts),
+ * repetida aqui porque este arquivo não tem imports de valor.
  */
-export function faltaOPontoDaLoja(veredito: Partial<Pick<VeredictoDeEntrega, "resultado" | "motivo">> | null | undefined): boolean {
-  return veredito?.resultado === "DESCONHECIDO" && /loja sem localiza[çc][ãa]o no mapa/i.test(String(veredito.motivo || ""));
+export function faltaOPontoDaLoja(
+  veredito: Partial<Pick<VeredictoDeEntrega, "resultado" | "motivo" | "semPontoDaLoja">> | null | undefined,
+): boolean {
+  if (veredito?.resultado !== "DESCONHECIDO") return false;
+  if (typeof veredito.semPontoDaLoja === "boolean") return veredito.semPontoDaLoja;
+  return /loja sem localiza[çc][ãa]o no mapa/i.test(String(veredito.motivo || ""));
 }
 
 /**
@@ -386,7 +394,7 @@ export function faltaOPontoDaLoja(veredito: Partial<Pick<VeredictoDeEntrega, "re
  */
 export function motivoParaPedirLocalizacao(
   veredito:
-    | (Pick<VeredictoDeEntrega, "modo" | "resultado" | "pedeConfirmacao" | "aproximado"> & Partial<Pick<VeredictoDeEntrega, "motivo">>)
+    | (Pick<VeredictoDeEntrega, "modo" | "resultado" | "pedeConfirmacao" | "aproximado"> & Partial<Pick<VeredictoDeEntrega, "motivo" | "semPontoDaLoja">>)
     | null
     | undefined,
   temCoordsDoCliente: boolean,

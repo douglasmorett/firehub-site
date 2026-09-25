@@ -639,7 +639,11 @@ export async function fatorDeDesvio(origem: Ponto): Promise<{ fator: number; amo
   return valor;
 }
 
-/** A distância estimada: linha reta × fator, arredondada a 0,01 km como a rota. */
+/**
+ * A distância estimada: linha reta × fator, arredondada a 0,01 km como a rota.
+ * A reta entra EXATA (geocoding.ts, linhaRetaKm): arredondada antes, a conta
+ * arredondava duas vezes e 0,7375 × 1,36 dava 1,01 km em vez de 1,00 (R5).
+ */
 export function estimarPelaLinhaReta(linhaRetaKm: number, fator: number): number {
   return arredondar(linhaRetaKm * fator);
 }

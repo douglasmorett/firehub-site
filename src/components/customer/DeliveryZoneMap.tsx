@@ -11,6 +11,9 @@ import {
   escolhaDoRepasseParaGravar,
   mesmoCadastro,
   repasseDescontado,
+  repasseNaTelaDepoisDeLer,
+  repasseNaAbertura,
+  listaDoAviso,
   formatarKm,
   formatarReais,
   type Problema,
@@ -160,6 +163,12 @@ interface Props {
   /** As áreas de risco já gravadas (User.deliveryConfig.areasDeRisco). */
   initialAreasDeRisco?: unknown;
   /**
+   * O `separado` gravado (User.deliveryConfig.repasseDoEntregador.separado),
+   * lido pela página com o resto do cadastro: a opção "Quanto o motoboy
+   * recebe" já abre nele, sem o palpite até o GET voltar (repasseNaAbertura).
+   */
+  initialRepasseSeparado?: boolean | null;
+  /**
    * `storeAddress` só vem quando a loja marcou para TROCAR o endereço do
    * cadastro pelo do mapa — ausente, o servidor mantém o que está gravado.
    */
@@ -272,7 +281,7 @@ function CampoNumerico({
   );
 }
 
-export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialAreasDeRisco, onSave }: Props) {
+export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialAreasDeRisco, initialRepasseSeparado, onSave }: Props) {
   const pontoInicial = useMemo(() => lerPontoDaLoja(initialLatLng), [initialLatLng]);
   // O cadastro gravado, lido como o MOTOR lê (lib/cadastro-da-entrega.ts,
   // lerZonasGravadas): lista, ou a lista em TEXTO, com o contorno das áreas
@@ -395,13 +404,17 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   // não pega o da faixa seguinte (R6), cai no acerto de cada entregador — e a
   // loja só descobriria no fechamento que pagou por duas regras.
   //
-  // A tela começa ligada quando o cadastro já tem valores. A escolha gravada
-  // chega logo depois (GET abaixo) e corrige, se a pessoa ainda não mexeu. Se
-  // o GET falhar, a tela fica no palpite — e o Salvar não grava palpite, só o
-  // que a loja clicou (escolhaDoRepasseParaGravar).
+  // A tela ABRE no `separado` que a página já leu do banco
+  // (initialRepasseSeparado → repasseNaAbertura). Só sem ele vale o palpite
+  // "o cadastro já tem valores". A escolha gravada chega logo depois (GET
+  // abaixo) e confere, se a pessoa ainda não mexeu. Se o GET falhar, a tela
+  // fica na abertura — e o Salvar não grava o que a loja não clicou
+  // (escolhaDoRepasseParaGravar).
   const temValorDeMotoboy =
     faixas.some((f) => f.motoboyFee != null) || bairros.some((b) => b.motoboyFee != null) || areasDeEntrega.some((a) => a.repasse != null);
-  const [repassePorFaixa, setRepassePorFaixa] = useState<boolean>(temValorDeMotoboy);
+  const [repassePorFaixa, setRepassePorFaixa] = useState<boolean>(() =>
+    repasseNaAbertura({ gravadoNaPagina: initialRepasseSeparado, temValorNasFaixas: temValorDeMotoboy }),
+  );
   const [separadoNoServidor, setSeparadoNoServidor] = useState<boolean | null>(null);
   const mexeuNoRepasse = useRef(false);
   const [descontoDoAtalho, setDescontoDoAtalho] = useState<number | null>(1);
@@ -414,10 +427,13 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         const separado = gravado.repasseDoEntregador?.separado === true;
         if (!vivo) return;
         setSeparadoNoServidor(separado);
+        // A tela passa ao gravado, nos DOIS sentidos (repasseNaTelaDepoisDeLer).
         // Loja que NÃO separa, mas com valores antigos nas faixas: os valores
-        // não valem hoje (lib/repasse-do-entregador.ts ignora sem `separado`).
-        // Mostrar "ligado" seria dizer que vale o que não vale.
-        if (!separado && !mexeuNoRepasse.current) setRepassePorFaixa(false);
+        // não valem hoje (lib/repasse-do-entregador.ts ignora sem `separado`) —
+        // mostrar "ligado" seria dizer que vale o que não vale. Loja que separa
+        // com as faixas ainda sem valor: mostrar "acerto" escondia o campo que
+        // ela precisa preencher. Só o setter funcional lê o valor atual aqui.
+        setRepassePorFaixa((naTela) => repasseNaTelaDepoisDeLer({ gravado: separado, naTela, lojaEscolheu: mexeuNoRepasse.current }));
       } catch {}
     })();
     return () => { vivo = false; };
@@ -1048,7 +1064,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
     if (validacao.erros.length > 0) {
       setMostrarErros(true);
-      setAvisoDoPainel({ tipo: "erro", texto: "Não salvei. Corrija os campos em vermelho:", lista: validacao.erros.slice(0, 8) });
+      // Até 8 linhas, e o que não coube é contado (listaDoAviso): cortar
+      // calado escondia a 9ª faixa da Divinos.
+      setAvisoDoPainel({ tipo: "erro", texto: "Não salvei. Corrija os campos em vermelho:", lista: listaDoAviso(validacao.erros, 8) });
       return;
     }
     const cadastro = validacao.resultado;
@@ -1212,7 +1230,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         avisoDoRepasse = " Não consegui ler como o motoboy recebe hoje, então essa escolha ficou como estava gravada.";
       } else if (escolha.telaPassaA !== repassePorFaixa) {
         setRepassePorFaixa(escolha.telaPassaA);
-        avisoDoRepasse = " Como o motoboy recebe ficou como estava gravado (pelo acerto de cada entregador) — confira acima e salve de novo se quiser mudar.";
+        // A tela agora segue o gravado nos dois sentidos: o aviso diz qual.
+        avisoDoRepasse = escolha.telaPassaA
+          ? " Como o motoboy recebe ficou como estava gravado (um valor por faixa) — preencha \"Motoboy recebe\" em cada faixa e salve de novo."
+          : " Como o motoboy recebe ficou como estava gravado (pelo acerto de cada entregador) — confira acima e salve de novo se quiser mudar.";
       }
 
       if (trocarEndereco) {

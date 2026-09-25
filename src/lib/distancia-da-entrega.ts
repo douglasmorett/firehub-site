@@ -55,7 +55,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { haversineDistanceKm } from "@/lib/geocoding";
+import { haversineDistanceKm, linhaRetaKm } from "@/lib/geocoding";
 import { rotaEntre, medicaoDaLoja, fatorDeDesvio, estimarPelaLinhaReta, chaveDaRota } from "@/lib/distancia-por-rota";
 import { coordenadaGrosseira, limiteDoParceiroKm, pontoDoParceiroParaALoja } from "@/lib/coordenadas-do-parceiro";
 import type { MedidaDaDistancia } from "@/lib/cotacao-de-entrega";
@@ -218,7 +218,10 @@ export async function medirEntrega(
     const loja = await dadosDaLoja(franchiseeId);
     if (!loja.ponto) return null;
 
-    const emLinhaReta = haversineDistanceKm(loja.ponto.lat, loja.ponto.lng, destino.lat, destino.lng);
+    // A reta exata é a que se multiplica pelo fator: arredondada antes, a
+    // estimativa arredondava duas vezes e subia de faixa (linhaRetaKm).
+    const retaExata = linhaRetaKm(loja.ponto.lat, loja.ponto.lng, destino.lat, destino.lng);
+    const emLinhaReta = arredondar(retaExata);
     // Distância 0 é entrega de verdade (cliente na porta da loja). Longe
     // demais da loja não é o cliente: 60 km para todo mundo, e o corte do
     // R8 para o ponto de parceiro.
@@ -243,7 +246,7 @@ export async function medirEntrega(
         falhandoDesde.delete(chave);
       }
       const { fator } = await fatorDeDesvio(loja.ponto);
-      return { km: estimarPelaLinhaReta(emLinhaReta, fator), medida: "estimada" };
+      return { km: estimarPelaLinhaReta(retaExata, fator), medida: "estimada" };
     }
     return { km: arredondar(emLinhaReta), medida: "linha-reta" };
   } catch {

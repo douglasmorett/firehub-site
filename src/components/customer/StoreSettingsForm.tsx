@@ -1200,6 +1200,13 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           zoneType={user.deliveryZoneType || "KM"}
           initialIfoodSyncDeliveryTime={(user as any).ifoodSyncDeliveryTime ?? false}
           initialAreasDeRisco={((user as any).deliveryConfig as any)?.areasDeRisco || []}
+          // O `separado` gravado, na mesma leitura de lib/repasse-do-entregador.ts
+          // (lerRegraDeRepasse: só `true` liga). Sem ele, "Quanto o motoboy
+          // recebe" abria num palpite até o GET da tela voltar (E1). `null`
+          // (quem montou o `user` sem deliveryConfig) = não sei: volta ao palpite.
+          initialRepasseSeparado={(user as any).deliveryConfig !== undefined
+            ? ((user as any).deliveryConfig as any)?.repasseDoEntregador?.separado === true
+            : null}
           onSave={async (data) => {
             const res = await fetch("/api/store-settings", {
               method: "PUT",
