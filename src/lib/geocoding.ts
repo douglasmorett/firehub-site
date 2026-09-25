@@ -12,6 +12,17 @@ import type { MedidaDaDistancia, OrigemDoPonto } from "@/lib/cotacao-de-entrega"
 // Calcula a distância exata em linha reta (KM) usando a fórmula Haversine
 // Alinhado 100% com os círculos de raio desenhados no mapa Leaflet de configurações da loja
 export function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  return Math.round(linhaRetaKm(lat1, lon1, lat2, lon2) * 100) / 100;
+}
+
+/**
+ * A linha reta SEM arredondar. É ela que entra na distância ESTIMADA (reta ×
+ * fator): arredondar a reta antes e multiplicar depois arredondava duas vezes
+ * — 0,7375 km virava 0,74, × 1,36 = 1,0064 → 1,01 km, e o cliente de 1,00 km
+ * (R$ 5) caía na faixa de 1,5 km (R$ 8, repasse R$ 7). Visto no teste de ponta
+ * a ponta de 25/09/2026 com o roteador fora (R5: arredondar uma vez só).
+ */
+export function linhaRetaKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Raio da Terra em KM
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -22,9 +33,8 @@ export function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lo
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const straightDistance = R * c;
   // Distância exata em linha reta geométrica
-  return Math.round(straightDistance * 100) / 100;
+  return R * c;
 }
 
 export type Ponto = { lat: number; lng: number };
@@ -997,7 +1007,10 @@ export async function verifyStoreDeliveryAddress(
   // Roteador fora (ou rota de outro ponto): linha reta × o fator de desvio
   // DA LOJA, e a medida sai "estimada" — o pedido registra. Nunca mais a
   // linha reta pura, calada, que subcobrava até 48% em Cabo Frio.
-  const emLinhaReta = haversineDistanceKm(loja.lat, loja.lng, customerLat, customerLng);
+  // A reta exata é a que se multiplica pelo fator (linhaRetaKm); a de 0,01 km
+  // é a que se mostra e compara.
+  const retaExata = linhaRetaKm(loja.lat, loja.lng, customerLat, customerLng);
+  const emLinhaReta = Math.round(retaExata * 100) / 100;
   const textual = !coordsDoCliente;
   if (textual && emLinhaReta > 2 * maxRadiusKm) {
     motivos.push(`o ponto caiu a ${emLinhaReta} km da loja, mais que o dobro do raio de ${maxRadiusKm} km — provável homônimo`);
@@ -1021,11 +1034,11 @@ export async function verifyStoreDeliveryAddress(
     } else {
       const f = await fatorDeDesvio(loja);
       fator = f.fator;
-      distanceKm = estimarPelaLinhaReta(emLinhaReta, f.fator);
+      distanceKm = estimarPelaLinhaReta(retaExata, f.fator);
       medida = "estimada";
       motivoDaEstimativa = rota.ok ? "rota menor que a linha reta (ponto arrastado até a rua)" : rota.motivo;
       console.warn(
-        `[Taxa de entrega] distância ESTIMADA (${emLinhaReta} km × ${f.fator}${f.amostras < 3 ? ", sem histórico" : ""} = ${distanceKm} km): ${motivoDaEstimativa}`,
+        `[Taxa de entrega] distância ESTIMADA (${Math.round(retaExata * 1000) / 1000} km × ${f.fator}${f.amostras < 3 ? ", sem histórico" : ""} = ${distanceKm} km): ${motivoDaEstimativa}`,
       );
     }
   }

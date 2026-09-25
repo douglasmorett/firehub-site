@@ -12,6 +12,8 @@
  * gravava por cima do cadastro real.
  */
 import React from "react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import DeliveryZoneMap from "../src/components/customer/DeliveryZoneMap";
 
@@ -91,6 +93,56 @@ const FAIXAS = [
   const kms = valores(h, "Até quantos km");
   confere("loja nova: a tabela de exemplo 1/3/5 km", JSON.stringify(kms) === JSON.stringify(["1", "3", "5"]), kms);
   confere("loja nova com [] e {}: sem aviso", !temAvisoDeIlegivel(html([], "KM")) && !temAvisoDeIlegivel(html({}, "KM")));
+}
+
+// ── "Quanto o motoboy recebe" abre no GRAVADO, não num palpite ─────────────
+//
+// E1 (teste de ponta a ponta, 25/09/2026): loja com `separado: true` e as
+// faixas ainda sem "Motoboy recebe". Até o GET da tela voltar (1–1,5 s; mais
+// de 2,5 s na primeira compilação), aparecia "Pelo acerto de cada entregador"
+// marcado e sem os campos — e o clique nesse intervalo vencia o gravado. A
+// página já tem o `deliveryConfig`: passa o `separado` (initialRepasseSeparado).
+{
+  const tela = (zonas: unknown, separado?: boolean | null) =>
+    renderToStaticMarkup(
+      <DeliveryZoneMap initialAddress="Tv Liberdade 11" initialLatLng={LOJA} initialZones={zonas} zoneType="ROTA"
+        initialRepasseSeparado={separado} onSave={async () => {}} />,
+    );
+  /** O texto da opção marcada no grupo "Quanto o motoboy recebe". */
+  const marcada = (h: string) =>
+    h.match(/role="radio" aria-checked="true"[^>]*>([^<]*)</)?.[1] ?? null;
+  const camposDoMotoboy = (h: string) => valores(h, "Motoboy recebe (R$)").length;
+  const EM_BRANCO = FAIXAS.map(({ motoboyFee: _semValor, ...f }) => f);
+
+  const ligadoEmBranco = tela(EM_BRANCO, true);
+  confere("separado:true e faixas em branco: abre em 'Um valor por faixa'",
+    marcada(ligadoEmBranco) === "Um valor por faixa", marcada(ligadoEmBranco));
+  confere("… com o campo 'Motoboy recebe' em cada faixa (3)", camposDoMotoboy(ligadoEmBranco) === 3, camposDoMotoboy(ligadoEmBranco));
+
+  const desligadoComValores = tela(FAIXAS, false);
+  confere("separado:false com valores velhos: abre em 'Pelo acerto de cada entregador'",
+    marcada(desligadoComValores) === "Pelo acerto de cada entregador", marcada(desligadoComValores));
+  confere("… sem os campos 'Motoboy recebe'", camposDoMotoboy(desligadoComValores) === 0);
+
+  const ligadoComValores = tela(FAIXAS, true);
+  confere("separado:true com valores: 'Um valor por faixa' e os valores gravados",
+    marcada(ligadoComValores) === "Um valor por faixa"
+      && JSON.stringify(valores(ligadoComValores, "Motoboy recebe (R$)")) === JSON.stringify(["4,00", "7,00", "9,00"]),
+    valores(ligadoComValores, "Motoboy recebe (R$)"));
+
+  // Sem o gravado (quem monta a tela sem deliveryConfig): o palpite de antes.
+  confere("sem o gravado: o palpite (faixas em branco → acerto; com valores → por faixa)",
+    marcada(tela(EM_BRANCO)) === "Pelo acerto de cada entregador" && marcada(tela(FAIXAS, null)) === "Um valor por faixa",
+    [marcada(tela(EM_BRANCO)), marcada(tela(FAIXAS, null))]);
+}
+
+// ── O aviso "Não salvei" não corta a lista calado (D3) ─────────────────────
+{
+  const fonte = readFileSync(join(__dirname, "../src/components/customer/DeliveryZoneMap.tsx"), "utf8");
+  confere("o aviso usa listaDoAviso (conta o que não coube), não erros.slice(0, 8)",
+    /lista: listaDoAviso\(validacao\.erros/.test(fonte) && !/validacao\.erros\.slice\(/.test(fonte));
+  const formulario = readFileSync(join(__dirname, "../src/components/customer/StoreSettingsForm.tsx"), "utf8");
+  confere("a página passa o `separado` gravado para a tela", /initialRepasseSeparado=\{/.test(formulario));
 }
 
 console.log(`\n${ok} ok, ${falhas} falha(s)`);

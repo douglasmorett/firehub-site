@@ -24,6 +24,9 @@ import {
   previaDaTabelaDaTela,
   lerZonasGravadas,
   escolhaDoRepasseParaGravar,
+  repasseNaTelaDepoisDeLer,
+  repasseNaAbertura,
+  listaDoAviso,
   type FaixaDeKm,
 } from "../src/lib/cadastro-da-entrega";
 
@@ -311,6 +314,63 @@ const tabelaDaTela = [
   confere("a loja clicou em ligado e a conferência diz desligado: grava true", escolheuContraAConferencia.mandar === true, escolheuContraAConferencia);
   const semClique = escolhaDoRepasseParaGravar({ lidaAoAbrir: true, lidaAgora: true, naTela: false, lojaEscolheu: false });
   confere("gravado ligado com faixas em branco (tela mostra desligado), sem clique: não grava", semClique.mandar === null && !semClique.naoLida, semClique);
+  confere("… e a tela passa ao gravado (ligado), para pedir o 'Motoboy recebe'", semClique.telaPassaA === true, semClique);
+}
+
+// ── A tela abre no que está gravado, nos dois sentidos ──────────────────────
+{
+  // Teste de ponta a ponta (E1, 25/09/2026): loja recém-configurada com
+  // `separado: true` e as faixas sem "Motoboy recebe". O palpite de abertura
+  // (há valores nas faixas?) dá "acerto"; a leitura só desligava, e a tela
+  // abria em "Pelo acerto de cada entregador" contradizendo o gravado.
+  confere("gravado ligado, palpite desligado, sem clique → 'Um valor por faixa'",
+    repasseNaTelaDepoisDeLer({ gravado: true, naTela: false, lojaEscolheu: false }) === true);
+  confere("gravado desligado, valores velhos nas faixas (palpite ligado), sem clique → desligado",
+    repasseNaTelaDepoisDeLer({ gravado: false, naTela: true, lojaEscolheu: false }) === false);
+  confere("a loja já clicou antes de a leitura voltar: a escolha dela fica",
+    repasseNaTelaDepoisDeLer({ gravado: true, naTela: false, lojaEscolheu: true }) === false
+      && repasseNaTelaDepoisDeLer({ gravado: false, naTela: true, lojaEscolheu: true }) === true);
+  confere("leitura falhou: fica o palpite",
+    repasseNaTelaDepoisDeLer({ gravado: null, naTela: true, lojaEscolheu: false }) === true
+      && repasseNaTelaDepoisDeLer({ gravado: null, naTela: false, lojaEscolheu: false }) === false);
+}
+
+// ── A tela ABRE no gravado que a página leu (sem palpite até o GET) ─────────
+{
+  // E1 de novo, agora antes do GET: por 1–1,5 s a tela mostrava "Pelo acerto
+  // de cada entregador" (palpite: faixas sem valor) numa loja com
+  // `separado: true` — e o clique nesse intervalo vencia o gravado.
+  confere("gravado ligado, faixas em branco → abre em 'Um valor por faixa'",
+    repasseNaAbertura({ gravadoNaPagina: true, temValorNasFaixas: false }) === true);
+  confere("gravado desligado, valores velhos nas faixas → abre em 'acerto'",
+    repasseNaAbertura({ gravadoNaPagina: false, temValorNasFaixas: true }) === false);
+  confere("sem o gravado (null/ausente) → o palpite de antes: há valores nas faixas?",
+    repasseNaAbertura({ gravadoNaPagina: null, temValorNasFaixas: true }) === true
+      && repasseNaAbertura({ temValorNasFaixas: false }) === false);
+}
+
+// ── O aviso "Não salvei" conta o que não coube ─────────────────────────────
+{
+  // D3: a Divinos com "um valor por faixa" e as 9 faixas em branco. O aviso
+  // listava 8 e sumia com a de 5 km, e o contador dizia 9.
+  const DIVINOS_KM = ["1", "1,5", "2", "2,5", "3", "3,5", "4", "4,5", "5"];
+  const nove = DIVINOS_KM.map((k) => `até ${k} km: falta quanto o motoboy recebe (use 0 se ele não recebe nada).`);
+  const lista = listaDoAviso(nove, 8);
+  const contada = lista[lista.length - 1];
+  const mostradas = lista.length - 1;
+  const numeroContado = Number(contada.match(/e mais ([0-9]+)/)?.[1]);
+  confere("9 faixas sem valor: no máximo 8 linhas", lista.length === 8, lista);
+  confere("… a última diz quantas faltam, e a conta fecha nas 9",
+    /^… e mais 2 problemas/.test(contada) && mostradas + numeroContado === 9, contada);
+  confere("… as mostradas são as primeiras, na ordem", lista.slice(0, mostradas).every((t, i) => t === nove[i]));
+  confere("8 erros cabem: todos, sem linha de contagem",
+    JSON.stringify(listaDoAviso(nove.slice(0, 8), 8)) === JSON.stringify(nove.slice(0, 8)));
+  confere("1 erro: ele só", JSON.stringify(listaDoAviso(nove.slice(0, 1))) === JSON.stringify(nove.slice(0, 1)));
+  confere("nenhum erro: lista vazia", listaDoAviso([]).length === 0);
+  const vinte = Array.from({ length: 20 }, (_, i) => `erro ${i + 1}`);
+  const l20 = listaDoAviso(vinte, 8);
+  confere("20 erros: 7 + 'e mais 13'", l20.length === 8 && /e mais 13 problemas/.test(l20[7]), l20);
+  confere("não mexe na lista original", nove.length === 9);
 }
 
 console.log(`\n${ok} ok, ${falhas} falha(s)`);

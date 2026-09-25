@@ -52,6 +52,8 @@ const lojas = new Map<string, any>([
 
 const nominatim = new Map<string, unknown[]>();
 const osrmMetros = new Map<string, number>();
+/** Destinos em que o roteador responde 503 (fora do ar): a distância sai estimada. */
+const osrmFora = new Set<string>();
 /** Status do Nominatim (503 = fora) e quanto ele demora, para a rajada. */
 let nominatimStatus = 200;
 let latenciaMs = 0;
@@ -69,6 +71,7 @@ let chamadasAoNominatim = 0;
   }
   if (url.includes("/route/v1/driving/")) {
     const m = url.match(/driving\/([-\d.]+),([-\d.]+);([-\d.]+),([-\d.]+)/)!;
+    if (osrmFora.has(chave4({ lat: Number(m[4]), lng: Number(m[3]) }))) return json({ message: "fora" }, 503);
     const metros = osrmMetros.get(chave4({ lat: Number(m[4]), lng: Number(m[3]) })) ?? 1000;
     return json({ code: "Ok", routes: [{ distance: metros, duration: 120 }], waypoints: [{ distance: 2 }, { distance: 6 }] });
   }
@@ -143,6 +146,21 @@ async function main() {
   osrmMetros.set(chave4(longe), 6100);
   const fora = (await pedir({ franchiseeId: "divinos", lat: String(longe.lat), lng: String(longe.lng), origem: "pino" })).corpo;
   conferir("fora pela rua: indisponível, a mensagem diz 'pela rua', pode ajustar o pino", fora.available === false && /pela rua/.test(fora.message) && fora.podeConfirmarNoMapa === true && fora.precisaConfirmarNoMapa === false, fora);
+  conferir("… e a frase se lê: '(6,1 km pela rua até a loja; entregamos até 5 km)'",
+    fora.message === "Endereço fora da área de entrega (6,1 km pela rua até a loja; entregamos até 5 km).", fora.message);
+
+  // Roteador fora: a distância é estimada (R4). A frase era "(~5,06 km
+  // (distância estimada) da loja; …)" — parêntese dentro de parêntese.
+  const longeEstimado = aoSul(4.5, 0.0006);
+  osrmFora.add(chave4(longeEstimado));
+  const foraEstimado = (await pedir({ franchiseeId: "divinos", lat: String(longeEstimado.lat), lng: String(longeEstimado.lng), origem: "pino" })).corpo;
+  osrmFora.clear();
+  // O disjuntor abriu com as duas falhas: sem reiniciar, os casos seguintes sairiam estimados.
+  rota.reiniciarRoteadorParaTeste({ intervaloDoPublicoMs: 0 });
+  conferir("fora com distância estimada: '(~X km estimados até a loja; entregamos até 5 km)', sem parêntese dentro de parêntese",
+    foraEstimado.available === false && foraEstimado.medida === "estimada"
+      && /^Endereço fora da área de entrega \(~\d+,\d+ km estimados até a loja; entregamos até 5 km\)\.$/.test(foraEstimado.message),
+    foraEstimado);
 
   console.log("\n== Coordenada de enchimento na query não decide nada (R8) ==");
   const falsa = (await pedir({ franchiseeId: "divinos", lat: "-23", lng: "-43" })).corpo;

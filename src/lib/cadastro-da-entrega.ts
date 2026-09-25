@@ -606,11 +606,77 @@ export function escolhaDoRepasseParaGravar(p: {
   const gravada = p.lidaAgora ?? p.lidaAoAbrir;
   if (!p.lojaEscolheu) {
     // Sem escolha, não grava. A tela passa a mostrar o gravado do mesmo jeito
-    // que o carregamento faria: desligado desliga; ligado mantém o que a tela
-    // mostra (ligado com as faixas em branco dá no mesmo que desligado).
-    return { mandar: null, gravada, telaPassaA: gravada === false ? false : p.naTela, naoLida: gravada === null };
+    // que o carregamento faz (repasseNaTelaDepoisDeLer), nos dois sentidos.
+    return {
+      mandar: null, gravada,
+      telaPassaA: repasseNaTelaDepoisDeLer({ gravado: gravada, naTela: p.naTela, lojaEscolheu: false }),
+      naoLida: gravada === null,
+    };
   }
   return { mandar: gravada === p.naTela ? null : p.naTela, gravada, telaPassaA: p.naTela, naoLida: false };
+}
+
+/**
+ * O que a opção "Como o motoboy recebe" mostra depois de ler o `separado`
+ * gravado: o gravado, a não ser que a loja já tenha clicado (a escolha dela
+ * vence) ou a leitura tenha falhado (fica o palpite de abertura).
+ *
+ * Até 25/09/2026 a leitura só DESLIGAVA. A loja recém-configurada, com
+ * `separado: true` e as faixas ainda sem "Motoboy recebe", abria em "Pelo
+ * acerto de cada entregador" — o palpite de abertura vem de "há valores nas
+ * faixas" — e a tela contradizia o gravado: o campo que a R6 exige preencher
+ * nem aparecia (teste de ponta a ponta, E1).
+ */
+export function repasseNaTelaDepoisDeLer(p: {
+  /** O `separado` gravado (null = a leitura falhou). */
+  gravado: boolean | null;
+  /** O que a tela mostra agora. */
+  naTela: boolean;
+  /** A loja clicou numa das opções. */
+  lojaEscolheu: boolean;
+}): boolean {
+  if (p.lojaEscolheu || p.gravado === null) return p.naTela;
+  return p.gravado;
+}
+
+/**
+ * A opção "Como o motoboy recebe" com que a tela ABRE, antes do GET de
+ * /api/store-settings voltar.
+ *
+ * A página (Minha Loja) já lê `deliveryConfig` do banco para desenhar a tela:
+ * quando ela passa o `separado` gravado, é ele — não palpite. Sem isso, a tela
+ * abria pelo palpite "há valores nas faixas", e a loja com `separado: true` e
+ * as faixas ainda em branco via "Pelo acerto de cada entregador" marcado, sem
+ * os campos "Motoboy recebe", por 1–1,5 s (mais de 2,5 s na primeira
+ * compilação). Clicando nesse intervalo, a escolha dela vencia o gravado sem
+ * que ela o tivesse visto (teste de ponta a ponta, E1). O palpite fica só
+ * para quem monta a tela sem o gravado; o GET continua conferindo depois
+ * (repasseNaTelaDepoisDeLer).
+ */
+export function repasseNaAbertura(p: {
+  /** O `separado` gravado que a página leu com o resto do cadastro (ausente = não leu). */
+  gravadoNaPagina?: boolean | null;
+  /** Alguma faixa/bairro/área já tem "Motoboy recebe". */
+  temValorNasFaixas: boolean;
+}): boolean {
+  return typeof p.gravadoNaPagina === "boolean" ? p.gravadoNaPagina : p.temValorNasFaixas;
+}
+
+/**
+ * A lista do aviso "Não salvei. Corrija os campos em vermelho": no máximo
+ * `max` linhas, e o que não coube é CONTADO na última — nunca cortado calado.
+ *
+ * Era `erros.slice(0, 8)`. A Divinos tem 9 faixas; com "um valor por faixa" e
+ * nenhuma preenchida, o aviso listava "até 1 km" … "até 4,5 km" e sumia com a
+ * de 5 km, enquanto o contador dizia "9 faixas sem o valor do motoboy" — a
+ * loja preenchia as 8 e dava de cara com o "Não salvei" de novo (D3).
+ */
+export function listaDoAviso(erros: readonly string[], max = 8): string[] {
+  const teto = Math.max(2, Math.floor(max));
+  if (erros.length <= teto) return [...erros];
+  const cabem = teto - 1;
+  const resto = erros.length - cabem;
+  return [...erros.slice(0, cabem), `… e mais ${resto} ${resto === 1 ? "problema" : "problemas"}, nos campos em vermelho abaixo.`];
 }
 
 /** O atalho "motoboy recebe a taxa − R$ X": nunca negativo. */

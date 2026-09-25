@@ -38,8 +38,9 @@ import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./
 import { isStoreOpen } from "@/lib/store-hours";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
 import {
-  assinaturaDaConsulta, carimboDoPonto, comoAbrirOMapa, consultaDaCotacao, criarSequenciadorDeCotacoes, entregaNoPedidoDoSite,
-  gpsEhPreciso, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco, pontoValido, temRuaOuBairro,
+  assinaturaDaConsulta, avisoDoPontoSemEndereco, BOTAO_DO_GPS, carimboDoPonto, comoAbrirOMapa, consultaDaCotacao, criarSequenciadorDeCotacoes,
+  enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
+  temOndeAbrirOMapa, temRuaOuBairro,
   type CotacaoNaTela, type EnderecoDigitado, type Ponto, type PontoDoCliente,
 } from "@/lib/entrega-no-checkout";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
@@ -366,6 +367,14 @@ export default function CustomerStorePage({
   const [pedeConfirmacao, setPedeConfirmacao] = useState(false);
   /** Onde o mapa abre: o palpite do servidor para este endereço. */
   const [pontoAproximado, setPontoAproximado] = useState<Ponto | null>(null);
+  /**
+   * O servidor mandou usar o GPS (`pedirGps`, na cotação ou na recusa do
+   * pedido): loja por km sem pino e o mapa sem palpite — o pino não tem onde
+   * abrir. Em vez do mapa obrigatório que não abria (e de dois alertas
+   * seguidos), o painel mostra UM aviso e o botão do GPS
+   * (lib/entrega-no-checkout.ts, gpsNoLugarDoMapa).
+   */
+  const [pedirGps, setPedirGps] = useState(false);
   /**
    * O cliente pode conferir o pino mesmo com a taxa na tela? Na área
    * desenhada e na entrega por km, sim: o mapa acha o endereço errado com a
@@ -1382,6 +1391,7 @@ export default function CustomerStorePage({
     setPedeConfirmacao(c.pedeConfirmacao);
     setPodeConferirNoMapa(c.podeConferirNoMapa);
     setPontoAproximado(c.pontoAproximado);
+    setPedirGps(c.pedirGps);
     setTempoDaEntregaMin(c.disponivel ? c.tempoMin : null);
     setMedidaDaEntrega(c.disponivel ? c.medida : null);
     setDeliveryDistanceKm(c.distanciaKm);
@@ -1407,6 +1417,7 @@ export default function CustomerStorePage({
     cotadaEm.current = null;
     setPrecisaConfirmarNoMapa(false);
     setPedeConfirmacao(false);
+    setPedirGps(false);
     setTempoDaEntregaMin(null);
     setMedidaDaEntrega(null);
   };
@@ -1448,6 +1459,7 @@ export default function CustomerStorePage({
       setAssinaturaCotada(null);
       setPrecisaConfirmarNoMapa(false);
       setPedeConfirmacao(false);
+      setPedirGps(false);
       setDeliveryFee(null);
       setDeliveryFeeCalculated(false);
       setDeliveryAvailable(false);
@@ -1461,14 +1473,41 @@ export default function CustomerStorePage({
     }
   };
 
-  /** Abre o mapa de confirmação — se houver onde abrir (a loja, o palpite ou um ponto anterior). */
-  const abrirMapaDeConfirmacao = (): boolean => {
-    if (!pontoDaLoja && !pontoDoClienteRef.current && !pontoAproximado && !pontoDescartado) {
-      alert('Não consegui abrir o mapa agora. Use o botão "Usar minha localização atual (GPS)" ou confira rua, número e bairro.');
+  /**
+   * Onde o mapa de confirmação pode abrir: o pino da loja, o ponto que o
+   * cliente já deu, o palpite do servidor, o ponto guardado, o GPS
+   * aproximado — os mesmos de quem o monta (comoAbrirOMapa + a loja, lá
+   * embaixo). Lido pela ref: vale dentro de callbacks.
+   */
+  const ondeOMapaPodeAbrir = (): (Ponto | null | undefined)[] =>
+    [pontoDaLoja, pontoDoClienteRef.current?.ponto, pontoAproximado, pontoDescartado, gpsAproximado];
+
+  /**
+   * Abre o mapa de confirmação — se houver onde abrir. `palpiteNovo`: o que
+   * acabou de chegar (a recusa do pedido) e ainda não está no estado; sem
+   * ele, o palpite da recusa não contava e o mapa "não abria".
+   */
+  const abrirMapaDeConfirmacao = (palpiteNovo?: Ponto | null): boolean => {
+    if (!temOndeAbrirOMapa([...ondeOMapaPodeAbrir(), palpiteNovo])) {
+      // Rede de proteção: sem onde abrir, a tela já oferece o GPS no lugar
+      // do mapa (gpsNoLugarDoMapa) e não chega aqui. Se chegar, UM aviso.
+      alert(`Não consegui abrir o mapa agora. Toque em "${BOTAO_DO_GPS}" ou confira rua, número e bairro.`);
       return false;
     }
     setMapaDeConfirmacaoAberto(true);
     return true;
+  };
+
+  /**
+   * Leva o cliente ao painel da entrega, onde está o botão do GPS. O checkout
+   * existe duas vezes na página (a coluna do computador e a gaveta do
+   * celular): vale o que está visível.
+   */
+  const mostrarPainelDaEntrega = () => {
+    if (typeof document === "undefined") return;
+    const visivel = Array.from(document.querySelectorAll<HTMLElement>("[data-painel-da-entrega]"))
+      .find((el) => el.getClientRects().length > 0);
+    visivel?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   const fecharMapaDeConfirmacao = () => {
@@ -1480,12 +1519,14 @@ export default function CustomerStorePage({
    * Rua, número e bairro de um ponto, pelo reverse geocode do mapa, escritos
    * na tela. `sobrescrever`: o GPS troca o que estava digitado (o cliente
    * pediu "use onde estou"); o pino só preenche o que está vazio. Devolve o
-   * endereço que ficou na tela e se o número foi o mapa que escreveu (esse
-   * não entra no carimbo: é chute do mapa).
+   * endereço que ficou na tela, se o número foi o mapa que escreveu (esse
+   * não entra no carimbo: é chute do mapa) e se o mapa respondeu (`leuOMapa`:
+   * sem nome de rua ali não é o mesmo que o mapa fora — avisoDoPontoSemEndereco).
    */
   const preencherPeloPonto = async (ponto: Ponto, opcoes: { sobrescrever: boolean }) => {
     const endereco: EnderecoDigitado = { ...enderecoNaTela.current };
     let numeroDoMapa = false;
+    let leuOMapa = false;
     const pode = (campo: unknown) => opcoes.sobrescrever || !String(campo ?? "").trim();
     try {
       // Sem prazo, um Nominatim lento prendia o "Localizando..." para sempre.
@@ -1498,10 +1539,10 @@ export default function CustomerStorePage({
       });
       if (rev.ok) {
         const revData = await rev.json();
-        const addr = revData.address || {};
-        const road = addr.road || addr.pedestrian || addr.street || addr.footway || "";
-        const houseNum = addr.house_number || "";
-        const neigh = addr.suburb || addr.neighbourhood || addr.city_district || "";
+        leuOMapa = true;
+        // O bairro também vem de residential/quarter/hamlet: loteamento sem
+        // `suburb` fazia o GPS preciso ser jogado fora (enderecoDoReverso).
+        const { rua: road, numero: houseNum, bairro: neigh } = enderecoDoReverso(revData?.address);
         if (road && pode(endereco.street)) { setCustomerStreet(road); endereco.street = road; }
         if (houseNum && pode(endereco.number)) { setCustomerNumber(houseNum); endereco.number = houseNum; numeroDoMapa = true; }
         if (neigh && !isNeighborhoodType && pode(endereco.neighborhood)) { setCustomerNeighborhood(neigh); endereco.neighborhood = neigh; }
@@ -1512,20 +1553,21 @@ export default function CustomerStorePage({
       console.warn("Reverse geocode timeout / failed:", e);
     }
     enderecoNaTela.current = endereco;
-    return { endereco, numeroDoMapa };
+    return { endereco, numeroDoMapa, leuOMapa };
   };
 
   /**
    * O ponto passa a ser o do cliente — se o endereço na tela disser ONDE.
-   * Sem rua nem bairro (o reverse geocode falhou com o formulário vazio), o
-   * ponto não vale para endereço nenhum: o cliente no trabalho digitaria o
-   * endereço de casa e o pedido iria com o ponto do trabalho. Ele fica só de
-   * palpite para o mapa, e o cliente digita o endereço.
+   * Sem rua nem bairro (o reverse geocode falhou, ou o mapa não tem nome
+   * nenhum ali, com o formulário vazio), o ponto não vale para endereço
+   * nenhum: o cliente no trabalho digitaria o endereço de casa e o pedido iria
+   * com o ponto do trabalho. Ele fica só de palpite para o mapa, e o cliente
+   * digita o endereço. `leuOMapa` escolhe o aviso (avisoDoPontoSemEndereco).
    */
-  const adotarPontoDoCliente = (ponto: PontoDoCliente, endereco: EnderecoDigitado, numeroDoMapa: boolean): boolean => {
+  const adotarPontoDoCliente = (ponto: PontoDoCliente, endereco: EnderecoDigitado, numeroDoMapa: boolean, leuOMapa: boolean): boolean => {
     if (!temRuaOuBairro(endereco)) {
       setPontoDescartado({ lat: ponto.lat, lng: ponto.lng });
-      alert("Não consegui ler o nome da rua desse ponto agora. Digite rua, número e bairro — se o mapa não achar, ele abre onde você marcou.");
+      alert(avisoDoPontoSemEndereco(leuOMapa));
       return false;
     }
     setPontoDescartado(null);
@@ -1557,8 +1599,8 @@ export default function CustomerStorePage({
             setMapaDeConfirmacaoAberto(true);
             return;
           }
-          const { endereco, numeroDoMapa } = await preencherPeloPonto(ponto, { sobrescrever: true });
-          if (!adotarPontoDoCliente(ponto, endereco, numeroDoMapa)) return;
+          const { endereco, numeroDoMapa, leuOMapa } = await preencherPeloPonto(ponto, { sobrescrever: true });
+          if (!adotarPontoDoCliente(ponto, endereco, numeroDoMapa, leuOMapa)) return;
           await cotarEntrega(endereco, ponto, { forcar: true });
         } catch (err) {
           console.error(err);
@@ -1568,7 +1610,9 @@ export default function CustomerStorePage({
       },
       () => {
         setGpsLoading(false);
-        alert("Não foi possível obter sua localização. Por favor, digite seu endereço.");
+        // "Digite seu endereço" era beco sem saída para quem chegou aqui
+        // porque o endereço digitado não foi achado (pedirGps).
+        alert("Não foi possível obter sua localização. Confira se a localização do celular está ligada e liberada para este site — ou confira rua, número e bairro.");
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
@@ -1580,12 +1624,13 @@ export default function CustomerStorePage({
     fecharMapaDeConfirmacao();
     let endereco: EnderecoDigitado = { ...enderecoNaTela.current };
     let numeroDoMapa = false;
+    let leuOMapa = false;
     if (!temRuaOuBairro(endereco)) {
       // Veio do GPS aproximado com o formulário vazio: rua e bairro do ponto
       // que o cliente TOCOU (esse, sim, é a casa dele).
-      ({ endereco, numeroDoMapa } = await preencherPeloPonto(ponto, { sobrescrever: false }));
+      ({ endereco, numeroDoMapa, leuOMapa } = await preencherPeloPonto(ponto, { sobrescrever: false }));
     }
-    if (!adotarPontoDoCliente(ponto, endereco, numeroDoMapa)) return;
+    if (!adotarPontoDoCliente(ponto, endereco, numeroDoMapa, leuOMapa)) return;
     cotarEntrega(endereco, ponto, { forcar: true });
   };
 
@@ -1739,11 +1784,18 @@ export default function CustomerStorePage({
         temPontoDoCliente: Boolean(pontoNoPedido),
         freteGratis: isFreeShippingEffective,
         mensagem: deliveryMessage,
+        pedirGps,
+        temOndeAbrirOMapa: temOndeAbrirOMapa(ondeOMapaPodeAbrir()),
       });
       if (falta) {
         if (falta.acao === "abrir-mapa") {
           // O mapa se explica sozinho; o alerta só sai se ele não puder abrir.
           abrirMapaDeConfirmacao();
+        } else if (falta.acao === "pedir-gps") {
+          // O mapa não tem onde abrir: UM aviso, e o painel com o botão do
+          // GPS à vista (o Finalizar fica longe dele no celular).
+          alert(falta.mensagem);
+          mostrarPainelDaEntrega();
         } else {
           if (falta.acao === "recotar") calcDeliveryFee({ forcar: true });
           alert(falta.mensagem);
@@ -1855,19 +1907,24 @@ export default function CustomerStorePage({
         // ponto, ou km/rota com endereço não achado ou só aproximado (R2/R3).
         // Em vez de só avisar, abre o mapa (no palpite do servidor, se veio):
         // o cliente resolve ali mesmo, no toque seguinte, sem sair do checkout.
-        if (d?.precisaConfirmarNoMapa || d?.pedeConfirmacao) {
-          // O POST do pedido manda o palpite em `pontoAproximado`
-          // (lib/entrega-do-pedido.ts, recusaDoSite); `ponto` é o nome na cotação.
-          const palpite = pontoValido(d?.pontoAproximado ?? d?.ponto);
-          if (palpite) setPontoAproximado(palpite);
-          if (d?.precisaConfirmarNoMapa) setPrecisaConfirmarNoMapa(true);
+        // Sem onde abrir o mapa (`pedirGps`: loja sem pino e sem palpite), o
+        // caminho é o GPS — antes eram dois alertas seguidos, a recusa e o
+        // "não consegui abrir o mapa" (lib/entrega-no-checkout.ts, lerRecusaDoPedido).
+        const recusa = lerRecusaDoPedido(d, ondeOMapaPodeAbrir());
+        if (recusa) {
+          if (recusa.pontoAproximado) setPontoAproximado(recusa.pontoAproximado);
+          if (recusa.precisaConfirmarNoMapa) setPrecisaConfirmarNoMapa(true);
           else setPedeConfirmacao(true);
+          setPedirGps(recusa.pedirGps);
+          // O painel diz o mesmo que o aviso, e continua dizendo depois dele.
+          setDeliveryMessage(recusa.mensagem);
           // A cotação que a tela tinha não serve para este pedido: a próxima
-          // sai do pino.
+          // sai do pino ou do GPS.
           setCotacaoDaEntrega(null);
           ultimaConsultaPedida.current = "";
-          alert(d?.error || "Confirme no mapa onde fica a sua casa para fecharmos o pedido.");
-          abrirMapaDeConfirmacao();
+          alert(recusa.mensagem);
+          if (recusa.depois === "abrir-mapa") abrirMapaDeConfirmacao(recusa.pontoAproximado);
+          else mostrarPainelDaEntrega();
           return;
         }
         alert(d?.error || "Erro.");
@@ -1991,6 +2048,23 @@ export default function CustomerStorePage({
     pontoDoCliente && pontoValeParaEndereco(pontoDoCliente.carimbo, { street: customerStreet, number: customerNumber, neighborhood: customerNeighborhood })
       ? pontoDoCliente.ponto
       : null;
+  /** Onde o mapa abre, com qual texto, e se o ponto inicial já vale sem o cliente tocar (lib/entrega-no-checkout.ts). */
+  const mapa = comoAbrirOMapa({
+    gpsAproximado,
+    pontoDoCliente,
+    endereco: { street: customerStreet, number: customerNumber, neighborhood: customerNeighborhood },
+    pontoAproximado,
+    pontoDescartado,
+    precisaConfirmarNoMapa,
+    pedeConfirmacao,
+  });
+  /**
+   * O mapa de confirmação abriria? É a MESMA condição que o monta, lá embaixo
+   * (o pino da loja ou um ponto inicial). Sem ela o painel oferece o GPS no
+   * lugar do mapa (gpsNoLugarDoMapa) — em vez de um botão que só dava "Não
+   * consegui abrir o mapa agora".
+   */
+  const mapaPodeAbrir = temOndeAbrirOMapa([pontoDaLoja, mapa.pontoInicial]);
   const painel = painelDaEntrega({
     bairroLocal: isNeighborhoodType,
     calculando: deliveryCalculating,
@@ -2008,6 +2082,8 @@ export default function CustomerStorePage({
     medida: medidaDaEntrega,
     tempoMin: tempoDaEntregaMin,
     mensagem: deliveryMessage,
+    pedirGps,
+    temOndeAbrirOMapa: mapaPodeAbrir,
   });
   const corDoPainel = {
     ok: { fundo: isFreeShippingByMin ? "#ECFDF5" : "#F0FDF4", borda: "#86EFAC", texto: "#166534" },
@@ -2024,23 +2100,13 @@ export default function CustomerStorePage({
   const rotuloDaTaxaNoResumo = (): string | null => {
     if (deliveryType !== "DELIVERY" || deliveryCalculating) return null;
     if (erroNaCotacao) return "A calcular";
-    if (precisaConfirmarNoMapa && !pontoNaTela) return "Marque no mapa";
+    if (precisaConfirmarNoMapa && !pontoNaTela) return painel.botaoDoGps ? "Falta sua localização" : "Marque no mapa";
     if (deliveryFeeCalculated && !deliveryAvailable) return "Fora da área";
     if (pedeConfirmacao && !pontoNaTela && deliveryFeeCalculated && effectiveDeliveryFee > 0) {
       return `R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")} (estimada)`;
     }
     return null;
   };
-  /** Onde o mapa abre, com qual texto, e se o ponto inicial já vale sem o cliente tocar (lib/entrega-no-checkout.ts). */
-  const mapa = comoAbrirOMapa({
-    gpsAproximado,
-    pontoDoCliente,
-    endereco: { street: customerStreet, number: customerNumber, neighborhood: customerNeighborhood },
-    pontoAproximado,
-    pontoDescartado,
-    precisaConfirmarNoMapa,
-    pedeConfirmacao,
-  });
   const enderecoEscritoNoMapa = [`${customerStreet} ${customerNumber}`.trim(), customerNeighborhood.trim()].filter(Boolean).join(", ");
 
   // ===== CART SIDEBAR CONTENT =====
@@ -2626,7 +2692,7 @@ export default function CustomerStorePage({
                       transition: "all 0.2s"
                     }}
                   >
-                    {gpsLoading ? "⏳ Obtendo sua localização..." : "📍 Usar minha localização atual (GPS)"}
+                    {gpsLoading ? "⏳ Obtendo sua localização..." : `📍 ${BOTAO_DO_GPS}`}
                   </button>
                 )}
 
@@ -2850,6 +2916,7 @@ export default function CustomerStorePage({
                 {/* STATUS TAXA DE ENTREGA EM TEMPO REAL — painelDaEntrega() */}
                 <div
                   aria-live="polite"
+                  data-painel-da-entrega
                   style={{
                     padding: "9px 12px",
                     borderRadius: "10px",
@@ -2901,6 +2968,24 @@ export default function CustomerStorePage({
                           {painel.botaoDoMapa === "obrigatorio"
                             ? (precisaConfirmarNoMapa ? "📍 Marcar no mapa onde eu moro" : "📍 Confirmar no mapa a minha porta")
                             : (pontoNaTela ? "📍 Ver ou mudar o ponto no mapa" : "📍 Conferir o ponto no mapa")}
+                        </button>
+                      )}
+                      {/* O mapa não tem onde abrir (loja sem pino e endereço sem
+                          palpite — pedirGps): o botão que resolve é o GPS, no
+                          lugar do "Marcar no mapa" que só dava alerta. */}
+                      {painel.botaoDoGps && (
+                        <button
+                          type="button"
+                          onClick={handleUseGpsLocation}
+                          disabled={gpsLoading || deliveryCalculating}
+                          style={{
+                            marginTop: 6, alignSelf: "flex-start", padding: "8px 14px", borderRadius: 8,
+                            border: "none", background: "#16A34A", color: "#fff", fontWeight: 800,
+                            fontSize: "0.78rem", fontFamily: "inherit",
+                            cursor: (gpsLoading || deliveryCalculating) ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {gpsLoading ? "⏳ Obtendo sua localização..." : `📍 ${BOTAO_DO_GPS}`}
                         </button>
                       )}
                     </div>

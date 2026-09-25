@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { avaliarEntrega, raioMaximoKm, taxaFixaDaLoja, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { assinarCotacao, chaveDoEndereco } from "@/lib/cotacao-de-entrega";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
-import { pontoDaLojaDesconhecido, taxaDaLojaSemPonto } from "@/lib/entrega-do-pedido";
+import { distanciaNaFraseDeFora, pontoDaLojaDesconhecido, taxaDaLojaSemPonto } from "@/lib/entrega-do-pedido";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 /**
@@ -81,6 +81,12 @@ function textoDaDistancia(v: VeredictoDeEntrega): string {
   if (v.medida === "estimada") return `~${km} km (distância estimada)`;
   return `${km} km`;
 }
+
+// A distância na frase de FORA vem de lib/entrega-do-pedido.ts
+// (distanciaNaFraseDeFora): a recusa do pedido usa a MESMA função, para o
+// cliente não cotar "6,01 km pela rua" e ler "pelas ruas" ao finalizar. Não
+// sai de `textoDaDistancia`: com "até a loja" depois, a estimada virava
+// "(~5,06 km (distância estimada) da loja; …)" — parêntese dentro de parêntese.
 
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams;
@@ -202,7 +208,7 @@ export async function GET(req: NextRequest) {
           : v.modo === "POLIGONO"
             ? "Esse endereço está fora da área que a loja entrega. Se o ponto no mapa não for a sua casa, ajuste e tentamos de novo."
             : v.distanciaKm != null && v.raioMaxKm != null
-              ? `Endereço fora da área de entrega (${textoDaDistancia(v)} da loja; entregamos até ${kmBr(v.raioMaxKm)} km).`
+              ? `Endereço fora da área de entrega (${distanciaNaFraseDeFora(v)}; entregamos até ${kmBr(v.raioMaxKm)} km).`
               : "Endereço fora da área de entrega da loja.";
     return NextResponse.json({
       fee: 0, available: false, type, distanceKm: v.distanciaKm, maxRadiusKm: v.raioMaxKm,
@@ -219,7 +225,13 @@ export async function GET(req: NextRequest) {
   // LOJA não decide mais: o checkout abre o mapa no palpite ou no GPS do
   // cliente. Só a loja cujo PRÓPRIO ponto é desconhecido (sem pino e o
   // endereço dela não achado) fica fora deste "confirme no mapa".
-  if (v.resultado === "DESCONHECIDO" && (v.modo === "POLIGONO" || (porKm && !pontoDaLojaDesconhecido(v)))) {
+  //
+  // Quem diz que é a loja é o campo `v.semPontoDaLoja` do motor, lido pela
+  // MESMA função do pedido; o texto do motivo é só reserva. Antes era o texto
+  // ("loja sem localização no mapa"): reescrever a frase do log mandava a loja
+  // sem ponto para o "confirme no mapa", onde nem o pino do cliente mede.
+  const lojaSemPonto = porKm && pontoDaLojaDesconhecido(v);
+  if (v.resultado === "DESCONHECIDO" && (v.modo === "POLIGONO" || (porKm && !lojaSemPonto))) {
     // Área DESENHADA é geometria, e KM/ROTA é distância: sem ponto confiável
     // não há o que calcular, e chutar a faixa mais cara era cobrar R$ 12 de
     // quem mora a 300 m (R2). A resposta é "confirme no mapa" — o checkout

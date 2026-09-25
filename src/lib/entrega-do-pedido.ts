@@ -184,13 +184,21 @@ export type EntregaDoPedido = {
 /**
  * O veredicto disse "não sei" porque a LOJA não tem ponto? É a resposta de
  * lib/area-de-entrega.ts quando `verifyStoreDeliveryAddress` devolve null
- * (sem `storeLatLng` e o endereço da loja não achado): o motivo é "loja sem
- * localização no mapa (storeLatLng)". O motor não tem campo próprio para
- * isso — o texto é o contrato; mudou lá, mude aqui (o teste
- * scripts/teste-entrega-do-pedido.ts prova o texto atual).
+ * (sem `storeLatLng` e o endereço da loja não achado), e o motor diz isso no
+ * campo `semPontoDaLoja`.
+ *
+ * Era lido pelo TEXTO do motivo ("loja sem localização no mapa"): uma frase de
+ * log virava regra de negócio, e reescrevê-la fechava a loja sem ponto para
+ * entrega sem erro de compilação. Agora o campo decide — quando o veredicto o
+ * traz (true OU false), é ele. O texto ficou só como reserva, para veredicto
+ * montado sem o campo. A cotação (/api/delivery-fee) decide por esta mesma
+ * função, para a tela e o pedido não divergirem.
  */
-export function pontoDaLojaDesconhecido(v: { resultado?: string | null; motivo?: string | null } | null | undefined): boolean {
+export function pontoDaLojaDesconhecido(
+  v: { resultado?: string | null; motivo?: string | null; semPontoDaLoja?: boolean | null } | null | undefined,
+): boolean {
   if (!v || v.resultado !== "DESCONHECIDO") return false;
+  if (typeof v.semPontoDaLoja === "boolean") return v.semPontoDaLoja;
   return /loja sem localiza/i.test(String(v.motivo || ""));
 }
 
@@ -313,6 +321,25 @@ export function entregaDoVeredicto(
 const km = (n: number) => String(centavos(n)).replace(".", ",");
 const reais = (n: number) => `R$ ${centavos(n).toFixed(2).replace(".", ",")}`;
 
+/**
+ * A distância dentro da frase de FORA ("Endereço fora da área de entrega (…;
+ * entregamos até 5 km)"). UMA frase para a cotação (/api/delivery-fee) e para
+ * a recusa do pedido (recusaDoSite): a medida é dita como foi feita — "pela
+ * rua" na rota de verdade, "~X km estimados" quando o roteador não respondeu
+ * (linha reta × desvio da loja), nada na linha reta.
+ *
+ * Eram duas cópias. A do pedido dizia "pelas ruas" para rota E para estimada:
+ * o cliente cotava "6,01 km pela rua", tocava em Finalizar e lia "6,01 km
+ * pelas ruas" (teste de ponta a ponta, E7); com o roteador fora, a
+ * estimativa virava distância medida pela rua (R4: estimativa é declarada).
+ */
+export function distanciaNaFraseDeFora(v: { distanciaKm?: number | null; medida?: string | null }): string {
+  const d = km(v.distanciaKm ?? 0);
+  if (v.medida === "rota") return `${d} km pela rua até a loja`;
+  if (v.medida === "estimada") return `~${d} km estimados até a loja`;
+  return `${d} km até a loja`;
+}
+
 /** Os modos em que o PONTO decide a taxa — e em que "não sei o ponto" não fecha. */
 const MODO_DE_PONTO = (m: ModoDaArea | null) => m === "KM" || m === "POLIGONO";
 
@@ -360,9 +387,10 @@ export function recusaDoSite(
     if (e.areaDeRisco) {
       return { status: 400, corpo: { error: "A loja não entrega nesse endereço. Revise o endereço ou escolha retirar no balcão." } };
     }
-    const pelasRuas = e.medida === "rota" || e.medida === "estimada" ? " pelas ruas" : "";
+    // A mesma frase da cotação (distanciaNaFraseDeFora): "pela rua" só na
+    // rota medida, "estimados" quando o roteador não respondeu.
     const detalhe = e.modo === "KM" && e.distanciaKm != null && e.raioMaxKm != null
-      ? ` (${km(e.distanciaKm)} km${pelasRuas} até a loja; entregamos até ${km(e.raioMaxKm)} km)`
+      ? ` (${distanciaNaFraseDeFora(e)}; entregamos até ${km(e.raioMaxKm)} km)`
       : e.modo === "BAIRRO" ? " (bairro não atendido)" : "";
     return {
       status: 400,

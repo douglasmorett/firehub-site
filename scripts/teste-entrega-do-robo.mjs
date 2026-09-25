@@ -100,13 +100,29 @@ conferir("sem veredito", motivoParaPedirLocalizacao(null, false) === null);
 // Revisão de 25/09/2026: quem não tem ponto no mapa é a LOJA — a localização do
 // cliente não resolve, e pedir era um turno inútil antes de segurar.
 {
-  const semPontoDaLoja = { modo: "KM", resultado: "DESCONHECIDO", motivo: "loja sem localização no mapa (storeLatLng)" };
-  conferir("loja sem ponto no mapa: reconhecido pelo motivo", faltaOPontoDaLoja(semPontoDaLoja));
+  // A forma que o motor (lib/area-de-entrega.ts) devolve: o campo decide, o
+  // motivo em texto é para o log.
+  const MOTIVO_SEM_PONTO = "loja sem localização no mapa (storeLatLng)";
+  const semPontoDaLoja = { modo: "KM", resultado: "DESCONHECIDO", semPontoDaLoja: true, motivo: MOTIVO_SEM_PONTO };
+  conferir("loja sem ponto no mapa: reconhecido pelo campo semPontoDaLoja", faltaOPontoDaLoja(semPontoDaLoja));
   conferir("loja sem ponto no mapa: NÃO pede a localização do cliente", motivoParaPedirLocalizacao(semPontoDaLoja, false) === null);
+  // O defeito que o campo fecha: a frase do log era a regra — reescrita, o
+  // robô voltava a pedir o 📎 de quem não tem como ser medido.
+  conferir("o campo decide mesmo com o motivo reescrito",
+    faltaOPontoDaLoja({ resultado: "DESCONHECIDO", semPontoDaLoja: true, motivo: "a loja não marcou o ponto" }) &&
+    motivoParaPedirLocalizacao({ modo: "KM", resultado: "DESCONHECIDO", semPontoDaLoja: true, motivo: "a loja não marcou o ponto" }, false) === null);
+  conferir("semPontoDaLoja: false vence o texto (o campo presente é a palavra do motor)",
+    !faltaOPontoDaLoja({ resultado: "DESCONHECIDO", semPontoDaLoja: false, motivo: MOTIVO_SEM_PONTO }) &&
+    motivoParaPedirLocalizacao({ modo: "KM", resultado: "DESCONHECIDO", semPontoDaLoja: false, motivo: MOTIVO_SEM_PONTO }, false) === "desconhecido");
+  conferir("sem o campo, o texto do motivo ainda vale (reserva)",
+    faltaOPontoDaLoja({ resultado: "DESCONHECIDO", motivo: MOTIVO_SEM_PONTO }) &&
+    motivoParaPedirLocalizacao({ modo: "KM", resultado: "DESCONHECIDO", motivo: MOTIVO_SEM_PONTO }, false) === null);
   conferir("endereço não achado (a loja tem ponto) continua pedindo",
     !faltaOPontoDaLoja({ resultado: "DESCONHECIDO", motivo: "endereço não localizado no mapa" }) &&
     motivoParaPedirLocalizacao({ modo: "KM", resultado: "DESCONHECIDO", motivo: "endereço não localizado no mapa" }, false) === "desconhecido");
-  conferir("ATENDE nunca é 'falta o ponto da loja'", !faltaOPontoDaLoja({ resultado: "ATENDE", motivo: "loja sem localização no mapa" }) && !faltaOPontoDaLoja(null));
+  conferir("ATENDE nunca é 'falta o ponto da loja'",
+    !faltaOPontoDaLoja({ resultado: "ATENDE", semPontoDaLoja: true, motivo: MOTIVO_SEM_PONTO }) &&
+    !faltaOPontoDaLoja({ resultado: "ATENDE", motivo: "loja sem localização no mapa" }) && !faltaOPontoDaLoja(null));
 }
 
 console.log("\n5) O que a nota do pedido conta (R7)");

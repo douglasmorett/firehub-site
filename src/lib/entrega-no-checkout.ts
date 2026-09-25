@@ -3,7 +3,7 @@
  *
  * O cardápio (CustomerStorePage) e o balcão (venda-presencial) perguntam a
  * taxa a /api/delivery-fee. Quem decide é o servidor (lib/area-de-entrega.ts);
- * a tela só precisa não estragar a resposta no caminho. E estragava, de quatro
+ * a tela só precisa não estragar a resposta no caminho. E estragava, de cinco
  * jeitos, todos vistos na Divinos Burger (Cabo Frio, modo ROTA) em 25/09/2026:
  *
  *  1. O GPS SE PERDIA. O "Minha localização" carimbava o endereço ANTES de o
@@ -17,6 +17,10 @@
  *     virava a faixa do centro do bairro, sem ninguém conferir.
  *  4. A COTAÇÃO NÃO IA NO PEDIDO. O POST geocodificava de novo; quando a
  *     segunda consulta falhava, o pedido saía "não localizado" com outra taxa.
+ *  5. SEM MAPA, DOIS ALERTAS. Loja por km sem pino e endereço sem palpite: o
+ *     servidor manda `pedirGps`, a tela pedia o mapa assim mesmo, e o mapa não
+ *     tinha onde abrir — "confirme no mapa" seguido de "não consegui abrir o
+ *     mapa". Agora é um aviso e o botão do GPS (gpsNoLugarDoMapa).
  *
  * Aqui mora a parte que dá para testar sem navegador: quando o ponto do
  * cliente ainda vale, o que identifica "a mesma consulta", como ler a resposta,
@@ -213,6 +217,56 @@ export function gpsEhPreciso(precisaoEmMetros: unknown): boolean {
     && precisaoEmMetros >= 0 && precisaoEmMetros <= PRECISAO_MAXIMA_DO_GPS_M;
 }
 
+// ── O ENDEREÇO DE UM PONTO (REVERSE GEOCODE) ────────────────────────────────
+
+const primeiroTexto = (a: Record<string, unknown>, campos: readonly string[]): string => {
+  for (const c of campos) {
+    const v = typeof a[c] === "string" ? (a[c] as string).trim() : "";
+    if (v) return v;
+  }
+  return "";
+};
+
+/**
+ * Rua, número e bairro do `address` que o Nominatim devolve no reverse
+ * geocode (/reverse?addressdetails=1) — o que o "Minha localização" e o pino
+ * escrevem na tela.
+ *
+ * O BAIRRO nem sempre vem em `suburb`. Loteamento em Cabo Frio vem só como
+ * `residential` ("Vila Jardim Esperança", a ~1 km da Divinos): o teste de
+ * ponta a ponta de 25/09/2026 sorteou 4 pontos a 1 km da loja, e em 2 o mapa
+ * não tinha nome de rua e o bairro estava só ali. A tela lia suburb/
+ * neighbourhood/city_district, ficava sem rua e sem bairro, e o GPS PRECISO
+ * era jogado fora (adotarPontoDoCliente) — o cliente digitava tudo e a taxa
+ * saía do texto. A ordem é a do servidor (geocoding.ts, bairro do mapa), para
+ * o bairro escrito aqui ser o mesmo que o servidor lê do mapa; `hamlet` é o
+ * povoado da zona rural, onde não há mais nada.
+ */
+export function enderecoDoReverso(address: unknown): { rua: string; numero: string; bairro: string } {
+  const a = address && typeof address === "object" ? (address as Record<string, unknown>) : {};
+  return {
+    rua: primeiroTexto(a, ["road", "pedestrian", "street", "footway"]),
+    numero: primeiroTexto(a, ["house_number"]),
+    bairro: primeiroTexto(a, ["suburb", "neighbourhood", "city_district", "quarter", "residential", "hamlet"]),
+  };
+}
+
+/**
+ * O aviso de quando o ponto (GPS ou pino) não vira o do cliente porque o
+ * endereço na tela não diz onde (sem rua e sem bairro: pontoValeParaEndereco).
+ *
+ * `leuOMapa`: o reverse geocode RESPONDEU, só não tinha nome de rua nem de
+ * bairro ali. Dizer "agora" nesse caso era mentir que a falha é passageira: o
+ * cliente tentava de novo e dava o mesmo. "Agora" fica para o mapa que não
+ * respondeu (rede, 429, prazo).
+ */
+export function avisoDoPontoSemEndereco(leuOMapa: boolean): string {
+  const oQueFazer = "Digite rua, número e bairro — se o mapa não achar, ele abre onde você marcou.";
+  return leuOMapa
+    ? `O mapa não tem o nome da rua nem do bairro desse ponto. ${oQueFazer}`
+    : `Não consegui ler o nome da rua desse ponto agora. ${oQueFazer}`;
+}
+
 export type MotivoDoMapaNaTela = "nao-achou" | "aproximado" | "conferir" | "gps-aproximado";
 
 /**
@@ -247,6 +301,52 @@ export function comoAbrirOMapa(e: {
   return { pontoInicial: e.pontoAproximado || e.pontoDescartado || c?.ponto || null, motivo, exigirToque: true };
 }
 
+// ── SEM ONDE ABRIR O MAPA: O GPS ────────────────────────────────────────────
+
+/**
+ * O texto do botão do GPS no checkout. As mensagens do servidor mandam tocar
+ * nele pelo nome (/api/delivery-fee e a recusa do POST, lib/entrega-do-pedido.ts):
+ * se o botão mudar de nome, a frase manda o cliente procurar um botão que
+ * não existe. O teste confere que as duas pontas usam o mesmo texto.
+ */
+export const BOTAO_DO_GPS = "Usar minha localização atual (GPS)";
+
+const MENSAGEM_DO_GPS =
+  `Não conseguimos marcar o seu endereço no mapa. Toque em "${BOTAO_DO_GPS}" para calcularmos a entrega até a sua porta (ou escolha retirar no balcão).`;
+const MENSAGEM_DO_GPS_NO_APROXIMADO =
+  `O mapa achou só um ponto aproximado do seu endereço. Toque em "${BOTAO_DO_GPS}" para confirmar a taxa.`;
+
+/**
+ * O MAPA DE CONFIRMAÇÃO TEM ONDE ABRIR? Ele nasce na loja ou num ponto: o
+ * palpite do servidor, o ponto que o cliente já deu, o GPS aproximado, o
+ * ponto guardado. Sem nenhum, ele não abre — é a mesma conta que a tela faz
+ * para montá-lo (o pino da loja ou comoAbrirOMapa().pontoInicial).
+ */
+export function temOndeAbrirOMapa(pontos: readonly unknown[]): boolean {
+  return pontos.some((p) => pontoValido(p) != null);
+}
+
+/**
+ * O CAMINHO É O GPS, E NÃO O MAPA?
+ *
+ * `pedirGps` é o servidor dizendo, na cotação ou na recusa do POST do pedido,
+ * que o pino não tem onde abrir: loja por km SEM pino e o mapa sem palpite
+ * nenhum para o endereço. Até 25/09/2026 a tela não lia a bandeira: mostrava
+ * "Marcar no mapa onde eu moro" como obrigatório, o toque dava "Não consegui
+ * abrir o mapa agora", e a recusa do pedido dava DOIS alertas seguidos (o
+ * erro e o "não consegui abrir"). Sem mapa, o que fecha o pedido é o GPS.
+ *
+ * A última palavra é da tela (`temOndeAbrirOMapa`), porque o servidor não
+ * sabe do ponto que ela guarda — o GPS aproximado que o cliente fechou, o
+ * GPS cujo nome de rua o mapa não leu, o pino de antes. Com um deles o mapa
+ * abre ali (pedir o GPS de novo daria o mesmo ponto); sem nenhum, o GPS é o
+ * caminho mesmo sem a bandeira (o mapa não abriria). Sem a tela dizer
+ * (`temOndeAbrirOMapa` omitido), vale a bandeira.
+ */
+export function gpsNoLugarDoMapa(e: { pedirGps?: boolean; temOndeAbrirOMapa?: boolean }): boolean {
+  return e.temOndeAbrirOMapa === undefined ? e.pedirGps === true : !e.temOndeAbrirOMapa;
+}
+
 // ── A CONSULTA ──────────────────────────────────────────────────────────────
 
 /**
@@ -279,8 +379,17 @@ export function consultaDaCotacao(a: EnderecoDigitado & { franchiseeId?: string 
   // O mesmo formato de texto livre que o checkout sempre mandou ("Rua X, 10 -
   // Bairro, Cidade"): é ele que o geocodificador recebe quando as peças não
   // bastam, e trocar a pontuação muda o que o Nominatim acha.
+  //
+  // Pedaço vazio sai com a pontuação dele. O GPS e o pino cotam antes de o
+  // cliente digitar número ou bairro, e o texto ia "Estrada Nelore,  - Gamboa,
+  // Cabo Frio" e "Rua Sete de Setembro,  - , Cabo Frio" — com o ponto dado, ele
+  // volta como o endereço que "o mapa entendeu". Número sem rua não localiza
+  // nada (temRuaOuBairro) e também fica de fora. A chave da cotação não muda:
+  // `chaveDoEndereco` usa as peças, e o texto só sem elas, já sem pontuação.
   const cidade = String(a.cidade ?? "").trim();
-  q.set("address", `${rua}, ${numero} - ${bairro}${cidade ? `, ${cidade}` : ""}`.trim());
+  const ruaENumero = rua && numero ? `${rua}, ${numero}` : rua;
+  const local = [ruaENumero, bairro].filter(Boolean).join(" - ");
+  q.set("address", [local, cidade].filter(Boolean).join(", "));
   const p = a.ponto && pontoValido(a.ponto);
   if (p && a.ponto) {
     q.set("lat", String(p.lat));
@@ -312,6 +421,12 @@ export type CotacaoNaTela = {
   podeConferirNoMapa: boolean;
   /** O palpite do servidor — é onde o mapa abre. */
   pontoAproximado: Ponto | null;
+  /**
+   * O servidor não tem onde abrir o pino (loja por km sem pino e o mapa sem
+   * palpite): o caminho é o GPS do aparelho. Só vale junto de um pedido de
+   * mapa (precisaConfirmarNoMapa/pedeConfirmacao). Ver gpsNoLugarDoMapa.
+   */
+  pedirGps: boolean;
   /** Resposta antiga "não localizado" com taxa (modos que ainda aceitam). */
   naoLocalizado: boolean;
   /** O token assinado que o pedido devolve ao servidor (R1). */
@@ -355,8 +470,60 @@ export function lerRespostaDaCotacao(bruto: unknown, taxaPadrao: number = 0): Co
     // régua para o ponto confirmado).
     podeConferirNoMapa: d.podeConfirmarNoMapa === true || d.type === "poligono",
     pontoAproximado: pontoValido(d.ponto),
+    pedirGps: d.pedirGps === true && (precisaConfirmarNoMapa || pedeConfirmacao),
     naoLocalizado: d.unknown === true,
     cotacao: disponivel && typeof d.cotacao === "string" && d.cotacao.length > 0 && d.cotacao.length <= 4000 ? d.cotacao : null,
+  };
+}
+
+export type RecusaDaEntrega = {
+  /** Sem ponto confiável (R2); a recusa do ponto aproximado (R3) também vem assim do servidor. */
+  precisaConfirmarNoMapa: boolean;
+  pedeConfirmacao: boolean;
+  /** Onde abrir o pino: o palpite que o servidor mandou (pode não haver). */
+  pontoAproximado: Ponto | null;
+  pedirGps: boolean;
+  /** O aviso — UM só — que o cliente vê. */
+  mensagem: string;
+  /** Depois do aviso: abre o mapa, ou leva ao painel com o botão do GPS (sem onde abrir o mapa). */
+  depois: "abrir-mapa" | "mostrar-gps";
+};
+
+/**
+ * A RECUSA DO POST /api/customer-order por falta de ponto confiável
+ * (lib/entrega-do-pedido.ts, recusaDoSite: R2 sem ponto, R3 ponto só
+ * aproximado). null = a recusa é outra (estoque, loja fechada...), e a tela
+ * mostra o erro como sempre.
+ *
+ * `pontosDaTela`: onde a tela já pode abrir o mapa (o pino da loja, o ponto
+ * do cliente, o palpite e o ponto guardados) — o palpite que veio na recusa
+ * entra sozinho. Omitido, vale a bandeira `pedirGps` do servidor.
+ */
+export function lerRecusaDoPedido(bruto: unknown, pontosDaTela?: readonly unknown[]): RecusaDaEntrega | null {
+  const d: any = bruto && typeof bruto === "object" ? bruto : null;
+  if (!d || (d.precisaConfirmarNoMapa !== true && d.pedeConfirmacao !== true)) return null;
+  const precisaConfirmarNoMapa = d.precisaConfirmarNoMapa === true;
+  // O POST manda o palpite em `pontoAproximado`; `ponto` é o nome na cotação.
+  const pontoAproximado = pontoValido(d.pontoAproximado ?? d.ponto);
+  const pedirGps = d.pedirGps === true;
+  const gps = gpsNoLugarDoMapa({
+    pedirGps,
+    temOndeAbrirOMapa: pontosDaTela ? temOndeAbrirOMapa([...pontosDaTela, pontoAproximado]) : undefined,
+  });
+  const erro = typeof d.error === "string" ? d.error.trim() : "";
+  return {
+    precisaConfirmarNoMapa,
+    pedeConfirmacao: !precisaConfirmarNoMapa,
+    pontoAproximado,
+    pedirGps,
+    // A frase do servidor segue a bandeira dele: com `pedirGps` ela manda
+    // tocar no GPS, sem ela manda confirmar no mapa. Quando a tela decide
+    // diferente (ela tem onde abrir o mapa, ou não tem), a frase é a da tela —
+    // o aviso não pode apontar para o botão que não está lá.
+    mensagem: gps
+      ? (pedirGps && erro) || MENSAGEM_DO_GPS
+      : (!pedirGps && erro) || "Confirme no mapa onde fica a sua casa para fecharmos o pedido.",
+    depois: gps ? "mostrar-gps" : "abrir-mapa",
   };
 }
 
@@ -393,6 +560,11 @@ export type PainelDaEntrega = {
   mensagem: string;
   /** O botão do mapa: obrigatório (não fecha sem), opcional (conferir) ou nenhum. */
   botaoDoMapa: "obrigatorio" | "opcional" | null;
+  /**
+   * O botão "Usar minha localização atual (GPS)" NO LUGAR do mapa obrigatório:
+   * o pino não tem onde abrir (gpsNoLugarDoMapa). Nunca junto de botaoDoMapa.
+   */
+  botaoDoGps: boolean;
 };
 
 export function painelDaEntrega(e: {
@@ -414,62 +586,84 @@ export function painelDaEntrega(e: {
   medida: MedidaDaDistancia | null;
   tempoMin: number | null;
   mensagem: string;
+  /** A bandeira do servidor: o pino não tem onde abrir, use o GPS (CotacaoNaTela.pedirGps). */
+  pedirGps?: boolean;
+  /** A tela tem onde abrir o mapa (temOndeAbrirOMapa)? Omitido, vale `pedirGps`. */
+  temOndeAbrirOMapa?: boolean;
 }): PainelDaEntrega {
   const detalhe = e.disponivel ? detalheDaEntrega(e) : "";
+  // Sem onde abrir o mapa, nenhum botão de mapa aparece — nem o de conferir:
+  // o toque só daria "Não consegui abrir o mapa agora".
+  const semMapa = gpsNoLugarDoMapa(e);
   if (e.calculando) {
-    return { tom: "calculando", icone: "⏳", titulo: "Calculando a entrega...", detalhe: "", mensagem: "", botaoDoMapa: null };
+    return { tom: "calculando", icone: "⏳", titulo: "Calculando a entrega...", detalhe: "", mensagem: "", botaoDoMapa: null, botaoDoGps: false };
   }
   if (e.precisaConfirmarNoMapa && !e.temPontoDoCliente) {
+    if (semMapa) {
+      // UM aviso e o botão que resolve: o GPS mede a partir da porta do
+      // cliente, sem precisar da loja no mapa.
+      return {
+        tom: "alerta", icone: "📍", titulo: "Use a sua localização para calcular a entrega", detalhe: "",
+        mensagem: (e.pedirGps && e.mensagem) || MENSAGEM_DO_GPS,
+        botaoDoMapa: null, botaoDoGps: true,
+      };
+    }
     return {
       tom: "alerta", icone: "📍", titulo: "Marque no mapa onde você mora", detalhe: "",
-      mensagem: e.mensagem || "Não localizamos esse endereço no mapa. A entrega é calculada pela distância até a sua porta.",
-      botaoDoMapa: "obrigatorio",
+      // Com a bandeira do GPS a frase do servidor manda tocar no GPS; se a
+      // tela tem onde abrir o mapa (um ponto que ela guarda), a frase é a do mapa.
+      mensagem: (!e.pedirGps && e.mensagem) || "Não localizamos esse endereço no mapa. A entrega é calculada pela distância até a sua porta.",
+      botaoDoMapa: "obrigatorio", botaoDoGps: false,
     };
   }
   if (e.erro) {
-    return { tom: "erro", icone: "⚠️", titulo: "Não consegui calcular a entrega", detalhe: "", mensagem: e.mensagem, botaoDoMapa: null };
+    return { tom: "erro", icone: "⚠️", titulo: "Não consegui calcular a entrega", detalhe: "", mensagem: e.mensagem, botaoDoMapa: null, botaoDoGps: false };
   }
   if (!e.disponivel && e.calculada) {
     return {
       tom: "erro", icone: "⛔", titulo: "Fora da área de entrega", detalhe: "", mensagem: e.mensagem,
-      botaoDoMapa: e.podeConferirNoMapa || e.precisaConfirmarNoMapa ? "opcional" : null,
+      botaoDoMapa: !semMapa && (e.podeConferirNoMapa || e.precisaConfirmarNoMapa) ? "opcional" : null,
+      botaoDoGps: false,
     };
   }
   if (e.pedeConfirmacao && !e.temPontoDoCliente) {
     return {
       tom: "alerta", icone: "📍",
-      titulo: e.taxaEfetiva > 0 ? `Taxa estimada: ${reais(e.taxaEfetiva)}` : "Confirme no mapa onde você mora",
+      titulo: e.taxaEfetiva > 0 ? `Taxa estimada: ${reais(e.taxaEfetiva)}` : semMapa ? "Use a sua localização para confirmar a taxa" : "Confirme no mapa onde você mora",
       detalhe,
-      mensagem: "O mapa achou só um ponto aproximado do seu endereço. Marque a sua porta no mapa para confirmar a taxa.",
-      botaoDoMapa: "obrigatorio",
+      mensagem: semMapa
+        ? MENSAGEM_DO_GPS_NO_APROXIMADO
+        : "O mapa achou só um ponto aproximado do seu endereço. Marque a sua porta no mapa para confirmar a taxa.",
+      botaoDoMapa: semMapa ? null : "obrigatorio",
+      botaoDoGps: semMapa,
     };
   }
-  const opcional = e.podeConferirNoMapa || e.temPontoDoCliente ? "opcional" : null;
+  const opcional = !semMapa && (e.podeConferirNoMapa || e.temPontoDoCliente) ? "opcional" : null;
   if (e.naoLocalizado && e.calculada && !e.temPontoDoCliente) {
     // Loja sem pino no mapa: não há mapa para oferecer, e a taxa é a que a
     // loja vai confirmar. Aviso em âmbar, não "tudo certo" em verde.
     return {
       tom: "alerta", icone: "⚠️",
       titulo: e.taxaEfetiva > 0 ? `Taxa de Entrega: ${reais(e.taxaEfetiva)}` : "Entrega Grátis! 🎉",
-      detalhe, mensagem: e.mensagem, botaoDoMapa: opcional,
+      detalhe, mensagem: e.mensagem, botaoDoMapa: opcional, botaoDoGps: false,
     };
   }
   // Com a distância e o prazo na tela, "Distância: 0,84 km pela rua" do
   // servidor só repetiria o detalhe.
   const mensagem = detalhe ? "" : e.mensagem;
   if (e.freteGratisPorMinimo && e.calculada) {
-    return { tom: "ok", icone: "🎉", titulo: "Frete Grátis Aplicado! 🎉", detalhe, mensagem, botaoDoMapa: opcional };
+    return { tom: "ok", icone: "🎉", titulo: "Frete Grátis Aplicado! 🎉", detalhe, mensagem, botaoDoMapa: opcional, botaoDoGps: false };
   }
   if (e.calculada && e.taxaEfetiva > 0) {
-    return { tom: "ok", icone: "🛵", titulo: `Taxa de Entrega: ${reais(e.taxaEfetiva)}`, detalhe, mensagem, botaoDoMapa: opcional };
+    return { tom: "ok", icone: "🛵", titulo: `Taxa de Entrega: ${reais(e.taxaEfetiva)}`, detalhe, mensagem, botaoDoMapa: opcional, botaoDoGps: false };
   }
   if (e.calculada) {
-    return { tom: "ok", icone: "🎉", titulo: "Entrega Grátis! 🎉", detalhe, mensagem, botaoDoMapa: opcional };
+    return { tom: "ok", icone: "🎉", titulo: "Entrega Grátis! 🎉", detalhe, mensagem, botaoDoMapa: opcional, botaoDoGps: false };
   }
   return {
     tom: "neutro", icone: "📍",
     titulo: e.bairroLocal ? "Selecione seu bairro acima" : "Preencha rua, número e bairro para calcular",
-    detalhe: "", mensagem: e.mensagem, botaoDoMapa: null,
+    detalhe: "", mensagem: e.mensagem, botaoDoMapa: null, botaoDoGps: false,
   };
 }
 
@@ -498,6 +692,8 @@ export type PendenciaDaEntrega =
   | { acao: "recotar"; mensagem: string }
   /** Sem o pino não fecha: abra o mapa. */
   | { acao: "abrir-mapa"; mensagem: string }
+  /** Sem o pino não fecha, e o mapa não tem onde abrir: UM aviso e o botão do GPS à vista. */
+  | { acao: "pedir-gps"; mensagem: string }
   /** Fora da área. */
   | { acao: "recusar"; mensagem: string };
 
@@ -523,6 +719,10 @@ export function oQueFaltaParaFechar(e: {
   temPontoDoCliente: boolean;
   freteGratis: boolean;
   mensagem: string;
+  /** A bandeira do servidor: o pino não tem onde abrir, use o GPS. */
+  pedirGps?: boolean;
+  /** A tela tem onde abrir o mapa? Omitido, vale `pedirGps` (gpsNoLugarDoMapa). */
+  temOndeAbrirOMapa?: boolean;
 }): PendenciaDaEntrega | null {
   if (e.calculando) {
     return { acao: "aguardar", mensagem: "⏳ Ainda estamos calculando a entrega do seu endereço. Um instante e toque em Finalizar de novo." };
@@ -538,10 +738,15 @@ export function oQueFaltaParaFechar(e: {
       return { acao: "recotar", mensagem: "A taxa de entrega foi calculada há muito tempo. Atualizamos — confira e toque em Finalizar de novo." };
     }
   }
+  // Sem onde abrir o mapa, "abrir-mapa" era o alerta "Não consegui abrir o
+  // mapa agora" — e o cliente sem saber o que fazer. O que fecha é o GPS.
+  const semMapa = gpsNoLugarDoMapa(e);
   if (e.precisaConfirmarNoMapa) {
-    return { acao: "abrir-mapa", mensagem: e.mensagem || "Marque no mapa onde fica a sua casa para calcularmos a entrega." };
+    if (semMapa) return { acao: "pedir-gps", mensagem: (e.pedirGps && e.mensagem) || MENSAGEM_DO_GPS };
+    return { acao: "abrir-mapa", mensagem: (!e.pedirGps && e.mensagem) || "Marque no mapa onde fica a sua casa para calcularmos a entrega." };
   }
   if (e.pedeConfirmacao && !e.temPontoDoCliente) {
+    if (semMapa) return { acao: "pedir-gps", mensagem: MENSAGEM_DO_GPS_NO_APROXIMADO };
     return { acao: "abrir-mapa", mensagem: "Confirme no mapa onde fica a sua porta: a taxa mostrada é estimada." };
   }
   if (!e.disponivel) {
