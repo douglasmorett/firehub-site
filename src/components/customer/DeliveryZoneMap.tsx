@@ -46,7 +46,8 @@ const CORES_DA_AREA = ["#0F766E", "#1C1917", "#44403C", "#E8590C", "#0F766E", "#
  * precisa devolvê-lo intacto ao salvar: apagá-lo zeraria o acerto de quem
  * configurou pela tela antiga.
  */
-type Zone = { km: number; time: number; fee: number; motoboyFee?: number };
+/** `_uid` é só da tela (para o cartão não trocar de faixa ao reordenar); não é salvo. */
+type Zone = { km: number; time: number; fee: number; motoboyFee?: number; _uid?: string };
 
 interface Props {
   initialAddress: string;
@@ -623,9 +624,28 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     setMsg("");
   };
 
+  // ── QUANTAS FAIXAS A LOJA PRECISAR ────────────────────────────────────────
+  //
+  // A lista era reordenada por km DURANTE o desenho da tela (`zones.sort` no
+  // meio do render). Digitar "4,5" numa faixa nova fazia o cartão pular de
+  // lugar no primeiro número, e o resto da digitação caía em OUTRA faixa. Com
+  // 10 faixas (Deeds Delivery, 25/09/2026: 0,5 a 7,5 km) montar a tabela virou
+  // briga, e a loja concluiu que havia um limite. Não há limite nenhum.
+  //
+  // Agora a ordem só muda quando a pessoa sai do campo de km, e cada faixa tem
+  // uma identidade (`_uid`, só da tela, não é salva) para o cartão andar junto
+  // com o foco. A faixa nova copia taxa e tempo da última — quem cadastra 10
+  // faixas não redigita os 45 minutos dez vezes.
+  const proximoUid = useRef(0);
+  const novoUid = () => `faixa_${++proximoUid.current}`;
+  useEffect(() => {
+    if (zones.some((z) => !z._uid)) setZones((prev) => prev.map((z) => (z._uid ? z : { ...z, _uid: novoUid() })));
+  }, [zones]);
+
   const addZone = () => {
-    const lastKm = zones.length ? Math.max(...zones.map(z => z.km)) : 0;
-    setZones(prev => [...prev, { km: lastKm + 1, time: 45, fee: 10 }]);
+    const ultima = [...zones].sort((a, b) => a.km - b.km).pop();
+    const lastKm = ultima ? Number(ultima.km) || 0 : 0;
+    setZones(prev => [...prev, { km: lastKm + 1, time: ultima?.time ?? 45, fee: ultima?.fee ?? 0, _uid: novoUid() }]);
   };
 
   const removeZone = (i: number) => setZones(prev => prev.filter((_, idx) => idx !== i));
@@ -633,6 +653,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const updateZone = (i: number, key: keyof Zone, val: number) => {
     setZones(prev => prev.map((z, idx) => idx === i ? { ...z, [key]: val } : z));
   };
+
+  /** Coloca as faixas em ordem de km — quando a pessoa termina de digitar o km. */
+  const ordenarFaixas = () => setZones(prev => [...prev].sort((a, b) => a.km - b.km));
 
   /** Rótulo em cima do campo: é o que evita cabeçalho de coluna espremido. */
   // `maxWidth` para o campo que sobra na quebra de linha não esticar sozinho
@@ -667,11 +690,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     // configurou antes da mudança, e o relatório voltaria à taxa do cliente.
     // A modalidade escolhida diz qual cadastro vale. O desenho vai como está:
     // contorno, taxa e tempo por área (lib/area-de-entrega.ts lê `pontos`).
+    // Faixas em km vão em ordem e sem o `_uid`, que é só da tela.
     const activeZones: any[] = currentZoneType === "NEIGHBORHOOD"
       ? neighborhoodZones
       : currentZoneType === "POLIGONO"
         ? areasDeEntrega
-        : zones;
+        : [...zones].sort((a, b) => a.km - b.km).map(({ _uid, ...faixa }) => faixa);
     if (currentZoneType === "POLIGONO" && activeZones.length === 0) {
       setMsg("⚠️ Desenhe pelo menos uma área de entrega no mapa antes de salvar.");
       setSaving(false);
@@ -1013,12 +1037,16 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                   tinha um cabeçalho de colunas de 60px, e "TEMPO(M)",
                   "CLIENTE(R$)" e "MOTOBOY(R$)" se sobrepunham — rótulo de
                   coluna não cabe em coluna estreita. */}
-              {zones.sort((a, b) => a.km - b.km).map((zone, i) => {
+              {zones.map((zone, i) => {
                 const repasse = Number(zone.motoboyFee ?? zone.fee) || 0;
                 const sobra = Math.round(((Number(zone.fee) || 0) - repasse) * 100) / 100;
+                // "De X a Y km" pela faixa imediatamente abaixo em km — não
+                // pela vizinha na lista, que durante a digitação ainda não
+                // está em ordem.
+                const anterior = zones.reduce((m, z, j) => (j !== i && z.km < zone.km && z.km > m ? z.km : m), 0);
                 return (
                   <div
-                    key={i}
+                    key={zone._uid ?? `faixa_${i}`}
                     onMouseEnter={() => setHoveredZoneIndex(i)}
                     onMouseLeave={() => setHoveredZoneIndex(null)}
                     style={{
@@ -1030,7 +1058,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                     <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
                       <span style={{ width: 10, height: 10, borderRadius: "50%", background: ZONE_COLORS[i % ZONE_COLORS.length], flexShrink: 0 }} />
                       <b style={{ fontSize: "0.84rem", color: "#0F172A" }}>
-                        {i === 0 ? "Até" : `De ${zones[i - 1].km} a`} {zone.km} km
+                        {anterior > 0 ? `De ${anterior} a` : "Até"} {zone.km} km
                       </b>
                       <button
                         onClick={() => removeZone(i)}
@@ -1044,8 +1072,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                       <label style={campoDaFaixa}>
                         <span style={rotuloDoCampo}>Até quantos km</span>
-                        <input type="number" min="0.5" step="0.5" value={zone.km}
+                        <input type="number" min="0.1" step="0.1" value={zone.km}
                           onChange={e => updateZone(i, "km", parseFloat(e.target.value) || 0)}
+                          onBlur={ordenarFaixas}
                           style={caixaDoCampo} />
                       </label>
                       <label style={campoDaFaixa}>
@@ -1056,7 +1085,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                       </label>
                       <label style={campoDaFaixa}>
                         <span style={rotuloDoCampo}>👤 Cliente paga</span>
-                        <input type="number" min="0" step="0.5" value={zone.fee}
+                        {/* Centavos: taxa de R$ 2,99 é comum e o passo de 0,50
+                            fazia o navegador marcar o valor como inválido. */}
+                        <input type="number" min="0" step="0.01" value={zone.fee}
                           onChange={e => updateZone(i, "fee", parseFloat(e.target.value) || 0)}
                           style={caixaDoCampo} />
                       </label>

@@ -40,7 +40,45 @@ import { prisma } from "@/lib/prisma";
  */
 
 const BASE = (process.env.OSRM_URL || "https://router.project-osrm.org").replace(/\/+$/, "");
+/**
+ * O segundo roteador, tentado só quando o primeiro falha: o do FOSSGIS (o
+ * OpenStreetMap da Alemanha), mesma API do OSRM, sem chave. Medido em
+ * 25/09/2026 na Deeds Delivery (Londrina): os dois devolvem a MESMA rota ao
+ * metro (3.195,8 m). Sem ele, uma queda do primeiro fazia a entrega sair pela
+ * linha reta — mais curta que a rua, logo mais barata do que a loja cobra.
+ */
+const RESERVA = (process.env.OSRM_URL_RESERVA || "https://routing.openstreetmap.de/routed-car").replace(/\/+$/, "");
 const PRAZO_MS = 3500;
+
+/** Uma consulta a UM roteador. `null` = este não soube responder. */
+async function perguntarAoRoteador(
+  base: string,
+  origem: { lat: number; lng: number },
+  destino: { lat: number; lng: number },
+): Promise<{ km: number; segundos: number } | null> {
+  try {
+    // `overview=false` porque não precisamos do desenho da rota, só do número —
+    // e o desenho é o que pesa na resposta.
+    const url = `${base}/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=false&alternatives=false&steps=false`;
+    const r = await fetch(url, {
+      signal: AbortSignal.timeout(PRAZO_MS),
+      headers: { "User-Agent": "FireHub/1.0 (contato@firehubfood.com.br)" },
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (d?.code !== "Ok" || !Array.isArray(d?.routes) || d.routes.length === 0) return null;
+    const metros = Number(d.routes[0]?.distance);
+    const segundos = Number(d.routes[0]?.duration);
+    if (!Number.isFinite(metros) || metros <= 0) return null;
+    const km = Math.round((metros / 1000) * 100) / 100;
+    // Rota absurda é rota errada: acima de 200 km o endereço caiu noutra
+    // cidade, e usar isso cobraria uma fortuna ou recusaria a entrega.
+    if (km > 200) return null;
+    return { km, segundos };
+  } catch {
+    return null;
+  }
+}
 
 /** ~11 metros. Preciso o bastante para a porta, grosso o bastante para reusar. */
 const casas = (n: number) => Number(n.toFixed(4));
@@ -108,25 +146,11 @@ export async function distanciaPorRotaKm(
   }
 
   try {
-    // `overview=false` porque não precisamos do desenho da rota, só do número —
-    // e o desenho é o que pesa na resposta.
-    const url = `${BASE}/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=false&alternatives=false&steps=false`;
-    const r = await fetch(url, {
-      signal: AbortSignal.timeout(PRAZO_MS),
-      headers: { "User-Agent": "FireHub/1.0 (contato@firehubfood.com.br)" },
-    });
-    if (!r.ok) return null;
-    const d = await r.json();
-    if (d?.code !== "Ok" || !Array.isArray(d?.routes) || d.routes.length === 0) return null;
-
-    const metros = Number(d.routes[0]?.distance);
-    const segundos = Number(d.routes[0]?.duration);
-    if (!Number.isFinite(metros) || metros <= 0) return null;
-
-    const km = Math.round((metros / 1000) * 100) / 100;
-    // Rota absurda é rota errada: acima de 200 km o endereço caiu noutra
-    // cidade, e usar isso cobraria uma fortuna ou recusaria a entrega.
-    if (km > 200) return null;
+    const rota =
+      (await perguntarAoRoteador(BASE, origem, destino)) ||
+      (RESERVA && RESERVA !== BASE ? await perguntarAoRoteador(RESERVA, origem, destino) : null);
+    if (!rota) return null;
+    const { km, segundos } = rota;
 
     naMemoria.set(chave, km);
     if (temTabela) {
