@@ -18,17 +18,26 @@
  * uma:
  *
  *   ATENDE       — dentro do raio / bairro cadastrado. Taxa e tempo vêm daqui.
+ *                  Com `pedeConfirmacao`, a taxa é ESTIMADA por um ponto
+ *                  aproximado e só fecha com o cliente confirmando no mapa.
  *   FORA         — fora do raio, ou bairro que a loja não cadastrou.
  *   DESCONHECIDO — o mapa não localizou o endereço (ou a loja não tem pino no
- *                  mapa). Não é "atende": é "ninguém sabe". O robô não fecha
- *                  entrega sem saber; o site cobra a faixa mais cara e marca o
- *                  pedido para a loja conferir.
+ *                  mapa, ou o ponto aproximado caiu fora). Não é "atende": é
+ *                  "ninguém sabe". Em KM/ROTA, "não sei" NUNCA vira a faixa
+ *                  mais cara: o site pede o pino, o robô pede a localização,
+ *                  o balcão avisa o atendente.
  *
  * Loja SEM área cadastrada não tem regra para aplicar: continua como sempre
  * (taxa padrão), porque bloquear venda de quem nunca configurou seria pior.
+ *
+ * A cotação inteira (mapa + rota) tem prazo: 12 s. O mapa passa pelo cache e
+ * pela fila de 1 req/s do servidor (lib/geocodificacao-servidor.ts).
+ * Teste: scripts/teste-motor-da-entrega.ts.
  */
 import type { MedidaDaDistancia, OrigemDoPonto } from "./cotacao-de-entrega";
-import { verifyStoreDeliveryAddress, haversineDistanceKm } from "@/lib/geocoding";
+import { verifyStoreDeliveryAddress, haversineDistanceKm, PRAZO_DA_VERIFICACAO_MS, type DeliveryZoneCheckResult } from "@/lib/geocoding";
+import { geocodificadorDaTaxa, geocodificadorDaTaxaPara } from "@/lib/geocodificacao-servidor";
+import { coordenadaGrosseira } from "@/lib/coordenadas-do-parceiro";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
 import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
@@ -92,7 +101,11 @@ export type VeredictoDeEntrega = {
   bairro?: string;
   /** Como o mapa entendeu o endereço (modo KM). */
   enderecoNoMapa?: string;
-  /** true quando a distância veio do CENTRO do bairro, não do endereço exato. */
+  /**
+   * true quando o ponto que mediu NÃO é o endereço exato: centro do bairro,
+   * outra rua perto, rua homônima, ponto arrastado até a rua. Vai na nota do
+   * pedido como "ponto aproximado".
+   */
   aproximado?: boolean;
   /** O nome da área de risco que recusou, quando foi esse o motivo. */
   areaDeRisco?: string;
@@ -119,6 +132,21 @@ export type VeredictoDeEntrega = {
    * O site pede o pino; o robô pede a localização; o balcão avisa o operador.
    */
   pedeConfirmacao?: boolean;
+  /** Os porquês do `pedeConfirmacao`, em português (log e nota do pedido). */
+  motivosDaConfirmacao?: string[];
+  /**
+   * DESCONHECIDO porque o mapa NÃO RESPONDEU — acabou o prazo, fila cheia,
+   * 429/5xx, rede ("indisponivel") ou quem pergunta passou do teto de buscas
+   * ("limite"). Sem isto, "não deu para perguntar" saía como "endereço não
+   * localizado" na tela e na nota do pedido.
+   */
+  falhaDoMapa?: "prazo" | "indisponivel" | "limite";
+  /**
+   * De onde a distância foi medida quando a loja NÃO tem pino (o endereço dela
+   * achado no mapa). É onde o mapa de confirmação do checkout abre quando não
+   * há palpite: sem pino da loja, o cliente ainda pode marcar a casa.
+   */
+  pontoDaLoja?: { lat: number; lng: number };
 };
 
 export function normalizarTexto(texto: unknown): string {
@@ -270,11 +298,41 @@ export function bairroCadastrado(texto: unknown, lista: BairroAtendido[] | LojaP
 const DISTANCIA_ABSURDA_KM = 60;
 
 /**
+ * A coordenada que o CLIENTE mandou (GPS, pino, localização do WhatsApp), se
+ * serve. Fora do globo, (0,0) e ponto de enchimento (-23,-43: graus inteiros,
+ * como o 99Food manda quando não sabe) não servem — e aí vale o texto.
+ */
+function coordenadaDoCliente(c: { lat: number; lng: number } | null | undefined): { lat: number; lng: number } | null {
+  if (!c) return null;
+  const lat = Number(c.lat);
+  const lng = Number(c.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return null;
+  if (coordenadaGrosseira(lat, lng)) return null;
+  return { lat, lng };
+}
+
+const kmBr = (n: number) => String(Math.round(n * 100) / 100).replace(".", ",");
+
+/** O mapa não respondeu (≠ "o mapa não conhece o endereço"). */
+function falhaDoCheck(check: DeliveryZoneCheckResult | null): VeredictoDeEntrega["falhaDoMapa"] {
+  const m = check?.motivoDaFalha;
+  return m === "prazo" || m === "indisponivel" || m === "limite" ? m : undefined;
+}
+
+/**
  * A loja entrega neste endereço?
  *
  * `bairro` é o campo separado quando o canal tem um (site em modo bairro);
  * senão o bairro é procurado dentro do endereço. `coords` é o GPS do cliente,
- * quando ele usou "minha localização" — vale mais que o texto.
+ * quando ele usou "minha localização" ou confirmou o pino — vale mais que o
+ * texto, e com ele NUNCA se pede confirmação (`origemDasCoords` diz qual dos
+ * dois foi, para o pedido registrar).
+ *
+ * `opcoes.prazoMs`: o tempo total da avaliação (mapa + rota). Padrão 12 s.
+ * `opcoes.donos`: quem pergunta, no cardápio público ("ip:…", "loja:…") — as
+ * buscas que vão ao mapa contam no teto de cada um (lib/geocodificacao-
+ * servidor.ts). Robô, pedido e balcão não passam: só a fila vale para eles.
  */
 export async function avaliarEntrega(
   loja: LojaParaEntrega,
@@ -283,10 +341,29 @@ export async function avaliarEntrega(
     bairro?: string | null;
     coords?: { lat: number; lng: number } | null;
     partes?: { street?: string; number?: string; neighborhood?: string; city?: string };
+    origemDasCoords?: "pino" | "gps";
   },
+  opcoes?: { prazoMs?: number; donos?: string[] },
 ): Promise<VeredictoDeEntrega> {
   const modo = modoDaArea(loja);
   const endereco = String(pedido.endereco || "").trim();
+  const prazo = Date.now() + (opcoes?.prazoMs ?? PRAZO_DA_VERIFICACAO_MS);
+  const coords = coordenadaDoCliente(pedido.coords);
+  const origemDasCoords: "pino" | "gps" = pedido.origemDasCoords === "pino" ? "pino" : "gps";
+  // O bairro que veio em campo separado também ancora a busca no mapa (níveis
+  // de rua + bairro e o centro do bairro): sem ele, o robô nunca tinha o
+  // centro do bairro como reserva.
+  const partes = pedido.partes || pedido.bairro
+    ? {
+        ...(pedido.partes || {}),
+        neighborhood: pedido.partes?.neighborhood?.trim() || pedido.bairro?.trim() || undefined,
+      }
+    : undefined;
+  const opcoesDoMapa = {
+    geocodificador: opcoes?.donos?.length ? geocodificadorDaTaxaPara(opcoes.donos) : geocodificadorDaTaxa,
+    prazo,
+    origemDasCoords,
+  };
 
   // ── ÁREA DE RISCO VENCE TUDO ─────────────────────────────────────────
   //
@@ -298,7 +375,7 @@ export async function avaliarEntrega(
   //
   // Sem coordenada não se recusa ninguém: endereço que o mapa não achou não
   // pode virar pedido negado.
-  const riscoDireto = areaDeRiscoDoPonto(pedido.coords ?? null, loja.deliveryConfig);
+  const riscoDireto = areaDeRiscoDoPonto(coords, loja.deliveryConfig);
   if (riscoDireto) {
     return {
       modo, resultado: "FORA", taxa: null, tempoMin: null, areaDeRisco: riscoDireto,
@@ -332,12 +409,13 @@ export async function avaliarEntrega(
         motivo: "a loja usa área desenhada no mapa e não há nenhuma área válida cadastrada",
       };
     }
-    const ponto = pedido.coords && Number.isFinite(pedido.coords.lat) && Number.isFinite(pedido.coords.lng)
-      ? pedido.coords
-      : null;
-
-    let pontoFinal = ponto;
+    let pontoFinal: { lat: number; lng: number; origem: OrigemDoPonto } | null =
+      coords ? { ...coords, origem: origemDasCoords } : null;
+    /** O palpite do mapa que não serve para decidir — é onde o pino abre. */
+    let pontoAproximado: { lat: number; lng: number; origem: OrigemDoPonto } | undefined;
+    let motivosDaConfirmacao: string[] | undefined;
     let enderecoNoMapa: string | undefined;
+    let falhaDoMapa: VeredictoDeEntrega["falhaDoMapa"];
     if (!pontoFinal) {
       // Sem coordenada na mão, tenta o mapa uma vez — o mesmo caminho do modo
       // KM. Se o mapa também não souber, para aqui.
@@ -347,7 +425,7 @@ export async function avaliarEntrega(
       try {
         const check = await verifyStoreDeliveryAddress(
           loja.storeAddress ?? null, loja.storeLatLng as any, loja.city ?? null,
-          [], loja.deliveryZoneType ?? null, endereco, null, loja.deliveryConfig, pedido.partes,
+          [], loja.deliveryZoneType ?? null, endereco, null, loja.deliveryConfig, partes, opcoesDoMapa,
         );
         // PRECISÃO DE BAIRRO NÃO SERVE PARA GEOMETRIA.
         //
@@ -356,9 +434,17 @@ export async function avaliarEntrega(
         // versa). No raio isso vira uma aproximação tolerável; numa área
         // desenhada é decidir a fronteira com o ponto errado. Aqui a resposta
         // honesta é "não sei" — e quem resolve é o cliente, confirmando o pino.
-        if (check?.addressFound && check.clienteLat != null && check.clienteLng != null && check.precisao !== "bairro") {
-          pontoFinal = { lat: check.clienteLat, lng: check.clienteLng };
-          enderecoNoMapa = check.matchedAddress;
+        // Vale o mesmo para rua homônima, outro município e ponto longe demais.
+        falhaDoMapa = falhaDoCheck(check);
+        if (check?.addressFound && check.clienteLat != null && check.clienteLng != null) {
+          const achado = { lat: check.clienteLat, lng: check.clienteLng, origem: check.origemDoPonto ?? ("mapa" as OrigemDoPonto) };
+          if (check.precisao !== "bairro" && !check.pedeConfirmacao) {
+            pontoFinal = achado;
+            enderecoNoMapa = check.matchedAddress;
+          } else {
+            pontoAproximado = achado;
+            motivosDaConfirmacao = check.motivosDaConfirmacao;
+          }
         }
       } catch {
         // Mapa fora do ar: cai no DESCONHECIDO logo abaixo.
@@ -368,22 +454,27 @@ export async function avaliarEntrega(
     if (!pontoFinal) {
       return {
         modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null,
-        motivo: "endereço sem ponto no mapa — a área desenhada só decide com a localização confirmada",
+        ...(pontoAproximado ? { ponto: pontoAproximado, pedeConfirmacao: true, aproximado: true, motivosDaConfirmacao } : {}),
+        ...(falhaDoMapa ? { falhaDoMapa } : {}),
+        motivo: falhaDoMapa
+          ? "o mapa não respondeu agora — a área desenhada só decide com a localização confirmada"
+          : "endereço sem ponto no mapa — a área desenhada só decide com a localização confirmada",
       };
     }
+    const ponto = pontoFinal;
 
-    const risco = areaDeRiscoDoPonto(pontoFinal, loja.deliveryConfig);
+    const risco = areaDeRiscoDoPonto(ponto, loja.deliveryConfig);
     if (risco) {
       return {
-        modo, resultado: "FORA", taxa: null, tempoMin: null, areaDeRisco: risco, enderecoNoMapa,
+        modo, resultado: "FORA", taxa: null, tempoMin: null, areaDeRisco: risco, enderecoNoMapa, ponto,
         motivo: `endereço dentro da área que a loja não atende (${risco})`,
       };
     }
 
-    const dentro = areas.filter((a) => dentroDoPoligono(pontoFinal!, a.pontos));
+    const dentro = areas.filter((a) => dentroDoPoligono(ponto, a.pontos));
     if (dentro.length === 0) {
       return {
-        modo, resultado: "FORA", taxa: null, tempoMin: null, enderecoNoMapa,
+        modo, resultado: "FORA", taxa: null, tempoMin: null, enderecoNoMapa, ponto,
         motivo: "endereço fora das áreas de entrega desenhadas pela loja",
       };
     }
@@ -393,12 +484,13 @@ export async function avaliarEntrega(
     // o motoboy por distância fecha o mês com zero em toda entrega.
     const pontoDaLoja = lerPontoDaLoja(loja.storeLatLng as any);
     const distanciaKm = pontoDaLoja
-      ? haversineDistanceKm(pontoDaLoja.lat, pontoDaLoja.lng, pontoFinal.lat, pontoFinal.lng)
+      ? haversineDistanceKm(pontoDaLoja.lat, pontoDaLoja.lng, ponto.lat, ponto.lng)
       : undefined;
     return {
       modo, resultado: "ATENDE", taxa: escolhida.fee, tempoMin: escolhida.time,
       bairro: escolhida.nome, enderecoNoMapa, distanciaKm,
       taxaDoEntregador: escolhida.repasse ?? null,
+      ponto, medida: "linha-reta",
       motivo: `dentro da área desenhada "${escolhida.nome}"`,
     };
   }
@@ -427,8 +519,7 @@ export async function avaliarEntrega(
     return { modo, resultado: "FORA", taxa: null, tempoMin: null, motivo: `bairro não cadastrado (${pedido.bairro || pedido.partes?.neighborhood || endereco})` };
   }
 
-  // modo KM
-  const coords = pedido.coords && Number.isFinite(pedido.coords.lat) && Number.isFinite(pedido.coords.lng) ? pedido.coords : null;
+  // ── modo KM (raio em linha reta, ou ROTA pelas ruas) ─────────────────────
   if (!coords && endereco.length < 4) {
     return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: raioMaximoKm(loja) ?? undefined, motivo: "endereço vazio" };
   }
@@ -444,7 +535,8 @@ export async function avaliarEntrega(
       endereco,
       coords,
       loja.deliveryConfig,
-      pedido.partes,
+      partes,
+      opcoesDoMapa,
     );
   } catch (e: any) {
     return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: raioMaximoKm(loja) ?? undefined, motivo: `mapa indisponível: ${e?.message || e}` };
@@ -453,52 +545,109 @@ export async function avaliarEntrega(
   if (!check) {
     return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: raioMaximoKm(loja) ?? undefined, motivo: "loja sem localização no mapa (storeLatLng)" };
   }
-  if (!check.addressFound || check.distanceKm == null) {
-    return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: check.maxRadiusKm ?? raioMaximoKm(loja) ?? undefined, motivo: check.reason || "endereço não localizado no mapa" };
+  // A loja sem pino mede do endereço dela achado no mapa: sem pino não há
+  // "a loja" no mapa do checkout, e é este ponto que o abre.
+  const lojaTemPino = lerPontoDaLoja(loja.storeLatLng as any) != null;
+  const pontoDaLoja = !lojaTemPino && check.centroDaLoja ? { pontoDaLoja: check.centroDaLoja } : {};
+  if (!check.addressFound || check.distanceKm == null || check.clienteLat == null || check.clienteLng == null) {
+    const falhaDoMapa = falhaDoCheck(check);
+    return {
+      modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: check.maxRadiusKm ?? raioMaximoKm(loja) ?? undefined,
+      ...pontoDaLoja,
+      ...(falhaDoMapa ? { falhaDoMapa } : {}),
+      motivo: check.reason || "endereço não localizado no mapa",
+    };
   }
+  const ponto = {
+    lat: check.clienteLat,
+    lng: check.clienteLng,
+    origem: check.origemDoPonto ?? (coords ? origemDasCoords : ("mapa" as OrigemDoPonto)),
+  };
+  const d = check.distanceKm;
+
   // Segunda chance para a área de risco: no modo KM o endereço só ganha
   // coordenada AQUI, depois do mapa responder. Sem esta checagem, o pedido
   // digitado sem lat/lng (site, robô, balcão) passaria pela exclusão.
-  if (!coords && check.clienteLat != null && check.clienteLng != null) {
-    const risco = areaDeRiscoDoPonto({ lat: check.clienteLat, lng: check.clienteLng }, loja.deliveryConfig);
+  if (!coords) {
+    const risco = areaDeRiscoDoPonto(ponto, loja.deliveryConfig);
     if (risco) {
       return {
         modo, resultado: "FORA", taxa: null, tempoMin: null, areaDeRisco: risco,
-        distanciaKm: check.distanceKm, enderecoNoMapa: check.matchedAddress,
+        distanciaKm: d, enderecoNoMapa: check.matchedAddress, ponto, medida: check.medida,
         motivo: `endereço dentro da área que a loja não atende (${risco})`,
       };
     }
   }
 
-  if (check.distanceKm > DISTANCIA_ABSURDA_KM) {
+  // Ponto que veio do TEXTO e não merece confiança (centro do bairro, rua
+  // homônima, outro município, ponto arrastado, longe demais): R3. Com a
+  // coordenada do cliente nunca — ele já disse onde mora.
+  const pede = !coords && check.pedeConfirmacao === true;
+  const motivos = pede ? check.motivosDaConfirmacao ?? [] : [];
+
+  if (!coords && d > DISTANCIA_ABSURDA_KM) {
     // Rua Juriti "a 552 km" em 25/08: o pedido foi entregue normalmente — o
     // mapa achou uma rua homônima em outro estado. Isso não é "fora", é
     // "não sei".
-    return { modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: check.maxRadiusKm, distanciaKm: check.distanceKm, enderecoNoMapa: check.matchedAddress, motivo: `mapa caiu longe demais (${check.distanceKm} km) — provável homônimo` };
-  }
-
-  const base = {
-    modo,
-    distanciaKm: check.distanceKm,
-    raioMaxKm: check.maxRadiusKm,
-    enderecoNoMapa: check.matchedAddress,
-    aproximado: check.precisao === "bairro",
-  };
-  if (check.isWithinRadius) {
     return {
-      ...base, resultado: "ATENDE", taxa: check.deliveryFee ?? null, tempoMin: check.estimatedTimeMin ?? null,
-      taxaDoEntregador: repasseDaFaixaKm(zonas(loja), check.distanceKm),
-      motivo: `${check.distanceKm} km ≤ ${check.maxRadiusKm} km${check.precisao === "bairro" ? " (pelo centro do bairro)" : ""}`,
+      modo, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, raioMaxKm: check.maxRadiusKm, distanciaKm: d,
+      enderecoNoMapa: check.matchedAddress, ponto, medida: check.medida, pedeConfirmacao: true, aproximado: true,
+      motivosDaConfirmacao: motivos.length ? motivos : [`o ponto caiu a ${kmBr(d)} km da loja`],
+      ...pontoDaLoja,
+      motivo: `mapa caiu longe demais (${d} km) — provável homônimo`,
     };
   }
-  return { ...base, resultado: "FORA", taxa: null, tempoMin: null, motivo: `${check.distanceKm} km > raio de ${check.maxRadiusKm} km` };
+
+  const comoMediu =
+    check.medida === "rota" ? "pela rua"
+      : check.medida === "estimada" ? `ESTIMADOS (linha reta × ${check.fatorDeDesvio ?? "?"}: ${check.motivoDaEstimativa || "roteador indisponível"})`
+        : "em linha reta";
+  const base = {
+    modo,
+    distanciaKm: d,
+    raioMaxKm: check.maxRadiusKm,
+    enderecoNoMapa: check.matchedAddress,
+    aproximado: pede || check.precisao === "bairro",
+    ponto,
+    medida: check.medida,
+    ...(pede ? { pedeConfirmacao: true, motivosDaConfirmacao: motivos } : { pedeConfirmacao: false }),
+  };
+  const doPonto = pede ? ` — ponto aproximado: ${motivos.join("; ")}` : "";
+
+  if (check.isWithinRadius) {
+    const faixaKm = check.faixaKm;
+    return {
+      ...base, resultado: "ATENDE", taxa: check.deliveryFee ?? null, tempoMin: check.estimatedTimeMin ?? null,
+      ...(faixaKm != null ? { faixaKm } : {}),
+      // O repasse da MESMA faixa que decidiu a taxa: procurar pela distância
+      // de novo poderia cair noutra faixa na folga dos 50 m.
+      taxaDoEntregador: repasseDaFaixaKm(zonas(loja), faixaKm ?? d),
+      motivo: `${d} km ${comoMediu} ≤ ${check.maxRadiusKm} km${faixaKm != null ? ` (faixa até ${faixaKm} km)` : ""}${doPonto}`,
+    };
+  }
+  if (pede) {
+    // O ponto APROXIMADO caiu fora — mas a casa pode estar dentro (o centro do
+    // bairro a 5,2 km, a casa a 4,6 km). Recusar seria decidir a fronteira com
+    // o ponto errado: é "não sei" até o cliente confirmar no mapa — que abre
+    // no palpite (`ponto`), com ou sem o pino da loja. Nunca a faixa mais cara.
+    return {
+      ...base, resultado: "DESCONHECIDO", taxa: null, tempoMin: null,
+      motivo: `ponto aproximado a ${d} km ${comoMediu}, além do raio de ${check.maxRadiusKm} km${doPonto}`,
+    };
+  }
+  return { ...base, resultado: "FORA", taxa: null, tempoMin: null, motivo: `${d} km ${comoMediu} > raio de ${check.maxRadiusKm} km${doPonto}` };
 }
 
 /** Frase curta, para nota de pedido e log. */
 export function descreverVeredicto(v: VeredictoDeEntrega): string {
   if (v.resultado === "ATENDE") {
     if (v.modo === "BAIRRO") return `bairro ${v.bairro}, taxa R$ ${(v.taxa ?? 0).toFixed(2).replace(".", ",")}`;
-    if (v.modo === "KM") return `${v.distanciaKm} km${v.aproximado ? " (aprox.)" : ""} de ${v.raioMaxKm} km, taxa R$ ${(v.taxa ?? 0).toFixed(2).replace(".", ",")}`;
+    if (v.modo === "KM") {
+      // "estimada" e "ponto aproximado" são o que a loja precisa conferir: vão
+      // escritos por extenso na nota do pedido.
+      const medida = v.medida === "rota" ? " pela rua" : v.medida === "estimada" ? " (distância estimada)" : "";
+      return `${v.distanciaKm} km${medida}${v.aproximado ? " (ponto aproximado)" : ""} de ${v.raioMaxKm} km, taxa R$ ${(v.taxa ?? 0).toFixed(2).replace(".", ",")}`;
+    }
     return "sem área cadastrada";
   }
   if (v.resultado === "FORA") {
@@ -507,5 +656,8 @@ export function descreverVeredicto(v: VeredictoDeEntrega): string {
     if (v.areaDeRisco) return `área não atendida pela loja (${v.areaDeRisco})`;
     return v.modo === "BAIRRO" ? "bairro não atendido" : `${v.distanciaKm} km, fora do raio de ${v.raioMaxKm} km`;
   }
+  // "Não deu para perguntar" não é "o mapa não conhece": a loja confere
+  // sabendo que o endereço pode estar certo.
+  if (v.falhaDoMapa) return `não deu para consultar o mapa agora (${v.motivo})`;
   return `endereço não localizado no mapa (${v.motivo})`;
 }

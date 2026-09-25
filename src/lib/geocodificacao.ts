@@ -505,6 +505,15 @@ export type OpcoesGeocodificador = {
   estado: string | null;
   /** Coordenada da loja: âncora do raio, do viés do Photon e do último recurso. */
   centroDaLoja: Ponto;
+  /**
+   * Quem dá a vez de CADA chamada ao mapa (Nominatim e Photon). No servidor é
+   * a fila única do processo (lib/geocodificacao-servidor.ts), com um relógio
+   * só para a roteirização, o cron e a cotação de frete: com o relógio próprio
+   * daqui, a busca da taxa e a da roteirização saíam coladas (1 ms entre as
+   * duas) e furavam o 1 req/s do IP do servidor. Sem isto (navegador), vale o
+   * relógio local de 1,1 s.
+   */
+  vez?: <T>(chamada: () => Promise<T>) => Promise<T>;
 };
 
 /**
@@ -529,12 +538,18 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
   // Photon responde pela rua E pelo bairro.
   let nominatimEmTreguaAte = 0;
 
+  /** A chamada na vez dela: pela fila do servidor, quando há uma, ou pelo relógio local. */
+  const naVez = async <T,>(chamada: () => Promise<T>): Promise<T> => {
+    if (opts.vez) return opts.vez(chamada);
+    const espera = ultimaChamadaNominatim + 1100 - Date.now();
+    if (espera > 0) await new Promise((r) => setTimeout(r, espera));
+    ultimaChamadaNominatim = Date.now();
+    return chamada();
+  };
+
   const fetchNominatim = async (query: string) => {
     if (Date.now() < nominatimEmTreguaAte) return null;
     try {
-      const espera = ultimaChamadaNominatim + 1100 - Date.now();
-      if (espera > 0) await new Promise((r) => setTimeout(r, espera));
-      ultimaChamadaNominatim = Date.now();
       // Duas formas de perguntar: texto solto (q=) ou campos estruturados
       // (street=/city=/…, marcados com __params=1). A estruturada acerta
       // rua onde o texto solto falha, porque o Nominatim não precisa
@@ -543,10 +558,10 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
       const url = ehEstruturada
         ? `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&${query.replace("&__params=1", "")}`
         : `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1`;
-      const res = await fetch(
+      const res = await naVez(() => fetch(
         url,
         { headers: { "User-Agent": "FireHub-Roteirizacao/2.0" }, signal: AbortSignal.timeout(5000) }
-      );
+      ));
       if (!res.ok) {
         // 429 é o Nominatim limitando o IP — acontece de verdade (26/08/2026
         // numa loja; na certificação de 11/09 depois de ~170 buscas). Antes
@@ -586,13 +601,10 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
   // perto da loja.
   const fetchPhoton = async (query: string) => {
     try {
-      const espera = ultimaChamadaNominatim + 1100 - Date.now();
-      if (espera > 0) await new Promise((r) => setTimeout(r, espera));
-      ultimaChamadaNominatim = Date.now();
-      const res = await fetch(
+      const res = await naVez(() => fetch(
         `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=default&lat=${defaultCenter.lat}&lon=${defaultCenter.lng}`,
         { signal: AbortSignal.timeout(5000) }
-      );
+      ));
       if (res.ok) {
         const data = await res.json();
         const f = data?.features?.[0];
@@ -648,14 +660,11 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
    */
   const fetchPhotonBairro = async (bairro: string) => {
     try {
-      const espera = ultimaChamadaNominatim + 1100 - Date.now();
-      if (espera > 0) await new Promise((r) => setTimeout(r, espera));
-      ultimaChamadaNominatim = Date.now();
       const url =
         `https://photon.komoot.io/api/?q=${encodeURIComponent(`${bairro}, ${storeCity}`)}&limit=5&lang=default` +
         `&lat=${defaultCenter.lat}&lon=${defaultCenter.lng}` +
         `&osm_tag=place:suburb&osm_tag=place:neighbourhood&osm_tag=place:quarter&osm_tag=place:city_district&osm_tag=place:village&osm_tag=boundary:administrative`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const res = await naVez(() => fetch(url, { signal: AbortSignal.timeout(5000) }));
       if (!res.ok) return null;
       const data = await res.json();
       const alvo = normalizaBairro(bairro);

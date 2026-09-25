@@ -37,6 +37,12 @@ import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
 import { isStoreOpen } from "@/lib/store-hours";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
+import {
+  assinaturaDaConsulta, carimboDoPonto, comoAbrirOMapa, consultaDaCotacao, criarSequenciadorDeCotacoes, entregaNoPedidoDoSite,
+  gpsEhPreciso, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco, pontoValido, temRuaOuBairro,
+  type CotacaoNaTela, type EnderecoDigitado, type Ponto, type PontoDoCliente,
+} from "@/lib/entrega-no-checkout";
+import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/TrilhaDoCliente";
@@ -158,13 +164,6 @@ type StoreRating = {
   count: number;
   reviews?: { rating: number; comment: string; customerName: string; createdAt: string }[];
 };
-
-function pontoDaLojaNaVitrine(bruto: unknown): { lat: number; lng: number } | null {
-  const v: any = typeof bruto === "string" ? (() => { try { return JSON.parse(bruto); } catch { return null; } })() : bruto;
-  const lat = Number(v?.lat);
-  const lng = Number(v?.lng);
-  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
-}
 
 export default function CustomerStorePage({
   franchisee,
@@ -328,36 +327,89 @@ export default function CustomerStorePage({
   const [deliveryCalculating, setDeliveryCalculating] = useState(false);
   const [deliveryMessage, setDeliveryMessage] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
-  // Coordenadas do "Minha localização": vão no pedido para o servidor conferir
-  // a área pelo GPS, não pelo texto (que o mapa às vezes não acha).
-  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   /**
-   * O mapa não achou o endereço e a loja decide por GEOMETRIA (área desenhada
-   * ou raio): sem ponto não dá para dizer se entrega. Em vez de aceitar e
-   * descobrir na hora de despachar — foi assim que um pedido de 10,8 km entrou
-   * numa loja de raio 4 km —, o cliente confirma no mapa onde fica a casa
-   * dele. Um toque, sem pedir permissão de GPS a ninguém.
+   * O ponto que o PRÓPRIO cliente deu — o "Minha localização" (GPS) ou o pino
+   * confirmado no mapa — e o CARIMBO: para qual endereço ele foi dado.
+   *
+   * Vai no pedido para o servidor decidir a área e a faixa pelo ponto, não
+   * pelo texto (que o mapa às vezes não acha, ou acha no centro do bairro).
+   *
+   * O carimbo existe porque o cliente confirmava o pino na casa dele, trocava
+   * a rua para a do trabalho e finalizava: o pedido saía com o endereço NOVO
+   * validado pela coordenada VELHA — a área aprovava um lugar e o motoboy ia
+   * para outro. O ponto só viaja enquanto rua, bairro e o número que o
+   * cliente deu forem os do carimbo, na grafia que for (pontoValeParaEndereco,
+   * perguntado a cada leitura — o ponto não é jogado fora no meio de uma
+   * redigitação). E o carimbo é gravado DEPOIS de o GPS preencher rua e bairro
+   * — era antes, e o próprio preenchimento derrubava o ponto: só 2 de 168
+   * pedidos do site em lojas por km tinham coordenada.
+   *
+   * Estado para a tela; a ref espelha para os callbacks que duram (GPS, timer).
+   */
+  const [pontoDoCliente, setPontoCarimbado] = useState<{ ponto: PontoDoCliente; carimbo: EnderecoDigitado } | null>(null);
+  const pontoDoClienteRef = useRef<{ ponto: PontoDoCliente; carimbo: EnderecoDigitado } | null>(null);
+  /**
+   * O mapa não achou o endereço e a loja decide por GEOMETRIA (área desenhada,
+   * raio ou km pela rua): sem ponto não dá para dizer se entrega nem quanto
+   * custa. Em vez de aceitar e descobrir na hora de despachar — foi assim que
+   * um pedido de 10,8 km entrou numa loja de raio 4 km — ou de cobrar a faixa
+   * mais cara de quem mora a 300 m (Divinos Burger, 25/09/2026) —, o cliente
+   * confirma no mapa onde fica a casa dele. Um toque, sem pedir permissão de
+   * GPS a ninguém.
    */
   const [precisaConfirmarNoMapa, setPrecisaConfirmarNoMapa] = useState(false);
   /**
-   * A loja desenhou a área no mapa? Então o ponto é TUDO: o mapa acha o
-   * endereço errado com a mesma facilidade com que não acha (o caso real:
-   * "Boa Vista, Nova Iguaçu" devolve uma rua homônima a 2 km da loja). Com
-   * área desenhada o cliente sempre pode conferir o pino, mesmo quando a
-   * taxa já apareceu.
+   * O mapa achou só um ponto APROXIMADO (centro do bairro, rua de mesmo nome
+   * em outro trecho): a taxa na tela é estimada, e o pedido não fecha sem o
+   * pino do cliente. É o que decide a faixa quando elas têm 0,5 km.
    */
-  const [lojaDesenhouArea, setLojaDesenhouArea] = useState(false);
+  const [pedeConfirmacao, setPedeConfirmacao] = useState(false);
+  /** Onde o mapa abre: o palpite do servidor para este endereço. */
+  const [pontoAproximado, setPontoAproximado] = useState<Ponto | null>(null);
   /**
-   * PARA QUAL ENDEREÇO o ponto confirmado vale.
-   *
-   * O cliente confirma o pino na casa dele, troca a rua e o número para o
-   * trabalho e finaliza: o pedido saía com o endereço NOVO validado pela
-   * coordenada VELHA — a área aprovava um lugar e o motoboy ia para outro. O
-   * ponto só viaja no pedido quando o endereço escrito ainda é o mesmo de
-   * quando ele foi confirmado.
+   * O cliente pode conferir o pino mesmo com a taxa na tela? Na área
+   * desenhada e na entrega por km, sim: o mapa acha o endereço errado com a
+   * mesma facilidade com que não acha (o caso real: "Boa Vista, Nova Iguaçu"
+   * devolve uma rua homônima a 2 km da loja).
    */
-  const enderecoDoPonto = useRef<string>("");
+  const [podeConferirNoMapa, setPodeConferirNoMapa] = useState(false);
+  /** Prazo da faixa ("chega em até ~30 min") e como a distância foi medida. */
+  const [tempoDaEntregaMin, setTempoDaEntregaMin] = useState<number | null>(null);
+  const [medidaDaEntrega, setMedidaDaEntrega] = useState<CotacaoNaTela["medida"]>(null);
+  /** A consulta ao servidor falhou (rede, 5xx, limite): não é "fora da área". */
+  const [erroNaCotacao, setErroNaCotacao] = useState(false);
+  /** "Não localizado, a loja confirma" (loja sem pino): taxa provisória, painel em âmbar. */
+  const [naoLocalizado, setNaoLocalizado] = useState(false);
+  /**
+   * A COTAÇÃO ASSINADA que o servidor devolveu, e para QUAL consulta
+   * (assinaturaDaConsulta: rua, número, bairro e ponto). Ela vai no pedido, e
+   * o pedido cobra exatamente o que o cliente viu, sem geocodificar de novo —
+   * a segunda consulta ao mapa, falhando, era o que transformava R$ 5 em R$ 12
+   * no pedido #2 da Divinos. Só vai se a assinatura ainda for a do endereço na
+   * tela.
+   */
+  const [cotacaoDaEntrega, setCotacaoDaEntrega] = useState<string | null>(null);
+  const [assinaturaCotada, setAssinaturaCotada] = useState<string | null>(null);
+  const cotadaEm = useRef<number | null>(null);
+  /** Só a última cotação pedida pinta a tela (lib/entrega-no-checkout.ts). */
+  const [cotacoes] = useState(criarSequenciadorDeCotacoes);
+  /** A última consulta PEDIDA — a mesma de novo, em voo ou respondida, não repete. */
+  const ultimaConsultaPedida = useRef<string>("");
+  /**
+   * Um ponto que NÃO decide a taxa mas diz onde o mapa abre: o GPS aproximado
+   * que o cliente fechou sem acertar, ou o GPS/pino cujo nome de rua o mapa
+   * não conseguiu ler (sem rua nem bairro, o ponto não vale para endereço
+   * nenhum — lib/entrega-no-checkout.ts, pontoValeParaEndereco).
+   */
+  const [pontoDescartado, setPontoDescartado] = useState<Ponto | null>(null);
   const [mapaDeConfirmacaoAberto, setMapaDeConfirmacaoAberto] = useState(false);
+  /**
+   * O "Minha localização" veio APROXIMADO (precisão pior que 150 m — celular
+   * com "Localização precisa" desligada, desktop por IP): o mapa abre nele e
+   * o cliente TOCA onde mora. Sem isto, o centro de um círculo de 3 km virava
+   * o "GPS" do cliente, decidia a faixa e ia para o motoboy.
+   */
+  const [gpsAproximado, setGpsAproximado] = useState<Ponto | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [showVipTooltip, setShowVipTooltip] = useState(false);
 
@@ -1291,9 +1343,198 @@ export default function CustomerStorePage({
     );
   }, [availableNeighborhoods, neighborhoodSearch]);
 
-  /** Rua+número+bairro normalizados: é o que identifica "o mesmo endereço". */
-  const chaveDoEndereco = () =>
-    `${customerStreet}|${customerNumber}|${customerNeighborhood}`.toLowerCase().replace(/\s+/g, " ").trim();
+  // ── A COTAÇÃO DA ENTREGA ────────────────────────────────────────────────
+  //
+  // A regra é do servidor (/api/delivery-fee → lib/area-de-entrega.ts); o
+  // estado da tela é lib/entrega-no-checkout.ts, testado sem navegador
+  // (scripts/teste-entrega-no-checkout.ts). Aqui só se liga uma coisa à outra.
+
+  /** O endereço na tela AGORA — para callbacks que duram (GPS, timer), que veriam o de quando nasceram. */
+  const enderecoNaTela = useRef<EnderecoDigitado>({ street: "", number: "", neighborhood: "" });
+  enderecoNaTela.current = { street: customerStreet, number: customerNumber, neighborhood: customerNeighborhood };
+
+  // A MESMA leitura do servidor (lib/ponto-da-loja.ts): {lat,lng},
+  // {latitude,longitude}, "lat,lng" em texto ou par. Lendo só {lat,lng}, a tela
+  // achava que a loja de cadastro antigo não tinha pino enquanto o servidor
+  // pedia "confirme no mapa" — e o mapa não abria para ninguém.
+  const pontoDaLoja = useMemo(() => lerPontoDaLoja((franchisee as any).storeLatLng), [franchisee]);
+
+  const definirPontoDoCliente = (ponto: PontoDoCliente | null, carimbo: EnderecoDigitado = enderecoNaTela.current) => {
+    const valor = ponto ? { ponto, carimbo: { ...carimbo } } : null;
+    pontoDoClienteRef.current = valor;
+    setPontoCarimbado(valor);
+  };
+
+  /** O ponto do cliente, se ainda for DESTE endereço (lido pela ref: vale dentro de callbacks). */
+  const pontoValendo = (endereco: EnderecoDigitado = enderecoNaTela.current): PontoDoCliente | null => {
+    const atual = pontoDoClienteRef.current;
+    return atual && pontoValeParaEndereco(atual.carimbo, endereco) ? atual.ponto : null;
+  };
+
+  const zonasDaLoja = (franchisee.deliveryZones as any[]) || [];
+  /** Só quando a resposta não traz `fee` — resposta antiga ou loja sem área. */
+  const taxaPadraoDaLoja = Number(delivConfig.deliveryFee || delivConfig.defaultFee || (Array.isArray(zonasDaLoja) && zonasDaLoja[0]?.fee) || 5);
+
+  const aplicarCotacao = (c: CotacaoNaTela, assinatura: string) => {
+    setErroNaCotacao(false);
+    setNaoLocalizado(c.naoLocalizado && c.disponivel);
+    setPrecisaConfirmarNoMapa(c.precisaConfirmarNoMapa);
+    setPedeConfirmacao(c.pedeConfirmacao);
+    setPodeConferirNoMapa(c.podeConferirNoMapa);
+    setPontoAproximado(c.pontoAproximado);
+    setTempoDaEntregaMin(c.disponivel ? c.tempoMin : null);
+    setMedidaDaEntrega(c.disponivel ? c.medida : null);
+    setDeliveryDistanceKm(c.distanciaKm);
+    setDeliveryMaxRadiusKm(c.raioMaxKm);
+    setDeliveryMessage(c.mensagem);
+    setCotacaoDaEntrega(c.cotacao);
+    setAssinaturaCotada(assinatura);
+    cotadaEm.current = Date.now();
+    setDeliveryFee(c.disponivel ? (c.taxa ?? 0) : 0);
+    setDeliveryFeeCalculated(true);
+    setDeliveryAvailable(c.disponivel);
+  };
+
+  /** Esquece a cotação da tela (retirada escolhida, endereço incompleto). A que está em voo não pinta mais nada. */
+  const esquecerCotacaoDaEntrega = () => {
+    cotacoes.cancelar();
+    ultimaConsultaPedida.current = "";
+    setDeliveryCalculating(false);
+    setErroNaCotacao(false);
+    setNaoLocalizado(false);
+    setCotacaoDaEntrega(null);
+    setAssinaturaCotada(null);
+    cotadaEm.current = null;
+    setPrecisaConfirmarNoMapa(false);
+    setPedeConfirmacao(false);
+    setTempoDaEntregaMin(null);
+    setMedidaDaEntrega(null);
+  };
+
+  // Tela desmontada: a cotação em voo é cancelada, e a resposta não chega a lugar nenhum.
+  useEffect(() => () => cotacoes.cancelar(), [cotacoes]);
+
+  /**
+   * Pergunta a taxa ao servidor. A mesma consulta de novo (em voo ou já
+   * respondida) não repete — o GPS, o timer do formulário e o "sair do campo"
+   * pediam a mesma cotação três vezes. E SÓ A ÚLTIMA pedida pinta a tela: o
+   * cliente corrige o número, e a resposta do número anterior, mais lenta,
+   * chegava depois e mostrava a taxa do endereço errado.
+   */
+  const cotarEntrega = async (endereco: EnderecoDigitado, ponto: PontoDoCliente | null, opcoes: { forcar?: boolean } = {}) => {
+    const assinatura = assinaturaDaConsulta(endereco, ponto);
+    if (!opcoes.forcar && assinatura === ultimaConsultaPedida.current) return;
+    ultimaConsultaPedida.current = assinatura;
+    const { id, signal } = cotacoes.nova();
+    setDeliveryCalculating(true);
+    try {
+      const res = await fetch(
+        `/api/delivery-fee?${consultaDaCotacao({ franchiseeId: franchisee.id, cidade: franchisee.city, ...endereco, ponto })}`,
+        { signal },
+      );
+      const data = await res.json().catch(() => null);
+      if (!cotacoes.vale(id)) return;
+      if (!res.ok || !data) {
+        throw new Error(typeof data?.message === "string" ? data.message : typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+      }
+      aplicarCotacao(lerRespostaDaCotacao(data, taxaPadraoDaLoja), assinatura);
+    } catch (e: any) {
+      if (!cotacoes.vale(id)) return; // cancelada por uma mais nova: não é erro
+      // Sem resposta válida não se assume taxa nem área: pede novo cálculo.
+      ultimaConsultaPedida.current = "";
+      setErroNaCotacao(true);
+      setNaoLocalizado(false);
+      setCotacaoDaEntrega(null);
+      setAssinaturaCotada(null);
+      setPrecisaConfirmarNoMapa(false);
+      setPedeConfirmacao(false);
+      setDeliveryFee(null);
+      setDeliveryFeeCalculated(false);
+      setDeliveryAvailable(false);
+      setDeliveryMessage(
+        e?.message && !/^HTTP \d+$/.test(e.message) && !/abort|fetch|network/i.test(e.message)
+          ? e.message
+          : "Não consegui calcular a entrega agora. Toque em Recalcular.",
+      );
+    } finally {
+      if (cotacoes.vale(id)) setDeliveryCalculating(false);
+    }
+  };
+
+  /** Abre o mapa de confirmação — se houver onde abrir (a loja, o palpite ou um ponto anterior). */
+  const abrirMapaDeConfirmacao = (): boolean => {
+    if (!pontoDaLoja && !pontoDoClienteRef.current && !pontoAproximado && !pontoDescartado) {
+      alert('Não consegui abrir o mapa agora. Use o botão "Usar minha localização atual (GPS)" ou confira rua, número e bairro.');
+      return false;
+    }
+    setMapaDeConfirmacaoAberto(true);
+    return true;
+  };
+
+  const fecharMapaDeConfirmacao = () => {
+    setMapaDeConfirmacaoAberto(false);
+    setGpsAproximado(null);
+  };
+
+  /**
+   * Rua, número e bairro de um ponto, pelo reverse geocode do mapa, escritos
+   * na tela. `sobrescrever`: o GPS troca o que estava digitado (o cliente
+   * pediu "use onde estou"); o pino só preenche o que está vazio. Devolve o
+   * endereço que ficou na tela e se o número foi o mapa que escreveu (esse
+   * não entra no carimbo: é chute do mapa).
+   */
+  const preencherPeloPonto = async (ponto: Ponto, opcoes: { sobrescrever: boolean }) => {
+    const endereco: EnderecoDigitado = { ...enderecoNaTela.current };
+    let numeroDoMapa = false;
+    const pode = (campo: unknown) => opcoes.sobrescrever || !String(campo ?? "").trim();
+    try {
+      // Sem prazo, um Nominatim lento prendia o "Localizando..." para sempre.
+      const prazo = typeof AbortSignal !== "undefined" && typeof (AbortSignal as any).timeout === "function"
+        ? (AbortSignal as any).timeout(6000) as AbortSignal
+        : undefined;
+      const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${ponto.lat}&lon=${ponto.lng}&addressdetails=1`, {
+        headers: { "Accept-Language": "pt-BR" },
+        signal: prazo,
+      });
+      if (rev.ok) {
+        const revData = await rev.json();
+        const addr = revData.address || {};
+        const road = addr.road || addr.pedestrian || addr.street || addr.footway || "";
+        const houseNum = addr.house_number || "";
+        const neigh = addr.suburb || addr.neighbourhood || addr.city_district || "";
+        if (road && pode(endereco.street)) { setCustomerStreet(road); endereco.street = road; }
+        if (houseNum && pode(endereco.number)) { setCustomerNumber(houseNum); endereco.number = houseNum; numeroDoMapa = true; }
+        if (neigh && !isNeighborhoodType && pode(endereco.neighborhood)) { setCustomerNeighborhood(neigh); endereco.neighborhood = neigh; }
+      } else {
+        console.warn(`Reverse geocode HTTP ${rev.status}`);
+      }
+    } catch (e) {
+      console.warn("Reverse geocode timeout / failed:", e);
+    }
+    enderecoNaTela.current = endereco;
+    return { endereco, numeroDoMapa };
+  };
+
+  /**
+   * O ponto passa a ser o do cliente — se o endereço na tela disser ONDE.
+   * Sem rua nem bairro (o reverse geocode falhou com o formulário vazio), o
+   * ponto não vale para endereço nenhum: o cliente no trabalho digitaria o
+   * endereço de casa e o pedido iria com o ponto do trabalho. Ele fica só de
+   * palpite para o mapa, e o cliente digita o endereço.
+   */
+  const adotarPontoDoCliente = (ponto: PontoDoCliente, endereco: EnderecoDigitado, numeroDoMapa: boolean): boolean => {
+    if (!temRuaOuBairro(endereco)) {
+      setPontoDescartado({ lat: ponto.lat, lng: ponto.lng });
+      alert("Não consegui ler o nome da rua desse ponto agora. Digite rua, número e bairro — se o mapa não achar, ele abre onde você marcou.");
+      return false;
+    }
+    setPontoDescartado(null);
+    // O carimbo é o endereço que FICOU na tela depois do preenchimento —
+    // gravado antes dele, o próprio preenchimento "mudava o endereço" e o GPS
+    // era jogado fora.
+    definirPontoDoCliente(ponto, carimboDoPonto(endereco, { numeroDoMapa }));
+    return true;
+  };
 
   const handleUseGpsLocation = () => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -1301,78 +1542,56 @@ export default function CustomerStorePage({
       return;
     }
     setGpsLoading(true);
-    setDeliveryCalculating(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          const { latitude, longitude } = pos.coords;
-          setGpsCoords({ lat: latitude, lng: longitude });
-          enderecoDoPonto.current = chaveDoEndereco();
-          // Reverse geocode para obter rua, número e bairro
-          try {
-            const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`, {
-              headers: { "Accept-Language": "pt-BR" }
-            });
-            if (rev.ok) {
-              const revData = await rev.json();
-              const addr = revData.address || {};
-              const road = addr.road || addr.pedestrian || addr.street || addr.footway || "";
-              const houseNum = addr.house_number || "";
-              const neigh = addr.suburb || addr.neighbourhood || addr.city_district || "";
-              if (road) setCustomerStreet(road);
-              if (houseNum) setCustomerNumber(houseNum);
-              if (neigh && !isNeighborhoodType) setCustomerNeighborhood(neigh);
-            }
-          } catch (e) {
-            console.warn("Reverse geocode timeout / failed:", e);
+          const ponto: PontoDoCliente = { lat: pos.coords.latitude, lng: pos.coords.longitude, origem: "gps" };
+          if (!gpsEhPreciso(pos.coords.accuracy)) {
+            // Localização APROXIMADA: o ponto é o centro de um círculo de até
+            // alguns km. Vira o lugar onde o mapa abre, e o cliente toca a
+            // porta — o pino tocado é que decide a taxa. Rua e bairro não são
+            // preenchidos por ele: seriam os de algum lugar dentro do círculo.
+            console.warn(`GPS aproximado (precisão ${Math.round(Number(pos.coords.accuracy) || 0)} m): pedindo o pino.`);
+            setPontoDescartado({ lat: ponto.lat, lng: ponto.lng });
+            setGpsAproximado({ lat: ponto.lat, lng: ponto.lng });
+            setMapaDeConfirmacaoAberto(true);
+            return;
           }
-
-          // Consultar rota api/delivery-fee com lat e lng
-          const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&lat=${latitude}&lng=${longitude}`);
-          if (res.ok) {
-            const data = await res.json();
-            setPrecisaConfirmarNoMapa(Boolean(data.precisaConfirmarNoMapa));
-        setLojaDesenhouArea(data.type === "poligono" || Boolean(data.podeConfirmarNoMapa));
-            setLojaDesenhouArea(data.type === "poligono" || Boolean(data.podeConfirmarNoMapa));
-            if (data.available === false) {
-              setDeliveryFee(0);
-              setDeliveryFeeCalculated(true);
-              setDeliveryAvailable(false);
-              setDeliveryDistanceKm(data.distanceKm || null);
-              setDeliveryMaxRadiusKm(data.maxRadiusKm || null);
-              setDeliveryMessage(data.message || "Endereço fora da área de entrega da loja.");
-            } else {
-              setDeliveryFee(Number(data.fee) || 0);
-              setDeliveryFeeCalculated(true);
-              setDeliveryAvailable(true);
-              setDeliveryDistanceKm(data.distanceKm || null);
-              setDeliveryMaxRadiusKm(data.maxRadiusKm || null);
-              setDeliveryMessage(data.message || `Distância calculada: ~${data.distanceKm} km`);
-            }
-          }
+          const { endereco, numeroDoMapa } = await preencherPeloPonto(ponto, { sobrescrever: true });
+          if (!adotarPontoDoCliente(ponto, endereco, numeroDoMapa)) return;
+          await cotarEntrega(endereco, ponto, { forcar: true });
         } catch (err) {
           console.error(err);
         } finally {
           setGpsLoading(false);
-          setDeliveryCalculating(false);
         }
       },
-      (err) => {
+      () => {
         setGpsLoading(false);
-        setDeliveryCalculating(false);
         alert("Não foi possível obter sua localização. Por favor, digite seu endereço.");
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
   };
 
-  const calcDeliveryFee = async (neighborhood?: string, customAddress?: string) => {
-    const neigh = neighborhood !== undefined ? neighborhood : customerNeighborhood;
-    if (neighborhood !== undefined) setCustomerNeighborhood(neighborhood);
+  /** O cliente tocou "É aqui" no mapa: o pino vira o ponto dele, e a cotação é refeita com ele. */
+  const confirmarPontoNoMapa = async (p: Ponto) => {
+    const ponto: PontoDoCliente = { lat: p.lat, lng: p.lng, origem: "pino" };
+    fecharMapaDeConfirmacao();
+    let endereco: EnderecoDigitado = { ...enderecoNaTela.current };
+    let numeroDoMapa = false;
+    if (!temRuaOuBairro(endereco)) {
+      // Veio do GPS aproximado com o formulário vazio: rua e bairro do ponto
+      // que o cliente TOCOU (esse, sim, é a casa dele).
+      ({ endereco, numeroDoMapa } = await preencherPeloPonto(ponto, { sobrescrever: false }));
+    }
+    if (!adotarPontoDoCliente(ponto, endereco, numeroDoMapa)) return;
+    cotarEntrega(endereco, ponto, { forcar: true });
+  };
 
-    const zones = (franchisee.deliveryZones as any[]) || [];
-    const zoneType = franchisee.deliveryZoneType || "RADIUS";
-    const defaultStoreFee = Number(delivConfig.deliveryFee || delivConfig.defaultFee || (Array.isArray(zones) && zones[0]?.fee) || 5);
+  const calcDeliveryFee = async (opcoes: { bairro?: string; forcar?: boolean } = {}) => {
+    const neigh = opcoes.bairro !== undefined ? opcoes.bairro : customerNeighborhood;
+    if (opcoes.bairro !== undefined) setCustomerNeighborhood(opcoes.bairro);
 
     if (isNeighborhoodType && availableNeighborhoods.length > 0) {
       if (!neigh) {
@@ -1399,70 +1618,36 @@ export default function CustomerStorePage({
       return;
     }
 
-    const fullStreet = customerStreet.trim();
-    const fullNum = customerNumber.trim();
-    const fullNeigh = (neigh || customerNeighborhood || "").trim();
-    const addrQuery = customAddress || `${fullStreet}, ${fullNum} - ${fullNeigh}, ${franchisee.city || ""}`.trim();
-    // Endereço digitado de novo: o ponto de antes era de OUTRO endereço.
-    // O carimbo é o que impede o pedido de sair com endereço A e ponto B — e
-    // também o que faz o ponto confirmado no mapa SOBREVIVER a um recálculo
-    // automático do mesmo endereço (antes ele era apagado em toda chamada).
-    if (enderecoDoPonto.current && enderecoDoPonto.current !== chaveDoEndereco()) {
-      setGpsCoords(null);
-      enderecoDoPonto.current = "";
-    }
-
-    if (!fullStreet || !fullNum || (!isNeighborhoodType && !fullNeigh) || addrQuery.length < 5) {
+    const endereco: EnderecoDigitado = {
+      street: customerStreet.trim(),
+      number: customerNumber.trim(),
+      neighborhood: (neigh || "").trim(),
+    };
+    const ponto = pontoValendo(endereco);
+    // Sem o ponto do cliente, o texto tem de estar completo; com ele, o ponto
+    // já decide a área (o texto vai junto, para a cotação casar com o pedido).
+    if (!ponto && (!endereco.street || !endereco.number || (!isNeighborhoodType && !endereco.neighborhood))) {
+      esquecerCotacaoDaEntrega();
       setDeliveryFee(null);
       setDeliveryFeeCalculated(false);
       setDeliveryAvailable(true);
       setDeliveryMessage(isNeighborhoodType ? "Informe a rua e número." : "Informe rua, número e bairro para calcular.");
       return;
     }
-
-    setDeliveryCalculating(true);
-    try {
-      const res = await fetch(
-        `/api/delivery-fee?franchiseeId=${franchisee.id}&street=${encodeURIComponent(fullStreet)}&number=${encodeURIComponent(fullNum)}&neighborhood=${encodeURIComponent(fullNeigh)}&address=${encodeURIComponent(addrQuery)}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        // "Confirme no mapa": a loja desenhou a área e o endereço não virou
-        // ponto. Quem resolve é o próprio cliente, arrastando o pino.
-        setPrecisaConfirmarNoMapa(Boolean(data.precisaConfirmarNoMapa));
-        if (data.available === false) {
-          setDeliveryFee(0);
-          setDeliveryFeeCalculated(true);
-          setDeliveryAvailable(false);
-          setDeliveryDistanceKm(data.distanceKm || null);
-          setDeliveryMaxRadiusKm(data.maxRadiusKm || null);
-          setDeliveryMessage(data.message || "Endereço fora da área de entrega.");
-        } else {
-          setDeliveryFee(data.fee !== undefined ? Number(data.fee) : defaultStoreFee);
-          setDeliveryFeeCalculated(true);
-          setDeliveryAvailable(true);
-          setDeliveryDistanceKm(data.distanceKm || null);
-          setDeliveryMaxRadiusKm(data.maxRadiusKm || null);
-          setDeliveryMessage(data.message || "");
-        }
-      } else {
-        // Sem resposta valida nao se assume taxa nem area: pede novo calculo.
-        setDeliveryFee(null);
-        setDeliveryFeeCalculated(false);
-        setDeliveryAvailable(false);
-        setDeliveryMessage("Não consegui calcular a entrega agora. Toque em Recalcular.");
-      }
-    } catch {
-      setDeliveryFee(null);
-      setDeliveryFeeCalculated(false);
-      setDeliveryAvailable(false);
-      setDeliveryMessage("Não consegui calcular a entrega agora. Toque em Recalcular.");
-    } finally {
-      setDeliveryCalculating(false);
-    }
+    await cotarEntrega(endereco, ponto, { forcar: opcoes.forcar });
   };
 
-  // Cálculo automático ao preencher Rua, Número e Bairro no modo Raio
+  // O ponto que deixou de valer (outra rua, outro bairro, outro número) NÃO é
+  // jogado fora: cada leitura (o painel, a cotação, o pedido) pergunta a
+  // pontoValeParaEndereco se ele ainda é deste endereço. Até 25/09/2026 um
+  // efeito o descartava a cada tecla — e a tecla "E" de quem redigitava
+  // "Esperança" já não casava com "Jardim Esperança": o GPS sumia no meio da
+  // palavra e não voltava quando ela terminava. Guardado, ele volta a valer
+  // quando o texto volta a ser o do carimbo, e enquanto não vale serve de
+  // palpite para o mapa abrir perto (comoAbrirOMapa).
+
+  // Cálculo automático ao preencher Rua, Número e Bairro (e quando o ponto do
+  // cliente muda). A consulta repetida não sai (cotarEntrega).
   useEffect(() => {
     if (deliveryType !== "DELIVERY") return;
     if (isNeighborhoodType) return;
@@ -1472,11 +1657,12 @@ export default function CustomerStorePage({
     if (street.length < 3 || !num || neigh.length < 2) return;
 
     const timer = setTimeout(() => {
-      calcDeliveryFee(neigh, `${street}, ${num} - ${neigh}, ${franchisee.city || ""}`.trim());
+      calcDeliveryFee();
     }, 700);
 
     return () => clearTimeout(timer);
-  }, [customerStreet, customerNumber, customerNeighborhood, deliveryType, isNeighborhoodType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerStreet, customerNumber, customerNeighborhood, deliveryType, isNeighborhoodType, pontoDoCliente]);
 
   const ONLINE_METHODS = ["PIX", "CREDITO_ONLINE", "ONLINE", "MERCADOPAGO", "CARTAO_ONLINE"];
 
@@ -1514,8 +1700,13 @@ export default function CustomerStorePage({
     if (!customerName.trim()) { alert("Por favor, informe seu nome."); return; }
     if (!customerPhone.trim()) { alert("Por favor, informe seu WhatsApp / telefone."); return; }
     let finalAddress = "";
+    /** O ponto do cliente (GPS/pino) que vai no pedido — só se for deste endereço. */
+    let pontoNoPedido: PontoDoCliente | null = null;
+    /** A cotação assinada que o cliente viu — só se for deste endereço e deste ponto. */
+    let cotacaoNoPedido: string | null = null;
     if (deliveryType === "DELIVERY") {
-      if (isNeighborhoodType && availableNeighborhoods.length > 0) {
+      const bairroDaLista = isNeighborhoodType && availableNeighborhoods.length > 0;
+      if (bairroDaLista) {
         if (!customerNeighborhood.trim() || !deliveryFeeCalculated) {
           alert("⚠️ Por favor, selecione seu Bairro na lista de bairros atendidos pela loja.");
           return;
@@ -1528,14 +1719,38 @@ export default function CustomerStorePage({
       }
       if (!customerStreet.trim()) { alert("Por favor, informe a Rua / Logradouro de entrega."); return; }
       if (!customerNumber.trim()) { alert("Por favor, informe o Número do endereço."); return; }
-      if (!deliveryAvailable) {
-        alert(deliveryMessage || "Este endereço está fora da área de entrega da loja. Por favor, revise o endereço ou escolha 'Retirar no Balcão'.");
+
+      // ── A ENTREGA NA TELA É A DESTE ENDEREÇO? ──────────────────────────
+      // Cotação em voo, cotação de outro endereço, sem ponto em km/rota,
+      // taxa estimada sem pino, fora da área — lib/entrega-no-checkout.ts.
+      const enderecoAtual: EnderecoDigitado = { street: customerStreet, number: customerNumber, neighborhood: customerNeighborhood };
+      pontoNoPedido = pontoValendo(enderecoAtual);
+      const falta = oQueFaltaParaFechar({
+        calculando: deliveryCalculating,
+        cotadaPeloServidor: !bairroDaLista,
+        assinaturaCotada,
+        assinaturaAtual: assinaturaDaConsulta(enderecoAtual, pontoNoPedido),
+        idadeDaCotacaoMs: cotadaEm.current == null ? null : Date.now() - cotadaEm.current,
+        erro: erroNaCotacao,
+        calculada: deliveryFeeCalculated,
+        disponivel: deliveryAvailable,
+        precisaConfirmarNoMapa,
+        pedeConfirmacao,
+        temPontoDoCliente: Boolean(pontoNoPedido),
+        freteGratis: isFreeShippingEffective,
+        mensagem: deliveryMessage,
+      });
+      if (falta) {
+        if (falta.acao === "abrir-mapa") {
+          // O mapa se explica sozinho; o alerta só sai se ele não puder abrir.
+          abrirMapaDeConfirmacao();
+        } else {
+          if (falta.acao === "recotar") calcDeliveryFee({ forcar: true });
+          alert(falta.mensagem);
+        }
         return;
       }
-      if (!deliveryFeeCalculated && !isFreeShippingEffective) {
-        alert("⚠️ Por favor, aguarde o cálculo da taxa de entrega do seu endereço.");
-        return;
-      }
+      cotacaoNoPedido = bairroDaLista ? null : cotacaoDaEntrega;
       finalAddress = `${customerStreet.trim()}, ${customerNumber.trim()} - ${customerNeighborhood.trim()}${customerComplement.trim() ? ` (${customerComplement.trim()})` : ""}`;
     }
     setLoading(true);
@@ -1547,11 +1762,15 @@ export default function CustomerStorePage({
           franchiseeSlug: franchisee.slug,
           customerName, customerPhone,
           customerAddress: deliveryType === "DELIVERY" ? finalAddress : null,
-          // O ponto só acompanha o pedido se for DESTE endereço.
-          customerCoords:
-            deliveryType === "DELIVERY" && gpsCoords && enderecoDoPonto.current === chaveDoEndereco()
-              ? gpsCoords
-              : null,
+          // O ponto (com a origem: GPS ou pino) e a cotação assinada (R1) —
+          // só se forem DESTE endereço (ver oQueFaltaParaFechar acima). Com a
+          // cotação o servidor cobra o que o cliente viu, com o ponto e a
+          // distância que decidiram a taxa, sem ir ao mapa de novo; ela é da
+          // MESMA rua/número/bairro/ponto deste corpo, e se a chave não bater
+          // o servidor cota de novo.
+          ...(deliveryType === "DELIVERY"
+            ? entregaNoPedidoDoSite(pontoNoPedido, cotacaoNoPedido)
+            : entregaNoPedidoDoSite(null, null)),
           // As MESMAS peças que a cotação de taxa usou: sem elas o servidor
           // geocodificava só a string livre e chegava a outra conclusão.
           customerStreet: customerStreet || null,
@@ -1632,12 +1851,24 @@ export default function CustomerStorePage({
         }
       } else {
         const d = await res.json().catch(() => ({} as any));
-        // O servidor recusou por falta de ponto no mapa (loja com área
-        // desenhada). Em vez de só avisar, abre o mapa: o cliente resolve ali
-        // mesmo, no toque seguinte, sem sair do checkout.
-        if (d?.precisaConfirmarNoMapa) {
-          setPrecisaConfirmarNoMapa(true);
-          setMapaDeConfirmacaoAberto(true);
+        // O servidor recusou por falta de ponto confiável — área desenhada sem
+        // ponto, ou km/rota com endereço não achado ou só aproximado (R2/R3).
+        // Em vez de só avisar, abre o mapa (no palpite do servidor, se veio):
+        // o cliente resolve ali mesmo, no toque seguinte, sem sair do checkout.
+        if (d?.precisaConfirmarNoMapa || d?.pedeConfirmacao) {
+          // O POST do pedido manda o palpite em `pontoAproximado`
+          // (lib/entrega-do-pedido.ts, recusaDoSite); `ponto` é o nome na cotação.
+          const palpite = pontoValido(d?.pontoAproximado ?? d?.ponto);
+          if (palpite) setPontoAproximado(palpite);
+          if (d?.precisaConfirmarNoMapa) setPrecisaConfirmarNoMapa(true);
+          else setPedeConfirmacao(true);
+          // A cotação que a tela tinha não serve para este pedido: a próxima
+          // sai do pino.
+          setCotacaoDaEntrega(null);
+          ultimaConsultaPedida.current = "";
+          alert(d?.error || "Confirme no mapa onde fica a sua casa para fecharmos o pedido.");
+          abrirMapaDeConfirmacao();
+          return;
         }
         alert(d?.error || "Erro.");
       }
@@ -1750,6 +1981,67 @@ export default function CustomerStorePage({
       </div>
     );
   }
+
+  // ── O PAINEL DA ENTREGA ────────────────────────────────────────────────
+  // O que o cliente vê sobre a entrega sai de uma função só
+  // (painelDaEntrega, lib/entrega-no-checkout.ts). "Não achamos o endereço"
+  // aparecia como "Fora da Área de Entrega", em vermelho, para quem mora a
+  // 300 m da loja — agora é "marque no mapa onde você mora".
+  const pontoNaTela =
+    pontoDoCliente && pontoValeParaEndereco(pontoDoCliente.carimbo, { street: customerStreet, number: customerNumber, neighborhood: customerNeighborhood })
+      ? pontoDoCliente.ponto
+      : null;
+  const painel = painelDaEntrega({
+    bairroLocal: isNeighborhoodType,
+    calculando: deliveryCalculating,
+    calculada: deliveryFeeCalculated,
+    disponivel: deliveryAvailable,
+    erro: erroNaCotacao,
+    taxaEfetiva: effectiveDeliveryFee,
+    freteGratisPorMinimo: isFreeShippingByMin,
+    precisaConfirmarNoMapa,
+    pedeConfirmacao,
+    podeConferirNoMapa,
+    temPontoDoCliente: Boolean(pontoNaTela),
+    naoLocalizado,
+    distanciaKm: deliveryDistanceKm,
+    medida: medidaDaEntrega,
+    tempoMin: tempoDaEntregaMin,
+    mensagem: deliveryMessage,
+  });
+  const corDoPainel = {
+    ok: { fundo: isFreeShippingByMin ? "#ECFDF5" : "#F0FDF4", borda: "#86EFAC", texto: "#166534" },
+    alerta: { fundo: "#FFFBEB", borda: "#FCD34D", texto: "#92400E" },
+    erro: { fundo: "#FEF2F2", borda: "#FCA5A5", texto: "#DC2626" },
+    calculando: { fundo: "#EFF6FF", borda: "#BFDBFE", texto: "#1D4ED8" },
+    neutro: { fundo: "#F8FAFC", borda: "#E2E8F0", texto: "#475569" },
+  }[painel.tom];
+  /**
+   * A taxa no resumo, com o mesmo cuidado do painel: indisponível não é
+   * "Grátis 🎉" (era — a taxa zerada da resposta "fora" caía no ramo do
+   * grátis), e taxa de ponto aproximado diz que é estimada.
+   */
+  const rotuloDaTaxaNoResumo = (): string | null => {
+    if (deliveryType !== "DELIVERY" || deliveryCalculating) return null;
+    if (erroNaCotacao) return "A calcular";
+    if (precisaConfirmarNoMapa && !pontoNaTela) return "Marque no mapa";
+    if (deliveryFeeCalculated && !deliveryAvailable) return "Fora da área";
+    if (pedeConfirmacao && !pontoNaTela && deliveryFeeCalculated && effectiveDeliveryFee > 0) {
+      return `R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")} (estimada)`;
+    }
+    return null;
+  };
+  /** Onde o mapa abre, com qual texto, e se o ponto inicial já vale sem o cliente tocar (lib/entrega-no-checkout.ts). */
+  const mapa = comoAbrirOMapa({
+    gpsAproximado,
+    pontoDoCliente,
+    endereco: { street: customerStreet, number: customerNumber, neighborhood: customerNeighborhood },
+    pontoAproximado,
+    pontoDescartado,
+    precisaConfirmarNoMapa,
+    pedeConfirmacao,
+  });
+  const enderecoEscritoNoMapa = [`${customerStreet} ${customerNumber}`.trim(), customerNeighborhood.trim()].filter(Boolean).join(", ");
 
   // ===== CART SIDEBAR CONTENT =====
   const cartContentJSX = (
@@ -2173,6 +2465,8 @@ export default function CustomerStorePage({
                       "Grátis (Prêmio da trilha) 🎉"
                     ) : deliveryCalculating ? (
                       "Calculando..."
+                    ) : rotuloDaTaxaNoResumo() ? (
+                      rotuloDaTaxaNoResumo()
                     ) : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? (
                       `R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
                     ) : (deliveryFeeCalculated && effectiveDeliveryFee === 0) ? (
@@ -2241,11 +2535,12 @@ export default function CustomerStorePage({
                     }
                     setDeliveryType("DELIVERY");
                     if (isNeighborhoodType) {
-                      if (customerNeighborhood) calcDeliveryFee(customerNeighborhood);
+                      if (customerNeighborhood) calcDeliveryFee({ bairro: customerNeighborhood, forcar: true });
                       else { setDeliveryFee(null); setDeliveryFeeCalculated(false); }
                     } else {
-                      if (customerStreet && customerNumber) calcDeliveryFee(customerNeighborhood);
-                      else { setDeliveryFee(null); setDeliveryFeeCalculated(false); }
+                      // A retirada apagou a taxa da tela: cota de novo mesmo
+                      // que o endereço seja o mesmo de antes.
+                      calcDeliveryFee({ forcar: true });
                     }
                   }}
                   className={`checkout-type-btn ${deliveryType === "DELIVERY" ? "active" : ""}`}
@@ -2260,6 +2555,8 @@ export default function CustomerStorePage({
                     type="button"
                     onClick={() => {
                       setDeliveryType("PICKUP");
+                      // A cotação em voo não pode pintar a taxa por cima da retirada.
+                      esquecerCotacaoDaEntrega();
                       setDeliveryFee(0);
                       setDeliveryFeeCalculated(true);
                       setDeliveryAvailable(true);
@@ -2530,7 +2827,7 @@ export default function CustomerStorePage({
                         className="checkout-input"
                         value={customerNeighborhood}
                         onChange={e => setCustomerNeighborhood(e.target.value)}
-                        onBlur={() => calcDeliveryFee(customerNeighborhood)}
+                        onBlur={() => calcDeliveryFee()}
                         placeholder="Ex: Centro"
                       />
                     )}
@@ -2550,54 +2847,60 @@ export default function CustomerStorePage({
                   />
                 </div>
 
-                {/* STATUS TAXA DE ENTREGA EM TEMPO REAL */}
-                <div style={{
-                  padding: "9px 12px",
-                  borderRadius: "10px",
-                  background: !deliveryAvailable ? "#FEF2F2" : isFreeShippingByMin ? "#ECFDF5" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#F0FDF4" : deliveryCalculating ? "#EFF6FF" : "#F8FAFC",
-                  border: `1.5px solid ${!deliveryAvailable ? "#FCA5A5" : isFreeShippingByMin ? "#86EFAC" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#86EFAC" : deliveryCalculating ? "#BFDBFE" : "#E2E8F0"}`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "8px",
-                  marginTop: "2px"
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "1rem" }}>
-                      {!deliveryAvailable ? "⛔" : deliveryCalculating ? "⏳" : isFreeShippingByMin ? "🎉" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "🛵" : "📍"}
-                    </span>
-                    <div style={{ display: "flex", flexDirection: "column" }}>
-                      <span style={{ fontSize: "0.80rem", fontWeight: 800, color: !deliveryAvailable ? "#DC2626" : isFreeShippingByMin ? "#166534" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#166534" : "#475569" }}>
-                        {!deliveryAvailable ? (
-                          "Fora da Área de Entrega"
-                        ) : deliveryCalculating ? (
-                          "Verificando endereço e raio..."
-                        ) : isFreeShippingByMin ? (
-                          "Frete Grátis Aplicado! 🎉"
-                        ) : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? (
-                          `Taxa de Entrega: R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
-                        ) : (deliveryFeeCalculated && effectiveDeliveryFee === 0) ? (
-                          "Entrega Grátis! 🎉"
-                        ) : (
-                          isNeighborhoodType ? "Selecione seu bairro acima" : "Preencha rua, número e bairro para calcular"
-                        )}
+                {/* STATUS TAXA DE ENTREGA EM TEMPO REAL — painelDaEntrega() */}
+                <div
+                  aria-live="polite"
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: "10px",
+                    background: corDoPainel.fundo,
+                    border: `1.5px solid ${corDoPainel.borda}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "8px",
+                    marginTop: "2px"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                    <span style={{ fontSize: "1rem" }}>{painel.icone}</span>
+                    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                      <span style={{ fontSize: "0.80rem", fontWeight: 800, color: corDoPainel.texto }}>
+                        {painel.titulo}
                       </span>
-                      {deliveryMessage && (
-                        <span style={{ fontSize: "0.70rem", color: !deliveryAvailable ? "#DC2626" : "#15803D", fontWeight: 600 }}>
-                          {deliveryMessage}
+                      {/* Distância (pela rua / estimada) e prazo da faixa. */}
+                      {painel.detalhe && (
+                        <span style={{ fontSize: "0.72rem", color: "#334155", fontWeight: 700 }}>
+                          {painel.detalhe}
                         </span>
                       )}
-                      {(precisaConfirmarNoMapa || lojaDesenhouArea) && (
+                      {painel.mensagem && (
+                        <span style={{ fontSize: "0.70rem", color: painel.tom === "ok" ? "#15803D" : corDoPainel.texto, fontWeight: 600 }}>
+                          {painel.mensagem}
+                        </span>
+                      )}
+                      {pontoNaTela && (
+                        <span style={{ fontSize: "0.70rem", color: "#15803D", fontWeight: 700 }}>
+                          {pontoNaTela.origem === "pino" ? "✓ Ponto confirmado no mapa" : "✓ Usando a sua localização (GPS)"}
+                        </span>
+                      )}
+                      {painel.botaoDoMapa && (
                         <button
                           type="button"
-                          onClick={() => setMapaDeConfirmacaoAberto(true)}
-                          style={{
-                            marginTop: 6, alignSelf: "flex-start", padding: "7px 12px", borderRadius: 8,
+                          onClick={() => abrirMapaDeConfirmacao()}
+                          style={painel.botaoDoMapa === "obrigatorio" ? {
+                            marginTop: 6, alignSelf: "flex-start", padding: "8px 14px", borderRadius: 8,
                             border: "none", background: "#16A34A", color: "#fff", fontWeight: 800,
-                            fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit",
+                            fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                          } : {
+                            marginTop: 4, alignSelf: "flex-start", padding: "4px 10px", borderRadius: 8,
+                            border: "1px solid #86EFAC", background: "#fff", color: "#15803D", fontWeight: 700,
+                            fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit",
                           }}
                         >
-                          {precisaConfirmarNoMapa ? "📍 Mostrar no mapa onde eu moro" : "📍 Conferir o ponto no mapa"}
+                          {painel.botaoDoMapa === "obrigatorio"
+                            ? (precisaConfirmarNoMapa ? "📍 Marcar no mapa onde eu moro" : "📍 Confirmar no mapa a minha porta")
+                            : (pontoNaTela ? "📍 Ver ou mudar o ponto no mapa" : "📍 Conferir o ponto no mapa")}
                         </button>
                       )}
                     </div>
@@ -2605,7 +2908,7 @@ export default function CustomerStorePage({
                   {!isNeighborhoodType && (
                     <button
                       type="button"
-                      onClick={() => calcDeliveryFee(customerNeighborhood, `${customerStreet} ${customerNumber}, ${customerNeighborhood}, ${franchisee.city || ""}`.trim())}
+                      onClick={() => calcDeliveryFee({ forcar: true })}
                       disabled={deliveryCalculating}
                       style={{
                         background: "#FFFFFF",
@@ -2686,6 +2989,8 @@ export default function CustomerStorePage({
                     "Grátis (Prêmio da trilha) 🎉"
                   ) : deliveryCalculating ? (
                     "Calculando..."
+                  ) : rotuloDaTaxaNoResumo() ? (
+                    rotuloDaTaxaNoResumo()
                   ) : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? (
                     `R$ ${effectiveDeliveryFee.toFixed(2).replace(".", ",")}`
                   ) : (deliveryFeeCalculated && effectiveDeliveryFee === 0) ? (
@@ -2742,6 +3047,7 @@ export default function CustomerStorePage({
                 // "não atingiu o mínimo" no último clique.
                 if (somenteRetiradaPorValor) {
                   setDeliveryType("PICKUP");
+                  esquecerCotacaoDaEntrega();
                   setDeliveryFee(0);
                   setDeliveryFeeCalculated(true);
                   setDeliveryAvailable(true);
@@ -3589,41 +3895,20 @@ export default function CustomerStorePage({
           Antes só combos abriam; produto simples caía direto na sacola com um
           toque em qualquer ponto do card: compra acidental na rolagem, sem
           descrição completa, sem observação e sem o botão claro de confirmar. */}
-      {mapaDeConfirmacaoAberto && pontoDaLojaNaVitrine((franchisee as any).storeLatLng) && (
+      {/* ONDE FICA A CASA DO CLIENTE — abre no palpite do servidor (centro do
+          bairro, rua homônima) ou no ponto que ele já deu, com a loja à vista.
+          O ponto confirmado vira o ponto do cliente (origem "pino") e a
+          cotação é refeita com ele e com rua/número/bairro, para a cotação
+          assinada casar com o pedido. */}
+      {mapaDeConfirmacaoAberto && (pontoDaLoja || mapa.pontoInicial) && (
         <ConfirmarPontoNoMapa
-          centro={pontoDaLojaNaVitrine((franchisee as any).storeLatLng)!}
-          pontoInicial={gpsCoords}
-          enderecoEscrito={`${customerStreet} ${customerNumber}, ${customerNeighborhood}`.trim()}
-          aoFechar={() => setMapaDeConfirmacaoAberto(false)}
-          aoConfirmar={async (p: { lat: number; lng: number }) => {
-            // O ponto confirmado vale como a localização do cliente: é o mesmo
-            // campo que o GPS preenche, e é ele que viaja no pedido.
-            setGpsCoords(p);
-            enderecoDoPonto.current = chaveDoEndereco();
-            setMapaDeConfirmacaoAberto(false);
-            setDeliveryCalculating(true);
-            try {
-              const res = await fetch(`/api/delivery-fee?franchiseeId=${franchisee.id}&lat=${p.lat}&lng=${p.lng}`);
-              const data = await res.json().catch(() => ({} as any));
-              setPrecisaConfirmarNoMapa(Boolean(data?.precisaConfirmarNoMapa));
-              setLojaDesenhouArea(data?.type === "poligono" || Boolean(data?.podeConfirmarNoMapa));
-              if (data?.available === false) {
-                setDeliveryFee(0);
-                setDeliveryFeeCalculated(true);
-                setDeliveryAvailable(false);
-                setDeliveryMessage(data?.message || "A loja não entrega nesse ponto.");
-              } else {
-                setDeliveryFee(Number(data?.fee) || 0);
-                setDeliveryFeeCalculated(true);
-                setDeliveryAvailable(true);
-                setDeliveryMessage(data?.message || "Ponto confirmado no mapa.");
-              }
-            } catch {
-              setDeliveryMessage("Não consegui confirmar agora. Tente de novo.");
-            } finally {
-              setDeliveryCalculating(false);
-            }
-          }}
+          centro={pontoDaLoja}
+          pontoInicial={mapa.pontoInicial}
+          motivo={mapa.motivo}
+          exigirToque={mapa.exigirToque}
+          enderecoEscrito={enderecoEscritoNoMapa}
+          aoFechar={fecharMapaDeConfirmacao}
+          aoConfirmar={confirmarPontoNoMapa}
         />
       )}
 

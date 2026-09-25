@@ -23,7 +23,7 @@ import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import type { WabizPedido } from "@/lib/wabiz-api";
 import { texto, traduzirPedidoWabiz } from "@/lib/wabiz-traducao";
-import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
+import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 
 export interface ResultadoWabizPedido {
   action: "created" | "exists" | "error";
@@ -123,7 +123,11 @@ export async function processWabizOrder(
 
   // Quantos km — só quando a Wabiz mandou o ponto do cliente. É o que a escada
   // de km do entregador compara no fechamento (lib/distancia-da-entrega.ts).
-  const distanciaDaEntrega = await distanciaDaEntregaKm(loja.id, dados.customerLatLng);
+  // O ponto passa pelo corte do R8: longe demais da loja não é o cliente.
+  const doParceiro = await pontoEDistanciaDoParceiro(loja.id, dados.customerLatLng);
+  if (doParceiro.ponto) dados.customerLatLng = doParceiro.ponto;
+  else delete dados.customerLatLng;
+  const distanciaDaEntrega = doParceiro.km;
   if (distanciaDaEntrega != null) dados.deliveryDistance = distanciaDaEntrega;
 
   let criado: { id: string } | null = null;

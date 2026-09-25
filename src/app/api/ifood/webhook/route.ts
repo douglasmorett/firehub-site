@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
+import { pontoDoParceiroDaLoja } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
@@ -383,6 +384,10 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
       // já tinha tirado do contador ficava queimado. Em produção, 23/08/2026, a
       // Hakim ficou com a sequência 93, 94, 96, 98 — sem 95 nem 97. Dentro da
       // transação, a falha desfaz o incremento junto.
+      //
+      // O ponto do iFood passa pelo corte do R8 antes (fora da transação):
+      // longe demais da loja não é o cliente, e não vai para o pedido.
+      const pontoDoCliente = await pontoDoParceiroDaLoja(franchisee.id, coordenadasDoIfood(orderData));
       const createdOrder = await prisma.$transaction(async (tx) =>
         (tx.customerOrder as any).create({
         data: {
@@ -407,7 +412,7 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
             const localizer = phone?.localizer;
             return localizer ? `${number} ID: ${localizer}` : number;
           })(),
-          customerLatLng: coordenadasDoIfood(orderData),
+          customerLatLng: pontoDoCliente,
           customerAddress:  (() => {
             const addr = orderData.delivery?.deliveryAddress;
             if (!addr) return "";

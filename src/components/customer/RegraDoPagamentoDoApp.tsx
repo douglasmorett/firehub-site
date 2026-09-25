@@ -14,13 +14,37 @@
  * pode valer um número para um e outro para outro.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { explicarRegraDoApp, lerRegraDeRepasse, type OrigemDoRepasseNoApp } from "@/lib/repasse-do-entregador";
+import { lerZonasGravadas } from "@/lib/cadastro-da-entrega";
 
 export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConfig?: unknown }) {
-  // O valor vem do servidor junto da página — /api/store-settings só tem PUT,
-  // e inventar um GET só para ler uma chave seria rota nova para nada.
+  // O valor vem do servidor junto da página.
   const regraInicial = lerRegraDeRepasse(deliveryConfig);
+  // "Um valor por faixa" é decidido na tela de Entrega. Aqui só se mostra —
+  // e nunca se grava: a versão anterior mandava `separado: true` em todo
+  // clique e ligava o repasse por faixa de lojas que nunca preencheram
+  // "Motoboy recebe" em faixa nenhuma.
+  //
+  // Vale de verdade quando está ligado E alguma faixa tem o valor: ligado com
+  // as faixas em branco dá no mesmo que desligado (cada entregador recebe
+  // pelo acerto dele), e dizer "recebe o valor da faixa" seria mentir.
+  const [porFaixa, setPorFaixa] = useState<boolean>(regraInicial.separado);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/store-settings", { cache: "no-store" });
+        if (!r.ok) return;
+        const d = await r.json();
+        // Lidas como o motor lê: o cadastro em TEXTO também conta.
+        const zonas: any[] = lerZonasGravadas(d?.entrega?.deliveryZones).zonas;
+        const temValor = zonas.some((z) => z && ((z.motoboyFee ?? z.repasse) !== undefined && (z.motoboyFee ?? z.repasse) !== null && (z.motoboyFee ?? z.repasse) !== ""));
+        if (vivo) setPorFaixa(d?.entrega?.repasseDoEntregador?.separado === true && temValor);
+      } catch {}
+    })();
+    return () => { vivo = false; };
+  }, []);
   const [valor, setValor] = useState<OrigemDoRepasseNoApp>(() => regraInicial.marketplace);
   const [fixo, setFixo] = useState<string>(() =>
     regraInicial.valorFixoApp == null ? "" : String(regraInicial.valorFixoApp).replace(".", ","),
@@ -45,21 +69,24 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         // Campo próprio: a rota mescla dentro do deliveryConfig sem apagar o
-        // frete grátis, o pedido mínimo nem as áreas de risco.
+        // frete grátis, o pedido mínimo nem as áreas de risco. `separado` não
+        // vai: campo ausente mantém o que a tela de Entrega gravou.
         body: JSON.stringify({
           repasseDoEntregador: {
-            separado: true,
             marketplace: modo,
             valorFixoApp: numeroDoCampo(textoDoFixo),
           },
         }),
       });
-      if (!r.ok) throw new Error("salvar");
+      if (!r.ok) {
+        const d = await r.json().catch(() => null);
+        throw new Error(d?.error || "salvar");
+      }
       setAviso("Salvo.");
       setTimeout(() => setAviso(""), 2200);
       return true;
-    } catch {
-      setAviso("Não consegui salvar agora. Tente de novo.");
+    } catch (e: any) {
+      setAviso(e?.message && e.message !== "salvar" ? `Não salvei: ${e.message}` : "Não consegui salvar agora. Tente de novo.");
       return false;
     } finally {
       setSalvando(false);
@@ -80,7 +107,9 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
     {
       v: "TABELA",
       t: "O valor que eu combinei com ele",
-      d: "O acerto do entregador — faixa de km, valor por entrega ou diária, cadastrado aqui embaixo.",
+      d: porFaixa
+        ? "O acerto do entregador cadastrado aqui embaixo. Sem acerto, o valor da faixa da sua tabela de entrega (“Motoboy recebe”)."
+        : "O acerto do entregador — faixa de km, valor por entrega ou diária, cadastrado aqui embaixo.",
     },
     {
       v: "APP",
@@ -166,7 +195,21 @@ export default function RegraDoPagamentoDoApp({ deliveryConfig }: { deliveryConf
         border: `1px solid ${valor === "APP" ? "#E2E8F0" : "#FDE68A"}`,
         borderRadius: 9, padding: "8px 11px",
       }}>
-        {explicarRegraDoApp({ separado: true, marketplace: valor, valorFixoApp: numeroDoCampo(fixo) })}
+        {explicarRegraDoApp({ separado: porFaixa, marketplace: valor, valorFixoApp: numeroDoCampo(fixo) })}
+      </p>
+
+      {/* ── E NO PEDIDO DO SITE, QUEM VENCE? ─────────────────────────────
+          A pergunta que a loja faz no fechamento ("por que ele recebeu isso?")
+          tem resposta diferente conforme a escolha da tela de Entrega. Dita
+          aqui porque é aqui que ela procura o pagamento do motoboy. */}
+      <p style={{
+        margin: "8px 0 0", fontSize: "0.76rem", lineHeight: 1.5, color: "#334155",
+        background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 9, padding: "8px 11px",
+      }}>
+        <b>Pedidos do seu site, balcão e WhatsApp:</b>{" "}
+        {porFaixa
+          ? "o motoboy recebe o valor da faixa (campo “Motoboy recebe” na tela de Entrega), gravado no pedido na hora da venda. Faixa sem valor cai no acerto do entregador cadastrado aqui embaixo."
+          : "vale o acerto de cada entregador cadastrado aqui embaixo. Para pagar um valor por faixa de distância, escolha “Um valor por faixa” na tela de Entrega (Minha Loja)."}
       </p>
     </div>
   );

@@ -30,6 +30,69 @@ function dentroDoBrasil(lat: number, lng: number): boolean {
   return lat >= -34 && lat <= 6 && lng >= -74 && lng <= -34;
 }
 
+/** Menos de 3 casas decimais: múltiplo de 0,01° (~1 km). */
+function temPoucasCasas(n: number): boolean {
+  return Math.abs(n * 100 - Math.round(n * 100)) < 1e-7;
+}
+
+/**
+ * COORDENADA DE ENCHIMENTO (R8).
+ *
+ * O 99Food manda (-23,-43) quando não sabe onde o cliente está: 33 de 270
+ * pedidos em 20 dias (25/09/2026). O par passa em "dentro do Brasil", e a
+ * Brazza Burguer gravou 54,34 km em ~17 entregas; na Divinos o pino caiu no
+ * mar, a 100 km da loja.
+ *
+ * É enchimento quando lat E lng têm menos de 3 casas (2 casas = ~1 km de
+ * erro: não decide faixa nenhuma), ou quando um dos dois é um grau INTEIRO —
+ * GPS e pino têm 5 casas ou mais, e um grau cravado não acontece por acaso.
+ * Uma só coordenada com 2 casas (-22.85 de um pino que parou ali) passa.
+ */
+export function coordenadaGrosseira(lat: number, lng: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return true;
+  if (Number.isInteger(lat) || Number.isInteger(lng)) return true;
+  return temPoucasCasas(lat) && temPoucasCasas(lng);
+}
+
+/** O mínimo do corte por distância, para loja de raio pequeno ou sem raio. */
+export const CORTE_MINIMO_DO_PARCEIRO_KM = 15;
+
+/**
+ * Até onde um ponto de parceiro pode estar da loja (R8): o dobro do raio
+ * máximo dela, nunca menos de 15 km. Além disso não é o cliente, é o ponto
+ * padrão do app, uma rua homônima ou coordenada trocada.
+ */
+export function limiteDoParceiroKm(raioMaximoKm: number | null | undefined): number {
+  const raio = Number(raioMaximoKm);
+  return Math.max(CORTE_MINIMO_DO_PARCEIRO_KM, Number.isFinite(raio) && raio > 0 ? 2 * raio : 0);
+}
+
+function linhaRetaKm(a: Ponto, b: Ponto): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+/**
+ * O ponto do parceiro serve para ESTA loja? `undefined` quando é enchimento
+ * ou está longe demais dela — e aí o pedido grava sem ponto (o cron e a
+ * roteirização geocodificam pelo texto), nunca com o ponto errado.
+ *
+ * Sem o ponto da loja, só a regra do enchimento vale.
+ */
+export function pontoDoParceiroParaALoja(
+  ponto: Ponto | null | undefined,
+  loja: { ponto: Ponto | null | undefined; raioMaximoKm?: number | null },
+): Ponto | undefined {
+  if (!ponto || coordenadaGrosseira(ponto.lat, ponto.lng)) return undefined;
+  if (loja.ponto && linhaRetaKm(loja.ponto, ponto) > limiteDoParceiroKm(loja.raioMaximoKm)) return undefined;
+  return ponto;
+}
+
 function numero(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   // String com vírgula decimal aparece em parceiro que serializa em pt-BR.
@@ -59,6 +122,8 @@ function doObjeto(alvo: any): Ponto | null {
     if (lat === null || lng === null) continue;
     if (lat === 0 && lng === 0) continue; // app que não conseguiu localizar
     if (!dentroDoBrasil(lat, lng)) continue;
+    // (-23,-43) do 99Food: o par está no Brasil, mas não é o cliente.
+    if (coordenadaGrosseira(lat, lng)) continue;
     return { lat, lng };
   }
   return null;

@@ -245,8 +245,12 @@ export type RegistroDeEdicao = {
   /** ISO. Quem lê é humano, e o servidor roda em UTC (ver lib/fuso.ts). */
   quando: string;
   quem: string;
-  /** PAGAMENTO: a forma de pagamento mudou (painel ou app do motoboy); total não muda. */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO";
+  /**
+   * PAGAMENTO: a forma de pagamento mudou (painel ou app do motoboy); total não muda.
+   * TAXA_DE_ENTREGA: a loja corrigiu a taxa de um pedido já feito
+   * (api/store/orders/[id]/taxa-de-entrega); o total muda só a diferença.
+   */
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;

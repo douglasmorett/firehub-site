@@ -126,16 +126,25 @@ export function ganhoDoPedido(args: {
 
   if (acerto.tipo === "DAILY_RATE") return { valor: 0, origem: "SO_DIARIA" };
 
-  const gravado = Number(pedido.motoboyFee || 0);
-  if (gravado > 0) return { valor: centavos(gravado), origem: "GRAVADO" };
+  // ── ZERO GRAVADO É RESPOSTA ───────────────────────────────────────────
+  //
+  // `motoboyFee` só é gravado quando a loja separa o repasse, e a faixa com
+  // R$ 0,00 é escolha dela (R6, 25/09/2026). Ler `|| 0 > 0` tratava esse zero
+  // como "não gravado" e pagava o acordo do entregador no lugar. Nulo continua
+  // sendo "não gravado".
+  const gravado = numeroGravado(pedido.motoboyFee);
+  if (gravado != null) return { valor: centavos(gravado), origem: "GRAVADO" };
+
+  // Distância 0 é medida (cliente na porta da loja); nulo é "não medida".
+  const km = numeroGravado(pedido.deliveryDistance);
 
   // A faixa do entregador vem ANTES do km e do valor por entrega: quem
   // cadastrou faixa quis faixa, e ela é o combinado individual dele.
-  const daFaixaDele = valorDaFaixa(acerto.faixas, pedido.deliveryDistance);
+  const daFaixaDele =
+    km == null ? null : km === 0 ? (acerto.faixas[0]?.valor ?? null) : valorDaFaixa(acerto.faixas, km);
   if (daFaixaDele != null) return { valor: centavos(daFaixaDele), origem: "FAIXA_DELE" };
 
-  const km = Number(pedido.deliveryDistance || 0);
-  if (usaPorKm(acerto.tipo) && km > 0) return { valor: centavos(km * acerto.perKmRate), origem: "POR_KM" };
+  if (usaPorKm(acerto.tipo) && km != null && km > 0) return { valor: centavos(km * acerto.perKmRate), origem: "POR_KM" };
 
   if (acerto.perDeliveryRate > 0) return { valor: centavos(acerto.perDeliveryRate), origem: "POR_ENTREGA" };
 
@@ -155,7 +164,18 @@ export function ganhoDoPedido(args: {
   // marketplace, e foi justamente o "Taxa R$ 6,94" numa entrega de R$ 3,00 que
   // originou esta regra. Zero declarado, com a contagem na tela, é honesto —
   // um número inventado passa batido no fechamento.
-  if (acerto.pagoPorDistancia) return { valor: 0, origem: "SEM_DISTANCIA" };
+  if (acerto.pagoPorDistancia) {
+    // Distância medida em 0 km: R$/km × 0 é a resposta — não "falta
+    // distância", que mandaria a loja procurar um defeito que não existe.
+    return km === 0 ? { valor: 0, origem: "POR_KM" } : { valor: 0, origem: "SEM_DISTANCIA" };
+  }
 
   return { valor: centavos(Number(pedido.deliveryFee || 0)), origem: "TAXA_DO_CLIENTE" };
+}
+
+/** Número >= 0 gravado no pedido, ou null. Vazio, texto e negativo são "não gravado". */
+function numeroGravado(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }

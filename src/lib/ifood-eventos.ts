@@ -19,7 +19,7 @@ import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-nu
 import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
-import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
+import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 
 export type ResultadoEventos = {
   created: number;
@@ -641,8 +641,10 @@ export async function processarEventosIfood(opts: {
           // Quantos km — medido FORA da transação (pode consultar rota) e com o
           // ponto que o iFood mandou. É o que faz a escada de km do entregador
           // valer em pedido de app (lib/distancia-da-entrega.ts).
-          const coordsDoCliente = coordenadasDoIfood(orderData);
-          const distanciaDaEntrega = await distanciaDaEntregaKm(eventFranchisee.id, coordsDoCliente);
+          // O ponto passa pelo corte do R8 (longe demais da loja não é o cliente).
+          const doParceiro = await pontoEDistanciaDoParceiro(eventFranchisee.id, coordenadasDoIfood(orderData));
+          const coordsDoCliente = doParceiro.ponto;
+          const distanciaDaEntrega = doParceiro.km;
 
           // Agora número e pedido nascem na MESMA transação: se a gravação falhar
           // — inclusive por duplicidade — o contador volta atrás junto.
