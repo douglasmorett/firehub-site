@@ -87,7 +87,13 @@ export async function POST(req: NextRequest) {
     if (semCaixa) return semCaixa;
 
     const data = await req.json();
-    const { tableId, customerName, waiterName, waiterId } = data;
+    const { tableId, customerName, waiterName, waiterId, notes } = data;
+    // A observação da mesa ("aniversário", "cadeirinha de bebê", "sem glúten").
+    // A coluna existia e ninguém gravava: sem onde escrever, a loja espremia
+    // o recado no nome — "Emerson BD mesa 3", "Maria Clara viagem" (banco,
+    // 24/09/2026). Teto de 200: é recado de mesa, não um campo de texto livre
+    // que alguém cola a conversa inteira.
+    const observacao = String(notes ?? "").trim().slice(0, 200) || null;
 
     if (!tableId) return NextResponse.json({ error: "Table ID is required" }, { status: 400 });
 
@@ -134,6 +140,7 @@ export async function POST(req: NextRequest) {
           tableId,
           franchiseeId: targetFranchiseeId,
           customerName: customerName || null,
+          notes: observacao,
           // waiterId informado mas não é desta loja: nem o nome entra, senão o
           // card da mesa mostraria um garçom que não existe aqui.
           waiterName: garcomDaMesa?.name || (waiterId ? null : waiterName || null),

@@ -25,6 +25,8 @@ interface TableItem {
   openSession: {
     id: string;
     customerName: string | null;
+    /** Observação escrita ao ocupar a mesa ("aniversário", "sem glúten"). */
+    notes?: string | null;
     waiterName: string | null;
     waiterId?: string | null;
     openedAt: string;
@@ -149,6 +151,14 @@ const ESTILO_TABLET = `
   }
   .mesa-detalhe { width: 370px; }
 
+  /* Nome e observação da mesa aberta: no máximo duas linhas no cartão (o
+     texto inteiro está no painel da mesa) e uma no celular, mais abaixo. */
+  .mesa-cartao-nome, .mesa-cartao-obs {
+    max-width: 100%; box-sizing: border-box; text-align: center;
+    overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; overflow-wrap: anywhere;
+  }
+
   @media (max-width: 1180px) {
     .mesa-lancar { grid-template-columns: 1fr 290px; }
     .mesa-produtos { grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); }
@@ -234,6 +244,12 @@ const ESTILO_TABLET = `
     .mesa-cartao-valor { font-size: 12.5px !important; }
     /* A linha miúda do cartão sai: ilegível em 94px e recuperável num toque. */
     .mesa-cartao-linha { display: none !important; }
+    /* Nome e observação ficam — são o que o garçom procura de longe. O nome
+       numa linha, cortado com "..."; a observação em até duas, porque numa
+       só o cartão de 84px mostrava "aniversár..." e o recado se perdia. */
+    .mesa-cartao-nome { -webkit-line-clamp: 1; }
+    .mesa-cartao-nome { font-size: 11.5px !important; }
+    .mesa-cartao-obs { font-size: 10.5px !important; padding: 1px 5px !important; }
 
     /* ── A GAVETA DA MESA ────────────────────────────────────────────
        Fora do fluxo: o mapa atrás continua inteiro e o garçom troca de mesa
@@ -388,6 +404,7 @@ export default function MesasApp({
 
   // Open table form
   const [openCustomerName, setOpenCustomerName] = useState("");
+  const [openNotes, setOpenNotes] = useState("");
   const [openWaiterId, setOpenWaiterId] = useState("");
   const [waiters, setWaiters] = useState<any[]>([]);
 
@@ -783,6 +800,7 @@ export default function MesasApp({
         body: JSON.stringify({
           tableId: confirmOpen.id,
           customerName: openCustomerName,
+          notes: openNotes,
           waiterId: waiterIdEscolhido,
           waiterName: selectedWaiter ? selectedWaiter.name : ""
         })
@@ -791,6 +809,7 @@ export default function MesasApp({
         showToast(`✅ Mesa ${confirmOpen.number} ocupada!`);
         setConfirmOpen(null);
         setOpenCustomerName("");
+        setOpenNotes("");
         setOpenWaiterId(garcomFixo);
         await fetchTables();
         // Select the now-opened table
@@ -1267,6 +1286,27 @@ export default function MesasApp({
     window.location.assign(`/garcom/${encodeURIComponent(slug)}`);
   };
 
+  // ── OCUPADAS NO TOPO ─────────────────────────────────────────────────────
+  //
+  // Pedido do dono (24/09/2026): num salão de 20 mesas com 4 ocupadas, quem
+  // trabalha procura as ocupadas no meio das livres. Ligado, a grade vira dois
+  // grupos — OCUPADAS e depois LIVRES, cada um em ordem de número. É opcional
+  // e fica guardado NESTE aparelho: o celular do garçom não muda a tela do
+  // caixa. Lido depois de montar, e não no useState, senão o HTML do servidor
+  // (sem localStorage) e o do navegador divergem.
+  const CHAVE_OCUPADAS_NO_TOPO = "firehub_mesas_ocupadas_no_topo";
+  const [ocupadasNoTopo, setOcupadasNoTopo] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(CHAVE_OCUPADAS_NO_TOPO) === "1") setOcupadasNoTopo(true);
+    } catch { /* aba anônima ou armazenamento bloqueado: fica a ordem de número */ }
+  }, []);
+  const trocarOcupadasNoTopo = () => {
+    const ligar = !ocupadasNoTopo;
+    setOcupadasNoTopo(ligar);
+    try { localStorage.setItem(CHAVE_OCUPADAS_NO_TOPO, ligar ? "1" : "0"); } catch { /* só não lembra */ }
+  };
+
   // ─── Computed ──────────────────────────────────────────────────────────────
   const occupiedTables = tables.filter(t => t.openSession);
   const freeTables = tables.filter(t => !t.openSession);
@@ -1443,6 +1483,7 @@ export default function MesasApp({
               <div style={{ fontSize: 12, opacity: 0.8 }}>
                 {selectedTable.openSession.customerName || ""}
                 {selectedTable.openSession.waiterName ? ` · Garçom: ${selectedTable.openSession.waiterName}` : ""}
+                {selectedTable.openSession.notes ? ` · 📝 ${selectedTable.openSession.notes}` : ""}
               </div>
             </div>
           </div>
@@ -1721,6 +1762,107 @@ export default function MesasApp({
     );
   }
 
+  // ── O CARTÃO DA MESA ──────────────────────────────────────────────────────
+  //
+  // Função, e não JSX solto dentro do map: a grade desenha os cartões numa
+  // lista só (ordem de número) ou em dois grupos (ocupadas no topo), e o
+  // cartão tem de ser o mesmo nos dois jeitos.
+  //
+  // A mesa aberta mostra o NOME do cliente e a OBSERVAÇÃO escrita ao ocupar
+  // a mesa, à vista de quem passa pelo salão (pedido do dono, 24/09/2026).
+  // Texto longo é cortado no cartão; o inteiro está no painel da mesa.
+  const cartaoDaMesa = (table: TableItem) => {
+    const occupied = !!table.openSession;
+    const isSelected = selectedTable?.id === table.id;
+    const hasValue = occupied && (table.openSession?.totalAmount || 0) > 0;
+    const nome = (table.openSession?.customerName || "").trim();
+    const observacao = (table.openSession?.notes || "").trim();
+    return (
+      <button
+        key={table.id}
+        onClick={() => {
+          if (occupied) {
+            setSelectedTable(table);
+            if (table.openSession) fetchSessionDetail(table.openSession.id);
+          } else {
+            // Show confirm modal
+            setConfirmOpen(table);
+          }
+        }}
+        className="mesa-cartao"
+        style={{
+          background: isSelected
+            ? "linear-gradient(135deg, #475569, #334155)"
+            : occupied
+              ? hasValue ? "#FEF2F2" : "#FFF4EF"
+              : "#fff",
+          border: `2px solid ${isSelected ? "#475569" : occupied ? (hasValue ? "#FECACA" : "#FFD3C2") : "#E2E8F0"}`,
+          borderRadius: 16, padding: "14px 10px", cursor: "pointer",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          gap: 4, transition: "all 0.15s",
+          boxShadow: isSelected
+            ? "0 4px 20px rgba(28, 25, 23,0.35)"
+            : occupied
+              ? "0 2px 8px rgba(220,38,38,0.08)"
+              : "0 1px 3px rgba(0,0,0,0.04)",
+          minHeight: 120, position: "relative",
+        }}
+      >
+        {/* Number */}
+        <span className="mesa-cartao-numero" style={{
+          fontSize: 26, fontWeight: 900, letterSpacing: "-0.5px",
+          color: isSelected ? "#fff" : occupied ? "#C92E09" : "#334155",
+        }}>
+          {table.label || table.number.toString().padStart(2, "0")}
+        </span>
+
+        {/* Status indicator */}
+        <span style={{ fontSize: 18 }}>{occupied ? "🔴" : "🟢"}</span>
+
+        {occupied ? (
+          <>
+            {nome && (
+              <span className="mesa-cartao-nome" title={nome} style={{
+                fontSize: 12.5, fontWeight: 800, lineHeight: 1.2,
+                color: isSelected ? "#fff" : "#0F172A",
+              }}>
+                {nome}
+              </span>
+            )}
+            <span className="mesa-cartao-valor" style={{
+              fontSize: 14, fontWeight: 800,
+              color: isSelected ? "#E7DDD3" : "#C92E09",
+            }}>
+              {fmt(table.openSession!.totalAmount)}
+            </span>
+            <span className="mesa-cartao-linha" style={{
+              fontSize: 10, color: isSelected ? "#CBD5E1" : "#94A3B8",
+              fontWeight: 600,
+            }}>
+              {table.openSession!.orderCount} ped. · {elapsed(table.openSession!.openedAt)}
+              {useServiceFee && serviceFee > 0 ? ` · +${serviceFee}%` : ""}
+            </span>
+            {observacao && (
+              <span className="mesa-cartao-obs" title={observacao} style={{
+                fontSize: 11, fontWeight: 700, lineHeight: 1.25,
+                background: "#FEF3C7", color: "#92400E",
+                border: "1px solid #FDE68A", borderRadius: 6, padding: "2px 6px",
+              }}>
+                {observacao}
+              </span>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#0F766E" }}>Livre</span>
+        )}
+      </button>
+    );
+  };
+  const tituloDoGrupo = {
+    gridColumn: "1 / -1", fontSize: 12, fontWeight: 800,
+    letterSpacing: "0.06em", textTransform: "uppercase",
+  } as const;
+
   // ─── GRID VIEW (main view) ────────────────────────────────────────────────
   return (
     <div className="mesa-tela" style={{
@@ -1858,74 +2000,40 @@ export default function MesasApp({
               )}
             </div>
           ) : (
-            tables.map(table => {
-              const occupied = !!table.openSession;
-              const isSelected = selectedTable?.id === table.id;
-              const hasValue = occupied && (table.openSession?.totalAmount || 0) > 0;
-              return (
-                <button
-                  key={table.id}
-                  onClick={() => {
-                    if (occupied) {
-                      setSelectedTable(table);
-                      if (table.openSession) fetchSessionDetail(table.openSession.id);
-                    } else {
-                      // Show confirm modal
-                      setConfirmOpen(table);
-                    }
-                  }}
-                  className="mesa-cartao"
+            <>
+              {/* Liga e desliga; cada aparelho lembra a sua escolha. */}
+              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8 }}>
+                <button type="button" onClick={trocarOcupadasNoTopo} aria-pressed={ocupadasNoTopo}
+                  className="mesa-chip"
+                  title={ocupadasNoTopo ? "Voltar para a ordem de número" : "Mostrar as mesas ocupadas primeiro"}
                   style={{
-                    background: isSelected
-                      ? "linear-gradient(135deg, #475569, #334155)"
-                      : occupied
-                        ? hasValue ? "#FEF2F2" : "#FFF4EF"
-                        : "#fff",
-                    border: `2px solid ${isSelected ? "#475569" : occupied ? (hasValue ? "#FECACA" : "#FFD3C2") : "#E2E8F0"}`,
-                    borderRadius: 16, padding: "14px 10px", cursor: "pointer",
-                    display: "flex", flexDirection: "column", alignItems: "center",
-                    gap: 4, transition: "all 0.15s",
-                    boxShadow: isSelected
-                      ? "0 4px 20px rgba(28, 25, 23,0.35)"
-                      : occupied
-                        ? "0 2px 8px rgba(220,38,38,0.08)"
-                        : "0 1px 3px rgba(0,0,0,0.04)",
-                    minHeight: 120, position: "relative",
-                  }}
-                >
-                  {/* Number */}
-                  <span className="mesa-cartao-numero" style={{
-                    fontSize: 26, fontWeight: 900, letterSpacing: "-0.5px",
-                    color: isSelected ? "#fff" : occupied ? "#C92E09" : "#334155",
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "7px 14px", borderRadius: 999, cursor: "pointer",
+                    fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+                    background: ocupadasNoTopo ? "#334155" : "#fff",
+                    color: ocupadasNoTopo ? "#fff" : "#475569",
+                    border: `1.5px solid ${ocupadasNoTopo ? "#334155" : "#E2E8F0"}`,
                   }}>
-                    {table.label || table.number.toString().padStart(2, "0")}
-                  </span>
-
-                  {/* Status indicator */}
-                  <span style={{ fontSize: 18 }}>{occupied ? "🔴" : "🟢"}</span>
-
-                  {occupied ? (
-                    <>
-                      <span className="mesa-cartao-valor" style={{
-                        fontSize: 14, fontWeight: 800,
-                        color: isSelected ? "#E7DDD3" : "#C92E09",
-                      }}>
-                        {fmt(table.openSession!.totalAmount)}
-                      </span>
-                      <span className="mesa-cartao-linha" style={{
-                        fontSize: 10, color: isSelected ? "#CBD5E1" : "#94A3B8",
-                        fontWeight: 600,
-                      }}>
-                        {table.openSession!.orderCount} ped. · {elapsed(table.openSession!.openedAt)}
-                        {useServiceFee && serviceFee > 0 ? ` · +${serviceFee}%` : ""}
-                      </span>
-                    </>
-                  ) : (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#0F766E" }}>Livre</span>
-                  )}
+                  ⬆ Ocupadas no topo{ocupadasNoTopo ? " ✓" : ""}
                 </button>
-              );
-            })
+              </div>
+              {ocupadasNoTopo ? (
+                <>
+                  {occupiedTables.length > 0 && (
+                    <div style={{ ...tituloDoGrupo, color: "#C92E09" }}>Ocupadas · {occupiedTables.length}</div>
+                  )}
+                  {occupiedTables.map(cartaoDaMesa)}
+                  {freeTables.length > 0 && (
+                    <div style={{ ...tituloDoGrupo, color: "#0F766E", marginTop: occupiedTables.length > 0 ? 8 : 0 }}>
+                      Livres · {freeTables.length}
+                    </div>
+                  )}
+                  {freeTables.map(cartaoDaMesa)}
+                </>
+              ) : (
+                tables.map(cartaoDaMesa)
+              )}
+            </>
           )}
         </div>
 
@@ -1956,6 +2064,14 @@ export default function MesasApp({
                     {selectedTable.openSession.waiterName && ` · 👤 ${selectedTable.openSession.waiterName}`}
                     {selectedTable.openSession.customerName && ` · ${selectedTable.openSession.customerName}`}
                   </div>
+                  {/* A observação inteira: no cartão ela pode sair cortada. */}
+                  {selectedTable.openSession.notes && (
+                    <div style={{
+                      marginTop: 6, fontSize: 12, fontWeight: 700, lineHeight: 1.3,
+                      background: "#FEF3C7", color: "#92400E", borderRadius: 6,
+                      padding: "4px 8px", whiteSpace: "pre-wrap", overflowWrap: "anywhere",
+                    }}>📝 {selectedTable.openSession.notes}</div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 4 }}>
                   {!ehGarcom && (
@@ -2366,7 +2482,7 @@ export default function MesasApp({
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
           display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenWaiterId(garcomFixo); }}>
+        }} onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenNotes(""); setOpenWaiterId(garcomFixo); }}>
           <div onClick={e => e.stopPropagation()} style={{
             background: "#fff", borderRadius: 20, width: "90%", maxWidth: 420,
             padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
@@ -2400,6 +2516,22 @@ export default function MesasApp({
               </label>
               <input value={openCustomerName} onChange={e => setOpenCustomerName(e.target.value)}
                 placeholder="Ex: João, Família Silva..."
+                style={{
+                  width: "100%", padding: "10px 14px", borderRadius: 10,
+                  border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit",
+                }} />
+            </div>
+
+            {/* O recado da mesa sai no cartão, à vista de quem passa pelo
+                salão. Sem este campo, a loja escrevia "Emerson BD mesa 3" no
+                nome. */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>
+                Observação (opcional)
+              </label>
+              <input value={openNotes} onChange={e => setOpenNotes(e.target.value)}
+                maxLength={120}
+                placeholder="Ex: aniversário, cadeirinha de bebê, sem glúten..."
                 style={{
                   width: "100%", padding: "10px 14px", borderRadius: 10,
                   border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit",
@@ -2442,7 +2574,7 @@ export default function MesasApp({
             </div>
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenWaiterId(garcomFixo); }}
+              <button onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenNotes(""); setOpenWaiterId(garcomFixo); }}
                 style={{
                   flex: 1, padding: "12px 0", borderRadius: 12,
                   border: "1.5px solid #E2E8F0", background: "#F8FAFC",
