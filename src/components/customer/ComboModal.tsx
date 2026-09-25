@@ -578,6 +578,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                 <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#0F766E", marginTop: "2px" }}>
                                   + R$ {addPrice.toFixed(2).replace(".", ",")}
                                 </div>
+                              ) : addPrice < 0 ? (
+                                /* Meia pizza mais barata: o total DESCE. "Incluso"
+                                   aqui escondia o desconto que o rodapé aplicava. */
+                                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#0F766E", marginTop: "2px" }}>
+                                  − R$ {Math.abs(addPrice).toFixed(2).replace(".", ",")}
+                                </div>
                               ) : (
                                 <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#94A3B8", marginTop: "1px" }}>
                                   Incluso

@@ -7,7 +7,7 @@ import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
-import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
+import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 
 export async function POST(
   req: NextRequest,
@@ -97,7 +97,8 @@ export async function POST(
       // Mesma conta do cardápio, do modal e do totem (src/lib/preco-combo.ts).
       const noCanal = aplicarPrecoDoCanalComCombo(produto as any, "salao");
       let preco = precoUnitarioDoItem(noCanal as any, item.comboSelections);
-      const minimo = precoMinimoDoProduto(noCanal as any);
+      // Piso que aceita o desconto da meia pizza mais barata (lib/preco-combo.ts).
+      const minimo = pisoDoPreco(noCanal as any);
       if (preco < minimo) preco = minimo;
       const quantity = Math.max(1, Math.min(99, Math.floor(Number(item.quantity) || 1)));
       itensValidados.push({

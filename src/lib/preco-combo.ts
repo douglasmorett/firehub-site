@@ -26,6 +26,8 @@
 
 export type ItemDeGrupo = {
   additionalPrice?: number | null;
+  /** Quantas vezes a opção pode repetir. Nulo = até o teto do grupo. */
+  maxPerItem?: number | null;
   menuProduct?: { name?: string | null; price?: number | null } | null;
 };
 
@@ -308,6 +310,54 @@ export function precoMinimoDoProduto(produto: ProdutoComCombo): number {
     minimo += regraDoGrupo(g) === "SOMA" ? maisBarato * quantos : maisBarato;
   }
   return arredondar(minimo);
+}
+
+/**
+ * O MENOR preço que uma escolha válida pode dar — o PISO que o servidor
+ * aplica quando a escolha chega vazia ou com nome que não casa.
+ *
+ * Não é o "a partir de". Aquele ignora a pergunta opcional, e está certo para
+ * a vitrine; como piso, não. Pizza meio a meio montada com "a outra metade"
+ * numa pergunta opcional cobra a média pela diferença: a Bjorn Ironside
+ * (R$ 109,90) com meia Calabresa (R$ 65,90) é base 109,90 e acréscimo
+ * −22,00 = R$ 87,90. O modal mostrava R$ 87,90 e o servidor, com o
+ * "a partir de" como piso, lançava R$ 109,90 — no delivery e na mesa
+ * (Ragnar, 25/09/2026). O balcão escapava porque confia no preço da tela.
+ *
+ * Então o piso soma, além do mínimo exigido, o DESCONTO mais fundo que as
+ * perguntas permitem. Continua segurando o que ele existe para segurar: o
+ * "Nugget" de base R$ 0,00 sem escolha não sai de graça, porque nenhuma opção
+ * dele desconta.
+ */
+export function pisoDoPreco(produto: ProdutoComCombo): number {
+  let piso = precoMinimoDoProduto(produto);
+  for (const g of produto.comboGroups || []) {
+    const itens = [...(g.items || [])].sort(
+      (a, b) => (Number(a.additionalPrice) || 0) - (Number(b.additionalPrice) || 0)
+    );
+    const maisBarato = Number(itens[0]?.additionalPrice) || 0;
+    if (itens.length === 0 || maisBarato >= 0) continue;
+    const exigidos = minimoExigidoDoGrupo(g);
+
+    // MAIOR/MEDIA valem UMA pizza: o desconto mais fundo é a opção mais
+    // barata, e o "a partir de" já a contou quando o grupo é obrigatório.
+    if (regraDoGrupo(g) !== "SOMA") {
+      if (exigidos <= 0) piso += maisBarato;
+      continue;
+    }
+
+    // SOMA: o "a partir de" já contou as escolhas exigidas; as vagas que
+    // sobram até o teto do grupo entram só com opção que desconta.
+    let vagas = Math.max(1, Number(g.maxQty) || 1) - exigidos;
+    for (const i of itens) {
+      const preco = Number(i.additionalPrice) || 0;
+      if (preco >= 0 || vagas <= 0) break;
+      const leva = Math.min(Number(i.maxPerItem) > 0 ? Number(i.maxPerItem) : vagas, vagas);
+      piso += preco * leva;
+      vagas -= leva;
+    }
+  }
+  return arredondar(piso);
 }
 
 /**

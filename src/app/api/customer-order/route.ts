@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { precoUnitarioDoItem, precoMinimoDoProduto } from "@/lib/preco-combo";
+import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
@@ -292,7 +292,9 @@ export async function POST(req: Request) {
       // opção do grupo, o cálculo devolve só a base — e no "Nugget" (base
       // R$ 0,00) isso é um pedido de graça. Cobrar o mínimo possível é o pior
       // caso aceitável; entregar sem cobrar não é.
-      const minimoDoProduto = precoMinimoDoProduto(produtoNoCanal as any);
+      // `pisoDoPreco`, não o "a partir de": a meia pizza mais barata DESCONTA
+      // (acréscimo negativo), e o "a partir de" como piso a cobrava cheia.
+      const minimoDoProduto = pisoDoPreco(produtoNoCanal as any);
       if (precoUnitario < minimoDoProduto) {
         console.warn(
           `[customer-order] "${product.name}" sairia por R$ ${precoUnitario} sem escolha válida ` +

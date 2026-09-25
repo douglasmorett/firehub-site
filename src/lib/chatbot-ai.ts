@@ -12,7 +12,7 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { trackGeminiUsage, trackDivergenciaDePreco } from "@/lib/usage-tracker";
 import { conferirPrecosDitos, extrairPrecosDoTexto, compararTotalDitoComGravado } from "@/lib/precos-ditos";
 import { normalizeStoreHours } from "@/lib/store-hours";
-import { precoMinimoDoProduto, precoVariaPorEscolha, minimoExigidoDoGrupo } from "./preco-combo";
+import { precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, minimoExigidoDoGrupo } from "./preco-combo";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
@@ -2233,7 +2233,8 @@ async function syncAiOrderToDatabase({
         );
       }
 
-      const precoMinimo = precoMinimoDoProduto(matchedProduct as any);
+      // Piso, não "a partir de": a meia pizza mais barata desconta.
+      const precoMinimo = pisoDoPreco(matchedProduct as any);
       const comEscolhas = (Number(matchedProduct.price) || 0) + somaDasOpcoes;
       const realPrice = Math.round(Math.max(comEscolhas, precoMinimo) * 100) / 100;
 

@@ -33,6 +33,7 @@ const {
   adicionaisDetalhados,
   precoUnitarioDoItem,
   precoMinimoDoProduto,
+  pisoDoPreco,
   precoVariaPorEscolha,
   regraDoGrupo,
 } = jiti(path.resolve(__dirname, "..", "src", "lib", "preco-combo.ts"));
@@ -142,6 +143,37 @@ const digao = {
 };
 conferir("soma as duas metades: 24,45 + 22,95 = 47,40", somaDosAdicionais(digao, { g1: { Mussarela: 1, "Calabresa Acebolada": 1 } }), 47.4);
 conferir("a partir de 45,90 (22,95 x 2), como o site do InstaDelivery anuncia", precoMinimoDoProduto(digao), 45.9);
+
+console.log("\n== Piso do servidor: a meia pizza mais barata DESCONTA ==");
+// Ragnar (25/09/2026): a pizza é o card e a outra metade é uma pergunta
+// opcional com acréscimo = (outra − esta) / 2. Bjorn Ironside 109,90 com meia
+// Calabresa 65,90 = 87,90. O "a partir de" (109,90) como piso cobrava cheio.
+const bjorn = {
+  price: 109.9,
+  comboGroups: [
+    { id: "m", title: "Meio a meio?", minQty: 0, maxQty: 1, items: [sabor("1/2 Calabresa", -22), sabor("1/2 Judith", 0), sabor("1/2 Americana", -16.5)] },
+    { id: "b", title: "Borda", minQty: 0, maxQty: 1, items: [sabor("Catupiry", 22.9)] },
+  ],
+};
+conferir("vitrine continua 'a partir de' 109,90", precoMinimoDoProduto(bjorn), 109.9);
+conferir("piso desce até a metade mais barata: 87,90", pisoDoPreco(bjorn), 87.9);
+conferir("Bjorn + meia Calabresa = 87,90 (o piso não barra)", precoUnitarioDoItem(bjorn, { m: { "1/2 Calabresa": 1 } }), 87.9);
+conferir("Bjorn + meia Calabresa + borda = 110,80", precoUnitarioDoItem(bjorn, { m: { "1/2 Calabresa": 1 }, b: { Catupiry: 1 } }), 110.8);
+
+// O piso ainda segura o que existe para segurar: base 0, valor na opção.
+const nugget = { price: 0, comboGroups: [{ id: "n", minQty: 1, maxQty: 1, items: [sabor("6 Nuggets", 9.9), sabor("15 Nuggets", 19.9)] }] };
+conferir("Nugget: piso continua 9,90", pisoDoPreco(nugget), 9.9);
+conferir("produto sem pergunta: piso = preço", pisoDoPreco({ price: 30, comboGroups: [] }), 30);
+
+// Desconto que repete: SOMA 0..3, opção −2 com maxPerItem 1 e outra −1 livre.
+const repete = { price: 20, comboGroups: [{ id: "r", minQty: 0, maxQty: 3, items: [{ ...sabor("A", -2), maxPerItem: 1 }, sabor("B", -1), sabor("C", 5)] }] };
+conferir("SOMA 0..3: −2 uma vez + −1 duas = piso 16", pisoDoPreco(repete), 16);
+// Obrigatória com desconto já entra no "a partir de"; as vagas que sobram, só com desconto.
+const obrigatoria = { price: 20, comboGroups: [{ id: "o", minQty: 1, maxQty: 2, items: [sabor("A", -3), sabor("B", 4)] }] };
+conferir("SOMA 1..2 com −3: a partir de 17, piso 14", [precoMinimoDoProduto(obrigatoria), pisoDoPreco(obrigatoria)], [17, 14]);
+// MEDIA opcional com opção negativa vale UMA vez.
+const mediaOpcional = { price: 50, comboGroups: [{ id: "x", minQty: 0, maxQty: 2, priceRule: "MEDIA", items: [sabor("A", -4), sabor("B", -6)] }] };
+conferir("MEDIA opcional: piso 44 (a mais barata, uma vez)", pisoDoPreco(mediaOpcional), 44);
 
 console.log(`\n${ok} ok, ${falhou} falharam\n`);
 process.exit(falhou > 0 ? 1 : 0);

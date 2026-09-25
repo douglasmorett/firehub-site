@@ -2561,8 +2561,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                                   {opcao.optionNote && (
                                     <span style={{ fontSize: 15, color: "#94A3B8" }}>{opcao.optionNote}</span>
                                   )}
-                                  {adicional > 0 && (
-                                    <div style={{ fontSize: 17, color: "#4ADE80", fontWeight: 800 }}>+ {formatarPreco(adicional)}</div>
+                                  {adicional !== 0 && (
+                                    <div style={{ fontSize: 17, color: "#4ADE80", fontWeight: 800 }}>
+                                      {adicional > 0 ? "+ " : "− "}{formatarPreco(Math.abs(adicional))}
+                                    </div>
                                   )}
                                 </div>
 
