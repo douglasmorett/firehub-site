@@ -215,15 +215,10 @@ async function main() {
   // ── assets da ficha da loja ─────────────────────────────────────────
   fs.mkdirSync(assetsLoja, { recursive: true });
   await sharp(iconeMestre).resize(128, 128).png().toFile(path.join(assetsLoja, "icone-loja-128.png"));
-  await sharp(path.join(raiz, "public", "images", "ifood_eta_banner.jpg"))
-    .resize(1180, 700, { fit: "contain", background: "#FFFFFF" })
-    .extend({ top: 50, bottom: 50, left: 50, right: 50, background: "#FFFFFF" })
-    .jpeg({ quality: 92 })
-    .toFile(path.join(assetsLoja, "screenshot-1280x800.jpg"));
-  await sharp(path.join(raiz, "public", "images", "ifood_eta_banner.jpg"))
-    .resize(440, 280, { fit: "cover" })
-    .jpeg({ quality: 92 })
-    .toFile(path.join(assetsLoja, "tile-promocional-440x280.jpg"));
+  // As capturas NÃO saem mais do ifood_eta_banner.jpg: aquilo é arte com o
+  // logo do iFood e um selo "Connected" que a extensão não tem — marca de
+  // terceiro e tela que não existe, as duas coisas que a revisão barra. Elas
+  // saem do popup real: node scripts/vitrine-extensao/capturar.mjs
 
   // ── zip ─────────────────────────────────────────────────────────────
   const zipPath = path.join(saida, `firehub-ifood-extension-v${manifest.version}.zip`);

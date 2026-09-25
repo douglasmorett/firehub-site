@@ -5,7 +5,9 @@ Visibilidade escolhida: **Não listada** — só instala quem recebe o link do p
 
 ---
 
-## 0. Pendências da conta (bloqueiam tudo)
+## 0. Pendências da conta — RESOLVIDAS em 09/09/2026
+
+> Resolvidas quando a FireHub Prazos foi enviada (ver `PRAZOS-CHROME-WEB-STORE.md`). O resto desta seção é histórico.
 
 Verificado no painel em 24/08/2026, na conta `contatohakim@gmail.com`
 (publisher `529cf443-6bd1-4aad-8d41-e6e9c252a297`): **a conta ainda não pode publicar**. O painel
@@ -42,7 +44,7 @@ Sai em `build/chrome-store/`:
 | --- | --- |
 | `firehub-ifood-extension-v1.0.0.zip` | é este que sobe no painel |
 | `loja/icone-loja-128.png` | ícone da ficha |
-| `loja/screenshot-1280x800.jpg` | captura obrigatória (mínimo 1) |
+| `loja/captura-*.png` | capturas 1280x800 do popup real, geradas pelo próprio script |
 | `loja/tile-promocional-440x280.jpg` | opcional, melhora a ficha |
 | `extensao/` | o conteúdo do zip, para conferir |
 
@@ -65,36 +67,37 @@ manifest e dos scripts, gera os ícones 16/48/128 de verdade e valida a sintaxe 
 
 ## 3. Preencher a ficha
 
-**Nome**
+**Nome** (sem marca de terceiro no nome — mesma regra da FireHub Prazos; o iFood aparece só na descrição)
 ```
-FireHub — iFood Dynamic ETA & Automação
+FireHub — Prazo Automático de Entrega
 ```
 
 **Descrição breve** (até 132 caracteres)
 ```
-Ajusta sozinho o tempo de entrega da sua loja no iFood conforme a fila real da cozinha e os entregadores disponíveis.
+Ajusta sozinho o tempo de entrega da sua loja no Portal do Parceiro iFood pela fila de pedidos do painel FireHub.
 ```
 
 **Descrição detalhada**
 ```
-O FireHub Auto-ETA cuida do tempo de entrega da sua loja no Portal do Parceiro iFood enquanto você
-atende os clientes.
+Cuida do tempo de entrega da sua loja no Portal do Parceiro iFood enquanto você atende os clientes.
 
 Como funciona:
-• A extensão lê quantos pedidos estão em produção no seu painel FireHub.
+• A extensão lê quantos pedidos estão na coluna "Em produção" do seu painel FireHub.
 • Você informa quantos entregadores estão na casa.
-• Ela calcula o prazo pela tabela de capacidade da sua operação e aplica no iFood nos bastidores.
-• Se a fila estourar o limite de segurança, pausa a loja para não vender atraso.
+• Ela escolhe o prazo pela tabela de capacidade (até 1, 2, 3 ou 4 pedidos por entregador: 28, 38, 58 ou 78 min) e aplica na tela de entrega do Portal do Parceiro, na aba que você deixou aberta.
+• Se a fila passar de 4 pedidos por entregador, o prazo fica no máximo e um aviso vermelho aparece na tela. Pausar a loja continua sendo decisão sua.
 
 Dois modos:
-• Automático — o robô monitora a cozinha e ajusta a cada poucos minutos.
-• Manual — o operador digita os pedidos e o prazo e trava o tempo na hora.
+• Automático — segue a tabela acima.
+• Manual — você cria as próprias faixas ("até 5 pedidos, 40 min").
 
-Para quem é: lojistas que usam o painel FireHub (firehubfood.com.br) e vendem pelo iFood. É
-necessário ter conta ativa no FireHub e estar logado no Portal do Parceiro iFood.
+Para quem é: lojistas que usam o painel FireHub (firehubfood.com.br) e vendem pelo iFood. É preciso ter conta ativa no FireHub e estar logado no Portal do Parceiro da própria loja.
 
-A extensão funciona apenas em portal.ifood.com.br e firehubfood.com.br. Não coleta histórico de
-navegação, não acessa outros sites e não compartilha dados com terceiros.
+O que ela NÃO faz: não aceita, recusa nem cancela pedidos, não pausa a loja, não abre abas sozinha e não mexe em preço nem em taxa. Ela ajusta o tempo de entrega, e só.
+
+Funciona apenas em portal.ifood.com.br e firehubfood.com.br. Não coleta histórico de navegação e não compartilha dados com terceiros.
+
+Produto do FireHub. Não somos o iFood e não temos vínculo com a empresa.
 ```
 
 **Categoria:** Fluxo de trabalho e planejamento · **Idioma:** Português (Brasil)
@@ -114,7 +117,7 @@ Cole cada uma no campo correspondente:
 | --- | --- |
 | `storage` | Guardar no próprio navegador a sessão do lojista e as preferências (modo automático/manual, regras de prazo). |
 | `alarms` | Recalcular o tempo de entrega periodicamente enquanto a loja está aberta. |
-| `tabs` | Localizar a aba do Portal do Parceiro iFood já aberta pelo lojista e reabri-la caso seja fechada por engano. |
+| `tabs` | Localizar a aba do Portal do Parceiro iFood que o próprio lojista deixou aberta, para aplicar o prazo nela. A extensão não abre aba sozinha: sem a aba, ela só avisa, e abre a tela de entrega apenas quando o lojista clica no aviso. |
 | `activeTab` | Agir na aba do Portal iFood quando o lojista aciona a extensão. |
 | `scripting` | Aplicar a alteração do tempo de entrega na página do Portal do Parceiro iFood. |
 | `host_permissions` (`portal.ifood.com.br`, `firehubfood.com.br`) | São os dois únicos sites onde a extensão opera: lê a fila da cozinha no painel FireHub e aplica o prazo no portal do iFood, ambos da própria loja do usuário. |

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "FireHub — iFood Dynamic ETA & Automação",
+  "name": "FireHub — Prazo Automático de Entrega",
   "version": "1.0.0",
-  "description": "Automação inteligente do tempo de entrega no Portal iFood com base no KDS FireHub e motoboys disponíveis.",
+  "description": "Ajusta sozinho o tempo de entrega da sua loja no Portal do Parceiro iFood pela fila de pedidos do painel FireHub.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

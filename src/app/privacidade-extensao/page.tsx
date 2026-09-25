@@ -3,7 +3,7 @@ import { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Política de Privacidade — Extensão FireHub para Chrome",
   description:
-    "Quais dados a extensão FireHub — iFood Dynamic ETA usa, para quê, onde ficam guardados e como excluí-los.",
+    "Quais dados a extensão FireHub — Prazo Automático de Entrega usa, para quê, onde ficam guardados e como excluí-los.",
 };
 
 const box = {
@@ -31,8 +31,8 @@ export default function PrivacidadeExtensaoPage() {
         Política de Privacidade — Extensão FireHub para Chrome
       </h1>
       <p style={{ color: "#64748B", marginBottom: "2rem" }}>
-        Aplica-se à extensão <strong>FireHub — iFood Dynamic ETA &amp; Automação</strong>, publicada
-        na Chrome Web Store pela FireHub Food. Última atualização: 24/08/2026.
+        Aplica-se à extensão <strong>FireHub — Prazo Automático de Entrega</strong>, publicada
+        na Chrome Web Store pela FireHub Food. Última atualização: 25/09/2026.
       </p>
 
       <section style={{ marginBottom: "2rem" }}>
@@ -55,7 +55,7 @@ export default function PrivacidadeExtensaoPage() {
           <li>
             <strong>Credenciais do FireHub:</strong> e-mail e senha digitados pelo lojista no popup
             da extensão são enviados apenas para <code>firehubfood.com.br</code> para autenticar a
-            loja. A senha não é armazenada — guarda-se somente o token de sessão retornado.
+            loja. A senha não é armazenada — guardam-se somente o e-mail e o token de sessão retornado.
           </li>
           <li>
             <strong>Dados operacionais da loja:</strong> quantidade de pedidos em produção, número de
@@ -119,8 +119,9 @@ export default function PrivacidadeExtensaoPage() {
             <code>alarms</code> — recalcular o tempo de entrega a cada poucos minutos.
           </li>
           <li>
-            <code>tabs</code> e <code>activeTab</code> — localizar a aba do Portal iFood já aberta e
-            reabri-la se o operador fechar por engano.
+            <code>tabs</code> e <code>activeTab</code> — localizar a aba do Portal iFood que o próprio
+            operador deixou aberta. A extensão não abre abas sozinha: se a aba estiver fechada, ela
+            apenas avisa no painel FireHub, e só abre a tela de entrega quando o operador clica no aviso.
           </li>
           <li>
             <code>scripting</code> — aplicar a alteração de tempo na página do Portal iFood.

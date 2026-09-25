@@ -38,6 +38,8 @@ const FORA = [
   "src/components/FloatingContactWidget.tsx",
   "src/components/trilha/TrilhaDoCliente.tsx",
   "src/components/CartProvider.tsx",
+  // Cópias do popup da extensão (que não usa a paleta): tematizar tira a semelhança com o que o lojista vê.
+  "src/app/store/extensao-ifood/ilustracoes.tsx",
   "src/components/Providers.tsx",
 ].map((p) => path.join(RAIZ, p).toLowerCase());
 

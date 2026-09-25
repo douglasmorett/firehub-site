@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<!--
+  Capturas 1280x800 da ficha na Chrome Web Store, com o popup REAL da extensão
+  (firehub-ifood-extension/popup) rodando sobre stub.js. Sirva a raiz do repo
+  por HTTP e abra scripts/vitrine-extensao/cena.html?c=automatico (ou login,
+  manual). A loja reprova captura que não mostra o produto de verdade, e o
+  banner antigo tinha logo do iFood e um selo "Connected" que não existe.
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Vitrine da extensão</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 800px; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: radial-gradient(circle at 80% 30%, #FFE4D6 0%, #FFF7ED 35%, #F8FAFC 75%);
+    color: #0F172A;
+    display: grid; grid-template-columns: 1fr 520px; align-items: center; gap: 40px;
+    padding: 0 90px;
+  }
+  .marca { display: inline-flex; align-items: center; gap: 10px; font-weight: 900; font-size: 20px; }
+  .marca i { width: 40px; height: 40px; border-radius: 11px; background: linear-gradient(135deg,#FF5722,#F44336); display: grid; place-items: center; font-style: normal; font-size: 22px; }
+  h1 { font-size: 50px; line-height: 1.08; letter-spacing: -1.4px; margin: 26px 0 22px; font-weight: 900; }
+  h1 em { font-style: normal; color: #E8360C; }
+  ul { list-style: none; display: grid; gap: 14px; }
+  li { font-size: 21px; color: #334155; line-height: 1.4; padding-left: 34px; position: relative; }
+  li::before { content: "✓"; position: absolute; left: 0; top: 0; color: #16A34A; font-weight: 900; }
+  .palco { display: grid; place-items: center; }
+  iframe { border: 0; width: 320px; transform: scale(1.5); transform-origin: center; border-radius: 16px; box-shadow: 0 30px 60px rgba(15,23,42,0.35); background: #0F172A; }
+</style>
+</head>
+<body>
+  <div>
+    <div class="marca"><i>🔥</i> FireHub — Prazo Automático de Entrega</div>
+    <h1 id="titulo"></h1>
+    <ul id="pontos"></ul>
+  </div>
+  <div class="palco"><iframe id="popup" title="popup"></iframe></div>
+<script>
+  const TEXTOS = {
+    automatico: {
+      titulo: "O prazo do iFood <em>acompanha a fila</em> da sua cozinha",
+      pontos: ["Lê os pedidos em produção no painel FireHub", "Você informa os entregadores na casa", "Aplica o prazo na tela de entrega do Portal do Parceiro"],
+    },
+    login: {
+      titulo: "Entre com o <em>mesmo login</em> do seu painel FireHub",
+      pontos: ["Uma vez só, no computador do caixa", "A senha não fica guardada no navegador", "Funciona só em firehubfood.com.br e no Portal do Parceiro"],
+    },
+    manual: {
+      titulo: "Prefere a sua tabela? <em>Crie suas faixas</em>",
+      pontos: ["\"Até 6 pedidos, 40 min\" e pronto", "Um robô ligado por vez: Automático ou Manual", "Não pausa a loja nem mexe em preço ou taxa"],
+    },
+  };
+  const cena = new URLSearchParams(location.search).get("c") || "automatico";
+  const t = TEXTOS[cena] || TEXTOS.automatico;
+  document.getElementById("titulo").innerHTML = t.titulo;
+  document.getElementById("pontos").innerHTML = t.pontos.map((p) => `<li>${p}</li>`).join("");
+
+  // O popup.html de verdade, com o stub enfiado antes do popup.js.
+  const base = new URL("../../firehub-ifood-extension/popup/", location.href).href;
+  fetch(base + "popup.html").then((r) => r.text()).then((html) => {
+    const stub = new URL("stub.js", location.href).href;
+    const antes = `<base href="${base}"><script>window.__CENA = ${JSON.stringify(cena)};<\/script><script src="${stub}"><\/script>`;
+    const frame = document.getElementById("popup");
+    frame.srcdoc = html.replace("<head>", "<head>" + antes);
+    frame.onload = () => {
+      // O popup do modo manual é bem mais alto que o do login: a escala se
+      // ajusta para ele caber inteiro nos 800px.
+      const ajustar = () => {
+        const altura = frame.contentDocument.body.scrollHeight;
+        frame.style.height = altura + "px";
+        frame.style.transform = `scale(${Math.min(1.5, 740 / altura)})`;
+      };
+      ajustar();
+      setTimeout(ajustar, 400);
+    };
+  });
+</script>
+</body>
+</html>
