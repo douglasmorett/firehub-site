@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { segredoObrigatorio } from "@/lib/segredos";
+import { gatewayDaLoja } from "@/lib/gateway-da-loja";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const lojaId = quemPediu.ownerId || quemPediu.id;
   const loja = await prisma.user.findUnique({
     where: { id: lojaId },
-    select: { storePhone: true },
+    select: { storePhone: true, chatbotConfig: true },
   });
 
   const body = await req.json().catch(() => ({}));
@@ -54,16 +54,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const gatewayUrl = (
-    process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app"
-  ).replace(/\/$/, "");
   const instanceName = `firehub_${lojaId.slice(-10)}`;
 
   try {
+    // O gateway DESTA loja: se ela estiver num gateway à parte, o código tem
+    // que sair de lá, que é onde a instância dela vai viver.
+    const { baseUrl, apiKey } = gatewayDaLoja(loja?.chatbotConfig);
     const res = await fetch(
-      `${gatewayUrl}/instance/pairing-code/${instanceName}?number=${numero}`,
+      `${baseUrl}/instance/pairing-code/${instanceName}?number=${numero}`,
       {
-        headers: { apikey: segredoObrigatorio("EVOLUTION_API_KEY") },
+        headers: { apikey: apiKey },
         signal: AbortSignal.timeout(20000),
       },
     );

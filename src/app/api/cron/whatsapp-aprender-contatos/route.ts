@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { segredoObrigatorio } from "@/lib/segredos";
+import { gatewayDaLoja } from "@/lib/gateway-da-loja";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
 
@@ -35,11 +35,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const gatewayUrl = (
-    process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app"
-  ).replace(/\/$/, "");
-  const apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
-
   const desde = new Date(Date.now() - DIAS_DE_CLIENTE_ATIVO * 24 * 60 * 60 * 1000);
   const porLoja: Record<string, unknown> = {};
 
@@ -68,8 +63,10 @@ export async function GET(req: NextRequest) {
       if (numeros.length === 0) continue;
 
       const instanceName = `firehub_${loja.id.slice(-10)}`;
+      // Cada loja no gateway dela (ver lib/gateway-da-loja.ts).
+      const { baseUrl, apiKey } = gatewayDaLoja(cfg);
       try {
-        const res = await fetch(`${gatewayUrl}/instance/aprender-contatos/${instanceName}`, {
+        const res = await fetch(`${baseUrl}/instance/aprender-contatos/${instanceName}`, {
           method: "POST",
           headers: { apikey: apiKey, "Content-Type": "application/json" },
           body: JSON.stringify({ numeros }),
