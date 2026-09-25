@@ -99,7 +99,28 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.24";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.25";
+
+/** "1.2.10" é mais nova que "1.2.9": compara por número, não por texto. */
+export function versaoAssistenteAoMenos(versao: string | null | undefined, minima: string): boolean {
+  if (!versao) return false;
+  const a = String(versao).split(".").map((n) => parseInt(n, 10) || 0);
+  const b = String(minima).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return true;
+}
+
+/** Antes desta, cada reinício reimprimia as últimas horas: não havia confirmação no servidor. */
+export const VERSAO_QUE_CONFIRMA_IMPRESSAO = "1.2.7";
+/** Desde a 1.2.0 ele se atualiza sozinho — e, desde 24/09/2026, só com a loja parada. */
+export const VERSAO_QUE_SE_ATUALIZA = "1.2.0";
+/**
+ * Teto zero: aberto, reiniciado ou atualizado, só imprime o que entrar depois,
+ * e comanda presa desiste em 30 min (regra do dono em 24/09/2026).
+ */
+export const VERSAO_TETO_ZERO = "1.2.25";
 
 /**
  * A partir daqui o Assistente imprime o "CPF na nota" em LINHA PRÓPRIA.

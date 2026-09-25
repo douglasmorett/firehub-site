@@ -13,6 +13,8 @@ import { avisosDoPedido, blocosDoPedido } from "@/lib/comanda-modelo";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
+import { lembrarAssistente } from "@/lib/assistente-da-loja";
+import { getClientIp } from "@/lib/rateLimit";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -136,6 +138,30 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // ── TETO ZERO AO ABRIR (Assistente 1.2.25+) ───────────────────────────
+    //
+    // Regra do dono em 24/09/2026: "abriu o Assistente, não imprime nada; só o
+    // que entrar depois. Se quiser imprimir, pede." Os 30 min acima valiam
+    // também para quem acabou de abrir, reiniciar ou se atualizar — e ele
+    // cuspia a meia hora anterior de uma vez.
+    //
+    // O Assistente diz HÁ QUANTO TEMPO está aberto, não a hora em que abriu: o
+    // relógio do PC da loja pode estar adiantado, e uma hora do futuro faria a
+    // fila esconder os pedidos dos primeiros minutos. A conta é no relógio
+    // daqui. Os 10 s de folga cobrem a viagem da consulta.
+    //
+    // Depois de 30 min aberto, o teto de sempre volta a mandar sozinho.
+    const abertoHaSeg = Number(searchParams.get("abertoHaSeg"));
+    const aberturaDoAssistente =
+      searchParams.has("abertoHaSeg") && Number.isFinite(abertoHaSeg) && abertoHaSeg >= 0
+        ? new Date(Date.now() - abertoHaSeg * 1000 - 10_000)
+        : null;
+    if (aberturaDoAssistente && aberturaDoAssistente > sinceDate) sinceDate = aberturaDoAssistente;
+
+    // Quem é a loja deste endereço: é assim que a rota da versão reconhece o
+    // Assistente antigo, que pergunta sem dizer quem é (lib/assistente-da-loja.ts).
+    if (franchiseeId) lembrarAssistente(getClientIp(req), franchiseeId);
+
     // Uma unica leitura da config da loja (nao repete o JSON por pedido).
     //
     // TOLERANTE ao banco atrasado: este GET é chamado por todo Assistente de
@@ -212,9 +238,11 @@ export async function GET(req: NextRequest) {
     // O atraso respeita o MESMO teto de 30 min: um Assistente que voltou depois
     // de dias recebe, no máximo, a última meia hora. Era 7 dias, e foi assim
     // que a instalação no meio do expediente virou uma bobina inteira de papel.
+    // Com o teto zero (Assistente que diz há quanto tempo está aberto) não há
+    // atraso a entregar: o que chegou antes de ele abrir não sai sozinho.
     const ultimaConsulta = owner?.printQueuePolledAt?.getTime() ?? null;
     const inicioDoAtraso =
-      ultimaConsulta && ultimaConsulta < sinceDate.getTime()
+      !aberturaDoAssistente && ultimaConsulta && ultimaConsulta < sinceDate.getTime()
         ? new Date(Math.max(ultimaConsulta - 60_000, Date.now() - TETO_DA_FILA_MS))
         : null;
     if (inicioDoAtraso) {

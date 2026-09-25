@@ -1,7 +1,14 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { Printer, CheckCircle, Download, AlertCircle, Plus, Trash2, RefreshCw } from "lucide-react";
-import { VERSAO_ASSISTENTE_ATUAL, fetchAssistente, printersParaAssistente } from "@/lib/print";
+import {
+  VERSAO_ASSISTENTE_ATUAL,
+  VERSAO_QUE_SE_ATUALIZA,
+  VERSAO_TETO_ZERO,
+  fetchAssistente,
+  printersParaAssistente,
+  versaoAssistenteAoMenos,
+} from "@/lib/print";
 import {
   MODULOS,
   impressoraAtendeModulo,
@@ -130,6 +137,13 @@ export default function PrinterSetupClient({
   // antigo devolve, e havia build reportando "2.0.0" com código mais velho que
   // o de hoje — a ordem mentiria.
   const versaoDesatualizada = !!versaoInstalada && versaoInstalada !== VERSAO_ASSISTENTE_ATUAL;
+  // Da 1.2.0 em diante ele se atualiza sozinho — e, desde 24/09/2026, só com a
+  // loja parada (lib/assistente-da-loja.ts). Mandar "baixe e instale por cima"
+  // para esses era empurrar a reinstalação para o meio do serviço. O "2.0.0"
+  // fica de fora: é o build antigo que reportava esse número (ver acima).
+  const seAtualizaSozinho =
+    versaoAssistenteAoMenos(versaoInstalada, VERSAO_QUE_SE_ATUALIZA) && !versaoAssistenteAoMenos(versaoInstalada, "2.0.0");
+  const tetoZeroNoPc = versaoAssistenteAoMenos(versaoInstalada, VERSAO_TETO_ZERO) && !versaoAssistenteAoMenos(versaoInstalada, "2.0.0");
 
   // A loja desmarcou a conta da mesa em TODAS as impressoras: o botao
   // "Imprimir Conta" do modulo de mesas passa a recusar, e e melhor dizer
@@ -535,22 +549,27 @@ export default function PrinterSetupClient({
                     tem instalado — e duas lojas em versões diferentes imprimiam a
                     mesma comanda de jeitos diferentes sem ninguém entender por quê. */}
                 {versaoInstalada && (
-                  <p style={{ margin: "3px 0 0", fontSize: "0.72rem", fontWeight: 700, color: versaoDesatualizada ? "#B45309" : "#64748B" }}>
-                    {versaoDesatualizada
-                      ? `⚠️ Assistente ${versaoInstalada} — a versão atual é ${VERSAO_ASSISTENTE_ATUAL}. Baixe o instalador ao lado e instale por cima (não precisa desinstalar). Esta é a última atualização manual: a partir da 1.2.0 ele se atualiza sozinho.`
-                      : `Assistente ${versaoInstalada} — atualizado`}
+                  <p style={{ margin: "3px 0 0", fontSize: "0.72rem", fontWeight: 700, color: versaoDesatualizada && !seAtualizaSozinho ? "#B45309" : "#64748B" }}>
+                    {!versaoDesatualizada
+                      ? `Assistente ${versaoInstalada} — atualizado`
+                      : seAtualizaSozinho
+                        ? `Assistente ${versaoInstalada} — a ${VERSAO_ASSISTENTE_ATUAL} chega sozinha, fora do horário da loja. Não precisa fazer nada.`
+                        : `⚠️ Assistente ${versaoInstalada} — a versão atual é ${VERSAO_ASSISTENTE_ATUAL}. Baixe o instalador ao lado e instale por cima (não precisa desinstalar), de preferência com a loja fechada. Esta é a última atualização manual: dali em diante ele se atualiza sozinho.`}
                   </p>
                 )}
-                {/* Comanda que não saiu fica pendente no Assistente, em disco, e
-                    ele insiste até a impressora responder. Isto era um console
+                {/* Comanda que não saiu fica pendente no Assistente e ele insiste
+                    até a impressora responder — desde a 1.2.25, por até 30 min e
+                    só enquanto ele estiver aberto (teto zero). Isto era um console
                     num programa sem janela: a loja só descobria pelo cliente. */}
                 {pendentesAssistente.length > 0 && (
                   <div style={{ margin: "6px 0 0", padding: "6px 10px", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 6, fontSize: "0.72rem", color: "#92400E" }}>
-                    <strong>Comandas aguardando a impressora</strong> — saem sozinhas assim que ela responder; confira cabo, papel e se está ligada:
+                    <strong>Comandas aguardando a impressora</strong> — {tetoZeroNoPc
+                      ? "saem sozinhas se ela responder em até 30 minutos; depois disso, imprima pelo botão Imprimir do pedido. Confira cabo, papel e se está ligada:"
+                      : "saem sozinhas assim que ela responder; confira cabo, papel e se está ligada:"}
                     <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
                       {pendentesAssistente.slice(0, 10).map((f, i) => (
                         <li key={i}>
-                          Pedido #{f.pedido} em “{f.impressora}” desde {new Date(f.desde).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ({f.tentativas} tentativas{f.erro ? `: ${f.erro}` : ""})
+                          Pedido #{f.pedido} em “{f.impressora}” desde {new Date(f.desde).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} ({f.tentativas} tentativas{f.erro ? `: ${traduzErroDeImpressao(f.erro)}` : ""})
                         </li>
                       ))}
                     </ul>

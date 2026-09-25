@@ -2598,16 +2598,14 @@ function unmarkOrderAsPrinted(order, printerName) {
  * acabou —, a marca ficava e a comanda nunca mais saia, sem erro na tela de
  * ninguem. Depois virou "tres tentativas em nove segundos", e desistia.
  *
- * Regra da casa: impressora desligada NAO perde pedido, nao importa quanto
- * tempo fique desligada. O job que falhou vai para `pendentes`, gravado em
- * disco (sobrevive a reinicio e ao auto-update), e e tentado de novo a cada
- * 30 s ate sair. A marca de "ja impresso" fica no lugar nesse meio-tempo,
- * para a fila da nuvem e o navegador nao criarem copias — e quem mandar o
- * mesmo pedido recebe `aguardando`, nao "ja impresso".
+ * O job que falhou vai para `pendentes` e e tentado de novo ate sair — por
+ * ate 30 min (PENDENTE_VALIDADE_MS). A marca de "ja impresso" fica no lugar
+ * nesse meio-tempo, para a fila da nuvem e o navegador nao criarem copias — e
+ * quem mandar o mesmo pedido recebe `aguardando`, nao "ja impresso".
  *
- * A fila da nuvem so entrega as ultimas horas: sem esta lista local, um
- * pedido que falhou as 20h e cuja impressora so voltou as 23h ja teria
- * sumido da fila. Aqui ele espera o tempo que for. */
+ * A lista vai para o disco so para o /status e o painel mostrarem o que esta
+ * preso; ela NAO sobrevive a reinicio nem a atualizacao (ver
+ * descartarPendentesDaRodadaAnterior). */
 const PENDENTES_FILE = path.join(process.env.APPDATA || os.homedir(), "FireHub", "pendentes.json");
 const pendentes = new Map(); // chave -> { job, falhas, desde, naoAntesDe, ultimoErro }
 /* ── QUANTO ESPERAR ANTES DE TENTAR DE NOVO ────────────────────────────────
@@ -2629,9 +2627,20 @@ const pendentes = new Map(); // chave -> { job, falhas, desde, naoAntesDe, ultim
  */
 const ESPERA_PENDENTE_MS = 3_000;
 const ESPERA_PENDENTE_MAX_MS = 2 * 60_000;
-/* Sete dias: comanda mais velha que isso ja nao serve a ninguem, e a lista
-   nao pode crescer para sempre num PC que ficou meses sem impressora. */
-const PENDENTE_VALIDADE_MS = 7 * 24 * 3600_000;
+/* ── QUANTO TEMPO UMA COMANDA PRESA AINDA VALE ──────────────────────────────
+ *
+ * Eram 7 dias ("impressora desligada nao perde pedido"). Na pratica isso virou
+ * bobina de papel velho esperando para sair: a BALCAO da Ragnar Burger ficou
+ * recusada pelo Windows das 17:46 as 22h de 24/09/2026, com 37 comandas presas
+ * (12 delas a mesma conta da mesa 4, pedida de novo pelos garcons porque nao
+ * saia), e todas sairiam de uma vez no dia em que a impressora voltasse. Regra
+ * do dono no mesmo dia: "abriu o Assistente, nao imprime nada; so o que entrar
+ * depois. Se quiser imprimir manualmente, pede."
+ *
+ * Agora: 30 min, o mesmo teto da fila da nuvem (decisao de 17/09/2026). Bobina
+ * trocada em 10 min: a comanda sai sozinha. Passou disso, a cozinha ja resolveu
+ * pela tela, e a loja reimprime pelo painel se quiser. */
+const PENDENTE_VALIDADE_MS = 30 * 60_000;
 
 const chaveDeFalha = (order, printerName) =>
   `${String(printerName || "").toLowerCase().trim()}::${order?.id || order?.ifoodReference || order?.openDeliveryReference || order?.dailyOrderNumber || ""}`;
@@ -2645,16 +2654,22 @@ function salvarPendentes() {
   }
 }
 
-(function carregarPendentes() {
+/* ── AO ABRIR, COMECA DO ZERO ───────────────────────────────────────────────
+ *
+ * O arquivo era recarregado e tudo que estava preso voltava a tentar — e saia
+ * de uma vez quando a impressora respondesse, inclusive depois de um reinicio
+ * ou de uma atualizacao, horas depois. Agora ele e lido so para contar o que
+ * foi descartado (fica no log) e e zerado: o painel para de mostrar a lista
+ * velha e nada de antes da abertura sai sozinho. */
+(function descartarPendentesDaRodadaAnterior() {
   try {
     if (!fs.existsSync(PENDENTES_FILE)) return;
-    const limite = Date.now() - PENDENTE_VALIDADE_MS;
-    for (const [k, p] of JSON.parse(fs.readFileSync(PENDENTES_FILE, "utf8"))) {
-      if (p && p.job && Number(p.desde) > limite) pendentes.set(k, { ...p, naoAntesDe: 0 });
-    }
-    if (pendentes.size) console.log(`[PrintServer] ${pendentes.size} comanda(s) pendente(s) recarregada(s) do disco; saem quando a impressora responder.`);
+    let quantos = 0;
+    try { quantos = JSON.parse(fs.readFileSync(PENDENTES_FILE, "utf8")).length || 0; } catch {}
+    fs.writeFileSync(PENDENTES_FILE, "[]");
+    if (quantos) console.log(`[PrintServer] ${quantos} comanda(s) presa(s) da rodada anterior descartada(s): ao abrir, so sai o que entrar depois (reimprima pelo painel se precisar).`);
   } catch (e) {
-    console.warn("[PrintServer] pendentes.json ilegivel, ignorando:", e.message);
+    console.warn("[PrintServer] nao consegui zerar pendentes.json:", e.message);
   }
 })();
 
@@ -2695,7 +2710,7 @@ setInterval(() => {
     .sort((a, b) => a[1].desde - b[1].desde);
   for (const [chave, p] of vencidos) {
     if (agora - p.desde > PENDENTE_VALIDADE_MS) {
-      console.error(`[PrintServer] Pedido #${p.job?.order?.dailyOrderNumber || p.job?.order?.id} pendente ha 7 dias em ${p.job?.printer}; descartado.`);
+      console.error(`[PrintServer] Pedido #${p.job?.order?.dailyOrderNumber || p.job?.order?.id} preso ha mais de ${Math.round(PENDENTE_VALIDADE_MS / 60_000)} min em ${p.job?.printer}; descartado (reimprima pelo painel se precisar).`);
       pendentes.delete(chave); salvarPendentes();
       continue;
     }
@@ -2726,7 +2741,11 @@ function parametrosDeEstado() {
   const lista = listarPendentes();
   const comErro = lista.find(p => p.erro);
   const locais = (cacheDeImpressoras.lista || []).map(p => p && p.name).filter(Boolean).join("|").slice(0, 600);
+  // `abertoHaSeg`: ha quanto tempo este Assistente esta aberto. E o teto zero
+  // do servidor — nada criado antes da abertura vem na fila. Vai a IDADE, nao
+  // a hora: o relogio do PC da loja pode estar adiantado ou atrasado.
   return `&v=${encodeURIComponent(VERSAO_ASSISTENTE)}&pendentes=${lista.length}` +
+    `&abertoHaSeg=${Math.max(0, Math.floor((Date.now() - INICIADO_EM) / 1000))}` +
     (portaAtiva ? `&porta=${portaAtiva}` : "") +
     (comErro ? `&erro=${encodeURIComponent(String(comErro.erro).slice(0, 120))}` : "") +
     (locais ? `&impressoras=${encodeURIComponent(locais)}` : "");
@@ -2915,6 +2934,7 @@ setInterval(async () => {
     // de um programa sem janela.
     const url = `${base}/api/store/print-queue?franchiseeId=${encodeURIComponent(currentConfig.franchiseeId)}${parametrosDeEstado()}`;
     const res = await fetchFn(url, { signal: AbortSignal.timeout(10_000) });
+    aprenderRelogioDoServidor(res);
     if (!res.ok) return;
     const data = await res.json();
     const rawJobs = Array.isArray(data.jobs) ? data.jobs : [];
@@ -3077,8 +3097,10 @@ app.get("/status", (req, res) => {
  * dizendo "esta imprimindo errado", a primeira pergunta e "qual versao?" e a
  * segunda e "atualiza". Antes so restava mandar o instalador por WhatsApp. */
 app.post("/atualizar-agora", (req, res) => {
-  // A janela calma nao vale aqui: se alguem pediu, e porque pode.
+  // A janela calma nao vale aqui: se alguem pediu, e porque pode. Nem a trava
+  // de horario do servidor (ver urlDaChecagemDeVersao).
   ultimaImpressaoEm = 0;
+  atualizacaoPedidaAMao = true;
   setImmediate(() => { try { verificarAtualizacao(); } catch (e) { logUpdate(`Falha ao procurar atualizacao a pedido: ${e?.message}`); } });
   res.json({ ok: true, versao: VERSAO_ASSISTENTE, mensagem: "Procurando atualizacao agora. Se houver versao nova, ele instala e volta sozinho." });
 });
@@ -3087,9 +3109,48 @@ app.post("/atualizar-agora", (req, res) => {
 // tela de Impressoras precisa depois de plugar uma impressora nova.
 app.get("/printers", (req, res) => res.json(listPrintersCached(req.query.fresh === "1")));
 
+/* ── TETO ZERO AO ABRIR, TAMBEM PELA PORTA DO NAVEGADOR ─────────────────────
+ *
+ * Regra do dono (24/09/2026): "abriu o Assistente, nao imprime nada; so o que
+ * entrar depois. Se quiser imprimir manualmente, pede." A fila da nuvem ja nao
+ * entrega nada de antes da abertura (o servidor corta pelo `abertoHaSeg`). Mas
+ * o painel tambem imprime sozinho (GlobalPrintListener): ao reabrir, ele manda
+ * o que achar dos ultimos 30 min, e insiste no que falhou "por mais velho que
+ * fique" — era por aqui que um Assistente reiniciado recebia o atraso.
+ *
+ * Pedido AUTOMATICO (force=false) criado antes da abertura nao sai. O manual —
+ * botao Imprimir, reimpressao, teste — sai sempre.
+ *
+ * A comparacao e no relogio do SERVIDOR, porque o `createdAt` vem de la e o
+ * relogio deste PC pode estar errado: a diferenca e aprendida no cabecalho
+ * `Date` de cada resposta da fila e da checagem de versao. Enquanto ela nao e
+ * conhecida (primeiros segundos, ou loja sem fila), a folga e de 2 min. */
+let desvioDoRelogioMs = 0;
+let desvioConhecido = false;
+function aprenderRelogioDoServidor(res) {
+  try {
+    const noServidor = Date.parse(res?.headers?.get?.("date") || "");
+    if (!Number.isFinite(noServidor)) return;
+    desvioDoRelogioMs = noServidor - Date.now();
+    desvioConhecido = true;
+  } catch {}
+}
+function criadoAntesDeAbrir(order) {
+  const criado = Date.parse(order?.createdAt || "");
+  if (!Number.isFinite(criado)) return false; // sem data nao da para saber: nao barra
+  const folga = desvioConhecido ? 15_000 : 120_000;
+  return criado < INICIADO_EM + desvioDoRelogioMs - folga;
+}
+
 app.post("/print", async (req, res) => {
   try {
     const { printer, order, storeName, copies = 1, paperWidth, columns, escposProfile, force = false } = req.body;
+    if (!force && criadoAntesDeAbrir(order)) {
+      console.log(`[PrintServer] Pedido #${order?.dailyOrderNumber || order?.id} e de antes da abertura do Assistente; nao sai sozinho (use Imprimir no painel).`);
+      // ok:true de proposito: o navegador da o pedido por resolvido e para de
+      // insistir. Com ok:false ele tentaria de novo a cada rodada, para sempre.
+      return res.json({ ok: true, skipped: true, antesDaAbertura: true, message: "Pedido de antes da abertura do Assistente: nao sai sozinho. Use Imprimir no painel." });
+    }
     const result = await enqueuePrintJob({ printer, order, storeName, copies, paperWidth, columns, escposProfile, force });
     res.json(result);
   } catch (e) {
@@ -3410,15 +3471,48 @@ function tentarDeNovoQuandoAInternetVoltar(motivo) {
   setTimeout(() => { retomadaAgendada = false; verificarAtualizacao(); }, RETENTAR_SEM_REDE_MS);
 }
 
+/* ── QUEM DECIDE A HORA E O SERVIDOR ────────────────────────────────────────
+ *
+ * Ele sabe o horario da loja e se entrou pedido ha pouco (lib/assistente-da-
+ * loja.ts no site); este programa so sabia "imprimi nos ultimos 30 min?" — e
+ * com a janela afrouxando, atualizava no meio do jantar. A pergunta leva a
+ * loja e a versao; a resposta `adiada` diz por que esperar e quando perguntar
+ * de novo. `pedido=1` e quem clicou "procurar atualizacao agora": quem pediu
+ * escolheu a hora, e a trava nao vale. */
+let atualizacaoPedidaAMao = false;
+let reconsultaAgendada = false;
+
+function urlDaChecagemDeVersao(domain, franchiseeId, versaoLocal, pedidoAMao) {
+  const q = [`v=${encodeURIComponent(versaoLocal || "")}`];
+  if (franchiseeId) q.push(`franchiseeId=${encodeURIComponent(franchiseeId)}`);
+  if (pedidoAMao) q.push("pedido=1");
+  return `https://${domain || "firehubfood.com.br"}/api/assistente/versao?${q.join("&")}`;
+}
+
+function perguntarDeNovoEm(segundos, motivo) {
+  if (reconsultaAgendada || atualizacaoEmAndamento) return;
+  const s = Math.min(3600, Math.max(300, Number(segundos) || 600));
+  reconsultaAgendada = true;
+  logUpdate(`${motivo} — pergunto de novo em ${Math.round(s / 60)} min.`);
+  setTimeout(() => { reconsultaAgendada = false; verificarAtualizacao(); }, s * 1000);
+}
+
 async function verificarAtualizacao() {
   if (atualizacaoEmAndamento) return;
   let versaoAlvo = null;
+  const pedidoAMao = atualizacaoPedidaAMao;
+  atualizacaoPedidaAMao = false;
   try {
     const fetchFn = globalThis.fetch || (await import("node-fetch")).default;
-    const domain = currentConfig.domain || "firehubfood.com.br";
-    const res = await fetchFn(`https://${domain}/api/assistente/versao`, { signal: AbortSignal.timeout(15000) });
+    const url = urlDaChecagemDeVersao(currentConfig.domain, currentConfig.franchiseeId, VERSAO_LOCAL_UPDATE, pedidoAMao);
+    const res = await fetchFn(url, { signal: AbortSignal.timeout(15000) });
+    aprenderRelogioDoServidor(res);
     if (!res.ok) { tentarDeNovoQuandoAInternetVoltar(`O servidor respondeu HTTP ${res.status} ao perguntar a versão`); return; }
     const info = await res.json();
+    if (info?.adiada) {
+      perguntarDeNovoEm(info.tenteDeNovoEmSegundos, `Versão ${info.versaoDisponivel || "nova"} adiada pelo servidor (${info.motivo || "loja em operação"})`);
+      return;
+    }
     if (!info?.versao || !info?.url) { tentarDeNovoQuandoAInternetVoltar("Resposta da versão veio sem versão/url"); return; }
 
     versaoAlvo = info.versao;

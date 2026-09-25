@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { fetchAssistente, printersParaAssistente, VERSAO_ASSISTENTE_ATUAL } from "@/lib/print";
+import {
+  fetchAssistente,
+  printersParaAssistente,
+  VERSAO_ASSISTENTE_ATUAL,
+  VERSAO_QUE_CONFIRMA_IMPRESSAO,
+  VERSAO_TETO_ZERO,
+  versaoAssistenteAoMenos,
+} from "@/lib/print";
 import { traduzErroDeImpressao } from "@/lib/erro-de-impressao";
 import { BotaoNaoVerMais, gravarNaoVerMais, lerNaoVerMais } from "./NaoVerMais";
 
@@ -42,16 +49,6 @@ import { BotaoNaoVerMais, gravarNaoVerMais, lerNaoVerMais } from "./NaoVerMais";
  */
 const TOLERANCIA_S = 3 * 60;
 
-/** `a` é mais nova que `b`? ("1.2.8" > "1.2.6"). Igual ou menor = false. */
-function versaoMaisNova(a: string, b: string): boolean {
-  const x = String(a || "").split(".").map((n) => parseInt(n, 10) || 0);
-  const y = String(b || "").split(".").map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < 3; i++) {
-    if ((x[i] || 0) > (y[i] || 0)) return true;
-    if ((x[i] || 0) < (y[i] || 0)) return false;
-  }
-  return false;
-}
 /** Nome deste aviso na regra única de "não ver mais" (./NaoVerMais.tsx). */
 const AVISO = "impressao";
 const PORTAS_DO_ASSISTENTE = [7899, 7900, 7901, 7891];
@@ -222,9 +219,19 @@ export default function AvisoImpressaoParada() {
   // comandas, o Assistente sumia (a atualização automática o fechava), ela
   // abria de novo e as mesmas comandas saíam outra vez. Nada no painel dizia
   // isso — a loja descobriu pela pilha de papel repetido.
+  //
+  // Só para ELA. Aparecia para qualquer versão mais velha que a atual, dizendo
+  // "as comandas das últimas 2 horas saem OUTRA VEZ" e mandando instalar por
+  // cima — falso da 1.2.7 em diante, e a cada versão nova empurrava o lojista a
+  // reinstalar no meio do serviço. Essas se atualizam sozinhas, com a loja
+  // parada (lib/assistente-da-loja.ts).
   const versaoRelatada = estado.versaoAssistente || null;
   const assistenteAntigo =
-    !filaMuda && (!versaoRelatada || versaoMaisNova(VERSAO_ASSISTENTE_ATUAL, versaoRelatada));
+    !filaMuda && (!versaoRelatada || !versaoAssistenteAoMenos(versaoRelatada, VERSAO_QUE_CONFIRMA_IMPRESSAO));
+  // Teto zero (1.2.25+): aberto de novo, só sai sozinho o que entrar depois, e
+  // comanda presa desiste em 30 min. O texto tem que dizer isso, senão promete
+  // um papel que não vem.
+  const tetoZero = versaoAssistenteAoMenos(versaoRelatada, VERSAO_TETO_ZERO);
 
   const minutos = Math.floor((estado.paradoHaSegundos ?? 0) / 60);
   const tempo = minutos >= 120 ? `${Math.floor(minutos / 60)} horas` : `${minutos} min`;
@@ -258,7 +265,10 @@ export default function AvisoImpressaoParada() {
     titulo = `A impressão automática parou há ${tempo}`;
     texto = vinculadoMasMudo
       ? "O Assistente está aberto neste PC, mas não está conseguindo falar com o servidor. Confira a internet deste computador."
-      : "Comanda de mesa, de balcão, do iFood e do 99Food não vai sair sozinha até ele voltar. Confira se o Assistente de Impressão está aberto no PC do caixa (ícone 🔥 perto do relógio) e se o PC está ligado e com internet. Quando ele voltar, as comandas que faltam saem sozinhas.";
+      : "Comanda de mesa, de balcão, do iFood e do 99Food não vai sair sozinha até ele voltar. Confira se o Assistente de Impressão está aberto no PC do caixa (ícone 🔥 perto do relógio) e se o PC está ligado e com internet. " +
+        (tetoZero
+          ? "Quando ele voltar, só sai sozinho o que entrar depois; o que ficou para trás, imprima pelo botão Imprimir do pedido."
+          : "Quando ele voltar, as comandas que faltam saem sozinhas.");
   } else if (nuncaConsultou && estado.usaSalao) {
     ocorrencia = "nunca-consultou";
     titulo = "O Assistente de Impressão desta loja nunca consultou a fila da nuvem";
@@ -276,7 +286,10 @@ export default function AvisoImpressaoParada() {
     ocorrencia = `presas:${new Date().toLocaleDateString("sv-SE")}`;
     titulo = presas === 1 ? "1 comanda não saiu na impressora" : `${presas} comandas não saíram na impressora`;
     const erro = traduzErroDeImpressao(estado.erroImpressao);
-    texto = `O Assistente tenta de novo em 3 segundos, depois vai espaçando até 2 minutos, e não desiste enquanto não sair. Confira se a impressora está ligada, com papel e sem erro no Windows.${erro ? ` Último erro: ${erro}.` : ""}`;
+    texto = (tetoZero
+      ? "O Assistente tenta de novo por até 30 minutos. Passou disso, ou se ele for fechado, a comanda não sai mais sozinha: imprima pelo botão Imprimir do pedido. "
+      : "O Assistente tenta de novo em 3 segundos, depois vai espaçando até 2 minutos, e não desiste enquanto não sair. ") +
+      `Confira se a impressora está ligada, com papel e sem erro no Windows.${erro ? ` Último erro: ${erro}.` : ""}`;
   } else if (assistenteAntigo) {
     // Calado até sair versão MAIS NOVA que esta.
     ocorrencia = `antigo:${VERSAO_ASSISTENTE_ATUAL}`;
