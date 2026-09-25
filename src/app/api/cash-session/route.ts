@@ -394,6 +394,17 @@ export async function PUT(req: Request) {
         // tela avisa QUANTOS são antes de o operador confirmar — ver
         // GET /api/cash-session, campo `saiuParaEntrega`.
         ...(openSession ? { createdAt: { gte: openSession.openedAt } } : { createdAt: { lt: threeHoursAgo } }),
+        // ── PEDIDO DE MESA NÃO ESTÁ "NA RUA" ─────────────────────────────
+        //
+        // O KDS dá a mesa por pronta como dá a retirada — SAIU_ENTREGA —, e
+        // este updateMany a levava junto para ENTREGUE com a mesa AINDA
+        // aberta. Hakim Centro, mesa 4: aberta desde 06/09/2026 com o pedido
+        // #76 "finalizado" no fechamento do caixa, sem ninguém ter pago —
+        // cancelar respondia "Este pedido já foi finalizado" e a mesa ficou
+        // 459 h na tela. O dinheiro da mesa entra pelas baixas quando ELA
+        // fecha (lib/esperado-do-turno.ts), e é o fechamento dela que dá os
+        // pedidos por entregues (table-sessions/[id]/close).
+        tableSessionId: null,
       },
       data: { status: "ENTREGUE", updatedAt: new Date() },
     });

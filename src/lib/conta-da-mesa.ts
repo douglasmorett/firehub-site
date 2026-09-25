@@ -298,6 +298,16 @@ export function montarCupomDaConta(
   // cliente em 15/09/2026. Agora viajam em campo próprio e o Assistente
   // imprime consumo, taxa, gorjeta e total, nessa ordem.
   if (!taxaSeparada) {
+    // O desconto também é linha aqui: sem ela, a diferença entre os itens e o
+    // total caía no "Ajuste de centavos" logo abaixo — um ajuste de -R$ 10,00
+    // que o cliente não tem como entender.
+    if (conta.desconto.valor > 0) {
+      items.push({
+        name: `Desconto${conta.desconto.motivo ? ` (${conta.desconto.motivo})` : ""}`,
+        qty: 1,
+        price: -conta.desconto.valor,
+      });
+    }
     if (conta.taxaServico.valor > 0) {
       items.push({
         name: `Taxa de servico ${conta.taxaServico.percentual}%${opcoes.garcom ? ` (garcom ${opcoes.garcom})` : ""}`,

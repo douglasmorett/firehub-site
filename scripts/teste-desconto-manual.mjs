@@ -10,7 +10,7 @@ const js = ts.transpileModule(readFileSync("src/lib/desconto-manual.ts", "utf8")
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const M = await import("data:text/javascript," + encodeURIComponent(js));
-const { valorDoDesconto, descreverDesconto, problemaDoDesconto, notaDoDesconto, SEM_DESCONTO } = M;
+const { valorDoDesconto, descreverDesconto, problemaDoDesconto, notaDoDesconto, descontoDoCorpo, SEM_DESCONTO } = M;
 
 let falhas = 0;
 const conferir = (nome, ok, detalhe) => {
@@ -52,6 +52,15 @@ conferir("acima de 100% é barrado", /não passa de 100/.test(problemaDoDesconto
 conferir("maior que a conta é barrado", /maior que o valor/.test(problemaDoDesconto({ tipo: "valor", valor: 90 }, 80)));
 conferir("desconto válido passa", problemaDoDesconto({ tipo: "valor", valor: 10 }, 80) === "");
 conferir("100% é permitido (cortesia total)", problemaDoDesconto({ tipo: "percent", valor: 100 }, 80) === "");
+
+console.log("\nX) O desconto que chega do navegador (impressão da conta da mesa)");
+conferir("tipo, valor e motivo", JSON.stringify(descontoDoCorpo({ tipo: "valor", valor: 5, motivo: "Cortesia" })) === JSON.stringify({ tipo: "valor", valor: 5, motivo: "Cortesia" }));
+conferir("tipo desconhecido vira porcentagem", descontoDoCorpo({ tipo: "xpto", valor: 10 })?.tipo === "percent");
+conferir("valor zero é sem desconto", descontoDoCorpo({ tipo: "percent", valor: 0 }) === null);
+conferir("valor negativo é sem desconto", descontoDoCorpo({ tipo: "valor", valor: -5 }) === null);
+conferir("texto no valor é sem desconto", descontoDoCorpo({ tipo: "valor", valor: "abc" }) === null);
+conferir("nulo é sem desconto", descontoDoCorpo(null) === null);
+conferir("motivo longo é cortado em 60", descontoDoCorpo({ tipo: "valor", valor: 1, motivo: "x".repeat(90) })?.motivo.length === 60);
 
 console.log(falhas === 0 ? "\nTUDO OK\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

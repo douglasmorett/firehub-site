@@ -2,7 +2,7 @@
  * POST /api/store/table-sessions/[id]/imprimir-conta
  *
  * Imprime a conta inteira da mesa — o papel que vai para o cliente na hora de
- * fechar. Corpo (opcional): { taxa?: number, gorjeta?: number }.
+ * fechar. Corpo (opcional): { taxa?: number, gorjeta?: number, desconto?: DescontoManual }.
  *
  * A taxa de serviço padrão é a COMISSÃO CADASTRADA do garçom da mesa (aba
  * Garçons); sem garçom vinculado, 10%. A tela de fechamento pode mandar outra
@@ -21,6 +21,7 @@ import { calcularContaDaMesa, montarCupomDaConta, sanearTaxa } from "@/lib/conta
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 import { versaoAtende } from "@/lib/campanha-converter";
 import { VERSAO_ASSISTENTE_COM_TAXA_SEPARADA } from "@/lib/print";
+import { descontoDoCorpo } from "@/lib/desconto-manual";
 
 export const dynamic = "force-dynamic";
 
@@ -109,7 +110,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     );
   }
 
-  const conta = calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta);
+  // ── O DESCONTO DA MESA VAI PARA O PAPEL ──────────────────────────────────
+  // A conta impressa ignorava o desconto: saía o consumo cheio e os 10% sobre
+  // ele, enquanto o fechamento cobrava o consumo descontado e os 10% sobre o
+  // que sobrou. O cliente conferia um papel que não batia com a cobrança.
+  const conta = calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta, descontoDoCorpo(body?.desconto));
   if (conta.total <= 0) {
     return NextResponse.json({ error: "A mesa ainda não tem consumo para imprimir" }, { status: 400 });
   }

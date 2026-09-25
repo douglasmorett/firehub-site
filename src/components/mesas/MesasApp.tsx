@@ -464,6 +464,19 @@ export default function MesasApp({
   const [desconto, setDesconto] = useState<DescontoManual>(SEM_DESCONTO);
   const [mostrarDesconto, setMostrarDesconto] = useState(false);
 
+  // ── DESCONTO E GORJETA SÃO DESTA MESA ────────────────────────────────────
+  // Viviam na tela, não na mesa: fechar a mesa 4 com 10% de desconto e abrir
+  // o fechamento da mesa 5 levava os 10% junto, e a gorjeta também. Trocou de
+  // conta, zera. O id da sessão (e não o objeto da mesa) é a chave: o refresh
+  // da lista recria o objeto a cada poucos segundos e apagaria o que o garçom
+  // acabou de digitar.
+  const sessaoDaConta = selectedTable?.openSession?.id ?? null;
+  useEffect(() => {
+    setDesconto(SEM_DESCONTO);
+    setMostrarDesconto(false);
+    setWaiterTip(0);
+  }, [sessaoDaConta]);
+
   // New table
   const [newTableNumber, setNewTableNumber] = useState("");
   const [newTableLabel, setNewTableLabel] = useState("");
@@ -943,7 +956,9 @@ export default function MesasApp({
       const res = await chamar(`/api/store/table-sessions/${sessionId}/imprimir-conta`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taxa, gorjeta }),
+        // O desconto da mesa vai junto: sem ele o papel saía com o consumo
+        // cheio e os 10% sobre ele, e não batia com o que o fechamento cobra.
+        body: JSON.stringify({ taxa, gorjeta, desconto: Number(desconto.valor) > 0 ? desconto : null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1353,6 +1368,13 @@ export default function MesasApp({
   const consumoCobrado = Math.max(0, consumoFechamento - descontoDaMesa);
   const taxaFechamento = useServiceFee ? consumoCobrado * serviceFee / 100 : 0;
   const totalFechamento = consumoCobrado + taxaFechamento + (Number(waiterTip) || 0);
+
+  // O rodapé do painel da mesa, com a mesma regra: desconto primeiro, taxa
+  // sobre o que sobrou. Ele fazia os 10% sobre o consumo cheio e ignorava o
+  // desconto — a tela dizia um total e o fechamento cobrava outro.
+  const descontoNoPainel = valorDoDesconto(desconto, sessionTotal);
+  const consumoCobradoNoPainel = Math.max(0, sessionTotal - descontoNoPainel);
+  const taxaNoPainel = useServiceFee ? consumoCobradoNoPainel * serviceFee / 100 : 0;
 
   // O placar sai do que está GRAVADO, não do que está digitado na tela. É a
   // mesma lista que o servidor confere no fechamento, então a tela nunca
@@ -2410,6 +2432,12 @@ export default function MesasApp({
                 <span>Consumo</span>
                 <span style={{ fontWeight: 700 }}>{fmt(sessionTotal)}</span>
               </div>
+              {descontoNoPainel > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#9A3412", fontWeight: 700, marginTop: 4 }}>
+                  <span>Desconto{desconto.motivo ? ` (${desconto.motivo})` : ""}</span>
+                  <span>- {fmt(descontoNoPainel)}</span>
+                </div>
+              )}
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#475569", marginTop: 6, cursor: "pointer" }}>
                 <input
                   type="checkbox"
@@ -2432,7 +2460,7 @@ export default function MesasApp({
                   }}
                 />%
                 <span style={{ marginLeft: "auto", fontWeight: 700, color: useServiceFee ? "#B45309" : "#94A3B8" }}>
-                  {useServiceFee ? fmt(sessionTotal * serviceFee / 100) : "sem taxa"}
+                  {useServiceFee ? fmt(taxaNoPainel) : "sem taxa"}
                 </span>
               </label>
               {!ehGarcom && useServiceFee && serviceFee !== taxaSalva && (
@@ -2465,7 +2493,7 @@ export default function MesasApp({
               }}>
                 <span>Total</span>
                 <span style={{ color: "#475569" }}>
-                  {fmt(sessionTotal + (useServiceFee ? sessionTotal * serviceFee / 100 : 0))}
+                  {fmt(consumoCobradoNoPainel + taxaNoPainel)}
                 </span>
               </div>
               <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>

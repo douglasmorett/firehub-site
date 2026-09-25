@@ -53,6 +53,23 @@ export function valorDoDesconto(d: DescontoManual | null | undefined, subtotal: 
   return centavos(Math.min(bruto, base));
 }
 
+/**
+ * O desconto como chegou no corpo de uma requisição — tipo, valor e motivo,
+ * nunca um valor em reais pronto. Quem usa recalcula com `valorDoDesconto`
+ * sobre o consumo que ELE mesmo apurou.
+ */
+export function descontoDoCorpo(bruto: unknown): DescontoManual | null {
+  if (!bruto || typeof bruto !== "object") return null;
+  const d = bruto as Record<string, unknown>;
+  const valor = Number(d.valor);
+  if (!Number.isFinite(valor) || valor <= 0) return null;
+  return {
+    tipo: d.tipo === "valor" ? "valor" : "percent",
+    valor,
+    motivo: String(d.motivo || "").slice(0, 60),
+  };
+}
+
 /** Como o desconto aparece escrito na comanda e no relatório. */
 export function descreverDesconto(d: DescontoManual | null | undefined, subtotal: number): string {
   const reais = valorDoDesconto(d, subtotal);

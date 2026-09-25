@@ -15,8 +15,9 @@
  *          usa as baixas registradas, não a ficha técnica de hoje).
  *
  * Guardas, nesta ordem: sessão do painel → mesa da MINHA loja → sessão ainda
- * OPEN → pedido DESTA sessão → pedido ainda vivo. Mesa fechada não se edita:
- * a conta já virou pagamento; corrigir depois é estorno, outro fluxo.
+ * OPEN → pedido DESTA sessão → pedido não cancelado e sem nota fiscal
+ * emitida. Mesa fechada não se edita: a conta já virou pagamento; corrigir
+ * depois é estorno, outro fluxo.
  *
  * Estoque em edição PARCIAL não é mexido de propósito: a devolução registrada
  * é por PEDIDO, e devolver "proporcional" pela ficha técnica de hoje devolveria
@@ -26,7 +27,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
-import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
+import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 
 async function contexto(req: NextRequest, params: Promise<{ id: string; orderId: string }>) {
   // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts):
@@ -55,8 +56,20 @@ async function contexto(req: NextRequest, params: Promise<{ id: string; orderId:
   if ((STATUS_CANCELADOS as readonly string[]).includes(order.status)) {
     return { erro: NextResponse.json({ error: "Este pedido já foi cancelado" }, { status: 409 }) };
   }
-  if ((STATUS_FINALIZADOS as readonly string[]).includes(order.status)) {
-    return { erro: NextResponse.json({ error: "Este pedido já foi finalizado" }, { status: 409 }) };
+  // ── "FINALIZADO" COM A MESA ABERTA NÃO É CONTA FECHADA ─────────────────
+  //
+  // Pedido de mesa só se encerra de verdade quando a MESA fecha: é ali que o
+  // dinheiro entra e que os pedidos viram ENTREGUE. Um pedido finalizado com
+  // a mesa ainda aberta foi finalizado por fora — o fechamento do caixa o
+  // levava junto com os "na rua", o quadro de Pedidos o conclui — e ninguém
+  // pagou nada ainda. Recusar aqui prendia a mesa para sempre: Hakim Centro,
+  // mesa 4, 459 h aberta com "Este pedido já foi finalizado" a cada tentativa
+  // de cancelar. A guarda que vale é a de cima (mesa fechada = estorno).
+  //
+  // O que continua barrado é nota fiscal já emitida: aí cancelar é na tela
+  // Fiscal, senão a nota fica valendo para um pedido que deixou de existir.
+  if (order.fiscalStatus === "EMITTED") {
+    return { erro: NextResponse.json({ error: "Este pedido já tem nota fiscal emitida — cancele a nota na tela Fiscal antes de mexer nele." }, { status: 409 }) };
   }
 
   return { lojaId, order };
