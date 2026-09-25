@@ -15,7 +15,9 @@ import {
 } from '@/lib/loop-guard';
 import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA } from '@/lib/problema-no-pedido';
 import { numeroEstaNaListaDeIgnorados } from '@/lib/numeros-ignorados';
-import { ehConversaDeCliente, tipoDoJid } from '@/lib/jid-de-cliente';
+import { ehConversaDeCliente, conversaOriginalEhDeCliente, tipoDoJid } from '@/lib/jid-de-cliente';
+import { contaOficialDoWhatsApp } from '@/lib/contas-oficiais-whatsapp';
+import { descartavelNoCooldown, desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, textoDaLocalizacao } from '@/lib/localizacao-do-whatsapp';
 import { avisarDono, avisarAdminDoSistema, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
 import { mesmoTelefone } from '@/lib/telefone';
 import { detectarPedidoDeAtendente, FRASE_DE_CHAMAR_ATENDENTE } from '@/lib/pedido-de-atendente';
@@ -128,11 +130,11 @@ export async function POST(req: NextRequest) {
     // usam. Uma fonte de verdade só, para as três não divergirem de novo.
     if ((event.includes("CONNECTION") || event.includes("STATE")) && instance) {
       try {
-        const shortId = instance.replace(/^firehub_/, "");
-        const user = await prisma.user.findFirst({
-          where: { id: { endsWith: shortId } },
-          select: { id: true, chatbotConfig: true, storePhone: true },
-        });
+        // A MESMA cascata das mensagens (instanceName exato → id → sufixo
+        // reconstruído). Aqui era um `endsWith` solto num findFirst: o id de
+        // outra loja terminando igual gravava o estado na loja errada.
+        const candidatas = await lojasDaInstancia(instance, { id: true, chatbotConfig: true, storePhone: true, notificationPhone: true });
+        const user = candidatas.length === 1 ? candidatas[0] : null;
 
         if (user) {
           const config = (user.chatbotConfig as any) || {};
@@ -164,7 +166,28 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ status: "ok", ignorado: "nunca-conectou" });
           }
 
-          await registrarEstadoDoRobo(user.id, config, conectada, formattedPhone, user.storePhone);
+          // ── O QUE SE SABE DO APARELHO DO ROBÔ ─────────────────────────────
+          //
+          // Na terça 22/09 a Divinos ficou "conectada" com o WhatsApp PESSOAL
+          // do dono (plataforma "iphone", número 22 99209-0207), não com o da
+          // loja. Quem escrevia para a loja nunca chegava ao robô, e nada na
+          // tela dizia isso. O gateway agora manda a plataforma e os avisos do
+          // aparelho; aqui entra também a comparação com os números
+          // cadastrados. Vai junto na MESMA gravação do estado (um write só,
+          // como sempre), em `chatbotConfig.vinculoDoAparelho`.
+          //
+          // A saúde do vínculo também é regravada na abertura, com o estado que
+          // o gateway tem AGORA: depois de um novo QR o alarme do vínculo
+          // anterior não vale, e numa religação rápida ele continua valendo.
+          const configParaGravar = conectada
+            ? {
+                ...config,
+                vinculoDoAparelho: vinculoDoAparelho(body.data, phone, user.storePhone, user.notificationPhone),
+                saudeDoVinculo: saudeDoVinculo(body.data),
+              }
+            : config;
+
+          await registrarEstadoDoRobo(user.id, configParaGravar, conectada, formattedPhone, user.storePhone);
 
           console.log(
             `[${new Date().toISOString()}] [WhatsApp Webhook] ${conectada ? "✅" : "⚠️"} Instância ${instance} ${conectada ? "CONECTADA" : `DESCONECTADA (estado "${estadoBruto || "?"}")`}.`
@@ -172,6 +195,35 @@ export async function POST(req: NextRequest) {
         }
       } catch (connErr: any) {
         console.error(`[WhatsApp Webhook] Erro ao processar conexão:`, connErr?.message);
+      }
+      return NextResponse.json({ status: "ok" });
+    }
+
+    // ── SAÚDE DO VÍNCULO (aviso do gateway) ──────────────────────────────────
+    //
+    // O gateway avisa quando o vínculo ENTRA ou SAI do estado doente (contatos
+    // diferentes pedindo retransmissão: o que o robô manda chega ilegível) e
+    // quando descobre um aparelho hospedado na conta. Fica registrado na loja
+    // para a tela do robô mostrar — não sai mensagem pelo WhatsApp: avisar
+    // pelo próprio vínculo doente seria mandar mais uma mensagem ilegível.
+    if (event === "SAUDE_DO_VINCULO" && instance) {
+      try {
+        const candidatas = await lojasDaInstancia(instance, { id: true, chatbotConfig: true });
+        if (candidatas.length === 1) {
+          const loja = candidatas[0];
+          const config = (loja.chatbotConfig as any) || {};
+          const d = body.data || {};
+          await prisma.user.update({
+            where: { id: loja.id },
+            data: { chatbotConfig: { ...config, saudeDoVinculo: saudeDoVinculo(d) } },
+          });
+          console.warn(
+            `[WhatsApp Webhook] ${d.vinculoDoente ? "🚨 Vínculo DOENTE" : "💚 Vínculo sadio"} em ${instance}` +
+              `${d.aparelhoHospedado ? " · aparelho hospedado na conta" : ""}${d.motivo ? ` — ${String(d.motivo).slice(0, 200)}` : ""}`
+          );
+        }
+      } catch (e: any) {
+        console.error(`[WhatsApp Webhook] Erro ao registrar a saúde do vínculo:`, e?.message);
       }
       return NextResponse.json({ status: "ok" });
     }
@@ -193,6 +245,103 @@ export async function POST(req: NextRequest) {
     // MESMO em erro fatal, retorna 200 para a Evolution API não desativar o webhook
     return NextResponse.json({ status: "error_handled", error: err.message || "Webhook error" });
   }
+}
+
+/**
+ * As lojas que uma instância do gateway pode ser — no máximo duas, e quem
+ * chama recusa quando vierem duas (ambiguidade não se adivinha).
+ *
+ * Cascata explícita, na ordem de confiança:
+ *   1) `chatbotConfig.instanceName` EXATO — o vínculo real do QR;
+ *   2) o id da loja exato (legado);
+ *   3) `firehub_<10 últimos do id>`, reconstruído do id encontrado pelo sufixo.
+ *
+ * O porquê de cada passo está no comentário do vínculo em handleIncomingMessage.
+ */
+async function lojasDaInstancia(instance: string, select: Record<string, true>): Promise<any[]> {
+  const shortId = instance.replace(/^firehub_/, "");
+  let candidatos: any[] = await prisma.user.findMany({
+    where: { chatbotConfig: { path: ['instanceName'], equals: instance } },
+    select,
+    take: 2,
+  });
+  if (candidatos.length === 0) {
+    candidatos = await prisma.user.findMany({
+      where: { OR: [{ id: shortId }, { id: instance }] },
+      select,
+      take: 2,
+    });
+  }
+  if (candidatos.length === 0 && shortId.length >= 8) {
+    const porSufixo: any[] = await prisma.user.findMany({
+      where: { id: { endsWith: shortId } },
+      select,
+      take: 5,
+    });
+    candidatos = porSufixo.filter((u) => `firehub_${String(u.id).slice(-10)}` === instance).slice(0, 2);
+  }
+  return candidatos;
+}
+
+/**
+ * A saúde do vínculo como o gateway contou (evento SAUDE_DO_VINCULO ou a
+ * abertura da conexão). Só campos conhecidos e com tamanho limitado: vem de
+ * fora, e vai parar no chatbotConfig da loja.
+ */
+function saudeDoVinculo(d: any) {
+  const motivo = typeof d?.motivo === "string" ? d.motivo : typeof d?.motivoDoVinculo === "string" ? d.motivoDoVinculo : null;
+  return {
+    vinculoDoente: d?.vinculoDoente === true,
+    motivo: motivo ? motivo.slice(0, 600) : null,
+    contatosQueNaoLeram: Number(d?.contatosQueNaoLeram) || 0,
+    aparelhoHospedado: d?.aparelhoHospedado === true,
+    avisos: avisosDoGateway(d?.avisos),
+    em: new Date().toISOString(),
+  };
+}
+
+/** Avisos do gateway, só no formato esperado e com tamanho limitado (vem de fora). */
+function avisosDoGateway(bruto: unknown): Array<{ tipo: string; mensagem: string }> {
+  if (!Array.isArray(bruto)) return [];
+  return bruto
+    .filter((a: any) => a && typeof a.tipo === "string" && typeof a.mensagem === "string")
+    .slice(0, 5)
+    .map((a: any) => ({ tipo: a.tipo.slice(0, 40), mensagem: a.mensagem.slice(0, 600) }));
+}
+
+/**
+ * O que gravar sobre o aparelho do robô quando a conexão abre: o aplicativo
+ * que leu o QR, o id do aparelho, os avisos do gateway e — conferido aqui, que
+ * é quem conhece os números da loja — se o robô ficou no número do DONO em vez
+ * do número da loja.
+ */
+function vinculoDoAparelho(
+  dados: any,
+  telefoneConectado: string,
+  storePhone: string | null | undefined,
+  notificationPhone: string | null | undefined,
+) {
+  const avisos = avisosDoGateway(dados?.avisos);
+  const noNumeroDoDono =
+    Boolean(telefoneConectado && notificationPhone && mesmoTelefone(notificationPhone, telefoneConectado)) &&
+    !(storePhone && mesmoTelefone(storePhone, telefoneConectado));
+  if (noNumeroDoDono && !avisos.some((a) => a.tipo === "numero-do-dono")) {
+    avisos.push({
+      tipo: "numero-do-dono",
+      mensagem:
+        `O robô está conectado no WhatsApp do proprietário (final ${telefoneConectado.slice(-4)}), não no número da loja` +
+        `${storePhone ? ` (final ${String(storePhone).replace(/\D/g, "").slice(-4)})` : ""}. ` +
+        `Quem escreve para o número da loja não chega ao robô. Desconecte e leia o QR com o WhatsApp da loja.`,
+    });
+  }
+  const aparelhoId = dados?.aparelhoId === null || dados?.aparelhoId === undefined ? NaN : Number(dados.aparelhoId);
+  return {
+    plataforma: typeof dados?.plataforma === "string" ? dados.plataforma.slice(0, 20) : null,
+    tipoDePlataforma: typeof dados?.tipoDePlataforma === "string" ? dados.tipoDePlataforma.slice(0, 20) : null,
+    aparelhoId: Number.isFinite(aparelhoId) ? aparelhoId : null,
+    avisos,
+    em: new Date().toISOString(),
+  };
 }
 
 /**
@@ -302,6 +451,16 @@ async function handleIncomingMessage(body: any, instance: string) {
   const key = data.key || data.message?.key || {};
   const fromMe = key.fromMe;
 
+  // ── A CONVERSA ORIGINAL, ANTES DE ESCOLHER O "TELEFONE DE VERDADE" ────────
+  // Num status (status@broadcast) ou grupo, `key.participant` é o telefone de
+  // quem postou — e ganhava a escolha abaixo, virando "conversa de cliente":
+  // o robô respondia por mensagem direta a um status. A pergunta "é conversa
+  // de cliente?" é sobre a conversa, e ela só existe no endereço original.
+  if (!conversaOriginalEhDeCliente(key.remoteJid)) {
+    console.log(`[Webhook] Ignorado: ${tipoDoJid(key.remoteJid)} (${key.remoteJid})`);
+    return;
+  }
+
   // Extrai o remoteJid e telefone real (filtrando IDs internos @lid do WhatsApp)
   const getRealJid = (): string => {
     const candidates = [
@@ -374,8 +533,27 @@ async function handleIncomingMessage(body: any, instance: string) {
     return;
   }
 
-  const shortId = instance.replace(/^firehub_/, "");
-  
+  // ── CONTA OFICIAL DO WHATSAPP/META: SILÊNCIO TOTAL ────────────────────────
+  //
+  // Em 24–25/09/2026 o robô da Divinos respondeu ~40 vezes ao robô do Suporte
+  // do WhatsApp, com quem o dono tinha aberto um chamado pelo número da loja —
+  // e ainda o avisou de que "o cliente pediu atendente". Antes de tudo (loja,
+  // fila, anti-loop, IA, contagem): nem resposta, nem frase de degradação,
+  // nem fila. O que o dono digita para o Suporte também não vira "atendente
+  // assumiu". A lista e o porquê: lib/contas-oficiais-whatsapp.ts, com teste.
+  const contaOficial = contaOficialDoWhatsApp({
+    jids: [
+      remoteJid, key.remoteJid, key.remoteJidAlt, key.senderPn, key.participant, key.participantPn,
+      data.senderAlt, data.sender, data.participantAlt, data.from,
+    ],
+    verifiedBizName: data.verifiedBizName || data.message?.verifiedBizName,
+  });
+  if (contaOficial) {
+    console.log(`[Webhook] 🔕 Conta oficial do WhatsApp (${contaOficial.quem} — ${contaOficial.porque}) em ${instance}: o robô não responde.`);
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: "texto", estagio: "numero-ignorado", detalhe: `conta oficial: ${contaOficial.quem}` });
+    return;
+  }
+
   // Busca multi-tenant genérica: encontra a loja pelo ID ou pelo nome da instância configurada
   // ── VINCULO INSTANCIA -> LOJA (isolamento entre lojas) ────────────────────
   // O telefone que leu o QR pertence a UMA loja. A fonte de verdade e o
@@ -401,22 +579,9 @@ async function handleIncomingMessage(body: any, instance: string) {
     notificationPhone: true,
   } as const;
 
+  // A cascata:
   // 1) Vinculo real do QR: instanceName exato.
-  let candidatos = await prisma.user.findMany({
-    where: { chatbotConfig: { path: ['instanceName'], equals: instance } },
-    select: selecaoLoja,
-    take: 2,
-  });
-
   // 2) Legado: instancia derivada do proprio id da loja, sempre EXATO.
-  if (candidatos.length === 0) {
-    candidatos = await prisma.user.findMany({
-      where: { OR: [{ id: shortId }, { id: instance }] },
-      select: selecaoLoja,
-      take: 2,
-    });
-  }
-
   // 3) Legado real: o nome da instancia e SEMPRE `firehub_<10 ultimos do id>`
   //    (src/lib/whatsapp-evolution.ts), e o id completo e um cuid — nunca igual
   //    ao sufixo. Ou seja, o passo 2 acima jamais casa, e toda loja conectada
@@ -427,14 +592,12 @@ async function handleIncomingMessage(body: any, instance: string) {
   //    gerado seria o mesmo.
   //    Aqui o sufixo so estreita a busca — a decisao vem da RECONSTRUCAO exata
   //    do nome a partir do id encontrado. Ambiguidade continua recusando.
-  if (candidatos.length === 0 && shortId.length >= 8) {
-    const porSufixo = await prisma.user.findMany({
-      where: { id: { endsWith: shortId } },
-      select: selecaoLoja,
-      take: 5,
-    });
-    candidatos = porSufixo.filter(u => `firehub_${u.id.slice(-10)}` === instance).slice(0, 2);
-  }
+  //    (A cascata mora em `lojasDaInstancia`, usada também pelos avisos de
+  //    conexão e de saúde do vínculo — uma regra só para "de quem é".)
+  const candidatos: Array<{
+    id: string; ownerId: string | null; chatbotConfig: unknown; slug: string | null;
+    email: string; isFranqueadoHakim: boolean | null; notificationPhone: string | null;
+  }> = await lojasDaInstancia(instance, selecaoLoja);
 
   if (candidatos.length > 1) {
     console.error(
@@ -507,6 +670,26 @@ async function handleIncomingMessage(body: any, instance: string) {
     data.message?.viewOnceMessageV2?.message?.audioMessage ||
     data.audio;
 
+  // 📎 → Localização. O ponto do aparelho do cliente é o dado que decide a
+  // taxa de quem cobra por km: vira uma linha na conversa (o modelo lê, o
+  // histórico guarda) e vai como coordenada para a área de entrega
+  // (lib/localizacao-do-whatsapp.ts).
+  const localizacao = localizacaoDoPayload(data);
+
+  // ── A MENSAGEM CHEGOU: CONTA AQUI, NA ENTRADA ─────────────────────────────
+  //
+  // O INBOUND era gravado só DEPOIS de a IA responder. Mensagem pausada, na
+  // fila humana, em cooldown, barrada pelo anti-loop ou com áudio ilegível
+  // nunca contava — e o diagnóstico da Divinos (25/09/2026) concluiu "27
+  // INBOUND = só o Suporte" a partir de uma métrica cega para o que chegou e
+  // não foi respondido. Agora conta toda mensagem de cliente que chegou à loja
+  // (fromMe, conta oficial, status e grupo já saíram acima), antes de qualquer
+  // download ou porteira. Custo zero: só a resposta (OUTBOUND) é cobrada.
+  trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", {
+    remoteJid,
+    tipo: isAudioMessage || audioObj ? "audio" : localizacao ? "localizacao" : "texto",
+  });
+
   let audioData: { base64: string; mimeType: string } | undefined = undefined;
 
   if (isAudioMessage || audioObj) {
@@ -546,13 +729,23 @@ async function handleIncomingMessage(body: any, instance: string) {
     }
   }
 
+  // O conteúdo fora do envelope de mensagem temporária / visualização única.
+  // O gateway do FireHub já manda desembrulhado; a Evolution oficial não.
+  const conteudo = desembrulharMensagem(data.message) || {};
+
   const rawText =
-    data.message?.conversation ||
-    data.message?.extendedTextMessage?.text ||
-    data.message?.imageMessage?.caption ||
+    conteudo.conversation ||
+    conteudo.extendedTextMessage?.text ||
+    conteudo.imageMessage?.caption ||
+    conteudo.videoMessage?.caption ||
     data.body ||
     data.text ||
+    (localizacao ? textoDaLocalizacao(localizacao) : "") ||
     "";
+
+  // Rótulo do rastro: separar áudio de texto é o que torna o diagnóstico útil,
+  // já que "não respondeu" tem causas diferentes nos dois casos.
+  const tipoTrace: "texto" | "audio" = (isAudioMessage || audioObj) ? "audio" : "texto";
 
   // Detecção de Ligação de Voz / Chamada Perdida
   const eventName = (body.event || body.type || "").toUpperCase();
@@ -574,21 +767,16 @@ async function handleIncomingMessage(body: any, instance: string) {
     // atendente): a checagem geral só vem mais abaixo, e até aqui o robô
     // respondia por cima de quem estava atendendo.
     if (roboEstaPausado(user.id, remoteJid)) return;
-    const cleanTarget = remoteJid.replace(/@.*$/, "");
-    if (cleanTarget) {
-      replyToCustomer(
-        user.id,
-        remoteJid,
-        "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?",
-        cleanTarget
-      ).catch(() => {});
-    }
+    // Sem `target` cortado: tirar o "@lid" do endereço mandava a resposta para
+    // "55<LID>@s.whatsapp.net" — um número que não existe (ou o de outra
+    // pessoa). O envio já sabe endereçar @lid e telefone.
+    replyToCustomer(
+      user.id,
+      remoteJid,
+      "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?"
+    ).catch(() => {});
     return;
   }
-
-  // Rótulo do rastro: separar áudio de texto é o que torna o diagnóstico útil,
-  // já que "não respondeu" tem causas diferentes nos dois casos.
-  const tipoTrace: "texto" | "audio" = (isAudioMessage || audioObj) ? "audio" : "texto";
 
   let textMessage = rawText;
   /**
@@ -625,6 +813,14 @@ async function handleIncomingMessage(body: any, instance: string) {
 
   if (!textMessage.trim() && !audioData) return;
 
+  /**
+   * O que o cliente DIGITOU, sem a linha da localização. É o que os detectores
+   * de "pediu atendente" e de reclamação leem: o nome do lugar que o WhatsApp
+   * anexa ao ponto é texto de terceiros — a localização da "Suporte Técnico
+   * Informática" pausava o robô como se o cliente tivesse pedido suporte.
+   */
+  const textoDigitado = semLinhaDaLocalizacao(textMessage);
+
   // Cooldown check (não responder se a última resposta foi há menos de 3 segundos)
   const now = Date.now();
   const lastResponse = cooldownCache.get(remoteJid) || 0;
@@ -632,7 +828,16 @@ async function handleIncomingMessage(body: any, instance: string) {
   // alguém" logo depois de uma resposta do robô está reagindo a ela — e era
   // descartado aqui em silêncio, sem fila e sem alerta, antes de qualquer
   // checagem (medido em 18/09/2026).
-  if (now - lastResponse < 3000 && !detectarPedidoDeAtendente(textMessage).pediu) {
+  //
+  // A LOCALIZAÇÃO também não (lib/localizacao-do-whatsapp.ts,
+  // `descartavelNoCooldown`): é o ponto que decide a taxa de quem cobra por km,
+  // e chega justamente logo depois da resposta. Descartada aqui, ia só para o
+  // painel e não entrava no histórico em memória, de onde o robô a lê.
+  if (descartavelNoCooldown({
+    msDesdeAUltimaResposta: now - lastResponse,
+    temLocalizacao: Boolean(localizacao),
+    pediuAtendente: detectarPedidoDeAtendente(textoDigitado).pediu,
+  })) {
     // ⚠️ ESTE DESCARTE AINDA EXISTE, e é o próximo a sair: a mensagem some sem
     // fila, sem histórico e sem rastro. Quem escreve picado ("oi" / "quero 2
     // x-tudo" / "e uma coca") perde parte do que disse. O substituto já está
@@ -779,7 +984,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   const stopOnHuman = chatbotConfig.stopOnHumanRequest !== false;
   // O dono falando com o próprio robô ("algum cliente pediu atendente hoje?",
   // "preciso falar com o motoboy do pedido 8") não é cliente pedindo pessoa.
-  const pedidoDeAtendente = ehODono ? { pediu: false as const, gatilho: undefined } : detectarPedidoDeAtendente(textMessage);
+  const pedidoDeAtendente = ehODono ? { pediu: false as const, gatilho: undefined } : detectarPedidoDeAtendente(textoDigitado);
   /** Um alerta por mensagem: três caminhos abaixo avisam o dono, e sem isto saíam dois pela mesma. */
   let donoJaAvisado = false;
 
@@ -861,7 +1066,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   const escalarPorProblema = chatbotConfig.escalateOnComplaint !== false && !ehODono;
   if (escalarPorProblema) {
     const historicoAtual = conversationCache.get(user.id + "_" + remoteJid) || [];
-    const problema = detectarProblemaNoPedido(textMessage, historicoAtual, now);
+    const problema = detectarProblemaNoPedido(textoDigitado, historicoAtual.map((m) => ({ ...m, text: semLinhaDaLocalizacao(m.text) })), now);
 
     // Já entregue à equipe: só atualiza a fila. Repetir "vou chamar alguém" a
     // cada nova mensagem de quem está bravo é piorar o atendimento, e o alerta
@@ -1283,8 +1488,8 @@ async function handleIncomingMessage(body: any, instance: string) {
         }
       }
 
-      // Track WhatsApp usage (fire-and-forget)
-      trackWhatsAppMessage(user.id, "INBOUND", "SERVICE", { remoteJid: recipientTarget });
+      // Uso do WhatsApp (fire-and-forget). O INBOUND já foi contado na entrada
+      // da mensagem — aqui contava de novo, e só quando havia resposta.
       if (!silenciarResposta) trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
 
       console.log(
@@ -1396,7 +1601,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     });
 
     const espera = await comPrazo(
-      processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName),
+      processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName, { localizacao }),
       aiTimeout,
       async (respostaTardia, atrasoMs) => {
         if (vigia) clearTimeout(vigia);

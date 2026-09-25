@@ -72,6 +72,30 @@ export function ehConversaDeCliente(remoteJid: unknown): boolean {
 }
 
 /**
+ * A CONVERSA de onde a mensagem veio (`key.remoteJid`, antes de qualquer
+ * troca) é de cliente?
+ *
+ * ── Por que olhar o endereço ORIGINAL ───────────────────────────────────────
+ *
+ * O webhook escolhe o "telefone de verdade" entre vários candidatos
+ * (`getRealJid`: senderAlt, participant, remoteJid...) e só DEPOIS perguntava a
+ * `ehConversaDeCliente`. Num status postado por um contato, `key.remoteJid` é
+ * `status@broadcast` e `key.participant` é o telefone de quem postou — com nota
+ * máxima na escolha. O filtro recebia o telefone, aprovava, e o robô respondia
+ * por mensagem direta a um STATUS (auditoria de 25/09/2026). O mesmo vale para
+ * grupo (`@g.us` + participant) e canal.
+ *
+ * A pergunta certa é sobre a conversa, e ela só existe no endereço original.
+ * Vazio não recusa: há payload antigo que só traz `data.from`, e quem decide
+ * nesse caso continua sendo `ehConversaDeCliente` sobre o endereço resolvido.
+ */
+export function conversaOriginalEhDeCliente(remoteJidOriginal: unknown): boolean {
+  if (remoteJidOriginal === null || remoteJidOriginal === undefined) return true;
+  if (typeof remoteJidOriginal === "string" && !remoteJidOriginal.trim()) return true;
+  return ehConversaDeCliente(remoteJidOriginal);
+}
+
+/**
  * O que é este endereço, em uma palavra — para log e para alerta. Não decide
  * nada: quem decide é `ehConversaDeCliente`.
  */
