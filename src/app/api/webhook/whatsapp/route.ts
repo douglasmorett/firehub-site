@@ -1163,6 +1163,12 @@ async function handleIncomingMessage(body: any, instance: string) {
   const guard = await evaluateLoopGuard({
     userId: user.id,
     remoteJid,
+    // O lojista que puxa assunto pelo celular com um contato novo fica gravado
+    // no LID; a resposta do contato chega com o telefone. Os dois são a mesma
+    // conversa para o "atendente assumiu" (lib/loop-guard.ts).
+    outrosEnderecos: [key.remoteJid, key.remoteJidAlt, data.senderAlt].filter(
+      (j): j is string => typeof j === "string" && j !== remoteJid && ehConversaDeCliente(j),
+    ),
     text: textMessage,
     verifiedBizName: data.verifiedBizName || data.message?.verifiedBizName,
     isAudio: Boolean(audioData?.base64),
