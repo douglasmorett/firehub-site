@@ -27,6 +27,7 @@
  * Loja SEM área cadastrada não tem regra para aplicar: continua como sempre
  * (taxa padrão), porque bloquear venda de quem nunca configurou seria pior.
  */
+import type { MedidaDaDistancia, OrigemDoPonto } from "./cotacao-de-entrega";
 import { verifyStoreDeliveryAddress, haversineDistanceKm } from "@/lib/geocoding";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
@@ -97,6 +98,27 @@ export type VeredictoDeEntrega = {
   areaDeRisco?: string;
   /** Para log e para a nota do pedido. */
   motivo: string;
+
+  // ── ENTREGA POR KM (modos KM e ROTA) — 25/09/2026 ──────────────────────
+  //
+  // O que o pedido precisa gravar para o motoboy, o acerto dele e a
+  // roteirização usarem o MESMO ponto que decidiu a taxa (antes a roteirização
+  // geocodificava de novo e punha o cliente a 4,95 km de onde a taxa o tinha
+  // medido: pedido #5 da Divinos). Ver src/lib/cotacao-de-entrega.ts.
+
+  /** O ponto do cliente que decidiu a taxa, e de onde ele veio. */
+  ponto?: { lat: number; lng: number; origem: OrigemDoPonto };
+  /** Como a distância foi medida: pelas ruas, estimada (roteador fora) ou em linha reta (modo KM). */
+  medida?: MedidaDaDistancia;
+  /** Km da faixa que decidiu a taxa. */
+  faixaKm?: number;
+  /**
+   * true = em KM/ROTA o ponto não é confiável o bastante para cobrar sem o
+   * cliente confirmar no mapa: veio do centro do bairro, a rua existe em mais
+   * de um lugar, ou o roteador precisou arrastar o ponto para longe até a rua.
+   * O site pede o pino; o robô pede a localização; o balcão avisa o operador.
+   */
+  pedeConfirmacao?: boolean;
 };
 
 export function normalizarTexto(texto: unknown): string {
