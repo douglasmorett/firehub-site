@@ -12,6 +12,7 @@ import { CHEFS } from "./chefs";
 import { SeloDeGarantia } from "./SeloDeGarantia";
 import { TEXTO_CTA, PRECO_SOB_BOTAO } from "./textos";
 import MedidorDaPagina from "./MedidorDaPagina";
+import { FluxoDoPrazo, EmailDeAcesso, FichaDaLoja, MarcarColuna, AbasAbertas } from "./Ilustracoes";
 
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
@@ -342,34 +343,19 @@ export default function PrazosLanding() {
         </div>
       </section>
 
-      {/* ─────────── COMO FUNCIONA: três ícones e a foto real ─────────── */}
+      {/* ─────────── COMO FUNCIONA: o fluxo desenhado e a foto real ───────────
+          Eram três emojis (👆 🔢 ✍️) que misturavam o que o lojista faz uma
+          vez (marcar a coluna) com o que a extensão faz o dia inteiro. Em
+          25/09/2026, a pedido do dono, virou o desenho do que acontece de
+          verdade: a coluna do painel, a conta, e o campo do iFood e do 99
+          mudando — ./Ilustracoes.tsx. O que se faz uma vez foi para o
+          "Instalar", lá embaixo. */}
       <section style={{ background: "#fff", borderTop: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F0" }}>
         <div style={secao}>
-          <h2 style={h2}>Três passos, uma vez só</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginTop: 18 }}>
-            {/* O número em laranja dá ordem de leitura ao que antes eram três
-                cartões cinzas iguais — e diz de relance que são só três. */}
-            {[
-              ["👆", "Marca a coluna", "no seu painel, com um clique"],
-              ["🔢", "Ela conta", "a cada mudança na tela"],
-              ["✍️", "Ela escreve", "no iFood e no 99Food, nas lojas que você marcar"],
-            ].map(([e, t, d], i) => (
-              // Fundo levemente cinza porque a seção é branca: cartão branco
-              // em fundo branco não existe.
-              <div key={t} style={{ ...tile, background: "#F8FAFC", border: "1px solid #E2E8F0", borderTop: `4px solid ${LARANJA}`, position: "relative", paddingTop: "1.6rem" }}>
-                <div style={{
-                  position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)",
-                  width: 30, height: 30, borderRadius: 999, background: `linear-gradient(135deg, ${LARANJA}, #E64A19)`,
-                  color: "#fff", fontWeight: 900, display: "grid", placeItems: "center", fontSize: ".95rem",
-                  boxShadow: "0 6px 16px rgba(255,87,34,.35)",
-                }}>
-                  {i + 1}
-                </div>
-                <div style={emoji}>{e}</div>
-                <div style={{ fontWeight: 900, fontSize: "1.1rem" }}>{t}</div>
-                <div style={{ color: "#64748B", fontSize: ".95rem", marginTop: 4, lineHeight: 1.45 }}>{d}</div>
-              </div>
-            ))}
+          <h2 style={h2}>Três coisas acontecendo sozinhas, o dia inteiro</h2>
+          <p style={p}>A cada pedido que entra ou sai da fila:</p>
+          <div style={{ marginTop: 18 }}>
+            <FluxoDoPrazo />
           </div>
 
           {/* No desktop, a foto inteira: painel + popup lado a lado. No celular
@@ -602,24 +588,44 @@ export default function PrazosLanding() {
         </div>
       </section>
 
-      {/* ─────────── INSTALAÇÃO: dois botões, como no e-mail ─────────── */}
+      {/* ─────────── INSTALAÇÃO: os quatro passos, desenhados ───────────
+          Eram dois cartões de texto ("1. Instalar no Chrome", "2. Ativar
+          minha conta") e uma frase sobre marcar a coluna. Quem nunca instalou
+          extensão não imaginava a tela — e "instalar extensão" é a segunda
+          maior objeção desta venda. Agora cada passo mostra o que aparece
+          no computador: o e-mail, a loja do Google, o botão do popup e as
+          abas abertas, com os rótulos de verdade (ver ./Ilustracoes.tsx). */}
       <section id="instalar" style={secao}>
         <h2 style={h2}>Instalar não dá trabalho</h2>
-        <p style={p}>Você assina agora, até pelo celular. No computador da loja, são dois cliques que chegam no e-mail:</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
-          <div style={{ ...tile, borderLeft: `5px solid ${LARANJA}`, textAlign: "left" }}>
-            <div style={{ fontWeight: 900, fontSize: "1.15rem" }}>1. Instalar no Chrome</div>
-            <div style={{ color: "#64748B", marginTop: 4 }}>um clique, pela loja do Google</div>
-          </div>
-          <div style={{ ...tile, borderLeft: "5px solid #0F172A", textAlign: "left" }}>
-            <div style={{ fontWeight: 900, fontSize: "1.15rem" }}>2. Ativar minha conta</div>
-            <div style={{ color: "#64748B", marginTop: 4 }}>a extensão entra sozinha, sem senha</div>
-          </div>
+        <p style={p}>Você assina agora, até pelo celular. No computador da loja, é uma vez só:</p>
+        {/* Dois por linha no computador (quatro numa linha espremia os
+            desenhos; três deixava o quarto sozinho), um por linha no celular. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 400px), 1fr))", gap: 14, marginTop: 6 }}>
+          {[
+            { titulo: "O acesso chega no e-mail", texto: "Na hora, com dois botões.", desenho: <EmailDeAcesso /> },
+            { titulo: "Instale e ative", texto: "Um clique na loja do Google. Depois o botão 2 do e-mail: ela entra sozinha, sem senha.", desenho: <FichaDaLoja /> },
+            { titulo: "Marque a coluna do seu painel", texto: "O único passo que depende de você — só você sabe qual coluna é.", desenho: <MarcarColuna /> },
+            { titulo: "Deixe as abas abertas", texto: "Painel, iFood e 99. A extensão faz o resto, a noite inteira.", desenho: <AbasAbertas /> },
+          ].map((s, i) => (
+            <div key={s.titulo} style={{ ...card, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ width: 28, height: 28, borderRadius: 999, background: `linear-gradient(135deg, ${LARANJA}, #E64A19)`, color: "#fff", fontWeight: 900, display: "grid", placeItems: "center", flexShrink: 0, boxShadow: "0 6px 16px rgba(255,87,34,.3)" }}>
+                  {i + 1}
+                </span>
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: "1.08rem", lineHeight: 1.25 }}>{s.titulo}</div>
+                  <div style={{ color: "#64748B", fontSize: ".94rem", marginTop: 3, lineHeight: 1.45 }}>{s.texto}</div>
+                </div>
+              </div>
+              {/* O desenho num fundo cinza próprio, centralizado: no celular
+                  ele ocupa a largura do cartão; no computador, o tamanho de
+                  uma miniatura de tela. */}
+              <div style={{ background: "#F1F5F9", borderRadius: 12, padding: "16px 12px", display: "grid", placeItems: "center", flex: 1 }}>
+                {s.desenho}
+              </div>
+            </div>
+          ))}
         </div>
-        <p style={{ ...p, marginTop: 16, marginBottom: 0 }}>
-          Depois, marque a coluna do seu painel. É o único passo que depende de você — só você sabe qual
-          coluna é.
-        </p>
       </section>
 
       {/* ─────────── FAQ (fechado) ─────────── */}
