@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import StoreOrdersDashboard from "@/components/customer/StoreOrdersDashboard";
+import AvisosDoDia from "@/components/customer/AvisosDoDia";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
@@ -188,22 +189,28 @@ export default async function FranchiseeCustomerOrdersPage() {
   const noMapa = await resolverLojaNoMapa(lojaDoMapa, { prazoMs: 1200 });
 
   return (
-    <StoreOrdersDashboard
-      user={{
-        ...user,
-        storeAddress: noMapa.endereco || user.storeAddress,
-        city: noMapa.cidade || user.city,
-        storeLatLng: noMapa.ponto,
-      }}
-      orders={orders}
-      // De qual MARCA é cada pedido. Sem isto o selo da loja só saía para o
-      // iFood (que grava o nome na linha do pedido) e o do 99Food vinha sem
-      // marca nenhuma. Vazio quando a conta não tem o que separar.
-      lojasDeOrigem={lojasDeOrigem}
-      isFranqueado={user.role === "FRANCHISEE" || user.role === "STAFF"}
-      initialCashSessionOpenedAt={activeCashSessionOpenedAt}
-      initialMotoboys={motoboys}
-      activeStoreId={activeStore || targetFranchiseeId}
-    />
+    <>
+      {/* Cancelamento e disputa do dia: janela e som SÓ nesta tela. Montado
+          no layout, abria em cima do KDS; o dono quer o aviso aqui e em mais
+          lugar nenhum (25/09/2026). Regras em lib/avisos-do-dia.ts. */}
+      <AvisosDoDia />
+      <StoreOrdersDashboard
+        user={{
+          ...user,
+          storeAddress: noMapa.endereco || user.storeAddress,
+          city: noMapa.cidade || user.city,
+          storeLatLng: noMapa.ponto,
+        }}
+        orders={orders}
+        // De qual MARCA é cada pedido. Sem isto o selo da loja só saía para o
+        // iFood (que grava o nome na linha do pedido) e o do 99Food vinha sem
+        // marca nenhuma. Vazio quando a conta não tem o que separar.
+        lojasDeOrigem={lojasDeOrigem}
+        isFranqueado={user.role === "FRANCHISEE" || user.role === "STAFF"}
+        initialCashSessionOpenedAt={activeCashSessionOpenedAt}
+        initialMotoboys={motoboys}
+        activeStoreId={activeStore || targetFranchiseeId}
+      />
+    </>
   );
 }

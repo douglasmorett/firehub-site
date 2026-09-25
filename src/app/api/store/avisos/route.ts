@@ -2,8 +2,8 @@
  * GET  /api/store/avisos              → cancelamentos e disputas do dia em aberto
  * POST /api/store/avisos { ciente: [] } → "Ciente" nos cancelamentos listados
  *
- * Consultado em loop pelo AvisosDoDia (components/customer), montado no layout
- * da loja: o aviso aparece em qualquer tela do painel, não só na de pedidos.
+ * Consultado em loop pelo AvisosDoDia (components/customer), montado SÓ na tela
+ * de pedidos — no KDS e nas outras telas o aviso não aparece (dono, 25/09/2026).
  * A regra do que é aviso mora em lib/avisos-do-dia.ts.
  */
 import { NextResponse } from "next/server";

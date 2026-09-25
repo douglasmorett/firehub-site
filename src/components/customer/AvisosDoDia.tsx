@@ -2,10 +2,16 @@
 /**
  * O aviso que TOCA: pedido cancelado por quem não é a loja, e disputa aberta.
  *
- * Montado no layout da loja, então aparece em qualquer tela do painel — o
- * cancelamento importa esteja o atendente na tela de pedidos, no PDV ou no
- * caixa. A regra do que vira aviso mora no servidor (lib/avisos-do-dia.ts):
- * só do dia, só os de fora, e o "Ciente" vale para todas as telas.
+ * SÓ NA TELA DE PEDIDOS (montado em app/store/pedidos-clientes/page.tsx). Já
+ * morou no layout da loja, para aparecer em qualquer tela, e abria no meio do
+ * KDS da cozinha — "iFood espera sua resposta" numa tela onde ninguém responde
+ * nada. O dono decidiu (25/09/2026): aqui e em mais lugar nenhum.
+ *
+ * A disputa não tem janela própria: a tela de pedidos já tem o modal de
+ * resposta dela (StoreOrdersDashboard). Daqui ela só ganha o som.
+ *
+ * A regra do que vira aviso mora no servidor (lib/avisos-do-dia.ts): só do
+ * dia, só os de fora, e o "Ciente" vale para todas as telas de pedidos abertas.
  *
  * ── Três sons, três coisas ──────────────────────────────────────────────────
  *
@@ -19,14 +25,11 @@
  * cozinha.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
 import { PALETA } from "@/lib/paleta-brasa";
 import type { AvisoDeCancelamento, AvisoDeDisputa } from "@/lib/avisos-do-dia";
 
 const INTERVALO_DA_CONSULTA = 8000;
 const INTERVALO_DO_SOM = 6000;
-/** A tela onde a disputa se responde (o modal do StoreOrdersDashboard). */
-const TELA_DE_PEDIDOS = "/store/pedidos-clientes";
 
 const reais = (v: number) => `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const hora = (iso: string | null) =>
@@ -42,17 +45,7 @@ function porQuem(quem: string | null) {
   return quem === "cliente" ? " pelo cliente" : ` pelo ${quem}`;
 }
 
-const O_QUE_A_DISPUTA_PEDE: Record<string, string> = {
-  CANCELLATION: "O cliente pediu para cancelar o pedido",
-  PARTIAL_CANCELLATION: "O cliente pediu para cancelar parte do pedido",
-  DUE_DATE_CHANGE: "Pediram uma nova previsão de entrega",
-  RESEND_ITEMS: "O cliente pediu para reenviar itens",
-  REFUND_ITEMS: "O cliente pediu reembolso de itens",
-};
-
 export default function AvisosDoDia() {
-  const pathname = usePathname() || "";
-  const router = useRouter();
   const [cancelamentos, setCancelamentos] = useState<AvisoDeCancelamento[]>([]);
   const [disputas, setDisputas] = useState<AvisoDeDisputa[]>([]);
   const [enviando, setEnviando] = useState(false);
@@ -61,9 +54,6 @@ export default function AvisosDoDia() {
   // janela piscava de volta na consulta que já estava no ar quando o clique
   // aconteceu.
   const cienteLocalRef = useRef<Set<string>>(new Set());
-  // Disputa que o atendente deixou para depois NESTE aparelho (fora da tela de
-  // pedidos). A resposta continua esperando lá.
-  const [disputasAdiadas, setDisputasAdiadas] = useState<Set<string>>(new Set());
 
   // ── CONSULTA ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -190,10 +180,6 @@ export default function AvisosDoDia() {
     }
   };
 
-  const naTelaDePedidos = pathname.startsWith(TELA_DE_PEDIDOS);
-  // Na tela de pedidos a disputa já tem o modal de resposta dela — aqui só o som.
-  const disputaParaMostrar = naTelaDePedidos ? null : disputas.find((d) => !disputasAdiadas.has(d.id)) || null;
-
   const cartao: React.CSSProperties = {
     width: "min(440px, calc(100vw - 32px))", background: "#FFF", borderRadius: 14, overflow: "hidden",
     boxShadow: "0 24px 60px rgba(28,25,23,0.35)", fontFamily: "inherit",
@@ -269,43 +255,7 @@ export default function AvisosDoDia() {
     );
   }
 
-  if (disputaParaMostrar) {
-    const d = disputaParaMostrar;
-    const pede = (d.tipo && O_QUE_A_DISPUTA_PEDE[d.tipo]) || "O parceiro abriu uma negociação neste pedido";
-    return (
-      <div style={fundo} role="alertdialog" aria-modal="true" aria-labelledby="aviso-disputa-titulo">
-        <div style={cartao}>
-          <div id="aviso-disputa-titulo" style={{ background: PALETA.atencao, color: "#FFF", padding: "14px 18px", fontWeight: 900, fontSize: "1.1rem" }}>
-            ⚖️ {d.canal.toUpperCase()} ESPERA SUA RESPOSTA
-          </div>
-          <div style={{ padding: "16px 18px 18px", color: PALETA.carvao, display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: "1.25rem", fontWeight: 900 }}>
-              Pedido {d.numero != null ? `#${d.numero}` : ""} · {d.canal}
-            </div>
-            {numeroNoParceiro(d) && <div style={{ fontWeight: 800 }}>{numeroNoParceiro(d)}</div>}
-            <div style={{ fontSize: "0.95rem" }}>{pede}.</div>
-            <div style={{ fontSize: "0.95rem" }}>Valor: <b>{reais(d.valor)}</b></div>
-            {d.expiraEm && (
-              <div style={{ fontSize: "0.95rem", color: PALETA.atencao, fontWeight: 800 }}>
-                Responda até {hora(d.expiraEm)}. Sem resposta, quem decide é o {d.canal}.
-              </div>
-            )}
-            <button type="button" style={{ ...botaoPrincipal, marginTop: 10 }} onClick={() => router.push(TELA_DE_PEDIDOS)} autoFocus>
-              RESPONDER AGORA
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisputasAdiadas((s) => new Set(s).add(d.id))}
-              style={{ background: "none", border: "none", color: PALETA.areiaTinta, fontSize: "0.82rem", cursor: "pointer", padding: 6, fontFamily: "inherit" }}
-            >
-              Agora não (a resposta fica esperando na tela de pedidos)
-            </button>
-            {avisoDeSom}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // Disputa: a janela é o modal de resposta da própria tela de pedidos. Aqui
+  // só a sirene, que o modal não tem.
   return null;
 }
