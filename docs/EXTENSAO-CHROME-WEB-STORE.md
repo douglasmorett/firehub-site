@@ -176,3 +176,25 @@ O Chrome atualiza os lojistas sozinho em algumas horas. Nada de pedir para ningu
   Crie uma conta de teste no FireHub e informe e-mail e senha no campo "Instruções para revisão".
 - **"Automação de site de terceiro"** → responda que a extensão age apenas na sessão que o próprio
   lojista já tem aberta, na loja dele, e não contorna autenticação nem termos do iFood.
+
+---
+
+## Item criado e enviado em 25/09/2026
+
+- **ID da extensão:** `icmjhjaniopcbdeamcnngoencpcbahhh`
+- **Link de instalação (vale depois de aprovada):** <https://chromewebstore.google.com/detail/icmjhjaniopcbdeamcnngoencpcbahhh>
+- **Painel:** <https://chrome.google.com/webstore/devconsole/529cf443-6bd1-4aad-8d41-e6e9c252a297/icmjhjaniopcbdeamcnngoencpcbahhh/edit>
+- **Status:** Revisão pendente, com publicação automática ao aprovar. Não listada, sem custo
+  financeiro (a extensão não tem função de compra; a exigência de conta FireHub está na descrição),
+  todas as regiões.
+- **Conta de revisão:** `revisao.extensao@firehubfood.com.br`, loja FRANCHISEE criada direto no
+  banco (o formulário de criar loja do admin não está montado em tela nenhuma), loja fechada, sem
+  slug, sem documento, sem integração, trial até 24/11/2026. A senha fica só no console, aba
+  *Instruções de teste*. Desativar depois da aprovação.
+- **Dados declarados:** identificação pessoal (e-mail), autenticação (senha enviada ao nosso
+  servidor no login) e conteúdo do site (contagem da coluna "Em produção").
+
+**Quando aprovar:** definir `NEXT_PUBLIC_CHROME_EXTENSION_ID="icmjhjaniopcbdeamcnngoencpcbahhh"` no
+Coolify e fazer redeploy — o passo 1 de `/store/extensao-ifood` troca o WhatsApp pelo botão da loja.
+Quem já usa a pasta descompactada precisa remover e instalar pela loja (ID diferente = extensão
+diferente para o Chrome; o login na extensão é pedido de novo).
