@@ -225,6 +225,21 @@ function ehAPropriaConta(instanceName, numero) {
  *   `includes(numero)`. O `includes` pegava qualquer arquivo que contivesse
  *   aqueles dígitos em qualquer posição.
  */
+/**
+ * Este arquivo é uma sessão Signal deste número (qualquer aparelho)?
+ *
+ * O Baileys 7 grava o endereço com o DOMÍNIO quando não é telefone:
+ * "session-<lid>_1.<aparelho>.json" para LID, "_128"/"_129" para o aparelho
+ * hospedado. Casar só "session-<numero>." deixava de reconhecer a sessão da
+ * própria loja pelo LID — e as proteções que usam esta função passariam a
+ * apagá-la.
+ */
+function arquivoDeSessaoDe(arquivo, numero) {
+  const prefixo = `session-${numero}`;
+  if (!numero || !arquivo.startsWith(prefixo)) return false;
+  return /^(_\d+)?\./.test(arquivo.slice(prefixo.length));
+}
+
 function apagarSessaoDoContato(instanceName, jid) {
   const numero = String(jid).split("@")[0].split(":")[0].replace(/\D/g, "");
   if (!numero) return 0;
@@ -237,7 +252,7 @@ function apagarSessaoDoContato(instanceName, jid) {
   let apagados = 0;
   try {
     for (const arquivo of fs.readdirSync(pastaDaSessao(instanceName))) {
-      if (!arquivo.startsWith(`session-${numero}.`)) continue;
+      if (!arquivoDeSessaoDe(arquivo, numero)) continue;
       fs.rmSync(path.join(pastaDaSessao(instanceName), arquivo), { force: true });
       apagados++;
     }
@@ -462,7 +477,9 @@ async function resolverParaTelefone(sock, jid) {
 
     for (const resolver of candidatos) {
       const pn = await resolver(texto);
-      const achado = String(pn || "");
+      // O Baileys 7 devolve o telefone com o aparelho ("5522...:0@s.whatsapp.net");
+      // a conversa é com a pessoa, não com um aparelho dela.
+      const achado = String(pn || "").replace(/:\d+(?=@)/, "");
       if (achado.includes("@s.whatsapp.net")) {
         console.log(`[WhatsApp Gateway] 🔗 LID ${texto} resolvido para ${achado}`);
         return achado;
@@ -766,7 +783,6 @@ async function criarSocket(instanceName) {
   const sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: false,
     generateHighQualityLinkPreview: false,
     browser: ["FireHub Food", "Chrome", "1.0.0"],
     syncFullHistory: false,
@@ -804,6 +820,13 @@ async function criarSocket(instanceName) {
 
   // Fix 1: GC periódico agora é global (não duplica em reconexões)
   sock.ev.on("creds.update", saveCreds);
+
+  // Baileys 7: o próprio WhatsApp avisa quando liga um LID a um telefone. É o
+  // mesmo mapa que faz a resposta sair para o telefone (ver `lembrarLid`).
+  sock.ev.on("lid-mapping.update", ({ lid, pn } = {}) => {
+    const telefone = normalizarParaJidDeTelefone(pn);
+    if (lid && telefone) lembrarLid(String(lid).replace(/:\d+(?=@)/, ""), telefone);
+  });
 
   sock.ev.on("connection.update", async (update) => {
     // Socket velho falando: quando um socket é substituído, o listener dele
@@ -1123,12 +1146,14 @@ async function criarSocket(instanceName) {
       // sair para o telefone em vez do @lid, que é o que não decifra.
       let senderAlt = "";
       if (String(remoteJid).endsWith("@lid")) {
-        // O TELEFONE VEM JUNTO DA MENSAGEM. O Baileys põe o número real em
-        // `senderPn` na própria `key` de toda mensagem recebida por LID — é a
-        // fonte mais confiável que existe, melhor que qualquer mapa nosso,
-        // porque chega junto do dado e não depende de consulta nem de memória.
+        // O TELEFONE VEM JUNTO DA MENSAGEM. O Baileys põe o número real na
+        // própria `key` de toda mensagem recebida por LID (`senderPn` no 6,
+        // `remoteJidAlt`/`participantAlt` no 7) — é a fonte mais confiável que
+        // existe, melhor que qualquer mapa nosso, porque chega junto do dado e
+        // não depende de consulta nem de memória.
         const doProprioWhatsApp = normalizarParaJidDeTelefone(
-          msg.key?.senderPn || msg.key?.participantPn || msg.key?.remoteJidAlt || msg.participantPn,
+          msg.key?.senderPn || msg.key?.participantPn || msg.key?.remoteJidAlt ||
+            msg.key?.participantAlt || msg.participantPn,
         );
 
         if (doProprioWhatsApp) {
@@ -1464,7 +1489,7 @@ app.post("/instance/renovar-chaves/:instanceName", async (req, res) => {
       // NUNCA a própria conta: toda mensagem 1:1 é cifrada também para os
       // aparelhos da loja, e apagar essa sessão quebra de uma vez a cópia de
       // todas as conversas no celular do dono.
-      if (proprias.some((n) => arquivo.startsWith(`session-${n}.`))) {
+      if (proprias.some((n) => arquivoDeSessaoDe(arquivo, n))) {
         console.warn(`[WhatsApp Gateway] 🛡️ Preservando ${arquivo} (própria conta de ${instanceName})`);
         continue;
       }
@@ -1580,7 +1605,7 @@ app.get("/instance/diagnostico-sessao/:instanceName", (req, res) => {
   }
 
   const sessoes = arquivos.filter((a) => a.startsWith("session-"));
-  const daPropriaConta = sessoes.filter((a) => proprias.some((n) => a.startsWith(`session-${n}.`)));
+  const daPropriaConta = sessoes.filter((a) => proprias.some((n) => arquivoDeSessaoDe(a, n)));
 
   const corrompidos = [];
   for (const arquivo of arquivos) {
@@ -1700,7 +1725,7 @@ app.post("/instance/renegociar-todas-as-conversas/:instanceName", (req, res) => 
         // são nossos e apagá-los derrubaria a loja.
         if (!arquivo.startsWith("session-")) continue;
         // E nunca a própria conta — ver `apagarSessaoDoContato`.
-        if (proprias.some((n) => arquivo.startsWith(`session-${n}.`))) continue;
+        if (proprias.some((n) => arquivoDeSessaoDe(arquivo, n))) continue;
         fs.rmSync(path.join(raiz, instancia, arquivo), { force: true });
         apagados++;
       }
