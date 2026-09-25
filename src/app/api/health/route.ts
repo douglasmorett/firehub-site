@@ -4,12 +4,16 @@
  * Verifica: servidor, banco de dados e conectividade.
  * Retorna 200 se tudo ok, 503 se algo falhar.
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { estadoDoRoteador, sondarRoteador } from "@/lib/distancia-por-rota";
+import { estadoDoNominatim } from "@/lib/geocoding";
+import { sondarNominatim, estadoDaFilaDoMapa } from "@/lib/geocodificacao-servidor";
+import { verifyCronAuth } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const checks: Record<string, { ok: boolean; ms?: number; error?: string }> = {};
   const start = Date.now();
 
@@ -148,12 +152,42 @@ export async function GET() {
     esquema = { ok: false, faltando: [], erro: String(e?.message || "").slice(0, 120) };
   }
 
+  // ── Mapa e rota da ENTREGA ───────────────────────────────────────────────
+  //
+  // A taxa de entrega por km depende de dois serviços públicos de terceiros:
+  // o Nominatim (onde fica o endereço) e o roteador OSRM (quantos km de rua).
+  // Os dois limitam por IP, e quando um cai as lojas passam a ver "confirme no
+  // mapa" (Nominatim) ou "distância estimada" (roteador) — sem ninguém saber
+  // por quê. Isto diz, sem ir à rede, como as últimas cotações foram.
+  //
+  // FORA do `allOk`, como o esquema: serviço de terceiro fora não é motivo
+  // para o Coolify reiniciar o container em laço. `?sondar=1` pergunta de
+  // verdade aos dois (no máximo uma vez por minuto, uma sonda por vez, no
+  // ritmo de todo mundo) — e só para o CRON_SECRET ou a chamada interna: aberta,
+  // uma rajada de sondas enchia a fila do Nominatim e a cotação de frete do
+  // mesmo instante voltava "não localizado".
+  const entrega: Record<string, unknown> = {
+    roteador: estadoDoRoteador(),
+    nominatim: { ...estadoDoNominatim(), fila: estadoDaFilaDoMapa() },
+  };
+  const querSondar = req.nextUrl.searchParams.get("sondar") === "1";
+  if (querSondar && !verifyCronAuth(req)) {
+    entrega.sondas = "sondar=1 exige Authorization: Bearer CRON_SECRET";
+  } else if (querSondar) {
+    const [roteador, nominatim] = await Promise.all([
+      sondarRoteador().catch((e: any) => ({ ok: false, ms: 0, motivo: String(e?.message || e) })),
+      sondarNominatim().catch((e: any) => ({ ok: false, ms: 0, motivo: String(e?.message || e) })),
+    ]);
+    entrega.sondas = { roteador, nominatim };
+  }
+
   return NextResponse.json(
     {
       status: allOk ? "healthy" : "degraded",
       uptime: uptimeSeconds,
       memory: `${heapUsedMB}MB / ${heapTotalMB}MB`,
       esquema,
+      entrega,
       checks,
       timestamp: new Date().toISOString(),
       responseTime: Date.now() - start,

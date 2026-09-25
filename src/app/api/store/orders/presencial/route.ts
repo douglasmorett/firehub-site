@@ -11,6 +11,25 @@ import { normalizarDocumento, problemaDoDocumento, lerDocumentoDoCliente } from 
 import { problemaDoPagerObrigatorio } from "@/lib/balcao-config";
 import { MENSAGEM_CAIXA_FECHADO, ERRO_CAIXA_FECHADO } from "@/lib/caixa-aberto";
 import { caixaEstaAberto } from "@/lib/caixa-aberto-servidor";
+import { avaliarEntrega, modoDaArea, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+import { comPrazo } from "@/lib/com-prazo";
+import {
+  camposDaEntrega,
+  coordenadaDoCorpo,
+  cotacaoDoPedido,
+  entregaDaCotacao,
+  entregaDoVeredicto,
+  notasDaEntrega,
+  type EntregaDoPedido,
+} from "@/lib/entrega-do-pedido";
+
+/**
+ * Quanto o balcão espera o mapa quando o PDV não mandou a cotação. O atendente
+ * está com o cliente na linha: passado isto a venda sai sem a distância (o
+ * cron de distâncias pendentes mede depois) e com a etiqueta de conferência.
+ */
+const PRAZO_DO_MAPA_NO_BALCAO_MS = 10_000;
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -121,11 +140,89 @@ export async function POST(req: Request) {
     }
   }
 
+  // ── A ENTREGA LANÇADA NO BALCÃO ──────────────────────────────────────────
+  //
+  // O balcão gravava só a taxa: nem distância, nem ponto, nem repasse. Com o
+  // entregador pago por faixa de km, o acerto dessas entregas dava R$ 0,00
+  // "sem distância" (lib/ganho-do-entregador.ts), e a roteirização
+  // geocodificava o endereço de novo.
+  //
+  // Agora o PDV manda de volta a cotação assinada que recebeu de
+  // /api/delivery-fee (`cotacao`) e o pedido grava o que ela mediu — sem mapa
+  // de novo. Sem cotação válida, o mapa é consultado aqui, com prazo.
+  //
+  // O que NÃO muda: a taxa cobrada é a do atendente. O balcão é onde se
+  // combina "hoje sai de graça" e "é longe, cobra 12"; fora da área e
+  // endereço não localizado não barram a venda (R2) — ficam escritos no
+  // pedido para a loja conferir, junto com a taxa que a tabela daria.
+  const taxaCobrada = Math.max(0, Math.round((Number(deliveryFee) || 0) * 100) / 100);
+  let camposDeEntrega: ReturnType<typeof camposDaEntrega> | null = null;
+  let notasDeEntrega: string[] = [];
+  if (tipoDeLancamento === "DELIVERY") {
+    try {
+      const loja = await prisma.user.findUnique({
+        where: { id: targetFranchiseeId },
+        select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, city: true },
+      });
+      const endereco = String(customerAddress || "").trim();
+      const coords = coordenadaDoCorpo(data.customerCoords, data.customerCoordsOrigem);
+      if (loja && (endereco.length >= 4 || coords)) {
+        const partes = {
+          street: typeof data.customerStreet === "string" ? data.customerStreet : undefined,
+          number: typeof data.customerNumber === "string" ? data.customerNumber : undefined,
+          neighborhood: typeof data.customerNeighborhood === "string" ? data.customerNeighborhood : undefined,
+          city: loja.city || undefined,
+        };
+        const modo = modoDaArea(loja);
+        const cotacao = cotacaoDoPedido(data.cotacao, {
+          loja: targetFranchiseeId,
+          endereco: { ...partes, address: endereco },
+          coords,
+        });
+        let entrega: EntregaDoPedido;
+        if (cotacao) {
+          entrega = entregaDaCotacao(cotacao, modo, coords);
+        } else {
+          const avaliacao = await comPrazo<VeredictoDeEntrega>(
+            avaliarEntrega(loja, {
+              endereco,
+              coords: coords ? { lat: coords.lat, lng: coords.lng } : null,
+              ...(coords ? { origemDasCoords: coords.origem === "pino" ? ("pino" as const) : ("gps" as const) } : {}),
+              bairro: partes.neighborhood,
+              partes: partes.street || partes.number || partes.neighborhood ? partes : undefined,
+            }),
+            PRAZO_DO_MAPA_NO_BALCAO_MS,
+          ).catch((e: any) => {
+            console.warn(`[Presencial] avaliarEntrega falhou na loja ${targetFranchiseeId}: ${e?.message || e}`);
+            return null;
+          });
+          if (avaliacao && !avaliacao.noPrazo) {
+            console.warn(`[Presencial] mapa não respondeu em ${PRAZO_DO_MAPA_NO_BALCAO_MS} ms na loja ${targetFranchiseeId} — venda segue sem distância`);
+          }
+          entrega = entregaDoVeredicto(avaliacao?.noPrazo ? avaliacao.valor : null, coords, modo);
+        }
+        camposDeEntrega = camposDaEntrega(entrega, lerRegraDeRepasse(loja.deliveryConfig), loja.deliveryZones);
+        notasDeEntrega = notasDaEntrega(entrega, { canal: "balcao", taxaCobrada });
+      }
+    } catch (e: any) {
+      // Medida da entrega é informação, não trava: a venda do balcão sai.
+      console.error(`[Presencial] entrega da loja ${targetFranchiseeId} sem medida:`, e?.message || e);
+    }
+  }
+
   // Estoque disponível: o balcão também vende o que a loja disse ter.
+  //
+  // DEPOIS da medida da entrega, e não antes: sem a cotação do PDV, a medida
+  // espera o mapa até 10 s. Com o estoque conferido antes, a janela entre
+  // conferir e baixar passava de milissegundos para 10 s — o atendente B
+  // vendia a última unidade no meio, os dois passavam e o estoque ia a −1,
+  // com dois pedidos na cozinha para uma unidade.
   const estoque = await conferirEstoque(targetFranchiseeId, items || []);
   if (!estoque.ok) {
     return NextResponse.json({ error: `${estoque.mensagem} Ajuste a venda.` }, { status: 409 });
   }
+
+  const notasDoPedido = [String(notes || "").trim(), ...notasDeEntrega].filter(Boolean).join(" ");
 
   const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
 
@@ -145,7 +242,7 @@ export async function POST(req: Request) {
       changeAmount: changeAmount ? Number(changeAmount) : (change ? Number(change) : null),
       employeeId: employeeId || null,
       employeeName: employeeName || null,
-      notes: notes || "",
+      notes: notasDoPedido,
       // O pager fica em campo PRÓPRIO, não embutido no nome: é assim que o
       // painel consegue mostrá-lo com destaque no card e que, amanhã, o
       // Assistente pode passar a imprimi-lo como linha dedicada. Quem junta os
@@ -171,7 +268,12 @@ export async function POST(req: Request) {
       // A taxa vem do PDV, que a cota em /api/delivery-fee (mesma regra do
       // cardápio) e deixa o atendente ajustar. Aqui só o piso: entrega
       // negativa não existe, e o campo alimenta o repasse do entregador.
-      deliveryFee: Math.max(0, Math.round((Number(deliveryFee) || 0) * 100) / 100),
+      deliveryFee: taxaCobrada,
+      // Distância, o ponto que decidiu a taxa e o repasse da faixa (quando a
+      // loja separa) — os mesmos campos do pedido do site (R7).
+      ...(camposDeEntrega?.deliveryDistance != null ? { deliveryDistance: camposDeEntrega.deliveryDistance } : {}),
+      ...(camposDeEntrega?.customerLatLng ? { customerLatLng: camposDeEntrega.customerLatLng } : {}),
+      ...(camposDeEntrega?.motoboyFee != null ? { motoboyFee: camposDeEntrega.motoboyFee } : {}),
       status: "ACEITO",
       source: "PRESENCIAL",
       items: {
@@ -237,5 +339,8 @@ export async function POST(req: Request) {
       .catch((err) => console.warn("[Presencial] notificação CREATED:", err?.message || err));
   }
 
-  return NextResponse.json({ success: true, orderId: order.id });
+  // `avisosDeEntrega`: as mesmas etiquetas que foram para a observação
+  // (fora da área, não localizado, aproximado, taxa diferente da tabela), para
+  // o PDV poder mostrar ao atendente sem abrir o pedido.
+  return NextResponse.json({ success: true, orderId: order.id, avisosDeEntrega: notasDeEntrega });
 }

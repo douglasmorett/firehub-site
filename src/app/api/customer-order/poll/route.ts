@@ -4,7 +4,7 @@ import { dataHoraDaLoja } from "@/lib/fuso";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
-import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
+import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
 
@@ -439,8 +439,10 @@ async function pollIfoodEvents(sessionUserId?: string) {
             const { generateDailyOrderNumberTx } = await import("@/lib/order-number");
 
             // Quantos km — fora da transação, pelo ponto que o iFood mandou.
-            const coordsDoCliente = coordenadasDoIfood(orderData);
-            const distanciaDaEntrega = await distanciaDaEntregaKm(eventFranchisee.id, coordsDoCliente);
+            // O ponto passa pelo corte do R8 (longe demais da loja não é o cliente).
+            const doParceiro = await pontoEDistanciaDoParceiro(eventFranchisee.id, coordenadasDoIfood(orderData));
+            const coordsDoCliente = doParceiro.ponto;
+            const distanciaDaEntrega = doParceiro.km;
 
             // Quem entrega — a MESMA derivação do webhook e do cron. Este era o
             // único dos três caminhos que criava o pedido sem `deliveryBy`, e é

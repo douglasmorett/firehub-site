@@ -76,36 +76,119 @@ export function kmDaZona(z: any): number {
   return Number(z?.km ?? z?.radius ?? z?.maxKm ?? z?.distance ?? 0) || 0;
 }
 
-/** O repasse cadastrado numa zona. `null` = a loja não separou nesta faixa. */
+/**
+ * O repasse cadastrado numa zona. `null` = a loja não preencheu nesta faixa.
+ *
+ * ZERO É RESPOSTA, não ausência: a faixa em que o motoboy da casa não recebe
+ * nada de propósito (o cliente da esquina que a loja leva a pé, por exemplo).
+ * Vazio, espaço em branco, texto e negativo contam como "não preenchido".
+ */
 export function repasseDaZona(z: any): number | null {
-  const v = Number(z?.motoboyFee);
-  return Number.isFinite(v) && v >= 0 && z?.motoboyFee !== null && z?.motoboyFee !== "" ? v : null;
+  const bruto = z?.motoboyFee;
+  if (bruto === null || bruto === undefined) return null;
+  if (typeof bruto !== "number" && typeof bruto !== "string") return null;
+  if (typeof bruto === "string" && bruto.trim() === "") return null;
+  const v = Number(bruto);
+  return Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null;
+}
+
+/** `deliveryZones` como lista — o JSONB às vezes volta serializado em texto. */
+function listaDeZonas(zonas: unknown): any[] {
+  if (Array.isArray(zonas)) return zonas;
+  if (typeof zonas === "string") {
+    try {
+      const lido = JSON.parse(zonas);
+      return Array.isArray(lido) ? lido : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** As faixas de km da loja, em ordem, com o repasse de cada uma (null = sem valor). */
+function faixasDeKm(zonas: unknown): { km: number; repasse: number | null }[] {
+  return listaDeZonas(zonas)
+    .map((z: any) => ({ km: kmDaZona(z), repasse: repasseDaZona(z) }))
+    .filter((f) => f.km > 0)
+    .sort((a, b) => a.km - b.km);
 }
 
 /**
- * O repasse da faixa que cobre esta distância.
+ * O repasse da faixa que cobre esta distância — a MESMA faixa que decide a
+ * taxa do cliente: limite inclusivo ("até 1,5 km"), distância arredondada a
+ * 0,01 km antes de comparar (lib/geocoding.ts faz igual).
  *
- * Além da última faixa vale a última: devolver nulo faria a entrega mais longa
- * cair na taxa do cliente enquanto todas as outras usam o repasse — o pior dos
- * dois mundos, e justamente na entrega que a loja mais paga.
+ * ── Faixa sem valor NÃO pega o valor da vizinha ────────────────────────────
+ *
+ * Até 25/09/2026 as faixas sem repasse eram descartadas ANTES da busca, e a
+ * entrega de 1,8 km numa faixa de 2 km sem valor pagava, calada, o repasse da
+ * faixa de 2,5 km. Agora a faixa que cobre a distância responde — e, se ela
+ * não tem valor, a resposta é `null`: o acerto cai na regra seguinte (o
+ * acordo do entregador, depois a taxa do cliente), e a tela de Entrega exige
+ * preencher todas quando a loja usa repasse por faixa (`faixasSemRepasse`).
+ *
+ * Distância 0 é entrega de verdade (cliente na porta da loja) e cai na
+ * primeira faixa. Além da última faixa vale a última: devolver nulo faria a
+ * entrega mais longa cair na taxa do cliente enquanto todas as outras usam o
+ * repasse — o pior dos dois mundos, e justamente na entrega que a loja mais
+ * paga.
  */
 export function repasseDaFaixaKm(zonas: unknown, km: number | null | undefined): number | null {
-  const faixas = (Array.isArray(zonas) ? zonas : [])
+  const faixas = faixasDeKm(zonas);
+  if (!faixas.some((f) => f.repasse != null)) return null;
+  if (km === null || km === undefined || (km as unknown) === "") return null;
+  const d = Number(km);
+  if (!Number.isFinite(d) || d < 0) return null;
+  const distancia = Math.round(d * 100) / 100;
+  const faixa = faixas.find((f) => distancia <= f.km) ?? faixas[faixas.length - 1];
+  return faixa.repasse;
+}
+
+/**
+ * A loja paga o entregador pela TABELA de faixas de km? (separou os valores e
+ * preencheu o repasse em pelo menos uma faixa.) É o que faz a distância do
+ * pedido virar dinheiro mesmo quando nenhum entregador tem faixa própria — e
+ * o cron de distâncias pendentes precisa saber disso para não pular a loja.
+ */
+export function temRepassePorFaixa(deliveryConfig: unknown, zonas: unknown): boolean {
+  if (!lerRegraDeRepasse(deliveryConfig).separado) return false;
+  return faixasDeKm(zonas).some((f) => f.repasse != null);
+}
+
+/**
+ * Os km das faixas que estão sem o valor do motoboy. Para a tela e o servidor
+ * de configuração recusarem a tabela pela metade quando a loja usa repasse
+ * por faixa: faixa em branco é entrega paga pela regra de outro lugar.
+ */
+export function faixasSemRepasse(zonas: unknown): number[] {
+  return faixasDeKm(zonas).filter((f) => f.repasse == null).map((f) => f.km);
+}
+
+/**
+ * A faixa de km cuja TAXA AO CLIENTE é este valor — para a correção de taxa
+ * de um pedido já feito (api/store/orders/[id]/taxa-de-entrega): "cobrei
+ * R$ 12, era R$ 5" diz qual faixa valia. Mais de uma faixa com a mesma taxa e
+ * repasses diferentes é ambíguo, e ambíguo devolve null.
+ */
+export function faixaDaTaxa(zonas: unknown, taxa: number | null | undefined): { km: number; repasse: number | null } | null {
+  const t = Number(taxa);
+  if (taxa === null || taxa === undefined || !Number.isFinite(t) || t < 0) return null;
+  const alvo = Math.round(t * 100) / 100;
+  const iguais = listaDeZonas(zonas)
+    .filter((z: any) => kmDaZona(z) > 0 && Number.isFinite(Number(z?.fee)) && Math.abs(Math.round(Number(z.fee) * 100) / 100 - alvo) < 0.005)
     .map((z: any) => ({ km: kmDaZona(z), repasse: repasseDaZona(z) }))
-    .filter((f) => f.km > 0 && f.repasse != null)
     .sort((a, b) => a.km - b.km);
-  if (!faixas.length) return null;
-  const d = Number(km || 0);
-  if (!(d > 0)) return null;
-  const faixa = faixas.find((f) => d <= f.km);
-  return (faixa ? faixa.repasse : faixas[faixas.length - 1].repasse) as number;
+  if (!iguais.length) return null;
+  if (iguais.some((f) => f.repasse !== iguais[0].repasse)) return null;
+  return iguais[0];
 }
 
 /** O repasse cadastrado no bairro, comparando pelo nome já casado pela área de entrega. */
 export function repasseDoBairro(zonas: unknown, nomeDoBairro: string | null | undefined): number | null {
   const alvo = String(nomeDoBairro || "").trim().toLowerCase();
   if (!alvo) return null;
-  const z = (Array.isArray(zonas) ? zonas : []).find(
+  const z = listaDeZonas(zonas).find(
     (x: any) => String(x?.name || "").trim().toLowerCase() === alvo,
   );
   return z ? repasseDaZona(z) : null;

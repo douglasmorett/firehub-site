@@ -9,9 +9,20 @@ import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
-import { avaliarEntrega, descreverVeredicto, taxaFixaDaLoja, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
-import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
-import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
+import { avaliarEntrega, modoDaArea, taxaFixaDaLoja } from "@/lib/area-de-entrega";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
+import {
+  camposDaEntrega,
+  coordenadaDoCorpo,
+  cotacaoDoPedido,
+  entregaDaCotacao,
+  entregaDoVeredicto,
+  notasDaEntrega,
+  recusaDoSite,
+  taxaDaLojaSemPonto,
+  type EntregaDoPedido,
+} from "@/lib/entrega-do-pedido";
 import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
@@ -123,8 +134,10 @@ export async function POST(req: Request) {
     //
     // A mesma regra do robô e da API de taxa (src/lib/area-de-entrega.ts).
     // FORA → recusa. ATENDE → a taxa é a da faixa/bairro, não a que veio no
-    // corpo. DESCONHECIDO (mapa não achou) → aceita com a taxa informada e
-    // marca o pedido para a loja conferir a área.
+    // corpo. DESCONHECIDO (mapa não achou) → em KM/ROTA e área desenhada o
+    // site recusa e pede o pino no mapa; no bairro aceita pelo piso, e na
+    // loja por km sem localização no mapa pela 1ª faixa — os dois marcados
+    // para a loja conferir.
     // ── É ENTREGA OU RETIRADA? A pergunta é pelo COMPLEMENTO ───────────────
     //
     // A guarda de área rodava só quando `deliveryType` era exatamente
@@ -140,70 +153,85 @@ export async function POST(req: Request) {
     const ehRetirada = RETIRADA.includes(canalNormalizado);
     const ehEntrega = !ehRetirada;
 
-    /** O ponto que o cliente confirmou (GPS ou pino no mapa), já validado. */
-    let pontoConfirmadoDoCliente: { lat: number; lng: number } | null = null;
-    let veredictoDaArea: VeredictoDeEntrega | null = null;
+    // ── A ENTREGA DESTE PEDIDO: A COTAÇÃO QUE O CLIENTE VIU, OU O MAPA ─────
+    //
+    // Regra e porquês em lib/entrega-do-pedido.ts. Em resumo:
+    //
+    //  1. O token `cotacao` que /api/delivery-fee assinou, desta loja e deste
+    //     endereço, É o resultado — sem geocodificar de novo. Foi a segunda
+    //     consulta ao mapa, 51 s depois da cotação, que cobrou R$ 12 (faixa
+    //     mais cara) de quem a cotação tinha achado a 0,84 km (Divinos Burger,
+    //     pedido #2 de 25/09/2026).
+    //  2. Sem token válido (vencido, endereço mudou, aba antiga), o mapa é
+    //     consultado com as MESMAS peças que a cotação recebe.
+    //  3. Área desenhada e KM/ROTA não fecham com "não sei" nem com ponto
+    //     aproximado: o site recusa e pede o pino no mapa (R2/R3) — tenha a
+    //     loja pino ou não (o mapa abre no palpite ou no GPS do cliente). Só
+    //     a loja por km SEM ponto dela no mapa segue pela 1ª faixa, marcada
+    //     para conferir; bairro segue a regra antiga (piso e nota).
+    let entrega: EntregaDoPedido | null = null;
+    const modoDaLoja = modoDaArea(franchisee);
     if (ehEntrega) {
-      const coordsBrutas = body.customerCoords;
       // COORDENADA DO CORPO É PALPITE, NÃO PROVA. Ela decide a área inteira, e
-      // esta rota é pública: fora da faixa válida, (0,0) e lixo saem daqui.
-      const latBruta = Number(coordsBrutas?.lat);
-      const lngBruta = Number(coordsBrutas?.lng);
-      const coordsValidas =
-        Number.isFinite(latBruta) && Number.isFinite(lngBruta) &&
-        Math.abs(latBruta) <= 90 && Math.abs(lngBruta) <= 180 &&
-        !(Math.abs(latBruta) < 0.01 && Math.abs(lngBruta) < 0.01);
-      const coords = coordsValidas ? { lat: latBruta, lng: lngBruta } : null;
-      pontoConfirmadoDoCliente = coords;
-      if (coordsBrutas && !coordsValidas) {
+      // esta rota é pública: fora da faixa válida, (0,0), ponto de enchimento
+      // e lixo saem daqui.
+      const coordsBrutas = body.customerCoords;
+      const coords = coordenadaDoCorpo(coordsBrutas, body.customerCoordsOrigem);
+      if (coordsBrutas && !coords) {
         console.warn(`[customer-order] customerCoords recusado (${JSON.stringify(coordsBrutas)}) na loja ${franchisee.id}`);
       }
-      try {
-        // As MESMAS peças que a /api/delivery-fee recebe. Sem elas, a cotação
-        // e a gravação geocodificavam o mesmo endereço de jeitos diferentes:
-        // a tela mostrava "entregamos, R$ 6,00" e o pedido entrava marcado
-        // como "não localizado" (ou ao contrário, recusando quem a tela
-        // aceitou). Duas respostas para o mesmo endereço, no mesmo fluxo.
-        const partesDoEndereco = {
-          street: typeof body.customerStreet === "string" ? body.customerStreet : undefined,
-          number: typeof body.customerNumber === "string" ? body.customerNumber : undefined,
-          neighborhood: typeof body.customerNeighborhood === "string" ? body.customerNeighborhood : undefined,
-          city: franchisee.city || undefined,
-        };
-        veredictoDaArea = await avaliarEntrega(franchisee, {
-          endereco: customerAddress,
-          coords,
-          bairro: partesDoEndereco.neighborhood,
-          partes: partesDoEndereco,
-        });
-      } catch (e: any) {
-        console.warn(`[customer-order] avaliarEntrega falhou na loja ${franchisee.id}: ${e?.message || e}`);
+      const partesDoEndereco = {
+        street: typeof body.customerStreet === "string" ? body.customerStreet : undefined,
+        number: typeof body.customerNumber === "string" ? body.customerNumber : undefined,
+        neighborhood: typeof body.customerNeighborhood === "string" ? body.customerNeighborhood : undefined,
+        city: franchisee.city || undefined,
+      };
+
+      const cotacao = cotacaoDoPedido(body.cotacao, {
+        loja: franchisee.id,
+        endereco: { ...partesDoEndereco, address: customerAddress },
+        coords,
+      });
+      if (cotacao) {
+        entrega = entregaDaCotacao(cotacao, modoDaLoja, coords);
+      } else {
+        if (body.cotacao) {
+          // Veio token e não serviu: vencido, de outro endereço ou adulterado.
+          // Não é erro — reavalia —, mas a frequência disto diz se o checkout
+          // está mandando a chave certa.
+          console.warn(`[customer-order] cotação recusada (vencida, outro endereço ou inválida) na loja ${franchisee.id} — reavaliando no mapa`);
+        }
+        let veredicto = null;
+        try {
+          // As MESMAS peças que a /api/delivery-fee recebe. Sem elas, a
+          // cotação e a gravação geocodificavam o mesmo endereço de jeitos
+          // diferentes: duas respostas para o mesmo endereço, no mesmo fluxo.
+          veredicto = await avaliarEntrega(franchisee, {
+            endereco: customerAddress,
+            coords: coords ? { lat: coords.lat, lng: coords.lng } : null,
+            ...(coords ? { origemDasCoords: coords.origem === "pino" ? ("pino" as const) : ("gps" as const) } : {}),
+            bairro: partesDoEndereco.neighborhood,
+            partes: partesDoEndereco,
+          });
+        } catch (e: any) {
+          console.warn(`[customer-order] avaliarEntrega falhou na loja ${franchisee.id}: ${e?.message || e}`);
+        }
+        entrega = entregaDoVeredicto(veredicto, coords, modoDaLoja);
       }
-      // ── ÁREA DESENHADA NÃO ACEITA "NÃO SEI" ──────────────────────────
-      //
-      // No raio e no bairro, endereço que o mapa não acha entra marcado para a
-      // loja conferir: é a escolha de não perder venda por falha do mapa. A
-      // loja que DESENHOU a área escolheu o contrário, e com razão — foi por
-      // esse buraco que um pedido de 10,8 km entrou numa loja de raio 4 km com
-      // frete zero (R&D Pizzaria, 19/09/2026). Sem ponto no mapa não há
-      // geometria, e sem geometria não há entrega.
-      if (veredictoDaArea?.resultado === "DESCONHECIDO" && veredictoDaArea.modo === "POLIGONO") {
-        return NextResponse.json(
-          {
-            error: "Não localizamos o seu endereço no mapa. Confirme o ponto da entrega no mapa (ou escolha retirar no balcão) para fechar o pedido.",
-            precisaConfirmarNoMapa: true,
-          },
-          { status: 400 }
-        );
+
+      const recusa = recusaDoSite(entrega, {
+        temCoordenadaDoCliente: coords != null,
+        lojaTemPonto: lerPontoDaLoja(franchisee.storeLatLng) != null,
+      });
+      if (recusa) {
+        console.warn(`[customer-order] entrega recusada na loja ${franchisee.id} (${entrega.fonte}, ${entrega.resultado ?? "sem resposta"}): ${entrega.motivo}`);
+        return NextResponse.json(recusa.corpo, { status: recusa.status });
       }
-      if (veredictoDaArea?.resultado === "FORA") {
-        const detalhe = veredictoDaArea.modo === "KM" && veredictoDaArea.distanciaKm != null
-          ? ` (${veredictoDaArea.distanciaKm} km da loja; entregamos até ${veredictoDaArea.raioMaxKm} km)`
-          : veredictoDaArea.modo === "BAIRRO" ? " (bairro não atendido)" : "";
-        return NextResponse.json(
-          { error: `Endereço fora da área de entrega${detalhe}. Revise o endereço ou escolha retirar no balcão.` },
-          { status: 400 }
-        );
+      if (entrega.lojaSemPonto) {
+        // Só chega aqui a loja em KM/ROTA cujo PRÓPRIO ponto é desconhecido
+        // (sem pino e o endereço dela não achado): nem o pino do cliente
+        // mediria. Sai pela 1ª faixa, marcado — nunca a faixa mais cara (R2).
+        console.warn(`[customer-order] loja ${franchisee.id} em KM/ROTA sem localização no mapa: entrega aceita pela 1ª faixa, sem distância`);
       }
     }
 
@@ -387,14 +415,31 @@ export async function POST(req: Request) {
     }
 
     let originalFee = feeForaDaFaixa ? 0 : feeInformada;
-    let notaDaArea = "";
-    if (veredictoDaArea?.resultado === "ATENDE" && veredictoDaArea.taxa != null && veredictoDaArea.modo !== "SEM_AREA") {
-      // A taxa é a da regra da loja. Se o navegador mandou outra, vale a regra.
-      const daRegra = Math.round(Number(veredictoDaArea.taxa) * 100) / 100;
+    // Distância estimada, ponto aproximado, endereço não localizado: o que a
+    // loja precisa conferir vai escrito no pedido (lib/entrega-do-pedido.ts).
+    const notaDaArea = entrega ? notasDaEntrega(entrega, { canal: "site" }).map((n) => ` ${n}`).join("") : "";
+    if (entrega?.resultado === "ATENDE" && entrega.taxa != null && entrega.modo !== "SEM_AREA") {
+      // A taxa é a da regra da loja — da cotação que o cliente viu, ou do
+      // mapa agora. Se o navegador mandou outra, vale a regra.
+      const daRegra = Math.round(Number(entrega.taxa) * 100) / 100;
       if (Math.abs(daRegra - originalFee) >= 0.01) {
-        console.warn(`[customer-order] taxa do corpo (${originalFee}) ≠ taxa da área (${daRegra}) na loja ${franchisee.id} — gravando a da área.`);
+        console.warn(`[customer-order] taxa do corpo (${originalFee}) ≠ taxa da área (${daRegra}, ${entrega.fonte}) na loja ${franchisee.id} — gravando a da área.`);
       }
       originalFee = daRegra;
+    } else if (ehEntrega && entrega?.modo === "KM") {
+      // ── KM/ROTA SEM MEDIDA: A 1ª FAIXA, NUNCA A MAIS CARA (R2) ─────────
+      //
+      // "Não sei" e ponto aproximado já foram recusados lá em cima; aqui só
+      // chega a loja sem ponto no mapa (entrega.lojaSemPonto). A régua antiga
+      // — a faixa mais cara — cobrava R$ 20 de quem mora a 300 m. A taxa é a
+      // da 1ª faixa (ou a fixa), a mesma que /api/delivery-fee mostrou, e o
+      // pedido vai com a nota para a loja corrigir (R10). O corpo não decide:
+      // aba antiga com a taxa velha ou POST direto com qualquer valor.
+      const daPrimeiraFaixa = taxaDaLojaSemPonto(franchisee.deliveryZones, taxaFixaDaLoja(franchisee as any));
+      if (Math.abs(daPrimeiraFaixa - originalFee) >= 0.01) {
+        console.warn(`[customer-order] taxa do corpo (${originalFee}) ≠ 1ª faixa (${daPrimeiraFaixa}) na loja ${franchisee.id} sem localização — gravando a 1ª faixa.`);
+      }
+      originalFee = daPrimeiraFaixa;
     } else if (ehEntrega) {
       // ── O CORPO NÃO DEFINE A TAXA SOZINHO ────────────────────────────
       //
@@ -410,12 +455,12 @@ export async function POST(req: Request) {
       const zonasDaLoja = Array.isArray(franchisee.deliveryZones) ? (franchisee.deliveryZones as any[]) : [];
       const maisCara = Math.max(0, ...zonasDaLoja.map((z: any) => Number(z?.fee) || 0));
       const piso = Math.round((maisCara || taxaFixaDaLoja(franchisee as any) || 0) * 100) / 100;
+      // KM/ROTA tem o ramo próprio acima, e na área desenhada "não sei" é
+      // recusado lá em cima (o cliente confirma o pino). Sobra a loja de
+      // bairro e a sem área cadastrada.
       if (piso > originalFee) {
         console.warn(`[customer-order] taxa do corpo (${originalFee}) abaixo do piso da loja (${piso}) em ${franchisee.id} — gravando o piso.`);
         originalFee = piso;
-      }
-      if (veredictoDaArea?.resultado === "DESCONHECIDO") {
-        notaDaArea = ` [⚠️ Endereço não localizado no mapa — confira a área de entrega e a taxa]`;
       }
     }
     let fee = originalFee;
@@ -547,26 +592,20 @@ export async function POST(req: Request) {
     }
     const finalNotes = orderNotes || null;
 
-    // Só quando a loja separou os dois valores (tela de Entrega). Sem isso o
-    // campo fica nulo e o relatório usa o acerto do próprio entregador.
-    const repasseDoEntregador = (() => {
-      if (deliveryType === "PICKUP") return null;
-      const regra = lerRegraDeRepasse(franchisee.deliveryConfig);
-      if (!regra.separado) return null;
-      const doVeredicto = veredictoDaArea?.taxaDoEntregador;
-      if (doVeredicto != null) return Math.round(Number(doVeredicto) * 100) / 100;
-      // Endereço que o mapa não resolveu: ainda dá para achar a faixa quando a
-      // distância veio junto do pedido.
-      return repasseDoPedido({
-        regra,
-        zonas: franchisee.deliveryZones,
-        km: veredictoDaArea?.distanciaKm ?? null,
-        bairro: veredictoDaArea?.bairro ?? null,
-        taxaDaEntrega: fee,
-      });
-    })();
-
-    const distanciaDaEntrega = deliveryType === "PICKUP" ? null : distanciaDoVeredicto(veredictoDaArea);
+    // ── O QUE A ENTREGA DEIXA GRAVADO (R7) ────────────────────────────────
+    //
+    // Distância, o ponto que decidiu a taxa ({lat,lng,origem,medida}) e o
+    // repasse da faixa — este só quando a loja separou os dois valores (tela
+    // de Entrega); sem isso fica nulo e o relatório usa o acerto do próprio
+    // entregador. Antes o ponto que o MAPA achou era descartado e só a
+    // coordenada do corpo era gravada: 2 de 168 entregas do site em lojas KM
+    // tinham ponto, e a roteirização geocodificava de novo — no pedido #5 da
+    // Divinos, a 4,95 km de onde a taxa tinha medido 0,13 km.
+    const doPedido = ehEntrega && entrega
+      ? camposDaEntrega(entrega, lerRegraDeRepasse(franchisee.deliveryConfig), franchisee.deliveryZones)
+      : { deliveryDistance: null, customerLatLng: null, motoboyFee: null };
+    const repasseDoEntregador = doPedido.motoboyFee;
+    const distanciaDaEntrega = doPedido.deliveryDistance;
 
     const pmUpper = (paymentMethod || "").toUpperCase().trim();
     const isOnlinePayment = pmUpper.includes("ONLINE") || pmUpper === "PIX" || pmUpper === "PIX_ONLINE" || pmUpper === "CREDITO_ONLINE" || pmUpper === "DEBITO_ONLINE";
@@ -611,25 +650,28 @@ export async function POST(req: Request) {
         // lib/repasse-do-entregador.ts, e a faixa/bairro que decidiu a taxa do
         // cliente é a mesma que decide esta (lib/area-de-entrega.ts).
         ...(repasseDoEntregador != null ? { motoboyFee: repasseDoEntregador } : {}),
-        // A distância que a área de entrega JÁ mediu para decidir a taxa. Sem
-        // ela gravada, a escada de km do entregador não tem o que comparar e o
-        // acerto cai no valor por entrega (lib/distancia-da-entrega.ts).
+        // A distância que a área de entrega JÁ mediu para decidir a taxa (0 km
+        // vale: cliente na porta da loja). Sem ela gravada, a escada de km do
+        // entregador não tem o que comparar e o acerto cai no valor por
+        // entrega (lib/distancia-da-entrega.ts).
         ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
         status: initialStatus,
         kdsStage: initialKdsStage,
         kdsProductionAt: initialKdsProductionAt,
+        // O PONTO QUE DECIDIU A TAXA FICA NO PEDIDO — o pino/GPS do cliente,
+        // ou o ponto que o mapa achou para o endereço digitado.
+        //
+        // Ele decidia a área e era jogado fora: a roteirização, o app do
+        // entregador e o mapa do painel geocodificavam o endereço DE NOVO — e
+        // erravam de novo, do mesmo jeito que o mapa erra. A coluna já existe
+        // e é a mesma que o iFood preenche com o ponto que o parceiro manda;
+        // quem lê `{lat,lng}` continua lendo (origem e medida são extras).
+        ...(doPedido.customerLatLng ? { customerLatLng: doPedido.customerLatLng } : {}),
         // Cookies do GA4 do cliente, capturados no cardápio. É o que permite o
         // `purchase` enviado pelo NOSSO servidor cair na mesma pessoa e na
         // mesma sessão que veio do anúncio — sem eles a venda aparece como
         // visitante novo, sem origem. Vazio quando o cliente bloqueia cookie
         // ou quando a loja não usa GA4: o disparo simplesmente não acontece.
-        // O PONTO QUE O CLIENTE CONFIRMOU NO MAPA FICA NO PEDIDO.
-        //
-        // Ele decidia a área e era jogado fora: a roteirização, o app do
-        // entregador e o mapa do painel geocodificavam o endereço DE NOVO — e
-        // erravam de novo, do mesmo jeito que o mapa erra. A coluna já existe
-        // e é a mesma que o iFood preenche com o ponto que o parceiro manda.
-        ...(pontoConfirmadoDoCliente ? { customerLatLng: pontoConfirmadoDoCliente } : {}),
         gaClientId: typeof body.gaClientId === "string" ? body.gaClientId.slice(0, 64) : null,
         gaSessionId: typeof body.gaSessionId === "string" ? body.gaSessionId.slice(0, 32) : null,
         items: { create: orderItems }
@@ -720,6 +762,9 @@ export async function POST(req: Request) {
     return NextResponse.json({
       orderId: order.id,
       total: finalTotal,
+      // A taxa que ficou gravada: o checkout confere com a que mostrou antes
+      // de abrir o Pix (a cotação e o pedido não podem divergir calados).
+      deliveryFee: fee,
       discount,
       status: initialStatus,
       autoAccepted: franchisee.autoAcceptOrders,

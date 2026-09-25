@@ -8,7 +8,7 @@ import { aplicarPedidoAlterado99, sincronizar99Food } from "@/lib/food99-status"
 import { donoDoAppShopId, donoDoShopId } from "@/lib/food99-lojas";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
-import { distanciaDaEntregaKm } from "@/lib/distancia-da-entrega";
+import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 
 /**
  * POST /api/99food/webhook
@@ -540,7 +540,10 @@ export async function POST(req: NextRequest) {
 
           // Quantos km — sem isto a escada de km do entregador não tem o que
           // comparar e o acerto cai no valor por entrega.
-          const distanciaDaEntrega = await distanciaDaEntregaKm(franchisee.id, p.coordenadas);
+          // O ponto passa pelo corte do R8 (enchimento, ou longe demais da
+          // loja): o que não é o cliente não vai para customerLatLng.
+          const doParceiro = await pontoEDistanciaDoParceiro(franchisee.id, p.coordenadas);
+          const distanciaDaEntrega = doParceiro.km;
 
           try {
             await (prisma.customerOrder as any).create({
@@ -553,7 +556,7 @@ export async function POST(req: NextRequest) {
                 // O ponto do app do cliente, quando o 99Food manda. É o que
                 // faz a roteirização e o "motoboy mais perto" acertarem sem
                 // depender de geocodificar o texto do endereço.
-                ...(p.coordenadas ? { customerLatLng: p.coordenadas } : {}),
+                ...(doParceiro.ponto ? { customerLatLng: doParceiro.ponto } : {}),
                 ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
                 // O aceite automatico da loja vale para o 99Food tambem. Com ele
                 // ligado o pedido ja nasce ACEITO e e confirmado no 99Food logo

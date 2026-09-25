@@ -14,6 +14,8 @@ import {
   BALCAO_CONFIG_PADRAO, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
 } from "@/lib/balcao-config";
 import { MENSAGEM_CAIXA_FECHADO, CAMINHO_DO_CAIXA } from "@/lib/caixa-aberto";
+import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
+import { useSession } from "next-auth/react";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -44,6 +46,13 @@ const CHAVE_DO_RASCUNHO = "firehub_pdv_rascunho";
 const VALIDADE_DO_RASCUNHO = 12 * 60 * 60 * 1000;
 
 export default function VendaPresencialPage() {
+  /**
+   * A cidade da loja (cadastro, "Cabo Frio - RJ"): o separador do endereço de
+   * uma linha não pode tomá-la por bairro — "Rua X, 10 - Cabo Frio" virava
+   * bairro "Cabo Frio", e o "centro do bairro" era o centro da cidade.
+   */
+  const { data: sessao } = useSession();
+  const cidadeDaLoja: string = String((sessao?.user as any)?.city ?? "");
   const [products, setProducts] = useState<any[]>([]);
   const [paymentConfig, setPaymentConfig] = useState<any>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -280,6 +289,14 @@ export default function VendaPresencialPage() {
   const [taxaNaMao, setTaxaNaMao] = useState(false);
   const [taxaAviso, setTaxaAviso] = useState<{ tom: "ok" | "alerta" | "erro"; texto: string } | null>(null);
   const [cotandoTaxa, setCotandoTaxa] = useState(false);
+  /**
+   * A COTAÇÃO ASSINADA que o servidor devolveu, e para QUAL endereço (o texto
+   * exato que foi cotado). Vai no POST do balcão: com ela o pedido grava o
+   * ponto, a distância e o repasse do motoboy da MESMA consulta que deu a
+   * taxa — o balcão gravava só a taxa, e o motoboy pago por faixa recebia
+   * R$ 0 "sem distância". Endereço mudou, a cotação não vai.
+   */
+  const [cotacaoDoBalcao, setCotacaoDoBalcao] = useState<{ token: string; endereco: string } | null>(null);
 
   const taxaDeEntrega =
     orderType === "DELIVERY"
@@ -302,31 +319,32 @@ export default function VendaPresencialPage() {
     if (taxaNaMao) return;
 
     let vivo = true;
+    const controle = typeof AbortController === "function" ? new AbortController() : null;
     setCotandoTaxa(true);
+    // A taxa do endereço ANTERIOR sai do campo já: ela ficava lá quando o
+    // novo endereço dava "fora" ou falhava, e ia para o pedido de outro lugar.
+    setTaxaEntrega("");
+    setCotacaoDoBalcao(null);
     // Meio segundo de espera: o atendente digita o endereço inteiro de uma vez
     // e não há por que geocodificar cada letra.
     const agendado = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/delivery-fee?address=${encodeURIComponent(consulta)}`);
+        // Rua, número e bairro separados quando o formato permite
+        // (partesDoEnderecoDigitado): sem o bairro à parte, o mapa não tem o
+        // centro do bairro como último recurso. As MESMAS partes vão no POST
+        // (entregaNoPedidoDoBalcao), senão a cotação assinada não casa.
+        const res = await fetch(`/api/delivery-fee?${consultaDoBalcao(consulta, cidadeDaLoja)}`, { signal: controle?.signal });
         const d = await res.json().catch(() => null);
         if (!vivo) return;
-        if (!res.ok || !d) {
-          setTaxaAviso({ tom: "erro", texto: "Não consegui calcular a taxa. Digite o valor na mão." });
-          return;
-        }
-        if (d.available) {
-          setTaxaEntrega(String(Number(d.fee || 0).toFixed(2)));
-          setTaxaAviso(
-            d.unknown
-              ? { tom: "alerta", texto: d.message || "Endereço não localizado no mapa — confira a taxa." }
-              : { tom: "ok", texto: d.message || "Taxa calculada pela área de entrega da loja." }
-          );
-        } else {
-          // FORA da área não bloqueia a venda: o balcão atende quem já está na
-          // linha, e o lojista pode decidir entregar assim mesmo. Só não
-          // inventa taxa — quem digita é ele.
-          setTaxaAviso({ tom: "alerta", texto: `${d.message || "Endereço fora da área de entrega."} Se for entregar, digite a taxa na mão.` });
-        }
+        // lib/entrega-no-checkout.ts: FORA e "não localizado" não bloqueiam a
+        // venda (o balcão atende quem já está na linha, e o lojista pode
+        // decidir entregar assim mesmo), mas também não inventam taxa — o
+        // campo fica vazio e quem digita é ele. Ponto aproximado e distância
+        // estimada preenchem a taxa COM aviso: é chute, e ele precisa saber.
+        const lida = lerCotacaoNoBalcao(res.ok ? d : null, d?.message);
+        setTaxaEntrega(lida.taxa ?? "");
+        setTaxaAviso({ tom: lida.tom, texto: lida.texto });
+        setCotacaoDoBalcao(lida.cotacao ? { token: lida.cotacao, endereco: consulta } : null);
       } catch {
         if (vivo) setTaxaAviso({ tom: "erro", texto: "Não consegui calcular a taxa. Digite o valor na mão." });
       } finally {
@@ -334,11 +352,15 @@ export default function VendaPresencialPage() {
       }
     }, 500);
 
-    // Digitar de novo cancela a cotação em voo. Sem apagar o "calculando..."
-    // aqui, o `finally` daquela chamada não roda (ela já não está viva) e o
-    // campo ficava calculando para sempre.
-    return () => { vivo = false; clearTimeout(agendado); setCotandoTaxa(false); };
-  }, [orderType, address, taxaNaMao]);
+    // Digitar de novo cancela a cotação em voo (e a requisição, que já não
+    // interessa a ninguém). Sem apagar o "calculando..." aqui, o `finally`
+    // daquela chamada não roda (ela já não está viva) e o campo ficava
+    // calculando para sempre.
+    // A cidade está nas dependências porque muda as partes (e a chave da
+    // cotação): a sessão chega depois da tela, e a cotação feita sem ela não
+    // casaria com o POST.
+    return () => { vivo = false; controle?.abort(); clearTimeout(agendado); setCotandoTaxa(false); };
+  }, [orderType, address, taxaNaMao, cidadeDaLoja]);
 
   const isVoucher = paymentMethod === "Voucher/Vale";
   const subtotal = cart.reduce((s, i) => s + (i.unitPrice ?? i.product.price) * i.qty, 0);
@@ -419,6 +441,16 @@ export default function VendaPresencialPage() {
     if (cart.length === 0) return setMsg("❌ Adicione pelo menos um produto.");
     if (orderType === "MESA" && !tableNum) return setMsg("❌ Informe o número da mesa.");
     if (orderType === "DELIVERY" && !address) return setMsg("❌ Informe o endereço de entrega.");
+    // A taxa da entrega é decisão consciente: a cotação preenche; quando ela
+    // não preenche (fora da área, endereço que o mapa não achou, falha), o
+    // campo fica VAZIO e o atendente digita — 0 se for de graça. Vazio ia
+    // como R$ 0,00 calado, e a loja só via no fechamento.
+    if (orderType === "DELIVERY" && !taxaNaMao && cotandoTaxa) {
+      return setMsg("⏳ Calculando a taxa de entrega — aguarde um instante ou digite o valor na mão.");
+    }
+    if (orderType === "DELIVERY" && String(taxaEntrega).trim() === "") {
+      return setMsg("❌ Digite a taxa de entrega (0 se for grátis).");
+    }
     if (paymentMethod === "Conta Funcionário" && !selectedEmployeeId) {
       return setMsg("❌ Selecione o funcionário responsável pela conta.");
     }
@@ -474,6 +506,12 @@ export default function VendaPresencialPage() {
       // (lib/billing.ts) e sem isto a base de cobrança encolheria junto.
       ...(descontoEmReais > 0 ? { discountTotal: descontoEmReais, discountMerchant: descontoEmReais } : {}),
       deliveryFee: taxaDeEntrega,
+      // A cotação assinada deste MESMO endereço (R1): o servidor grava dela o
+      // ponto, a distância, a faixa e o repasse do motoboy, sem geocodificar
+      // de novo. `taxaDigitadaNoBalcao` diz que o valor acima foi combinado
+      // na mão — no balcão a taxa é editável, e vale o que o atendente
+      // digitou. E as mesmas partes do endereço que a cotação usou.
+      ...(orderType === "DELIVERY" ? entregaNoPedidoDoBalcao(address, cotacaoDoBalcao, taxaNaMao, cidadeDaLoja) : {}),
       items: cart.map(i => ({
         menuProductId: i.product.id,
         quantity: i.qty,
@@ -488,14 +526,22 @@ export default function VendaPresencialPage() {
     });
     setLoading(false);
     if (res.ok) {
-      setMsg("✅ Pedido registrado!");
+      // O que o servidor anotou sobre a entrega (fora da área, não localizado,
+      // ponto aproximado, distância estimada, taxa diferente da tabela) — as
+      // mesmas etiquetas da observação do pedido, para o atendente ver sem
+      // abrir o pedido.
+      const ok = await res.json().catch(() => null);
+      const avisos = Array.isArray(ok?.avisosDeEntrega)
+        ? ok.avisosDeEntrega.filter((a: unknown) => typeof a === "string" && a.trim()).join(" ")
+        : "";
+      setMsg(avisos ? `✅ Pedido registrado! ${avisos}` : "✅ Pedido registrado!");
       // TUDO DO CLIENTE SAI DAQUI, inclusive pager e documento. O que fica no
       // campo vai parar na comanda do PRÓXIMO cliente, e "PAGER 12" chamando a
       // pessoa errada ou o CPF de outro impresso na nota é o tipo de erro que
       // ninguém percebe até alguém reclamar. O pager já ficava para trás antes
       // deste campo existir — mesma falha, consertada junto.
       setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento("");
-      setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null);
+      setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null); setCotacaoDoBalcao(null);
       if (dividir) ligarDivisao(false);
     } else {
       const err = await res.json();

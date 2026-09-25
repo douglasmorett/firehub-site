@@ -182,9 +182,12 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const storeUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/loja/${user.slug}`;
-  // Delivery zones
-  const [deliveryZoneType, setDeliveryZoneType] = useState<string>(user.deliveryZoneType || "");
-  const [deliveryZones, setDeliveryZones] = useState<any[]>(() => (Array.isArray(user.deliveryZones) ? user.deliveryZones : []));
+  // A área de entrega (tipo e faixas) NÃO tem estado aqui: quem edita e grava
+  // é o DeliveryZoneMap, com o salvar dele. Este formulário guardava uma cópia
+  // de quando a página carregou — que o router.refresh não atualiza — e o
+  // "Salvar Tudo" a mandava de volta: a loja cadastrava as 9 faixas com o
+  // "Motoboy recebe" no mapa, salvava, clicava em "Salvar Tudo" e as faixas de
+  // fábrica voltavam, com o repasse apagado (25/09/2026).
 
   // Frete grátis por valor mínimo
   const initialDelivConfig = (user as any).deliveryConfig || {};
@@ -393,7 +396,9 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     try {
       const res = await fetch("/api/store-settings", {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeName, storePhone, storeAddress, storeBanner, storeLogo, storeHours, storeDeliveryOnly, storeCoupons: coupons, paymentFees: paymentConfig, deliveryZoneType: deliveryZoneType || null, deliveryZones: deliveryZones.length > 0 ? deliveryZones : null })
+        // Sem deliveryZoneType/deliveryZones: campo ausente mantém o que está
+        // gravado (lib/cadastro-da-entrega.ts, cadastroParaGravar).
+        body: JSON.stringify({ storeName, storePhone, storeAddress, storeBanner, storeLogo, storeHours, storeDeliveryOnly, storeCoupons: coupons, paymentFees: paymentConfig })
       });
       if (res.ok) { alert("Configurações salvas!"); router.refresh(); } else alert("Erro ao salvar.");
     } catch { alert("Erro ao salvar."); } finally { setLoading(false); }
@@ -1219,7 +1224,11 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 areasDeRisco: data.areasDeRisco || [],
               }),
             });
-            const result = await res.json();
+            const result = await res.json().catch(() => ({}));
+            // O servidor recusa cadastro inválido com 400 e a lista do que
+            // corrigir (store-settings, cadastroParaGravar). Sem esta linha o
+            // "não salvei" voltava ao mapa como sucesso.
+            if (!res.ok) throw new Error(result?.error || `erro ${res.status}`);
             if (result.ifoodSync && !result.ifoodSync.success) {
               throw new Error(`iFood: ${result.ifoodSync.error || "Erro desconhecido"}`);
             }

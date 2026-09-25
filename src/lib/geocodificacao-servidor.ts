@@ -28,7 +28,18 @@ import {
   isPointInSea,
   type Ponto,
 } from "@/lib/geocodificacao";
-import { geocodeAddress, geocodeStreetStructured, extrairLogradouro } from "@/lib/geocoding";
+import {
+  geocodeAddress,
+  geocodeStreetStructured,
+  extrairLogradouro,
+  buscaLivreNoMapa,
+  buscaDeRuaNoMapa,
+  resumoDaConsulta,
+  type GeocodificadorDaTaxa,
+  type RespostaDoMapa,
+  type ResultadoDoMapa,
+  type TrechoDeRua,
+} from "@/lib/geocoding";
 
 export type PedidoDeGeocodificacao = {
   /** Id do pedido, só para devolver o resultado casado. */
@@ -96,28 +107,203 @@ async function garantirTabela() {
       "ultimoUso" TIMESTAMP(3) NOT NULL DEFAULT NOW()
     )
   `);
+  // A resposta inteira da busca do caminho da taxa (lista de trechos, bairro,
+  // município) — a roteirização só precisa de lat/lng e não lê esta coluna.
+  await prisma.$executeRawUnsafe(`ALTER TABLE "GeocodeCache" ADD COLUMN IF NOT EXISTS "resposta" TEXT`);
   tabelaPronta = true;
 }
 
-/**
- * Uma fila por processo: o Nominatim aceita 1 chamada por segundo POR IP, e o
- * IP aqui é o do servidor inteiro. Duas lojas roteirizando ao mesmo tempo, sem
- * esta fila, derrubariam o limite para todas as outras.
- */
-let ultimaVez: Promise<unknown> = Promise.resolve();
-/** Quantas consultas estão esperando a vez — o teto evita que uma loja com
- *  muitos endereços novos prenda a roteirização de todas as outras no mesmo
- *  container. Estourado o teto, a consulta é recusada e o navegador daquela
- *  loja resolve sozinho, como fazia antes. */
-let naFilaAgora = 0;
+// ── A FILA DO MAPA: UMA CHAMADA POR VEZ, UM RELÓGIO SÓ ───────────────────────
+//
+// O Nominatim aceita 1 chamada por segundo POR IP, e o IP aqui é o do servidor
+// inteiro. Duas lojas roteirizando ao mesmo tempo, sem esta fila, derrubariam o
+// limite para todas as outras.
+//
+// A fila anda por CHAMADA, não por endereço. Até 25/09/2026 a roteirização e o
+// cron de distâncias punham o endereço INTEIRO como um item: uma cascata de até
+// 8 buscas (~8 s quando a rua não está no OSM, o caso da Divinos). A cotação de
+// frete, que tem 8,5 s de mapa em ROTA, esperava o item acabar e estourava o
+// prazo: "O mapa não respondeu a tempo" para um endereço que o mapa acha na 2ª
+// busca. E o ritmo era de cada um: a busca da taxa e a da roteirização saíam
+// com 1 ms de intervalo, furando o 1 req/s.
+//
+// Agora:
+//   - cada chamada HTTP entra sozinha, e o espaço de 1,1 s entre DUAS
+//     QUAISQUER é contado aqui, num relógio só (a roteirização passa o seu
+//     `vez` para lib/geocodificacao.ts);
+//   - a cotação (cliente esperando a taxa) passa na frente do lote
+//     (roteirização, cron, ponto da loja, sonda);
+//   - cada DONO (o IP do cardápio público, a loja) tem um teto de buscas em voo
+//     e por minuto: 40 GETs de um IP com ruas inventadas enchiam a fila de 25 e
+//     derrubavam a cotação de todas as lojas do processo.
+
+type Prioridade = "cotacao" | "lote";
+
+export type OpcoesDaFila = {
+  /** "cotacao" passa na frente do "lote" (padrão). */
+  prioridade?: Prioridade;
+  /** Quem pediu ("ip:…", "loja:…"): limita as buscas em voo e por minuto de cada um. */
+  donos?: string[];
+};
+
+/** Por que a fila recusou: cheia, dono no limite, ou a vez cairia depois do prazo. */
+export class RecusaDaFila extends Error {
+  constructor(message: string, readonly tipo: "cheia" | "limite" | "prazo") {
+    super(message);
+  }
+}
+
+type Vez = {
+  executar: () => Promise<unknown>;
+  resolver: (v: unknown) => void;
+  rejeitar: (e: unknown) => void;
+  /** Epoch ms, relido na hora da vez: o voo compartilhado estica o prazo (ver resolverNaTaxa). */
+  prazo: () => number | undefined;
+};
+
+const filas: Record<Prioridade, Vez[]> = { cotacao: [], lote: [] };
+/** Quantas chamadas podem esperar em cada fila — o teto do lote não trava a cotação, e vice-versa. */
 const TETO_DA_FILA = 25;
 
-function naFila<T>(fn: () => Promise<T>): Promise<T> {
-  if (naFilaAgora >= TETO_DA_FILA) return Promise.reject(new Error("fila de geocodificação cheia"));
-  naFilaAgora++;
-  const proxima = ultimaVez.then(fn, fn).finally(() => { naFilaAgora--; });
-  ultimaVez = proxima.catch(() => undefined);
-  return proxima;
+/**
+ * Teto de cada dono. `emVoo`: esperando ou rodando ao mesmo tempo. `porMinuto`:
+ * chamadas ao mapa numa janela DESLIZANTE de 60 s — orçamento de BUSCA, não de
+ * requisição: cotação que sai do cache não gasta nada daqui. Uma cotação de
+ * endereço novo gasta de 1 a 5 buscas (a rua com outro número, de 1 a 2: a
+ * rua, o bairro e o centro dele já estão no cache); 20 por minuto é um cliente
+ * corrigindo o endereço várias vezes — ou alguns atrás do mesmo IP de
+ * operadora —, não um laço. A loja inteira fica em 40: a fila anda ~54 por
+ * minuto, e uma loja-alvo não pode tomar a vez de todas as outras.
+ */
+const LIMITES_DO_DONO: Record<string, { emVoo: number; porMinuto: number }> = {
+  ip: { emVoo: 2, porMinuto: 20 },
+  loja: { emVoo: 4, porMinuto: 40 },
+};
+/** Para o teste conferir os tetos sem repetir os números. */
+export const TETOS_DO_DONO = LIMITES_DO_DONO;
+const emVooDoDono = new Map<string, number>();
+const chamadasDoDono = new Map<string, number[]>();
+
+let despachando = false;
+let ultimaChamadaNominatim = 0;
+let intervaloDoNominatimMs = 1100;
+
+const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function limiteDoDono(dono: string) {
+  return LIMITES_DO_DONO[dono.split(":")[0]] ?? null;
+}
+
+/** A próxima chamada que ainda vale: cotação antes do lote; a que perdeu o prazo sai recusada. */
+function tirarAProxima(): Vez | null {
+  for (const prioridade of ["cotacao", "lote"] as const) {
+    const fila = filas[prioridade];
+    while (fila.length > 0) {
+      const vez = fila.shift()!;
+      const prazo = vez.prazo();
+      // Quem tem pressa não quer a resposta depois do prazo: gastar o limite
+      // do IP numa resposta que ninguém vai ler é o pior dos dois.
+      if (prazo != null && Date.now() > prazo - 500) {
+        vez.rejeitar(new RecusaDaFila("prazo esgotado na fila", "prazo"));
+        continue;
+      }
+      return vez;
+    }
+  }
+  return null;
+}
+
+async function despachar() {
+  if (despachando) return;
+  despachando = true;
+  try {
+    while (filas.cotacao.length > 0 || filas.lote.length > 0) {
+      // Espera o ritmo ANTES de escolher: a cotação que chega durante a espera
+      // passa na frente do lote que já estava na fila.
+      const espera = ultimaChamadaNominatim + intervaloDoNominatimMs - Date.now();
+      if (espera > 0) {
+        await dormir(espera);
+        continue;
+      }
+      const vez = tirarAProxima();
+      if (!vez) continue;
+      ultimaChamadaNominatim = Date.now();
+      // Uma de cada vez, até o fim: a política do Nominatim é de um cliente
+      // sem paralelismo, e a resposta lenta de um é o intervalo do seguinte.
+      try {
+        vez.resolver(await vez.executar());
+      } catch (e) {
+        vez.rejeitar(e);
+      }
+    }
+  } finally {
+    despachando = false;
+  }
+}
+
+/**
+ * Uma chamada ao mapa, na vez dela. `prazo` (epoch ms, ou função que o relê):
+ * se a vez chega tarde demais, a chamada nem sai. `opcoes.prioridade` põe a
+ * cotação na frente; `opcoes.donos` aplica o teto de cada dono.
+ *
+ * Recusa (RecusaDaFila) quando a fila daquela prioridade está cheia, quando um
+ * dono passou do teto ou quando o prazo acabou esperando.
+ */
+export function naFila<T>(
+  fn: () => Promise<T>,
+  prazo?: number | (() => number | undefined),
+  opcoes?: OpcoesDaFila,
+): Promise<T> {
+  const prioridade: Prioridade = opcoes?.prioridade ?? "lote";
+  const donos = [...new Set(opcoes?.donos ?? [])];
+  if (filas[prioridade].length >= TETO_DA_FILA) {
+    return Promise.reject(new RecusaDaFila("fila de geocodificação cheia", "cheia"));
+  }
+  const agora = Date.now();
+  for (const dono of donos) {
+    const limite = limiteDoDono(dono);
+    if (!limite) continue;
+    if ((emVooDoDono.get(dono) ?? 0) >= limite.emVoo) {
+      return Promise.reject(new RecusaDaFila(`limite de buscas em voo (${dono.split(":")[0]})`, "limite"));
+    }
+    const recentes = (chamadasDoDono.get(dono) ?? []).filter((t) => agora - t < 60_000);
+    chamadasDoDono.set(dono, recentes);
+    if (recentes.length >= limite.porMinuto) {
+      return Promise.reject(new RecusaDaFila(`limite de buscas por minuto (${dono.split(":")[0]})`, "limite"));
+    }
+  }
+  for (const dono of donos) {
+    if (!limiteDoDono(dono)) continue;
+    emVooDoDono.set(dono, (emVooDoDono.get(dono) ?? 0) + 1);
+    chamadasDoDono.get(dono)!.push(agora);
+  }
+  // O Map de donos não pode crescer para sempre (IP novo a cada requisição).
+  if (chamadasDoDono.size > 5000) {
+    for (const [dono, lista] of chamadasDoDono) {
+      if (!lista.some((t) => agora - t < 60_000) && !emVooDoDono.get(dono)) chamadasDoDono.delete(dono);
+    }
+  }
+  const lerPrazo = typeof prazo === "function" ? prazo : () => prazo;
+  return new Promise<T>((resolver, rejeitar) => {
+    filas[prioridade].push({ executar: fn, resolver: resolver as (v: unknown) => void, rejeitar, prazo: lerPrazo });
+    void despachar();
+  }).finally(() => {
+    for (const dono of donos) {
+      if (!limiteDoDono(dono)) continue;
+      const n = (emVooDoDono.get(dono) ?? 1) - 1;
+      if (n > 0) emVooDoDono.set(dono, n);
+      else emVooDoDono.delete(dono);
+    }
+  });
+}
+
+/** Para o /api/health: quantas chamadas esperam a vez, sem ir à rede. */
+export function estadoDaFilaDoMapa() {
+  return {
+    cotacoesEsperando: filas.cotacao.length,
+    loteEsperando: filas.lote.length,
+    ultimaChamada: ultimaChamadaNominatim ? new Date(ultimaChamadaNominatim).toISOString() : null,
+  };
 }
 
 export async function geocodificarNoServidor(
@@ -153,7 +339,6 @@ export async function geocodificarNoServidor(
   }
 
   const estado = estadoPeloEndereco(loja.endereco);
-  const geo = criarGeocodificador({ storeCity: cidade, estado, centroDaLoja: loja.centro });
   const saida: ResultadoGeocodificacao[] = [];
 
   // ── ORÇAMENTO DE TEMPO ────────────────────────────────────────────────
@@ -167,6 +352,23 @@ export async function geocodificarNoServidor(
   // Com prazo, a rota devolve o que conseguiu e o navegador resolve o resto
   // pelo caminho antigo. Quem ficou de fora entra no cache na próxima abertura.
   const prazo = Date.now() + 25_000;
+
+  // Cada CHAMADA da cascata entra na fila única, com prioridade de lote: a
+  // cotação de frete de qualquer loja passa na frente entre uma chamada e a
+  // outra deste endereço. Se a fila recusar alguma (cheia, prazo), o endereço
+  // sai do lote — o ponto dele seria de um degrau pior da cascata, e o
+  // navegador resolve sozinho, como fazia quando a fila recusava o item todo.
+  let recusadaNesteItem = false;
+  const geo = criarGeocodificador({
+    storeCity: cidade,
+    estado,
+    centroDaLoja: loja.centro,
+    vez: (chamada) =>
+      naFila(chamada, prazo, { prioridade: "lote" }).catch((e) => {
+        if (e instanceof RecusaDaFila) recusadaNesteItem = true;
+        throw e;
+      }),
+  });
 
   for (let i = 0; i < pedidos.length; i++) {
     if (Date.now() > prazo && !noCache.has(chaves[i])) {
@@ -185,9 +387,12 @@ export async function geocodificarNoServidor(
     const cleanedStreet = cleanAddressForGeocoding(paraBuscar);
     const dictFallback = dicionarioDeBairro(neighborhood, loja.centro);
     try {
-      const { coords, origem } = await naFila(() =>
-        geo.geocodificarItem({ idx: i, neighborhood, streetName, houseNumber, cleanedStreet, dictFallback }),
-      );
+      recusadaNesteItem = false;
+      const { coords, origem } = await geo.geocodificarItem({ idx: i, neighborhood, streetName, houseNumber, cleanedStreet, dictFallback });
+      if (recusadaNesteItem) {
+        console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)} ficou para o navegador: a fila recusou uma das buscas`);
+        continue;
+      }
       saida.push({ id: p.id, lat: coords.lat, lng: coords.lng, origem, doCache: false });
       // Grava NA HORA, não no fim: o lote pode ser interrompido pelo prazo ou
       // pela plataforma, e o endereço que já custou uma ida à rede não pode se
@@ -199,7 +404,8 @@ export async function geocodificarNoServidor(
         await gravarNoCache({ chave, lat: coords.lat, lng: coords.lng, origem, bairro: neighborhood, cidade });
       }
     } catch (e: any) {
-      console.warn(`[Geocodificação] ${p.endereco.slice(0, 60)}: ${e?.message}`);
+      // O endereço do cliente não vai para o log (LGPD): o resumo correlaciona.
+      console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)}: ${e?.message}`);
     }
   }
 
@@ -224,13 +430,6 @@ export async function geocodificarNoServidor(
  * (lib/area-de-entrega.ts) e só o lojista, arrastando o pino, pode dizer que
  * ele está certo. Aqui é só de onde a câmera do mapa parte.
  */
-let ultimaChamadaNominatim = 0;
-async function ritmoDoNominatim() {
-  const espera = ultimaChamadaNominatim + 1100 - Date.now();
-  if (espera > 0) await new Promise((r) => setTimeout(r, espera));
-  ultimaChamadaNominatim = Date.now();
-}
-
 export async function pontoDeEndereco(
   endereco: string,
   cidade: string,
@@ -260,33 +459,31 @@ export async function pontoDeEndereco(
   const estado = estadoPeloEndereco(texto);
   const sufixo = [cid, estado, "Brasil"].filter(Boolean).join(", ");
 
-  const achado = await naFila(async () => {
+  // Cada busca na fila única, uma por vez (prioridade de lote).
+  const achado = await (async () => {
     // 1. Busca estruturada (rua + cidade): é a que acha endereço de loja onde o
     //    texto solto falha. Ver o comentário de geocodeStreetStructured.
     const rua = extrairLogradouro(texto);
     if (rua && cid) {
-      await ritmoDoNominatim();
-      const trechos = await geocodeStreetStructured(rua, cid, null);
+      const trechos = await naFila(() => geocodeStreetStructured(rua, cid, null));
       const bom = trechos.find((t) => !isPointInSea(t.lat, t.lng));
       if (bom) return { lat: bom.lat, lng: bom.lng, origem: "loja: rua estruturada" };
     }
 
     // 2. Endereço inteiro em texto livre.
     if (texto) {
-      await ritmoDoNominatim();
-      const r = await geocodeAddress(sufixo ? `${texto}, ${sufixo}` : texto, null);
+      const r = await naFila(() => geocodeAddress(sufixo ? `${texto}, ${sufixo}` : texto, null));
       if (r && !isPointInSea(r.lat, r.lng)) return { lat: r.lat, lng: r.lng, origem: "loja: endereço" };
     }
 
     // 3. Só a cidade. Pior que o endereço e melhor que abrir em outro estado:
     //    o lojista vê o próprio bairro na tela e entende onde arrastar o pino.
     if (cid) {
-      await ritmoDoNominatim();
-      const r = await geocodeAddress([cid, estado, "Brasil"].filter(Boolean).join(", "), null);
+      const r = await naFila(() => geocodeAddress([cid, estado, "Brasil"].filter(Boolean).join(", "), null));
       if (r && !isPointInSea(r.lat, r.lng)) return { lat: r.lat, lng: r.lng, origem: "loja: cidade" };
     }
     return null;
-  }).catch((e: any) => {
+  })().catch((e: any) => {
     console.warn(`[Geocodificação] ponto da loja "${texto.slice(0, 50)}" falhou: ${e?.message}`);
     return null;
   });
@@ -316,4 +513,331 @@ async function gravarNoCache(g: { chave: string; lat: number; lng: number; orige
   } catch (e: any) {
     console.warn("[Geocodificação] gravação do cache falhou:", e?.message);
   }
+}
+
+// ── O CAMINHO DA TAXA ────────────────────────────────────────────────────────
+//
+// A cotação de frete (site, robô, balcão) geocodificava direto no Nominatim:
+// sem cache, sem fila, até 5 buscas seguidas de 4,5 s cada. O mesmo endereço
+// repetido virava buscas repetidas — o que a política do Nominatim proíbe
+// ("Results must be cached on your side") e é o caminho mais curto para o IP
+// do servidor ser bloqueado e TODAS as lojas caírem em "não localizado".
+//
+// Aqui cada busca do caminho da taxa passa, nesta ordem, por:
+//   1. a memória do processo (inclusive o "não existe no mapa", por 30 min);
+//   2. o GeocodeCache do banco — o mesmo da roteirização, com chaves próprias
+//      ("taxa|...") e a resposta inteira na coluna "resposta" (90 dias);
+//   3. a fila única de 1 req/s deste processo (a mesma da roteirização), na
+//      frente do lote, e no teto do dono quando há um (o IP do cardápio).
+// E respeita o prazo da cotação: busca que não cabe no tempo não sai — e
+// volta como FALHA, não como "o mapa não conhece".
+
+const VALIDADE_NO_BANCO_DIAS = 90;
+/** Na memória, o que o mapa achou vale 1 dia; o que ele NÃO achou, 30 min. */
+const VALIDADE_NA_MEMORIA_MS = 24 * 60 * 60_000;
+const VALIDADE_DO_NAO_ACHOU_MS = 30 * 60_000;
+const TETO_DA_MEMORIA_DA_TAXA = 3000;
+const PRAZO_DO_BANCO_MS = 2000;
+const PRAZO_DA_BUSCA_MS = 4500;
+
+const memoriaDaTaxa = new Map<string, { valor: unknown; exp: number }>();
+/**
+ * A busca em voo de cada chave. O prazo é o MAIOR entre quem espera: a
+ * cotação automática do checkout (6 s) abre o voo e o POST do mesmo endereço
+ * (20 s) chega depois. Com o prazo do primeiro, a fila recusava a busca
+ * quando ele acabava e o segundo recebia "não localizado" tendo 17 s de sobra.
+ */
+type VooDaTaxa = { promessa: Promise<RespostaDoMapa<unknown>>; prazo: number };
+const emVooDaTaxa = new Map<string, VooDaTaxa>();
+let bancoDaTaxaForaAte = 0;
+
+function lembrarNaTaxa(chave: string, valor: unknown, validadeMs: number) {
+  memoriaDaTaxa.delete(chave);
+  memoriaDaTaxa.set(chave, { valor, exp: Date.now() + validadeMs });
+  if (memoriaDaTaxa.size > TETO_DA_MEMORIA_DA_TAXA) {
+    const maisVelha = memoriaDaTaxa.keys().next().value;
+    if (maisVelha !== undefined) memoriaDaTaxa.delete(maisVelha);
+  }
+}
+
+/**
+ * Onde a resposta fica guardada entre processos. Trocável de propósito: o
+ * teste põe um de memória no lugar do banco.
+ */
+export type ArmazemDaTaxa = {
+  /** A resposta guardada (JSON), ou null. */
+  ler(chave: string): Promise<string | null>;
+  gravar(g: { chave: string; lat: number; lng: number; origem: string; bairro: string; cidade: string; resposta: string }): Promise<void>;
+};
+
+const armazemNoBanco: ArmazemDaTaxa = {
+  async ler(chave) {
+    await garantirTabela();
+    const linhas = await prisma.$queryRawUnsafe<{ resposta: string | null }[]>(
+      `SELECT "resposta" FROM "GeocodeCache"
+        WHERE "chave" = $1 AND "resposta" IS NOT NULL
+          AND "criadoEm" > NOW() - ($2::int * INTERVAL '1 day')
+        LIMIT 1`,
+      chave,
+      VALIDADE_NO_BANCO_DIAS,
+    );
+    if (!linhas[0]?.resposta) return null;
+    prisma
+      .$executeRawUnsafe(`UPDATE "GeocodeCache" SET "usos" = "usos" + 1, "ultimoUso" = NOW() WHERE "chave" = $1`, chave)
+      .catch(() => undefined);
+    return linhas[0].resposta;
+  },
+  async gravar(g) {
+    await garantirTabela();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "GeocodeCache" ("chave","lat","lng","origem","bairro","cidade","resposta")
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT ("chave") DO UPDATE SET "lat"=EXCLUDED."lat","lng"=EXCLUDED."lng","origem"=EXCLUDED."origem",
+         "bairro"=EXCLUDED."bairro","cidade"=EXCLUDED."cidade","resposta"=EXCLUDED."resposta",
+         "criadoEm"=NOW(),"ultimoUso"=NOW()`,
+      g.chave, g.lat, g.lng, g.origem, g.bairro, g.cidade, g.resposta,
+    );
+  },
+};
+
+export const armazemDaTaxa: ArmazemDaTaxa = { ...armazemNoBanco };
+
+/** Banco lento não segura a cotação; banco fora não é consultado por 60 s. */
+async function doBancoDaTaxa<T>(fn: () => Promise<T>, seFalhar: T): Promise<T> {
+  if (Date.now() < bancoDaTaxaForaAte) return seFalhar;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise<T>((_, rejeita) => {
+        timer = setTimeout(() => rejeita(new Error("banco demorou")), PRAZO_DO_BANCO_MS);
+      }),
+    ]);
+  } catch (e: any) {
+    bancoDaTaxaForaAte = Date.now() + 60_000;
+    console.warn("[Geocodificação da taxa] cache no banco falhou — só memória por 60 s:", String(e?.message || e).slice(0, 120));
+    return seFalhar;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** O que vier primeiro: a promessa ou o prazo (aí vale `seEstourar`). */
+function ateOPrazo<T>(p: Promise<T>, prazo: number, seEstourar: T): Promise<T> {
+  const resta = prazo - Date.now();
+  if (resta <= 0) return Promise.resolve(seEstourar);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p.catch(() => seEstourar),
+    new Promise<T>((r) => {
+      timer = setTimeout(() => r(seEstourar), resta);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/** A região da loja a ~11 km: a caixa de busca muda o que o mapa devolve. */
+function regiao(centro: Ponto | null): string {
+  return centro && Number.isFinite(centro.lat) && Number.isFinite(centro.lng)
+    ? `${centro.lat.toFixed(1)},${centro.lng.toFixed(1)}`
+    : "-";
+}
+
+/** A recusa da fila, dita como a busca que não aconteceu. */
+function motivoDaRecusa(e: any): string {
+  if (e instanceof RecusaDaFila) return e.tipo === "prazo" ? "prazo esgotado na fila" : e.tipo === "limite" ? `limite: ${e.message}` : e.message;
+  return String(e?.message || e);
+}
+
+/** Falha que pode passar se perguntar de novo com mais tempo. */
+const falhaDeTempo = (motivo: string) => /prazo|sem resposta/.test(motivo);
+
+/**
+ * Uma busca do caminho da taxa: memória, banco, e só então a fila.
+ *
+ * Devolve a resposta do mapa (`ok`, inclusive "não achou nada") ou a FALHA
+ * com o motivo — fila cheia, prazo, 429, 5xx, rede, limite do dono. Até
+ * 25/09/2026 as duas coisas voltavam como "vazio": "não deu para perguntar"
+ * virava "o mapa não conhece", a cotação dizia "Endereço não localizado" e
+ * descia para o centro do bairro como se a casa não existisse.
+ */
+async function resolverNaTaxa<T>(
+  args: {
+    chave: string;
+    prazo: number;
+    buscar: (timeoutMs: number) => Promise<RespostaDoMapa<T>>;
+    /** O que vai nas colunas do cache; null = o mapa não achou nada (não vai ao banco). */
+    paraGravar: (v: T) => { lat: number; lng: number; bairro: string; cidade: string } | null;
+    origem: string;
+    donos?: string[];
+  },
+  jaTentouDeNovo = false,
+): Promise<RespostaDoMapa<T>> {
+  const { chave, prazo } = args;
+  const lembrado = memoriaDaTaxa.get(chave);
+  if (lembrado && lembrado.exp > Date.now()) {
+    lembrarNaTaxa(chave, lembrado.valor, lembrado.exp - Date.now());
+    return { ok: true, valor: lembrado.valor as T };
+  }
+
+  // Duas cotações do mesmo endereço ao mesmo tempo (o checkout recalcula
+  // enquanto o cliente digita) esperam a MESMA busca — com o prazo de quem
+  // pode esperar mais.
+  let voo = emVooDaTaxa.get(chave);
+  if (voo) {
+    voo.prazo = Math.max(voo.prazo, prazo);
+  } else {
+    const novo: VooDaTaxa = { prazo, promessa: Promise.resolve({ ok: false, motivo: "" }) };
+    novo.promessa = (async (): Promise<RespostaDoMapa<unknown>> => {
+      try {
+        const guardada = await doBancoDaTaxa(() => armazemDaTaxa.ler(chave), null);
+        if (guardada) {
+          try {
+            const valor = JSON.parse(guardada) as T;
+            lembrarNaTaxa(chave, valor, VALIDADE_NA_MEMORIA_MS);
+            return { ok: true, valor };
+          } catch {
+            // Linha ilegível: pergunta de novo, e a gravação conserta.
+          }
+        }
+        if (novo.prazo - Date.now() < 800) return { ok: false, motivo: "prazo" };
+        let r: RespostaDoMapa<T>;
+        try {
+          r = await naFila(
+            async () => {
+              const resta = novo.prazo - Date.now();
+              if (resta < 500) return { ok: false, motivo: "prazo" } as RespostaDoMapa<T>;
+              return args.buscar(Math.min(PRAZO_DA_BUSCA_MS, resta));
+            },
+            () => novo.prazo,
+            { prioridade: "cotacao", donos: args.donos },
+          );
+        } catch (e: any) {
+          // Fila cheia, dono no limite ou prazo: não é "não existe", é "não deu agora".
+          const motivo = motivoDaRecusa(e);
+          if (!falhaDeTempo(motivo)) console.warn(`[Geocodificação da taxa] busca recusada: ${motivo}`);
+          return { ok: false, motivo };
+        }
+        if (!r.ok) return r;
+        const valor = r.valor;
+        const colunas = args.paraGravar(valor);
+        if (colunas) {
+          lembrarNaTaxa(chave, valor, VALIDADE_NA_MEMORIA_MS);
+          void doBancoDaTaxa(
+            () => armazemDaTaxa.gravar({ chave, ...colunas, origem: args.origem, resposta: JSON.stringify(valor) }),
+            undefined,
+          );
+        } else {
+          lembrarNaTaxa(chave, valor, VALIDADE_DO_NAO_ACHOU_MS);
+        }
+        return r;
+      } finally {
+        // Aqui dentro, e não num .finally() pendurado: quem acorda com a
+        // resposta e pergunta de novo não pode cair neste voo já pousado.
+        if (emVooDaTaxa.get(chave) === novo) emVooDaTaxa.delete(chave);
+      }
+    })();
+    emVooDaTaxa.set(chave, novo);
+    voo = novo;
+  }
+  const r = (await ateOPrazo(voo.promessa, prazo, { ok: false, motivo: "prazo" } as RespostaDoMapa<unknown>)) as RespostaDoMapa<T>;
+  // O voo foi aberto por quem tinha menos tempo e a busca saiu com o prazo
+  // curto dele: quem ainda tem tempo pergunta de novo, uma vez.
+  if (!r.ok && !jaTentouDeNovo && falhaDeTempo(r.motivo) && prazo - Date.now() >= 1500) {
+    return resolverNaTaxa(args, true);
+  }
+  return r;
+}
+
+/**
+ * O geocodificador do caminho da taxa: cache (memória + GeocodeCache), fila
+ * de 1 req/s compartilhada com a roteirização e o prazo de quem pergunta.
+ * É o que lib/area-de-entrega.ts passa para `verifyStoreDeliveryAddress`.
+ *
+ * `donos` (o IP do cardápio público, a loja): as buscas que VÃO À REDE contam
+ * no teto de cada um (ver LIMITES_DO_DONO). Cache não conta.
+ */
+export function geocodificadorDaTaxaPara(donos?: string[]): GeocodificadorDaTaxa {
+  return {
+    livre(consulta, centro, prazo) {
+      return resolverNaTaxa<ResultadoDoMapa | null>({
+        chave: `taxa|livre|${regiao(centro)}|${chaveDeCache(consulta, "")}`.slice(0, 400),
+        prazo,
+        buscar: (timeoutMs) => buscaLivreNoMapa(consulta, centro, { timeoutMs }),
+        paraGravar: (v) => (v ? { lat: v.lat, lng: v.lng, bairro: v.bairro || "", cidade: v.cidades?.[0] || "" } : null),
+        origem: "taxa: busca livre",
+        donos,
+      });
+    },
+    estruturada(rua, cidade, centro, prazo) {
+      return resolverNaTaxa<TrechoDeRua[]>({
+        chave: `taxa|rua|${regiao(centro)}|${chaveDeCache(rua, cidade)}`.slice(0, 400),
+        prazo,
+        buscar: (timeoutMs) => buscaDeRuaNoMapa(rua, cidade, centro, { timeoutMs }),
+        paraGravar: (v) =>
+          v.length > 0 ? { lat: v[0].lat, lng: v[0].lng, bairro: v[0].suburb || "", cidade: v[0].cidades?.[0] || cidade } : null,
+        origem: "taxa: rua estruturada",
+        donos,
+      });
+    },
+  };
+}
+
+/** O de quem não tem dono (robô, pedido, balcão): sem teto próprio, só a fila. */
+export const geocodificadorDaTaxa: GeocodificadorDaTaxa = geocodificadorDaTaxaPara();
+
+/** Zera memória, voos, disjuntor do banco, o ritmo e os tetos dos donos. SÓ PARA TESTE. */
+export function reiniciarGeocodificacaoParaTeste(opcoes?: { intervaloDoNominatimMs?: number }) {
+  memoriaDaTaxa.clear();
+  emVooDaTaxa.clear();
+  emVooDoDono.clear();
+  chamadasDoDono.clear();
+  bancoDaTaxaForaAte = 0;
+  ultimaChamadaNominatim = 0;
+  intervaloDoNominatimMs = opcoes?.intervaloDoNominatimMs ?? 1100;
+  ultimaSondaDoNominatim = null;
+}
+
+type ResultadoDaSonda = { ok: boolean; ms: number; motivo?: string };
+let ultimaSondaDoNominatim: { em: number; valor: ResultadoDaSonda } | null = null;
+let sondaDoNominatimEmVoo: Promise<ResultadoDaSonda> | null = null;
+
+/**
+ * Pergunta de verdade ao Nominatim (só o /api/health?sondar=1), pela fila e no
+ * ritmo de todo mundo, no máximo uma vez por minuto.
+ *
+ * Uma sonda por vez: o resultado só era guardado DEPOIS de a sonda terminar, e
+ * 30 GETs simultâneos disparavam 30 sondas — 25 enchiam a fila e a cotação de
+ * frete do mesmo instante voltava "não localizado" em 4 ms. Quem chega com uma
+ * sonda em voo espera a mesma. E ela entra como lote: cotação passa na frente.
+ */
+export function sondarNominatim(): Promise<ResultadoDaSonda> {
+  if (ultimaSondaDoNominatim && Date.now() - ultimaSondaDoNominatim.em < 60_000) return Promise.resolve(ultimaSondaDoNominatim.valor);
+  if (sondaDoNominatimEmVoo) return sondaDoNominatimEmVoo;
+  const voo = (async (): Promise<ResultadoDaSonda> => {
+    const inicio = Date.now();
+    const prazo = inicio + 8000;
+    let valor: ResultadoDaSonda;
+    try {
+      const r = await naFila(
+        () => buscaLivreNoMapa("Cabo Frio, Rio de Janeiro, Brasil", null, { timeoutMs: Math.max(500, prazo - Date.now()) }),
+        prazo,
+      );
+      valor = r.ok && r.valor
+        ? { ok: true, ms: Date.now() - inicio }
+        : { ok: false, ms: Date.now() - inicio, motivo: r.ok ? "sem resultado" : r.motivo };
+    } catch (e: any) {
+      valor = { ok: false, ms: Date.now() - inicio, motivo: motivoDaRecusa(e) };
+    }
+    ultimaSondaDoNominatim = { em: Date.now(), valor };
+    return valor;
+  })();
+  sondaDoNominatimEmVoo = voo;
+  voo
+    .finally(() => {
+      if (sondaDoNominatimEmVoo === voo) sondaDoNominatimEmVoo = null;
+    })
+    .catch(() => undefined);
+  return voo;
 }

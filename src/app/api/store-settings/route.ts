@@ -5,6 +5,49 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { fusoPorEndereco } from "@/lib/fuso-por-endereco";
 import { esquecerPontoDaLoja } from "@/lib/distancia-da-entrega";
+import { cadastroParaGravar, mesclarRegraDeRepasse } from "@/lib/cadastro-da-entrega";
+import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+
+/**
+ * GET: o cadastro de entrega GRAVADO da loja da sessão.
+ *
+ * A tela de Entrega usa para duas coisas: saber a escolha "o motoboy recebe
+ * um valor por faixa" (`repasseDoEntregador.separado`, que mora no
+ * deliveryConfig e não chega à tela por props) e CONFERIR, depois de salvar,
+ * que o que ela mandou é o que ficou no banco — o salvar dela passa pelo
+ * formulário da loja, que não olha o status da resposta, e um "não salvei" do
+ * servidor aparecia como "salvo".
+ *
+ * A loja é a do DONO (`ownerId || id`), como em /api/delivery-fee e
+ * /api/store/orders/presencial, e como a página Minha Loja mostra. Lendo a
+ * linha do funcionário, a tela dele via `separado: false` (a linha dele não
+ * tem regra), passava para "pelo acerto" e avisava que ia apagar os valores do
+ * dono; e a conferência dizia "salvo" sem nada mudar para os clientes.
+ */
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  const quem = await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: { id: true, ownerId: true },
+  });
+  if (!quem) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const user = await prisma.user.findUnique({
+    where: { id: quem.ownerId || quem.id },
+    select: { deliveryZoneType: true, deliveryZones: true, storeLatLng: true, storeAddress: true, deliveryConfig: true },
+  });
+  if (!user) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
+  return NextResponse.json({
+    entrega: {
+      deliveryZoneType: user.deliveryZoneType ?? null,
+      deliveryZones: user.deliveryZones ?? null,
+      storeLatLng: lerPontoDaLoja(user.storeLatLng),
+      storeAddress: user.storeAddress ?? null,
+      repasseDoEntregador: lerRegraDeRepasse(user.deliveryConfig),
+    },
+  });
+}
 
 export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
@@ -18,6 +61,22 @@ export async function PUT(req: Request) {
   if (!currentUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const isSecondary = currentUser.role === "STAFF" || Boolean((currentUser as any).ownerId);
+
+  // ── A ENTREGA É DA LOJA, NÃO DE QUEM ESTÁ LOGADO ─────────────────────
+  //
+  // Área de entrega, pino e deliveryConfig (frete grátis, pedido mínimo,
+  // áreas de risco, regra do repasse) vão para a linha da LOJA — a do dono
+  // (`ownerId || id`) —, que é a que o cardápio, o balcão, o robô e
+  // /api/delivery-fee leem, e a que a página Minha Loja mostra. O gerente que
+  // cadastrava as 9 faixas da Divinos gravava na linha DELE: a tela dizia
+  // "salvo" e o cardápio continuava cobrando pela tabela do dono.
+  //
+  // Os outros campos seguem como sempre foram (na linha de quem salvou).
+  const donoId = (currentUser as any).ownerId as string | null | undefined;
+  const loja = donoId ? await prisma.user.findUnique({ where: { id: donoId } }) : currentUser;
+  if (!loja) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
+  /** O que vai para a linha da loja (a do dono). */
+  const daLoja: any = {};
 
   // Nome, Cidade e E-mail só podem ser alterados pela conta principal (não secundária)
   if (!isSecondary) {
@@ -41,8 +100,10 @@ export async function PUT(req: Request) {
   // Store settings — campos permitidos
   for (const key of [
     "storeName", "storePhone", "notificationPhone", "storeAddress", "storeBanner", "storeLogo",
-    "storeHours", "paymentFees", "deliveryZoneType", "deliveryZones",
-    "storeLatLng", "storeCoupons", "storePause",
+    // deliveryZoneType, deliveryZones e storeLatLng NÃO entram aqui: são
+    // validados logo abaixo antes de gravar (ver "ÁREA DE ENTREGA").
+    "storeHours", "paymentFees",
+    "storeCoupons", "storePause",
     "facebookPixelId",   // Meta Pixel ID
     "metaPixelId",       // Mesmo pixel, campo usado pelo módulo Meta Ads
     "metaCapiToken",     // Token da API de Conversões (venda enviada pelo servidor)
@@ -55,6 +116,46 @@ export async function PUT(req: Request) {
     "repasseConfig",     // Configurações de Repasse Automático (Brendi Flow)
   ]) {
     if (body[key] !== undefined) data[key] = body[key];
+  }
+
+  // ── ÁREA DE ENTREGA: VALIDADA E NORMALIZADA ANTES DE GRAVAR ──────────
+  //
+  // Até 25/09/2026 as faixas eram gravadas como viessem: km repetido ou zero,
+  // taxa negativa, tempo zero, JSON qualquer pela API. A regra está em
+  // lib/cadastro-da-entrega.ts, e a tela de Entrega roda a MESMA antes de
+  // mandar — aqui é a garantia para quem chama a API direto (ou uma tela
+  // antiga ainda aberta no navegador de alguém).
+  //
+  // Só valida o que MUDOU. As outras seções do painel ("Salvar Tudo") mandam
+  // tipo e zonas junto sem mexer neles; revalidar aí travaria o salvar do nome
+  // da loja por causa de uma faixa antiga. Essa faixa é corrigida quando a
+  // loja abre a tela de Entrega, que não deixa salvar sem acertar.
+  //
+  // Nulo não apaga: `deliveryZones` nulo é loja "sem área", e sem área a loja
+  // atende qualquer endereço do mundo (lib/area-de-entrega.ts). Apagar o
+  // cadastro de entrega não acontece por um campo vazio no corpo.
+  const avisos: string[] = [];
+  const decisao = cadastroParaGravar(
+    { tipo: (loja as any).deliveryZoneType ?? null, zonas: (loja as any).deliveryZones ?? null },
+    { deliveryZoneType: body.deliveryZoneType, deliveryZones: body.deliveryZones },
+  );
+  if (decisao.acao === "recusar") {
+    return NextResponse.json({ error: decisao.erro, erros: decisao.erros }, { status: 400 });
+  }
+  if (decisao.acao === "gravar") {
+    daLoja.deliveryZoneType = decisao.tipo;
+    daLoja.deliveryZones = decisao.zonas;
+    avisos.push(...decisao.avisos);
+  }
+
+  // O pino da loja: objeto {lat,lng} de verdade, ou nada. Um (0,0) ou um texto
+  // quebrado aqui mudava o ponto de onde se mede TODA entrega da loja.
+  if (body.storeLatLng !== undefined && body.storeLatLng !== null) {
+    const ponto = lerPontoDaLoja(body.storeLatLng);
+    if (!ponto) {
+      return NextResponse.json({ error: "Não salvei: o ponto da loja no mapa é inválido. Marque a loja no mapa de novo." }, { status: 400 });
+    }
+    daLoja.storeLatLng = { lat: ponto.lat, lng: ponto.lng };
   }
 
   // ── TROCAR O NOME DA LOJA TROCA O LINK DO CARDÁPIO ───────────────────
@@ -95,10 +196,10 @@ export async function PUT(req: Request) {
   // salvar apagar o que a outra tinha acabado de gravar — a loja desenhava a
   // área de risco, ia salvar o pedido mínimo e as áreas sumiam sem aviso.
   if (body.deliveryConfig !== undefined && body.deliveryConfig !== null) {
-    const atual = (currentUser as any)?.deliveryConfig;
+    const atual = (loja as any)?.deliveryConfig;
     const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
     const novo = typeof body.deliveryConfig === "object" && !Array.isArray(body.deliveryConfig) ? body.deliveryConfig : {};
-    data.deliveryConfig = { ...base, ...novo };
+    daLoja.deliveryConfig = { ...base, ...novo };
   }
 
   // ── ÁREAS DE RISCO ENTRAM SEM APAGAR O RESTO ─────────────────────────
@@ -108,7 +209,7 @@ export async function PUT(req: Request) {
   // ela manda so `areasDeRisco` e a mesclagem acontece AQUI — mandar o
   // deliveryConfig inteiro de la apagaria o frete gratis da loja.
   if (body.areasDeRisco !== undefined) {
-    const atual = (currentUser as any)?.deliveryConfig;
+    const atual = (loja as any)?.deliveryConfig;
     const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
     const limpas = (Array.isArray(body.areasDeRisco) ? body.areasDeRisco : [])
       .map((a: any) => ({
@@ -123,8 +224,8 @@ export async function PUT(req: Request) {
       .slice(0, 50);
     // Sobre o que ja tiver sido mesclado acima, nao sobre o do banco: as duas
     // coisas podem vir no MESMO salvar.
-    const jaMontado = data.deliveryConfig && typeof data.deliveryConfig === "object" ? data.deliveryConfig : base;
-    data.deliveryConfig = { ...jaMontado, areasDeRisco: limpas };
+    const jaMontado = daLoja.deliveryConfig && typeof daLoja.deliveryConfig === "object" ? daLoja.deliveryConfig : base;
+    daLoja.deliveryConfig = { ...jaMontado, areasDeRisco: limpas };
   }
 
   // ── PAGAMENTO DO ENTREGADOR ──────────────────────────────────────────
@@ -135,23 +236,19 @@ export async function PUT(req: Request) {
   // risco, e pelo mesmo motivo: a tela de entrega não conhece os outros
   // campos do deliveryConfig e não pode apagá-los.
   if (body.repasseDoEntregador !== undefined && body.repasseDoEntregador !== null) {
-    const atual = (currentUser as any)?.deliveryConfig;
+    const atual = (loja as any)?.deliveryConfig;
     const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
-    const jaMontado = data.deliveryConfig && typeof data.deliveryConfig === "object" ? data.deliveryConfig : base;
-    const r = body.repasseDoEntregador as any;
-    // "FIXO" = valor fixo por entrega de app (ver lib/repasse-do-entregador.ts).
-    // O valor é guardado mesmo quando a loja troca de modo, para ela não ter de
-    // digitar de novo se voltar atrás.
-    const marketplace = r?.marketplace === "APP" ? "APP" : r?.marketplace === "FIXO" ? "FIXO" : "TABELA";
-    const bruto = r?.valorFixoApp;
-    const n = bruto === null || bruto === undefined || bruto === "" ? null : Number(bruto);
-    data.deliveryConfig = {
+    const jaMontado = daLoja.deliveryConfig && typeof daLoja.deliveryConfig === "object" ? daLoja.deliveryConfig : base;
+    // ── CADA TELA MANDA SÓ O QUE ELA DECIDE ────────────────────────────
+    //
+    // `separado` é decidido na tela de Entrega ("o motoboy recebe um valor
+    // por faixa"); `marketplace` e `valorFixoApp` ("FIXO" = valor fixo por
+    // entrega de app, guardado mesmo quando a loja troca de modo), na aba
+    // Motoboys. Campo ausente no corpo mantém o que está gravado
+    // (lib/cadastro-da-entrega.ts, mesclarRegraDeRepasse).
+    daLoja.deliveryConfig = {
       ...jaMontado,
-      repasseDoEntregador: {
-        separado: r?.separado === true,
-        marketplace,
-        valorFixoApp: Number.isFinite(n as number) && (n as number) >= 0 ? Math.round((n as number) * 100) / 100 : null,
-      },
+      repasseDoEntregador: mesclarRegraDeRepasse(jaMontado.repasseDoEntregador, body.repasseDoEntregador),
     };
   }
 
@@ -172,7 +269,10 @@ export async function PUT(req: Request) {
   if (body.autoAcceptOrders !== undefined) data.autoAcceptOrders = Boolean(body.autoAcceptOrders);
   if (body.allowScheduledOrders !== undefined) data.allowScheduledOrders = Boolean(body.allowScheduledOrders);
   if (body.storeAlertSound !== undefined) data.storeAlertSound = body.storeAlertSound;
-  if (body.ifoodSyncDeliveryTime !== undefined) data.ifoodSyncDeliveryTime = Boolean(body.ifoodSyncDeliveryTime);
+  // A sincronização do tempo com o iFood está DESLIGADA (ver o fim desta
+  // rota): o campo só aceita ser desligado.
+  if (body.ifoodSyncDeliveryTime === false) data.ifoodSyncDeliveryTime = false;
+  else if (body.ifoodSyncDeliveryTime === true) avisos.push("A sincronização do tempo de entrega com o iFood está desligada até ser corrigida.");
   // O que a loja mostra na barra do painel de pedidos. Só booleanos entram: é
   // config de exibição, e aceitar objeto solto aqui viraria porta para gravar
   // qualquer coisa no registro da loja.
@@ -214,7 +314,16 @@ export async function PUT(req: Request) {
     });
   }
 
-  const updatedUser = await prisma.user.update({ where: { id: currentUser.id }, data });
+  if (loja.id === currentUser.id) {
+    await prisma.user.update({ where: { id: currentUser.id }, data: { ...data, ...daLoja } });
+  } else {
+    // Conta de funcionário: o dele na linha dele, a entrega na do dono — as
+    // duas juntas ou nenhuma.
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: currentUser.id }, data }),
+      ...(Object.keys(daLoja).length ? [prisma.user.update({ where: { id: loja.id }, data: daLoja })] : []),
+    ]);
+  }
 
   // ── Sincronizar cidade e dados da loja para todos os funcionários da equipe ──
   if (data.city !== undefined || data.storeName !== undefined || data.cpfCnpj !== undefined || data.storeTimezone !== undefined) {
@@ -234,87 +343,20 @@ export async function PUT(req: Request) {
   // consultar o banco a cada pedido importado (lib/distancia-da-entrega.ts).
   // Quem acabou de arrastar o pino no mapa não pode esperar esses 10 minutos
   // para o próximo pedido nascer com a distância certa.
-  esquecerPontoDaLoja(currentUser.id);
+  esquecerPontoDaLoja(loja.id);
 
-  // ── Sincronização automática do tempo de preparo/entrega com o iFood ──
-  let ifoodSyncResult: any = null;
-
-  if (updatedUser.ifoodSyncDeliveryTime) {
-    try {
-      const zones = (updatedUser.deliveryZones as any[]) || [];
-      console.log(`[iFood Sync] Toggle ativo. Zonas salvas: ${zones.length}`, JSON.stringify(zones));
-
-      if (zones.length === 0) {
-        ifoodSyncResult = { success: false, error: "Nenhuma zona de entrega configurada. Configure pelo menos uma zona antes de sincronizar." };
-      } else {
-        const times = zones.map(z => Number(z.time)).filter(t => t > 0);
-        console.log(`[iFood Sync] Tempos válidos encontrados: ${times.length}`, times);
-
-        if (times.length === 0) {
-          ifoodSyncResult = { success: false, error: "Nenhum tempo de entrega válido nas zonas configuradas." };
-        } else {
-          const mainTime = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
-          console.log(`[iFood Sync] Tempo médio calculado: ${mainTime} min`);
-          const { ifoodFetch, updateIfoodPreparationTime } = await import("@/lib/ifood-api");
-
-          // 1. Descobrir lojas autorizadas ativas no iFood
-          const listRes = await ifoodFetch("/merchant/v1.0/merchants");
-          let targetIds: string[] = [];
-
-          if (listRes.ok) {
-            const listData = await listRes.json();
-            const listArr = Array.isArray(listData) ? listData : [listData];
-            targetIds = listArr.map((m: any) => m.id || m.merchantId).filter(Boolean);
-          } else {
-            console.warn(`[iFood Sync] Falha ao listar lojas: ${listRes.status} ${listRes.statusText}`);
-          }
-
-          if (updatedUser.ifoodMerchantId && !targetIds.includes(updatedUser.ifoodMerchantId)) {
-            targetIds.push(updatedUser.ifoodMerchantId);
-          }
-
-          if (process.env.IFOOD_MERCHANT_UUID && !targetIds.includes(process.env.IFOOD_MERCHANT_UUID)) {
-            targetIds.push(process.env.IFOOD_MERCHANT_UUID);
-          }
-
-          console.log(`[iFood Sync] Lojas encontradas no iFood:`, targetIds);
-
-          if (targetIds.length === 0) {
-            ifoodSyncResult = { success: false, error: "Nenhuma loja iFood encontrada. Verifique se a integração iFood está configurada." };
-          } else {
-            let syncSuccess = false;
-            let lastError = "";
-
-            for (const mId of targetIds) {
-              console.log(`[iFood Sync] Tentando sincronizar ${mainTime} min para loja ${mId}...`);
-              const res = await updateIfoodPreparationTime(mId, mainTime);
-              if (res.success) {
-                syncSuccess = true;
-                ifoodSyncResult = { success: true, sentMinutes: mainTime, merchantId: mId };
-                // Salvar o merchantId funcional no usuário
-                await prisma.user.update({
-                  where: { id: updatedUser.id },
-                  data: { ifoodMerchantId: mId }
-                });
-                console.log(`[iFood Sync] ✅ Sincronizado com sucesso: ${mainTime} min para loja ${mId}`);
-                break;
-              } else {
-                lastError = res.error || "Erro ao atualizar";
-                console.warn(`[iFood Sync] ❌ Falha para loja ${mId}: ${lastError}`);
-              }
-            }
-
-            if (!syncSuccess) {
-              ifoodSyncResult = { success: false, error: lastError || "Nenhuma loja autorizada respondeu com sucesso" };
-            }
-          }
-        }
-      }
-    } catch (err: any) {
-      console.error("[iFood Sync] Erro ao sincronizar tempo de preparo com iFood:", err?.message);
-      ifoodSyncResult = { success: false, error: err?.message };
-    }
-  }
-
-  return NextResponse.json({ success: true, ifoodSync: ifoodSyncResult });
+  // ── SINCRONIZAÇÃO DE TEMPO COM O iFOOD: DESLIGADA ────────────────────
+  //
+  // Existia aqui um bloco que, com `ifoodSyncDeliveryTime` ligado, listava
+  // TODOS os merchants do token centralizado do iFood (client_credentials,
+  // lib/ifood-api.ts), mudava o tempo de PREPARO do primeiro que aceitasse —
+  // que podia ser OUTRA loja da plataforma — e gravava o id desse merchant no
+  // `ifoodMerchantId` desta loja. E o tempo mandado era a MÉDIA das faixas de
+  // entrega, não o preparo. Nenhuma loja tinha o toggle ligado em 25/09/2026 e
+  // a tela não o mostra, mas bastava uma chamada à API para escrever na loja
+  // errada. Volta quando usar só o merchant da própria loja (contextoIfood),
+  // sem iterar lista, e mandar o tempo de preparo de verdade.
+  //
+  // `ifoodSync: null` fica na resposta para as telas que ainda leem o campo.
+  return NextResponse.json({ success: true, ifoodSync: null, ...(avisos.length ? { avisos } : {}) });
 }

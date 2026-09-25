@@ -22,7 +22,7 @@
 import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
 import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
-import { distanciaDaEntregaKm } from "./distancia-da-entrega";
+import { pontoEDistanciaDoParceiro } from "./distancia-da-entrega";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { isBeverageName } from "@/lib/beverage";
@@ -1048,15 +1048,15 @@ export async function processBrendiEvent(
       // Vale mais que geocodificar o texto acima: o texto erra bairro
       // homônimo e rua repetida em duas cidades. Ver
       // lib/coordenadas-do-parceiro.ts.
-      const customerLatLng = coordenadasDoParceiro(
-        orderData.delivery?.deliveryAddress,
-        orderData.delivery,
-        orderData,
-      );
-
       // Quantos km tem a entrega — é o que a escada de km do entregador compara
-      // no fechamento (lib/distancia-da-entrega.ts).
-      const distanciaDaEntrega = await distanciaDaEntregaKm(franchiseeIdToUse, customerLatLng);
+      // no fechamento (lib/distancia-da-entrega.ts). O ponto passa pelo corte
+      // do R8: longe demais da loja não é o cliente, e não vai para o pedido.
+      const doParceiro = await pontoEDistanciaDoParceiro(
+        franchiseeIdToUse,
+        coordenadasDoParceiro(orderData.delivery?.deliveryAddress, orderData.delivery, orderData),
+      );
+      const customerLatLng = doParceiro.ponto;
+      const distanciaDaEntrega = doParceiro.km;
 
       const deliveryType = (() => {
         // `type` é o campo REAL da Brendi ("DELIVERY" / "TAKEOUT"), confirmado

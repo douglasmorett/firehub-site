@@ -26,31 +26,81 @@
  * sempre o servidor (lib/area-de-entrega.ts), com a mesma regra do robô e da
  * API de taxa. Tela que decide sozinha é como o cardápio passou a aceitar o
  * que a rota recusava.
+ *
+ * ── Entrega por km (KM/ROTA) — 25/09/2026 ─────────────────────────────────
+ *
+ * A mesma tela passou a servir a loja que cobra por distância. Lá o ponto
+ * decide a FAIXA: com faixas de 0,5 km (Divinos Burger, Cabo Frio), o centro
+ * do bairro no lugar da porta do cliente já é R$ 3 a mais ou a menos. Por isso
+ * o mapa abre no ponto APROXIMADO que o servidor achou (centro do bairro, a
+ * rua homônima do outro lado da cidade) com a loja à vista, e nesse caso o
+ * cliente tem de TOCAR onde mora — confirmar o centro do bairro sem olhar
+ * seria o mesmo chute de antes, agora com carimbo de "confirmado".
  */
 
 import { useEffect, useRef, useState } from "react";
 
 type Ponto = { lat: number; lng: number };
 
+/**
+ * Por que o mapa abriu — muda o texto e se o ponto inicial já vale:
+ *   nao-achou  — o mapa não achou o endereço; o pino nasce na loja.
+ *   aproximado — achou só um ponto aproximado; a taxa na tela é estimada.
+ *   conferir   — achou o endereço; o cliente quer conferir (opcional).
+ *   gps-aproximado — o "Minha localização" veio com precisão ruim (celular
+ *                com "Localização precisa" desligada, desktop por IP): o pino
+ *                nasce no centro do círculo, e o cliente toca a porta.
+ */
+export type MotivoDoMapa = "nao-achou" | "aproximado" | "conferir" | "gps-aproximado";
+
+/** Distância em linha reta, em km — só para enquadrar o mapa, nunca para cobrar. */
+function kmEntre(a: Ponto, b: Ponto): number {
+  const r = (g: number) => (g * Math.PI) / 180;
+  const dLat = r(b.lat - a.lat);
+  const dLng = r(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+const TEXTOS: Record<MotivoDoMapa, string> = {
+  "nao-achou":
+    "Não achamos esse endereço no mapa. Toque no lugar certo ou arraste o pino até a sua porta — é isso que diz se a gente entrega aí e quanto custa.",
+  aproximado:
+    "O mapa só achou um ponto aproximado (o centro do bairro ou uma rua de mesmo nome). Toque no lugar exato da sua casa — a taxa é pela distância até a sua porta.",
+  conferir:
+    "Confira se o pino está na sua porta. Se não estiver, toque no lugar certo ou arraste o pino.",
+  "gps-aproximado":
+    "Seu celular informou só a localização aproximada (a opção \"Localização precisa\" pode estar desligada). O pino está perto de você, não na sua porta: toque no lugar exato da sua casa — a taxa é pela distância até ela.",
+};
+
 export default function ConfirmarPontoNoMapa({
   centro,
   pontoInicial,
   enderecoEscrito,
+  motivo = "nao-achou",
+  exigirToque,
   aoConfirmar,
   aoFechar,
 }: {
-  /** Onde a loja está — é por ela que o mapa abre quando não há palpite. */
-  centro: Ponto;
+  /** Onde a loja está (bolinha vermelha). Sem pino da loja, o mapa abre no palpite. */
+  centro: Ponto | null;
   /** O melhor palpite que o servidor teve, quando teve algum. */
   pontoInicial?: Ponto | null;
   enderecoEscrito?: string;
+  motivo?: MotivoDoMapa;
+  /**
+   * O ponto inicial só vale depois de o cliente tocar no mapa. Padrão: só
+   * quando não há palpite (o pino nasceu na loja).
+   */
+  exigirToque?: boolean;
   aoConfirmar: (ponto: Ponto) => void;
   aoFechar: () => void;
 }) {
   const caixaDoMapa = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<any>(null);
   const pinoRef = useRef<any>(null);
-  const [ponto, setPonto] = useState<Ponto>(pontoInicial || centro);
+  const inicio = pontoInicial || centro;
+  const [ponto, setPonto] = useState<Ponto | null>(inicio);
   const [pronto, setPronto] = useState(false);
   /**
    * O cliente JÁ disse onde mora?
@@ -61,10 +111,20 @@ export default function ConfirmarPontoNoMapa({
    * dentro de todos os contornos, frete da faixa mais barata. O pedido de
    * 10,8 km entraria de novo, agora com um "confirmado no mapa" em cima.
    *
-   * Então: com palpite do servidor, o ponto já vale (o mapa achou algo, e o
-   * cliente está conferindo). Sem palpite, só vale depois que ele tocar.
+   * Então: com palpite PRECISO do servidor, o ponto já vale (o mapa achou o
+   * endereço, e o cliente está conferindo). Sem palpite, ou com palpite
+   * aproximado, só vale depois que ele tocar.
    */
-  const [confirmouOPonto, setConfirmouOPonto] = useState(Boolean(pontoInicial));
+  const [confirmouOPonto, setConfirmouOPonto] = useState(
+    exigirToque === undefined ? Boolean(pontoInicial) : !exigirToque,
+  );
+
+  // Esc fecha, como qualquer janela por cima da página.
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => { if (e.key === "Escape") aoFechar(); };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [aoFechar]);
 
   // O CSS do Leaflet vem do NOSSO domínio: o CSP bloqueia stylesheet de CDN, e
   // sem ele os tiles viram um embaralhado (mesma nota do mapa do painel).
@@ -78,11 +138,21 @@ export default function ConfirmarPontoNoMapa({
   }, []);
 
   useEffect(() => {
-    if (!caixaDoMapa.current || mapaRef.current) return;
+    if (!caixaDoMapa.current || mapaRef.current || !inicio) return;
     let vivo = true;
     import("leaflet").then((L) => {
       if (!vivo || !caixaDoMapa.current) return;
-      const mapa = L.map(caixaDoMapa.current).setView([ponto.lat, ponto.lng], 16);
+      const mapa = L.map(caixaDoMapa.current);
+      // Palpite longe da loja (a rua homônima a 5 km): o mapa mostra os dois,
+      // e o cliente que mora perto da loja vê na hora que o pino está errado.
+      if (pontoInicial && centro && kmEntre(pontoInicial, centro) > 1.2) {
+        mapa.fitBounds(
+          [[pontoInicial.lat, pontoInicial.lng], [centro.lat, centro.lng]],
+          { padding: [40, 40], maxZoom: 16 },
+        );
+      } else {
+        mapa.setView([inicio.lat, inicio.lng], pontoInicial ? 16 : 15);
+      }
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap",
         maxZoom: 19,
@@ -93,7 +163,7 @@ export default function ConfirmarPontoNoMapa({
         html: '<div style="font-size:30px;line-height:30px;transform:translate(-50%,-100%)">📍</div>',
         iconSize: [30, 30],
       });
-      const pino = L.marker([ponto.lat, ponto.lng], { icon: icone, draggable: true }).addTo(mapa);
+      const pino = L.marker([inicio.lat, inicio.lng], { icon: icone, draggable: true }).addTo(mapa);
       pino.on("dragend", (e: any) => {
         const p = e.target.getLatLng();
         setPonto({ lat: p.lat, lng: p.lng });
@@ -108,11 +178,13 @@ export default function ConfirmarPontoNoMapa({
       });
 
       // A loja, para o cliente se situar ("minha casa é para lá da pizzaria").
-      L.circleMarker([centro.lat, centro.lng], {
-        radius: 7, color: "#C62828", fillColor: "#C62828", fillOpacity: 1, weight: 2,
-      })
-        .addTo(mapa)
-        .bindTooltip("A loja", { permanent: false });
+      if (centro) {
+        L.circleMarker([centro.lat, centro.lng], {
+          radius: 7, color: "#C62828", fillColor: "#C62828", fillOpacity: 1, weight: 2,
+        })
+          .addTo(mapa)
+          .bindTooltip("A loja", { permanent: false });
+      }
 
       mapaRef.current = mapa;
       pinoRef.current = pino;
@@ -133,6 +205,10 @@ export default function ConfirmarPontoNoMapa({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Sem loja e sem palpite não há onde abrir o mapa — quem chama não deveria
+  // abrir; se abrir, não desenha um mapa no meio do oceano.
+  if (!inicio) return null;
+
   return (
     <div
       style={{
@@ -150,11 +226,10 @@ export default function ConfirmarPontoNoMapa({
         }}
       >
         <div style={{ fontWeight: 900, fontSize: "1rem", color: "#0F172A", marginBottom: 2 }}>
-          Onde fica a sua casa?
+          {motivo === "conferir" ? "O pino está na sua porta?" : "Onde fica a sua casa?"}
         </div>
         <div style={{ fontSize: "0.82rem", color: "#475569", lineHeight: 1.45, marginBottom: 10 }}>
-          Não achamos esse endereço no mapa. Toque no lugar certo ou arraste o pino até a sua porta —
-          é isso que diz se a gente entrega aí.
+          {TEXTOS[motivo]}
           {enderecoEscrito ? (
             <div style={{ marginTop: 4, color: "#64748B" }}>
               Você escreveu: <b>{enderecoEscrito}</b>
@@ -187,8 +262,8 @@ export default function ConfirmarPontoNoMapa({
           </button>
           <button
             type="button"
-            disabled={!confirmouOPonto}
-            onClick={() => confirmouOPonto && aoConfirmar(ponto)}
+            disabled={!confirmouOPonto || !ponto}
+            onClick={() => confirmouOPonto && ponto && aoConfirmar(ponto)}
             style={{
               flex: 2, padding: "11px", borderRadius: 10, border: "none",
               background: confirmouOPonto ? "#16A34A" : "#CBD5E1",

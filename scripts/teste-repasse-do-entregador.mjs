@@ -52,8 +52,16 @@ conferir("1,5 km cai na faixa de 2 km", repasseDaFaixaKm(FAIXAS, 1.5) === 3);
 conferir("2,8 km cai na faixa de 3 km", repasseDaFaixaKm(FAIXAS, 2.8) === 4);
 conferir("além da última faixa vale a última", repasseDaFaixaKm(FAIXAS, 12) === 4);
 conferir("sem distância não há faixa", repasseDaFaixaKm(FAIXAS, null) === null);
-conferir("faixa sem repasse cadastrado é ignorada",
-  repasseDaFaixaKm([{ km: 1, fee: 3 }, { km: 5, fee: 9, motoboyFee: 6 }], 0.5) === 6);
+// R6 (25/09/2026): a faixa que COBRE a distância responde. Até aqui a faixa
+// sem valor era pulada e a entrega de 0,5 km pagava, calada, o repasse da
+// faixa de 5 km. Agora é null, e o acerto cai na regra seguinte.
+conferir("faixa sem repasse cadastrado NÃO pega o valor da seguinte",
+  repasseDaFaixaKm([{ km: 1, fee: 3 }, { km: 5, fee: 9, motoboyFee: 6 }], 0.5) === null);
+conferir("…e a faixa que tem valor continua respondendo",
+  repasseDaFaixaKm([{ km: 1, fee: 3 }, { km: 5, fee: 9, motoboyFee: 6 }], 3) === 6);
+conferir("distância 0 é entrega: cai na 1ª faixa", repasseDaFaixaKm(FAIXAS, 0) === 3);
+conferir("faixa com repasse zero devolve zero",
+  repasseDaFaixaKm([{ km: 1, fee: 3, motoboyFee: 0 }, { km: 5, fee: 9, motoboyFee: 6 }], 0.5) === 0);
 conferir("nenhuma faixa com repasse = null", repasseDaFaixaKm([{ km: 1, fee: 3 }], 0.5) === null);
 conferir("repasse zero é resposta, não ausência", repasseDaZona({ motoboyFee: 0 }) === 0);
 conferir("campo vazio não é zero", repasseDaZona({ motoboyFee: "" }) === null && repasseDaZona({}) === null);

@@ -2,6 +2,19 @@ import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
 import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
+import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
+import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
+import {
+  estadoDaLocalizacao, roboJaPediuLocalizacao, semCoordenadasDaLocalizacao, semLinhaDaLocalizacao, enderecoDasFalas,
+  COMO_MANDAR_A_LOCALIZACAO, type LocalizacaoVigente,
+} from "@/lib/localizacao-do-whatsapp";
+import {
+  freteGratisQueVale, minimoDoFreteGratis, pontoParaGravar, pontoDoClienteGravado, mesmoEnderecoDeEntrega,
+  motivoParaPedirLocalizacao, avisosDaEntregaNaNota, partesDoEnderecoDaTag, frasesDaDistancia,
+  avaliarEntregaDoRobo, faltaOPontoDaLoja, pareceEnderecoEscrito, partesDoEnderecoDigitado,
+  enderecoDaLocalizacaoDoCliente, ehEnderecoDaLocalizacao, levaEnderecoDaLocalizacao,
+} from "@/lib/entrega-do-robo";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { cuponsAnunciaveis } from "@/lib/cupons";
 import { hojeDaLoja } from "@/lib/cupons-no-banco";
@@ -92,7 +105,13 @@ export async function processChatbotAI(
   history: any[] = [],
   remoteJid?: string,
   audioData?: { base64: string; mimeType: string },
-  pushName?: string
+  pushName?: string,
+  /**
+   * O que a mensagem trouxe além do texto. `localizacao` = o ponto que o
+   * cliente mandou pelo 📎 NESTA mensagem (lib/localizacao-do-whatsapp.ts);
+   * a de mensagens anteriores é relida do histórico.
+   */
+  extras?: { localizacao?: LocalizacaoVigente | null }
 ) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -892,7 +911,18 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
 
   // Geocodificação e verificação de raio no mapa em tempo real
   let addressValidationText = "";
-  const potentialAddressText = `${message || ""} ${history ? history.slice(-2).map((h: any) => h.text).join(" ") : ""}`;
+  // O que o CLIENTE escreveu nas últimas mensagens — só ele. Antes entravam a
+  // mensagem e as duas últimas falas do histórico, a do ROBÔ inclusive: a
+  // oferta da regra 18a ("me passa a rua, o número e o bairro") casava com a
+  // régua de endereço e ia ao mapa como se fosse o endereço do cliente, e o
+  // "Anotado! Seu X-Tudo..." entrava no texto procurado (revisão de
+  // 25/09/2026). A linha da localização sai inteira: o ponto vai em separado.
+  const falasRecentesDoCliente = [
+    ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").slice(-3).map((h: any) => String(h.text || "")),
+    String(message || ""),
+  ];
+  const digitadoPeloCliente = falasRecentesDoCliente.map((t) => semLinhaDaLocalizacao(t)).filter(Boolean);
+  const potentialAddressText = digitadoPeloCliente.join(" ");
   // Só tipos de logradouro, que valem em qualquer cidade. Antes havia bairros
   // de Rio das Ostras na lista (Mariléa, Costa Azul, Zabulão, Cidade Praiana,
   // Âncora, Remanso, Serra Mar): loja de outra cidade não ganhava nada com
@@ -910,11 +940,66 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   // syncAiOrderToDatabase. Antes este bloco dizia "NUNCA RECUSE ESSE PEDIDO" e,
   // em loja por bairro, inventava um raio de 10 km com taxa de R$ 5,00.
   const modoDaAreaDaLoja = modoDaArea(user);
-  const bairroNoTexto = modoDaAreaDaLoja === "BAIRRO" ? bairroCadastrado(potentialAddressText, user) : null;
-  if (modoDaAreaDaLoja !== "SEM_AREA" && (addressRegex.test(potentialAddressText) || bairroNoTexto)) {
+  /**
+   * A loja mede a entrega pelo PERCURSO da moto (km de rua), não em linha reta.
+   * Muda o que se diz ao cliente: "raio" para quem cobra por km rodado fazia o
+   * cliente a 900 m em linha reta e 2 km pela rua achar que foi cobrado errado.
+   */
+  const ehRota = String((user as any).deliveryZoneType || "").toUpperCase() === "ROTA";
+  // O bairro pode estar no endereço que o WhatsApp anexou ao ponto: aqui ele conta.
+  const bairroNoTexto = modoDaAreaDaLoja === "BAIRRO"
+    ? bairroCadastrado(falasRecentesDoCliente.map((t) => semCoordenadasDaLocalizacao(t)).join(" "), user)
+    : null;
+  /** O endereço que o cliente escreveu: o mais recente (e o bairro que ele mandou em seguida). */
+  const enderecoDigitado = enderecoDasFalas(digitadoPeloCliente.filter((t) => addressRegex.test(t)));
+
+  // ── A LOCALIZAÇÃO QUE O CLIENTE MANDOU (📎 → Localização) ──────────────────
+  //
+  // A desta mensagem, ou a mais recente da conversa (lib/localizacao-do-whatsapp.ts).
+  // É o ponto mais confiável que existe: com ele o mapa não adivinha nada, e é
+  // o que resolve o "centro do bairro" e o endereço que o mapa não acha
+  // (R2/R3, 25/09/2026). A rua que o cliente digita DEPOIS dela é complemento
+  // do mesmo lugar — só troca o ponto se o cliente disser que é outro lugar
+  // ou se o mapa a achar com certeza longe dele (`avaliarEntregaDoRobo`).
+  const estadoDoPonto = extras?.localizacao
+    ? { localizacao: extras.localizacao, descartadaPeloCliente: false }
+    : estadoDaLocalizacao(history, message, pareceEnderecoEscrito);
+  const localizacaoDoCliente: LocalizacaoVigente | null = estadoDoPonto.localizacao;
+  const coordsDoCliente = localizacaoDoCliente ? { lat: localizacaoDoCliente.lat, lng: localizacaoDoCliente.lng } : null;
+  // Localização não diz o NOME do bairro: na loja por bairro ela sozinha não decide nada.
+  const localizacaoDecide = Boolean(coordsDoCliente) && modoDaAreaDaLoja !== "BAIRRO";
+  const medePorPonto = modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO";
+
+  if (modoDaAreaDaLoja !== "SEM_AREA" && (Boolean(enderecoDigitado) || bairroNoTexto || localizacaoDecide)) {
     try {
-      const v = await avaliarEntrega(user, { endereco: potentialAddressText });
+      // O endereço digitado DEPOIS da localização é conferido contra ela; sem
+      // localização, vale o endereço digitado. Rua, número e bairro vão em
+      // partes, como na gravação: sem o bairro o mapa nunca tentava o centro
+      // do bairro, e a conversa dizia "não achei" para o endereço que a
+      // gravação achava (a taxa mudava no fechamento — R1).
+      const textoDepoisDoPonto = coordsDoCliente && medePorPonto ? localizacaoDoCliente?.enderecoDigitadoDepois || null : null;
+      const enderecoDaCotacao = textoDepoisDoPonto || enderecoDigitado || potentialAddressText;
+      const avaliacao = await avaliarEntregaDoRobo((p) => avaliarEntrega(user, p), {
+        endereco: enderecoDaCotacao,
+        partes: partesDoEnderecoDigitado(enderecoDaCotacao, (user as any).city),
+        gps: coordsDoCliente,
+        textoDepoisDoPonto,
+      });
+      const v = avaliacao.veredito;
+      /** O ponto do cliente que ficou valendo (null se o endereço digitado venceu). */
+      const coordsQueValem = avaliacao.coords;
       const brl = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+      const distancia = v.modo === "KM" ? frasesDaDistancia(v, ehRota) : null;
+      const pedirLocalizacao = motivoParaPedirLocalizacao(v, Boolean(coordsQueValem));
+      // Com a localização, o "endereço no mapa" pode nem existir: o ponto é o do aparelho.
+      const ondeFoiMedido = coordsQueValem && !v.enderecoNoMapa
+        ? "Ponto: a localização que o cliente mandou pelo WhatsApp"
+        : `Endereço no mapa: "${v.enderecoNoMapa || enderecoDaCotacao.trim()}"`;
+      const linhaDaLocalizacao = avaliacao.trocouPeloTexto
+        ? `\n- ⚠️ O cliente tinha mandado a LOCALIZAÇÃO, mas o endereço que ele DIGITOU depois fica longe dela: a área e a taxa acima são do endereço DIGITADO. Confirme com ele, numa frase, que a entrega é nesse endereço (se for na localização, peça para ele mandar a localização de novo).`
+        : coordsQueValem
+          ? `\n- O cliente mandou a LOCALIZAÇÃO pelo WhatsApp e a área e a taxa foram conferidas por ela. Se ele ainda não disse rua, número e complemento/ponto de referência, peça — o entregador precisa do endereço escrito. O endereço escrito NÃO muda a taxa e NÃO é motivo para pedir a localização de novo.`
+          : "";
       if (v.resultado === "ATENDE") {
         addressValidationText = `
 🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
@@ -924,20 +1009,43 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
       // Área desenhada não tem raio: falar em "raio máximo undefined km" é o
       // robô entregando texto quebrado ao cliente, assinado pela loja.
       ? `Endereço dentro da área de entrega da loja${v.bairro ? ` ("${v.bairro}")` : ""}${v.distanciaKm != null ? ` — ${v.distanciaKm} km da loja` : ""}`
-      : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja (raio máximo ${v.raioMaxKm} km)${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
+      : `${ondeFoiMedido} — ${distancia ? distancia.distancia : `${v.distanciaKm} km da loja`}${distancia?.limite ? ` (${distancia.limite})` : ""}${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
 - RESULTADO: ✅ A LOJA ATENDE. Taxa de entrega: ${brl(v.taxa ?? 0)}${v.tempoMin && prazoDaLoja.temDado ? ` (${v.tempoMin} min)` : ""}.
-- Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.
+- Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.${linhaDaLocalizacao}${pedirLocalizacao === "aproximado" ? `
+- ⚠️ O mapa só achou este endereço de forma APROXIMADA (centro do bairro, rua que existe em mais de um lugar, ou ponto longe da rua): a taxa acima é uma ESTIMATIVA. ANTES de fechar o pedido, peça a localização do cliente, numa frase só: "Pra calcular a taxa certinha, me manda sua localização? ${COMO_MANDAR_A_LOCALIZACAO}" Se ele não puder mandar, siga com a taxa estimada e diga que a loja confere o valor.` : ""}
+`;
+      } else if (faltaOPontoDaLoja(v)) {
+        // Quem não tem ponto no mapa é a LOJA: a localização do cliente não
+        // resolve (o motor devolve o mesmo "não sei"). Pedir o 📎 seria um
+        // turno inútil — o cliente manda e o pedido é segurado do mesmo jeito.
+        addressValidationText = `
+🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
+- A LOJA ainda não marcou o próprio ponto no mapa, então o sistema NÃO consegue medir a distância da entrega agora.
+- RESULTADO: ❓ TAXA NÃO CALCULADA. NÃO peça a localização nem o bairro do cliente (não resolve), NÃO cote taxa por conta própria e NÃO finalize entrega com "finalized": true.
+- Anote o pedido normalmente e diga que um atendente da loja confirma a taxa de entrega por aqui${aceitaRetirada ? " (ou ofereça retirada no balcão)" : ""}.
 `;
       } else if (v.resultado === "FORA") {
         addressValidationText = `
 🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
 - ${v.modo === "BAIRRO"
     ? "O bairro informado NÃO está entre os bairros que a loja entrega."
-    : v.modo === "POLIGONO"
-      ? `Esse endereço está FORA da área que a loja desenhou como área de entrega${v.areaDeRisco ? ` (a loja não atende a região "${v.areaDeRisco}")` : ""}.`
-      : `Endereço no mapa: "${v.enderecoNoMapa || potentialAddressText.trim()}" — ${v.distanciaKm} km da loja, e a loja entrega até ${v.raioMaxKm} km.`}
+    : v.areaDeRisco
+      ? `Esse endereço fica numa região que a loja NÃO atende ("${v.areaDeRisco}").`
+      : v.modo === "POLIGONO"
+        ? "Esse endereço está FORA da área que a loja desenhou como área de entrega."
+        : `${ondeFoiMedido} — ${distancia ? distancia.distancia : `${v.distanciaKm} km da loja`}, e ${distancia?.limite || `a loja entrega até ${v.raioMaxKm} km`}.`}
 - RESULTADO: 🛑 FORA DA ÁREA DE ENTREGA. É PROIBIDO anotar entrega para este endereço, cotar taxa ou pedir pagamento.
-- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && v.distanciaKm != null && v.raioMaxKm != null ? ` (fica a ${v.distanciaKm} km; entregamos até ${v.raioMaxKm} km)` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.
+- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && !v.areaDeRisco && distancia?.limite ? ` (fica a ${distancia.distancia}; ${distancia.limite})` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.
+`;
+      } else if (pedirLocalizacao === "desconhecido") {
+        // R2: em KM/ROTA (e área desenhada), "não sei" nunca vira "faixa mais
+        // cara". O dado que resolve é o ponto do aparelho do cliente.
+        addressValidationText = `
+🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
+- O sistema NÃO conseguiu localizar este endereço no mapa (${v.motivo}).
+- RESULTADO: ❓ ÁREA NÃO CONFIRMADA. NÃO prometa entrega, NÃO cote taxa por conta própria e NÃO finalize entrega com "finalized": true.
+- Peça a LOCALIZAÇÃO do cliente, numa frase só: "Não achei esse endereço no mapa 🗺️ Me manda sua localização? ${COMO_MANDAR_A_LOCALIZACAO}" — com ela o sistema calcula a distância e a taxa na hora.
+- Se ele não puder mandar, peça o bairro e um ponto de referência e diga que um atendente confirma a área de entrega${aceitaRetirada ? " (ou ofereça retirada no balcão)" : ""}.
 `;
       } else {
         addressValidationText = `
@@ -1122,11 +1230,12 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
     - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Não temos atendimento no local! 😊"`}
 18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA, FRETE OU SE ENTREGAMOS EM UM BAIRRO/RUA:
     - REGRA INFALÍVEL DE ÁREA DE ENTREGA:
-      a) Consulte o campo "VALIDAÇÃO DE MAPA E RAIO DE ENTREGA EM TEMPO REAL" abaixo caso o cliente tenha enviado um endereço.
-      b) Se o resultado do mapa indicar "ATENDE COM SUCESSO", aceite o pedido imediatamente, diga que entregamos sim com alegria e informe o valor da taxa de entrega!
-      c) Se o resultado do mapa indicar "FORA DO RAIO MÁXIMO", informe com carinho que o endereço fica além do raio máximo da loja.
-    - REQUISITO DE RUA E NÚMERO PARA VALOR EXATO DE TAXA DE ENTREGA:
-      a) Se o cliente perguntar se entregamos na rua/bairro dele ou o valor da taxa, diga a taxa estimada ou peça a rua e número para conferir o valor exato no mapa: "A nossa taxa de entrega é calculada conforme o seu endereço. Qual a sua rua e número para eu colocar no pedido e ver o valor certinho pra você? 😊"
+      a) Consulte o campo "VALIDAÇÃO DA ÁREA DE ENTREGA" abaixo, quando ele existir (o sistema o monta quando o cliente manda um endereço${modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" ? " ou a localização" : ""}).
+      b) Se ele disser "A LOJA ATENDE", diga que entregamos sim, com alegria, e informe a taxa que está lá.
+      c) Se disser "FORA DA ÁREA DE ENTREGA", informe com carinho que a loja não entrega nesse endereço${ehRota ? " (a distância que conta é o percurso da moto pelas ruas, não a linha reta)" : ""}.
+      d) Se disser "ÁREA NÃO CONFIRMADA" ou mandar pedir a localização, faça exatamente o que ele pede.
+    - REQUISITO DE ENDEREÇO PARA O VALOR EXATO DA TAXA:
+      a) Se o cliente perguntar se entregamos na rua/bairro dele ou o valor da taxa, peça a rua, o número e o bairro${modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" ? " (ou a localização pelo WhatsApp)" : ""} para conferir o valor exato no mapa: "A nossa taxa de entrega é calculada conforme o seu endereço. Me passa a rua, o número e o bairro${modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" ? " (ou manda sua localização pelo 📎)" : ""} que eu vejo o valor certinho pra você? 😊"
 19. DISCRIMINAÇÃO OBRIGATÓRIA DA TAXA DE ENTREGA NO RESUMO DO PEDIDO:
     - Ao apresentar o resumo do pedido para o cliente (or ao finalizar):
       a) Você DEVE obrigatoriamente discriminar no texto:
@@ -1191,6 +1300,11 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
     - CAMPOS DO PEDIDO ALÉM DOS ITENS: se o pagamento for em dinheiro e o cliente disser para quanto precisa de troco,
       inclua "changeFor": 50 (a NOTA que ele vai entregar, não o valor do troco). Observação geral do pedido
       ("portão azul", "interfone quebrado, ligar ao chegar") vai em "observation": "...".
+    - ENDEREÇO EM PARTES: em pedido de ENTREGA, além de "address" (o endereço completo), mande também "street" (rua),
+      "number" (número) e "neighborhood" (bairro) separados, do jeito que o cliente disse. É com eles que o sistema acha a
+      casa no mapa e calcula a taxa certa — no texto corrido o mapa muitas vezes só acha o bairro.
+    - TIPO DO PEDIDO: mande sempre "deliveryType": "DELIVERY" (entrega) ou "deliveryType": "RETIRADA" (o cliente
+      busca no balcão). Com frete grátis o "deliveryFee" vai 0, e é o tipo que diz que o pedido é de entrega.
     - CAMPO "alteraPedido": use SÓ quando existir, mais abaixo, a seção "📦 PEDIDO Nº ... ENVIADO À LOJA" e o cliente
       quiser mudar AQUELE pedido (acrescentar, tirar, trocar). Vai o número dele: "alteraPedido": 12, com a lista
       COMPLETA de itens — e em TODA tag enquanto a alteração está sendo combinada, inclusive as de "finalized": false.
@@ -1206,7 +1320,9 @@ ${regraDoPedidoMinimo(fatosDoMinimo)}
          Não está? Diga com carinho que ainda não entregam lá, e ofereça a retirada se a
          loja aceitar. NUNCA invente taxa para bairro que não está cadastrado, e NUNCA use
          a taxa de um bairro parecido.
-       - Se a loja entrega POR RAIO: respeite o raio máximo informado e a faixa de km.
+       - Se a loja entrega POR DISTÂNCIA (km): a taxa é a da faixa que a "VALIDAÇÃO DA ÁREA DE ENTREGA" informar —
+         nunca escolha a faixa nem estime a distância você mesmo. Endereço que o mapa não achou, ou achou só de forma
+         aproximada: peça a localização do cliente (📎 → Localização).
        - SEMPRE pergunte o BAIRRO quando o cliente mandar só rua e número — sem o bairro
          você não tem como conferir nem cobrar a taxa certa.
        - Só use a taxa que estiver cadastrada para aquele bairro/faixa. Taxa chutada vira
@@ -1302,20 +1418,36 @@ ${(() => {
   const zoneType = (user as any).deliveryZoneType || "";
   const dc = (user.deliveryConfig as any) || {};
   const fixedFee = dc.fixedFee ?? dc.defaultFee ?? dc.deliveryFee ?? dc.fixedDeliveryFee ?? dc.fee ?? null;
-  const freteGratisLigado = dc.freeShippingActive !== false && dc.freeDeliveryActive !== false;
-  const freeMin = freteGratisLigado ? (dc.freeShippingMinValue || dc.freeDeliveryMinValue || 0) : 0;
+  // 4. O frete grátis agora usa a MESMA régua do site (lib/entrega-do-robo.ts):
+  //    interruptor LIGADO (`freeShippingActive === true`) e mínimo > 0. Com
+  //    `!== false`, o 60,00 que a tela grava de padrão virava promessa de
+  //    frete grátis em loja que nunca ligou a regra — e o pedido saía com taxa.
+  const freeMin = minimoDoFreteGratis(dc) ?? 0;
   const kmDaFaixa = (z: any) => Number(z.km ?? z.radius ?? z.maxKm ?? 0);
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
     taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}`).join("\n") +
       "\n- A LOJA SÓ ENTREGA NESTES BAIRROS. Bairro fora da lista: NÃO anote entrega nem cote taxa — ofereça retirada ou peça outro endereço. O sistema recusa a gravação de entrega fora da lista.";
+  } else if (modoDaAreaDaLoja === "POLIGONO") {
+    // Área desenhada não tem km: descrever como raio dizia "RAIO MÁXIMO 0 KM".
+    const areas = zones.filter((z: any) => z && z.pontos);
+    taxaText = "TIPO DE ENTREGA DA LOJA: POR ÁREA DESENHADA NO MAPA\n" +
+      (areas.length ? areas.map((z: any) => `- ${String(z.nome || z.name || "Área de entrega").trim()}: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}`).join("\n") + "\n" : "") +
+      "- Quem decide se o endereço está dentro de uma área é a validação no mapa. Endereço que o mapa não achou: peça a LOCALIZAÇÃO do cliente (📎 → Localização). O sistema recusa a gravação de entrega fora das áreas.";
+  } else if (zones.length > 0 && ehRota) {
+    const maxKm = Math.max(...zones.map(kmDaFaixa));
+    taxaText = `TIPO DE ENTREGA DA LOJA: POR DISTÂNCIA PERCORRIDA PELA MOTO (km de rua, o caminho da loja até o cliente — NÃO é raio nem linha reta)!\n- FAIXAS DE KM DE PERCURSO E TAXAS:\n` +
+      zones.map((z: any) => `  * Até ${kmDaFaixa(z) || "?"} km de percurso: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}`).join("\n") +
+      `\n- DISTÂNCIA MÁXIMA DE ENTREGA: ${maxKm} KM DE PERCURSO.` +
+      `\n- A TAXA EXATA de um endereço vem da validação no mapa, que mede o caminho pelas ruas. NUNCA estime a distância nem cite uma taxa única como se valesse para todo mundo: quem mora "pertinho em linha reta" pode estar bem mais longe pela rua.` +
+      `\n- Endereço FORA da distância máxima: NÃO anote entrega. Endereço que o sistema NÃO localizou (ou só achou aproximado): peça a LOCALIZAÇÃO do cliente (📎 → Localização → Enviar localização atual). O sistema recusa a gravação fora da área e segura o que não conseguir localizar.`;
   } else if (zones.length > 0) {
     const maxKm = Math.max(...zones.map(kmDaFaixa));
     taxaText = `TIPO DE ENTREGA DA LOJA: POR RAIO DE DISTÂNCIA DA LOJA!\n- FAIXAS DE KM E TAXAS PERMITIDAS:\n` +
       zones.map((z: any) => `  * Até ${kmDaFaixa(z) || "?"} km: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}`).join("\n") +
       `\n- RAIO MÁXIMO DE ENTREGA DA LOJA: ${maxKm} KM.` +
       `\n- A TAXA EXATA de um endereço vem da validação no mapa. NUNCA cite uma taxa única como se valesse para todo mundo.` +
-      `\n- Endereço FORA do raio: NÃO anote entrega. Endereço que o sistema NÃO localizou: NÃO finalize entrega — peça bairro e ponto de referência. O sistema recusa a gravação nesses dois casos.`;
+      `\n- Endereço FORA do raio: NÃO anote entrega. Endereço que o sistema NÃO localizou (ou só achou aproximado): NÃO finalize entrega — peça a LOCALIZAÇÃO do cliente (📎 → Localização) ou o bairro e um ponto de referência. O sistema recusa a gravação fora da área e segura o que não conseguir localizar.`;
   } else if (fixedFee !== null) {
     taxaText = `- Taxa Padrão de Entrega da Loja: R$ ${Number(fixedFee).toFixed(2)}`;
   } else {
@@ -1777,6 +1909,12 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   textoDoHorario: estadoAtualDaLoja.texto,
                   loja: user,
                   aceitaRetirada,
+                  // O ponto do aparelho do cliente e se o robô já pediu por ele:
+                  // decidem entre medir, pedir a localização uma vez, ou segurar
+                  // o pedido para a loja (R2/R3).
+                  coordsDoCliente: localizacaoDoCliente,
+                  localizacaoDescartada: estadoDoPonto.descartadaPeloCliente,
+                  jaPediuLocalizacao: roboJaPediuLocalizacao(history),
                 });
               }
             } else if (rawJsonPayload) {
@@ -1800,6 +1938,20 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           const numero = resultadoDoSync.numero;
           if (numero && !cleanText.includes(`#${numero}`)) {
             cleanText = `${cleanText}\n\n🧾 Pedido nº ${numero} registrado na cozinha!`;
+          }
+          // ── A TAXA GRAVADA É A DA REGRA, E O CLIENTE PRECISA SABER ────────
+          // O modelo escreveu um frete no resumo; a gravação usou o da área de
+          // entrega (e o frete grátis da loja). Quando os dois diferem, o
+          // cliente leu um total e vai pagar outro — era só um log. Agora ele
+          // lê o valor certo junto da confirmação, não na porta de casa.
+          const taxaGravada = resultadoDoSync.taxaDeEntrega;
+          const taxaDita = resultadoDoSync.taxaDitaPelaIa;
+          if (resultadoDoSync.ehEntrega && taxaGravada != null && taxaDita != null && Math.abs(taxaGravada - taxaDita) >= 0.01) {
+            const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+            cleanText += resultadoDoSync.freteGratisAcimaDe != null && taxaGravada === 0
+              ? `\n\n🎉 Seu pedido ganhou frete grátis (acima de ${reais(resultadoDoSync.freteGratisAcimaDe)}): o total fica ${reais(resultadoDoSync.total)}.`
+              : `\n\nℹ️ Conferi no mapa: a taxa de entrega para o seu endereço é ${reais(taxaGravada)}, então o total fica ${reais(resultadoDoSync.total)}.`;
+            console.warn(`[Chatbot AI] 💬 Taxa corrigida na mensagem ao cliente: modelo disse ${taxaDita}, gravado ${taxaGravada} (pedido ${resultadoDoSync.orderId}).`);
           }
           console.log(`[Chatbot AI] ✅ Confirmação com lastro: pedido ${resultadoDoSync.orderId} (nº ${numero ?? "—"}) gravado com ${resultadoDoSync.itens} item(ns), R$ ${resultadoDoSync.total.toFixed(2)}.`);
         } else if ((payloadQueriaFinalizar || prometeuCozinha) && !gravouFinalizado) {
@@ -1967,6 +2119,14 @@ type SyncResultado =
       finalizado: boolean;
       itens: number;
       total: number;
+      /** Pedido de entrega (e não retirada). */
+      ehEntrega?: boolean;
+      /** A taxa de entrega GRAVADA (regra da área + frete grátis). */
+      taxaDeEntrega?: number;
+      /** A taxa que o modelo escreveu na tag — para corrigir a mensagem quando difere. */
+      taxaDitaPelaIa?: number | null;
+      /** O mínimo do frete grátis que zerou a taxa, quando zerou. */
+      freteGratisAcimaDe?: number | null;
     }
   | {
       gravado: false;
@@ -1982,6 +2142,32 @@ type SyncResultado =
       manterRespostaDaIa?: boolean;
     };
 
+/** Último aviso de "loja sem ponto no mapa", por loja: um a cada 6 h, não um por pedido. */
+const avisoDeLojaSemPonto = new Map<string, number>();
+
+/**
+ * Avisa o dono que o robô não consegue medir a entrega porque a LOJA não tem
+ * o ponto no mapa. O alerta da transferência ("o robô chamou atendente") diz
+ * que algo deu errado; este diz o que arrumar. Nunca lança nem espera.
+ */
+function avisarLojaSemPontoNoMapa(franchiseeId: string) {
+  const agora = Date.now();
+  if (agora - (avisoDeLojaSemPonto.get(franchiseeId) || 0) < 6 * 60 * 60 * 1000) return;
+  avisoDeLojaSemPonto.set(franchiseeId, agora);
+  void import("@/lib/alertas-do-dono")
+    .then(({ avisarDono }) =>
+      avisarDono(
+        franchiseeId,
+        "pedido_de_atendente",
+        "🗺️ O robô do WhatsApp não conseguiu calcular a taxa de entrega de um pedido: a sua LOJA está sem o ponto no mapa " +
+          "(sem o pino e sem um endereço que o mapa encontre). Marque o pino da loja no mapa da área de entrega, nas " +
+          "configurações da loja — sem ele nem o robô nem o site conseguem medir a distância. O pedido ficou com a equipe " +
+          "para confirmar a taxa com o cliente.",
+      ),
+    )
+    .catch(() => undefined);
+}
+
 async function syncAiOrderToDatabase({
   franchiseeId,
   customerPhone,
@@ -1995,6 +2181,9 @@ async function syncAiOrderToDatabase({
   textoDoHorario,
   loja,
   aceitaRetirada,
+  coordsDoCliente,
+  localizacaoDescartada,
+  jaPediuLocalizacao,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -2014,6 +2203,15 @@ async function syncAiOrderToDatabase({
   loja?: LojaParaEntrega;
   /** A loja aceita retirada no balcão? Muda o que se oferece a quem está fora da área. */
   aceitaRetirada?: boolean;
+  /**
+   * O ponto que o cliente mandou pelo WhatsApp (📎 → Localização), se mandou —
+   * com o endereço que ele digitou DEPOIS dele, quando digitou.
+   */
+  coordsDoCliente?: LocalizacaoVigente | null;
+  /** O cliente disse que a entrega é em OUTRO lugar: nem o ponto guardado no rascunho vale. */
+  localizacaoDescartada?: boolean;
+  /** O robô já pediu a localização nesta conversa? Na segunda vez não pede: segura ou segue. */
+  jaPediuLocalizacao?: boolean;
 }): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
@@ -2427,12 +2625,66 @@ async function syncAiOrderToDatabase({
   // nascia RETIRADA na primeira mensagem, antes do endereço, e nunca mudava.
   // A regra e os casos reais estão em lib/tipo-do-pedido-do-robo.ts; o tipo é
   // regravado a cada atualização do rascunho, logo abaixo.
+  //
+  // Cliente que só mandou a LOCALIZAÇÃO (sem rua escrita) e está pedindo
+  // entrega: a linha da localização entra como endereço de reserva, para o
+  // motoboy não sair sem endereço nenhum. "Pedindo entrega" = o modelo cobrou
+  // frete, ou escreveu que é entrega, ou o frete grátis da loja vale para este
+  // subtotal — aí o deliveryFee da tag vem 0 ("Frete Grátis" no resumo) e,
+  // só pelo frete, o pedido de quem mandou a localização virava RETIRADA e ia
+  // para o balcão (revisão de 25/09/2026). Sem nenhum desses sinais, "sem
+  // endereço e frete zero" continua sendo a retirada de quem mandou a
+  // localização e depois decidiu buscar.
+  const enderecoDaLocalizacao =
+    coordsDoCliente &&
+    levaEnderecoDaLocalizacao({
+      temLocalizacao: true,
+      frete: deliveryFee,
+      tipoInformado: payload.deliveryType || payload.orderType,
+      freteGratisVale: freteGratisQueVale(loja?.deliveryConfig, totalItemsSum) != null,
+    })
+      ? enderecoDaLocalizacaoDoCliente(coordsDoCliente)
+      : "";
   const { tipo: deliveryType, endereco: enderecoDoPedido } = tipoDoPedidoDoRobo({
     enderecoDoPayload: payload.address,
-    enderecoDoRascunho: existingDraft?.customerAddress,
+    enderecoDoRascunho: existingDraft?.customerAddress || enderecoDaLocalizacao,
     tipoInformado: payload.deliveryType || payload.orderType,
     frete: deliveryFee,
   });
+
+  // ── ONDE ESTÁ O CLIENTE ─────────────────────────────────────────────────
+  // A localização que ele mandou nesta conversa (📎 → Localização); senão a
+  // que o rascunho já guardou DELE (GPS/pino) — quando o endereço é o mesmo
+  // (o modelo reescreve o texto: "…, Cabo Frio", "casa 2") ou quando o
+  // rascunho só tinha a localização e o cliente agora digitou a rua. Ponto de
+  // OUTRO endereço mediria a entrega errada, e o cliente que disse "é em outro
+  // lugar" (`localizacaoDescartada`) não tem ponto nenhum.
+  //
+  // O endereço digitado DEPOIS do ponto é conferido contra ele na avaliação
+  // (`avaliarEntregaDoRobo`): complemento do mesmo lugar mantém o ponto; texto
+  // que o mapa acha com certeza longe dele troca (é outro lugar).
+  const pontoDoRascunho = existingDraft && !localizacaoDescartada
+    ? pontoDoClienteGravado((existingDraft as any).customerLatLng)
+    : null;
+  const enderecoGuardado = String((existingDraft as any)?.customerAddress || "").trim();
+  let coords: { lat: number; lng: number } | null = coordsDoCliente ? { lat: coordsDoCliente.lat, lng: coordsDoCliente.lng } : null;
+  const enderecoFoiDigitado = Boolean(enderecoDoPedido) && !ehEnderecoDaLocalizacao(enderecoDoPedido);
+  let textoDepoisDoPonto: string | null = coordsDoCliente?.enderecoDigitadoDepois && enderecoFoiDigitado ? enderecoDoPedido : null;
+  if (!coords && pontoDoRascunho) {
+    if (mesmoEnderecoDeEntrega(enderecoGuardado, enderecoDoPedido)) {
+      coords = pontoDoRascunho;
+    } else if (!enderecoGuardado || ehEnderecoDaLocalizacao(enderecoGuardado)) {
+      coords = pontoDoRascunho;
+      textoDepoisDoPonto = enderecoFoiDigitado ? enderecoDoPedido : null;
+    }
+  }
+  // Rua, número e bairro separados, quando o modelo mandou na tag: é o que faz
+  // o mapa achar a casa em vez do centro do bairro. Sem eles na tag, os que
+  // dá para tirar do endereço escrito — a mesma leitura da cotação da conversa.
+  const partesDoEndereco =
+    partesDoEnderecoDaTag(payload) ??
+    (enderecoFoiDigitado ? partesDoEnderecoDigitado(enderecoDoPedido, loja?.city ?? null) : undefined);
+  const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
 
   // ── A LOJA ENTREGA NESTE ENDEREÇO? ────────────────────────────────────────
   //
@@ -2442,27 +2694,51 @@ async function syncAiOrderToDatabase({
   // site: FORA não fecha; endereço que o mapa não acha também não fecha
   // sozinho — um atendente confirma; ATENDE fecha com a taxa da regra, não
   // com a que o modelo escreveu. Rascunho passa: o cliente ainda está montando.
+  //
+  // Sem ponto confiável em KM/ROTA, o robô pede a localização do cliente UMA
+  // vez antes de segurar o pedido (R2) ou de fechar com a taxa estimada (R3).
   let vereditoDaArea: VeredictoDeEntrega | null = null;
   if (isFinal && deliveryType === "DELIVERY" && loja && modoDaArea(loja) !== "SEM_AREA") {
-    vereditoDaArea = await avaliarEntrega(loja, { endereco: enderecoDoPedido, bairro: payload.neighborhood || payload.bairro || null });
+    const modoDaLoja = modoDaArea(loja);
+    const avaliacao = await avaliarEntregaDoRobo((p) => avaliarEntrega(loja, p), {
+      endereco: enderecoDoPedido,
+      bairro: payload.neighborhood || payload.bairro || null,
+      partes: partesDoEndereco,
+      gps: coords,
+      // Só quem mede por ponto confere o texto contra a localização.
+      textoDepoisDoPonto: modoDaLoja === "KM" || modoDaLoja === "POLIGONO" ? textoDepoisDoPonto : null,
+    });
+    vereditoDaArea = avaliacao.veredito;
+    // O ponto do cliente que ficou valendo: null quando o endereço digitado
+    // era outro lugar — aí é o ponto do texto que vai gravado.
+    coords = avaliacao.coords;
+    if (avaliacao.trocouPeloTexto) {
+      console.warn(
+        `[Chatbot AI Order Sync] 📍 Endereço digitado longe da localização enviada: vale o endereço digitado. ` +
+        `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${enderecoDoPedido}"`
+      );
+    }
     const primeiroNome = String(customerName || "").trim().split(" ")[0];
     const saudacao = primeiroNome && primeiroNome !== "Cliente" ? `Poxa, ${primeiroNome}!` : "Poxa!";
     const retirada = aceitaRetirada
       ? " Se quiser, deixo o pedido para RETIRADA no balcão — é só me dizer! 😊"
       : " Se tiver outro endereço dentro da área, me manda que eu anoto! 😊";
+    const pedirLocalizacao = motivoParaPedirLocalizacao(vereditoDaArea, Boolean(coords));
+    const ehRotaDaLoja = String(loja.deliveryZoneType || "").toUpperCase() === "ROTA";
     if (vereditoDaArea.resultado === "FORA") {
       console.warn(
         `[Chatbot AI Order Sync] 🛑 Pedido recusado: FORA DA ÁREA (${vereditoDaArea.motivo}). ` +
         `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
       );
       const lista = bairrosAtendidos(loja);
+      const distancia = vereditoDaArea.modo === "KM" ? frasesDaDistancia(vereditoDaArea, ehRotaDaLoja) : null;
       const explicacao = vereditoDaArea.modo === "BAIRRO"
         ? `a gente ainda não entrega nesse bairro.${lista.length ? ` Atendemos: ${lista.slice(0, 12).map((b) => b.name).join(", ")}${lista.length > 12 ? "…" : ""}.` : ""}`
-        : vereditoDaArea.modo === "POLIGONO" || vereditoDaArea.distanciaKm == null || vereditoDaArea.raioMaxKm == null
-          // Sem raio cadastrado (área desenhada) não há número para citar: a
-          // frase genérica é melhor que "a undefined km da loja".
+        : vereditoDaArea.areaDeRisco || vereditoDaArea.modo === "POLIGONO" || !distancia?.limite
+          // Sem limite em km para citar (área desenhada, região que a loja não
+          // atende): a frase genérica é melhor que "a undefined km da loja".
           ? "esse endereço está fora da nossa área de entrega."
-          : `esse endereço fica a ${vereditoDaArea.distanciaKm} km da loja, e nossa entrega vai até ${vereditoDaArea.raioMaxKm} km.`;
+          : `esse endereço fica a ${distancia.distancia}, e ${distancia.limite}.`;
       return {
         gravado: false,
         motivo: `endereço fora da área de entrega (${vereditoDaArea.motivo})`,
@@ -2471,6 +2747,44 @@ async function syncAiOrderToDatabase({
       };
     }
     if (vereditoDaArea.resultado === "DESCONHECIDO") {
+      // ── A LOJA SEM PONTO NO MAPA ────────────────────────────────────────
+      // Sem pino e sem endereço da loja que o mapa ache, não há de onde medir:
+      // a localização do cliente não resolve (o motor devolve o mesmo "não
+      // sei"), e pedi-la era um turno inútil antes de segurar do mesmo jeito.
+      // Segura direto, e a loja fica sabendo O QUE arrumar.
+      if (faltaOPontoDaLoja(vereditoDaArea)) {
+        console.error(
+          `[Chatbot AI Order Sync] 🗺️ Pedido segurado: a LOJA não tem ponto no mapa (${vereditoDaArea.motivo}). ` +
+          `Marque o pino da loja em Minha Loja → Entrega. Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
+        );
+        avisarLojaSemPontoNoMapa(franchiseeId);
+        return {
+          gravado: false,
+          motivo: `a loja não tem o ponto dela no mapa — marque o pino da loja para o robô calcular a entrega (${vereditoDaArea.motivo})`,
+          regraDeNegocio: true,
+          chamarAtendente: true,
+          mensagemParaOCliente:
+            `Não consegui calcular a taxa de entrega agora. 🗺️ Já chamei um atendente da loja para confirmar a taxa com você por aqui — não precisa repetir o pedido!`,
+        };
+      }
+      // ── R2: "NÃO SEI" NÃO É "FAIXA MAIS CARA" — É PEDIR O PONTO ──────────
+      // Em KM/ROTA e área desenhada, o que resolve é a localização do aparelho
+      // do cliente: o robô pede UMA vez. Se ela não vier (ou a loja por bairro,
+      // onde o ponto não ajuda), o pedido fica segurado para a loja confirmar.
+      if (pedirLocalizacao === "desconhecido" && !jaPediuLocalizacao) {
+        console.warn(
+          `[Chatbot AI Order Sync] 📍 Pedido aguardando LOCALIZAÇÃO: o mapa não achou o endereço (${vereditoDaArea.motivo}). ` +
+          `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
+        );
+        return {
+          gravado: false,
+          motivo: `área não confirmada — pedindo a localização do cliente (${vereditoDaArea.motivo})`,
+          regraDeNegocio: true,
+          mensagemParaOCliente:
+            `Não consegui achar esse endereço no mapa para calcular a entrega. 🗺️ Me manda sua localização por aqui? ` +
+            `${COMO_MANDAR_A_LOCALIZACAO} Com ela eu confiro a taxa na hora — não precisa repetir o pedido! 😊`,
+        };
+      }
       console.warn(
         `[Chatbot AI Order Sync] ❓ Pedido segurado: ÁREA NÃO CONFIRMADA (${vereditoDaArea.motivo}). ` +
         `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
@@ -2485,18 +2799,101 @@ async function syncAiOrderToDatabase({
           `Me manda o bairro certinho e um ponto de referência? Já chamei um atendente da loja para confirmar com você por aqui — não precisa repetir o pedido!`,
       };
     }
+    // ── R3: PONTO APROXIMADO — A TAXA É ESTIMATIVA ─────────────────────────
+    // O mapa só achou o centro do bairro (ou a rua em mais de um trecho): a
+    // taxa pode ser de outra faixa. Pede a localização UMA vez; se o cliente
+    // não mandar, o pedido segue com a taxa estimada e a nota avisa a loja.
+    if (pedirLocalizacao === "aproximado" && !jaPediuLocalizacao) {
+      console.warn(
+        `[Chatbot AI Order Sync] 📍 Pedido aguardando LOCALIZAÇÃO: ponto aproximado (${vereditoDaArea.motivo}). ` +
+        `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
+      );
+      const estimada = vereditoDaArea.taxa != null ? ` de ${reais(centavos(vereditoDaArea.taxa))}` : "";
+      return {
+        gravado: false,
+        motivo: `ponto aproximado — pedindo a localização para confirmar a taxa (${vereditoDaArea.motivo})`,
+        regraDeNegocio: true,
+        mensagemParaOCliente:
+          `Quase lá! 😊 Pelo endereço, o mapa só achou a região, então a taxa${estimada} ainda é uma estimativa. ` +
+          `Pra eu calcular certinho, me manda sua localização por aqui? ${COMO_MANDAR_A_LOCALIZACAO}`,
+      };
+    }
     if (vereditoDaArea.taxa != null) {
       const daRegra = centavos(vereditoDaArea.taxa);
       if (Math.abs(daRegra - deliveryFee) >= 0.01) {
         console.warn(`[Chatbot AI Order Sync] frete da IA (${deliveryFee}) ≠ frete da área (${daRegra}) — gravando o da área.`);
       }
       deliveryFee = daRegra;
-      const dc: any = loja.deliveryConfig || {};
-      if (dc.freeShippingActive === true && Number(dc.freeShippingMinValue) > 0 && totalItemsSum >= Number(dc.freeShippingMinValue)) {
-        deliveryFee = 0;
-      }
-      totalOrderAmount = centavos(totalItemsSum + deliveryFee);
     }
+  }
+
+  // Retirada não tem frete. O modelo às vezes repete na tag o frete que tinha
+  // cotado antes de o cliente decidir buscar — e ele entrava no total.
+  if (deliveryType === "RETIRADA") deliveryFee = 0;
+
+  // ── FRETE GRÁTIS: A MESMA RÉGUA DO SITE, EM TODA ENTREGA ──────────────────
+  // Antes só valia dentro da área cadastrada e só no pedido final. O site
+  // isenta qualquer entrega que alcance o mínimo com a regra LIGADA
+  // (lib/entrega-do-robo.ts); o robô agora faz igual, e guarda o que a entrega
+  // custaria (lib/entrega-gratis.ts) para a nota não ficar sem linha de entrega.
+  let entregaGratis: EntregaGratis | null = null;
+  let freteGratisAcimaDe: number | null = null;
+  if (deliveryType === "DELIVERY") {
+    const minimoQueValeu = freteGratisQueVale(loja?.deliveryConfig, totalItemsSum);
+    if (minimoQueValeu != null) {
+      if (deliveryFee > 0) entregaGratis = { valor: deliveryFee, motivo: porValorMinimo(minimoQueValeu) };
+      freteGratisAcimaDe = minimoQueValeu;
+      deliveryFee = 0;
+    }
+  }
+  totalOrderAmount = centavos(totalItemsSum + deliveryFee);
+
+  // ── O QUE A ENTREGA GRAVA NO PEDIDO (R7) ──────────────────────────────────
+  //
+  // O rascunho que virava pedido — o caminho comum do robô — não gravava
+  // distância, ponto nem repasse: só o pedido criado de uma vez gravava a
+  // distância. O acerto do motoboy por faixa de km e a roteirização ficavam
+  // sem dado justamente nos pedidos do WhatsApp.
+  //  - customerLatLng: o ponto que DECIDIU a taxa ({lat,lng,origem,medida});
+  //  - deliveryDistance: a distância que a área mediu;
+  //  - motoboyFee: o repasse da faixa/bairro, só quando a loja separa os
+  //    valores (mesma regra do site, lib/repasse-do-entregador.ts).
+  const pontoDoPedido = deliveryType === "DELIVERY" ? pontoParaGravar(vereditoDaArea, coords) : null;
+  const distanciaDoPedido = deliveryType === "DELIVERY" ? distanciaDoVeredicto(vereditoDaArea) : null;
+  const repasseDoEntregador = (() => {
+    if (deliveryType !== "DELIVERY" || !isFinal) return null;
+    const regra = lerRegraDeRepasse(loja?.deliveryConfig);
+    if (!regra.separado) return null;
+    if (vereditoDaArea?.taxaDoEntregador != null) return centavos(Number(vereditoDaArea.taxaDoEntregador));
+    return repasseDoPedido({
+      regra,
+      zonas: loja?.deliveryZones,
+      km: vereditoDaArea?.distanciaKm ?? null,
+      bairro: vereditoDaArea?.bairro ?? null,
+      taxaDaEntrega: deliveryFee,
+    });
+  })();
+  const avisosDaEntrega = deliveryType === "DELIVERY" ? avisosDaEntregaNaNota(vereditoDaArea, Boolean(coords)) : [];
+
+  /** Rascunho reescrito: o que a entrega grava por cima do que ele tinha. */
+  const entregaNoRascunho: Prisma.CustomerOrderUpdateInput = {};
+  if (deliveryType === "DELIVERY") {
+    if (pontoDoPedido) entregaNoRascunho.customerLatLng = pontoDoPedido;
+    if (isFinal) {
+      // No fechamento vale o que a área mediu AGORA: um ponto de endereço
+      // antigo, uma distância de outro endereço ou um frete grátis que não
+      // vale mais não podem sobrar do rascunho.
+      if (!pontoDoPedido) entregaNoRascunho.customerLatLng = Prisma.DbNull;
+      entregaNoRascunho.deliveryDistance = distanciaDoPedido;
+      entregaNoRascunho.motoboyFee = repasseDoEntregador;
+      entregaNoRascunho.entregaGratis = entregaGratis ?? Prisma.DbNull;
+    }
+  } else if (isFinal) {
+    // Virou retirada: nada de entrega sobra do rascunho.
+    entregaNoRascunho.customerLatLng = Prisma.DbNull;
+    entregaNoRascunho.deliveryDistance = null;
+    entregaNoRascunho.motoboyFee = null;
+    entregaNoRascunho.entregaGratis = Prisma.DbNull;
   }
 
   // ── PEDIDO MÍNIMO: TRAVA DE VERDADE, NÃO PEDIDO DE FAVOR ──────────────────
@@ -2582,6 +2979,9 @@ async function syncAiOrderToDatabase({
     ? `🤖 Pedido finalizado via IA pelo WhatsApp`
     : `🤖 Pedido sendo montado pela IA no WhatsApp`) +
     (vereditoDaArea ? ` · Entrega: ${descreverVeredicto(vereditoDaArea)}` : "") +
+    // "estimada" / "aproximado": a loja confere a taxa antes de despachar (R7).
+    (avisosDaEntrega.length ? ` · ${avisosDaEntrega.join(" · ")}` : "") +
+    (entregaGratis ? ` · Frete grátis (${entregaGratis.motivo}) — taxa ref: ${reais(entregaGratis.valor)}` : "") +
     (doPedido.observacao ? ` · Obs: ${doPedido.observacao}` : "");
 
   // Troco só existe em dinheiro. Se esta tag não trouxe o valor mas o rascunho
@@ -2632,13 +3032,15 @@ async function syncAiOrderToDatabase({
       data: {
         customerName: finalCustomerName,
         customerPhone: formattedCustomerPhone,
-        customerAddress: payload.address || existingDraft.customerAddress,
+        customerAddress: payload.address || existingDraft.customerAddress || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null,
         paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
         changeAmount: trocoParaGravar,
         deliveryFee: deliveryFee,
         // Sem isto o rascunho ficava com o tipo da PRIMEIRA mensagem, gravado
         // antes de o cliente dar o endereço (lib/tipo-do-pedido-do-robo.ts).
         deliveryType,
+        // Ponto, distância, repasse e frete grátis (R7) — ver `entregaNoRascunho`.
+        ...entregaNoRascunho,
         totalAmount: totalOrderAmount,
         // Cinto e suspensório: `destinoDaTag` já não deixa uma tag não-final
         // chegar aqui com um pedido enviado. Se um dia deixar, o status fica.
@@ -2678,7 +3080,7 @@ async function syncAiOrderToDatabase({
         franchiseeId,
         customerName: finalCustomerName,
         customerPhone: formattedCustomerPhone,
-        customerAddress: payload.address || null,
+        customerAddress: payload.address || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null,
         paymentMethod: payload.paymentMethod || null,
         changeAmount: trocoParaGravar,
         deliveryFee: deliveryFee,
@@ -2686,10 +3088,12 @@ async function syncAiOrderToDatabase({
         deliveryType,
         // A distância que a área de entrega já mediu para este endereço. Sem
         // ela gravada, a escada de km do entregador não tem o que comparar no
-        // fechamento (lib/distancia-da-entrega.ts).
-        ...(distanciaDoVeredicto(vereditoDaArea) != null
-          ? { deliveryDistance: distanciaDoVeredicto(vereditoDaArea) }
-          : {}),
+        // fechamento (lib/distancia-da-entrega.ts). E, com ela, o ponto que
+        // decidiu a taxa, o repasse da faixa e o frete grátis (R7).
+        ...(distanciaDoPedido != null ? { deliveryDistance: distanciaDoPedido } : {}),
+        ...(pontoDoPedido ? { customerLatLng: pontoDoPedido } : {}),
+        ...(repasseDoEntregador != null ? { motoboyFee: repasseDoEntregador } : {}),
+        ...(entregaGratis ? { entregaGratis } : {}),
         source: "WHATSAPP_IA",
         status: finalStatus,
         notes: notesText,
@@ -2738,6 +3142,10 @@ async function syncAiOrderToDatabase({
     finalizado: isFinal,
     itens: orderItemsData.length,
     total: totalOrderAmount,
+    ehEntrega: deliveryType === "DELIVERY",
+    taxaDeEntrega: deliveryFee,
+    taxaDitaPelaIa: freteValido ? centavos(freteBruto) : null,
+    freteGratisAcimaDe,
   };
 }
 
