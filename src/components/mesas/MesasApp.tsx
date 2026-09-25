@@ -1397,8 +1397,10 @@ export default function MesasApp({
   const faltaDaPessoa = (pes: { id: string; aPagar: number }) =>
     Math.max(0, pes.aPagar - pagoDaPessoa(pes.id));
 
-  // Taxa e gorjeta entram no rateio, então mexer nelas muda quanto cada pessoa
-  // deve. O debounce evita uma requisição por tecla digitada na gorjeta.
+  // Taxa, gorjeta e DESCONTO entram no rateio, então mexer neles muda quanto
+  // cada pessoa deve. O desconto faltava aqui: dar desconto não recarregava a
+  // conta por pessoa, que seguia com a parte de cada um e os 10% sobre o valor
+  // cheio. O debounce evita uma requisição por tecla digitada.
   useEffect(() => {
     const sessionId = selectedTable?.openSession?.id;
     if (!showCloseModal || !sessionId) return;
@@ -1410,7 +1412,7 @@ export default function MesasApp({
         .catch(() => { /* mantém a conta anterior */ });
     }, 400);
     return () => clearTimeout(t);
-  }, [showCloseModal, serviceFee, useServiceFee, waiterTip, selectedTable?.openSession?.id]);
+  }, [showCloseModal, serviceFee, useServiceFee, waiterTip, selectedTable?.openSession?.id, desconto.tipo, desconto.valor, desconto.motivo]);
 
   // ─── MODAL DE COMBO ───────────────────────────────────────────────────────
   // Esta página tem DOIS returns: o de lançar pedido e o da grade de mesas. O
