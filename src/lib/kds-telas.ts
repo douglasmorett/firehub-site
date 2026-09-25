@@ -309,6 +309,93 @@ export function telaMostraPedido(
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   QUEM É DONO DE CADA CATEGORIA, VISTO DE UMA TELA
+
+   "Categoria sem dono acompanha o pedido em toda tela" — e o dono era a união
+   dos filtros SALVOS de todas as telas da etapa, inclusive a própria. O filtro
+   que o cozinheiro escolhe na própria tela (a lista CATEGORIAS) não entrava:
+   na Hakim Centro (24/09/2026), com as 4 telas salvas sem filtro, marcar
+   "Esfirras Salgadas" e "Esfirras Doces" deixava as próprias esfirras "sem
+   dono" — e a regra do sem dono mostrava tudo. O filtro não filtrava nada.
+
+   Agora: dono = os filtros salvos das OUTRAS telas da etapa + o filtro que
+   ESTA tela está usando. O salvo desta tela não entra: quem manda nela é o que
+   ela está usando agora.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export function categoriasComDono(
+  telas: TelaDoKds[] | null | undefined,
+  estagio: string,
+  minha: TelaDoKds | null | undefined,
+  filtroDestaTela?: string[] | null
+): Set<string> {
+  const donos = new Set<string>();
+  const chaveMinha = chaveDaTela(minha);
+  for (const t of telas || []) {
+    if (texto(t?.stage) !== texto(estagio)) continue;
+    if (minha && (t === minha || (chaveMinha !== "" && chaveDaTela(t) === chaveMinha))) continue;
+    for (const c of t?.categoryFilter || []) {
+      const nome = texto(c);
+      if (nome) donos.add(nome);
+    }
+  }
+  for (const c of filtroDestaTela || []) {
+    const nome = texto(c);
+    if (nome) donos.add(nome);
+  }
+  return donos;
+}
+
+/**
+ * O pedido como ESTA tela o mostra, ou `null` se ela não o mostra.
+ *
+ * A decisão é POR PEDIDO, não item a item — é como a cozinha trabalha: "se o
+ * pedido tivesse esfirra deveria aparecer tudo; como é só pizza, não tem nada
+ * que faz parte do filtro dele, não deve aparecer" (NIK, 22/09/2026).
+ *
+ *   - Tem item do filtro desta tela: entra. Na finalização, inteiro (é onde a
+ *     sacola é montada); na produção, só o que é desta tela mais o que não é
+ *     de tela nenhuma (o acompanhamento), menos o que a loja deixou só para a
+ *     finalização.
+ *   - É TODO de categoria sem dono (a comanda só de refrigerante): entra
+ *     inteiro em toda tela — senão não apareceria em nenhuma.
+ *   - Senão, não entra.
+ *
+ * `donos` nulo = as telas ainda não carregaram: só o item sem categoria é
+ * curinga, como sempre foi. Morava dentro de store/kds/tela/page.tsx; veio
+ * para cá para o teste medir com pedido de verdade.
+ */
+export function pedidoNaTela<I extends ItemParaTela, P extends { items: I[] }>(
+  pedido: P,
+  opts: {
+    filtroDestaTela: string[];
+    donos: Set<string> | null;
+    estagio: string;
+    config: KdsConfig | null;
+  }
+): P | null {
+  const ativos = (opts.filtroDestaTela || []).map(texto).filter(Boolean);
+  if (ativos.length === 0) return pedido;
+  const categoriaDoItem = (item: I) => texto(item?.menuProduct?.category || item?.category || "");
+  const semDono = (cat: string) => !cat || (!!opts.donos && !opts.donos.has(cat));
+
+  const cats = pedido.items.map(categoriaDoItem);
+  const temItemDesteFiltro = cats.some((c) => c && ativos.includes(c));
+  const pedidoTodoSemDono = cats.every(semDono);
+  if (!temItemDesteFiltro && !pedidoTodoSemDono) return null;
+  if (texto(opts.estagio) === "finishing") return pedido;
+  if (pedidoTodoSemDono) return pedido;
+
+  const items = pedido.items.filter((item) => {
+    const cat = categoriaDoItem(item);
+    if (ativos.includes(cat)) return true;
+    if (!semDono(cat)) return false;
+    return !categoriaSoNaFinalizacao(opts.config, cat, ativos);
+  });
+  return items.length > 0 ? { ...pedido, items } : null;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    O QUE NÃO VAI PARA A PRODUÇÃO: A BEBIDA
 
    Categoria sem tela acompanha o pedido em toda tela (é a borda, feita junto

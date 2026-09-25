@@ -5,7 +5,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
-import { categoriaSoNaFinalizacao, lerKdsConfig, type KdsConfig } from "@/lib/kds-telas";
+import {
+  categoriaSoNaFinalizacao,
+  categoriasComDono as donosDaEtapa,
+  lerKdsConfig,
+  pedidoNaTela,
+  type KdsConfig,
+} from "@/lib/kds-telas";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -201,6 +207,15 @@ export default function KDSTelaPage() {
    */
   const filtroMexidoAqui = useRef(false);
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
+  /** Esta tela existe no painel do KDS (achada pelo id do link ou pelo nome)? */
+  const temTelaSalva = useRef(false);
+  /**
+   * O filtro escolhido AQUI fica salvo na tela do painel. Ele valia só até
+   * recarregar e nem contava para as outras telas — na Hakim Centro
+   * (24/09/2026) as 4 telas seguiam salvas sem filtro nenhum enquanto a
+   * cozinha filtrava esfirras na TV.
+   */
+  const [filtroSalvo, setFiltroSalvo] = useState<"" | "salvando" | "salvo" | "so-aqui" | "erro">("");
 
   // ─── State ──────────────────────────────────────────────────────────────────
 
@@ -325,15 +340,6 @@ export default function KDSTelaPage() {
         .then((r) => (r.ok ? r.json() : null))
         .then((telas) => {
           if (!vivo || !Array.isArray(telas)) return;
-          const comDono = new Set<string>();
-          for (const t of telas) {
-            if (t?.stage !== stage) continue;
-            for (const c of t?.categoryFilter || []) {
-              const nome = String(c || "").toLowerCase().trim();
-              if (nome) comDono.add(nome);
-            }
-          }
-          setCategoriasComDono(comDono);
 
           // ── A TELA DA TV SEGUE O PAINEL ────────────────────────────────
           //
@@ -349,6 +355,12 @@ export default function KDSTelaPage() {
           const minha =
             (chaveDaTela && telas.find((t: any) => String(t?.id || "") === chaveDaTela)) ||
             telas.find((t: any) => t?.stage === stage && String(t?.name || "") === screenName);
+          temTelaSalva.current = Boolean(minha);
+
+          // Donos que vêm das OUTRAS telas da etapa. O desta tela é o filtro
+          // que ela está usando, somado na hora de filtrar (lib/kds-telas.ts).
+          setCategoriasComDono(donosDaEtapa(telas, stage, minha || null));
+
           if (minha && !filtroMexidoAqui.current) {
             const doPainel = (minha.categoryFilter || []).map((c: any) => String(c));
             setActiveCategories((atual) =>
@@ -371,6 +383,44 @@ export default function KDSTelaPage() {
       clearInterval(id);
     };
   }, [stage, screenName, chaveDaTela]);
+
+  // ── O FILTRO ESCOLHIDO AQUI VAI PARA O PAINEL ────────────────────────────
+  //
+  // Só quando o cozinheiro mexe (a sincronização com o painel não conta), um
+  // pouco depois do último clique. A tela é achada do mesmo jeito que acima:
+  // pelo id do link, senão pelo nome. Tela que não está no painel (link
+  // antigo, nome trocado) segue filtrando só aqui — e a tela diz isso.
+  useEffect(() => {
+    if (!filtroMexidoAqui.current) return;
+    setFiltroSalvo("salvando");
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch("/api/store/kds-screens", { credentials: "include", cache: "no-store" });
+        const telas = r.ok ? await r.json() : null;
+        if (!Array.isArray(telas)) { setFiltroSalvo("erro"); return; }
+        let idx = chaveDaTela ? telas.findIndex((x: any) => String(x?.id || "") === chaveDaTela) : -1;
+        if (idx < 0) idx = telas.findIndex((x: any) => x?.stage === stage && String(x?.name || "") === screenName);
+        if (idx < 0) { setFiltroSalvo("so-aqui"); return; }
+        const atual = (telas[idx]?.categoryFilter || []).map((c: any) => String(c));
+        if (atual.length === activeCategories.length && atual.every((c: string, i: number) => c === activeCategories[i])) {
+          setFiltroSalvo("salvo");
+          return;
+        }
+        const novas = telas.map((x: any, i: number) => (i === idx ? { ...x, categoryFilter: activeCategories } : x));
+        const put = await fetch("/api/store/kds-screens", {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(novas),
+        });
+        setFiltroSalvo(put.ok ? "salvo" : "erro");
+      } catch {
+        setFiltroSalvo("erro");
+      }
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [activeCategories, chaveDaTela, stage, screenName]);
+
   const lastJsonRef = useRef<string>("");
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -648,51 +698,19 @@ export default function KDSTelaPage() {
     // Antes, o corte era por item: o pedido entrava se sobrasse QUALQUER item
     // depois da peneira, e um pedido só de pizza entrava na tela das esfihas
     // pelo item que ninguém reclamava — o curinga sem categoria.
+    //
+    // A regra mora em lib/kds-telas.ts (pedidoNaTela), com o teste. Os donos
+    // são os filtros das OUTRAS telas da etapa mais o filtro que ESTA tela
+    // está usando — o que o cozinheiro marcou aqui conta, senão as próprias
+    // categorias dele ficavam "sem dono" e a tela mostrava tudo (Hakim Centro,
+    // 24/09/2026).
     if (activeCategories.length > 0) {
-      const activeNormalized = activeCategories.map((c) => c.toLowerCase().trim());
-      const categoriaDoItem = (item: any) =>
-        (item.menuProduct?.category || item.category || "").toLowerCase().trim();
-      // Categoria que nenhuma tela desta etapa pediu. Ninguém vai produzi-la
-      // em lugar nenhum, então ela não pode ser o motivo de esconder o pedido
-      // — nem de mostrá-lo numa tela que não tem nada a ver com ele.
-      const semDono = (cat: string) => !cat || (!!categoriasComDono && !categoriasComDono.has(cat));
-
+      const donos = categoriasComDono
+        ? new Set([...categoriasComDono, ...activeCategories.map((c) => c.toLowerCase().trim())])
+        : null;
       result = result
-        .map((order) => {
-          const cats = order.items.map(categoriaDoItem);
-          const temItemDesteFiltro = cats.some((c) => c && activeNormalized.includes(c));
-          // O pedido inteiro é de categoria que ninguém pediu (a comanda só de
-          // refrigerante): aparece em TODA tela, senão não apareceria em
-          // nenhuma. Comida parada é mais cara que linha a mais na tela.
-          const pedidoTodoSemDono = cats.every(semDono);
-          if (!temItemDesteFiltro && !pedidoTodoSemDono) return null;
-
-          // NA FINALIZAÇÃO, O PEDIDO INTEIRO. É onde a sacola é montada: quem
-          // confere precisa ver tudo o que vai dentro, inclusive a pizza que
-          // saiu da outra tela e a bebida que ninguém produz.
-          if (stage === "finishing") return order;
-
-          // NA PRODUÇÃO, só o que é desta tela — mais o que não é de tela
-          // nenhuma, que senão não é feito por ninguém. O cozinheiro das
-          // esfihas não precisa ler a pizza que o outro está fazendo.
-          //
-          // Menos o que a loja mandou deixar SÓ para a finalização: a bebida
-          // acompanha o pedido, mas ninguém a produz, e a NIK não quer lê-la
-          // na tela de pizza nem na de esfiha (22/09/2026). A comanda que é
-          // SÓ disso continua aparecendo inteira — esconder tudo seria
-          // pedido invisível, e isso já custou pedido perdido.
-          if (pedidoTodoSemDono) return order;
-          return {
-            ...order,
-            items: order.items.filter((item: any) => {
-              const cat = categoriaDoItem(item);
-              if (activeNormalized.includes(cat)) return true;
-              if (!semDono(cat)) return false;
-              return !categoriaSoNaFinalizacao(kdsConfig, cat, activeNormalized);
-            }),
-          };
-        })
-        .filter((order): order is Order => order !== null && order.items.length > 0);
+        .map((order) => pedidoNaTela(order, { filtroDestaTela: activeCategories, donos, estagio: stage || "", config: kdsConfig }))
+        .filter((order): order is Order => order !== null);
     } else if (stage === "production" && kdsConfig && kdsConfig.soNaFinalizacao.length > 0) {
       // Tela de produção SEM filtro mostra tudo — mas "tudo" também não inclui
       // o que a loja tirou da produção. Pedido só de bebida segue inteiro.
@@ -1326,6 +1344,46 @@ export default function KDSTelaPage() {
                       </div>
                     )}
                   </div>
+                  {/* ── O QUE CONTINUA APARECENDO, E POR QUÊ ──
+                      Categoria que nenhuma tela mostra acompanha o pedido em
+                      toda tela — é o que impede o pedido de sumir da cozinha.
+                      Na Hakim Centro (24/09/2026) eram Combos e Promoção do
+                      Dia, que também são esfirra: o filtro "só esfirras"
+                      parecia não filtrar nada. A tela diz quais são e o que
+                      fazer, em vez de deixar o cozinheiro achar que quebrou. */}
+                  {activeCategories.length > 0 && categoriasComDono && (() => {
+                    const norm = (s: string) => String(s || "").toLowerCase().trim();
+                    const donos = new Set([...categoriasComDono, ...activeCategories.map(norm)]);
+                    const soNaFinal = new Set((kdsConfig?.soNaFinalizacao || []).map(norm));
+                    const acompanham = allCategories
+                      .map((c) => c.name)
+                      .filter((n) => !donos.has(norm(n)) && !(stage === "production" && soNaFinal.has(norm(n))));
+                    if (acompanham.length === 0) return null;
+                    return (
+                      <div style={{ marginTop: 8, fontSize: 11.5, lineHeight: 1.45, color: "#94A3B8" }}>
+                        Também aparecem aqui, junto do pedido: <b style={{ color: "#E2E8F0" }}>{acompanham.join(", ")}</b>.
+                        Nenhuma tela as mostra, então elas acompanham o pedido em toda tela.
+                        Para tirar daqui, marque-as numa tela ou deixe-as <b style={{ color: "#E2E8F0" }}>só na finalização</b> no painel do KDS.
+                      </div>
+                    );
+                  })()}
+                  {/* Onde o filtro ficou: salvo na tela do painel, ou só aqui. */}
+                  {filtroSalvo && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        lineHeight: 1.4,
+                        color: filtroSalvo === "salvo" ? "#5EEAD4" : filtroSalvo === "salvando" ? "#94A3B8" : "#F5B454",
+                      }}
+                    >
+                      {filtroSalvo === "salvando" && "Salvando o filtro desta tela…"}
+                      {filtroSalvo === "salvo" && "✓ Salvo nesta tela: continua depois de recarregar."}
+                      {filtroSalvo === "so-aqui" && "Esta tela não está no painel do KDS: o filtro vale só até recarregar. Abra a tela pelo painel do KDS para ele ficar salvo."}
+                      {filtroSalvo === "erro" && "Não consegui salvar: o filtro vale só até recarregar. Confira a internet e marque de novo."}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

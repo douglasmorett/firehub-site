@@ -92,11 +92,17 @@ export default function KDSHubClient() {
   const save = (s: KDSScreenConfig[]) => {
     setScreens(s);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    // Falha calada aqui era o pior dos mundos: o painel mostrava o filtro
+    // salvo, e as telas da cozinha — que leem do servidor — seguiam sem ele.
+    const avisar = () =>
+      alert("Não consegui salvar as telas do KDS. As telas da cozinha continuam com a configuração anterior. Confira a internet e salve de novo.");
     fetch("/api/store/kds-screens", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(s),
-    }).catch(() => {});
+    })
+      .then((r) => { if (!r.ok) avisar(); })
+      .catch(avisar);
   };
 
   const openForm = (existing?: KDSScreenConfig) => {
