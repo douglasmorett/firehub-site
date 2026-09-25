@@ -22,6 +22,7 @@ import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
+import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
@@ -540,6 +541,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   onOpenReceiptModal,
   /** Abre o modal já na aba de edição — o lápis do card. */
   onOpenEditModal,
+  /** Abre "Finalizar pedido manualmente" — só no rascunho do robô (CRIANDO_IA). */
+  onFinalizarRascunho,
   /** Quem está logado ({ role, permissions }), para o lápis só aparecer a quem pode editar. */
   operador,
   onOpenDeliveryModal,
@@ -921,8 +924,34 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             );
           })()}
 
-          {/* Badge Pronto Cozinha / Botão Marcar como Pronto Cozinha */}
-          {order.kdsStage === "FINISHED" || order.kdsStage === "READY" ? (
+          {/* Badge Pronto Cozinha / Botão Marcar como Pronto Cozinha.
+              No rascunho do robô o lugar é do "Finalizar pedido manualmente":
+              ele ainda nem foi para a cozinha, e "Pronto Cozinha" prometia um
+              preparo que não começou. */}
+          {isAiCreating && onFinalizarRascunho ? (
+            <div style={{ marginBottom: "4px" }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); onFinalizarRascunho(order.id); }}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: "6px",
+                  fontSize: "0.75rem",
+                  fontWeight: 800,
+                  background: PALETA.marca,
+                  color: "#fff",
+                  border: "none",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontFamily: "inherit",
+                }}
+                title="O robô montou este pedido e passou a conversa para a equipe. Complete o que falta e mande para a cozinha."
+              >
+                ✍️ Finalizar pedido manualmente
+              </button>
+            </div>
+          ) : order.kdsStage === "FINISHED" || order.kdsStage === "READY" ? (
             <div style={{ marginBottom: "4px" }}>
               <span style={{ ...etiquetaDeEstado("ok"), display: "inline-block" }}>
                 ✓ Pronto Cozinha
@@ -1738,6 +1767,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
   const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
   const [viewReceiptOrderId, setViewReceiptOrderId] = useState<string | null>(null);
+  /** O rascunho do robô ("IA criando…") que a loja está finalizando à mão. */
+  const [rascunhoParaFinalizar, setRascunhoParaFinalizar] = useState<string | null>(null);
   /** Qual aba do modal Ver pedido está aberta: a prévia do papel ou a edição. */
   const [abaDoRecibo, setAbaDoRecibo] = useState<"comanda" | "editar">("comanda");
   const [confirmarPagamentoOrder, setConfirmarPagamentoOrder] = useState<any | null>(null);
@@ -3703,6 +3734,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </div>
         );
       })()}
+
+      {/* FINALIZAR À MÃO o pedido que o robô deixou em "IA criando…" (Divinos,
+          25/09/2026: o robô lançou tudo, não achou o endereço e chamou a
+          equipe; arrastar o cartão tirava do rascunho sem completar nada). */}
+      {rascunhoParaFinalizar && (
+        <FinalizarPedidoDoRobo
+          key={rascunhoParaFinalizar}
+          orderId={rascunhoParaFinalizar}
+          onClose={() => setRascunhoParaFinalizar(null)}
+          onFinalizado={async () => {
+            setRascunhoParaFinalizar(null);
+            await recarregarPedidos();
+          }}
+        />
+      )}
 
       {/* DIGITAL RECEIPT PREVIEW MODAL */}
       {viewReceiptOrderId && (() => {
@@ -5796,6 +5842,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                   onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                   onOpenEditModal={(id: string) => abrirEdicao(id)}
+                  onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                   operador={operadorDaEdicao}
                   onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                   onDragStart={handleDragStart}
@@ -5866,6 +5913,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
+                onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
@@ -5908,6 +5956,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
+                onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
@@ -5946,6 +5995,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
+                onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
@@ -5981,6 +6031,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
+                onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
@@ -6016,6 +6067,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
+                onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
@@ -6053,6 +6105,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
                 onOpenReceiptModal={(id: string) => abrirRecibo(id)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
+                onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onDragStart={handleDragStart}
