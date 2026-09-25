@@ -211,6 +211,20 @@ export interface LoopGuardInput {
    * que robô nenhum manda.
    */
   isAudio?: boolean;
+  /**
+   * Os OUTROS endereços desta mesma conversa que a mensagem trouxe (o LID e o
+   * telefone são o mesmo contato). Só a pergunta "o lojista acabou de falar?"
+   * olha para eles — contadores, travas e memória continuam em `remoteJid`.
+   *
+   * O "atendente assumiu" é gravado no endereço da mensagem que SAIU, e quem
+   * puxa assunto pelo celular com um contato novo sai pelo LID, sem telefone
+   * conhecido. A resposta do contato já chega com o telefone junto
+   * (`senderPn`), e a conversa passa a ser a do telefone — onde a trava gravada
+   * um minuto antes não existia. Pizzaria do Costa, 25/09/2026: o dono pediu
+   * uma coisa a um contato pelo celular, o contato respondeu, e o robô falou
+   * por cima dele dizendo o contrário.
+   */
+  outrosEnderecos?: string[];
   now: number;
 }
 
@@ -299,6 +313,28 @@ export async function evaluateLoopGuard(input: LoopGuardInput): Promise<LoopDeci
   }
 }
 
+/**
+ * Quando o lojista falou por último nesta conversa (ms, 0 se nunca), em
+ * qualquer um dos endereços dela — ver `outrosEnderecos` em LoopGuardInput.
+ */
+async function atendenteFalouEm(
+  userId: string,
+  remoteJid: string,
+  state: ConversationState | null,
+  outrosEnderecos: string[] | undefined,
+): Promise<number> {
+  let em = state?.humanTakeoverAt ? state.humanTakeoverAt.getTime() : 0;
+  for (const outro of new Set(outrosEnderecos || [])) {
+    if (!outro || outro === remoteJid) continue;
+    // Falha ao ler o endereço secundário não derruba a avaliação: vale o que
+    // o principal disser, como era antes.
+    const s = await readState(userId, outro).catch(() => null);
+    const t = s?.humanTakeoverAt ? s.humanTakeoverAt.getTime() : 0;
+    if (t > em) em = t;
+  }
+  return em;
+}
+
 async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
   const { userId, remoteJid, text, verifiedBizName, isAudio, now } = input;
 
@@ -345,7 +381,7 @@ async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
   }
 
   // ── Atendente da loja assumiu ───────────────────────────────────────────
-  const takeoverAt = state?.humanTakeoverAt ? state.humanTakeoverAt.getTime() : 0;
+  const takeoverAt = await atendenteFalouEm(userId, remoteJid, state, input.outrosEnderecos);
   if (takeoverAt && now - takeoverAt < HUMAN_TAKEOVER_SILENCE_MS) {
     return { action: "ignore", reason: "atendente da loja assumiu a conversa" };
   }
