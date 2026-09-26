@@ -523,6 +523,19 @@ async function main() {
     geocoding.encontroDeRuas([{ logradouro: "A", trechos: [travessaDoCentro] }, { logradouro: "B", trechos: [ruaDoForno] }]) === null);
   conferir("o trecho mais perto do bairro", geocoding.trechoMaisPerto([travessaDoCentro, travessaCerta], centroDoJardim)?.trecho === travessaCerta);
 
+  // O bairro como o cliente digita (as 27 entregas não achadas em 7 dias, 25/09/2026).
+  const confere = geocoding.bairroConfere;
+  conferir("bairro colado: 'JardimBelaVista' é 'Jardim Bela Vista'", confere("JardimBelaVista", "Jardim Bela Vista"));
+  conferir("bairro colado: 'Extensãodobosque' é 'Extensão do Bosque'", confere("Extensãodobosque", "Extensão do Bosque"));
+  conferir("uma letra a menos: 'Atlântic' é 'Atlântica'", confere("Atlântic", "Atlântica"));
+  conferir("uma letra trocada: 'Alecrin' é 'Alecrim'", confere("Alecrin", "Alecrim"));
+  conferir("'Chácar Marilea' é 'Chácara Mariléa'", confere("Chácar Marilea", "Chácara Mariléa"));
+  conferir("prefixo: 'Jardim Esperança' é 'Vila Jardim Esperança'", confere("Jardim Esperança", "Vila Jardim Esperança"));
+  conferir("nome curto parecido é OUTRO bairro: 'Vila Nova' não é 'Vila Nobre'", !confere("Vila Nova", "Vila Nobre"));
+  conferir("'Boa Vista' não é 'Bela Vista'", !confere("Boa Vista", "Bela Vista"));
+  conferir("'Jardim América' não é 'Jardim Amélia'", !confere("Jardim América", "Jardim Amélia"));
+  conferir("'Ouro Verde' não é 'Ouro Preto'", !confere("Ouro Verde", "Ouro Preto"));
+
   // ════════════════════════════════════════════════════════════════════════
   console.log("\n== Google como segunda fonte (só com GOOGLE_MAPS_API_KEY) ==");
   const casaNoGoogle = aoSul(1.2, 0.002);

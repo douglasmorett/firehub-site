@@ -563,7 +563,47 @@ export function bairroConfere(informado: string | null | undefined, noMapa: stri
   const a = nomeDeBairro(String(informado || ""));
   const b = nomeDeBairro(String(noMapa || ""));
   if (!a || !b) return true;
-  return a === b || contidoEm(a, b) || contidoEm(b, a);
+  if (a === b || contidoEm(a, b) || contidoEm(b, a)) return true;
+  return bairroParecido(String(informado || ""), String(noMapa || ""));
+}
+
+/** Quantas letras trocar, pôr ou tirar para `a` virar `b` — até `teto` (acima, devolve teto + 1). */
+function distanciaDeEdicao(a: string, b: string, teto: number): number {
+  if (Math.abs(a.length - b.length) > teto) return teto + 1;
+  let anterior = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const atual = [i];
+    let menorDaLinha = i;
+    for (let j = 1; j <= b.length; j++) {
+      atual[j] = Math.min(anterior[j] + 1, atual[j - 1] + 1, anterior[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      menorDaLinha = Math.min(menorDaLinha, atual[j]);
+    }
+    if (menorDaLinha > teto) return teto + 1;
+    anterior = atual;
+  }
+  return anterior[b.length];
+}
+
+/**
+ * O bairro como o cliente DIGITA no celular, medido em 25/09/2026 nas 27
+ * entregas que o mapa não achou em 7 dias: tudo junto ("JardimBelaVista",
+ * "Extensãodobosque") e uma letra errada ou a menos ("Atlântic" para
+ * Atlântica, "Alecrin" para Alecrim, "Chácar Marilea"). Sem espaço, o nome
+ * inteiro tem que ser o mesmo; com erro, só UMA letra (duas em nome longo) —
+ * nome curto parecido é outro bairro ("Vila Nova" não é "Vila Nobre").
+ */
+function bairroParecido(informado: string, noMapa: string): boolean {
+  const junto = (t: string) => normalizarParaComparar(t).replace(/\s+/g, "");
+  const semPrefixoJunto = (t: string) => nomeDeBairro(t).replace(/\s+/g, "");
+  // Tudo junto: com ou sem o prefixo, o nome colado tem que ser igual.
+  if (junto(informado) === junto(noMapa) || junto(informado) === semPrefixoJunto(noMapa) || semPrefixoJunto(informado) === junto(noMapa)) return true;
+  const a = semPrefixoJunto(informado);
+  const b = semPrefixoJunto(noMapa);
+  if (a === b) return true;
+  const menor = Math.min(a.length, b.length);
+  if (menor < 6) return false;
+  const teto = menor >= 12 ? 2 : 1;
+  return distanciaDeEdicao(a, b, teto) <= teto;
 }
 
 /**
@@ -806,7 +846,10 @@ export async function verifyStoreDeliveryAddress(
     // O bairro do campo separado ou, sem ele, o que o cliente ESCREVEU no
     // texto ("Rua Diamante, 19 - Monte Alegre"). É por ele que se confere se
     // a rua achada é a do cliente ou a homônima de outro bairro.
-    const neigh = parsedDetails?.neighborhood?.trim() || bairroDoTexto(customerAddressText, city);
+    // "JardimBelaVista" (digitado colado no celular) vira "Jardim Bela Vista":
+    // é assim que o mapa conhece o bairro na busca pelo nome dele.
+    const neigh = (parsedDetails?.neighborhood?.trim() || bairroDoTexto(customerAddressText, city))
+      .replace(/([a-zà-ÿ])([A-ZÀ-Þ])/g, "$1 $2");
 
     /**
      * A primeira busca que NÃO foi respondida (fila cheia, prazo, 429, rede).
