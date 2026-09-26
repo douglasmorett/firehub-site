@@ -158,6 +158,14 @@ const jobs = [
     intervalMs: 10 * 60_000, // 10 minutos
   },
   {
+    // Os caches do mapa (endereços e rotas) sem uso há 90 dias saem do banco:
+    // eles ganham uma linha por endereço novo e cresceriam com o uso para
+    // sempre (src/lib/faxina-dos-caches.ts).
+    name: 'faxina-dos-caches',
+    path: '/api/cron/faxina-dos-caches',
+    intervalMs: 24 * 60 * 60_000, // 1 dia
+  },
+  {
     name: 'billing-close',
     path: '/api/cron/billing-close',
     intervalMs: 60 * 60_000, // 1 hora (verifica internamente se é dia 1 às 03h)
