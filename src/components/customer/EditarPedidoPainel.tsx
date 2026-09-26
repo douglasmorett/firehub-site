@@ -29,6 +29,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { avaliarEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
+import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
+import ComboModal from "@/components/customer/ComboModal";
 
 type ItemDoPedido = {
   id: string;
@@ -43,7 +45,31 @@ type ProdutoDoCardapio = {
   name: string;
   price: number;
   category?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  /** As perguntas (sabor, tamanho, borda). Produto com elas abre a mesma janela do cardápio. */
+  comboGroups?: any[];
 };
+
+/** Um acréscimo do rascunho. `precoUnitario` já tem as escolhas; o servidor recalcula do zero. */
+type AcrescimoDoRascunho = {
+  produto: ProdutoDoCardapio;
+  quantity: number;
+  precoUnitario: number;
+  comboSelections?: Record<string, Record<string, number>>;
+  notes?: string;
+};
+
+/** "Calabresa, Frango c/ Requeijão" — as escolhas como a comanda vai imprimir. */
+function resumoDasEscolhas(sel?: Record<string, Record<string, number>>): string {
+  if (!sel) return "";
+  return Object.values(sel)
+    .flatMap((g) => Object.entries(g || {}).filter(([, q]) => Number(q) > 0).map(([nome, q]) => (Number(q) > 1 ? `${nome} x${q}` : nome)))
+    .join(", ");
+}
+
+/** Categorias de espelho de integração: não se vende pelo balcão (mesma lista da mesa). */
+const CATEGORIAS_ESCONDIDAS = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
 
 const FORMAS_DE_PAGAMENTO = ["Dinheiro", "Pix", "Débito", "Crédito"];
 
@@ -74,7 +100,9 @@ export default function EditarPedidoPainel({
     Object.fromEntries((pedido.items || []).map((i: ItemDoPedido) => [i.id, i.quantity]))
   );
   const [removidos, setRemovidos] = useState<Set<string>>(new Set());
-  const [acrescimos, setAcrescimos] = useState<{ produto: ProdutoDoCardapio; quantity: number }[]>([]);
+  const [acrescimos, setAcrescimos] = useState<AcrescimoDoRascunho[]>([]);
+  // Produto com perguntas esperando a escolha dos sabores/opções.
+  const [produtoComOpcoes, setProdutoComOpcoes] = useState<ProdutoDoCardapio | null>(null);
   const [pagamento, setPagamento] = useState("Dinheiro");
 
   const [cardapio, setCardapio] = useState<ProdutoDoCardapio[]>([]);
@@ -100,9 +128,22 @@ export default function EditarPedidoPainel({
         const res = await fetch(`/api/admin/menu-products?canal=${canalDePreco}`);
         const data = await res.json().catch(() => []);
         if (!vivo) return;
+        // O mesmo recorte da mesa: sem sabor/adicional solto (o servidor marca
+        // `apenasOpcaoDeCombo`), sem inativo e sem espelho de integração. Os
+        // sabores apareciam como item de R$ 0,00 no meio da busca.
         const lista = (Array.isArray(data) ? data : data?.products || [])
           .filter((p: any) => p?.id && p?.name)
-          .map((p: any) => ({ id: p.id, name: p.name, price: Number(p.price) || 0, category: p.category }));
+          .filter((p: any) => p.active !== false && p.apenasOpcaoDeCombo !== true)
+          .filter((p: any) => !CATEGORIAS_ESCONDIDAS.has(String(p.category || "").toUpperCase().trim()))
+          .map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            price: Number(p.price) || 0,
+            category: p.category,
+            description: p.description ?? null,
+            imageUrl: p.imageUrl ?? null,
+            comboGroups: Array.isArray(p.comboGroups) ? p.comboGroups : [],
+          }));
         setCardapio(lista);
       } catch {
         if (vivo) setErro("Não consegui carregar o cardápio. Tente de novo.");
@@ -123,7 +164,7 @@ export default function EditarPedidoPainel({
     const somaOriginais = itensOriginais
       .filter((i) => !removidos.has(i.id))
       .reduce((s, i) => s + i.price * (quantidades[i.id] ?? i.quantity), 0);
-    const somaNovos = acrescimos.reduce((s, a) => s + a.produto.price * a.quantity, 0);
+    const somaNovos = acrescimos.reduce((s, a) => s + a.precoUnitario * a.quantity, 0);
     if (modo === "MARKETPLACE") {
       // O acréscimo do marketplace nunca entra no pedido do parceiro: ele vira
       // pedido colado, e é esse valor que o cliente paga por fora.
@@ -201,6 +242,8 @@ export default function EditarPedidoPainel({
         corpo.acrescentar = acrescimos.map((a) => ({
           menuProductId: a.produto.id,
           quantity: a.quantity,
+          ...(a.comboSelections ? { comboSelections: a.comboSelections } : {}),
+          ...(a.notes ? { notes: a.notes } : {}),
         }));
         if (ehMarketplace) corpo.pagamento = pagamento;
       }
@@ -374,7 +417,11 @@ export default function EditarPedidoPainel({
                 <div style={{ fontWeight: 600, fontSize: "0.86rem", color: "#134E4A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {a.produto.name}
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "#0F766E" }}>{fmt(a.produto.price)} cada</div>
+                {a.comboSelections && (
+                  <div style={{ fontSize: "0.75rem", color: "#134E4A", fontWeight: 600, lineHeight: 1.35 }}>↳ {resumoDasEscolhas(a.comboSelections)}</div>
+                )}
+                {a.notes && <div style={{ fontSize: "0.74rem", color: "#B45309", fontWeight: 600 }}>📝 {a.notes}</div>}
+                <div style={{ fontSize: "0.75rem", color: "#0F766E" }}>{fmt(a.precoUnitario)} cada</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                 <button
@@ -444,10 +491,17 @@ export default function EditarPedidoPainel({
                 key={p.id}
                 type="button"
                 onClick={() => {
+                  // Pizza, combo, lanche com ponto: a mesma janela do cardápio,
+                  // que pergunta sabor e opções e já cobra pela regra. Entrava
+                  // direto pelo preço base — R$ 0,00 na pizza da Divinos.
+                  if ((p.comboGroups || []).length > 0) {
+                    setProdutoComOpcoes(p);
+                    return;
+                  }
                   setAcrescimos((lista) => {
-                    const ja = lista.findIndex((x) => x.produto.id === p.id);
+                    const ja = lista.findIndex((x) => x.produto.id === p.id && !x.comboSelections && !x.notes);
                     if (ja >= 0) return lista.map((x, i) => (i === ja ? { ...x, quantity: Math.min(99, x.quantity + 1) } : x));
-                    return [...lista, { produto: p, quantity: 1 }];
+                    return [...lista, { produto: p, quantity: 1, precoUnitario: p.price }];
                   });
                   setBuscaProduto("");
                   setAbrindoBusca(false);
@@ -467,7 +521,10 @@ export default function EditarPedidoPainel({
                 }}
               >
                 <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#1E293B" }}>{p.name}</span>
-                <span style={{ fontWeight: 700, color: "#0F766E" }}>{fmt(p.price)}</span>
+                {/* O preço do cardápio: "a partir de" quando depende da escolha. */}
+                <span style={{ fontWeight: 700, color: "#0F766E", whiteSpace: "nowrap" }}>
+                  {precoVariaPorEscolha(p as any) ? `a partir de ${fmt(precoMinimoDoProduto(p as any))}` : fmt(precoMinimoDoProduto(p as any))}
+                </span>
               </button>
             ))}
             {cardapio.length > 0 && produtosFiltrados.length === 0 && (
@@ -585,6 +642,46 @@ export default function EditarPedidoPainel({
       <div style={{ marginTop: "8px", fontSize: "0.73rem", color: "#64748B", textAlign: "center", lineHeight: 1.4 }}>
         A comanda sai de novo marcada como 2ª via, para a cozinha descartar a anterior.
       </div>
+
+      {/* A mesma janela do cardápio e da mesa: pergunta os sabores, aplica a
+          regra da pizza (média, a mais cara) e devolve o preço com as
+          escolhas. Fica dentro do modal do pedido de propósito — em portal ela
+          cairia atrás dele, que está numa camada acima. */}
+      {produtoComOpcoes && (
+        <ComboModal
+          product={{
+            id: produtoComOpcoes.id,
+            name: produtoComOpcoes.name,
+            description: produtoComOpcoes.description ?? null,
+            price: produtoComOpcoes.price,
+            imageUrl: produtoComOpcoes.imageUrl ?? null,
+            comboGroups: (produtoComOpcoes.comboGroups || []) as any,
+          }}
+          onClose={() => setProdutoComOpcoes(null)}
+          onConfirm={(selections, extraSum, qty, notes) => {
+            const p = produtoComOpcoes;
+            const escolhas: Record<string, Record<string, number>> = {};
+            for (const [grupo, itens] of Object.entries((selections || {}) as Record<string, Record<string, number>>)) {
+              for (const [nome, q] of Object.entries(itens || {})) {
+                if (Number(q) > 0) (escolhas[grupo] ||= {})[nome] = Number(q);
+              }
+            }
+            setAcrescimos((lista) => [
+              ...lista,
+              {
+                produto: p,
+                quantity: Math.max(1, Math.min(99, Number(qty) || 1)),
+                precoUnitario: Math.round(((Number(p.price) || 0) + (Number(extraSum) || 0)) * 100) / 100,
+                comboSelections: Object.keys(escolhas).length > 0 ? escolhas : undefined,
+                notes: notes && notes.trim() ? notes.trim() : undefined,
+              },
+            ]);
+            setProdutoComOpcoes(null);
+            setBuscaProduto("");
+            setAbrindoBusca(false);
+          }}
+        />
+      )}
     </div>
   );
 }

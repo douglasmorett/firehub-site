@@ -15,7 +15,7 @@
  *            tirar o último item não vira cancelamento — cancelar pedido de
  *            parceiro é pelo botão que avisa o parceiro.
  *
- *        { acrescentar: [{ menuProductId, quantity, notes }], pagamento }
+ *        { acrescentar: [{ menuProductId, quantity, notes, comboSelections }], pagamento }
  *          → acrescenta item. Em pedido próprio o item entra no MESMO pedido e
  *            o total sobe. Em pedido de marketplace nasce um pedido COLADO
  *            (`parentOrderId`), com a forma de pagamento que o cliente vai usar
@@ -53,7 +53,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
-import { precoDoCanal, type CanalDePreco } from "@/lib/preco-por-canal";
+import { precoDoCanal, aplicarPrecoDoCanalComCombo, type CanalDePreco } from "@/lib/preco-por-canal";
+import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import {
   avaliarEdicao,
   recalcularTotal,
@@ -134,8 +135,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { order, operador, avaliacao, lojaId } = ctx;
 
     const body = await req.json().catch(() => ({}) as any);
-    const acrescentar: { menuProductId: string; quantity: number; notes?: string }[] =
-      Array.isArray(body?.acrescentar) ? body.acrescentar : [];
+    const acrescentar: Acrescimo[] = Array.isArray(body?.acrescentar) ? body.acrescentar : [];
     const itens: { itemId: string; quantity: number }[] = Array.isArray(body?.itens) ? body.itens : [];
     const removerItemIds: string[] = Array.isArray(body?.removerItemIds)
       ? body.removerItemIds.map(String)
@@ -221,7 +221,7 @@ async function editarPedidoProprio(entrada: {
   operador: any;
   itens: { itemId: string; quantity: number }[];
   removerItemIds: string[];
-  acrescentar: { menuProductId: string; quantity: number; notes?: string }[];
+  acrescentar: Acrescimo[];
 }) {
   const { order, lojaId, operador } = entrada;
 
@@ -277,7 +277,7 @@ async function editarPedidoProprio(entrada: {
       const antes = order.items.find((i: any) => i.id === m.itemId)?.quantity;
       return `${nomeDoItem(m.itemId)} ${antes}x → ${m.quantity}x`;
     }),
-    ...novosItens.map((i) => `+${i.quantity}x ${i.productName}`),
+    ...novosItens.map((i) => `+${i.quantity}x ${comEscolhas(i)}`),
   ].join(", ");
 
   const registro: RegistroDeEdicao = {
@@ -482,13 +482,51 @@ async function editarItensDoMarketplace(entrada: {
 
 // ── Itens novos: preço do banco e isolamento entre lojas ────────────────────
 
+/** O que a tela manda para acrescentar. `comboSelections`: { grupoId: { opção: qtd } }, como o cardápio. */
+type Acrescimo = { menuProductId: string; quantity: number; notes?: string; comboSelections?: unknown };
+
 type ItemNovo = {
   menuProductId: string;
   productName: string;
   quantity: number;
   price: number;
   notes: string | null;
+  comboSelections?: Record<string, Record<string, number>>;
 };
+
+/** "Pizza G (Calabresa, Frango)" — o histórico de edição diz o que entrou, não só o produto. */
+function comEscolhas(i: ItemNovo): string {
+  const nomes = Object.values(i.comboSelections || {}).flatMap((g) =>
+    Object.entries(g).map(([nome, q]) => (q > 1 ? `${nome} x${q}` : nome))
+  );
+  return nomes.length > 0 ? `${i.productName} (${nomes.join(", ")})` : i.productName;
+}
+
+/**
+ * As escolhas que vieram da tela, só com o que EXISTE no produto: pergunta
+ * dele e opção daquela pergunta, quantidade inteira de 1 a 30. É o que vai
+ * para a comanda e para a conta — opção inventada no corpo não imprime nem
+ * entra no preço.
+ */
+function escolhasDoProduto(bruto: unknown, grupos: any[]): Record<string, Record<string, number>> | null {
+  let v: any = bruto;
+  if (typeof v === "string") {
+    try { v = JSON.parse(v); } catch { return null; }
+  }
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const saida: Record<string, Record<string, number>> = {};
+  for (const g of grupos) {
+    const doGrupo = v[g.id];
+    if (!doGrupo || typeof doGrupo !== "object") continue;
+    const nomes = new Set((g.items || []).map((i: any) => i?.menuProduct?.name).filter(Boolean));
+    for (const [nome, q] of Object.entries(doGrupo)) {
+      const n = Math.floor(Number(q));
+      if (!nomes.has(nome) || !Number.isFinite(n) || n < 1 || n > 30) continue;
+      (saida[g.id] ||= {})[nome] = n;
+    }
+  }
+  return Object.keys(saida).length > 0 ? saida : null;
+}
 
 /**
  * Transforma o que o navegador pediu em itens graváveis.
@@ -499,7 +537,7 @@ type ItemNovo = {
  * fazia a baixa de estoque seguir a ficha técnica dela, drenando insumo alheio.
  */
 async function montarItensNovos(
-  brutos: { menuProductId: string; quantity: number; notes?: string }[],
+  brutos: Acrescimo[],
   lojaId: string,
   deliveryType: string | null | undefined
 ): Promise<{ erro: NextResponse } | { itens: ItemNovo[] }> {
@@ -508,6 +546,7 @@ async function montarItensNovos(
       menuProductId: String(a?.menuProductId || ""),
       quantity: Math.floor(Number(a?.quantity)),
       notes: a?.notes ? String(a.notes).trim().slice(0, 200) : null,
+      comboSelections: a?.comboSelections,
     }))
     .filter((a) => a.menuProductId && Number.isFinite(a.quantity) && a.quantity >= 1 && a.quantity <= 99);
 
@@ -523,6 +562,21 @@ async function montarItensNovos(
       // Sem esta coluna o item trocado sairia pelo preço de tabela enquanto
       // a vitrine anunciava a promoção.
       promoPrice: true,
+      // As perguntas, com a regra e o preço por canal de cada opção. Sem elas
+      // a pizza de base R$ 0,00 entrava por R$ 0,00 e sem sabor: a Divinos
+      // tentou corrigir por aqui o pedido #9218 em 25/09/2026 e não conseguiu.
+      comboGroups: {
+        select: {
+          id: true, title: true, minQty: true, maxQty: true, priceRule: true,
+          items: {
+            select: {
+              additionalPrice: true, additionalPriceDelivery: true, additionalPriceSalao: true,
+              additionalPriceTotem: true, maxPerItem: true,
+              menuProduct: { select: { name: true, price: true } },
+            },
+          },
+        },
+      },
     },
   });
   const porId = new Map(produtos.map((p) => [p.id, p]));
@@ -542,12 +596,29 @@ async function montarItensNovos(
   return {
     itens: pedidos.map((p) => {
       const prod = porId.get(p.menuProductId)!;
+      const grupos = prod.comboGroups || [];
+      if (grupos.length === 0) {
+        return {
+          menuProductId: prod.id,
+          productName: prod.name,
+          quantity: p.quantity,
+          price: precoDoCanal(prod as any, canalDePreco),
+          notes: p.notes,
+        };
+      }
+      // Produto com perguntas: a mesma conta da mesa, do site e do totem
+      // (lib/preco-combo.ts) — a regra de cada pergunta (SOMA, MAIOR, MÉDIA)
+      // e o piso, que segura a pizza de base zero mandada sem sabor.
+      const noCanal = aplicarPrecoDoCanalComCombo(prod as any, canalDePreco);
+      const escolhas = escolhasDoProduto(p.comboSelections, grupos);
+      const preco = Math.max(precoUnitarioDoItem(noCanal as any, escolhas), pisoDoPreco(noCanal as any));
       return {
         menuProductId: prod.id,
         productName: prod.name,
         quantity: p.quantity,
-        price: precoDoCanal(prod as any, canalDePreco),
+        price: Math.round(preco * 100) / 100,
         notes: p.notes,
+        ...(escolhas ? { comboSelections: escolhas } : {}),
       };
     }),
   };
@@ -559,7 +630,7 @@ async function acrescentarColado(entrada: {
   order: any;
   lojaId: string;
   operador: any;
-  acrescentar: { menuProductId: string; quantity: number; notes?: string }[];
+  acrescentar: Acrescimo[];
   pagamento: string;
 }) {
   const { order, lojaId, operador, pagamento } = entrada;
@@ -580,7 +651,7 @@ async function acrescentarColado(entrada: {
 
   const valorDoAcrescimo =
     Math.round(novosItens.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100;
-  const descricao = novosItens.map((i) => `+${i.quantity}x ${i.productName}`).join(", ");
+  const descricao = novosItens.map((i) => `+${i.quantity}x ${comEscolhas(i)}`).join(", ");
 
   const numero = await generateDailyOrderNumber(lojaId);
   const novo = await prisma.customerOrder.create({
