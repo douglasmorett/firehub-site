@@ -37,6 +37,7 @@ import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { conferirEstoque, estoqueDaLojaOuVazio } from "./estoque-restante";
 import { STATUS_QUE_NAO_CONTAM } from "./estoque-do-cardapio";
+import { marcarAguardandoLoja } from "./finalizar-rascunho";
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
 
@@ -2168,6 +2169,39 @@ function avisarLojaSemPontoNoMapa(franchiseeId: string) {
     .catch(() => undefined);
 }
 
+/**
+ * O robô segurou o pedido para a loja — o mapa não confirmou o endereço e o
+ * cliente não mandou a localização (regra do dono, 25/09/2026: "melhor do que
+ * botar pra dentro"). O rascunho ganha a marca que abre, no painel de pedidos,
+ * o aviso "Pedido do WhatsApp esperando você" (lib/finalizar-rascunho.ts), e
+ * os dados da conversa mais recentes: é com eles que a loja decide.
+ */
+async function segurarRascunhoParaALoja(
+  rascunhoId: string | null | undefined,
+  motivo: string,
+  dados: { customerAddress?: string | null; paymentMethod?: string | null; customerName?: string | null },
+) {
+  if (!rascunhoId) {
+    console.warn(`[Chatbot AI Order Sync] Pedido segurado sem rascunho para marcar (${motivo}) — a loja vê só a conversa na fila de atendimento.`);
+    return;
+  }
+  try {
+    const r = await prisma.customerOrder.findUnique({ where: { id: rascunhoId }, select: { notes: true, status: true } });
+    if (!r || String(r.status).toUpperCase() !== "CRIANDO_IA") return;
+    await prisma.customerOrder.updateMany({
+      where: { id: rascunhoId, status: "CRIANDO_IA" },
+      data: {
+        notes: marcarAguardandoLoja(r.notes, motivo),
+        ...(dados.customerAddress ? { customerAddress: dados.customerAddress } : {}),
+        ...(dados.paymentMethod ? { paymentMethod: dados.paymentMethod } : {}),
+        ...(dados.customerName && !dados.customerName.includes("Cliente WhatsApp") ? { customerName: dados.customerName } : {}),
+      },
+    });
+  } catch (e: any) {
+    console.error("[Chatbot AI Order Sync] Não consegui marcar o rascunho para a loja:", e?.message || e);
+  }
+}
+
 async function syncAiOrderToDatabase({
   franchiseeId,
   customerPhone,
@@ -2746,6 +2780,17 @@ async function syncAiOrderToDatabase({
         mensagemParaOCliente: `${saudacao} 😕 Conferi aqui e ${explicacao}${retirada}`,
       };
     }
+    /** O rascunho que fica esperando a loja quando o robô segura o pedido. */
+    const rascunhoDoCliente =
+      (existingDraft && String(existingDraft.status).toUpperCase() === "CRIANDO_IA" ? existingDraft : null) ||
+      candidatosDoCliente.find((p: any) => String(p.status).toUpperCase() === "CRIANDO_IA") ||
+      null;
+    const segurarParaALoja = (motivo: string) =>
+      segurarRascunhoParaALoja(rascunhoDoCliente?.id, motivo, {
+        customerAddress: payload.address || enderecoDoPedido || null,
+        paymentMethod: payload.paymentMethod || null,
+        customerName: finalCustomerName,
+      });
     if (vereditoDaArea.resultado === "DESCONHECIDO") {
       // ── A LOJA SEM PONTO NO MAPA ────────────────────────────────────────
       // Sem pino e sem endereço da loja que o mapa ache, não há de onde medir:
@@ -2758,6 +2803,7 @@ async function syncAiOrderToDatabase({
           `Marque o pino da loja em Minha Loja → Entrega. Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
         );
         avisarLojaSemPontoNoMapa(franchiseeId);
+        await segurarParaALoja("a loja não tem o ponto dela no mapa — o robô não calculou a entrega");
         return {
           gravado: false,
           motivo: `a loja não tem o ponto dela no mapa — marque o pino da loja para o robô calcular a entrega (${vereditoDaArea.motivo})`,
@@ -2789,6 +2835,7 @@ async function syncAiOrderToDatabase({
         `[Chatbot AI Order Sync] ❓ Pedido segurado: ÁREA NÃO CONFIRMADA (${vereditoDaArea.motivo}). ` +
         `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
       );
+      await segurarParaALoja("o robô não achou o endereço no mapa");
       return {
         gravado: false,
         motivo: `área de entrega não confirmada (${vereditoDaArea.motivo})`,
@@ -2802,7 +2849,7 @@ async function syncAiOrderToDatabase({
     // ── R3: PONTO APROXIMADO — A TAXA É ESTIMATIVA ─────────────────────────
     // O mapa só achou o centro do bairro (ou a rua em mais de um trecho): a
     // taxa pode ser de outra faixa. Pede a localização UMA vez; se o cliente
-    // não mandar, o pedido segue com a taxa estimada e a nota avisa a loja.
+    // não mandar, o pedido ESPERA a loja conferir a taxa (logo abaixo).
     if (pedirLocalizacao === "aproximado" && !jaPediuLocalizacao) {
       console.warn(
         `[Chatbot AI Order Sync] 📍 Pedido aguardando LOCALIZAÇÃO: ponto aproximado (${vereditoDaArea.motivo}). ` +
@@ -2816,6 +2863,25 @@ async function syncAiOrderToDatabase({
         mensagemParaOCliente:
           `Quase lá! 😊 Pelo endereço, o mapa só achou a região, então a taxa${estimada} ainda é uma estimativa. ` +
           `Pra eu calcular certinho, me manda sua localização por aqui? ${COMO_MANDAR_A_LOCALIZACAO}`,
+      };
+    }
+    // Regra do dono (25/09/2026): taxa ESTIMADA também não entra sozinha. O
+    // cliente não mandou a localização: em vez de ir para a cozinha com a
+    // estimativa, o pedido espera a loja conferir a taxa (aviso no painel).
+    if (pedirLocalizacao === "aproximado" && jaPediuLocalizacao) {
+      console.warn(
+        `[Chatbot AI Order Sync] ❓ Pedido segurado: PONTO APROXIMADO e sem localização (${vereditoDaArea.motivo}). ` +
+        `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
+      );
+      await segurarParaALoja("o mapa só achou o endereço de forma aproximada — confira a taxa");
+      return {
+        gravado: false,
+        motivo: `taxa não confirmada: ponto aproximado e o cliente não mandou a localização (${vereditoDaArea.motivo})`,
+        regraDeNegocio: true,
+        chamarAtendente: true,
+        mensagemParaOCliente:
+          `Não consegui confirmar no mapa o endereço exato para fechar a taxa de entrega. 🗺️ ` +
+          `Já chamei um atendente da loja para confirmar com você por aqui — não precisa repetir o pedido!`,
       };
     }
     if (vereditoDaArea.taxa != null) {

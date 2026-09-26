@@ -125,6 +125,32 @@ export function statusDaFinalizacao(chatbotConfig: unknown): "ACEITO" | "NOVO" {
   return c.autoAcceptOrders === true ? "ACEITO" : "NOVO";
 }
 
+// ── "AGUARDANDO A LOJA" ─────────────────────────────────────────────────────
+//
+// Regra do dono (25/09/2026): pedido do robô cujo endereço o mapa não
+// confirmou NÃO entra sozinho na produção — "melhor do que botar pra dentro".
+// O robô segura o rascunho, chama a equipe e marca o motivo aqui; o painel de
+// pedidos abre o aviso "Pedido do WhatsApp esperando você" com Aceitar (e
+// conferir a taxa) ou Não aceitar. A marca mora na observação do rascunho,
+// que o robô reescreve a cada turno — e, depois de chamar a equipe, ele cala.
+
+export const MARCA_AGUARDANDO_LOJA = "🙋 AGUARDANDO A LOJA";
+const MARCA_NO_INICIO = /^🙋 AGUARDANDO A LOJA: [^·\n]*(· )?/;
+
+/** A observação com a marca na frente (trocando a que já houver). */
+export function marcarAguardandoLoja(notas: unknown, motivo: string): string {
+  const resto = String(notas || "").replace(MARCA_NO_INICIO, "").trim();
+  const porque = String(motivo || "").replace(/[·\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+  return `${MARCA_AGUARDANDO_LOJA}: ${porque}${resto ? ` · ${resto}` : ""}`;
+}
+
+/** Este rascunho está esperando a loja? O motivo, ou null. */
+export function motivoDeAguardarLoja(pedido: { status?: unknown; notes?: unknown } | null | undefined): string | null {
+  if (!pedido || String(pedido.status || "").toUpperCase() !== "CRIANDO_IA") return null;
+  const m = String(pedido.notes || "").match(/^🙋 AGUARDANDO A LOJA: ([^·\n]*)/);
+  return m ? m[1].trim() : null;
+}
+
 const PREFIXO_DO_RASCUNHO = /^🤖 Pedido (sendo montado pela IA no WhatsApp|finalizado via IA pelo WhatsApp)/;
 
 /**
@@ -133,7 +159,8 @@ const PREFIXO_DO_RASCUNHO = /^🤖 Pedido (sendo montado pela IA no WhatsApp|fin
  * quem finalizou; a observação da loja e as notas da entrega vêm no fim.
  */
 export function notasDaFinalizacao(notasAntes: unknown, quem: string, observacao: string, extras: string[] = []): string {
-  const antes = String(notasAntes || "").trim();
+  // A marca "aguardando a loja" sai: finalizar é justamente a loja respondendo.
+  const antes = String(notasAntes || "").replace(MARCA_NO_INICIO, "").trim();
   const semCabecalho = antes.replace(PREFIXO_DO_RASCUNHO, "").replace(/^\s*·\s*/, "").trim();
   const partes = [
     `🤖 Montado pela IA no WhatsApp · 🧑‍💼 Finalizado à mão por ${quem}`,

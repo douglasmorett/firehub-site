@@ -3,7 +3,7 @@
  *
  *   npx tsx scripts/teste-finalizar-rascunho.ts
  */
-import { lerFinalizacao, notasDaFinalizacao, statusDaFinalizacao, totalComATaxa, numeroDigitado } from "../src/lib/finalizar-rascunho";
+import { lerFinalizacao, notasDaFinalizacao, statusDaFinalizacao, totalComATaxa, numeroDigitado, marcarAguardandoLoja, motivoDeAguardarLoja } from "../src/lib/finalizar-rascunho";
 
 let ok = 0, falhas = 0;
 function confere(nome: string, cond: boolean, detalhe?: unknown) {
@@ -68,6 +68,19 @@ confere(
   notas,
 );
 confere("sem nada do robô", notasDaFinalizacao("", "Zé (dono)", "") === "🤖 Montado pela IA no WhatsApp · 🧑‍💼 Finalizado à mão por Zé (dono)");
+
+// ── "Aguardando a loja": o robô segurou o pedido (regra do dono, 25/09/2026) ──
+const doRobo = "🤖 Pedido sendo montado pela IA no WhatsApp · Obs: sem cebola";
+const marcada = marcarAguardandoLoja(doRobo, "o robô não achou o endereço no mapa");
+confere("a marca vai na frente, com o motivo, e o resto fica", marcada === "🙋 AGUARDANDO A LOJA: o robô não achou o endereço no mapa · 🤖 Pedido sendo montado pela IA no WhatsApp · Obs: sem cebola", marcada);
+confere("marcar de novo troca o motivo (não empilha)",
+  marcarAguardandoLoja(marcada, "o mapa só achou o endereço de forma aproximada — confira a taxa").startsWith("🙋 AGUARDANDO A LOJA: o mapa só achou") &&
+  marcarAguardandoLoja(marcada, "x").split("AGUARDANDO A LOJA").length === 2);
+confere("rascunho marcado: o painel lê o motivo", motivoDeAguardarLoja({ status: "CRIANDO_IA", notes: marcada }) === "o robô não achou o endereço no mapa");
+confere("pedido já finalizado não abre aviso", motivoDeAguardarLoja({ status: "NOVO", notes: marcada }) === null);
+confere("rascunho sem marca não abre aviso", motivoDeAguardarLoja({ status: "CRIANDO_IA", notes: doRobo }) === null);
+const finalizada = notasDaFinalizacao(marcada, "Ana (funcionário)", "");
+confere("finalizar tira a marca", !finalizada.includes("AGUARDANDO A LOJA") && finalizada.includes("Obs: sem cebola"), finalizada);
 
 console.log(`${ok} ok, ${falhas} falha(s)`);
 process.exit(falhas ? 1 : 0);

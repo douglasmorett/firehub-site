@@ -23,6 +23,8 @@ import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
+import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperandoLoja";
+import { motivoDeAguardarLoja } from "@/lib/finalizar-rascunho";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
@@ -950,6 +952,11 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               >
                 ✍️ Finalizar pedido manualmente
               </button>
+              {motivoDeAguardarLoja(order) && (
+                <div style={{ fontSize: "0.7rem", color: PALETA.atencao, marginTop: "3px", fontWeight: 600 }}>
+                  🙋 Esperando a loja: {motivoDeAguardarLoja(order)}
+                </div>
+              )}
             </div>
           ) : order.kdsStage === "FINISHED" || order.kdsStage === "READY" ? (
             <div style={{ marginBottom: "4px" }}>
@@ -1769,6 +1776,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [viewReceiptOrderId, setViewReceiptOrderId] = useState<string | null>(null);
   /** O rascunho do robô ("IA criando…") que a loja está finalizando à mão. */
   const [rascunhoParaFinalizar, setRascunhoParaFinalizar] = useState<string | null>(null);
+  /** Avisos "Pedido do WhatsApp esperando você" que a pessoa já fechou nesta sessão. */
+  const [avisosDispensados, setAvisosDispensados] = useState<string[]>([]);
   /** Qual aba do modal Ver pedido está aberta: a prévia do papel ou a edição. */
   const [abaDoRecibo, setAbaDoRecibo] = useState<"comanda" | "editar">("comanda");
   const [confirmarPagamentoOrder, setConfirmarPagamentoOrder] = useState<any | null>(null);
@@ -3749,6 +3758,42 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           }}
         />
       )}
+
+      {/* PEDIDO DO WHATSAPP ESPERANDO A LOJA: o robô segurou porque o mapa não
+          confirmou o endereço (regra do dono, 25/09/2026: "melhor do que
+          botar pra dentro"). Um por vez; "Depois" fecha só nesta sessão. */}
+      {!rascunhoParaFinalizar && (() => {
+        const esperando = orders.filter((o: any) => motivoDeAguardarLoja(o) && !avisosDispensados.includes(o.id));
+        const primeiro = esperando[0];
+        if (!primeiro) return null;
+        const dispensar = () => setAvisosDispensados((d) => [...d, primeiro.id]);
+        return (
+          <AvisoPedidoEsperandoLoja
+            key={primeiro.id}
+            pedido={primeiro}
+            motivo={motivoDeAguardarLoja(primeiro) || "o mapa não confirmou o endereço"}
+            quantosMais={esperando.length - 1}
+            onAceitar={() => { dispensar(); setRascunhoParaFinalizar(primeiro.id); }}
+            onDepois={dispensar}
+            onNaoAceitar={async (motivoDaRecusa) => {
+              try {
+                const res = await fetch("/api/customer-order/status", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ orderId: primeiro.id, status: "CANCELADO", cancelReason: motivoDaRecusa }),
+                });
+                const d = await res.json().catch(() => null);
+                if (!res.ok) return d?.error || "Não consegui cancelar o pedido.";
+                dispensar();
+                await recarregarPedidos();
+                return null;
+              } catch {
+                return "Não consegui falar com o servidor. Verifique a internet e tente de novo.";
+              }
+            }}
+          />
+        );
+      })()}
 
       {/* DIGITAL RECEIPT PREVIEW MODAL */}
       {viewReceiptOrderId && (() => {
