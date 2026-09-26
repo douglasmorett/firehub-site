@@ -77,6 +77,24 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [dirtyCoupons, setDirtyCoupons] = useState(false);
   const [dirtyPayment, setDirtyPayment] = useState<boolean>(!user.hasConfiguredPayment && (!user.paymentFees || !user.paymentFees.PIX));
   const [syncIfoodHours, setSyncIfoodHours] = useState(true); // Refletir horários no iFood
+  // Abre e fecha sozinha no horário (lib/abertura-da-loja.ts). Salva no toque:
+  // é um interruptor, não um campo de formulário.
+  const [aberturaAutomatica, setAberturaAutomatica] = useState<boolean>(user.aberturaAutomatica === true);
+  const [salvandoAbertura, setSalvandoAbertura] = useState(false);
+  const [erroAbertura, setErroAbertura] = useState<string | null>(null);
+  const alternarAbertura = async (ligar: boolean) => {
+    setAberturaAutomatica(ligar);
+    setSalvandoAbertura(true);
+    setErroAbertura(null);
+    try {
+      await saveFields({ aberturaAutomatica: ligar });
+    } catch {
+      setAberturaAutomatica(!ligar);
+      setErroAbertura("Não consegui salvar. Tente de novo.");
+    } finally {
+      setSalvandoAbertura(false);
+    }
+  };
   const [hoursError, setHoursError] = useState<string | null>(null);
   const [hoursSyncMsg, setHoursSyncMsg] = useState<string | null>(null);
   // Saving states por seção
@@ -580,6 +598,33 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
       {show("hours") && <div className="card mb-4">
         <h3 className="font-bold mb-4">⏰ Horário de Funcionamento</h3>
         <p style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: "0.75rem" }}>Configure múltiplos turnos por dia (ex: Almoço e Jantar)</p>
+        {/* Com o "Site aberto" desligado, site e robô recusam pedido mesmo
+            no horário. Em 25/09/2026 a Hakim Centro passou a noite assim
+            porque ninguém ligou o interruptor. */}
+        <label style={{
+          display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", marginBottom: "0.9rem",
+          borderRadius: 10, border: `1px solid ${aberturaAutomatica ? "#99F6E4" : "#E2E8F0"}`,
+          background: aberturaAutomatica ? "#F0FDFA" : "#F8FAFC", cursor: salvandoAbertura ? "wait" : "pointer",
+        }}>
+          <input
+            type="checkbox"
+            checked={aberturaAutomatica}
+            disabled={salvandoAbertura}
+            onChange={e => alternarAbertura(e.target.checked)}
+            style={{ width: 18, height: 18, marginTop: 2, flexShrink: 0, accentColor: "#0F766E" }}
+          />
+          <span>
+            <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>
+              Abrir e fechar a loja sozinha no horário {aberturaAutomatica && <span style={{ color: "#0F766E" }}>· ligado</span>}
+            </span>
+            <span style={{ display: "block", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.45, marginTop: 2 }}>
+              O &quot;Site aberto&quot; liga quando cada turno começa e desliga quando termina: site e robô recebem pedido sem
+              ninguém precisar abrir. Vale o horário salvo abaixo. Se alguém fechar no meio do turno, a loja fica fechada até o
+              próximo turno.
+            </span>
+            {erroAbertura && <span style={{ display: "block", fontSize: "0.76rem", color: "#C92E09", fontWeight: 700, marginTop: 4 }}>{erroAbertura}</span>}
+          </span>
+        </label>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
           {Array.isArray(storeHours) && storeHours.map((h: any, idx: number) => {
             const dayShifts = Array.isArray(h?.shifts) && h.shifts.length > 0

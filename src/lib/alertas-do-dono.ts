@@ -60,7 +60,18 @@ export type TipoDeAlerta =
    * e de palestra — porque o "Notificar responsáveis" do ManyChat só avisa por
    * e-mail, e dono de restaurante não vive no e-mail: vive no WhatsApp.
    */
-  | "aviso_externo";
+  | "aviso_externo"
+  /**
+   * Passaram 15 minutos do horário de abrir e a loja está FECHADA no FireHub
+   * (interruptor "Site aberto" desligado): site e robô não vendem. A Hakim
+   * Centro passou a noite de 25/09/2026 assim porque ninguém ligou o
+   * interruptor (lib/abertura-da-loja.ts).
+   */
+  | "loja_fechada_no_horario"
+  /** Passaram 15 minutos do horário de abrir e ninguém abriu o caixa. */
+  | "caixa_nao_aberto"
+  /** A loja está fechada no iFood dentro do horário da loja: pedido de lá não entra. */
+  | "ifood_fechado";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -73,6 +84,11 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   // Ligado: só chega se a loja criou uma chave de avisos. Quem não criou,
   // nunca recebe — não há o que calar.
   aviso_externo: true,
+  // Pedido do dono (25/09/2026): os três vêm ligados. Cada um sai no máximo
+  // uma vez por turno (o do iFood, uma vez por fechamento).
+  loja_fechada_no_horario: true,
+  caixa_nao_aberto: true,
+  ifood_fechado: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -84,6 +100,9 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   impressao_parada: "Impressão automática parou, ou comanda não está saindo na impressora",
   ia_fora_do_ar: "A inteligência artificial do robô caiu (ele passa as conversas para a equipe até voltar)",
   aviso_externo: "Aviso de uma ferramenta ligada pela API (ex.: pedido de demonstração ou de palestra no Instagram)",
+  loja_fechada_no_horario: "Passou do horário de abrir e a loja está fechada (site e robô sem receber pedido)",
+  caixa_nao_aberto: "Passou do horário de abrir e o caixa não foi aberto",
+  ifood_fechado: "A loja está fechada no iFood dentro do horário de funcionamento",
 };
 
 /** O dono ligou este alerta? Sem config salva, vale o padrão. */

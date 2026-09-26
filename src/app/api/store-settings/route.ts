@@ -195,6 +195,25 @@ export async function PUT(req: Request) {
     data.appMotoboyConfig = limparAppMotoboyConfig(body.appMotoboyConfig);
   }
 
+  // ── Abre e fecha sozinha no horário (lib/abertura-da-loja.ts) ──────────
+  // É da LOJA: o cron lê o registro do dono, então vai para o dono mesmo
+  // quando quem salva é funcionário. Ligar limpa o carimbo do turno — senão
+  // um turno que a abertura já tinha carimbado antes de ser desligada não
+  // abriria de novo, e "liguei e nada aconteceu" seria a primeira impressão.
+  if (typeof body.aberturaAutomatica === "boolean") {
+    const lojaId = (currentUser as any).ownerId || currentUser.id;
+    const dono = await prisma.user.findUnique({ where: { id: lojaId }, select: { aberturaEstado: true } });
+    const estado: any = { ...((dono?.aberturaEstado as any) || {}) };
+    if (body.aberturaAutomatica) {
+      delete estado.abriu;
+      delete estado.fechou;
+    }
+    await prisma.user.update({
+      where: { id: lojaId },
+      data: { aberturaAutomatica: body.aberturaAutomatica, aberturaEstado: estado },
+    });
+  }
+
   const updatedUser = await prisma.user.update({ where: { id: currentUser.id }, data });
 
   // ── Sincronizar cidade e dados da loja para todos os funcionários da equipe ──

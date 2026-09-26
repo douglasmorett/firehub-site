@@ -98,6 +98,8 @@ export async function GET() {
       // Prisma carimba) daria 500.
       ["CustomerOrder", "cancelledAt"], ["CustomerOrder", "cancelCienteEm"],
       ["CustomerOrder", "cancelCientePor"],
+      // Abertura automática: a tela de horários e o cron leem as duas.
+      ["User", "aberturaAutomatica"], ["User", "aberturaEstado"],
       ["CustomerOrderItem", "notes"], ["CustomerOrderItem", "tableGuestId"],
       ["MenuProduct", "sortOrder"], ["ComboGroup", "minQty"],
       ["ComboGroupItem", "maxPerItem"], ["ComboGroupItem", "optionNote"],

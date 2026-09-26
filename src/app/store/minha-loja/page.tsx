@@ -49,6 +49,13 @@ export default async function StoreSettingsPage() {
       deliveryConfig: (storeOwner as any).deliveryConfig || null,
       storeTimezone: (storeOwner as any).storeTimezone || "America/Sao_Paulo",
       showAddressOnMenu: (storeOwner as any).showAddressOnMenu !== false,
+      // Os dois abaixo são salvos pelo "Salvar Informações" — e não vinham
+      // para a tela: o campo abria vazio e o salvar gravava vazio por cima.
+      // Era assim que o "WhatsApp do Proprietário" sumia, e com ele todo
+      // aviso do robô ao dono (lib/alertas-do-dono.ts).
+      notificationPhone: storeOwner.notificationPhone || "",
+      storeDeliveryOnly: Boolean((storeOwner as any).storeDeliveryOnly),
+      aberturaAutomatica: (storeOwner as any).aberturaAutomatica === true,
     }} />
   );
 }

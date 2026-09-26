@@ -1714,6 +1714,23 @@ export default function ChatbotHubClient() {
                 titulo: "Avisos de fora do FireHub (Instagram, ManyChat)",
                 detalhe: "Quando uma ferramenta ligada pela API avisa que alguém pediu demonstração, palestra ou contato. Só chega se você criou uma chave de avisos em Minha Loja → API Aberta.",
               },
+              // Os três abaixo saem do cron api/cron/abertura-da-loja, pelo
+              // horário cadastrado em Minha Loja → Horários.
+              {
+                id: "loja_fechada_no_horario",
+                titulo: "Passou do horário e a loja não abriu",
+                detalhe: "15 minutos depois do horário de abrir, a loja continua fechada no FireHub (\"Site aberto\" desligado): site e robô não recebem pedido. Um aviso por turno.",
+              },
+              {
+                id: "caixa_nao_aberto",
+                titulo: "Passou do horário e o caixa não foi aberto",
+                detalhe: "15 minutos depois do horário de abrir, ninguém abriu o caixa. Um aviso por turno.",
+              },
+              {
+                id: "ifood_fechado",
+                titulo: "Loja fechada no iFood dentro do horário",
+                detalhe: "O iFood está com a loja fechada enquanto o seu horário diz aberto (pausa, loja desconectada, horário diferente lá): pedido de lá não entra. Conferido a cada 5 minutos; um aviso por fechamento.",
+              },
             ];
             const alertas = config.alertas || {};
             const ligado = (id: string) => (typeof alertas[id] === "boolean" ? alertas[id] : true);

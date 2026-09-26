@@ -124,6 +124,15 @@ const jobs = [
     intervalMs: 60 * 60_000, // 1 hora
   },
   {
+    // Abre e fecha a loja no horario (quem ligou em Minha Loja -> Horarios) e
+    // avisa o dono no WhatsApp: loja fechada no horario, caixa nao aberto,
+    // iFood fechado. A cada minuto porque a abertura tem hora marcada; a rota
+    // segura a repeticao (um aviso por turno) e consulta o iFood a cada 5 min.
+    name: 'abertura-da-loja',
+    path: '/api/cron/abertura-da-loja',
+    intervalMs: 60_000, // 1 minuto
+  },
+  {
     // A cada 5 minutos porque atraso pede reacao rapida — e quem segura a
     // repeticao e a propria rota: um aviso por PEDIDO a cada hora.
     name: 'pedidos-atrasados',

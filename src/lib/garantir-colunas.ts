@@ -756,6 +756,12 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelCienteEm" TIMESTAMP(3)`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelCientePor" TEXT`,
 
+  // ── Loja: abre e fecha sozinha no horário (lib/abertura-da-loja.ts) ──
+  // Ligada por loja em Minha Loja → Horários; `aberturaEstado` guarda os
+  // carimbos do turno (abriu, fechou) e dos avisos ao dono.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "aberturaAutomatica" BOOLEAN DEFAULT false`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "aberturaEstado" JSONB`,
+
   // ── Item do pedido ──
   `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "notes" TEXT`,
   `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "tableGuestId" TEXT`,

@@ -126,6 +126,28 @@ export default function StoreTopNav({
     }).catch(() => {});
   }, []);
 
+  // O interruptor muda sem clique: a abertura automática liga e desliga no
+  // horário (api/cron/abertura-da-loja), e outro aparelho da loja pode mexer.
+  // Sem reler, o painel aberto desde a tarde mostrava "fechado" com a loja já
+  // vendendo — e o atendente "abria" de novo. Não relê durante um clique.
+  const togglingRef = useRef(toggling);
+  togglingRef.current = toggling;
+  useEffect(() => {
+    const reler = () => {
+      if (togglingRef.current || document.visibilityState !== "visible") return;
+      fetch("/api/store/status", { cache: "no-store" })
+        .then(r => (r.ok ? r.json() : null))
+        .then(s => {
+          if (!s || togglingRef.current) return;
+          if (typeof s.storeOpen === "boolean") setStoreOpen(s.storeOpen);
+          if (typeof s.cashOpen === "boolean") setCashOpen(s.cashOpen);
+        })
+        .catch(() => {});
+    };
+    const t = setInterval(reler, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   // Fechar dropdown ao clicar fora
   useEffect(() => {
     const handler = (e: MouseEvent) => {

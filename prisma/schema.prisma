@@ -52,6 +52,10 @@ model User {
   storeOpen       Boolean         @default(true)
   cashOpen        Boolean         @default(false)
   storePause      Json?           // { active, from, to, reason }
+  /// Liga o "Site aberto" quando o turno começa e desliga quando termina (lib/abertura-da-loja.ts).
+  aberturaAutomatica Boolean?     @default(false)
+  /// Carimbos do turno e dos avisos ao dono: { abriu, fechou, fechadaDesde, avisos, ifood }.
+  aberturaEstado  Json?
   storeCoupons    Json?           // Array de cupons de desconto
   pagarmeRecipientId String?      // ID do destinatário no Pagar.me (split por restaurante)
   facebookPixelId String?         // ID do Pixel do Facebook/Meta Ads

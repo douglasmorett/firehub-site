@@ -15,7 +15,7 @@
  * seguinte. Agora ele recebe o estado pronto e a ordem de não vender.
  */
 import { normalizeStoreHours, type StoreDayHour } from "@/lib/store-hours";
-import { FUSO_PADRAO, relogioDaLoja } from "@/lib/fuso";
+import { FUSO_PADRAO, dataDaLoja, relogioDaLoja } from "@/lib/fuso";
 
 export { FUSO_PADRAO, relogioDaLoja };
 
@@ -153,6 +153,64 @@ export function estadoDaLoja(opts: {
     motivo: "fechada_hoje",
     texto: "A loja está fechada no momento e não há horário de funcionamento cadastrado.",
   };
+}
+
+/** O turno em que a loja está AGORA, pelo horário cadastrado. */
+export type TurnoDaLoja = {
+  /**
+   * Identidade do turno: a data em que ele COMEÇOU e a hora de abrir
+   * ("2026-09-25@17:30"). O turno de 18:00–02:00 que começou ontem continua
+   * com a data de ontem à 00:30 — é por esta chave que a abertura automática
+   * e os avisos sabem que já agiram "neste turno".
+   */
+  chave: string;
+  abre: string;
+  fecha: string;
+  minutosDesdeAbertura: number;
+  minutosAteFechar: number;
+};
+
+/**
+ * Em que turno do horário cadastrado estamos agora, ou null fora de turno.
+ *
+ * Só o HORÁRIO: não olha o interruptor `storeOpen` nem a pausa — é a pergunta
+ * "a loja devia estar aberta?", que é o que a abertura automática e os avisos
+ * ao dono precisam (lib/abertura-da-loja.ts). Mesmas bordas de `estadoDaLoja`:
+ * a hora de fechar ainda conta como dentro, e o turno de ontem que atravessa a
+ * madrugada vale até fechar.
+ */
+export function turnoAgora(storeHours: unknown, timezone?: string | null, agora: Date = new Date()): TurnoDaLoja | null {
+  const horas = normalizeStoreHours(storeHours);
+  const { minutos, diaIdx } = relogioDaLoja(timezone, agora);
+  const ontemIdx = (diaIdx + 6) % 7;
+
+  for (const t of turnosDoDia(horas[ontemIdx])) {
+    const abre = paraMinutos(t.open);
+    const fecha = paraMinutos(t.close);
+    if (abre == null || fecha == null) continue;
+    if (fecha < abre && minutos <= fecha) {
+      const ontem = dataDaLoja(timezone, new Date(agora.getTime() - 24 * 60 * 60_000));
+      return {
+        chave: `${ontem}@${t.open}`, abre: t.open, fecha: t.close,
+        minutosDesdeAbertura: minutos + 24 * 60 - abre,
+        minutosAteFechar: fecha - minutos,
+      };
+    }
+  }
+
+  for (const t of turnosDoDia(horas[diaIdx])) {
+    const abre = paraMinutos(t.open);
+    const fecha = paraMinutos(t.close);
+    if (abre == null || fecha == null) continue;
+    const dentro = fecha >= abre ? minutos >= abre && minutos <= fecha : minutos >= abre;
+    if (!dentro) continue;
+    return {
+      chave: `${dataDaLoja(timezone, agora)}@${t.open}`, abre: t.open, fecha: t.close,
+      minutosDesdeAbertura: minutos - abre,
+      minutosAteFechar: fecha >= abre ? fecha - minutos : fecha + 24 * 60 - minutos,
+    };
+  }
+  return null;
 }
 
 /** "2026-09-15" → "15/09". */
