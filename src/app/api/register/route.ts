@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { getCorsHeaders } from "@/lib/cors";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { diasDeTesteDoLink } from "@/lib/trial-do-cadastro";
+import { cpfValido } from "@/lib/fiscal-validacao";
 
 // CORS headers for cross-origin requests from firehubfood.com.br
 export async function OPTIONS(req: NextRequest) {
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, password, phone, storeName, cnpj, cpf, city, repasseConfig, refCode, comoConheceu, faturamento } = await req.json();
+    const { name, email, password, phone, storeName, cnpj, cpf, semCnpj, city, repasseConfig, refCode, comoConheceu, faturamento } = await req.json();
 
     // Validações básicas
     if (!name || !email || !password) {
@@ -41,29 +42,58 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!cnpj) {
+    // ── CNPJ OU CPF ───────────────────────────────────────────────────────
+    //
+    // O CNPJ era obrigatório e barrava quem está começando a vender sem
+    // empresa aberta. Agora quem marca "ainda não tenho CNPJ" entra pelo CPF,
+    // e o CPF vira o documento da conta (`cpfCnpj`) até a pessoa trocar em
+    // Minha Loja. Nada depois do cadastro exige 14 dígitos: Asaas cobra CPF,
+    // e a NFC-e usa o CNPJ da configuração fiscal, que só existe com empresa.
+    //
+    // O CPF é sempre conferido pelo dígito — a tela já confere, mas a trava de
+    // "uma conta por pessoa" não pode depender de a requisição vir da tela.
+    const cpfClean = String(cpf || "").replace(/\D/g, "");
+    const cnpjClean = String(cnpj || "").replace(/\D/g, "");
+    const pelaPessoa = !cnpjClean && !!semCnpj;
+
+    if (!cnpjClean && !pelaPessoa) {
       return NextResponse.json(
-        { error: "O CNPJ da empresa é obrigatório." },
+        { error: "Informe o CNPJ da empresa ou escolha continuar com o CPF." },
         { status: 400, headers: getCorsHeaders(req) }
       );
     }
-
-    // Normalizar CNPJ (somente números)
-    const cnpjClean = cnpj.replace(/\D/g, "");
-    if (cnpjClean.length !== 14) {
+    if (cnpjClean && cnpjClean.length !== 14) {
       return NextResponse.json(
         { error: "CNPJ inválido." },
         { status: 400, headers: getCorsHeaders(req) }
       );
     }
-
-    // 1. Verificar se o CNPJ já está cadastrado (bloqueio principal — não importa o email)
-    const existingByCnpj = await prisma.user.findFirst({
-      where: { cpfCnpj: cnpjClean },
-    });
-    if (existingByCnpj) {
+    if (!cpfValido(cpfClean)) {
       return NextResponse.json(
-        { error: "Este CNPJ já possui uma conta cadastrada no FireHub. Faça login ou entre em contato com o suporte." },
+        { error: "CPF inválido." },
+        { status: 400, headers: getCorsHeaders(req) }
+      );
+    }
+    const documento = pelaPessoa ? cpfClean : cnpjClean;
+
+    // 1. Uma conta por documento — não importa o e-mail.
+    //
+    // O CPF é conferido nos DOIS caminhos: quem entrou pelo CPF e depois volta
+    // com um CNPJ recém-aberto está pedindo um segundo teste grátis, não uma
+    // conta nova — o caminho é atualizar o documento em Minha Loja. Contas
+    // antigas guardam CNPJ em `cpfCnpj`, então isso não pega ninguém de antes.
+    const existingByDoc = await prisma.user.findFirst({
+      where: { cpfCnpj: { in: pelaPessoa ? [cpfClean] : [cnpjClean, cpfClean] } },
+      select: { cpfCnpj: true },
+    });
+    if (existingByDoc) {
+      const porCpf = existingByDoc.cpfCnpj === cpfClean;
+      return NextResponse.json(
+        {
+          error: porCpf
+            ? "Este CPF já possui uma conta no FireHub. Faça login — se abriu o CNPJ, dá para atualizar em Minha Loja."
+            : "Este CNPJ já possui uma conta cadastrada no FireHub. Faça login ou entre em contato com o suporte.",
+        },
         { status: 409, headers: getCorsHeaders(req) }
       );
     }
@@ -157,7 +187,7 @@ export async function POST(req: NextRequest) {
         city: city || null,
         // O fuso vem da cidade (ver fuso-por-endereco.ts); sem estado reconhecível, Brasília.
         storeTimezone: fusoPorEndereco({ city })?.fuso ?? "America/Sao_Paulo",
-        cpfCnpj: cnpjClean,
+        cpfCnpj: documento,
         slug,
         ambassadorId,
         referredById,
@@ -166,6 +196,10 @@ export async function POST(req: NextRequest) {
         onboardingData: {
           comoConheceu: comoConheceu || null,
           faturamento: faturamento || null,
+          // O CPF de quem cadastrou, mesmo quando a conta é pelo CNPJ: antes
+          // ele era pedido na tela e jogado fora.
+          cpfDoResponsavel: cpfClean,
+          semCnpj: pelaPessoa,
         },
         permissions: "",
         isFranqueadoHakim: false,

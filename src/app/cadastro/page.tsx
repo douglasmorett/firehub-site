@@ -76,6 +76,15 @@ export default function CadastroPage() {
   // Step 3 - CNPJ
   const [cnpjInput, setCnpjInput] = useState("");
   const [cnpjData, setCnpjData] = useState<CnpjData|null>(null);
+  // ── QUEM AINDA NÃO TEM CNPJ ENTRA PELO CPF ────────────────────────────
+  //
+  // O CNPJ era obrigatório, e quem está começando a vender (a maioria dos
+  // interessados que chegam pelo Instagram) parava aqui. Sem CNPJ, o CPF da
+  // pessoa vira o documento da conta — e continua sendo a trava de "uma conta
+  // por pessoa". Quando abrir a empresa, troca em Minha Loja. A cidade vem do
+  // CNPJ quando ele existe; sem ele, a pessoa digita (é dela que sai o fuso).
+  const [semCnpj, setSemCnpj] = useState(false);
+  const [cidadeSemCnpj, setCidadeSemCnpj] = useState("");
 
   // Step 4 - Senha
   const [senha, setSenha] = useState("");
@@ -126,9 +135,18 @@ export default function CadastroPage() {
         setError(`CNPJ com situação "${data.situacao}". Só aceitamos CNPJs ativos.`); return;
       }
       setCnpjData(data);
+      setSemCnpj(false);
       setStep(4);
     } catch { setError("Erro de conexão."); }
     finally { setLoading(false); }
+  }
+
+  function continuarSemCnpj() {
+    setError("");
+    if (cidadeSemCnpj.trim().length < 3) { setError("Digite a cidade da loja (ex.: Niterói - RJ)."); return; }
+    setCnpjData(null);
+    setSemCnpj(true);
+    setStep(4);
   }
 
   async function handleStep4(e: React.FormEvent) {
@@ -160,8 +178,8 @@ export default function CadastroPage() {
       
       const body: any = {
         name: nome, email, password: senha, phone: whatsapp.replace(/\D/g, ""),
-        cnpj: cnpjData?.cnpj, cpf: cpf.replace(/\D/g, ""),
-        storeName, city: cnpjData?.municipio, refCode,
+        cnpj: semCnpj ? null : cnpjData?.cnpj, cpf: cpf.replace(/\D/g, ""), semCnpj,
+        storeName, city: semCnpj ? cidadeSemCnpj.trim() : cnpjData?.municipio, refCode,
         comoConheceu, faturamento
       };
       if (repasseData) body.repasseConfig = repasseData;
@@ -205,7 +223,7 @@ export default function CadastroPage() {
 
 
 
-  const labels = ["Seus dados", "CPF", "CNPJ", "Senha", "Recebimento", "Pronto"];
+  const labels = ["Seus dados", "CPF", "Empresa", "Senha", "Recebimento", "Pronto"];
   const si = step - 1;
 
   return (
@@ -357,9 +375,9 @@ export default function CadastroPage() {
             {/* ===== STEP 3: CNPJ ===== */}
             {step === 3 && (
               <>
-                <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>Digite o CNPJ da empresa</h2>
+                <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#111", marginBottom: 6 }}>Sua empresa tem CNPJ?</h2>
                 <p style={{ color: "#6B7280", marginBottom: 22, fontSize: ".86rem", lineHeight: 1.6 }}>
-                  Vamos verificar sua empresa para preencher tudo automaticamente.
+                  Se tiver, digite abaixo e a gente preenche tudo automaticamente. Ainda não tem? Sem problema — dá para começar com o seu CPF.
                 </p>
                 {error && <div className="err">{error}</div>}
                 <div style={{ marginBottom: 16 }}>
@@ -370,13 +388,40 @@ export default function CadastroPage() {
                 <button className="btn" onClick={handleStep3} disabled={loading}>
                   {loading ? "🔍 Verificando..." : "Verificar CNPJ →"}
                 </button>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "22px 0 16px", color: "#9CA3AF", fontSize: ".76rem" }}>
+                  <div style={{ flex: 1, height: 1, background: "#E5E7EB" }} />
+                  ainda não tenho CNPJ
+                  <div style={{ flex: 1, height: 1, background: "#E5E7EB" }} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <input className="inp" placeholder="Cidade da loja (ex.: Niterói - RJ)" value={cidadeSemCnpj}
+                    onChange={e => setCidadeSemCnpj(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && continuarSemCnpj()} />
+                  <button type="button" onClick={continuarSemCnpj} disabled={loading}
+                    style={{ width: "100%", padding: 13, background: "#fff", color: "#111", border: "2px solid #E5E7EB", borderRadius: 12, fontSize: ".92rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    Continuar com meu CPF ({cpf}) →
+                  </button>
+                  <span style={{ fontSize: ".74rem", color: "#94A3B8", lineHeight: 1.4, textAlign: "center" }}>
+                    Você usa tudo do FireHub normalmente. Quando abrir o CNPJ, é só atualizar em Minha Loja.
+                  </span>
+                </div>
                 <button className="back" onClick={() => { setStep(2); setError(""); }}>← Voltar</button>
               </>
             )}
 
             {/* ===== STEP 4: SENHA ===== */}
-            {step === 4 && cnpjData && (
+            {step === 4 && (cnpjData || semCnpj) && (
               <>
+                {semCnpj ? (
+                <div className="cnpj-box">
+                  <div style={{ fontSize: ".72rem", color: "#16A34A", fontWeight: 700, marginBottom: 2 }}>✅ CADASTRO COM CPF</div>
+                  <div style={{ fontWeight: 700, color: "#111", fontSize: ".92rem" }}>{empresa.trim()}</div>
+                  <div style={{ fontSize: ".76rem", color: "#6B7280", marginTop: 2 }}>
+                    CPF {cpf} · {cidadeSemCnpj.trim()}
+                  </div>
+                </div>
+                ) : cnpjData && (
                 <div className="cnpj-box">
                   <div style={{ fontSize: ".72rem", color: "#16A34A", fontWeight: 700, marginBottom: 2 }}>✅ EMPRESA VERIFICADA</div>
                   <div style={{ fontWeight: 700, color: "#111", fontSize: ".92rem" }}>
@@ -386,6 +431,7 @@ export default function CadastroPage() {
                     CNPJ {fmtCNPJ(cnpjData.cnpj)}{cnpjData.municipio ? ` · ${cnpjData.municipio}/${cnpjData.uf}` : ""}
                   </div>
                 </div>
+                )}
 
                 <h2 style={{ fontSize: "1.3rem", fontWeight: 800, color: "#111", marginBottom: 4 }}>Crie sua senha</h2>
                 <p style={{ color: "#6B7280", marginBottom: 18, fontSize: ".84rem" }}>Defina uma senha para acessar seu painel.</p>
