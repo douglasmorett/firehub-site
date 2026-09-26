@@ -24,6 +24,19 @@
  * Este arquivo é a leitura da resposta (pura, testada) e a chamada; o cache e
  * o teto moram em lib/geocodificacao-servidor.ts.
  * Teste: scripts/teste-motor-da-entrega.ts (seção do Google).
+ *
+ * ── ⚠ NÃO LIGAR A CHAVE ANTES DE RESOLVER OS TERMOS (26/09/2026) ────────────
+ *
+ * Os termos do Google Maps Platform vetam duas coisas que o FireHub faz hoje:
+ *   - usar o resultado "with or near a non-Google Map". O checkout abre o
+ *     mapa do OpenStreetMap (Leaflet) no ponto da cotação, e esse ponto pode
+ *     ser o do Google;
+ *   - guardar lat/lng por mais de 30 dias. O GeocodeCache guarda até 90 dias
+ *     sem uso (lib/faxina-dos-caches.ts), com o "taxa|google|..." junto.
+ * Fontes: cloud.google.com/maps-platform/terms e .../maps-service-terms. Para
+ * ligar: apagar em 30 dias o que veio do Google, e não abrir o mapa do OSM no
+ * ponto dele. Com a taxa pelo bairro, o GPS e o CEP, o Google deixou de ser
+ * necessário.
  */
 import type { RespostaDoMapa } from "./geocoding";
 
