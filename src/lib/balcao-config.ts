@@ -25,6 +25,13 @@
  * item sem nunca perguntar pager, então ligar a trava da mesa NÃO alcança o
  * pedido que o garçom abre no salão. Decisão do dono em 22/09/2026, para não
  * mexer na tela que roda no salão em horário de operação.
+ *
+ * ── O pager no lugar do número da mesa ──────────────────────────────────────
+ *
+ * Com o pager obrigatório na mesa, o número da mesa deixa de ser: quem pede
+ * na aba Mesa e fica com o aparelhinho é chamado por ele, e exigir os dois
+ * números fazia o atendente inventar uma mesa. Pedido da NIK (Danilo) em
+ * 26/09/2026. Digitado, o número da mesa continua indo para o pedido.
  */
 
 /** Onde o pedido está sendo lançado. Delivery não tem pager. */
@@ -68,6 +75,11 @@ export function pagerEhObrigatorio(config: unknown, tipo: TipoDeLancamento | str
   // Delivery não tem pager, e qualquer outro tipo que apareça amanhã entra
   // livre em vez de travar sozinho.
   return false;
+}
+
+/** O número da mesa é obrigatório na aba Mesa? Só quando o pager não está no lugar dele. */
+export function numeroDaMesaEhObrigatorio(config: unknown): boolean {
+  return !lerBalcaoConfig(config).pagerObrigatorioMesa;
 }
 
 /**

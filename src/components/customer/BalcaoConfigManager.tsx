@@ -32,7 +32,7 @@ const CHAVES: { chave: Chave; titulo: string; ligado: string; desligado: string;
     titulo: "Exigir pager na Mesa",
     ligado: "SIM — mesa não fecha sem pager",
     desligado: "NÃO — pager é opcional na mesa",
-    ajuda: "Mesmo comportamento para o pedido lançado na aba Mesa da venda presencial.",
+    ajuda: "Mesmo comportamento para o pedido lançado na aba Mesa da venda presencial. Com isto ligado, o número da mesa passa a ser opcional: o cliente é chamado pelo pager.",
   },
 ];
 

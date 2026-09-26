@@ -11,7 +11,7 @@ import {
   lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento, tipoDoDocumento,
 } from "@/lib/documento-do-cliente";
 import {
-  BALCAO_CONFIG_PADRAO, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
+  BALCAO_CONFIG_PADRAO, numeroDaMesaEhObrigatorio, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
 } from "@/lib/balcao-config";
 import { MENSAGEM_CAIXA_FECHADO, CAMINHO_DO_CAIXA } from "@/lib/caixa-aberto";
 import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
@@ -439,7 +439,7 @@ export default function VendaPresencialPage() {
     // (lib/caixa-aberto.ts) — aqui é para o atendente não perder a viagem.
     if (caixaAberto === false) return setMsg(`❌ ${MENSAGEM_CAIXA_FECHADO}`);
     if (cart.length === 0) return setMsg("❌ Adicione pelo menos um produto.");
-    if (orderType === "MESA" && !tableNum) return setMsg("❌ Informe o número da mesa.");
+    if (orderType === "MESA" && !tableNum.trim() && numeroDaMesaEhObrigatorio(balcaoConfig)) return setMsg("❌ Informe o número da mesa.");
     if (orderType === "DELIVERY" && !address) return setMsg("❌ Informe o endereço de entrega.");
     // A taxa da entrega é decisão consciente: a cotação preenche; quando ela
     // não preenche (fora da área, endereço que o mapa não achou, falha), o
@@ -483,15 +483,18 @@ export default function VendaPresencialPage() {
     const trocoDividido = dividir && parteDinheiro > 0 && change && Number(change) > parteDinheiro
       ? ` [Dinheiro ${fmt(parteDinheiro)} · cliente deu ${fmt(Number(change))} · troco ${fmt(Number(change) - parteDinheiro)}]`
       : "";
+    // Sem número (loja que chama a mesa pelo pager), fica só "Mesa" — o pager
+    // já sai no card e na comanda pelo campo próprio.
+    const nomeDaMesa = tableNum.trim() ? `Mesa ${tableNum.trim()}` : "Mesa";
     const body = {
       customerName: paymentMethod === "Conta Funcionário" && selectedEmployeeName
         ? `Func. ${selectedEmployeeName}`
-        : customerName || (orderType === "MESA" ? `Mesa ${tableNum}` : orderType === "BALCAO" ? "Balcão" : "Cliente"),
+        : customerName || (orderType === "MESA" ? nomeDaMesa : orderType === "BALCAO" ? "Balcão" : "Cliente"),
       customerPhone: customerPhone || "00000000000",
       pagerNumber: pager.trim() || null,
       // "CPF na nota". Vai só com os dígitos; a máscara é coisa da tela.
       customerCpfCnpj: lerDocumentoDoCliente(documento),
-      customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? `Mesa ${tableNum}` : "Balcão",
+      customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? nomeDaMesa : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
       paymentMethod,
       ...(partesValidas ? { paymentMethods: partesValidas } : {}),
@@ -849,7 +852,7 @@ export default function VendaPresencialPage() {
 
           {/* Campos por tipo */}
           {orderType === "MESA" && (
-            <input placeholder="Número da mesa *" value={tableNum} onChange={e => setTableNum(e.target.value)}
+            <input placeholder={numeroDaMesaEhObrigatorio(balcaoConfig) ? "Número da mesa *" : "Número da mesa (opcional)"} value={tableNum} onChange={e => setTableNum(e.target.value)}
               style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #64748B", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
           )}
           {orderType === "DELIVERY" && (
