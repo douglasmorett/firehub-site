@@ -39,6 +39,7 @@ const {
   tudoPronto,
   faltaFinalizacao,
   telaMostraPedido,
+  juntarPedidosDaProducao,
 } = jiti(path.resolve(__dirname, "..", "src", "lib", "kds-telas.ts"));
 
 let ok = 0;
@@ -124,6 +125,28 @@ console.log("\nitem sem categoria MOSTRA em toda tela, mas nao PRENDE nenhuma");
 conferir("NAO exige baixa da esfirra", telaPrecisaDarBaixa(ESFIRRA, ORFAO), false);
 conferir("orfao sozinho nao prende ninguem", telasComItem([ESFIRRA, PIZZA, FINAL], [ORFAO], "production"), []);
 conferir("orfao nao trava o pedido", faltaTelaDarBaixa([ESFIRRA, PIZZA, FINAL], [ORFAO], "production", []), false);
+
+console.log("\nPRODUCAO: o pedido que outra tela adiantou continua na que tem item dele (NIK, 26/09)");
+// A busca da producao olhava so a etapa: a esfirra dava baixa, o pedido ia
+// para a finalizacao e sumia da tela de pizza com a pizza por fazer.
+const agora = Date.now();
+const ped = (id, min, itens, extra) => Object.assign({ id, createdAt: new Date(agora - min * 60000), isRoutePriority: false, items: itens }, extra || {});
+const naTelaDe = (tela, naProducao, adiantados) =>
+  juntarPedidosDaProducao(naProducao, adiantados).filter((o) => telaTemPendencia(tela, o.items)).map((o) => o.id);
+const MISTO = ped("misto", 10, [carimbado(umaEsfirra), umaPizza], { kdsStage: "FINISHING" });
+const NOVO = ped("novo", 2, [umaPizza], { kdsStage: null });
+const ANTIGO = ped("antigo", 30, [umaPizza], { kdsStage: "PRODUCTION" });
+conferir("a pizza continua na tela de pizza, na posicao dela", naTelaDe(PIZZA, [ANTIGO, NOVO], [MISTO]), ["antigo", "misto", "novo"]);
+conferir("e nao volta para a de esfirra, que ja fez a parte dela", naTelaDe(ESFIRRA, [], [MISTO]), []);
+conferir("pizza carimbada: sai da de pizza tambem", naTelaDe(PIZZA, [], [ped("misto", 10, [carimbado(umaEsfirra), carimbado(umaPizza)], { kdsStage: "FINISHING" })]), []);
+const BEBIDA = { id: "i7", menuProduct: { category: "Bebidas" }, prontoEm: null };
+const BEBIDA_SEM_CARIMBO = ped("bebida", 12, [carimbado(umaEsfirra), BEBIDA], { kdsStage: "FINISHING" });
+conferir("bebida que nenhuma tela faz nao traz o pedido de volta (esfirra)", naTelaDe(ESFIRRA, [], [BEBIDA_SEM_CARIMBO]), []);
+conferir("bebida que nenhuma tela faz nao traz o pedido de volta (pizza)", naTelaDe(PIZZA, [], [BEBIDA_SEM_CARIMBO]), []);
+conferir("tela sem filtro ve o que falta de qualquer um", naTelaDe({ id: "geral", stage: "production", categoryFilter: [] }, [], [MISTO]), ["misto"]);
+conferir("o mesmo pedido nas duas buscas aparece uma vez", juntarPedidosDaProducao([NOVO], [NOVO]).map((o) => o.id), ["novo"]);
+conferir("rota prioritaria continua na frente", juntarPedidosDaProducao([ANTIGO, NOVO], [ped("rota", 1, [umaPizza], { isRoutePriority: true })]).map((o) => o.id), ["rota", "antigo", "novo"]);
+conferir("sem adiantados a fila e a de sempre", juntarPedidosDaProducao([NOVO, ANTIGO], null).map((o) => o.id), ["antigo", "novo"]);
 
 console.log("\nchave da tela");
 conferir("usa o id quando existe", chaveDaTela({ id: "abc", name: "Esfirras" }), "abc");

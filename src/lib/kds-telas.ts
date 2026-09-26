@@ -232,6 +232,37 @@ export function telaTemPendencia<T extends ItemParaTela & { prontoEm?: Date | st
   return meus.some((i) => !itemPronto(i));
 }
 
+/**
+ * A fila de uma tela de PRODUÇÃO: os pedidos que ainda estão na produção mais
+ * os que OUTRA tela já mandou para a finalização.
+ *
+ * O pedido vai para a finalização na PRIMEIRA baixa da produção (decisão do
+ * dono, 22/09/2026). Se a tela de produção buscasse só pela etapa do pedido, o
+ * de pizza e esfiha sumiria da tela de pizza no instante em que a de esfiha
+ * desse baixa, com a pizza por fazer. Na NIK, em 50 h até 26/09/2026, os 6
+ * pedidos com item das duas telas sumiram assim da segunda — "o pedido entra e
+ * dá baixa sozinho".
+ *
+ * Esta função só junta e ordena. Quem decide se o pedido adiantado ainda é
+ * desta tela é `telaTemPendencia`: ela tira os que não têm item desta tela sem
+ * carimbo. Ordem de sempre da cozinha: rota prioritária na frente, depois o
+ * que chegou primeiro — o adiantado volta para a posição que já era dele.
+ */
+export function juntarPedidosDaProducao<
+  T extends { id?: string | null; isRoutePriority?: boolean | null; createdAt?: Date | string | null },
+>(naProducao: T[] | null | undefined, adiantados: T[] | null | undefined): T[] {
+  const porId = new Map<string, T>();
+  for (const p of naProducao || []) if (p?.id) porId.set(p.id, p);
+  for (const p of adiantados || []) if (p?.id && !porId.has(p.id)) porId.set(p.id, p);
+  const quando = (p: T) => {
+    const ms = new Date(p?.createdAt as any).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  };
+  return [...porId.values()].sort(
+    (a, b) => Number(!!b.isRoutePriority) - Number(!!a.isRoutePriority) || quando(a) - quando(b),
+  );
+}
+
 /** Alguma coisa deste pedido já foi dada por pronta? */
 export function temAlgoPronto(itens: { prontoEm?: Date | string | null }[] | null | undefined): boolean {
   return (itens || []).some((i) => itemPronto(i));

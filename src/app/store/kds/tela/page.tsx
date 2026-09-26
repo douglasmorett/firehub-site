@@ -113,6 +113,20 @@ function getSourceInfo(order: Order): {
   return { label: `Online${refStr}`, color: "#fff", bg: "#1C1917" };
 }
 
+/**
+ * Baixa pelo teclado: o intervalo mínimo entre duas. Pega o repique do
+ * teclado numérico sem atrapalhar quem aperta duas vezes de propósito.
+ */
+const INTERVALO_ENTRE_BAIXAS_POR_TECLA_MS = 250;
+
+/**
+ * Baixa pelo toque: por quanto tempo o cartão que acabou de chegar à posição
+ * dele (novo, ou escorregando para o lugar do que saiu) ignora o toque. Mais
+ * curto que qualquer toque de propósito, mais longo que o segundo toque de um
+ * toque duplo.
+ */
+const TOQUE_PROTEGIDO_MS = 350;
+
 function getElapsedSeconds(order: Order, stage: string): number {
   let ref: string | null = null;
   if (stage === "production") {
@@ -724,6 +738,21 @@ export default function KDSTelaPage() {
       });
     }
 
+    // ── O QUE OUTRA TELA JÁ FEZ NÃO VOLTA PARA SER FEITO ─────────────────
+    //
+    // A produção continua com o pedido que outra tela já adiantou para a
+    // finalização (api/kds, 26/09/2026). O item que aquela tela carimbou sai
+    // daqui — "se alguém fez, não é pra fazer de novo". Pedido todo carimbado
+    // nem chega: o servidor não o manda.
+    if (stage === "production") {
+      result = result.map((order) => {
+        const porFazer = order.items.filter((item: any) => !item.prontoEm);
+        return porFazer.length > 0 && porFazer.length < order.items.length
+          ? { ...order, items: porFazer }
+          : order;
+      });
+    }
+
     return result;
   }, [orders, filter, activeCategories, categoriasComDono, kdsConfig, stage]);
 
@@ -815,12 +844,26 @@ export default function KDSTelaPage() {
       const success = await sendBaixaWithRetry(3);
 
       if (!success) {
+        // ── A BAIXA QUE NÃO CHEGOU VOLTA PARA A TELA ─────────────────────
+        //
+        // O aviso aqui era "Baixa sincronizada em segundo plano", e não existe
+        // segundo plano: o pedido continuava na produção do servidor, e esta
+        // tela o escondia pela trava de concluídos até alguém apertar F5 —
+        // "se sumir, F5", como a NIK aprendeu (26/09/2026). Agora ele volta
+        // e o aviso diz o que houve. Se a baixa tiver chegado e só a resposta
+        // se perdeu, a próxima consulta o tira de novo.
+        completedOrderIdsRef.current.delete(order.id);
+        exitingOrderIdsRef.current.delete(order.id);
+        setExitingOrderIds(new Set(exitingOrderIdsRef.current));
+        setLastCompletedOrder((atual) => (atual?.order.id === order.id ? null : atual));
+        try { localStorage.removeItem(chaveDaBaixa); } catch {}
+        lastJsonRef.current = "";
         setToast({
           orderId: order.id,
-          label: "⚠️ Conexão oscilou. Baixa sincronizada em segundo plano.",
+          label: `⚠️ #${getDisplayOrderNumber(order)}: a baixa não chegou. Toque de novo.`,
         });
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+        toastTimerRef.current = setTimeout(() => setToast(null), 5000);
       }
 
       // Confirma busca atualizada
@@ -876,8 +919,29 @@ export default function KDSTelaPage() {
 
   // ─── Keyboard support ──────────────────────────────────────────────────────
 
+  const ultimaBaixaPorTeclaRef = useRef(0);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // ── TECLA SEGURADA NÃO É OUTRA BAIXA ─────────────────────────────────
+      //
+      // Segurada, a tecla se repete umas 30 vezes por segundo, e cada
+      // repetição dava baixa no pedido que escorregava para aquela posição:
+      // um toque demorado no "1" levava a fila (NIK, 26/09/2026). Quem digita
+      // num campo também não está dando baixa.
+      if (e.repeat) return;
+      const alvo = e.target as HTMLElement | null;
+      if (
+        alvo &&
+        (alvo.isContentEditable ||
+          alvo.tagName === "TEXTAREA" ||
+          alvo.tagName === "SELECT" ||
+          (alvo.tagName === "INPUT" &&
+            !/^(checkbox|radio|button|submit|reset)$/i.test((alvo as HTMLInputElement).type)))
+      ) {
+        return;
+      }
+
       // Atalho de desfazer baixa: Backspace ou 'z' ou 'u' ou Ctrl+Z
       if (
         e.key === "Backspace" ||
@@ -894,6 +958,9 @@ export default function KDSTelaPage() {
         }
       }
 
+      // Ctrl+1, Alt+2… são atalhos do navegador, não baixa.
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
       // Numpad 0-9 codes: Numpad0-Numpad9, Digit0-Digit9
       let num: number | null = null;
 
@@ -908,6 +975,13 @@ export default function KDSTelaPage() {
       if (num === null || isNaN(num)) return;
 
       e.preventDefault();
+
+      // Teclado numérico barato "repica": manda o mesmo toque duas vezes em
+      // poucos milissegundos, sem marcar repetição, e o repique dava baixa
+      // também no pedido de trás.
+      const agora = Date.now();
+      if (agora - ultimaBaixaPorTeclaRef.current < INTERVALO_ENTRE_BAIXAS_POR_TECLA_MS) return;
+      ultimaBaixaPorTeclaRef.current = agora;
 
       if (num === 0) {
         // Mark FIRST (oldest) order
@@ -1658,6 +1732,21 @@ function OrderCard({
   tick: number;
   onMarkPronto?: () => void;
 }) {
+  // ── O TOQUE QUE ERA DO CARTÃO DE ANTES ─────────────────────────────────
+  //
+  // O cartão que sai dá lugar ao de trás, que escorrega para o mesmo ponto.
+  // O segundo toque de um toque duplo caía no cartão que acabou de chegar ali
+  // e dava baixa num pedido que ninguém olhou. Recém-chegado à posição, o
+  // cartão ignora o toque por um instante.
+  const chegouNaPosicaoEm = useRef(Date.now());
+  useEffect(() => {
+    chegouNaPosicaoEm.current = Date.now();
+  }, [position]);
+  const aoTocar = () => {
+    if (Date.now() - chegouNaPosicaoEm.current < TOQUE_PROTEGIDO_MS) return;
+    onMarkPronto?.();
+  };
+
   const elapsed = getElapsedSeconds(order, stage);
   const tColor = timerColor(elapsed);
   const glow = timerGlow(elapsed);
@@ -1702,7 +1791,7 @@ function OrderCard({
         flexDirection: "column",
         gap: isHugeOrder ? 6 : isVeryLargeOrder ? 8 : 12,
       }}
-      onClick={onMarkPronto}
+      onClick={aoTocar}
     >
       {/* Green flash overlay for exiting cards */}
       {isExiting && (

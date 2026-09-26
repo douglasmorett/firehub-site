@@ -7,6 +7,7 @@ import {
   faltaFinalizacao,
   itemPronto,
   itensDaTela,
+  juntarPedidosDaProducao,
   telaTemPendencia,
   lerTelasProntas,
   temAlgoPronto,
@@ -22,6 +23,14 @@ import {
  */
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+/**
+ * Até quando o pedido que outra tela já mandou para a finalização continua
+ * na tela de produção que ainda tem item dele sem baixa. Item parado há mais
+ * que isso não é mais cozinha — é pedido esquecido, e ele não pode reaparecer
+ * na TV da cozinha no meio do próximo turno.
+ */
+const ADIANTADO_AINDA_NA_PRODUCAO_MS = 6 * 60 * 60 * 1000;
 
 async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 600): Promise<T> {
   let lastErr: any;
@@ -114,9 +123,11 @@ export async function GET(req: NextRequest) {
       where.kdsStage = { not: "FINISHED" };
     }
 
-    const orders = await withRetry(() =>
+    // Uma consulta só para as duas buscas da produção (mais abaixo): o pedido
+    // que volta pela segunda precisa chegar à tela com os mesmos campos.
+    const buscarPedidos = (filtro: any, ordem: any) =>
       prisma.customerOrder.findMany({
-        where,
+        where: filtro,
         select: {
           id: true,
           // De qual loja é o pedido: é por ele que o item de plataforma casa
@@ -189,17 +200,62 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-        orderBy: [
-          { isRoutePriority: "desc" },
-          { createdAt: "asc" },
-        ],
+        orderBy: ordem,
         take: 100,
-      })
+      });
+
+    const orders = await withRetry(() =>
+      buscarPedidos(where, [{ isRoutePriority: "desc" }, { createdAt: "asc" }]),
     );
     // Sem `.catch(() => [])` aqui, e é de propósito: lista vazia por falha de
     // banco é indistinguível de cozinha vazia para quem olha a TV. O erro sobe
     // para o catch do fim, que responde 503 — e a tela mantém o que está na
     // tela e avisa que está reconectando (ver o fetch em store/kds/tela).
+
+    // A tela que está pedindo. Lida aqui, antes da categoria do item, porque a
+    // produção precisa dela para decidir a segunda busca, logo abaixo.
+    const daTela = String(req.nextUrl.searchParams.get("tela") || "").trim();
+    let minha: TelaDoKds | null = null;
+    if (daTela) {
+      const donoDasTelas = await prisma.user
+        .findUnique({ where: { id: userStoreIds[0] }, select: { kdsScreens: true } })
+        .catch(() => null);
+      const telas = (Array.isArray(donoDasTelas?.kdsScreens) ? donoDasTelas!.kdsScreens : []) as any[];
+      minha = telas.find((t) => chaveDaTela(t) === daTela) || null;
+    }
+
+    // ── O PEDIDO QUE OUTRA TELA ADIANTOU CONTINUA NESTA ──────────────────
+    //
+    // O pedido vai para a finalização na PRIMEIRA baixa da produção, mas a
+    // busca acima só olha a etapa: o de pizza e esfiha sumia da tela de pizza
+    // no instante em que a de esfiha dava baixa, com a pizza por fazer ("o
+    // pedido entra e dá baixa sozinho" — NIK, 26/09/2026). A tela de produção
+    // também busca os que já estão na finalização com item sem carimbo, e
+    // `telaTemPendencia`, abaixo, fica só com os que ainda têm item DELA.
+    //
+    // Busca à parte, e não um OR na de cima: com `take: 100` em ordem de
+    // chegada, os pedidos parados na finalização (a bebida que nenhuma tela
+    // carimba fica sem carimbo para sempre) empurrariam os novos para fora da
+    // lista. Se ela falhar, a tela fica como era antes — nunca vazia.
+    let paraATela = orders;
+    if (stage === "production" && minha) {
+      const adiantados = await withRetry(
+        () =>
+          buscarPedidos(
+            {
+              franchiseeId: { in: userStoreIds },
+              status: where.status,
+              createdAt: { gte: new Date(Date.now() - ADIANTADO_AINDA_NA_PRODUCAO_MS) },
+              kdsStage: "FINISHING",
+              items: { some: { prontoEm: null } },
+            },
+            [{ createdAt: "desc" }],
+          ),
+        1,
+        300,
+      ).catch(() => [] as typeof orders);
+      paraATela = juntarPedidosDaProducao(orders, adiantados);
+    }
 
     // ── A CATEGORIA REAL DO ITEM DE PLATAFORMA ───────────────────────────
     //
@@ -213,8 +269,8 @@ export async function GET(req: NextRequest) {
     // categoria a tela mostra em todo lugar (lib/categoria-do-item.ts).
     const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
     const ordersWithDailyNum = await resolverCategoriasDosPedidos(
-      orders.map((o) => ({ ...o, franchiseeId: (o as any).franchiseeId ?? userStoreIds[0] })),
-    ).catch(() => orders);
+      paraATela.map((o) => ({ ...o, franchiseeId: (o as any).franchiseeId ?? userStoreIds[0] })),
+    ).catch(() => paraATela);
 
     // ── O QUE CADA TELA ENXERGA ───────────────────────────────────────────
     //
@@ -228,16 +284,9 @@ export async function GET(req: NextRequest) {
     // 22/09/2026) — é isso que deixa a expedição saber o que já veio e o que
     // ainda vem. E some só da tela que deu a baixa DELA: duas telas de
     // finalização são estações diferentes e cada uma fecha a sua.
-    const daTela = String(req.nextUrl.searchParams.get("tela") || "").trim();
     let visiveis: any[] = ordersWithDailyNum as any[];
 
     if (daTela) {
-      const donoDasTelas = await prisma.user
-        .findUnique({ where: { id: userStoreIds[0] }, select: { kdsScreens: true } })
-        .catch(() => null);
-      const telas = (Array.isArray(donoDasTelas?.kdsScreens) ? donoDasTelas!.kdsScreens : []) as any[];
-      const minha = telas.find((t) => chaveDaTela(t) === daTela);
-
       if (stage === "finishing") {
         visiveis = visiveis.filter((o) => {
           if (lerTelasProntas(o?.kdsTelasProntas).includes(daTela)) return false;
