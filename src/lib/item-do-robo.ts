@@ -17,10 +17,12 @@
  *
  * ── O que NÃO mora aqui ─────────────────────────────────────────────────────
  *
- * O PREÇO. Ele continua sendo decidido em chatbot-ai.ts, com o piso de
- * `precoMinimoDoProduto` — tirar o piso faria o Nugget de base R$ 0,00 voltar a
- * sair de graça quando a IA manda `options: []` (incidente de 01/08/2026). Daqui
- * sai só a SOMA das opções casadas, que é um dos termos daquela conta.
+ * O PREÇO. Ele é decidido em chatbot-ai.ts, por `precoUnitarioDoItem` sobre as
+ * `comboSelections` daqui (a regra de cada pergunta: SOMA, MAIOR, MÉDIA) e com
+ * o piso de `pisoDoPreco` — tirar o piso faria o Nugget de base R$ 0,00 voltar a
+ * sair de graça quando a IA manda `options: []` (incidente de 01/08/2026).
+ * `somaDasOpcoes` é a soma CHEIA, só para o log: cobrada, ela lançava a pizza
+ * meio a meio pelo preço de duas inteiras (Divinos, 25/09/2026).
  *
  * Arquivo puro, sem imports: tem teste que o carrega sozinho
  * (scripts/teste-item-do-robo.mjs).
@@ -52,7 +54,7 @@ export type ItemDaTag = {
 export type EscolhasDoItem = {
   /** Formato do cardápio online: `{ grupoId: { nomeDaOpcao: quantidade } }`. Nulo = nenhuma opção casou. */
   comboSelections: Record<string, Record<string, number>> | null;
-  /** Soma dos `additionalPrice` das opções que casaram. */
+  /** Soma CHEIA dos `additionalPrice` das opções que casaram, sem a regra da pergunta. Não é o preço: ver o topo. */
   somaDasOpcoes: number;
   /** Opções que a IA anotou e que não existem no cadastro — NÃO são cobradas. */
   naoCasadas: string[];

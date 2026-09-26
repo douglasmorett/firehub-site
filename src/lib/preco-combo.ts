@@ -208,12 +208,17 @@ export function adicionaisDetalhados(
 
   const porGrupoENome = new Map<string, number>();
   const porNome = new Map<string, number>();
+  const gruposDoNome = new Map<string, Set<string>>();
   for (const g of grupos) {
     for (const item of g.items || []) {
       const nome = item?.menuProduct?.name;
       if (!nome) continue;
       const add = Number(item.additionalPrice) || 0;
-      if (g.id) porGrupoENome.set(`${g.id}::${nome}`, add);
+      if (g.id) {
+        porGrupoENome.set(`${g.id}::${nome}`, add);
+        if (!gruposDoNome.has(nome)) gruposDoNome.set(nome, new Set());
+        gruposDoNome.get(nome)!.add(g.id);
+      }
       // No fallback por nome, o MENOR: sem saber de qual grupo veio a escolha,
       // cobrar o maior seria cobrar do cliente por uma opção que ele pode não
       // ter escolhido.
@@ -222,10 +227,22 @@ export function adicionaisDetalhados(
   }
 
   // Preço CHEIO de cada escolha, antes da regra do grupo.
+  //
+  // Escolha SEM grupo (a lista do PDV e da mesa) cujo nome existe em UMA
+  // pergunta só é daquela pergunta — não há o que chutar. Sem isto ela caía em
+  // "sem grupo", que é SOMA, e a pizza meio a meio da mesa saía pelo preço de
+  // duas inteiras enquanto o modal mostrava a média: Divinos, 25/09/2026,
+  // Calabresa 33,90 + Frango 46,90 = 80,80 onde a média dá 40,40. Nome em duas
+  // perguntas continua sem grupo (o menor preço, sem regra), como antes.
   const cheios = escolhido.map(({ grupoId, nome, qtd }) => {
-    const doGrupo = grupoId ? porGrupoENome.get(`${grupoId}::${nome}`) : undefined;
+    let grupo = grupoId;
+    if (!grupo) {
+      const dele = gruposDoNome.get(nome);
+      if (dele && dele.size === 1) grupo = [...dele][0];
+    }
+    const doGrupo = grupo ? porGrupoENome.get(`${grupo}::${nome}`) : undefined;
     const add = doGrupo ?? porNome.get(nome) ?? 0;
-    return { grupoId, nome, qtd, precoCheio: Number.isFinite(add) ? add : 0 };
+    return { grupoId: grupo, nome, qtd, precoCheio: Number.isFinite(add) ? add : 0 };
   });
 
   // ── A REGRA DO GRUPO ────────────────────────────────────────────────────

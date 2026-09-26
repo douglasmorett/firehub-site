@@ -12,7 +12,7 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { trackGeminiUsage, trackDivergenciaDePreco } from "@/lib/usage-tracker";
 import { conferirPrecosDitos, extrairPrecosDoTexto, compararTotalDitoComGravado } from "@/lib/precos-ditos";
 import { normalizeStoreHours } from "@/lib/store-hours";
-import { precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, minimoExigidoDoGrupo } from "./preco-combo";
+import { precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo } from "./preco-combo";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
@@ -646,17 +646,34 @@ export async function processChatbotAI(
             ? `obrigatório, escolha ${min}`
             : `obrigatório, de ${min} a ${max}`;
 
+        // Pergunta de sabores com regra (MÉDIA ou MAIOR): as escolhas formam
+        // UMA pizza. Listada como "+R$ 33,90" por sabor, a IA somava — na
+        // Divinos (25/09/2026) disse ~R$ 46 para Calabresa + Frango, que pela
+        // média é R$ 40,40. Cada sabor vai com o preço da pizza inteira
+        // daquele sabor, e a regra vai escrita.
+        const regra = regraDoGrupo(g as any);
+        const umaPizza = max > 1 && regra !== "SOMA";
+        const comoCobra = !umaPizza
+          ? ""
+          : regra === "MEDIA"
+            ? "; é UMA pizza: com mais de um sabor o preço é a MÉDIA dos sabores escolhidos (ex.: R$ 30,00 e R$ 40,00 → R$ 35,00), NUNCA a soma"
+            : "; é UMA pizza: com mais de um sabor o preço é o do sabor MAIS CARO, NUNCA a soma";
+
         const opcoes = itens.map((i: any) => {
           const add = Number(i.additionalPrice) || 0;
           const nome = i.menuProduct.name;
-          if (ehEscolhaDeVariante) {
+          if (ehEscolhaDeVariante || umaPizza) {
             const absoluto = (precoBase + add).toFixed(2).replace(".", ",");
             return `${nome} = R$ ${absoluto}`;
           }
+          // Negativo DESCONTA: é a meia pizza mais barata do meio a meio da
+          // Ragnar ("1/2 Calabresa" −22,00 na Bjorn). Como "(sem custo)", o
+          // robô cotava a Bjorn cheia e o sistema cobrava 22 a menos.
+          if (add < 0) return `${nome} −R$ ${Math.abs(add).toFixed(2).replace(".", ",")} (desconta do preço)`;
           return add > 0 ? `${nome} +R$ ${add.toFixed(2).replace(".", ",")}` : `${nome} (sem custo)`;
         });
 
-        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}): ${opcoes.join(" | ")}`);
+        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${opcoes.join(" | ")}`);
       }
 
       const line =
@@ -2226,21 +2243,29 @@ async function syncAiOrderToDatabase({
       // mesmos três campos que o site grava e que a impressão, o KDS e o painel
       // já leem: comboSelections, notes e productName.
       const doItem = escolhasDoItem(it, matchedProduct as any);
-      const somaDasOpcoes = doItem.somaDasOpcoes;
       if (doItem.naoCasadas.length > 0) {
         console.warn(
           `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${doItem.naoCasadas.join(", ")} — não cobradas; foram para a observação do item.`
         );
       }
 
+      // Base + opções pela REGRA de cada pergunta (lib/preco-combo.ts), a
+      // mesma conta do site, da mesa e do totem. Era base + a soma CHEIA das
+      // opções (`doItem.somaDasOpcoes`), e a pizza de "até 2 sabores" com
+      // regra MÉDIA saía pelo preço de duas inteiras: Divinos, 25/09/2026,
+      // pedido #9218 — o robô disse ~R$ 46 ao cliente e o sistema gravou
+      // Calabresa 33,90 + Frango 46,90 = 80,80.
+      const base = Number(matchedProduct.price) || 0;
+      const comEscolhas = doItem.comboSelections
+        ? precoUnitarioDoItem(matchedProduct as any, doItem.comboSelections)
+        : base;
       // Piso, não "a partir de": a meia pizza mais barata desconta.
       const precoMinimo = pisoDoPreco(matchedProduct as any);
-      const comEscolhas = (Number(matchedProduct.price) || 0) + somaDasOpcoes;
       const realPrice = Math.round(Math.max(comEscolhas, precoMinimo) * 100) / 100;
 
-      if (realPrice !== (Number(matchedProduct.price) || 0)) {
+      if (realPrice !== base) {
         console.warn(
-          `[Chatbot AI] "${matchedProduct.name}": base R$ ${matchedProduct.price}, opções R$ ${somaDasOpcoes.toFixed(2)}, mínimo R$ ${precoMinimo.toFixed(2)} — lançado por R$ ${realPrice.toFixed(2)}.`
+          `[Chatbot AI] "${matchedProduct.name}": base R$ ${base}, opções R$ ${(comEscolhas - base).toFixed(2)} (soma cheia R$ ${doItem.somaDasOpcoes.toFixed(2)}), mínimo R$ ${precoMinimo.toFixed(2)} — lançado por R$ ${realPrice.toFixed(2)}.`
         );
       }
 

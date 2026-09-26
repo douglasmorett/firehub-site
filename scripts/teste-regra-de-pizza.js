@@ -175,5 +175,41 @@ conferir("SOMA 1..2 com −3: a partir de 17, piso 14", [precoMinimoDoProduto(ob
 const mediaOpcional = { price: 50, comboGroups: [{ id: "x", minQty: 0, maxQty: 2, priceRule: "MEDIA", items: [sabor("A", -4), sabor("B", -6)] }] };
 conferir("MEDIA opcional: piso 44 (a mais barata, uma vez)", pisoDoPreco(mediaOpcional), 44);
 
+// Divinos (25/09/2026): pizza de base 0, pergunta de 1 a 2 sabores com MEDIA e
+// o preço CHEIO em cada sabor. O modal cobrava a média; a MESA manda as
+// escolhas como lista sem grupo ([{ name, quantity }]) e o servidor caía em
+// "sem grupo" = SOMA: Calabresa 33,90 + Frango 46,90 = 80,80, duas pizzas.
+const divinos = {
+  price: 0,
+  comboGroups: [
+    { id: "s", title: "Escolha até 2 sabores", minQty: 1, maxQty: 2, priceRule: "MEDIA", items: [sabor("Calabresa", 33.9), sabor("Frango c/ Requeijão", 46.9), sabor("Mussarela", 30.9)] },
+    { id: "b", title: "Borda", minQty: 0, maxQty: 1, items: [sabor("Catupiry", 8)] },
+  ],
+};
+const meiaMeiaSemGrupo = [{ name: "Calabresa", quantity: 1 }, { name: "Frango c/ Requeijão", quantity: 1 }];
+conferir("Divinos pelo site (com grupo): média 40,40", precoUnitarioDoItem(divinos, { s: { Calabresa: 1, "Frango c/ Requeijão": 1 } }), 40.4);
+conferir("Divinos pela mesa (lista sem grupo): média 40,40, não 80,80", precoUnitarioDoItem(divinos, meiaMeiaSemGrupo), 40.4);
+conferir("lista sem grupo + borda: 40,40 + 8 = 48,40", precoUnitarioDoItem(divinos, [...meiaMeiaSemGrupo, { name: "Catupiry", quantity: 1 }]), 48.4);
+conferir("lista sem grupo: detalhe soma o total", adicionaisDetalhados(divinos, meiaMeiaSemGrupo).reduce((s, a) => s + a.precoUnitario * a.qtd, 0), 40.4);
+const maiorDivinos = { ...divinos, comboGroups: [{ ...divinos.comboGroups[0], priceRule: "MAIOR" }] };
+conferir("MAIOR pela lista sem grupo: 46,90", precoUnitarioDoItem(maiorDivinos, meiaMeiaSemGrupo), 46.9);
+// Nome em DUAS perguntas continua sem chute: fica no menor preço, sem regra.
+const ambiguo = {
+  price: 0,
+  comboGroups: [
+    { id: "a", minQty: 1, maxQty: 2, priceRule: "MEDIA", items: [sabor("Calabresa", 30), sabor("Atum", 40)] },
+    { id: "c", minQty: 0, maxQty: 1, items: [sabor("Calabresa", 5)] },
+  ],
+};
+conferir("nome em duas perguntas, sem grupo: não chuta (menor preço)", precoUnitarioDoItem(ambiguo, [{ name: "Calabresa", quantity: 1 }]), 5);
+
+// O ROBÔ (pedido #9218 da Divinos): a IA anota os sabores em `options`, o
+// item-do-robo casa com o cadastro e o preço sai de precoUnitarioDoItem — não
+// da soma cheia, que era o que o chatbot-ai cobrava.
+const { escolhasDoItem } = jiti(path.resolve(__dirname, "..", "src", "lib", "item-do-robo.ts"));
+const doRobo = escolhasDoItem({ name: "Pizza G 30cm 8 fatias", options: ["Calabresa", "Frango c/ Requeijão"] }, { name: "Pizza G 30cm 8 fatias", comboGroups: divinos.comboGroups });
+conferir("robô: a soma cheia é 80,80 (só log)", doRobo.somaDasOpcoes, 80.8);
+conferir("robô: Calabresa + Frango pela regra = 40,40", precoUnitarioDoItem(divinos, doRobo.comboSelections), 40.4);
+
 console.log(`\n${ok} ok, ${falhou} falharam\n`);
 process.exit(falhou > 0 ? 1 : 0);
