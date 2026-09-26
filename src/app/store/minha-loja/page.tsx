@@ -35,6 +35,7 @@ export default async function StoreSettingsPage() {
       storePhone: storeOwner.storePhone || "",
       storeAddress: storeOwner.storeAddress || "",
       storeBanner: storeOwner.storeBanner || "",
+      storeBannerVideo: (storeOwner as any).storeBannerVideo || "",
       storeLogo: storeOwner.storeLogo || "",
       storeHours: storeOwner.storeHours ? normalizeStoreHours(storeOwner.storeHours) : null,
       hasConfiguredHours: Boolean(storeOwner.storeHours && Array.isArray(storeOwner.storeHours) && storeOwner.storeHours.length > 0),

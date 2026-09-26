@@ -17,10 +17,13 @@
  * Aqui o arquivo é lido do disco a cada request, então aparece na hora em que
  * o lojista envia, sem depender de restart.
  */
+import { createReadStream } from "fs";
 import { readFile, stat } from "fs/promises";
+import { Readable } from "stream";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { LEGACY_PUBLIC_ROOT, UPLOADS_ROOT } from "@/lib/storage";
+import { pedacoPedido } from "@/lib/pedaco-do-arquivo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +35,9 @@ const TIPOS: Record<string, string> = {
   ".png": "image/png",
   ".gif": "image/gif",
   ".pdf": "application/pdf",
+  // Vídeo da capa do cardápio (lib/video-enviado.ts).
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
 };
 
 /**
@@ -52,8 +58,41 @@ async function arquivoLegivel(caminho: string): Promise<boolean> {
   }
 }
 
+/**
+ * Vídeo sai em PEDAÇOS (206) e em fluxo, nunca inteiro na memória.
+ *
+ * O Safari do iPhone não toca <video> de servidor que ignora o Range: ele pede
+ * "bytes=0-1" primeiro e, recebendo o arquivo inteiro com 200, desiste — a capa
+ * fica no pôster. E ler 9 MB com readFile a cada visita, num servidor de 2 GB,
+ * é memória que as outras rotas precisam.
+ */
+function servirVideo(req: NextRequest, caminho: string, tamanho: number, tipo: string): Response {
+  const cabecalhos: Record<string, string> = {
+    "Content-Type": tipo,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+    // Aberto direto na barra, o vídeo nunca vira página com script.
+    "Content-Security-Policy": "default-src 'none'; media-src 'self'; sandbox",
+  };
+  const pedaco = pedacoPedido(req.headers.get("range"), tamanho);
+  if (pedaco === "fora") {
+    return new Response(null, { status: 416, headers: { ...cabecalhos, "Content-Range": `bytes */${tamanho}` } });
+  }
+  const { ini, fim } = pedaco ?? { ini: 0, fim: tamanho - 1 };
+  const fluxo = Readable.toWeb(createReadStream(caminho, { start: ini, end: fim })) as unknown as ReadableStream;
+  return new Response(fluxo, {
+    status: pedaco ? 206 : 200,
+    headers: {
+      ...cabecalhos,
+      "Content-Length": String(fim - ini + 1),
+      ...(pedaco ? { "Content-Range": `bytes ${ini}-${fim}/${tamanho}` } : {}),
+    },
+  });
+}
+
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path: partes } = await params;
@@ -74,6 +113,8 @@ export async function GET(
   for (const raiz of [UPLOADS_ROOT, LEGACY_PUBLIC_ROOT]) {
     const caminho = resolverDentroDe(raiz, partes);
     if (!caminho || !(await arquivoLegivel(caminho))) continue;
+
+    if (tipo.startsWith("video/")) return servirVideo(req, caminho, (await stat(caminho)).size, tipo);
 
     const conteudo = await readFile(caminho);
     return new NextResponse(new Uint8Array(conteudo), {

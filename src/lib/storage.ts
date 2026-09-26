@@ -22,6 +22,7 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { conferirVideo } from "@/lib/video-enviado";
 
 /**
  * Raiz dos uploads no disco. O padrao e public/uploads porque e ali que o
@@ -159,6 +160,33 @@ export async function saveUploadedFile(file: File, folder?: string | null): Prom
     url: `${PUBLIC_PREFIX}/${dir}/${fileName}`,
     pathname: `${dir}/${fileName}`,
     size: buffer.length,
+  };
+}
+
+/**
+ * Grava o VÍDEO da capa do cardápio (MP4/MOV/WebM) e devolve a URL pública.
+ *
+ * Sem recompressão: não há ffmpeg no container. Quem garante que o vídeo toca e
+ * cabe é `conferirVideo` (lib/video-enviado.ts): tipo pelos bytes, codec lido
+ * da caixa `stsd` (HEVC do iPhone é recusado com a dica do WhatsApp) e 9 MB,
+ * abaixo do corte de 10 MB do proxy do Next.
+ */
+export async function saveUploadedVideo(file: File, folder?: string | null): Promise<SavedFile> {
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const conferido = conferirVideo(bytes, Math.max(file.size, bytes.length));
+  if (!conferido.ok) throw new Error(conferido.erro);
+
+  const dir = sanitizeFolder(folder);
+  const fileName = safeBaseName(file.name, conferido.extensao);
+  const destDir = path.join(UPLOADS_ROOT, dir);
+
+  await mkdir(destDir, { recursive: true });
+  await writeFile(path.join(destDir, fileName), bytes);
+
+  return {
+    url: `${PUBLIC_PREFIX}/${dir}/${fileName}`,
+    pathname: `${dir}/${fileName}`,
+    size: bytes.length,
   };
 }
 

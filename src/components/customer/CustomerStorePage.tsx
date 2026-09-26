@@ -47,6 +47,8 @@ import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/TrilhaDoCliente";
+import FileiraDeDestaques from "./FileiraDeDestaques";
+import CapaDaLoja from "./CapaDaLoja";
 import { lerTrilha, nomeDoPremio } from "@/lib/trilha-premiada";
 import "./store.css";
 
@@ -134,6 +136,8 @@ type Franchisee = {
   storePhone: string | null;
   storeAddress: string | null;
   storeBanner: string | null;
+  /** Vídeo da capa (/uploads/lojas/...mp4); a imagem vira o pôster. */
+  storeBannerVideo?: string | null;
   storeLogo?: string | null;
   storeHours?: any;
   storeTimezone?: string | null;
@@ -3260,12 +3264,9 @@ export default function CustomerStorePage({
         </div>
       )}
 
-      {/* BANNER PANORÂMICO */}
-      {franchisee.storeBanner && (
-        <div className="store-banner">
-          <img src={franchisee.storeBanner} alt={storeName} fetchPriority="high" decoding="async" />
-          <div className="store-banner-overlay" />
-        </div>
+      {/* CAPA: a imagem e, quando a loja tem, o vídeo por cima (CapaDaLoja) */}
+      {(franchisee.storeBanner || franchisee.storeBannerVideo) && (
+        <CapaDaLoja imagem={franchisee.storeBanner} video={franchisee.storeBannerVideo ?? null} nome={storeName} />
       )}
 
       {/* STORE HEADER */}
@@ -3535,101 +3536,14 @@ export default function CustomerStorePage({
             fotoDoProduto={fotoDoProdutoDaTrilha}
           />
 
-          {/* ===== VITRINE DE DESTAQUES (Apenas produtos marcados como Destaque) ===== */}
+          {/* ===== DESTAQUES: a fileira que rola para o lado (FileiraDeDestaques) ===== */}
           {selectedCategory === "Todos" && !searchTerm && highlightProducts.length > 0 && (
-            <div style={{ marginBottom: "2rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "0.85rem" }}>
-                <h2 style={{ fontSize: "1.15rem", fontWeight: 800, margin: 0, color: "#0F172A" }}>
-                  ⭐ Destaques da Casa
-                </h2>
-                <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#16A34A", backgroundColor: "#DCFCE7", padding: "2px 8px", borderRadius: "12px" }}>
-                  Mais pedidos
-                </span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "14px" }}>
-                {highlightProducts.map(p => {
-                  const q = getQty(p.id);
-                  return (
-                    <div
-                      key={`highlight_${p.id}`}
-                      onClick={() => setComboProduct(p)}
-                      style={{
-                        backgroundColor: "#FFFFFF",
-                        borderRadius: "16px",
-                        border: q > 0 ? "1.5px solid #16A34A" : "1px solid #E2E8F0",
-                        overflow: "hidden",
-                        display: "flex",
-                        flexDirection: "column",
-                        cursor: "pointer",
-                        boxShadow: "0 4px 14px rgba(0,0,0,0.04)",
-                        transition: "all 0.2s ease"
-                      }}
-                    >
-                      {p.imageUrl && (
-                        <div style={{ width: "100%", height: "180px", overflow: "hidden", position: "relative", backgroundColor: "#F8FAFC" }}>
-                          <img src={p.imageUrl} alt={p.name} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain", padding: "4px" }} />
-                          {p.isCombo && (
-                            <span style={{ position: "absolute", top: "10px", left: "10px", background: "rgba(15,23,42,0.85)", color: "#fff", padding: "3px 8px", borderRadius: "6px", fontSize: "0.68rem", fontWeight: 800 }}>
-                              COMBO
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", flex: 1 }}>
-                        <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", marginBottom: "4px" }}>
-                          {p.name}
-                        </div>
-                        {p.description && (
-                          <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 8px 0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                            {p.description}
-                          </p>
-                        )}
-                        {isCashbackActive && (
-                          <div style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            background: "linear-gradient(135deg, #ECFDF5, #DCFCE7)",
-                            border: "1px solid #A7F3D0",
-                            borderRadius: "8px",
-                            padding: "3px 8px",
-                            fontSize: "0.72rem",
-                            fontWeight: 800,
-                            color: "#047857",
-                            marginBottom: "6px",
-                            width: "fit-content"
-                          }}>
-                            💸 Ganhe R$ {((p.price * cashbackRate) / 100).toFixed(2).replace(".", ",")} de volta ({cashbackRate}%)
-                          </div>
-                        )}
-                        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: "8px" }}>
-                          <PrecoDoCard produto={p} tamanho="1.05rem" cor="#059669" />
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              setComboProduct(p);
-                            }}
-                            style={{
-                              padding: "6px 14px",
-                              borderRadius: "8px",
-                              border: "none",
-                              backgroundColor: "#059669",
-                              color: "#fff",
-                              fontWeight: 700,
-                              fontSize: "0.8rem",
-                              cursor: "pointer"
-                            }}
-                          >
-                            {p.isCombo ? "Montar" : "+ Pedir"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <FileiraDeDestaques
+              produtos={highlightProducts}
+              quantidade={getQty}
+              abrir={p => setComboProduct(p as any)}
+              preco={p => <PrecoDoCard produto={p} tamanho="0.95rem" cor="#0F172A" />}
+            />
           )}
 
           {/* LISTAGEM DE CATEGORIAS & PRODUTOS */}

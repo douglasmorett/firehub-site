@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { saveUploadedFile } from "@/lib/storage";
+import { saveUploadedFile, saveUploadedVideo } from "@/lib/storage";
 
 /**
- * POST /api/upload-store-image — logo e banner da loja.
+ * POST /api/upload-store-image — logo, banner e o vídeo da capa (type=video) da loja.
  * Passou do Vercel Blob para disco local (ver src/lib/storage.ts).
  */
 export async function POST(req: NextRequest) {
@@ -29,7 +29,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const saved = await saveUploadedFile(file as File, "lojas");
+    const saved = formData.get("type") === "video"
+      ? await saveUploadedVideo(file as File, "lojas")
+      : await saveUploadedFile(file as File, "lojas");
     return NextResponse.json({ url: saved.url, size: saved.size });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Falha ao salvar arquivo" }, { status: 400 });

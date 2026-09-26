@@ -7,6 +7,7 @@ import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Bankno
 
 import { DAYS, DAY_MAP, normalizeStoreHours, defaultHours } from "@/lib/store-hours";
 import { FUSOS_DO_BRASIL, fusoPorEndereco, rotuloDoFuso } from "@/lib/fuso-por-endereco";
+import { DICA_DO_VIDEO, MAX_VIDEO_BYTES } from "@/lib/video-enviado";
 
 /**
  * O cupom como fica gravado em `storeCoupons`. A régua que lê isto é
@@ -58,6 +59,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const fusoEfetivo = fusoDoEndereco?.fuso ?? storeTimezone;
   const [storeBanner, setStoreBanner] = useState(user.storeBanner || "");
   const [storeLogo, setStoreLogo] = useState(user.storeLogo || "");
+  // O vídeo da capa grava sozinho ao enviar e ao remover (como a imagem ao enviar):
+  // não passa pelo "Salvar", então não entra no dirty.
+  const [storeBannerVideo, setStoreBannerVideo] = useState<string>(user.storeBannerVideo || "");
+  const [uploadingVideo, setUploadingVideo] = useState(false);
   const [storeDeliveryOnly, setStoreDeliveryOnly] = useState(user.storeDeliveryOnly || false);
   const [showAddressOnMenu, setShowAddressOnMenu] = useState<boolean>(user.showAddressOnMenu !== false);
   const [storeHours, setStoreHours] = useState<any[]>(() => normalizeStoreHours(user.storeHours));
@@ -375,6 +380,55 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
     } catch { alert("Erro no upload."); } finally { setUploading(false); }
   };
 
+  /**
+   * O VÍDEO DA CAPA. O tamanho é conferido aqui antes de subir: acima de 10 MB
+   * o proxy do Next corta o corpo do envio e o servidor receberia meio arquivo.
+   * O resto (é vídeo? toca em todo celular?) é o servidor que confere pelos
+   * bytes, e a mensagem dele volta como está (lib/video-enviado.ts).
+   */
+  const enviarVideoDaCapa = async (file: File) => {
+    if (file.size > MAX_VIDEO_BYTES) {
+      alert(`O vídeo tem ${(file.size / 1024 / 1024).toFixed(1).replace(".", ",")} MB e o limite é 9 MB. Use um trecho curto (até uns 15 segundos).\n\n${DICA_DO_VIDEO}`);
+      return;
+    }
+    setUploadingVideo(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", "video");
+      const res = await fetch("/api/upload-store-image", { method: "POST", body: formData });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.url) {
+        alert(d.error || "Não consegui enviar o vídeo. Tente de novo.");
+        return;
+      }
+      const salvo = await fetch("/api/store-settings", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeBannerVideo: d.url }),
+      });
+      if (!salvo.ok) {
+        const erro = await salvo.json().catch(() => ({}));
+        alert(erro.error || "O vídeo subiu, mas não consegui salvar na capa. Tente de novo.");
+        return;
+      }
+      setStoreBannerVideo(d.url);
+    } catch {
+      alert("Não consegui enviar o vídeo. Confira a internet e tente de novo.");
+    } finally {
+      setUploadingVideo(false);
+    }
+  };
+
+  const removerVideoDaCapa = async () => {
+    if (!confirm("Tirar o vídeo da capa? A imagem da capa continua.")) return;
+    const res = await fetch("/api/store-settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storeBannerVideo: "" }),
+    }).catch(() => null);
+    if (res?.ok) setStoreBannerVideo("");
+    else alert("Não consegui tirar o vídeo agora. Tente de novo.");
+  };
+
   const addCoupon = () => { setCoupons(prev => [...prev, { code: "", discount: 10, type: "percent", active: true }]); setDirtyCoupons(true); };
   /**
    * O cupom de primeiro pedido: um só por loja (lib/cupons.ts lê o primeiro
@@ -488,6 +542,40 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <div style={{ display: "flex", gap: "1rem" }}>
           <UploadBox label="Logo" value={storeLogo} type="logo" uploading={uploadingLogo} />
           <UploadBox label="Banner / Capa" value={storeBanner} type="banner" uploading={uploadingBanner} />
+        </div>
+
+        {/* VÍDEO NA CAPA — toca sem som, em laço, no lugar da imagem. A imagem
+            da capa continua valendo: aparece antes de o vídeo carregar e para
+            quem está com economia de dados. */}
+        <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px dashed #E2E8F0" }}>
+          <label style={{ fontWeight: 600, fontSize: "0.85rem", display: "block", marginBottom: "4px" }}>🎬 Vídeo na capa (opcional)</label>
+          <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 8px" }}>
+            Toca sem som e em repetição no topo do cardápio, no lugar da imagem da capa. Use um vídeo deitado, curto (até uns 15 segundos) e de até 9 MB, em MP4.
+          </p>
+          {storeBannerVideo ? (
+            <div style={{ position: "relative", borderRadius: "12px", overflow: "hidden", border: "1.5px solid #E2E8F0", background: "#0F172A" }}>
+              <video src={storeBannerVideo} poster={storeBanner || undefined} muted loop playsInline autoPlay style={{ width: "100%", height: "140px", objectFit: "cover", display: "block" }} />
+              <div style={{ position: "absolute", top: "6px", right: "6px", display: "flex", gap: "4px" }}>
+                <label title="Trocar o vídeo" style={{ width: "30px", height: "30px", borderRadius: "8px", background: "rgba(255,255,255,0.9)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 6px rgba(0,0,0,0.15)" }}>
+                  <Upload size={14} />
+                  <input type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) enviarVideoDaCapa(f); }} />
+                </label>
+                <button type="button" title="Tirar o vídeo da capa" onClick={removerVideoDaCapa} style={{ width: "30px", height: "30px", borderRadius: "8px", background: "rgba(255,255,255,0.9)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.15)" }}>
+                  <Trash2 size={14} color="#C92E09" />
+                </button>
+              </div>
+              {uploadingVideo && (
+                <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.6)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.85rem" }}>Enviando o vídeo...</div>
+              )}
+            </div>
+          ) : (
+            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "96px", borderRadius: "12px", border: "2px dashed #CBD5E1", cursor: uploadingVideo ? "wait" : "pointer", background: "#F8FAFC" }}>
+              <Upload size={22} color="#94A3B8" />
+              <span style={{ fontSize: "0.8rem", color: "#94A3B8", marginTop: "6px" }}>{uploadingVideo ? "Enviando o vídeo..." : "Enviar vídeo da capa"}</span>
+              <input type="file" accept="video/mp4,video/webm,video/quicktime" hidden disabled={uploadingVideo} onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) enviarVideoDaCapa(f); }} />
+            </label>
+          )}
+          <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0" }}>{DICA_DO_VIDEO}</p>
         </div>
       </div>}
 

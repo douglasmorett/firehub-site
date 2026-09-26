@@ -118,6 +118,21 @@ export async function PUT(req: Request) {
     if (body[key] !== undefined) data[key] = body[key];
   }
 
+  // O VÍDEO DA CAPA vai para a linha da LOJA, que é a que o cardápio lê. Só
+  // aceita o que o nosso upload gravou (lib/video-enviado.ts conferiu tipo,
+  // codec e tamanho): URL de fora nem tocaria, o CSP do cardápio só carrega
+  // mídia do próprio site.
+  if (body.storeBannerVideo !== undefined) {
+    const video = typeof body.storeBannerVideo === "string" ? body.storeBannerVideo.trim() : "";
+    if (!video) {
+      daLoja.storeBannerVideo = null;
+    } else if (/^\/uploads\/lojas\/[\w.-]+\.(mp4|webm)$/i.test(video)) {
+      daLoja.storeBannerVideo = video;
+    } else {
+      return NextResponse.json({ error: "Vídeo da capa inválido: envie o arquivo pelo botão do vídeo da capa." }, { status: 400 });
+    }
+  }
+
   // ── ÁREA DE ENTREGA: VALIDADA E NORMALIZADA ANTES DE GRAVAR ──────────
   //
   // Até 25/09/2026 as faixas eram gravadas como viessem: km repetido ou zero,

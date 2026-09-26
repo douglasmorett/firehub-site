@@ -26,6 +26,11 @@ model User {
   storeAddress    String?
   storeBanner     String?
   storeLogo       String?
+  /// Vídeo da capa do cardápio (MP4/WebM enviado pela loja, /uploads/lojas/...).
+  /// Nulo = só a imagem `storeBanner`, que com vídeo vira o pôster: aparece
+  /// antes de o vídeo carregar e no lugar dele para quem pediu menos animação
+  /// ou economia de dados. A COLUNA nasce em garantir-colunas.ts.
+  storeBannerVideo String?
   storeHours      Json?
   /// Loja que NÃO aceita retirada no balcão. Nasce `false` — retirada é o
   /// padrão, e quem não atende é que desmarca.
