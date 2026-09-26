@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { estadoDoRoteador, sondarRoteador } from "@/lib/distancia-por-rota";
 import { estadoDoNominatim } from "@/lib/geocoding";
-import { sondarNominatim, estadoDaFilaDoMapa } from "@/lib/geocodificacao-servidor";
+import { sondarNominatim, estadoDaFilaDoMapa, estadoDoGoogle } from "@/lib/geocodificacao-servidor";
 import { verifyCronAuth } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
@@ -169,6 +169,7 @@ export async function GET(req: NextRequest) {
   const entrega: Record<string, unknown> = {
     roteador: estadoDoRoteador(),
     nominatim: { ...estadoDoNominatim(), fila: estadoDaFilaDoMapa() },
+    google: estadoDoGoogle(),
   };
   const querSondar = req.nextUrl.searchParams.get("sondar") === "1";
   if (querSondar && !verifyCronAuth(req)) {

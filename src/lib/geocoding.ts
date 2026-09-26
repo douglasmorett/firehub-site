@@ -8,6 +8,7 @@ import {
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { nomeDeRuaParecido } from "@/lib/geocodificacao";
 import type { MedidaDaDistancia, OrigemDoPonto } from "@/lib/cotacao-de-entrega";
+import type { ResultadoDoGoogle } from "@/lib/geocodificacao-google";
 
 // Calcula a distância exata em linha reta (KM) usando a fórmula Haversine
 // Alinhado 100% com os círculos de raio desenhados no mapa Leaflet de configurações da loja
@@ -365,6 +366,12 @@ export async function geocodeStreetStructured(
 export type GeocodificadorDaTaxa = {
   livre(consulta: string, centro: Ponto | null, prazo: number): Promise<RespostaDoMapa<ResultadoDoMapa | null>>;
   estruturada(rua: string, cidade: string, centro: Ponto | null, prazo: number): Promise<RespostaDoMapa<TrechoDeRua[]>>;
+  /**
+   * O Google, quando o mapa aberto não achou com segurança
+   * (lib/geocodificacao-google.ts). Opcional: sem ele — ou sem a chave no
+   * ambiente —, a cascata é a de sempre.
+   */
+  google?(consulta: string, cidade: string, centro: Ponto | null, prazo: number): Promise<RespostaDoMapa<ResultadoDoGoogle | null>>;
 };
 
 export const geocodificadorDireto: GeocodificadorDaTaxa = {
@@ -1013,6 +1020,25 @@ export async function verifyStoreDeliveryAddress(
     // longe do bairro que o cliente escreveu: aí o mapa só conhece a homônima
     // e a rua dele não está no mapa. A régua é o centro do bairro dele.
     const consultaDoBairro = neigh ? `${neigh}, ${city}` : "";
+
+    // ── NÍVEL G: O GOOGLE ────────────────────────────────────────────────
+    //
+    // O mapa aberto não achou o endereço com segurança (o que sobrou é rua de
+    // outro bairro, homônima, centro de bairro ou nada). Antes de aceitar um
+    // ponto aproximado, pergunta-se ao Google (lib/geocodificacao-google.ts).
+    // Só vale o ponto da CASA ou da RUA, da cidade da loja, com a rua e o
+    // bairro que o cliente escreveu. Falha dele não é "o mapa não respondeu":
+    // o mapa aberto respondeu, e a cascata segue como sempre.
+    if (!foundGeo && geo.google && temTempoNoMapa()) {
+      const g = await geo.google(textoParaOMapa, city, loja, prazoDoMapa);
+      const r = g.ok ? g.valor : null;
+      if (r && r.precisao !== "bairro") {
+        const ruasDoCliente = street ? [street] : ruasProcuradas;
+        const ruaBate = ruasDoCliente.length === 0 || (!!r.rua && ruasDoCliente.some((x) => ruaConfere(x, r.rua)));
+        const bairroBate = !neigh || !r.bairro || bairroConfere(neigh, r.bairro);
+        if (ruaBate && bairroBate) aceitar({ lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades }, r.precisao);
+      }
+    }
 
     // A principal das duas ruas do texto, achada pela busca livre e guardada
     // para o encontro das duas tentar antes: ninguém achou a pequena, vale ela.

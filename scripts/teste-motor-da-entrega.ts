@@ -58,7 +58,9 @@ const osrm = new Map<string, RespostaSimulada | ((tentativa: number) => Resposta
 /** O roteador reserva (OSRM_URL_RESERVA), com respostas próprias pelo destino. */
 const RESERVA_DO_TESTE = "http://reserva.local:5000";
 const osrmReserva = new Map<string, RespostaSimulada>();
-const chamadas: { tipo: "nominatim" | "osrm" | "reserva"; url: string; em: number }[] = [];
+/** Google (GOOGLE_MAPS_API_KEY): pelo "address" normalizado. Sem entrada: ZERO_RESULTS. */
+const google = new Map<string, unknown>();
+const chamadas: { tipo: "nominatim" | "osrm" | "reserva" | "google"; url: string; em: number }[] = [];
 
 const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -113,10 +115,15 @@ const tentativasOsrm = new Map<string, number>();
     if (r === "pendura") return esperarAbortar(init?.signal);
     return new Response(JSON.stringify(r.corpo), { status: r.status, headers: { "content-type": "application/json" } });
   }
+  if (url.includes("maps.googleapis.com/maps/api/geocode")) {
+    chamadas.push({ tipo: "google", url, em: Date.now() });
+    const k = norm(new URL(url).searchParams.get("address") || "");
+    return new Response(JSON.stringify(google.get(k) ?? { status: "ZERO_RESULTS", results: [] }), { status: 200, headers: { "content-type": "application/json" } });
+  }
   throw new Error(`fetch inesperado no teste: ${url}`);
 };
 
-const contar = (tipo: "nominatim" | "osrm" | "reserva", desde: number) => chamadas.slice(desde).filter((c) => c.tipo === tipo).length;
+const contar = (tipo: "nominatim" | "osrm" | "reserva" | "google", desde: number) => chamadas.slice(desde).filter((c) => c.tipo === tipo).length;
 
 // Os avisos do motor vão para cá (o teste confere o log do 429 e da estimativa).
 const avisos: string[] = [];
@@ -174,6 +181,9 @@ async function main() {
     // Reserva desligado por padrão: os casos abaixo falam da política do
     // PRINCIPAL (quantas perguntas, prazo, 429). O reserva tem seção própria.
     process.env.OSRM_URL_RESERVA = "";
+    // Google desligado por padrão (sem chave): tem seção própria.
+    google.clear();
+    delete process.env.GOOGLE_MAPS_API_KEY;
   }
   /** Avalia com o PINO do cliente num ponto em que o roteador devolve `metros`. */
   async function comPino(destino: Ponto, metros: number, loja: any = divinos) {
@@ -512,6 +522,62 @@ async function main() {
   conferir("duas ruas longe uma da outra não se encontram",
     geocoding.encontroDeRuas([{ logradouro: "A", trechos: [travessaDoCentro] }, { logradouro: "B", trechos: [ruaDoForno] }]) === null);
   conferir("o trecho mais perto do bairro", geocoding.trechoMaisPerto([travessaDoCentro, travessaCerta], centroDoJardim)?.trecho === travessaCerta);
+
+  // ════════════════════════════════════════════════════════════════════════
+  console.log("\n== Google como segunda fonte (só com GOOGLE_MAPS_API_KEY) ==");
+  const casaNoGoogle = aoSul(1.2, 0.002);
+  const respostaDoGoogle = (p: Ponto, cidade = "Cabo Frio") => ({
+    status: "OK",
+    results: [{
+      formatted_address: `Rua Sem Mapa, 55 - Vila Nova, ${cidade} - RJ`,
+      geometry: { location: { lat: p.lat, lng: p.lng }, location_type: "ROOFTOP" },
+      types: ["street_address"],
+      address_components: [
+        { long_name: "55", types: ["street_number"] },
+        { long_name: "Rua Sem Mapa", types: ["route"] },
+        { long_name: "Vila Nova", types: ["sublocality_level_1", "sublocality", "political"] },
+        { long_name: cidade, types: ["administrative_area_level_2", "political"] },
+      ],
+    }],
+  });
+  const enderecoSemMapa = "Rua Sem Mapa, 55 - Vila Nova";
+
+  zerar();
+  antes = chamadas.length;
+  const semChave = await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  conferir("sem a chave: o Google nem é perguntado (a cascata é a de sempre)", contar("google", antes) === 0 && semChave.resultado !== "ATENDE", { google: contar("google", antes), resultado: semChave.resultado });
+
+  zerar();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(casaNoGoogle));
+  osrm.set(chave4(casaNoGoogle), osrmOk(1600));
+  antes = chamadas.length;
+  const peloGoogle = await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  conferir("o mapa aberto não acha, o Google acha a CASA: vale, sem confirmação (1,6 km de rua, R$ 10)",
+    peloGoogle.resultado === "ATENDE" && peloGoogle.ponto?.lat === casaNoGoogle.lat && peloGoogle.pedeConfirmacao === false && peloGoogle.taxa === 10 && contar("google", antes) === 1,
+    { resultado: peloGoogle.resultado, ponto: peloGoogle.ponto, taxa: peloGoogle.taxa, conf: peloGoogle.pedeConfirmacao, google: contar("google", antes) });
+  antes = chamadas.length;
+  await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  conferir("o mesmo endereço de novo não paga o Google outra vez (cache)", contar("google", antes) === 0, contar("google", antes));
+
+  zerar();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(aoSul(9, 0.01), "São Pedro da Aldeia"));
+  const outraCidadeNoGoogle = await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  conferir("o Google achou em OUTRA cidade: não vale", outraCidadeNoGoogle.resultado !== "ATENDE" || outraCidadeNoGoogle.ponto?.lat !== aoSul(9, 0.01).lat, outraCidadeNoGoogle);
+
+  zerar();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  antes = chamadas.length;
+  await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  conferir("'não achei' do Google também fica guardado: uma consulta só", contar("google", antes) === 1, contar("google", antes));
+
+  zerar();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  antes = chamadas.length;
+  await comPino(aoSul(1.1, 0.0061), 1500);
+  conferir("com o pino do cliente o Google não é perguntado", contar("google", antes) === 0);
 
   zerar();
   const praia = aoSul(3.2, 0.01);

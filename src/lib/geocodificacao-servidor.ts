@@ -19,6 +19,7 @@
  * O navegador nunca mais fala com o geocodificador.
  */
 import { prisma } from "@/lib/prisma";
+import { buscarNoGoogle, chaveDoGoogle, type ResultadoDoGoogle } from "@/lib/geocodificacao-google";
 import {
   criarGeocodificador,
   parseAddressDetails,
@@ -758,8 +759,108 @@ async function resolverNaTaxa<T>(
  * `donos` (o IP do cardápio público, a loja): as buscas que VÃO À REDE contam
  * no teto de cada um (ver LIMITES_DO_DONO). Cache não conta.
  */
+// ── O GOOGLE NA TAXA: CACHE E TETO DO DIA ─────────────────────────────────
+//
+// Cada consulta ao Google custa (acima de 10 mil por mês). O robô recota o
+// endereço a cada mensagem da conversa: sem cache, o MESMO endereço seria pago
+// várias vezes — e o "não achei" também, por isso ele é guardado. O teto do
+// dia (GOOGLE_GEOCODING_TETO_DIA, padrão 1.000) é o freio de mão: passado
+// ele, a cascata segue só com o mapa aberto até o dia virar.
+
+const memoriaDoGoogle = new Map<string, { valor: ResultadoDoGoogle | null; em: number }>();
+const VALIDADE_DO_GOOGLE_NA_MEMORIA_MS = 6 * 60 * 60 * 1000;
+const TETO_DA_MEMORIA_DO_GOOGLE = 5000;
+let contagemDoGoogle = { dia: "", n: 0, avisou: false };
+
+function tetoDoGoogleNoDia(): number {
+  const n = Number(process.env.GOOGLE_GEOCODING_TETO_DIA);
+  return Number.isFinite(n) && n >= 0 ? n : 1000;
+}
+
+function lembrarDoGoogle(chave: string, valor: ResultadoDoGoogle | null) {
+  if (memoriaDoGoogle.size >= TETO_DA_MEMORIA_DO_GOOGLE) {
+    const maisAntiga = memoriaDoGoogle.keys().next().value;
+    if (maisAntiga !== undefined) memoriaDoGoogle.delete(maisAntiga);
+  }
+  memoriaDoGoogle.set(chave, { valor, em: Date.now() });
+}
+
+async function googleNaTaxa(
+  consulta: string,
+  cidade: string,
+  centro: Ponto | null,
+  prazo: number,
+): Promise<RespostaDoMapa<ResultadoDoGoogle | null>> {
+  if (!chaveDoGoogle()) return { ok: true, valor: null };
+  const chave = `taxa|google|${chaveDeCache(consulta, cidade)}`.slice(0, 400);
+
+  const lembrada = memoriaDoGoogle.get(chave);
+  if (lembrada && Date.now() - lembrada.em < VALIDADE_DO_GOOGLE_NA_MEMORIA_MS) return { ok: true, valor: lembrada.valor };
+  const guardada = await doBancoDaTaxa(() => armazemDaTaxa.ler(chave), null);
+  if (guardada) {
+    try {
+      const v = JSON.parse(guardada);
+      const valor = v && typeof v === "object" && !v.nada ? (v as ResultadoDoGoogle) : null;
+      lembrarDoGoogle(chave, valor);
+      return { ok: true, valor };
+    } catch {
+      // Linha estragada: pergunta de novo.
+    }
+  }
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  if (contagemDoGoogle.dia !== hoje) contagemDoGoogle = { dia: hoje, n: 0, avisou: false };
+  if (contagemDoGoogle.n >= tetoDoGoogleNoDia()) {
+    if (!contagemDoGoogle.avisou) {
+      contagemDoGoogle.avisou = true;
+      console.warn(`[Google] teto do dia atingido (${tetoDoGoogleNoDia()} consultas) — até amanhã a taxa segue só com o mapa aberto`);
+    }
+    return { ok: true, valor: null };
+  }
+  const resta = prazo - Date.now();
+  if (resta < 800) return { ok: false, motivo: "prazo" };
+
+  contagemDoGoogle.n++;
+  const r = await buscarNoGoogle(consulta, cidade, centro, Math.min(4000, resta));
+  if (!r.ok) {
+    // Sem o endereço no log (LGPD): o resumo correlaciona sem expor.
+    console.warn(`[Google] endereço ${resumoDaConsulta(consulta)}: ${r.motivo}`);
+    return r;
+  }
+  lembrarDoGoogle(chave, r.valor);
+  const v = r.valor;
+  doBancoDaTaxa(
+    () =>
+      armazemDaTaxa.gravar({
+        chave,
+        lat: v?.lat ?? 0,
+        lng: v?.lng ?? 0,
+        origem: "google",
+        bairro: v?.bairro || "",
+        cidade: v?.cidades?.[0] || cidade,
+        resposta: JSON.stringify(v ?? { nada: true }),
+      }),
+    undefined,
+  ).catch(() => undefined);
+  return r;
+}
+
+/** Para o /api/health: o Google está ligado, e quanto do teto de hoje já foi. */
+export function estadoDoGoogle() {
+  const hoje = new Date().toISOString().slice(0, 10);
+  return {
+    ligado: !!chaveDoGoogle(),
+    consultasHoje: contagemDoGoogle.dia === hoje ? contagemDoGoogle.n : 0,
+    tetoDoDia: tetoDoGoogleNoDia(),
+    naMemoria: memoriaDoGoogle.size,
+  };
+}
+
 export function geocodificadorDaTaxaPara(donos?: string[]): GeocodificadorDaTaxa {
   return {
+    google(consulta, cidade, centro, prazo) {
+      return googleNaTaxa(consulta, cidade, centro, prazo);
+    },
     livre(consulta, centro, prazo) {
       return resolverNaTaxa<ResultadoDoMapa | null>({
         chave: `taxa|livre|${regiao(centro)}|${chaveDeCache(consulta, "")}`.slice(0, 400),
@@ -789,6 +890,8 @@ export const geocodificadorDaTaxa: GeocodificadorDaTaxa = geocodificadorDaTaxaPa
 
 /** Zera memória, voos, disjuntor do banco, o ritmo e os tetos dos donos. SÓ PARA TESTE. */
 export function reiniciarGeocodificacaoParaTeste(opcoes?: { intervaloDoNominatimMs?: number }) {
+  memoriaDoGoogle.clear();
+  contagemDoGoogle = { dia: "", n: 0, avisou: false };
   memoriaDaTaxa.clear();
   emVooDaTaxa.clear();
   emVooDoDono.clear();
