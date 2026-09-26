@@ -62,6 +62,8 @@ interface SessionOrder {
     tableGuestId?: string | null;
     /** Escolhas do combo. É aqui que mora "2 pastéis" na Pastel da Paulista. */
     comboSelections?: unknown;
+    /** Observação do item ("sem leite"), escrita no carrinho ou no modal. */
+    notes?: string | null;
   }[];
 }
 
@@ -277,6 +279,9 @@ const ESTILO_TABLET = `
     .mesa-cartao { min-height: 84px !important; }
   }
 
+  /* No toque, a regra de .mesa-lancar input abaixo passa por cima (16px). */
+  .mesa-obs-item { font-size: 12px; }
+
   @media (pointer: coarse) {
     .mesa-lancar button, .mesa-detalhe button { min-height: 44px; }
     .mesa-lancar input, .mesa-lancar select { min-height: 44px; font-size: 16px; }
@@ -432,7 +437,8 @@ export default function MesasApp({
   const [cart, setCart] = useState<{
     uid: string; item: MenuItem; qty: number; unitPrice?: number;
     comboSelections?: any[]; guestId?: string | null;
-    /* Observação do item ("sem cebola"), vinda do modal do produto. */
+    /* Observação do item ("sem cebola"): vem do modal do produto ou é
+       escrita na própria linha do carrinho. */
     notes?: string;
   }[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
@@ -1153,7 +1159,8 @@ export default function MesasApp({
     } else {
       // Cada toque no card soma UM. Dizer quantos ficaram evita o garçom tocar
       // de novo "para garantir" e depois somar outra vez no carrinho.
-      const ex = cart.find(i => i.item.id === item.id && !i.comboSelections && (i.guestId || null) === pessoaAtiva);
+      // Mesma busca do addToCart: a linha com observação não recebe o toque.
+      const ex = cart.find(i => i.item.id === item.id && !i.comboSelections && !i.notes && (i.guestId || null) === pessoaAtiva);
       addToCart(item);
       showToast(`${item.name}: ${(ex?.qty ?? 0) + 1}x no pedido`);
     }
@@ -1168,7 +1175,10 @@ export default function MesasApp({
     const dono = pessoaAtiva;
     const obs = String(notes || "").trim();
     setCart(prev => {
-      const uid = `${item.id}-${prev.length}-${dono || "mesa"}`;
+      // Único de verdade: com `prev.length` no meio, apagar uma linha e somar
+      // outra do mesmo produto repetia o uid — e a observação digitada numa
+      // linha aparecia na outra.
+      const uid = `${item.id}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}-${dono || "mesa"}`;
       if ((comboSelections && comboSelections.length > 0) || obs) {
         return [...prev, { uid, item, qty: 1, comboSelections: comboSelections && comboSelections.length > 0 ? comboSelections : undefined, unitPrice, guestId: dono, notes: obs || undefined }];
       }
@@ -1712,11 +1722,25 @@ export default function MesasApp({
                 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>{c.item.name}</div>
-                    {c.notes && (
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 6, padding: "2px 6px", marginTop: 2 }}>
-                        📝 {c.notes}
-                      </div>
-                    )}
+                    {/* Observação editável na própria linha, antes de enviar:
+                        produto sem opção (o suco "sem leite" da Ragnar,
+                        25/09/2026) entra com um toque e não passa pelo modal,
+                        então não tinha onde escrever. Igual ao balcão. Vai
+                        para a cozinha e para a comanda como Obs: do item. */}
+                    <input
+                      className="mesa-obs-item"
+                      value={c.notes || ""}
+                      placeholder="📝 obs. do item (ex.: sem leite)"
+                      maxLength={140}
+                      aria-label={`Observação de ${c.item.name}`}
+                      onChange={(e) => { const v = e.target.value; setCart(prev => prev.map(x => x.uid === c.uid ? { ...x, notes: v } : x)); }}
+                      style={{
+                        width: "100%", marginTop: 4, padding: "5px 8px", borderRadius: 6,
+                        border: `1px solid ${c.notes ? "#B45309" : "#E2E8F0"}`,
+                        background: c.notes ? "#FFF7E6" : "#fff", color: c.notes ? "#B45309" : "#1E293B",
+                        fontWeight: c.notes ? 700 : 400, outline: "none", fontFamily: "inherit", boxSizing: "border-box",
+                      }}
+                    />
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#475569" }}>{fmt((c.unitPrice ?? c.item.price) * c.qty)}</div>
                     {pessoas.length > 0 && (
                       <div style={{ fontSize: 11, color: c.guestId ? "#1C1917" : "#94A3B8", fontWeight: 700, marginTop: 2 }}>
@@ -2343,6 +2367,13 @@ export default function MesasApp({
                                 </span>
                               );
                             })()}
+                            {/* O garçom confere depois de enviar que o "sem
+                                leite" foi junto. */}
+                            {item.notes && (
+                              <span style={{ display: "block", fontSize: 11, color: "#B45309", fontWeight: 800, marginTop: 1 }}>
+                                📝 {item.notes}
+                              </span>
+                            )}
                             <span style={{
                               marginLeft: 6, fontSize: 11, fontWeight: 700,
                               color: item.tableGuestId ? "#1C1917" : "#94A3B8",
