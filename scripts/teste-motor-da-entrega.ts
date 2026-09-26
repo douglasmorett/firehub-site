@@ -473,6 +473,46 @@ async function main() {
     homonima.resultado !== "FORA" && homonima.pedeConfirmacao === true && !!homonima.ponto, homonima);
   conferir("… e o ponto aproximado fora do raio é DESCONHECIDO (confirme no mapa)", homonima.resultado === "DESCONHECIDO" && homonima.taxa === null);
 
+  // ════════════════════════════════════════════════════════════════════════
+  console.log("\n== Duas ruas no texto e rua homônima pelo bairro (Divinos, 25/09/2026, 20h34) ==");
+  // Medido no OSM: a Travessa Pantanal existe em DOIS lugares de Cabo Frio — a
+  // certa a ~0,3 km da Rua do Forno, a outra no Centro —, e nenhuma diz bairro.
+  // O bairro do cliente ("Jardim Esperança") no mapa é "Vila Jardim Esperança".
+  const travessaCerta = aoSul(1.9, -0.0035);
+  const travessaDoCentro = aoSul(-2.9, 0.004);
+  const ruaDoForno = aoSul(1.65, -0.0012);
+  const centroDoJardim = aoSul(2.1, 0.003);
+  const duasTravessas = () =>
+    nominatim.set(`${norm("Travessa Pantanal")}|${norm("Cabo Frio")}`, { status: 200, corpo: [
+      lugar(travessaDoCentro, { road: "Travessa Pantanal", suburb: "Centro" }),
+      lugar(travessaCerta, { road: "Travessa Pantanal" }),
+    ] });
+
+  zerar();
+  duasTravessas();
+  nominatim.set(`${norm("Rua do Forno")}|${norm("Cabo Frio")}`, { status: 200, corpo: [lugar(ruaDoForno, { road: "Rua do Forno" })] });
+  osrm.set(chave4(travessaCerta), osrmOk(2600));
+  const duasRuas = await avaliarEntrega(divinos, { endereco: "Rua do forno, travessa pantanal, nº 130, Jardim Esperança" });
+  conferir("duas ruas: a travessa JUNTO da Rua do Forno (não a do Centro), 2,6 km de rua, R$ 15, sem confirmação",
+    duasRuas.resultado === "ATENDE" && duasRuas.ponto?.lat === travessaCerta.lat && duasRuas.pedeConfirmacao === false && duasRuas.taxa === 15, duasRuas);
+
+  zerar();
+  duasTravessas();
+  nominatim.set(norm("Jardim Esperança, Cabo Frio"), { status: 200, corpo: [
+    lugar(centroDoJardim, { suburb: "Vila Jardim Esperança", classe: "landuse", tipo: "residential", display: "Vila Jardim Esperança, Cabo Frio, Rio de Janeiro, Brasil" }),
+  ] });
+  osrm.set(chave4(travessaCerta), osrmOk(2600));
+  const soATravessa = await avaliarEntrega(divinos, { endereco: "Travessa Pantanal, 130 - Jardim Esperança" });
+  conferir("rua homônima: fica o trecho junto do bairro do cliente (não o mais longe, nem o centro do bairro), com confirmação",
+    soATravessa.ponto?.lat === travessaCerta.lat && soATravessa.pedeConfirmacao === true, soATravessa);
+
+  const ordem = geocoding.logradourosDoTexto("Rua do forno, travessa pantanal, nº 130, Jardim Esperança");
+  conferir("as ruas do texto, a pequena primeiro", JSON.stringify(ordem) === JSON.stringify(["Travessa pantanal", "Rua do forno"]), ordem);
+  conferir("rua de referência não entra", JSON.stringify(geocoding.logradourosCandidatos("Rua Beira Alta, 20, perto da Rua do Sol")) === JSON.stringify(["Rua Beira Alta"]), geocoding.logradourosCandidatos("Rua Beira Alta, 20, perto da Rua do Sol"));
+  conferir("duas ruas longe uma da outra não se encontram",
+    geocoding.encontroDeRuas([{ logradouro: "A", trechos: [travessaDoCentro] }, { logradouro: "B", trechos: [ruaDoForno] }]) === null);
+  conferir("o trecho mais perto do bairro", geocoding.trechoMaisPerto([travessaDoCentro, travessaCerta], centroDoJardim)?.trecho === travessaCerta);
+
   zerar();
   const praia = aoSul(3.2, 0.01);
   nominatim.set(norm("Rua da Praia, 10 - Braga, Cabo Frio"), { status: 200, corpo: [lugar(praia, { road: "Rua da Praia", suburb: "Braga", house_number: "10" })] });

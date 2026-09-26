@@ -380,16 +380,85 @@ export const geocodificadorDireto: GeocodificadorDaTaxa = {
   },
 };
 
-/** "Rua Sol Nascente, 23, Aquários" → "Rua Sol Nascente". Só o logradouro, sem número, bairro ou complemento. */
-export function extrairLogradouro(texto: string): string {
-  const m = String(texto || "").match(
-    /\b(rua|r\.|avenida|av\.?|travessa|tv\.|alameda|al\.|estrada|est\.|rodovia|rod\.|pra[çc]a|largo|beco|via|servid[ãa]o)\s+([^,;\-\n\d(]{3,60})/i
-  );
-  if (!m) return "";
+const PADRAO_DO_LOGRADOURO =
+  "\\b(rua|r\\.|avenida|av\\.?|travessa|tv\\.|alameda|al\\.|estrada|est\\.|rodovia|rod\\.|pra[çc]a|largo|beco|via|servid[ãa]o)\\s+([^,;\\-\\n\\d(]{3,60})";
+
+function logradouroDoAchado(m: RegExpMatchArray): string {
   const tipo = m[1].toLowerCase().replace(".", "");
   const nomes: Record<string, string> = { r: "Rua", av: "Avenida", tv: "Travessa", al: "Alameda", est: "Estrada", rod: "Rodovia", praca: "Praça" };
   const tipoCheio = nomes[tipo] || (m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase());
   return `${tipoCheio} ${m[2].trim().replace(/\s+(n[º°o]?|numero|número|casa|lote|lt|quadra|qd|s\/n)\b.*$/i, "").trim()}`;
+}
+
+/** "Rua Sol Nascente, 23, Aquários" → "Rua Sol Nascente". Só o logradouro, sem número, bairro ou complemento. */
+export function extrairLogradouro(texto: string): string {
+  const m = String(texto || "").match(new RegExp(PADRAO_DO_LOGRADOURO, "i"));
+  return m ? logradouroDoAchado(m) : "";
+}
+
+/** Travessa, beco, servidão: a rua pequena onde a casa fica, quando o cliente cita duas. */
+const RUA_PEQUENA = /^(travessa|beco|servid[aã]o)\b/i;
+
+/**
+ * TODAS as ruas escritas no texto, a pequena primeiro.
+ *
+ * "Rua do forno, travessa pantanal, nº 130, Jardim Esperança" (Divinos,
+ * 25/09/2026): o cliente dá a rua principal e a travessa onde mora. Só a
+ * primeira era procurada — e a casa fica na travessa. Com as duas, uma serve
+ * de régua para a outra (`encontroDeRuas`): a Travessa Pantanal existe em dois
+ * lugares de Cabo Frio, e a certa é a que fica junto da Rua do Forno.
+ */
+export function logradourosDoTexto(texto: string): string[] {
+  const achados: string[] = [];
+  const vistos = new Set<string>();
+  for (const m of String(texto || "").matchAll(new RegExp(PADRAO_DO_LOGRADOURO, "gi"))) {
+    const l = logradouroDoAchado(m);
+    const k = normalizarParaComparar(l);
+    if (!k || vistos.has(k)) continue;
+    vistos.add(k);
+    achados.push(l);
+  }
+  return [...achados.filter((l) => RUA_PEQUENA.test(l)), ...achados.filter((l) => !RUA_PEQUENA.test(l))];
+}
+
+/** Até quanto um trecho de uma rua pode ficar do trecho da outra para as duas serem "a mesma esquina". */
+export const ENCONTRO_DE_RUAS_KM = 1.2;
+
+type PontoDoTrecho = { lat: number; lng: number };
+
+/**
+ * Duas (ou três) ruas do mesmo texto: o trecho da PRIMEIRA delas (a pequena)
+ * que fica junto de outra rua do texto. `null` quando nenhuma fica perto de
+ * outra — aí a régua não serve e segue a busca rua a rua.
+ */
+export function encontroDeRuas<T extends PontoDoTrecho>(
+  porRua: { logradouro: string; trechos: T[] }[],
+  maxKm: number = ENCONTRO_DE_RUAS_KM,
+): { logradouro: string; trecho: T; km: number } | null {
+  for (let i = 0; i < porRua.length; i++) {
+    let melhor: { logradouro: string; trecho: T; km: number } | null = null;
+    for (const t of porRua[i].trechos) {
+      for (let j = 0; j < porRua.length; j++) {
+        if (j === i) continue;
+        for (const u of porRua[j].trechos) {
+          const km = haversineDistanceKm(t.lat, t.lng, u.lat, u.lng);
+          if (!melhor || km < melhor.km) melhor = { logradouro: porRua[i].logradouro, trecho: t, km: Math.round(km * 100) / 100 };
+        }
+      }
+    }
+    if (melhor && melhor.km <= maxKm) return melhor;
+  }
+  return null;
+}
+
+/** O trecho mais perto de um ponto (o centro do bairro do cliente). */
+export function trechoMaisPerto<T extends PontoDoTrecho>(trechos: T[], ponto: PontoDoTrecho): { trecho: T; km: number } | null {
+  let melhor: { trecho: T; km: number } | null = null;
+  for (const t of trechos) {
+    const km = haversineDistanceKm(t.lat, t.lng, ponto.lat, ponto.lng);
+    if (!melhor || km < melhor.km) melhor = { trecho: t, km: Math.round(km * 100) / 100 };
+  }
+  return melhor;
 }
 
 // Algarismo romano sozinho vira número para COMPARAR bairro: o cliente escreve
@@ -437,6 +506,9 @@ export function semReferencias(texto: string): string {
  * quem chama confere se a rua achada é mesmo essa (`nomeDeRuaParecido`).
  */
 export function logradourosCandidatos(texto: string): string[] {
+  // Todas as ruas escritas, fora as de referência ("perto da Rua X" não é onde a casa fica).
+  const escritas = logradourosDoTexto(semReferencias(texto));
+  if (escritas.length > 0) return escritas;
   const explicito = extrairLogradouro(texto);
   if (explicito) return [explicito];
   // O código de rua da Cidade Nova de Ananindeua: WE (as travessas) e SN.
@@ -804,7 +876,9 @@ export async function verifyStoreDeliveryAddress(
     /** A busca pela rua achou a rua num lugar só, com outro bairro no mapa. */
     let reservaRuaUnica: TrechoDeRua | null = null;
     /** A busca pela rua achou trechos em lugares diferentes, e nenhum no bairro do cliente. */
-    let reservaHomonima: { trecho: TrechoDeRua; motivo: string } | null = null;
+    let reservaHomonima: { trecho: TrechoDeRua; motivo: string; trechos: TrechoDeRua[] } | null = null;
+    /** Duas ruas no texto e a busca livre achou a PRINCIPAL, sem número: a casa fica na pequena. */
+    let reservaRuaDoTexto: ResultadoDoMapa | null = null;
     /** A busca livre só achou uma ÁREA (bairro, loteamento, cidade): o centro dela. */
     let reservaArea: ResultadoDoMapa | null = null;
     /** Por que o candidato de outro bairro não foi aceito (vai no motivo do centro do bairro). */
@@ -830,9 +904,45 @@ export async function verifyStoreDeliveryAddress(
         reservaOutroBairro ??= achado;
         continue;
       }
+      // Duas ruas no texto ("Rua do Forno, Travessa Pantanal, 130") e o mapa
+      // achou a principal sem número: antes dela, tenta-se o encontro das duas
+      // (nível 4a), que acha a travessa onde a casa fica.
+      if (ruasProcuradas.length >= 2 && achado.temNumero === false && !ruaConfere(ruasProcuradas[0], achado.rua)) {
+        reservaRuaDoTexto ??= achado;
+        continue;
+      }
       // Rua sem o número no mapa é o MEIO da rua, não a casa.
       aceitar(achado, achado.temNumero === false ? "rua" : "endereco");
       break;
+    }
+
+    // A busca estruturada de cada rua, uma vez só nesta verificação: o nível 4a
+    // e o 4 perguntam pelas mesmas ruas, e cada pergunta custa 1,1 s na fila.
+    const cidadeDaBusca = city || storeCity || "";
+    const estruturadas = new Map<string, Promise<RespostaDoMapa<TrechoDeRua[]>>>();
+    const estruturadaDe = (logradouro: string) => {
+      const k = normalizarParaComparar(logradouro);
+      let p = estruturadas.get(k);
+      if (!p) {
+        p = geo.estruturada(logradouro, cidadeDaBusca, loja, prazoDoMapa);
+        estruturadas.set(k, p);
+      }
+      return p;
+    };
+
+    // Nível 4a: DUAS RUAS no texto. Uma é a régua da outra: o trecho da
+    // pequena (travessa, beco) que fica junto da principal é onde a casa fica
+    // — mesmo que a travessa exista em outro canto da cidade. Duas ruas que se
+    // encontram é prova melhor que qualquer nome de bairro.
+    if (!foundGeo && ruasProcuradas.length >= 2 && cidadeDaBusca) {
+      const porRua: { logradouro: string; trechos: TrechoDeRua[] }[] = [];
+      for (const logradouro of ruasProcuradas.slice(0, 3)) {
+        if (!temTempoNoMapa()) { esgotouOPrazo = true; break; }
+        const achados = valorOu(await estruturadaDe(logradouro), [] as TrechoDeRua[]);
+        porRua.push({ logradouro, trechos: achados.filter((t) => ruaConfere(logradouro, t.rua)) });
+      }
+      const encontro = encontroDeRuas(porRua);
+      if (encontro) aceitar(encontro.trecho, "rua");
     }
 
     // Nível 4: busca ESTRUTURADA pela rua, na cidade da loja. Acha o que a
@@ -847,7 +957,6 @@ export async function verifyStoreDeliveryAddress(
       const ruas = street
         ? [street, ...logradourosCandidatos(street).filter((r) => r !== street)]
         : ruasProcuradas;
-      const cidadeDaBusca = city || storeCity || "";
       const maisLonge = (lista: TrechoDeRua[]) =>
         lista
           .map((t) => ({ t, km: haversineDistanceKm(loja.lat, loja.lng, t.lat, t.lng) }))
@@ -857,7 +966,7 @@ export async function verifyStoreDeliveryAddress(
       for (const logradouro of cidadeDaBusca ? ruas : []) {
         if (foundGeo) break;
         if (!temTempoNoMapa()) { esgotouOPrazo = true; break; }
-        const achados = valorOu(await geo.estruturada(logradouro, cidadeDaBusca, loja, prazoDoMapa), [] as TrechoDeRua[]);
+        const achados = valorOu(await estruturadaDe(logradouro), [] as TrechoDeRua[]);
         // Só trecho da MESMA rua: "WE 62" sozinho devolvia um comércio no
         // número 62 da Travessa WE 13, a 1,7 km dali.
         const trechos = achados.filter((t) => ruaConfere(logradouro, t.rua));
@@ -878,6 +987,7 @@ export async function verifyStoreDeliveryAddress(
           reservaHomonima ??= {
             trecho: maisLonge(trechos),
             motivo: `a rua "${logradouro}" existe no mapa em mais de um lugar${bairros ? ` (${bairros})` : ""}, mas não no bairro "${neigh}"`,
+            trechos,
           };
         } else {
           const doTexto = trechos.filter(
@@ -889,6 +999,7 @@ export async function verifyStoreDeliveryAddress(
           reservaHomonima ??= {
             trecho: maisLonge(trechos),
             motivo: `a rua "${logradouro}" existe em mais de um lugar da cidade${bairros ? ` (${bairros})` : ""}`,
+            trechos,
           };
         }
       }
@@ -902,6 +1013,36 @@ export async function verifyStoreDeliveryAddress(
     // longe do bairro que o cliente escreveu: aí o mapa só conhece a homônima
     // e a rua dele não está no mapa. A régua é o centro do bairro dele.
     const consultaDoBairro = neigh ? `${neigh}, ${city}` : "";
+
+    // A principal das duas ruas do texto, achada pela busca livre e guardada
+    // para o encontro das duas tentar antes: ninguém achou a pequena, vale ela.
+    if (!foundGeo && reservaRuaDoTexto) aceitar(reservaRuaDoTexto, "rua");
+
+    // ── A RUA HOMÔNIMA, PELO BAIRRO ─────────────────────────────────────
+    //
+    // A rua existe em mais de um lugar e nenhum trecho diz o bairro do
+    // cliente. Ficava o trecho MAIS LONGE — ou, antes dele, o centro do
+    // bairro. Com o centro do bairro na mão, o trecho que fica nele é melhor
+    // que os dois: a Travessa Pantanal de quem escreveu "Jardim Esperança" é
+    // a da Vila Jardim Esperança, não a do Centro (Divinos, 25/09/2026). Ainda
+    // é homônima (R3): o cliente confirma o ponto.
+    if (!foundGeo && reservaHomonima && consultaDoBairro) {
+      if (!temTempoNoMapa()) {
+        esgotouOPrazo = true;
+      } else {
+        const r = await buscarLivre(consultaDoBairro);
+        if (!r.ok) {
+          falha ??= r.motivo;
+        } else if (r.valor) {
+          const perto = trechoMaisPerto(reservaHomonima.trechos, r.valor);
+          if (perto && perto.km <= PERTO_DO_BAIRRO_KM) {
+            aceitar(perto.trecho, "rua");
+            motivos.push(`${reservaHomonima.motivo} — ficou o trecho a ${String(perto.km).replace(".", ",")} km do bairro`);
+          }
+        }
+      }
+    }
+
     const candidato: { lat: number; lng: number; displayName: string; cidades?: string[]; bairro?: string; suburb?: string; temNumero?: boolean } | null =
       reservaOutroBairro ?? reservaRuaUnica;
     if (!foundGeo && !reservaHomonima && candidato && consultaDoBairro) {
