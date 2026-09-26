@@ -3,7 +3,7 @@ import SairDaConta from "@/components/SairDaConta";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check } from "lucide-react";
 import { useState, useTransition, useEffect, useRef } from "react";
 import StoreSelector from "./StoreSelector";
 
@@ -111,6 +111,30 @@ export default function StoreTopNav({
   const [ifoodToggling, setIfoodToggling] = useState(false);
   const ifoodRef = useRef<HTMLDivElement>(null);
 
+  // "Ver cardápio": abrir ou só COPIAR o link. Quem manda o cardápio no
+  // WhatsApp ou no Instagram só quer o link — abrir a loja para copiar da
+  // barra do navegador era o caminho de hoje.
+  const [menuCardapio, setMenuCardapio] = useState(false);
+  const [linkCopiado, setLinkCopiado] = useState(false);
+  const cardapioRef = useRef<HTMLDivElement>(null);
+  const copiarLinkDoCardapio = async () => {
+    if (!storeUrl) return;
+    const link = `${window.location.origin}${storeUrl}`;
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      // Clipboard API bloqueada (aba sem foco, navegador antigo): o jeito velho.
+      const campo = document.createElement("textarea");
+      campo.value = link;
+      document.body.appendChild(campo);
+      campo.select();
+      try { document.execCommand("copy"); } catch { /* sem cópia: o link fica visível no menu */ }
+      campo.remove();
+    }
+    setLinkCopiado(true);
+    setTimeout(() => { setLinkCopiado(false); setMenuCardapio(false); }, 1400);
+  };
+
   useEffect(() => {
     fetch("/api/ifood/auth?step=test").then(r => r.json()).then(d => {
       if (d.connected) {
@@ -152,6 +176,7 @@ export default function StoreTopNav({
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ifoodRef.current && !ifoodRef.current.contains(e.target as Node)) setShowIfood(false);
+      if (cardapioRef.current && !cardapioRef.current.contains(e.target as Node)) setMenuCardapio(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -714,6 +739,13 @@ export default function StoreTopNav({
             }}>
               {opening ? "Abrindo..." : "✅ Confirmar Abertura"}
             </button>
+            {/* O histórico também daqui: com o caixa fechado ele só existia
+                no menu do caixa ABERTO, e conferir o fechamento de ontem
+                obrigava a abrir um caixa novo (pedido do dono, 26/09/2026). */}
+            <a href={`/store/caixa/historico?voltar=${encodeURIComponent(pathname || "/store")}`}
+               style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, width:"100%", marginTop:10, padding:"11px", background:"#F1F5F9", color:"#334155", borderRadius:12, fontWeight:700, fontSize:"0.9rem", textDecoration:"none", fontFamily:"inherit" }}>
+              <History size={16} /> Ver histórico de caixas
+            </a>
           </div>
         </div>
       )}
@@ -1359,9 +1391,39 @@ export default function StoreTopNav({
             </a>
           )}
           {storeUrl && (
-            <a href={storeUrl} target="_blank" className="nav-view-store" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.65rem", borderRadius:8, background:"rgba(255,255,255,0.15)", color:"#fff", fontWeight:600, fontSize:"0.72rem", textDecoration:"none", border:"1px solid rgba(255,255,255,0.25)", whiteSpace:"nowrap" }}>
-              <ExternalLink size={12} /> Ver Loja
-            </a>
+            <div ref={cardapioRef} className="nav-view-store" style={{ position: "relative" }}>
+              <button
+                type="button"
+                onClick={() => setMenuCardapio(v => !v)}
+                aria-expanded={menuCardapio}
+                style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.65rem", borderRadius:8, background:"rgba(255,255,255,0.15)", color:"#fff", fontWeight:600, fontSize:"0.72rem", border:"1px solid rgba(255,255,255,0.25)", whiteSpace:"nowrap", cursor:"pointer", fontFamily:"inherit" }}
+              >
+                <ExternalLink size={12} /> Ver cardápio ▾
+              </button>
+              {menuCardapio && (
+                <div style={{ position:"absolute", top:"calc(100% + 8px)", right:0, background:"#fff", border:"1px solid #E2E8F0", borderRadius:14, boxShadow:"0 8px 32px rgba(0,0,0,0.18)", minWidth:250, zIndex:500, overflow:"hidden" }}>
+                  <div style={{ padding:"0.6rem 1rem", borderBottom:"1px solid #F1F5F9", fontSize:"0.7rem", color:"#64748B", wordBreak:"break-all" }}>
+                    {typeof window !== "undefined" ? `${window.location.host}${storeUrl}` : storeUrl}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copiarLinkDoCardapio}
+                    style={{ display:"flex", alignItems:"center", gap:8, width:"100%", padding:"0.7rem 1rem", border:"none", borderBottom:"1px solid #F1F5F9", background: linkCopiado ? "#F0FDFA" : "#fff", color: linkCopiado ? "#0F766E" : "#1E293B", fontWeight:700, fontSize:"0.82rem", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}
+                  >
+                    {linkCopiado ? <Check size={15} /> : <Copy size={15} />} {linkCopiado ? "Link copiado!" : "Copiar link do cardápio"}
+                  </button>
+                  <a
+                    href={storeUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setMenuCardapio(false)}
+                    style={{ display:"flex", alignItems:"center", gap:8, padding:"0.7rem 1rem", color:"#1E293B", fontWeight:700, fontSize:"0.82rem", textDecoration:"none" }}
+                  >
+                    <ExternalLink size={15} /> Abrir o cardápio
+                  </a>
+                </div>
+              )}
+            </div>
           )}
           {isAdmin && (
             <a href="/store/admin/lojistas" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.65rem", borderRadius:8, background:"#C92E09", color:"#fff", fontWeight:700, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap" }}>
