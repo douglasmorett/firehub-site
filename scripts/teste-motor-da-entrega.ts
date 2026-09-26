@@ -60,7 +60,11 @@ const RESERVA_DO_TESTE = "http://reserva.local:5000";
 const osrmReserva = new Map<string, RespostaSimulada>();
 /** Google (GOOGLE_MAPS_API_KEY): pelo "address" normalizado. Sem entrada: ZERO_RESULTS. */
 const google = new Map<string, unknown>();
-const chamadas: { tipo: "nominatim" | "osrm" | "reserva" | "google"; url: string; em: number }[] = [];
+/** Geoapify (GEOAPIFY_API_KEY) e openrouteservice (ORS_API_KEY): pelo destino (4 casas). Sem entrada: rua = reta × 1,3. */
+const geoapify = new Map<string, RespostaSimulada>();
+const ors = new Map<string, RespostaSimulada>();
+type TipoDeChamada = "nominatim" | "osrm" | "reserva" | "google" | "geoapify" | "ors";
+const chamadas: { tipo: TipoDeChamada; url: string; em: number; chave?: string }[] = [];
 
 const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -75,6 +79,29 @@ function lugar(p: Ponto, a: { road?: string; suburb?: string; city?: string; hou
 const osrmOk = (metros: number, deslocamento = 5) => ({
   status: 200,
   corpo: { code: "Ok", routes: [{ distance: metros, duration: metros / 8 }], waypoints: [{ distance: 3 }, { distance: deslocamento }] },
+});
+/** A resposta do Geoapify (GeoJSON): o cliente preso à rua em `preso` (padrão: no próprio ponto). */
+const geoapifyOk = (origem: Ponto, destino: Ponto, metros: number, preso: Ponto = destino) => ({
+  status: 200,
+  corpo: {
+    type: "FeatureCollection",
+    features: [{
+      type: "Feature",
+      properties: {
+        mode: "drive", distance: metros, time: metros / 8, units: "metric",
+        waypoints: [{ location: [origem.lng, origem.lat], original_index: 0 }, { location: [preso.lng, preso.lat], original_index: 1 }],
+      },
+      geometry: { type: "MultiLineString", coordinates: [[[origem.lng, origem.lat], [preso.lng, preso.lat]]] },
+    }],
+  },
+});
+/** A resposta do openrouteservice (GeoJSON): o último ponto do desenho é onde o cliente foi preso à rua. */
+const orsOk = (origem: Ponto, destino: Ponto, metros: number, preso: Ponto = destino) => ({
+  status: 200,
+  corpo: {
+    type: "FeatureCollection",
+    features: [{ type: "Feature", properties: { summary: { distance: metros, duration: metros / 8 } }, geometry: { type: "LineString", coordinates: [[origem.lng, origem.lat], [preso.lng, preso.lat]] } }],
+  },
 });
 
 function esperarAbortar(signal: AbortSignal | null | undefined): Promise<Response> {
@@ -115,6 +142,24 @@ const tentativasOsrm = new Map<string, number>();
     if (r === "pendura") return esperarAbortar(init?.signal);
     return new Response(JSON.stringify(r.corpo), { status: r.status, headers: { "content-type": "application/json" } });
   }
+  if (url.includes("api.geoapify.com/v1/routing")) {
+    const u = new URL(url);
+    chamadas.push({ tipo: "geoapify", url, em: Date.now(), chave: u.searchParams.get("apiKey") || "" });
+    const [a, b] = (u.searchParams.get("waypoints") || "").split("|").map((p) => p.split(",").map(Number));
+    const origem = { lat: a[0], lng: a[1] }, destino = { lat: b[0], lng: b[1] };
+    const r = geoapify.get(chave4(destino)) ?? geoapifyOk(origem, destino, retaKm(origem, destino) * 1300);
+    if (r === "pendura") return esperarAbortar(init?.signal);
+    return new Response(JSON.stringify(r.corpo), { status: r.status, headers: { "content-type": "application/json" } });
+  }
+  if (url.includes("api.openrouteservice.org/v2/directions/driving-car")) {
+    const cab = (init?.headers || {}) as Record<string, string>;
+    chamadas.push({ tipo: "ors", url, em: Date.now(), chave: cab.Authorization || "" });
+    const [a, b] = JSON.parse(String(init?.body || "{}")).coordinates as [number, number][];
+    const origem = { lat: a[1], lng: a[0] }, destino = { lat: b[1], lng: b[0] };
+    const r = ors.get(chave4(destino)) ?? orsOk(origem, destino, retaKm(origem, destino) * 1300);
+    if (r === "pendura") return esperarAbortar(init?.signal);
+    return new Response(JSON.stringify(r.corpo), { status: r.status, headers: { "content-type": "application/json" } });
+  }
   if (url.includes("maps.googleapis.com/maps/api/geocode")) {
     chamadas.push({ tipo: "google", url, em: Date.now() });
     const k = norm(new URL(url).searchParams.get("address") || "");
@@ -123,7 +168,7 @@ const tentativasOsrm = new Map<string, number>();
   throw new Error(`fetch inesperado no teste: ${url}`);
 };
 
-const contar = (tipo: "nominatim" | "osrm" | "reserva" | "google", desde: number) => chamadas.slice(desde).filter((c) => c.tipo === tipo).length;
+const contar = (tipo: TipoDeChamada, desde: number) => chamadas.slice(desde).filter((c) => c.tipo === tipo).length;
 
 // Os avisos do motor vão para cá (o teste confere o log do 429 e da estimativa).
 const avisos: string[] = [];
@@ -184,6 +229,12 @@ async function main() {
     // Google desligado por padrão (sem chave): tem seção própria.
     google.clear();
     delete process.env.GOOGLE_MAPS_API_KEY;
+    // Geoapify e openrouteservice também (a cadeia tem seção própria).
+    geoapify.clear();
+    ors.clear();
+    delete process.env.GEOAPIFY_API_KEY;
+    delete process.env.ORS_API_KEY;
+    delete process.env.OPENROUTESERVICE_API_KEY;
   }
   /** Avalia com o PINO do cliente num ponto em que o roteador devolve `metros`. */
   async function comPino(destino: Ponto, metros: number, loja: any = divinos) {
@@ -378,6 +429,105 @@ async function main() {
   const reservaMudo = await avaliarEntrega(divinos, { endereco: "x", coords: destinoReservaMudo }, { prazoMs: 12_000 });
   const gastoNoMudo = Date.now() - inicioDoMudo;
   conferir("reserva mudo: desiste em 3 s e estima (a cotação não passa do prazo)", reservaMudo.medida === "estimada" && gastoNoMudo < 5000, { gasto: gastoNoMudo, medida: reservaMudo.medida });
+
+  // ════════════════════════════════════════════════════════════════════════
+  console.log("\n== Cadeia de roteadores: Geoapify e openrouteservice no lugar do demo (26/09/2026) ==");
+  // O demo (router.project-osrm.org) e o "reserva" FOSSGIS eram o MESMO
+  // servidor, e a política dos dois veta uso comercial. Com uma chave de
+  // roteador permitido, o demo sai da cadeia.
+  zerar();
+  antes = chamadas.length;
+  const semChaveDeRota = await comPino(aoSul(1.1, 0.0101), 1500);
+  conferir("sem chave nenhuma: o demo continua respondendo (transição), e o estado avisa que está fora da política",
+    contar("osrm", antes) === 1 && semChaveDeRota.medida === "rota" && rota.estadoDoRoteador().foraDaPolitica === true, rota.estadoDoRoteador().cadeia);
+  conferir("o FOSSGIS não é mais o reserva padrão (é o mesmo servidor do demo)", rota.estadoDoRoteador().reserva.servidor === null);
+
+  zerar();
+  process.env.GEOAPIFY_API_KEY = "chave-geoapify";
+  const casaGeo = aoSul(1.25, 0.0102);
+  const lojaGeo = { lat: LOJA.lat, lng: LOJA.lng };
+  geoapify.set(chave4(casaGeo), geoapifyOk(lojaGeo, casaGeo, 1620));
+  antes = chamadas.length;
+  const peloGeoapify = await avaliarEntrega(divinos, { endereco: "x", coords: casaGeo, origemDasCoords: "pino" });
+  conferir("com a chave do Geoapify: ele responde (1,62 km de rua, R$ 10) e o demo NÃO é perguntado",
+    peloGeoapify.medida === "rota" && peloGeoapify.distanciaKm === 1.62 && peloGeoapify.taxa === 10 && contar("geoapify", antes) === 1 && contar("osrm", antes) === 0,
+    { d: peloGeoapify.distanciaKm, taxa: peloGeoapify.taxa, geo: contar("geoapify", antes), osrm: contar("osrm", antes) });
+  conferir("a chave vai na pergunta", chamadas.slice(antes).find((c) => c.tipo === "geoapify")?.chave === "chave-geoapify");
+  conferir("o estado mostra a cadeia sem o demo, dentro da política",
+    JSON.stringify(rota.estadoDoRoteador().cadeia.map((c) => c.id)) === JSON.stringify(["geoapify"]) && rota.estadoDoRoteador().foraDaPolitica === false,
+    rota.estadoDoRoteador().cadeia);
+  conferir("a rota do Geoapify vai para o cache (os termos permitem)", !!rotasGuardadas.get(rota.chaveDaRota(LOJA, casaGeo)));
+  conferir("atribuição: OpenStreetMap e 'Powered by Geoapify'", rota.atribuicaoDasRotas() === "© OpenStreetMap · Powered by Geoapify", rota.atribuicaoDasRotas());
+
+  zerar();
+  process.env.GEOAPIFY_API_KEY = "chave-geoapify";
+  process.env.ORS_API_KEY = "chave-ors";
+  const casaOrs = aoSul(1.3, 0.0103);
+  geoapify.set(chave4(casaOrs), { status: 429, corpo: { statusCode: 429, error: "Too Many Requests", message: "Rate limit exceeded" } });
+  ors.set(chave4(casaOrs), orsOk(LOJA, casaOrs, 1740));
+  antes = chamadas.length;
+  const peloOrs = await avaliarEntrega(divinos, { endereco: "x", coords: casaOrs, origemDasCoords: "pino" });
+  conferir("Geoapify no limite (429): o openrouteservice responde (1,74 km, R$ 10), uma pergunta a cada um",
+    peloOrs.medida === "rota" && peloOrs.distanciaKm === 1.74 && contar("geoapify", antes) === 1 && contar("ors", antes) === 1,
+    { d: peloOrs.distanciaKm, geo: contar("geoapify", antes), ors: contar("ors", antes) });
+  conferir("a chave do openrouteservice vai no cabeçalho", chamadas.slice(antes).find((c) => c.tipo === "ors")?.chave === "chave-ors");
+  conferir("o 429 tira o Geoapify da cadeia por 60 s, e conta como resposta do reserva",
+    rota.estadoDoRoteador().cadeia.find((c) => c.id === "geoapify")?.disjuntorAberto === true && rota.estadoDoRoteador().contagem.respondidasPelaReserva === 1,
+    rota.estadoDoRoteador());
+  antes = chamadas.length;
+  const casaOrs2 = aoSul(1.31, 0.0104);
+  await avaliarEntrega(divinos, { endereco: "x", coords: casaOrs2, origemDasCoords: "pino" });
+  conferir("com o Geoapify fora, a seguinte vai direto ao openrouteservice", contar("geoapify", antes) === 0 && contar("ors", antes) === 1);
+
+  zerar();
+  process.env.GEOAPIFY_API_KEY = "chave-geoapify";
+  process.env.ORS_API_KEY = "chave-ors";
+  const semRua = aoSul(1.2, 0.0105);
+  geoapify.set(chave4(semRua), { status: 400, corpo: { statusCode: 400, error: "Bad Request", message: "Route not found" } });
+  antes = chamadas.length;
+  const naoHaRota = await avaliarEntrega(divinos, { endereco: "x", coords: semRua, origemDasCoords: "pino" });
+  conferir("'não há rota' do Geoapify é definitiva: o openrouteservice não é perguntado, e a cotação estima",
+    contar("ors", antes) === 0 && naoHaRota.medida === "estimada", { ors: contar("ors", antes), medida: naoHaRota.medida });
+
+  zerar();
+  process.env.ORS_API_KEY = "chave-ors";
+  const longeDaRua = aoSul(1.2, 0.0106);
+  ors.set(chave4(longeDaRua), { status: 404, corpo: { error: { code: 2010, message: "Could not find routable point within a radius of 350.0 meters of specified coordinate 1" } } });
+  const orsSemPonto = await rota.rotaEntre(LOJA, longeDaRua);
+  conferir("openrouteservice 2010 (ponto longe da rua) é definitivo", !orsSemPonto.ok && orsSemPonto.tipo === "definitiva" && /2010|routable point/.test(orsSemPonto.motivo), orsSemPonto);
+
+  zerar();
+  process.env.GEOAPIFY_API_KEY = "chave-geoapify";
+  process.env.ORS_API_KEY = "chave-ors";
+  const casaFora = aoSul(1.4, 0.0107);
+  geoapify.set(chave4(casaFora), { status: 503, corpo: {} });
+  ors.set(chave4(casaFora), { status: 502, corpo: {} });
+  antes = chamadas.length;
+  const ambosForaNaCadeia = await avaliarEntrega(divinos, { endereco: "x", coords: casaFora, origemDasCoords: "pino" });
+  conferir("Geoapify e openrouteservice fora: estima, e o demo continua de fora (a política vale na queda também)",
+    ambosForaNaCadeia.medida === "estimada" && contar("osrm", antes) === 0 && contar("geoapify", antes) === 2 && contar("ors", antes) === 1,
+    { medida: ambosForaNaCadeia.medida, osrm: contar("osrm", antes), geo: contar("geoapify", antes), ors: contar("ors", antes) });
+
+  zerar();
+  process.env.GEOAPIFY_API_KEY = "chave-geoapify";
+  const naPraia = aoSul(1.6, 0.0108);
+  const presoNaRua = { lat: naPraia.lat + 0.00316, lng: naPraia.lng };
+  geoapify.set(chave4(naPraia), geoapifyOk(LOJA, naPraia, 2100, presoNaRua));
+  const arrastadoGeo = await rota.rotaEntre(LOJA, naPraia);
+  conferir("o Geoapify diz onde prendeu o cliente na rua: deslocamento ~351 m (vira confirmação no texto)",
+    arrastadoGeo.ok && arrastadoGeo.deslocamentoM != null && Math.abs(arrastadoGeo.deslocamentoM - 351) <= 3, arrastadoGeo);
+
+  zerar();
+  process.env.OSRM_URL = "http://osrm.local:5000";
+  process.env.GEOAPIFY_API_KEY = "chave-geoapify";
+  const casaPropria = aoSul(1.15, 0.0109);
+  osrm.set(chave4(casaPropria), { status: 503, corpo: {} });
+  antes = chamadas.length;
+  const proprioFora = await avaliarEntrega(divinos, { endereco: "x", coords: casaPropria, origemDasCoords: "pino" });
+  conferir("OSRM próprio primeiro: duas perguntas a ele, e o Geoapify segura a queda",
+    contar("osrm", antes) === 2 && contar("geoapify", antes) === 1 && proprioFora.medida === "rota",
+    { osrm: contar("osrm", antes), geo: contar("geoapify", antes), medida: proprioFora.medida });
+  delete process.env.OSRM_URL;
 
   zerar();
   const destinoMenor = aoSul(1.5);

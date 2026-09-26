@@ -31,25 +31,33 @@ import { prisma } from "@/lib/prisma";
  *   - um disjuntor de 60 s: com o roteador fora, a cotação seguinte não espera
  *     o prazo inteiro para descobrir de novo que ele está fora.
  *
- * ── O servidor público pede ≤ 1 requisição por segundo ──────────────────────
+ * ── Quem responde: a CADEIA de roteadores (26/09/2026) ──────────────────────
  *
- * O padrão é o servidor de demonstração do OSRM (router.project-osrm.org):
- * "reasonable, non-commercial use", no máximo 1 req/s, sem garantia — e o
- * acesso pode ser cortado sem aviso. O cron de distâncias pendentes disparava
- * até 150 chamadas em sequência. Aqui há um limitador de processo inteiro
- * (≤ 1/s) e o cache agressivo: um par loja→cliente é calculado UMA vez
- * (chave a 4 casas, ~11 m) e vale por 60 dias, no banco e na memória.
+ * Até aqui o principal era o demo do OSRM (router.project-osrm.org) e o
+ * "reserva" era o do FOSSGIS (routing.openstreetmap.de). Eram o MESMO servidor
+ * — um é CNAME do outro (5.148.170.168) —, com a mesma cota de 1 req/s. E a
+ * política dos dois veta o nosso uso: o demo é "reasonable, non-commercial
+ * use", e o FOSSGIS só aceita uso comercial que não seja "parte substancial"
+ * da oferta; a taxa de entrega é o centro do SaaS. Nenhum garante uptime.
  *
- * `OSRM_URL` no ambiente troca o servidor por uma instância própria — aí o
- * limitador não se aplica (o limite era do servidor público), o disjuntor sim.
+ * Agora a pergunta segue `cadeiaDeRoteadores()`, nesta ordem:
+ *   1. OSRM próprio (`OSRM_URL`): sem limite e sem termos de terceiros;
+ *   2. Geoapify (`GEOAPIFY_API_KEY`): plano grátis com 3.000 rotas/dia e 5/s,
+ *      uso comercial em produção explícito e cache permitido. Exige "Powered
+ *      by Geoapify" perto da informação (`atribuicaoDasRotas`);
+ *   3. openrouteservice (`ORS_API_KEY`): grátis, 2.000/dia e 40/min. Os
+ *      resultados são CC-BY-SA, e só vão as coordenadas (nada de nome);
+ *   4. um OSRM reserva explícito (`OSRM_URL_RESERVA`), se houver;
+ *   5. o demo público, SÓ quando nenhum dos três primeiros está configurado.
+ *      É a transição, e o /api/health mostra `foraDaPolitica`.
+ * O primeiro da cadeia ganha uma nova tentativa; os outros, uma pergunta só.
+ * Falha passageira passa para o próximo. "Não há rota" é definitiva: os três
+ * usam o mesmo OSM, e o próximo diria o mesmo. Cada um tem limitador e
+ * disjuntor próprios.
  *
- * ── O roteador reserva ──────────────────────────────────────────────────────
- *
- * Falha passageira do principal (ou disjuntor dele aberto) ainda tenta o do
- * FOSSGIS — o OpenStreetMap da Alemanha, mesma API, sem chave — ANTES da
- * estimativa. Medido em 25/09/2026 na Deeds Delivery (Londrina): os dois
- * devolvem a mesma rota ao metro (3.195,8 m). Tem limitador e disjuntor
- * próprios; `OSRM_URL_RESERVA` troca, e vazio desliga.
+ * O cache continua agressivo: um par loja→cliente é calculado UMA vez (chave
+ * a 4 casas, ~11 m) e vale por 60 dias, no banco e na memória. Medido em
+ * 26/09/2026: de 3 a 14 rotas novas por dia (só 2 lojas cobram por rota).
  *
  * ── O ponto arrastado até a rua ─────────────────────────────────────────────
  *
@@ -62,26 +70,35 @@ import { prisma } from "@/lib/prisma";
  */
 
 const URL_PUBLICA = "https://router.project-osrm.org";
+/** O mesmo servidor do demo: router.project-osrm.org é CNAME dele. */
+const URL_DO_FOSSGIS = "https://routing.openstreetmap.de";
 
 /** Lido a cada chamada (não no carregamento), para o teste poder trocar. */
 function baseDoRoteador(): string {
-  return (process.env.OSRM_URL || URL_PUBLICA).replace(/\/+$/, "");
-}
-function roteadorPublico(): boolean {
-  return !process.env.OSRM_URL;
+  return (process.env.OSRM_URL || URL_PUBLICA).trim().replace(/\/+$/, "");
 }
 
-const URL_RESERVA_PUBLICA = "https://routing.openstreetmap.de/routed-car";
-
-/** O reserva, ou "" quando desligado (`OSRM_URL_RESERVA=` vazio) ou igual ao principal. */
+/**
+ * O reserva: só o que está em `OSRM_URL_RESERVA` (uma segunda instância
+ * própria, por exemplo). O padrão era o FOSSGIS, que é o mesmo servidor do
+ * demo: não reservava nada.
+ */
 function baseDaReserva(): string {
-  const base = (process.env.OSRM_URL_RESERVA ?? URL_RESERVA_PUBLICA).trim().replace(/\/+$/, "");
+  const base = (process.env.OSRM_URL_RESERVA ?? "").trim().replace(/\/+$/, "");
   return base && base !== baseDoRoteador() ? base : "";
 }
 
-/** Os dois servidores públicos pedem ≤ 1 req/s; instância própria não tem limite. */
+/** O demo e o FOSSGIS pedem ≤ 1 req/s; instância própria não tem limite. */
 function servidorPublico(base: string): boolean {
-  return base === URL_PUBLICA || base === URL_RESERVA_PUBLICA;
+  return base.startsWith(URL_PUBLICA) || base.startsWith(URL_DO_FOSSGIS);
+}
+
+/** As chaves dos roteadores com plano grátis. Sem chave, o roteador fica fora da cadeia. */
+function chaveDoGeoapify(): string {
+  return String(process.env.GEOAPIFY_API_KEY || "").trim();
+}
+function chaveDoOrs(): string {
+  return String(process.env.ORS_API_KEY || process.env.OPENROUTESERVICE_API_KEY || "").trim();
 }
 
 /** Prazo da primeira pergunta. */
@@ -93,6 +110,10 @@ const PAUSA_ANTES_DA_SEGUNDA_MS = 200;
 const TEMPO_MINIMO_MS = 400;
 /** Política do servidor público: no máximo 1 requisição por segundo. */
 const INTERVALO_DO_PUBLICO_MS = 1000;
+/** Geoapify grátis: até 5 por segundo. 4/s deixa folga. */
+const INTERVALO_DO_GEOAPIFY_MS = 250;
+/** openrouteservice grátis: 40 por minuto. */
+const INTERVALO_DO_ORS_MS = 1600;
 /** Quanto uma chamada sem prazo aceita esperar pela vez no limitador. */
 const ESPERA_MAXIMA_PADRAO_MS = 5000;
 /** Prazo padrão de quem não informa um (cron, importação de pedido). */
@@ -322,28 +343,33 @@ async function doBanco<T>(fn: () => Promise<T>, seFalhar: T): Promise<T> {
 
 // ── LIMITADOR E DISJUNTOR ──────────────────────────────────────────────────
 
-/** A próxima vez livre em cada servidor público (epoch ms). Reserva, não espera em fila. */
+/** A próxima vez livre em cada roteador com limite (epoch ms). Reserva, não espera em fila. */
 const proximaVaga = new Map<string, number>();
+/**
+ * O intervalo do servidor público. No teste vale 0, e aí nenhum roteador
+ * espera: os intervalos dos outros andam na mesma proporção.
+ */
 let intervaloDoPublicoMs = INTERVALO_DO_PUBLICO_MS;
 
 /**
- * Reserva a próxima vez livre neste servidor. Devolve quanto esperar, ou null
+ * Reserva a próxima vez livre neste roteador. Devolve quanto esperar, ou null
  * quando a vez cai depois do que quem chama pode esperar — aí nem se reserva,
  * para não empurrar os outros por uma pergunta que não vai acontecer.
  */
-function reservarVaga(base: string, esperaMaximaMs: number): number | null {
-  if (!servidorPublico(base)) return 0;
+function reservarVaga(r: Pick<Roteador, "id" | "intervaloMs">, esperaMaximaMs: number): number | null {
+  const intervalo = Math.round(r.intervaloMs * (intervaloDoPublicoMs / INTERVALO_DO_PUBLICO_MS));
+  if (intervalo <= 0) return 0;
   const agora = Date.now();
-  const vaga = Math.max(agora, proximaVaga.get(base) || 0);
+  const vaga = Math.max(agora, proximaVaga.get(r.id) || 0);
   const espera = vaga - agora;
   if (espera > esperaMaximaMs) return null;
-  proximaVaga.set(base, vaga + intervaloDoPublicoMs);
+  proximaVaga.set(r.id, vaga + intervalo);
   return espera;
 }
 
-let disjuntorAbertoAte = 0;
-/** O reserva tem o dele: fora, não atrasa a cotação seguinte. */
-let disjuntorDaReservaAte = 0;
+/** Até quando cada roteador fica fora da cadeia (epoch ms): fora, não atrasa a cotação seguinte. */
+const disjuntores = new Map<string, number>();
+const disjuntorAberto = (id: string, agora = Date.now()) => agora < (disjuntores.get(id) || 0);
 
 const estado = {
   ultimoSucessoEm: 0,
@@ -356,22 +382,40 @@ const estado = {
   respondidasPelaReserva: 0,
 };
 
-function abrirDisjuntor(motivo: string) {
-  const jaAberto = Date.now() < disjuntorAbertoAte;
-  disjuntorAbertoAte = Date.now() + DISJUNTOR_MS;
-  if (!jaAberto) {
-    estado.disjuntorAberturas++;
-    console.warn(`[Rota] roteador ${baseDoRoteador()} fora (${motivo}) — distâncias por estimativa nos próximos 60 s`);
-  }
+/** Tira o roteador da cadeia por 60 s. O primeiro da cadeia avisa no log: é a rota que vira estimativa. */
+function abrirDisjuntor(r: Pick<Roteador, "id" | "nome">, primeiro: boolean, motivo: string) {
+  const jaAberto = disjuntorAberto(r.id);
+  disjuntores.set(r.id, Date.now() + DISJUNTOR_MS);
+  if (jaAberto) return;
+  if (primeiro) estado.disjuntorAberturas++;
+  console.warn(`[Rota] roteador ${r.nome} fora (${motivo}) — a cadeia segue sem ele nos próximos 60 s`);
+}
+
+/**
+ * O que a loja precisa mostrar perto da distância pela rua, pelos roteadores
+ * configurados. Todos usam o OpenStreetMap; o plano grátis do Geoapify exige
+ * "Powered by Geoapify", e o openrouteservice pede o crédito dele.
+ */
+export function atribuicaoDasRotas(): string {
+  const creditos = ["© OpenStreetMap"];
+  if (chaveDoGeoapify()) creditos.push("Powered by Geoapify");
+  if (chaveDoOrs()) creditos.push("© openrouteservice by HeiGIT");
+  return creditos.join(" · ");
 }
 
 /** Para o /api/health: o roteador está respondendo? Sem ir à rede. */
 export function estadoDoRoteador() {
   const agora = Date.now();
+  const cadeia = cadeiaDeRoteadores();
+  const primeiro = cadeia[0];
+  const reserva = cadeia.find((r) => r.id === "reserva");
   return {
-    servidor: roteadorPublico() ? "público (router.project-osrm.org)" : "próprio (OSRM_URL)",
-    disjuntorAberto: agora < disjuntorAbertoAte,
-    disjuntorAte: agora < disjuntorAbertoAte ? new Date(disjuntorAbertoAte).toISOString() : null,
+    servidor: primeiro.nome,
+    cadeia: cadeia.map((r) => ({ id: r.id, nome: r.nome, disjuntorAberto: disjuntorAberto(r.id, agora) })),
+    // O demo público não permite uso comercial (ver o cabeçalho): configure um dos outros.
+    foraDaPolitica: primeiro.id === "publico",
+    disjuntorAberto: disjuntorAberto(primeiro.id, agora),
+    disjuntorAte: disjuntorAberto(primeiro.id, agora) ? new Date(disjuntores.get(primeiro.id)!).toISOString() : null,
     ultimoSucesso: estado.ultimoSucessoEm ? new Date(estado.ultimoSucessoEm).toISOString() : null,
     ultimaFalha: estado.ultimaFalhaEm
       ? { em: new Date(estado.ultimaFalhaEm).toISOString(), motivo: estado.ultimaFalhaMotivo }
@@ -379,13 +423,14 @@ export function estadoDoRoteador() {
     contagem: {
       perguntasAoRoteador: estado.consultas,
       respondidasPeloCache: estado.doCache,
+      /** Respondidas por quem não é o primeiro da cadeia. */
       respondidasPelaReserva: estado.respondidasPelaReserva,
       falhas: estado.falhas,
       aberturasDoDisjuntor: estado.disjuntorAberturas,
     },
     reserva: {
-      servidor: baseDaReserva() || null,
-      disjuntorAberto: agora < disjuntorDaReservaAte,
+      servidor: reserva ? baseDaReserva() : null,
+      disjuntorAberto: reserva ? disjuntorAberto(reserva.id, agora) : false,
     },
     rotasNaMemoria: naMemoria.size,
   };
@@ -399,8 +444,7 @@ export function estadoDoRoteador() {
 export function reiniciarRoteadorParaTeste(opcoes?: { intervaloDoPublicoMs?: number }) {
   naMemoria.clear();
   fatores.clear();
-  disjuntorAbertoAte = 0;
-  disjuntorDaReservaAte = 0;
+  disjuntores.clear();
   proximaVaga.clear();
   bancoForaAte = 0;
   intervaloDoPublicoMs = opcoes?.intervaloDoPublicoMs ?? INTERVALO_DO_PUBLICO_MS;
@@ -417,45 +461,185 @@ type Resposta =
   | { ok: true; km: number; minutos: number | null; deslocamentoM: number | null }
   | { ok: false; definitiva: boolean; status?: number; motivo: string };
 
-async function perguntar(base: string, origem: Ponto, destino: Ponto, prazoMs: number): Promise<Resposta> {
-  // `overview=false`: não precisamos do desenho da rota, só do número — e o
-  // desenho é o que pesa na resposta.
-  const url = `${base}/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=false&alternatives=false&steps=false`;
-  estado.consultas++;
-  let r: Response;
+const CABECALHOS = { "User-Agent": "FireHub/1.0 (contato@firehubfood.com.br)" };
+
+/** O fetch com prazo, e a falha de rede/prazo já no formato da Resposta. */
+async function buscar(url: string, prazoMs: number, init?: RequestInit): Promise<Response | Extract<Resposta, { ok: false }>> {
   try {
-    r = await fetch(url, {
+    return await fetch(url, {
+      ...init,
       signal: AbortSignal.timeout(Math.max(1, Math.round(prazoMs))),
-      headers: { "User-Agent": "FireHub/1.0 (contato@firehubfood.com.br)" },
+      headers: { ...CABECALHOS, ...(init?.headers || {}) },
     });
   } catch (e: any) {
     const tempo = e?.name === "TimeoutError" || e?.name === "AbortError";
     return { ok: false, definitiva: false, motivo: tempo ? `sem resposta em ${Math.round(prazoMs)} ms` : `rede: ${e?.message || e}` };
   }
-  let d: any = null;
+}
+
+async function lerJson(r: Response): Promise<any> {
   try {
-    d = await r.json();
+    return await r.json();
   } catch {
-    d = null;
+    return null;
   }
+}
+
+/** Metros e segundos de qualquer roteador → a Resposta, com as travas de sempre. */
+function respostaMedida(metros: number, segundos: number, deslocamentoM: number | null): Resposta {
+  if (!Number.isFinite(metros) || metros < 0) return { ok: false, definitiva: true, motivo: "resposta sem distância" };
+  const km = arredondar(metros / 1000);
+  if (km > ROTA_ABSURDA_KM) return { ok: false, definitiva: true, motivo: `rota absurda (${km} km)` };
+  return {
+    ok: true,
+    km,
+    minutos: Number.isFinite(segundos) ? Math.round(segundos / 60) : null,
+    deslocamentoM: deslocamentoM != null && Number.isFinite(deslocamentoM) && deslocamentoM >= 0 ? Math.round(deslocamentoM) : null,
+  };
+}
+
+/**
+ * Chave recusada, cota do dia estourada, limite por segundo: não é o endereço,
+ * é o roteador. Passageira — o próximo da cadeia responde.
+ */
+function falhaDoServico(status: number, motivo: string): Extract<Resposta, { ok: false }> {
+  const porque = status === 401 || status === 403 ? "chave recusada" : status === 429 ? "limite do plano" : `HTTP ${status}`;
+  return { ok: false, definitiva: false, status, motivo: motivo ? `${porque}: ${motivo}` : porque };
+}
+
+async function perguntarAoOsrm(base: string, origem: Ponto, destino: Ponto, prazoMs: number): Promise<Resposta> {
+  // `overview=false`: não precisamos do desenho da rota, só do número — e o
+  // desenho é o que pesa na resposta.
+  const url = `${base}/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=false&alternatives=false&steps=false`;
+  const r = await buscar(url, prazoMs);
+  if (!(r instanceof Response)) return r;
+  const d = await lerJson(r);
   const codigo = String(d?.code || "");
   if (r.ok && codigo === "Ok") {
     const rota = Array.isArray(d?.routes) ? d.routes[0] : null;
-    const metros = Number(rota?.distance);
-    if (!rota || !Number.isFinite(metros) || metros < 0) return { ok: false, definitiva: true, motivo: "resposta sem distância" };
-    const km = arredondar(metros / 1000);
-    if (km > ROTA_ABSURDA_KM) return { ok: false, definitiva: true, motivo: `rota absurda (${km} km)` };
-    const segundos = Number(rota?.duration);
-    const deslocamento = Number(d?.waypoints?.[1]?.distance);
-    return {
-      ok: true,
-      km,
-      minutos: Number.isFinite(segundos) ? Math.round(segundos / 60) : null,
-      deslocamentoM: Number.isFinite(deslocamento) && deslocamento >= 0 ? Math.round(deslocamento) : null,
-    };
+    if (!rota) return { ok: false, definitiva: true, motivo: "resposta sem distância" };
+    return respostaMedida(Number(rota.distance), Number(rota.duration), Number(d?.waypoints?.[1]?.distance));
   }
   if (CODIGOS_DEFINITIVOS.has(codigo)) return { ok: false, definitiva: true, status: r.status, motivo: `roteador: ${codigo}` };
   return { ok: false, definitiva: false, status: r.status, motivo: `HTTP ${r.status}${codigo ? ` (${codigo})` : ""}` };
+}
+
+/**
+ * GEOAPIFY (apidocs.geoapify.com/docs/routing): GET /v1/routing, waypoints
+ * "lat,lon|lat,lon", modo "drive" (o mesmo carro do OSRM: a taxa não pode
+ * mudar conforme quem respondeu). A resposta é GeoJSON: distância em metros e
+ * tempo em segundos em `features[0].properties`; o ponto em que o cliente foi
+ * preso à rua vem em `properties.waypoints[].location` ([lon, lat]).
+ */
+async function perguntarAoGeoapify(chave: string, origem: Ponto, destino: Ponto, prazoMs: number): Promise<Resposta> {
+  const pontos = encodeURIComponent(`${origem.lat},${origem.lng}|${destino.lat},${destino.lng}`);
+  const r = await buscar(`https://api.geoapify.com/v1/routing?waypoints=${pontos}&mode=drive&apiKey=${encodeURIComponent(chave)}`, prazoMs);
+  if (!(r instanceof Response)) return r;
+  const d = await lerJson(r);
+  const mensagem = String(d?.message || d?.error || "").slice(0, 120);
+  if (r.ok) {
+    const p = Array.isArray(d?.features) ? d.features[0]?.properties : null;
+    if (!p) return { ok: false, definitiva: true, motivo: "Geoapify: sem rota" };
+    const preso = Array.isArray(p.waypoints) ? p.waypoints.find((w: any) => w?.original_index === 1) ?? p.waypoints[1] : null;
+    const onde = Array.isArray(preso?.location) ? { lat: Number(preso.location[1]), lng: Number(preso.location[0]) } : null;
+    const deslocamento = onde && Number.isFinite(onde.lat) && Number.isFinite(onde.lng) ? linhaRetaKm(destino, onde) * 1000 : null;
+    return respostaMedida(Number(p.distance), Number(p.time), deslocamento);
+  }
+  if (r.status === 401 || r.status === 403 || r.status === 429 || r.status >= 500) return falhaDoServico(r.status, mensagem);
+  // 400 para uma pergunta bem formada: ponto sem rua por perto, sem rota.
+  return { ok: false, definitiva: true, status: r.status, motivo: `Geoapify: ${mensagem || `HTTP ${r.status}`}` };
+}
+
+/** Pontos que o openrouteservice não acha na rua (2010) ou sem caminho entre eles (2009). */
+const CODIGOS_DEFINITIVOS_DO_ORS = new Set([2009, 2010]);
+
+/**
+ * OPENROUTESERVICE (giscience.github.io/openrouteservice): POST
+ * /v2/directions/driving-car/geojson, chave no cabeçalho Authorization,
+ * coordenadas [lon, lat]. Distância em metros e duração em segundos em
+ * `features[0].properties.summary`; o último ponto do desenho é onde o
+ * cliente foi preso à rua. Só vão as coordenadas: os termos proíbem mandar
+ * dado pessoal, e nome ou telefone nunca saem daqui.
+ */
+async function perguntarAoOrs(chave: string, origem: Ponto, destino: Ponto, prazoMs: number): Promise<Resposta> {
+  const r = await buscar("https://api.openrouteservice.org/v2/directions/driving-car/geojson", prazoMs, {
+    method: "POST",
+    headers: { Authorization: chave, "Content-Type": "application/json", Accept: "application/geo+json, application/json" },
+    body: JSON.stringify({ coordinates: [[origem.lng, origem.lat], [destino.lng, destino.lat]], instructions: false }),
+  });
+  if (!(r instanceof Response)) return r;
+  const d = await lerJson(r);
+  const erro = d?.error;
+  const codigo = Number(typeof erro === "object" && erro ? erro.code : NaN);
+  const mensagem = String((typeof erro === "object" && erro ? erro.message : erro) || d?.message || "").slice(0, 120);
+  if (r.ok) {
+    const f = Array.isArray(d?.features) ? d.features[0] : null;
+    const resumo = f?.properties?.summary;
+    if (!resumo) return { ok: false, definitiva: true, motivo: "openrouteservice: sem rota" };
+    const desenho = Array.isArray(f?.geometry?.coordinates) ? f.geometry.coordinates : [];
+    const ultimo = desenho[desenho.length - 1];
+    const onde = Array.isArray(ultimo) ? { lat: Number(ultimo[1]), lng: Number(ultimo[0]) } : null;
+    const deslocamento = onde && Number.isFinite(onde.lat) && Number.isFinite(onde.lng) ? linhaRetaKm(destino, onde) * 1000 : null;
+    // Rota de 0 m (os dois pontos na mesma rua, colados) vem sem `distance`.
+    return respostaMedida(Number(resumo.distance ?? 0), Number(resumo.duration ?? 0), deslocamento);
+  }
+  if (CODIGOS_DEFINITIVOS_DO_ORS.has(codigo)) {
+    return { ok: false, definitiva: true, status: r.status, motivo: `openrouteservice: ${mensagem || codigo}` };
+  }
+  return falhaDoServico(r.status, mensagem);
+}
+
+// ── A CADEIA ───────────────────────────────────────────────────────────────
+
+type IdDoRoteador = "proprio" | "geoapify" | "ors" | "reserva" | "publico";
+
+type Roteador = {
+  id: IdDoRoteador;
+  nome: string;
+  /** Intervalo mínimo entre perguntas (ms). 0 = sem limitador. */
+  intervaloMs: number;
+  perguntar(origem: Ponto, destino: Ponto, prazoMs: number): Promise<Resposta>;
+};
+
+/**
+ * Quem é perguntado, na ordem (ver o cabeçalho). Lido a cada cotação: trocar
+ * uma chave no ambiente vale sem reiniciar nada no código.
+ */
+function cadeiaDeRoteadores(): Roteador[] {
+  const cadeia: Roteador[] = [];
+  const proprio = (process.env.OSRM_URL || "").trim().replace(/\/+$/, "");
+  if (proprio) {
+    cadeia.push({
+      id: "proprio", nome: `OSRM próprio (${proprio})`,
+      intervaloMs: servidorPublico(proprio) ? INTERVALO_DO_PUBLICO_MS : 0,
+      perguntar: (o, d, p) => perguntarAoOsrm(proprio, o, d, p),
+    });
+  }
+  const geoapify = chaveDoGeoapify();
+  if (geoapify) {
+    cadeia.push({ id: "geoapify", nome: "Geoapify", intervaloMs: INTERVALO_DO_GEOAPIFY_MS, perguntar: (o, d, p) => perguntarAoGeoapify(geoapify, o, d, p) });
+  }
+  const ors = chaveDoOrs();
+  if (ors) {
+    cadeia.push({ id: "ors", nome: "openrouteservice", intervaloMs: INTERVALO_DO_ORS_MS, perguntar: (o, d, p) => perguntarAoOrs(ors, o, d, p) });
+  }
+  // O demo só entra quando não há nenhum roteador que a política permita.
+  if (cadeia.length === 0) {
+    cadeia.push({
+      id: "publico", nome: "demo público (router.project-osrm.org)",
+      intervaloMs: INTERVALO_DO_PUBLICO_MS,
+      perguntar: (o, d, p) => perguntarAoOsrm(URL_PUBLICA, o, d, p),
+    });
+  }
+  const reserva = baseDaReserva();
+  if (reserva) {
+    cadeia.push({
+      id: "reserva", nome: `OSRM reserva (${reserva})`,
+      intervaloMs: servidorPublico(reserva) ? INTERVALO_DO_PUBLICO_MS : 0,
+      perguntar: (o, d, p) => perguntarAoOsrm(reserva, o, d, p),
+    });
+  }
+  return cadeia;
 }
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -512,71 +696,60 @@ export async function rotaEntre(origem: Ponto, destino: Ponto, opcoes?: { prazo?
     estado.ultimaFalhaMotivo = motivo;
   };
 
-  // 2. O roteador principal. Disjuntor aberto = nem pergunta.
+  // 2. A cadeia de roteadores (cadeiaDeRoteadores), um depois do outro.
+  //    Disjuntor aberto = nem pergunta. Falha passageira passa ao próximo;
+  //    "não há rota" é definitiva — o próximo (o mesmo OSM) diria o mesmo.
   let ultimoMotivo = "sem tempo para perguntar ao roteador";
-  if (Date.now() < disjuntorAbertoAte) {
-    ultimoMotivo = "roteador fora (disjuntor aberto)";
-  } else {
-    const base = baseDoRoteador();
-    const tentativas = [PRAZO_PRIMEIRA_MS, PRAZO_SEGUNDA_MS];
+  const cadeia = cadeiaDeRoteadores();
+  for (let n = 0; n < cadeia.length; n++) {
+    const roteador = cadeia[n];
+    const primeiro = n === 0;
+    const comNome = (m: string) => (primeiro ? m : `${roteador.nome}: ${m}`);
+    const somar = (m: string) => {
+      ultimoMotivo = primeiro ? m : `${ultimoMotivo}; ${m}`;
+    };
+    if (disjuntorAberto(roteador.id)) {
+      somar(primeiro ? "roteador fora (disjuntor aberto)" : `${roteador.nome} fora (disjuntor aberto)`);
+      continue;
+    }
+    // O primeiro ganha uma nova tentativa, curta; os outros, uma pergunta só.
+    const tentativas = primeiro ? [PRAZO_PRIMEIRA_MS, PRAZO_SEGUNDA_MS] : [PRAZO_PRIMEIRA_MS];
     let falhasTransitorias = 0;
     for (let i = 0; i < tentativas.length; i++) {
       if (i > 0) await dormir(PAUSA_ANTES_DA_SEGUNDA_MS);
       const restante = prazo - Date.now();
       if (restante < TEMPO_MINIMO_MS) break;
-      const espera = reservarVaga(base, Math.min(ESPERA_MAXIMA_PADRAO_MS, restante - TEMPO_MINIMO_MS));
+      const espera = reservarVaga(roteador, Math.min(ESPERA_MAXIMA_PADRAO_MS, restante - TEMPO_MINIMO_MS));
       if (espera === null) {
-        ultimoMotivo = "limitador de 1 req/s sem vez a tempo";
+        somar(comNome("limitador sem vez a tempo"));
         break;
       }
       if (espera > 0) await dormir(espera);
       const tempo = Math.min(tentativas[i], prazo - Date.now());
       if (tempo < TEMPO_MINIMO_MS) break;
 
-      const r = await perguntar(base, origem, destino, tempo);
-      if (r.ok) return medida(r);
-      anotarFalha(r.motivo);
-      ultimoMotivo = r.motivo;
+      estado.consultas++;
+      const r = await roteador.perguntar(origem, destino, tempo);
+      if (r.ok) {
+        if (!primeiro) estado.respondidasPelaReserva++;
+        return medida(r);
+      }
+      anotarFalha(comNome(r.motivo));
       if (r.definitiva) {
-        return ouRotaVelha({ ok: false, tipo: "definitiva", motivo: r.motivo });
+        return ouRotaVelha({ ok: false, tipo: "definitiva", motivo: comNome(r.motivo) });
       }
       falhasTransitorias++;
+      somar(comNome(r.motivo));
       // 429 é o servidor pedindo para parar: insistir piora e pode render
-      // bloqueio do IP — que derrubaria a rota de TODAS as lojas.
+      // bloqueio — que derrubaria a rota de TODAS as lojas.
       if (r.status === 429) {
-        abrirDisjuntor("HTTP 429");
+        abrirDisjuntor(roteador, primeiro, "HTTP 429");
         break;
       }
     }
-    // Duas falhas seguidas é roteador fora, não azar.
-    if (falhasTransitorias >= 2) abrirDisjuntor(ultimoMotivo);
-  }
-
-  // 3. O roteador reserva, só para falha passageira do principal: "não há
-  //    rota" dele o reserva também diria. Uma tentativa; falhou, disjuntor dele.
-  const baseReserva = baseDaReserva();
-  if (baseReserva && Date.now() >= disjuntorDaReservaAte) {
-    const restante = prazo - Date.now();
-    const espera = restante >= TEMPO_MINIMO_MS
-      ? reservarVaga(baseReserva, Math.min(ESPERA_MAXIMA_PADRAO_MS, restante - TEMPO_MINIMO_MS))
-      : null;
-    if (espera !== null) {
-      if (espera > 0) await dormir(espera);
-      const tempo = Math.min(PRAZO_PRIMEIRA_MS, prazo - Date.now());
-      if (tempo >= TEMPO_MINIMO_MS) {
-        const r = await perguntar(baseReserva, origem, destino, tempo);
-        if (r.ok) {
-          estado.respondidasPelaReserva++;
-          return medida(r);
-        }
-        anotarFalha(`reserva: ${r.motivo}`);
-        if (r.definitiva) {
-          return ouRotaVelha({ ok: false, tipo: "definitiva", motivo: `reserva: ${r.motivo}` });
-        }
-        disjuntorDaReservaAte = Date.now() + DISJUNTOR_MS;
-        ultimoMotivo = `${ultimoMotivo}; reserva: ${r.motivo}`;
-      }
-    }
+    // Duas falhas seguidas do primeiro é roteador fora, não azar; os outros
+    // têm uma pergunta só, e falhar nela já tira da cadeia por 60 s.
+    if (falhasTransitorias >= (primeiro ? 2 : 1)) abrirDisjuntor(roteador, primeiro, ultimoMotivo);
   }
   return ouRotaVelha({ ok: false, tipo: "transitoria", motivo: ultimoMotivo });
 }
@@ -667,17 +840,17 @@ export function sondarRoteador(): Promise<ResultadoDaSonda> {
   if (sondaEmVoo) return sondaEmVoo;
   const voo = (async (): Promise<ResultadoDaSonda> => {
     const inicio = Date.now();
-    // A sonda é do PRINCIPAL: é ele que diz se a rota está saindo do jeito certo.
-    const base = baseDoRoteador();
-    const espera = reservarVaga(base, 2000);
+    // A sonda é do PRIMEIRO da cadeia: é ele que diz se a rota está saindo do jeito certo.
+    const roteador = cadeiaDeRoteadores()[0];
+    const espera = reservarVaga(roteador, 2000);
     let valor: ResultadoDaSonda;
     if (espera === null) {
       valor = { ok: false, ms: 0, motivo: "limitador sem vez" };
     } else {
       if (espera > 0) await dormir(espera);
       // Dois pontos fixos em Cabo Frio (Divinos Burger → Vila Boca do Mato).
-      const r = await perguntar(base, { lat: -22.854033, lng: -42.0296526 }, { lat: -22.8518, lng: -42.0353 }, PRAZO_PRIMEIRA_MS);
-      valor = r.ok ? { ok: true, ms: Date.now() - inicio } : { ok: false, ms: Date.now() - inicio, motivo: r.motivo };
+      const r = await roteador.perguntar({ lat: -22.854033, lng: -42.0296526 }, { lat: -22.8518, lng: -42.0353 }, PRAZO_PRIMEIRA_MS);
+      valor = r.ok ? { ok: true, ms: Date.now() - inicio } : { ok: false, ms: Date.now() - inicio, motivo: `${roteador.nome}: ${r.motivo}` };
     }
     ultimaSonda = { em: Date.now(), valor };
     return valor;

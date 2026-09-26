@@ -320,6 +320,15 @@ confere("sem distância nem prazo, nada", detalheDaEntrega({ distanciaKm: null, 
   confere("painel ATENDE: taxa, detalhe, mapa opcional, sem repetir a mensagem do servidor",
     p.tom === "ok" && p.titulo === "Taxa de Entrega: R$ 5,00" && p.detalhe.includes("pela rua") && p.botaoDoMapa === "opcional" && p.mensagem === "",
     p);
+  // O crédito de quem mediu a rua (o plano grátis do Geoapify exige perto da informação).
+  const credito = "© OpenStreetMap · Powered by Geoapify";
+  confere("distância pela rua: o crédito do roteador aparece", painelDaEntrega({ ...base, atribuicaoDaRota: credito }).atribuicao === credito);
+  confere("distância estimada (roteador fora): sem crédito", painelDaEntrega({ ...base, medida: "estimada", atribuicaoDaRota: credito }).atribuicao === "");
+  confere("fora da área: sem crédito", painelDaEntrega({ ...base, disponivel: false, atribuicaoDaRota: credito }).atribuicao === "");
+  confere("calculando: sem crédito", painelDaEntrega({ ...base, calculando: true, atribuicaoDaRota: credito }).atribuicao === "");
+  confere("a cotação lê o crédito (e ignora lixo)",
+    lerRespostaDaCotacao({ fee: 5, available: true, atribuicaoDaRota: credito }).atribuicaoDaRota === credito &&
+    lerRespostaDaCotacao({ fee: 5, available: true, atribuicaoDaRota: 42 }).atribuicaoDaRota === "");
   const est = painelDaEntrega({ ...base, pedeConfirmacao: true, taxaEfetiva: 10 });
   confere("painel aproximado: 'Taxa estimada' + mapa obrigatório",
     est.tom === "alerta" && est.titulo === "Taxa estimada: R$ 10,00" && est.botaoDoMapa === "obrigatorio", est);

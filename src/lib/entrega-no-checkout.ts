@@ -428,6 +428,8 @@ export type CotacaoNaTela = {
    * mapa (25/09/2026) —, e o mapa e o GPS ficam como opção.
    */
   peloBairro: boolean;
+  /** O crédito de quem mediu a rua ("© OpenStreetMap · Powered by Geoapify"), para mostrar perto da distância. */
+  atribuicaoDaRota: string;
   /** O palpite do servidor — é onde o mapa abre. */
   pontoAproximado: Ponto | null;
   /**
@@ -479,6 +481,7 @@ export function lerRespostaDaCotacao(bruto: unknown, taxaPadrao: number = 0): Co
     // régua para o ponto confirmado).
     podeConferirNoMapa: d.podeConfirmarNoMapa === true || d.type === "poligono",
     peloBairro: d.peloBairro === true,
+    atribuicaoDaRota: typeof d.atribuicaoDaRota === "string" && d.atribuicaoDaRota.length <= 200 ? d.atribuicaoDaRota : "",
     pontoAproximado: pontoValido(d.ponto),
     pedirGps: d.pedirGps === true && (precisaConfirmarNoMapa || pedeConfirmacao),
     naoLocalizado: d.unknown === true,
@@ -577,9 +580,21 @@ export type PainelDaEntrega = {
    * a casa num mapa). Nunca junto de um mapa "obrigatorio".
    */
   botaoDoGps: boolean;
+  /** O crédito de quem mediu a rua, quando a distância na tela é pela rua ("" quando não). */
+  atribuicao: string;
 };
 
-export function painelDaEntrega(e: {
+export function painelDaEntrega(e: EntradaDoPainel): PainelDaEntrega {
+  const painel = painelSemCredito(e);
+  // O crédito vai junto da entrega medida pela rua: é dela que o roteador é
+  // dono (o plano grátis do Geoapify exige "Powered by Geoapify" perto).
+  const pelaRua = e.calculada && e.disponivel && !e.calculando && !e.erro && e.medida === "rota";
+  return { ...painel, atribuicao: pelaRua ? String(e.atribuicaoDaRota || "") : "" };
+}
+
+type EntradaDoPainel = Parameters<typeof painelSemCredito>[0];
+
+function painelSemCredito(e: {
   bairroLocal: boolean;
   calculando: boolean;
   calculada: boolean;
@@ -604,7 +619,9 @@ export function painelDaEntrega(e: {
   temOndeAbrirOMapa?: boolean;
   /** A cotação saiu pelo bairro (CotacaoNaTela.peloBairro). */
   peloBairro?: boolean;
-}): PainelDaEntrega {
+  /** CotacaoNaTela.atribuicaoDaRota: o crédito de quem mediu a rua. */
+  atribuicaoDaRota?: string;
+}): Omit<PainelDaEntrega, "atribuicao"> {
   // Pelo bairro, a distância é até o CENTRO do bairro: "0,84 km pela rua"
   // diria ao cliente uma medida da casa dele que ninguém fez.
   const peloBairro = e.peloBairro === true && !e.temPontoDoCliente;

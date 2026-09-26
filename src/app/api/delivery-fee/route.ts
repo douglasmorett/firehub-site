@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { avaliarEntrega, raioMaximoKm, taxaFixaDaLoja, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { atribuicaoDasRotas } from "@/lib/distancia-por-rota";
 import { assinarCotacao, chaveDoEndereco } from "@/lib/cotacao-de-entrega";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { distanciaNaFraseDeFora, pontoDaLojaDesconhecido, taxaDaLojaSemPonto } from "@/lib/entrega-do-pedido";
@@ -191,6 +192,9 @@ export async function GET(req: NextRequest) {
         ponto: v.ponto ?? null,
         pedeConfirmacao: v.pedeConfirmacao === true && v.peloBairro !== true,
         peloBairro: v.peloBairro === true,
+        // Quem mediu a rua pede o crédito perto da distância (o plano grátis do
+        // Geoapify exige "Powered by Geoapify"): lib/distancia-por-rota.ts.
+        ...(v.medida === "rota" ? { atribuicaoDaRota: atribuicaoDasRotas() } : {}),
       }
     : {};
 

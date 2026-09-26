@@ -420,6 +420,8 @@ export default function CustomerStorePage({
   const [podeConferirNoMapa, setPodeConferirNoMapa] = useState(false);
   /** A taxa (ou o "fora") saiu pelo bairro: o mapa achou o bairro, não a rua (CotacaoNaTela.peloBairro). */
   const [peloBairro, setPeloBairro] = useState(false);
+  /** O crédito de quem mediu a rua (CotacaoNaTela.atribuicaoDaRota). */
+  const [atribuicaoDaRota, setAtribuicaoDaRota] = useState("");
   /** Prazo da faixa ("chega em até ~30 min") e como a distância foi medida. */
   const [tempoDaEntregaMin, setTempoDaEntregaMin] = useState<number | null>(null);
   const [medidaDaEntrega, setMedidaDaEntrega] = useState<CotacaoNaTela["medida"]>(null);
@@ -1463,6 +1465,7 @@ export default function CustomerStorePage({
     setPedeConfirmacao(c.pedeConfirmacao);
     setPodeConferirNoMapa(c.podeConferirNoMapa);
     setPeloBairro(c.peloBairro);
+    setAtribuicaoDaRota(c.atribuicaoDaRota);
     setPontoAproximado(c.pontoAproximado);
     setPedirGps(c.pedirGps);
     setTempoDaEntregaMin(c.disponivel ? c.tempoMin : null);
@@ -2250,6 +2253,7 @@ export default function CustomerStorePage({
     pedirGps,
     temOndeAbrirOMapa: mapaPodeAbrir,
     peloBairro,
+    atribuicaoDaRota,
   });
   const corDoPainel = {
     ok: { fundo: isFreeShippingByMin ? "#ECFDF5" : "#F0FDF4", borda: "#86EFAC", texto: "#166534" },
@@ -3127,6 +3131,12 @@ export default function CustomerStorePage({
                       {painel.detalhe && (
                         <span style={{ fontSize: "0.72rem", color: "#334155", fontWeight: 700 }}>
                           {painel.detalhe}
+                        </span>
+                      )}
+                      {/* O crédito de quem mediu a rua (o plano grátis do Geoapify exige). */}
+                      {painel.atribuicao && (
+                        <span style={{ fontSize: "0.62rem", color: "#94A3B8", fontWeight: 500 }}>
+                          {painel.atribuicao}
                         </span>
                       )}
                       {painel.mensagem && (
