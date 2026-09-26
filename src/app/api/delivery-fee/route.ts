@@ -22,6 +22,10 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
  *   - ATENDE com `pedeConfirmacao` → taxa ESTIMADA por um ponto aproximado; o
  *                    checkout exige o pino antes de fechar (R3) e só a cotação
  *                    do pino confirmado sai com token;
+ *   - ATENDE PELO BAIRRO (`peloBairro`) → o mapa achou o bairro que o cliente
+ *                    escreveu, não a rua: a taxa é a do bairro, SAI com token e
+ *                    o pedido fecha sem o pino, marcado para a loja conferir.
+ *                    Muito cliente não sabe apontar a casa num mapa (25/09/2026);
  *   - FORA         → indisponível, com o motivo;
  *   - DESCONHECIDO → em KM/ROTA e área desenhada: sem taxa, "confirme no mapa"
  *                    (R2). Nunca mais a faixa mais cara.
@@ -185,7 +189,8 @@ export async function GET(req: NextRequest) {
         faixaKm: v.faixaKm ?? null,
         taxaDoEntregador: daSessao ? v.taxaDoEntregador ?? null : null,
         ponto: v.ponto ?? null,
-        pedeConfirmacao: v.pedeConfirmacao === true,
+        pedeConfirmacao: v.pedeConfirmacao === true && v.peloBairro !== true,
+        peloBairro: v.peloBairro === true,
       }
     : {};
 
@@ -207,6 +212,10 @@ export async function GET(req: NextRequest) {
           ? "Bairro não atendido pela loja. Por favor, selecione um dos bairros cadastrados."
           : v.modo === "POLIGONO"
             ? "Esse endereço está fora da área que a loja entrega. Se o ponto no mapa não for a sua casa, ajuste e tentamos de novo."
+            : v.peloBairro && v.distanciaKm != null && v.raioMaxKm != null
+              // Pelo bairro: é o bairro que fica fora, não a casa medida. Quem mora na
+              // beirada mais perto pode mandar a localização — o checkout oferece.
+              ? `O bairro${neighborhood.trim() ? ` ${neighborhood.trim()}` : ""} fica fora da nossa área de entrega (${distanciaNaFraseDeFora(v)}; entregamos até ${kmBr(v.raioMaxKm)} km). Se você mora na parte mais perto da loja, use a sua localização.`
             : v.distanciaKm != null && v.raioMaxKm != null
               ? `Endereço fora da área de entrega (${distanciaNaFraseDeFora(v)}; entregamos até ${kmBr(v.raioMaxKm)} km).`
               : "Endereço fora da área de entrega da loja.";
@@ -276,7 +285,9 @@ export async function GET(req: NextRequest) {
   // ATENDE
   // Loja sem área cadastrada segue como sempre: R$ 5,00 quando não há taxa fixa.
   const fee = v.taxa ?? taxaFixaDaLoja(user) ?? (v.modo === "SEM_AREA" ? 5 : 0);
-  const pede = v.pedeConfirmacao === true;
+  // PELO BAIRRO não pede o pino: o bairro já diz a taxa (ver o cabeçalho).
+  const peloBairro = v.peloBairro === true;
+  const pede = v.pedeConfirmacao === true && !peloBairro;
 
   // ── O TOKEN DA COTAÇÃO (R1) ────────────────────────────────────────────
   //
@@ -304,6 +315,7 @@ export async function GET(req: NextRequest) {
         // acha o repasse pela faixa do token (repasseDaEntrega → repasseDoPedido).
         taxaDoEntregador: daSessao ? v.taxaDoEntregador ?? null : null,
         tempoMin: v.tempoMin ?? null,
+        ...(peloBairro ? { peloBairro: true } : {}),
       });
     } catch (e: any) {
       // Sem segredo configurado: o pedido reavalia, como antes do token.
@@ -316,8 +328,10 @@ export async function GET(req: NextRequest) {
       : porKm
         ? pede
           ? `Achamos o seu endereço só de forma aproximada: a entrega fica em torno de ${brl(fee)}. Confirme no mapa onde fica a sua casa para fechar o pedido.`
-          : v.medida === "linha-reta" ? `Distância aproximada: ${kmBr(v.distanciaKm ?? 0)} km`
-            : `Distância: ${textoDaDistancia(v)}`
+          : peloBairro
+            ? `Não achamos a sua rua no mapa, então a taxa é a do bairro${neighborhood.trim() ? ` ${neighborhood.trim()}` : ""}.`
+            : v.medida === "linha-reta" ? `Distância aproximada: ${kmBr(v.distanciaKm ?? 0)} km`
+              : `Distância: ${textoDaDistancia(v)}`
         : v.modo === "POLIGONO" ? `Área de entrega: ${v.bairro}`
           : "Taxa padrão da loja";
 

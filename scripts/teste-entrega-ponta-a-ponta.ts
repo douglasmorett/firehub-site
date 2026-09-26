@@ -277,7 +277,10 @@ async function main() {
   conferir("token adulterado: não vale, reavalia", p1d.entrega.fonte === "avaliacao", p1d.entrega);
 
   // ════════════════════════════════════════════════════════════════════════
-  console.log("\n== 2. Site: só o centro do bairro → taxa estimada, pino obrigatório → cotação do pino → pedido (R3) ==");
+  console.log("\n== 2. Site: só o centro do bairro → taxa PELO BAIRRO, fecha sem o mapa, pedido marcado (25/09/2026) ==");
+  // Até 25/09/2026 o centro do bairro pedia o pino (R3). O dono: "se o mapa achou
+  // o bairro já sabe o valor da taxa... muito cliente não vai saber apontar no
+  // mapa". Agora o bairro fecha a taxa, e o mapa fica como opção.
   zerar();
   const centro = aoSul(1.1, 0.004);
   regrasDoMapa.push({ contem: "rua do beco", resposta: [] });
@@ -285,28 +288,55 @@ async function main() {
   ruas.set(chave4(centro), 1300);
   const end2 = { street: "Rua do Beco", number: "7", neighborhood: "Jardim Esperança" };
   const r2 = await cotar(checkout.consultaDaCotacao({ franchiseeId: LOJA_ID, cidade: "Cabo Frio", ...end2, ponto: null }));
-  conferir("cotação: disponível, pedeConfirmacao, ponto 'bairro', R$ 8 estimado, SEM token",
-    r2.corpo.available === true && r2.corpo.pedeConfirmacao === true && r2.corpo.ponto?.origem === "bairro" && r2.corpo.fee === 8 && !r2.corpo.cotacao, r2.corpo);
+  conferir("cotação: disponível PELO BAIRRO, sem pedir o pino, ponto 'bairro', R$ 8, COM token",
+    r2.corpo.available === true && r2.corpo.peloBairro === true && r2.corpo.pedeConfirmacao === false && r2.corpo.ponto?.origem === "bairro" &&
+    r2.corpo.fee === 8 && typeof r2.corpo.cotacao === "string" && /taxa é a do bairro Jardim Esperança/.test(r2.corpo.message), r2.corpo);
   const tela2 = checkout.lerRespostaDaCotacao(r2.corpo, 5);
   const painel2 = checkout.painelDaEntrega({
     bairroLocal: false, calculando: false, calculada: true, disponivel: tela2.disponivel, erro: false, taxaEfetiva: tela2.taxa ?? 0,
     freteGratisPorMinimo: false, precisaConfirmarNoMapa: tela2.precisaConfirmarNoMapa, pedeConfirmacao: tela2.pedeConfirmacao,
     podeConferirNoMapa: tela2.podeConferirNoMapa, temPontoDoCliente: false, distanciaKm: tela2.distanciaKm, medida: tela2.medida,
-    tempoMin: tela2.tempoMin, mensagem: tela2.mensagem,
+    tempoMin: tela2.tempoMin, mensagem: tela2.mensagem, peloBairro: tela2.peloBairro,
   });
-  conferir("a tela mostra 'Taxa estimada: R$ 8,00' com o mapa obrigatório, aberto no palpite",
-    painel2.titulo === "Taxa estimada: R$ 8,00" && painel2.botaoDoMapa === "obrigatorio" && tela2.pontoAproximado?.lat === centro.lat, { painel2, tela2 });
+  conferir("a tela mostra a taxa 'pelo bairro' (não 'pela rua'), a frase do servidor e o mapa só como opção",
+    painel2.tom === "ok" && painel2.titulo === "Taxa de Entrega: R$ 8,00" && painel2.detalhe === "pelo bairro · chega em até ~35 min" &&
+    /taxa é a do bairro/.test(painel2.mensagem) && painel2.botaoDoMapa === "opcional" && !painel2.botaoDoGps, { painel2, tela2 });
   const falta2 = checkout.oQueFaltaParaFechar({
     calculando: false, cotadaPeloServidor: true, assinaturaCotada: checkout.assinaturaDaConsulta(end2, null), assinaturaAtual: checkout.assinaturaDaConsulta(end2, null),
     idadeDaCotacaoMs: 1000, erro: false, calculada: true, disponivel: tela2.disponivel, precisaConfirmarNoMapa: tela2.precisaConfirmarNoMapa,
     pedeConfirmacao: tela2.pedeConfirmacao, temPontoDoCliente: false, freteGratis: false, mensagem: tela2.mensagem,
   });
-  conferir("sem o pino a tela não fecha: abre o mapa", falta2?.acao === "abrir-mapa", falta2);
-  // Aba antiga (ou POST direto) sem pino: o servidor recusa pedindo o mapa.
-  const p2 = await postDoSite(corpoDoSite(end2, null, null));
-  conferir("POST sem pino: 400 com precisaConfirmarNoMapa, taxaEstimada 8 e o ponto onde o pino abre",
-    p2.status === 400 && p2.recusa?.precisaConfirmarNoMapa === true && p2.recusa?.taxaEstimada === 8 && p2.recusa?.pontoAproximado?.lat === centro.lat, p2.recusa);
-  // O cliente arrasta o pino para a casa de verdade e confirma.
+  conferir("sem o pino a tela FECHA", falta2 === null, falta2);
+  const p2 = await postDoSite(corpoDoSite(end2, null, tela2.cotacao));
+  conferir("o pedido usa o token pelo bairro, sem ir ao mapa, e grava o ponto 'bairro'",
+    p2.status === 200 && p2.entrega.fonte === "cotacao" && p2.entrega.peloBairro === true && !p2.entrega.pedeConfirmacao && p2.foiAoMapa === false &&
+    p2.campos?.customerLatLng?.origem === "bairro", p2);
+  conferir("a nota avisa a loja: taxa pelo bairro, confira o endereço", (p2.notas || []).some((n: string) => /Taxa pelo bairro/.test(n)), p2.notas);
+  // Aba antiga (ou POST direto) sem token: reavalia e aceita pelo bairro do mesmo jeito.
+  const p2x = await postDoSite(corpoDoSite(end2, null, null));
+  conferir("POST sem token: reavalia e aceita pelo bairro (não pede mais o pino)",
+    p2x.status === 200 && p2x.entrega.fonte === "avaliacao" && p2x.entrega.peloBairro === true && !p2x.recusa, p2x);
+
+  // O bairro inteiro fica além do raio: pelo bairro é FORA, com o GPS de opção.
+  const longe = aoSul(6.0, 0.004);
+  regrasDoMapa.push({ contem: "rua sumida", resposta: [] });
+  regrasDoMapa.push({ contem: "bairro distante", naoContem: "rua sumida", resposta: [lugar(longe, { suburb: "Bairro Distante", classe: "place", tipo: "suburb", display: "Bairro Distante, Cabo Frio, Rio de Janeiro, Brasil" })] });
+  ruas.set(chave4(longe), 6500);
+  const endLonge = { street: "Rua Sumida", number: "3", neighborhood: "Bairro Distante" };
+  const r2f = await cotar(checkout.consultaDaCotacao({ franchiseeId: LOJA_ID, cidade: "Cabo Frio", ...endLonge, ponto: null }));
+  conferir("bairro além do raio: FORA pelo bairro (não 'confirme no mapa'), com a frase do bairro",
+    r2f.corpo.available === false && r2f.corpo.peloBairro === true && r2f.corpo.precisaConfirmarNoMapa === false && /O bairro Bairro Distante fica fora/.test(r2f.corpo.message), r2f.corpo);
+  const tela2f = checkout.lerRespostaDaCotacao(r2f.corpo, 5);
+  const painel2f = checkout.painelDaEntrega({
+    bairroLocal: false, calculando: false, calculada: true, disponivel: tela2f.disponivel, erro: false, taxaEfetiva: 0,
+    freteGratisPorMinimo: false, precisaConfirmarNoMapa: tela2f.precisaConfirmarNoMapa, pedeConfirmacao: tela2f.pedeConfirmacao,
+    podeConferirNoMapa: tela2f.podeConferirNoMapa, temPontoDoCliente: false, distanciaKm: tela2f.distanciaKm, medida: tela2f.medida,
+    tempoMin: null, mensagem: tela2f.mensagem, peloBairro: tela2f.peloBairro,
+  });
+  conferir("a tela diz 'fora' e oferece o GPS (quem mora na beirada mais perto)",
+    painel2f.tom === "erro" && painel2f.titulo === "Fora da área de entrega" && painel2f.botaoDoGps, painel2f);
+
+  // Quem quiser ainda ajusta no mapa: o pino decide, como sempre.
   const casa2 = aoSul(0.75, 0.0042);
   ruas.set(chave4(casa2), 960);
   const pino2 = { lat: casa2.lat, lng: casa2.lng, origem: "pino" as const };
@@ -332,7 +362,7 @@ async function main() {
     freteGratisPorMinimo: false, precisaConfirmarNoMapa: tela3.precisaConfirmarNoMapa, pedeConfirmacao: false,
     podeConferirNoMapa: tela3.podeConferirNoMapa, temPontoDoCliente: false, distanciaKm: null, medida: null, tempoMin: null, mensagem: tela3.mensagem,
   });
-  conferir("a tela pede o pino (não diz 'fora da área')", painel3.botaoDoMapa === "obrigatorio" && !/fora/i.test(painel3.titulo), painel3);
+  conferir("a tela oferece o GPS e o mapa como opção (não diz 'fora da área')", painel3.botaoDoGps && painel3.botaoDoMapa === "opcional" && !/fora/i.test(painel3.titulo), painel3);
   const p3 = await postDoSite(corpoDoSite(end3, null, null));
   conferir("POST sem ponto: 400 pedindo o mapa, nada de R$ 20", p3.status === 400 && p3.recusa?.precisaConfirmarNoMapa === true, p3.recusa);
 
@@ -401,7 +431,9 @@ async function main() {
   regrasDoMapa.push({ contem: "jardim esperanca", resposta: [lugar(centro, { suburb: "Jardim Esperança", classe: "place", tipo: "suburb", display: "Jardim Esperança, Cabo Frio, Rio de Janeiro, Brasil" })] });
   ruas.set(chave4(centro), 1300);
   const v7b = await avaliarEntrega(DIVINOS, { endereco: "Jardim Esperança", bairro: "Jardim Esperança", coords: null, partes: robo.partesDoEnderecoDaTag({ neighborhood: "Jardim Esperança" }) });
-  conferir("só o bairro no texto: o robô pede a localização ('aproximado')", robo.motivoParaPedirLocalizacao(v7b, false) === "aproximado", v7b);
+  conferir("só o bairro no texto: o robô NÃO pede a localização — a taxa é a do bairro",
+    robo.motivoParaPedirLocalizacao(v7b, false) === null && v7b.peloBairro === true && v7b.taxa === 8, v7b);
+  conferir("… e a nota do pedido avisa a loja", robo.avisosDaEntregaNaNota(v7b, false).some((a: string) => /taxa pelo bairro/.test(a)), robo.avisosDaEntregaNaNota(v7b, false));
   const v7c = await avaliarEntrega(DIVINOS, { endereco: "Rua Inexistente, 30 - Lugar Nenhum", coords: null });
   conferir("mapa não achou: o robô pede a localização ('desconhecido'), sem taxa", robo.motivoParaPedirLocalizacao(v7c, false) === "desconhecido" && v7c.taxa === null, v7c);
 

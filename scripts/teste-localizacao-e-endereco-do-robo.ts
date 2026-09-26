@@ -247,8 +247,11 @@ async function main() {
   const g6 = await gravacao(DIVINOS, { address: textoAuditoria, street: "Travessa canaã", number: "6", neighborhood: "Boca do mato" }, null);
   conferir("conversa e gravação: mesmo resultado e mesma taxa",
     c6.veredito.resultado === g6.veredito.resultado && c6.veredito.taxa === g6.veredito.taxa, { conversa: c6.veredito, gravacao: g6.veredito });
-  conferir("… pelo centro do bairro (aproximado): os dois pedem a localização uma vez (R3)",
-    c6.pedirLocalizacao === "aproximado" && g6.pedirLocalizacao === "aproximado", { c: c6.pedirLocalizacao, g: g6.pedirLocalizacao });
+  // Até 25/09/2026 os dois pediam a localização uma vez (R3). Agora o centro do
+  // bairro que o cliente escreveu fecha a taxa pelo bairro, como no site.
+  conferir("… pelo centro do bairro: os dois fecham PELO BAIRRO, sem pedir a localização",
+    c6.pedirLocalizacao === null && g6.pedirLocalizacao === null && c6.veredito.peloBairro === true && g6.veredito.peloBairro === true,
+    { c: c6.pedirLocalizacao, g: g6.pedirLocalizacao, pelo: [c6.veredito.peloBairro, g6.veredito.peloBairro] });
 
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exit(falhou ? 1 : 0);

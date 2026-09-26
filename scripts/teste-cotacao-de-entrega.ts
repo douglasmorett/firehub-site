@@ -34,6 +34,17 @@ const forjado = Buffer.from(JSON.stringify(mexido)).toString("base64url") + "." 
 confere("taxa trocada no token é recusada", lerCotacao(forjado, { loja: "loja1", chave }, agora) === null);
 confere("lixo é recusado", lerCotacao("abc.def", { loja: "loja1", chave }, agora) === null && lerCotacao(undefined, { loja: "loja1", chave }, agora) === null);
 
+// Pelo bairro (25/09/2026): a marca vai no token e é coberta pela assinatura.
+const tokenPeloBairro = assinarCotacao({ ...base, origemDoPonto: "bairro", peloBairro: true }, agora);
+confere("a marca 'pelo bairro' volta na leitura", lerCotacao(tokenPeloBairro, { loja: "loja1", chave }, agora)?.peloBairro === true);
+confere("token de antes (sem a marca) continua valendo, sem ela", lerCotacao(token, { loja: "loja1", chave }, agora)?.peloBairro === undefined);
+{
+  const semPino = JSON.parse(Buffer.from(corpo, "base64url").toString());
+  semPino.peloBairro = true;
+  confere("pôr a marca num token sem ela (para fugir do pino) quebra a assinatura",
+    lerCotacao(Buffer.from(JSON.stringify(semPino)).toString("base64url") + "." + ass, { loja: "loja1", chave }, agora) === null);
+}
+
 // Chave do endereço
 confere("acento, caixa e espaços não mudam a chave",
   chaveDoEndereco({ street: "travessa  canaa", number: "6", neighborhood: "BOCA DO MATO" }) === chave);

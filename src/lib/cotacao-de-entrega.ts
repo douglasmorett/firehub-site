@@ -60,6 +60,12 @@ export type CotacaoDeEntrega = {
   taxa: number;
   taxaDoEntregador: number | null;
   tempoMin: number | null;
+  /**
+   * A taxa saiu PELO BAIRRO: o mapa achou o bairro que o cliente escreveu, não
+   * a casa (lib/geocoding.ts, peloBairro). O pedido fecha sem o pino e vai
+   * marcado para a loja conferir. Ausente nos tokens de antes (25/09/2026).
+   */
+  peloBairro?: boolean;
   /** Epoch em ms. */
   exp: number;
 };

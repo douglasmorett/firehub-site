@@ -394,7 +394,7 @@ export function faltaOPontoDaLoja(
  */
 export function motivoParaPedirLocalizacao(
   veredito:
-    | (Pick<VeredictoDeEntrega, "modo" | "resultado" | "pedeConfirmacao" | "aproximado"> & Partial<Pick<VeredictoDeEntrega, "motivo" | "semPontoDaLoja">>)
+    | (Pick<VeredictoDeEntrega, "modo" | "resultado" | "pedeConfirmacao" | "aproximado"> & Partial<Pick<VeredictoDeEntrega, "motivo" | "semPontoDaLoja" | "peloBairro">>)
     | null
     | undefined,
   temCoordsDoCliente: boolean,
@@ -403,6 +403,10 @@ export function motivoParaPedirLocalizacao(
   if (veredito.modo !== "KM" && veredito.modo !== "POLIGONO") return null;
   if (faltaOPontoDaLoja(veredito)) return null;
   if (veredito.resultado === "DESCONHECIDO") return "desconhecido";
+  // Achou o bairro que o cliente escreveu: a taxa é a do bairro, como no site —
+  // pedir a localização aqui só atrasava o pedido (e segurava para a loja
+  // quando o cliente não mandava). A nota do pedido avisa a loja.
+  if (veredito.resultado === "ATENDE" && veredito.peloBairro === true) return null;
   if (veredito.resultado === "ATENDE" && (veredito.pedeConfirmacao === true || veredito.aproximado === true)) {
     return "aproximado";
   }
@@ -415,13 +419,15 @@ export function motivoParaPedirLocalizacao(
  * fora do ar) ou o ponto é APROXIMADO.
  */
 export function avisosDaEntregaNaNota(
-  veredito: Pick<VeredictoDeEntrega, "resultado" | "medida" | "pedeConfirmacao" | "aproximado"> | null | undefined,
+  veredito: (Pick<VeredictoDeEntrega, "resultado" | "medida" | "pedeConfirmacao" | "aproximado"> & Partial<Pick<VeredictoDeEntrega, "peloBairro">>) | null | undefined,
   temCoordsDoCliente: boolean,
 ): string[] {
   if (!veredito || veredito.resultado !== "ATENDE") return [];
   const avisos: string[] = [];
   if (veredito.medida === "estimada") avisos.push("⚠️ distância estimada (mapa de ruas fora do ar) — confira a taxa");
-  if (!temCoordsDoCliente && (veredito.pedeConfirmacao === true || veredito.aproximado === true)) {
+  if (!temCoordsDoCliente && veredito.peloBairro === true) {
+    avisos.push("📍 taxa pelo bairro (o mapa não achou a rua) — confira o endereço");
+  } else if (!temCoordsDoCliente && (veredito.pedeConfirmacao === true || veredito.aproximado === true)) {
     avisos.push("⚠️ ponto aproximado (sem localização do cliente) — confira a taxa");
   }
   if (temCoordsDoCliente) avisos.push("📍 localização enviada pelo cliente");

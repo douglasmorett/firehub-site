@@ -37,6 +37,7 @@ import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
 import { isStoreOpen } from "@/lib/store-hours";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
+import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
 import {
   assinaturaDaConsulta, avisoDoPontoSemEndereco, BOTAO_DO_GPS, carimboDoPonto, comoAbrirOMapa, consultaDaCotacao, criarSequenciadorDeCotacoes,
   enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
@@ -327,6 +328,11 @@ export default function CustomerStorePage({
   const [customerNumber, setCustomerNumber] = useState("");
   const [customerNeighborhood, setCustomerNeighborhood] = useState("");
   const [customerComplement, setCustomerComplement] = useState("");
+  /** O CEP só preenche rua e bairro (lib/cep.ts); não vai no pedido nem decide a taxa. */
+  const [customerCep, setCustomerCep] = useState("");
+  const [avisoDoCepNaTela, setAvisoDoCepNaTela] = useState("");
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const ultimoCepBuscado = useRef("");
   const [neighborhoodSearch, setNeighborhoodSearch] = useState("");
   const [isNeighborhoodOpen, setIsNeighborhoodOpen] = useState(false);
   const [deliveryCalculating, setDeliveryCalculating] = useState(false);
@@ -386,6 +392,8 @@ export default function CustomerStorePage({
    * devolve uma rua homônima a 2 km da loja).
    */
   const [podeConferirNoMapa, setPodeConferirNoMapa] = useState(false);
+  /** A taxa (ou o "fora") saiu pelo bairro: o mapa achou o bairro, não a rua (CotacaoNaTela.peloBairro). */
+  const [peloBairro, setPeloBairro] = useState(false);
   /** Prazo da faixa ("chega em até ~30 min") e como a distância foi medida. */
   const [tempoDaEntregaMin, setTempoDaEntregaMin] = useState<number | null>(null);
   const [medidaDaEntrega, setMedidaDaEntrega] = useState<CotacaoNaTela["medida"]>(null);
@@ -1394,6 +1402,7 @@ export default function CustomerStorePage({
     setPrecisaConfirmarNoMapa(c.precisaConfirmarNoMapa);
     setPedeConfirmacao(c.pedeConfirmacao);
     setPodeConferirNoMapa(c.podeConferirNoMapa);
+    setPeloBairro(c.peloBairro);
     setPontoAproximado(c.pontoAproximado);
     setPedirGps(c.pedirGps);
     setTempoDaEntregaMin(c.disponivel ? c.tempoMin : null);
@@ -1422,6 +1431,7 @@ export default function CustomerStorePage({
     setPrecisaConfirmarNoMapa(false);
     setPedeConfirmacao(false);
     setPedirGps(false);
+    setPeloBairro(false);
     setTempoDaEntregaMin(null);
     setMedidaDaEntrega(null);
   };
@@ -1464,6 +1474,7 @@ export default function CustomerStorePage({
       setPrecisaConfirmarNoMapa(false);
       setPedeConfirmacao(false);
       setPedirGps(false);
+      setPeloBairro(false);
       setDeliveryFee(null);
       setDeliveryFeeCalculated(false);
       setDeliveryAvailable(false);
@@ -1638,6 +1649,41 @@ export default function CustomerStorePage({
     cotarEntrega(endereco, ponto, { forcar: true });
   };
 
+  /**
+   * O CEP digitado preenche a rua e o bairro pelo ViaCEP (lib/cep.ts) — o
+   * "outro meio" além do mapa. Só o último CEP digitado pinta a tela. Na loja
+   * de bairros cadastrados, o bairro do CEP só é escolhido se casar com um da
+   * lista: "não atendido" por diferença de grafia seria recusar quem a loja atende.
+   */
+  const aoDigitarCep = async (valor: string) => {
+    const formatado = cepFormatado(valor);
+    setCustomerCep(formatado);
+    const cep = digitosDoCep(formatado);
+    if (cep.length !== 8) {
+      ultimoCepBuscado.current = "";
+      setAvisoDoCepNaTela("");
+      setBuscandoCep(false);
+      return;
+    }
+    if (cep === ultimoCepBuscado.current) return;
+    ultimoCepBuscado.current = cep;
+    setBuscandoCep(true);
+    const consulta = await buscarCep(cep);
+    if (ultimoCepBuscado.current !== cep) return; // o cliente já digitou outro
+    setBuscandoCep(false);
+    setAvisoDoCepNaTela(avisoDoCep(consulta, franchisee.city));
+    if (!consulta.ok) return;
+    const { rua, bairro } = consulta.endereco;
+    if (rua) setCustomerStreet(rua);
+    if (!bairro) return;
+    if (isNeighborhoodType && availableNeighborhoods.length > 0) {
+      const achado = bairroCadastrado(bairro, availableNeighborhoods.map((z) => ({ name: z.name, fee: z.fee, time: Number(z.time) || 45 })));
+      if (achado) calcDeliveryFee({ bairro: achado.name, forcar: true });
+    } else {
+      setCustomerNeighborhood(bairro);
+    }
+  };
+
   const calcDeliveryFee = async (opcoes: { bairro?: string; forcar?: boolean } = {}) => {
     const neigh = opcoes.bairro !== undefined ? opcoes.bairro : customerNeighborhood;
     if (opcoes.bairro !== undefined) setCustomerNeighborhood(opcoes.bairro);
@@ -1795,7 +1841,7 @@ export default function CustomerStorePage({
         if (falta.acao === "abrir-mapa") {
           // O mapa se explica sozinho; o alerta só sai se ele não puder abrir.
           abrirMapaDeConfirmacao();
-        } else if (falta.acao === "pedir-gps") {
+        } else if (falta.acao === "pedir-gps" || falta.acao === "mostrar-opcoes") {
           // O mapa não tem onde abrir: UM aviso, e o painel com o botão do
           // GPS à vista (o Finalizar fica longe dele no celular).
           alert(falta.mensagem);
@@ -2088,6 +2134,7 @@ export default function CustomerStorePage({
     mensagem: deliveryMessage,
     pedirGps,
     temOndeAbrirOMapa: mapaPodeAbrir,
+    peloBairro,
   });
   const corDoPainel = {
     ok: { fundo: isFreeShippingByMin ? "#ECFDF5" : "#F0FDF4", borda: "#86EFAC", texto: "#166534" },
@@ -2700,6 +2747,28 @@ export default function CustomerStorePage({
                   </button>
                 )}
 
+                {/* CEP — preenche rua e bairro (lib/cep.ts), como no CardápioWeb. */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
+                    <label className="checkout-label" style={{ fontSize: "0.82rem", margin: 0 }}>CEP</label>
+                    <span style={{ fontSize: "0.68rem", color: "#94A3B8" }}>Opcional · preenche a rua e o bairro</span>
+                  </div>
+                  <input
+                    className="checkout-input"
+                    inputMode="numeric"
+                    autoComplete="postal-code"
+                    maxLength={9}
+                    value={customerCep}
+                    onChange={e => aoDigitarCep(e.target.value)}
+                    placeholder="Ex: 28900-000"
+                  />
+                  {(buscandoCep || avisoDoCepNaTela) && (
+                    <span style={{ display: "block", marginTop: "3px", fontSize: "0.7rem", fontWeight: 600, color: buscandoCep ? "#1D4ED8" : "#92400E" }}>
+                      {buscandoCep ? "⏳ Procurando o CEP..." : avisoDoCepNaTela}
+                    </span>
+                  )}
+                </div>
+
                 <div>
                   <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Rua / Logradouro *</label>
                   <input
@@ -2955,6 +3024,24 @@ export default function CustomerStorePage({
                           {pontoNaTela.origem === "pino" ? "✓ Ponto confirmado no mapa" : "✓ Usando a sua localização (GPS)"}
                         </span>
                       )}
+                      {/* O GPS vem ANTES do mapa: é o jeito mais fácil de dizer onde
+                          mora. Sem onde abrir o mapa (pedirGps) ele é o único; com o
+                          endereço não achado, o mapa fica como opção logo abaixo. */}
+                      {painel.botaoDoGps && (
+                        <button
+                          type="button"
+                          onClick={handleUseGpsLocation}
+                          disabled={gpsLoading || deliveryCalculating}
+                          style={{
+                            marginTop: 6, alignSelf: "flex-start", padding: "8px 14px", borderRadius: 8,
+                            border: "none", background: "#16A34A", color: "#fff", fontWeight: 800,
+                            fontSize: "0.78rem", fontFamily: "inherit",
+                            cursor: (gpsLoading || deliveryCalculating) ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {gpsLoading ? "⏳ Obtendo sua localização..." : `📍 ${BOTAO_DO_GPS}`}
+                        </button>
+                      )}
                       {painel.botaoDoMapa && (
                         <button
                           type="button"
@@ -2971,25 +3058,7 @@ export default function CustomerStorePage({
                         >
                           {painel.botaoDoMapa === "obrigatorio"
                             ? (precisaConfirmarNoMapa ? "📍 Marcar no mapa onde eu moro" : "📍 Confirmar no mapa a minha porta")
-                            : (pontoNaTela ? "📍 Ver ou mudar o ponto no mapa" : "📍 Conferir o ponto no mapa")}
-                        </button>
-                      )}
-                      {/* O mapa não tem onde abrir (loja sem pino e endereço sem
-                          palpite — pedirGps): o botão que resolve é o GPS, no
-                          lugar do "Marcar no mapa" que só dava alerta. */}
-                      {painel.botaoDoGps && (
-                        <button
-                          type="button"
-                          onClick={handleUseGpsLocation}
-                          disabled={gpsLoading || deliveryCalculating}
-                          style={{
-                            marginTop: 6, alignSelf: "flex-start", padding: "8px 14px", borderRadius: 8,
-                            border: "none", background: "#16A34A", color: "#fff", fontWeight: 800,
-                            fontSize: "0.78rem", fontFamily: "inherit",
-                            cursor: (gpsLoading || deliveryCalculating) ? "not-allowed" : "pointer",
-                          }}
-                        >
-                          {gpsLoading ? "⏳ Obtendo sua localização..." : `📍 ${BOTAO_DO_GPS}`}
+                            : (pontoNaTela ? "📍 Ver ou mudar o ponto no mapa" : precisaConfirmarNoMapa ? "📍 Marcar a casa no mapa" : "📍 Conferir o ponto no mapa")}
                         </button>
                       )}
                     </div>

@@ -326,8 +326,11 @@ confere("sem distância nem prazo, nada", detalheDaEntrega({ distanciaKm: null, 
   const estConfirmado = painelDaEntrega({ ...base, pedeConfirmacao: true, temPontoDoCliente: true });
   confere("painel aproximado mas com pino do cliente: não pede de novo", estConfirmado.tom === "ok" && estConfirmado.botaoDoMapa === "opcional");
   const precisa = painelDaEntrega({ ...base, disponivel: false, precisaConfirmarNoMapa: true, taxaEfetiva: 0, mensagem: "" });
-  confere("painel sem ponto: NÃO diz 'fora da área', pede o mapa",
-    precisa.tom === "alerta" && precisa.titulo === "Marque no mapa onde você mora" && precisa.botaoDoMapa === "obrigatorio" && !!precisa.mensagem, precisa);
+  // 25/09/2026: o mapa deixou de ser o caminho obrigatório — muito cliente não
+  // sabe apontar a casa. Primeiro conferir rua e bairro, depois o GPS; o mapa
+  // fica como opção.
+  confere("painel sem ponto: NÃO diz 'fora da área', oferece o GPS e o mapa como opção",
+    precisa.tom === "alerta" && precisa.titulo === "Não achamos esse endereço no mapa" && precisa.botaoDoGps && precisa.botaoDoMapa === "opcional" && precisa.mensagem.includes(BOTAO_DO_GPS), precisa);
   const fora = painelDaEntrega({ ...base, disponivel: false, podeConferirNoMapa: false, mensagem: "Fora do raio" });
   confere("painel fora", fora.tom === "erro" && fora.titulo === "Fora da área de entrega" && fora.botaoDoMapa === null);
   const calc = painelDaEntrega({ ...base, calculando: true });
@@ -338,6 +341,22 @@ confere("sem distância nem prazo, nada", detalheDaEntrega({ distanciaKm: null, 
   confere("frete grátis por mínimo", gratis.titulo.startsWith("Frete Grátis"));
   const vazio = painelDaEntrega({ ...base, calculada: false, distanciaKm: null, mensagem: "" });
   confere("antes de preencher", vazio.tom === "neutro" && vazio.titulo.startsWith("Preencha"));
+  // PELO BAIRRO (25/09/2026): a distância é até o centro do bairro — "pela rua"
+  // seria uma medida da casa que ninguém fez. Fecha sem o mapa; o mapa é opção.
+  const bairro = painelDaEntrega({ ...base, peloBairro: true, taxaEfetiva: 8, mensagem: "Não achamos a sua rua no mapa, então a taxa é a do bairro X." });
+  confere("pelo bairro: taxa em verde, 'pelo bairro' no detalhe (não 'pela rua'), a frase do servidor, mapa opcional",
+    bairro.tom === "ok" && bairro.titulo === "Taxa de Entrega: R$ 8,00" && bairro.detalhe === "pelo bairro · chega em até ~30 min" &&
+    /taxa é a do bairro/.test(bairro.mensagem) && bairro.botaoDoMapa === "opcional" && !bairro.botaoDoGps, bairro);
+  const bairroComPonto = painelDaEntrega({ ...base, peloBairro: true, temPontoDoCliente: true });
+  confere("pelo bairro mas com o GPS/pino do cliente: volta a distância de verdade", bairroComPonto.detalhe.includes("pela rua"), bairroComPonto);
+  const bairroFora = painelDaEntrega({ ...base, disponivel: false, peloBairro: true, mensagem: "O bairro X fica fora da nossa área de entrega" });
+  confere("bairro fora do raio: 'fora' com o GPS (quem mora na beirada mais perto)",
+    bairroFora.tom === "erro" && bairroFora.botaoDoGps && bairroFora.botaoDoMapa === "opcional", bairroFora);
+  const foraComum = painelDaEntrega({ ...base, disponivel: false, mensagem: "Fora do raio" });
+  confere("fora de verdade (a casa medida): sem o GPS", !foraComum.botaoDoGps, foraComum);
+  confere("a cotação lê a marca 'pelo bairro'",
+    lerRespostaDaCotacao({ fee: 8, available: true, peloBairro: true }).peloBairro === true &&
+    lerRespostaDaCotacao({ fee: 8, available: true }).peloBairro === false);
   const provisoria = painelDaEntrega({ ...base, naoLocalizado: true, distanciaKm: null, podeConferirNoMapa: false, taxaEfetiva: 12, mensagem: "a loja confirma" });
   confere("taxa provisória (não localizado, loja sem pino): âmbar, com a mensagem",
     provisoria.tom === "alerta" && provisoria.titulo === "Taxa de Entrega: R$ 12,00" && provisoria.mensagem === "a loja confirma", provisoria);
@@ -360,8 +379,8 @@ confere("sem distância nem prazo, nada", detalheDaEntrega({ distanciaKm: null, 
     oQueFaltaParaFechar({ ...base, idadeDaCotacaoMs: VALIDADE_DA_COTACAO_NA_TELA_MS + 1 })?.acao === "recotar");
   confere("a validade da tela é menor que a do servidor", VALIDADE_DA_COTACAO_NA_TELA_MS < VALIDADE_DA_COTACAO_MS);
   confere("erro de rede: cota de novo", oQueFaltaParaFechar({ ...base, erro: true, disponivel: false })?.acao === "recotar");
-  confere("sem ponto em KM/ROTA: abre o mapa (não recusa como 'fora')",
-    oQueFaltaParaFechar({ ...base, disponivel: false, precisaConfirmarNoMapa: true })?.acao === "abrir-mapa");
+  confere("sem ponto em KM/ROTA: mostra as opções (GPS e mapa), não recusa como 'fora'",
+    oQueFaltaParaFechar({ ...base, disponivel: false, precisaConfirmarNoMapa: true })?.acao === "mostrar-opcoes");
   confere("ponto aproximado sem pino: abre o mapa",
     oQueFaltaParaFechar({ ...base, pedeConfirmacao: true })?.acao === "abrir-mapa");
   confere("ponto aproximado COM pino do cliente: fecha",
@@ -412,6 +431,9 @@ async function corrida() {
   const aprox = lerCotacaoNoBalcao({ fee: 10, available: true, type: "radius", distanceKm: 1.04, medida: "rota", pedeConfirmacao: true, cotacao: "tk2" });
   confere("balcão aproximado: preenche a taxa mas AVISA que é estimada",
     aprox.taxa === "10.00" && aprox.tom === "alerta" && /ESTIMADA/.test(aprox.texto) && aprox.cotacao === "tk2", aprox);
+  const bairroBalcao = lerCotacaoNoBalcao({ fee: 8, available: true, type: "radius", distanceKm: 1.3, medida: "rota", tempoMin: 35, peloBairro: true, cotacao: "tkb" });
+  confere("balcão pelo bairro: preenche a taxa, leva o token e avisa para confirmar a rua",
+    bairroBalcao.taxa === "8.00" && bairroBalcao.tom === "alerta" && bairroBalcao.cotacao === "tkb" && /Taxa pelo bairro/.test(bairroBalcao.texto) && !/pela rua/.test(bairroBalcao.texto), bairroBalcao);
   const est = lerCotacaoNoBalcao({ fee: 12, available: true, type: "radius", distanceKm: 4.2, medida: "estimada", cotacao: "tk3" });
   confere("balcão distância estimada: avisa", est.tom === "alerta" && /Distância ESTIMADA/.test(est.texto) && est.texto.includes("~4,2 km"), est);
   const desc = lerCotacaoNoBalcao({ fee: 0, available: false, precisaConfirmarNoMapa: true, unknown: true });
@@ -543,8 +565,10 @@ async function corrida() {
   const pSoBandeira = painelDaEntrega({ ...base, pedirGps: true });
   confere("painel só com a bandeira (a tela não disse): GPS", pSoBandeira.botaoDoGps && pSoBandeira.botaoDoMapa === null, pSoBandeira);
   const pComPonto = painelDaEntrega({ ...base, pedirGps: true, temOndeAbrirOMapa: true });
-  confere("painel com a bandeira mas um ponto guardado: mapa obrigatório, sem a frase do GPS",
-    pComPonto.botaoDoMapa === "obrigatorio" && !pComPonto.botaoDoGps && !pComPonto.mensagem.includes(BOTAO_DO_GPS), pComPonto);
+  // Com onde abrir o mapa, o endereço não achado oferece os DOIS: o GPS primeiro
+  // e o mapa como opção (25/09/2026 — muito cliente não sabe apontar a casa).
+  confere("painel com a bandeira mas um ponto guardado: GPS primeiro e o mapa como opção",
+    pComPonto.botaoDoMapa === "opcional" && pComPonto.botaoDoGps && pComPonto.mensagem.includes(BOTAO_DO_GPS), pComPonto);
   const pSemBandeira = painelDaEntrega({ ...base, mensagem: "Não localizamos. Confirme no mapa onde fica a sua casa.", temOndeAbrirOMapa: false });
   confere("sem onde abrir e sem a bandeira: GPS, com a frase da tela (a do servidor mandava para o mapa)",
     pSemBandeira.botaoDoGps && pSemBandeira.mensagem.includes(`"${BOTAO_DO_GPS}"`) && !/Confirme no mapa/.test(pSemBandeira.mensagem), pSemBandeira);
@@ -559,15 +583,16 @@ async function corrida() {
   });
   confere("depois do GPS (ATENDE pelo ponto do cliente): taxa em verde, sem o botão do GPS",
     pDepois.tom === "ok" && pDepois.titulo === "Taxa de Entrega: R$ 5,00" && !pDepois.botaoDoGps && pDepois.botaoDoMapa === "opcional", pDepois);
-  // Nenhuma combinação mostra os dois botões — nem o de mapa quando não há onde abrir.
+  // Nenhuma combinação mostra o GPS junto de um mapa OBRIGATÓRIO (seriam dois caminhos
+  // "obrigatórios") — nem o de mapa quando não há onde abrir.
   const b = [false, true];
   let doisBotoes = 0, mapaSemOndeAbrir = 0;
   for (const precisa of b) for (const pede of b) for (const disp of b) for (const ponto of b) for (const gps of b) for (const onde of b) {
     const x = painelDaEntrega({ ...base, precisaConfirmarNoMapa: precisa, pedeConfirmacao: pede, disponivel: disp, temPontoDoCliente: ponto, pedirGps: gps, temOndeAbrirOMapa: onde });
-    if (x.botaoDoGps && x.botaoDoMapa) doisBotoes++;
+    if (x.botaoDoGps && x.botaoDoMapa === "obrigatorio") doisBotoes++;
     if (!onde && x.botaoDoMapa) mapaSemOndeAbrir++;
   }
-  confere("nenhum painel mostra o botão do GPS e o do mapa juntos", doisBotoes === 0, doisBotoes);
+  confere("nenhum painel mostra o GPS junto de um mapa obrigatório", doisBotoes === 0, doisBotoes);
   confere("nenhum painel oferece o mapa quando ele não tem onde abrir", mapaSemOndeAbrir === 0, mapaSemOndeAbrir);
 
   // FINALIZAR.
@@ -581,11 +606,11 @@ async function corrida() {
   confere("Finalizar com pedirGps: 'pedir-gps' (UM aviso, a frase do servidor), não 'abrir-mapa'",
     f?.acao === "pedir-gps" && f.mensagem === respostaSoGps.message, f);
   const fComPonto = oQueFaltaParaFechar({ ...fechar, pedirGps: true, temOndeAbrirOMapa: true });
-  confere("Finalizar com a bandeira e um ponto guardado: abre o mapa, sem a frase do GPS",
-    fComPonto?.acao === "abrir-mapa" && !fComPonto.mensagem.includes(BOTAO_DO_GPS), fComPonto);
+  confere("Finalizar com a bandeira e um ponto guardado: mostra as opções (o GPS e o mapa), sem abrir o mapa à força",
+    fComPonto?.acao === "mostrar-opcoes" && fComPonto.mensagem.includes(BOTAO_DO_GPS), fComPonto);
   const fAprox = oQueFaltaParaFechar({ ...fechar, disponivel: true, precisaConfirmarNoMapa: false, pedeConfirmacao: true, temOndeAbrirOMapa: false });
   confere("Finalizar aproximado sem onde abrir: GPS", fAprox?.acao === "pedir-gps" && fAprox.mensagem.includes(BOTAO_DO_GPS), fAprox);
-  confere("sem as entradas novas, nada muda (abrir-mapa)", oQueFaltaParaFechar(fechar)?.acao === "abrir-mapa");
+  confere("sem as entradas novas: mostra as opções", oQueFaltaParaFechar(fechar)?.acao === "mostrar-opcoes");
 
   // A RECUSA DO POST — a de verdade (lib/entrega-do-pedido.ts, recusaDoSite).
   const veredicto = (v: Partial<VeredictoDeEntrega>): VeredictoDeEntrega =>

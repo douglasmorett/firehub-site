@@ -1012,7 +1012,8 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
       ? `Endereço dentro da área de entrega da loja${v.bairro ? ` ("${v.bairro}")` : ""}${v.distanciaKm != null ? ` — ${v.distanciaKm} km da loja` : ""}`
       : `${ondeFoiMedido} — ${distancia ? distancia.distancia : `${v.distanciaKm} km da loja`}${distancia?.limite ? ` (${distancia.limite})` : ""}${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
 - RESULTADO: ✅ A LOJA ATENDE. Taxa de entrega: ${brl(v.taxa ?? 0)}${v.tempoMin && prazoDaLoja.temDado ? ` (${v.tempoMin} min)` : ""}.
-- Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.${linhaDaLocalizacao}${pedirLocalizacao === "aproximado" ? `
+- Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.${linhaDaLocalizacao}${v.peloBairro && !coordsQueValem ? `
+- O mapa achou o BAIRRO do cliente, não a rua: a taxa acima é a do bairro e VALE — pode fechar o pedido com ela. NÃO peça a localização por causa disso. Só confira que o endereço escrito tem rua, número e um ponto de referência (é o que o entregador usa para achar a casa).` : ""}${pedirLocalizacao === "aproximado" ? `
 - ⚠️ O mapa só achou este endereço de forma APROXIMADA (centro do bairro, rua que existe em mais de um lugar, ou ponto longe da rua): a taxa acima é uma ESTIMATIVA. ANTES de fechar o pedido, peça a localização do cliente, numa frase só: "Pra calcular a taxa certinha, me manda sua localização? ${COMO_MANDAR_A_LOCALIZACAO}" Se ele não puder mandar, siga com a taxa estimada e diga que a loja confere o valor.` : ""}
 `;
       } else if (faltaOPontoDaLoja(v)) {
@@ -1036,7 +1037,8 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
         ? "Esse endereço está FORA da área que a loja desenhou como área de entrega."
         : `${ondeFoiMedido} — ${distancia ? distancia.distancia : `${v.distanciaKm} km da loja`}, e ${distancia?.limite || `a loja entrega até ${v.raioMaxKm} km`}.`}
 - RESULTADO: 🛑 FORA DA ÁREA DE ENTREGA. É PROIBIDO anotar entrega para este endereço, cotar taxa ou pedir pagamento.
-- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && !v.areaDeRisco && distancia?.limite ? ` (fica a ${distancia.distancia}; ${distancia.limite})` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.
+- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && !v.areaDeRisco && distancia?.limite ? ` (fica a ${distancia.distancia}; ${distancia.limite})` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.${v.peloBairro ? `
+- Essa distância foi medida pelo CENTRO DO BAIRRO (o mapa não achou a rua). Se o cliente disser que mora na parte do bairro mais perto da loja, peça a LOCALIZAÇÃO dele (${COMO_MANDAR_A_LOCALIZACAO}) — com ela o sistema mede de novo.` : ""}
 `;
       } else if (pedirLocalizacao === "desconhecido") {
         // R2: em KM/ROTA (e área desenhada), "não sei" nunca vira "faixa mais

@@ -135,6 +135,13 @@ export type VeredictoDeEntrega = {
   /** Os porquês do `pedeConfirmacao`, em português (log e nota do pedido). */
   motivosDaConfirmacao?: string[];
   /**
+   * O aproximado é só "onde no bairro que o cliente escreveu" (lib/geocoding.ts,
+   * peloBairro): o bairro já diz a taxa e se a loja entrega. O site fecha sem
+   * o pino, o robô não pede a localização, e o pedido vai marcado. Fora do
+   * raio, pelo bairro, é FORA — não mais "não sei".
+   */
+  peloBairro?: boolean;
+  /**
    * DESCONHECIDO porque o mapa NÃO RESPONDEU — acabou o prazo, fila cheia,
    * 429/5xx, rede ("indisponivel") ou quem pergunta passou do teto de buscas
    * ("limite"). Sem isto, "não deu para perguntar" saía como "endereço não
@@ -606,6 +613,7 @@ export async function avaliarEntrega(
   // coordenada do cliente nunca — ele já disse onde mora.
   const pede = !coords && check.pedeConfirmacao === true;
   const motivos = pede ? check.motivosDaConfirmacao ?? [] : [];
+  const peloBairro = pede && check.peloBairro === true;
 
   if (!coords && d > DISTANCIA_ABSURDA_KM) {
     // Rua Juriti "a 552 km" em 25/08: o pedido foi entregue normalmente — o
@@ -633,6 +641,7 @@ export async function avaliarEntrega(
     ponto,
     medida: check.medida,
     ...(pede ? { pedeConfirmacao: true, motivosDaConfirmacao: motivos } : { pedeConfirmacao: false }),
+    ...(peloBairro ? { peloBairro: true } : {}),
   };
   const doPonto = pede ? ` — ponto aproximado: ${motivos.join("; ")}` : "";
 
@@ -647,7 +656,10 @@ export async function avaliarEntrega(
       motivo: `${d} km ${comoMediu} ≤ ${check.maxRadiusKm} km${faixaKm != null ? ` (faixa até ${faixaKm} km)` : ""}${doPonto}`,
     };
   }
-  if (pede) {
+  // Pelo bairro, fora do raio é FORA: o bairro que o cliente escreveu fica além
+  // da área. Quem mora na beirada mais perto ainda pode mandar a localização
+  // (o site oferece o GPS e o mapa como opção, não como obrigação).
+  if (pede && !peloBairro) {
     // O ponto APROXIMADO caiu fora — mas a casa pode estar dentro (o centro do
     // bairro a 5,2 km, a casa a 4,6 km). Recusar seria decidir a fronteira com
     // o ponto errado: é "não sei" até o cliente confirmar no mapa — que abre

@@ -290,6 +290,31 @@ conferir("KM/ROTA sem ponto → recusa e pede o pino (nunca 'faixa mais cara')",
     rh?.corpo.precisaConfirmarNoMapa === true && rh.corpo.taxaEstimada === 20 &&
     igual(rh.corpo.pontoAproximado, { lat: -22.8912345, lng: -41.9876543 }), rh);
   conferir("…e o mesmo com a loja COM pino", recusaDoSite(homonimo495, COM_PINO_DA_LOJA)?.corpo.precisaConfirmarNoMapa === true);
+
+  // PELO BAIRRO (25/09/2026): o mapa achou o bairro que o cliente escreveu, não
+  // a rua. O bairro decide a taxa — o site fecha sem o pino, e a loja é avisada.
+  const peloBairro = entregaDoVeredicto(veredicto({
+    resultado: "ATENDE", taxa: 8, distanciaKm: 1.3, faixaKm: 1.5, medida: "rota",
+    pedeConfirmacao: true, aproximado: true, peloBairro: true,
+    motivosDaConfirmacao: ['só o bairro "Jardim Esperança" foi achado no mapa — o ponto é o centro dele'],
+    ponto: { lat: -22.8639, lng: -42.0256, origem: "bairro" },
+  } as Partial<VeredictoDeEntrega>), null);
+  conferir("pelo bairro: não pede o pino (R3 não se aplica), fica marcado", peloBairro.peloBairro === true && peloBairro.pedeConfirmacao === false, peloBairro);
+  conferir("…o site ACEITA, com a loja com ou sem pino",
+    recusaDoSite(peloBairro, COM_PINO_DA_LOJA) === null && recusaDoSite(peloBairro, SEM_PINO_DA_LOJA) === null);
+  const notaPeloBairro = notasDaEntrega(peloBairro, { canal: "site" }).join(" ");
+  conferir("…e a nota diz 'Taxa pelo bairro', não 'confira com o cliente' do aproximado",
+    /Taxa pelo bairro/.test(notaPeloBairro) && !/localizado só de forma aproximada/.test(notaPeloBairro), notaPeloBairro);
+  conferir("…o ponto do bairro é gravado (a roteirização sabe a origem)", pontoParaGravar(peloBairro)?.origem === "bairro");
+  conferir("com o GPS do cliente, o bairro não conta: é o ponto dele",
+    entregaDoVeredicto(veredicto({ resultado: "ATENDE", taxa: 5, peloBairro: true } as Partial<VeredictoDeEntrega>), gps).peloBairro === false);
+  // A cotação pelo bairro volta no pedido com a marca do token.
+  const tokenPeloBairro = entregaDaCotacao({ ...lida!, origemDoPonto: "bairro", peloBairro: true }, "KM", null);
+  conferir("token pelo bairro: aceita sem pino e fica marcado",
+    tokenPeloBairro.peloBairro === true && tokenPeloBairro.pedeConfirmacao === false && recusaDoSite(tokenPeloBairro, COM_PINO_DA_LOJA) === null, tokenPeloBairro);
+  const tokenDoCentroSemMarca = entregaDaCotacao({ ...lida!, origemDoPonto: "bairro" }, "KM", null);
+  conferir("token do centro do bairro SEM a marca (não sai mais, mas se vier): continua pedindo o pino",
+    tokenDoCentroSemMarca.pedeConfirmacao === true && tokenDoCentroSemMarca.peloBairro === false);
   conferir("lojaTemPonto omitido vale como 'tem pino' (texto de sempre)",
     recusaDoSite(naoSei, { temCoordenadaDoCliente: false })?.corpo.pedirGps === undefined);
 

@@ -454,6 +454,7 @@ async function main() {
   conferir("só o centro do bairro: ATENDE com taxa ESTIMADA e pedeConfirmacao",
     bairro.resultado === "ATENDE" && bairro.taxa === 5 && bairro.pedeConfirmacao === true && bairro.aproximado === true, bairro);
   conferir("o ponto vai junto (é onde o pino abre), com origem 'bairro'", bairro.ponto?.origem === "bairro" && bairro.ponto?.lat === centroDoBairro.lat, bairro.ponto);
+  conferir("… e é PELO BAIRRO que o cliente escreveu: o site fecha sem o pino, o robô não pede a localização", bairro.peloBairro === true, bairro);
   conferir("a nota diz 'ponto aproximado'", /ponto aproximado/.test(area.descreverVeredicto(bairro)));
   conferir("a busca pela rua veio ANTES do centro do bairro",
     (() => { const n = chamadas.filter((c) => c.tipo === "nominatim").map((c) => c.url); const iRua = n.findIndex((u) => u.includes("street=")); const iBairro = n.findIndex((u) => /q=Boca/.test(u)); return iRua >= 0 && iBairro > iRua; })());
@@ -482,6 +483,7 @@ async function main() {
   conferir("rua homônima com bairro que não confere: NÃO assume o mais longe como verdade (nunca FORA calado)",
     homonima.resultado !== "FORA" && homonima.pedeConfirmacao === true && !!homonima.ponto, homonima);
   conferir("… e o ponto aproximado fora do raio é DESCONHECIDO (confirme no mapa)", homonima.resultado === "DESCONHECIDO" && homonima.taxa === null);
+  conferir("… e NÃO é pelo bairro: o trecho não tem nada a ver com o bairro escrito", homonima.peloBairro !== true, homonima);
 
   // ════════════════════════════════════════════════════════════════════════
   console.log("\n== Duas ruas no texto e rua homônima pelo bairro (Divinos, 25/09/2026, 20h34) ==");
@@ -515,6 +517,7 @@ async function main() {
   const soATravessa = await avaliarEntrega(divinos, { endereco: "Travessa Pantanal, 130 - Jardim Esperança" });
   conferir("rua homônima: fica o trecho junto do bairro do cliente (não o mais longe, nem o centro do bairro), com confirmação",
     soATravessa.ponto?.lat === travessaCerta.lat && soATravessa.pedeConfirmacao === true, soATravessa);
+  conferir("… é o trecho DENTRO do bairro escrito: vale pelo bairro (fecha sem o pino)", soATravessa.peloBairro === true && soATravessa.resultado === "ATENDE", soATravessa);
 
   const ordem = geocoding.logradourosDoTexto("Rua do forno, travessa pantanal, nº 130, Jardim Esperança");
   conferir("as ruas do texto, a pequena primeiro", JSON.stringify(ordem) === JSON.stringify(["Travessa pantanal", "Rua do forno"]), ordem);
@@ -592,12 +595,50 @@ async function main() {
   await comPino(aoSul(1.1, 0.0061), 1500);
   conferir("com o pino do cliente o Google não é perguntado", contar("google", antes) === 0);
 
+  // O Google conhece o BAIRRO que o mapa aberto não conhece ("Jardim Esperança"
+  // nem existe como bairro no OSM de Cabo Frio, medido em 26/09/2026).
+  const bairroNoGoogle = (p: Ponto, nome: string, cidade = "Cabo Frio") => ({
+    status: "OK",
+    results: [{
+      formatted_address: `${nome}, ${cidade} - RJ`,
+      geometry: { location: { lat: p.lat, lng: p.lng }, location_type: "APPROXIMATE" },
+      types: ["sublocality_level_1", "sublocality", "political"],
+      address_components: [
+        { long_name: nome, types: ["sublocality_level_1", "sublocality", "political"] },
+        { long_name: cidade, types: ["administrative_area_level_2", "political"] },
+      ],
+    }],
+  });
+  const centroDoSol = aoSul(1.15, 0.0033);
+  const enderecoNoSol = "Rua Nova do Loteamento, 12 - Loteamento Sol";
+  zerar();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  google.set(norm(`${enderecoNoSol}, Cabo Frio`), bairroNoGoogle(centroDoSol, "Loteamento Sol"));
+  osrm.set(chave4(centroDoSol), osrmOk(1200));
+  const peloBairroDoGoogle = await avaliarEntrega(divinos, { endereco: enderecoNoSol });
+  conferir("o mapa aberto não conhece o bairro, o Google conhece: é o centro dele, PELO BAIRRO (1,2 km, R$ 8)",
+    peloBairroDoGoogle.resultado === "ATENDE" && peloBairroDoGoogle.ponto?.origem === "bairro" && peloBairroDoGoogle.ponto?.lat === centroDoSol.lat &&
+    peloBairroDoGoogle.peloBairro === true && peloBairroDoGoogle.taxa === 8, peloBairroDoGoogle);
+  zerar();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  google.set(norm(`${enderecoNoSol}, Cabo Frio`), bairroNoGoogle(centroDoSol, "Jardim Caiçara"));
+  const outroBairroNoGoogle = await avaliarEntrega(divinos, { endereco: enderecoNoSol });
+  conferir("o Google devolveu OUTRO bairro: não vale como o centro do bairro escrito", outroBairroNoGoogle.resultado === "DESCONHECIDO" && outroBairroNoGoogle.peloBairro !== true, outroBairroNoGoogle);
+  zerar();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  const centroDoSolNoOsm = aoSul(1.12, 0.0034);
+  nominatim.set(norm("Loteamento Sol, Cabo Frio"), { status: 200, corpo: [lugar(centroDoSolNoOsm, { suburb: "Loteamento Sol", classe: "place", tipo: "suburb", display: "Loteamento Sol, Cabo Frio, Rio de Janeiro, Brasil" })] });
+  google.set(norm(`${enderecoNoSol}, Cabo Frio`), bairroNoGoogle(centroDoSol, "Loteamento Sol"));
+  const osmPrimeiro = await avaliarEntrega(divinos, { endereco: enderecoNoSol });
+  conferir("o OSM conhece o bairro: vale o centro dele (o do Google é só a reserva)", osmPrimeiro.ponto?.lat === centroDoSolNoOsm.lat && osmPrimeiro.peloBairro === true, osmPrimeiro.ponto);
+
   zerar();
   const praia = aoSul(3.2, 0.01);
   nominatim.set(norm("Rua da Praia, 10 - Braga, Cabo Frio"), { status: 200, corpo: [lugar(praia, { road: "Rua da Praia", suburb: "Braga", house_number: "10" })] });
   osrm.set(chave4(praia), osrmOk(4300, 351));
   const arrastado = await avaliarEntrega(divinos, { endereco: "Rua da Praia, 10 - Braga, Cabo Frio", partes: { street: "Rua da Praia", number: "10", neighborhood: "Braga", city: "Cabo Frio" } });
   conferir("roteador arrastou o ponto 351 m até a rua: pedeConfirmacao", arrastado.resultado === "ATENDE" && arrastado.pedeConfirmacao === true && (arrastado.motivosDaConfirmacao || []).some((m) => /351 m/.test(m)), arrastado);
+  conferir("… e não é pelo bairro (a casa foi achada; a dúvida é a rota)", arrastado.peloBairro !== true, arrastado);
   zerar();
   osrm.set(chave4(praia), osrmOk(4300, 351));
   const pinoNaPraia = await avaliarEntrega(divinos, { endereco: "Rua da Praia, 10", coords: praia, origemDasCoords: "pino" });
@@ -611,6 +652,7 @@ async function main() {
   const soOBairro = await avaliarEntrega(divinos, { endereco: "Boca do Mato" });
   conferir("texto que o mapa resolve como ÁREA (bairro): pedeConfirmacao, origem 'bairro'",
     soOBairro.resultado === "ATENDE" && soOBairro.pedeConfirmacao === true && soOBairro.ponto?.origem === "bairro", soOBairro);
+  conferir("… a ÁREA achada pela busca livre não é pelo bairro (pode ser a cidade, um loteamento): continua pedindo", soOBairro.peloBairro !== true, soOBairro);
   zerar();
   const ruaSemNumero = aoSul(0.8, 0.0007);
   nominatim.set(norm("Rua Beira Alta, Cabo Frio"), { status: 200, corpo: [lugar(ruaSemNumero, { road: "Rua Beira Alta", suburb: "Vila Monte Alegre", classe: "highway", tipo: "residential" })] });

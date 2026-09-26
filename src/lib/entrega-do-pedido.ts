@@ -169,6 +169,12 @@ export type EntregaDoPedido = {
   pedeConfirmacao: boolean;
   /** Os porquês do aproximado, do motor ("centro do bairro", "rua homônima"...). */
   motivosDaConfirmacao: string[];
+  /**
+   * A taxa saiu PELO BAIRRO que o cliente escreveu (o mapa não achou a rua):
+   * não pede o pino (R3 não se aplica) e vai na nota para a loja conferir.
+   * Nunca junto de `pedeConfirmacao`.
+   */
+  peloBairro: boolean;
   raioMaxKm: number | null;
   areaDeRisco: string | null;
   /**
@@ -258,9 +264,11 @@ export function entregaDaCotacao(
     tempoMin: numeroOuNulo(c.tempoMin),
     bairro: null,
     // A cotação só sai assinada quando ATENDE, mas "atende pelo centro do
-    // bairro" ainda é ponto que o cliente não confirmou.
-    pedeConfirmacao: !coords && c.origemDoPonto === "bairro",
-    motivosDaConfirmacao: !coords && c.origemDoPonto === "bairro" ? ["centro do bairro"] : [],
+    // bairro" ainda é ponto que o cliente não confirmou — a não ser que a
+    // cotação tenha saído PELO BAIRRO (o site aceitou a taxa do bairro).
+    pedeConfirmacao: !coords && c.origemDoPonto === "bairro" && c.peloBairro !== true,
+    motivosDaConfirmacao: !coords && c.origemDoPonto === "bairro" && c.peloBairro !== true ? ["centro do bairro"] : [],
+    peloBairro: !coords && c.peloBairro === true,
     raioMaxKm: null,
     areaDeRisco: null,
     lojaSemPonto: false,
@@ -278,7 +286,7 @@ export function entregaDoVeredicto(
     return {
       fonte: "nenhuma", modo: modoDaLoja, resultado: null, taxa: null, distanciaKm: null, medida: null,
       faixaKm: null, ponto: coords, taxaDoEntregador: null, tempoMin: null, bairro: null,
-      pedeConfirmacao: false, motivosDaConfirmacao: [], raioMaxKm: null, areaDeRisco: null,
+      pedeConfirmacao: false, motivosDaConfirmacao: [], peloBairro: false, raioMaxKm: null, areaDeRisco: null,
       lojaSemPonto: false,
       motivo: "avaliação da entrega falhou",
     };
@@ -290,7 +298,9 @@ export function entregaDoVeredicto(
   // confirmou. Pedir de novo seria prender o cliente num laço — confirma o
   // pino, o servidor pede o pino.
   const aproximado = v.pedeConfirmacao === true || v.aproximado === true || v.ponto?.origem === "bairro";
-  const pedeConfirmacao = !coords && aproximado;
+  // Pelo bairro, o bairro já decidiu a taxa: o pedido não pede o pino.
+  const peloBairro = !coords && v.peloBairro === true;
+  const pedeConfirmacao = !coords && aproximado && !peloBairro;
   // Lido sem depender do tipo: o motor ganhou o campo no mesmo dia, e o pedido
   // não pode quebrar se ele vier ausente.
   const brutos = (v as { motivosDaConfirmacao?: unknown }).motivosDaConfirmacao;
@@ -311,6 +321,7 @@ export function entregaDoVeredicto(
     motivosDaConfirmacao: !pedeConfirmacao
       ? []
       : motivosDoMotor.length ? motivosDoMotor : v.ponto?.origem === "bairro" ? ["centro do bairro"] : [],
+    peloBairro,
     raioMaxKm: numeroOuNulo(v.raioMaxKm),
     areaDeRisco: v.areaDeRisco ?? null,
     lojaSemPonto: pontoDaLojaDesconhecido(v),
@@ -527,7 +538,11 @@ export function notasDaEntrega(
         : "fora da área cadastrada";
     notas.push(`[⚠️ Fora da área de entrega (${onde}) — entrega combinada no balcão]`);
   }
-  if (e.pedeConfirmacao && e.resultado !== "DESCONHECIDO") {
+  if (e.peloBairro && e.resultado === "ATENDE") {
+    // O cliente não marcou a casa: a taxa é a do bairro que ele escreveu. A loja
+    // confere o endereço antes de sair (e corrige a taxa se precisar, R10).
+    notas.push("[📍 Taxa pelo bairro: o mapa achou o bairro, não a rua do cliente — confira o endereço antes de sair]");
+  } else if (e.pedeConfirmacao && e.resultado !== "DESCONHECIDO") {
     const porque = e.motivosDaConfirmacao.length
       ? e.motivosDaConfirmacao.join("; ")
       : e.ponto?.origem === "bairro" ? "centro do bairro" : "ponto não confirmado no mapa";

@@ -85,6 +85,12 @@ export type DeliveryZoneCheckResult = {
   /** Os porquês, em português, para o log e a nota do pedido. */
   motivosDaConfirmacao?: string[];
   /**
+   * O aproximado é só "onde no bairro": o ponto é o centro do bairro que o
+   * cliente escreveu (ou o trecho da rua homônima que fica nele). A taxa pelo
+   * bairro vale sem o pino — o pedido vai marcado para a loja conferir.
+   */
+  peloBairro?: boolean;
+  /**
    * Por que não achou: o mapa não conhece ("nao-achado"), acabou o tempo da
    * cotação ("prazo"), o mapa não respondeu — fila cheia, 429, 5xx, rede
    * ("indisponivel") — ou quem pergunta passou do teto de buscas ("limite").
@@ -834,6 +840,14 @@ export async function verifyStoreDeliveryAddress(
   let cidadesDoResultado: string[] | undefined;
   /** Por que este ponto precisa da confirmação do cliente (vazio = não precisa). */
   const motivos: string[] = [];
+  /**
+   * O ponto aproximado veio do BAIRRO que o cliente escreveu: o centro dele, ou
+   * o trecho da rua homônima que fica nele. A dúvida é só ONDE no bairro — e a
+   * taxa pelo bairro é a noção que a loja aceita sem o pino (peloBairro).
+   */
+  let aproximadoNoBairro = false;
+  /** Sinais de que o bairro achado é OUTRO (outra cidade, longe demais): aí não vale a taxa pelo bairro. */
+  let bairroDeOutroLugar = false;
 
   if (coordsDoCliente) {
     customerLat = coordsDoCliente.lat;
@@ -1072,6 +1086,13 @@ export async function verifyStoreDeliveryAddress(
     // Só vale o ponto da CASA ou da RUA, da cidade da loja, com a rua e o
     // bairro que o cliente escreveu. Falha dele não é "o mapa não respondeu":
     // o mapa aberto respondeu, e a cascata segue como sempre.
+    /**
+     * O Google achou só o BAIRRO que o cliente escreveu (sem a rua). Não decide
+     * sozinho: é o centro do bairro quando o mapa aberto não conhece o bairro —
+     * o "Jardim Esperança" que no OSM de Cabo Frio nem existe como bairro. Vale
+     * também de régua para a rua homônima e a rua de outro bairro, abaixo.
+     */
+    let bairroDoGoogle: { lat: number; lng: number; displayName: string; cidades?: string[] } | null = null;
     if (!foundGeo && geo.google && temTempoNoMapa()) {
       const g = await geo.google(textoParaOMapa, city, loja, prazoDoMapa);
       const r = g.ok ? g.valor : null;
@@ -1080,6 +1101,8 @@ export async function verifyStoreDeliveryAddress(
         const ruaBate = ruasDoCliente.length === 0 || (!!r.rua && ruasDoCliente.some((x) => ruaConfere(x, r.rua)));
         const bairroBate = !neigh || !r.bairro || bairroConfere(neigh, r.bairro);
         if (ruaBate && bairroBate) aceitar({ lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades }, r.precisao);
+      } else if (r && neigh && r.bairro && bairroConfere(neigh, r.bairro)) {
+        bairroDoGoogle = { lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades };
       }
     }
 
@@ -1102,10 +1125,11 @@ export async function verifyStoreDeliveryAddress(
         const r = await buscarLivre(consultaDoBairro);
         if (!r.ok) {
           falha ??= r.motivo;
-        } else if (r.valor) {
-          const perto = trechoMaisPerto(reservaHomonima.trechos, r.valor);
+        } else if (r.valor || bairroDoGoogle) {
+          const perto = trechoMaisPerto(reservaHomonima.trechos, (r.valor || bairroDoGoogle)!);
           if (perto && perto.km <= PERTO_DO_BAIRRO_KM) {
             aceitar(perto.trecho, "rua");
+            aproximadoNoBairro = true;
             motivos.push(`${reservaHomonima.motivo} — ficou o trecho a ${String(perto.km).replace(".", ",")} km do bairro`);
           }
         }
@@ -1122,7 +1146,8 @@ export async function verifyStoreDeliveryAddress(
         if (!r.ok) {
           falha ??= r.motivo;
         } else {
-          const km = r.valor ? haversineDistanceKm(candidato.lat, candidato.lng, r.valor.lat, r.valor.lng) : null;
+          const centroDoBairro = r.valor || bairroDoGoogle;
+          const km = centroDoBairro ? haversineDistanceKm(candidato.lat, candidato.lng, centroDoBairro.lat, centroDoBairro.lng) : null;
           const ondeFica = candidato.bairro || candidato.suburb || "outro bairro";
           if (km == null || km <= PERTO_DO_BAIRRO_KM) {
             // O mesmo lugar com outro nome (ou o mapa não conhece o bairro:
@@ -1150,9 +1175,11 @@ export async function verifyStoreDeliveryAddress(
         return falhou("prazo", { maxRadiusKm, centroDaLoja: loja });
       }
       const r = await buscarLivre(consultaDoBairro);
-      if (!r.ok) return falhou(r.motivo, { maxRadiusKm, centroDaLoja: loja });
-      if (r.valor) {
-        aceitar(r.valor, "bairro");
+      if (!r.ok && !bairroDoGoogle) return falhou(r.motivo, { maxRadiusKm, centroDaLoja: loja });
+      const centro = (r.ok ? r.valor : null) || bairroDoGoogle;
+      if (centro) {
+        aceitar(centro, "bairro");
+        aproximadoNoBairro = true;
         motivos.push(motivoDoCandidato ? `${motivoDoCandidato} — o ponto é o centro do bairro` : `só o bairro "${neigh}" foi achado no mapa — o ponto é o centro dele`);
       }
     }
@@ -1203,7 +1230,10 @@ export async function verifyStoreDeliveryAddress(
     // Homônimo em OUTRO município: a rua existe na cidade vizinha e o mapa foi
     // lá. Não é "fora": é "não sei" até o cliente confirmar.
     const outroMunicipio = storeCity ? foraDoMunicipio(storeCity, cidadesDoResultado, `${customerAddressText} ${parsedDetails?.city || ""}`) : null;
-    if (outroMunicipio) motivos.push(`o mapa achou o endereço em ${outroMunicipio}, fora de ${storeCity}`);
+    if (outroMunicipio) {
+      bairroDeOutroLugar = true;
+      motivos.push(`o mapa achou o endereço em ${outroMunicipio}, fora de ${storeCity}`);
+    }
   }
 
   // ── 3. A DISTÂNCIA: EM LINHA RETA OU PELAS RUAS ──────────────────────
@@ -1223,6 +1253,7 @@ export async function verifyStoreDeliveryAddress(
   const emLinhaReta = Math.round(retaExata * 100) / 100;
   const textual = !coordsDoCliente;
   if (textual && emLinhaReta > 2 * maxRadiusKm) {
+    bairroDeOutroLugar = true;
     motivos.push(`o ponto caiu a ${emLinhaReta} km da loja, mais que o dobro do raio de ${maxRadiusKm} km — provável homônimo`);
   }
 
@@ -1265,6 +1296,12 @@ export async function verifyStoreDeliveryAddress(
   const deliveryFee = faixa ? faixa.fee : baseStoreFee;
   const estimatedTimeMin = faixa ? faixa.time : 45;
   const pedeConfirmacao = textual && motivos.length > 0;
+  // A TAXA PELO BAIRRO (25/09/2026): quando a única dúvida é onde, dentro do
+  // bairro que o cliente escreveu, fica a casa, o bairro já diz a taxa e se a
+  // loja entrega — o site fecha sem o mapa e o pedido vai marcado. Ponto
+  // arrastado até a rua não tira isso (é o mesmo bairro); outra cidade ou
+  // longe demais, sim (é outro bairro com o mesmo nome).
+  const peloBairro = pedeConfirmacao && aproximadoNoBairro && !bairroDeOutroLugar;
 
   return {
     addressFound: true,
@@ -1289,5 +1326,6 @@ export async function verifyStoreDeliveryAddress(
     deslocamentoAteARuaM,
     pedeConfirmacao,
     ...(pedeConfirmacao ? { motivosDaConfirmacao: motivos } : {}),
+    ...(peloBairro ? { peloBairro: true } : {}),
   };
 }
