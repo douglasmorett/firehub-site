@@ -64,7 +64,7 @@ const google = new Map<string, unknown>();
 const geoapify = new Map<string, RespostaSimulada>();
 const ors = new Map<string, RespostaSimulada>();
 type TipoDeChamada = "nominatim" | "osrm" | "reserva" | "google" | "geoapify" | "ors";
-const chamadas: { tipo: TipoDeChamada; url: string; em: number; chave?: string }[] = [];
+const chamadas: { tipo: TipoDeChamada; url: string; em: number; chave?: string; raio?: string }[] = [];
 
 const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -80,7 +80,11 @@ const osrmOk = (metros: number, deslocamento = 5) => ({
   status: 200,
   corpo: { code: "Ok", routes: [{ distance: metros, duration: metros / 8 }], waypoints: [{ distance: 3 }, { distance: deslocamento }] },
 });
-/** A resposta do Geoapify (GeoJSON): o cliente preso à rua em `preso` (padrão: no próprio ponto). */
+/**
+ * A resposta do Geoapify (GeoJSON), como a real de 26/09/2026: os `waypoints`
+ * REPETEM os pontos pedidos, e onde o cliente foi preso à rua (`preso`) é o fim
+ * do desenho.
+ */
 const geoapifyOk = (origem: Ponto, destino: Ponto, metros: number, preso: Ponto = destino) => ({
   status: 200,
   corpo: {
@@ -88,8 +92,9 @@ const geoapifyOk = (origem: Ponto, destino: Ponto, metros: number, preso: Ponto 
     features: [{
       type: "Feature",
       properties: {
-        mode: "drive", distance: metros, time: metros / 8, units: "metric",
-        waypoints: [{ location: [origem.lng, origem.lat], original_index: 0 }, { location: [preso.lng, preso.lat], original_index: 1 }],
+        mode: "drive", distance: metros, distance_units: "meters", time: metros / 8, units: "metric",
+        waypoints: [{ location: [origem.lng, origem.lat], original_index: 0 }, { location: [destino.lng, destino.lat], original_index: 1 }],
+        legs: [{ distance: metros, time: metros / 8, steps: [] }],
       },
       geometry: { type: "MultiLineString", coordinates: [[[origem.lng, origem.lat], [preso.lng, preso.lat]]] },
     }],
@@ -151,10 +156,11 @@ const tentativasOsrm = new Map<string, number>();
     if (r === "pendura") return esperarAbortar(init?.signal);
     return new Response(JSON.stringify(r.corpo), { status: r.status, headers: { "content-type": "application/json" } });
   }
-  if (url.includes("api.openrouteservice.org/v2/directions/driving-car")) {
+  if (url.includes("/openrouteservice/v2/directions/driving-car") || url.includes("api.openrouteservice.org/v2/directions/driving-car")) {
     const cab = (init?.headers || {}) as Record<string, string>;
-    chamadas.push({ tipo: "ors", url, em: Date.now(), chave: cab.Authorization || "" });
-    const [a, b] = JSON.parse(String(init?.body || "{}")).coordinates as [number, number][];
+    const pedido = JSON.parse(String(init?.body || "{}"));
+    chamadas.push({ tipo: "ors", url, em: Date.now(), chave: cab.Authorization || "", raio: JSON.stringify(pedido.radiuses) });
+    const [a, b] = pedido.coordinates as [number, number][];
     const origem = { lat: a[1], lng: a[0] }, destino = { lat: b[1], lng: b[0] };
     const r = ors.get(chave4(destino)) ?? orsOk(origem, destino, retaKm(origem, destino) * 1300);
     if (r === "pendura") return esperarAbortar(init?.signal);
@@ -471,6 +477,9 @@ async function main() {
     peloOrs.medida === "rota" && peloOrs.distanciaKm === 1.74 && contar("geoapify", antes) === 1 && contar("ors", antes) === 1,
     { d: peloOrs.distanciaKm, geo: contar("geoapify", antes), ors: contar("ors", antes) });
   conferir("a chave do openrouteservice vai no cabeçalho", chamadas.slice(antes).find((c) => c.tipo === "ors")?.chave === "chave-ors");
+  conferir("o openrouteservice é perguntado no api.heigit.org, com o raio máximo de busca da rua",
+    chamadas.slice(antes).some((c) => c.tipo === "ors" && c.url.startsWith("https://api.heigit.org/openrouteservice/v2/") && c.raio === "[-1,-1]"),
+    chamadas.slice(antes).filter((c) => c.tipo === "ors"));
   conferir("o 429 tira o Geoapify da cadeia por 60 s, e conta como resposta do reserva",
     rota.estadoDoRoteador().cadeia.find((c) => c.id === "geoapify")?.disjuntorAberto === true && rota.estadoDoRoteador().contagem.respondidasPelaReserva === 1,
     rota.estadoDoRoteador());

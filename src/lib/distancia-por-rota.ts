@@ -528,8 +528,12 @@ async function perguntarAoOsrm(base: string, origem: Ponto, destino: Ponto, praz
  * GEOAPIFY (apidocs.geoapify.com/docs/routing): GET /v1/routing, waypoints
  * "lat,lon|lat,lon", modo "drive" (o mesmo carro do OSRM: a taxa não pode
  * mudar conforme quem respondeu). A resposta é GeoJSON: distância em metros e
- * tempo em segundos em `features[0].properties`; o ponto em que o cliente foi
- * preso à rua vem em `properties.waypoints[].location` ([lon, lat]).
+ * tempo em segundos em `features[0].properties`.
+ *
+ * Onde o cliente foi preso à rua é o ÚLTIMO ponto do desenho da rota. O
+ * `properties.waypoints[].location` só devolve o ponto pedido — medido em
+ * 26/09/2026 com um ponto a ~120 m da rua: os waypoints repetiam a entrada, e
+ * o desenho terminava na rua.
  */
 async function perguntarAoGeoapify(chave: string, origem: Ponto, destino: Ponto, prazoMs: number): Promise<Resposta> {
   const pontos = encodeURIComponent(`${origem.lat},${origem.lng}|${destino.lat},${destino.lng}`);
@@ -538,10 +542,15 @@ async function perguntarAoGeoapify(chave: string, origem: Ponto, destino: Ponto,
   const d = await lerJson(r);
   const mensagem = String(d?.message || d?.error || "").slice(0, 120);
   if (r.ok) {
-    const p = Array.isArray(d?.features) ? d.features[0]?.properties : null;
+    const f = Array.isArray(d?.features) ? d.features[0] : null;
+    const p = f?.properties;
     if (!p) return { ok: false, definitiva: true, motivo: "Geoapify: sem rota" };
-    const preso = Array.isArray(p.waypoints) ? p.waypoints.find((w: any) => w?.original_index === 1) ?? p.waypoints[1] : null;
-    const onde = Array.isArray(preso?.location) ? { lat: Number(preso.location[1]), lng: Number(preso.location[0]) } : null;
+    // MultiLineString (uma linha por perna) ou LineString: o fim da última linha.
+    const g = f?.geometry;
+    const linhas: unknown[] = g?.type === "MultiLineString" && Array.isArray(g.coordinates) ? g.coordinates : [g?.coordinates];
+    const ultimaLinha = linhas[linhas.length - 1];
+    const ultimo = Array.isArray(ultimaLinha) ? ultimaLinha[ultimaLinha.length - 1] : null;
+    const onde = Array.isArray(ultimo) ? { lat: Number(ultimo[1]), lng: Number(ultimo[0]) } : null;
     const deslocamento = onde && Number.isFinite(onde.lat) && Number.isFinite(onde.lng) ? linhaRetaKm(destino, onde) * 1000 : null;
     return respostaMedida(Number(p.distance), Number(p.time), deslocamento);
   }
@@ -560,12 +569,21 @@ const CODIGOS_DEFINITIVOS_DO_ORS = new Set([2009, 2010]);
  * `features[0].properties.summary`; o último ponto do desenho é onde o
  * cliente foi preso à rua. Só vão as coordenadas: os termos proíbem mandar
  * dado pessoal, e nome ou telefone nunca saem daqui.
+ *
+ * O endereço é o api.heigit.org: o api.openrouteservice.org foi descontinuado
+ * (aviso na conta HeiGIT; desligamento marcado para 24/08/2026). E o raio de
+ * busca da rua vai no máximo (`radiuses: -1`): no padrão de 350 m, um ponto do
+ * Jardim Esperança dava "Could not find routable point" (2010) enquanto o OSRM
+ * e o Geoapify achavam a rua. Ponto preso longe da rua vira deslocamento, e
+ * quem chama pede confirmação acima de 150 m (DESLOCAMENTO_SUSPEITO_M).
  */
+const URL_DO_ORS = "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson";
+
 async function perguntarAoOrs(chave: string, origem: Ponto, destino: Ponto, prazoMs: number): Promise<Resposta> {
-  const r = await buscar("https://api.openrouteservice.org/v2/directions/driving-car/geojson", prazoMs, {
+  const r = await buscar(URL_DO_ORS, prazoMs, {
     method: "POST",
     headers: { Authorization: chave, "Content-Type": "application/json", Accept: "application/geo+json, application/json" },
-    body: JSON.stringify({ coordinates: [[origem.lng, origem.lat], [destino.lng, destino.lat]], instructions: false }),
+    body: JSON.stringify({ coordinates: [[origem.lng, origem.lat], [destino.lng, destino.lat]], instructions: false, radiuses: [-1, -1] }),
   });
   if (!(r instanceof Response)) return r;
   const d = await lerJson(r);
