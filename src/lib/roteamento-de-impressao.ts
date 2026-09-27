@@ -22,6 +22,7 @@ import { moduloDoPedido, impressoraAtendeModulo, type ModuloDePedido } from "./m
 import { impressorasDaLoja, type PedidoComOrigem } from "./loja-de-origem";
 import { CATEGORIAS_DE_INTEGRACAO } from "./cardapio-interno";
 import { impressorasDoAndar, type AndarDaMesa } from "./andares-da-mesa";
+import { isBeverageCategory, isBeverageName } from "./beverage";
 
 export type ImpressoraConfigurada = {
   /** O id do cadastro — é por ele que o andar escolhe a impressora. */
@@ -35,6 +36,11 @@ export type ImpressoraConfigurada = {
   escposProfile?: string | null;
   modulos?: ModuloDePedido[] | null;
   somenteBebidas?: boolean | null;
+  /**
+   * Recebe o pedido que é SÓ bebida — e, quando recebe, as outras não. Pedido
+   * com qualquer comida não vem para ela. Ver `impressorasPeloPedidoSoDeBebida`.
+   */
+  pedidoSoDeBebida?: boolean | null;
   /** true = uma linha por unidade no papel desta impressora. */
   separarItens?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
@@ -45,8 +51,11 @@ export type ImpressoraConfigurada = {
 
 type ItemDoPedido = {
   name?: string | null;
+  productName?: string | null;
   category?: string | null;
-  menuProduct?: { name?: string | null; category?: string | null } | null;
+  isBeverage?: boolean | null;
+  comboSelections?: unknown;
+  menuProduct?: { name?: string | null; category?: string | null; isBeverage?: boolean | null } | null;
 };
 
 const texto = (v: unknown) => String(v ?? "").toLowerCase().trim();
@@ -110,7 +119,7 @@ export function categoriasPedidas(
 ): Set<string> {
   const pedidas = new Set<string>();
   for (const imp of impressoras || []) {
-    if (!imp || imp.somenteBebidas === true) continue;
+    if (!imp || imp.somenteBebidas === true || imp.pedidoSoDeBebida === true) continue;
     for (const c of imp.categories || []) {
       const cat = texto(c);
       if (cat && !ehCategoriaDeOrigem(cat, pedido?.source)) pedidas.add(cat);
@@ -149,6 +158,10 @@ export function itensDaImpressora<T extends ItemDoPedido>(
   pedidas?: Set<string>
 ): T[] | null {
   const itens = pedido?.items || [];
+
+  // A do pedido só de bebida recebe o pedido inteiro: quem decidiu que ele
+  // vem para cá foi `impressorasPeloPedidoSoDeBebida`, e tudo nele é bebida.
+  if (impressora.pedidoSoDeBebida === true) return itens as T[];
 
   // Só bebida NÃO passa pelo filtro de categoria, e isso é o ponto: o combo tem
   // categoria "Combos", seria descartado, e a bebida de dentro dele nunca seria
@@ -220,17 +233,82 @@ export function restoDoPedido(
   return itens > 0 && centavos > 0 ? { itens, valor: centavos / 100 } : undefined;
 }
 
+/* ── PEDIDO SÓ DE BEBIDA ───────────────────────────────────────────────────
+ *
+ * NIK Pizzas (27/09/2026): refrigerante vendido sozinho no balcão tem de sair
+ * na impressora do balcão; pedido com pizza e refrigerante sai INTEIRO na
+ * cozinha. Nenhuma das opções que existiam fazia isso:
+ *   - "só bebida" puxa as bebidas de TODO pedido, e o refrigerante do pedido
+ *     com pizza ia para o balcão, separado da pizza;
+ *   - categoria "Bebidas" na impressora do balcão faz o mesmo;
+ *   - e a cozinha, sem filtro, recebia também o refrigerante sozinho.
+ * A decisão aqui é sobre o PEDIDO, não sobre o item: todo ele é bebida?
+ *
+ * Na dúvida o item NÃO é bebida — o erro manda a comanda para a cozinha, que
+ * é como a loja imprimia até hoje, e nunca tira a comida da cozinha. */
+
+/** Um item do pedido é bebida por si só (não o combo que tem bebida dentro). */
+function itemEhBebida(item: ItemDoPedido | null | undefined, source: unknown, palavrasDaLoja?: string | string[] | null): boolean {
+  if (!item) return false;
+  if (item.isBeverage === true || item.menuProduct?.isBeverage === true) return true;
+
+  const categoria = String(item.category ?? item.menuProduct?.category ?? "").trim();
+  // A categoria da loja decide: "Refrigerantes" é bebida, "Combos" não é —
+  // nem o "Combo Pizza + Coca", que tem coca no nome.
+  if (categoria && !ehCategoriaDeOrigem(categoria, source)) return isBeverageCategory(categoria);
+
+  // Sem categoria (ou só o espelho da plataforma): pelo nome, e nunca o que
+  // tem cara de combo ("Pizza + Coca 2L").
+  const nome = String(item.name ?? item.productName ?? item.menuProduct?.name ?? "");
+  if (/\bcombo\b|\+/i.test(nome)) return false;
+  return isBeverageName(nome, palavrasDaLoja || undefined);
+}
+
+/** Todos os itens do pedido são bebida? Pedido vazio não é. */
+export function pedidoEhSoBebida(
+  pedido: { source?: unknown; items?: ItemDoPedido[] | null },
+  palavrasDaLoja?: string | string[] | null
+): boolean {
+  const itens = pedido?.items || [];
+  return itens.length > 0 && itens.every((item) => itemEhBebida(item, pedido?.source, palavrasDaLoja));
+}
+
+/**
+ * Tira ou deixa só as impressoras de "pedido só de bebida".
+ *
+ *   - Pedido só de bebida, e alguma dessas atende o módulo dele: só elas.
+ *   - Qualquer outro caso: todas MENOS elas — a do pedido só de bebida nunca
+ *     recebe comida, nem parte de pedido com comida.
+ *
+ * O módulo é o que limita a regra: a do balcão marcada só em "Salão" pega o
+ * refrigerante do balcão e da mesa; o refrigerante sozinho do iFood continua
+ * na impressora do delivery.
+ */
+export function impressorasPeloPedidoSoDeBebida<P extends ImpressoraConfigurada>(
+  impressoras: P[],
+  pedido: { source?: unknown; items?: ItemDoPedido[] | null },
+  palavrasDaLoja?: string | string[] | null
+): P[] {
+  const modulo = moduloDoPedido(pedido?.source as any);
+  const deBebida = impressoras.filter((p) => p.pedidoSoDeBebida === true && impressoraAtendeModulo(p.modulos as any, modulo));
+  if (deBebida.length > 0 && pedidoEhSoBebida(pedido, palavrasDaLoja)) return deBebida;
+  return impressoras.filter((p) => p.pedidoSoDeBebida !== true);
+}
+
 /**
  * Para quais impressoras este pedido vai, já com os itens de cada uma.
  *
  * `impressoras` vazio devolve lista vazia: quem chama decide o que fazer sem
  * configuração — o navegador detecta a impressora padrão, a fila cai na antiga.
+ * `palavrasDeBebida` são as da loja (printerConfig.customBeverageKeywords).
  */
 export function destinosDoPedido<T extends ItemDoPedido>(
   impressoras: ImpressoraConfigurada[],
   pedido: { source?: unknown; items?: T[] | null },
   /** Andares do salão e o número da mesa deste pedido (lib/andares-da-mesa.ts). */
-  salao?: { andares?: AndarDaMesa[] | null; mesa?: unknown }
+  salao?: { andares?: AndarDaMesa[] | null; mesa?: unknown },
+  /** As palavras de bebida da loja (printerConfig.customBeverageKeywords). */
+  opcoes: { palavrasDeBebida?: string | string[] | null } = {}
 ): { impressora: ImpressoraConfigurada; itens: T[] }[] {
   // ── DE QUAL LOJA É ESTE PEDIDO ──
   // Três marcas no iFood no mesmo painel: a impressora da Ragnar Pizza não
@@ -251,26 +329,35 @@ export function destinosDoPedido<T extends ItemDoPedido>(
     salao?.mesa
   );
 
+  // Pedido só de bebida vai só para a impressora dele; os outros nunca vão.
+  //
+  // ANTES de deduplicar: a loja cadastra a MESMA impressora duas vezes — uma
+  // como sempre foi, outra com "pedido só de bebida" (NIK, 27/09/2026). Com a
+  // deduplicação primeiro, sobrava a linha que viesse antes na lista, e a
+  // outra regra sumia calada: ou o refrigerante sozinho ia para a cozinha, ou
+  // o balcão parava de receber o pedido com pizza.
+  const candidatasComRepeticao = impressorasPeloPedidoSoDeBebida(validas, pedido, opcoes.palavrasDeBebida);
+
   // Deduplica pela impressora FÍSICA: duas linhas apontando para o mesmo nome
   // do Windows fariam o mesmo papel sair duas vezes.
   const vistas = new Set<string>();
-  const unicas: ImpressoraConfigurada[] = [];
-  for (const imp of validas) {
+  const candidatas: ImpressoraConfigurada[] = [];
+  for (const imp of candidatasComRepeticao) {
     const chave = texto(imp.name);
     if (vistas.has(chave)) continue;
     vistas.add(chave);
-    unicas.push(imp);
+    candidatas.push(imp);
   }
 
   // Quem pede o quê, entre as que de fato recebem este pedido.
   const modulo = moduloDoPedido(pedido?.source as any);
   const pedidas = categoriasPedidas(
-    unicas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo)),
+    candidatas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo)),
     pedido
   );
 
   const destinos: { impressora: ImpressoraConfigurada; itens: T[] }[] = [];
-  for (const imp of unicas) {
+  for (const imp of candidatas) {
     const itens = itensParaImpressora(imp, pedido, pedidas);
     if (itens === null) continue;
     destinos.push({ impressora: imp, itens });

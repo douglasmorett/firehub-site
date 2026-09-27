@@ -4,7 +4,7 @@ import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
 import { impressorasDoAndar, lerAndares } from "./andares-da-mesa";
-import { categoriasPedidas, itensDaImpressora, restoDoPedido } from "./roteamento-de-impressao";
+import { categoriasPedidas, impressorasPeloPedidoSoDeBebida, itensDaImpressora, restoDoPedido } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
@@ -160,6 +160,8 @@ export type PrinterEntry = {
   escposProfile?: EscPosProfile;
   /* So bebida: mesmo dentro de combo, so a bebida sai nesta impressora. */
   somenteBebidas?: boolean;
+  /** Recebe o pedido que é SÓ bebida, e só ele (lib/roteamento-de-impressao.ts). */
+  pedidoSoDeBebida?: boolean;
   /** true = uma linha por unidade ("1x X-Bacon" cinco vezes). Ausente = agrupado. */
   separarItens?: boolean;
   /* Quais mundos esta impressora atende: salao, delivery, ou os dois.
@@ -533,6 +535,31 @@ export async function printOrder(
   // camposDaMesaParaImpressao ja poe no pedido formatado.
   printersToUse = impressorasDoAndar(printersToUse, lerAndares(printerConfig), (order as any).mesa);
 
+  // ── CADA IMPRESSORA COM OS SEUS ITENS ──────────────────────────────────
+  // Mesma regra da fila da nuvem (roteamento-de-impressao.ts): só bebida leva
+  // o pedido inteiro e o Assistente separa; categoria leva o que é dela; e o
+  // que NENHUMA impressora pediu vai para as que ficariam sem nada. Aqui a
+  // categoria vem do cardápio aberto na tela (`itemCategories`), e o objeto
+  // do item segue intacto para o papel.
+  const itensComCategoria = order.items.map(item => ({
+    item,
+    category: itemCategories[item.name] || (item as any).category || "",
+    // O que o "pedido só de bebida" olha além da categoria.
+    name: item.name,
+    isBeverage: (item as any).isBeverage === true || (item as any).menuProduct?.isBeverage === true,
+  }));
+  const pedidoParaRotear = { source: (order as any).source, items: itensComCategoria };
+
+  // Pedido só de bebida vai só para a impressora dele; os outros nunca vão
+  // (mesma regra da fila, roteamento-de-impressao.ts). ANTES de deduplicar:
+  // a mesma impressora cadastrada duas vezes — uma normal, outra de pedido só
+  // de bebida — perderia a linha que viesse depois na lista.
+  printersToUse = impressorasPeloPedidoSoDeBebida(
+    printersToUse,
+    pedidoParaRotear,
+    printerConfig?.customBeverageKeywords
+  );
+
   // Deduplica impressoras para a mesma impressora física não receber o pedido 2x
   const uniquePrinters: PrinterEntry[] = [];
   const seenPrinterNames = new Set<string>();
@@ -548,17 +575,6 @@ export async function printOrder(
   // Alguma impressora respondeu "pendente no Assistente": ele vai insistir.
   let aguardando = false;
 
-  // ── CADA IMPRESSORA COM OS SEUS ITENS ──────────────────────────────────
-  // Mesma regra da fila da nuvem (roteamento-de-impressao.ts): só bebida leva
-  // o pedido inteiro e o Assistente separa; categoria leva o que é dela; e o
-  // que NENHUMA impressora pediu vai para as que ficariam sem nada. Aqui a
-  // categoria vem do cardápio aberto na tela (`itemCategories`), e o objeto
-  // do item segue intacto para o papel.
-  const itensComCategoria = order.items.map(item => ({
-    item,
-    category: itemCategories[item.name] || (item as any).category || "",
-  }));
-  const pedidoParaRotear = { source: (order as any).source, items: itensComCategoria };
   const pedidas = categoriasPedidas(uniquePrinters, pedidoParaRotear);
 
   for (const printer of uniquePrinters) {

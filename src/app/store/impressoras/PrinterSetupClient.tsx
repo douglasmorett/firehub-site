@@ -61,6 +61,9 @@ type PrinterEntry = {
   modulos?: ModuloDePedido[];
   // So bebida: mesmo dentro de combo, so a bebida sai nesta impressora.
   somenteBebidas?: boolean;
+  // Pedido SO de bebida: recebe o pedido que e todo bebida, e so ele; as
+  // outras nao imprimem esse pedido (lib/roteamento-de-impressao.ts).
+  pedidoSoDeBebida?: boolean;
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
@@ -1249,6 +1252,56 @@ export default function PrinterSetupClient({
                   dentro do combo só funciona a partir da {VERSAO_ASSISTENTE_ATUAL} — até atualizar,
                   esta impressora vai receber o pedido inteiro. Baixe o instalador lá em cima.
                 </p>
+              )}
+            </div>
+
+            {/* ── Pedido só de bebida ──
+                NIK Pizzas (27/09/2026): o refrigerante vendido sozinho no
+                balcão sai no balcão; o pedido com pizza sai inteiro na
+                cozinha. "Só bebida" não serve — ele tira a bebida de TODO
+                pedido, inclusive do que tem pizza. A decisão é sobre o pedido
+                inteiro e mora em lib/roteamento-de-impressao.ts. */}
+            <div style={{ marginBottom: "1rem" }}>
+              <button
+                onClick={() => updatePrinter(printer.id, { pedidoSoDeBebida: !printer.pedidoSoDeBebida })}
+                style={{
+                  width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                  padding: "12px 14px", borderRadius: 12,
+                  border: printer.pedidoSoDeBebida ? "2px solid #1C1917" : "1.5px solid #E2E8F0",
+                  background: printer.pedidoSoDeBebida ? "#FAF6F2" : "#fff",
+                  color: printer.pedidoSoDeBebida ? "#1C1917" : "#64748B",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: "0.88rem" }}>
+                  {printer.pedidoSoDeBebida ? "✓" : "○"} 🧃 Pedido só de bebida
+                </div>
+                <div style={{ fontSize: "0.76rem", fontWeight: 500, marginTop: 3, lineHeight: 1.4, opacity: 0.9 }}>
+                  Marcado, esta impressora recebe o pedido que é <strong>todo bebida</strong> — e ele não sai
+                  nas outras. Pedido com qualquer comida não vem para cá: sai inteiro, bebida junto, nas
+                  impressoras de sempre.
+                </div>
+              </button>
+              {printer.pedidoSoDeBebida && (
+                <div style={{ fontSize: "0.74rem", color: "#475569", margin: "6px 0 0", lineHeight: 1.45 }}>
+                  <p style={{ margin: 0 }}>
+                    Vale para o que está marcado em <strong>Quando esta impressora imprime</strong>: marcada só
+                    em Balcão e mesa, pega a bebida sozinha do balcão e da mesa; a do delivery segue na impressora do delivery.
+                  </p>
+                  <p style={{ margin: "4px 0 0" }}>
+                    É bebida o produto de categoria de bebida (Bebidas, Refrigerantes, Sucos, Cervejas, Águas,
+                    Drinks, Vinhos…). Refrigerante cadastrado em outra categoria conta como comida e sai na cozinha.
+                  </p>
+                  <p style={{ margin: "4px 0 0" }}>
+                    Esta impressora também tira outras comandas? Cadastre-a de novo em <strong>+ Adicionar impressora</strong>,
+                    escolhendo a mesma no Windows e sem esta opção: uma linha segue como sempre, a outra pega o pedido só
+                    de bebida — e o papel não sai em dobro.
+                  </p>
+                  {(printer.somenteBebidas || (printer.categories || []).length > 0) && (
+                    <p style={{ margin: "4px 0 0", color: "#B45309", fontWeight: 700 }}>
+                      Com isto ligado, "Imprimir só bebida" e as categorias abaixo não valem para esta impressora.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
 
