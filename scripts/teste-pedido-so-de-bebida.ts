@@ -35,7 +35,7 @@ const PIZZA = item("Pizza Calabresa G", "Pizzas Tradicionais");
 const COMBO = item("Combo Pizza G + Coca 2L", "Combos");
 
 const para = (impressoras: ImpressoraConfigurada[], pedido: { source?: string; items: any[] }, palavras?: string) =>
-  destinosDoPedido(impressoras, pedido, undefined, { palavrasDeBebida: palavras }).map((d) => `${d.impressora.name}:${d.itens.map((i: any) => i.name).join("+")}`);
+  destinosDoPedido(impressoras, pedido, { palavrasDeBebida: palavras }).map((d) => `${d.impressora.name}:${d.itens.map((i: any) => i.name).join("+")}`);
 
 // ── O pedido da NIK ──
 confere("balcão, só refrigerante → só no BALCAO", para(NIK, { source: "PRESENCIAL", items: [COCA] }), ["BALCAO:Coca-Cola Lata"]);
