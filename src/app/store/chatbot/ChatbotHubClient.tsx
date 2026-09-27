@@ -3215,8 +3215,13 @@ export default function ChatbotHubClient() {
                   <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>
                     🏢 Tipo de Atendimento (Possui Loja Física?)
                   </div>
-                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px" }}>
-                    Escolha se sua loja recebe clientes no local ou se é 100% focada em delivery.
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px", lineHeight: 1.45 }}>
+                    Serve só para o robô saber o que responder quando o cliente perguntar se pode comer aí ou
+                    qual o endereço. <strong>Nas duas opções o robô continua tirando pedido de delivery
+                    normalmente</strong> — marcar &quot;Atende no local&quot; não muda nada no delivery.
+                    <br />
+                    <strong>Atende no local:</strong> ele diz que tem salão e passa o endereço.{" "}
+                    <strong>Só delivery:</strong> ele diz que a loja só faz entrega (e retirada, se estiver ligada).
                   </div>
                 </div>
 

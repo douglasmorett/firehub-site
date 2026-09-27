@@ -38,6 +38,7 @@ import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { conferirEstoque, estoqueDaLojaOuVazio } from "./estoque-restante";
 import { STATUS_QUE_NAO_CONTAM } from "./estoque-do-cardapio";
 import { marcarAguardandoLoja } from "./finalizar-rascunho";
+import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-fonte";
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
 
@@ -1222,6 +1223,10 @@ ${prazoDaLoja.regra}
     - É PROIBIDO DIVIDIR, SOMAR, CALCULAR OU CHUTAR QUALQUER PREÇO! O valor do item é EXATAMENTE o que está no banco. É PROIBIDO inventar valores diferentes!
     - VOCÊ SÓ PODE OFERECER E REGISTRAR O QUE ESTÁ NA LISTA OFICIAL FORNECIDA. SE O CLIENTE PEDIR UM PRODUTO OU SABOR QUE NÃO EXISTE AQUI, NEGUE COM EDUCAÇÃO E OFEREÇA AS OPÇÕES DISPONÍVEIS.
     - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
+10b. O QUE NÃO ESTÁ ESCRITO, VOCÊ NÃO SABE (serviços e funcionamento da loja):
+    - Rodízio, buffet, self-service, reserva de mesa, estacionamento, música ao vivo, espaço kids, happy hour, Wi-Fi, festa ou evento, e qualquer outra coisa sobre COMO a loja funciona: só afirme se estiver ESCRITO em DADOS DA LOJA, no cardápio ou nas instruções da loja abaixo.
+    - Não deduza pelo tipo de loja. Pizzaria com salão NÃO quer dizer que tem rodízio; ter endereço NÃO quer dizer que tem estacionamento.
+    - Se não estiver escrito, responda que essa informação você não tem aqui e que vai chamar alguém da equipe para confirmar — e inclua no final a marca [[CHAMAR_ATENDENTE]]. Não diga "sim, temos" nem "não temos" por palpite.
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
     - Cite APENAS itens/combos reais cadastrados no cardápio abaixo com o seu preço exato oficial e envie o link (${storeLink}). NUNCA invente ou chute um produto ou preço que não seja o cadastrado no banco!
 12. Quando informar preços, fale de forma natural (ex: "24,90 reais").
@@ -1782,6 +1787,25 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         // As marcas que o modelo escreveu voltam aqui, na grafia que o webhook lê.
         if (modeloMandouCardapio) cleanText = `${cleanText}\n[[ENVIAR_CARDAPIO]]`.trim();
         if (modeloChamouAtendente) cleanText = `${cleanText}\n[[CHAMAR_ATENDENTE]]`.trim();
+
+        // ── O SERVIÇO QUE O ROBÔ AFIRMOU ESTÁ ESCRITO EM ALGUM LUGAR? ───────
+        //
+        // R&D Pizzaria (27/09/2026): o robô disse que a loja tinha rodízio, e
+        // não tem. A régua é só o que é DADO — nome, endereço, cardápio e as
+        // instruções do lojista —, não o prompt inteiro, cujas regras citam
+        // "rodízio" como exemplo (lib/afirmacao-sem-fonte.ts). Resposta que
+        // fecha pedido não passa aqui: trocar o texto dela descolaria a
+        // conversa do pedido que acabou de ser gravado.
+        if (inicioPedido === -1) {
+          const semMarcas = cleanText.replace(/\[\[[\s\S]*?\]\]/g, " ");
+          const fonteDosFatos = [storeName, user.storeAddress, catalogSummary, customPrompt].filter(Boolean).join("\n");
+          const semFonte = servicosSemFonte(semMarcas, fonteDosFatos, { soDelivery: chatbotConfig.storeType !== "PHYSICAL" });
+          if (semFonte.length > 0) {
+            console.warn(`[Chatbot AI] 🚫 Resposta afirmava sem fonte (${semFonte.join(", ")}) — troquei por "não sei" e chamei o atendente. Era: ${semMarcas.slice(0, 200)}`);
+            const transcricao = cleanText.match(/\[\[TRANSCRICAO[\s\S]*?\]\]/)?.[0];
+            cleanText = [RESPOSTA_QUANDO_NAO_SABE, transcricao, "[[CHAMAR_ATENDENTE]]"].filter(Boolean).join("\n");
+          }
+        }
 
         // ── O PREÇO QUE O ROBÔ DISSE EXISTE? ────────────────────────────────
         //
