@@ -992,79 +992,28 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <h3 className="font-bold mb-2">💳 Formas de Pagamento</h3>
         <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.25rem" }}>Gerencie suas formas de pagamento online e na entrega do pedido.</p>
 
-        {/* ── ALERTA DE OBRIGATORIEDADE ── */}
-        <div style={{ background: "#FAF6F2", border: "1.5px solid #E7DDD3", borderRadius: "14px", padding: "1rem 1.25rem", marginBottom: "1.5rem" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-            <ShieldCheck size={20} color="#1C1917" style={{ marginTop: 2, flexShrink: 0 }} />
-            <div style={{ fontSize: "0.83rem", color: "#1C1917", lineHeight: 1.6 }}>
-              <strong>🔒 Pagamento Online no FireHub:</strong>
-              <ul style={{ margin: "4px 0 0", paddingLeft: "1.2rem" }}>
-                <li>O <strong>Pix Online</strong> é <strong>obrigatório e permanece sempre ativo</strong> para garantir praticidade ao cliente final e permitir o abatimento automático da sua fatura mensal.</li>
-                <li>O <strong>Cartão de Crédito Online</strong> pode ser ativado ou desativado por você a qualquer momento.</li>
-                <li>Pendências de mensalidade do sistema são <strong>descontadas automaticamente</strong> das vendas online recebidas.</li>
-              </ul>
+        {/* ── PIX E CARTÃO PELO SITE (conta Asaas da loja) ──
+            Aqui ficavam dois cartões — "Pix Online obrigatório e sempre ativo"
+            e "Cartão online" — com taxas e prazos que nenhum código cumpria
+            (0,5% + R$ 0,40, "estorno automático em 24h", "mensalidade descontada
+            das vendas online"). O pagamento online estava desligado desde
+            23/08/2026. O que existe de verdade agora é Pix e cartão na conta
+            Asaas do próprio lojista, com as regras em lib/pix-online.ts. A
+            conexão mora em Integrações → Asaas; aqui fica o atalho. */}
+        <a
+          href="/store/integracoes?abrir=asaas"
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.5rem", textDecoration: "none", color: "inherit" }}
+        >
+          <div>
+            <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>⚡ Pix e cartão pelo site (Asaas)</div>
+            <div style={{ fontSize: "0.8rem", color: "#64748B", lineHeight: 1.45 }}>
+              O cliente paga na hora, no cardápio, e o dinheiro cai na sua conta Asaas. Conecte, ligue ou desligue em Integrações → Asaas.
             </div>
           </div>
-        </div>
-
-        {/* ── SEÇÃO PAGAMENTO ONLINE ── */}
-        <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem", marginBottom: "1.5rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "1rem" }}>
-            <ShieldCheck size={20} color="#0F766E" />
-            <div>
-              <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>Pagamento online</h4>
-              <span style={{ fontSize: "0.76rem", color: "#64748B" }}>Sempre disponível para seus clientes. Não podem ser desativados.</span>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-            {/* PIX Online */}
-            <div style={{ background: "#fff", border: "1.5px solid #00BFA530", borderRadius: "12px", padding: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Smartphone size={18} color="#0D9488" />
-                  <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Pix</strong>
-                </div>
-                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#E6F4EA", color: "#137333", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>🔒 Sempre ativo</span>
-              </div>
-              <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
-                <div><strong>Taxa:</strong> 0,5% + R$ 0,40 por pedido</div>
-                <div><strong>Recebimento:</strong> Conforme suas configurações de repasse</div>
-                <div style={{ color: "#0F766E", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático em até 24h na conta do cliente ao cancelar</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowRepasseModal(true)}
-                style={{ marginTop: "12px", width: "100%", padding: "7px 12px", borderRadius: "10px", border: "1.5px solid #0D9488", background: "#E6F4EA", color: "#00796B", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "inherit" }}
-              >
-                <Upload size={14} /> Configurar repasse
-              </button>
-            </div>
-
-            {/* Cartão de Crédito Online */}
-            <div style={{ background: "#fff", border: "1.5px solid #9C27B030", borderRadius: "12px", padding: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <CreditCard size={18} color="#44403C" />
-                  <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Cartão de crédito online</strong>
-                </div>
-                <span style={{ padding: "3px 8px", borderRadius: 99, background: "#FFF7E6", color: "#92400E", fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>⚡ D+30 / D+0</span>
-              </div>
-              <div style={{ fontSize: "0.78rem", color: "#475569", lineHeight: 1.7 }}>
-                <div><strong>Taxa:</strong> 3,99% por transação</div>
-                <div><strong>Recebimento:</strong> D+30, ou no mesmo dia (D+0) com +1,7% de adiantamento</div>
-                <div style={{ color: "#0F766E", fontWeight: 600, marginTop: 4 }}>⚡ <strong>Estorno:</strong> Automático na fatura do cartão ao cancelar</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowRepasseModal(true)}
-                style={{ marginTop: "12px", width: "100%", padding: "7px 12px", borderRadius: "10px", border: "1.5px solid #44403C", background: "#F3E5F5", color: "#7B1FA2", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "inherit" }}
-              >
-                <Upload size={14} /> Configurar repasse
-              </button>
-            </div>
-          </div>
-        </div>
+          <span style={{ padding: "8px 14px", borderRadius: 10, background: "#059669", color: "#fff", fontWeight: 700, fontSize: "0.82rem", whiteSpace: "nowrap" }}>
+            Abrir Integrações →
+          </span>
+        </a>
 
         {/* ── SEÇÃO PAGAMENTO NA ENTREGA ── */}
         <h4 style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A", marginBottom: "0.85rem" }}>Pagamento na entrega (Maquininha / Dinheiro)</h4>

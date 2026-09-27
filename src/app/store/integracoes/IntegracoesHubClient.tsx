@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import PagamentoOnlineAsaas from "@/components/customer/PagamentoOnlineAsaas";
 import { CheckCircle2, ShieldCheck, Zap, Key, Store, Save, ExternalLink, RefreshCw, X, ArrowRight, Activity, CreditCard, Radio, Plus, Trash2, Loader2 } from "lucide-react";
 
 export default function IntegracoesHubClient({
@@ -40,7 +41,27 @@ export default function IntegracoesHubClient({
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
-  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "pagarme" | "99food" | "brendi" | "wabiz" | null>(null);
+  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | null>(null);
+
+  // ── ASAAS (Pix e cartão pelo site na conta da loja) ──
+  // O estado vem de /api/store/asaas; o cartão da lista mostra o que é
+  // verdade, e é relido quando o modal fecha (a loja pode ter ligado algo).
+  const [asaas, setAsaas] = useState<{ conectado: boolean; pixAtivo: boolean; cartaoAtivo: boolean } | null>(null);
+  const lerAsaas = () =>
+    fetch("/api/store/asaas")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setAsaas({ conectado: Boolean(d.conectado), pixAtivo: Boolean(d.pixAtivo), cartaoAtivo: Boolean(d.cartaoAtivo) }))
+      .catch(() => {});
+  useEffect(() => {
+    lerAsaas();
+    // Atalho de Minha Loja → Pagamentos: /store/integracoes?abrir=asaas
+    try {
+      if (new URLSearchParams(window.location.search).get("abrir") === "asaas") setOpenModal("asaas");
+    } catch { /* sem window */ }
+  }, []);
+  useEffect(() => {
+    if (openModal === null) lerAsaas();
+  }, [openModal]);
 
   // Meta Pixel state
   const [pixelId, setPixelId] = useState(initialFacebookPixelId || "");
@@ -1150,14 +1171,21 @@ export default function IntegracoesHubClient({
       description: "Gerencie suas integrações iFood. Conecte múltiplas lojas e acompanhe o status.",
     },
     {
-      id: "pagarme" as const,
+      // O cartão "Mercado Pago / Mercado Livre" que ficava aqui dizia
+      // "🟢 PIX / Cartão Ativos" para toda loja — o pagamento online estava
+      // desligado desde 23/08/2026 e nenhuma loja tinha conta conectada.
+      id: "asaas" as const,
       category: "payments",
-      title: "Mercado Pago / Mercado Livre",
-      subtitle: "PIX Instantâneo & Cartão Online",
-      icon: "💙",
-      gradient: "linear-gradient(135deg, #009EE3, #0072B1)",
-      badge: mpConnected || pagarmeRecipientId ? { text: "🟢 Mercado Pago Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "🟢 PIX / Cartão Ativos", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" },
-      description: "Processamento seguro de PIX instantâneo e Cartão de Crédito via Mercado Pago / Mercado Livre com repasse para sua conta.",
+      title: "Asaas",
+      subtitle: "Pix e cartão pelo site",
+      icon: "💳",
+      gradient: "linear-gradient(135deg, #0030B9, #1D4ED8)",
+      badge: asaas?.pixAtivo || asaas?.cartaoAtivo
+        ? { text: `🟢 ${[asaas.pixAtivo && "Pix", asaas.cartaoAtivo && "Cartão"].filter(Boolean).join(" + ")} no cardápio`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
+        : asaas?.conectado
+          ? { text: "🟡 Conectado · desligado", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
+          : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "O cliente paga Pix ou cartão na hora, no cardápio, e o dinheiro cai na sua conta Asaas. O pedido só vai para a cozinha depois de pago.",
     },
     {
       id: "99food" as const,
@@ -1344,7 +1372,7 @@ export default function IntegracoesHubClient({
       {/* ================= MODAL DE CONFIGURAÇÃO DEDICADA ================= */}
       {openModal && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(6px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
-          <div style={{ background: "#fff", borderRadius: "24px", width: "100%", maxWidth: "560px", padding: "28px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
+          <div style={{ background: "#fff", borderRadius: "24px", width: "100%", maxWidth: openModal === "asaas" ? "780px" : "560px", maxHeight: "92vh", overflowY: "auto", padding: "28px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
             
             {/* Close Button */}
             <button
@@ -2257,38 +2285,19 @@ export default function IntegracoesHubClient({
               </div>
             )}
 
-            {/* 💳 MODAL: MERCADO PAGO */}
-            {openModal === "pagarme" && (
+            {/* 💳 MODAL: ASAAS — Pix e cartão pelo site (conta da loja) */}
+            {openModal === "asaas" && (
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
-                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #009EE3, #0072B1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem" }}>
-                    💙
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px", paddingRight: "40px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, #0030B9, #1D4ED8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem", flexShrink: 0 }}>
+                    💳
                   </div>
                   <div>
-                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Mercado Pago / Mercado Livre</h2>
-                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Processamento de Pagamento Online no Cardápio</span>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Asaas</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Pix e cartão pelo site, na sua conta Asaas</span>
                   </div>
                 </div>
-
-                <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
-                  <div style={{ fontSize: "0.75rem", color: "#0F766E" }}>Status da Integração:</div>
-                  <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F766E" }}>
-                    🟢 Recebimento PIX Instantâneo e Cartão de Crédito Ativos no Cardápio
-                  </div>
-                </div>
-
-                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "24px" }}>
-                  Os pagamentos efetuados pelos seus clientes via PIX instantâneo e Cartão de Crédito no cardápio online do FireHub são processados com total segurança através do <strong>Mercado Pago / Mercado Livre</strong> com repasse direto para a sua conta.
-                </p>
-
-                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-                  <button
-                    onClick={() => setOpenModal(null)}
-                    style={{ padding: "10px 18px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #009EE3, #0072B1)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}
-                  >
-                    Entendido
-                  </button>
-                </div>
+                <PagamentoOnlineAsaas />
               </div>
             )}
 

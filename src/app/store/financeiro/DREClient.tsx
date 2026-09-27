@@ -339,8 +339,14 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
         Boolean(o.pagarmeOrderId);
       const foiPagoDeVerdade = Boolean(o.paymentPaidAt);
 
+      // Pix pelo site na conta Asaas DA LOJA (lib/pix-online.ts): o dinheiro
+      // já caiu na conta da loja no Asaas — não é saldo guardado aqui, não tem
+      // saque por aqui e a tarifa é a do Asaas (R$ 1,99 + 1% do FireHub), não a
+      // do Mercado Pago. Entra como venda da loja, com a origem certa.
+      const isAsaasDaLoja = o.gatewayProvider === "asaas" && foiPagoDeVerdade;
+
       const isMercadoPagoGateway =
-        !isIfood && !isJotaja && !isPresencial &&
+        !isIfood && !isJotaja && !isPresencial && !isAsaasDaLoja &&
         temIdentificadorDeGateway && foiPagoDeVerdade;
 
       const displayOrderNum = getOrderDisplayNumber(o);
@@ -387,15 +393,15 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
       lancamentos.push({
         id: o.id,
-        tipo: isMercadoPagoGateway ? "Venda Online (Mercado Pago)" : isIfood ? "Venda iFood" : isJotaja ? "Venda Jotajá" : "Venda Presencial",
+        tipo: isMercadoPagoGateway ? "Venda Online (Mercado Pago)" : isAsaasDaLoja ? "Venda Pix pelo site" : isIfood ? "Venda iFood" : isJotaja ? "Venda Jotajá" : "Venda Presencial",
         horario: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
         descricao: `Pedido #${displayOrderNum}`,
         formaPagamento: o.paymentMethod || "Online",
-        origem: isMercadoPagoGateway ? "Gateway Mercado Pago" : isIfood ? "Repasse Direto iFood" : isJotaja ? "Repasse Direto Jotajá" : "Loja (Entrega)",
+        origem: isMercadoPagoGateway ? "Gateway Mercado Pago" : isAsaasDaLoja ? "Sua conta Asaas" : isIfood ? "Repasse Direto iFood" : isJotaja ? "Repasse Direto Jotajá" : "Loja (Entrega)",
         isGateway: isMercadoPagoGateway,
         sourceChannel: isIfood ? "IFOOD" : isJotaja ? "JOTAJA" : isMercadoPagoGateway ? "GATEWAY" : "LOJA",
         status: "Aprovado",
-        dataLiberacao: !isMercadoPagoGateway ? "Repasse Externo" : isPix ? "Imediato (D+0)" : "30 dias (D+30)",
+        dataLiberacao: isAsaasDaLoja ? "Na hora, na sua conta Asaas" : !isMercadoPagoGateway ? "Repasse Externo" : isPix ? "Imediato (D+0)" : "30 dias (D+30)",
         valorBruto: gross,
         taxa: fee,
         valorLiquido: net

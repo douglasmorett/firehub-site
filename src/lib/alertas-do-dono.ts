@@ -71,7 +71,13 @@ export type TipoDeAlerta =
   /** Passaram 15 minutos do horário de abrir e ninguém abriu o caixa. */
   | "caixa_nao_aberto"
   /** A loja está fechada no iFood dentro do horário da loja: pedido de lá não entra. */
-  | "ifood_fechado";
+  | "ifood_fechado"
+  /**
+   * Pix pelo site (conta Asaas da loja, lib/pix-online.ts): ligado, estorno
+   * que ficou pendente ou falhou, Pix pago depois do cancelamento, chave do
+   * Asaas desativada. É dinheiro de cliente — a loja precisa saber na hora.
+   */
+  | "pix_online";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -89,6 +95,7 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   loja_fechada_no_horario: true,
   caixa_nao_aberto: true,
   ifood_fechado: true,
+  pix_online: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -103,6 +110,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   loja_fechada_no_horario: "Passou do horário de abrir e a loja está fechada (site e robô sem receber pedido)",
   caixa_nao_aberto: "Passou do horário de abrir e o caixa não foi aberto",
   ifood_fechado: "A loja está fechada no iFood dentro do horário de funcionamento",
+  pix_online: "Pix pelo site: estorno pendente, Pix pago em pedido cancelado, chave do Asaas desativada",
 };
 
 /** O dono ligou este alerta? Sem config salva, vale o padrão. */

@@ -133,6 +133,15 @@ const jobs = [
     intervalMs: 60_000, // 1 minuto
   },
   {
+    // Pix pelo site (conta Asaas da loja): expira o Pix nao pago em 30 min,
+    // confirma o que o webhook perdeu, estorna Pix pago depois do cancelamento
+    // e usa a chave de cada loja uma vez por dia (o Asaas desativa chave parada).
+    // A cada 2 minutos para o prazo de 30 min nao virar 35.
+    name: 'pix-online',
+    path: '/api/cron/pix-online',
+    intervalMs: 2 * 60_000, // 2 minutos
+  },
+  {
     // A cada 5 minutos porque atraso pede reacao rapida — e quem segura a
     // repeticao e a propria rota: um aviso por PEDIDO a cada hora.
     name: 'pedidos-atrasados',

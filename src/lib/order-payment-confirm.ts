@@ -19,21 +19,56 @@ export async function confirmOrderPayment(orderId: string) {
     return order;
   }
 
+  // Pagamento que chega DEPOIS do cancelamento não ressuscita o pedido: sem
+  // esta guarda ele voltava para NOVO/ACEITO e ia para a cozinha — lanche
+  // feito para um pedido que a loja (ou o cliente) já tinha desistido. Quem
+  // recebeu o dinheiro decide o que fazer com ele (o Pix pelo site estorna
+  // sozinho, lib/pix-online-pedido.ts).
+  if (order.status === "CANCELADO") {
+    console.warn(`[ConfirmPayment] Pedido ${orderId} está CANCELADO: pagamento não reabre o pedido.`);
+    return order;
+  }
+
+  // Trava: só UM caminho confirma. O webhook do gateway, a tela do cliente
+  // (consulta a cada 3 s) e o cron chegam juntos com frequência, e os dois
+  // passavam pela guarda acima — cada um gerava um número (o segundo ficava
+  // "queimado") e disparava o WhatsApp e a impressão em dobro.
+  // O segundo OR recupera a confirmação que começou e não terminou (processo
+  // caiu no meio): passados 2 minutos, outro caminho pode concluir.
+  const carimbo = new Date();
+  const trava = await prisma.customerOrder.updateMany({
+    where: {
+      id: orderId,
+      status: { not: "CANCELADO" },
+      OR: [
+        { paymentPaidAt: null },
+        { status: "AGUARDANDO_PAGAMENTO", paymentPaidAt: { lt: new Date(carimbo.getTime() - 2 * 60_000) } },
+      ],
+    },
+    data: { paymentPaidAt: carimbo },
+  });
+  if (trava.count === 0) {
+    return prisma.customerOrder.findUnique({ where: { id: orderId } });
+  }
+
   const franchisee = order.franchisee;
   const initialStatus = franchisee?.autoAcceptOrders ? "ACEITO" : "NOVO";
 
-  // Gera número do pedido apenas agora, se o pedido estiver sem número (abandonou no AGUARDANDO_PAGAMENTO)
+  // Gera número do pedido apenas agora, se o pedido estiver sem número (abandonou no AGUARDANDO_PAGAMENTO).
+  // Pela hora em que o pedido NASCEU, não a do pagamento: o Pix feito às
+  // 23h58 e pago às 00h01 ganhava o #1 do dia seguinte com a data do dia
+  // anterior — dois #1 no painel quando o primeiro pedido de verdade chegava.
   let finalDailyNumber = order.dailyOrderNumber;
   if (!finalDailyNumber && order.franchiseeId) {
     const { generateDailyOrderNumber } = await import("@/lib/order-number");
-    finalDailyNumber = await generateDailyOrderNumber(order.franchiseeId);
+    finalDailyNumber = await generateDailyOrderNumber(order.franchiseeId, order.createdAt);
   }
 
   // Atualização atômica do pedido: marca como pago, define status ativo, gera senha e coloca no KDS em produção
   const updatedOrder = await prisma.customerOrder.update({
     where: { id: orderId },
     data: {
-      paymentPaidAt: new Date(),
+      paymentPaidAt: carimbo,
       status: initialStatus,
       pagarmeStatus: "approved",
       kdsStage: "PRODUCTION",
@@ -51,7 +86,7 @@ export async function confirmOrderPayment(orderId: string) {
       customerPhone: order.customerPhone,
       customerAddress: order.customerAddress,
       deliveryType: order.deliveryType || "DELIVERY",
-      paymentMethod: `${order.paymentMethod || "ONLINE"} (Pago Online MP)`,
+      paymentMethod: `${order.paymentMethod || "ONLINE"} (Pago online)`,
       isPrepaid: true,
       items: (order.items || []).map((i: any) => ({
         name: i.menuProduct?.name || "Item",

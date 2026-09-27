@@ -183,6 +183,20 @@ model User {
   referredBy      User?          @relation("UserReferrals", fields: [referredById], references: [id])
   referrals       User[]         @relation("UserReferrals")
   asaasWalletId   String?        // Carteira Asaas para o split de pagamentos
+  // === PIX PELO SITE, NA CONTA ASAAS DA LOJA (lib/pix-online.ts) ===
+  /// A loja oferece "Pix pelo site" no cardápio. Só vale com a conta Asaas
+  /// conectada (`asaasChaveCifrada`) — quem lê confere os dois.
+  pixOnlineAtivo     Boolean   @default(false)
+  /// O mesmo para o cartão pelo site (o cliente digita o cartão na página do
+  /// Asaas). Independente do Pix: a loja pode querer só um dos dois.
+  cartaoOnlineAtivo  Boolean   @default(false)
+  /// A chave de API do Asaas DA LOJA, cifrada (lib/cofre.ts). Nunca vai à tela.
+  asaasChaveCifrada  String?   @db.Text
+  /// O resto da conexão, sem segredo em claro: { ambiente, walletId, nome,
+  /// cpfCnpj, situacao, chavePix, webhookId, webhookTokenCifrado, webhookUrl,
+  /// conectadoEm, conectadoPor, regrasAceitasEm, versaoDasRegras,
+  /// verificadoEm, desligadoEm, desligadoMotivo }.
+  asaasConexao       Json?
 
   apiKeys         ApiKey[]
   webhookSubscriptions WebhookSubscription[]
@@ -814,6 +828,11 @@ model CustomerOrder {
   // === GATEWAY UNIFICADO (Mercado Pago / Celcoin) ===
   gatewayProvider  String?             // mercadopago | celcoin | manual
   gatewayPaymentId String?             // ID do pagamento no gateway ativo
+  /// A taxa do pagamento online deste pedido (Pix/cartão pelo site na conta
+  /// Asaas da loja, lib/pix-online.ts): { forma, percentual, valor, split,
+  /// motivo, conferidoEm }. `split`: ENVIADO | DONE | PENDING | ... do Asaas,
+  /// ou RECUSADO / SEM_CARTEIRA / MESMA_CONTA quando não foi por split.
+  taxaOnline       Json?
   // === IFOOD ===
   ifoodOrderId        String?  @unique   // ID do pedido no iFood (idempotência)
   ifoodReference      String?            // Número de exibição do pedido no iFood (#ABC123)

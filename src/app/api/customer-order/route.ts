@@ -27,6 +27,8 @@ import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
 import { efeitoDoPremio } from "@/lib/trilha-premiada";
+import { cpfValido } from "@/lib/fiscal-validacao";
+import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 
 /**
  * Este telefone já fez pedido PELO SITE nesta loja? É a regra do "só no
@@ -73,10 +75,41 @@ export async function POST(req: Request) {
         // A área de entrega, para o SERVIDOR conferir — antes só o navegador
         // conferia, e um POST direto (ou aba antiga) entrava com qualquer
         // endereço e qualquer taxa.
-        deliveryZones: true, deliveryZoneType: true, storeLatLng: true, storeAddress: true, city: true
+        deliveryZones: true, deliveryZoneType: true, storeLatLng: true, storeAddress: true, city: true,
+        // Pix e cartão pelo site na conta Asaas da loja (lib/pix-online.ts).
+        pixOnlineAtivo: true, cartaoOnlineAtivo: true, asaasChaveCifrada: true,
       }
     });
     if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
+
+    // ── PAGAMENTO PELO SITE (PIX E CARTÃO) ─────────────────────────────────
+    // "PIX" (sem _ENTREGA) e "CREDITO_ONLINE" são pagos na hora, pelo site. Só
+    // existem na loja que ligou o recurso — antes um POST direto criava pedido
+    // esperando um pagamento que nenhum gateway ia gerar. E o Asaas só gera a
+    // cobrança com o CPF de quem paga: melhor recusar aqui, com a frase certa,
+    // do que depois, com o pedido já criado.
+    const pmOnline = String(paymentMethod || "").toUpperCase().trim();
+    const cpfDoPagador = String(body.customerCpfCnpj || "").replace(/\D/g, "");
+    const formaPeloSite =
+      pmOnline === "PIX" || pmOnline === "PIX_ONLINE" ? "Pix"
+      : pmOnline === "CREDITO_ONLINE" || pmOnline === "CARTAO_ONLINE" ? "cartão"
+      : null;
+    if (formaPeloSite) {
+      const conectada = Boolean(franchisee.asaasChaveCifrada);
+      const lojaRecebe = conectada && (formaPeloSite === "Pix" ? franchisee.pixOnlineAtivo : franchisee.cartaoOnlineAtivo);
+      if (!lojaRecebe && !PAGAMENTO_ONLINE_ATIVO) {
+        return NextResponse.json(
+          { error: `Esta loja não está recebendo ${formaPeloSite} pelo site agora. Escolha pagar na entrega ou outra forma de pagamento.` },
+          { status: 400 }
+        );
+      }
+      if (lojaRecebe && !cpfValido(cpfDoPagador)) {
+        return NextResponse.json(
+          { error: `Para pagar com ${formaPeloSite} pelo site, informe um CPF válido. O banco exige o CPF de quem paga.` },
+          { status: 400 }
+        );
+      }
+    }
 
     // Validar se agendamento está desativado
     if ((body.scheduledDatetime || body.scheduledDate || body.isScheduled) && franchisee.allowScheduledOrders === false) {
@@ -672,6 +705,9 @@ export async function POST(req: Request) {
         // mesma sessão que veio do anúncio — sem eles a venda aparece como
         // visitante novo, sem origem. Vazio quando o cliente bloqueia cookie
         // ou quando a loja não usa GA4: o disparo simplesmente não acontece.
+        // CPF de quem paga: o Pix pelo site exige; em qualquer forma ele vai
+        // para a nota fiscal (NFC-e de entrega pede CPF). Só grava se válido.
+        customerCpfCnpj: cpfValido(cpfDoPagador) ? cpfDoPagador : null,
         gaClientId: typeof body.gaClientId === "string" ? body.gaClientId.slice(0, 64) : null,
         gaSessionId: typeof body.gaSessionId === "string" ? body.gaSessionId.slice(0, 32) : null,
         items: { create: orderItems }

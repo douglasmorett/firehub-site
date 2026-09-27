@@ -702,6 +702,14 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "metaIaSemanaReferencia" TEXT`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "metaIaGeracoesUsadas" INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "showAddressOnMenu" BOOLEAN NOT NULL DEFAULT true`,
+  // Pix pelo site na conta Asaas da loja (lib/pix-online.ts). O cardápio
+  // público lê `pixOnlineAtivo`: sem a coluna, /loja inteira seria 500.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pixOnlineAtivo" BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "cartaoOnlineAtivo" BOOLEAN NOT NULL DEFAULT false`,
+  // A taxa do pagamento online de cada pedido pago pelo site (e o que houve com o split).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "taxaOnline" JSONB`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "asaasChaveCifrada" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "asaasConexao" JSONB`,
 
   // ── CustomerOrder — o caminho mais quente do sistema ──
   // De qual loja iFood veio o pedido — conta com várias lojas no mesmo painel.

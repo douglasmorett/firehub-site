@@ -20,16 +20,33 @@ const PAYMENT_LABELS: Record<PayMethod, string> = {
 };
 
 export default function PaymentGateway({
-  orderId, amount, initialMethod = "pix", onPaid, onError, onCancel
+  orderId, amount, initialMethod = "pix", metodos = ["pix", "credit_card"], cartaoPeloAsaas = false, onPaid, onError, onCancel
 }: {
   orderId:  string;
   amount:   number;
   initialMethod?: "pix" | "credit_card";
+  /**
+   * Quais formas mostrar. O Pix pelo site (conta Asaas da loja) é só Pix: o
+   * cartão online é do Mercado Pago, desligado em src/lib/pagamento-online.ts.
+   */
+  metodos?: PayMethod[];
+  /**
+   * Cartão pelo site na conta Asaas da loja: nada de formulário de cartão
+   * aqui — o cliente paga na página do Asaas (o número do cartão nunca passa
+   * pelo FireHub) e esta tela confere sozinha.
+   */
+  cartaoPeloAsaas?: boolean;
   onPaid:   () => void;
   onError:  (msg: string) => void;
   onCancel: () => void;
 }) {
-  const [method, setMethod]       = useState<PayMethod>(initialMethod);
+  const soPix = !metodos.includes("credit_card");
+  // Sem Mercado Pago: só Pix, ou cartão pela página do Asaas.
+  const semMercadoPago = soPix || cartaoPeloAsaas;
+  const [method, setMethod]       = useState<PayMethod>(metodos.length === 1 ? metodos[0] : initialMethod);
+  const cartaoAsaas = method === "credit_card" && cartaoPeloAsaas;
+  const [cartao, setCartao]       = useState<{ paymentId: string; linkDePagamento: string | null; expiresAt: string } | null>(null);
+  const [emAnalise, setEmAnalise] = useState(false);
   const [loading, setLoading]     = useState(false);
   const [pixData, setPixData]     = useState<{ paymentId: string; pixKey: string; qrCodeBase64: string | null; expiresAt: string } | null>(null);
   const [pixPaid, setPixPaid]     = useState(false);
@@ -37,6 +54,16 @@ export default function PaymentGateway({
   const [copied, setCopied]       = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const autoTriggeredRef           = useRef(false);
+  // Contagem regressiva do prazo para pagar: o cliente precisa VER que acaba.
+  const [agora, setAgora]         = useState(() => Date.now());
+  const expiraEm = pixData?.expiresAt || cartao?.expiresAt || null;
+  useEffect(() => {
+    if (!expiraEm || pixPaid || pixExpired) return;
+    const t = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [expiraEm, pixPaid, pixExpired]);
+  const restanteMs = expiraEm ? Math.max(0, new Date(expiraEm).getTime() - agora) : 0;
+  const restante = `${String(Math.floor(restanteMs / 60000)).padStart(2, "0")}:${String(Math.floor((restanteMs % 60000) / 1000)).padStart(2, "0")}`;
 
   // Mercado Pago Public Key
   const [mpPublicKey, setMpPublicKey] = useState<string>(process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || "");
@@ -53,6 +80,8 @@ export default function PaymentGateway({
 
   // Carregar script do Mercado Pago e Public Key do backend
   useEffect(() => {
+    // Só Pix, ou cartão pelo Asaas: nada do Mercado Pago precisa carregar.
+    if (semMercadoPago) return;
     // 1. Buscar Public Key
     fetch(`/api/payments/config?orderId=${orderId}`)
       .then(res => res.json())
@@ -81,12 +110,58 @@ export default function PaymentGateway({
   }, []);
 
   // Disparar geração de PIX automaticamente na montagem se o método for PIX
+  // (ou a cobrança do cartão, no cartão pelo Asaas).
   useEffect(() => {
     if (method === "pix" && !pixData && !loading && !autoTriggeredRef.current) {
       autoTriggeredRef.current = true;
       handlePixPay();
     }
+    if (cartaoAsaas && !cartao && !loading && !autoTriggeredRef.current) {
+      autoTriggeredRef.current = true;
+      handleCartaoAsaas();
+    }
   }, [method]);
+
+  // ───────────────────── CARTÃO PELA PÁGINA DO ASAAS ─────────────────────
+  const handleCartaoAsaas = async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch("/api/payments/cartao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (res.status === 409 && data.pago) {
+        setPixPaid(true);
+        setTimeout(onPaid, 1500);
+        return;
+      }
+      if (res.status === 410) {
+        setPixExpired(true);
+        return;
+      }
+      if (!res.ok || !data.linkDePagamento) {
+        const msg = data.error || "Não foi possível abrir o pagamento com cartão. Tente de novo.";
+        setErrorMessage(msg);
+        onError(msg);
+        return;
+      }
+      setCartao({ paymentId: data.paymentId, linkDePagamento: data.linkDePagamento, expiresAt: data.expiresAt });
+      startPixPolling(data.paymentId);
+      if (data.expiresAt) {
+        const ms = new Date(data.expiresAt).getTime() - Date.now();
+        if (ms > 0) setTimeout(() => setPixExpired(true), ms);
+      }
+    } catch (e: any) {
+      const msg = e?.message || "Erro de rede ao abrir o pagamento com cartão.";
+      setErrorMessage(msg);
+      onError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ──────────────────────────── PIX ────────────────────────────
   const handlePixPay = async () => {
@@ -99,6 +174,17 @@ export default function PaymentGateway({
         body: JSON.stringify({ orderId }),
       });
       const data = await res.json();
+      // Já pago (o cliente voltou à página depois de pagar): segue o fluxo de pago.
+      if (res.status === 409 && data.pago) {
+        setPixPaid(true);
+        setTimeout(onPaid, 1500);
+        return;
+      }
+      // O prazo acabou e o servidor cancelou o pedido.
+      if (res.status === 410) {
+        setPixExpired(true);
+        return;
+      }
       if (!res.ok) {
         const rawErr = data.error || "Erro ao gerar PIX";
         const isMerchantConfigError =
@@ -140,6 +226,7 @@ export default function PaymentGateway({
         const res = await fetch(`/api/payments/status?orderId=${orderId}`);
         if (res.ok) {
           const d = await res.json();
+          setEmAnalise(d.status === "analise");
           if (d.paid) {
             setPixPaid(true);
             if (pollRef.current) clearInterval(pollRef.current);
@@ -147,8 +234,15 @@ export default function PaymentGateway({
           }
           if (d.failed) {
             if (pollRef.current) clearInterval(pollRef.current);
-            setErrorMessage("PIX expirado ou cancelado.");
-            onError("PIX expirado ou cancelado.");
+            if (d.status === "expirado") {
+              setPixExpired(true);
+            } else {
+              const msg = d.status === "estornado"
+                ? "Este pagamento foi devolvido e o pedido cancelado."
+                : "Este pedido foi cancelado. Se você já pagou, o Pix volta para a sua conta.";
+              setErrorMessage(msg);
+              onError(msg);
+            }
           }
         }
       } catch {}
@@ -323,7 +417,7 @@ export default function PaymentGateway({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
         <div>
           <h2 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0, color: "#0F172A" }}>
-            {method === "pix" ? "💰 Pagamento via Pix" : "💳 Pagamento via Cartão"}
+            {method === "pix" ? "💰 Pagamento via Pix" : "💳 Pagamento com Cartão"}
           </h2>
           <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "2px 0 0" }}>
             Total a pagar: <strong style={{ color: "#0F766E" }}>R$ {amount.toFixed(2).replace(".", ",")}</strong>
@@ -370,6 +464,7 @@ export default function PaymentGateway({
               onClick={() => {
                 setErrorMessage(null);
                 if (method === "pix") handlePixPay();
+                else if (cartaoAsaas) handleCartaoAsaas();
                 else handleCardPay();
               }}
               style={{
@@ -407,7 +502,7 @@ export default function PaymentGateway({
       )}
 
       {/* Seleção de método (se o lojista aceitar ambos) */}
-      {!pixPaid && (
+      {!pixPaid && metodos.length > 1 && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
           {(["pix", "credit_card"] as PayMethod[]).map(m => (
             <button
@@ -473,10 +568,16 @@ export default function PaymentGateway({
             Aguardando confirmação do pagamento...
           </div>
           {pixData.expiresAt && (
-            <p style={{ fontSize: "0.74rem", color: "#94A3B8", marginTop: "6px" }}>
-              Expira às {new Date(pixData.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            <p style={{ fontSize: "0.8rem", color: restanteMs < 5 * 60_000 ? "#DC2626" : "#475569", marginTop: "6px", fontWeight: 700 }}>
+              ⏱️ Pague em até {restante}{" "}
+              <span style={{ fontWeight: 500, color: "#94A3B8" }}>
+                (até {new Date(pixData.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})
+              </span>
             </p>
           )}
+          <p style={{ fontSize: "0.74rem", color: "#94A3B8", marginTop: "4px", lineHeight: 1.4 }}>
+            Pode ir ao app do banco e voltar: esta tela confirma sozinha quando o Pix cair.
+          </p>
         </div>
       )}
 
@@ -494,7 +595,20 @@ export default function PaymentGateway({
         </div>
       )}
 
-      {pixExpired && (
+      {pixExpired && semMercadoPago && !pixPaid && (
+        <div style={{ textAlign: "center", padding: "1.5rem" }}>
+          <p style={{ fontWeight: 800, color: "#DC2626", marginBottom: "6px" }}>⏱️ O tempo para pagar acabou.</p>
+          <p style={{ fontSize: "0.85rem", color: "#475569", marginBottom: "14px", lineHeight: 1.5 }}>
+            O pedido foi cancelado e {cartaoAsaas ? "o link do cartão" : "o QR Code"} não vale mais. Seus itens continuam na sacola.
+          </p>
+          <button onClick={onCancel}
+            style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "#DC2626", color: "#fff", fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px", fontFamily: "inherit" }}>
+            <RefreshCw size={14} /> Voltar para a sacola
+          </button>
+        </div>
+      )}
+
+      {pixExpired && !semMercadoPago && !pixPaid && (
         <div style={{ textAlign: "center", padding: "1.5rem" }}>
           <p style={{ fontWeight: 700, color: "#C92E09" }}>⏱️ PIX expirado.</p>
           <button onClick={() => { setPixData(null); setPixExpired(false); handlePixPay(); }}
@@ -504,8 +618,54 @@ export default function PaymentGateway({
         </div>
       )}
 
+      {/* ── CARTÃO PELA PÁGINA DO ASAAS ── */}
+      {cartaoAsaas && !cartao && !pixPaid && !pixExpired && !errorMessage && (
+        <div style={{ textAlign: "center", padding: "24px 0" }}>
+          <Loader size={32} color="#2563EB" style={{ animation: "spin 1s linear infinite", margin: "0 auto 12px" }} />
+          <p style={{ fontWeight: 700, fontSize: "0.9rem", color: "#334155" }}>Preparando o pagamento com cartão...</p>
+        </div>
+      )}
+      {cartaoAsaas && cartao && !pixPaid && !pixExpired && (
+        <div style={{ textAlign: "center" }}>
+          <div style={{ background: "#EFF6FF", border: "2px solid #BFDBFE", borderRadius: "16px", padding: "18px", marginBottom: "12px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", textAlign: "left", fontSize: "0.82rem", color: "#1E40AF", lineHeight: 1.5, marginBottom: "14px" }}>
+              <ShieldCheck size={18} color="#2563EB" style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>Você vai digitar o cartão na <strong>página segura do Asaas</strong>, que processa o pagamento desta loja. O número do cartão não fica com a loja.</span>
+            </div>
+            {cartao.linkDePagamento && (
+              <a
+                href={cartao.linkDePagamento}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+                  width: "100%", padding: "14px", borderRadius: "12px", boxSizing: "border-box",
+                  background: "linear-gradient(135deg, #2563EB, #1D4ED8)", color: "#fff",
+                  fontWeight: 800, fontSize: "1rem", textDecoration: "none",
+                  boxShadow: "0 4px 14px rgba(37, 99, 235, 0.3)",
+                }}
+              >
+                <CreditCard size={18} /> Pagar com cartão • R$ {amount.toFixed(2).replace(".", ",")}
+              </a>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", color: "#475569", fontSize: "0.85rem", fontWeight: 700 }}>
+            <Loader size={15} style={{ animation: "spin 1.5s linear infinite" }} />
+            {emAnalise ? "Cartão em análise de segurança no Asaas..." : "Aguardando o pagamento..."}
+          </div>
+          {cartao.expiresAt && (
+            <p style={{ fontSize: "0.8rem", color: restanteMs < 5 * 60_000 ? "#DC2626" : "#475569", marginTop: "6px", fontWeight: 700 }}>
+              ⏱️ Pague em até {restante}
+            </p>
+          )}
+          <p style={{ fontSize: "0.74rem", color: "#94A3B8", marginTop: "4px", lineHeight: 1.4 }}>
+            Depois de pagar, volte para esta tela: ela confirma sozinha quando o cartão for aprovado.
+          </p>
+        </div>
+      )}
+
       {/* ── CARTÃO DE CRÉDITO ── */}
-      {method === "credit_card" && !pixPaid && (
+      {method === "credit_card" && !cartaoPeloAsaas && !pixPaid && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ padding: "10px 14px", background: "#FAF6F2", border: "1px solid #E7DDD3", borderRadius: "10px", fontSize: "0.78rem", color: "#1C1917", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
             <ShieldCheck size={18} color="#1C1917" style={{ flexShrink: 0 }} />

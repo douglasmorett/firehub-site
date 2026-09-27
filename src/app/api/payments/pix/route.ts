@@ -1,6 +1,14 @@
 /**
  * POST /api/payments/pix
- * Gera QR Code PIX via Mercado Pago.
+ * Gera o QR Code Pix do pedido do cardápio.
+ *
+ * Loja com Pix pelo site ligado (conta Asaas dela, lib/pix-online.ts): a
+ * cobrança sai na conta Asaas da loja, com o split do FireHub. Esse caminho não
+ * depende do interruptor global do Mercado Pago.
+ *
+ * Qualquer outra loja: o caminho antigo do Mercado Pago, que continua atrás de
+ * NEXT_PUBLIC_PAGAMENTO_ONLINE (src/lib/pagamento-online.ts).
+ *
  * Retorna: { paymentId, pixKey, qrCodeBase64, expiresAt }
  */
 import { NextRequest, NextResponse } from "next/server";
@@ -9,17 +17,8 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { PAGAMENTO_ONLINE_ATIVO, MOTIVO_PAGAMENTO_ONLINE_OFF } from "@/lib/pagamento-online";
 
-const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || "";
-
 export async function POST(req: NextRequest) {
   try {
-    // Pagamento online desligado — ver src/lib/pagamento-online.ts.
-    // Esconder os botões no cardápio não basta: esta rota é pública e
-    // continuaria aceitando chamada direta.
-    if (!PAGAMENTO_ONLINE_ATIVO) {
-      return NextResponse.json({ error: MOTIVO_PAGAMENTO_ONLINE_OFF }, { status: 503 });
-    }
-
     // Rate limiting: 10 tentativas por minuto por IP
     const ip = getClientIp(req);
     const { allowed } = checkRateLimit(`pay-pix:${ip}`, { windowMs: 60_000, maxRequests: 10 });
@@ -29,6 +28,29 @@ export async function POST(req: NextRequest) {
 
     const { orderId } = await req.json();
     if (!orderId) return NextResponse.json({ error: "orderId obrigatório" }, { status: 400 });
+
+    const loja = await prisma.customerOrder.findUnique({
+      where: { id: orderId },
+      select: { gatewayProvider: true, franchisee: { select: { pixOnlineAtivo: true, asaasChaveCifrada: true } } },
+    });
+    // O pedido que já tem cobrança no Asaas continua no Asaas, mesmo que a
+    // loja tenha desligado o Pix pelo site depois.
+    if (
+      loja?.franchisee?.asaasChaveCifrada &&
+      (loja.franchisee.pixOnlineAtivo || loja.gatewayProvider === "asaas")
+    ) {
+      const { gerarPixDoPedido } = await import("@/lib/pix-online-pedido");
+      const r = await gerarPixDoPedido(orderId);
+      if (!r.ok) return NextResponse.json({ error: r.erro, pago: r.pago === true }, { status: r.status });
+      return NextResponse.json(r.dados);
+    }
+
+    // Pagamento online desligado — ver src/lib/pagamento-online.ts.
+    // Esconder os botões no cardápio não basta: esta rota é pública e
+    // continuaria aceitando chamada direta.
+    if (!PAGAMENTO_ONLINE_ATIVO) {
+      return NextResponse.json({ error: MOTIVO_PAGAMENTO_ONLINE_OFF }, { status: 503 });
+    }
 
     const order = await prisma.customerOrder.findUnique({
       where: { id: orderId },

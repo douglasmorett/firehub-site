@@ -51,6 +51,17 @@ import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/Tr
 import FileiraDeDestaques from "./FileiraDeDestaques";
 import CapaDaLoja from "./CapaDaLoja";
 import { lerTrilha, nomeDoPremio } from "@/lib/trilha-premiada";
+import { cpfValido } from "@/lib/fiscal-validacao";
+import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
+
+/** "12345678901" → "123.456.789-01", enquanto digita. */
+function formatarCpf(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  return d
+    .replace(/^(\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d{1,2})$/, ".$1-$2");
+}
 import "./store.css";
 
 type MenuProduct = {
@@ -163,6 +174,9 @@ type Franchisee = {
   mpSellerId?: string | null;
   mpAccessToken?: string | null;
   hasOnlinePayment?: boolean;
+  /** Pix e cartão pelo site, na conta Asaas da loja (lib/pix-online.ts). */
+  pixOnlineAtivo?: boolean;
+  cartaoOnlineAtivo?: boolean;
 };
 
 type StoreRating = {
@@ -236,7 +250,19 @@ export default function CustomerStorePage({
   // credencial de teste do Mercado Pago no ar.
   const hasOnlinePayment =
     PAGAMENTO_ONLINE_ATIVO && franchisee.hasOnlinePayment !== false;
-  const [paymentMethod, setPaymentMethod] = useState(() => (hasOnlinePayment ? "PIX" : "DINHEIRO"));
+  // Pix pelo site na conta Asaas DA LOJA: depende só da loja ter ligado
+  // (Minha Loja → Pagamentos), não do interruptor global do Mercado Pago.
+  const pixPeloSite = franchisee.pixOnlineAtivo === true || hasOnlinePayment;
+  // Cartão pelo site na conta Asaas da loja: o cliente digita o cartão na
+  // página do Asaas. O cartão online antigo (Mercado Pago) segue no interruptor.
+  const cartaoPeloAsaas = franchisee.cartaoOnlineAtivo === true;
+  const [paymentMethod, setPaymentMethod] = useState(() => (pixPeloSite ? "PIX" : "DINHEIRO"));
+  // CPF de quem paga: o Asaas só gera o Pix com ele (e ele vai na nota).
+  const [cpfDoPagador, setCpfDoPagador] = useState("");
+  // Forma paga pelo site na conta Asaas: pede CPF (o Asaas exige).
+  const pagaPeloAsaas =
+    (paymentMethod === "PIX" && franchisee.pixOnlineAtivo === true) ||
+    (paymentMethod === "CREDITO_ONLINE" && cartaoPeloAsaas);
   // "Troco para quanto?" — sem isso o motoboy chega sem troco e a entrega
   // trava na porta. Vazio = não precisa de troco.
   const [trocoPara, setTrocoPara] = useState("");
@@ -444,6 +470,37 @@ export default function CustomerStorePage({
   const [showPayment, setShowPayment] = useState(false);
   const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
   const [pendingAmount, setPendingAmount] = useState(0);
+  // O Purchase do navegador de um pedido pago online só sai quando o Pix cai
+  // (o servidor faz o mesmo em lib/order-payment-confirm.ts). Guardado aqui
+  // entre o "finalizar" e o "pagou".
+  const compraPendente = useRef<(() => void) | null>(null);
+
+  // ── A TELA DO PIX SOBREVIVE A RECARREGAR ────────────────────────────────
+  // O id do pedido esperando Pix vivia só na memória da aba: o cliente que ia
+  // ao app do banco e voltava com a página recarregada perdia o QR, e o
+  // pedido ficava esperando um pagamento que ele não tinha mais como fazer.
+  const pixPendenteKey = `fh_pix_${franchisee.slug || franchisee.id}`;
+  const lembrarPixPendente = (orderId: string | null, amount = 0) => {
+    try {
+      if (orderId) localStorage.setItem(pixPendenteKey, JSON.stringify({ orderId, amount, at: Date.now() }));
+      else localStorage.removeItem(pixPendenteKey);
+    } catch { /* storage bloqueado: segue sem */ }
+  };
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(pixPendenteKey);
+      if (!raw) return;
+      const salvo = JSON.parse(raw);
+      if (salvo?.orderId && Date.now() - (salvo.at || 0) < (MINUTOS_PARA_PAGAR + 5) * 60_000) {
+        setPendingOrderId(salvo.orderId);
+        setPendingAmount(Number(salvo.amount) || 0);
+        setShowPayment(true);
+      } else {
+        localStorage.removeItem(pixPendenteKey);
+      }
+    } catch { /* idem */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const storeName = franchisee.storeName || franchisee.name;
   const storeStatus = isStoreOpen(franchisee.storeHours as any, undefined, franchisee.storeTimezone);
@@ -1300,11 +1357,13 @@ export default function CustomerStorePage({
 
   const paymentOptions = (() => {
     const base: { k: string; l: string }[] = [];
-    if (hasOnlinePayment) {
-      base.push(
-        { k: "PIX", l: "💰 Pix (Online)" },
-        { k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" }
-      );
+    if (pixPeloSite) {
+      base.push({ k: "PIX", l: "⚡ Pix agora (pelo site)" });
+    }
+    if (cartaoPeloAsaas) {
+      base.push({ k: "CREDITO_ONLINE", l: "💳 Cartão pelo site" });
+    } else if (hasOnlinePayment) {
+      base.push({ k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" });
     }
     // Pix na ENTREGA (cliente paga na chave da loja quando recebe).
     // Sem isto, desligar o Pix online deixava o cardápio sem NENHUMA forma de
@@ -1314,9 +1373,10 @@ export default function CustomerStorePage({
     // A chave é PIX_ENTREGA, não PIX: "PIX" está em ONLINE_METHODS e abriria o
     // modal de pagamento online. Como o nome contém "ENTREGA", o financeiro já
     // o classifica como presencial e ele não entra no saldo do gateway.
-    if (!hasOnlinePayment) {
-      base.push({ k: "PIX_ENTREGA", l: "💰 Pix (na entrega)" });
-    }
+    //
+    // Continua junto do Pix pelo site: quem não quer informar CPF, ou prefere
+    // pagar ao receber, ainda paga com Pix.
+    base.push({ k: "PIX_ENTREGA", l: "💰 Pix (na entrega)" });
 
     base.push(
       { k: "DINHEIRO", l: "💵 Dinheiro" },
@@ -1794,6 +1854,10 @@ export default function CustomerStorePage({
     }
     if (!customerName.trim()) { alert("Por favor, informe seu nome."); return; }
     if (!customerPhone.trim()) { alert("Por favor, informe seu WhatsApp / telefone."); return; }
+    if (pagaPeloAsaas && !cpfValido(cpfDoPagador)) {
+      alert(`Para pagar com ${paymentMethod === "PIX" ? "Pix" : "cartão"} pelo site, informe o CPF de quem vai pagar. O banco exige o CPF para gerar a cobrança.`);
+      return;
+    }
     let finalAddress = "";
     /** O ponto do cliente (GPS/pino) que vai no pedido — só se for deste endereço. */
     let pontoNoPedido: PontoDoCliente | null = null;
@@ -1879,6 +1943,8 @@ export default function CustomerStorePage({
           customerNumber: customerNumber || null,
           customerNeighborhood: customerNeighborhood || null,
           deliveryType, paymentMethod, notes,
+          // CPF de quem paga (Pix pelo site exige; também vai na nota fiscal).
+          customerCpfCnpj: pagaPeloAsaas ? cpfDoPagador.replace(/\D/g, "") || null : null,
           // Troco em dinheiro: vai para a cozinha/motoboy junto do pedido.
           changeAmount: (() => {
             if (paymentMethod !== "DINHEIRO" || !trocoPara.trim()) return null;
@@ -1900,6 +1966,11 @@ export default function CustomerStorePage({
       });
       if (res.ok) {
         const d = await res.json();
+        // A venda para o Pixel e o GA4. Pedido pago na entrega registra agora;
+        // pedido com Pix pelo site só quando o Pix cai (onPaid do modal) —
+        // quem desiste na tela do QR não pode virar venda, a mesma regra do
+        // servidor em lib/order-payment-confirm.ts.
+        const registrarCompra = () => {
         // O `eventID` é o que faz o Meta entender que este Purchase e o que o
         // SERVIDOR manda (src/lib/meta-purchase.ts) são o MESMO evento, e contar
         // uma venda só. Sem ele, toda venda contaria duas vezes — o ROAS dobra
@@ -1935,17 +2006,21 @@ export default function CustomerStorePage({
             price: i.price,
           })),
         });
+        };
         const pmUpper = (paymentMethod || "").toUpperCase();
         // Comparação EXATA: com includes(), "PIX_ENTREGA".includes("PIX") era
         // true e o cliente do pagamento na entrega caía no modal do gateway —
         // que está desligado — com o pedido JÁ criado na cozinha.
         const isOnline = ONLINE_METHODS.includes(pmUpper);
         if (isOnline) {
+          compraPendente.current = registrarCompra;
           setPendingOrderId(d.orderId);
           setPendingAmount(finalTotal);
           setShowPayment(true);
+          lembrarPixPendente(d.orderId, finalTotal);
           // Mantém os itens no carrinho até a confirmação do pagamento
         } else {
+          registrarCompra();
           setOrderSuccess(d.orderId);
           setCart([]);
           setIsCheckout(false);
@@ -1980,6 +2055,46 @@ export default function CustomerStorePage({
         alert(d?.error || "Erro.");
       }
     } catch { alert("Erro ao conectar."); } finally { setLoading(false); }
+  };
+
+  // O Pix caiu: agora sim é venda — limpa a sacola e mostra o acompanhamento.
+  const pixPago = () => {
+    const id = pendingOrderId;
+    try { compraPendente.current?.(); } catch { /* rastreio nunca derruba a tela */ }
+    compraPendente.current = null;
+    lembrarPixPendente(null);
+    setShowPayment(false);
+    setCart([]); // Carrinho é limpo APENAS após pagamento aprovado!
+    setIsCheckout(false);
+    setMobileCartOpen(false);
+    setOrderSuccess(id);
+  };
+
+  // O cliente desistiu na tela do Pix. Antes chamava um PATCH numa rota que só
+  // tem GET: o pedido ficava esperando com o QR pagável. A rota nova cancela de
+  // verdade — e avisa se o Pix caiu no meio do caminho.
+  const desistirDoPagamento = async () => {
+    const id = pendingOrderId;
+    setShowPayment(false);
+    if (id) {
+      try {
+        const r = await fetch("/api/payments/cancelar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: id }),
+        });
+        const d = await r.json().catch(() => ({} as any));
+        if (d?.pago) {
+          alert("O seu Pix já tinha sido pago — o pedido foi enviado para a loja.");
+          pixPago();
+          return;
+        }
+      } catch { /* sem rede: o prazo do Pix cancela sozinho */ }
+    }
+    lembrarPixPendente(null);
+    compraPendente.current = null;
+    setPendingOrderId(null);
+    setIsCheckout(true);
   };
 
   // ===== ORDER TRACKING =====
@@ -3094,6 +3209,34 @@ export default function CustomerStorePage({
                   <button key={pm.k} type="button" onClick={() => setPaymentMethod(pm.k)} className={`checkout-type-btn ${paymentMethod === pm.k ? "active" : ""}`} style={{ flex: "1 1 30%", fontSize: "0.78rem", minHeight: "44px" }}>{pm.l}</button>
                 ))}
               </div>
+              {/* Pix/cartão pelo site: o Asaas só gera a cobrança com o CPF de quem paga. */}
+              {pagaPeloAsaas && (
+                <div style={{ marginTop: "8px", background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: "10px", padding: "10px 12px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#065F46", display: "block", marginBottom: "4px" }}>
+                    CPF de quem vai pagar <span style={{ fontWeight: 500 }}>(obrigatório para {paymentMethod === "PIX" ? "o Pix" : "o cartão"})</span>
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={cpfDoPagador}
+                    onChange={e => setCpfDoPagador(formatarCpf(e.target.value))}
+                    placeholder="000.000.000-00"
+                    maxLength={14}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #6EE7B7", fontSize: "16px", outline: "none", boxSizing: "border-box", background: "#fff" }}
+                  />
+                  {cpfDoPagador.replace(/\D/g, "").length === 11 && !cpfValido(cpfDoPagador) && (
+                    <div style={{ fontSize: "0.75rem", color: "#DC2626", fontWeight: 600, marginTop: "4px" }}>
+                      Esse CPF não é válido. Confira os números.
+                    </div>
+                  )}
+                  <div style={{ fontSize: "0.75rem", color: "#047857", marginTop: "6px", lineHeight: 1.45 }}>
+                    {paymentMethod === "PIX"
+                      ? <>Ao finalizar, aparece o QR Code do Pix. Você tem {MINUTOS_PARA_PAGAR} minutos para pagar, e o pedido vai para a cozinha assim que o pagamento cair.</>
+                      : <>Ao finalizar, você digita o cartão na página segura do Asaas, no nome da loja. O pedido vai para a cozinha assim que o cartão for aprovado.</>}
+                  </div>
+                </div>
+              )}
               {/* Dinheiro sem pergunta de troco = motoboy sem troco na porta. */}
               {paymentMethod === "DINHEIRO" && (
                 <div style={{ marginTop: "8px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px 12px" }}>
@@ -3271,7 +3414,13 @@ export default function CustomerStorePage({
               >
                 {lojaFechadaAgora
                   ? `🔴 Loja fechada${!storeStatus.open && storeStatus.text ? ` • ${storeStatus.text}` : ""}`
-                  : loading ? "Enviando pedido..." : `✓ Finalizar Pedido • R$ ${finalTotal.toFixed(2).replace(".", ",")}`}
+                  : loading
+                    ? "Enviando pedido..."
+                    : paymentMethod === "PIX" && pixPeloSite
+                      ? `⚡ Finalizar e pagar com Pix • R$ ${finalTotal.toFixed(2).replace(".", ",")}`
+                      : paymentMethod === "CREDITO_ONLINE" && cartaoPeloAsaas
+                        ? `💳 Finalizar e pagar com cartão • R$ ${finalTotal.toFixed(2).replace(".", ",")}`
+                        : `✓ Finalizar Pedido • R$ ${finalTotal.toFixed(2).replace(".", ",")}`}
               </button>
             </div>
           )}
@@ -4428,18 +4577,7 @@ export default function CustomerStorePage({
             // Um toque ACIDENTAL fora do modal cancelava o pedido inteiro sem
             // perguntar — no meio do Pix, com o QR na tela.
             if (!window.confirm("Cancelar o pagamento? O pedido será cancelado.")) return;
-            setShowPayment(false);
-            if (pendingOrderId) {
-              try {
-                await fetch(`/api/customer-order/${pendingOrderId}/status`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ status: "CANCELADO", cancellationReason: "Pagamento fechado pelo cliente" })
-                });
-              } catch {}
-            }
-            setPendingOrderId(null);
-            setIsCheckout(true);
+            await desistirDoPagamento();
           }}
         >
           <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: "24px", padding: "1.75rem", maxWidth: "440px", width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)", position: "relative" }}>
@@ -4447,30 +4585,20 @@ export default function CustomerStorePage({
               orderId={pendingOrderId}
               amount={pendingAmount}
               initialMethod={paymentMethod === "CREDITO_ONLINE" ? "credit_card" : "pix"}
-              onPaid={() => {
-                setShowPayment(false);
-                setCart([]); // Carrinho é limpo APENAS após pagamento aprovado!
-                setIsCheckout(false);
-                setMobileCartOpen(false);
-                setOrderSuccess(pendingOrderId);
-              }}
+              // Pagamento pelo site na conta Asaas da loja: uma forma só, a que o
+              // cliente escolheu (a cobrança nasce para ela). O Mercado Pago
+              // antigo, se um dia voltar, mostra as duas.
+              metodos={
+                franchisee.pixOnlineAtivo || cartaoPeloAsaas
+                  ? [paymentMethod === "CREDITO_ONLINE" ? "credit_card" : "pix"]
+                  : ["pix", "credit_card"]
+              }
+              cartaoPeloAsaas={cartaoPeloAsaas}
+              onPaid={pixPago}
               onError={(msg) => {
                 console.warn("Payment error:", msg);
               }}
-              onCancel={async () => {
-                setShowPayment(false);
-                if (pendingOrderId) {
-                  try {
-                    await fetch(`/api/customer-order/${pendingOrderId}/status`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ status: "CANCELADO", cancellationReason: "Pagamento online cancelado pelo cliente" })
-                    });
-                  } catch {}
-                }
-                setPendingOrderId(null);
-                setIsCheckout(true);
-              }}
+              onCancel={desistirDoPagamento}
             />
           </div>
         </div>

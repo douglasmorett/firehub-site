@@ -142,6 +142,22 @@ export async function PUT(req: Request) {
     return NextResponse.json({ success: true, semMudanca: true, order });
   }
 
+  // Pix pelo site esperando o cliente pagar: quem tira o pedido da espera é o
+  // pagamento (lib/pix-online-pedido.ts), não um clique. Mais abaixo, sair de
+  // AGUARDANDO_PAGAMENTO chama `confirmOrderPayment` — isso é certo para o
+  // totem que paga no caixa, mas aqui carimbaria como pago um Pix que não caiu.
+  // Cancelar pode (a cobrança é excluída e o QR deixa de valer).
+  const esperaPixPeloSite =
+    order.status === "AGUARDANDO_PAGAMENTO" &&
+    order.source === "ONLINE" &&
+    (order.gatewayProvider === "asaas" || ["PIX", "PIX_ONLINE"].includes(String(order.paymentMethod || "").toUpperCase()));
+  if (esperaPixPeloSite && status !== "CANCELADO") {
+    return NextResponse.json(
+      { error: "Este pedido está esperando o Pix do cliente. Ele entra sozinho no painel quando o pagamento cair." },
+      { status: 409 }
+    );
+  }
+
   // State machine: só permite transições válidas (exceto ADMIN que tem controle total)
   if (role !== "ADMIN") {
     const allowedNext = ALLOWED_TRANSITIONS[order.status] ?? [];
@@ -479,14 +495,32 @@ export async function PUT(req: Request) {
   }
 
   // Estorno Automático para Pagamentos Online no Cancelamento
-  if (status === "CANCELADO" && (order as any).paymentId) {
+  //
+  // Pix pelo site (conta Asaas da loja): pago → estorna do saldo da loja;
+  // esperando → exclui a cobrança. O que não sair na hora (sem saldo, estorno
+  // esperando autorização no app do Asaas) volta em `avisoEstorno` para o
+  // painel e vai para o WhatsApp do dono.
+  let avisoEstorno: string | null = null;
+  if (status === "CANCELADO" && order.gatewayProvider === "asaas") {
+    try {
+      const { aoCancelarPedidoPelaLoja } = await import("@/lib/pix-online-pedido");
+      avisoEstorno = await aoCancelarPedidoPelaLoja(orderId, cancelReason);
+    } catch (errEstorno: any) {
+      console.error(`[Pix pelo site] Erro ao estornar/excluir a cobrança do pedido ${orderId}:`, errEstorno?.message);
+      avisoEstorno = "Não foi possível falar com o Asaas agora. Confira o estorno no app do Asaas.";
+    }
+  }
+
+  // Mercado Pago (desligado desde 23/08). Lia `(order as any).paymentId`, campo
+  // que não existe no pedido — o estorno nunca rodava. O id é `gatewayPaymentId`.
+  if (status === "CANCELADO" && order.gatewayProvider === "mercadopago" && order.gatewayPaymentId && order.paymentPaidAt) {
     try {
       const { refundMpPayment } = await import("@/lib/mercadopago");
       const franchisee = await prisma.user.findUnique({
         where: { id: order.franchiseeId },
         select: { mpAccessToken: true },
       });
-      const refundRes = await refundMpPayment((order as any).paymentId, franchisee?.mpAccessToken || undefined);
+      const refundRes = await refundMpPayment(order.gatewayPaymentId, franchisee?.mpAccessToken || undefined);
       if (refundRes.success) {
         console.log(`[Automatic Refund] Order ${orderId} refunded successfully via MP.`);
       } else {
@@ -551,7 +585,7 @@ export async function PUT(req: Request) {
 
   // `avisoIfood` vem preenchido quando o iFood recusou a ação: o status local
   // mudou, mas o lojista precisa saber que o iFood não acompanhou.
-  return NextResponse.json({ success: true, avisoIfood, aviso99Food });
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoEstorno });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });

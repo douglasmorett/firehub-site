@@ -87,6 +87,10 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       ifoodConnected: true,
       ifoodWidgetId: true,
       mpSellerId: true,
+      // Pix pelo site (conta Asaas da loja). Só o interruptor: a chave cifrada
+      // NÃO entra neste select — tudo aqui vai para o HTML do cardápio.
+      pixOnlineAtivo: true,
+      cartaoOnlineAtivo: true,
       showReviewsOnMenu: true,
       showAddressOnMenu: true,
       allowScheduledOrders: true,

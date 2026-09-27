@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     where: { id: orderId },
     select: {
       paymentPaidAt:    true,
+      status:           true,
       gatewayProvider:  true,
       gatewayPaymentId: true,
       pagarmeStatus:    true,
@@ -24,13 +25,23 @@ export async function GET(req: NextRequest) {
 
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
 
-  // Já está pago no banco
-  if (order.paymentPaidAt) return NextResponse.json({ paid: true, failed: false });
+  // Já está pago no banco. Cancelado com pagamento é Pix que caiu depois do
+  // cancelamento e está sendo devolvido: para o cliente, não foi pago.
+  if (order.paymentPaidAt && order.status !== "CANCELADO") return NextResponse.json({ paid: true, failed: false });
+  if (order.status === "CANCELADO") return NextResponse.json({ paid: false, failed: true, status: "cancelado" });
 
   // Sem gateway configurado ainda
   if (!order.gatewayPaymentId) return NextResponse.json({ paid: false, failed: false });
 
   try {
+    // Pix pelo site na conta Asaas da loja: a conferência consulta o Asaas,
+    // confirma, e também expira o pedido quando o prazo para pagar acaba.
+    if (order.gatewayProvider === "asaas") {
+      const { conferirPagamentoDoPedido } = await import("@/lib/pix-online-pedido");
+      const s = await conferirPagamentoDoPedido(orderId);
+      return NextResponse.json({ paid: s.pago, failed: s.encerrado, status: s.motivo || (s.pago ? "paid" : "pending") });
+    }
+
     if (order.gatewayProvider === "celcoin") {
       const status = await checkCelcoinPixStatus(order.gatewayPaymentId);
       const paid = status === "PAID";
