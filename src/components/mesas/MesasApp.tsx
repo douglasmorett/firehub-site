@@ -313,7 +313,7 @@ export default function MesasApp({
 }: {
   modo?: ModoDaTela;
   /** Garçom logado pelo link. Só existe em modo "garcom". */
-  garcom?: { id: string; name: string; commissionRate?: number | null; podeFecharConta?: boolean } | null;
+  garcom?: { id: string; name: string; commissionRate?: number | null; podeFecharConta?: boolean; podeDarDesconto?: boolean } | null;
   /** Slug da loja, para o "Sair" do garçom voltar ao login certo. */
   slug?: string;
 }) {
@@ -2938,7 +2938,9 @@ export default function MesasApp({
                     serviço e é rateado entre as pessoas na proporção do que
                     cada uma consumiu — é assim que a mesa entende "10% pra
                     gente". Sem motivo, vira furo de caixa sem explicação. */}
-                {!mostrarDesconto && descontoDaMesa === 0 ? (
+                {ehGarcom && garcom?.podeDarDesconto === false ? null : !mostrarDesconto && descontoDaMesa === 0 ? (
+                  /* Garçom sem "pode dar desconto" no cadastro: o botão não existe
+                     para ele, e o servidor recusa desconto vindo dele. */
                   <button type="button" onClick={() => setMostrarDesconto(true)}
                     style={{ width: "100%", padding: "7px", borderRadius: 9, border: "1.5px dashed #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 8 }}>
                     🏷️ Dar desconto

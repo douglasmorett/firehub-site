@@ -13,6 +13,8 @@ interface Waiter {
   active: boolean;
   /** Pelo link, pode fechar a conta? Ausente (cadastro antigo) = pode. */
   podeFecharConta?: boolean;
+  /** Pelo link, pode dar desconto? Ausente = pode. */
+  podeDarDesconto?: boolean;
   /** Login pelo link do garçom. Nulo = sem acesso próprio. */
   login: string | null;
   lastLoginAt: string | null;
@@ -24,7 +26,7 @@ interface AcessoDoGarcom {
   caminho: string | null;
 }
 
-const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, podeFecharConta: true, login: "", password: "" };
+const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, podeFecharConta: true, podeDarDesconto: true, login: "", password: "" };
 
 interface TableSessionData {
   id: string;
@@ -206,7 +208,7 @@ export default function GarconsPage() {
 
   const openEdit = (w: Waiter) => {
     setEditingId(w.id);
-    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, login: w.login || "", password: "" });
+    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, podeDarDesconto: w.podeDarDesconto !== false, login: w.login || "", password: "" });
     setErroDoForm("");
     setMostrarSenha(false);
     setShowModal(true);
@@ -516,6 +518,16 @@ export default function GarconsPage() {
                 </label>
                 <p style={{ margin: "6px 0 0 26px", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>
                   Desmarcado, o garçom lança pedidos e imprime a conta, mas o botão "Fechar Conta" só aparece no painel da loja.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={formData.podeDarDesconto} onChange={e => setFormData({ ...formData, podeDarDesconto: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#475569" }} />
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>Pode dar desconto pelo link do garçom</span>
+                </label>
+                <p style={{ margin: "6px 0 0 26px", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>
+                  Desmarcado, o botão "Dar desconto" some para ele; o desconto na conta fica só com o painel da loja.
                 </p>
               </div>
 

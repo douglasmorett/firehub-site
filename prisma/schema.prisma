@@ -1397,6 +1397,9 @@ model Waiter {
   /// loja fecha (pedido do dono, 27/09/2026). A COLUNA nasce em
   /// garantir-colunas.ts (INSTRUCOES_MESA).
   podeFecharConta  Boolean         @default(true)
+  /// Pelo link, pode dar desconto na conta? Mesma regra: nasce ligado, o
+  /// dono tira se quiser. A COLUNA nasce em garantir-colunas.ts.
+  podeDarDesconto  Boolean         @default(true)
 
   /// Acesso próprio do garçom pelo link /garcom/<slug-da-loja>.
   ///

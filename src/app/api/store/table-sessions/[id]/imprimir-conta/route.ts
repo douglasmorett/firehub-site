@@ -35,6 +35,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  // Garçom sem "pode dar desconto": a conta impressa por ele não leva desconto.
+  if (operador.tipo === "garcom" && !operador.garcom.podeDarDesconto && Number(body?.desconto?.valor) > 0) {
+    return NextResponse.json({ error: "Este garçom não dá desconto. A conta com desconto sai pelo painel da loja." }, { status: 403 });
+  }
 
   const mesa = await prisma.tableSession.findUnique({
     where: { id },

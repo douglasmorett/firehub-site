@@ -37,6 +37,11 @@ export async function POST(
 
     const data = await req.json();
     const { paymentMethods, serviceFeePercent, waiterTip, desconto } = data;
+    // Garçom sem "pode dar desconto" no cadastro: o botão nem aparece para
+    // ele, e um desconto que chegue mesmo assim não fecha a mesa.
+    if (operador.tipo === "garcom" && !operador.garcom.podeDarDesconto && Number(desconto?.valor) > 0) {
+      return NextResponse.json({ error: "Este garçom não dá desconto. Peça ao caixa para fechar com desconto pelo painel." }, { status: 403 });
+    }
 
     const tableSession = await prisma.tableSession.findUnique({
       where: { id },
