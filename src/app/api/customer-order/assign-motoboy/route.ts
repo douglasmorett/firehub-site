@@ -8,6 +8,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
+import { linhasDePagamentoParaOMotoboy } from "@/lib/pagamento-no-whatsapp-do-motoboy";
 
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -129,52 +130,11 @@ export async function PATCH(req: NextRequest) {
         const storeCity = order.franchisee?.city || "Rio das Ostras";
         const storeAddress = storeCity;
 
-        // Análise de Pagamento e Troco
-        const methodRaw = String(order.paymentMethod || "").toUpperCase();
-        const notesRaw = String(order.notes || "").toUpperCase();
-        const total = Number(order.totalAmount || 0);
-
-        // A OBSERVAÇÃO SÓ FALA QUANDO NÃO HÁ FORMA DE PAGAMENTO GRAVADA.
-        //
-        // Ela carrega texto livre do cliente — e o robô passou a gravar o que
-        // ele escreve. "Já paguei no pix, não precisa de troco" marcava o
-        // pedido como DINHEIRO e mandava o motoboy cobrar na porta. O campo de
-        // pagamento é quem sabe; a observação continua valendo para o pedido
-        // antigo (ou de integração) que veio sem ele.
-        const semFormaDePagamento = methodRaw.trim() === "";
-        const isCash =
-          methodRaw.includes("DINHEIRO") ||
-          methodRaw.includes("CASH") ||
-          (semFormaDePagamento && (notesRaw.includes("DINHEIRO") || notesRaw.includes("TROCO")));
-        const isCardOnDelivery =
-          methodRaw.includes("CARTAO") ||
-          methodRaw.includes("MAQUINA") ||
-          methodRaw.includes("MAQUININHA") ||
-          methodRaw.includes("DEBITO") ||
-          methodRaw.includes("CREDITO") ||
-          methodRaw.includes("VALE") ||
-          (semFormaDePagamento && (notesRaw.includes("LEVAR MAQUINA") || notesRaw.includes("MAQUININHA")));
-
-        let changeNeeded = 0;
-        if (typeof order.changeAmount === "number" && order.changeAmount > 0) {
-          changeNeeded = order.changeAmount > total ? order.changeAmount - total : order.changeAmount;
-        } else {
-          const match =
-            notesRaw.match(/TROCO\s*(?:PARA)?\s*R?\$?\s*(\d+[\.,]?\d*)/i) ||
-            notesRaw.match(/TROCO\s*(\d+[\.,]?\d*)/i);
-          if (match && match[1]) {
-            const trocoPara = parseFloat(match[1].replace(",", "."));
-            if (trocoPara > total) changeNeeded = trocoPara - total;
-            else changeNeeded = trocoPara;
-          }
-        }
-
-        let payText = "✅ Pago Online";
-        if (isCash) {
-          payText = `💵 Dinheiro (Levar R$ ${changeNeeded.toFixed(2)} de troco)`;
-        } else if (isCardOnDelivery) {
-          payText = `💳 Cartão (Levar Maquininha e cobrar na entrega)`;
-        }
+        // Quanto cobrar, em qual forma e o troco: a MESMA decisão do app do
+        // motoboy (lib/pagamento-no-whatsapp-do-motoboy.ts). A leitura que
+        // morava aqui não dizia o valor, e o que ela não reconhecia virava
+        // "Pago Online" — o app, na dúvida, manda cobrar.
+        const linhasDePagamento = linhasDePagamentoParaOMotoboy(order as any);
 
         // Link leve de navegação direta do Google Maps (utiliza o GPS atual do motoboy e remove textos pesados de complemento)
         const orderLat = (order as any).customerLatLng?.lat || (order as any).latitude || (order as any).lat;
@@ -207,7 +167,7 @@ export async function PATCH(req: NextRequest) {
         msg += `👤 *Cliente:* ${customerName}\n`;
         msg += `📍 *Endereço:* ${customerAddress}\n`;
         if (customerPhone) msg += customerPhone;
-        msg += `💰 *Pagamento:* ${payText}\n\n`;
+        msg += `${linhasDePagamento}\n`;
         msg += `🗺️ *Navegação Google Maps:* ${googleMapsUrl}`;
 
         await sendEvolutionMessage(order.franchiseeId, fullPhone, msg);
