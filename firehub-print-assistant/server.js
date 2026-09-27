@@ -3628,6 +3628,15 @@ async function verificarAtualizacao() {
     // de deixar a loja sem Assistente nenhum.
     const comando = `ping -n 6 127.0.0.1 >nul & "${exePath}" /S & ping -n 4 127.0.0.1 >nul${relancar}`;
     gravarTentativaDeUpdate({ versao: info.versao, localAntes: VERSAO_LOCAL_UPDATE, em: Date.now() });
+    // A vigia do Windows (main.js, 1.2.27) abre o Assistente quando ele não
+    // está rodando — e durante a instalação ele não está. Aberta no meio, ela
+    // travaria o executável que o instalador está trocando. Três minutos
+    // cobrem a instalação com folga; se o religar do fim falhar, a vigia é
+    // que traz o Assistente de volta depois.
+    try {
+      fs.mkdirSync(APP_DIR, { recursive: true });
+      fs.writeFileSync(path.join(APP_DIR, "atualizando.json"), JSON.stringify({ versao: info.versao, ate: Date.now() + 3 * 60_000 }));
+    } catch {}
     logUpdate(`Instalando ${info.versao} em silêncio e reiniciando.`);
     const filho = spawn("cmd.exe", ["/c", comando], { detached: true, stdio: "ignore", windowsHide: true });
     filho.unref();
