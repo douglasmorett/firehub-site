@@ -2,7 +2,12 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 
-export default function AmbassadorLoginForm() {
+/**
+ * Login do portal do embaixador — e do vendedor, que é a mesma conta
+ * (lib/vendedores.ts). `modo="vendedor"` só troca os textos e o destino.
+ */
+export default function AmbassadorLoginForm({ modo = "embaixador" }: { modo?: "embaixador" | "vendedor" }) {
+  const vendedor = modo === "vendedor";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -24,9 +29,9 @@ export default function AmbassadorLoginForm() {
       });
 
       if (res?.ok) {
-        window.location.href = "/embaixador";
+        window.location.href = vendedor ? "/vendedor" : "/embaixador";
       } else {
-        setError("E-mail ou senha de embaixador incorretos. Verifique suas credenciais.");
+        setError(`E-mail ou senha de ${vendedor ? "vendedor" : "embaixador"} incorretos. Verifique suas credenciais.`);
       }
     } catch (err: any) {
       console.error(err);
@@ -117,11 +122,13 @@ export default function AmbassadorLoginForm() {
           </div>
           <div>
             <span style={{ display: "inline-block", background: "#FEF2F2", color: "#C92E09", border: "1px solid #FECACA", padding: "4px 14px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
-              🤝 Portal do Embaixador
+              {vendedor ? "💼 Portal do Vendedor" : "🤝 Portal do Embaixador"}
             </span>
           </div>
           <p style={{ color: "#64748B", fontSize: "0.88rem", marginTop: "4px", lineHeight: "1.4" }}>
-            Acesse seu painel exclusivo para acompanhar suas lojas indicadas e comissões
+            {vendedor
+              ? "Acesse sua carteira para ver os clientes novos, marcar quem já atendeu e acompanhar sua comissão"
+              : "Acesse seu painel exclusivo para acompanhar suas lojas indicadas e comissões"}
           </p>
         </div>
 
@@ -148,7 +155,7 @@ export default function AmbassadorLoginForm() {
 
         <form onSubmit={handleSubmit}>
           <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
-            E-mail do Embaixador
+            {vendedor ? "E-mail do Vendedor" : "E-mail do Embaixador"}
           </label>
           <input
             type="email"
@@ -191,7 +198,7 @@ export default function AmbassadorLoginForm() {
           />
 
           <button type="submit" className="amb-btn" disabled={loading}>
-            {loading ? "Entrando..." : "🚀 Acessar Painel do Embaixador"}
+            {loading ? "Entrando..." : vendedor ? "🚀 Acessar Minha Carteira" : "🚀 Acessar Painel do Embaixador"}
           </button>
         </form>
 

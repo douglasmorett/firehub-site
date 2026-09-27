@@ -177,6 +177,19 @@ model User {
   ambassadorId    String?        // ID do embaixador que indicou esta loja
   ambassador      Ambassador?    @relation("AmbassadorStores", fields: [ambassadorId], references: [id], onDelete: SetNull)
   ambassadorAccount Ambassador?  @relation("AmbassadorAccount") // conta de embaixador deste lojista, se promovido
+  /// VENDEDOR RESPONSÁVEL pela loja — atribuído à mão pelo admin (aba
+  /// Lojistas). Não é quem indicou (`ambassadorId`): é quem acompanha a loja
+  /// que chegou por tráfego pago ou orgânico. Leva `Ambassador.sellerPercent`
+  /// (3%) da mensalidade pelo split do Asaas (lib/billing.ts), somado ao que o
+  /// embaixador que indicou já leva. Ver lib/vendedores.ts.
+  ///
+  /// AS COLUNAS EXISTEM NO BANCO ANTES destes campos: src/lib/garantir-colunas.ts.
+  vendedorId          String?
+  vendedor            Ambassador?  @relation("VendedorStores", fields: [vendedorId], references: [id], onDelete: SetNull)
+  /// "AGUARDANDO" quando o admin atribui; o vendedor marca "ATENDIDO" no painel dele.
+  vendedorStatus      String?
+  vendedorAtribuidoEm DateTime?
+  vendedorAtendidoEm  DateTime?
   onboardingData  Json?          // { comoConheceu, faturamento, etc }
   // === INDIQUE E GANHE (Parceiros/Revendedores) ===
   referredById    String?
@@ -266,6 +279,7 @@ model User {
   usageLogs           UsageLog[]
 
   @@index([ifoodMerchantId])
+  @@index([vendedorId])
   @@index([jotajaMerchantId])
   @@index([accountGroupId])
 }
@@ -1852,6 +1866,14 @@ model Ambassador {
   /// de nível 1 já contratada.
   linkedUserId      String?    @unique
   linkedUser        User?      @relation("AmbassadorAccount", fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  /// Também é VENDEDOR: recebe lojas atribuídas à mão pelo admin e as vê em
+  /// /vendedor. Pode ser só vendedor (cadastrado na aba Vendedores) ou um
+  /// embaixador que passou a vender também — o login é o mesmo.
+  isVendedor        Boolean    @default(false)
+  /// % da mensalidade das lojas da carteira dele (User.vendedorId).
+  sellerPercent     Float      @default(3)
+  carteira          User[]     @relation("VendedorStores")
 
   @@index([parentAmbassadorId])
 }

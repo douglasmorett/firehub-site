@@ -29,11 +29,14 @@
 import { prisma } from "@/lib/prisma";
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
+import { ganhaComoVendedor } from "@/lib/vendedores";
 
 /**
  * Teto de comissão que pode sair de uma mensalidade, somando os dois níveis do
  * programa de embaixadores. O padrão do programa é 20% + 3% = 23%; a folga até
- * 40% existe para os casos negociados à mão (o Victor está em 30% + 3%). Acima
+ * 40% existe para os casos negociados à mão (o Victor está em 30% + 3%). O
+ * vendedor responsável (+3%) só entra em loja que não é indicação dele, então
+ * ele não empilha em cima dos 30%. Acima
  * disso o boleto sai sem split e o erro vai para o log — é quase certo que
  * alguém errou o número no admin.
  */
@@ -527,6 +530,8 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
           // Dois niveis: quem indicou a loja e quem indicou esse embaixador.
           // Nao sobe mais que isso — o programa para no segundo nivel.
           ambassador: { include: { parentAmbassador: true } },
+          // O vendedor que o admin pôs para acompanhar a loja (lib/vendedores.ts).
+          vendedor: true,
         },
       },
     },
@@ -773,6 +778,24 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         if (nivel2?.active && nivel2.asaasWalletId && nivel2.id !== nivel1.id) {
           splits.push({ walletId: nivel2.asaasWalletId, percentualValue: nivel2.level2Percent ?? 3 });
         }
+      }
+
+      // Vendedor responsável: `sellerPercent` (3%) além do embaixador — só em
+      // loja que NÃO é indicação dele. Se ele indicou a loja (ou trouxe quem
+      // indicou), já ganha a comissão de embaixador e só acompanha
+      // (lib/vendedores.ts, ganhaComoVendedor). A soma na mesma linha fica
+      // como rede: o Asaas não aceita a mesma carteira duas vezes.
+      const vendedor = cycle.franchisee?.vendedor;
+      if (
+        vendedor?.active && vendedor.isVendedor && vendedor.asaasWalletId && vendedor.sellerPercent > 0 &&
+        ganhaComoVendedor(vendedor.id, {
+          ambassadorId: cycle.franchisee?.ambassadorId,
+          ambassador: cycle.franchisee?.ambassador ? { parentAmbassadorId: cycle.franchisee.ambassador.parentAmbassadorId } : null,
+        })
+      ) {
+        const mesma = splits.find((s) => s.walletId === vendedor.asaasWalletId);
+        if (mesma) mesma.percentualValue += vendedor.sellerPercent;
+        else splits.push({ walletId: vendedor.asaasWalletId, percentualValue: vendedor.sellerPercent });
       }
 
       // Freio de mão. `commissionPercent` entra por um input livre no admin —

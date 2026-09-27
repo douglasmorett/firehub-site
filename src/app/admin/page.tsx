@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import AdminDashboardClient from "@/components/admin/AdminDashboardClient";
 import { getCurrentYearMonth, intervaloDoMes } from "@/lib/billing";
 import { inicioDoDiaDaLojaAtras } from "@/lib/fuso";
+import { atividadeDasLojas } from "@/lib/atividade-da-loja";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "FireHub Admin — Visão Geral" };
@@ -24,7 +25,18 @@ export default async function AdminPage() {
       isFranqueadoHakim: true, mpAccessToken: true, celcoinAccountId: true,
       mpSellerId: true, storeLogo: true, storePhone: true, trialEndsAt: true,
       cpfCnpj: true, repasseConfig: true, onboardingData: true,
+      vendedorId: true, vendedorStatus: true, vendedorAtribuidoEm: true,
     },
+  });
+
+  // Está usando? O último pedido de cada loja, para achar quem parou.
+  const atividade = await atividadeDasLojas(lojistas.map(l => l.id));
+
+  // A equipe de vendas, para o seletor ao lado de cada loja (lib/vendedores.ts).
+  const vendedores = await prisma.ambassador.findMany({
+    where: { isVendedor: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, active: true },
   });
 
   // Lojistas isentos de cobrança do FireHub
@@ -126,6 +138,10 @@ export default async function AdminPage() {
     pendente: exemptSet.has(l.id) ? 0 : (pendingMap[l.id] || 0),
     temMP: !!(l.mpAccessToken || l.mpSellerId),
     temCelcoin: !!l.celcoinAccountId,
+    vendedorId: l.vendedorId,
+    vendedorStatus: l.vendedorStatus,
+    vendedorAtribuidoEm: l.vendedorAtribuidoEm ? l.vendedorAtribuidoEm.toISOString() : null,
+    atividade: atividade.get(l.id) || null,
   }));
 
   return (
@@ -138,6 +154,7 @@ export default async function AdminPage() {
       }}
       monthlyGrowth={monthlyGrowth}
       lojistas={serialized}
+      vendedores={vendedores}
     />
   );
 }

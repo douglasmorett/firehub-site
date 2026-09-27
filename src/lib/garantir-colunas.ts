@@ -817,6 +817,15 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "linkedUserId" TEXT`,
   `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "level2Percent" DOUBLE PRECISION NOT NULL DEFAULT 3`,
 
+  // ── Vendedores (lib/vendedores.ts) ──
+  `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "isVendedor" BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "sellerPercent" DOUBLE PRECISION NOT NULL DEFAULT 3`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "vendedorId" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "vendedorStatus" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "vendedorAtribuidoEm" TIMESTAMP(3)`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "vendedorAtendidoEm" TIMESTAMP(3)`,
+  `CREATE INDEX IF NOT EXISTS "User_vendedorId_idx" ON "User"("vendedorId")`,
+
   // ── Tabelas que também nasceram nesta janela ──
   // Se a tabela não existir no banco desta loja, estas seis falham sozinhas e
   // as 33 de cima continuam valendo. É por isso que o catch é por instrução.

@@ -117,6 +117,10 @@ export async function GET(req: NextRequest) {
       ["StoreCustomer", "birthDate"], ["TotemLicense", "posTerminalId"],
       ["Ambassador", "parentAmbassadorId"], ["Ambassador", "linkedUserId"],
       ["Ambassador", "level2Percent"],
+      // Vendedores: a loja lê as quatro em toda consulta sem `select`.
+      ["Ambassador", "isVendedor"], ["Ambassador", "sellerPercent"],
+      ["User", "vendedorId"], ["User", "vendedorStatus"],
+      ["User", "vendedorAtribuidoEm"], ["User", "vendedorAtendidoEm"],
       ["TableSession", "waiterId"], ["TableSession", "waiterTip"],
       ["TableSession", "waiterCommission"],
       ["PosTerminal", "deviceToken"], ["PosTerminal", "lastSeenAt"],

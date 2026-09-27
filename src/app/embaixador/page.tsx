@@ -3,26 +3,11 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import AmbassadorDashboard from "@/components/ambassador/AmbassadorDashboard";
 import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
-import { calcMensalidade } from "@/lib/firehub-billing";
-import { getCurrentYearMonth, intervaloDoMes } from "@/lib/billing";
+import { comissaoDasLojas, SELECT_DA_LOJA_NA_CARTEIRA } from "@/lib/comissao-da-carteira";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Portal do Embaixador - FireHub" };
 
-/** Campos da loja que o portal precisa para calcular comissão. */
-const SELECT_DA_LOJA = {
-  id: true,
-  name: true,
-  storeName: true,
-  storePhone: true,
-  email: true,
-  createdAt: true,
-  trialEndsAt: true,
-  slug: true,
-  city: true,
-  storeOpen: true,
-  planPercent: true,
-} as const;
 
 export default async function EmbaixadorPage() {
   const session = await getServerSession(authOptions);
@@ -44,7 +29,7 @@ export default async function EmbaixadorPage() {
     },
     include: {
       referredStores: {
-        select: SELECT_DA_LOJA,
+        select: SELECT_DA_LOJA_NA_CARTEIRA,
         orderBy: { createdAt: "desc" }
       },
       // Rede de nível 2: os embaixadores que ELE trouxe. As lojas deles pagam
@@ -57,7 +42,7 @@ export default async function EmbaixadorPage() {
           name: true,
           code: true,
           referredStores: {
-            select: SELECT_DA_LOJA,
+            select: SELECT_DA_LOJA_NA_CARTEIRA,
             orderBy: { createdAt: "desc" }
           }
         }
@@ -69,92 +54,8 @@ export default async function EmbaixadorPage() {
     return <AmbassadorLoginForm />;
   }
 
-  const now = new Date();
-  // Mês EM BRASÍLIA (o mesmo do fechamento de cobrança): com getMonth() do
-  // container (UTC) as vendas das 21:00 às 24:00 do último dia caíam na
-  // comissão do mês seguinte.
-  const { monthStart: startOfMonth, monthEnd: endOfMonth } = intervaloDoMes(getCurrentYearMonth());
-
-  // Coleta dados de vendas de um conjunto de lojas, aplicando o percentual que
-  // vale para elas: `commissionPercent` nas lojas próprias (nível 1) e
-  // `level2Percent` nas lojas dos embaixadores que ele trouxe (nível 2).
-  const calcularLojas = async (lojas: typeof ambassador.referredStores, percentual: number) => await Promise.all(
-    lojas.map(async (store) => {
-      // Vendas no mês atual
-      const monthAgg = await prisma.customerOrder.aggregate({
-        where: {
-          franchiseeId: store.id,
-          status: { not: "CANCELADO" },
-          createdAt: { gte: startOfMonth, lt: endOfMonth }
-        },
-        _sum: { totalAmount: true },
-        _count: true
-      });
-
-      const monthSales = monthAgg._sum.totalAmount || 0;
-      const monthOrdersCount = monthAgg._count || 0;
-
-      // Status da Loja
-      const isTrial = store.trialEndsAt ? new Date(store.trialEndsAt) > now : false;
-      const trialDaysRemaining = isTrial && store.trialEndsAt
-        ? Math.max(0, Math.ceil((new Date(store.trialEndsAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
-        : 0;
-
-      let status: "TRIAL" | "ACTIVE" | "INACTIVE" = "INACTIVE";
-      if (isTrial) {
-        status = "TRIAL";
-      } else if (monthSales > 0 || store.storeOpen) {
-        status = "ACTIVE";
-      } else {
-        status = "INACTIVE";
-      }
-
-      // Verificação de ciclo pago no Asaas ou faturamento real
-      const paidCycle = await prisma.franchiseeBillingCycle.findFirst({
-        where: {
-          franchiseeId: store.id,
-          status: "PAID"
-        },
-        orderBy: { createdAt: "desc" }
-      });
-
-      // Cálculo da mensalidade real da plataforma:
-      // Se a loja está em Teste (Trial) ou não movimentou faturamento, mensalidade e comissão são R$ 0,00.
-      let platformFee = 0;
-      let isPaidByAsaas = false;
-
-      if (paidCycle) {
-        isPaidByAsaas = true;
-        platformFee = paidCycle.amountDue;
-      } else if (!isTrial && monthSales > 0) {
-        // Se a loja já saiu do teste e está faturando
-        const { mensalidade } = calcMensalidade(monthSales, true);
-        platformFee = mensalidade;
-      }
-
-      // Comissão real do embaixador: só conta sobre mensalidade real gerada/paga
-      const ambassadorProfit = platformFee * (percentual / 100);
-
-      return {
-        id: store.id,
-        name: store.name,
-        storeName: store.storeName || store.name || "Restaurante sem nome",
-        storePhone: store.storePhone,
-        email: store.email,
-        slug: store.slug,
-        city: store.city,
-        createdAt: store.createdAt.toISOString(),
-        trialEndsAt: store.trialEndsAt ? store.trialEndsAt.toISOString() : null,
-        trialDaysRemaining,
-        status,
-        monthSales,
-        monthOrdersCount,
-        platformFee,
-        ambassadorProfit,
-        isPaidByAsaas
-      };
-    })
-  );
+  // A conta mora em lib/comissao-da-carteira.ts — a mesma do vendedor.
+  const calcularLojas = comissaoDasLojas;
 
   const storesData = await calcularLojas(ambassador.referredStores, ambassador.commissionPercent);
 
@@ -182,6 +83,15 @@ export default async function EmbaixadorPage() {
   const totalPlatformFees = storesData.reduce((acc, s) => acc + s.platformFee, 0);
 
   return (
+    <>
+    {ambassador.isVendedor && (
+      <a
+        href="/vendedor"
+        style={{ display: "block", background: "#0B0B0C", color: "#fff", textAlign: "center", padding: "10px 16px", fontWeight: 700, fontSize: "0.88rem", textDecoration: "none", fontFamily: "Inter, sans-serif" }}
+      >
+        💼 Você também é vendedor — ver sua carteira de clientes →
+      </a>
+    )}
     <AmbassadorDashboard
       ambassador={{
         id: ambassador.id,
@@ -204,5 +114,6 @@ export default async function EmbaixadorPage() {
       totalPortfolioSales={totalPortfolioSales}
       totalPlatformFees={totalPlatformFees}
     />
+    </>
   );
 }
