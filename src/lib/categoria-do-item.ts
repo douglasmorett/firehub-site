@@ -383,13 +383,7 @@ export async function resolverCategoriasDosPedidos<
 
   const lojas = Array.from(new Set(precisa.map((p) => p.franchiseeId).filter(Boolean))) as string[];
   const mapas = new Map<string, MapaDeCategorias>();
-  for (const lojaId of lojas) {
-    const produtos = await prisma.menuProduct.findMany({
-      where: { franchiseeId: lojaId },
-      select: { id: true, name: true, category: true, active: true },
-    });
-    mapas.set(lojaId, montarMapa(produtos));
-  }
+  for (const lojaId of lojas) mapas.set(lojaId, await mapaDaLoja(lojaId));
 
   return pedidos.map((p) => {
     const mapa = p.franchiseeId ? mapas.get(p.franchiseeId) : undefined;
@@ -405,6 +399,36 @@ export async function resolverCategoriasDosPedidos<
       }),
     };
   });
+}
+
+/**
+ * O mapa do cardápio de uma loja, guardado por 60 s.
+ *
+ * Quem chama isto é o poll do painel (a cada poucos segundos, por aba aberta),
+ * a fila de impressão (a cada 3 s, por Assistente) e o KDS — e cada chamada
+ * lia o cardápio INTEIRO da loja no banco. No domingo 27/09/2026 às 19h o
+ * droplet de produção passou de 55% de CPU só com a carga normal; este é um
+ * dos pesos que dá para tirar de graça. Categoria de produto muda raramente,
+ * e um minuto de atraso na impressão/KDS não muda nada para a cozinha.
+ */
+const VALIDADE_DO_MAPA_MS = 60_000;
+const mapasPorLoja = new Map<string, { em: number; mapa: MapaDeCategorias }>();
+
+async function mapaDaLoja(lojaId: string): Promise<MapaDeCategorias> {
+  const agora = Date.now();
+  const guardado = mapasPorLoja.get(lojaId);
+  if (guardado && agora - guardado.em < VALIDADE_DO_MAPA_MS) return guardado.mapa;
+  const produtos = await prisma.menuProduct.findMany({
+    where: { franchiseeId: lojaId },
+    select: { id: true, name: true, category: true, active: true },
+  });
+  const mapa = montarMapa(produtos);
+  mapasPorLoja.set(lojaId, { em: agora, mapa });
+  // Sem crescer para sempre: loja que não consulta há 10 min sai do mapa.
+  if (mapasPorLoja.size > 200) {
+    for (const [k, v] of mapasPorLoja) if (agora - v.em > 10 * 60_000) mapasPorLoja.delete(k);
+  }
+  return mapa;
 }
 
 /** Uma escolha feita dentro do combo, com a categoria do produto que ela é. */
