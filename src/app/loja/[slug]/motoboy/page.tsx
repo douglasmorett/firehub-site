@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { getBeveragesFromOrder } from "@/lib/beverage";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica } from "@/lib/pagamento-na-entrega";
+import VerPedido from "@/components/motoboy/VerPedido";
 
 export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
@@ -1195,6 +1196,10 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                     </div>
                   )}
                 </div>
+
+                {/* O que vai na sacola, para conferir sem ligar para a loja
+                    (lanches, escolhas do combo e a bebida em azul). */}
+                <VerPedido order={order} palavrasDeBebida={bevKeywords} />
 
                 {/* Quick Navigation Buttons (Google Maps + Waze + WhatsApp).
                     Sem destino geocodificável os botões nem aparecem: um link
