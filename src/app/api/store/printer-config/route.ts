@@ -3,12 +3,17 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { lerCampanha } from "@/lib/campanha-converter";
+import { lerAndares } from "@/lib/andares-da-mesa";
 
 export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
   const config = await req.json();
+  // Andares do salão (só a tela de Mesas manda): gravados já no formato limpo.
+  if (config && typeof config === "object" && "andares" in config) {
+    config.andares = lerAndares(config);
+  }
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },

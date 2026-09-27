@@ -3,6 +3,7 @@ import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
+import { impressorasDoAndar, lerAndares } from "./andares-da-mesa";
 import { categoriasPedidas, itensDaImpressora, restoDoPedido } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
@@ -525,6 +526,12 @@ export async function printOrder(
   // da outra. Mesma regra da fila da nuvem (roteamento-de-impressao.ts), com o
   // mesmo resgate: nenhuma impressora marcada para esta loja = todas.
   printersToUse = impressorasDaLoja(printersToUse, order as any);
+
+  // ── DE QUAL ANDAR E ESTA MESA ────────────────────────────────────────────
+  // A impressora do terreo nao recebe a mesa do segundo andar. Mesma regra da
+  // fila da nuvem (lib/andares-da-mesa.ts); o numero vem do campo `mesa` que
+  // camposDaMesaParaImpressao ja poe no pedido formatado.
+  printersToUse = impressorasDoAndar(printersToUse, lerAndares(printerConfig), (order as any).mesa);
 
   // Deduplica impressoras para a mesma impressora física não receber o pedido 2x
   const uniquePrinters: PrinterEntry[] = [];

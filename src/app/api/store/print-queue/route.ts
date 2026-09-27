@@ -12,7 +12,8 @@ import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-con
 import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
-import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
+import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda, numeroDaMesa } from "@/lib/mesa-na-comanda";
+import { impressorasDoAndar, lerAndares } from "@/lib/andares-da-mesa";
 import { lembrarAssistente } from "@/lib/assistente-da-loja";
 import { getClientIp } from "@/lib/rateLimit";
 import { corteDaVolta } from "@/lib/volta-do-assistente";
@@ -408,6 +409,9 @@ export async function GET(req: NextRequest) {
         .catch(() => { /* tabela ainda não existe: nada a apagar */ });
     }
     const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
+    // Andares do salão (tela de Mesas): a impressora de um andar só recebe as
+    // mesas dele — comanda, reimpressão e conta (lib/andares-da-mesa.ts).
+    const andares = lerAndares(pc);
     const slugDaLoja = owner?.slug || "";
 
     const jobs = recentOrders.map(({ tableSession, ...pedidoDoBanco }) => {
@@ -443,7 +447,7 @@ export async function GET(req: NextRequest) {
           comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct),
         })),
       };
-      const destinos = destinosDoPedido(printers, order as any);
+      const destinos = destinosDoPedido(printers, order as any, { andares, mesa: numeroDaMesa(comMesa as any) });
       // ── QR "PUXAR PEDIDO" ──────────────────────────────────────────
       //
       // Esta fila imprime o delivery quando o painel não está aberto num
@@ -618,7 +622,7 @@ export async function GET(req: NextRequest) {
       const alvo = typeof order.impressoraAlvo === "string" ? order.impressoraAlvo.trim() : "";
       const destinos = alvo
         ? [{ impressora: printers.find((p) => String(p?.name || "").trim() === alvo) || { name: alvo }, itens: order.items || [] }]
-        : destinosDoPedido(printers, order);
+        : destinosDoPedido(printers, order, { andares, mesa: order.mesa || numeroDaMesa(order) });
       return {
         id: "job_" + pedida.id,
         order: {
@@ -663,6 +667,11 @@ export async function GET(req: NextRequest) {
 
     const jobsAvulsos = (paraConta === null ? [] : contas).map((pedido) => {
       const order: any = pedido.payload;
+      // A conta sai na impressora do ANDAR da mesa, entre as marcadas para a
+      // conta. Nenhuma delas é do andar? Sai nas de sempre: conta que não sai é
+      // pior que conta no andar errado.
+      const doAndar = impressorasDoAndar(destinosDaConta, andares, numeroDaMesa(order));
+      const destinosDestaConta = doAndar.length > 0 ? doAndar : destinosDaConta;
       return {
         id: "job_" + pedido.id,
         order,
@@ -677,7 +686,7 @@ export async function GET(req: NextRequest) {
           defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
           printers,
         },
-        destinos: destinosDaConta.map((d) => ({
+        destinos: destinosDestaConta.map((d) => ({
           printer: d.name,
           copies: Number(d.copies) > 0 ? Number(d.copies) : 1,
           paperWidth: d.paperWidth || pc?.defaultPaperWidth || "80mm",

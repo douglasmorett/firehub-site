@@ -257,10 +257,14 @@ export default function PrinterSetupClient({
   const saveConfig = async () => {
     setSaving(true);
     try {
+      // Os andares do salão são da tela de Mesas (lib/andares-da-mesa.ts): esta
+      // tela os recebe no carregamento e, se os mandasse de volta, uma aba
+      // aberta há horas apagaria o andar criado depois. O PUT mescla por chave.
+      const { andares: _andaresDaTelaDeMesas, ...semAndares } = config as PrinterConfig & { andares?: unknown };
       await fetch("/api/store/printer-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(semAndares),
       });
 
       // Este POST sai SEMPRE, mesmo sem nenhuma impressora cadastrada.

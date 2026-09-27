@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
+import { lerAndares } from "@/lib/andares-da-mesa";
 
 export async function GET(req: NextRequest) {
   try {
@@ -67,12 +68,16 @@ export async function GET(req: NextRequest) {
     // Nulo = 10, que é o costume da casa.
     const loja = await prisma.user.findUnique({
       where: { id: targetFranchiseeId },
-      select: { taxaServicoPadrao: true },
+      select: { taxaServicoPadrao: true, printerConfig: true },
     });
 
     return NextResponse.json({
       tables: formattedTables,
       taxaServicoPadrao: loja?.taxaServicoPadrao ?? 10,
+      // Os andares do salão (lib/andares-da-mesa.ts) vêm com as mesas: o
+      // garçom pelo link também filtra por andar, e ele não lê a config de
+      // impressoras.
+      andares: lerAndares(loja?.printerConfig),
     });
   } catch (error: any) {
     console.error("[Tables GET]", error);

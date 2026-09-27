@@ -30,47 +30,33 @@ import { prisma } from "@/lib/prisma";
  * outra e recebem valores diferentes. Não há janela de corrida, e não depende
  * de nível de isolamento nem de retry.
  *
- * A REGRA DE NEGÓCIO É PRESERVADA: a sequência continua por dia de calendário
- * em America/Sao_Paulo, e o contador é semeado com o maior número já usado no
- * dia — então números já impressos nunca são reaproveitados nem reindexados.
+ * O período do contador é o que vai de um FECHAMENTO DE CAIXA ao próximo (ver
+ * chaveDoContador), e ele é semeado com o último número já usado nesse período
+ * — então números já impressos nunca são reaproveitados nem reindexados.
  */
-
-/** Data no fuso de São Paulo, no formato YYYY-MM-DD. */
-function dateKeySP(ref: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(ref);
-}
 
 /**
- * Maior número já em uso no dia. Usado só para SEMEAR o contador na primeira
- * chamada do dia — mantém a mesma lógica da versão antiga, para o contador
- * nunca começar atrás de um pedido que já foi impresso.
+ * Último número já em uso no período. Usado só para SEMEAR o contador na
+ * primeira chamada — para ele nunca começar atrás de um pedido já impresso.
+ *
+ * Os ÚLTIMOS pedidos, e não o maior número desde o início do período: na troca
+ * da regra (27/09/2026) a loja sem caixa tinha a contagem por dia, e o maior
+ * número de todos os tempos seria o de algum sábado de meses atrás — o #45 de
+ * hoje pularia para o #301. Os 30 mais recentes dizem onde a contagem está,
+ * inclusive com o rascunho do robô que ganha número depois de criado.
  */
-async function calcularSemente(db: ClientePrisma, franchiseeId: string, startOfDay: Date): Promise<number> {
-  const [totalToday, maxOrder] = await Promise.all([
-    db.customerOrder.count({
-      where: {
-        franchiseeId,
-        createdAt: { gte: startOfDay },
-        status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
-      },
-    }),
-    db.customerOrder.findFirst({
-      where: {
-        franchiseeId,
-        createdAt: { gte: startOfDay },
-        dailyOrderNumber: { not: null },
-      },
-      orderBy: { dailyOrderNumber: "desc" },
-      select: { dailyOrderNumber: true },
-    }),
-  ]);
-
-  return Math.max(totalToday, maxOrder?.dailyOrderNumber || 0);
+async function calcularSemente(db: ClientePrisma, franchiseeId: string, desde: Date): Promise<number> {
+  const recentes = await db.customerOrder.findMany({
+    where: {
+      franchiseeId,
+      createdAt: { gte: desde },
+      dailyOrderNumber: { not: null },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+    select: { dailyOrderNumber: true },
+  });
+  return recentes.reduce((maior, p) => Math.max(maior, p.dailyOrderNumber || 0), 0);
 }
 
 /**
@@ -110,43 +96,40 @@ export async function generateDailyOrderNumber(
  * estava atendendo e o painel começou a recontar (19/09/2026). O turno dele
  * não acabou à meia-noite — acaba quando ele fecha o caixa.
  *
- * Então, com caixa ABERTO, o contador é do TURNO: continua somando enquanto o
- * caixa estiver aberto, atravessando a meia-noite quantas vezes precisar, e só
- * recomeça no próximo caixa. Sem caixa aberto (loja que não usa a ferramenta),
- * nada muda: continua por dia de calendário, como sempre foi.
+ * REGRA DO DONO (27/09/2026): "a numeração zera só quando fecha o caixa.
+ * Horário nenhum é para zerar. Se o cliente nunca fechar o caixa, continua
+ * contando sem parar."
  *
- * A SEMENTE TEM UMA TRAVA. Um caixa novo não começa cegamente do 1: ele começa
- * do maior número já usado NO DIA. Sem isso, a loja que fecha o caixa de manhã
- * e abre outro à noite (é o caso da Hakim: 00:40→06:16 e depois 22:58→06:30)
- * teria dois pedidos #1 no mesmo dia — e duas comandas com o mesmo número é o
- * que faz a cozinha entregar trocado. Num caixa que abre antes do primeiro
- * pedido do dia, que é o normal, o maior do dia é zero e a contagem começa no
- * 1 do mesmo jeito.
+ * Então o período do contador é o que vai do ÚLTIMO FECHAMENTO DE CAIXA até o
+ * próximo. Não importa se há caixa aberto agora nem que horas são: fechou o
+ * caixa, o próximo pedido é o #1; não fechou, soma. A loja que nunca fechou um
+ * caixa conta desde sempre. O caixa só fecha pela mão de alguém — no botão de
+ * fechar ou ao abrir um novo por cima (api/cash-session) —, nunca pelo relógio.
+ *
+ * Até esta data havia duas travas que contrariavam a regra: sem caixa aberto a
+ * contagem voltava ao 1 à meia-noite, e o caixa novo aberto no mesmo dia
+ * continuava do maior número do dia em vez de começar do 1. Número repetido no
+ * mesmo dia (fechou às 15h, reabriu às 18h) é aceito pelo dono; o QR do
+ * motoboy já desempata pelo pedido que ainda dá para puxar.
  */
 export async function chaveDoContador(
   db: ClientePrisma,
   franchiseeId: string,
-  ref: Date
+  // O instante não decide mais o período; fica na assinatura por quem chama.
+  _ref?: Date
 ): Promise<{ dateKey: string; desde: Date }> {
-  const diaKey = dateKeySP(ref);
-  const inicioDoDia = new Date(`${diaKey}T00:00:00-03:00`);
   try {
-    const caixa = await db.cashSession.findFirst({
-      where: { franchiseeId, status: "OPEN" },
-      orderBy: { openedAt: "desc" },
-      select: { id: true, openedAt: true },
+    const fechado = await db.cashSession.findFirst({
+      where: { franchiseeId, status: "CLOSED", closedAt: { not: null } },
+      orderBy: { closedAt: "desc" },
+      select: { id: true, closedAt: true },
     });
-    if (caixa) {
-      // A semente olha do MENOR dos dois: início do dia ou abertura do caixa.
-      // Se o caixa abriu ontem às 23h, o maior número do turno está lá atrás.
-      const desde = caixa.openedAt < inicioDoDia ? caixa.openedAt : inicioDoDia;
-      return { dateKey: `caixa:${caixa.id}`, desde };
-    }
+    if (fechado?.closedAt) return { dateKey: `fechamento:${fechado.id}`, desde: fechado.closedAt };
   } catch {
     // Sem a tabela de caixa (ou erro de leitura) a numeração não pode parar:
-    // cai no comportamento de sempre, por dia.
+    // segue o contador de sempre, que também não olha o relógio.
   }
-  return { dateKey: diaKey, desde: inicioDoDia };
+  return { dateKey: "sempre", desde: new Date(0) };
 }
 
 /** Mesma numeração, porém usando o client da transação em andamento. */

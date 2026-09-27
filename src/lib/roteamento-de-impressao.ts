@@ -21,8 +21,11 @@
 import { moduloDoPedido, impressoraAtendeModulo, type ModuloDePedido } from "./modulo-do-pedido";
 import { impressorasDaLoja, type PedidoComOrigem } from "./loja-de-origem";
 import { CATEGORIAS_DE_INTEGRACAO } from "./cardapio-interno";
+import { impressorasDoAndar, type AndarDaMesa } from "./andares-da-mesa";
 
 export type ImpressoraConfigurada = {
+  /** O id do cadastro — é por ele que o andar escolhe a impressora. */
+  id?: string | null;
   name?: string | null;
   label?: string | null;
   categories?: string[] | null;
@@ -225,7 +228,9 @@ export function restoDoPedido(
  */
 export function destinosDoPedido<T extends ItemDoPedido>(
   impressoras: ImpressoraConfigurada[],
-  pedido: { source?: unknown; items?: T[] | null }
+  pedido: { source?: unknown; items?: T[] | null },
+  /** Andares do salão e o número da mesa deste pedido (lib/andares-da-mesa.ts). */
+  salao?: { andares?: AndarDaMesa[] | null; mesa?: unknown }
 ): { impressora: ImpressoraConfigurada; itens: T[] }[] {
   // ── DE QUAL LOJA É ESTE PEDIDO ──
   // Três marcas no iFood no mesmo painel: a impressora da Ragnar Pizza não
@@ -233,9 +238,17 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   // separam uma marca da outra — para eles é tudo "iFood". Nenhuma impressora
   // marcada para a loja deste pedido = todas continuam candidatas, em vez de
   // engolir o pedido (regra de lib/loja-de-origem.ts).
-  const validas = impressorasDaLoja(
-    (impressoras || []).filter((p) => p && texto(p.name)),
-    pedido as PedidoComOrigem
+  // ── DE QUAL ANDAR É ESTA MESA ──
+  // A impressora do térreo não recebe a comanda da mesa do segundo andar. Vem
+  // ANTES das categorias: o bar do outro andar não pode "pedir" a bebida desta
+  // mesa e tirá-la da impressora deste andar.
+  const validas = impressorasDoAndar(
+    impressorasDaLoja(
+      (impressoras || []).filter((p) => p && texto(p.name)),
+      pedido as PedidoComOrigem
+    ),
+    salao?.andares || [],
+    salao?.mesa
   );
 
   // Deduplica pela impressora FÍSICA: duas linhas apontando para o mesmo nome

@@ -153,10 +153,13 @@ O que você mudou nele se perde. As impressoras que usam este modelo continuam u
     setSalvando(true);
     setErro("");
     try {
+      // Sem os andares do salão: são da tela de Mesas, e esta cópia pode ser
+      // velha (o PUT mescla por chave — ver PrinterSetupClient).
+      const { andares: _andaresDaTelaDeMesas, ...semAndares } = (config || {}) as { andares?: unknown };
       const r = await fetch("/api/store/printer-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(semAndares),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setSalvo(true);

@@ -4,11 +4,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { useRouter } from "next/navigation";
 import ComboModal from "@/components/customer/ComboModal";
+import AndaresConfig from "@/components/mesas/AndaresConfig";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
 import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
+import { impressorasDoAndar, lerAndares, numerosDaFaixa, type AndarDaMesa } from "@/lib/andares-da-mesa";
+import { numeroDaMesa } from "@/lib/mesa-na-comanda";
 import { CAMINHO_DO_CAIXA } from "@/lib/caixa-aberto";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
@@ -155,11 +158,17 @@ const ESTILO_TABLET = `
 
   /* Nome e observação da mesa aberta: no máximo duas linhas no cartão (o
      texto inteiro está no painel da mesa) e uma no celular, mais abaixo. */
-  .mesa-cartao-nome, .mesa-cartao-obs {
+  .mesa-cartao-nome, .mesa-cartao-obs, .mesa-cartao-garcom {
     max-width: 100%; box-sizing: border-box; text-align: center;
     overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
     -webkit-line-clamp: 2; overflow-wrap: anywhere;
+    /* Não encolhem para caber: quem cresce é o cartão (a grade usa
+       grid-auto-rows: max-content). Com overflow hidden o navegador os
+       espremia até 0px (27/09/2026). */
+    flex-shrink: 0;
   }
+  /* O garçom numa linha só: é o complemento, não o destaque. */
+  .mesa-cartao-garcom { -webkit-line-clamp: 1; }
 
   @media (max-width: 1180px) {
     .mesa-lancar { grid-template-columns: 1fr 290px; }
@@ -251,6 +260,7 @@ const ESTILO_TABLET = `
        só o cartão de 84px mostrava "aniversár..." e o recado se perdia. */
     .mesa-cartao-nome { -webkit-line-clamp: 1; }
     .mesa-cartao-nome { font-size: 11.5px !important; }
+    .mesa-cartao-garcom { font-size: 10.5px !important; }
     .mesa-cartao-obs { font-size: 10.5px !important; padding: 1px 5px !important; }
 
     /* ── A GAVETA DA MESA ────────────────────────────────────────────
@@ -499,6 +509,7 @@ export default function MesasApp({
       if (res.ok) {
         const data = await res.json();
         setTables(data.tables || []);
+        if (Array.isArray(data.andares)) setAndares(lerAndares({ andares: data.andares }));
         if (typeof data.taxaServicoPadrao === "number") {
           setTaxaSalva(data.taxaServicoPadrao);
           // Só encosta no campo enquanto o garçom não mexeu nele, senão o
@@ -990,7 +1001,10 @@ export default function MesasApp({
             // não marcar nenhuma, o palpite do caixa (lib/impressao-da-conta.ts).
             // Papel e nuvem escolhendo diferente sairia dobrado, em duas.
             const marcadas = impressorasDaContaDaMesa<any>(cfg.printers || []);
-            const escolhidas = (marcadas || []).map((p: any) => ({ ...p, categories: [] }));
+            // E a do ANDAR da mesa, entre as marcadas — igual à fila da nuvem
+            // (lib/andares-da-mesa.ts); nenhuma do andar, as de sempre.
+            const doAndar = impressorasDoAndar<any>(marcadas || [], lerAndares(cfg), numeroDaMesa(data.cupom));
+            const escolhidas = (doAndar.length > 0 ? doAndar : marcadas || []).map((p: any) => ({ ...p, categories: [] }));
             // Sem impressora do salão cadastrada, o caminho local detectaria
             // uma impressora qualquer e a fila da nuvem mandaria para a
             // `currentConfig.printer` do Assistente: duas impressoras
@@ -1338,6 +1352,51 @@ export default function MesasApp({
     setOcupadasNoTopo(ligar);
     try { localStorage.setItem(CHAVE_OCUPADAS_NO_TOPO, ligar ? "1" : "0"); } catch { /* só não lembra */ }
   };
+
+  // ── ANDARES (lib/andares-da-mesa.ts) ─────────────────────────────────────
+  //
+  // Pedido do dono (27/09/2026): um botão por andar ("Térreo", "Piso 2") e o
+  // "Todos". Em "Todos" a grade vem separada por andar, e o "Ocupadas no topo"
+  // vale DENTRO de cada andar — quem olha a tela enxerga a divisão do prédio.
+  // O andar escolhido fica guardado neste aparelho, como o "Ocupadas no topo":
+  // o garçom do segundo andar abre direto no andar dele.
+  const CHAVE_ANDAR = "firehub_mesas_andar";
+  const SEM_ANDAR = "__sem_andar__";
+  const [andares, setAndares] = useState<AndarDaMesa[]>([]);
+  const [andarFiltro, setAndarFiltro] = useState<string>("todos");
+  const [abaConfig, setAbaConfig] = useState<"mesas" | "andares">("mesas");
+  useEffect(() => {
+    try {
+      const salvo = localStorage.getItem(CHAVE_ANDAR);
+      if (salvo) setAndarFiltro(salvo);
+    } catch { /* sem armazenamento: começa em Todos */ }
+  }, []);
+  const escolherAndar = (id: string) => {
+    setAndarFiltro(id);
+    try { localStorage.setItem(CHAVE_ANDAR, id); } catch { /* só não lembra */ }
+  };
+  // Mesa → andar, calculado uma vez por mudança (a lista é relida a cada 10 s).
+  const andarPorMesa = useMemo(() => {
+    const faixas = andares.map(a => ({ id: a.id, numeros: numerosDaFaixa(a.mesas) }));
+    const mapa = new Map<string, string>();
+    for (const t of tables) {
+      const dono = faixas.find(f => f.numeros.has(Number(t.number)));
+      if (dono) mapa.set(t.id, dono.id);
+    }
+    return mapa;
+  }, [andares, tables]);
+  const andarDe = (t: TableItem) => andarPorMesa.get(t.id) || null;
+  const temMesaSemAndar = andares.length > 0 && tables.some(t => !andarDe(t));
+  const gruposPorAndar = [
+    ...andares.map(a => ({ id: a.id, nome: a.nome, mesas: tables.filter(t => andarDe(t) === a.id) })),
+    ...(temMesaSemAndar ? [{ id: SEM_ANDAR, nome: "Sem andar", mesas: tables.filter(t => !andarDe(t)) }] : []),
+  ];
+  // Andar apagado ou de outro aparelho: volta para Todos em vez de tela vazia.
+  const filtroValido =
+    andarFiltro === "todos" ||
+    (andarFiltro === SEM_ANDAR && temMesaSemAndar) ||
+    andares.some(a => a.id === andarFiltro);
+  const filtroAtual = filtroValido ? andarFiltro : "todos";
 
   // ─── Computed ──────────────────────────────────────────────────────────────
   const occupiedTables = tables.filter(t => t.openSession);
@@ -1834,6 +1893,9 @@ export default function MesasApp({
     const hasValue = occupied && (table.openSession?.totalAmount || 0) > 0;
     const nome = (table.openSession?.customerName || "").trim();
     const observacao = (table.openSession?.notes || "").trim();
+    // O garçom também à vista (pedido do dono, 27/09/2026): de longe já se sabe
+    // de quem é a mesa, sem tocar nela.
+    const garcomDaMesa = (table.openSession?.waiterName || "").trim();
     return (
       <button
         key={table.id}
@@ -1856,6 +1918,10 @@ export default function MesasApp({
           border: `2px solid ${isSelected ? "#475569" : occupied ? (hasValue ? "#FECACA" : "#FFD3C2") : "#E2E8F0"}`,
           borderRadius: 16, padding: "14px 10px", cursor: "pointer",
           display: "flex", flexDirection: "column", alignItems: "center",
+          // A linha da grade tem a altura do cartão mais alto dela (a mesa com
+          // nome, garçom e observação); o conteúdo do cartão livre ao lado fica
+          // no meio, e não colado no topo.
+          justifyContent: "center",
           gap: 4, transition: "all 0.15s",
           boxShadow: isSelected
             ? "0 4px 20px rgba(28, 25, 23,0.35)"
@@ -1884,6 +1950,14 @@ export default function MesasApp({
                 color: isSelected ? "#fff" : "#0F172A",
               }}>
                 {nome}
+              </span>
+            )}
+            {garcomDaMesa && (
+              <span className="mesa-cartao-garcom" title={`Garçom: ${garcomDaMesa}`} style={{
+                fontSize: 11.5, fontWeight: 700, lineHeight: 1.2,
+                color: isSelected ? "#E2E8F0" : "#475569",
+              }}>
+                Garçom: {garcomDaMesa}
               </span>
             )}
             <span className="mesa-cartao-valor" style={{
@@ -2025,6 +2099,11 @@ export default function MesasApp({
           flex: 1, overflowY: "auto", padding: 20,
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill, minmax(clamp(112px, 22vw, 145px), 1fr))",
+          // A linha mede o quadrado mais alto dela. Com "auto", a grade de
+          // altura fixa (a tela) e mais mesas do que cabem dava a cada linha só
+          // o min-height do cartão (120px): o nome e a observação da mesa eram
+          // espremidos até 0px e sumiam (Ragnar, mesa 5 "aniversario", 27/09/2026).
+          gridAutoRows: "max-content",
           gap: 12, alignContent: "start",
         }}>
           {tables.length === 0 ? (
@@ -2059,7 +2138,7 @@ export default function MesasApp({
           ) : (
             <>
               {/* Liga e desliga; cada aparelho lembra a sua escolha. */}
-              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <button type="button" onClick={trocarOcupadasNoTopo} aria-pressed={ocupadasNoTopo}
                   className="mesa-chip"
                   title={ocupadasNoTopo ? "Voltar para a ordem de número" : "Mostrar as mesas ocupadas primeiro"}
@@ -2073,22 +2152,88 @@ export default function MesasApp({
                   }}>
                   ⬆ Ocupadas no topo{ocupadasNoTopo ? " ✓" : ""}
                 </button>
+                {andares.length > 0 && (
+                  <>
+                    <span aria-hidden style={{ width: 1, height: 22, background: "#E2E8F0", margin: "0 2px" }} />
+                    {[
+                      { id: "todos", nome: "Todos", mesas: tables },
+                      ...gruposPorAndar,
+                    ].map(g => {
+                      const ativo = filtroAtual === g.id;
+                      const ocupadas = g.mesas.filter(t => t.openSession).length;
+                      return (
+                        <button key={g.id} type="button" onClick={() => escolherAndar(g.id)} aria-pressed={ativo}
+                          className="mesa-chip"
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            padding: "7px 14px", borderRadius: 999, cursor: "pointer",
+                            fontFamily: "inherit", fontSize: 13, fontWeight: 800,
+                            background: ativo ? "#0F766E" : "#fff",
+                            color: ativo ? "#fff" : "#334155",
+                            border: `1.5px solid ${ativo ? "#0F766E" : "#E2E8F0"}`,
+                          }}>
+                          {g.id === "todos" ? "🏢 " : ""}{g.nome}
+                          {ocupadas > 0 && (
+                            <span style={{
+                              fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "1px 7px",
+                              background: ativo ? "rgba(255,255,255,.22)" : "#FEE2E2",
+                              color: ativo ? "#fff" : "#C92E09",
+                            }}>{ocupadas}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
               </div>
-              {ocupadasNoTopo ? (
-                <>
-                  {occupiedTables.length > 0 && (
-                    <div style={{ ...tituloDoGrupo, color: "#C92E09" }}>Ocupadas · {occupiedTables.length}</div>
-                  )}
-                  {occupiedTables.map(cartaoDaMesa)}
-                  {freeTables.length > 0 && (
-                    <div style={{ ...tituloDoGrupo, color: "#0F766E", marginTop: occupiedTables.length > 0 ? 8 : 0 }}>
-                      Livres · {freeTables.length}
-                    </div>
-                  )}
-                  {freeTables.map(cartaoDaMesa)}
-                </>
+              {andares.length === 0 || filtroAtual !== "todos" ? (
+                // Sem andares, ou um andar só na tela: a grade de sempre, com os
+                // grupos Ocupadas/Livres quando "Ocupadas no topo" está ligado.
+                (() => {
+                  const lista = andares.length === 0
+                    ? tables
+                    : gruposPorAndar.find(g => g.id === filtroAtual)?.mesas || [];
+                  const ocupadas = lista.filter(t => t.openSession);
+                  const livres = lista.filter(t => !t.openSession);
+                  return ocupadasNoTopo ? (
+                    <>
+                      {ocupadas.length > 0 && (
+                        <div style={{ ...tituloDoGrupo, color: "#C92E09" }}>Ocupadas · {ocupadas.length}</div>
+                      )}
+                      {ocupadas.map(cartaoDaMesa)}
+                      {livres.length > 0 && (
+                        <div style={{ ...tituloDoGrupo, color: "#0F766E", marginTop: ocupadas.length > 0 ? 8 : 0 }}>
+                          Livres · {livres.length}
+                        </div>
+                      )}
+                      {livres.map(cartaoDaMesa)}
+                    </>
+                  ) : (
+                    lista.map(cartaoDaMesa)
+                  );
+                })()
               ) : (
-                tables.map(cartaoDaMesa)
+                // "Todos" com andares: um bloco por andar, com o nome dele em
+                // cima. "Ocupadas no topo" ordena dentro de cada andar.
+                gruposPorAndar.map((g, i) => {
+                  const ocupadas = g.mesas.filter(t => t.openSession);
+                  const lista = ocupadasNoTopo ? [...ocupadas, ...g.mesas.filter(t => !t.openSession)] : g.mesas;
+                  return (
+                    <div key={g.id} style={{ display: "contents" }}>
+                      <div style={{
+                        gridColumn: "1 / -1", display: "flex", alignItems: "baseline", gap: 10,
+                        marginTop: i > 0 ? 14 : 2, paddingBottom: 6, borderBottom: "2px solid #E2E8F0",
+                      }}>
+                        <span style={{ fontSize: 16, fontWeight: 900, color: "#1E293B" }}>🏢 {g.nome}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#64748B" }}>
+                          {ocupadas.length > 0 ? <span style={{ color: "#C92E09" }}>{ocupadas.length} ocupada{ocupadas.length > 1 ? "s" : ""} · </span> : null}
+                          {g.mesas.length - ocupadas.length} livre{g.mesas.length - ocupadas.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      {lista.map(cartaoDaMesa)}
+                    </div>
+                  );
+                })
               )}
             </>
           )}
@@ -3247,8 +3392,25 @@ export default function MesasApp({
               <h3 style={{ margin: 0, fontWeight: 800 }}>⚙️ Gerenciar Mesas</h3>
               <button onClick={() => setShowConfigModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer" }}>✕</button>
             </div>
+            <div style={{ display: "flex", gap: 6, padding: "10px 20px 0" }}>
+              {([["mesas", "🪑 Mesas"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`]] as const).map(([id, rotulo]) => (
+                <button key={id} type="button" onClick={() => setAbaConfig(id)} style={{
+                  flex: 1, padding: "9px 10px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
+                  fontSize: 14, fontWeight: 800,
+                  background: abaConfig === id ? "#334155" : "#F1F5F9",
+                  color: abaConfig === id ? "#fff" : "#475569",
+                  border: "none",
+                }}>{rotulo}</button>
+              ))}
+            </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px" }}>
-              {tables.map(table => (
+              {abaConfig === "andares" ? (
+                <AndaresConfig
+                  andaresSalvos={andares}
+                  numerosDasMesas={tables.map(t => Number(t.number)).filter(n => Number.isInteger(n))}
+                  onSalvo={(novos) => { setAndares(novos); fetchTables(); }}
+                />
+              ) : tables.map(table => (
                 <div key={table.id} style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between",
                   padding: "10px 0", borderBottom: "1px solid #F1F5F9",
