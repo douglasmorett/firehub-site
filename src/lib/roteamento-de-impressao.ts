@@ -178,7 +178,24 @@ export function itensDaImpressora<T extends ItemDoPedido>(
     const cat = categoriaDoItem(item);
     return categorias.some((c) => texto(c) === cat);
   });
-  if (filtrados.length > 0) return filtrados as T[];
+
+  // ── O ITEM QUE O SISTEMA NÃO SABE O QUE É SAI EM TODAS ──
+  //
+  // Item sem categoria, ou com a categoria da PLATAFORMA (o combo do iFood que
+  // não casou com nenhum produto real, ver lib/categoria-do-item.ts): ninguém
+  // sabe se é burger ou pizza, então ele sai em toda impressora que recebe o
+  // pedido — inclusive na que já tem item seu. Antes só saía nas que ficariam
+  // vazias: com a categoria real ligada na impressão (27/09/2026), a "Coca"
+  // casada iria para o bar e o "Combo X-Bacon" não casado sairia SÓ no bar,
+  // nunca na cozinha. Comanda a mais é papel; comanda que não sai é prejuízo.
+  const semRotulo = itens.filter((item) => {
+    const cat = categoriaDoItem(item);
+    return !cat || ehCategoriaDeOrigem(cat, pedido?.source);
+  });
+  if (filtrados.length > 0) {
+    const desta = new Set<unknown>(filtrados);
+    return itens.filter((item) => desta.has(item) || semRotulo.includes(item)) as T[];
+  }
 
   if (!pedidas) return itens as T[];
 

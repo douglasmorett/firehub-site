@@ -1095,8 +1095,14 @@ export async function GET(req: NextRequest) {
       if (o.tableSession == null) delete o.tableSession;
     }
 
-    // Apenas passamos os pedidos diretamente (A numeração será tratada no Client via getDisplayOrderNumber)
-    const ordersWithDailyNum = orders;
+    // O item do iFood/99Food/Wabiz herda a categoria REAL do produto da loja,
+    // casado pelo nome (lib/categoria-do-item.ts) — a mesma regra do KDS e da
+    // fila da nuvem. É por este poll que o painel aberto imprime, e sem a
+    // categoria o pedido de plataforma saía inteiro em toda impressora da
+    // marca. Quem não casa fica "iFood", que a impressão trata como "sai em
+    // todas". Falhou a leitura do cardápio? Os pedidos seguem como estavam.
+    const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
+    const ordersWithDailyNum = await resolverCategoriasDosPedidos(orders as any[]).catch(() => orders);
 
     // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
     try {

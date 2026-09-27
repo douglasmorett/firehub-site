@@ -168,5 +168,41 @@ confere(
   { "COZINHA PIZZA": ["Heineken"], "COZINHA ENTREGA RAGNA": ["Thor"], BAR: ["Heineken"] }
 );
 
+console.log("\n— iFood com a categoria real (27/09/2026): o que casou vai para a sua impressora, o que não casou sai em todas —");
+
+confere(
+  "Pedido do iFood da marca burger: a Coca casada e o combo não casado saem na cozinha da marca (o BAR só recebe a loja própria)",
+  papel(RAGNAR, pedido("IFOOD", [["Combo - X-Bacon + Fritas + Bebida", "iFood"], ["Coca-Cola 350ml", "Refrigerantes"]], { ifoodStoreMerchant: IFOOD_BURGER })),
+  { "COZINHA ENTREGA RAGNA": ["Combo - X-Bacon + Fritas + Bebida", "Coca-Cola 350ml"] }
+);
+
+const COZINHA_E_BAR: ImpressoraConfigurada[] = [
+  { name: "COZINHA", modulos: ["delivery", "salao"], categories: ["Lanches"] },
+  { name: "BAR", modulos: ["delivery", "salao"], categories: ["Bebidas"] },
+];
+confere(
+  "Loja sem filtro de marca: a Coca casada vai ao BAR, o combo não casado sai na cozinha E no bar",
+  papel(COZINHA_E_BAR, pedido("IFOOD", [["Combo Promo", "iFood"], ["Coca", "Bebidas"]], { ifoodStoreMerchant: "x" })),
+  { COZINHA: ["Combo Promo"], BAR: ["Combo Promo", "Coca"] }
+);
+
+confere(
+  "Tudo casado: burger só na cozinha do burger, sem sobra para o bar",
+  papel(RAGNAR, pedido("IFOOD", [["X-Egg", "Burgers"], ["Batata", "Entradas"]], { ifoodStoreMerchant: IFOOD_BURGER })),
+  { "COZINHA ENTREGA RAGNA": ["X-Egg", "Batata"] }
+);
+
+confere(
+  "Nada casado: o pedido inteiro na impressora da marca, como antes",
+  papel(RAGNAR, pedido("IFOOD", [["Pizza Pop + Guaraná 1l", "iFood"]], { ifoodStoreMerchant: IFOOD_PIZZA })),
+  { "COZINHA PIZZA": ["Pizza Pop + Guaraná 1l"] }
+);
+
+confere(
+  "Item SEM categoria nenhuma no salão: sai em TODAS — nas que têm item seu e nas que ficariam vazias",
+  papel(RAGNAR, pedido("PRESENCIAL", [["Thor", "Burgers"], ["Caipiroska", "Drinks"], ["Item avulso", ""]])),
+  { BALCAO: ["Item avulso"], "COZINHA PIZZA": ["Item avulso"], "COZINHA ENTREGA RAGNA": ["Thor", "Item avulso"], BAR: ["Caipiroska", "Item avulso"] }
+);
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

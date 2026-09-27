@@ -380,6 +380,20 @@ export async function GET(req: NextRequest) {
       recentOrders = await consulta(false);
     }
 
+    // ── O ITEM DO iFOOD GANHA A CATEGORIA REAL, COMO NO KDS ────────────────
+    //
+    // O item de plataforma aponta para o espelho `ifood-*`, de categoria
+    // "iFood", e por isso o pedido saía inteiro na impressora da marca — a
+    // Coca não ia para o bar nem a esfiha para a cozinha certa. A mesma lib
+    // que o KDS usa casa o item pelo nome com o produto real da loja
+    // (lib/categoria-do-item.ts); quem não casa fica como está e sai em toda
+    // impressora do pedido (regra em lib/roteamento-de-impressao.ts). O
+    // painel aberto faz o mesmo no poll — é o que mantém os dois trilhos iguais.
+    if (recentOrders.length > 0) {
+      const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
+      recentOrders = (await resolverCategoriasDosPedidos(recentOrders as any).catch(() => recentOrders)) as typeof recentOrders;
+    }
+
     // Carimba a consulta — no máximo uma vez por minuto (o Assistente bate a
     // cada 3 s). É o que deixa o painel avisar "a impressão parou" antes de a
     // loja descobrir pela comanda que não saiu. Na mesma passada, apaga as
