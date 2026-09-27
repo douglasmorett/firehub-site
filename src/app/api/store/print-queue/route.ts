@@ -13,7 +13,7 @@ import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora } from "@/lib/co
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda, numeroDaMesa } from "@/lib/mesa-na-comanda";
-import { impressorasDoAndar, lerAndares } from "@/lib/andares-da-mesa";
+import { impressorasDaContaNoAndar, lerAndares } from "@/lib/andares-da-mesa";
 import { lembrarAssistente } from "@/lib/assistente-da-loja";
 import { getClientIp } from "@/lib/rateLimit";
 import { corteDaVolta } from "@/lib/volta-do-assistente";
@@ -683,10 +683,11 @@ export async function GET(req: NextRequest) {
 
     const jobsAvulsos = (paraConta === null ? [] : contas).map((pedido) => {
       const order: any = pedido.payload;
-      // A conta sai na impressora do ANDAR da mesa, entre as marcadas para a
-      // conta. Nenhuma delas é do andar? Sai nas de sempre: conta que não sai é
-      // pior que conta no andar errado.
-      const doAndar = impressorasDoAndar(destinosDaConta, andares, numeroDaMesa(order));
+      // A conta sai na impressora do ANDAR da mesa (ela recebe a mesa inteira);
+      // andar sem impressora, nas marcadas para a conta que não são de outro
+      // andar. Nenhuma? Sai nas de sempre: conta que não sai é pior que conta
+      // no andar errado.
+      const doAndar = impressorasDaContaNoAndar(printers, destinosDaConta, andares, numeroDaMesa(order));
       const destinosDestaConta = doAndar.length > 0 ? doAndar : destinosDaConta;
       return {
         id: "job_" + pedido.id,

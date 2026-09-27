@@ -3,7 +3,7 @@ import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
-import { impressorasDoAndar, lerAndares } from "./andares-da-mesa";
+import { impressorasParaAMesa, lerAndares, temImpressoraDoAndar } from "./andares-da-mesa";
 import { categoriasPedidas, impressorasPeloPedidoSoDeBebida, itensDaImpressora, restoDoPedido } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
@@ -530,10 +530,13 @@ export async function printOrder(
   printersToUse = impressorasDaLoja(printersToUse, order as any);
 
   // ── DE QUAL ANDAR E ESTA MESA ────────────────────────────────────────────
-  // A impressora do terreo nao recebe a mesa do segundo andar. Mesma regra da
+  // A impressora do terreo nao recebe a mesa do segundo andar, e a do andar da
+  // mesa recebe a mesa INTEIRA (sem categoria, sem "so bebida"). Mesma regra da
   // fila da nuvem (lib/andares-da-mesa.ts); o numero vem do campo `mesa` que
   // camposDaMesaParaImpressao ja poe no pedido formatado.
-  printersToUse = impressorasDoAndar(printersToUse, lerAndares(printerConfig), (order as any).mesa);
+  const andares = lerAndares(printerConfig);
+  const antesDoAndar = printersToUse;
+  printersToUse = impressorasParaAMesa(printersToUse, andares, (order as any).mesa);
 
   // ── CADA IMPRESSORA COM OS SEUS ITENS ──────────────────────────────────
   // Mesma regra da fila da nuvem (roteamento-de-impressao.ts): só bebida leva
@@ -561,21 +564,29 @@ export async function printOrder(
   );
 
   // Deduplica impressoras para a mesma impressora física não receber o pedido 2x
-  const uniquePrinters: PrinterEntry[] = [];
-  const seenPrinterNames = new Set<string>();
-  for (const p of printersToUse) {
-    const key = (p.name || "").toLowerCase().trim();
-    if (key && !seenPrinterNames.has(key)) {
-      seenPrinterNames.add(key);
-      uniquePrinters.push(p);
+  const semRepetir = (lista: PrinterEntry[]) => {
+    const saida: PrinterEntry[] = [];
+    const vistas = new Set<string>();
+    for (const p of lista) {
+      const key = (p.name || "").toLowerCase().trim();
+      if (key && !vistas.has(key)) {
+        vistas.add(key);
+        saida.push(p);
+      }
     }
-  }
+    return saida;
+  };
+  const uniquePrinters = semRepetir(printersToUse);
+  // Com impressora de andar recebendo tudo, a do outro andar tambem "pede" a
+  // categoria dela — o item ja sai garantido e nao vai de resgate para a
+  // cozinha vazia (mesma regra de lib/roteamento-de-impressao.ts).
+  const basePedidas = temImpressoraDoAndar(printersToUse, andares, (order as any).mesa) ? semRepetir(antesDoAndar) : uniquePrinters;
 
   let printed = 0;
   // Alguma impressora respondeu "pendente no Assistente": ele vai insistir.
   let aguardando = false;
 
-  const pedidas = categoriasPedidas(uniquePrinters, pedidoParaRotear);
+  const pedidas = categoriasPedidas(basePedidas, pedidoParaRotear);
 
   for (const printer of uniquePrinters) {
     if (!printer.name) continue;

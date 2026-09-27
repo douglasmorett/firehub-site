@@ -10,7 +10,7 @@ import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
 import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
-import { impressorasDoAndar, lerAndares, numerosDaFaixa, type AndarDaMesa } from "@/lib/andares-da-mesa";
+import { impressorasDaContaNoAndar, lerAndares, numerosDaFaixa, type AndarDaMesa } from "@/lib/andares-da-mesa";
 import { numeroDaMesa } from "@/lib/mesa-na-comanda";
 import { CAMINHO_DO_CAIXA } from "@/lib/caixa-aberto";
 import {
@@ -1001,9 +1001,9 @@ export default function MesasApp({
             // não marcar nenhuma, o palpite do caixa (lib/impressao-da-conta.ts).
             // Papel e nuvem escolhendo diferente sairia dobrado, em duas.
             const marcadas = impressorasDaContaDaMesa<any>(cfg.printers || []);
-            // E a do ANDAR da mesa, entre as marcadas — igual à fila da nuvem
-            // (lib/andares-da-mesa.ts); nenhuma do andar, as de sempre.
-            const doAndar = impressorasDoAndar<any>(marcadas || [], lerAndares(cfg), numeroDaMesa(data.cupom));
+            // E a do ANDAR da mesa, que recebe a mesa inteira — igual à fila da
+            // nuvem (lib/andares-da-mesa.ts); andar sem impressora, as marcadas.
+            const doAndar = impressorasDaContaNoAndar<any>(cfg.printers || [], marcadas || [], lerAndares(cfg), numeroDaMesa(data.cupom));
             const escolhidas = (doAndar.length > 0 ? doAndar : marcadas || []).map((p: any) => ({ ...p, categories: [] }));
             // Sem impressora do salão cadastrada, o caminho local detectaria
             // uma impressora qualquer e a fila da nuvem mandaria para a

@@ -21,7 +21,7 @@
 import { moduloDoPedido, impressoraAtendeModulo, type ModuloDePedido } from "./modulo-do-pedido";
 import { impressorasDaLoja, type PedidoComOrigem } from "./loja-de-origem";
 import { CATEGORIAS_DE_INTEGRACAO } from "./cardapio-interno";
-import { impressorasDoAndar, type AndarDaMesa } from "./andares-da-mesa";
+import { impressorasParaAMesa, temImpressoraDoAndar, type AndarDaMesa } from "./andares-da-mesa";
 import { isBeverageCategory, isBeverageName } from "./beverage";
 
 export type ImpressoraConfigurada = {
@@ -334,17 +334,16 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   // marcada para a loja deste pedido = todas continuam candidatas, em vez de
   // engolir o pedido (regra de lib/loja-de-origem.ts).
   // ── DE QUAL ANDAR É ESTA MESA ──
-  // A impressora do térreo não recebe a comanda da mesa do segundo andar. Vem
-  // ANTES das categorias: o bar do outro andar não pode "pedir" a bebida desta
-  // mesa e tirá-la da impressora deste andar.
-  const validas = impressorasDoAndar(
-    impressorasDaLoja(
-      (impressoras || []).filter((p) => p && texto(p.name)),
-      pedido as PedidoComOrigem
-    ),
-    salao?.andares || [],
-    salao?.mesa
+  // A impressora do térreo não recebe a comanda da mesa do segundo andar, e a
+  // do andar da mesa recebe a MESA INTEIRA, sem o filtro de categoria dela.
+  // Vem ANTES das categorias: o bar do outro andar não pode "pedir" a bebida
+  // desta mesa e tirá-la da impressora deste andar.
+  const daLoja = impressorasDaLoja(
+    (impressoras || []).filter((p) => p && texto(p.name)),
+    pedido as PedidoComOrigem
   );
+  const andares = salao?.andares || [];
+  const validas = impressorasParaAMesa(daLoja, andares, salao?.mesa);
 
   // Pedido só de bebida vai só para a impressora dele; os outros nunca vão.
   //
@@ -357,19 +356,27 @@ export function destinosDoPedido<T extends ItemDoPedido>(
 
   // Deduplica pela impressora FÍSICA: duas linhas apontando para o mesmo nome
   // do Windows fariam o mesmo papel sair duas vezes.
-  const vistas = new Set<string>();
-  const candidatas: ImpressoraConfigurada[] = [];
-  for (const imp of candidatasComRepeticao) {
-    const chave = texto(imp.name);
-    if (vistas.has(chave)) continue;
-    vistas.add(chave);
-    candidatas.push(imp);
-  }
+  const semRepetir = (lista: ImpressoraConfigurada[]) => {
+    const vistas = new Set<string>();
+    const saida: ImpressoraConfigurada[] = [];
+    for (const imp of lista) {
+      const chave = texto(imp.name);
+      if (vistas.has(chave)) continue;
+      vistas.add(chave);
+      saida.push(imp);
+    }
+    return saida;
+  };
+  const candidatas = semRepetir(candidatasComRepeticao);
 
-  // Quem pede o quê, entre as que de fato recebem este pedido.
+  // Quem pede o quê, entre as que de fato recebem este pedido. Com impressora
+  // de andar recebendo a mesa inteira, a impressora do OUTRO andar também
+  // conta como quem pediu: o drink do bar do piso de cima já sai na do térreo,
+  // e não precisa ir de resgate para uma cozinha vazia.
   const modulo = moduloDoPedido(pedido?.source as any);
+  const basePedidas = temImpressoraDoAndar(validas, andares, salao?.mesa) ? semRepetir(daLoja) : candidatas;
   const pedidas = categoriasPedidas(
-    candidatas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo)),
+    basePedidas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo)),
     pedido
   );
 

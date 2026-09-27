@@ -14,12 +14,14 @@
  *
  * A REGRA DA IMPRESSORA, uma só para os dois caminhos:
  *   • impressora que NENHUM andar escolheu não muda nada (a cozinha que atende
- *     o prédio inteiro continua recebendo de todas as mesas);
- *   • impressora escolhida por algum andar só recebe o pedido — e a conta — das
- *     mesas DAQUELE andar;
+ *     o prédio inteiro continua recebendo só o que é dela, de todas as mesas);
+ *   • impressora escolhida por um andar recebe a MESA INTEIRA das mesas daquele
+ *     andar — a comanda toda e a conta —, e nada das mesas dos outros andares.
+ *     Regra do dono (27/09/2026, Ragnar: "Piso Superior" no BAR): "mesmo que na
+ *     tela de Impressoras ela só saia bebidas, na mesa do 51 pra cima tem que
+ *     sair lá o pedido todo". Categoria, "só bebida" e módulo dela não valem
+ *     para a mesa do seu andar; as outras impressoras seguem o filtro delas;
  *   • pedido que não é de mesa (delivery, balcão) não passa por aqui.
- * O que cada impressora imprime (categorias, só bebida) continua sendo da tela
- * de Impressoras: o andar escolhe ONDE, não O QUÊ.
  */
 
 export type AndarDaMesa = {
@@ -87,7 +89,7 @@ export function andarDaMesa(andares: AndarDaMesa[], numero: unknown): AndarDaMes
  * (pedido que não é de mesa) ou nenhum andar com impressora: a lista volta
  * inteira. Mesa fora de todo andar: só as impressoras sem andar.
  */
-export function impressorasDoAndar<T extends { id?: string | number | null }>(
+export function impressorasDoAndar<T extends { id?: unknown }>(
   printers: T[],
   andares: AndarDaMesa[],
   numeroDaMesa: unknown
@@ -101,4 +103,60 @@ export function impressorasDoAndar<T extends { id?: string | number | null }>(
     const id = String(p?.id ?? "");
     return !deAlgumAndar.has(id) || doAndar.has(id);
   });
+}
+
+/**
+ * As impressoras que recebem a COMANDA desta mesa, com a do andar dela
+ * liberada de todo filtro: ela imprime a mesa inteira, venha o que vier na
+ * tela de Impressoras (categorias, "só bebida", módulo). As demais seguem como
+ * estão. Sem andar, ou andar sem impressora: igual a `impressorasDoAndar`.
+ */
+export function impressorasParaAMesa<
+  T extends { id?: unknown; categories?: unknown; somenteBebidas?: unknown; modulos?: unknown },
+>(printers: T[], andares: AndarDaMesa[], numeroDaMesa: unknown): T[] {
+  const candidatas = impressorasDoAndar(printers, andares, numeroDaMesa);
+  const andar = andarDaMesa(andares, numeroDaMesa);
+  if (!andar || andar.impressoras.length === 0) return candidatas;
+  const doAndar = new Set(andar.impressoras);
+  return candidatas.map((p) =>
+    doAndar.has(String(p?.id ?? "")) ? ({ ...p, categories: [], somenteBebidas: false, modulos: undefined } as T) : p
+  );
+}
+
+/**
+ * Esta mesa tem uma impressora de andar recebendo tudo? Quando tem, o item
+ * cuja impressora está em OUTRO andar (o drink do BAR do piso de cima, numa
+ * mesa do térreo) já sai garantido nela — e não precisa do resgate de "item
+ * de ninguém", que o mandaria para uma cozinha que ficaria vazia.
+ */
+export function temImpressoraDoAndar<T extends { id?: unknown }>(
+  printers: T[],
+  andares: AndarDaMesa[],
+  numeroDaMesa: unknown
+): boolean {
+  const andar = andarDaMesa(andares, numeroDaMesa);
+  if (!andar || andar.impressoras.length === 0) return false;
+  const ids = new Set(andar.impressoras);
+  return printers.some((p) => ids.has(String(p?.id ?? "")));
+}
+
+/**
+ * As impressoras que recebem a CONTA desta mesa: as do andar dela, quando o
+ * andar tem alguma (a conta é papel da mesa, e a impressora do andar recebe a
+ * mesa inteira); senão as marcadas para a conta, menos as de outros andares.
+ * Vazio = quem chama volta às marcadas de sempre: conta que não sai é pior.
+ */
+export function impressorasDaContaNoAndar<T extends { id?: unknown }>(
+  todas: T[],
+  marcadas: T[],
+  andares: AndarDaMesa[],
+  numeroDaMesa: unknown
+): T[] {
+  const andar = andarDaMesa(andares, numeroDaMesa);
+  if (andar && andar.impressoras.length > 0) {
+    const ids = new Set(andar.impressoras);
+    const doAndar = todas.filter((p) => ids.has(String(p?.id ?? "")));
+    if (doAndar.length > 0) return doAndar;
+  }
+  return impressorasDoAndar(marcadas, andares, numeroDaMesa);
 }

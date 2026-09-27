@@ -208,7 +208,11 @@ export default function AndaresConfig({
                         <span style={{ fontSize: 13, lineHeight: 1.3 }}>
                           <b>{p.name}</b>{p.label ? <span style={{ color: "#94A3B8" }}> · {p.label}</span> : null}
                           <br />
-                          <span style={{ color: "#64748B" }}>imprime {oQueImprime(p)}{p.contaDaMesa ? " · e a conta da mesa" : ""}</span>
+                          <span style={{ color: "#64748B" }}>
+                            {marcada
+                              ? "neste andar imprime a mesa inteira (comanda e conta)"
+                              : `hoje imprime ${oQueImprime(p)}${p.contaDaMesa ? " · e a conta da mesa" : ""}`}
+                          </span>
                         </span>
                       </label>
                     );
@@ -228,8 +232,9 @@ export default function AndaresConfig({
       {andares.length > 0 && (
         <div style={{ fontSize: 12.5, color: "#64748B", lineHeight: 1.5, background: "#F8FAFC", borderRadius: 10, padding: "10px 12px" }}>
           {semAndar.length > 0 && <div><b>Sem andar:</b> {faixaLegivel(semAndar)}</div>}
-          <div>A impressora que <b>nenhum</b> andar marcou continua imprimindo as mesas de todos os andares (a cozinha, por exemplo).
-            O que cada uma imprime se ajusta na tela de Impressoras.</div>
+          <div>A impressora marcada num andar recebe a <b>mesa inteira</b> das mesas dele — comanda completa e conta —, mesmo que
+            na tela de Impressoras ela só saia bebidas. A impressora que <b>nenhum</b> andar marcou continua como está: recebe só o
+            que é dela, das mesas de todos os andares (a cozinha, por exemplo).</div>
         </div>
       )}
 
