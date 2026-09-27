@@ -7,6 +7,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 import { comboParaImpressao } from "@/lib/parse-combo";
+import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
 import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
@@ -458,6 +459,18 @@ export async function GET(req: NextRequest) {
         ...camposDaMesaParaImpressao(comMesa as any),
         items: (pedidoDoBanco.items || []).map((i: any) => ({
           ...i,
+          // O NOME QUE O ASSISTENTE IMPRIME. Ele lê `item.name || menuProduct.name`
+          // — nunca `productName` — e esta fila não mandava `name`: o cabeçalho
+          // do item saía com o nome do ESPELHO (o cadastro), não com o nome do
+          // dia do pedido. Para a Brendi e o JotaJá o espelho nascia com as
+          // opções do primeiro pedido no nome, e a Frangoso via a comanda
+          // "trocada": cabeçalho de um pedido, opções de outro (27/09/2026).
+          // É a mesma regra do trilho do navegador (GlobalPrintListener e
+          // StoreOrdersDashboard): o nome do dia, cortado no primeiro " | "
+          // quando as opções saem nas linhas de baixo (comboSelections). Item
+          // sem opções gravadas fica com o nome inteiro — em 90 dias, 6 itens
+          // (JotaJá antigo, 99Food) trazem as escolhas só no nome.
+          name: i.comboSelections ? nomeDoItemParaComanda(i, "Combo") : nomeDoItem(i, "Item"),
           // O 2º argumento é o produto: é com os `comboGroups` dele que o preço
           // de cada adicional é resolvido, para sair "+R$ 3,00" na notinha.
           comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct),

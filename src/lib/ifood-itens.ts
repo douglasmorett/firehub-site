@@ -46,7 +46,7 @@
  */
 
 import { observacaoDoItem } from "@/lib/observacao-do-item";
-import { prisma } from "./prisma";
+import { corrigirNomeDoEspelho } from "./espelho-do-parceiro";
 
 /** Uma opção/complemento do item, como a comanda e o KDS leem. */
 type OpcaoDoItem = { name: string; quantity: number; price: number };
@@ -112,7 +112,7 @@ export async function montarItensDoPedidoIfood(
     const precoUnitario = getIfoodItemUnitPrice(i);
     const opcoes = opcoesDoItem(i);
 
-    await corrigirNomeDoEspelho(produtoId, nome, franchiseeId);
+    await corrigirNomeDoEspelho(produtoId, nome, franchiseeId, "iFood");
 
     itens.push({
       price: precoUnitario,
@@ -173,34 +173,5 @@ export async function montarItensDoPedidoIfood(
   return itens;
 }
 
-/**
- * Corrige o nome do espelho quando o item foi renomeado no iFood.
- *
- * Só toca em produto que JÁ existe — quem cria é o `connectOrCreate` do item,
- * dentro da transação do pedido. Lê antes de escrever de propósito: o caso
- * comum é o nome não ter mudado, e aí não há escrita nenhuma.
- *
- * O update é condicionado ao franqueado dono do produto. Sem isso, um id de
- * catálogo repetido entre duas lojas deixaria uma renomear o produto da outra.
- *
- * Falhar aqui não pode custar o pedido: o nome do pedido já está garantido em
- * `productName`, e este espelho é só o cadastro que as telas de catálogo leem.
- */
-async function corrigirNomeDoEspelho(produtoId: string, nome: string, franchiseeId: string) {
-  try {
-    const existente = await (prisma.menuProduct as any).findUnique({
-      where: { id: produtoId },
-      select: { name: true, franchiseeId: true },
-    });
-    if (!existente) return;
-    if (existente.name === nome) return;
-    if (existente.franchiseeId !== franchiseeId) return;
-
-    await (prisma.menuProduct as any).update({
-      where: { id: produtoId },
-      data: { name: nome },
-    });
-  } catch (err: any) {
-    console.warn("[iFood] Nao consegui atualizar o nome do espelho", produtoId, err?.message);
-  }
-}
+// `corrigirNomeDoEspelho` mora em src/lib/espelho-do-parceiro.ts: a mesma regra
+// vale para a Brendi e o JotaJá, que tinham o defeito descrito no cabeçalho.

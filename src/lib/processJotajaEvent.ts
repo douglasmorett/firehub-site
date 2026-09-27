@@ -12,6 +12,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 // A MESMA extração da Brendi (mesmo contrato Open Delivery). Eram duas
 // cópias idênticas, com o mesmo defeito nas duas — ver o arquivo.
 import { extrairOpcoesDoItem, valorOpenDelivery } from "@/lib/opcoes-open-delivery";
+import { corrigirNomeDoEspelho } from "@/lib/espelho-do-parceiro";
 
 export interface JotajaEvent {
   id?: string;
@@ -231,6 +232,9 @@ export async function processJotajaEvent(
         []
       );
 
+      // Espelhos que já existem e cujo nome precisa acompanhar o catálogo do
+      // JotaJá (lib/espelho-do-parceiro.ts) — corrigidos antes de gravar.
+      const espelhos: { id: string; nome: string }[] = [];
       const items = rawItemsList.map((i: any) => {
         const itemName = i.name || i.productName || i.title || i.label || "Item Jotajá";
         const options = extrairOpcoesDoItem(i);
@@ -274,6 +278,7 @@ export async function processJotajaEvent(
 
         const comboSelectionsJson = comboSelsList ? JSON.stringify(comboSelsList) : null;
         const itemId = i.id || i.externalId || `item-${Math.random().toString(36).slice(2)}`;
+        espelhos.push({ id: `jotaja-${itemId}`, nome: itemName });
 
         return {
           price: Math.round(itemPrice * 100) / 100,
@@ -284,22 +289,30 @@ export async function processJotajaEvent(
           notes: observacaoDoItem(i),
           comboSelections: comboSelectionsJson,
           menuProduct: {
+            // O id é o do item no CATÁLOGO do JotaJá, o mesmo em todo pedido
+            // daquele produto: o nome do espelho é o nome BASE, nunca o nome
+            // com as opções deste pedido (as opções vão em `comboSelections`,
+            // o nome completo do dia em `productName`). Era o mesmo defeito
+            // da Brendi — ver lib/espelho-do-parceiro.ts.
             connectOrCreate: {
               where: { id: `jotaja-${itemId}` } as any,
               create: {
                 id: `jotaja-${itemId}`,
                 franchiseeId: franchisee.id,
-                name: fullName,
-                description: i.specialInstructions || i.observations || i.notes || "",
-                price: itemPrice,
+                name: itemName,
+                description: "",
+                price: rawUnit || itemPrice,
                 category: i.category || "Jotajá",
-                isBeverage: isBeverageName(fullName) || options.some((o: any) => isBeverageName(o.name)),
+                isBeverage: isBeverageName(itemName) || options.some((o: any) => isBeverageName(o.name)),
                 active: false,
               } as any,
             } as any,
           },
         };
       });
+      // Espelho que já existe com outro nome (renomeado no JotaJá, ou nascido
+      // com as opções no nome): corrige antes de gravar o pedido.
+      await Promise.all(espelhos.map((e) => corrigirNomeDoEspelho(e.id, e.nome, franchisee.id, "JotaJá")));
 
       // Totais — handles {value, currency} objects
       const rawTotal = orderData.total?.orderAmount ?? orderData.total?.subTotal ?? orderData.totalPrice ?? orderData.total;

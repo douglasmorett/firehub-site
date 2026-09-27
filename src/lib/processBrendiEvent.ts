@@ -31,6 +31,7 @@ import { brendiFetch, confirmarPedidoBrendi } from "@/lib/brendi-api";
 // A extração das opções é a MESMA do JotaJá (mesmo contrato Open Delivery):
 // mora em lib/opcoes-open-delivery.ts para não voltar a ser duas cópias.
 import { extrairOpcoesDoItem, valorOpenDelivery } from "@/lib/opcoes-open-delivery";
+import { corrigirNomeDoEspelho } from "@/lib/espelho-do-parceiro";
 
 export interface BrendiEvent {
   id?: string;
@@ -715,6 +716,9 @@ export async function processBrendiEvent(
         []
       );
 
+      // Espelhos que já existem e cujo nome precisa acompanhar o catálogo da
+      // Brendi (lib/espelho-do-parceiro.ts) — corrigidos antes de gravar.
+      const espelhos: { id: string; nome: string }[] = [];
       const items = rawItemsList.map((i: any) => {
         const itemName = i.name || i.productName || i.title || i.label || "Item Brendi";
         const options = extrairOpcoesDoItem(i);
@@ -758,6 +762,7 @@ export async function processBrendiEvent(
 
         const comboSelectionsJson = comboSelsList ? JSON.stringify(comboSelsList) : null;
         const itemId = i.id || i.externalId || `item-${Math.random().toString(36).slice(2)}`;
+        espelhos.push({ id: `brendi-${itemId}`, nome: itemName });
 
         return {
           price: Math.round(itemPrice * 100) / 100,
@@ -774,22 +779,38 @@ export async function processBrendiEvent(
           menuProduct: {
             // Produto fantasma: existe só para a comanda/relatório referenciar;
             // active:false para nunca aparecer no cardápio da loja.
+            //
+            // O id é o do item no CATÁLOGO da Brendi — o mesmo em todo pedido
+            // daquele produto. Por isso o nome aqui é o nome BASE do item, e
+            // não `fullName`: com as opções no nome, o espelho nascia com as
+            // escolhas do primeiro pedido e os seguintes conectavam nele — a
+            // comanda da Frangoso saía com o cabeçalho de outro pedido
+            // (72 de 112 pedidos em 30 dias, 27/09/2026). As opções deste
+            // pedido estão em `comboSelections`, e o nome completo do dia em
+            // `productName`. Ver lib/espelho-do-parceiro.ts.
             connectOrCreate: {
               where: { id: `brendi-${itemId}` } as any,
               create: {
                 id: `brendi-${itemId}`,
                 franchiseeId: franchisee!.id,
-                name: fullName,
-                description: i.specialInstructions || i.observations || i.notes || "",
-                price: itemPrice,
+                name: itemName,
+                // A observação do cliente é do PEDIDO (coluna `notes` acima),
+                // não do produto: gravada aqui virava descrição fixa do espelho.
+                description: "",
+                // Preço base, sem as opções deste pedido: o espelho não cobra
+                // nada (a linha do pedido tem o dela); é só cadastro.
+                price: rawUnit || itemPrice,
                 category: i.category || "Brendi",
-                isBeverage: isBeverageName(fullName) || options.some((o: any) => isBeverageName(o.name)),
+                isBeverage: isBeverageName(itemName) || options.some((o: any) => isBeverageName(o.name)),
                 active: false,
               } as any,
             } as any,
           },
         };
       });
+      // Espelho que já existe com outro nome (renomeado na Brendi, ou nascido
+      // com as opções no nome): corrige antes de gravar o pedido.
+      await Promise.all(espelhos.map((e) => corrigirNomeDoEspelho(e.id, e.nome, franchisee!.id, "Brendi")));
 
       // Totais — aceita número puro ou objetos {value, currency}
       const rawTotal = orderData.total?.orderAmount ?? orderData.total?.subTotal ?? orderData.totalPrice ?? orderData.total;
