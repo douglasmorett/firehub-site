@@ -797,6 +797,9 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "ComboGroup" ADD COLUMN IF NOT EXISTS "minQty" INTEGER`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "maxPerItem" INTEGER`,
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "optionNote" TEXT`,
+  // Preço da opção conforme outra escolha — a meia pizza que custa diferente
+  // na Pequena e na Grande (lib/preco-combo.ts, lib/meio-a-meio.ts).
+  `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "precoPorEscolha" JSONB`,
   // A ordem das OPÇÕES dentro da pergunta. As setinhas de subir/descer opção
   // existiam na tela desde sempre, mas não havia coluna para guardar o que o
   // lojista arrumou — e as leituras, sem ORDER BY, devolviam a ordem física do

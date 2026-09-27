@@ -25,7 +25,7 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { trackGeminiUsage, trackDivergenciaDePreco } from "@/lib/usage-tracker";
 import { conferirPrecosDitos, extrairPrecosDoTexto, compararTotalDitoComGravado } from "@/lib/precos-ditos";
 import { normalizeStoreHours } from "@/lib/store-hours";
-import { precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo } from "./preco-combo";
+import { precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, tabelaDaOpcao } from "./preco-combo";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
@@ -266,6 +266,8 @@ export async function processChatbotAI(
               orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
               select: {
                 additionalPrice: true, additionalPriceDelivery: true,
+                // Meia pizza que custa conforme o tamanho (lib/meio-a-meio.ts).
+                precoPorEscolha: true,
                 menuProduct: { select: { id: true, name: true, price: true } },
               },
             },
@@ -699,6 +701,13 @@ export async function processChatbotAI(
         const opcoes = itens.map((i: any) => {
           const add = Number(i.additionalPrice) || 0;
           const nome = i.menuProduct.name;
+          // Meia pizza que custa conforme o tamanho (Serpa, 27/09/2026): um
+          // valor só faria a IA cotar a Grande pelo acréscimo da Pequena.
+          const porTamanho = tabelaDaOpcao(i);
+          if (porTamanho.length > 0) {
+            const sinal = (v: number) => `${v < 0 ? "−" : "+"}R$ ${Math.abs(v).toFixed(2).replace(".", ",")}`;
+            return `${nome} ${porTamanho.map(([t, v]) => `${sinal(v)} se ${t}`).join(", ")}`;
+          }
           if (ehEscolhaDeVariante || umaPizza) {
             const absoluto = (precoBase + add).toFixed(2).replace(".", ",");
             return `${nome} = R$ ${absoluto}`;

@@ -9,6 +9,7 @@ import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACA
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { SELECT_DO_CARDAPIO, ordemDasCategorias, ordenarComoALoja } from "@/lib/cardapio-da-loja";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
+import { refazerMeiasDaLoja } from "@/lib/meio-a-meio-no-banco";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -132,6 +133,11 @@ function dadosDoGrupo(g: any, gIdx: number) {
             typeof it === "object" && typeof it?.optionNote === "string" && it.optionNote.trim()
               ? it.optionNote.trim()
               : null,
+          // A tabela do meio a meio por tamanho volta do jeito que veio: a
+          // tela não a edita, mas o salvamento recria as opções, e sem isto
+          // qualquer "Salvar" na pizza apagava o preço da meia no Grande.
+          // (refazerMeiasDaLoja, logo depois, recalcula de qualquer forma.)
+          precoPorEscolha: typeof it === "object" ? tabelaValida(it?.precoPorEscolha) : undefined,
           // A ordem que o lojista arrumou com as setinhas na tela. É o índice
           // do array, do mesmo jeito que o grupo usa `gIdx` — sem isto as
           // setinhas mexiam na tela e nada mudava para o cliente.
@@ -140,6 +146,17 @@ function dadosDoGrupo(g: any, gIdx: number) {
       }),
     },
   };
+}
+
+/** `{ "Grande": 15 }` com número em todo valor, ou nada. */
+function tabelaValida(t: any): Record<string, number> | undefined {
+  if (!t || typeof t !== "object" || Array.isArray(t)) return undefined;
+  const saida: Record<string, number> = {};
+  for (const [k, v] of Object.entries(t)) {
+    const n = Number(v);
+    if (k && Number.isFinite(n)) saida[k] = n;
+  }
+  return Object.keys(saida).length > 0 ? saida : undefined;
 }
 
 // Um combo só pode apontar para itens da MESMA loja. Antes dava para montar um
@@ -497,6 +514,15 @@ export async function PUT(req: NextRequest) {
         });
       }
     }
+  }
+
+  // Preço de pizza mudou: as meias dela nas outras pizzas (e as outras nela)
+  // cobram a diferença calculada, que agora está velha. Falhar aqui não
+  // desfaz o salvamento — só deixa a meia com o preço anterior até o próximo.
+  if ("price" in updateData || comboGroups !== undefined) {
+    await refazerMeiasDaLoja(existing.franchiseeId).catch((e) =>
+      console.error("[menu-products] meio a meio não refeito:", e?.message || e)
+    );
   }
 
   return NextResponse.json(product);

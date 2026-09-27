@@ -180,6 +180,8 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
                 additionalPriceDelivery: true,
                 maxPerItem: true,
                 optionNote: true,
+                // Meia pizza que custa conforme o tamanho (lib/meio-a-meio.ts).
+                precoPorEscolha: true,
                 menuProduct: { select: { id: true, name: true, active: true, imageUrl: true, description: true, price: true } }
               }
             }

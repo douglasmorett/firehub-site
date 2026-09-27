@@ -359,6 +359,8 @@ export async function GET(req: NextRequest) {
                       items: {
                         select: {
                           additionalPrice: true,
+                          // Meia pizza que custa conforme o tamanho (lib/preco-combo.ts).
+                          precoPorEscolha: true,
                           menuProduct: { select: { name: true } },
                         },
                       },

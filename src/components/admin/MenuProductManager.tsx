@@ -846,7 +846,7 @@ export default function MenuProductManager({
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(true);
   const [activeGarcom, setActiveGarcom] = useState(true);
-  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; priceRule: string | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null }[] }[]>([]);
+  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; priceRule: string | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null; precoPorEscolha?: Record<string, number> | null }[] }[]>([]);
   /** Mostra os três campos de preço por canal em cada opção do combo. */
   const [precosCanalNoCombo, setPrecosCanalNoCombo] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1040,6 +1040,9 @@ export default function MenuProductManager({
           additionalPriceTotem: Number(i.additionalPriceTotem) > 0 ? Number(i.additionalPriceTotem) : null,
           maxPerItem: i.maxPerItem === null || i.maxPerItem === undefined ? null : Number(i.maxPerItem),
           optionNote: i.optionNote ?? null,
+          // Meio a meio por tamanho (lib/meio-a-meio.ts): a tela não edita,
+          // mas precisa DEVOLVER no salvamento, que recria as opções.
+          precoPorEscolha: i.precoPorEscolha ?? null,
         }))
       })));
       // Já abre destravado quando o combo tem preço por canal em alguma opção:
@@ -2723,6 +2726,16 @@ export default function MenuProductManager({
                                   title="Quanto este item soma ao preço do combo."
                                   style={{ width: "76px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
                                 />
+                                {it.precoPorEscolha && Object.keys(it.precoPorEscolha).length > 0 && (
+                                  <span
+                                    title="Meia pizza: o acréscimo muda com o tamanho e é recalculado sozinho quando o preço de uma pizza muda."
+                                    style={{ fontSize: "0.72rem", color: "#0F766E", fontWeight: 700 }}
+                                  >
+                                    {Object.entries(it.precoPorEscolha)
+                                      .map(([t, v]) => `${t} ${Number(v) < 0 ? "−" : "+"}${Math.abs(Number(v)).toFixed(2).replace(".", ",")}`)
+                                      .join(" · ")}
+                                  </span>
+                                )}
                                 <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Máx</label>
                                 <input
                                   type="number"

@@ -110,6 +110,7 @@ export async function GET(req: NextRequest) {
       ["CustomerOrderItem", "notes"], ["CustomerOrderItem", "tableGuestId"],
       ["MenuProduct", "sortOrder"], ["ComboGroup", "minQty"],
       ["ComboGroupItem", "maxPerItem"], ["ComboGroupItem", "optionNote"],
+      ["ComboGroupItem", "precoPorEscolha"],
       // A ordem das opções dentro da pergunta. Toda tela de venda ordena por
       // ela: coluna ausente é 500 no cardápio inteiro, não item fora de lugar.
       ["ComboGroupItem", "sortOrder"],

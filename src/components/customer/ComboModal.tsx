@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Minus, Check } from "lucide-react";
-import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo } from "@/lib/preco-combo";
+import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela } from "@/lib/preco-combo";
 
 export type ComboGroupData = {
   id: string;
@@ -23,6 +23,8 @@ export type ComboGroupData = {
     maxPerItem?: number | null;
     /** Linha curta sob o nome da opção ("13cm"), quando o grupo define uma. */
     optionNote?: string | null;
+    /** Preço conforme outra escolha — a meia pizza por tamanho (lib/preco-combo.ts). */
+    precoPorEscolha?: unknown;
     menuProduct: {
       id: string;
       name: string;
@@ -526,7 +528,10 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                       const optName = item.menuProduct.name;
                       const qty = selections[group.id]?.[optName] || 0;
                       const isSelected = qty > 0;
-                      const addPrice = item.additionalPrice || 0;
+                      // Pelo motor, com as escolhas feitas: a meia Camarão
+                      // é +5 na Pequena e +15 na Grande, e muda na hora em
+                      // que o cliente troca o tamanho.
+                      const addPrice = precoDaOpcaoNaTela(item, selections);
                       const grupoCheio = total >= max;
                       const tetoDoItem = Number(item.maxPerItem) > 0 ? Number(item.maxPerItem) : max;
 

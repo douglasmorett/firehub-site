@@ -592,7 +592,7 @@ async function montarItensNovos(
           items: {
             select: {
               additionalPrice: true, additionalPriceDelivery: true, additionalPriceSalao: true,
-              additionalPriceTotem: true, maxPerItem: true,
+              additionalPriceTotem: true, maxPerItem: true, precoPorEscolha: true,
               menuProduct: { select: { name: true, price: true } },
             },
           },

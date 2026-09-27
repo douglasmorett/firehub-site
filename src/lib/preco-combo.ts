@@ -26,10 +26,78 @@
 
 export type ItemDeGrupo = {
   additionalPrice?: number | null;
+  /**
+   * Preço desta opção conforme o que se escolheu em OUTRA pergunta do mesmo
+   * produto: `{ "Grande": 15 }` = com "Grande" escolhido, a opção custa 15.
+   * Nenhuma chave escolhida = vale `additionalPrice`. Ver `precoDaOpcao`.
+   */
+  precoPorEscolha?: unknown;
   /** Quantas vezes a opção pode repetir. Nulo = até o teto do grupo. */
   maxPerItem?: number | null;
   menuProduct?: { name?: string | null; price?: number | null } | null;
 };
+
+/**
+ * PREÇO DA OPÇÃO QUE DEPENDE DE OUTRA ESCOLHA.
+ *
+ * Nasceu com o meio a meio da Serpa Pizzaria (27/09/2026): cada sabor é um
+ * card, o cliente escolhe o tamanho e, se quiser, a outra metade — e a casa
+ * cobra METADE DE CADA no tamanho escolhido. O problema é que o Grande custa
+ * diferente em cada sabor (Margueritha +10, Calabresa +20, Camarão +40): a
+ * meia Camarão numa Calabresa vale +5 na Pequena ((50 − 40) / 2) e +15 na
+ * Grande ((90 − 60) / 2). Um acréscimo fixo acertaria um tamanho e erraria o
+ * outro.
+ *
+ * Aqui a opção carrega uma tabela `{ nome de outra opção: preço }`. Vale o
+ * preço da primeira chave que o cliente escolheu em qualquer pergunta do
+ * produto; sem nenhuma, o `additionalPrice` de sempre. Quem monta a tabela é
+ * lib/meio-a-meio.ts, que refaz a conta quando o preço de uma pizza muda.
+ *
+ * Não tem preço por canal: a tabela vale igual em todo canal.
+ */
+export function tabelaDaOpcao(item: ItemDeGrupo | null | undefined): [string, number][] {
+  let bruto: any = item?.precoPorEscolha;
+  if (typeof bruto === "string") {
+    try {
+      bruto = JSON.parse(bruto);
+    } catch {
+      return [];
+    }
+  }
+  if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return [];
+  return Object.entries(bruto as Record<string, unknown>)
+    .map(([nome, v]) => [nome, Number(v)] as [string, number])
+    .filter(([nome, v]) => nome && Number.isFinite(v));
+}
+
+/** O preço da opção, dadas as opções escolhidas no produto (por nome). */
+export function precoDaOpcao(item: ItemDeGrupo, escolhidas: ReadonlySet<string>): number {
+  for (const [nome, valor] of tabelaDaOpcao(item)) if (escolhidas.has(nome)) return valor;
+  return Number(item?.additionalPrice) || 0;
+}
+
+/** Todos os preços que a opção PODE ter — para "a partir de", piso e afins. */
+function precosPossiveis(item: ItemDeGrupo): number[] {
+  return [Number(item?.additionalPrice) || 0, ...tabelaDaOpcao(item).map(([, v]) => v)];
+}
+
+/** O mais barato que a opção pode custar. */
+export function menorPrecoDaOpcao(item: ItemDeGrupo): number {
+  return Math.min(...precosPossiveis(item));
+}
+
+/**
+ * O preço da opção NA TELA, com as escolhas que o cliente já fez. É o número
+ * que o modal escreve ao lado da opção ("+ R$ 15,00") — e muda sozinho quando
+ * ele troca o tamanho.
+ */
+export function precoDaOpcaoNaTela(item: ItemDeGrupo, escolhas: EscolhasDoCombo): number {
+  return precoDaOpcao(item, nomesEscolhidos(normalizarEscolhas(escolhas)));
+}
+
+function nomesEscolhidos(escolhido: { nome: string; qtd: number }[]): Set<string> {
+  return new Set(escolhido.filter((e) => e.qtd > 0).map((e) => e.nome));
+}
 
 export type GrupoDeCombo = {
   id?: string;
@@ -206,6 +274,7 @@ export function adicionaisDetalhados(
   const escolhido = normalizarEscolhas(escolhas);
   if (escolhido.length === 0) return [];
 
+  const escolhidas = nomesEscolhidos(escolhido);
   const porGrupoENome = new Map<string, number>();
   const porNome = new Map<string, number>();
   const gruposDoNome = new Map<string, Set<string>>();
@@ -213,7 +282,7 @@ export function adicionaisDetalhados(
     for (const item of g.items || []) {
       const nome = item?.menuProduct?.name;
       if (!nome) continue;
-      const add = Number(item.additionalPrice) || 0;
+      const add = precoDaOpcao(item, escolhidas);
       if (g.id) {
         porGrupoENome.set(`${g.id}::${nome}`, add);
         if (!gruposDoNome.has(nome)) gruposDoNome.set(nome, new Set());
@@ -320,7 +389,7 @@ export function precoMinimoDoProduto(produto: ProdutoComCombo): number {
     if (itens.length === 0) continue;
     const quantos = minimoExigidoDoGrupo(g);
     if (quantos <= 0) continue;
-    const maisBarato = Math.min(...itens.map((i) => Number(i.additionalPrice) || 0));
+    const maisBarato = Math.min(...itens.map((i) => menorPrecoDaOpcao(i)));
     // Em MAIOR/MEDIA o grupo vale UMA pizza por mais sabores que ele exija:
     // duas metades do sabor mais barato custam o preço dele, não o dobro. Sem
     // esta linha o "a partir de" de uma pizza de 2 sabores sairia dobrado.
@@ -349,10 +418,10 @@ export function precoMinimoDoProduto(produto: ProdutoComCombo): number {
 export function pisoDoPreco(produto: ProdutoComCombo): number {
   let piso = precoMinimoDoProduto(produto);
   for (const g of produto.comboGroups || []) {
-    const itens = [...(g.items || [])].sort(
-      (a, b) => (Number(a.additionalPrice) || 0) - (Number(b.additionalPrice) || 0)
-    );
-    const maisBarato = Number(itens[0]?.additionalPrice) || 0;
+    // Opção com preço por escolha entra pelo MENOR que pode custar: o piso é
+    // um limite de baixo, e errar para baixo só deixa de barrar, nunca cobra.
+    const itens = [...(g.items || [])].sort((a, b) => menorPrecoDaOpcao(a) - menorPrecoDaOpcao(b));
+    const maisBarato = itens.length ? menorPrecoDaOpcao(itens[0]) : 0;
     if (itens.length === 0 || maisBarato >= 0) continue;
     const exigidos = minimoExigidoDoGrupo(g);
 
@@ -367,7 +436,7 @@ export function pisoDoPreco(produto: ProdutoComCombo): number {
     // sobram até o teto do grupo entram só com opção que desconta.
     let vagas = Math.max(1, Number(g.maxQty) || 1) - exigidos;
     for (const i of itens) {
-      const preco = Number(i.additionalPrice) || 0;
+      const preco = menorPrecoDaOpcao(i);
       if (preco >= 0 || vagas <= 0) break;
       const leva = Math.min(Number(i.maxPerItem) > 0 ? Number(i.maxPerItem) : vagas, vagas);
       piso += preco * leva;
@@ -385,7 +454,7 @@ export function pisoDoPreco(produto: ProdutoComCombo): number {
 export function precoVariaPorEscolha(produto: ProdutoComCombo): boolean {
   for (const g of produto.comboGroups || []) {
     for (const item of g.items || []) {
-      if ((Number(item.additionalPrice) || 0) > 0) return true;
+      if (precosPossiveis(item).some((v) => v > 0)) return true;
     }
   }
   return false;

@@ -21,7 +21,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo } from "@/lib/preco-combo";
+import { minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, precoDaOpcaoNaTela } from "@/lib/preco-combo";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TOTEM DE AUTOATENDIMENTO
@@ -177,6 +177,8 @@ type OpcaoDeGrupo = {
   additionalPrice?: number | null;
   maxPerItem?: number | null;
   optionNote?: string | null;
+  /** Preço conforme outra escolha — a meia pizza por tamanho (lib/preco-combo.ts). */
+  precoPorEscolha?: unknown;
   menuProduct?: { id: string; name: string; active?: boolean; imageUrl?: string | null; price?: number } | null;
 };
 
@@ -372,6 +374,7 @@ function escolhasParaEnvio(produto: Produto, escolhas: EscolhasNaTela): Escolhas
 
 function detalhesDaEscolha(produto: Produto, escolhas: EscolhasNaTela): DetalheDaEscolha[] {
   const lista: DetalheDaEscolha[] = [];
+  const paraEnvio = escolhasParaEnvio(produto, escolhas);
   for (const grupo of gruposDoProduto(produto)) {
     for (const opcao of opcoesUtilizaveis(grupo)) {
       const qtd = Number(escolhas[grupo.id]?.[opcao.id]) || 0;
@@ -380,7 +383,7 @@ function detalhesDaEscolha(produto: Produto, escolhas: EscolhasNaTela): DetalheD
         grupo: grupo.title || "Escolhas",
         nome: opcao.menuProduct?.name || "",
         quantidade: qtd,
-        adicional: Number(opcao.additionalPrice) || 0,
+        adicional: precoDaOpcaoNaTela(opcao, paraEnvio),
       });
     }
   }
@@ -2548,7 +2551,8 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                         <div style={{ display: "grid", gap: 14 }}>
                           {opcoes.map((opcao) => {
                             const qtd = Number(escolhas[grupo.id]?.[opcao.id]) || 0;
-                            const adicional = Number(opcao.additionalPrice) || 0;
+                            // A meia pizza muda de preço com o tamanho escolhido.
+                            const adicional = precoDaOpcaoNaTela(opcao, escolhasParaEnvio(comboAberto, escolhas));
                             const podeSomar = escolhido < teto && qtd < tetoDaOpcao(grupo, opcao);
                             const nome = opcao.menuProduct?.name || "";
                             return (

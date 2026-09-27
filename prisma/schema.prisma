@@ -725,6 +725,16 @@ model ComboGroupItem {
   /// pode ser um produto genérico ("Baby") reaproveitado em dezenas de grupos,
   /// e o que muda de um para outro é justamente essa linha.
   optionNote      String?
+  /// PREÇO DA OPÇÃO CONFORME OUTRA ESCOLHA DO PRODUTO. Nulo = só `additionalPrice`.
+  ///
+  /// `{ "Grande": 15 }`: com "Grande" escolhido em outra pergunta, esta opção
+  /// custa 15. É a meia pizza da Serpa Pizzaria, que cobra metade de cada sabor
+  /// no tamanho escolhido — e o Grande custa diferente em cada sabor, então um
+  /// acréscimo fixo erraria um dos tamanhos. Quem lê: lib/preco-combo.ts
+  /// (`precoDaOpcao`); quem monta e refaz: lib/meio-a-meio.ts.
+  ///
+  /// A COLUNA EXISTE NO BANCO ANTES deste campo: src/lib/garantir-colunas.ts.
+  precoPorEscolha Json?
   /// A ORDEM EM QUE A OPÇÃO APARECE DENTRO DA PERGUNTA.
   ///
   /// A tela de cadastro sempre teve as setinhas de subir e descer opção, mas
