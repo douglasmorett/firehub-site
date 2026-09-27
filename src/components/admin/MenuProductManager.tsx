@@ -1187,6 +1187,33 @@ export default function MenuProductManager({
     router.refresh();
   };
 
+  // ── PAUSAR A CATEGORIA INTEIRA ──────────────────────────────────────────
+  //
+  // Pedido do dono (27/09/2026): um botão no cabeçalho da categoria que pausa
+  // todos os produtos dela de uma vez, com aviso antes. O inverso (reativar
+  // todos) aparece quando a categoria inteira já está pausada. É a mesma
+  // chamada da pausa de um produto (PUT { id, active }), uma por item.
+  const handleToggleCategoria = async (catName: string, catProds: any[], pausar: boolean) => {
+    const alvo = catProds.filter(p => pausar ? p.active : !p.active);
+    if (alvo.length === 0) return;
+    const aviso = pausar
+      ? `Atenção: pausar a categoria "${catName}" pausa TODOS os ${alvo.length} produtos que estão nela. Tem certeza?`
+      : `Reativar os ${alvo.length} produtos pausados de "${catName}"?`;
+    if (!confirm(aviso)) return;
+    setPausing(true);
+    try {
+      await Promise.all(alvo.map(p =>
+        fetch("/api/admin/menu-products", {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: p.id, active: !pausar })
+        })
+      ));
+    } finally {
+      setPausing(false);
+      router.refresh();
+    }
+  };
+
   // Estoque disponível direto na lista: repor, ligar/desligar o controle e
   // responder "zerou, pausar?". O restante é recalculado no servidor.
   const handleEstoque = async (id: string, dados: { estoque?: number | null; estoquePausar?: boolean }) => {
@@ -3084,6 +3111,28 @@ export default function MenuProductManager({
                       >
                         + Criar item
                       </button>
+
+                      {catProds.length > 0 && (() => {
+                        // Todos pausados → oferece reativar; senão, pausar o que está ativo.
+                        const todosPausados = catProds.every((p: any) => !p.active);
+                        return (
+                          <button
+                            onClick={() => handleToggleCategoria(cat.name, catProds, !todosPausados)}
+                            disabled={pausing}
+                            title={todosPausados ? "Reativar todos os produtos desta categoria" : "Pausar todos os produtos desta categoria"}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: "5px",
+                              padding: "6px 12px", borderRadius: "8px", fontSize: "0.78rem", fontWeight: 700, cursor: pausing ? "wait" : "pointer",
+                              border: `1.5px solid ${todosPausados ? "#99F6E4" : "#FDE68A"}`,
+                              background: todosPausados ? "#F0FDFA" : "#FFFBEB",
+                              color: todosPausados ? "#0F766E" : "#92400E",
+                            }}
+                          >
+                            {todosPausados ? <Play size={12} /> : <Pause size={12} />}
+                            {todosPausados ? "Reativar categoria" : "Pausar categoria"}
+                          </button>
+                        );
+                      })()}
 
                       <div style={{ display: "flex", gap: "3px", marginLeft: "4px" }}>
                         <button
