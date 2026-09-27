@@ -54,6 +54,8 @@ export type GarcomAutenticado = {
   franchiseeId: string;
   /** Comissão cadastrada (%), sugerida como taxa de serviço no fechamento. */
   commissionRate: number | null;
+  /** Pode registrar pagamento e fechar a conta pelo link? (cadastro do garçom) */
+  podeFecharConta: boolean;
 };
 
 export type ResultadoDoGarcom =
@@ -116,7 +118,7 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
     where: { id: token.gid },
     select: {
       id: true, name: true, login: true, active: true, franchiseeId: true,
-      credentialsUpdatedAt: true, commissionRate: true,
+      credentialsUpdatedAt: true, commissionRate: true, podeFecharConta: true,
       franchisee: { select: { cashClosedAt: true } },
     },
   });
@@ -157,7 +159,11 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
 
   return {
     ok: true,
-    garcom: { id: w.id, name: w.name, login: w.login, franchiseeId: w.franchiseeId, commissionRate: w.commissionRate },
+    garcom: {
+      id: w.id, name: w.name, login: w.login, franchiseeId: w.franchiseeId, commissionRate: w.commissionRate,
+      // Nulo (linha de antes da coluna) = pode, que é o padrão.
+      podeFecharConta: w.podeFecharConta !== false,
+    },
   };
 }
 
@@ -231,6 +237,7 @@ export async function resolverOperadorDaMesa(): Promise<OperadorDaMesa | null> {
  */
 export const CAMPOS_DO_GARCOM = {
   id: true, name: true, phone: true, active: true, commissionRate: true, notes: true,
+  podeFecharConta: true,
   login: true, lastLoginAt: true, createdAt: true, updatedAt: true,
 } as const;
 

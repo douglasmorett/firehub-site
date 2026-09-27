@@ -33,7 +33,7 @@ export default async function PaginaDeMesasDoGarcom({ params }: { params: Promis
   return (
     <MesasApp
       modo="garcom"
-      garcom={{ id: auth.garcom.id, name: auth.garcom.name, commissionRate: auth.garcom.commissionRate }}
+      garcom={{ id: auth.garcom.id, name: auth.garcom.name, commissionRate: auth.garcom.commissionRate, podeFecharConta: auth.garcom.podeFecharConta }}
       slug={slug}
     />
   );

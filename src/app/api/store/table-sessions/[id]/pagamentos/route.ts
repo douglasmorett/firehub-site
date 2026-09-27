@@ -42,6 +42,11 @@ async function abrirContexto(req: NextRequest, id: string) {
   if (!operador) {
     return { erro: NextResponse.json({ error: "Não autorizado" }, { status: 401 }) };
   }
+  // Registrar ou apagar pagamento é parte do fechamento: o garçom sem "pode
+  // fechar a conta" no cadastro não passa (ver a conta, pelo GET, ele pode).
+  if (req.method !== "GET" && operador.tipo === "garcom" && !operador.garcom.podeFecharConta) {
+    return { erro: NextResponse.json({ error: "Este garçom não fecha conta. Peça ao caixa para fechar pelo painel." }, { status: 403 }) };
+  }
   const lojaId = operador.franchiseeId;
 
   // O dono vem da MESA, não do campo solto da sessão.

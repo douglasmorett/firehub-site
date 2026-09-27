@@ -313,7 +313,7 @@ export default function MesasApp({
 }: {
   modo?: ModoDaTela;
   /** Garçom logado pelo link. Só existe em modo "garcom". */
-  garcom?: { id: string; name: string; commissionRate?: number | null } | null;
+  garcom?: { id: string; name: string; commissionRate?: number | null; podeFecharConta?: boolean } | null;
   /** Slug da loja, para o "Sair" do garçom voltar ao login certo. */
   slug?: string;
 }) {
@@ -2306,11 +2306,21 @@ export default function MesasApp({
                 background: "#0F766E", color: "#fff", fontWeight: 800, fontSize: 13,
                 cursor: "pointer", boxShadow: "0 2px 6px rgba(15, 118, 110,0.2)",
               }}>+ Novo Pedido</button>
-              <button onClick={abrirFechamento} style={{
-                padding: "10px 0", borderRadius: 10, border: "none",
-                background: "#C92E09", color: "#fff", fontWeight: 800, fontSize: 13,
-                cursor: "pointer", boxShadow: "0 2px 6px rgba(220,38,38,0.2)",
-              }}>💰 Fechar Conta</button>
+              {/* Garçom sem "pode fechar a conta" no cadastro: o botão não
+                  existe para ele — o servidor também recusa. */}
+              {!(ehGarcom && garcom?.podeFecharConta === false) ? (
+                <button onClick={abrirFechamento} style={{
+                  padding: "10px 0", borderRadius: 10, border: "none",
+                  background: "#C92E09", color: "#fff", fontWeight: 800, fontSize: 13,
+                  cursor: "pointer", boxShadow: "0 2px 6px rgba(220,38,38,0.2)",
+                }}>💰 Fechar Conta</button>
+              ) : (
+                <div title="Este garçom não fecha conta; o caixa fecha pelo painel." style={{
+                  padding: "10px 6px", borderRadius: 10, border: "1px dashed #CBD5E1",
+                  background: "#F8FAFC", color: "#64748B", fontWeight: 700, fontSize: 12,
+                  textAlign: "center", lineHeight: 1.2,
+                }}>Conta fecha no caixa</div>
+              )}
               {/* Lado a lado: no celular o painel tem 46vh e cada linha de botão
                   custa 44px; três linhas cheias empurravam o Total para fora. */}
               <button onClick={() => imprimirConta(taxaSugeridaDaMesa(selectedTable))} disabled={imprimindoConta}

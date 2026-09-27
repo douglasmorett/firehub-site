@@ -11,6 +11,8 @@ interface Waiter {
   phone: string | null;
   commissionRate: number;
   active: boolean;
+  /** Pelo link, pode fechar a conta? Ausente (cadastro antigo) = pode. */
+  podeFecharConta?: boolean;
   /** Login pelo link do garçom. Nulo = sem acesso próprio. */
   login: string | null;
   lastLoginAt: string | null;
@@ -22,7 +24,7 @@ interface AcessoDoGarcom {
   caminho: string | null;
 }
 
-const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, login: "", password: "" };
+const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, podeFecharConta: true, login: "", password: "" };
 
 interface TableSessionData {
   id: string;
@@ -204,7 +206,7 @@ export default function GarconsPage() {
 
   const openEdit = (w: Waiter) => {
     setEditingId(w.id);
-    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active, login: w.login || "", password: "" });
+    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, login: w.login || "", password: "" });
     setErroDoForm("");
     setMostrarSenha(false);
     setShowModal(true);
@@ -504,6 +506,16 @@ export default function GarconsPage() {
                 <p style={{ margin: "8px 0 0", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>
                   Sem login o garçom não entra pelo link, mas continua disponível para escolher ao abrir uma mesa.
                   Trocar a senha desconecta o celular dele na hora.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={formData.podeFecharConta} onChange={e => setFormData({ ...formData, podeFecharConta: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#475569" }} />
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>Pode fechar a conta pelo link do garçom</span>
+                </label>
+                <p style={{ margin: "6px 0 0 26px", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>
+                  Desmarcado, o garçom lança pedidos e imprime a conta, mas o botão "Fechar Conta" só aparece no painel da loja.
                 </p>
               </div>
 

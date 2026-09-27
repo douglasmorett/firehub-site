@@ -1392,6 +1392,11 @@ model Waiter {
   active           Boolean         @default(true)
   commissionRate   Float?          @default(10) // Ex: 10% padrão de comissão
   notes            String?
+  /// Pelo link do garçom, ele pode fechar a conta (registrar pagamentos e
+  /// liberar a mesa)? Nasce ligado para todos; desligado, só o painel da
+  /// loja fecha (pedido do dono, 27/09/2026). A COLUNA nasce em
+  /// garantir-colunas.ts (INSTRUCOES_MESA).
+  podeFecharConta  Boolean         @default(true)
 
   /// Acesso próprio do garçom pelo link /garcom/<slug-da-loja>.
   ///

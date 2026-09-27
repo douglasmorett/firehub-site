@@ -13,6 +13,11 @@ export async function POST(
     // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts).
     const operador = await resolverOperadorDaMesa();
     if (!operador) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Garçom sem "pode fechar a conta" no cadastro: o botão nem aparece para
+    // ele, e aqui a porta fica fechada mesmo para quem chamar a rota na mão.
+    if (operador.tipo === "garcom" && !operador.garcom.podeFecharConta) {
+      return NextResponse.json({ error: "Este garçom não fecha conta. Peça ao caixa para fechar pelo painel." }, { status: 403 });
+    }
     const targetFranchiseeId = operador.franchiseeId;
 
     // ── ESTE É O MOMENTO DO DINHEIRO ─────────────────────────────────────
