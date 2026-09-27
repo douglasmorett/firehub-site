@@ -15,6 +15,10 @@ interface Waiter {
   podeFecharConta?: boolean;
   /** Pelo link, pode dar desconto? Ausente = pode. */
   podeDarDesconto?: boolean;
+  /** Pelo link: liberar mesa, tirar a taxa de serviço, remover item lançado. Ausente = pode. */
+  podeLiberarMesa?: boolean;
+  podeTirarTaxa?: boolean;
+  podeRemoverItem?: boolean;
   /** Login pelo link do garçom. Nulo = sem acesso próprio. */
   login: string | null;
   lastLoginAt: string | null;
@@ -26,7 +30,16 @@ interface AcessoDoGarcom {
   caminho: string | null;
 }
 
-const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, podeFecharConta: true, podeDarDesconto: true, login: "", password: "" };
+const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, podeFecharConta: true, podeDarDesconto: true, podeLiberarMesa: true, podeTirarTaxa: true, podeRemoverItem: true, login: "", password: "" };
+
+/** As permissões do módulo de mesas pelo link — todas nascem ligadas; o dono desliga. */
+const PERMISSOES_DO_LINK: { campo: "podeFecharConta" | "podeDarDesconto" | "podeLiberarMesa" | "podeTirarTaxa" | "podeRemoverItem"; titulo: string; ajuda: string }[] = [
+  { campo: "podeFecharConta", titulo: "Pode fechar a conta pelo link do garçom", ajuda: "Desmarcado, o garçom lança pedidos e imprime a conta, mas o botão \"Fechar Conta\" só aparece no painel da loja." },
+  { campo: "podeDarDesconto", titulo: "Pode dar desconto pelo link do garçom", ajuda: "Desmarcado, o botão \"Dar desconto\" some para ele; o desconto na conta fica só com o painel da loja." },
+  { campo: "podeLiberarMesa", titulo: "Pode liberar mesa pelo link do garçom", ajuda: "Desmarcado, o botão \"Liberar Mesa\" some para ele; quem libera a mesa é o painel da loja." },
+  { campo: "podeTirarTaxa", titulo: "Pode tirar a taxa de serviço pelo link do garçom", ajuda: "Desmarcado, a taxa fica travada para ele — não desmarca nem baixa o percentual; só o painel da loja mexe." },
+  { campo: "podeRemoverItem", titulo: "Pode remover item já lançado pelo link do garçom", ajuda: "Desmarcado, ele só acrescenta: não remove item, não diminui quantidade nem cancela pedido da mesa. Ajuste é com o caixa." },
+];
 
 interface TableSessionData {
   id: string;
@@ -208,7 +221,7 @@ export default function GarconsPage() {
 
   const openEdit = (w: Waiter) => {
     setEditingId(w.id);
-    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, podeDarDesconto: w.podeDarDesconto !== false, login: w.login || "", password: "" });
+    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, podeDarDesconto: w.podeDarDesconto !== false, podeLiberarMesa: w.podeLiberarMesa !== false, podeTirarTaxa: w.podeTirarTaxa !== false, podeRemoverItem: w.podeRemoverItem !== false, login: w.login || "", password: "" });
     setErroDoForm("");
     setMostrarSenha(false);
     setShowModal(true);
@@ -511,25 +524,15 @@ export default function GarconsPage() {
                 </p>
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={formData.podeFecharConta} onChange={e => setFormData({ ...formData, podeFecharConta: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#475569" }} />
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>Pode fechar a conta pelo link do garçom</span>
-                </label>
-                <p style={{ margin: "6px 0 0 26px", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>
-                  Desmarcado, o garçom lança pedidos e imprime a conta, mas o botão "Fechar Conta" só aparece no painel da loja.
-                </p>
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={formData.podeDarDesconto} onChange={e => setFormData({ ...formData, podeDarDesconto: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#475569" }} />
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>Pode dar desconto pelo link do garçom</span>
-                </label>
-                <p style={{ margin: "6px 0 0 26px", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>
-                  Desmarcado, o botão "Dar desconto" some para ele; o desconto na conta fica só com o painel da loja.
-                </p>
-              </div>
+              {PERMISSOES_DO_LINK.map(p => (
+                <div key={p.campo} style={{ marginBottom: 14 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input type="checkbox" checked={formData[p.campo]} onChange={e => setFormData({ ...formData, [p.campo]: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#475569" }} />
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>{p.titulo}</span>
+                  </label>
+                  <p style={{ margin: "6px 0 0 26px", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>{p.ajuda}</p>
+                </div>
+              ))}
 
               <div style={{ marginBottom: 24 }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>

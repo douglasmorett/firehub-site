@@ -58,6 +58,12 @@ export type GarcomAutenticado = {
   podeFecharConta: boolean;
   /** Pode dar desconto na conta pelo link? (cadastro do garçom) */
   podeDarDesconto: boolean;
+  /** Pode liberar mesa sem consumo pelo link? */
+  podeLiberarMesa: boolean;
+  /** Pode tirar (ou baixar) a taxa de serviço da conta pelo link? */
+  podeTirarTaxa: boolean;
+  /** Pode remover item já lançado (ou diminuir a quantidade / cancelar o pedido) pelo link? */
+  podeRemoverItem: boolean;
 };
 
 export type ResultadoDoGarcom =
@@ -121,6 +127,7 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
     select: {
       id: true, name: true, login: true, active: true, franchiseeId: true,
       credentialsUpdatedAt: true, commissionRate: true, podeFecharConta: true, podeDarDesconto: true,
+      podeLiberarMesa: true, podeTirarTaxa: true, podeRemoverItem: true,
       franchisee: { select: { cashClosedAt: true } },
     },
   });
@@ -166,6 +173,9 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
       // Nulo (linha de antes da coluna) = pode, que é o padrão.
       podeFecharConta: w.podeFecharConta !== false,
       podeDarDesconto: w.podeDarDesconto !== false,
+      podeLiberarMesa: w.podeLiberarMesa !== false,
+      podeTirarTaxa: w.podeTirarTaxa !== false,
+      podeRemoverItem: w.podeRemoverItem !== false,
     },
   };
 }
@@ -240,7 +250,7 @@ export async function resolverOperadorDaMesa(): Promise<OperadorDaMesa | null> {
  */
 export const CAMPOS_DO_GARCOM = {
   id: true, name: true, phone: true, active: true, commissionRate: true, notes: true,
-  podeFecharConta: true, podeDarDesconto: true,
+  podeFecharConta: true, podeDarDesconto: true, podeLiberarMesa: true, podeTirarTaxa: true, podeRemoverItem: true,
   login: true, lastLoginAt: true, createdAt: true, updatedAt: true,
 } as const;
 

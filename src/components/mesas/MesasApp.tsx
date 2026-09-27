@@ -313,7 +313,7 @@ export default function MesasApp({
 }: {
   modo?: ModoDaTela;
   /** Garçom logado pelo link. Só existe em modo "garcom". */
-  garcom?: { id: string; name: string; commissionRate?: number | null; podeFecharConta?: boolean; podeDarDesconto?: boolean } | null;
+  garcom?: { id: string; name: string; commissionRate?: number | null; podeFecharConta?: boolean; podeDarDesconto?: boolean; podeLiberarMesa?: boolean; podeTirarTaxa?: boolean; podeRemoverItem?: boolean } | null;
   /** Slug da loja, para o "Sair" do garçom voltar ao login certo. */
   slug?: string;
 }) {
@@ -322,6 +322,11 @@ export default function MesasApp({
   // configuração, atalho para o painel. O servidor recusa essas ações de
   // qualquer forma; aqui só se tira o botão para ninguém bater num 403.
   const ehGarcom = modo === "garcom" && !!garcom;
+  // Permissões do cadastro do garçom (todas ligadas por padrão; o dono
+  // desliga). Ausente = pode. O servidor recusa de qualquer forma.
+  const podeLiberarMesa = !(ehGarcom && garcom?.podeLiberarMesa === false);
+  const podeTirarTaxa = !(ehGarcom && garcom?.podeTirarTaxa === false);
+  const podeRemoverItem = !(ehGarcom && garcom?.podeRemoverItem === false);
   /** Em modo garçom a mesa abre sempre em nome dele; no painel, quem escolhe é o gerente. */
   const garcomFixo = ehGarcom && garcom ? garcom.id : "";
 
@@ -2336,7 +2341,7 @@ export default function MesasApp({
                 cursor: freeTables.length === 0 ? "not-allowed" : "pointer",
                 opacity: freeTables.length === 0 ? 0.5 : 1,
               }}>↔️ Mudar de mesa</button>
-              {(selectedTable.openSession.totalAmount === 0) && (
+              {(selectedTable.openSession.totalAmount === 0) && podeLiberarMesa && (
                 <button onClick={() => setShowFreeConfirm(true)} style={{
                   padding: "10px 0", borderRadius: 10, border: "1.5px solid #B45309",
                   background: "#FFF7E6", color: "#B45309", fontWeight: 800, fontSize: 13,
@@ -2466,7 +2471,7 @@ export default function MesasApp({
                         <span style={{ fontWeight: 800, fontSize: 13, color: cancelado ? "#B71C1C" : "#475569", textDecoration: cancelado ? "line-through" : "none" }}>
                           {fmt(order.totalAmount)}
                         </span>
-                        {!cancelado && (
+                        {!cancelado && podeRemoverItem && (
                           <button
                             onClick={() => cancelarPedidoMesa(order.id, order.dailyOrderNumber || "—")}
                             disabled={!!editandoItem}
@@ -2545,7 +2550,7 @@ export default function MesasApp({
                               {item.tableGuestId ? `👤 ${dono?.name || "cliente"}` : "🍽️ mesa"}
                             </span>
                           </span>
-                          {!cancelado && (
+                          {!cancelado && podeRemoverItem && (
                             <button
                               onClick={() => removerItemPedido(order.id, item.id, item.menuProduct.name, order.items.length === 1)}
                               disabled={!!editandoItem}
@@ -2581,11 +2586,12 @@ export default function MesasApp({
                   <div style={{ fontSize: 15, fontWeight: 800, color: "#1E293B", marginTop: 2 }}>{editorQtd.nome}</div>
                   <div style={{ fontSize: 12, color: "#94A3B8", marginBottom: 12 }}>Lançado: {editorQtd.atual}x · {fmt(editorQtd.preco)} cada</div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
-                    <button onClick={() => setEditorQtd({ ...editorQtd, novo: Math.max(0, editorQtd.novo - 1) })}
+                    {/* Garçom que não remove item também não diminui: o piso vira o que já foi lançado. */}
+                    <button onClick={() => setEditorQtd({ ...editorQtd, novo: Math.max(podeRemoverItem ? 0 : editorQtd.atual, editorQtd.novo - 1) })}
                       style={{ width: 52, height: 52, borderRadius: 14, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: 26, fontWeight: 800, color: "#C92E09", cursor: "pointer" }}>−</button>
                     <input
-                      type="number" inputMode="numeric" min={0} max={99} value={editorQtd.novo}
-                      onChange={(e) => setEditorQtd({ ...editorQtd, novo: Math.max(0, Math.min(99, Math.floor(Number(e.target.value) || 0))) })}
+                      type="number" inputMode="numeric" min={podeRemoverItem ? 0 : editorQtd.atual} max={99} value={editorQtd.novo}
+                      onChange={(e) => setEditorQtd({ ...editorQtd, novo: Math.max(podeRemoverItem ? 0 : editorQtd.atual, Math.min(99, Math.floor(Number(e.target.value) || 0))) })}
                       onFocus={(e) => e.target.select()}
                       style={{ width: 84, height: 56, textAlign: "center", fontSize: 28, fontWeight: 900, color: "#1E293B", border: "2px solid #475569", borderRadius: 14, outline: "none" }}
                     />
@@ -2640,6 +2646,8 @@ export default function MesasApp({
                   type="checkbox"
                   checked={useServiceFee}
                   onChange={e => setUseServiceFee(e.target.checked)}
+                  disabled={!podeTirarTaxa}
+                  title={podeTirarTaxa ? undefined : "A taxa de serviço só o caixa tira"}
                   style={{ accentColor: "#475569", width: 16, height: 16 }}
                 />
                 Taxa de serviço
@@ -2649,7 +2657,7 @@ export default function MesasApp({
                   max="100"
                   value={serviceFee}
                   onChange={e => setServiceFee(Number(e.target.value))}
-                  disabled={!useServiceFee}
+                  disabled={!useServiceFee || !podeTirarTaxa}
                   style={{
                     width: 48, padding: "3px 6px", borderRadius: 6, border: "1px solid #E2E8F0",
                     textAlign: "center", fontFamily: "inherit", fontSize: 13,
@@ -2999,9 +3007,9 @@ export default function MesasApp({
                   </div>
                 )}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, marginBottom: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={useServiceFee} onChange={e => setUseServiceFee(e.target.checked)} style={{ accentColor: "#475569", width: 18, height: 18 }} />
+                  <input type="checkbox" checked={useServiceFee} onChange={e => setUseServiceFee(e.target.checked)} disabled={!podeTirarTaxa} title={podeTirarTaxa ? undefined : "A taxa de serviço só o caixa tira"} style={{ accentColor: "#475569", width: 18, height: 18 }} />
                   Taxa de serviço
-                  <input type="number" value={serviceFee} onChange={e => setServiceFee(Number(e.target.value))}
+                  <input type="number" value={serviceFee} onChange={e => setServiceFee(Number(e.target.value))} disabled={!podeTirarTaxa}
                     style={{ width: 54, padding: "6px 8px", borderRadius: 6, border: "1px solid #E2E8F0", textAlign: "center", fontFamily: "inherit" }} />%
                   {useServiceFee && (
                     <span style={{ marginLeft: "auto", fontWeight: 700, color: "#B45309" }}>{fmt(taxaFechamento)}</span>

@@ -73,7 +73,7 @@ async function contexto(req: NextRequest, params: Promise<{ id: string; orderId:
     return { erro: NextResponse.json({ error: "Este pedido já tem nota fiscal emitida — cancele a nota na tela Fiscal antes de mexer nele." }, { status: 409 }) };
   }
 
-  return { lojaId, order };
+  return { lojaId, order, operador };
 }
 
 export async function PATCH(
@@ -101,6 +101,15 @@ export async function PATCH(
       .filter((m) => m && idsDoPedido.has(String(m.itemId)) && !remover.includes(String(m.itemId)))
       .map((m) => ({ itemId: String(m.itemId), quantity: Math.floor(Number(m.quantity)) }))
       .filter((m) => Number.isFinite(m.quantity) && m.quantity >= 1 && m.quantity <= 99);
+
+    // Garçom sem "pode remover item" (cadastro): só acrescenta. Remover item
+    // ou diminuir quantidade é tirar dinheiro da conta — trabalho do caixa.
+    if (ctx.operador.tipo === "garcom" && !ctx.operador.garcom.podeRemoverItem) {
+      const diminui = mudar.some((m) => m.quantity < (order.items.find((i) => i.id === m.itemId)?.quantity ?? 0));
+      if (remover.length > 0 || diminui) {
+        return NextResponse.json({ error: "Este garçom não remove item lançado. Peça ao caixa para ajustar pelo painel." }, { status: 403 });
+      }
+    }
 
     // O estado final que o pedido terá — calculado ANTES de escrever, porque
     // "sobrou zero item" muda a operação inteira (vira cancelamento).
@@ -158,6 +167,10 @@ export async function DELETE(
   try {
     const ctx = await contexto(req, params);
     if ("erro" in ctx) return ctx.erro;
+    // Cancelar o pedido inteiro é remover todos os itens: mesma permissão.
+    if (ctx.operador.tipo === "garcom" && !ctx.operador.garcom.podeRemoverItem) {
+      return NextResponse.json({ error: "Este garçom não cancela pedido lançado. Peça ao caixa para ajustar pelo painel." }, { status: 403 });
+    }
     return cancelarPedido(ctx.order.id);
   } catch (error: any) {
     console.error("[Table Session Order DELETE]", error);

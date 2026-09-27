@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
+import { sanearTaxa } from "@/lib/conta-da-mesa";
+
+/** Último degrau da taxa sugerida — o mesmo da conta impressa (imprimir-conta). */
+const TAXA_PADRAO = 10;
 
 export async function POST(
   req: NextRequest,
@@ -76,6 +80,24 @@ export async function POST(
 
     const pedidosValidos = tableSession.orders.filter((o) => o.status !== "CANCELADO");
     const subtotal = pedidosValidos.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
+
+    // ── PERMISSÕES DO GARÇOM PELO LINK (cadastro do garçom) ───────────────
+    // Liberar mesa é fechar sem consumo; tirar a taxa é fechar com taxa
+    // abaixo da sugerida para ele (comissão dele, senão a padrão da loja).
+    // O botão/caixa nem aparece para ele; aqui a porta fica fechada também.
+    if (operador.tipo === "garcom") {
+      if (!operador.garcom.podeLiberarMesa && subtotal <= 0) {
+        return NextResponse.json({ error: "Este garçom não libera mesa. Peça ao caixa para liberar pelo painel." }, { status: 403 });
+      }
+      if (!operador.garcom.podeTirarTaxa) {
+        const loja = await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { taxaServicoPadrao: true } });
+        const taxaDaLoja = sanearTaxa(loja?.taxaServicoPadrao, TAXA_PADRAO);
+        const taxaMinima = operador.garcom.commissionRate != null ? sanearTaxa(operador.garcom.commissionRate, taxaDaLoja) : taxaDaLoja;
+        if ((Number(serviceFeePercent) || 0) < taxaMinima) {
+          return NextResponse.json({ error: `Este garçom não tira a taxa de serviço (${taxaMinima}%). Peça ao caixa para fechar pelo painel.` }, { status: 403 });
+        }
+      }
+    }
     // Taxa e gorjeta nunca negativas nem fora da faixa: com taxa de -100% a
     // conta zerava e a mesa fechava "paga" sem um centavo. Fora da faixa é
     // pedido malformado, não conta.

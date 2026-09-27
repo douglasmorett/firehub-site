@@ -1400,6 +1400,13 @@ model Waiter {
   /// Pelo link, pode dar desconto na conta? Mesma regra: nasce ligado, o
   /// dono tira se quiser. A COLUNA nasce em garantir-colunas.ts.
   podeDarDesconto  Boolean         @default(true)
+  /// Pelo link, pode liberar mesa (sem consumo), tirar a taxa de serviço e
+  /// remover item já lançado? Mesma regra: nascem ligadas, o dono tira.
+  /// Ragnar (27/09/2026): o garçom só lança e muda de mesa; o resto é do
+  /// caixa. As COLUNAS nascem em garantir-colunas.ts.
+  podeLiberarMesa  Boolean         @default(true)
+  podeTirarTaxa    Boolean         @default(true)
+  podeRemoverItem  Boolean         @default(true)
 
   /// Acesso próprio do garçom pelo link /garcom/<slug-da-loja>.
   ///

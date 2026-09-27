@@ -872,6 +872,10 @@ const INSTRUCOES_MESA = [
   // Garçom pode fechar a conta pelo link? Nasce ligado para todos (27/09/2026).
   `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeFecharConta" BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeDarDesconto" BOOLEAN NOT NULL DEFAULT true`,
+  // Liberar mesa, tirar a taxa e remover item lançado — a Ragnar quer o garçom só lançando.
+  `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeLiberarMesa" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeTirarTaxa" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeRemoverItem" BOOLEAN NOT NULL DEFAULT true`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "Waiter_franchiseeId_login_key" ON "Waiter"("franchiseeId", "login")`,
 
   // Fechar o caixa encerra o turno do garçom; e o carimbo do poll da fila.

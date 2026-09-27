@@ -89,6 +89,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const taxaDoGarcom = mesa.waiter?.commissionRate;
   const taxaPadrao = taxaDoGarcom !== null && taxaDoGarcom !== undefined ? sanearTaxa(taxaDoGarcom, taxaDaLoja) : taxaDaLoja;
   const taxaPct = sanearTaxa(body?.taxa, taxaPadrao);
+  // Garçom sem "pode tirar a taxa": a conta impressa por ele sai com a taxa
+  // sugerida, nunca abaixo — o campo está travado na tela dele.
+  if (operador.tipo === "garcom" && !operador.garcom.podeTirarTaxa && taxaPct < taxaPadrao) {
+    return NextResponse.json({ error: `Este garçom não tira a taxa de serviço (${taxaPadrao}%). A conta sem taxa sai pelo painel da loja.` }, { status: 403 });
+  }
   const gorjeta =
     body?.gorjeta !== undefined && body?.gorjeta !== null && body?.gorjeta !== ""
       ? Number(body.gorjeta)
