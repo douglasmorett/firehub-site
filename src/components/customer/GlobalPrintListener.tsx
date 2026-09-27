@@ -296,6 +296,9 @@ export default function GlobalPrintListener() {
                         // cozinha da pizza (26/09/2026). A fila da nuvem sempre
                         // leu a categoria do banco; só este caminho a perdia.
                         category: i.menuProduct?.category || i.category || undefined,
+                        // As escolhas do combo com a categoria de cada uma (o
+                        // poll resolve): o suco do combo sai na impressora do suco.
+                        opcoesParaImpressao: i.opcoesParaImpressao,
                       };
                     }),
                     totalAmount: order.totalAmount || 0,

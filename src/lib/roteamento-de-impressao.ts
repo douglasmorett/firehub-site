@@ -53,6 +53,12 @@ type ItemDoPedido = {
   name?: string | null;
   productName?: string | null;
   category?: string | null;
+  quantity?: number | null;
+  qty?: number | null;
+  /** O objeto de papel, quando este é o embrulho do navegador (lib/print.ts). */
+  item?: Record<string, unknown> | null;
+  /** As escolhas do combo com a categoria de cada uma (lib/categoria-do-item.ts). */
+  opcoesParaImpressao?: { name: string; quantity: number; category: string }[] | null;
   isBeverage?: boolean | null;
   comboSelections?: unknown;
   menuProduct?: { name?: string | null; category?: string | null; isBeverage?: boolean | null } | null;
@@ -148,6 +154,36 @@ export function itensParaImpressora<T extends ItemDoPedido>(
 }
 
 /**
+ * A linha de papel de UMA opção do combo, para a impressora da categoria dela:
+ * "Suco de Morango Natural 500Ml  (do Combo Heimdall)", quantidade da opção ×
+ * quantidade do combo, sem preço (ele já está no combo) e sem escolhas.
+ * Funciona nos dois formatos: o item do banco (fila) e o embrulho do navegador
+ * (`{ item, category, name }`, lib/print.ts), que leva o papel dentro de `item`.
+ */
+function linhaDaOpcao<T extends ItemDoPedido>(item: T, op: { name: string; quantity: number; category: string }): T {
+  const pai = String(item.name ?? item.productName ?? item.menuProduct?.name ?? "combo").split(" | ")[0].trim() || "combo";
+  const nome = `${op.name}  (do ${pai})`;
+  const papel = (item.item || item) as Record<string, unknown>;
+  const qtdDoPai = Number(papel.quantity ?? papel.qty ?? item.quantity ?? item.qty ?? 1) || 1;
+  const n = qtdDoPai * op.quantity;
+  const papelNovo = {
+    ...papel,
+    name: nome,
+    productName: nome,
+    quantity: n,
+    qty: n,
+    price: 0,
+    comboSelections: null,
+    opcoesParaImpressao: null,
+    ...(papel.menuProduct && typeof papel.menuProduct === "object"
+      ? { menuProduct: { ...(papel.menuProduct as Record<string, unknown>), name: nome, category: op.category, isBeverage: false } }
+      : {}),
+  };
+  if (item.item) return { ...item, name: nome, category: op.category, opcoesParaImpressao: null, item: papelNovo } as T;
+  return { ...item, ...papelNovo, category: op.category } as T;
+}
+
+/**
  * O filtro por categoria, sem olhar o módulo. É a parte que o navegador
  * (lib/print.ts) usa: ele escolhe as impressoras do módulo por conta própria,
  * com o resgate de "nenhuma impressora deste módulo = todas".
@@ -192,12 +228,29 @@ export function itensDaImpressora<T extends ItemDoPedido>(
     const cat = categoriaDoItem(item);
     return !cat || ehCategoriaDeOrigem(cat, pedido?.source);
   });
+
+  // ── A OPÇÃO DO COMBO SAI NA IMPRESSORA DA CATEGORIA DELA ──
+  //
+  // "Combo Heimdall" é da cozinha do burger, mas o suco escolhido dentro dele
+  // é feito na cozinha da pizza (Ragnar, 27/09/2026). A impressora que pediu
+  // a categoria da opção recebe uma linha própria — "Suco de Morango (do
+  // Combo Heimdall)" — e a cozinha do combo continua recebendo o combo inteiro.
+  // Só quando o combo NÃO sai nesta impressora: se sai, a opção já vem dentro.
+  const noPapel = new Set<unknown>(filtrados);
+  const dasOpcoes: T[] = [];
+  for (const item of itens) {
+    if (noPapel.has(item)) continue;
+    for (const op of item.opcoesParaImpressao || []) {
+      if (categorias.some((c) => texto(c) === texto(op.category))) dasOpcoes.push(linhaDaOpcao(item, op));
+    }
+  }
+
   if (filtrados.length > 0) {
-    const desta = new Set<unknown>(filtrados);
-    return itens.filter((item) => desta.has(item) || semRotulo.includes(item)) as T[];
+    return [...itens.filter((item) => noPapel.has(item) || semRotulo.includes(item)), ...dasOpcoes] as T[];
   }
 
   if (!pedidas) return itens as T[];
+  if (dasOpcoes.length > 0) return dasOpcoes;
 
   // ── NENHUM ITEM É DESTA IMPRESSORA ──
   //

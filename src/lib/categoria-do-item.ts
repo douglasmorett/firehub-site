@@ -38,6 +38,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO } from "@/lib/cardapio-interno";
+import { parseComboSelections } from "@/lib/parse-combo";
 
 /**
  * As categorias que marcam espelho de plataforma. A lista do cardápio interno
@@ -374,7 +375,10 @@ export async function resolverCategoriasDosPedidos<
   // `ehItemDeEspelho` e não `ehCategoriaDeIntegracao`: o espelho da Wabiz traz
   // o nome do grupo dela como categoria, e por esta porta o pedido inteiro
   // saía sem ser resolvido — era o que sumia da cozinha da NIK.
-  const precisa = pedidos.filter((p) => (p.items || []).some(ehItemDeEspelho));
+  // Também o item com escolhas de combo: cada opção ganha a categoria do
+  // produto dela (`opcoesParaImpressao`), para a impressão mandar o suco do
+  // combo à impressora do suco.
+  const precisa = pedidos.filter((p) => (p.items || []).some((i) => ehItemDeEspelho(i) || temEscolhas(i)));
   if (precisa.length === 0) return pedidos;
 
   const lojas = Array.from(new Set(precisa.map((p) => p.franchiseeId).filter(Boolean))) as string[];
@@ -393,10 +397,40 @@ export async function resolverCategoriasDosPedidos<
     return {
       ...p,
       items: (p.items || []).map((i) => {
-        if (!ehItemDeEspelho(i)) return i;
+        const opcoes = opcoesComCategoria(i, mapa);
+        const comOpcoes = opcoes.length > 0 ? { opcoesParaImpressao: opcoes } : {};
+        if (!ehItemDeEspelho(i)) return opcoes.length > 0 ? { ...i, ...comOpcoes } : i;
         const categoria = categoriaResolvida(i, mapa);
-        return { ...i, menuProduct: { ...(i.menuProduct || {}), category: categoria } };
+        return { ...i, ...comOpcoes, menuProduct: { ...(i.menuProduct || {}), category: categoria } };
       }),
     };
   });
+}
+
+/** Uma escolha feita dentro do combo, com a categoria do produto que ela é. */
+export type OpcaoParaImpressao = { name: string; quantity: number; category: string };
+
+function temEscolhas(item: ItemComCategoria): boolean {
+  const s = item?.comboSelections;
+  return !!s && (Array.isArray(s) ? s.length > 0 : typeof s === "object" || typeof s === "string");
+}
+
+/**
+ * As escolhas do combo que são um produto do cardápio, cada uma com a
+ * categoria dele — só as que casam pelo nome, e nunca com categoria de
+ * plataforma. É o que deixa a impressora dos sucos receber "Suco de Morango
+ * (do Combo Heimdall)" mesmo o combo sendo da cozinha do burger (Ragnar,
+ * 27/09/2026). A quantidade é a da escolha, sem multiplicar pela do item.
+ */
+export function opcoesComCategoria(item: ItemComCategoria, mapa: MapaDeCategorias): OpcaoParaImpressao[] {
+  if (!temEscolhas(item)) return [];
+  const saida: OpcaoParaImpressao[] = [];
+  for (const sel of parseComboSelections(item.comboSelections as any, 1)) {
+    const nome = String(sel?.name ?? "").trim();
+    if (!nome) continue;
+    const categoria = mapa.porNome.get(chaveDoNome(nome));
+    if (!categoria || ehCategoriaDeIntegracao(categoria)) continue;
+    saida.push({ name: nome, quantity: Math.max(1, Number(sel.quantity) || 1), category: categoria });
+  }
+  return saida;
 }

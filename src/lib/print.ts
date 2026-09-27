@@ -550,6 +550,9 @@ export async function printOrder(
     // O que o "pedido só de bebida" olha além da categoria.
     name: item.name,
     isBeverage: (item as any).isBeverage === true || (item as any).menuProduct?.isBeverage === true,
+    // As escolhas do combo com categoria (vêm do poll): a impressora do suco
+    // recebe a linha do suco mesmo o combo sendo da cozinha.
+    opcoesParaImpressao: (item as any).opcoesParaImpressao,
   }));
   const pedidoParaRotear = { source: (order as any).source, items: itensComCategoria };
 
