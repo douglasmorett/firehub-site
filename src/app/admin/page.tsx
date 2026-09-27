@@ -26,6 +26,7 @@ export default async function AdminPage() {
       mpSellerId: true, storeLogo: true, storePhone: true, trialEndsAt: true,
       cpfCnpj: true, repasseConfig: true, onboardingData: true,
       vendedorId: true, vendedorStatus: true, vendedorAtribuidoEm: true,
+      ambassadorId: true,
     },
   });
 
@@ -37,6 +38,13 @@ export default async function AdminPage() {
     where: { isVendedor: true },
     orderBy: { name: "asc" },
     select: { id: true, name: true, active: true },
+  });
+
+  // Todos os embaixadores, para o seletor "quem indicou" ao lado do vendedor
+  // (api/admin/lojistas/[id]/embaixador).
+  const embaixadores = await prisma.ambassador.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, code: true, active: true },
   });
 
   // Lojistas isentos de cobrança do FireHub
@@ -141,6 +149,7 @@ export default async function AdminPage() {
     vendedorId: l.vendedorId,
     vendedorStatus: l.vendedorStatus,
     vendedorAtribuidoEm: l.vendedorAtribuidoEm ? l.vendedorAtribuidoEm.toISOString() : null,
+    ambassadorId: l.ambassadorId,
     atividade: atividade.get(l.id) || null,
   }));
 
@@ -155,6 +164,7 @@ export default async function AdminPage() {
       monthlyGrowth={monthlyGrowth}
       lojistas={serialized}
       vendedores={vendedores}
+      embaixadores={embaixadores}
     />
   );
 }

@@ -27,10 +27,13 @@ type Lojista = {
   diasRestantesTrial?: number; trialEndsAt?: string | null;
   pendente: number; temMP: boolean; temCelcoin: boolean;
   vendedorId: string | null; vendedorStatus: string | null; vendedorAtribuidoEm: string | null;
+  /** Quem INDICOU a loja (comissão de embaixador). Vínculo à parte do vendedor. */
+  ambassadorId: string | null;
   atividade: Atividade | null;
 };
 
 type Vendedor = { id: string; name: string; active: boolean };
+type Embaixador = { id: string; name: string; code: string; active: boolean };
 
 type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes" | "inativos" | "nunca";
 type Tab = "overview" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos";
@@ -60,13 +63,14 @@ function textoDoUltimoPedido(a: Atividade | null): string {
 }
 
 export default function AdminDashboardClient({
-  adminName, kpis, monthlyGrowth, lojistas: initialLojistas, vendedores,
+  adminName, kpis, monthlyGrowth, lojistas: initialLojistas, vendedores, embaixadores,
 }: {
   adminName: string;
   kpis: KPIs;
   monthlyGrowth: { label: string; count: number }[];
   lojistas: Lojista[];
   vendedores: Vendedor[];
+  embaixadores: Embaixador[];
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
@@ -172,6 +176,27 @@ export default function AdminDashboardClient({
         : x));
     } catch {
       alert("Erro de conexão ao atribuir o vendedor.");
+    } finally {
+      setAtribuindo(null);
+    }
+  };
+
+  /** Define quem INDICOU a loja (comissão de embaixador), ou tira. */
+  const atribuirEmbaixador = async (l: Lojista, ambassadorId: string) => {
+    const novo = ambassadorId || null;
+    if (novo === l.ambassadorId) return;
+    setAtribuindo(l.id);
+    try {
+      const res = await fetch(`/api/admin/lojistas/${l.id}/embaixador`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ambassadorId: novo }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || "Não foi possível atribuir o embaixador."); return; }
+      setLojistas(prev => prev.map(x => x.id === l.id ? { ...x, ambassadorId: novo } : x));
+    } catch {
+      alert("Erro de conexão ao atribuir o embaixador.");
     } finally {
       setAtribuindo(null);
     }
@@ -288,6 +313,27 @@ export default function AdminDashboardClient({
             {atribuindo === l.id ? "Salvando..." : l.vendedorStatus === "ATENDIDO" ? "✓ Atendido" : "● Aguardando contato"}
           </div>
         )}
+      </div>
+    );
+  };
+
+  const SeletorDeEmbaixador = ({ l }: { l: Lojista }) => {
+    const atual = embaixadores.find(e => e.id === l.ambassadorId);
+    return (
+      <div style={{ marginTop: 4 }}>
+        <select
+          className={`fha-select${l.ambassadorId ? "" : " vazio"}`}
+          value={l.ambassadorId || ""}
+          disabled={atribuindo === l.id}
+          onChange={e => atribuirEmbaixador(l, e.target.value)}
+          title="Quem indicou a loja: leva a comissão de embaixador"
+        >
+          <option value="">+ Atribuir embaixador</option>
+          {embaixadores.filter(e => e.active || e.id === l.ambassadorId).map(e => (
+            <option key={e.id} value={e.id}>🤝 {e.name}{e.active ? "" : " (pausado)"}</option>
+          ))}
+        </select>
+        {atual && <div className="fha-sub" style={{ color: "#64748B" }}>indicou · {atual.code}</div>}
       </div>
     );
   };
@@ -549,7 +595,7 @@ export default function AdminDashboardClient({
                 <div style={{ overflowX: "auto" }}>
                   <table className="fha-table">
                     <thead>
-                      <tr><th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso</th><th>Vendedor</th><th>Ação</th></tr>
+                      <tr><th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso</th><th>Vendedor / Embaixador</th><th>Ação</th></tr>
                     </thead>
                     <tbody>
                       {lojistas.slice(0, 10).map(l => (
@@ -561,7 +607,7 @@ export default function AdminDashboardClient({
                             <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
                             <td>{Situacao({ l })}</td>
                             <td>{Uso({ l })}</td>
-                            <td>{SeletorDeVendedor({ l })}</td>
+                            <td>{SeletorDeVendedor({ l })}{SeletorDeEmbaixador({ l })}</td>
                             <td>{Acoes({ l, curto: true })}</td>
                           </tr>
                           {expandedId === l.id && Dados({ l, colSpan: 8 })}
@@ -632,7 +678,7 @@ export default function AdminDashboardClient({
                 <table className="fha-table">
                   <thead>
                     <tr>
-                      <th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso</th><th>Vendedor</th><th>Ações</th>
+                      <th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso</th><th>Vendedor / Embaixador</th><th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -645,7 +691,7 @@ export default function AdminDashboardClient({
                           <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
                           <td>{Situacao({ l })}</td>
                           <td>{Uso({ l })}</td>
-                          <td>{SeletorDeVendedor({ l })}</td>
+                          <td>{SeletorDeVendedor({ l })}{SeletorDeEmbaixador({ l })}</td>
                           <td>{Acoes({ l })}</td>
                         </tr>
                         {expandedId === l.id && Dados({ l, colSpan: 8 })}

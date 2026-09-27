@@ -3,12 +3,21 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import AmbassadorDashboard from "@/components/ambassador/AmbassadorDashboard";
 import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
-import { comissaoDasLojas, SELECT_DA_LOJA_NA_CARTEIRA } from "@/lib/comissao-da-carteira";
+import type { LojaDaCarteiraDeVendas, LojaInadimplente } from "@/components/ambassador/SecoesDoEmbaixador";
+import { cobrancasDasLojas, comissaoDasLojas, mediaMensalDaComissao, SELECT_DA_LOJA_NA_CARTEIRA } from "@/lib/comissao-da-carteira";
+import { atividadeDasLojas } from "@/lib/atividade-da-loja";
+import { ganhaComoVendedor, SELECT_DO_EMBAIXADOR_DA_LOJA } from "@/lib/vendedores";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Portal do Embaixador - FireHub" };
 
-
+/**
+ * O portal do embaixador é o lugar ÚNICO de quem é embaixador e vendedor
+ * (pedido do dono, 27/09/2026): as lojas que ele indicou (comissão de
+ * embaixador), a rede de nível 2, a carteira de vendas (os 3% de quem ele
+ * atende), a média do que recebe por mês e a inadimplência das lojas dele,
+ * com a cobrança pronta no WhatsApp. /vendedor continua existindo.
+ */
 export default async function EmbaixadorPage() {
   const session = await getServerSession(authOptions);
 
@@ -46,7 +55,15 @@ export default async function EmbaixadorPage() {
             orderBy: { createdAt: "desc" }
           }
         }
-      }
+      },
+      // A carteira de VENDAS (lib/vendedores.ts): lojas que o admin pôs com ele.
+      carteira: {
+        select: {
+          ...SELECT_DA_LOJA_NA_CARTEIRA, ...SELECT_DO_EMBAIXADOR_DA_LOJA,
+          vendedorStatus: true, vendedorAtribuidoEm: true, vendedorAtendidoEm: true,
+        },
+        orderBy: { vendedorAtribuidoEm: "desc" },
+      },
     }
   });
 
@@ -76,22 +93,61 @@ export default async function EmbaixadorPage() {
     })
   );
 
+  // Carteira de vendas: só quem é vendedor. Loja que ele mesmo indicou não
+  // rende os 3% (ganhaComoVendedor) — ali ele já ganha como embaixador.
+  const pctDeVendas = (l: { ambassadorId?: string | null; ambassador?: { parentAmbassadorId?: string | null } | null }) =>
+    ganhaComoVendedor(ambassador.id, l) ? ambassador.sellerPercent : 0;
+  const carteira = ambassador.isVendedor ? ambassador.carteira : [];
+  const [vendasData, atividade] = await Promise.all([
+    calcularLojas(carteira, pctDeVendas),
+    atividadeDasLojas(carteira.map((l) => l.id)),
+  ]);
+  const lojasDeVendas: LojaDaCarteiraDeVendas[] = vendasData.map((l) => {
+    const c = carteira.find((x) => x.id === l.id)!;
+    return {
+      id: l.id, storeName: l.storeName, storePhone: l.storePhone, city: l.city, slug: l.slug,
+      status: l.status, trialDaysRemaining: l.trialDaysRemaining, monthSales: l.monthSales,
+      platformFee: l.platformFee, ambassadorProfit: l.ambassadorProfit,
+      atendimento: c.vendedorStatus === "ATENDIDO" ? "ATENDIDO" : "AGUARDANDO",
+      atribuidoEm: c.vendedorAtribuidoEm ? c.vendedorAtribuidoEm.toISOString() : null,
+      atividade: atividade.get(l.id) || null,
+      suaIndicacao: !ganhaComoVendedor(ambassador.id, c),
+    };
+  });
+
   // Totais consolidados da carteira
   const networkIncome = rede.reduce((acc, r) => acc + r.monthIncome, 0);
   const currentMonthIncome = storesData.reduce((acc, s) => acc + s.ambassadorProfit, 0);
   const totalPortfolioSales = storesData.reduce((acc, s) => acc + s.monthSales, 0);
   const totalPlatformFees = storesData.reduce((acc, s) => acc + s.platformFee, 0);
+  const comissaoDeVendas = lojasDeVendas.reduce((acc, l) => acc + l.ambassadorProfit, 0);
+
+  // Inadimplência: todas as lojas dele (indicadas, rede e vendas), sem repetir.
+  const lojasDaRede = ambassador.subAmbassadors.flatMap((s) => s.referredStores);
+  const todasAsLojas = new Map<string, { storeName: string; storePhone: string | null; vinculos: Set<string> }>();
+  const registrar = (lista: { id: string; storeName: string | null; name: string; storePhone: string | null }[], vinculo: string) => {
+    for (const l of lista) {
+      const atual = todasAsLojas.get(l.id) || { storeName: l.storeName || l.name, storePhone: l.storePhone, vinculos: new Set<string>() };
+      atual.vinculos.add(vinculo);
+      todasAsLojas.set(l.id, atual);
+    }
+  };
+  registrar(ambassador.referredStores, "você indicou");
+  registrar(lojasDaRede, "rede");
+  registrar(carteira, "carteira de vendas");
+  const cobrancas = await cobrancasDasLojas([...todasAsLojas.keys()]);
+  const inadimplentes: LojaInadimplente[] = [...cobrancas.entries()]
+    .map(([id, cobranca]) => ({ id, storeName: todasAsLojas.get(id)!.storeName, storePhone: todasAsLojas.get(id)!.storePhone, vinculo: [...todasAsLojas.get(id)!.vinculos].join(" + "), cobranca }))
+    .sort((a, b) => Number(b.cobranca.vencida) - Number(a.cobranca.vencida) || b.cobranca.pendente - a.cobranca.pendente);
+
+  // Média do que entrou de verdade nos últimos 3 meses, nas três carteiras.
+  const mediaMensal = await mediaMensalDaComissao([
+    { ids: ambassador.referredStores.map((l) => l.id), percentual: ambassador.commissionPercent },
+    { ids: lojasDaRede.map((l) => l.id), percentual: nivel2Percent },
+    { ids: carteira.map((l) => l.id), percentual: (id) => pctDeVendas(carteira.find((l) => l.id === id) || {}) },
+  ]);
 
   return (
-    <>
-    {ambassador.isVendedor && (
-      <a
-        href="/vendedor"
-        style={{ display: "block", background: "#0B0B0C", color: "#fff", textAlign: "center", padding: "10px 16px", fontWeight: 700, fontSize: "0.88rem", textDecoration: "none", fontFamily: "Inter, sans-serif" }}
-      >
-        💼 Você também é vendedor — ver sua carteira de clientes →
-      </a>
-    )}
     <AmbassadorDashboard
       ambassador={{
         id: ambassador.id,
@@ -113,7 +169,13 @@ export default async function EmbaixadorPage() {
       currentMonthIncome={currentMonthIncome}
       totalPortfolioSales={totalPortfolioSales}
       totalPlatformFees={totalPlatformFees}
+      extras={{
+        nomeDoEmbaixador: ambassador.name,
+        previsaoDoMes: currentMonthIncome + networkIncome + comissaoDeVendas,
+        mediaMensal,
+        inadimplentes,
+        vendas: ambassador.isVendedor ? { sellerPercent: ambassador.sellerPercent, lojas: lojasDeVendas } : null,
+      }}
     />
-    </>
   );
 }

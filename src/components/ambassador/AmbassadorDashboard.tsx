@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { signOut } from "next-auth/react";
+import SecoesDoEmbaixador, { type ExtrasDoEmbaixador } from "@/components/ambassador/SecoesDoEmbaixador";
 
 export interface ReferredStoreItem {
   id: string;
@@ -53,6 +54,8 @@ interface AmbassadorDashboardProps {
   currentMonthIncome: number;
   totalPortfolioSales: number;
   totalPlatformFees: number;
+  /** Média mensal, inadimplência e carteira de vendas (SecoesDoEmbaixador). */
+  extras?: ExtrasDoEmbaixador;
 }
 
 export default function AmbassadorDashboard({
@@ -62,6 +65,7 @@ export default function AmbassadorDashboard({
   currentMonthIncome,
   totalPortfolioSales,
   totalPlatformFees,
+  extras,
 }: AmbassadorDashboardProps) {
   const [copied, setCopied] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -744,6 +748,8 @@ export default function AmbassadorDashboard({
             </div>
           )}
         </div>
+
+        {extras && <SecoesDoEmbaixador {...extras} />}
 
         {/* ASAAS SPLIT INFO (Tema Claro) */}
         <div

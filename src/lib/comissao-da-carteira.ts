@@ -41,6 +41,97 @@ type LojaDaCarteira = {
   storeOpen: boolean;
 };
 
+/** A cobrança em aberto de uma loja (ciclo fechado com saldo), para o portal. */
+export type CobrancaDaLoja = {
+  /** Mês do ciclo mais recente em aberto ("2026-08"). */
+  yearMonth: string;
+  /** Soma do que está em aberto, em todos os ciclos fechados. */
+  pendente: number;
+  ciclos: number;
+  vencimento: string | null;
+  vencida: boolean;
+  diasDeAtraso: number;
+  boletoUrl: string | null;
+};
+
+/**
+ * INADIMPLÊNCIA das lojas de uma carteira: ciclo fechado com `amountPending`
+ * — vencido ou a vencer. É o que o embaixador/vendedor precisa para mandar a
+ * mensagem certa para a loja (pedido do dono, 27/09/2026). Loja sem cobrança
+ * em aberto não entra no mapa.
+ */
+export async function cobrancasDasLojas(ids: string[]): Promise<Map<string, CobrancaDaLoja>> {
+  const saida = new Map<string, CobrancaDaLoja>();
+  if (ids.length === 0) return saida;
+  const ciclos = await prisma.franchiseeBillingCycle.findMany({
+    where: { franchiseeId: { in: ids }, status: "CLOSED", amountPending: { gt: 0 } },
+    orderBy: { yearMonth: "desc" },
+    select: { franchiseeId: true, yearMonth: true, amountPending: true, dueDate: true, asaasBoletoUrl: true },
+  });
+  const agora = Date.now();
+  for (const c of ciclos) {
+    const ja = saida.get(c.franchiseeId);
+    if (ja) {
+      ja.pendente += c.amountPending;
+      ja.ciclos += 1;
+      continue;
+    }
+    const venc = c.dueDate ? c.dueDate.getTime() : null;
+    const vencida = venc !== null && venc < agora;
+    saida.set(c.franchiseeId, {
+      yearMonth: c.yearMonth,
+      pendente: c.amountPending,
+      ciclos: 1,
+      vencimento: c.dueDate ? c.dueDate.toISOString() : null,
+      vencida,
+      diasDeAtraso: vencida && venc !== null ? Math.floor((agora - venc) / 86_400_000) : 0,
+      boletoUrl: c.asaasBoletoUrl || null,
+    });
+  }
+  return saida;
+}
+
+/** "2026-09" menos N meses. */
+function mesesAtras(yearMonth: string, n: number): string {
+  const [a, m] = yearMonth.split("-").map(Number);
+  const d = new Date(Date.UTC(a, m - 1 - n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * MÉDIA MENSAL do que a carteira rendeu de verdade nos últimos meses: só
+ * ciclos PAGOS (é o que o split do Asaas repassou), mês a mês, dividido pelo
+ * número de meses — mês sem nada conta zero. Cada carteira traz o percentual
+ * dela (número, ou função por loja: o vendedor não leva os 3% da loja que ele
+ * mesmo indicou). A mesma loja pode estar em duas carteiras: soma.
+ */
+export async function mediaMensalDaComissao(
+  carteiras: { ids: string[]; percentual: number | ((lojaId: string) => number) }[],
+  meses = 3
+): Promise<{ media: number; porMes: { yearMonth: string; valor: number }[] }> {
+  const atual = getCurrentYearMonth();
+  const yms = Array.from({ length: meses }, (_, i) => mesesAtras(atual, i + 1));
+  const ids = Array.from(new Set(carteiras.flatMap((c) => c.ids)));
+  const porMes = yms.map((yearMonth) => ({ yearMonth, valor: 0 }));
+  if (ids.length > 0) {
+    const ciclos = await prisma.franchiseeBillingCycle.findMany({
+      where: { franchiseeId: { in: ids }, yearMonth: { in: yms }, status: "PAID" },
+      select: { franchiseeId: true, yearMonth: true, amountDue: true },
+    });
+    const pctDe = (lojaId: string) =>
+      carteiras.reduce((s, c) => {
+        if (!c.ids.includes(lojaId)) return s;
+        return s + (typeof c.percentual === "function" ? c.percentual(lojaId) : c.percentual);
+      }, 0);
+    for (const c of ciclos) {
+      const mes = porMes.find((m) => m.yearMonth === c.yearMonth);
+      if (mes) mes.valor += (c.amountDue * pctDe(c.franchiseeId)) / 100;
+    }
+  }
+  const soma = porMes.reduce((s, m) => s + m.valor, 0);
+  return { media: meses > 0 ? soma / meses : 0, porMes: porMes.reverse() };
+}
+
 /**
  * `percentual` pode ser um número (o mesmo para toda loja) ou uma função por
  * loja — o vendedor não leva nada da loja que ele mesmo indicou.
