@@ -1,6 +1,6 @@
 "use client";
 import SairDaConta from "@/components/SairDaConta";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import AmbassadorsTab from "./AmbassadorsTab";
@@ -89,6 +89,13 @@ export default function AdminDashboardClient({
   const [resetPalavra, setResetPalavra] = useState("");
   const [resetting, setResetting] = useState(false);
   const [resetFeito, setResetFeito] = useState<string | null>(null);
+
+  // Lixeira: apagar a loja inteira, com "EXCLUIR" digitado duas vezes.
+  const [excluirModalUser, setExcluirModalUser] = useState<Lojista | null>(null);
+  const [excluirRetrato, setExcluirRetrato] = useState<{ pedidos: number; mensalidadesPagas: number; produtos: number; garcons: number; subUsuarios: number } | null>(null);
+  const [excluirPalavra1, setExcluirPalavra1] = useState("");
+  const [excluirPalavra2, setExcluirPalavra2] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
   const resetConfirmado = resetPalavra.trim().toLowerCase() === "redefinir";
 
   // Impersonação
@@ -136,8 +143,20 @@ export default function AdminDashboardClient({
 
   const maxGrowth = Math.max(...monthlyGrowth.map(m => m.count), 1);
 
+  /** A lista completa com filtros mora na Visão Geral e na aba Lojistas. */
+  const tabelaRef = useRef<HTMLDivElement>(null);
+  /**
+   * Aplica o filtro e mostra a lista. Na Visão Geral a lista já está na
+   * página (o dono não quer clicar em "ver todos"): só rola até ela. De
+   * qualquer outra aba, vai para Lojistas.
+   */
   const irParaLojistas = (filtro: StatusFilter = "todos", vendedor = "todos") => {
-    setSearch(""); setStatusFilter(filtro); setVendedorFilter(vendedor); setTab("lojistas");
+    setSearch(""); setStatusFilter(filtro); setVendedorFilter(vendedor);
+    if (tab === "overview") {
+      setTimeout(() => tabelaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    } else {
+      setTab("lojistas");
+    }
   };
 
   const handleImpersonate = async (l: Lojista) => {
@@ -231,6 +250,37 @@ export default function AdminDashboardClient({
       alert("Erro de conexão ao redefinir a senha.");
     } finally {
       setResetting(false);
+    }
+  };
+
+  const abrirExcluir = async (l: Lojista) => {
+    setExcluirPalavra1(""); setExcluirPalavra2(""); setExcluirRetrato(null);
+    setExcluirModalUser(l);
+    try {
+      const r = await fetch(`/api/admin/lojistas/${l.id}`);
+      if (r.ok) setExcluirRetrato(await r.json());
+    } catch { /* o modal segue sem os números */ }
+  };
+  const fecharExcluir = () => { if (!excluindo) { setExcluirModalUser(null); setExcluirRetrato(null); } };
+  const excluirConfirmado = excluirPalavra1.trim().toUpperCase() === "EXCLUIR" && excluirPalavra2.trim().toUpperCase() === "EXCLUIR";
+  const handleExcluir = async () => {
+    if (!excluirModalUser || !excluirConfirmado) return;
+    setExcluindo(true);
+    try {
+      const res = await fetch(`/api/admin/lojistas/${excluirModalUser.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmacao1: excluirPalavra1, confirmacao2: excluirPalavra2 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) { alert(data.error || "Não foi possível excluir a loja."); return; }
+      setLojistas(prev => prev.filter(x => x.id !== excluirModalUser.id));
+      setExcluirModalUser(null);
+      setExcluirRetrato(null);
+    } catch {
+      alert("Erro de conexão ao excluir a loja.");
+    } finally {
+      setExcluindo(false);
     }
   };
 
@@ -381,6 +431,9 @@ export default function AdminDashboardClient({
       <button onClick={() => setExpandedId(expandedId === l.id ? null : l.id)} className={`fha-btn${expandedId === l.id ? " on" : ""}`} title="Ver dados completos do cadastro">
         Dados
       </button>
+      <button onClick={() => abrirExcluir(l)} className="fha-btn" style={{ color: "#B91C1C", gridColumn: "1 / -1" }} title="Excluir a loja inteira (pede EXCLUIR duas vezes)">
+        🗑️ Excluir
+      </button>
     </div>
   );
 
@@ -405,6 +458,89 @@ export default function AdminDashboardClient({
     { key: "inscricoes", icone: "⭐", rotulo: "Inscrições" },
     { key: "custos", icone: "💰", rotulo: "Custos & P&L" },
   ];
+
+  /** Busca, vendedor e situação — os mesmos filtros na Visão Geral e na aba Lojistas. */
+  const FiltrosDeLojistas = () => (
+    <div style={{ padding: "14px 18px", borderBottom: "1px solid #EEF0F3", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <div style={{ position: "relative", flex: "1 1 300px", minWidth: 220 }}>
+          <input
+            className="fha-input"
+            placeholder="Buscar por nome, loja, e-mail, cidade, telefone ou CPF/CNPJ..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ width: "100%", paddingRight: search ? 34 : 14 }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              title="Limpar busca"
+              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: "1.1rem", lineHeight: 1 }}
+            >×</button>
+          )}
+        </div>
+        <select className="fha-input" style={{ padding: "9px 12px" }} value={vendedorFilter} onChange={e => setVendedorFilter(e.target.value)}>
+          <option value="todos">Todos os vendedores</option>
+          <option value="sem">Sem vendedor ({semVendedor})</option>
+          {vendedores.map(v => (
+            <option key={v.id} value={v.id}>{v.name} ({lojistas.filter(l => l.vendedorId === v.id).length})</option>
+          ))}
+        </select>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {([
+          { key: "todos", label: `Todos (${lojistas.length})` },
+          { key: "mes", label: `Novos este mês (${kpis.novosMes})` },
+          { key: "trial", label: `Em teste (${kpis.emTrial})` },
+          { key: "assinantes", label: `Assinantes (${kpis.assinantes})` },
+          { key: "pendencia", label: `Com pendência (${kpis.comPendencia})`, alerta: true },
+          { key: "inativos", label: `Paradas · 7+ dias sem pedido (${inativas})`, alerta: true },
+          { key: "nunca", label: `Nunca venderam (${nuncaVenderam})`, alerta: true },
+        ] as { key: StatusFilter; label: string; alerta?: boolean }[]).map(opt => (
+          <button
+            key={opt.key}
+            onClick={() => setStatusFilter(opt.key)}
+            className={`fha-chip${opt.alerta ? " alerta" : ""}${statusFilter === opt.key ? " on" : ""}`}
+          >{opt.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+
+  /** A lista filtrada inteira — rola a página, sem "ver todos". */
+  const TabelaDeLojistas = () => (
+    <div style={{ overflowX: "auto" }}>
+      <table className="fha-table">
+        <thead>
+          <tr>
+            <th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso</th><th>Vendedor / Embaixador</th><th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map(l => (
+            <React.Fragment key={l.id}>
+              <tr>
+                <td>{NomeDaLoja({ l, comLogo: true })}</td>
+                <td>{l.city || <span className="fha-muted">—</span>}</td>
+                <td>{Telefone({ l })}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
+                <td>{Situacao({ l })}</td>
+                <td>{Uso({ l })}</td>
+                <td>{SeletorDeVendedor({ l })}{SeletorDeEmbaixador({ l })}</td>
+                <td>{Acoes({ l })}</td>
+              </tr>
+              {expandedId === l.id && Dados({ l, colSpan: 8 })}
+            </React.Fragment>
+          ))}
+          {filtered.length === 0 && (
+            <tr><td colSpan={8} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>
+              Nenhum lojista encontrado{search ? ` para "${search}"` : ""}.
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <div className="fha">
@@ -527,7 +663,7 @@ export default function AdminDashboardClient({
               {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
             </p>
           </div>
-          {tab !== "lojistas" && (
+          {tab !== "lojistas" && tab !== "overview" && (
             <button className="fha-btn" style={{ padding: "8px 14px" }} onClick={() => irParaLojistas()}>
               🔍 Buscar lojista
             </button>
@@ -584,38 +720,17 @@ export default function AdminDashboardClient({
                 </div>
               </div>
 
-              <div className="fha-section">
+              {/* A lista inteira, com os filtros, aqui mesmo: o dono não quer
+                  clicar em "ver todos" para achar uma loja. */}
+              <div className="fha-section" ref={tabelaRef}>
                 <div className="fha-section-head">
                   <h3>
-                    Últimos cadastros{" "}
-                    <span style={{ color: "#94A3B8", fontWeight: 500, fontSize: "0.78rem" }}>(10 mais recentes de {lojistas.length})</span>
+                    Lojistas <span style={{ color: "#94A3B8", fontWeight: 500 }}>({filtered.length} de {lojistas.length})</span>
                   </h3>
-                  <button className="fha-btn" onClick={() => irParaLojistas()}>Ver todos os {lojistas.length} lojistas →</button>
+                  <a href="/store/admin/lojistas" className="fha-btn fha-btn-primary" style={{ padding: "7px 14px" }}>+ Novo lojista</a>
                 </div>
-                <div style={{ overflowX: "auto" }}>
-                  <table className="fha-table">
-                    <thead>
-                      <tr><th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso</th><th>Vendedor / Embaixador</th><th>Ação</th></tr>
-                    </thead>
-                    <tbody>
-                      {lojistas.slice(0, 10).map(l => (
-                        <React.Fragment key={l.id}>
-                          <tr>
-                            <td>{NomeDaLoja({ l })}</td>
-                            <td>{l.city || <span className="fha-muted">—</span>}</td>
-                            <td>{Telefone({ l })}</td>
-                            <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
-                            <td>{Situacao({ l })}</td>
-                            <td>{Uso({ l })}</td>
-                            <td>{SeletorDeVendedor({ l })}{SeletorDeEmbaixador({ l })}</td>
-                            <td>{Acoes({ l, curto: true })}</td>
-                          </tr>
-                          {expandedId === l.id && Dados({ l, colSpan: 8 })}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {FiltrosDeLojistas()}
+                {TabelaDeLojistas()}
               </div>
             </>
           )}
@@ -629,82 +744,8 @@ export default function AdminDashboardClient({
                 </h3>
                 <a href="/store/admin/lojistas" className="fha-btn fha-btn-primary" style={{ padding: "7px 14px" }}>+ Novo lojista</a>
               </div>
-
-              <div style={{ padding: "14px 18px", borderBottom: "1px solid #EEF0F3", display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                  <div style={{ position: "relative", flex: "1 1 300px", minWidth: 220 }}>
-                    <input
-                      className="fha-input"
-                      placeholder="Buscar por nome, loja, e-mail, cidade, telefone ou CPF/CNPJ..."
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                      style={{ width: "100%", paddingRight: search ? 34 : 14 }}
-                    />
-                    {search && (
-                      <button
-                        onClick={() => setSearch("")}
-                        title="Limpar busca"
-                        style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: "1.1rem", lineHeight: 1 }}
-                      >×</button>
-                    )}
-                  </div>
-                  <select className="fha-input" style={{ padding: "9px 12px" }} value={vendedorFilter} onChange={e => setVendedorFilter(e.target.value)}>
-                    <option value="todos">Todos os vendedores</option>
-                    <option value="sem">Sem vendedor ({semVendedor})</option>
-                    {vendedores.map(v => (
-                      <option key={v.id} value={v.id}>{v.name} ({lojistas.filter(l => l.vendedorId === v.id).length})</option>
-                    ))}
-                  </select>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {([
-                    { key: "todos", label: `Todos (${lojistas.length})` },
-                    { key: "mes", label: `Novos este mês (${kpis.novosMes})` },
-                    { key: "trial", label: `Em teste (${kpis.emTrial})` },
-                    { key: "assinantes", label: `Assinantes (${kpis.assinantes})` },
-                    { key: "pendencia", label: `Com pendência (${kpis.comPendencia})`, alerta: true },
-                    { key: "inativos", label: `Paradas · 7+ dias sem pedido (${inativas})`, alerta: true },
-                    { key: "nunca", label: `Nunca venderam (${nuncaVenderam})`, alerta: true },
-                  ] as { key: StatusFilter; label: string; alerta?: boolean }[]).map(opt => (
-                    <button
-                      key={opt.key}
-                      onClick={() => setStatusFilter(opt.key)}
-                      className={`fha-chip${opt.alerta ? " alerta" : ""}${statusFilter === opt.key ? " on" : ""}`}
-                    >{opt.label}</button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ overflowX: "auto" }}>
-                <table className="fha-table">
-                  <thead>
-                    <tr>
-                      <th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso</th><th>Vendedor / Embaixador</th><th>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map(l => (
-                      <React.Fragment key={l.id}>
-                        <tr>
-                          <td>{NomeDaLoja({ l, comLogo: true })}</td>
-                          <td>{l.city || <span className="fha-muted">—</span>}</td>
-                          <td>{Telefone({ l })}</td>
-                          <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
-                          <td>{Situacao({ l })}</td>
-                          <td>{Uso({ l })}</td>
-                          <td>{SeletorDeVendedor({ l })}{SeletorDeEmbaixador({ l })}</td>
-                          <td>{Acoes({ l })}</td>
-                        </tr>
-                        {expandedId === l.id && Dados({ l, colSpan: 8 })}
-                      </React.Fragment>
-                    ))}
-                    {filtered.length === 0 && (
-                      <tr><td colSpan={8} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>
-                        Nenhum lojista encontrado{search ? ` para "${search}"` : ""}.
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              {FiltrosDeLojistas()}
+              {TabelaDeLojistas()}
             </div>
           )}
 
@@ -834,6 +875,63 @@ export default function AdminDashboardClient({
       )}
 
       {/* ── MODAL REDEFINIR SENHA ── */}
+      {excluirModalUser && (
+        <div onClick={fecharExcluir} className="fha-modal-fundo">
+          <div onClick={e => e.stopPropagation()} className="fha-modal">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ color: "#B91C1C" }}>🗑️ Excluir loja</h3>
+              <button onClick={fecharExcluir} style={{ background: "none", border: "none", color: "#94A3B8", fontSize: "1.2rem", cursor: "pointer" }}>✕</button>
+            </div>
+            <p style={{ color: "#475569", fontSize: "0.86rem", margin: "0 0 12px" }}>
+              <strong style={{ color: "#0F172A" }}>{excluirModalUser.storeName || excluirModalUser.name}</strong> ({excluirModalUser.email}) vai ser
+              apagada <strong style={{ color: "#B91C1C" }}>para sempre</strong>, com tudo que é dela: cardápio, pedidos, mesas, garçons, caixa, mensalidades e integrações.
+              Não tem como desfazer.
+            </p>
+            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: "0.82rem", color: "#7F1D1D" }}>
+              {excluirRetrato ? (
+                <>
+                  Vai junto: <strong>{excluirRetrato.pedidos}</strong> pedido{excluirRetrato.pedidos === 1 ? "" : "s"}, <strong>{excluirRetrato.produtos}</strong> produto{excluirRetrato.produtos === 1 ? "" : "s"},{" "}
+                  <strong>{excluirRetrato.garcons}</strong> garço{excluirRetrato.garcons === 1 ? "m" : "ns"}
+                  {excluirRetrato.subUsuarios > 0 ? <>, <strong>{excluirRetrato.subUsuarios}</strong> login{excluirRetrato.subUsuarios === 1 ? "" : "s"} de funcionário</> : null}.
+                  {excluirRetrato.mensalidadesPagas > 0 && (
+                    <div style={{ marginTop: 6, fontWeight: 800 }}>⚠️ Esta loja já pagou {excluirRetrato.mensalidadesPagas} mensalidade{excluirRetrato.mensalidadesPagas === 1 ? "" : "s"} — é cliente de verdade, não conta de teste.</div>
+                  )}
+                </>
+              ) : "Contando o que vai junto..."}
+            </div>
+
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+              Digite <span style={{ color: "#B91C1C" }}>EXCLUIR</span>:
+            </label>
+            <input autoFocus className="fha-input" placeholder="EXCLUIR" value={excluirPalavra1} onChange={e => setExcluirPalavra1(e.target.value)} style={{ width: "100%", marginBottom: 12 }} />
+            <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+              Digite <span style={{ color: "#B91C1C" }}>EXCLUIR</span> de novo:
+            </label>
+            <input className="fha-input" placeholder="EXCLUIR" value={excluirPalavra2} onChange={e => setExcluirPalavra2(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleExcluir(); }} style={{ width: "100%", marginBottom: 20 }} />
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button type="button" onClick={fecharExcluir} disabled={excluindo} style={{ background: "none", border: "none", color: "#64748B", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleExcluir}
+                disabled={!excluirConfirmado || excluindo || !excluirRetrato}
+                style={{
+                  background: excluirConfirmado && excluirRetrato ? "#B91C1C" : "#E2E8F0",
+                  color: excluirConfirmado && excluirRetrato ? "#fff" : "#94A3B8",
+                  border: "none", padding: "10px 18px", borderRadius: 10, fontWeight: 800,
+                  cursor: excluirConfirmado && !excluindo ? "pointer" : "not-allowed", fontSize: "0.85rem",
+                }}
+              >
+                {excluindo ? "Excluindo..." : "Excluir para sempre"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {resetModalUser && (
         <div onClick={fecharReset} className="fha-modal-fundo">
           <div onClick={e => e.stopPropagation()} className="fha-modal">
