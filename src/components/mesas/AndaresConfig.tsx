@@ -140,8 +140,8 @@ export default function AndaresConfig({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 0" }}>
       <p style={{ margin: 0, fontSize: 13, color: "#64748B", lineHeight: 1.5 }}>
-        Tem mais de um andar? Dê um nome a cada um, diga quais mesas estão nele e em qual impressora ele imprime.
-        A tela de mesas ganha um botão para cada andar.
+        Tem mais de um andar? Dê um nome a cada um, diga quais mesas estão nele e em qual impressora sai a <b>conta</b> dessas mesas.
+        A tela de mesas ganha um botão para cada andar. A comanda da cozinha não muda: segue o que está na tela de Impressoras.
       </p>
 
       {andares.map((a, i) => {
@@ -183,7 +183,7 @@ export default function AndaresConfig({
             </div>
 
             <div style={{ marginTop: 12 }}>
-              <label style={rotulo}>Imprime em</label>
+              <label style={rotulo}>A conta das mesas deste andar sai em</label>
               {impressoras === null ? (
                 <div style={{ fontSize: 13, color: "#94A3B8" }}>Carregando impressoras…</div>
               ) : impressoras.length === 0 ? (
@@ -210,8 +210,8 @@ export default function AndaresConfig({
                           <br />
                           <span style={{ color: "#64748B" }}>
                             {marcada
-                              ? "neste andar imprime a mesa inteira (comanda e conta)"
-                              : `hoje imprime ${oQueImprime(p)}${p.contaDaMesa ? " · e a conta da mesa" : ""}`}
+                              ? "a conta das mesas deste andar sai aqui"
+                              : `na cozinha imprime ${oQueImprime(p)}${p.contaDaMesa ? " · e a conta da mesa" : ""}`}
                           </span>
                         </span>
                       </label>
@@ -232,9 +232,9 @@ export default function AndaresConfig({
       {andares.length > 0 && (
         <div style={{ fontSize: 12.5, color: "#64748B", lineHeight: 1.5, background: "#F8FAFC", borderRadius: 10, padding: "10px 12px" }}>
           {semAndar.length > 0 && <div><b>Sem andar:</b> {faixaLegivel(semAndar)}</div>}
-          <div>A impressora marcada num andar recebe a <b>mesa inteira</b> das mesas dele — comanda completa e conta —, mesmo que
-            na tela de Impressoras ela só saia bebidas. A impressora que <b>nenhum</b> andar marcou continua como está: recebe só o
-            que é dela, das mesas de todos os andares (a cozinha, por exemplo).</div>
+          <div>A impressora marcada num andar recebe a <b>conta</b> das mesas dele ("Imprimir comanda" e a conta do fechamento).
+            As comandas da cozinha não mudam com o andar: cada impressora continua recebendo só as categorias marcadas para ela
+            na tela de Impressoras, das mesas de todos os andares.</div>
         </div>
       )}
 

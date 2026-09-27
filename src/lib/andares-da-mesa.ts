@@ -12,16 +12,17 @@
  * nunca manda esta chave, e o PUT mescla por chave). Roda no servidor (fila da
  * nuvem) e no navegador (painel aberto): sem Prisma aqui.
  *
- * A REGRA DA IMPRESSORA, uma só para os dois caminhos:
- *   • impressora que NENHUM andar escolheu não muda nada (a cozinha que atende
- *     o prédio inteiro continua recebendo só o que é dela, de todas as mesas);
- *   • impressora escolhida por um andar recebe a MESA INTEIRA das mesas daquele
- *     andar — a comanda toda e a conta —, e nada das mesas dos outros andares.
- *     Regra do dono (27/09/2026, Ragnar: "Piso Superior" no BAR): "mesmo que na
- *     tela de Impressoras ela só saia bebidas, na mesa do 51 pra cima tem que
- *     sair lá o pedido todo". Categoria, "só bebida" e módulo dela não valem
- *     para a mesa do seu andar; as outras impressoras seguem o filtro delas;
- *   • pedido que não é de mesa (delivery, balcão) não passa por aqui.
+ * A REGRA, uma só para o painel e para a fila da nuvem: o andar decide onde
+ * sai a CONTA da mesa ("Imprimir comanda" e o botão da janela de fechamento).
+ *   • a conta das mesas de um andar sai na(s) impressora(s) que o andar marcou;
+ *     andar sem impressora cai nas marcadas para a conta na tela de
+ *     Impressoras, menos as de outros andares (`impressorasDaContaNoAndar`);
+ *   • a COMANDA DA COZINHA não olha o andar: segue só o filtro de categoria da
+ *     tela de Impressoras. A versão que mandava a mesa inteira para a
+ *     impressora do andar durou uma tarde (27/09/2026): na Ragnar todo pedido
+ *     de mesa passou a sair também no balcão/bar do andar — "deveria imprimir
+ *     só no burger" (Fabiano). O que ele queria com "sair lá o pedido todo"
+ *     era a conta, que é o "Imprimir comanda" da tela de mesas.
  */
 
 export type AndarDaMesa = {
@@ -85,7 +86,7 @@ export function andarDaMesa(andares: AndarDaMesa[], numero: unknown): AndarDaMes
 }
 
 /**
- * As impressoras que podem receber o papel desta mesa. `numeroDaMesa` vazio
+ * As impressoras que podem receber a CONTA desta mesa. `numeroDaMesa` vazio
  * (pedido que não é de mesa) ou nenhum andar com impressora: a lista volta
  * inteira. Mesa fora de todo andar: só as impressoras sem andar.
  */
@@ -103,41 +104,6 @@ export function impressorasDoAndar<T extends { id?: unknown }>(
     const id = String(p?.id ?? "");
     return !deAlgumAndar.has(id) || doAndar.has(id);
   });
-}
-
-/**
- * As impressoras que recebem a COMANDA desta mesa, com a do andar dela
- * liberada de todo filtro: ela imprime a mesa inteira, venha o que vier na
- * tela de Impressoras (categorias, "só bebida", módulo). As demais seguem como
- * estão. Sem andar, ou andar sem impressora: igual a `impressorasDoAndar`.
- */
-export function impressorasParaAMesa<
-  T extends { id?: unknown; categories?: unknown; somenteBebidas?: unknown; modulos?: unknown },
->(printers: T[], andares: AndarDaMesa[], numeroDaMesa: unknown): T[] {
-  const candidatas = impressorasDoAndar(printers, andares, numeroDaMesa);
-  const andar = andarDaMesa(andares, numeroDaMesa);
-  if (!andar || andar.impressoras.length === 0) return candidatas;
-  const doAndar = new Set(andar.impressoras);
-  return candidatas.map((p) =>
-    doAndar.has(String(p?.id ?? "")) ? ({ ...p, categories: [], somenteBebidas: false, modulos: undefined } as T) : p
-  );
-}
-
-/**
- * Esta mesa tem uma impressora de andar recebendo tudo? Quando tem, o item
- * cuja impressora está em OUTRO andar (o drink do BAR do piso de cima, numa
- * mesa do térreo) já sai garantido nela — e não precisa do resgate de "item
- * de ninguém", que o mandaria para uma cozinha que ficaria vazia.
- */
-export function temImpressoraDoAndar<T extends { id?: unknown }>(
-  printers: T[],
-  andares: AndarDaMesa[],
-  numeroDaMesa: unknown
-): boolean {
-  const andar = andarDaMesa(andares, numeroDaMesa);
-  if (!andar || andar.impressoras.length === 0) return false;
-  const ids = new Set(andar.impressoras);
-  return printers.some((p) => ids.has(String(p?.id ?? "")));
 }
 
 /**

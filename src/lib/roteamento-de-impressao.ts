@@ -21,7 +21,6 @@
 import { moduloDoPedido, impressoraAtendeModulo, type ModuloDePedido } from "./modulo-do-pedido";
 import { impressorasDaLoja, type PedidoComOrigem } from "./loja-de-origem";
 import { CATEGORIAS_DE_INTEGRACAO } from "./cardapio-interno";
-import { impressorasParaAMesa, temImpressoraDoAndar, type AndarDaMesa } from "./andares-da-mesa";
 import { isBeverageCategory, isBeverageName } from "./beverage";
 
 export type ImpressoraConfigurada = {
@@ -376,7 +375,6 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   impressoras: ImpressoraConfigurada[],
   pedido: { source?: unknown; items?: T[] | null },
   /** Andares do salão e o número da mesa deste pedido (lib/andares-da-mesa.ts). */
-  salao?: { andares?: AndarDaMesa[] | null; mesa?: unknown },
   /** As palavras de bebida da loja (printerConfig.customBeverageKeywords). */
   opcoes: { palavrasDeBebida?: string | string[] | null } = {}
 ): { impressora: ImpressoraConfigurada; itens: T[] }[] {
@@ -386,17 +384,15 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   // separam uma marca da outra — para eles é tudo "iFood". Nenhuma impressora
   // marcada para a loja deste pedido = todas continuam candidatas, em vez de
   // engolir o pedido (regra de lib/loja-de-origem.ts).
-  // ── DE QUAL ANDAR É ESTA MESA ──
-  // A impressora do térreo não recebe a comanda da mesa do segundo andar, e a
-  // do andar da mesa recebe a MESA INTEIRA, sem o filtro de categoria dela.
-  // Vem ANTES das categorias: o bar do outro andar não pode "pedir" a bebida
-  // desta mesa e tirá-la da impressora deste andar.
-  const daLoja = impressorasDaLoja(
+  // Os ANDARES do salão (lib/andares-da-mesa.ts) não entram aqui: eles
+  // decidem onde sai a CONTA da mesa, não a comanda da cozinha. A versão que
+  // mandava a mesa inteira para a impressora do andar durou uma tarde
+  // (27/09/2026): na Ragnar, todo pedido de mesa passou a sair também no
+  // balcão ou no bar do andar — "deveria imprimir só no burger".
+  const validas = impressorasDaLoja(
     (impressoras || []).filter((p) => p && texto(p.name)),
     pedido as PedidoComOrigem
   );
-  const andares = salao?.andares || [];
-  const validas = impressorasParaAMesa(daLoja, andares, salao?.mesa);
 
   // Pedido só de bebida vai só para a impressora dele; os outros nunca vão.
   //
@@ -422,14 +418,10 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   };
   const candidatas = semRepetir(candidatasComRepeticao);
 
-  // Quem pede o quê, entre as que de fato recebem este pedido. Com impressora
-  // de andar recebendo a mesa inteira, a impressora do OUTRO andar também
-  // conta como quem pediu: o drink do bar do piso de cima já sai na do térreo,
-  // e não precisa ir de resgate para uma cozinha vazia.
+  // Quem pede o quê, entre as que de fato recebem este pedido.
   const modulo = moduloDoPedido(pedido?.source as any);
-  const basePedidas = temImpressoraDoAndar(validas, andares, salao?.mesa) ? semRepetir(daLoja) : candidatas;
   const pedidas = categoriasPedidas(
-    basePedidas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo)),
+    candidatas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo)),
     pedido
   );
 

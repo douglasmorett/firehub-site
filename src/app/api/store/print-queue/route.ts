@@ -425,8 +425,8 @@ export async function GET(req: NextRequest) {
         .catch(() => { /* tabela ainda não existe: nada a apagar */ });
     }
     const printers: any[] = Array.isArray(pc?.printers) ? pc.printers : [];
-    // Andares do salão (tela de Mesas): a impressora de um andar só recebe as
-    // mesas dele — comanda, reimpressão e conta (lib/andares-da-mesa.ts).
+    // Andares do salão (tela de Mesas): decidem onde sai a CONTA de cada mesa
+    // (lib/andares-da-mesa.ts). A comanda da cozinha não olha o andar.
     const andares = lerAndares(pc);
     const slugDaLoja = owner?.slug || "";
 
@@ -463,7 +463,7 @@ export async function GET(req: NextRequest) {
           comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct),
         })),
       };
-      const destinos = destinosDoPedido(printers, order as any, { andares, mesa: numeroDaMesa(comMesa as any) }, { palavrasDeBebida: pc?.customBeverageKeywords });
+      const destinos = destinosDoPedido(printers, order as any, { palavrasDeBebida: pc?.customBeverageKeywords });
       // ── QR "PUXAR PEDIDO" ──────────────────────────────────────────
       //
       // Esta fila imprime o delivery quando o painel não está aberto num
@@ -638,7 +638,7 @@ export async function GET(req: NextRequest) {
       const alvo = typeof order.impressoraAlvo === "string" ? order.impressoraAlvo.trim() : "";
       const destinos = alvo
         ? [{ impressora: printers.find((p) => String(p?.name || "").trim() === alvo) || { name: alvo }, itens: order.items || [] }]
-        : destinosDoPedido(printers, order, { andares, mesa: order.mesa || numeroDaMesa(order) }, { palavrasDeBebida: pc?.customBeverageKeywords });
+        : destinosDoPedido(printers, order, { palavrasDeBebida: pc?.customBeverageKeywords });
       return {
         id: "job_" + pedida.id,
         order: {
