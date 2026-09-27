@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -131,6 +132,9 @@ export async function POST(req: NextRequest) {
       // Aba Alertas: o que o dono recebe no WhatsApp, quem o robô não atende, e
       // se ele sai da conversa quando o cliente reclama do pedido.
       "alertas", "numerosIgnorados", "escalateOnComplaint",
+      // Link de avaliação no Google, pedido no agradecimento do pedido
+      // entregue (lib/order-notifications.ts).
+      "googleReviewUrl",
     ] as const;
 
     const permitido: Record<string, any> = {};
@@ -142,6 +146,20 @@ export async function POST(req: NextRequest) {
         recusados.push(chave);
       }
     }
+    // O link vai para todo cliente que recebe pedido: só entra link do Google,
+    // já com "https://". Vazio apaga; qualquer outra coisa é recusada e o
+    // link que estava continua.
+    if ("googleReviewUrl" in permitido) {
+      const bruto = String(permitido.googleReviewUrl ?? "").trim();
+      const link = linkDeAvaliacaoNoGoogle(bruto);
+      if (!bruto) permitido.googleReviewUrl = "";
+      else if (link) permitido.googleReviewUrl = link;
+      else {
+        delete permitido.googleReviewUrl;
+        recusados.push("googleReviewUrl");
+      }
+    }
+
     if (recusados.length > 0) {
       console.warn(
         `[chatbot/config] Campos recusados para a loja ${user.id} (não editáveis por aqui):`,

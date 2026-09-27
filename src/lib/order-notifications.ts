@@ -4,6 +4,7 @@ import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { inicioDoExpedienteDaLoja } from "./fuso";
 import { telefoneDeVerdade, paraEnvioWhatsApp } from "./telefone";
 import { ehRetirada } from "./status-para-o-cliente";
+import { linkDeAvaliacaoNoGoogle } from "./avaliacao-no-google";
 
 /**
  * `EM_PREPARO` é novo. A promessa feita ao cliente no "Pedido Recebido" é
@@ -34,6 +35,8 @@ export async function sendOrderNotification(
           select: {
             id: true,
             storeName: true,
+            // Sem o slug o link da avaliação saía "/loja/loja/avaliar/<id>".
+            slug: true,
             chatbotConfig: true,
           }
         }
@@ -163,12 +166,20 @@ Se tiver qualquer dúvida, basta nos responder por aqui.`;
         // entrega — e, quando ele ainda não passou na loja, que alguém pegou o
         // pedido dele.
         const ehRetirada = order.deliveryType !== "DELIVERY";
+        // Avaliação no Google, quando a loja cadastrou o link na tela do robô
+        // (lib/avaliacao-no-google.ts). Vai depois da do site, no mesmo
+        // agradecimento: uma mensagem só, que é o que o antispam do WhatsApp
+        // tolera melhor que duas seguidas.
+        const linkDoGoogle = linkDeAvaliacaoNoGoogle(chatbotConfig.googleReviewUrl);
+        const pedidoDoGoogle = linkDoGoogle
+          ? `\n\nE se puder deixar sua avaliação no Google também, ajuda demais a gente! 🙏\n⭐ ${linkDoGoogle}`
+          : "";
         message = `${ehRetirada ? "🥳 *Pedido Retirado!*" : "🥳 *Pedido Entregue com Sucesso!*"}
 
 Olá, *${order.customerName}*! O seu pedido *#${shortId}* de *${storeName}* ${ehRetirada ? "foi retirado! 🛍️" : "foi entregue! 🛵"}
 
 Sua opinião é muito importante para nós! Poderia avaliar ${ehRetirada ? "a refeição" : "a refeição e a entrega"} em 5 segundos?
-👉 ${reviewUrl}
+👉 ${reviewUrl}${pedidoDoGoogle}
 
 Muito obrigado e bom apetite! ⭐😋`;
         break;

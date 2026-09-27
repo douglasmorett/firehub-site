@@ -32,6 +32,7 @@ import {
   Trash2
 } from "lucide-react";
 import FaixaDoVinculo from "./FaixaDoVinculo";
+import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 import {
   leituraAoVivoDaResposta,
   momentoDaResposta,
@@ -3029,6 +3030,40 @@ export default function ChatbotHubClient() {
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* AVALIAÇÃO NO GOOGLE NO AGRADECIMENTO DO PEDIDO */}
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#FFFBEB", borderRadius: "12px", border: "1px solid #FDE68A" }}>
+              <label style={{ display: "block", fontWeight: 800, fontSize: "0.85rem", color: "#92400E" }}>
+                ⭐ Link de avaliação da loja no Google
+              </label>
+              <p style={{ margin: "2px 0 8px 0", fontSize: "0.74rem", color: "#92400E" }}>
+                Quando o pedido é entregue ou retirado, o robô agradece e pede a avaliação no site. Com este link preenchido, ele pede também a avaliação no Google. Pegue o link no Perfil da Empresa no Google, em "Pedir avaliações".
+              </p>
+              <input
+                type="text"
+                value={config.googleReviewUrl || ""}
+                onChange={(e) => setConfig((prev: any) => ({ ...prev, googleReviewUrl: e.target.value }))}
+                onBlur={() => {
+                  const bruto = (config.googleReviewUrl || "").trim();
+                  if (!bruto) {
+                    handleSaveConfig({ googleReviewUrl: "" });
+                    return;
+                  }
+                  const link = linkDeAvaliacaoNoGoogle(bruto);
+                  if (!link) {
+                    showToast("⚠️ Esse link não é do Google. Cole o link de \"Pedir avaliações\" do Perfil da Empresa.", "#C92E09");
+                    return;
+                  }
+                  handleSaveConfig({ googleReviewUrl: link });
+                }}
+                placeholder="Ex: https://g.page/r/sua-loja/review"
+                style={{
+                  width: "100%", padding: "10px 14px", borderRadius: "10px",
+                  border: "1px solid #FCD34D", fontSize: "0.88rem", outline: "none", boxSizing: "border-box",
+                  background: "#fff"
+                }}
+              />
             </div>
 
             {/* MÓDULO DE PEDIDOS DIRETO VIA IA NO WHATSAPP */}
