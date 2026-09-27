@@ -32,7 +32,10 @@ const decidir = (opts: { agora: Date; storeHours?: unknown; storePause?: unknown
 console.log("\n— Loja das 18h às 23h —");
 confere("21:00, jantar, pedido há 2 min", decidir({ agora: as("21:00"), pedidoHaMin: 2 }), false);
 confere("21:00, aberta mesmo sem pedido há 1 h", decidir({ agora: as("21:00"), pedidoHaMin: 60 }), false);
-confere("17:30, abre em 30 min", decidir({ agora: as("17:30"), pedidoHaMin: null }), false);
+confere("17:57, abre em 3 min", decidir({ agora: as("17:57"), pedidoHaMin: null }), false);
+// PC ligado meia hora antes de abrir: é a única hora em que ele está ligado com a
+// loja parada. Desde a 1.2.25 reiniciar não cospe papel (27/09/2026).
+confere("17:30, PC acabou de ligar, abre em 30 min", decidir({ agora: as("17:30"), pedidoHaMin: 1100 }), true);
 confere("16:00, abre em 2 h e nada entrou", decidir({ agora: as("16:00"), pedidoHaMin: 900 }), true);
 confere("23:20, fechou mas o último pedido foi há 15 min", decidir({ agora: as("23:20"), pedidoHaMin: 15 }), false);
 confere("00:10, fechou e o último pedido foi há 60 min", decidir({ agora: as("00:10", "2026-09-25"), pedidoHaMin: 60 }), true);

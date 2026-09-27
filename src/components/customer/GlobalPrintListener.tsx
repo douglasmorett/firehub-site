@@ -289,6 +289,13 @@ export default function GlobalPrintListener() {
                         price: i.price || 0,
                         notes: i.notes || "",
                         comboSelections: i.comboSelections,
+                        // A categoria é o que manda o item para a impressora
+                        // certa (lib/roteamento-de-impressao.ts). Sem ela todo
+                        // item era "de ninguém" e o pedido inteiro saía em
+                        // todas as impressoras — o burger da Ragnar no bar e na
+                        // cozinha da pizza (26/09/2026). A fila da nuvem sempre
+                        // leu a categoria do banco; só este caminho a perdia.
+                        category: i.menuProduct?.category || i.category || undefined,
                       };
                     }),
                     totalAmount: order.totalAmount || 0,

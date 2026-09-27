@@ -2034,6 +2034,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           price: i.price || 0,
           notes: i.notes || "",
           comboSelections: i.comboSelections,
+          // A impressora certa sai da categoria (lib/roteamento-de-impressao.ts);
+          // sem ela o pedido inteiro ia para todas. Ver GlobalPrintListener.
+          category: i.menuProduct?.category || i.category || undefined,
         };
       }),
       totalAmount: order.totalAmount || 0,

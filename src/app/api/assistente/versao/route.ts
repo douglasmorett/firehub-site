@@ -24,7 +24,7 @@ const URL_DO_INSTALADOR = "https://firehubfood.com.br/downloads/FireHub-Assisten
  * ── SÓ COM A LOJA PARADA (24/09/2026) ──────────────────────────────────────
  * A versão nova só é anunciada quando a loja que pergunta está fora de
  * operação (lib/assistente-da-loja.ts): fora do horário, sem pedido há 45 min
- * e sem abrir nos próximos 45. Enquanto isso a resposta vem sem versão e sem
+ * e sem abrir nos próximos 5 (eram 45; ver ANTES_DE_ABRIR_MIN). Enquanto isso a resposta vem sem versão e sem
  * URL — o Assistente já instalado lê isso como "tente de novo em 10 min", e o
  * 1.2.25+ lê o `adiada` e o motivo.
  *

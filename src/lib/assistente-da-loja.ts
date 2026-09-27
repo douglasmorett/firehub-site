@@ -49,8 +49,21 @@ export function lojaDoEndereco(endereco: string | null | undefined): string | nu
 
 /** Pedido entrou há menos que isso: a loja está trabalhando, diga o horário o que disser. */
 export const SEM_PEDIDO_HA_MIN = 45;
-/** Abre em menos que isso: não é hora de desligar a impressão. */
-export const ANTES_DE_ABRIR_MIN = 45;
+/**
+ * Abre em menos que isso: não é hora de desligar a impressão.
+ *
+ * Eram 45 min, e foi isso que congelou as lojas: em 27/09/2026, dois dias
+ * depois da 1.2.26, 12 de 13 lojas seguiam de 1.2.9 a 1.2.24. O PC é ligado
+ * pouco antes de abrir e desligado ao fechar — a única hora em que ele está
+ * ligado com a loja parada é justamente a que os 45 min proibiam, e o
+ * Assistente antes da 1.2.19 só pergunta 90 s depois de ligar (e a cada 6 h).
+ *
+ * Os 45 min protegiam do reinício que cuspia a meia hora anterior. Desde a
+ * 1.2.25 o Assistente reaberto não imprime o que veio antes, e o que entra
+ * DURANTE a instalação ainda sai (lib/volta-do-assistente.ts). Sobra só não
+ * reiniciar em cima da abertura.
+ */
+export const ANTES_DE_ABRIR_MIN = 5;
 
 export type DecisaoDeAtualizacao = { pode: boolean; motivo: string };
 
