@@ -17,8 +17,10 @@ import {
 } from "@/lib/entrega-do-robo";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { cuponsAnunciaveis } from "@/lib/cupons";
-import { hojeDaLoja } from "@/lib/cupons-no-banco";
+import { avaliarCupom, descreverBeneficio } from "@/lib/cupons";
+import { fatosDoCupom, hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
+import { cuponsComCampanha } from "@/lib/campanha-converter";
+import { codigoCompacto, cupomCitadoPeloCliente, cupomDesteClienteParaOPrompt, cuponsDoRobo, cuponsParaTentar, mensagemDoCupom } from "@/lib/cupom-do-robo";
 import fs from "fs";
 
 import { generateDailyOrderNumber } from "@/lib/order-number";
@@ -144,6 +146,9 @@ export async function processChatbotAI(
       deliveryZoneType: true,
       chatbotConfig: true,
       storeCoupons: true,
+      // O cupom da campanha "converter" (lib/campanha-converter.ts) mora aqui:
+      // o cliente que o recebeu na comanda do iFood pode digitá-lo no WhatsApp.
+      storeLoyalty: true,
       notificationPhone: true,
       cashOpen: true,
     },
@@ -165,7 +170,7 @@ export async function processChatbotAI(
       select: {
         storeName: true, storePhone: true, storeAddress: true, storeLatLng: true, storeTimezone: true, city: true, slug: true,
         storeHours: true, storePause: true, storeOpen: true, storeDeliveryOnly: true,
-        deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, storeCoupons: true,
+        deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, storeCoupons: true, storeLoyalty: true,
       },
     });
     if (dono) Object.assign(user, dono);
@@ -821,13 +826,14 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   // que o sync usa para decidir o que a tag reescreve (lib/rascunho-do-robo.ts).
   // Falhar aqui não pode derrubar a resposta: sem memória o robô ainda atende.
   let memoriaDoPedido = "";
+  // Os pedidos desta conversa: o cupom não os conta como "já pediu" (ver CUPONS).
+  let idsDaConversa: string[] = [];
   if (aiOrderingEnabled && clientPhoneDigits.length >= 10) {
     try {
       const agoraDaMemoria = Date.now();
-      memoriaDoPedido = memoriaDoPedidoParaOPrompt(
-        (await pedidosQueATagPodeTocar(targetFranchiseeId, clientPhoneDigits, agoraDaMemoria)) as any,
-        agoraDaMemoria,
-      );
+      const daConversa = await pedidosQueATagPodeTocar(targetFranchiseeId, clientPhoneDigits, agoraDaMemoria);
+      idsDaConversa = daConversa.map((p: any) => String(p.id));
+      memoriaDoPedido = memoriaDoPedidoParaOPrompt(daConversa as any, agoraDaMemoria);
     } catch (e: any) {
       console.error("[Chatbot AI] Não consegui ler o rascunho do cliente para o prompt:", e?.message || e);
     }
@@ -860,44 +866,68 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     }).join("\n");
   }
 
-  // Tratar cupons válidos cadastrados no banco de dados e configuração instantânea do WhatsApp
-  const instantCouponEnabled = chatbotConfig.instantCouponEnabled === true;
-  const instantCouponCode = (chatbotConfig.instantCouponCode || "").trim();
-  const instantCouponDiscount = chatbotConfig.instantCouponDiscount || "10%";
+  // ── CUPONS (lib/cupom-do-robo.ts) ─────────────────────────────────────────
+  //
+  // Na parte FIXA do prompt vai o que vale para qualquer cliente: os cupons
+  // públicos e, se houver, que existe um de primeiro pedido. QUEM tem direito
+  // a ele, e o cupom que o cliente escreveu, vão na parte desta conversa — lá
+  // embaixo, depois da linha "ESTA CONVERSA", porque dependem do cliente.
+  //
+  // O cupom instantâneo da tela do robô era citado a qualquer um. Na R&D ele é
+  // o PRIMEIROPEDIDO 40%: o cliente antigo ouvia a promessa e o site recusava.
+  // Cupom estratégico (recuperação de inativo) continua fora da lista: só vale
+  // quando o PRÓPRIO cliente escreve o código que recebeu.
+  const hojeDoCupom = hojeDaLoja((user as any).storeTimezone);
+  const cuponsDaLoja = cuponsComCampanha(user.storeCoupons, (user as any).storeLoyalty);
+  const doRobo = cuponsDoRobo(user.storeCoupons, chatbotConfig, hojeDoCupom);
+  const temCupomParaCitar = doRobo.publicos.length > 0 || doRobo.primeiroPedido !== null;
+  const minimoDoCupom = (c: { minOrderValue: number }) =>
+    c.minOrderValue > 0 ? ` — Válido apenas para pedidos a partir de R$ ${c.minOrderValue}` : "";
 
-  let availableCouponsText = "";
-  if (instantCouponEnabled && instantCouponCode) {
-    availableCouponsText += `- Cupom Instantâneo Público de WhatsApp: Código "${instantCouponCode}" (${instantCouponDiscount} OFF)\n`;
+  let availableCouponsText = doRobo.publicos
+    .map((c) => `- Cupom Público Permitido: Código "${c.code}" (${descreverBeneficio(c)}${minimoDoCupom(c)})`)
+    .join("\n");
+  if (doRobo.primeiroPedido) {
+    const c = doRobo.primeiroPedido;
+    availableCouponsText +=
+      (availableCouponsText ? "\n" : "") +
+      `- Cupom de PRIMEIRO PEDIDO: Código "${c.code}" (${descreverBeneficio(c)}${minimoDoCupom(c)}) — SÓ para quem nunca pediu nesta loja. ` +
+      `Quem tem direito está dito em "CUPOM DESTE CLIENTE", no fim; sem essa seção dizendo que o cliente tem direito, NÃO ofereça.`;
   }
 
-  if (Array.isArray(user.storeCoupons) && (user.storeCoupons as any[]).length > 0) {
-    // FILTRO DE SEGURANÇA: só chega na IA o cupom marcado como público ou o
-    // cupom instantâneo configurado PELA PRÓPRIA LOJA. Cupom estratégico de
-    // recuperação de cliente inativo nunca é exposto.
-    //
-    // O fallback aqui era `instantCouponCode || "HAKIM10"`: loja que não tinha
-    // cupom instantâneo configurado passava a comparar com HAKIM10, o cupom de
-    // outra loja. Sem o fallback, quem não configurou nada simplesmente não tem
-    // cupom para a IA citar — que é o correto.
-    const codigoInstantaneo = instantCouponEnabled && instantCouponCode ? instantCouponCode.toUpperCase() : null;
-    // Além de público: não vencido e SEM regra de primeiro pedido
-    // (lib/cupons.ts). O robô não tem como saber se quem pergunta já pediu, e
-    // prometer um desconto que o checkout vai recusar é pior que não prometer.
-    const anunciaveis = new Set(cuponsAnunciaveis(user.storeCoupons, hojeDaLoja((user as any).storeTimezone)).map((c) => c.code));
-    const activePublicCoupons = (user.storeCoupons as any[]).filter(
-      (c: any) => c.active !== false && c.code && (anunciaveis.has(String(c.code).toUpperCase()) || (codigoInstantaneo && c.code.toUpperCase() === codigoInstantaneo))
-    );
-    if (activePublicCoupons.length > 0) {
-      availableCouponsText += activePublicCoupons.map((c: any) => {
-        const benefitStr = c.type === "free_shipping"
-          ? "Frete Grátis / Isenção da taxa de entrega"
-          : c.type === "fixed"
-          ? `R$ ${c.discount} de desconto no pedido`
-          : `${c.discount}% de desconto`;
-        const minOrderStr = c.minOrderValue > 0 ? ` — Válido apenas para pedidos a partir de R$ ${c.minOrderValue}` : "";
-        return `- Cupom Público Permitido: Código "${c.code}" (${benefitStr}${minOrderStr})`;
-      }).join("\n");
+  // O cliente desta conversa: nunca pediu? escreveu algum código?
+  let cupomDesteCliente = "";
+  try {
+    const textosDoCliente = [
+      ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").slice(-12).map((h: any) => String(h.text || "")),
+      String(message || ""),
+    ];
+    const citado = cupomCitadoPeloCliente(textosDoCliente, cuponsDaLoja);
+    const temTelefone = clientPhoneDigits.length >= 10;
+    // O pedido desta própria conversa (rascunho ou recém-fechado) não conta:
+    // depois de fechar, o cliente ainda é o "novo" que ganhou o cupom.
+    const clienteNovo =
+      doRobo.primeiroPedido && temTelefone ? !(await jaPediuPeloSite(targetFranchiseeId, clientPhoneDigits, idsDaConversa)) : null;
+    let recusaDoCitado: string | null = null;
+    if (citado && temTelefone) {
+      // Só as regras do cliente (prazo, primeiro pedido, usos). O mínimo o
+      // prompt já diz, e o subtotal ainda não existe.
+      const v = avaliarCupom(
+        citado,
+        await fatosDoCupom(citado, {
+          franchiseeId: targetFranchiseeId,
+          telefone: clientPhoneDigits,
+          timeZone: (user as any).storeTimezone,
+          subtotal: Number.MAX_SAFE_INTEGER,
+          taxa: 0,
+          excetoPedidoId: idsDaConversa,
+        })
+      );
+      recusaDoCitado = v.ok ? null : v.motivo || "Cupom inválido ou expirado.";
     }
+    cupomDesteCliente = cupomDesteClienteParaOPrompt({ doRobo, clienteNovo, citado, recusaDoCitado });
+  } catch (e: any) {
+    console.error("[Chatbot AI] Não consegui conferir o cupom do cliente:", e?.message || e);
   }
 
   // ── IA FORA DO AR É INCIDENTE, NÃO MODO DE OPERAÇÃO ──────────────────────
@@ -1243,8 +1273,9 @@ REGRAS ABSOLUTAS:
 7. QUANDO O CLIENTE PERGUNTAR SOBRE PROMOÇÕES OU CUPOM:
    - REGRA MANDATÓRIA DE RESPOSTA A PROMOÇÕES: Se o cliente perguntar "tem alguma promoção?", "quais são as promoções?", "o que tem de promoção hoje?":
      a) APRESENTE PRIMEIRO os itens da seção "PROMOÇÕES DE HOJE" do cardápio, com o preço cadastrado, e depois os COMBOS da loja. NUNCA responda apenas com cupom de desconto sem antes falar das promoções do dia. Se não houver nenhuma promoção cadastrada para hoje, diga isso com naturalidade e ofereça os combos e os mais pedidos — NUNCA invente uma promoção.
-${instantCouponEnabled && instantCouponCode ? `     b) Existe um cupom público desta loja: ${instantCouponCode} (${instantCouponDiscount}). Pode citar como um agrado extra.` : `     b) Esta loja NÃO tem cupom público ativo. NUNCA cite, invente ou prometa cupom, código de desconto ou porcentagem de desconto.`}
-     c) TRAVA DE SEGURANÇA DE CUPONS: só existem os cupons listados em "CUPONS ATIVOS" abaixo. Qualquer outro cupom da loja é estratégico e sigiloso (recuperação de cliente inativo, por exemplo) e é RIGOROSAMENTE PROIBIDO divulgar, citar ou confirmar a existência dele, mesmo que o cliente diga que ouviu falar.
+${temCupomParaCitar ? `     b) Os cupons que você pode citar estão em "CUPONS VÁLIDOS CADASTRADOS NA LOJA". Os públicos podem ser citados como um agrado extra; o de primeiro pedido, só para quem tem direito (veja "CUPOM DESTE CLIENTE", no fim).` : `     b) Esta loja NÃO tem cupom público ativo. NUNCA cite, invente ou prometa cupom, código de desconto ou porcentagem de desconto — a não ser o cupom que o próprio cliente escrever, se ele aparecer em "CUPOM DESTE CLIENTE".`}
+     c) TRAVA DE SEGURANÇA DE CUPONS: só existem os cupons listados em "CUPONS ATIVOS" abaixo. Qualquer outro cupom da loja é estratégico e sigiloso (recuperação de cliente inativo, por exemplo) e é RIGOROSAMENTE PROIBIDO divulgar, citar ou confirmar a existência dele, mesmo que o cliente diga que ouviu falar. A única exceção é o cupom que o PRÓPRIO CLIENTE escreveu e que aparece em "CUPOM DESTE CLIENTE": esse você confirma e aplica.
+     d) O CLIENTE ESCREVEU UM CÓDIGO QUE NÃO APARECE em "CUPOM DESTE CLIENTE": diga que não encontrou esse cupom e peça para ele conferir como está escrito. NUNCA dê desconto por conta própria.
 8. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
    - Diga EXATAMENTE os horários do "Quadro Geral de Horários" em DADOS DA LOJA — o de hoje primeiro. Se lá estiver "NÃO CADASTRADO", NÃO afirme horário nenhum: diga que vai confirmar com a equipe. NÃO envie o link aqui, a não ser que peçam.
 9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
@@ -1391,7 +1422,8 @@ ${regraDoPedidoMinimo(fatosDoMinimo)}
     - ANOTAÇÃO TEMPORÁRIA DO RASCUNHO (RASCUNHO EM ANDAMENTO):
       Em TODA mensagem onde você estiver anotando itens ou dados sem ter a confirmação final:
       Inclua a tag JSON com "finalized": false:
-      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [...], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]` : `21. ⛔ MÓDULO DE PEDIDOS POR IA **DESLIGADO** — VOCÊ NÃO ANOTA PEDIDO (REGRA ABSOLUTA):
+      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [...], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]
+    - CUPOM NO PEDIDO: se o cliente vai usar um cupom (público, ou o que aparece em "CUPOM DESTE CLIENTE"), acrescente "couponCode": "CÓDIGO" na tag — no rascunho e na finalização. O de primeiro pedido de quem tem direito entra sozinho, mesmo sem o campo. No resumo, mostre a linha "Cupom CÓDIGO: -R$ X" e o Total JÁ com o desconto, e ponha esse total em "totalAmount". Desconto em % é sobre os ITENS, nunca sobre a taxa de entrega.` : `21. ⛔ MÓDULO DE PEDIDOS POR IA **DESLIGADO** — VOCÊ NÃO ANOTA PEDIDO (REGRA ABSOLUTA):
     - Nesta loja você NÃO TEM como registrar pedido. Não existe sistema ligado a você para
       isso. Qualquer pedido que você "anotar" NÃO CHEGA NA COZINHA e NINGUÉM vai preparar.
     - É TERMINANTEMENTE PROIBIDO, sem nenhuma exceção:
@@ -1537,7 +1569,7 @@ RETORNO APÓS INATIVIDADE DE 20 MINUTOS (MUITO IMPORTANTE!):
 ` : ""}
 PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
 ${recentOrdersSummary}
-${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}${addressValidationText}
+${cupomDesteCliente ? `\n${cupomDesteCliente}\n` : ""}${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}${addressValidationText}
 
 Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma ideia só, até uns 150 caracteres, sem repetir o que já foi dito e sem oferta de ajuda no final. Só o resumo do pedido e a lista de preços que o cliente pediu podem ser maiores.`;
 
@@ -1990,6 +2022,16 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   coordsDoCliente: localizacaoDoCliente,
                   localizacaoDescartada: estadoDoPonto.descartadaPeloCliente,
                   jaPediuLocalizacao: roboJaPediuLocalizacao(history),
+                  cupons: {
+                    lista: user.storeCoupons,
+                    campanha: (user as any).storeLoyalty,
+                    chatbotConfig: user.chatbotConfig,
+                    timeZone: (user as any).storeTimezone,
+                  },
+                  textosDoCliente: [
+                    ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").slice(-12).map((h: any) => String(h.text || "")),
+                    String(message || ""),
+                  ],
                 });
               }
             } else if (rawJsonPayload) {
@@ -2021,7 +2063,12 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           // lê o valor certo junto da confirmação, não na porta de casa.
           const taxaGravada = resultadoDoSync.taxaDeEntrega;
           const taxaDita = resultadoDoSync.taxaDitaPelaIa;
-          if (resultadoDoSync.ehEntrega && taxaGravada != null && taxaDita != null && Math.abs(taxaGravada - taxaDita) >= 0.01) {
+          const linhaDoCupom = mensagemDoCupom(resultadoDoSync, cleanText, true);
+          if (linhaDoCupom) {
+            // A linha do cupom já diz o total gravado — a da taxa seria repetida
+            // (e, no cupom de frete grátis, diria que a taxa "é R$ 0,00").
+            cleanText += linhaDoCupom;
+          } else if (resultadoDoSync.ehEntrega && taxaGravada != null && taxaDita != null && Math.abs(taxaGravada - taxaDita) >= 0.01) {
             const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
             cleanText += resultadoDoSync.freteGratisAcimaDe != null && taxaGravada === 0
               ? `\n\n🎉 Seu pedido ganhou frete grátis (acima de ${reais(resultadoDoSync.freteGratisAcimaDe)}): o total fica ${reais(resultadoDoSync.total)}.`
@@ -2029,6 +2076,11 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
             console.warn(`[Chatbot AI] 💬 Taxa corrigida na mensagem ao cliente: modelo disse ${taxaDita}, gravado ${taxaGravada} (pedido ${resultadoDoSync.orderId}).`);
           }
           console.log(`[Chatbot AI] ✅ Confirmação com lastro: pedido ${resultadoDoSync.orderId} (nº ${numero ?? "—"}) gravado com ${resultadoDoSync.itens} item(ns), R$ ${resultadoDoSync.total.toFixed(2)}.`);
+        } else if (resultadoDoSync?.gravado === true && !resultadoDoSync.finalizado) {
+          // Rascunho: o resumo que o cliente vai confirmar precisa do total com o
+          // cupom. Só quando a mensagem fala de total — "anotado, mais algo?"
+          // não ganha linha de cupom a cada item.
+          cleanText += mensagemDoCupom(resultadoDoSync, cleanText, false);
         } else if ((payloadQueriaFinalizar || prometeuCozinha) && !gravouFinalizado) {
           // A IA prometeu (ou tentou finalizar) e o pedido NÃO está no banco.
           // A promessa não pode sair. Mensagem honesta + atendente humano.
@@ -2202,6 +2254,12 @@ type SyncResultado =
       taxaDitaPelaIa?: number | null;
       /** O mínimo do frete grátis que zerou a taxa, quando zerou. */
       freteGratisAcimaDe?: number | null;
+      /** O cupom que entrou no pedido (lib/cupom-do-robo.ts), com o desconto gravado. */
+      cupom?: { code: string; desconto: number; freteGratis: boolean } | null;
+      /** Cupom que o CLIENTE pediu e o sistema recusou — o motivo, pronto para ele. */
+      cupomRecusado?: string | null;
+      /** O total que o modelo escreveu na tag. */
+      totalDitoPelaIa?: number | null;
     }
   | {
       gravado: false;
@@ -2292,6 +2350,8 @@ async function syncAiOrderToDatabase({
   coordsDoCliente,
   localizacaoDescartada,
   jaPediuLocalizacao,
+  cupons,
+  textosDoCliente,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -2320,6 +2380,10 @@ async function syncAiOrderToDatabase({
   localizacaoDescartada?: boolean;
   /** O robô já pediu a localização nesta conversa? Na segunda vez não pede: segura ou segue. */
   jaPediuLocalizacao?: boolean;
+  /** Os cupons da loja e o que o robô pode dar (lib/cupom-do-robo.ts). Ausente = pedido sem cupom. */
+  cupons?: { lista: unknown; campanha: unknown; chatbotConfig: unknown; timeZone: string | null | undefined };
+  /** O que o cliente escreveu nesta conversa: prova de que o cupom estratégico veio dele. */
+  textosDoCliente?: string[];
 }): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
@@ -3010,6 +3074,66 @@ async function syncAiOrderToDatabase({
   }
   totalOrderAmount = centavos(totalItemsSum + deliveryFee);
 
+  // ── CUPOM (lib/cupom-do-robo.ts) ──────────────────────────────────────────
+  //
+  // Até 28/09/2026 o pedido do robô nunca levava desconto: o total era
+  // recalculado sem cupom, e quem ouvia "40% no primeiro pedido" (R&D) e
+  // fechava pela conversa pagava o preço cheio. Agora é a régua do checkout do
+  // site (avaliarCupom + fatosDoCupom), com o pedido desta conversa fora da
+  // conta — senão a alteração de um pedido que já levou o cupom o perderia.
+  // Recalculado a cada gravação, como o resto: some se deixar de valer.
+  let cupomAplicado: { code: string; desconto: number; freteGratis: boolean } | null = null;
+  let cupomRecusado: string | null = null;
+  if (cupons) {
+    try {
+      const listaDeCupons = cuponsComCampanha(cupons.lista, cupons.campanha);
+      const doRobo = cuponsDoRobo(cupons.lista, cupons.chatbotConfig, hojeDaLoja(cupons.timeZone));
+      const citado = cupomCitadoPeloCliente(textosDoCliente || [], listaDeCupons);
+      const daTag = payload?.couponCode ?? payload?.cupom ?? payload?.coupon ?? null;
+      // Recusa só se diz do cupom que o CLIENTE pediu; o de primeiro pedido
+      // tentado sozinho, quando não vale, simplesmente não entra.
+      const pedidoPeloCliente = new Set([codigoCompacto(daTag), citado ? codigoCompacto(citado.code) : ""].filter(Boolean));
+      for (const cupom of cuponsParaTentar({ cupons: listaDeCupons, daTag, citado, doRobo })) {
+        const veredito = avaliarCupom(
+          cupom,
+          await fatosDoCupom(cupom, {
+            franchiseeId,
+            telefone: phoneClean,
+            timeZone: cupons.timeZone,
+            subtotal: totalItemsSum,
+            taxa: deliveryFee,
+            excetoPedidoId: existingDraft?.id,
+          })
+        );
+        if (!veredito.ok || veredito.dependeDoTelefone) {
+          if (pedidoPeloCliente.has(codigoCompacto(cupom.code)) && !cupomRecusado) cupomRecusado = veredito.motivo || null;
+          continue;
+        }
+        const desconto = veredito.zeraTaxa ? deliveryFee : veredito.desconto;
+        if (!(desconto > 0)) continue; // frete grátis numa retirada: nada a dar
+        if (veredito.zeraTaxa) {
+          entregaGratis = { valor: deliveryFee, motivo: `Cupom ${cupom.code}` };
+          deliveryFee = 0;
+        }
+        cupomAplicado = { code: cupom.code, desconto: centavos(desconto), freteGratis: veredito.zeraTaxa };
+        if (pedidoPeloCliente.has(codigoCompacto(cupom.code))) cupomRecusado = null;
+        break;
+      }
+    } catch (e: any) {
+      // Cupom é bônus: nunca impede o pedido de entrar.
+      console.error("[Chatbot AI Order Sync] Não consegui aplicar o cupom:", e?.message || e);
+    }
+  }
+  const descontoDosItens = cupomAplicado && !cupomAplicado.freteGratis ? cupomAplicado.desconto : 0;
+  totalOrderAmount = centavos(Math.max(0, totalItemsSum - descontoDosItens + deliveryFee));
+  if (cupomAplicado) {
+    console.log(`[Chatbot AI Order Sync] 🎟️ Cupom ${cupomAplicado.code} no pedido: -R$ ${cupomAplicado.desconto.toFixed(2)} · loja ${franchiseeId} · tel ${phoneClean.slice(-4)}`);
+  }
+  /** O cupom fica REGISTRADO como no checkout do site: desconto da loja e a marca que conta os usos. */
+  const descontoParaGravar = cupomAplicado
+    ? { discountTotal: cupomAplicado.desconto, discountMerchant: cupomAplicado.desconto }
+    : { discountTotal: null, discountMerchant: null };
+
   // ── O QUE A ENTREGA GRAVA NO PEDIDO (R7) ──────────────────────────────────
   //
   // O rascunho que virava pedido — o caminho comum do robô — não gravava
@@ -3144,7 +3268,8 @@ async function syncAiOrderToDatabase({
     // "estimada" / "aproximado": a loja confere a taxa antes de despachar (R7).
     (avisosDaEntrega.length ? ` · ${avisosDaEntrega.join(" · ")}` : "") +
     (entregaGratis ? ` · Frete grátis (${entregaGratis.motivo}) — taxa ref: ${reais(entregaGratis.valor)}` : "") +
-    (doPedido.observacao ? ` · Obs: ${doPedido.observacao}` : "");
+    (doPedido.observacao ? ` · Obs: ${doPedido.observacao}` : "") +
+    (cupomAplicado ? ` · [Cupom: ${cupomAplicado.code}]` : "");
 
   // Troco só existe em dinheiro. Se esta tag não trouxe o valor mas o rascunho
   // já tinha, ele fica — o modelo nem sempre repete o campo; se o cliente mudou
@@ -3207,6 +3332,7 @@ async function syncAiOrderToDatabase({
         // Cinto e suspensório: `destinoDaTag` já não deixa uma tag não-final
         // chegar aqui com um pedido enviado. Se um dia deixar, o status fica.
         status: !isFinal && existingDraft.status !== "CRIANDO_IA" ? existingDraft.status : finalStatus,
+        ...descontoParaGravar,
         notes: notesText,
         ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         // O pedido nasce AGORA, quando o cliente confirma — não quando o robô
@@ -3256,6 +3382,7 @@ async function syncAiOrderToDatabase({
         ...(pontoDoPedido ? { customerLatLng: pontoDoPedido } : {}),
         ...(repasseDoEntregador != null ? { motoboyFee: repasseDoEntregador } : {}),
         ...(entregaGratis ? { entregaGratis } : {}),
+        ...(cupomAplicado ? descontoParaGravar : {}),
         source: "WHATSAPP_IA",
         status: finalStatus,
         notes: notesText,
@@ -3308,6 +3435,9 @@ async function syncAiOrderToDatabase({
     taxaDeEntrega: deliveryFee,
     taxaDitaPelaIa: freteValido ? centavos(freteBruto) : null,
     freteGratisAcimaDe,
+    cupom: cupomAplicado,
+    cupomRecusado,
+    totalDitoPelaIa: Number.isFinite(Number(payload?.totalAmount)) && payload?.totalAmount != null ? centavos(Number(payload.totalAmount)) : null,
   };
 }
 

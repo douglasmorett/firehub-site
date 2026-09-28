@@ -23,6 +23,18 @@ export function hojeDaLoja(timeZone: string | null | undefined, agora: Date = ne
 }
 
 /**
+ * Tira o próprio pedido da conta. O robô regrava o pedido do cliente a cada
+ * alteração ("acrescenta uma Coca" depois de fechado): sem isto, o pedido que
+ * já levou o cupom de primeiro pedido contava como "já pediu" e "já usou", e
+ * perdia o desconto na primeira alteração.
+ */
+type PedidosDeFora = string | string[] | null | undefined;
+function semOPedido(exceto: PedidosDeFora) {
+  const ids = (Array.isArray(exceto) ? exceto : [exceto]).filter((id): id is string => Boolean(id));
+  return ids.length > 0 ? Prisma.sql`AND "id" NOT IN (${Prisma.join(ids)})` : Prisma.empty;
+}
+
+/**
  * Este telefone já fez pedido PELO SITE desta loja?
  *
  * Marketplace e salão não contam (FONTES_QUE_NAO_SAO_SITE): quem só pediu pelo
@@ -30,7 +42,7 @@ export function hojeDaLoja(timeZone: string | null | undefined, agora: Date = ne
  * o cupom de primeiro pedido quer trazer. Compara pelos últimos 8 dígitos,
  * porque o mesmo número aparece gravado com e sem DDD/55.
  */
-export async function jaPediuPeloSite(franchiseeId: string, telefone: unknown): Promise<boolean> {
+export async function jaPediuPeloSite(franchiseeId: string, telefone: unknown, excetoPedidoId?: PedidosDeFora): Promise<boolean> {
   const digitos = digitosDoTelefone(telefone);
   if (digitos.length < 8) return false;
   const ultimos8 = digitos.slice(-8);
@@ -40,6 +52,7 @@ export async function jaPediuPeloSite(franchiseeId: string, telefone: unknown): 
       AND "status" NOT IN ('CANCELADO', 'CANCELLED', 'CANCELED', 'CRIANDO_IA', 'AGUARDANDO_PAGAMENTO')
       AND COALESCE("source", 'ONLINE') NOT IN (${Prisma.join(FONTES_QUE_NAO_SAO_SITE)})
       AND regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + ultimos8}
+      ${semOPedido(excetoPedidoId)}
     LIMIT 1`;
   return linhas.length > 0;
 }
@@ -52,7 +65,7 @@ export async function jaPediuPeloSite(franchiseeId: string, telefone: unknown): 
  * existe do cupom usado, e é gravado há meses, então os usos antigos contam.
  * Pedido cancelado não conta: o cliente não levou o desconto.
  */
-export async function usosDoCupomPeloCliente(franchiseeId: string, telefone: unknown, code: string): Promise<number> {
+export async function usosDoCupomPeloCliente(franchiseeId: string, telefone: unknown, code: string, excetoPedidoId?: PedidosDeFora): Promise<number> {
   const digitos = digitosDoTelefone(telefone);
   if (digitos.length < 8) return 0;
   const ultimos8 = digitos.slice(-8);
@@ -62,7 +75,8 @@ export async function usosDoCupomPeloCliente(franchiseeId: string, telefone: unk
     WHERE "franchiseeId" = ${franchiseeId}
       AND "status" NOT IN ('CANCELADO', 'CANCELLED', 'CANCELED', 'CRIANDO_IA', 'AGUARDANDO_PAGAMENTO')
       AND COALESCE("notes", '') LIKE ${marca}
-      AND regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + ultimos8}`;
+      AND regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + ultimos8}
+      ${semOPedido(excetoPedidoId)}`;
   return Number(linhas[0]?.n ?? 0);
 }
 
@@ -73,12 +87,16 @@ export async function usosDoCupomPeloCliente(franchiseeId: string, telefone: unk
  */
 export async function fatosDoCupom(
   cupom: Cupom,
-  ctx: { franchiseeId: string; telefone: unknown; timeZone: string | null | undefined; subtotal: number; taxa: number }
+  ctx: {
+    franchiseeId: string; telefone: unknown; timeZone: string | null | undefined; subtotal: number; taxa: number;
+    /** O pedido que está sendo gravado: não conta como "já pediu" nem "já usou" dele mesmo. */
+    excetoPedidoId?: PedidosDeFora;
+  }
 ): Promise<FatosDoCupom> {
   const temTelefone = digitosDoTelefone(ctx.telefone).length >= 8;
   const [usos, jaPediu] = await Promise.all([
-    cupom.usosPorCliente > 0 && temTelefone ? usosDoCupomPeloCliente(ctx.franchiseeId, ctx.telefone, cupom.code) : Promise.resolve(null),
-    cupom.primeiroPedido && temTelefone ? jaPediuPeloSite(ctx.franchiseeId, ctx.telefone) : Promise.resolve(null),
+    cupom.usosPorCliente > 0 && temTelefone ? usosDoCupomPeloCliente(ctx.franchiseeId, ctx.telefone, cupom.code, ctx.excetoPedidoId) : Promise.resolve(null),
+    cupom.primeiroPedido && temTelefone ? jaPediuPeloSite(ctx.franchiseeId, ctx.telefone, ctx.excetoPedidoId) : Promise.resolve(null),
   ]);
   return {
     subtotal: ctx.subtotal,
