@@ -782,11 +782,12 @@ export default function VendaPresencialPage() {
               <ShoppingCart size={15} /> {cartQty} {cartQty === 1 ? "item" : "itens"}
             </div>
           </div>
-          {/* Categorias — quebram em mais linhas, nunca rolam para o lado.
-              A fileira rolava com a barra escondida: no PC do caixa, sem dedo
-              para arrastar, a aba que passava da borda não existia. Na NIK
-              (28/09/2026) era "Bebidas", logo depois de "Molhos". */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingBottom: 2 }}>
+          {/* Categorias — uma linha só, com a barrinha de rolar À MOSTRA.
+              A barra era escondida (scrollbarWidth "none"): no PC do caixa,
+              sem dedo para arrastar, a aba que passava da borda não existia.
+              Na NIK (28/09/2026) era "Bebidas", logo depois de "Molhos".
+              Quebrar em linhas o dono não quis: come a altura da grade. */}
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent", paddingBottom: 6 }}>
             {categories.map(cat => (
               <button key={cat} onClick={() => setSelectedCategory(cat)}
                 style={{ padding: "5px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontWeight: 600, fontSize: "0.78rem", whiteSpace: "nowrap", fontFamily: "inherit",
