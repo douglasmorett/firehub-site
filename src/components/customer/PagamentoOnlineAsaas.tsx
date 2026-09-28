@@ -11,10 +11,9 @@
  * existe (e o que ela abre).
  */
 import { useEffect, useState } from "react";
-import { CheckCircle2, AlertTriangle, XCircle, ExternalLink, Zap, Eye, EyeOff, RefreshCw, Unplug, CreditCard } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, Zap, Eye, EyeOff, RefreshCw, Unplug, CreditCard } from "lucide-react";
 import {
   CONFERIR_NO_ASAAS,
-  MINUTOS_PARA_PAGAR,
   REGRAS_DO_PIX_ONLINE,
   SPLIT_FIREHUB_PERCENTUAL,
   TARIFA_ASAAS_PIX,
@@ -26,6 +25,7 @@ import {
   tarifaDoAsaas,
   type FormaOnline,
 } from "@/lib/pix-online";
+import PassosNoAsaas, { Passo } from "@/components/customer/PassoAPassoAsaas";
 
 export type EstadoPagamentoOnline = {
   conectado: boolean;
@@ -418,97 +418,113 @@ export default function PagamentoOnlineAsaas({ estadoInicial }: { estadoInicial?
         </>
       )}
 
-      {/* ── NÃO CONECTADO ── */}
+      {/* ── NÃO CONECTADO ──
+          Passo a passo com imagem e quase nada para ler (dono, 28/09/2026: "as
+          pessoas não gostam de ler"). Valores, prazos e regras continuam aqui,
+          recolhidos em "Ver valores, prazos e regras" — e o aceite continua
+          obrigatório: é o dinheiro da loja. */}
       {e && !e.conectado && (
         <>
-          <Bloco titulo="💰 Quanto custa">
-            <TabelaDeCustos />
-          </Bloco>
+          {/* O resumo em três selos: o que o lojista quer saber antes de tudo. */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: "0.85rem" }}>
+            {[
+              { t: "⚡ Pix cai na hora", bg: "#ECFDF5", c: "#065F46" },
+              { t: "💳 Cartão em até 2 dias úteis", bg: "#EFF6FF", c: "#1E40AF" },
+              { t: `Taxa: ${SPLIT_FIREHUB_PERCENTUAL}% + tarifa do Asaas`, bg: "#F8FAFC", c: "#334155" },
+            ].map((s) => (
+              <span key={s.t} style={{ background: s.bg, color: s.c, fontWeight: 800, fontSize: "0.76rem", padding: "5px 10px", borderRadius: 99, border: "1px solid #E2E8F0" }}>
+                {s.t}
+              </span>
+            ))}
+          </div>
 
-          <Bloco titulo="⏱️ Quando o dinheiro chega">
-            <p style={{ fontSize: "0.82rem", color: cor.texto, margin: 0, lineHeight: 1.55 }}>
-              <strong>Pix: na hora.</strong> O Asaas confirma em segundos e o valor já fica disponível na sua conta Asaas.{" "}
-              <strong>Cartão de crédito à vista: em até 2 dias úteis.</strong> Para levar ao seu banco, faça um Pix de saída no app do Asaas — é
-              imediato. Conta PJ tem 30 transferências grátis por mês (depois, R$ 2,00 cada).
-            </p>
-          </Bloco>
-
-          <Bloco titulo="✅ Antes de conectar, confira no Asaas">
-            <ol style={{ margin: 0, paddingLeft: "1.15rem" }}>
-              {CONFERIR_NO_ASAAS.map((c) => (
-                <li key={c.titulo} style={{ fontSize: "0.82rem", marginBottom: 6, lineHeight: 1.5 }}>
-                  <strong style={{ color: cor.texto }}>{c.titulo}.</strong> <span style={{ color: "#475569" }}>{c.texto}</span>
-                </li>
-              ))}
-            </ol>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-              <a href="https://www.asaas.com" target="_blank" rel="noopener noreferrer" style={{ ...botao(false), textDecoration: "none" }}>
-                <ExternalLink size={14} /> Abrir o Asaas
-              </a>
-              <a
-                href="https://www.asaas.com/customerApiAccessToken/index"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ ...botao(false), textDecoration: "none" }}
-              >
-                <ExternalLink size={14} /> Onde gerar a chave de API
-              </a>
-            </div>
-          </Bloco>
-
-          <Bloco titulo="📋 Regras do pagamento pelo site">
-            <ListaDeRegras />
-          </Bloco>
+          <div style={{ background: "#fff", border: `1px solid ${cor.borda}`, borderRadius: 12, padding: "0.4rem 1rem 0.9rem", marginBottom: "0.85rem" }}>
+            <PassosNoAsaas />
+            <Passo n={4} titulo="Cole a chave aqui e conecte">
+              {e.podeEditar ? (
+                <>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    <input
+                      type={verChave ? "text" : "password"}
+                      value={chave}
+                      onChange={(ev) => setChave(ev.target.value)}
+                      placeholder="Cole aqui: $aact_prod_..."
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-label="Chave de API do Asaas"
+                      style={{ flex: 1, minWidth: 0, padding: "11px 12px", borderRadius: 10, border: "2px solid #0030B9", fontSize: "0.9rem", fontFamily: "monospace", outline: "none" }}
+                    />
+                    <button type="button" onClick={() => setVerChave((v) => !v)} aria-label={verChave ? "Esconder a chave" : "Mostrar a chave"} style={{ ...botao(false), padding: "9px 10px" }}>
+                      {verChave ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                  <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.84rem", color: cor.texto, cursor: "pointer", marginBottom: 10, lineHeight: 1.45 }}>
+                    <input type="checkbox" checked={aceitou} onChange={(ev) => setAceitou(ev.target.checked)} style={{ marginTop: 2, width: 18, height: 18, flexShrink: 0 }} />
+                    <span>
+                      Aceito as regras e a taxa de {SPLIT_FIREHUB_PERCENTUAL}% por venda paga pelo site.{" "}
+                      <button type="button" onClick={() => setVerRegras(true)} style={{ background: "none", border: "none", padding: 0, color: cor.azul, fontWeight: 700, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit", textDecoration: "underline" }}>
+                        Ver regras
+                      </button>
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={conectar}
+                    disabled={!aceitou || !chave.trim() || !!enviando}
+                    style={{ ...botao(true, !aceitou || !chave.trim() || !!enviando), padding: "11px 18px", fontSize: "0.9rem" }}
+                  >
+                    <Zap size={15} /> {enviando === "conectar" ? "Conferindo a conta no Asaas…" : "Conectar conta Asaas"}
+                  </button>
+                  <div style={{ fontSize: "0.74rem", color: cor.suave, marginTop: 8, lineHeight: 1.45 }}>
+                    🔒 A chave fica guardada criptografada. Tudo certo na conta, Pix e cartão já entram no cardápio.
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: "0.82rem", color: cor.suave }}>Só o titular da loja pode conectar a conta Asaas.</div>
+              )}
+            </Passo>
+          </div>
 
           {!e.avisosNoWhatsApp && (
             <div style={{ background: cor.azulFundo, border: "1px solid #BFDBFE", color: "#1E40AF", borderRadius: 10, padding: "10px 12px", fontSize: "0.8rem", marginBottom: "0.85rem", lineHeight: 1.5 }}>
-              📲 Cadastre o <strong>WhatsApp do Proprietário</strong> (Minha Loja → Informações) para receber no WhatsApp o resumo das regras e os
-              avisos de estorno pendente e de chave desativada.
+              📲 Cadastre o <strong>WhatsApp do Proprietário</strong> (Minha Loja → Informações) para receber os avisos no WhatsApp.
             </div>
           )}
 
-          {e.podeEditar ? (
-            <Bloco titulo="🔑 Conectar a sua conta Asaas" fundo="#fff">
-              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.84rem", color: cor.texto, cursor: "pointer", marginBottom: 12, lineHeight: 1.5 }}>
-                <input type="checkbox" checked={aceitou} onChange={(ev) => setAceitou(ev.target.checked)} style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0 }} />
-                <span>
-                  Li as regras acima e quero receber Pix e cartão pelo site na minha conta Asaas, com a taxa do pagamento online de{" "}
-                  {SPLIT_FIREHUB_PERCENTUAL}% por venda paga pelo site.
-                </span>
-              </label>
-              <label style={{ fontSize: "0.74rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Chave de API do Asaas</label>
-              <div style={{ display: "flex", gap: 6 }}>
-                <input
-                  type={verChave ? "text" : "password"}
-                  value={chave}
-                  onChange={(ev) => setChave(ev.target.value)}
-                  placeholder="$aact_prod_..."
-                  autoComplete="off"
-                  spellCheck={false}
-                  style={{ flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.88rem", fontFamily: "monospace", outline: "none" }}
-                />
-                <button type="button" onClick={() => setVerChave((v) => !v)} aria-label={verChave ? "Esconder a chave" : "Mostrar a chave"} style={{ ...botao(false), padding: "9px 10px" }}>
-                  {verChave ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-              <p style={{ fontSize: "0.74rem", color: cor.suave, margin: "6px 0 12px", lineHeight: 1.5 }}>
-                A chave começa com <code>$aact_prod_</code>. Ela é guardada criptografada e nunca mais aparece nesta tela. Ao conectar, o FireHub confere
-                a conta, cria uma chave Pix se faltar e liga o aviso automático de pagamento — e, se estiver tudo certo, já coloca Pix e cartão no
-                cardápio (cada um pode ser desligado depois).
-              </p>
-              <button type="button" onClick={conectar} disabled={!aceitou || !chave.trim() || !!enviando} style={botao(true, !aceitou || !chave.trim() || !!enviando)}>
-                <Zap size={14} /> {enviando === "conectar" ? "Conferindo a conta no Asaas…" : "Conectar conta Asaas"}
-              </button>
-              {!aceitou && (
-                <div style={{ fontSize: "0.74rem", color: cor.ambar, marginTop: 6 }}>Marque que leu as regras para conectar.</div>
-              )}
-            </Bloco>
-          ) : (
-            <div style={{ fontSize: "0.82rem", color: cor.suave }}>Só o titular da loja pode conectar a conta Asaas.</div>
+          {/* Tudo o que é para LER fica aqui, recolhido. */}
+          <button
+            type="button"
+            onClick={() => setVerRegras((v) => !v)}
+            style={{ ...botao(false), width: "100%", justifyContent: "center" }}
+            aria-expanded={verRegras}
+          >
+            {verRegras ? "Esconder valores, prazos e regras" : "Ver valores, prazos e regras"}
+          </button>
+          {verRegras && (
+            <div style={{ marginTop: "0.85rem" }}>
+              <Bloco titulo="💰 Quanto custa">
+                <TabelaDeCustos />
+              </Bloco>
+              <Bloco titulo="⏱️ Quando o dinheiro chega">
+                <p style={{ fontSize: "0.82rem", color: cor.texto, margin: 0, lineHeight: 1.55 }}>
+                  <strong>Pix: na hora.</strong> <strong>Cartão de crédito à vista: em até 2 dias úteis.</strong> Para levar ao seu banco, faça um Pix de
+                  saída no app do Asaas (imediato; conta PJ tem 30 grátis por mês, depois R$ 2,00 cada).
+                </p>
+              </Bloco>
+              <Bloco titulo="✅ Se a conexão der erro, confira no Asaas">
+                <ol style={{ margin: 0, paddingLeft: "1.15rem" }}>
+                  {CONFERIR_NO_ASAAS.map((c) => (
+                    <li key={c.titulo} style={{ fontSize: "0.82rem", marginBottom: 6, lineHeight: 1.5 }}>
+                      <strong style={{ color: cor.texto }}>{c.titulo}.</strong> <span style={{ color: "#475569" }}>{c.texto}</span>
+                    </li>
+                  ))}
+                </ol>
+              </Bloco>
+              <Bloco titulo="📋 Regras do pagamento pelo site">
+                <ListaDeRegras />
+              </Bloco>
+            </div>
           )}
-          <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "4px 0 0", lineHeight: 1.5 }}>
-            O cliente tem {MINUTOS_PARA_PAGAR} minutos para pagar cada pedido. Você pode desligar ou desconectar quando quiser.
-          </p>
         </>
       )}
     </div>
