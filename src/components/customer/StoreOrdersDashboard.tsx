@@ -125,6 +125,10 @@ const formaNoCard = (order: any): string => {
   if (peloSite) return `${peloSite} (Pago Online)`;
   return order.paymentMethod ? translatePayment(order.paymentMethod) : "—";
 };
+/** Pedido já FINALIZADO também se cancela — o cliente às vezes pede depois de
+ *  receber —, mas com trava: só escrevendo "cancelar" (Douglas, 28/09/2026). */
+const finalizadoPedeTrava = (order: any): boolean => order?.status === "ENTREGUE";
+const travaAberta = (texto: string): boolean => texto.trim().toLowerCase() === "cancelar";
 
 const cleanAddress = (addr: string | null) => {
   if (!addr) return "";
@@ -638,7 +642,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
         : decorrido;
   const timerColor = isLate ? PALETA.grave : isUrgent ? PALETA.atencao : PALETA.areiaTinta;
 
-  const canDrag = order.status !== "CANCELADO" && order.status !== "ENTREGUE" && order.status !== "ENCERRADO";
+  // O finalizado também arrasta, mas só para Cancelado, e com trava
+  // (handleDrop → janela de cancelamento).
+  const canDrag = order.status !== "CANCELADO" && order.status !== "ENCERRADO";
 
   const isAiCreating = order.status === "CRIANDO_IA";
   const cardBackground = isDragging
@@ -1514,6 +1520,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  // Trava do cancelamento de pedido FINALIZADO: só sai escrevendo "cancelar".
+  const [travaDoCancelamento, setTravaDoCancelamento] = useState("");
   const [cancellationReasons, setCancellationReasons] = useState<{ cancelCodeId: string, description: string }[]>([]);
   const [selectedCancelCode, setSelectedCancelCode] = useState<string>("");
   const [loadingReasons, setLoadingReasons] = useState<boolean>(false);
@@ -2949,6 +2957,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const confirmCancel = async () => {
     if (!cancelConfirmId) return;
+    const alvo = orders.find(o => o.id === cancelConfirmId);
+    if (alvo && finalizadoPedeTrava(alvo) && !travaAberta(travaDoCancelamento)) return;
     const finalReason = cancelReason.trim() || cancellationReasons.find(r => r.cancelCodeId === selectedCancelCode)?.description || "Cancelado pela loja";
     setLoadingId(cancelConfirmId);
     try {
@@ -2964,12 +2974,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       if (res.ok) {
         setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA" } : o));
         router.refresh();
+        // Os mesmos avisos do updateStatus: aqui eles faltavam, e é justamente
+        // pelo cancelamento que sai o estorno do que foi pago pelo site.
+        const data = await res.json().catch(() => ({} as any));
+        if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#B45309");
+        if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
+        if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
+        if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");
       } else showToast("Erro ao cancelar.", "#C92E09");
     } catch { showToast("Erro.", "#C92E09"); } finally {
       setLoadingId(null);
       setCancelConfirmId(null);
       setCancelReason("");
       setSelectedCancelCode("");
+      setTravaDoCancelamento("");
     }
   };
   // --- DRAG HANDLERS (DOM-DRIVEN FOR INSTANT 1-CLICK DRAG) ---
@@ -3035,6 +3053,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
+
+    // Pedido FINALIZADO só vai para Cancelado, e pela janela com a trava de
+    // escrever "cancelar". Voltar para outra coluna reabriria o pedido e
+    // repetiria os efeitos da entrega (WhatsApp, nota, faturamento).
+    if (finalizadoPedeTrava(order)) {
+      if (columnId === "col-finalizado") return;
+      if (columnId !== "col-cancelados") {
+        showToast("Pedido finalizado só pode ir para Cancelado.", "#B45309");
+        return;
+      }
+      if (order.tableSessionId) {
+        showToast("Pedido de mesa se cancela pela conta da mesa.", "#B45309");
+        return;
+      }
+      setCancelConfirmId(order.id);
+      setCancelReason("");
+      setTravaDoCancelamento("");
+      return;
+    }
 
     // Prontos não é status: é o selo de "pronto na cozinha". Soltar aqui faz o
     // que o botão do card faz — e nada além disso.
@@ -3461,13 +3498,47 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   return (
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* MODAL CANCELAR PEDIDO */}
-      {cancelConfirmId && (
-        <div onClick={() => { setCancelConfirmId(null); setCancelReason(""); setSelectedCancelCode(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "400px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+      {cancelConfirmId && (() => {
+        const pedido = orders.find(o => o.id === cancelConfirmId);
+        const finalizado = finalizadoPedeTrava(pedido);
+        const podeConfirmar = !finalizado || travaAberta(travaDoCancelamento);
+        const fechar = () => { setCancelConfirmId(null); setCancelReason(""); setSelectedCancelCode(""); setTravaDoCancelamento(""); };
+        // O que muda ao cancelar um pedido que já foi entregue — só o que vale
+        // para ESTE pedido (lib/pagamento-na-entrega, api/customer-order/status).
+        const peloSite = finalizado ? pagoPeloSite(pedido) : null;
+        const doParceiro = Boolean(pedido?.ifoodOrderId || pedido?.openDeliveryOrderId);
+        const consequencias = finalizado
+          ? [
+              peloSite && `💸 O ${peloSite === "Pix" ? "Pix" : "cartão"} pago pelo site volta para o cliente (estorno no Asaas).`,
+              doParceiro && `📱 ${nomeDoCanal(pedido)}: pedido entregue se cancela pelo app deles. Aqui ele só sai das vendas.`,
+              !doParceiro && "💬 O cliente recebe o aviso de cancelamento no WhatsApp.",
+              pedido?.fiscalStatus === "EMITTED" && "🧾 A nota fiscal NÃO é cancelada junto. Veja com o contador.",
+              "📉 Sai das vendas e do caixa do dia.",
+            ].filter(Boolean) as string[]
+          : [];
+        return (
+        <div onClick={fechar} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "400px", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ textAlign: "center", marginBottom: "16px" }}>
               <div style={{ fontSize: "2rem", marginBottom: "8px" }}>⚠️</div>
-              <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1E293B" }}>Tem certeza que deseja cancelar esse pedido?</div>
+              {finalizado ? (
+                <>
+                  <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#B71C1C" }}>Esse pedido já foi finalizado</div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B", marginTop: "4px" }}>
+                    Certeza que deseja cancelar o #{getDisplayOrderNumber(pedido)}{pedido?.customerName ? ` — ${pedido.customerName}` : ""}?
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1E293B" }}>Tem certeza que deseja cancelar esse pedido?</div>
+              )}
             </div>
+            {finalizado && (
+              <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "10px", padding: "10px 12px", marginBottom: "14px" }}>
+                {consequencias.map(c => (
+                  <div key={c} style={{ fontSize: "0.8rem", color: "#7F1D1D", lineHeight: 1.45, marginBottom: "3px" }}>{c}</div>
+                ))}
+              </div>
+            )}
             <div style={{ marginBottom: "16px" }}>
               <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Selecione o motivo do cancelamento:</label>
               {loadingReasons ? (
@@ -3498,17 +3569,41 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 value={cancelReason}
                 onChange={e => setCancelReason(e.target.value)}
                 placeholder="Ex: Cliente desistiu, item indisponível..."
-                autoFocus
+                autoFocus={!finalizado}
                 style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", minHeight: "80px", outline: "none", boxSizing: "border-box" }}
               />
             </div>
+            {finalizado && (
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
+                  Para confirmar, escreva <span style={{ color: "#B71C1C", fontWeight: 900 }}>cancelar</span>:
+                </label>
+                <input
+                  value={travaDoCancelamento}
+                  onChange={e => setTravaDoCancelamento(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && podeConfirmar && !loadingId) confirmCancel(); }}
+                  placeholder="cancelar"
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck={false}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: `2px solid ${podeConfirmar ? "#0F766E" : "#CBD5E1"}`, fontSize: "0.95rem", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+            )}
             <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button onClick={() => { setCancelConfirmId(null); setCancelReason(""); setSelectedCancelCode(""); }} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#334155", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Não</button>
-              <button onClick={confirmCancel} disabled={!!loadingId} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "none", background: "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>{loadingId ? "Cancelando..." : "Sim, cancelar"}</button>
+              <button onClick={fechar} style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#334155", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Não</button>
+              <button
+                onClick={confirmCancel}
+                disabled={!!loadingId || !podeConfirmar}
+                style={{ flex: 1, padding: "0.6rem", borderRadius: "8px", border: "none", background: podeConfirmar ? "#C92E09" : "#E2E8F0", color: podeConfirmar ? "#fff" : "#94A3B8", fontWeight: 700, cursor: podeConfirmar ? "pointer" : "not-allowed", fontSize: "0.85rem", fontFamily: "inherit" }}
+              >
+                {loadingId ? "Cancelando..." : finalizado ? "Cancelar pedido finalizado" : "Sim, cancelar"}
+              </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* PRINT SELECT MODAL */}
       {printSelectOrderId && (() => {

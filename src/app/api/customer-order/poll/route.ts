@@ -1009,6 +1009,8 @@ export async function GET(req: NextRequest) {
         totalAmount: true, changeAmount: true,
         discountTotal: true, discountIfood: true, discountMerchant: true, discountDetails: true,
         status: true, source: true, notes: true, kdsStage: true,
+        // A janela de cancelar pedido finalizado avisa quando já há nota emitida.
+        fiscalStatus: true,
         // ── QUEM JÁ IMPRIMIU, IMPRIMIU: O CARIMBO DO SERVIDOR ─────────────
         //
         // Existem DOIS caminhos que imprimem sozinhos e não se conheciam: o
