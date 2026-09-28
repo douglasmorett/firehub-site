@@ -461,17 +461,36 @@ export const SUFIXO_DA_VIA_DO_ENTREGADOR = "-via-entregador";
  * um papel A MAIS, com o pedido inteiro, na impressora marcada para isso.
  *
  * Só no delivery da própria loja (lib/qr-puxar.ts, ehEntregaDaLoja) e numa
- * impressora só: a primeira marcada entre as que atendem a loja e o mundo do
- * pedido. A categoria não conta — a via é do pedido inteiro, não de um item.
+ * impressora só, entre as marcadas que atendem a loja e o mundo do pedido.
+ *
+ * Qual delas: a que RECEBEU MAIS ITENS deste pedido (`recebem`, os destinos
+ * com a contagem). A Ragnar marcou a da pizza e a do hambúrguer (28/09/2026):
+ * o pedido de pizza tira a via na pizza, o de hambúrguer no hambúrguer — é
+ * onde o pedido fica pronto e o motoboy retira. Antes saía sempre na primeira
+ * marcada, e o hambúrguer tirava a via na impressora da pizza. "Mais itens" e
+ * não "recebeu algum" porque Refrigerantes está nas duas: o hambúrguer com
+ * Coca também passa pela pizza, e é a comida que desempata. Empate (ou pedido
+ * que passou pelas duas por igual) = uma via só, na primeira da lista. Nenhuma
+ * marcada recebeu nada, ou quem chama não sabe dos destinos = a primeira marcada.
  */
 export function impressoraDaViaDoEntregador<T extends ImpressoraConfigurada>(
   impressoras: T[] | null | undefined,
-  pedido: PedidoComOrigem & { source?: unknown; deliveryType?: string | null }
+  pedido: PedidoComOrigem & { source?: unknown; deliveryType?: string | null },
+  recebem?: { nome: string | null | undefined; itens: number }[]
 ): T | null {
   if (!ehEntregaDaLoja(pedido as any)) return null;
   const daLoja = impressorasDaLoja((impressoras || []).filter((p) => p && texto(p.name)), pedido);
   const modulo = moduloDoPedido(pedido?.source as any);
   const doModulo = daLoja.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo));
   const candidatas = doModulo.length > 0 ? doModulo : daLoja;
-  return candidatas.find((imp) => imp.viaDoEntregador === true) || null;
+  const marcadas = candidatas.filter((imp) => imp.viaDoEntregador === true);
+  const itensDe = (imp: T) =>
+    (recebem || []).reduce((n, r) => (texto(r.nome).toLowerCase() === texto(imp.name).toLowerCase() ? n + (Number(r.itens) || 0) : n), 0);
+  let escolhida: T | null = marcadas[0] || null;
+  let maior = 0;
+  for (const imp of marcadas) {
+    const n = itensDe(imp);
+    if (n > maior) { maior = n; escolhida = imp; }
+  }
+  return escolhida;
 }

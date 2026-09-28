@@ -615,7 +615,7 @@ export async function GET(req: NextRequest) {
     const blocosDaVia = blocosDaViaDoEntregador(pc);
     const avisosDaVia = avisosDoPedido(pc);
     const jobsDasVias = jobs.flatMap((job: any) => {
-      const imp = impressoraDaViaDoEntregador(printers, job.order);
+      const imp = impressoraDaViaDoEntregador(printers, job.order, (job.destinos || []).map((d: any) => ({ nome: d.printer, itens: (d.items || []).length })));
       if (!imp) return [];
       const idDaVia = String(job.order.id) + SUFIXO_DA_VIA_DO_ENTREGADOR;
       return [{

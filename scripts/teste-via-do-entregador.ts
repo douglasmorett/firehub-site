@@ -83,6 +83,37 @@ confere(
   nome(impressoraDaViaDoEntregador(DUAS_MARCADAS, { ...PEDIDO_50, source: "IFOOD", deliveryBy: "MERCHANT", ifoodStoreMerchant: IFOOD_BURGER })),
   "COZINHA ENTREGA RAGNA"
 );
+// Pedido da Ragnar em 28/09: a via na pizza E no hambúrguer — cada pedido na
+// cozinha dele. Refrigerantes está nas duas, então é a comida que desempata.
+const BURGER_COM_COCA = {
+  ...PEDIDO_50,
+  items: [
+    { name: "Ragnar Duplo", category: "Burgers", qty: 1, price: 39.9 },
+    { name: "Coca-Cola Lata", category: "Refrigerantes", qty: 1, price: 7 },
+  ],
+};
+const recebem = (impressoras: ImpressoraConfigurada[], p: any) =>
+  destinosDoPedido(impressoras, p).map((d) => ({ nome: d.impressora.name, itens: d.itens.length }));
+confere(
+  "Duas marcadas, hambúrguer com Coca: via no hambúrguer (a pizza só recebeu a Coca)",
+  nome(impressoraDaViaDoEntregador(DUAS_MARCADAS, BURGER_COM_COCA, recebem(DUAS_MARCADAS, BURGER_COM_COCA))),
+  "COZINHA ENTREGA RAGNA"
+);
+confere(
+  "Duas marcadas, pizza com Coca: via na pizza",
+  nome(impressoraDaViaDoEntregador(DUAS_MARCADAS, PEDIDO_50, recebem(DUAS_MARCADAS, PEDIDO_50))),
+  "COZINHA PIZZA"
+);
+confere(
+  "Duas marcadas, só a Coca: empate, uma via só, na primeira",
+  nome(impressoraDaViaDoEntregador(DUAS_MARCADAS, { ...PEDIDO_50, items: [BURGER_COM_COCA.items[1]] }, recebem(DUAS_MARCADAS, { ...PEDIDO_50, items: [BURGER_COM_COCA.items[1]] }))),
+  "COZINHA PIZZA"
+);
+confere(
+  "Marcada que não recebeu nada não ganha a via (o BAR não está marcado; a pizza sim)",
+  nome(impressoraDaViaDoEntregador(RAGNAR, BURGER_COM_COCA, recebem(RAGNAR, BURGER_COM_COCA))),
+  "COZINHA PIZZA"
+);
 confere("Nenhuma marcada: sem via (como sempre foi)", nome(impressoraDaViaDoEntregador(RAGNAR.map(({ viaDoEntregador, ...p }) => p), PEDIDO_50)), null);
 
 console.log("\n— A comanda de cada impressora não muda —");
@@ -161,6 +192,21 @@ async function painel() {
       { impressora: "COZINHA ENTREGA RAGNA", id: PEDIDO_50.id, itens: 1, semValores: true },
       { impressora: "BAR", id: PEDIDO_50.id, itens: 1, qr: "20260927-50" },
       { impressora: "COZINHA PIZZA", id: PEDIDO_50.id + SUFIXO_DA_VIA_DO_ENTREGADOR, itens: 2, qr: "20260927-50" },
+    ]
+  );
+
+  // O cadastro que a Ragnar pediu em 28/09: as duas cozinhas sem valores e
+  // com a via — o hambúrguer tira a via dele, não a da pizza.
+  enviados.length = 0;
+  await printOrder(BURGER_COM_COCA as any, "RAGNAR BURGER", { ...config, printers: DUAS_MARCADAS }, {}, false);
+  confere(
+    "Hambúrguer pelo painel, duas marcadas: comanda sem valores em cada cozinha e a via no hambúrguer",
+    enviados.map((b) => [b.printer, String(b.order.id).endsWith(SUFIXO_DA_VIA_DO_ENTREGADOR) ? "via" : b.order.semValores === true ? "sem valores" : "comanda"]),
+    [
+      ["COZINHA PIZZA", "sem valores"],
+      ["COZINHA ENTREGA RAGNA", "sem valores"],
+      ["BAR", "comanda"],
+      ["COZINHA ENTREGA RAGNA", "via"],
     ]
   );
 

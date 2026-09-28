@@ -585,6 +585,8 @@ export async function printOrder(
   let aguardando = false;
 
   const pedidas = categoriasPedidas(uniquePrinters, pedidoParaRotear);
+  // Quem ficou com itens do pedido: é onde a via do entregador sai (abaixo).
+  const receberam: { nome: string; itens: number }[] = [];
 
   for (const printer of uniquePrinters) {
     if (!printer.name) continue;
@@ -594,6 +596,7 @@ export async function printOrder(
     // burger. (Antes saía o pedido inteiro — ver roteamento-de-impressao.ts.)
     if (daImpressora === null) continue;
     const itemsToPrint = daImpressora.map(i => i.item);
+    receberam.push({ nome: printer.name, itens: itemsToPrint.length });
 
     // O que foi para as outras impressoras, para o papel desta dizer "Em outra
     // impressora (2 itens)" em vez de "Outros valores do pedido" (mesma regra
@@ -653,7 +656,7 @@ export async function printOrder(
   // mais na impressora marcada — a mesma regra da fila da nuvem. O id com
   // sufixo é o que impede o Assistente de tomá-la por segunda via da comanda
   // que acabou de sair na mesma impressora. O "Cupom da cozinha" não a leva.
-  const daVia = semValores ? null : impressoraDaViaDoEntregador(todasAsImpressoras, order as any);
+  const daVia = semValores ? null : impressoraDaViaDoEntregador(todasAsImpressoras, order as any, receberam);
   if (daVia) {
     const via = await printToDevice(
       daVia.name,
