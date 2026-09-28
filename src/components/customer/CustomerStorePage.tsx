@@ -3789,7 +3789,11 @@ export default function CustomerStorePage({
                       <div className="product-info">
                         <div className="product-name">
                           {p.name}
-                          {p.isCombo && <span className="product-combo-tag">📦 COMBO</span>}
+                          {/* `isCombo` só diz que o produto tem perguntas — pizza por
+                              tamanho, lanche com adicionais. O selo é para o que a loja
+                              chama de combo (Pizzaria 17, 28/09/2026: "nas pizzas não
+                              pode aparecer essa palavrinha combo"). */}
+                          {p.isCombo && /combo/i.test(`${p.name} ${p.category || ""}`) && <span className="product-combo-tag">📦 COMBO</span>}
                         </div>
                         {p.description && <p className="product-desc">{p.description}</p>}
                         {(p as any).tags && (() => {
