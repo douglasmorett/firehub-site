@@ -223,12 +223,14 @@ export async function PUT(req: Request) {
   // outras coisas. A tela de entrega nao conhece esses outros campos, entao
   // ela manda so `areasDeRisco` e a mesclagem acontece AQUI — mandar o
   // deliveryConfig inteiro de la apagaria o frete gratis da loja.
-  if (body.areasDeRisco !== undefined) {
-    const atual = (loja as any)?.deliveryConfig;
-    const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
-    const limpas = (Array.isArray(body.areasDeRisco) ? body.areasDeRisco : [])
+  // Um contorno desenhado, limpo para gravar: nome curto, vértices numéricos,
+  // no máximo 200 pontos por contorno e 50 contornos. Vale para a área de
+  // risco e para o contorno de atendimento — são o mesmo desenho, com
+  // sentidos opostos.
+  const limparContornos = (lista: unknown, nomePadrao: string) =>
+    (Array.isArray(lista) ? lista : [])
       .map((a: any) => ({
-        nome: String(a?.nome || "Área de risco").slice(0, 80),
+        nome: String(a?.nome || nomePadrao).slice(0, 80),
         ativa: a?.ativa !== false,
         pontos: (Array.isArray(a?.pontos) ? a.pontos : [])
           .map((p: any) => [Number(p?.[0] ?? p?.lat), Number(p?.[1] ?? p?.lng)])
@@ -237,10 +239,24 @@ export async function PUT(req: Request) {
       }))
       .filter((a: any) => a.pontos.length >= 3)
       .slice(0, 50);
-    // Sobre o que ja tiver sido mesclado acima, nao sobre o do banco: as duas
+  const configJaMontado = () => {
+    const atual = (loja as any)?.deliveryConfig;
+    const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
+    // Sobre o que ja tiver sido mesclado acima, nao sobre o do banco: as
     // coisas podem vir no MESMO salvar.
-    const jaMontado = daLoja.deliveryConfig && typeof daLoja.deliveryConfig === "object" ? daLoja.deliveryConfig : base;
-    daLoja.deliveryConfig = { ...jaMontado, areasDeRisco: limpas };
+    return daLoja.deliveryConfig && typeof daLoja.deliveryConfig === "object" ? daLoja.deliveryConfig : base;
+  };
+  if (body.areasDeRisco !== undefined) {
+    daLoja.deliveryConfig = { ...configJaMontado(), areasDeRisco: limparContornos(body.areasDeRisco, "Área de risco") };
+  }
+
+  // ── CONTORNO DE ATENDIMENTO: ONDE A LOJA ENTREGA, POR CIMA DO RAIO ────
+  //
+  // Mora no deliveryConfig como a área de risco, e pelo mesmo motivo: não
+  // mexe no `deliveryZones`, então a loja mantém as faixas por km E o desenho
+  // (lib/limite-de-atendimento.ts). Mesma mesclagem campo a campo.
+  if (body.limiteDeAtendimento !== undefined) {
+    daLoja.deliveryConfig = { ...configJaMontado(), limiteDeAtendimento: limparContornos(body.limiteDeAtendimento, "Onde a loja entrega") };
   }
 
   // ── PAGAMENTO DO ENTREGADOR ──────────────────────────────────────────

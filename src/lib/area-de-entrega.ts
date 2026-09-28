@@ -40,6 +40,7 @@ import { geocodificadorDaTaxa, geocodificadorDaTaxaPara } from "@/lib/geocodific
 import { coordenadaGrosseira } from "@/lib/coordenadas-do-parceiro";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
+import { foraDoLimiteDeAtendimento } from "@/lib/limite-de-atendimento";
 import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
 
 export type LojaParaEntrega = {
@@ -109,6 +110,8 @@ export type VeredictoDeEntrega = {
   aproximado?: boolean;
   /** O nome da área de risco que recusou, quando foi esse o motivo. */
   areaDeRisco?: string;
+  /** O contorno de atendimento (lib/limite-de-atendimento.ts) de que o ponto ficou fora, quando foi esse o motivo. */
+  foraDoLimite?: string;
   /** Para log e para a nota do pedido. */
   motivo: string;
 
@@ -405,6 +408,23 @@ export async function avaliarEntrega(
     };
   }
 
+  // ── CONTORNO DE ATENDIMENTO: FORA DELE É FORA ──────────────────────────
+  //
+  // O contorno que a loja desenhou por cima do raio/rota/bairro
+  // (lib/limite-de-atendimento.ts): o círculo do raio atravessa a Dutra e a
+  // moto não vai (R&D Pizzaria, 27/09/2026). Só com coordenada do cliente
+  // (pino, GPS ou parceiro) — o ponto que o mapa achar pelo texto é checado
+  // no modo KM, depois de saber se ele é confiável. No modo POLIGONO as
+  // áreas desenhadas já são o contorno; ali isto não vale.
+  const limiteDireto = modo === "POLIGONO" ? null : foraDoLimiteDeAtendimento(coords, loja.deliveryConfig);
+  if (limiteDireto) {
+    return {
+      modo, resultado: "FORA", taxa: null, tempoMin: null, foraDoLimite: limiteDireto,
+      ponto: coords ? { ...coords, origem: origemDasCoords } : undefined,
+      motivo: `endereço fora do contorno de atendimento da loja (${limiteDireto})`,
+    };
+  }
+
   // ── ÁREA DESENHADA ────────────────────────────────────────────────────
   //
   // Geometria pura: o ponto do cliente está dentro do contorno ou não está.
@@ -645,6 +665,27 @@ export async function avaliarEntrega(
   };
   const doPonto = pede ? ` — ponto aproximado: ${motivos.join("; ")}` : "";
 
+  // Contorno de atendimento, com o ponto que o MAPA achou (a coordenada do
+  // cliente já foi checada lá em cima). Ponto aproximado fora do contorno não
+  // é FORA: o centro do bairro pode cair do outro lado da rodovia com a casa
+  // do lado de cá — é "confirme no mapa", como no raio.
+  if (!coords) {
+    const foraDoLimite = foraDoLimiteDeAtendimento(ponto, loja.deliveryConfig);
+    if (foraDoLimite) {
+      if (pede) {
+        return {
+          ...base, resultado: "DESCONHECIDO", taxa: null, tempoMin: null, pedeConfirmacao: true,
+          motivosDaConfirmacao: motivos.length ? motivos : ["o ponto aproximado caiu fora do contorno de atendimento"],
+          motivo: `ponto aproximado fora do contorno de atendimento (${foraDoLimite})${doPonto}`,
+        };
+      }
+      return {
+        ...base, resultado: "FORA", taxa: null, tempoMin: null, foraDoLimite,
+        motivo: `endereço fora do contorno de atendimento da loja (${foraDoLimite})`,
+      };
+    }
+  }
+
   if (check.isWithinRadius) {
     const faixaKm = check.faixaKm;
     return {
@@ -688,6 +729,7 @@ export function descreverVeredicto(v: VeredictoDeEntrega): string {
     // A área de risco tem motivo próprio: "fora do raio" seria mentira para um
     // endereço a 900 m, e quem lê o log ia procurar erro no cálculo.
     if (v.areaDeRisco) return `área não atendida pela loja (${v.areaDeRisco})`;
+    if (v.foraDoLimite) return `fora do contorno de atendimento da loja (${v.foraDoLimite})`;
     return v.modo === "BAIRRO" ? "bairro não atendido" : `${v.distanciaKm} km, fora do raio de ${v.raioMaxKm} km`;
   }
   // "Não deu para perguntar" não é "o mapa não conhece": a loja confere

@@ -1237,6 +1237,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           zoneType={user.deliveryZoneType || "KM"}
           initialIfoodSyncDeliveryTime={(user as any).ifoodSyncDeliveryTime ?? false}
           initialAreasDeRisco={((user as any).deliveryConfig as any)?.areasDeRisco || []}
+          initialLimiteDeAtendimento={((user as any).deliveryConfig as any)?.limiteDeAtendimento || []}
           // O `separado` gravado, na mesma leitura de lib/repasse-do-entregador.ts
           // (lerRegraDeRepasse: só `true` liga). Sem ele, "Quanto o motoboy
           // recebe" abria num palpite até o GET da tela voltar (E1). `null`
@@ -1266,6 +1267,9 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                 // resto da configuração de entrega. Mandado como campo próprio
                 // para a rota mesclar sem apagar o que já está lá.
                 areasDeRisco: data.areasDeRisco || [],
+                // O contorno de onde a loja entrega, por cima do raio — mesmo
+                // caminho (lib/limite-de-atendimento.ts).
+                limiteDeAtendimento: data.limiteDeAtendimento || [],
               }),
             });
             const result = await res.json().catch(() => ({}));

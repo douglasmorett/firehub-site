@@ -1,6 +1,7 @@
 import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
 import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { limitesDeAtendimento } from "@/lib/limite-de-atendimento";
 import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
 import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
 import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
@@ -1043,11 +1044,13 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     ? "O bairro informado NÃO está entre os bairros que a loja entrega."
     : v.areaDeRisco
       ? `Esse endereço fica numa região que a loja NÃO atende ("${v.areaDeRisco}").`
+      : v.foraDoLimite
+        ? `Esse endereço fica FORA do contorno que a loja desenhou como área de atendimento ("${v.foraDoLimite}") — mesmo estando dentro do raio.`
       : v.modo === "POLIGONO"
         ? "Esse endereço está FORA da área que a loja desenhou como área de entrega."
         : `${ondeFoiMedido} — ${distancia ? distancia.distancia : `${v.distanciaKm} km da loja`}, e ${distancia?.limite || `a loja entrega até ${v.raioMaxKm} km`}.`}
 - RESULTADO: 🛑 FORA DA ÁREA DE ENTREGA. É PROIBIDO anotar entrega para este endereço, cotar taxa ou pedir pagamento.
-- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && !v.areaDeRisco && distancia?.limite ? ` (fica a ${distancia.distancia}; ${distancia.limite})` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.${v.peloBairro ? `
+- Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && !v.areaDeRisco && !v.foraDoLimite && distancia?.limite ? ` (fica a ${distancia.distancia}; ${distancia.limite})` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.${v.peloBairro ? `
 - Essa distância foi medida pelo CENTRO DO BAIRRO (o mapa não achou a rua). Se o cliente disser que mora na parte do bairro mais perto da loja, peça a LOCALIZAÇÃO dele (${COMO_MANDAR_A_LOCALIZACAO}) — com ela o sistema mede de novo.` : ""}
 `;
       } else if (pedirLocalizacao === "desconhecido") {
@@ -1469,6 +1472,13 @@ ${(() => {
     taxaText = `- Taxa Padrão de Entrega da Loja: R$ ${Number(fixedFee).toFixed(2)}`;
   } else {
     taxaText = "- A loja NÃO tem taxa fixa cadastrada. NUNCA invente um valor de entrega: peça o endereço e diga que a taxa é confirmada pelo mapa.";
+  }
+  // O contorno desenhado por cima do raio/rota/bairro (lib/limite-de-atendimento.ts):
+  // sem esta linha o robô dizia "entregamos até 3 km" para quem mora a 1 km
+  // do outro lado da Dutra.
+  const contornos = modoDaAreaDaLoja === "POLIGONO" ? [] : limitesDeAtendimento(dc).filter((l) => l.ativa !== false);
+  if (contornos.length > 0) {
+    taxaText += `\n- A LOJA DESENHOU NO MAPA O CONTORNO DE ONDE ENTREGA (${contornos.map((l) => l.nome).join(", ")}). Endereço FORA desse contorno NÃO é atendido, mesmo dentro do raio/faixa. Quem decide é a validação no mapa — NUNCA afirme que atende só pela distância.`;
   }
   if (freeMin > 0) taxaText += `\n- FRETE GRÁTIS para pedidos acima de R$ ${Number(freeMin).toFixed(2)}`;
   else taxaText += `\n- NÃO EXISTE frete grátis nesta loja. NUNCA prometa isenção de taxa por valor de pedido.`;

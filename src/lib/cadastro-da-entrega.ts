@@ -504,7 +504,7 @@ export type PreviaDaTabelaDaTela =
       /** FORA já em linha reta, num cadastro por rota: pela rua só aumenta. */
       foraJaEmLinhaReta: boolean;
     }
-  | { tipo: "sem-previa"; motivo: "PONTO_INCERTO" | "AREA_DE_RISCO" | "SEM_MEDIDA_PELA_RUA" };
+  | { tipo: "sem-previa"; motivo: "PONTO_INCERTO" | "AREA_DE_RISCO" | "FORA_DO_LIMITE" | "SEM_MEDIDA_PELA_RUA" };
 
 export function previaDaTabelaDaTela(
   metodo: unknown,
@@ -517,12 +517,15 @@ export function previaDaTabelaDaTela(
   },
   faixas: { km: number; fee: number; time?: number; motoboyFee?: number | null }[],
   naAreaDeRisco: boolean,
+  /** O ponto caiu fora do contorno de atendimento desta tela (lib/limite-de-atendimento.ts). */
+  foraDoLimite = false,
 ): PreviaDaTabelaDaTela | null {
   const d = resposta?.distanceKm;
   if (d == null || !Number.isFinite(Number(d))) return null;
   if (resposta.precisaConfirmarNoMapa === true || resposta.unknown === true || resposta.pedeConfirmacao === true) {
     return { tipo: "sem-previa", motivo: "PONTO_INCERTO" };
   }
+  if (foraDoLimite && !naAreaDeRisco) return { tipo: "sem-previa", motivo: "FORA_DO_LIMITE" };
   if (naAreaDeRisco) return { tipo: "sem-previa", motivo: "AREA_DE_RISCO" };
   const r = faixaDaDistancia(faixas, Number(d));
   if (r.resultado === "SEM_FAIXA") return null;

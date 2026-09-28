@@ -212,6 +212,12 @@ export async function GET(req: NextRequest) {
     const mensagemDeFora =
       v.areaDeRisco
         ? "A loja não entrega nesse endereço."
+        : v.foraDoLimite
+          // Contorno desenhado por cima do raio (lib/limite-de-atendimento.ts):
+          // "fora do raio" seria mentira para quem está a 1 km do outro lado
+          // da rodovia. O ponto pode ser o mapa errando a casa — o checkout
+          // oferece o pino (podeConfirmarNoMapa abaixo).
+          ? "Esse endereço fica fora da área que a loja atende. Se o ponto no mapa não for a sua casa, ajuste e tentamos de novo."
         : v.modo === "BAIRRO"
           ? "Bairro não atendido pela loja. Por favor, selecione um dos bairros cadastrados."
           : v.modo === "POLIGONO"

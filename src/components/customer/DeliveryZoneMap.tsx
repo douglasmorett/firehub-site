@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { areasDeRisco as lerAreasDeRisco, areaDeRiscoDoPonto, type AreaDeRisco } from "@/lib/area-de-risco";
+import { areasDeRisco as lerAreasDeRisco, areaDeRiscoDoPonto, dentroDoPoligono, type AreaDeRisco } from "@/lib/area-de-risco";
+import { limitesDeAtendimento as lerLimites, foraDoLimiteDeAtendimento, type LimiteDeAtendimento } from "@/lib/limite-de-atendimento";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import {
   lerValorDigitado,
@@ -162,6 +163,8 @@ interface Props {
   initialIfoodSyncDeliveryTime?: boolean;
   /** As áreas de risco já gravadas (User.deliveryConfig.areasDeRisco). */
   initialAreasDeRisco?: unknown;
+  /** O contorno de onde a loja entrega, por cima do raio (User.deliveryConfig.limiteDeAtendimento). */
+  initialLimiteDeAtendimento?: unknown;
   /**
    * O `separado` gravado (User.deliveryConfig.repasseDoEntregador.separado),
    * lido pela página com o resto do cadastro: a opção "Quanto o motoboy
@@ -179,6 +182,7 @@ interface Props {
     storeAddress?: string;
     ifoodSyncDeliveryTime?: boolean;
     areasDeRisco?: AreaDeRisco[];
+    limiteDeAtendimento?: LimiteDeAtendimento[];
   }) => Promise<void>;
 }
 
@@ -281,7 +285,7 @@ function CampoNumerico({
   );
 }
 
-export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialAreasDeRisco, initialRepasseSeparado, onSave }: Props) {
+export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialAreasDeRisco, initialLimiteDeAtendimento, initialRepasseSeparado, onSave }: Props) {
   const pontoInicial = useMemo(() => lerPontoDaLoja(initialLatLng), [initialLatLng]);
   // O cadastro gravado, lido como o MOTOR lê (lib/cadastro-da-entrega.ts,
   // lerZonasGravadas): lista, ou a lista em TEXTO, com o contorno das áreas
@@ -330,6 +334,17 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
    */
   const [areasDeRisco, setAreasDeRisco] = useState<AreaDeRisco[]>(() => lerAreasDeRisco(initialAreasDeRisco));
   /**
+   * Onde a loja ENTREGA, desenhado por cima do raio/rota/bairro
+   * (lib/limite-de-atendimento.ts). Mora no deliveryConfig, ao lado das áreas
+   * de risco — e não em `deliveryZones`, que é o que faz ele conviver com as
+   * faixas de km. A R&D Pizzaria (27/09/2026) queria "um mapa por km e outro
+   * por desenho, os dois juntos": desenhava, trocava de método e perdia o
+   * desenho, porque as áreas desenhadas e as faixas dividem o mesmo campo.
+   * No método "Desenhar no mapa" o contorno não vale (as áreas já são ele),
+   * mas fica guardado.
+   */
+  const [limites, setLimites] = useState<LimiteDeAtendimento[]>(() => lerLimites(initialLimiteDeAtendimento));
+  /**
    * As áreas de ENTREGA desenhadas. Moram em `deliveryZones`, como as faixas
    * de km e os bairros: é um cadastro só, e a modalidade escolhida diz qual
    * deles vale.
@@ -355,7 +370,32 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
    * O clique no mapa é o mesmo; só o destino do contorno muda — e sem isto o
    * contorno de entrega acabaria na lista de áreas de risco.
    */
-  const [alvoDoDesenho, setAlvoDoDesenho] = useState<"RISCO" | "ENTREGA">("RISCO");
+  const [alvoDoDesenho, setAlvoDoDesenho] = useState<"RISCO" | "ENTREGA" | "LIMITE">("RISCO");
+
+  /**
+   * Trocar de método SEM perder o desenho. As áreas de entrega desenhadas e
+   * as faixas de km dividem o mesmo campo, então sair de "Desenhar no mapa"
+   * deixa as áreas de fora do próximo Salvar. Antes isso acontecia calado —
+   * o lojista voltava para o raio e "sumia tudo". Agora ele escolhe: levar o
+   * desenho como CONTORNO de onde entrega (a taxa passa a ser a do método
+   * novo; fora do contorno a loja não atende) ou deixar para lá.
+   */
+  const trocarMetodo = (novo: string) => {
+    if (novo === currentZoneType) return;
+    if (currentZoneType === "POLIGONO" && areasDeEntrega.length > 0) {
+      const quantas = areasDeEntrega.length === 1 ? "a área desenhada deixa" : `as ${areasDeEntrega.length} áreas desenhadas deixam`;
+      const levar = window.confirm(
+        `Trocando para "${nomeDoMetodo(novo)}", ${quantas} de ser a área de entrega: a taxa passa a ser a do novo método.\n\n` +
+        `Quer MANTER o desenho como o contorno de onde você entrega? Dentro dele vale a tabela nova; fora dele a loja não atende. ` +
+        `(Clique em Cancelar para trocar sem manter o desenho.)`,
+      );
+      if (levar) {
+        setLimites((atual) => [...atual, ...areasDeEntrega.map((a) => ({ nome: a.nome, pontos: a.pontos, ativa: true }))]);
+      }
+    }
+    if (desenhando) setDesenhando(null);
+    setCurrentZoneType(novo);
+  };
   // O clique do mapa é registrado uma vez só, no início; ele lê estes refs
   // para saber o que fazer AGORA, em vez de capturar o estado de então.
   const desenhandoRef = useRef<[number, number][] | null>(null);
@@ -794,6 +834,24 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       riscoRef.current.push(contorno);
     }
 
+    // O contorno de onde a loja entrega: verde cheio, por cima do círculo do
+    // raio. Fora do método de desenho ele é a regra; dentro dele, só um
+    // lembrete apagado do que está guardado.
+    for (const limite of limites) {
+      const vale = !porDesenho && limite.ativa !== false;
+      const contorno = L.polygon(limite.pontos, {
+        color: vale ? "#0F766E" : "#94A3B8",
+        weight: 3,
+        fillColor: vale ? "#0F766E" : "#94A3B8",
+        fillOpacity: vale ? 0.08 : 0.04,
+      }).addTo(map);
+      contorno.bindTooltip(
+        `✅ ${limite.nome}${limite.ativa === false ? " (desligado)" : porDesenho ? " (não vale em 'Desenhar no mapa')" : " — a loja entrega só aqui dentro"}`,
+        { sticky: true },
+      );
+      riscoRef.current.push(contorno);
+    }
+
     for (const area of areasDeRisco) {
       const poligono = L.polygon(area.pontos, {
         color: area.ativa === false ? "#94A3B8" : "#C92E09",
@@ -809,10 +867,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     // O que está sendo desenhado agora: os vértices já clicados e a linha
     // entre eles, para a loja ver o contorno enquanto clica.
     if (desenhando && desenhando.length > 0) {
-      // Verde quando o contorno é de ENTREGA, vermelho quando é de recusa: a
-      // loja está clicando no mesmo mapa para as duas coisas, e a cor é o que
-      // diz qual delas está desenhando agora.
-      const corDoTracado = alvoDoDesenho === "ENTREGA" ? "#0F766E" : "#C92E09";
+      // Verde quando o contorno é de ENTREGA (ou o LIMITE de onde entrega),
+      // vermelho quando é de recusa: a loja está clicando no mesmo mapa para
+      // as duas coisas, e a cor é o que diz qual delas está desenhando agora.
+      const corDoTracado = alvoDoDesenho === "RISCO" ? "#C92E09" : "#0F766E";
       for (const p of desenhando) {
         const bolinha = L.circleMarker(p, { radius: 5, color: corDoTracado, fillColor: "#fff", fillOpacity: 1, weight: 2 }).addTo(map);
         riscoRef.current.push(bolinha);
@@ -822,7 +880,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         riscoRef.current.push(linha);
       }
     }
-  }, [areasDeRisco, areasDeEntrega, desenhando, alvoDoDesenho, leafletLoaded, mapaPronto]);
+  }, [areasDeRisco, areasDeEntrega, limites, porDesenho, desenhando, alvoDoDesenho, leafletLoaded, mapaPronto]);
 
   // Autocomplete live search as user types
   const handleAddressChange = (val: string) => {
@@ -1128,7 +1186,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     // exemplo da loja nova não é cadastro de ninguém. As áreas desenhadas
     // contam mesmo sem salvar — são o trabalho que a pessoa fez nesta tela.
     const perdas: string[] = [];
-    if (!porDesenho && areasDeEntrega.length > 0) perdas.push(`${areasDeEntrega.length} área(s) desenhada(s) no mapa`);
+    // O desenho que a loja levou como contorno de onde entrega (trocarMetodo)
+    // não se perde: continua no mapa, agora como limite por cima da tabela.
+    const desenhoVirouContorno = areasDeEntrega.length > 0 && areasDeEntrega.every((a) => limites.some((l) => l.pontos === a.pontos));
+    if (!porDesenho && areasDeEntrega.length > 0 && !desenhoVirouContorno) perdas.push(`${areasDeEntrega.length} área(s) desenhada(s) no mapa`);
     if (!porBairro && salvo.temCadastro && salvo.tipo === "NEIGHBORHOOD" && bairros.some((b) => b.name.trim())) perdas.push(`${bairros.filter((b) => b.name.trim()).length} bairro(s) cadastrado(s)`);
     if (!porDistancia && salvo.temCadastro && (salvo.tipo === "KM" || salvo.tipo === "ROTA") && faixas.length > 0) perdas.push(`${faixas.length} faixa(s) de distância`);
     if (perdas.length > 0) {
@@ -1176,6 +1237,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         deliveryZoneType: cadastro.tipo || currentZoneType,
         ...(trocarEndereco ? { storeAddress: address.trim() } : {}),
         areasDeRisco,
+        limiteDeAtendimento: limites,
       });
 
       // ── CONFERÊNCIA NO BANCO ──────────────────────────────────────────
@@ -1352,7 +1414,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     // têm faixa (lib/cadastro-da-entrega.ts, previaDaTabelaDaTela). A área de
     // risco é a desta tela, que é a que valerá depois de salvar.
     const naAreaDeRisco = !!areaDeRiscoDoPonto(simulacao.ponto ?? null, areasDeRisco);
-    return previaDaTabelaDaTela(currentZoneType, simulacao, lista, naAreaDeRisco);
+    // O contorno de onde a loja entrega, também o desta tela.
+    const foraDoLimite = !!foraDoLimiteDeAtendimento(simulacao.ponto ?? null, limites);
+    return previaDaTabelaDaTela(currentZoneType, simulacao, lista, naAreaDeRisco, foraDoLimite);
   })();
 
   // ── Textos que dependem do método ─────────────────────────────────────────
@@ -1615,7 +1679,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 <button
                   key={m.chave}
                   type="button"
-                  onClick={() => setCurrentZoneType(m.chave)}
+                  onClick={() => trocarMetodo(m.chave)}
                   aria-pressed={ativo}
                   style={{
                     display: "flex", alignItems: "flex-start", gap: 10, width: "100%", textAlign: "left",
@@ -2077,6 +2141,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                             ? <>esse endereço passa da última faixa <b>salva</b>, e a rua só é medida até ela — aqui só voltou a linha reta. <b>Salve e simule de novo</b> para medir pela rua com a tabela nova.</>
                             : p.motivo === "AREA_DE_RISCO"
                               ? <>o ponto cai numa área onde você não entrega — fica <b>fora</b> com qualquer tabela.</>
+                            : p.motivo === "FORA_DO_LIMITE"
+                              ? <>o ponto cai fora do contorno de onde você entrega — fica <b>fora</b> com qualquer tabela.</>
                               : <>sem prévia — o mapa só achou um ponto aproximado, e a faixa de um palpite não é resposta. Simule com rua e número que o mapa ache com certeza.</>
                           : p.resultado === "FORA" || !p.faixa
                             ? <><b>fora da última faixa</b>{p.foraJaEmLinhaReta ? " — já em linha reta; pela rua é ainda mais longe" : ""}.</>
@@ -2089,6 +2155,105 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               );
             })()}
           </div>
+
+          {/* ── ONDE VOCÊ ENTREGA (contorno por cima do raio/rota/bairro) ──
+              O círculo do raio atravessa a rodovia; o contorno diz até onde a
+              moto vai. Dentro dele vale a tabela de sempre; fora, a loja não
+              atende. Não aparece em "Desenhar no mapa": ali as áreas já são o
+              contorno (lib/limite-de-atendimento.ts). */}
+          {!porDesenho ? (
+            <div style={{ marginTop: "18px", paddingTop: "16px", borderTop: "1.5px solid #E2E8F0" }}>
+              <h4 style={{ fontWeight: 800, fontSize: "1rem", margin: "0 0 4px" }}>✅ Onde você entrega (contorno no mapa)</h4>
+              <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 12px", lineHeight: 1.45 }}>
+                O raio é um círculo e atravessa rodovia, rio e linha de trem. Desenhe o contorno de onde a moto vai:
+                <b> dentro dele</b> a taxa é a {porBairro ? "do bairro" : "da faixa de km"} de sempre; <b>fora dele</b> a loja não atende, mesmo perto.
+                Sem contorno, vale só {porBairro ? "a lista de bairros" : "o raio"}, como hoje.
+              </p>
+
+              {desenhando && alvoDoDesenho === "LIMITE" ? (
+                <div style={{ background: "#F0FDFA", border: "1.5px solid #99F6E4", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                  <p style={{ margin: 0, fontSize: "0.84rem", fontWeight: 800, color: "#134E4A" }}>
+                    Clique no mapa para marcar os cantos de onde você entrega
+                  </p>
+                  <p style={{ margin: "3px 0 10px", fontSize: "0.76rem", color: "#0F766E" }}>
+                    {desenhando.length} {desenhando.length === 1 ? "ponto marcado" : "pontos marcados"} — são necessários pelo menos 3. Contorne a área inteira, com a loja dentro.
+                  </p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      disabled={desenhando.length < 3}
+                      onClick={() => {
+                        const nome = (prompt("Nome deste contorno (ex.: Lado de cá da Dutra):", limites.length === 0 ? "Onde eu entrego" : `Onde eu entrego ${limites.length + 1}`) || "").trim();
+                        if (!nome) return;
+                        setLimites((atual) => [...atual, { nome, pontos: desenhando, ativa: true }]);
+                        setDesenhando(null);
+                        setAlvoDoDesenho("RISCO");
+                      }}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: desenhando.length < 3 ? "#99F6E4" : "#0F766E", color: "#fff", fontWeight: 800, fontSize: "0.82rem", cursor: desenhando.length < 3 ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+                    >
+                      ✓ Fechar contorno
+                    </button>
+                    <button type="button" onClick={() => setDesenhando(desenhando.slice(0, -1))} disabled={desenhando.length === 0}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #99F6E4", background: "#fff", color: "#0F766E", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}>
+                      ↶ Desfazer ponto
+                    </button>
+                    <button type="button" onClick={() => { setDesenhando(null); setAlvoDoDesenho("RISCO"); }}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #E2E8F0", background: "#fff", color: "#64748B", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}>
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setAlvoDoDesenho("LIMITE"); setDesenhando([]); }}
+                  disabled={!!desenhando}
+                  style={{ width: "100%", padding: "9px", borderRadius: 9, border: "1.5px dashed #5EEAD4", background: "#F0FDFA", color: "#0F766E", fontWeight: 700, fontSize: "0.84rem", cursor: desenhando ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: 12, opacity: desenhando ? 0.6 : 1 }}
+                >
+                  + Desenhar no mapa onde você entrega
+                </button>
+              )}
+
+              {limites.length === 0 && !desenhando && (
+                <p style={{ fontSize: "0.76rem", color: "#94A3B8", margin: 0, textAlign: "center" }}>
+                  Nenhum contorno — vale só {porBairro ? "a lista de bairros" : "o raio"}.
+                </p>
+              )}
+
+              {limites.map((limite, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderRadius: 9, border: "1px solid #E2E8F0", marginBottom: 6, background: limite.ativa === false ? "#F8FAFC" : "#fff" }}>
+                  <input
+                    type="checkbox"
+                    checked={limite.ativa !== false}
+                    title={limite.ativa === false ? "Voltar a limitar por este contorno" : "Parar de limitar, sem apagar o desenho"}
+                    onChange={(e) => setLimites((atual) => atual.map((a, j) => (j === i ? { ...a, ativa: e.target.checked } : a)))}
+                    style={{ width: 16, height: 16, accentColor: "#0F766E", cursor: "pointer", flexShrink: 0 }}
+                  />
+                  <input
+                    value={limite.nome}
+                    onChange={(e) => setLimites((atual) => atual.map((a, j) => (j === i ? { ...a, nome: e.target.value } : a)))}
+                    style={{ flex: 1, minWidth: 0, padding: "5px 8px", borderRadius: 7, border: "1px solid #E2E8F0", fontSize: "0.82rem", fontWeight: 700, fontFamily: "inherit", color: limite.ativa === false ? "#94A3B8" : "#0F172A" }}
+                  />
+                  <span style={{ fontSize: "0.72rem", color: "#94A3B8", whiteSpace: "nowrap" }}>{limite.pontos.length} pontos</span>
+                  <button type="button" title="Apagar este contorno"
+                    onClick={() => { if (confirm(`Apagar o contorno "${limite.nome}"?`)) setLimites((atual) => atual.filter((_, j) => j !== i)); }}
+                    style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #99F6E4", background: "#fff", color: "#0F766E", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+              {limites.some((l) => l.ativa !== false) && latLng && limites.every((l) => l.ativa === false || !dentroDoPoligono(latLng, l.pontos)) && (
+                <p style={{ fontSize: "0.76rem", color: "#B45309", margin: "6px 0 0", fontWeight: 700, lineHeight: 1.4 }}>
+                  ⚠️ A própria loja está fora de todos os contornos ligados. Confira o desenho: o contorno deve envolver a loja e os bairros que ela atende.
+                </p>
+              )}
+            </div>
+          ) : limites.length > 0 ? (
+            <p style={{ marginTop: "14px", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.45 }}>
+              {limites.length === 1 ? "O contorno de onde você entrega fica guardado" : `Os ${limites.length} contornos de onde você entrega ficam guardados`}, mas não vale{limites.length === 1 ? "" : "m"} em
+              &quot;Desenhar no mapa&quot;: aqui as próprias áreas desenhadas são o contorno.
+            </p>
+          ) : null}
 
           {/* ── ÁREAS DE RISCO ────────────────────────────────────────────
               Vale para todos os modos: raio, rota, bairro ou desenho. É a
