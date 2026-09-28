@@ -176,7 +176,7 @@ export function avaliarCupom(cupom: Cupom | null, fatos: FatosDoCupom): Veredito
     if (fatos.jaPediuPeloSite === true) {
       return {
         ok: false,
-        motivo: `O cupom ${cupom.code} vale só no seu primeiro pedido pelo site, e este telefone já fez pedido por aqui.`,
+        motivo: `O cupom ${cupom.code} vale só no primeiro pedido, e este telefone já fez pedido aqui.`,
         ...nada,
       };
     }

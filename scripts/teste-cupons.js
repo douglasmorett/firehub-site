@@ -67,7 +67,7 @@ conferir('lista sem ele -> null', cupomDePrimeiroPedido(ANTIGOS), null);
 conferir('inativo não conta', cupomDePrimeiroPedido([{ ...primeiro, active: false }]), null);
 conferir('quem nunca pediu: aceita', avaliarCupom(primeiro, fatos({ jaPediuPeloSite: false })).ok, true);
 conferir('quem já pediu: recusa', avaliarCupom(primeiro, fatos({ jaPediuPeloSite: true })).ok, false);
-conferir('a frase explica', /primeiro pedido pelo site/.test(avaliarCupom(primeiro, fatos({ jaPediuPeloSite: true })).motivo), true);
+conferir('a frase explica', /só no primeiro pedido, e este telefone já fez pedido aqui/.test(avaliarCupom(primeiro, fatos({ jaPediuPeloSite: true })).motivo), true);
 conferir('telefone desconhecido: aceita, depende do telefone', avaliarCupom(primeiro, fatos()).dependeDoTelefone, true);
 conferir('somentePrimeiroPedido (campanha) é lido igual', lerCupom({ code: 'VOLTA', discount: 10, active: true, somentePrimeiroPedido: true }).primeiroPedido, true);
 
