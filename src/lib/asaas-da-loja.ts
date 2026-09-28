@@ -107,7 +107,26 @@ export type ContaDoAsaas = {
   /** Quais partes do cadastro faltam, na língua do lojista. */
   pendenciasDoCadastro: string[];
   chavesPixAtivas: { tipo: string; chave: string }[];
+  /** O site dos dados comerciais: decide se o cartão pode voltar sozinho (`mesmoDominio`). */
+  site: string | null;
 };
+
+/**
+ * O Asaas só devolve o cliente ao site (`callback.successUrl`) se a URL for do
+ * MESMO domínio do site cadastrado nos dados comerciais da conta
+ * (docs.asaas.com/docs/redirecionamento-apos-o-pagamento). "www." não conta.
+ */
+export function mesmoDominio(site: string | null | undefined, url: string): boolean {
+  const dominio = (v: string) => {
+    try {
+      return new URL(/^https?:\/\//i.test(v) ? v : `https://${v}`).hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      return "";
+    }
+  };
+  const a = dominio(String(site || "").trim());
+  return Boolean(a) && a === dominio(url);
+}
 
 const PARTES_DO_CADASTRO: Record<string, string> = {
   commercialInfo: "dados comerciais",
@@ -162,6 +181,7 @@ export async function lerContaDoAsaas(chave: string): Promise<RespostaAsaas<Cont
       chavesPixAtivas: lista
         .filter((k) => String(k.status || "").toUpperCase() === "ACTIVE")
         .map((k) => ({ tipo: String(k.type || ""), chave: String(k.key || "") })),
+      site: c.site ? String(c.site).trim() || null : null,
     },
   };
 }
@@ -269,6 +289,10 @@ export type CobrancaGerada = {
   imagemBase64: string | null;
   /** Cartão: a página do Asaas onde o cliente digita o cartão. */
   linkDePagamento: string | null;
+  /** O Asaas aceitou devolver o cliente ao cardápio depois de pagar. */
+  voltaSozinho: boolean;
+  /** Preenchido quando a volta foi PEDIDA e o Asaas recusou (site da conta). */
+  voltaRecusada: string | null;
 };
 
 /** Hoje no fuso de Brasília, "YYYY-MM-DD" — o vencimento da cobrança. */
@@ -279,6 +303,14 @@ function hojeEmSaoPaulo(): string {
 /** Erro do Asaas que é do split (carteira, lista de carteiras, valor do split). */
 function erroDeSplit(erro: string | null): boolean {
   return /split|wallet|carteira/i.test(String(erro || ""));
+}
+
+/**
+ * Erro do Asaas que pode ser da volta ao site (`callback`): a documentação não
+ * diz o texto, e refazer sem ela nunca faz mal — então a rede é larga.
+ */
+function erroDaVolta(erro: string | null): boolean {
+  return /callback|success|url|dom[ií]nio|site|redirec/i.test(String(erro || ""));
 }
 
 /**
@@ -301,12 +333,19 @@ export async function criarCobranca(
     /** Carteira que recebe o split; null = sem split (ver `walletDoFireHub`). */
     walletDoSplit: string | null;
     valorDoSplit: number;
+    /**
+     * Cartão: para onde o Asaas devolve o cliente depois de pagar. Só vale no
+     * domínio do site cadastrado na conta (`mesmoDominio`); recusada, a
+     * cobrança sai sem ela e o cliente volta pela aba do cardápio.
+     */
+    voltarPara?: string | null;
   },
 ): Promise<RespostaAsaas<CobrancaGerada>> {
   const valor = Math.round(opts.valor * 100) / 100;
   const pediuSplit = Boolean(opts.walletDoSplit) && opts.valorDoSplit > 0;
+  const pediuVolta = opts.forma === "cartao" && Boolean(opts.voltarPara);
 
-  const corpo = (comSplit: boolean) => ({
+  const corpo = (comSplit: boolean, comVolta: boolean) => ({
     customer: opts.clienteId,
     billingType: opts.forma === "cartao" ? "CREDIT_CARD" : "PIX",
     value: valor,
@@ -325,18 +364,29 @@ export async function criarCobranca(
           ],
         }
       : {}),
+    ...(comVolta ? { callback: { successUrl: opts.voltarPara, autoRedirect: true } } : {}),
   });
 
-  let criada = await asaasDaLoja(chave, "/payments", { method: "POST", body: corpo(pediuSplit) });
+  // Recusada por causa da volta ou do split, a cobrança é refeita sem o que
+  // foi recusado: a venda da loja não para por nenhum dos dois.
+  let comSplit = pediuSplit;
+  let comVolta = pediuVolta;
   let splitRecusado: string | null = null;
-  if (!criada.ok && pediuSplit && erroDeSplit(criada.erro)) {
-    splitRecusado = criada.erro;
-    criada = await asaasDaLoja(chave, "/payments", { method: "POST", body: corpo(false) });
+  let voltaRecusada: string | null = null;
+  let criada = await asaasDaLoja(chave, "/payments", { method: "POST", body: corpo(comSplit, comVolta) });
+  for (let tentativa = 0; tentativa < 2 && !criada.ok; tentativa++) {
+    if (comVolta && erroDaVolta(criada.erro)) {
+      voltaRecusada = criada.erro;
+      comVolta = false;
+    } else if (comSplit && erroDeSplit(criada.erro)) {
+      splitRecusado = criada.erro;
+      comSplit = false;
+    } else break;
+    criada = await asaasDaLoja(chave, "/payments", { method: "POST", body: corpo(comSplit, comVolta) });
   }
   if (!criada.ok || !criada.dados?.id) {
     return { ok: false, status: criada.status, dados: null, erro: criada.erro || "O Asaas não devolveu a cobrança." };
   }
-  const comSplit = pediuSplit && !splitRecusado;
 
   const base = {
     cobrancaId: String(criada.dados.id),
@@ -346,6 +396,8 @@ export async function criarCobranca(
     copiaECola: null as string | null,
     imagemBase64: null as string | null,
     linkDePagamento: null as string | null,
+    voltaSozinho: comVolta,
+    voltaRecusada,
   };
 
   if (opts.forma === "cartao") {

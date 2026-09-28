@@ -45,7 +45,9 @@ export default function PaymentGateway({
   const semMercadoPago = soPix || cartaoPeloAsaas;
   const [method, setMethod]       = useState<PayMethod>(metodos.length === 1 ? metodos[0] : initialMethod);
   const cartaoAsaas = method === "credit_card" && cartaoPeloAsaas;
-  const [cartao, setCartao]       = useState<{ paymentId: string; linkDePagamento: string | null; expiresAt: string } | null>(null);
+  // voltaSozinho: o Asaas devolve o cliente ao cardápio depois de pagar, então
+  // a página dele abre na MESMA aba (lib/pix-online-pedido, voltaDoCartao).
+  const [cartao, setCartao]       = useState<{ paymentId: string; linkDePagamento: string | null; expiresAt: string; voltaSozinho: boolean } | null>(null);
   const [emAnalise, setEmAnalise] = useState(false);
   const [loading, setLoading]     = useState(false);
   const [pixData, setPixData]     = useState<{ paymentId: string; pixKey: string; qrCodeBase64: string | null; expiresAt: string } | null>(null);
@@ -148,7 +150,7 @@ export default function PaymentGateway({
         onError(msg);
         return;
       }
-      setCartao({ paymentId: data.paymentId, linkDePagamento: data.linkDePagamento, expiresAt: data.expiresAt });
+      setCartao({ paymentId: data.paymentId, linkDePagamento: data.linkDePagamento, expiresAt: data.expiresAt, voltaSozinho: data.voltaSozinho === true });
       startPixPolling(data.paymentId);
       if (data.expiresAt) {
         const ms = new Date(data.expiresAt).getTime() - Date.now();
@@ -635,7 +637,9 @@ export default function PaymentGateway({
             {cartao.linkDePagamento && (
               <a
                 href={cartao.linkDePagamento}
-                target="_blank"
+                // Sem a volta automática, a mesma aba prenderia o cliente na
+                // página de "pago" do Asaas: aí abre ao lado, e esta confirma.
+                target={cartao.voltaSozinho ? undefined : "_blank"}
                 rel="noopener noreferrer"
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
@@ -659,7 +663,9 @@ export default function PaymentGateway({
             </p>
           )}
           <p style={{ fontSize: "0.74rem", color: "#94A3B8", marginTop: "4px", lineHeight: 1.4 }}>
-            Depois de pagar, volte para esta tela: ela confirma sozinha quando o cartão for aprovado.
+            {cartao.voltaSozinho
+              ? "Depois de pagar, você volta para cá sozinho, com o pedido confirmado."
+              : "Depois de pagar, volte para esta tela: ela confirma sozinha quando o cartão for aprovado."}
           </p>
         </div>
       )}

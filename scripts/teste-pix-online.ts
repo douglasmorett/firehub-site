@@ -31,6 +31,7 @@ type Chamada = { metodo: string; caminho: string; corpo: any; chave: string | un
 const chamadas: Chamada[] = [];
 let qrFalha = false;
 let recusarSplit = false;
+let recusarVolta = false;
 let clientesExistentes: any[] = [];
 
 // Chaves FALSAS, montadas aqui para não parecerem credencial no código (o
@@ -64,7 +65,10 @@ const servidor = http.createServer((req, res) => {
       return responder(res, 200, { id: "acc", commercialInfo: "APPROVED", bankAccountInfo: "APPROVED", documentation: "APPROVED", general: "APPROVED" });
     }
     if (p === "/myAccount/commercialInfo/") {
-      return responder(res, 200, { companyName: "Pizzaria Teste LTDA", cpfCnpj: "12345678000195", personType: "JURIDICA" });
+      return responder(res, 200, {
+        companyName: "Pizzaria Teste LTDA", cpfCnpj: "12345678000195", personType: "JURIDICA",
+        site: "https://www.firehubfood.com.br/loja/pizzaria-teste",
+      });
     }
     if (p === "/pix/addressKeys" && req.method === "GET") {
       return responder(res, 200, { data: [{ id: "k1", key: "b6295ee1-f054-47d1-9e90-ee57b74f60d9", type: "EVP", status: "ACTIVE" }] });
@@ -72,6 +76,10 @@ const servidor = http.createServer((req, res) => {
     if (p === "/customers" && req.method === "GET") return responder(res, 200, { data: clientesExistentes });
     if (p === "/customers" && req.method === "POST") return responder(res, 200, { id: "cus_novo", ...corpo });
     if (p === "/payments" && req.method === "POST") {
+      // O texto real do Asaas não está na documentação; este é um palpite.
+      if (recusarVolta && corpo.callback) {
+        return responder(res, 400, { errors: [{ code: "invalid_callback", description: "O domínio da URL de sucesso não pertence ao site cadastrado." }] });
+      }
       if (recusarSplit && corpo.split) {
         return responder(res, 400, { errors: [{ code: "invalid_split", description: "O walletId informado no split não está autorizado." }] });
       }
@@ -124,7 +132,11 @@ async function main() {
   conferir("o texto cifrado não contém a chave", guardado.includes("aact"), false);
   conferir("abre de volta igual", decifrar(guardado), CHAVE_BOA);
   const partes = guardado.split(".");
-  partes[4] = partes[4].slice(0, -2) + (partes[4].endsWith("A") ? "B" : "A") + partes[4].slice(-1);
+  // Vira um bit de um BYTE do dado. Trocar uma letra do texto falhava 1 vez em
+  // ~64: a letra podia já ser a mesma, ou cair nos bits de sobra do base64.
+  const mexido = Buffer.from(partes[4], "base64url");
+  mexido[0] ^= 0x01;
+  partes[4] = mexido.toString("base64url");
   conferir("dado mexido não abre", decifrar(partes.join(".")), null);
   conferir("lixo não abre", decifrar("qualquer-coisa"), null);
   process.env.NEXTAUTH_SECRET = "outro-segredo";
@@ -252,6 +264,52 @@ async function main() {
   conferir("a cobrança saiu", semSplitAceito.ok, true);
   conferir("sem split", semSplitAceito.dados?.split, 0);
   conferir("guarda o motivo do Asaas", semSplitAceito.dados?.splitRecusado, "O walletId informado no split não está autorizado.");
+
+  console.log("\n== Cartão: o Asaas devolve o cliente ao cardápio ==");
+  const VOLTA = "https://firehubfood.com.br/loja/pizzaria-teste?pagamento=cartao2";
+  const cobrarCartao = () => asaas.criarCobranca(CHAVE_BOA, {
+    forma: "cartao", clienteId: "cus_nosso", valor: 100, descricao: "Pedido #14", referencia: "pedido:cartao2",
+    walletDoSplit: carteira, valorDoSplit: 1, voltarPara: VOLTA,
+  });
+  chamadas.length = 0;
+  const comVolta = await cobrarCartao();
+  const corpoComVolta = chamadas.find((c) => c.metodo === "POST" && c.caminho === "/payments")?.corpo;
+  conferir("pede a volta ao cardápio", corpoComVolta?.callback, { successUrl: VOLTA, autoRedirect: true });
+  conferir("volta aceita", comVolta.dados?.voltaSozinho, true);
+
+  chamadas.length = 0;
+  recusarVolta = true;
+  const voltaRecusada = await cobrarCartao();
+  recusarVolta = false;
+  const tentativasDaVolta = chamadas.filter((c) => c.metodo === "POST" && c.caminho === "/payments");
+  conferir("volta recusada: refaz sem ela", tentativasDaVolta.map((c) => Boolean(c.corpo?.callback)), [true, false]);
+  conferir("volta recusada: a cobrança sai", voltaRecusada.ok, true);
+  conferir("volta recusada: o split continua", tentativasDaVolta[1]?.corpo?.split?.[0]?.fixedValue, 1);
+  conferir("volta recusada: não volta sozinho", voltaRecusada.dados?.voltaSozinho, false);
+  conferir("volta recusada: guarda o motivo", voltaRecusada.dados?.voltaRecusada, "O domínio da URL de sucesso não pertence ao site cadastrado.");
+
+  chamadas.length = 0;
+  recusarVolta = true;
+  recusarSplit = true;
+  const semNada = await cobrarCartao();
+  recusarVolta = false;
+  recusarSplit = false;
+  const tresTentativas = chamadas.filter((c) => c.metodo === "POST" && c.caminho === "/payments");
+  conferir("volta e split recusados: tira um de cada vez", tresTentativas.map((c) => [Boolean(c.corpo?.callback), Boolean(c.corpo?.split)]), [[true, true], [false, true], [false, false]]);
+  conferir("volta e split recusados: a cobrança sai", semNada.ok, true);
+
+  chamadas.length = 0;
+  await asaas.criarCobranca(CHAVE_BOA, {
+    forma: "pix", clienteId: "cus_nosso", valor: 50, descricao: "x", referencia: "pedido:pixvolta", walletDoSplit: null, valorDoSplit: 0, voltarPara: VOLTA,
+  });
+  conferir("Pix não leva a volta (é pago na tela do cardápio)", chamadas.find((c) => c.caminho === "/payments")?.corpo?.callback, undefined);
+
+  conferir("mesmo domínio: www não conta", asaas.mesmoDominio("https://www.firehubfood.com.br", VOLTA), true);
+  conferir("mesmo domínio: site sem https", asaas.mesmoDominio("firehubfood.com.br/loja/hakim", VOLTA), true);
+  conferir("outro domínio", asaas.mesmoDominio("https://pizzariateste.com.br", VOLTA), false);
+  conferir("sem site", asaas.mesmoDominio(null, VOLTA), false);
+  const contaComSite = await asaas.lerContaDoAsaas(CHAVE_BOA);
+  conferir("lê o site dos dados comerciais", contaComSite.dados?.site, "https://www.firehubfood.com.br/loja/pizzaria-teste");
 
   console.log("\n== Pago, estornado ==");
   conferir("RECEIVED é pago", asaas.cobrancaPaga("RECEIVED"), true);

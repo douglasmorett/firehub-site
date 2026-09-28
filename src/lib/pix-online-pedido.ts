@@ -31,6 +31,7 @@ import {
   estornarCobranca,
   excluirCobranca,
   asaasDaLoja,
+  mesmoDominio,
   walletDoFireHub,
 } from "@/lib/asaas-da-loja";
 import { MINUTOS_PARA_PAGAR, SPLIT_FIREHUB_PERCENTUAL, reais, splitDoFireHub, type FormaOnline } from "@/lib/pix-online";
@@ -45,6 +46,31 @@ export const pedidoDaReferencia = (ref: string | null | undefined): string | nul
 
 export function prazoParaPagar(criadoEm: Date): Date {
   return new Date(criadoEm.getTime() + MINUTOS_PARA_PAGAR * 60_000);
+}
+
+/**
+ * O endereço público do cardápio. Mesma guarda de `urlDoSite` (lib/meta-ads):
+ * no Coolify o NEXTAUTH_URL já veio mascarado como "[SENSITIVE]".
+ */
+export function siteDoFireHub(): string {
+  const bruto = (process.env.NEXTAUTH_URL || "").trim();
+  const ok = Boolean(bruto) && !bruto.includes("[SENSITIVE]") && /^https?:\/\//i.test(bruto);
+  return (ok ? bruto : "https://firehubfood.com.br").replace(/\/$/, "");
+}
+
+/** O cardápio da loja — o site que o lojista cadastra no Asaas para o cartão voltar sozinho. */
+export function cardapioDaLoja(slug: string): string {
+  return `${siteDoFireHub()}/loja/${encodeURIComponent(slug)}`;
+}
+
+/**
+ * Para onde o Asaas devolve o cliente depois de pagar o cartão. O cardápio lê
+ * `?pagamento=<pedido>` e reabre a tela do pagamento, que confirma sozinha
+ * (CustomerStorePage). O que confirma o pagamento é a consulta ao Asaas, nunca
+ * a chegada a esta URL.
+ */
+export function voltaDoCartao(slug: string, orderId: string): string {
+  return `${cardapioDaLoja(slug)}?pagamento=${encodeURIComponent(orderId)}`;
 }
 
 /** Qual forma pelo site o pedido escolheu. null = não é pagamento pelo site. */
@@ -74,6 +100,12 @@ export type ConexaoAsaas = {
   desligadoMotivo?: string | null;
   /** Último aviso ao FireHub de split que não aconteceu (um por dia por loja). */
   avisoSplitEm?: string | null;
+  /**
+   * O site dos dados comerciais da conta, lido ao conectar e no "Conferir de
+   * novo". Ausente (conexão antiga) = não sabido: o cartão tenta voltar
+   * sozinho e, recusado, grava null aqui para não tentar de novo à toa.
+   */
+  site?: string | null;
 };
 
 /** A chave da loja em claro, ou null se não houver ou não abrir. */
@@ -131,6 +163,12 @@ export type CobrancaDoPedido = {
   qrCodeBase64: string | null;
   /** Cartão: a página do Asaas onde o cliente digita o cartão. */
   linkDePagamento: string | null;
+  /**
+   * Cartão: o Asaas devolve o cliente ao cardápio depois de pagar. Com isso a
+   * página do Asaas abre na MESMA aba; sem, numa aba nova (senão o cliente
+   * ficaria preso na página de "pago" do Asaas).
+   */
+  voltaSozinho: boolean;
   expiresAt: string;
   provedor: "asaas";
 };
@@ -152,8 +190,8 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
     select: {
       id: true, franchiseeId: true, status: true, paymentPaidAt: true, totalAmount: true, createdAt: true,
       customerName: true, customerPhone: true, customerCpfCnpj: true, dailyOrderNumber: true, paymentMethod: true,
-      gatewayProvider: true, gatewayPaymentId: true, pagarmePixQrCode: true,
-      franchisee: { select: { storeName: true, pixOnlineAtivo: true, cartaoOnlineAtivo: true } },
+      gatewayProvider: true, gatewayPaymentId: true, pagarmePixQrCode: true, taxaOnline: true,
+      franchisee: { select: { storeName: true, slug: true, pixOnlineAtivo: true, cartaoOnlineAtivo: true } },
     },
   });
   if (!pedido) return { ok: false, status: 404, erro: "Pedido não encontrado." };
@@ -187,6 +225,7 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
       pixKey: null,
       qrCodeBase64: null,
       linkDePagamento: null,
+      voltaSozinho: false,
       expiresAt: prazo.toISOString(),
       provedor: "asaas",
       ...extra,
@@ -204,7 +243,10 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
     }
     if (atual.ok && !atual.dados?.deleted) {
       if (forma === "cartao") {
-        return resposta(pedido.gatewayPaymentId, { linkDePagamento: atual.dados?.invoiceUrl ? String(atual.dados.invoiceUrl) : null });
+        return resposta(pedido.gatewayPaymentId, {
+          linkDePagamento: atual.dados?.invoiceUrl ? String(atual.dados.invoiceUrl) : null,
+          voltaSozinho: (pedido.taxaOnline as any)?.voltaSozinho === true,
+        });
       }
       const qr = await asaasDaLoja(chave, `/payments/${pedido.gatewayPaymentId}/pixQrCode`);
       return resposta(pedido.gatewayPaymentId, {
@@ -273,6 +315,12 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
     const valor = Math.round(Number(pedido.totalAmount) * 100) / 100;
     const taxa = splitDoFireHub(valor, forma);
 
+    // Cartão volta sozinho ao cardápio quando o site da conta é do FireHub —
+    // ou quando ainda não se sabe (conexão antiga): aí o Asaas decide.
+    const slug = pedido.franchisee?.slug;
+    const siteSabido = Object.prototype.hasOwnProperty.call(conexao, "site");
+    const tentaVoltar = forma === "cartao" && Boolean(slug) && (!siteSabido || mesmoDominio(conexao.site, siteDoFireHub()));
+
     const cobranca = await criarCobranca(chave, {
       forma,
       clienteId: cliente.dados.id,
@@ -281,6 +329,7 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
       referencia: referenciaDoPedido(orderId),
       walletDoSplit: carteira,
       valorDoSplit: taxa,
+      voltarPara: tentaVoltar && slug ? voltaDoCartao(slug, orderId) : null,
     });
     if (!cobranca.ok || !cobranca.dados) {
       await liberarTrava();
@@ -299,7 +348,19 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
       split: situacaoDoSplit,
       motivo: c.splitRecusado || null,
       criadoEm: new Date().toISOString(),
+      // A página do Asaas abre na mesma aba só se ela devolve o cliente.
+      voltaSozinho: c.voltaSozinho,
     };
+
+    // O Asaas recusou a volta: o site da conta não é do FireHub. Fica anotado
+    // para as próximas cobranças não tentarem à toa — o "Conferir de novo" em
+    // Integrações relê o site.
+    if (c.voltaRecusada) {
+      console.warn(`[PagamentoOnline] Loja ${pedido.franchiseeId}: o Asaas recusou a volta do cartão (${c.voltaRecusada}).`);
+      await prisma.user
+        .update({ where: { id: pedido.franchiseeId }, data: { asaasConexao: { ...conexao, site: null } as any } })
+        .catch(() => {});
+    }
 
     await prisma.customerOrder.update({
       where: { id: orderId },
@@ -324,6 +385,7 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
       pixKey: c.copiaECola,
       qrCodeBase64: c.imagemBase64,
       linkDePagamento: c.linkDePagamento,
+      voltaSozinho: c.voltaSozinho,
     });
   } catch (err: any) {
     await liberarTrava();

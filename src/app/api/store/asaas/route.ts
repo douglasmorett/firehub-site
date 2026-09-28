@@ -26,6 +26,7 @@ import {
   criarChavePixAleatoria,
   criarWebhookNaLoja,
   lerContaDoAsaas,
+  mesmoDominio,
   normalizarChave,
   removerWebhookDaLoja,
   walletDoFireHub,
@@ -37,7 +38,7 @@ import {
   VERSAO_DAS_REGRAS,
   type FormaOnline,
 } from "@/lib/pix-online";
-import type { ConexaoAsaas } from "@/lib/pix-online-pedido";
+import { cardapioDaLoja, siteDoFireHub, type ConexaoAsaas } from "@/lib/pix-online-pedido";
 import { avisarDono } from "@/lib/alertas-do-dono";
 
 export const dynamic = "force-dynamic";
@@ -77,9 +78,11 @@ const mascararDocumento = (doc?: string | null) => {
 async function estadoDaLoja(lojaId: string, titular: boolean, contaAoVivo?: ContaDoAsaas | null) {
   const loja = await prisma.user.findUnique({
     where: { id: lojaId },
-    select: { pixOnlineAtivo: true, cartaoOnlineAtivo: true, asaasChaveCifrada: true, asaasConexao: true, notificationPhone: true },
+    select: { pixOnlineAtivo: true, cartaoOnlineAtivo: true, asaasChaveCifrada: true, asaasConexao: true, notificationPhone: true, slug: true },
   });
   const conexao = ((loja?.asaasConexao as any) || {}) as ConexaoAsaas;
+  // O site dos dados comerciais decide se o cartão volta sozinho ao cardápio.
+  const site = contaAoVivo ? contaAoVivo.site : conexao.site ?? null;
   const conectado = Boolean(loja?.asaasChaveCifrada);
   const pixAtivo = Boolean(loja?.pixOnlineAtivo) && conectado;
   const cartaoAtivo = Boolean(loja?.cartaoOnlineAtivo) && conectado;
@@ -127,6 +130,11 @@ async function estadoDaLoja(lojaId: string, titular: boolean, contaAoVivo?: Cont
           versaoDasRegrasAceita: conexao.versaoDasRegras || null,
           verificadoEm: conexao.verificadoEm || null,
           desligadoMotivo: pixAtivo || cartaoAtivo ? null : conexao.desligadoMotivo || null,
+          // Cartão: o Asaas só devolve o cliente ao cardápio se o site da conta
+          // for do domínio do FireHub. `siteParaCadastrar` é o que a tela sugere.
+          site,
+          cartaoVoltaSozinho: mesmoDominio(site, siteDoFireHub()),
+          siteParaCadastrar: loja?.slug ? cardapioDaLoja(loja.slug) : siteDoFireHub(),
         }
       : null,
     ultimos30Dias: pagos ? { pedidos: pagos._count._all, total: pagos._sum.totalAmount || 0 } : null,
@@ -147,6 +155,7 @@ async function releConta(lojaId: string) {
     walletId: r.dados.walletId,
     situacao: r.dados.situacao,
     chavePix: r.dados.chavesPixAtivas[0]?.chave || null,
+    site: r.dados.site,
     verificadoEm: new Date().toISOString(),
   };
   await prisma.user.update({ where: { id: lojaId }, data: { asaasConexao: conexao } });
@@ -291,6 +300,7 @@ export async function POST(req: NextRequest) {
       cpfCnpj: conta.cpfCnpj,
       situacao: conta.situacao,
       chavePix: conta.chavesPixAtivas[0]?.chave || null,
+      site: conta.site,
       webhookId,
       webhookTokenCifrado,
       webhookUrl: webhookId ? url : null,

@@ -521,25 +521,43 @@ export default function CustomerStorePage({
   // ao app do banco e voltava com a página recarregada perdia o QR, e o
   // pedido ficava esperando um pagamento que ele não tinha mais como fazer.
   const pixPendenteKey = `fh_pix_${franchisee.slug || franchisee.id}`;
-  const lembrarPixPendente = (orderId: string | null, amount = 0) => {
+  // `forma` também vai: sem ela, o cartão reaberto caía na tela do Pix.
+  const lembrarPixPendente = (orderId: string | null, amount = 0, forma: "pix" | "cartao" = "pix") => {
     try {
-      if (orderId) localStorage.setItem(pixPendenteKey, JSON.stringify({ orderId, amount, at: Date.now() }));
+      if (orderId) localStorage.setItem(pixPendenteKey, JSON.stringify({ orderId, amount, forma, at: Date.now() }));
       else localStorage.removeItem(pixPendenteKey);
     } catch { /* storage bloqueado: segue sem */ }
   };
   useEffect(() => {
+    // ── A VOLTA DO ASAAS DEPOIS DO CARTÃO ──────────────────────────────────
+    // O Asaas devolve o cliente com ?pagamento=<pedido> (voltaDoCartao, em
+    // lib/pix-online-pedido). A tela do pagamento reabre e confirma sozinha —
+    // quem decide "pagou" é a consulta ao Asaas, não a chegada aqui.
+    let voltouDoAsaas: string | null = null;
+    try {
+      const url = new URL(window.location.href);
+      voltouDoAsaas = url.searchParams.get("pagamento");
+      if (voltouDoAsaas) {
+        url.searchParams.delete("pagamento");
+        window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+      }
+    } catch { /* URL estranha: segue sem */ }
     try {
       const raw = localStorage.getItem(pixPendenteKey);
-      if (!raw) return;
-      const salvo = JSON.parse(raw);
-      if (salvo?.orderId && Date.now() - (salvo.at || 0) < (MINUTOS_PARA_PAGAR + 5) * 60_000) {
+      const salvo = raw ? JSON.parse(raw) : null;
+      const valendo = Boolean(salvo?.orderId) && Date.now() - (salvo.at || 0) < (MINUTOS_PARA_PAGAR + 5) * 60_000;
+      if (valendo && (!voltouDoAsaas || salvo.orderId === voltouDoAsaas)) {
+        if (salvo.forma === "cartao" || voltouDoAsaas) setPaymentMethod("CREDITO_ONLINE");
         setPendingOrderId(salvo.orderId);
         setPendingAmount(Number(salvo.amount) || 0);
         setShowPayment(true);
-      } else {
-        localStorage.removeItem(pixPendenteKey);
+        return;
       }
+      if (raw && !valendo) localStorage.removeItem(pixPendenteKey);
     } catch { /* idem */ }
+    // Voltou do Asaas sem o pedido guardado neste navegador: mostra o
+    // acompanhamento do pedido, que diz se o pagamento entrou.
+    if (voltouDoAsaas) setOrderSuccess(voltouDoAsaas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2109,7 +2127,7 @@ export default function CustomerStorePage({
           setPendingOrderId(d.orderId);
           setPendingAmount(finalTotal);
           setShowPayment(true);
-          lembrarPixPendente(d.orderId, finalTotal);
+          lembrarPixPendente(d.orderId, finalTotal, pmUpper === "CREDITO_ONLINE" ? "cartao" : "pix");
           // Mantém os itens no carrinho até a confirmação do pagamento
         } else {
           registrarCompra();

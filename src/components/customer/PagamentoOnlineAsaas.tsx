@@ -49,6 +49,10 @@ export type EstadoPagamentoOnline = {
     regrasAceitasEm: string | null;
     verificadoEm: string | null;
     desligadoMotivo: string | null;
+    /** Cartão: o Asaas devolve o cliente ao cardápio (site da conta no domínio do FireHub). */
+    cartaoVoltaSozinho?: boolean;
+    /** O site que o lojista cadastra no Asaas para isso: o cardápio dele. */
+    siteParaCadastrar?: string;
   };
   ultimos30Dias: null | { pedidos: number; total: number };
 };
@@ -384,6 +388,17 @@ export default function PagamentoOnlineAsaas({ estadoInicial }: { estadoInicial?
               </div>
             )}
           </Bloco>
+
+          {/* O Asaas só devolve o cliente ao cardápio depois do cartão se o
+              site da conta for do domínio do FireHub. Sem isso, a página do
+              Asaas abre numa aba nova e o cliente volta sozinho pela aba. */}
+          {e.cartaoAtivo && conta.cartaoVoltaSozinho === false && conta.siteParaCadastrar && (
+            <div style={{ background: cor.azulFundo, border: "1px solid #BFDBFE", color: "#1E40AF", borderRadius: 10, padding: "10px 12px", fontSize: "0.8rem", marginBottom: "0.85rem", lineHeight: 1.5 }}>
+              💳 Para o cliente <strong>voltar sozinho ao cardápio</strong> depois de pagar com cartão: no Asaas, em{" "}
+              <strong>Configurações da conta → Informações</strong>, coloque o site{" "}
+              <strong style={{ wordBreak: "break-all" }}>{conta.siteParaCadastrar}</strong> e depois clique em “Conferir de novo” aqui.
+            </div>
+          )}
 
           {!e.avisosNoWhatsApp && (
             <div style={{ background: cor.azulFundo, border: "1px solid #BFDBFE", color: "#1E40AF", borderRadius: 10, padding: "10px 12px", fontSize: "0.8rem", marginBottom: "0.85rem", lineHeight: 1.5 }}>
