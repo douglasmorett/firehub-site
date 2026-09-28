@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Minus, Check } from "lucide-react";
 import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela } from "@/lib/preco-combo";
+import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
 export type ComboGroupData = {
   id: string;
@@ -140,6 +141,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
   const [comboQty, setComboQty] = useState(1);
   const [notes, setNotes] = useState("");
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
+  const { perguntar, avisoNaTela } = useAvisoDoCardapio();
 
   const [selections, setSelections] = useState<Selections>(() => {
     const init: Selections = {};
@@ -297,9 +299,9 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
     onConfirm(selections, extraSum, comboQty, notes.trim());
   };
 
-  const tentarFechar = () => {
+  const tentarFechar = async () => {
     const mexeu = JSON.stringify({ s: selections, n: notes.trim() && "x" || "" }) !== estadoInicial.current || notes.trim().length > 0;
-    if (mexeu && !window.confirm("Descartar as escolhas deste item?")) return;
+    if (mexeu && !(await perguntar({ titulo: "Descartar as escolhas deste item?", confirmar: "Descartar", cancelar: "Continuar escolhendo", perigo: true }))) return;
     onClose();
   };
 
@@ -307,6 +309,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
 
   return (
     <div className="fh-sheet-backdrop" onClick={tentarFechar}>
+      {avisoNaTela}
       <div
         className="fh-sheet"
         role="dialog"

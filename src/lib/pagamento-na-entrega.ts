@@ -72,6 +72,21 @@ export function ehPagoOnline(pedido: (PedidoParaCobranca & { gatewayPaymentId?: 
 }
 
 /**
+ * Pago pelo cardápio — Pix ou cartão pelo site, na conta Asaas da loja
+ * (lib/pix-online-pedido.ts) — e já confirmado. O texto da forma é só "PIX",
+ * igual ao Pix do PDV, e o card de pedidos não dizia que estava pago: o
+ * balcão podia cobrar de novo (Hakim, 28/09/2026). A cobrança gerada e ainda
+ * não paga não conta — esse pedido nem aparece nas colunas (o poll esconde
+ * AGUARDANDO_PAGAMENTO fora do totem).
+ */
+export function pagoPeloSite(
+  pedido: { gatewayProvider?: string | null; paymentPaidAt?: Date | string | null; paymentMethod?: string | null } | null | undefined
+): "Pix" | "Cartão" | null {
+  if (!pedido || pedido.gatewayProvider !== "asaas" || !pedido.paymentPaidAt) return null;
+  return /pix/i.test(String(pedido.paymentMethod || "")) ? "Pix" : "Cartão";
+}
+
+/**
  * As formas que se recebem na porta, escritas do jeito que TODOS os
  * classificadores do FireHub leem: fechamento de caixa (api/cash-session:
  * "dinheiro", "débito", "crédito", "pix", "vale"), acerto do motoboy

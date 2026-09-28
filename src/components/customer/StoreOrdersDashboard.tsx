@@ -18,6 +18,7 @@ import { avaliarEdicao } from "@/lib/edicao-de-pedido";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
+import { pagoPeloSite } from "@/lib/pagamento-na-entrega";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
@@ -95,6 +96,9 @@ const PAYMENT_LABELS: Record<string, string> = {
   DEBIT: "Débito (Cobrar na Entrega)",
   DEBITO: "Débito (Cobrar na Entrega)",
   PIX: "Pix",
+  // "Cartão pelo site" do cardápio (Asaas): aparecia o código cru.
+  CREDITO_ONLINE: "Cartão pelo site",
+  CARTAO_ONLINE: "Cartão pelo site",
   CASH: "Dinheiro",
   DINHEIRO: "Dinheiro",
   VOUCHER: "Voucher (Cobrar na Entrega)",
@@ -1096,6 +1100,20 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               </span>
             )}
           </div>
+          {/* Pix/cartão pelo site já pago: o card dizia só "Pix", igual ao Pix
+              do PDV, e o balcão podia cobrar de novo (lib/pagamento-na-entrega). */}
+          {(() => {
+            const forma = pagoPeloSite(order);
+            if (!forma) return null;
+            return (
+              <div style={{
+                ...etiquetaDeEstado("ok"), whiteSpace: "normal", display: "block",
+                fontWeight: 800, fontSize: "0.8rem", padding: "5px 10px", borderRadius: "8px", margin: "5px 0", lineHeight: 1.35
+              }}>
+                ✅ {forma} pago pelo site — não cobrar do cliente
+              </div>
+            );
+          })()}
 
           {/* Banner de Alerta para Entrega Parceira (iFood / 99Food / Parceiros) */}
           {(() => {
@@ -4293,10 +4311,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     (order as any).prepaid === false;
 
                   // Explicit online check: ONLY online if NOT explicit offline AND (contains "pago online", "online", "prepaid", "app" OR isPrepaid === true)
-                  const isOnline = !isExplicitOffline && (
+                  // O Pix pelo site grava só "PIX": pelo texto, saía "COBRAR DO
+                  // CLIENTE NA ENTREGA" num pedido já pago (pagoPeloSite).
+                  const isOnline = pagoPeloSite(order) !== null || (!isExplicitOffline && (
                     /pago online|online|prepaid|ifood pago|jotajá pago|jotaja pago|app/i.test(payMethodClean) ||
                     (order as any).isPrepaid === true
-                  );
+                  ));
 
                   // Mesma história do selo: sem caso para o 99Food, a comanda
                   // saía "Pago via Online" num pedido pago no 99Food.

@@ -53,6 +53,7 @@ import CapaDaLoja from "./CapaDaLoja";
 import { lerTrilha, nomeDoPremio } from "@/lib/trilha-premiada";
 import { cpfValido } from "@/lib/fiscal-validacao";
 import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
+import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
 function formatarCpf(v: string): string {
@@ -259,6 +260,8 @@ export default function CustomerStorePage({
   const [paymentMethod, setPaymentMethod] = useState(() => (pixPeloSite ? "PIX" : "DINHEIRO"));
   // CPF de quem paga: o Asaas só gera o Pix com ele (e ele vai na nota).
   const [cpfDoPagador, setCpfDoPagador] = useState("");
+  // Os avisos da página, em pop-up — era alert() do navegador.
+  const { avisar, perguntar, avisoNaTela } = useAvisoDoCardapio();
   // Forma paga pelo site na conta Asaas: pede CPF (o Asaas exige).
   const pagaPeloAsaas =
     (paymentMethod === "PIX" && franchisee.pixOnlineAtivo === true) ||
@@ -847,9 +850,13 @@ export default function CustomerStorePage({
     const pid = produto.productId || idDoProduto(produto);
     const naSacola = cart.filter(i => idDoProduto(i) === pid).reduce((s, i) => s + i.quantity, 0);
     if (naSacola + mais <= restante) return true;
-    alert(restante <= naSacola
-      ? `Você já pegou as últimas unidades de ${produto.name}.`
-      : `Só ${restante === 1 ? "resta 1 unidade" : `restam ${restante} unidades`} de ${produto.name}.`);
+    avisar({
+      tipo: "info",
+      titulo: restante <= naSacola ? "Acabou o estoque" : "Estoque acabando",
+      texto: restante <= naSacola
+        ? `Você já pegou as últimas unidades de ${produto.name}.`
+        : `Só ${restante === 1 ? "resta 1 unidade" : `restam ${restante} unidades`} de ${produto.name}.`,
+    });
     return false;
   };
 
@@ -1569,7 +1576,7 @@ export default function CustomerStorePage({
     if (!temOndeAbrirOMapa([...ondeOMapaPodeAbrir(), palpiteNovo])) {
       // Rede de proteção: sem onde abrir, a tela já oferece o GPS no lugar
       // do mapa (gpsNoLugarDoMapa) e não chega aqui. Se chegar, UM aviso.
-      alert(`Não consegui abrir o mapa agora. Toque em "${BOTAO_DO_GPS}" ou confira rua, número e bairro.`);
+      avisar({ tipo: "erro", titulo: "Não consegui abrir o mapa", texto: `Toque em "${BOTAO_DO_GPS}" ou confira rua, número e bairro.` });
       return false;
     }
     setMapaDeConfirmacaoAberto(true);
@@ -1645,7 +1652,7 @@ export default function CustomerStorePage({
   const adotarPontoDoCliente = (ponto: PontoDoCliente, endereco: EnderecoDigitado, numeroDoMapa: boolean, leuOMapa: boolean): boolean => {
     if (!temRuaOuBairro(endereco)) {
       setPontoDescartado({ lat: ponto.lat, lng: ponto.lng });
-      alert(avisoDoPontoSemEndereco(leuOMapa));
+      avisar({ tipo: "falta", titulo: "Digite o endereço", texto: avisoDoPontoSemEndereco(leuOMapa), campo: "checkout-rua" });
       return false;
     }
     setPontoDescartado(null);
@@ -1658,7 +1665,7 @@ export default function CustomerStorePage({
 
   const handleUseGpsLocation = () => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      alert("Geolocalização não é suportada pelo seu navegador.");
+      avisar({ tipo: "erro", titulo: "Seu navegador não mostra a localização", texto: "Preencha rua, número e bairro.", campo: "checkout-rua" });
       return;
     }
     setGpsLoading(true);
@@ -1690,7 +1697,11 @@ export default function CustomerStorePage({
         setGpsLoading(false);
         // "Digite seu endereço" era beco sem saída para quem chegou aqui
         // porque o endereço digitado não foi achado (pedirGps).
-        alert("Não foi possível obter sua localização. Confira se a localização do celular está ligada e liberada para este site — ou confira rua, número e bairro.");
+        avisar({
+          tipo: "erro",
+          titulo: "Não consegui pegar sua localização",
+          texto: "Confira se a localização do celular está ligada e liberada para este site — ou preencha rua, número e bairro.",
+        });
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
@@ -1832,10 +1843,10 @@ export default function CustomerStorePage({
         body: JSON.stringify({ orderId: ratingOrderId, rating: ratingValue, comment: ratingComment, customerName: customer?.name || customerName || "Cliente" })
       });
       if (res.ok) {
-        alert("Obrigado pela sua avaliação! ⭐");
+        avisar({ tipo: "sucesso", titulo: "Obrigado pela sua avaliação!", botao: "OK" });
         setShowRating(false);
       }
-    } catch { alert("Erro ao enviar avaliação."); }
+    } catch { avisar({ tipo: "erro", titulo: "Não deu para enviar a avaliação", texto: "Confira a internet e tente de novo." }); }
   };
 
   const handleCheckout = async () => {
@@ -1843,7 +1854,11 @@ export default function CustomerStorePage({
     // Primeiro de tudo: fechou, não cria pedido — com o motivo e o horário,
     // não um "Loja fechada.." genérico depois do formulário inteiro.
     if (lojaFechadaAgora) {
-      alert(`🔴 A loja está fechada agora${!storeStatus.open && storeStatus.text ? ` — ${storeStatus.text}` : ""}. Seus itens ficam na sacola para quando abrir!`);
+      avisar({
+        tipo: "fechada",
+        titulo: "A loja está fechada agora",
+        texto: `${!storeStatus.open && storeStatus.text ? `${storeStatus.text}. ` : ""}Seus itens ficam na sacola para quando abrir.`,
+      });
       return;
     }
     if (storeMinOrder > 0 && cartTotal < storeMinOrder) {
@@ -1852,13 +1867,20 @@ export default function CustomerStorePage({
         deliveryType === "DELIVERY" && pickupAvailable && cartTotal >= storeMinOrderPickup
           ? ` Se preferir, escolha "Retirar no Balcão" — o mínimo ${storeMinOrderPickup > 0 ? `é de R$ ${storeMinOrderPickup.toFixed(2).replace(".", ",")}` : "não se aplica"} nesse caso.`
           : "";
-      alert(`⚠️ O pedido mínimo desta loja ${qual} é de R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens para continuar.${saidaPelaRetirada}`);
+      avisar({
+        tipo: "falta",
+        titulo: "Falta pouco para o pedido mínimo",
+        texto: `O mínimo ${qual} é R$ ${storeMinOrder.toFixed(2).replace(".", ",")}. Adicione mais R$ ${remainingForMinOrder.toFixed(2).replace(".", ",")} em itens.${saidaPelaRetirada}`,
+      });
       return;
     }
-    if (!customerName.trim()) { alert("Por favor, informe seu nome."); return; }
-    if (!customerPhone.trim()) { alert("Por favor, informe seu WhatsApp / telefone."); return; }
-    if (pagaPeloAsaas && !cpfValido(cpfDoPagador)) {
-      alert(`Para pagar com ${paymentMethod === "PIX" ? "Pix" : "cartão"} pelo site, informe o CPF de quem vai pagar. O banco exige o CPF para gerar a cobrança.`);
+    // Um campo por vez, na ordem em que aparecem na tela: o aviso leva até ele.
+    if (!customerName.trim()) {
+      avisar({ titulo: "Qual é o seu nome?", texto: "A loja precisa saber de quem é o pedido.", campo: "checkout-nome" });
+      return;
+    }
+    if (!customerPhone.trim()) {
+      avisar({ titulo: "Qual é o seu WhatsApp?", texto: "A loja usa esse número para falar com você sobre o pedido.", campo: "checkout-whatsapp" });
       return;
     }
     let finalAddress = "";
@@ -1868,19 +1890,25 @@ export default function CustomerStorePage({
     let cotacaoNoPedido: string | null = null;
     if (deliveryType === "DELIVERY") {
       const bairroDaLista = isNeighborhoodType && availableNeighborhoods.length > 0;
+      if (!customerStreet.trim()) {
+        avisar({ titulo: "Qual é a rua da entrega?", campo: "checkout-rua" });
+        return;
+      }
+      if (!customerNumber.trim()) {
+        avisar({ titulo: "Qual é o número?", texto: "Se não tiver número, escreva S/N.", campo: "checkout-numero" });
+        return;
+      }
       if (bairroDaLista) {
         if (!customerNeighborhood.trim() || !deliveryFeeCalculated) {
-          alert("⚠️ Por favor, selecione seu Bairro na lista de bairros atendidos pela loja.");
+          avisar({ titulo: "Escolha seu bairro", texto: "Toque no campo Bairro e escolha na lista dos bairros atendidos.", campo: "checkout-bairro", botao: "Escolher" });
           return;
         }
       } else {
         if (!customerNeighborhood.trim()) {
-          alert("Por favor, informe seu Bairro de entrega.");
+          avisar({ titulo: "Qual é o seu bairro?", campo: "checkout-bairro" });
           return;
         }
       }
-      if (!customerStreet.trim()) { alert("Por favor, informe a Rua / Logradouro de entrega."); return; }
-      if (!customerNumber.trim()) { alert("Por favor, informe o Número do endereço."); return; }
 
       // ── A ENTREGA NA TELA É A DESTE ENDEREÇO? ──────────────────────────
       // Cotação em voo, cotação de outro endereço, sem ponto em km/rota,
@@ -1911,16 +1939,36 @@ export default function CustomerStorePage({
         } else if (falta.acao === "pedir-gps" || falta.acao === "mostrar-opcoes") {
           // O mapa não tem onde abrir: UM aviso, e o painel com o botão do
           // GPS à vista (o Finalizar fica longe dele no celular).
-          alert(falta.mensagem);
-          mostrarPainelDaEntrega();
+          avisar({
+            tipo: "falta",
+            titulo: falta.acao === "pedir-gps" ? "Precisamos da sua localização" : "Não achamos esse endereço",
+            texto: falta.mensagem,
+            aoFechar: mostrarPainelDaEntrega,
+          });
         } else {
           if (falta.acao === "recotar") calcDeliveryFee({ forcar: true });
-          alert(falta.mensagem);
+          avisar({
+            tipo: falta.acao === "recusar" ? "erro" : "info",
+            titulo: falta.acao === "recusar" ? "Fora da área de entrega" : falta.acao === "recotar" ? "Confira a taxa de entrega" : "Calculando a entrega",
+            texto: falta.mensagem,
+          });
         }
         return;
       }
       cotacaoNoPedido = bairroDaLista ? null : cotacaoDaEntrega;
       finalAddress = `${customerStreet.trim()}, ${customerNumber.trim()} - ${customerNeighborhood.trim()}${customerComplement.trim() ? ` (${customerComplement.trim()})` : ""}`;
+    }
+    // O CPF é o último campo da tela (fica no pagamento).
+    if (pagaPeloAsaas && !cpfValido(cpfDoPagador)) {
+      const digitou = cpfDoPagador.replace(/\D/g, "").length > 0;
+      avisar({
+        titulo: digitou ? "Esse CPF não confere" : "Falta o CPF de quem vai pagar",
+        texto: digitou
+          ? "Confira os números do CPF."
+          : `Para pagar com ${paymentMethod === "PIX" ? "Pix" : "cartão"} pelo site, a cobrança precisa do CPF.`,
+        campo: "checkout-cpf",
+      });
+      return;
     }
     setLoading(true);
     try {
@@ -2050,14 +2098,20 @@ export default function CustomerStorePage({
           // sai do pino ou do GPS.
           setCotacaoDaEntrega(null);
           ultimaConsultaPedida.current = "";
-          alert(recusa.mensagem);
-          if (recusa.depois === "abrir-mapa") abrirMapaDeConfirmacao(recusa.pontoAproximado);
-          else mostrarPainelDaEntrega();
+          avisar({
+            tipo: "falta",
+            titulo: "Confira o endereço de entrega",
+            texto: recusa.mensagem,
+            aoFechar: () => {
+              if (recusa.depois === "abrir-mapa") abrirMapaDeConfirmacao(recusa.pontoAproximado);
+              else mostrarPainelDaEntrega();
+            },
+          });
           return;
         }
-        alert(d?.error || "Erro.");
+        avisar({ tipo: "erro", titulo: "Não deu para fechar o pedido", texto: d?.error || "Tente de novo em instantes." });
       }
-    } catch { alert("Erro ao conectar."); } finally { setLoading(false); }
+    } catch { avisar({ tipo: "erro", titulo: "Sem conexão", texto: "Confira a internet e tente de novo." }); } finally { setLoading(false); }
   };
 
   // O Pix caiu: agora sim é venda — limpa a sacola e mostra o acompanhamento.
@@ -2088,7 +2142,7 @@ export default function CustomerStorePage({
         });
         const d = await r.json().catch(() => ({} as any));
         if (d?.pago) {
-          alert("O seu Pix já tinha sido pago — o pedido foi enviado para a loja.");
+          avisar({ tipo: "sucesso", titulo: "Seu Pix já foi pago", texto: "O pedido foi enviado para a loja.", botao: "OK" });
           pixPago();
           return;
         }
@@ -2339,7 +2393,9 @@ export default function CustomerStorePage({
               type="button"
               // Um toque aqui apagava a sacola INTEIRA sem perguntar — e o
               // botão fica a um dedo do X de fechar. Confirmação obrigatória.
-              onClick={() => { if (window.confirm("Esvaziar a sacola? Todos os itens serão removidos.")) clearCart(); }}
+              onClick={async () => {
+                if (await perguntar({ titulo: "Esvaziar a sacola?", texto: "Todos os itens serão removidos.", confirmar: "Esvaziar", cancelar: "Manter", perigo: true })) clearCart();
+              }}
               style={{ background: "none", border: "none", color: "#64748B", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.04em", padding: "10px 8px" }}
             >
               Limpar
@@ -2766,7 +2822,11 @@ export default function CustomerStorePage({
                     // cliente a preencher o endereço todo para só então
                     // descobrir que não fecha.
                     if (storeMinOrderDelivery > 0 && cartTotal < storeMinOrderDelivery) {
-                      alert(`⚠️ Para entrega, o pedido mínimo é de R$ ${storeMinOrderDelivery.toFixed(2).replace(".", ",")} — faltam R$ ${(storeMinOrderDelivery - cartTotal).toFixed(2).replace(".", ",")}. Você pode adicionar mais itens ou seguir com a retirada no balcão.`);
+                      avisar({
+                        tipo: "falta",
+                        titulo: "Entrega tem pedido mínimo",
+                        texto: `O mínimo para entrega é R$ ${storeMinOrderDelivery.toFixed(2).replace(".", ",")} — faltam R$ ${(storeMinOrderDelivery - cartTotal).toFixed(2).replace(".", ",")}. Adicione mais itens ou retire no balcão.`,
+                      });
                       return;
                     }
                     setDeliveryType("DELIVERY");
@@ -2810,6 +2870,7 @@ export default function CustomerStorePage({
             <div>
               <label className="checkout-label">Seu Nome Completo *</label>
               <input
+                data-campo="checkout-nome"
                 className="checkout-input"
                 value={customerName}
                 onChange={e => setCustomerName(e.target.value)}
@@ -2821,6 +2882,7 @@ export default function CustomerStorePage({
             <div>
               <label className="checkout-label">Seu WhatsApp (com DDD) *</label>
               <input
+                data-campo="checkout-whatsapp"
                 className="checkout-input"
                 type="tel"
                 maxLength={16}
@@ -2891,6 +2953,7 @@ export default function CustomerStorePage({
                 <div>
                   <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Rua / Logradouro *</label>
                   <input
+                    data-campo="checkout-rua"
                     className="checkout-input"
                     value={customerStreet}
                     onChange={e => setCustomerStreet(e.target.value)}
@@ -2902,6 +2965,7 @@ export default function CustomerStorePage({
                   <div>
                     <label className="checkout-label" style={{ fontSize: "0.82rem" }}>Número *</label>
                     <input
+                      data-campo="checkout-numero"
                       className="checkout-input"
                       inputMode="numeric"
                       value={customerNumber}
@@ -2969,6 +3033,7 @@ export default function CustomerStorePage({
                         ) : (
                           <div>
                             <input
+                              data-campo="checkout-bairro"
                               className="checkout-input"
                               value={neighborhoodSearch}
                               onChange={e => {
@@ -3082,6 +3147,7 @@ export default function CustomerStorePage({
                       </div>
                     ) : (
                       <input
+                        data-campo="checkout-bairro"
                         className="checkout-input"
                         value={customerNeighborhood}
                         onChange={e => setCustomerNeighborhood(e.target.value)}
@@ -3226,6 +3292,7 @@ export default function CustomerStorePage({
                     CPF de quem vai pagar <span style={{ fontWeight: 500 }}>(obrigatório para {paymentMethod === "PIX" ? "o Pix" : "o cartão"})</span>
                   </label>
                   <input
+                    data-campo="checkout-cpf"
                     type="text"
                     inputMode="numeric"
                     autoComplete="off"
@@ -3350,7 +3417,11 @@ export default function CustomerStorePage({
               type="button"
               onClick={() => {
                 if (isBelowCartMin) {
-                  alert(`⚠️ O pedido mínimo desta loja é de R$ ${minOrderToLeaveCart.toFixed(2).replace(".", ",")}. Por favor, adicione mais R$ ${remainingForCartMin.toFixed(2).replace(".", ",")} em itens para continuar.`);
+                  avisar({
+                    tipo: "falta",
+                    titulo: "Falta pouco para o pedido mínimo",
+                    texto: `O mínimo desta loja é R$ ${minOrderToLeaveCart.toFixed(2).replace(".", ",")}. Adicione mais R$ ${remainingForCartMin.toFixed(2).replace(".", ",")} em itens.`,
+                  });
                   return;
                 }
                 // Só dá para retirada: já entra no checkout com ela marcada, em
@@ -3442,6 +3513,7 @@ export default function CustomerStorePage({
   // ===== MAIN RENDER =====
   return (
     <div className="saipos-store">
+      {avisoNaTela}
       {/* Dois campos no schema guardam a mesma coisa: `facebookPixelId` (preenchido
           na tela de Integrações) e `metaPixelId` (preenchido pelo módulo de tráfego
           pago ao conectar a conta). Aceitar os dois evita o caso em que o lojista
@@ -4590,7 +4662,7 @@ export default function CustomerStorePage({
           onClick={async () => {
             // Um toque ACIDENTAL fora do modal cancelava o pedido inteiro sem
             // perguntar — no meio do Pix, com o QR na tela.
-            if (!window.confirm("Cancelar o pagamento? O pedido será cancelado.")) return;
+            if (!(await perguntar({ titulo: "Cancelar o pagamento?", texto: "O pedido será cancelado.", confirmar: "Cancelar pedido", cancelar: "Continuar pagando", perigo: true }))) return;
             await desistirDoPagamento();
           }}
         >
