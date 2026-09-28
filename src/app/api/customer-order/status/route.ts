@@ -170,6 +170,26 @@ export async function PUT(req: Request) {
   }
 
   const updateData: any = { status };
+
+  // ── RASCUNHO DO ROBÔ ARRASTADO NO QUADRO ────────────────────────────────
+  //
+  // O botão "Finalizar pedido manualmente" (finalizar-rascunho) e o fechamento
+  // pelo robô dão número do dia e fazem o pedido nascer agora. Arrastar o
+  // cartão de "IA criando…" só trocava o status: o pedido ia para a cozinha
+  // SEM NÚMERO, e sem número não há QR do motoboy (lib/qr-puxar.ts) — a
+  // Ragnar recebeu a comanda da Diva assim em 26/09/2026. Com a hora do
+  // rascunho, a fila da nuvem (2 h) e o prazo contavam desde a primeira
+  // mensagem do cliente.
+  const saiDoRascunhoDoRobo = order.status === "CRIANDO_IA" && status !== "CANCELADO";
+  if (saiDoRascunhoDoRobo) {
+    const { generateDailyOrderNumber } = await import("@/lib/order-number");
+    const { notasDaFinalizacao } = await import("@/lib/finalizar-rascunho");
+    updateData.dailyOrderNumber = order.dailyOrderNumber || (await generateDailyOrderNumber(order.franchiseeId));
+    updateData.createdAt = new Date();
+    updateData.printedAt = null;
+    updateData.notes = notasDaFinalizacao(order.notes, session.user?.name || session.user?.email || "?", "");
+  }
+
   // Allow updating scheduledDatetime (e.g. when anticipating a scheduled order)
   if (scheduledDatetime !== undefined) {
     updateData.scheduledDatetime = scheduledDatetime ? new Date(scheduledDatetime) : null;
@@ -455,10 +475,25 @@ export async function PUT(req: Request) {
     if (cancelReason) updateData.cancelReason = cancelReason;
   }
 
-  await prisma.customerOrder.update({
-    where: { id: orderId },
-    data: updateData
-  });
+  if (saiDoRascunhoDoRobo) {
+    // Só se AINDA é rascunho: o cliente pode ter confirmado com o robô no
+    // mesmo instante, e o robô já deu o número dele.
+    const gravados = await prisma.customerOrder.updateMany({
+      where: { id: orderId, status: "CRIANDO_IA" },
+      data: updateData,
+    });
+    if (gravados.count !== 1) {
+      return NextResponse.json(
+        { error: "O robô acabou de mexer neste pedido. A lista vai ser atualizada — confira e arraste de novo." },
+        { status: 409 }
+      );
+    }
+  } else {
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: updateData
+    });
+  }
 
   // ── Notificações via WhatsApp ──
   try {
@@ -589,7 +624,12 @@ export async function PUT(req: Request) {
 
   // `avisoIfood` vem preenchido quando o iFood recusou a ação: o status local
   // mudou, mas o lojista precisa saber que o iFood não acompanhou.
-  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoEstorno });
+  // `pedido`: o que o servidor mudou além do status, para o painel imprimir a
+  // comanda com o número (e o QR) sem esperar a próxima consulta.
+  const pedido = saiDoRascunhoDoRobo
+    ? { dailyOrderNumber: updateData.dailyOrderNumber, createdAt: updateData.createdAt, printedAt: null, notes: updateData.notes }
+    : undefined;
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoEstorno, ...(pedido ? { pedido } : {}) });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });

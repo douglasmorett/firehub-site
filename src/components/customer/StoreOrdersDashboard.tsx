@@ -2832,13 +2832,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         body: JSON.stringify({ orderId, status: newStatus })
       });
       if (res.ok) {
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+        const data = await res.json().catch(() => ({}));
+        // Rascunho do robô arrastado: o servidor deu o número do dia e a hora
+        // (`data.pedido`). A comanda abaixo sai desta cópia — sem o número,
+        // saía sem o QR do motoboy.
+        const mudou = { status: newStatus, ...(data?.pedido || {}) };
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...mudou } : o));
         router.refresh();
 
         // O status local mudou, mas o iFood recusou acompanhar (token vencido,
         // loja desconectada…). Antes isso morria no log do servidor e o lojista
         // só descobria pela reclamação do cliente.
-        const data = await res.json().catch(() => ({}));
         if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#B45309");
         // O mesmo aviso para o 99Food — antes o erro dele morria no log do
         // servidor e a tela dizia que estava tudo certo (Frangoso, 17/09/2026).
@@ -2851,8 +2855,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
         // 🖨️ Impressão Automática ao Aceitar Pedido (se autoprint estiver ativado)
         if (newStatus === "ACEITO" && printerConfig?.autoprint !== false) {
-          const targetOrder = orders.find(o => o.id === orderId);
-          if (targetOrder) {
+          const naTela = orders.find(o => o.id === orderId);
+          if (naTela) {
+            const targetOrder = { ...naTela, ...mudou };
             markAutoPrinted(targetOrder);
             handlePrint(targetOrder, "cozinha");
           }
