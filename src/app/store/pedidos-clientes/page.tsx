@@ -9,6 +9,7 @@ import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
+import { CHEGOU_A_LOJA } from "@/lib/pagamento-na-entrega";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +115,10 @@ export default async function FranchiseeCustomerOrdersPage() {
           //
           // Rascunho continua fora da impressão e da cozinha; quem cuida disso é
           // o GlobalPrintListener e o /api/kds, cada um com seu próprio filtro.
+          //
+          // Pedido pelo site cancelado sem nunca ter sido pago fica de fora,
+          // como no feed: não é cancelamento da loja (lib/pagamento-na-entrega.ts).
+          AND: [CHEGOU_A_LOJA],
         },
         include: {
           // A mesa e o garçom da conta, como no feed (/api/customer-order/poll):

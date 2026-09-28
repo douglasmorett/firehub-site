@@ -87,6 +87,27 @@ export function pagoPeloSite(
 }
 
 /**
+ * Filtro do Prisma para o Gerenciador: tira o pedido pelo site que NUNCA
+ * chegou à loja — cancelado sem nunca ter sido pago. É o cliente que fechou a
+ * tela do pagamento (ou trocou de cartão para Pix, que cancela um e cria
+ * outro) e o prazo de 30 minutos vencido. Ele caía na coluna Cancelado como
+ * se a loja tivesse perdido um pedido (Douglas, 28/09/2026: "não foi
+ * cancelamento, só troquei a forma de pagamento"). Continua gravado.
+ *
+ * Escrito como OR positivo, sem NOT: em coluna que pode ser nula, o NOT do
+ * Prisma também some com as linhas nulas — e quase todo pedido tem
+ * gatewayProvider nulo.
+ */
+export const CHEGOU_A_LOJA = {
+  OR: [
+    { status: { not: "CANCELADO" } },
+    { paymentPaidAt: { not: null } },
+    { gatewayProvider: null },
+    { gatewayProvider: { not: "asaas" } },
+  ],
+};
+
+/**
  * As formas que se recebem na porta, escritas do jeito que TODOS os
  * classificadores do FireHub leem: fechamento de caixa (api/cash-session:
  * "dinheiro", "débito", "crédito", "pix", "vale"), acerto do motoboy

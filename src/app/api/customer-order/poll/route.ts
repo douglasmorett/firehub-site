@@ -7,6 +7,7 @@ import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
+import { CHEGOU_A_LOJA } from "@/lib/pagamento-na-entrega";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -955,7 +956,10 @@ export async function GET(req: NextRequest) {
             // valendo para o agendamento distante, que não tem teto de idade.
             { scheduledDatetime: { gte: from, lte: to } },
           ],
-        }],
+        },
+        // Pedido pelo site cancelado sem nunca ter sido pago não é cancelamento
+        // da loja (lib/pagamento-na-entrega.ts).
+        CHEGOU_A_LOJA],
         // ── PENDENTE DE PAGAMENTO: O DO BALCÃO APARECE, O DO CHECKOUT NÃO ─────
         //
         // Este feed escondia TODO AGUARDANDO_PAGAMENTO. Como é ele que alimenta

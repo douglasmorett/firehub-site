@@ -118,6 +118,13 @@ const PAYMENT_LABELS: Record<string, string> = {
   other: "Pago Online",
 };
 const translatePayment = (method: string) => PAYMENT_LABELS[method] || PAYMENT_LABELS[method.toUpperCase()] || method;
+/** A forma no card. Pix/cartão pago pelo site grava só "PIX": aqui vira
+ *  "Pix (Pago Online)", como o "iFood App (Pago Online)" (pagoPeloSite). */
+const formaNoCard = (order: any): string => {
+  const peloSite = pagoPeloSite(order);
+  if (peloSite) return `${peloSite} (Pago Online)`;
+  return order.paymentMethod ? translatePayment(order.paymentMethod) : "—";
+};
 
 const cleanAddress = (addr: string | null) => {
   if (!addr) return "";
@@ -1081,9 +1088,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 wordBreak: "break-word",
                 lineHeight: "1.25",
               }}
-              title={order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+              title={formaNoCard(order)}
             >
-              {order.paymentMethod ? translatePayment(order.paymentMethod) : "—"}
+              {formaNoCard(order)}
             </span>
             {order.changeAmount != null && order.changeAmount > 0 && (
               <span style={{
