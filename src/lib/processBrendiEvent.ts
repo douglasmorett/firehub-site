@@ -761,7 +761,10 @@ export async function processBrendiEvent(
         })) : null;
 
         const comboSelectionsJson = comboSelsList ? JSON.stringify(comboSelsList) : null;
-        const itemId = i.id || i.externalId || `item-${Math.random().toString(36).slice(2)}`;
+        // Sem id no catálogo, o espelho é pelo código externo ou pelo NOME —
+        // nunca aleatório, senão cada pedido cria um espelho novo do mesmo item.
+        const itemId = i.id || i.externalId || i.externalCode ||
+          `nome-${String(itemName).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").slice(0, 60)}`;
         espelhos.push({ id: `brendi-${itemId}`, nome: itemName });
 
         return {
@@ -801,7 +804,10 @@ export async function processBrendiEvent(
                 // nada (a linha do pedido tem o dela); é só cadastro.
                 price: rawUnit || itemPrice,
                 category: i.category || "Brendi",
-                isBeverage: isBeverageName(itemName) || options.some((o: any) => isBeverageName(o.name)),
+                // Só pelo nome BASE: um combo com Coca entre as opções não é
+                // bebida — marcado assim, o roteamento mandava o combo inteiro
+                // para a impressora de bebidas e o painel o tratava como refri.
+                isBeverage: isBeverageName(itemName),
                 active: false,
               } as any,
             } as any,
@@ -816,33 +822,64 @@ export async function processBrendiEvent(
       const rawTotal = orderData.total?.orderAmount ?? orderData.total?.subTotal ?? orderData.totalPrice ?? orderData.total;
       const total = valorOpenDelivery(rawTotal);
 
-      // Taxa de entrega — total.deliveryFee ou array otherFees
+      // ── TAXAS (otherFees) ────────────────────────────────────────────────
+      // A Brendi manda cada taxa tipada e com quem a recebe:
+      //   { type: "DELIVERY_FEE", receivedBy: "MERCHANT", price: {value} }
+      //   { type: "SERVICE_FEE",  receivedBy: "MARKETPLACE", price: {value} }
+      // A taxa de entrega é a da LOJA. A de serviço é da plataforma: o cliente
+      // paga, entra no `orderAmount` e não passa pela loja. Antes as duas
+      // caíam na mesma busca por "FEE", e a de serviço, quando não virava
+      // "taxa de entrega", sumia da conta — e a aritmética do cupom (itens +
+      // taxa − total) devolvia um desconto R$ 1,01 menor que o cupom de
+      // verdade, impresso na comanda como se fosse da loja.
+      const taxasBrutas: any[] = Array.isArray(orderData.otherFees) ? orderData.otherFees : [];
+      const tipoDaTaxa = (f: any) => String(f?.type || f?.name || "").toUpperCase();
+      const valorDaTaxa = (f: any) => valorOpenDelivery(f?.price ?? f?.value ?? f?.amount) || 0;
+      // Taxa de ENTREGA nunca é "de serviço", nem quando a plataforma a recebe
+      // (entrega da Brendi): ela já entra por `delivery.deliveryFee`, e contar
+      // de novo aqui dobraria a taxa na aritmética do cupom.
+      const ehTaxaDeEntrega = (f: any) => /DELIVERY|FRETE|ENTREGA/.test(tipoDaTaxa(f));
+      const ehTaxaDeServico = (f: any) =>
+        !ehTaxaDeEntrega(f) &&
+        (/SERVICE|SERVI/.test(tipoDaTaxa(f)) || String(f?.receivedBy || "").toUpperCase() === "MARKETPLACE");
+      const serviceFeeValue = Math.round(taxasBrutas.filter(ehTaxaDeServico).reduce((s, f) => s + valorDaTaxa(f), 0) * 100) / 100;
+
+      // Taxa de entrega — total.deliveryFee, delivery.deliveryFee ou otherFees
       let deliveryFeeValue = valorOpenDelivery(orderData.total?.deliveryFee) || valorOpenDelivery(orderData.delivery?.deliveryFee) || valorOpenDelivery(orderData.deliveryFee) || 0;
-      if (!deliveryFeeValue && Array.isArray(orderData.otherFees)) {
-        const delFee = orderData.otherFees.find((f: any) =>
-          (f.type || f.name || "").toUpperCase().includes("DELIVERY") ||
-          (f.type || f.name || "").toUpperCase().includes("FRETE") ||
-          (f.type || f.name || "").toUpperCase().includes("FEE")
-        );
-        if (delFee) deliveryFeeValue = valorOpenDelivery(delFee.price ?? delFee.value);
+      if (!deliveryFeeValue) {
+        const delFee = taxasBrutas.find(ehTaxaDeEntrega);
+        if (delFee) deliveryFeeValue = valorDaTaxa(delFee);
       }
 
-      // Descontos/benefits (padrão Open Delivery completo)
-      const benefits = orderData.benefits ?? [];
+      // ── DESCONTOS ────────────────────────────────────────────────────────
+      // Open Delivery tem DUAS grafias e a Brendi usa a segunda:
+      //   benefits[]  { value, sponsorshipValues[{ name, value }] }
+      //   discounts[] { amount, target, sponsorshipValues[{ name, amount, discountCode }] }
+      // (pedido #6017 da Frangoso, 27/09/2026: discounts[0].amount 18,60,
+      // sponsorshipValues[0] { name: "MERCHANT", discountCode: "SAUDADES" }).
+      // Só `benefits` era lido, então TODO cupom da Brendi caía na aritmética
+      // de baixo e virava "da loja" — o cupom pago pela plataforma sumia da
+      // conta do lojista e do DRE.
+      const benefits: any[] = [
+        ...(Array.isArray(orderData.benefits) ? orderData.benefits : []),
+        ...(Array.isArray(orderData.discounts) ? orderData.discounts : []),
+      ];
       let discountPlatform = 0, discountMerchant = 0, discountTotal = 0;
       const discountDetails: any[] = [];
       for (const benefit of benefits) {
-        const value = valorOpenDelivery(benefit.value);
+        const value = valorOpenDelivery(benefit.value ?? benefit.amount);
         discountTotal += value;
         const sponsorships = Array.isArray(benefit.sponsorshipValues)
           ? benefit.sponsorshipValues
           : benefit.sponsorshipValues ? [benefit.sponsorshipValues] : [];
         let bPlatform = 0, bMerchant = 0;
+        let codigo: string | null = null;
         for (const sp of sponsorships) {
           const spName = (sp.name ?? sp.sponsorship ?? "").toUpperCase();
-          const spValue = valorOpenDelivery(sp.value);
+          const spValue = valorOpenDelivery(sp.value ?? sp.amount);
           if (spName === "MERCHANT") bMerchant += spValue;
           else bPlatform += spValue;
+          if (sp.discountCode && !codigo) codigo = String(sp.discountCode);
         }
         if (sponsorships.length === 0 && value > 0) {
           if ((benefit.sponsorship ?? "").toUpperCase() === "MERCHANT") bMerchant += value;
@@ -853,7 +890,7 @@ export async function processBrendiEvent(
         discountDetails.push({
           target: benefit.target ?? "CART",
           value, platform: bPlatform, merchant: bMerchant,
-          description: benefit.campaign?.name ?? benefit.description ?? null,
+          description: benefit.campaign?.name ?? benefit.description ?? (codigo ? `Cupom ${codigo.toUpperCase()}` : null),
         });
       }
 
@@ -873,9 +910,11 @@ export async function processBrendiEvent(
         const somaItens = valorOpenDelivery(orderData.total?.itemsPrice) ||
           items.reduce((s: number, it: any) => s + (it.price || 0) * (it.quantity || 1), 0);
 
+        // A taxa de serviço da plataforma está dentro do total: sem ela na
+        // soma, a diferença sai menor que o cupom.
         const valor = descontoDoPayload > 0
           ? descontoDoPayload
-          : Math.round((somaItens + deliveryFeeValue - total) * 100) / 100;
+          : Math.round((somaItens + deliveryFeeValue + serviceFeeValue - total) * 100) / 100;
 
         if (valor > 0.01 && somaItens > 0) {
           discountTotal = Math.round(valor * 100) / 100;
@@ -901,7 +940,7 @@ export async function processBrendiEvent(
         const orderTotal = valorOpenDelivery(orderData.total?.orderAmount ?? orderData.totalPrice);
         const subTotal = valorOpenDelivery(orderData.total?.subTotal);
         const benefitsValue = discountTotal || 0;
-        const calcFee = orderTotal - subTotal + benefitsValue;
+        const calcFee = orderTotal - subTotal + benefitsValue - serviceFeeValue;
         if (calcFee > 0 && calcFee < 100) {
           deliveryFeeValue = Math.round(calcFee * 100) / 100;
         }
@@ -916,41 +955,58 @@ export async function processBrendiEvent(
 
       const createdMs = orderData.createdAt ? new Date(orderData.createdAt).getTime() : Date.now();
 
+      // O Open Delivery escreve `scheduledDateTimeStart/End` (T maiúsculo) e a
+      // Brendi segue a grafia oficial; só a minúscula era lida, então o pedido
+      // agendado nascia "AGENDADO para agora" (preparationStartDateTime) e a
+      // loja preparava uma hora antes do horário que o cliente escolheu.
+      const agenda = orderData.schedule ?? {};
+      const agendaFim = agenda.scheduledDateTimeEnd ?? agenda.scheduledDatetimeEnd ?? null;
+      const agendaInicio = agenda.scheduledDateTimeStart ?? agenda.scheduledDatetimeStart ?? null;
       const isExplicitScheduled =
         orderData.orderTiming === "SCHEDULED" ||
-        Boolean(orderData.schedule?.scheduledDatetimeEnd) ||
-        Boolean(orderData.schedule?.scheduledDatetimeStart) ||
+        Boolean(agendaFim) ||
+        Boolean(agendaInicio) ||
         orderData.takeout?.mode === "SCHEDULED" ||
         orderData.delivery?.mode === "SCHEDULED";
 
       let scheduledDatetime: Date | null = null;
+      /** Data plausível como prazo: válida e mais de 5 min depois da criação. */
+      const prazoPlausivel = (raw: unknown): Date | null => {
+        if (!raw) return null;
+        const d = new Date(String(raw));
+        return Number.isFinite(d.getTime()) && d.getTime() > createdMs + 5 * 60000 ? d : null;
+      };
 
       if (isExplicitScheduled) {
+        // Prefere o INÍCIO da janela: é quando o cliente quer receber; o fim é
+        // o limite. Sem janela, o que a Brendi mandar de data prometida.
         const rawScheduled =
-          orderData.schedule?.scheduledDatetimeEnd ??
-          orderData.schedule?.scheduledDatetimeStart ??
+          agendaInicio ??
+          agendaFim ??
           orderData.scheduledDatetime ??
+          orderData.delivery?.deliveryDateTime ??
+          orderData.takeout?.takeoutDateTime ??
           orderData.preparationStartDateTime;
         if (rawScheduled) {
           scheduledDatetime = new Date(rawScheduled);
         }
       } else {
-        // Pedido imediato: retirada 40min, entrega 50min — a menos que o
-        // payload traga um prazo explícito e plausível (>5min da criação)
+        // Pedido imediato: a promessa que a Brendi mandou (deliveryDateTime /
+        // takeoutDateTime, o que o cliente vê no app dela), senão retirada
+        // 40 min e entrega 50 min.
         if (isTakeout) {
-          const rawTakeoutEnd = orderData.takeout?.estimatedTakeoutWindow?.end || orderData.takeout?.takeoutDeadline;
-          if (rawTakeoutEnd && new Date(rawTakeoutEnd).getTime() > createdMs + 5 * 60000) {
-            scheduledDatetime = new Date(rawTakeoutEnd);
-          } else {
-            scheduledDatetime = new Date(createdMs + 40 * 60000); // 40 minutos para Retirada
-          }
+          scheduledDatetime =
+            prazoPlausivel(orderData.takeout?.estimatedTakeoutWindow?.end) ||
+            prazoPlausivel(orderData.takeout?.takeoutDeadline) ||
+            prazoPlausivel(orderData.takeout?.takeoutDateTime) ||
+            new Date(createdMs + 40 * 60000); // 40 minutos para Retirada
         } else {
-          const rawDeliveryEnd = orderData.delivery?.deliveryDeadline || orderData.delivery?.estimatedDeliveryWindow?.end;
-          if (rawDeliveryEnd && new Date(rawDeliveryEnd).getTime() > createdMs + 5 * 60000) {
-            scheduledDatetime = new Date(rawDeliveryEnd);
-          } else {
-            scheduledDatetime = new Date(createdMs + 50 * 60000); // 50 minutos para Entrega
-          }
+          scheduledDatetime =
+            prazoPlausivel(orderData.delivery?.deliveryDeadline) ||
+            prazoPlausivel(orderData.delivery?.estimatedDeliveryWindow?.end) ||
+            prazoPlausivel(orderData.delivery?.estimatedDeliveryDateTime) ||
+            prazoPlausivel(orderData.delivery?.deliveryDateTime) ||
+            new Date(createdMs + 50 * 60000); // 50 minutos para Entrega
         }
       }
       const deliveryDeadline = scheduledDatetime;
@@ -992,6 +1048,9 @@ export async function processBrendiEvent(
           ? `🏷️ ${discountDetails[0]?.description || "Desconto"}: -R$${discountTotal.toFixed(2)}` +
             (discountPlatform > 0 ? ` (Plataforma: R$${discountPlatform.toFixed(2)} | Loja: R$${discountMerchant.toFixed(2)})` : "")
           : null,
+        // Fica com a plataforma, mas está no total que o cliente pagou: sem a
+        // linha, caixa e cozinha viam a conta "não fechar".
+        serviceFeeValue > 0 ? `💳 Taxa de serviço Brendi: R$${serviceFeeValue.toFixed(2)} (fica com a plataforma)` : null,
         customerNote ? `📝 OBS: ${customerNote}` : null,
         ...itemNotes.map((n: string) => `📝 ${n}`),
       ].filter(Boolean).join("\n");

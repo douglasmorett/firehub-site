@@ -203,6 +203,8 @@ export async function PUT(req: Request) {
   // O Frangoso descreveu exatamente isso em 17/09/2026 — "não reflete no 99,
   // cheio de erro" — sem nunca ter visto um aviso, porque não existia.
   let aviso99Food: string | null = null;
+  // E o mesmo para a Brendi: a falha ia só para o log, a tela dizia "pronto".
+  let avisoBrendi: string | null = null;
   if (order.ifoodOrderId) {
     try {
       const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
@@ -321,6 +323,8 @@ export async function PUT(req: Request) {
     );
     if (r.erros.length > 0) {
       console.error(`[Brendi Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      // Volta para a tela, igual ao aviso do iFood e do 99Food.
+      avisoBrendi = r.erros[0].replace(/^[^:]+:\s*/, "");
     }
   }
 
@@ -585,7 +589,7 @@ export async function PUT(req: Request) {
 
   // `avisoIfood` vem preenchido quando o iFood recusou a ação: o status local
   // mudou, mas o lojista precisa saber que o iFood não acompanhou.
-  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoEstorno });
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoEstorno });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });

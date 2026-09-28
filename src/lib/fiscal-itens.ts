@@ -110,9 +110,16 @@ export function montarItensDaNota(itensDoPedido: ItemDoPedido[]): ItemDaNota[] {
     const p = item.menuProduct;
     const situacaoDoProduto = String(p?.csosn ?? "").trim();
 
+    // xProd da NFC-e tem 120 caracteres. Brendi e JotaJá gravam "Item | opção
+    // | opção" em productName (as opções também em comboSelections): na nota
+    // vai só o cabeçalho, senão um Box de Frango com quatro molhos estoura o
+    // limite e a SEFAZ rejeita.
+    const nomeCompleto = item.productName || p?.name || "Item";
+    const descricao = ((item as any).comboSelections ? nomeCompleto.split(" | ")[0].trim() || nomeCompleto : nomeCompleto).slice(0, 120);
+
     const linhaSimples = (): ItemDaNota => ({
       codigo: p?.id ?? item.id,
-      descricao: item.productName || p?.name || "Item",
+      descricao,
       ncm: p?.ncm ?? "",
       cest: p?.cest ?? null,
       cfop: p?.cfop ?? "5102",

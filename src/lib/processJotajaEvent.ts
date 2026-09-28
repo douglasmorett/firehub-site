@@ -277,7 +277,10 @@ export async function processJotajaEvent(
         })) : null;
 
         const comboSelectionsJson = comboSelsList ? JSON.stringify(comboSelsList) : null;
-        const itemId = i.id || i.externalId || `item-${Math.random().toString(36).slice(2)}`;
+        // Sem id no catálogo, o espelho é pelo código externo ou pelo NOME —
+        // nunca aleatório, senão cada pedido cria um espelho novo do mesmo item.
+        const itemId = i.id || i.externalId || i.externalCode ||
+          `nome-${String(itemName).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").slice(0, 60)}`;
         espelhos.push({ id: `jotaja-${itemId}`, nome: itemName });
 
         return {
@@ -303,7 +306,8 @@ export async function processJotajaEvent(
                 description: "",
                 price: rawUnit || itemPrice,
                 category: i.category || "Jotajá",
-                isBeverage: isBeverageName(itemName) || options.some((o: any) => isBeverageName(o.name)),
+                // Só pelo nome BASE: combo com refri entre as opções não é bebida.
+                isBeverage: isBeverageName(itemName),
                 active: false,
               } as any,
             } as any,

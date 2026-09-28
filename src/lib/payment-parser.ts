@@ -74,7 +74,12 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
     // `change` sem sufixo é a variação Open Delivery que a Brendi usa para o
     // troco (JotaJá/iFood usam changeFor) — sem ele o motoboy sai sem troco.
     const pChange = payment.changeFor ?? payment.cash?.changeFor ?? payment.change;
-    if (pChange !== undefined && pChange !== null) {
+    // "Troco para" é a NOTA com que o cliente paga. A Brendi manda o próprio
+    // valor do pedido quando não há troco (pedido 6018 da Frangoso: R$ 58,99
+    // em dinheiro, `change: 58.99`), e a comanda saía "Troco p/ R$ 58,99".
+    // Nota igual ou menor que o valor pago não é troco.
+    const valorDestePagamento = Number(payment.value ?? payment.amount ?? 0) || 0;
+    if (pChange !== undefined && pChange !== null && Number(pChange) > 0 && Number(pChange) > valorDestePagamento) {
       changeAmountTotal += Number(pChange);
       hasChange = true;
     }
@@ -136,6 +141,10 @@ export function parseOrderPaymentInfo(orderData: any, source: 'IFOOD' | 'JOTAJA'
       baseName = 'iFood';
     } else if (rawMethod === 'DIGITAL_WALLET' || rawMethod === 'ONLINE' || rawMethod === 'IFOOD_PAY' || rawMethod === 'APP' || isPartnerPayment) {
       baseName = source === 'JOTAJA' ? 'JotaJá App' : source === 'BRENDI' ? 'Brendi App' : 'iFood App';
+    } else if (rawMethod === 'OTHER' || rawMethod === 'OTHERS') {
+      // "Outro" do Open Delivery: a loja combina com o cliente. Caía no
+      // default "Cartão" e entrava no crédito da maquininha no fechamento.
+      baseName = 'Outro';
     }
 
     let displayMethod = rawName || baseName;

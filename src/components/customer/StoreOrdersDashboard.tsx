@@ -2808,6 +2808,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         // O mesmo aviso para o 99Food — antes o erro dele morria no log do
         // servidor e a tela dizia que estava tudo certo (Frangoso, 17/09/2026).
         if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
+        // E a Brendi — a falha dela só ia para o log (levantamento de 27/09/2026).
+        if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
         // Pix pelo site: estorno que não saiu na hora (sem saldo no Asaas,
         // esperando autorização no app). Também vai para o WhatsApp do dono.
         if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");

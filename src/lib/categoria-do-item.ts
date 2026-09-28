@@ -341,7 +341,17 @@ export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategoria
   if (atual && !ehCategoriaDeIntegracao(atual) && ehCategoriaDaLoja(atual, mapa)) return atual;
   // O nome do dia (productName) vem antes do nome do espelho: é o que o
   // parceiro mandou neste pedido, e é o que bate com o cadastro da loja.
-  const nomes = [item?.productName, item?.menuProduct?.name];
+  //
+  // Brendi e JotaJá gravam "Item | opção | opção" em productName com as
+  // mesmas opções em `comboSelections`. Para casar com o cardápio vale só o
+  // cabeçalho: com as opções no nome, `pedacosDoNome` dava voto a cada opção
+  // e "Porção de Batata frita" (escolha dentro do Box de Frango) puxava o
+  // box inteiro para a categoria das porções. Sem `comboSelections` (JotaJá
+  // antigo) o nome fica inteiro: as escolhas só existem ali.
+  const nomeDoDia = item?.comboSelections
+    ? String(item?.productName ?? "").split(" | ")[0].trim() || item?.productName
+    : item?.productName;
+  const nomes = [nomeDoDia, item?.menuProduct?.name];
   for (const n of nomes) {
     const chave = chaveDoNome(n);
     if (chave && mapa.porNome.has(chave)) return mapa.porNome.get(chave)!;
