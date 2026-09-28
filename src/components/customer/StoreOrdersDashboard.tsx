@@ -2111,7 +2111,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           franchiseeId: user.ownerId || user.id,
-          order: formattedOrder,
+          // O "Cupom da cozinha" pela nuvem também sai sem valores: o
+          // Assistente lê `order.semValores` em todos os destinos.
+          order: semValores ? { ...formattedOrder, semValores: true } : formattedOrder,
           storeName,
           paperWidth: receiptPaperSize || "80mm",
         }),

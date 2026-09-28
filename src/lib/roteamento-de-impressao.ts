@@ -22,6 +22,7 @@ import { moduloDoPedido, impressoraAtendeModulo, type ModuloDePedido } from "./m
 import { impressorasDaLoja, type PedidoComOrigem } from "./loja-de-origem";
 import { CATEGORIAS_DE_INTEGRACAO } from "./cardapio-interno";
 import { isBeverageCategory, isBeverageName } from "./beverage";
+import { ehEntregaDaLoja } from "./qr-puxar";
 
 export type ImpressoraConfigurada = {
   /** O id do cadastro — é por ele que o andar escolhe a impressora. */
@@ -44,6 +45,10 @@ export type ImpressoraConfigurada = {
   separarItens?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
   qrPuxar?: boolean | null;
+  /** Imprime também a via do entregador no delivery da loja (ver viaDoEntregador). */
+  viaDoEntregador?: boolean | null;
+  /** O modelo de comanda desta impressora (lib/comanda-modelo.ts). */
+  modeloId?: string | null;
   /** De quais lojas recebe (chaves de lib/loja-de-origem.ts). Vazio = todas. */
   lojas?: string[] | null;
 };
@@ -418,19 +423,55 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   };
   const candidatas = semRepetir(candidatasComRepeticao);
 
-  // Quem pede o quê, entre as que de fato recebem este pedido.
+  // ── DE QUE MUNDO É ESTE PEDIDO ──
+  // Nenhuma impressora marcada para este mundo = todas atendem. É o resgate
+  // que o navegador (lib/print.ts) sempre teve e a fila da nuvem não tinha:
+  // loja com todas as impressoras em "Balcão e mesa" recebia o delivery do
+  // robô e do site pelo painel roteado por categoria, e pela fila com
+  // `destinos` vazio — uma via só, na impressora padrão do Assistente, sem a
+  // cozinha. O mesmo pedido saía de dois jeitos conforme houvesse aba aberta.
   const modulo = moduloDoPedido(pedido?.source as any);
-  const pedidas = categoriasPedidas(
-    candidatas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo)),
-    pedido
-  );
+  const doModulo = candidatas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo));
+  const atendem = doModulo.length > 0 ? doModulo : candidatas;
+
+  // Quem pede o quê, entre as que de fato recebem este pedido.
+  const pedidas = categoriasPedidas(atendem, pedido);
 
   const destinos: { impressora: ImpressoraConfigurada; itens: T[] }[] = [];
-  for (const imp of candidatas) {
-    const itens = itensParaImpressora(imp, pedido, pedidas);
+  for (const imp of atendem) {
+    const itens = itensDaImpressora(imp, pedido, pedidas);
     if (itens === null) continue;
     destinos.push({ impressora: imp, itens });
   }
 
   return destinos;
+}
+
+/** O sufixo do id da via do entregador (ver `viaDoEntregador`). */
+export const SUFIXO_DA_VIA_DO_ENTREGADOR = "-via-entregador";
+
+/**
+ * Em qual impressora sai a VIA DO ENTREGADOR deste pedido — ou `null`.
+ *
+ * Pedido da Ragnar (Fabiano, 27/09/2026): "queria que saísse a resumida, a
+ * ordem de serviço, e a nota do motoboy com QR code". A cozinha trabalha com a
+ * comanda resumida (modelo "Cozinha sem valores"), e o motoboy precisa de um
+ * papel completo — endereço, valores, pagamento, troco e o QR para puxar o
+ * pedido no app. Uma impressora só tem um modelo, então a via do entregador é
+ * um papel A MAIS, com o pedido inteiro, na impressora marcada para isso.
+ *
+ * Só no delivery da própria loja (lib/qr-puxar.ts, ehEntregaDaLoja) e numa
+ * impressora só: a primeira marcada entre as que atendem a loja e o mundo do
+ * pedido. A categoria não conta — a via é do pedido inteiro, não de um item.
+ */
+export function impressoraDaViaDoEntregador<T extends ImpressoraConfigurada>(
+  impressoras: T[] | null | undefined,
+  pedido: PedidoComOrigem & { source?: unknown; deliveryType?: string | null }
+): T | null {
+  if (!ehEntregaDaLoja(pedido as any)) return null;
+  const daLoja = impressorasDaLoja((impressoras || []).filter((p) => p && texto(p.name)), pedido);
+  const modulo = moduloDoPedido(pedido?.source as any);
+  const doModulo = daLoja.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo));
+  const candidatas = doModulo.length > 0 ? doModulo : daLoja;
+  return candidatas.find((imp) => imp.viaDoEntregador === true) || null;
 }

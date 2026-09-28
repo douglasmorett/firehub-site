@@ -65,12 +65,15 @@ export function qrLigadoNaImpressora(
  * o rodapé digitável não depende disto. Um lugar só para a regra, porque o
  * navegador (print.ts) e a fila da nuvem (print-queue) imprimem a mesma comanda.
  */
-export function camposDoQrPuxar(
-  pedido: { deliveryType?: string | null; dailyOrderNumber?: number | string | null; createdAt?: Date | string | null } & Record<string, any>,
-  slug: string | null | undefined,
-  base = "https://firehubfood.com.br"
-): { qrPuxarCodigo?: string; qrPuxarUrl?: string } {
-  if (!slug) return {};
+/**
+ * É entrega feita pelo MOTOBOY DA LOJA? Mesa, balcão, retirada e entrega
+ * parceira (iFood/99Food levando) não são. É a pergunta do QR e também a da
+ * via do entregador (lib/roteamento-de-impressao.ts).
+ */
+export function ehEntregaDaLoja(
+  pedido: { deliveryType?: string | null; source?: unknown } & Record<string, any> | null | undefined
+): boolean {
+  if (!pedido) return false;
   // Duas perguntas, de propósito: o `deliveryType` diz se é entrega (a mesa
   // grava "MESA", o balcão "RETIRADA"), e o `source` diz de que mundo o pedido
   // veio. O campo é texto livre com padrão "DELIVERY" no banco — uma origem
@@ -78,13 +81,23 @@ export function camposDoQrPuxar(
   // é a segunda trava, a mesma pela qual o roteamento separa salão de delivery.
   const ehEntrega = (pedido?.deliveryType || "DELIVERY") === "DELIVERY"
     && moduloDoPedido(pedido?.source as string | null | undefined) === "delivery";
-  const numero = pedido?.dailyOrderNumber;
-  if (!ehEntrega || numero === null || numero === undefined || numero === "") return {};
+  if (!ehEntrega) return false;
   try {
-    if (infoDaEntrega(pedido).parceira) return {};
+    return !infoDaEntrega(pedido).parceira;
   } catch {
-    return {};
+    return false;
   }
+}
+
+export function camposDoQrPuxar(
+  pedido: { deliveryType?: string | null; dailyOrderNumber?: number | string | null; createdAt?: Date | string | null } & Record<string, any>,
+  slug: string | null | undefined,
+  base = "https://firehubfood.com.br"
+): { qrPuxarCodigo?: string; qrPuxarUrl?: string } {
+  if (!slug) return {};
+  const numero = pedido?.dailyOrderNumber;
+  if (numero === null || numero === undefined || numero === "") return {};
+  if (!ehEntregaDaLoja(pedido)) return {};
   const codigo = codigoDoPedido(pedido?.createdAt || new Date(), numero);
   return { qrPuxarCodigo: codigo, qrPuxarUrl: urlDoPuxar(base, slug, codigo) };
 }

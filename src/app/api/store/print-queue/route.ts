@@ -1,7 +1,7 @@
 import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { destinosDoPedido, restoDoPedido } from "@/lib/roteamento-de-impressao";
+import { destinosDoPedido, impressoraDaViaDoEntregador, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "@/lib/roteamento-de-impressao";
 import { impressorasDaContaDaMesa, impressoraDoCaixa, impressoraUnicaDoPc } from "@/lib/impressao-da-conta";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -10,7 +10,7 @@ import { comboParaImpressao } from "@/lib/parse-combo";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
-import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
+import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda, numeroDaMesa } from "@/lib/mesa-na-comanda";
@@ -601,6 +601,51 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // ── A VIA DO ENTREGADOR (lib/roteamento-de-impressao.ts) ──────────────
+    //
+    // Um papel A MAIS no delivery da loja: o pedido inteiro, com valores,
+    // pagamento e o QR do motoboy, na impressora marcada para isso — enquanto
+    // a cozinha fica com a comanda resumida do modelo dela.
+    //
+    // Vai como JOB À PARTE, com id próprio no pedido: o Assistente guarda
+    // "já impresso" por id do pedido + impressora, e um segundo destino do
+    // mesmo pedido na mesma impressora seria engolido como duplicata. O id com
+    // sufixo não casa com pedido nenhum no /ack (que só carimba o pedido pelo
+    // job principal), e o Assistente deduplica a via pelo próprio id dela.
+    const blocosDaVia = blocosDaViaDoEntregador(pc);
+    const avisosDaVia = avisosDoPedido(pc);
+    const jobsDasVias = jobs.flatMap((job: any) => {
+      const imp = impressoraDaViaDoEntregador(printers, job.order);
+      if (!imp) return [];
+      const idDaVia = String(job.order.id) + SUFIXO_DA_VIA_DO_ENTREGADOR;
+      return [{
+        ...job,
+        id: "job_" + idDaVia,
+        order: {
+          ...job.order,
+          id: idDaVia,
+          ...camposDoQrPuxar(job.order, slugDaLoja),
+          campanha: undefined,
+          semValores: undefined,
+          blocos: blocosDaVia,
+          avisos: avisosDaVia,
+        },
+        destinos: [{
+          printer: imp.name,
+          copies: 1,
+          paperWidth: imp.paperWidth || pc?.defaultPaperWidth || "80mm",
+          columns: imp.columns ?? undefined,
+          escposProfile: imp.escposProfile ?? undefined,
+          somenteBebidas: false,
+          separarItens: false,
+          items: job.order.items,
+          ...camposDoQrPuxar(job.order, slugDaLoja),
+          ...(blocosDaVia ? { blocos: blocosDaVia } : {}),
+          ...(avisosDaVia ? { avisos: avisosDaVia } : {}),
+        }],
+      }];
+    });
+
     // ── IMPRESSÕES AVULSAS (conta da mesa) ───────────────────────────
     //
     // Não nascem de pedido: ficam em PrintRequest, já no formato de cupom
@@ -652,6 +697,13 @@ export async function GET(req: NextRequest) {
       const destinos = alvo
         ? [{ impressora: printers.find((p) => String(p?.name || "").trim() === alvo) || { name: alvo }, itens: order.items || [] }]
         : destinosDoPedido(printers, order, { palavrasDeBebida: pc?.customBeverageKeywords });
+      // ── A REIMPRESSÃO SAI IGUAL À ORIGINAL ──────────────────────────────
+      // Os destinos daqui não levavam o QR do motoboy, o modelo de cada
+      // impressora nem o "sem valores" dela: o botão Imprimir usado fora do PC
+      // do caixa devolvia a via do entregador sem QR e a da cozinha com preço
+      // (Ragnar, 27/09/2026). Mesmas regras do pedido novo, logo acima.
+      const qr = camposDoQrPuxar(order, slugDaLoja);
+      const qrEmTodas = destinos.length === 0 || destinos.every((d) => qrLigadoNaImpressora(d.impressora, pc));
       return {
         id: "job_" + pedida.id,
         order: {
@@ -660,6 +712,7 @@ export async function GET(req: NextRequest) {
           // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
           // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
           ...camposDeDesconto99ParaImpressao(order),
+          ...(qrEmTodas ? qr : {}),
           ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
           ...(avisosDaComanda ? { avisos: avisosDaComanda } : {}),
         },
@@ -689,6 +742,10 @@ export async function GET(req: NextRequest) {
           // Reimpressão sai igual à original: com o bloco da campanha onde ele
           // saiu da primeira vez.
           ...camposDaCampanha(order, owner?.storeLoyalty, slugDaLoja, d.impressora.name),
+          ...(qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
+          ...(blocosDaImpressora(d.impressora as any) ? { blocos: blocosDaImpressora(d.impressora as any) } : {}),
+          ...(avisosDaImpressora(d.impressora as any) ? { avisos: avisosDaImpressora(d.impressora as any) } : {}),
+          ...(semValoresDaImpressora(pc, (d.impressora as any)?.modeloId) ? { semValores: true } : {}),
         })),
         createdAt: pedida.createdAt.toISOString(),
       };
@@ -775,7 +832,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ jobs: [...jobs, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos] });
+    return NextResponse.json({ jobs: [...jobs, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos] });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.

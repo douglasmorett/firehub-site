@@ -3,9 +3,9 @@ import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
-import { categoriasPedidas, impressorasPeloPedidoSoDeBebida, itensDaImpressora, restoDoPedido } from "./roteamento-de-impressao";
+import { categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
-import { avisosDoPedido, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
+import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -170,6 +170,9 @@ export type PrinterEntry = {
   /* QR "puxar pedido" do motoboy no rodape da comanda de entrega.
      Ausente = LIGADO (nasce ligado em todas; a loja desliga onde nao quer). */
   qrPuxar?: boolean;
+  /* Via do entregador: papel a mais no delivery da loja, com o pedido inteiro,
+     valores e QR (lib/roteamento-de-impressao.ts). Ausente = desligado. */
+  viaDoEntregador?: boolean;
   /* Recebe a conta da mesa (a impressao pedida no modulo de mesas).
      Ausente = automatico, decidido por lib/impressao-da-conta.ts. */
   contaDaMesa?: boolean;
@@ -504,6 +507,8 @@ export async function printOrder(
   }
 
   if (!printersToUse.length) return { success: false, printed: 0, attempted: true, aguardando: false };
+  /** Todas as cadastradas, antes dos filtros: a via do entregador escolhe entre elas. */
+  const todasAsImpressoras = printersToUse;
 
   // ── DE QUE MUNDO E ESTE PEDIDO ─────────────────────────────────────────
   // Categoria nunca soube de onde o pedido veio: a impressora do balcao
@@ -641,6 +646,34 @@ export async function printOrder(
     );
     if (result.ok) printed++;
     if (result.aguardando) aguardando = true;
+  }
+
+  // ── A VIA DO ENTREGADOR (lib/roteamento-de-impressao.ts) ────────────────
+  // O pedido inteiro, com valores, pagamento e o QR do motoboy, num papel a
+  // mais na impressora marcada — a mesma regra da fila da nuvem. O id com
+  // sufixo é o que impede o Assistente de tomá-la por segunda via da comanda
+  // que acabou de sair na mesma impressora. O "Cupom da cozinha" não a leva.
+  const daVia = semValores ? null : impressoraDaViaDoEntregador(todasAsImpressoras, order as any);
+  if (daVia) {
+    const via = await printToDevice(
+      daVia.name,
+      { ...order, id: String(order.id) + SUFIXO_DA_VIA_DO_ENTREGADOR } as PrintOrder,
+      storeName,
+      1,
+      daVia.paperWidth || printerConfig?.defaultPaperWidth || "80mm",
+      force,
+      printerConfig,
+      resolveColumns(daVia) ?? printerConfig?.defaultColumns,
+      daVia.escposProfile,
+      false,
+      false,
+      false,
+      true,
+      undefined,
+      blocosDaViaDoEntregador(printerConfig),
+      avisosDoPedido(printerConfig)
+    );
+    if (via.aguardando) aguardando = true;
   }
 
   return { success: printed > 0, printed, attempted: true, aguardando };

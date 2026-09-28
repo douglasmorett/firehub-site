@@ -67,6 +67,8 @@ type PrinterEntry = {
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
+  /** Papel a mais no delivery da loja: pedido inteiro, valores e QR (lib/roteamento-de-impressao.ts). */
+  viaDoEntregador?: boolean;
   // Recebe a impressao PEDIDA no modulo de mesa (a conta da mesa).
   // Ausente = automatico: vale o palpite de lib/impressao-da-conta.ts (a
   // impressora do caixa) ate a loja marcar as que quer.
@@ -1343,6 +1345,46 @@ export default function PrinterSetupClient({
                 </p>
               )}
             </div>
+
+            {/* ── Via do entregador ──
+                Um papel A MAIS em todo delivery da própria loja: o pedido
+                inteiro, com endereço, valores, pagamento e o QR do motoboy.
+                É o que deixa a cozinha trabalhar com a comanda resumida
+                ("Cozinha sem valores") sem o motoboy sair sem a nota dele
+                (Ragnar, 27/09/2026). Uma impressora só: a primeira marcada. */}
+            {(() => {
+              const outra = config.printers.find(p => p.id !== printer.id && p.viaDoEntregador === true && p.name);
+              const ligada = printer.viaDoEntregador === true;
+              const antesDesta = outra && config.printers.indexOf(outra) < config.printers.indexOf(printer);
+              return (
+                <div style={{ marginBottom: "1rem" }}>
+                  <button
+                    onClick={() => updatePrinter(printer.id, { viaDoEntregador: !ligada })}
+                    style={{
+                      width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                      padding: "12px 14px", borderRadius: 12,
+                      border: ligada ? "2px solid #475569" : "1.5px solid #E2E8F0",
+                      background: ligada ? "#F8FAFC" : "#fff",
+                      color: ligada ? "#334155" : "#64748B",
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: "0.88rem" }}>
+                      {ligada ? "✓" : "○"} 🧾 Via do entregador no delivery
+                    </div>
+                    <div style={{ fontSize: "0.76rem", fontWeight: 500, marginTop: 3, lineHeight: 1.4, opacity: 0.9 }}>
+                      {ligada
+                        ? "Em todo delivery da loja (site, WhatsApp, iFood com motoboy seu) sai daqui, além da comanda desta impressora, uma via completa: endereço, valores, pagamento e o QR do motoboy. Use com o modelo \"Cozinha sem valores\" para a cozinha ficar com a resumida."
+                        : "Ligue para sair aqui, em todo delivery da loja, uma via completa para o motoboy — endereço, valores, pagamento e QR — além da comanda desta impressora."}
+                    </div>
+                  </button>
+                  {ligada && antesDesta && (
+                    <p style={{ fontSize: "0.74rem", color: "#B45309", margin: "6px 0 0", fontWeight: 700, lineHeight: 1.4 }}>
+                      A via sai numa impressora só, a primeira marcada da lista: {outra!.label || outra!.name}. Desligue lá para sair aqui.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ── Conta da mesa ──
                 A impressao que o garcom PEDE no modulo de mesas (botao

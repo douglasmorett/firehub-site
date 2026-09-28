@@ -1034,6 +1034,18 @@ export function blocosDoPedido(
 }
 
 /**
+ * Os blocos da VIA DO ENTREGADOR (lib/roteamento-de-impressao.ts): a via
+ * completa do modelo padrão da loja, com valores, e com o QR do motoboy
+ * garantido — a via existe por causa dele. Loja que nunca personalizou devolve
+ * `undefined` e o Assistente imprime o layout embutido, que já termina no QR.
+ */
+export function blocosDaViaDoEntregador(printerConfig: unknown): Bloco[] | undefined {
+  const blocos = blocosDoPedido(printerConfig);
+  if (!blocos) return undefined;
+  return blocos.some((x) => x.tipo === "qrMotoboy") ? blocos : [...blocos, { tipo: "qrMotoboy", ligado: true }];
+}
+
+/**
  * Os avisos que ESTA impressora desligou, para o `order.avisos` — ou
  * `undefined` quando não há nenhum. Segue o mesmo modelo que `blocosDoPedido`
  * escolhe: impressora com modelo próprio leva os avisos dele.
