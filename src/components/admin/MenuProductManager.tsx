@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { ehProdutoDeIntegracao, idsSoDeOpcaoDeCombo, combosQueUsamOpcao } from "@/lib/cardapio-interno";
+import { perguntaTravadaPelaPausa } from "@/lib/opcao-pausada";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
 
@@ -164,15 +165,30 @@ function EstoqueDoItem({ product, onSalvar }: {
  *
  * Agora a opção some da lista de categorias e aparece aqui, dentro do combo
  * que a oferece, com a regra da pergunta e o acréscimo cobrado. Editar o
- * combo continua sendo o formulário; este painel é só leitura, com um atalho.
+ * combo continua sendo o formulário; aqui há o atalho para ele e o PAUSAR com
+ * 1 clique em cada opção (pedido do dono, 27/09/2026: o sabor que acabou se
+ * pausa no meio do movimento, sem abrir formulário). A pausa é a do produto
+ * da opção — vale em todo combo que a oferece e em todo canal
+ * (lib/opcao-pausada.ts).
  */
-function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }: {
+function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao, onPausarOpcao, ativoNaTela }: {
   produto: any;
   catalogo: Map<string, any>;
   onEditarCombo: () => void;
   onEditarOpcao: (opcao: any) => void;
+  /** 1 clique: `ativar` false pausa a opção, true a reativa. */
+  onPausarOpcao?: (opcao: any, ativar: boolean) => void;
+  /** O que a tela já mostra antes de o servidor confirmar (id da opção → ativa). */
+  ativoNaTela?: Record<string, boolean>;
 }) {
   const grupos: any[] = produto.comboGroups || [];
+  const idDaOpcao = (it: any) => String(it.menuProduct?.id || it.menuProductId || "");
+  const ativaNaTela = (it: any): boolean => {
+    const id = idDaOpcao(it);
+    const naTela = ativoNaTela?.[id];
+    if (naTela !== undefined) return naTela;
+    return (catalogo.get(id)?.active ?? it.menuProduct?.active) !== false;
+  };
   return (
     <div style={{ flexBasis: "100%", width: "100%", marginTop: "2px", paddingTop: "10px", borderTop: "1px dashed #E2E8F0" }}>
       <div style={{ display: "grid", gap: "8px" }}>
@@ -185,6 +201,11 @@ function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }
               ? (Number(g.maxQty) === 1 ? "Obrigatória · 1 escolha" : `Obrigatória · exatamente ${g.maxQty}`)
               : `Obrigatória · de ${minimo} a ${g.maxQty}`;
           const itens: any[] = g.items || [];
+          // A conta do robô e do modal: com as pausas, a pergunta ainda fecha?
+          const travada = perguntaTravadaPelaPausa({
+            ...g,
+            items: itens.map((it) => ({ ...it, menuProduct: { ...(it.menuProduct || {}), active: ativaNaTela(it) } })),
+          });
           return (
             <div key={g.id || gIdx} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "8px 12px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "6px" }}>
@@ -195,6 +216,14 @@ function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }
                 <span style={{ fontSize: "0.66rem", fontWeight: 700, color: obrigatoria ? "#B71C1C" : "#475569", background: obrigatoria ? "#FEF2F2" : "#F1F5F9", border: `1px solid ${obrigatoria ? "#FECACA" : "#E2E8F0"}`, padding: "1px 7px", borderRadius: "20px" }}>
                   {regra}
                 </span>
+                {travada && (
+                  <span
+                    title="Sem opção ativa suficiente para esta pergunta obrigatória: o site e o totem não deixam pôr o combo na sacola, e o robô avisa que ele está indisponível. Reative uma opção ou pause o combo."
+                    style={{ fontSize: "0.66rem", fontWeight: 800, color: "#FFF", background: "#B71C1C", padding: "1px 8px", borderRadius: "20px" }}
+                  >
+                    ⚠️ Com as pausas, o combo não fecha
+                  </span>
+                )}
               </div>
 
               {itens.length === 0 ? (
@@ -202,29 +231,52 @@ function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao }
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "4px" }}>
                   {itens.map((it: any) => {
-                    const opcaoId = String(it.menuProduct?.id || it.menuProductId || "");
+                    const opcaoId = idDaOpcao(it);
                     const opcao = catalogo.get(opcaoId);
                     const nome = opcao?.name || it.menuProduct?.name || "Item excluído do cardápio";
-                    const pausada = (opcao?.active ?? it.menuProduct?.active) === false;
+                    const pausada = !ativaNaTela(it);
                     const acrescimo = Number(it.additionalPrice) || 0;
                     const porCanal = [it.additionalPriceSalao, it.additionalPriceDelivery, it.additionalPriceTotem].some(v => Number(v) > 0);
                     return (
-                      <div key={it.id || opcaoId} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "#FFF", border: "1px solid #E2E8F0", borderRadius: "8px", minWidth: 0, opacity: pausada ? 0.6 : 1 }}>
-                        <span title={nome} style={{ flex: 1, minWidth: 0, fontSize: "0.78rem", fontWeight: 700, color: opcao || it.menuProduct ? "#1E293B" : "#C92E09", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div key={it.id || opcaoId} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "3px 6px 3px 8px", background: pausada ? "#FFFBEB" : "#FFF", border: `1px solid ${pausada ? "#FDE68A" : "#E2E8F0"}`, borderRadius: "8px", minWidth: 0 }}>
+                        <span title={nome} style={{ flex: 1, minWidth: 0, fontSize: "0.78rem", fontWeight: 700, color: !(opcao || it.menuProduct) ? "#C92E09" : pausada ? "#94A3B8" : "#1E293B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {nome}
                           {it.optionNote && <span style={{ fontWeight: 500, color: "#64748B" }}> · {it.optionNote}</span>}
-                          {pausada && <span title="Opção pausada"> ⏸️</span>}
                         </span>
+                        {pausada && (
+                          <span style={{ fontSize: "0.6rem", fontWeight: 800, color: "#B45309", background: "#FEF3C7", padding: "1px 6px", borderRadius: "20px", whiteSpace: "nowrap" }}>
+                            Pausada
+                          </span>
+                        )}
                         {it.maxPerItem ? (
                           <span style={{ fontSize: "0.62rem", color: "#64748B", fontWeight: 700, whiteSpace: "nowrap" }}>máx {it.maxPerItem}</span>
                         ) : null}
                         <span
                           title={porCanal ? "Cobra valor diferente por canal (balcão, delivery, totem)" : "Quanto esta opção soma ao preço do combo"}
-                          style={{ fontSize: "0.76rem", fontWeight: 800, color: acrescimo > 0 ? "#E8360C" : "#0F766E", whiteSpace: "nowrap" }}
+                          style={{ fontSize: "0.76rem", fontWeight: 800, color: acrescimo > 0 ? "#E8360C" : "#0F766E", whiteSpace: "nowrap", opacity: pausada ? 0.5 : 1 }}
                         >
                           {acrescimo > 0 ? `+${moeda(acrescimo)}` : "Grátis"}
                           {porCanal && <span style={{ fontSize: "0.6rem", color: "#475569", marginLeft: "3px" }}>por canal</span>}
                         </span>
+                        {opcao && onPausarOpcao && (
+                          <button
+                            type="button"
+                            onClick={() => onPausarOpcao(opcao, pausada)}
+                            aria-label={pausada ? `Reativar ${nome}` : `Pausar ${nome}`}
+                            title={pausada
+                              ? `Reativar “${nome}”: volta a aparecer em todos os canais`
+                              : `Pausar “${nome}” agora: sai do site, totem, PDV, mesas e robô até você reativar`}
+                            style={{
+                              display: "inline-flex", alignItems: "center", justifyContent: "center",
+                              width: 26, height: 26, flexShrink: 0, padding: 0, borderRadius: "7px", cursor: "pointer",
+                              border: `1px solid ${pausada ? "#5EEAD4" : "#FCD34D"}`,
+                              background: pausada ? "#F0FDFA" : "#FFFBEB",
+                              color: pausada ? "#0F766E" : "#B45309",
+                            }}
+                          >
+                            {pausada ? <Play size={13} /> : <Pause size={13} />}
+                          </button>
+                        )}
                         {opcao && (
                           <button type="button" onClick={() => onEditarOpcao(opcao)} title="Editar nome, foto ou descrição desta opção"
                             style={{ background: "none", border: "none", cursor: "pointer", color: "#94A3B8", padding: 0, lineHeight: 0 }}>
@@ -305,6 +357,19 @@ export default function MenuProductManager({
   /** Card de combo com os complementos abertos, por id do produto. */
   const [complementosAbertos, setComplementosAbertos] = useState<Record<string, boolean>>({});
   const [mostrarOpcoesSemCombo, setMostrarOpcoesSemCombo] = useState(false);
+  /**
+   * Opção de combo pausada/reativada com 1 clique: o chip vira NA HORA, antes
+   * de o servidor confirmar (id da opção → ativa). A marca sai quando o
+   * cardápio recarregado (router.refresh) já diz o mesmo; se o servidor
+   * recusar, ela é desfeita em pausarOpcaoDoCombo.
+   */
+  const [opcaoNaTela, setOpcaoNaTela] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setOpcaoNaTela((antes) => {
+      const pendentes = Object.entries(antes).filter(([id, ativa]) => (produtosPorId.get(id)?.active !== false) !== ativa);
+      return pendentes.length === Object.keys(antes).length ? antes : Object.fromEntries(pendentes);
+    });
+  }, [produtosPorId]);
 
   // Categorias dinâmicas (inicia com as do servidor combinadas com quaisquer categorias presentes nos produtos)
   const [dynCategories, setDynCategories] = useState(() => {
@@ -1184,6 +1249,40 @@ export default function MenuProductManager({
     }
     setPausing(false);
     setPauseModal(null);
+    router.refresh();
+  };
+
+  // ── PAUSAR OPÇÃO DE COMBO COM 1 CLIQUE ─────────────────────────────────
+  //
+  // Pedido do dono (27/09/2026): o sabor que acabou se pausa direto no chip,
+  // dentro do combo, sem formulário e sem pergunta. A pausa é a do produto da
+  // opção (`active`), a mesma do botão da lista: vale em todo combo que a
+  // oferece e em todo canal (lib/opcao-pausada.ts). Sem o aviso "pausar os
+  // combos também" do item avulso: aqui a intenção é o combo seguir vendendo
+  // com as outras opções — e o toast diz até onde a pausa chegou.
+  const pausarOpcaoDoCombo = async (opcao: any, ativar: boolean) => {
+    const id = String(opcao.id);
+    setOpcaoNaTela((antes) => ({ ...antes, [id]: ativar }));
+    const r = await fetch("/api/admin/menu-products", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, active: ativar }),
+    }).catch(() => null);
+    if (!r?.ok) {
+      setOpcaoNaTela((antes) => {
+        const { [id]: _desfeita, ...resto } = antes;
+        return resto;
+      });
+      // "#C92E09" é a cor que o toast escreve em branco.
+      showToast(`⚠️ Não deu para ${ativar ? "reativar" : "pausar"} “${opcao.name}”. Tente de novo.`, "#C92E09");
+      return;
+    }
+    const combos = (usosDaOpcao.get(id) || []).length;
+    const onde = combos > 1 ? `nos ${combos} combos que a oferecem` : "neste combo";
+    const alcance = !ehOpcaoDeCombo(opcao) ? ` ${onde} e no cardápio avulso` : combos > 1 ? ` ${onde}` : "";
+    showToast(
+      ativar ? `▶️ “${opcao.name}” reativada${alcance}.` : `⏸️ “${opcao.name}” pausada${alcance}.`,
+      ativar ? "#5EEAD4" : "#FCD34D"
+    );
     router.refresh();
   };
 
@@ -3359,6 +3458,8 @@ export default function MenuProductManager({
                                   catalogo={produtosPorId}
                                   onEditarCombo={() => openEdit(p)}
                                   onEditarOpcao={(opcao) => openEdit(opcao)}
+                                  onPausarOpcao={pausarOpcaoDoCombo}
+                                  ativoNaTela={opcaoNaTela}
                                 />
                               )}
                             </div>

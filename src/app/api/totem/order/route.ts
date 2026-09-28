@@ -7,6 +7,7 @@ import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { conferirEstoque } from "@/lib/estoque-restante";
+import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
 
 export const dynamic = "force-dynamic";
 
@@ -203,6 +204,10 @@ export async function POST(req: NextRequest) {
     let totalAmount = 0;
     const orderItems: Array<{ menuProductId: string; quantity: number; price: number; comboSelections: any }> = [];
     const recusados: string[] = [];
+    // O produto continua no cardápio, mas a OPÇÃO escolhida foi pausada (o
+    // sabor que acabou): o totem fica horas com a tela carregada e não vê a
+    // pausa do painel (lib/opcao-pausada.ts).
+    const opcoesIndisponiveis: { produto: string; frase: string }[] = [];
 
     for (const item of items) {
       const product = productMap.get(item.menuProductId);
@@ -215,6 +220,12 @@ export async function POST(req: NextRequest) {
       // já esconde, mas a tela pode estar aberta desde ontem.
       if (!disponivelHoje(product.availableDays, hojeNaLoja)) {
         recusados.push(product.name);
+        continue;
+      }
+
+      const pausadas = opcoesPausadasEscolhidas(product as any, item.comboSelections);
+      if (pausadas.length > 0) {
+        opcoesIndisponiveis.push({ produto: product.name, frase: fraseDaOpcaoIndisponivel(product.name, pausadas) });
         continue;
       }
 
@@ -248,23 +259,32 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Recusar item silenciosamente é pior do que recusar o pedido: o cliente
+    // paga na maquininha o valor da tela e recebe menos comida.
+    //
+    // Vem ANTES do "nenhum produto válido": com o carrinho de um item só (o
+    // combo cujo sabor acabou), aquele 400 genérico deixava o cliente na tela
+    // de pagamento sem saber o quê; o 409 tira o item, diz o motivo e recarrega
+    // o cardápio (TotemApp).
+    if (recusados.length > 0 || opcoesIndisponiveis.length > 0) {
+      const frases = [
+        ...(recusados.length > 0 ? [`Estes itens saíram do cardápio: ${recusados.join(", ")}.`] : []),
+        ...opcoesIndisponiveis.map((o) => o.frase),
+      ];
+      return NextResponse.json(
+        {
+          error: "carrinho_desatualizado",
+          mensagem: `${frases.join(" ")} Refaça o pedido.`,
+          itensRecusados: [...recusados, ...opcoesIndisponiveis.map((o) => o.produto)],
+        },
+        { status: 409 }
+      );
+    }
+
     if (orderItems.length === 0) {
       return NextResponse.json(
         { error: "Nenhum produto válido no carrinho. Atualize o cardápio e tente de novo." },
         { status: 400 }
-      );
-    }
-
-    // Recusar item silenciosamente é pior do que recusar o pedido: o cliente
-    // paga na maquininha o valor da tela e recebe menos comida.
-    if (recusados.length > 0) {
-      return NextResponse.json(
-        {
-          error: "carrinho_desatualizado",
-          mensagem: `Estes itens saíram do cardápio: ${recusados.join(", ")}. Refaça o pedido.`,
-          itensRecusados: recusados,
-        },
-        { status: 409 }
       );
     }
 

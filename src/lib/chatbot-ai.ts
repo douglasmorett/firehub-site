@@ -29,6 +29,7 @@ import { normalizeStoreHours } from "@/lib/store-hours";
 import { precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, tabelaDaOpcao } from "./preco-combo";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
+import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { inicioDoExpedienteDaLoja } from "./fuso";
 import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
@@ -270,7 +271,10 @@ export async function processChatbotAI(
                 additionalPrice: true, additionalPriceDelivery: true,
                 // Meia pizza que custa conforme o tamanho (lib/meio-a-meio.ts).
                 precoPorEscolha: true,
-                menuProduct: { select: { id: true, name: true, price: true } },
+                // `active` e o teto da opção: a pausada não é oferecida, e o
+                // combo que ficou sem como fechar é marcado (logo abaixo).
+                maxPerItem: true,
+                menuProduct: { select: { id: true, name: true, price: true, active: true } },
               },
             },
           },
@@ -329,7 +333,14 @@ export async function processChatbotAI(
   // próprio de delivery, é ele que vale — na cotação E na gravação do pedido,
   // porque este mesmo array desce até syncAiOrderToDatabase. Loja sem preço por
   // canal continua no `price` normal, sem mudança nenhuma.
-  const products = aplicarPrecoNoCardapio(produtosCrus as any[], "delivery");
+  //
+  // A opção PAUSADA (o sabor que acabou) FICA aqui, como o esgotado: é por
+  // este array que o nome pedido casa com o cadastro. Ela sai do que o robô
+  // oferece (a lista do prompt usa `semOpcoesPausadas`) e é recusada na tag
+  // final quando é escolha nova. O combo que a pausa travou é marcado com
+  // `perguntaTravadaPelaPausa`: proibido no prompt, recusado na gravação
+  // (lib/opcao-pausada.ts).
+  const products = aplicarPrecoNoCardapio(produtosCrus as any[], "delivery").map((p: any) => marcarTravadoPelaPausa(p));
 
   // O `contains` dos 8 dígitos finais é só o funil (aproveita o índice); quem
   // decide é a comparação canônica com DDD — sem ela, o cliente de outro DDD
@@ -583,6 +594,10 @@ export async function processChatbotAI(
   products.forEach((p: any) => {
     if (soOpcaoDeCombo.has(String(p.id))) return;
     const rawCleanName = (p.name || "").split("|")[0].trim();
+    if (p.perguntaTravadaPelaPausa) {
+      unavailableTodayProducts.push(`- "${rawCleanName}" (${p.category}): [🚫 INDISPONÍVEL AGORA — as opções de "${p.perguntaTravadaPelaPausa}" estão pausadas. PROIBIDO OFERECER OU ANOTAR]`);
+      return;
+    }
     const estoqueDoItem = estoqueDoRobo.get(String(p.id));
     if (estoqueDoItem?.pausaAoZerar) {
       const restam = estoqueDoItem.restam;
@@ -656,8 +671,11 @@ export async function processChatbotAI(
       // gravação, e o produto é marcado como "a partir de" para o robô não
       // prometer preço fechado no que varia por escolha.
       const precoBase = Number(p.price) || 0;
-      const precoParaCotar = Math.max(precoBase, precoMinimoDoProduto(p as any));
-      const varia = precoVariaPorEscolha(p as any);
+      // O que se oferece é o que se pode escolher agora: sem as opções
+      // pausadas, no "a partir de" e na lista (lib/opcao-pausada.ts).
+      const ofertado: any = semOpcoesPausadas(p);
+      const precoParaCotar = Math.max(precoBase, precoMinimoDoProduto(ofertado));
+      const varia = precoVariaPorEscolha(ofertado);
       const priceFormatted = precoParaCotar.toFixed(2).replace(".", ",");
       const rotuloPreco = varia
         ? `PREÇO A PARTIR DE R$ ${priceFormatted} (varia conforme a opção escolhida — PERGUNTE a opção antes de fechar)`
@@ -674,9 +692,20 @@ export async function processChatbotAI(
       // daquela opção (base + adicional), que é como o cliente pensa: "o
       // Tradicional custa X". Grupo de adicional continua como "+R$ X".
       const linhasDeOpcoes: string[] = [];
-      for (const g of (p as any).comboGroups || []) {
+      for (const g of ofertado.comboGroups || []) {
         const itens = (g.items || []).filter((i: any) => i?.menuProduct?.name);
-        if (itens.length === 0) continue;
+        // A pausada não se oferece, mas o robô precisa saber que ela existe:
+        // "tem calabresa?" merece "acabou agora", não "não conheço" — que o
+        // leva a chamar o atendente.
+        const original = g.id ? ((p as any).comboGroups || []).find((o: any) => o.id === g.id) : null;
+        const pausadas: string[] = (original?.items || [])
+          .filter((i: any) => opcaoPausada(i) && i?.menuProduct?.name)
+          .map((i: any) => i.menuProduct.name);
+        const avisoDePausa = pausadas.length > 0 ? ` [INDISPONÍVEIS AGORA — NÃO OFEREÇA NEM ANOTE: ${pausadas.join(", ")}]` : "";
+        if (itens.length === 0) {
+          if (avisoDePausa) linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"}:${avisoDePausa}`);
+          continue;
+        }
 
         const max = Math.max(1, Number(g.maxQty) || 1);
         const min = minimoExigidoDoGrupo(g as any);
@@ -721,7 +750,7 @@ export async function processChatbotAI(
           return add > 0 ? `${nome} +R$ ${add.toFixed(2).replace(".", ",")}` : `${nome} (sem custo)`;
         });
 
-        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${opcoes.join(" | ")}`);
+        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${opcoes.join(" | ")}${avisoDePausa}`);
       }
 
       const line =
@@ -2672,6 +2701,28 @@ async function syncAiOrderToDatabase({
   }
   const existingDraft =
     destino.acao === "reescrever" ? candidatosDoCliente.find((p) => p.id === destino.pedido.id) || null : null;
+
+  // ── OPÇÃO PAUSADA E COMBO QUE A PAUSA TRAVOU ──────────────────────────────
+  // O cardápio que o modelo lê já esconde a opção pausada e lista o combo
+  // travado como proibido (lib/opcao-pausada.ts); esta é a trava do fim, como
+  // a do estoque logo abaixo. Só vale para o que é NOVO: quando a tag reescreve
+  // um pedido JÁ ENVIADO, o sabor que estava nele antes da pausa a loja já
+  // recebeu, e recusá-lo agora travaria o "acrescenta uma Coca". É regra da
+  // loja, não falha: o cliente ouve o motivo e troca, sem "problema técnico".
+  if (isFinal) {
+    const enviado: any[] =
+      existingDraft && !(STATUS_QUE_NAO_CONTAM as readonly string[]).includes(String(existingDraft.status))
+        ? existingDraft.items || []
+        : [];
+    const pausa = pausaNaTagDoRobo(orderItemsData as any[], storeProducts, enviado);
+    if (pausa) {
+      const motivo = pausa.tipo === "combo"
+        ? `opção pausada: "${pausa.produto}" sem opção ativa em "${pausa.pergunta}"`
+        : `opção pausada em "${pausa.produto}": ${pausa.opcoes.join(", ")}`;
+      console.warn(`[Chatbot AI Order Sync] ⏸️ Pedido recusado — ${motivo}. Loja=${franchiseeId}`);
+      return { gravado: false, motivo, regraDeNegocio: true, mensagemParaOCliente: mensagemDaPausaNaTag(pausa) };
+    }
+  }
 
   // ── ESTOQUE DISPONÍVEL ────────────────────────────────────────────────────
   // O esgotado já sai do cardápio que o modelo lê; isto pega a QUANTIDADE

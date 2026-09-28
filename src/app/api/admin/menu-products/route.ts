@@ -496,7 +496,10 @@ export async function PUT(req: NextRequest) {
 
   // Estoque reposto (ou "pausar" trocado): a vitrine é cacheada por 60 s e o
   // item pausado ficaria fora do ar esse tempo depois da reposição.
-  if ("estoqueQtd" in updateData || "estoquePausar" in updateData) {
+  // A pausa de verdade (`active`, e o desligar no delivery) também: com o
+  // pausar de 1 clique na opção do combo, o sabor que acabou seguia na vitrine
+  // por até um minuto — e o POST do site o recusava (lib/opcao-pausada.ts).
+  if ("estoqueQtd" in updateData || "estoquePausar" in updateData || "active" in updateData || "activeDelivery" in updateData) {
     const loja = await prisma.user.findUnique({ where: { id: existing.franchiseeId || "" }, select: { slug: true } }).catch(() => null);
     if (loja?.slug) {
       try { revalidatePath(`/loja/${loja.slug}`); } catch {}

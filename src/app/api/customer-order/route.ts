@@ -7,6 +7,7 @@ import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { conferirEstoque } from "@/lib/estoque-restante";
+import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, modoDaArea, taxaFixaDaLoja } from "@/lib/area-de-entrega";
@@ -300,9 +301,10 @@ export async function POST(req: Request) {
       },
       // Os grupos vêm junto porque o preço do item depende deles: sem isso o
       // servidor não tem como saber quanto custa a opção que o cliente marcou.
+      // `active` da opção: o sabor pausado não entra (lib/opcao-pausada.ts).
       include: {
         comboGroups: {
-          include: { items: { include: { menuProduct: { select: { name: true, price: true } } } } },
+          include: { items: { include: { menuProduct: { select: { name: true, price: true, active: true } } } } },
         },
       },
     });
@@ -328,6 +330,17 @@ export async function POST(req: Request) {
         throw Object.assign(
           new Error(`"${product.name}" só está disponível em dias específicos e hoje não é um deles.`),
           { statusCode: 400 }
+        );
+      }
+
+      // A OPÇÃO PAUSADA também não entra (o sabor que acabou). A vitrine já a
+      // esconde, mas a aba aberta antes da pausa e o "Repetir pedido" ainda a
+      // mandavam — e a cozinha recebia o que não tem (lib/opcao-pausada.ts).
+      const pausadas = opcoesPausadasEscolhidas(product as any, item.comboSelections);
+      if (pausadas.length > 0) {
+        throw Object.assign(
+          new Error(`${fraseDaOpcaoIndisponivel(product.name, pausadas)} Troque a opção e tente de novo.`),
+          { statusCode: 409 }
         );
       }
       // ── PREÇO COM AS OPÇÕES ESCOLHIDAS ────────────────────────────────
