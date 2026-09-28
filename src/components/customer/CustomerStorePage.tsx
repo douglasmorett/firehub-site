@@ -63,6 +63,34 @@ function formatarCpf(v: string): string {
     .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
     .replace(/\.(\d{3})(\d{1,2})$/, ".$1-$2");
 }
+
+/**
+ * O CPF de quem paga, lembrado NESTE aparelho: digitar em todo pedido cansava
+ * (dono, 28/09/2026). Fica só no navegador do cliente e vale para todas as
+ * lojas do FireHub, porque é a mesma pessoa. Só se grava depois de um pedido
+ * aceito, para não guardar CPF digitado errado; "Esquecer" apaga (aparelho
+ * dividido).
+ */
+const CHAVE_DO_CPF = "fh_cpf_pagador";
+function lerCpfLembrado(): string {
+  try {
+    const cpf = String(JSON.parse(localStorage.getItem(CHAVE_DO_CPF) || "null")?.cpf || "");
+    return cpfValido(cpf) ? cpf : "";
+  } catch {
+    return "";
+  }
+}
+function lembrarCpf(cpf: string) {
+  try {
+    const d = cpf.replace(/\D/g, "");
+    if (cpfValido(d)) localStorage.setItem(CHAVE_DO_CPF, JSON.stringify({ cpf: d, at: Date.now() }));
+  } catch {}
+}
+function esquecerCpf() {
+  try {
+    localStorage.removeItem(CHAVE_DO_CPF);
+  } catch {}
+}
 import "./store.css";
 
 type MenuProduct = {
@@ -260,6 +288,14 @@ export default function CustomerStorePage({
   const [paymentMethod, setPaymentMethod] = useState(() => (pixPeloSite ? "PIX" : "DINHEIRO"));
   // CPF de quem paga: o Asaas só gera o Pix com ele (e ele vai na nota).
   const [cpfDoPagador, setCpfDoPagador] = useState("");
+  // O CPF lembrado neste aparelho (lerCpfLembrado) já entra preenchido.
+  const [cpfLembrado, setCpfLembrado] = useState("");
+  useEffect(() => {
+    const cpf = lerCpfLembrado();
+    if (!cpf) return;
+    setCpfLembrado(cpf);
+    setCpfDoPagador((atual) => atual || formatarCpf(cpf));
+  }, []);
   // Os avisos da página, em pop-up — era alert() do navegador.
   const { avisar, perguntar, avisoNaTela } = useAvisoDoCardapio();
   // Forma paga pelo site na conta Asaas: pede CPF (o Asaas exige).
@@ -2017,6 +2053,11 @@ export default function CustomerStorePage({
       });
       if (res.ok) {
         const d = await res.json();
+        // O servidor aceitou o CPF: fica lembrado para o próximo pedido.
+        if (pagaPeloAsaas) {
+          lembrarCpf(cpfDoPagador);
+          setCpfLembrado(cpfDoPagador.replace(/\D/g, ""));
+        }
         // A venda para o Pixel e o GA4. Pedido pago na entrega registra agora;
         // pedido com Pix pelo site só quando o Pix cai (onPaid do modal) —
         // quem desiste na tela do QR não pode virar venda, a mesma regra do
@@ -3305,6 +3346,26 @@ export default function CustomerStorePage({
                   {cpfDoPagador.replace(/\D/g, "").length === 11 && !cpfValido(cpfDoPagador) && (
                     <div style={{ fontSize: "0.75rem", color: "#DC2626", fontWeight: 600, marginTop: "4px" }}>
                       Esse CPF não é válido. Confira os números.
+                    </div>
+                  )}
+                  {cpfLembrado && cpfDoPagador.replace(/\D/g, "") === cpfLembrado ? (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginTop: "4px", fontSize: "0.75rem" }}>
+                      <span style={{ color: "#047857", fontWeight: 700 }}>✓ Lembrado neste aparelho</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          esquecerCpf();
+                          setCpfLembrado("");
+                          setCpfDoPagador("");
+                        }}
+                        style={{ background: "none", border: "none", padding: "2px 0", color: "#64748B", fontSize: "inherit", fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
+                      >
+                        Esquecer
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "4px" }}>
+                      Fica salvo neste aparelho para o próximo pedido.
                     </div>
                   )}
                   <div style={{ fontSize: "0.75rem", color: "#047857", marginTop: "6px", lineHeight: 1.45 }}>
