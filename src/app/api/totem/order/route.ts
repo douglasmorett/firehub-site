@@ -8,6 +8,7 @@ import { autenticarTotem } from "@/lib/totem-auth";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
+import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
 
 export const dynamic = "force-dynamic";
 
@@ -223,7 +224,8 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const pausadas = opcoesPausadasEscolhidas(product as any, item.comboSelections);
+      // + a opção que outra escolha bloqueia (meia pizza com a Pequena).
+      const pausadas = [...opcoesPausadasEscolhidas(product as any, item.comboSelections), ...opcoesBloqueadasEscolhidas(product as any, item.comboSelections)];
       if (pausadas.length > 0) {
         opcoesIndisponiveis.push({ produto: product.name, frase: fraseDaOpcaoIndisponivel(product.name, pausadas) });
         continue;

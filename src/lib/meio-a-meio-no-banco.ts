@@ -14,6 +14,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { PREFIXO_DA_MEIA, ehPerguntaDeMeio, meiaNaPizza, regraDoTitulo, type PizzaDoMeio } from "@/lib/meio-a-meio";
+import { bloqueiosDaOpcao } from "@/lib/preco-combo";
 
 export async function refazerMeiasDaLoja(franchiseeId: string | null | undefined): Promise<number> {
   if (!franchiseeId) return 0;
@@ -67,7 +68,8 @@ export async function refazerMeiasDaLoja(franchiseeId: string | null | undefined
       if (!nome.startsWith(PREFIXO_DA_MEIA)) continue;
       const outra = porNome.get(nome.slice(PREFIXO_DA_MEIA.length));
       if (!outra) continue;
-      const meia = meiaNaPizza(esta, outra, regra);
+      // Os tamanhos sem meio a meio ficam como estão gravados (null na tabela).
+      const meia = meiaNaPizza(esta, outra, regra, bloqueiosDaOpcao(item as any));
       const igual =
         Number(item.additionalPrice) === meia.additionalPrice &&
         mesmaTabela(item.precoPorEscolha, meia.precoPorEscolha) &&

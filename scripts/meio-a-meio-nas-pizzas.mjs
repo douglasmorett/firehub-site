@@ -44,8 +44,12 @@ const [franchiseeId] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const GRAVAR = process.argv.includes("--gravar");
 const REGRA = (process.argv.find((a) => a.startsWith("--regra=")) || "--regra=media").split("=")[1];
 const CATS = (process.argv.find((a) => a.startsWith("--categorias=")) || "").split("=")[1];
+// Tamanhos em que a casa NÃO faz meio a meio (--sem-meio=Pequena): a meia fica
+// bloqueada neles (null na tabela). A Serpa, desde 29/09/2026.
+const SEM_MEIO = ((process.argv.find((a) => a.startsWith("--sem-meio=")) || "").split("=")[1] || "")
+  .split(",").map((x) => x.trim()).filter(Boolean);
 if (!franchiseeId || !["media", "maior"].includes(REGRA)) {
-  console.log('uso: node --experimental-strip-types scripts/meio-a-meio-nas-pizzas.mjs <franchiseeId> [--gravar] [--regra=media|maior] [--categorias="Pizzas A,Pizzas B"]');
+  console.log('uso: node --experimental-strip-types scripts/meio-a-meio-nas-pizzas.mjs <franchiseeId> [--gravar] [--regra=media|maior] [--categorias="Pizzas A,Pizzas B"] [--sem-meio=Pequena]');
   process.exit(1);
 }
 
@@ -135,7 +139,7 @@ for (const p of ordenadas) {
   const ordem = [...outros];
   ordem.splice(outros.findIndex((g) => ehPerguntaDeTamanho(g.title)) + 1, 0, { id: grupoId });
 
-  const meias = ordenadas.filter((x) => x.id !== p.id).map((q) => ({ q, meia: meiaNaPizza(p, q, REGRA) }));
+  const meias = ordenadas.filter((x) => x.id !== p.id).map((q) => ({ q, meia: meiaNaPizza(p, q, REGRA, SEM_MEIO) }));
   conta.vinculos += meias.length;
 
   // A pizza como ficará no banco, cobrada por precoUnitarioDoItem (o que o

@@ -149,10 +149,12 @@ function dadosDoGrupo(g: any, gIdx: number) {
 }
 
 /** `{ "Grande": 15 }` com número em todo valor, ou nada. */
-function tabelaValida(t: any): Record<string, number> | undefined {
+function tabelaValida(t: any): Record<string, number | null> | undefined {
   if (!t || typeof t !== "object" || Array.isArray(t)) return undefined;
-  const saida: Record<string, number> = {};
+  const saida: Record<string, number | null> = {};
   for (const [k, v] of Object.entries(t)) {
+    // null = "não existe com esta escolha" (meia pizza na Pequena, Serpa): fica.
+    if (k && v === null) { saida[k] = null; continue; }
     const n = Number(v);
     if (k && Number.isFinite(n)) saida[k] = n;
   }

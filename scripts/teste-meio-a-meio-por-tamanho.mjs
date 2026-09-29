@@ -4,7 +4,7 @@
  *
  *   node --experimental-strip-types scripts/teste-meio-a-meio-por-tamanho.mjs
  */
-import { precoUnitarioDoItem, precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, precoDaOpcaoNaTela, adicionaisDetalhados } from "../src/lib/preco-combo.ts";
+import { precoUnitarioDoItem, precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, precoDaOpcaoNaTela, adicionaisDetalhados, bloqueiosDaOpcao, opcaoDisponivelNaTela, opcoesBloqueadasEscolhidas, tabelaDaOpcao } from "../src/lib/preco-combo.ts";
 import { meiaNaPizza, TITULO_DO_MEIO, regraDoTitulo } from "../src/lib/meio-a-meio.ts";
 
 let ok = 0;
@@ -74,6 +74,25 @@ igual("a partir de = Pequena inteira", precoMinimoDoProduto(pizza), 40);
 igual("piso ≤ menor preço válido (P + meia Marg. = 40)", pisoDoPreco(pizza) <= 40, true);
 igual("piso conta o desconto do Grande", pisoDoPreco(pizza), 35);
 igual("preço varia por escolha", precoVariaPorEscolha({ price: 40, comboGroups: [{ items: [{ additionalPrice: 0, precoPorEscolha: { Grande: 3 } }] }] }), true);
+
+// ── Sem meio a meio na Pequena (Serpa, 29/09/2026) ──
+const meiaSoGrande = meiaNaPizza(calabresa, camarao, "media", ["Pequena"]);
+igual("sem meio na Pequena: tabela", meiaSoGrande.precoPorEscolha, { Pequena: null, Grande: 15 });
+igual("sem meio na Pequena: preço padrão é o da Grande", meiaSoGrande.additionalPrice, 15);
+igual("sem meio na Pequena: nota só da Grande", meiaSoGrande.optionNote, "Grande R$ 75,00");
+const itemSoGrande = { additionalPrice: 15, precoPorEscolha: meiaSoGrande.precoPorEscolha, menuProduct: { name: "1/2 Camarão" } };
+igual("null NÃO vira preço zero", tabelaDaOpcao(itemSoGrande), [["Grande", 15]]);
+igual("bloqueios", bloqueiosDaOpcao(itemSoGrande), ["Pequena"]);
+igual("bloqueio em texto (JSON do banco)", bloqueiosDaOpcao({ precoPorEscolha: JSON.stringify(meiaSoGrande.precoPorEscolha) }), ["Pequena"]);
+igual("tela: some com a Pequena", opcaoDisponivelNaTela(itemSoGrande, { tam: { Pequena: 1 } }), false);
+igual("tela: aparece com a Grande", opcaoDisponivelNaTela(itemSoGrande, { tam: { Grande: 1 } }), true);
+const pizzaSoGrande = { price: 40, comboGroups: [tamanho(20), { id: "meio", title: "Meio a meio?", maxQty: 1, minQty: 0, items: [itemSoGrande] }, borda] };
+igual("pedido: meia + Pequena é recusado", opcoesBloqueadasEscolhidas(pizzaSoGrande, { tam: { Pequena: 1 }, meio: { "1/2 Camarão": 1 } }), ["1/2 Camarão"]);
+igual("pedido: meia + Grande passa", opcoesBloqueadasEscolhidas(pizzaSoGrande, { tam: { Grande: 1 }, meio: { "1/2 Camarão": 1 } }), []);
+igual("pedido: Pequena sem meia passa", opcoesBloqueadasEscolhidas(pizzaSoGrande, { tam: { Pequena: 1 } }), []);
+igual("preço: Grande + meia Camarão = 75", precoUnitarioDoItem(pizzaSoGrande, { tam: { Grande: 1 }, meio: { "1/2 Camarão": 1 } }), 75);
+igual("preço: Pequena inteira = 40", precoUnitarioDoItem(pizzaSoGrande, { tam: { Pequena: 1 } }), 40);
+igual("a partir de continua a Pequena inteira", precoMinimoDoProduto(pizzaSoGrande), 40);
 
 console.log(`${ok} ok, ${falhou} falhou`);
 process.exit(falhou ? 1 : 0);

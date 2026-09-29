@@ -66,8 +66,60 @@ export function tabelaDaOpcao(item: ItemDeGrupo | null | undefined): [string, nu
   }
   if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return [];
   return Object.entries(bruto as Record<string, unknown>)
+    // `null` é "não existe com esta escolha" (bloqueiosDaOpcao) — NÃO é zero.
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
     .map(([nome, v]) => [nome, Number(v)] as [string, number])
     .filter(([nome, v]) => nome && Number.isFinite(v));
+}
+
+/**
+ * AS ESCOLHAS COM AS QUAIS ESTA OPÇÃO NÃO EXISTE: as chaves com `null` na
+ * tabela. `{ "Pequena": null, "Grande": 15 }` = a meia pizza só existe na
+ * Grande — a Serpa não faz meio a meio na Pequena (29/09/2026). A tela esconde
+ * a opção (e a pergunta, se ficar vazia) e o servidor recusa o pedido que a
+ * trouxer (`opcoesBloqueadasEscolhidas`).
+ */
+export function bloqueiosDaOpcao(item: ItemDeGrupo | null | undefined): string[] {
+  let bruto: any = item?.precoPorEscolha;
+  if (typeof bruto === "string") {
+    try {
+      bruto = JSON.parse(bruto);
+    } catch {
+      return [];
+    }
+  }
+  if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return [];
+  return Object.entries(bruto as Record<string, unknown>)
+    .filter(([nome, v]) => nome && v === null)
+    .map(([nome]) => nome);
+}
+
+/** A opção existe com as escolhas feitas? (nenhuma escolha a bloqueia) */
+export function opcaoDisponivel(item: ItemDeGrupo, escolhidas: ReadonlySet<string>): boolean {
+  return !bloqueiosDaOpcao(item).some((nome) => escolhidas.has(nome));
+}
+
+/** Idem, a partir das escolhas do modal/sacola. */
+export function opcaoDisponivelNaTela(item: ItemDeGrupo, escolhas: EscolhasDoCombo): boolean {
+  return opcaoDisponivel(item, nomesEscolhidos(normalizarEscolhas(escolhas)));
+}
+
+/**
+ * As opções ESCOLHIDAS que as outras escolhas bloqueiam, pelo nome — a meia
+ * pizza que chegou junto com a Pequena. O POST do site e do totem recusam.
+ */
+export function opcoesBloqueadasEscolhidas(produto: ProdutoComCombo | null | undefined, escolhas: EscolhasDoCombo): string[] {
+  const grupos = produto?.comboGroups || [];
+  if (!grupos.some((g) => (g?.items || []).some((i) => bloqueiosDaOpcao(i).length > 0))) return [];
+  const escolhido = normalizarEscolhas(escolhas).filter((e) => e.qtd > 0);
+  const nomes = new Set(escolhido.map((e) => e.nome));
+  const saida: string[] = [];
+  for (const e of escolhido) {
+    const doGrupo = e.grupoId ? grupos.filter((g) => g?.id === e.grupoId) : grupos;
+    const item = (doGrupo.length ? doGrupo : grupos).flatMap((g) => g?.items || []).find((i) => String(i?.menuProduct?.name || "").trim() === e.nome);
+    if (item && !opcaoDisponivel(item, nomes)) saida.push(e.nome);
+  }
+  return saida;
 }
 
 /** O preço da opção, dadas as opções escolhidas no produto (por nome). */

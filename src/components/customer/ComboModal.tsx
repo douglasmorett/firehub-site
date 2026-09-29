@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Minus, Check } from "lucide-react";
-import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela } from "@/lib/preco-combo";
+import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela, opcaoDisponivelNaTela } from "@/lib/preco-combo";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
 export type ComboGroupData = {
@@ -204,7 +204,37 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
     return total >= groupMin(group) && total <= Math.max(1, group.maxQty || 1);
   };
 
-  const allComplete = groups.every(g => isGroupComplete(g));
+  // Opção que outra escolha bloqueia (a meia pizza com a Pequena, na Serpa:
+  // lib/preco-combo, bloqueiosDaOpcao) some da tela; a pergunta que fica sem
+  // nenhuma opção por causa disso some inteira e não conta para fechar.
+  const itensVisiveis = (group: ComboGroupData) =>
+    (group.items || []).filter(i => i.menuProduct?.active !== false && opcaoDisponivelNaTela(i as any, selections));
+  const grupoEscondido = (group: ComboGroupData) =>
+    (group.items || []).some(i => i.menuProduct?.active !== false) && itensVisiveis(group).length === 0;
+  const gruposNaTela = groups.filter(g => !grupoEscondido(g));
+
+  // Trocou para uma escolha que bloqueia o que já estava marcado (escolheu a
+  // meia e depois a Pequena): a marcação sai, senão iria no pedido.
+  useEffect(() => {
+    const tirar: [string, string][] = [];
+    for (const g of groups)
+      for (const i of g.items || []) {
+        const nome = i.menuProduct?.name;
+        if (nome && (selections[g.id]?.[nome] || 0) > 0 && !opcaoDisponivelNaTela(i as any, selections)) tirar.push([g.id, nome]);
+      }
+    if (!tirar.length) return;
+    setSelections(prev => {
+      const novo: Selections = { ...prev };
+      for (const [gid, nome] of tirar) {
+        const { [nome]: _fora, ...resto } = novo[gid] || {};
+        novo[gid] = resto;
+      }
+      return novo;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selections]);
+
+  const allComplete = gruposNaTela.every(g => isGroupComplete(g));
 
   const handleSelectSingle = (gId: string, optionName: string) => {
     setSelections(prev => {
@@ -290,7 +320,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
       setAttemptedSubmit(true);
       // Mostra ONDE falta: sem isto o botão parecia simplesmente quebrado —
       // o grupo pendente podia estar rolado para fora da tela.
-      const pendente = groups.find(g => !isGroupComplete(g));
+      const pendente = gruposNaTela.find(g => !isGroupComplete(g));
       if (pendente) {
         groupRefs.current[pendente.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
       }
@@ -418,13 +448,14 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
           {/* GROUPS LIST */}
           <div style={{ padding: "0.5rem 1.25rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             {groups.map((group, gIdx) => {
+              if (grupoEscondido(group)) return null;
               const total = getGroupTotal(group.id);
               const max = group.maxQty || 1;
               const min = groupMin(group);
               const complete = isGroupComplete(group);
               const obrigatorio = min > 0;
               const isSingle = max === 1;
-              const activeItems = (group.items || []).filter(i => i.menuProduct?.active !== false);
+              const activeItems = itensVisiveis(group);
               // Grupo opcional nunca fica "faltando": ele já nasce completo.
               const isMissing = attemptedSubmit && !complete;
 

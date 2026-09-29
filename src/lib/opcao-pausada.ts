@@ -19,7 +19,7 @@
  * recusar o pedido inteiro por falta de um campo na consulta é pior do que o
  * que se quer evitar.
  */
-import { adicionaisDetalhados, minimoExigidoDoGrupo, type EscolhasDoCombo, type GrupoDeCombo, type ProdutoComCombo } from "./preco-combo";
+import { adicionaisDetalhados, minimoExigidoDoGrupo, opcoesBloqueadasEscolhidas, type EscolhasDoCombo, type GrupoDeCombo, type ProdutoComCombo } from "./preco-combo";
 
 export type OpcaoComEstado = {
   maxPerItem?: number | null;
@@ -153,8 +153,10 @@ export function pausaNaTagDoRobo(
     if (produto.perguntaTravadaPelaPausa && doEnviado.length === 0) {
       return { tipo: "combo", produto: nome, pergunta: String(produto.perguntaTravadaPelaPausa) };
     }
-    const jaEstavam = new Set(doEnviado.flatMap((e) => opcoesPausadasEscolhidas(produto, e.comboSelections as EscolhasDoCombo)));
-    const novas = opcoesPausadasEscolhidas(produto, i.comboSelections as EscolhasDoCombo).filter((n) => !jaEstavam.has(n));
+    // + a opção que outra escolha bloqueia (a meia pizza com a Pequena, Serpa).
+    const barradas = (esc: EscolhasDoCombo) => [...opcoesPausadasEscolhidas(produto, esc), ...opcoesBloqueadasEscolhidas(produto, esc)];
+    const jaEstavam = new Set(doEnviado.flatMap((e) => barradas(e.comboSelections as EscolhasDoCombo)));
+    const novas = barradas(i.comboSelections as EscolhasDoCombo).filter((n) => !jaEstavam.has(n));
     if (novas.length > 0) return { tipo: "opcao", produto: nome, opcoes: novas };
   }
   return null;

@@ -81,19 +81,28 @@ export type MeiaCalculada = {
   nome: string;
   /** Acréscimo no primeiro tamanho da pergunta (o que vale sem tamanho escolhido). */
   additionalPrice: number;
-  /** { tamanho: acréscimo }, ou null quando a pizza não tem pergunta de tamanho. */
-  precoPorEscolha: Record<string, number> | null;
+  /**
+   * { tamanho: acréscimo }, ou null quando a pizza não tem pergunta de tamanho.
+   * Tamanho com `null` = não tem meio a meio nele (a Serpa não faz na Pequena):
+   * a opção some da tela e o pedido é recusado (lib/preco-combo, bloqueiosDaOpcao).
+   */
+  precoPorEscolha: Record<string, number | null> | null;
   /** "Pequena R$ 45,00 · Grande R$ 75,00": o preço FINAL, que é o que o cliente quer ver. */
   optionNote: string;
 };
 
 /** A meia `outra` dentro do card `esta`. */
-export function meiaNaPizza(esta: PizzaDoMeio, outra: PizzaDoMeio, regra: RegraDoMeio): MeiaCalculada {
+export function meiaNaPizza(esta: PizzaDoMeio, outra: PizzaDoMeio, regra: RegraDoMeio, semMeio: readonly string[] = []): MeiaCalculada {
   const daEsta = precosPorTamanho(esta);
   const daOutra = precosPorTamanho(outra);
-  const tabela: Record<string, number> = {};
+  const tabela: Record<string, number | null> = {};
   const finais: string[] = [];
   for (const [tamanho, precoEsta] of daEsta) {
+    // Tamanho em que a casa não faz meio a meio: bloqueado, e a nota não o cita.
+    if (tamanho && semMeio.includes(tamanho)) {
+      tabela[tamanho] = null;
+      continue;
+    }
     // Tamanho que a outra não tem não entra na tabela: ali vale o
     // additionalPrice, e a nota não promete um preço que não existe.
     const precoOutra = daOutra.get(tamanho) ?? (daOutra.size === 1 ? [...daOutra.values()][0] : undefined);
@@ -102,11 +111,11 @@ export function meiaNaPizza(esta: PizzaDoMeio, outra: PizzaDoMeio, regra: RegraD
     tabela[tamanho] = r2(final - precoEsta);
     finais.push(tamanho ? `${tamanho} R$ ${brl(final)}` : `Meio a meio sai por R$ ${brl(final)}`);
   }
-  const primeiro = [...daEsta.keys()].find((t) => t in tabela);
+  const primeiro = [...daEsta.keys()].find((t) => t in tabela && tabela[t] !== null);
   const comTamanho = !daEsta.has("");
   return {
     nome: PREFIXO_DA_MEIA + outra.name,
-    additionalPrice: primeiro !== undefined ? tabela[primeiro] : 0,
+    additionalPrice: primeiro !== undefined ? (tabela[primeiro] as number) : 0,
     precoPorEscolha: comTamanho && Object.keys(tabela).length > 0 ? tabela : null,
     optionNote: finais.join(" · "),
   };

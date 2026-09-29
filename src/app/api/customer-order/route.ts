@@ -8,6 +8,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
+import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, modoDaArea, taxaFixaDaLoja } from "@/lib/area-de-entrega";
@@ -336,7 +337,10 @@ export async function POST(req: Request) {
       // A OPÇÃO PAUSADA também não entra (o sabor que acabou). A vitrine já a
       // esconde, mas a aba aberta antes da pausa e o "Repetir pedido" ainda a
       // mandavam — e a cozinha recebia o que não tem (lib/opcao-pausada.ts).
-      const pausadas = opcoesPausadasEscolhidas(product as any, item.comboSelections);
+      // Opção que outra escolha bloqueia (a meia pizza junto com a Pequena, na
+      // Serpa): a tela a esconde, mas sacola antiga e "Repetir pedido" mandam.
+      const bloqueadas = opcoesBloqueadasEscolhidas(product as any, item.comboSelections);
+      const pausadas = [...opcoesPausadasEscolhidas(product as any, item.comboSelections), ...bloqueadas];
       if (pausadas.length > 0) {
         throw Object.assign(
           new Error(`${fraseDaOpcaoIndisponivel(product.name, pausadas)} Troque a opção e tente de novo.`),
