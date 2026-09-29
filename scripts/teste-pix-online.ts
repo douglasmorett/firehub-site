@@ -106,7 +106,8 @@ async function main() {
   process.env.NEXTAUTH_SECRET = "segredo-de-teste-do-cofre";
   delete process.env.COFRE_CHAVE;
 
-  const { splitDoFireHub, liquidoDaLoja, tarifaDoAsaas, REGRAS_DO_PIX_ONLINE, mensagemDePixOnlineAtivado } = await import("../src/lib/pix-online");
+  const { splitDoFireHub, liquidoDaLoja, tarifaDoAsaas, REGRAS_DO_PIX_ONLINE, mensagemDePixOnlineAtivado, CUSTO_POR_VENDA_PIX, CUSTO_POR_VENDA_CARTAO } =
+    await import("../src/lib/pix-online");
   const { cifrar, decifrar, mesmoSegredo } = await import("../src/lib/cofre");
 
   console.log("\n== O split é 1% do pedido, em reais ==");
@@ -124,6 +125,9 @@ async function main() {
   conferir("cartão de R$ 50: tarifa do Asaas R$ 1,99 (2,99% + 0,49)", tarifaDoAsaas(50, "cartao"), 1.99);
   conferir("cartão de R$ 100: tarifa R$ 3,48", tarifaDoAsaas(100, "cartao"), 3.48);
   conferir("cartão de R$ 100: taxa online R$ 1,00", splitDoFireHub(100, "cartao"), 1);
+  // O resumo da tela mostra o custo SOMADO; o "R$" do Intl vem com espaço fixo.
+  conferir("custo por venda no Pix: R$ 1,99 + 1%", CUSTO_POR_VENDA_PIX.replace(/\s/g, " "), "R$ 1,99 + 1%");
+  conferir("custo por venda no cartão: 3,99% + R$ 0,49", CUSTO_POR_VENDA_CARTAO.replace(/\s/g, " "), "3,99% + R$ 0,49");
   conferir("cartão de R$ 100: loja recebe R$ 95,52", liquidoDaLoja(100, "cartao"), 95.52);
   conferir("as regras dizem quando o cartão cai", REGRAS_DO_PIX_ONLINE.some((r) => r.texto.includes("até 2 dias úteis")), true);
 

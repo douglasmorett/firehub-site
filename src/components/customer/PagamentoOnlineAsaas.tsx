@@ -14,6 +14,8 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, AlertTriangle, XCircle, Zap, Eye, EyeOff, RefreshCw, Unplug, CreditCard } from "lucide-react";
 import {
   CONFERIR_NO_ASAAS,
+  CUSTO_POR_VENDA_CARTAO,
+  CUSTO_POR_VENDA_PIX,
   REGRAS_DO_PIX_ONLINE,
   SPLIT_FIREHUB_PERCENTUAL,
   TARIFA_ASAAS_PIX,
@@ -440,12 +442,14 @@ export default function PagamentoOnlineAsaas({ estadoInicial }: { estadoInicial?
           obrigatório: é o dinheiro da loja. */}
       {e && !e.conectado && (
         <>
-          {/* O resumo em três selos: o que o lojista quer saber antes de tudo. */}
+          {/* O resumo em selos: o que o lojista quer saber antes de tudo. O
+              custo vai SOMADO por forma (lib/pix-online, CUSTO_POR_VENDA_*); o
+              detalhe de quem fica com o quê está em "Ver valores". */}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: "0.85rem" }}>
             {[
               { t: "⚡ Pix cai na hora", bg: "#ECFDF5", c: "#065F46" },
               { t: "💳 Cartão em até 2 dias úteis", bg: "#EFF6FF", c: "#1E40AF" },
-              { t: `Taxa: ${SPLIT_FIREHUB_PERCENTUAL}% + tarifa do Asaas`, bg: "#F8FAFC", c: "#334155" },
+              { t: `Custo por venda: Pix ${CUSTO_POR_VENDA_PIX} · Cartão ${CUSTO_POR_VENDA_CARTAO}`, bg: "#F8FAFC", c: "#334155" },
             ].map((s) => (
               <span key={s.t} style={{ background: s.bg, color: s.c, fontWeight: 800, fontSize: "0.76rem", padding: "5px 10px", borderRadius: 99, border: "1px solid #E2E8F0" }}>
                 {s.t}

@@ -96,6 +96,17 @@ const pct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits:
 /** "2,99% + R$ 0,49" */
 export const TEXTO_TARIFA_CARTAO = `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL)} + ${reais(TARIFA_ASAAS_CARTAO_FIXA)}`;
 
+/**
+ * O custo de uma venda paga pelo site, SOMADO — tarifa do Asaas + taxa do
+ * pagamento online —, para o resumo da tela: um número por forma, como o
+ * lojista compara com a maquininha (dono, 28/09/2026). Não diz que é tudo do
+ * Asaas: quem fica com o quê continua nas regras, na tabela de custos e no
+ * aceite da taxa de 1%.
+ */
+export const CUSTO_POR_VENDA_PIX = `${reais(TARIFA_ASAAS_PIX)} + ${pct(SPLIT_FIREHUB_PERCENTUAL)}`;
+/** "3,99% + R$ 0,49" */
+export const CUSTO_POR_VENDA_CARTAO = `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL + SPLIT_FIREHUB_PERCENTUAL)} + ${reais(TARIFA_ASAAS_CARTAO_FIXA)}`;
+
 /** Uma regra, com o título curto e a explicação. */
 export type Regra = { titulo: string; texto: string };
 
