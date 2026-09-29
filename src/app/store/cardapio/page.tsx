@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import MenuProductManager from "@/components/admin/MenuProductManager";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
-import IfoodImportButton from "@/components/IfoodImportButton";
 
 export const dynamic = "force-dynamic";
 
@@ -127,8 +126,9 @@ export default async function StoreCardapioPage() {
         </a>
       </div>
 
-      {/* IMPORTAR DO IFOOD */}
-      <IfoodImportButton />
+      {/* O "Importar Cardápio do iFood" saiu daqui em 29/09/2026: a sincronização
+          pela API e a planilha não funcionam, e o FireHub ainda não puxa
+          cardápio do iFood. O componente segue em components/IfoodImportButton. */}
 
       {/* BANNER DE DICA DE ALTA CONVERSÃO: DESTAQUES DA CASA */}
       <div
