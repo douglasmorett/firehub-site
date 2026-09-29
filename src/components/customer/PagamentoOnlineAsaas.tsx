@@ -15,16 +15,13 @@ import { CheckCircle2, AlertTriangle, XCircle, Zap, Eye, EyeOff, RefreshCw, Unpl
 import {
   CONFERIR_NO_ASAAS,
   CUSTO_POR_VENDA_CARTAO,
+  CUSTO_POR_VENDA_CARTAO_PROMOCIONAL,
   CUSTO_POR_VENDA_PIX,
+  CUSTO_POR_VENDA_PIX_PROMOCIONAL,
   REGRAS_DO_PIX_ONLINE,
-  SPLIT_FIREHUB_PERCENTUAL,
-  TARIFA_ASAAS_PIX,
-  TARIFA_ASAAS_PIX_PROMOCIONAL,
-  TEXTO_TARIFA_CARTAO,
+  custoDaVenda,
   liquidoDaLoja,
   reais,
-  splitDoFireHub,
-  tarifaDoAsaas,
   type FormaOnline,
 } from "@/lib/pix-online";
 import PassosNoAsaas, { Passo } from "@/components/customer/PassoAPassoAsaas";
@@ -115,7 +112,7 @@ function TabelaDeCustos() {
   const linha = (v: number, forma: FormaOnline) => (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.76rem", color: cor.suave }}>
       <span>
-        {forma === "pix" ? "Pix" : "Cartão"}: − {reais(tarifaDoAsaas(v, forma))} Asaas · − {reais(splitDoFireHub(v, forma))} taxa online
+        {forma === "pix" ? "Pix" : "Cartão"}: − {reais(custoDaVenda(v, forma))} de custo
       </span>
       <strong style={{ color: cor.verde, whiteSpace: "nowrap" }}>{reais(liquidoDaLoja(v, forma))}</strong>
     </div>
@@ -133,9 +130,9 @@ function TabelaDeCustos() {
         </div>
       ))}
       <p style={{ fontSize: "0.74rem", color: cor.suave, margin: "6px 0 0", lineHeight: 1.5 }}>
-        Tarifa do Asaas: {reais(TARIFA_ASAAS_PIX)} por Pix e {TEXTO_TARIFA_CARTAO} por cartão (nos 3 primeiros meses da sua conta Asaas, o Pix
-        sai por {reais(TARIFA_ASAAS_PIX_PROMOCIONAL)}). Taxa do pagamento online: {SPLIT_FIREHUB_PERCENTUAL}% da venda paga pelo site.
-        Sem mensalidade no Asaas. Pedido pago na entrega não tem taxa nenhuma.
+        Custo por venda: Pix {CUSTO_POR_VENDA_PIX} e cartão {CUSTO_POR_VENDA_CARTAO}, já descontado (nos 3 primeiros meses da sua conta
+        Asaas, Pix {CUSTO_POR_VENDA_PIX_PROMOCIONAL} e cartão {CUSTO_POR_VENDA_CARTAO_PROMOCIONAL}). Sem mensalidade no Asaas. Pedido
+        pago na entrega não tem custo nenhum.
       </p>
     </div>
   );
@@ -364,9 +361,9 @@ export default function PagamentoOnlineAsaas({ estadoInicial }: { estadoInicial?
               }
             />
             {e.mesmaContaDoFireHub ? (
-              <Item ok titulo="Esta é a conta que recebe pelo FireHub" texto="Sem taxa do pagamento online nesta loja: o Asaas não divide com a própria conta." />
+              <Item ok titulo="Esta é a conta que recebe pelo FireHub" texto="Nesta loja o custo é só a tarifa do Asaas: ele não divide com a própria conta." />
             ) : (
-              <Item ok titulo={`Taxa do pagamento online: ${e.splitPercentual}%`} texto="Separada automaticamente em cada venda paga pelo site." />
+              <Item ok titulo={`Custo por venda: Pix ${CUSTO_POR_VENDA_PIX} · Cartão ${CUSTO_POR_VENDA_CARTAO}`} texto="Já descontado de cada venda paga pelo site." />
             )}
             {conta.verificadoEm && (
               <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 4 }}>
@@ -480,7 +477,7 @@ export default function PagamentoOnlineAsaas({ estadoInicial }: { estadoInicial?
                   <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.84rem", color: cor.texto, cursor: "pointer", marginBottom: 10, lineHeight: 1.45 }}>
                     <input type="checkbox" checked={aceitou} onChange={(ev) => setAceitou(ev.target.checked)} style={{ marginTop: 2, width: 18, height: 18, flexShrink: 0 }} />
                     <span>
-                      Aceito as regras e a taxa de {SPLIT_FIREHUB_PERCENTUAL}% por venda paga pelo site.{" "}
+                      Aceito as regras e o custo por venda paga pelo site.{" "}
                       <button type="button" onClick={() => setVerRegras(true)} style={{ background: "none", border: "none", padding: 0, color: cor.azul, fontWeight: 700, cursor: "pointer", fontSize: "inherit", fontFamily: "inherit", textDecoration: "underline" }}>
                         Ver regras
                       </button>

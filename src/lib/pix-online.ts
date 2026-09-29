@@ -98,14 +98,26 @@ export const TEXTO_TARIFA_CARTAO = `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL)} + ${r
 
 /**
  * O custo de uma venda paga pelo site, SOMADO — tarifa do Asaas + taxa do
- * pagamento online —, para o resumo da tela: um número por forma, como o
- * lojista compara com a maquininha (dono, 28/09/2026). Não diz que é tudo do
- * Asaas: quem fica com o quê continua nas regras, na tabela de custos e no
- * aceite da taxa de 1%.
+ * pagamento online. É o número que o lojista vê em todo lugar (selo, tabela,
+ * tela de conectado, WhatsApp), como compara com a maquininha (dono,
+ * 28/09/2026). A divisão — 1% do FireHub, o resto do Asaas — fica numa
+ * linha só, na regra de custo que ele aceita (REGRAS_DO_PIX_ONLINE): o split
+ * aparece no extrato do Asaas com o nome do FireHub, e cobrança fora do
+ * aceite vira reclamação. Nunca dizer que o total é tarifa do Asaas.
  */
 export const CUSTO_POR_VENDA_PIX = `${reais(TARIFA_ASAAS_PIX)} + ${pct(SPLIT_FIREHUB_PERCENTUAL)}`;
 /** "3,99% + R$ 0,49" */
 export const CUSTO_POR_VENDA_CARTAO = `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL + SPLIT_FIREHUB_PERCENTUAL)} + ${reais(TARIFA_ASAAS_CARTAO_FIXA)}`;
+/** Nos 3 primeiros meses da conta Asaas, com a tarifa promocional dele. */
+export const CUSTO_POR_VENDA_PIX_PROMOCIONAL = `${reais(TARIFA_ASAAS_PIX_PROMOCIONAL)} + ${pct(SPLIT_FIREHUB_PERCENTUAL)}`;
+export const CUSTO_POR_VENDA_CARTAO_PROMOCIONAL =
+  `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL_PROMOCIONAL + SPLIT_FIREHUB_PERCENTUAL)} + ${reais(TARIFA_ASAAS_CARTAO_FIXA)}`;
+
+/** O custo somado em reais numa venda deste valor (tarifa cheia do Asaas). */
+export function custoDaVenda(valorDoPedido: number, forma: FormaOnline = "pix"): number {
+  const valor = Number(valorDoPedido) || 0;
+  return arred(tarifaDoAsaas(valor, forma) + splitDoFireHub(valor, forma));
+}
 
 /** Uma regra, com o título curto e a explicação. */
 export type Regra = { titulo: string; texto: string };
@@ -123,12 +135,13 @@ export const REGRAS_DO_PIX_ONLINE: Regra[] = [
       `e paga ${reais(TARIFA_ASAAS_SAQUE_PJ)} por transferência depois disso.`,
   },
   {
-    titulo: "Tarifas por venda paga pelo site",
+    titulo: "Custo por venda paga pelo site",
     texto:
-      `Tarifa do Asaas: ${reais(TARIFA_ASAAS_PIX)} por Pix e ${TEXTO_TARIFA_CARTAO} por cartão (nos 3 primeiros meses da sua conta, ` +
-      `${reais(TARIFA_ASAAS_PIX_PROMOCIONAL)} e ${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL_PROMOCIONAL)} + ${reais(TARIFA_ASAAS_CARTAO_FIXA)}). ` +
-      `Mais a taxa do pagamento online de ${SPLIT_FIREHUB_PERCENTUAL}% do pedido, serviço do FireHub, separada automaticamente em cada venda. ` +
-      "Pedido pago na entrega não tem taxa nenhuma.",
+      `Pix: ${CUSTO_POR_VENDA_PIX}. Cartão: ${CUSTO_POR_VENDA_CARTAO}. Já sai descontado do que cai na sua conta — nada é cobrado à parte. ` +
+      `Nos 3 primeiros meses da sua conta Asaas: Pix ${CUSTO_POR_VENDA_PIX_PROMOCIONAL} e cartão ${CUSTO_POR_VENDA_CARTAO_PROMOCIONAL}. ` +
+      // A ÚNICA linha que divide o custo — ver CUSTO_POR_VENDA_PIX.
+      `Desse custo, a taxa do pagamento online de ${SPLIT_FIREHUB_PERCENTUAL}% do pedido é do FireHub e o resto é a tarifa do Asaas. ` +
+      "Pedido pago na entrega não tem custo nenhum.",
   },
   {
     titulo: "O pedido só vai para a cozinha depois de pago",
@@ -227,7 +240,7 @@ export function mensagemDePixOnlineAtivado(nomeDaLoja: string, nomeDaConta: stri
     "",
     "*Como funciona*",
     "• Pix cai na sua conta Asaas na hora; cartão à vista, em até 2 dias úteis. Para levar ao banco, faça um Pix de saída no app do Asaas.",
-    `• Por venda paga pelo site: tarifa do Asaas (${reais(TARIFA_ASAAS_PIX)} no Pix, ${TEXTO_TARIFA_CARTAO} no cartão) + taxa do pagamento online de ${SPLIT_FIREHUB_PERCENTUAL}%.`,
+    `• Custo por venda paga pelo site: ${CUSTO_POR_VENDA_PIX} no Pix e ${CUSTO_POR_VENDA_CARTAO} no cartão, já descontado. Pedido pago na entrega não tem custo.`,
     "• O pedido só entra na cozinha depois de pago. Você não precisa aceitar à mão.",
     `• O cliente tem ${MINUTOS_PARA_PAGAR} min para pagar; depois o pedido é cancelado sozinho.`,
     "• Cancelou pedido pago? O dinheiro volta para o cliente sozinho, do seu saldo no Asaas.",

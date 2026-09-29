@@ -106,8 +106,10 @@ async function main() {
   process.env.NEXTAUTH_SECRET = "segredo-de-teste-do-cofre";
   delete process.env.COFRE_CHAVE;
 
-  const { splitDoFireHub, liquidoDaLoja, tarifaDoAsaas, REGRAS_DO_PIX_ONLINE, mensagemDePixOnlineAtivado, CUSTO_POR_VENDA_PIX, CUSTO_POR_VENDA_CARTAO } =
-    await import("../src/lib/pix-online");
+  const {
+    splitDoFireHub, liquidoDaLoja, tarifaDoAsaas, custoDaVenda, REGRAS_DO_PIX_ONLINE, mensagemDePixOnlineAtivado,
+    CUSTO_POR_VENDA_PIX, CUSTO_POR_VENDA_CARTAO, CUSTO_POR_VENDA_PIX_PROMOCIONAL, CUSTO_POR_VENDA_CARTAO_PROMOCIONAL,
+  } = await import("../src/lib/pix-online");
   const { cifrar, decifrar, mesmoSegredo } = await import("../src/lib/cofre");
 
   console.log("\n== O split é 1% do pedido, em reais ==");
@@ -119,9 +121,18 @@ async function main() {
   conferir("pedido menor que a tarifa → sem split", splitDoFireHub(1.5), 0);
   conferir("loja recebe R$ 47,51 de R$ 50 (1,99 + 0,50)", liquidoDaLoja(50), 47.51);
   conferir("loja recebe R$ 97,01 de R$ 100", liquidoDaLoja(100), 97.01);
+  // Em todo lugar o lojista vê o custo SOMADO; a regra que ele aceita é o
+  // único lugar que divide — e ela tem que continuar dizendo que 1% é do FireHub.
   conferir("as regras falam da taxa de 1%", REGRAS_DO_PIX_ONLINE.some((r) => r.texto.includes("taxa do pagamento online de 1%")), true);
-  conferir("o WhatsApp fala em taxa do pagamento online", mensagemDePixOnlineAtivado("Loja X", "Conta Y", { pix: true, cartao: true }).includes("taxa do pagamento online de 1%"), true);
+  conferir("as regras dizem que o 1% é do FireHub", REGRAS_DO_PIX_ONLINE.some((r) => /1% do pedido é do FireHub/.test(r.texto)), true);
+  conferir("as regras mostram o custo somado", REGRAS_DO_PIX_ONLINE.some((r) => r.texto.includes(CUSTO_POR_VENDA_PIX) && r.texto.includes(CUSTO_POR_VENDA_CARTAO)), true);
+  conferir("o WhatsApp mostra o custo somado", mensagemDePixOnlineAtivado("Loja X", "Conta Y", { pix: true, cartao: true }).includes(CUSTO_POR_VENDA_CARTAO), true);
   conferir("o WhatsApp nunca diz que o 1% é do Asaas", /tarifa do Asaas de 1%|1% (do|de tarifa do) Asaas/i.test(mensagemDePixOnlineAtivado("Loja X", "Conta Y")), false);
+  conferir("nenhuma regra chama o total de tarifa do Asaas", REGRAS_DO_PIX_ONLINE.some((r) => /tarifa do Asaas:? (de )?(R\$|\d)/i.test(r.texto)), false);
+  conferir("custo de um Pix de R$ 50: R$ 2,49", custoDaVenda(50), 2.49);
+  conferir("custo de um cartão de R$ 100: R$ 4,48", custoDaVenda(100, "cartao"), 4.48);
+  conferir("promoção: Pix R$ 0,99 + 1%", CUSTO_POR_VENDA_PIX_PROMOCIONAL.replace(/\s/g, " "), "R$ 0,99 + 1%");
+  conferir("promoção: cartão 2,99% + R$ 0,49", CUSTO_POR_VENDA_CARTAO_PROMOCIONAL.replace(/\s/g, " "), "2,99% + R$ 0,49");
   conferir("cartão de R$ 50: tarifa do Asaas R$ 1,99 (2,99% + 0,49)", tarifaDoAsaas(50, "cartao"), 1.99);
   conferir("cartão de R$ 100: tarifa R$ 3,48", tarifaDoAsaas(100, "cartao"), 3.48);
   conferir("cartão de R$ 100: taxa online R$ 1,00", splitDoFireHub(100, "cartao"), 1);
