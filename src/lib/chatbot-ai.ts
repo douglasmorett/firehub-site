@@ -32,6 +32,7 @@ import { precoMinimoDoProduto, pisoDoPreco, completarEscolhasExigidas, precoVari
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, motivoForaDoCardapio, textoDoHorario } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
+import { registroDeOpcoes } from "./opcoes-repetidas";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { ehNumeroDoDono } from "./numeros-do-dono";
 import { inicioDoExpedienteDaLoja } from "./fuso";
@@ -605,6 +606,8 @@ export async function processChatbotAI(
   };
 
   const seenProductKeys = new Set<string>();
+  // A lista de opções igual em vários produtos vai uma vez só (lib/opcoes-repetidas.ts).
+  const listasDeOpcoes = registroDeOpcoes();
 
   // Itens que só existem como OPÇÃO dentro de um combo (o "Frango" do combo
   // de pastel, por exemplo) são cadastrados soltos e com preço zero. Se
@@ -796,7 +799,7 @@ export async function processChatbotAI(
           return add > 0 ? `${nome} +R$ ${add.toFixed(2).replace(".", ",")}` : `${nome} (sem custo)`;
         });
 
-        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${opcoes.join(" | ")}${avisoDePausa}`);
+        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${listasDeOpcoes.marcar(`${opcoes.join(" | ")}${avisoDePausa}`)}`);
       }
 
       const line =
@@ -827,7 +830,10 @@ export async function processChatbotAI(
     }
 
     if (isTomorrow && isPromoItem) {
-      const line = `- "${rawCleanName}" (${p.category}): R$ ${p.price.toFixed(2)}${p.description ? ` — ${p.description}` : ""}`;
+      // Só nome e preço: a descrição já está na lista de hoje (quando vale
+      // hoje também) e, para "tem promoção amanhã?", nome e preço respondem.
+      // Na R&D a descrição repetida aqui eram 2,6 mil caracteres por mensagem.
+      const line = `- "${rawCleanName}" (${p.category}): R$ ${p.price.toFixed(2)}`;
       tomorrowPromotions.push(line);
     }
   });
@@ -836,6 +842,11 @@ export async function processChatbotAI(
     .filter(([_, items]) => items.length > 0)
     .map(([dCode, items]) => `- ${DAY_NAMES[dCode] || dCode}: ${items.join(", ")}`)
     .join("\n");
+
+  const {
+    blocos: [combosDoPrompt, avulsosDoPrompt],
+    secao: secaoDeListasDeOpcoes,
+  } = listasDeOpcoes.resolver([availableCombos, availableSingleProducts]);
 
   const catalogSummary = `=== 🌟 PROMOÇÕES DE HOJE (${currentDayName}) ===
 ${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma promoção cadastrada para hoje."}
@@ -848,11 +859,11 @@ ${tomorrowPromotions.length > 0 ? tomorrowPromotions.join("\n") : "- Nenhuma pro
 ${weeklyScheduleSummary || "- Sem cronograma de promoções cadastrado."}
 (SE O CLIENTE PERGUNTAR EM QUAIS DIAS TEM PROMOÇÃO, CONSULTE ESTA TABELA REAL DA LOJA E RESPONDA COM TOTAL CERTEZA.)
 
-=== COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
-${availableCombos.length > 0 ? availableCombos.join("\n") : "[NENHUM COMBO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER COMBOS QUE NÃO ESTEJAM AQUI!]"}
+${secaoDeListasDeOpcoes ? `${secaoDeListasDeOpcoes}\n\n` : ""}=== COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
+${combosDoPrompt.length > 0 ? combosDoPrompt.join("\n") : "[NENHUM COMBO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER COMBOS QUE NÃO ESTEJAM AQUI!]"}
 
 === PRODUTOS E ITENS AVULSOS DISPONÍVEIS HOJE (${currentDayName}) ===
-${availableSingleProducts.length > 0 ? availableSingleProducts.join("\n") : "[NENHUM ITEM AVULSO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER ITENS QUE NÃO ESTEJAM AQUI!]"}
+${avulsosDoPrompt.length > 0 ? avulsosDoPrompt.join("\n") : "[NENHUM ITEM AVULSO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER ITENS QUE NÃO ESTEJAM AQUI!]"}
 
 === PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER E PROIBIDO DAR O DESCONTO HOJE! ===
 ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
@@ -1294,7 +1305,7 @@ REGRAS ABSOLUTAS:
          prefere vender pelo site: lá o cliente vê foto, escolhe as opções e o pedido cai
          certinho, sem erro de digitação.
      2º) Se o cliente disser que NÃO quer o site e prefere pedir por aqui mesmo pelo WhatsApp:
-         ${cardapioArquivoUrl ? "escreva a marca [[ENVIAR_CARDAPIO]] no fim da sua resposta — o sistema envia a foto/PDF do cardapio automaticamente. Nesse caso nao descreva o cardapio inteiro: diga so algo curto como Claro! Segue nosso cardapio e coloque a marca." : "a loja nao tem arquivo de cardapio carregado, entao liste os itens por escrito com os precos exatos, como voce ja faz."}
+         ${cardapioArquivoUrl ? "escreva a marca [[ENVIAR_CARDAPIO]] no fim da sua resposta — o sistema envia a foto/PDF do cardapio automaticamente. Nesse caso nao descreva o cardapio inteiro: diga so algo curto como Claro! Segue nosso cardapio e coloque a marca." : "a loja nao tem arquivo de cardapio carregado. NAO despeje o cardapio inteiro numa mensagem: pergunte o que ele quer ver (lanches, pizzas, bebidas, combos...) e liste SO aquela parte, no maximo uns 10 itens, um por linha, com os precos exatos. Se ele quiser mais, mande a proxima parte na mensagem seguinte."}
      3º) NUNCA mande a marca [[ENVIAR_CARDAPIO]] antes de ter oferecido o link do site.
 6. REGRAS DE CONSULTA E STATUS DE PEDIDO DO DIA (JOTAJA, IFOOD, SITE E WHATSAPP):
    - Você tem acesso EM TEMPO REAL aos pedidos do dia cadastrados no sistema da loja (Jotajá, iFood, Site e WhatsApp) listados no campo "PEDIDOS RECENTES DO CLIENTE / PEDIDOS ATIVOS DO DIA" abaixo.
