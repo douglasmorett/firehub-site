@@ -574,12 +574,19 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                               <div style={{ fontSize: "0.85rem", fontWeight: isSelected ? 700 : 600, color: "#1E293B", lineHeight: 1.3 }}>
                                 {optName}
                               </div>
-                              {/* A nota do grupo ganha da descrição do produto: "Baby" é
-                                  o mesmo item em dezenas de grupos, e o que muda de um
-                                  para outro é o "13cm" que o grupo define. */}
-                              {(item.optionNote || item.menuProduct.description) && (
-                                <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "1px", lineHeight: 1.25 }}>
-                                  {item.optionNote || item.menuProduct.description}
+                              {/* Descrição E nota, as duas. A nota escondia a descrição —
+                                  na meia pizza, "Pequena R$ 40 · Grande R$ 60" tomava o
+                                  lugar dos ingredientes, e o cliente que não quer cebola
+                                  não tinha como saber (Serpa, 29/09/2026). A nota segue
+                                  valendo para o que o grupo define ("13cm" do "Baby"). */}
+                              {item.menuProduct.description && item.menuProduct.description.trim() !== String(item.optionNote || "").trim() && (
+                                <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "1px", lineHeight: 1.3 }}>
+                                  {item.menuProduct.description}
+                                </div>
+                              )}
+                              {item.optionNote && (
+                                <div style={{ fontSize: "0.7rem", color: "#94A3B8", marginTop: "1px", lineHeight: 1.25 }}>
+                                  {item.optionNote}
                                 </div>
                               )}
                               {addPrice > 0 ? (
