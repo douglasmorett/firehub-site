@@ -3,7 +3,28 @@ import { useState, useEffect, useCallback } from "react";
 import { CheckCircle, Clock, ChefHat, Bike, Package, X, Phone, ArrowLeft, Star } from "lucide-react";
 import Link from "next/link";
 
-type Item = { name: string; qty: number; price: number; imageUrl: string | null };
+type Item = { name: string; opcoes?: string[]; qty: number; price: number; imageUrl: string | null };
+
+/** A forma de pagamento como o cliente escolheu, não o código gravado ("PIX_ENTREGA"). */
+const FORMA_PARA_O_CLIENTE: Record<string, string> = {
+  PIX: "Pix (pago pelo site)",
+  PIX_ONLINE: "Pix (pago pelo site)",
+  CREDITO_ONLINE: "Cartão (pago pelo site)",
+  CARTAO_ONLINE: "Cartão (pago pelo site)",
+  PIX_ENTREGA: "Pix na entrega",
+  DINHEIRO: "Dinheiro",
+  DEBITO: "Débito na entrega",
+  CREDITO: "Crédito na entrega",
+  TICKET: "Ticket",
+  VR: "VR",
+  SODEXO: "Sodexo",
+  PLUXEE: "Pluxee",
+  VOUCHER: "Voucher",
+};
+function formaParaOCliente(codigo: string): string {
+  const c = String(codigo || "").trim();
+  return FORMA_PARA_O_CLIENTE[c.toUpperCase()] || c.replace(/_/g, " ") || "—";
+}
 
 const STATUS_FLOW = [
   { key: "NOVO",         label: "Pedido Recebido",     icon: Clock,       color: "#3B82F6", emoji: "🔔", desc: "Aguardando confirmação da loja" },
@@ -171,15 +192,24 @@ export default function OrderTrackingClient({
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "#64748B", marginBottom: "8px" }}>
             <span>Pagamento:</span>
-            <span style={{ fontWeight: 600 }}>{paymentMethod}</span>
+            <span style={{ fontWeight: 600 }}>{formaParaOCliente(paymentMethod)}</span>
           </div>
 
           {showItems && (
             <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: "8px", marginTop: "4px" }}>
               {items.map((item, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", padding: "4px 0", borderBottom: i < items.length - 1 ? "1px solid #F8FAFC" : "none" }}>
-                  <span style={{ color: "#475569" }}>{item.qty}x {item.name}</span>
-                  <span style={{ fontWeight: 600, color: "#0F172A" }}>{fmtR(item.price * item.qty)}</span>
+                <div key={i} style={{ padding: "4px 0", borderBottom: i < items.length - 1 ? "1px solid #F8FAFC" : "none" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.82rem" }}>
+                    <span style={{ color: "#475569" }}>{item.qty}x {item.name}</span>
+                    <span style={{ fontWeight: 600, color: "#0F172A", whiteSpace: "nowrap" }}>{fmtR(item.price * item.qty)}</span>
+                  </div>
+                  {item.opcoes && item.opcoes.length > 0 && (
+                    <div style={{ fontSize: "0.76rem", color: "#64748B", paddingLeft: 10, marginTop: 2, lineHeight: 1.45 }}>
+                      {item.opcoes.map((o, j) => (
+                        <div key={j}>↳ {o}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
               {deliveryFee > 0 && (
