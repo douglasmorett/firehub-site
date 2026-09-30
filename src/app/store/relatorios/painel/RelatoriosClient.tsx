@@ -1418,7 +1418,9 @@ export default function RelatoriosClient({
       </div>
 
       {/* ── GRID: CAMPEÃO + GRÁFICOS CANAL / PAGAMENTO ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "1.5rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+      {/* Duas colunas fixas empurravam o cartão de pagamentos 100 px para fora da
+          tela no celular; com auto-fit, uma coluna embaixo de 700 px. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: "1.5rem", marginBottom: "1.5rem" }}>
         
         {/* Produto Campeão Destaque */}
         <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, padding: "1.25rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 300 }}>
