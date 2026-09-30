@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import { BellRing, Bot, CalendarPlus, Check, MessageCircle, Pause } from "lucide-react";
 import { ETAPAS, ORIGENS, ROTULO_DA_ETAPA, ROTULO_DA_ORIGEM, ROTULO_DO_STATUS_DE_REUNIAO, type StatusDeReuniao } from "@/lib/crm/etapas";
 import type { ContatoCompleto, ReuniaoDaTela } from "@/lib/crm/serializar";
 import type { EstadoDaLojaParaSuporte } from "@/lib/atendimento/estado-da-loja";
@@ -119,8 +120,8 @@ export default function FichaDoContato({
         : "Pode responder";
 
   return (
-    <div className="crm" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+    <div className="crm" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="crm-ficha-cabeca" style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <Iniciais texto={nomeDeExibicao} tamanho={42} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontWeight: 800, fontSize: "0.95rem", overflow: "hidden", textOverflow: "ellipsis" }}>{nomeDeExibicao}</div>
@@ -133,7 +134,7 @@ export default function FichaDoContato({
       </div>
 
       {erro && <div className="crm-erro">{erro}</div>}
-      {salvo && <div className="crm-ok">✓ Salvo</div>}
+      {salvo && <div className="crm-ok" style={{ display: "flex", alignItems: "center", gap: 6 }}><Check size={14} aria-hidden /> Salvo</div>}
 
       <div className="crm-bloco">
         <h4>Funil</h4>
@@ -187,9 +188,9 @@ export default function FichaDoContato({
           ) : (
             <>
               {c.roboPausadoAte || c.aguardandoHumano
-                ? <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => robo("devolver")}>🤖 Devolver ao robô</button>
-                : <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => robo("pausar")}>⏸ Pausar robô</button>}
-              {c.aguardandoHumano && <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => robo("resolvido")}>✓ Já atendi</button>}
+                ? <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => robo("devolver")}><Bot size={13} aria-hidden /> Devolver ao robô</button>
+                : <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => robo("pausar")}><Pause size={12} aria-hidden /> Pausar robô</button>}
+              {c.aguardandoHumano && <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => robo("resolvido")}><Check size={13} aria-hidden /> Já atendi</button>}
               <button className="crm-btn crm-btn-sm crm-btn-perigo" disabled={!!ocupado} onClick={() => robo("desligar")} title="Contato pessoal, fornecedor: o robô nunca responde">Nunca responder</button>
             </>
           )}
@@ -265,18 +266,18 @@ export default function FichaDoContato({
             <div className="crm-sub">{dataHora(r.inicio)} · {r.vendedorNome} · {ROTULO_DO_STATUS_DE_REUNIAO[r.status as StatusDeReuniao] || r.status}</div>
             {r.status === "MARCADA" && (
               <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
-                <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => statusDaReuniao(r.id, "REALIZADA")}>✓ Feita</button>
+                <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => statusDaReuniao(r.id, "REALIZADA")}><Check size={13} aria-hidden /> Feita</button>
                 <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => statusDaReuniao(r.id, "FALTOU")}>Não veio</button>
                 <button className="crm-btn crm-btn-sm crm-btn-perigo" disabled={!!ocupado} onClick={() => statusDaReuniao(r.id, "CANCELADA")}>Cancelar</button>
                 {new Date(r.inicio).getTime() > Date.now() && (
-                  <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => lembrar(r)} title="Manda o lembrete agora, pelo WhatsApp do FireHub">📲 Lembrar</button>
+                  <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => lembrar(r)} title="Manda o lembrete agora, pelo WhatsApp do FireHub"><BellRing size={12} aria-hidden /> Lembrar</button>
                 )}
               </div>
             )}
             {r.lembreteEm && <div className="crm-sub" style={{ fontSize: "0.68rem", marginTop: 4 }}>Lembrete enviado em {dataHora(r.lembreteEm)}</div>}
           </div>
         ))}
-        <button className="crm-btn crm-btn-sm crm-btn-primary" onClick={() => setMarcando(true)}>📅 Marcar demonstração</button>
+        <button className="crm-btn crm-btn-sm crm-btn-primary" onClick={() => setMarcando(true)}><CalendarPlus size={13} aria-hidden /> Marcar demonstração</button>
       </div>
 
       <div className="crm-bloco">
@@ -300,7 +301,7 @@ export default function FichaDoContato({
         ))}
       </div>
 
-      {aoAbrirConversa && <button className="crm-btn" onClick={() => aoAbrirConversa(c.id)}>💬 Abrir a conversa</button>}
+      {aoAbrirConversa && <button className="crm-btn" onClick={() => aoAbrirConversa(c.id)}><MessageCircle size={14} aria-hidden /> Abrir a conversa</button>}
 
       {marcando && (
         <ModalDeReuniao

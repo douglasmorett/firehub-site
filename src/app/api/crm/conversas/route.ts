@@ -5,6 +5,7 @@ import { garantirEstruturaDoCrm } from "@/lib/garantir-colunas";
 import { filtroDeContatos, nomesDaEquipe, quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
 import { etapaValida } from "@/lib/crm/etapas";
 import { contatoParaLista } from "@/lib/crm/serializar";
+import { configDoAtendimento } from "@/lib/atendimento/config";
 
 export const dynamic = "force-dynamic";
 
@@ -77,5 +78,7 @@ export async function GET(req: NextRequest) {
       naoLidas,
     },
     quem: { tipo: quem.tipo, id: quem.id, nome: quem.nome },
+    // A tela diz "robô atende esta conversa" só se o interruptor geral estiver ligado.
+    roboLigado: (await configDoAtendimento()).roboLigado,
   });
 }

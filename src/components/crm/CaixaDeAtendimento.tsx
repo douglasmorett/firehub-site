@@ -1,17 +1,26 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft, Bot, Check, CheckCheck, Clock, Hand, MessageCircle, PanelRight, Pause, Search, SendHorizontal, Smartphone,
+  Store, TriangleAlert, UserRound, X, type LucideIcon,
+} from "lucide-react";
 import type { ContatoDaLista, MensagemDaTela } from "@/lib/crm/serializar";
-import { EstiloDoCrm, Iniciais, SeloDaEtapa, api, dataHora, horaDe, quandoCurto } from "./comum";
+import { EstiloDoCrm, Iniciais, SeloDaEtapa, api, horaDe, quandoCurto } from "./comum";
 import FichaDoContato, { type DetalheDoContato } from "./FichaDoContato";
 
 type Filtro = "todas" | "aguardando" | "naoLidas" | "semVendedor";
 
-const COR_DO_AUTOR: Record<string, { fundo: string; texto: string; rotulo: string }> = {
-  ROBO: { fundo: "#EEF2FF", texto: "#1E1B4B", rotulo: "🤖 Robô" },
-  ADMIN: { fundo: "#FFE4DA", texto: "#431407", rotulo: "Admin" },
-  VENDEDOR: { fundo: "#FEF3C7", texto: "#422006", rotulo: "Vendedor" },
-  CELULAR: { fundo: "#DCFCE7", texto: "#052E16", rotulo: "📱 Pelo celular" },
-  SISTEMA: { fundo: "#F1F5F9", texto: "#334155", rotulo: "⏰ Automático" },
+/**
+ * Quem escreveu a mensagem que SAIU, e como o balão mostra: a equipe (admin,
+ * vendedor, celular) em verde, o robô em lilás, o automático em âmbar
+ * (classes em comum.tsx). `previa` é o prefixo na lista de conversas.
+ */
+const AUTORES: Record<string, { classe: "gente" | "robo" | "aviso"; rotulo: string; previa: string; Icone: LucideIcon }> = {
+  ROBO: { classe: "robo", rotulo: "Robô", previa: "Robô", Icone: Bot },
+  ADMIN: { classe: "gente", rotulo: "Admin", previa: "Admin", Icone: UserRound },
+  VENDEDOR: { classe: "gente", rotulo: "Vendedor", previa: "", Icone: UserRound },
+  CELULAR: { classe: "gente", rotulo: "Pelo celular", previa: "Celular", Icone: Smartphone },
+  SISTEMA: { classe: "aviso", rotulo: "Automático", previa: "Aviso", Icone: Clock },
 };
 
 const diaDaMensagem = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit" }).format(new Date(iso));
@@ -52,6 +61,7 @@ export default function CaixaDeAtendimento({
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [fichaAberta, setFichaAberta] = useState(false);
+  const [roboLigado, setRoboLigado] = useState<boolean | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const colarNoFim = useRef(true);
@@ -77,6 +87,7 @@ export default function CaixaDeAtendimento({
     setErroLista(null);
     setContatos(r.dados.contatos || []);
     setTotais({ aguardando: r.dados.totais?.aguardando || 0, naoLidas: r.dados.totais?.naoLidas || 0 });
+    setRoboLigado(typeof r.dados.roboLigado === "boolean" ? r.dados.roboLigado : null);
   }, [busca, filtro, vendedorFiltro]);
 
   useEffect(() => {
@@ -186,6 +197,19 @@ export default function CaixaDeAtendimento({
     return saida;
   }, [mensagens]);
 
+  // O robô nesta conversa, numa palavra e numa cor (a pílula da faixa).
+  const estadoDoRobo = !c
+    ? null
+    : roboLigado === false
+      ? { tom: "cinza", texto: "Robô desligado (geral)" }
+      : c.roboDesligado
+        ? { tom: "cinza", texto: "Robô desligado aqui" }
+        : c.aguardandoHumano
+          ? { tom: "vermelho", texto: "Esperando uma pessoa" }
+          : c.roboPausadoAte
+            ? { tom: "ambar", texto: `Robô pausado até ${horaDe(c.roboPausadoAte)}` }
+            : { tom: "verde", texto: "Robô atende esta conversa" };
+
   return (
     <div className="crm">
       <EstiloDoCrm />
@@ -193,16 +217,30 @@ export default function CaixaDeAtendimento({
       <div className={`crm-caixa${selecionado ? " com-conversa" : ""}${fichaAberta ? " ficha-aberta" : ""}`}>
         {/* ── Lista ── */}
         <div className="crm-lista">
+          <div className="crm-faixa">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h3>Conversas</h3>
+              <div className="crm-sub" style={{ fontSize: "0.72rem" }}>
+                {totais.naoLidas ? `${totais.naoLidas} não lida${totais.naoLidas > 1 ? "s" : ""}` : "Tudo lido"}
+                {totais.aguardando ? ` · ${totais.aguardando} pedindo pessoa` : ""}
+              </div>
+            </div>
+          </div>
           <div className="crm-lista-topo">
-            <input className="crm-input" placeholder="Buscar nome, loja ou telefone…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <div className="crm-busca">
+              <Search size={15} strokeWidth={2.2} aria-hidden />
+              <input className="crm-input" placeholder="Buscar nome, loja ou telefone" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar conversa" />
+            </div>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
               <button className={`crm-chip${filtro === "todas" ? " on" : ""}`} onClick={() => setFiltro("todas")}>Todas</button>
-              <button className={`crm-chip alerta${filtro === "aguardando" ? " on" : ""}`} onClick={() => setFiltro("aguardando")}>🙋 Pediram pessoa{totais.aguardando ? ` (${totais.aguardando})` : ""}</button>
-              <button className={`crm-chip${filtro === "naoLidas" ? " on" : ""}`} onClick={() => setFiltro("naoLidas")}>Não lidas{totais.naoLidas ? ` (${totais.naoLidas})` : ""}</button>
+              <button className={`crm-chip alerta${filtro === "aguardando" ? " on" : ""}`} onClick={() => setFiltro("aguardando")}>
+                <Hand size={13} strokeWidth={2.2} aria-hidden /> Pediram pessoa{totais.aguardando ? ` · ${totais.aguardando}` : ""}
+              </button>
+              <button className={`crm-chip${filtro === "naoLidas" ? " on" : ""}`} onClick={() => setFiltro("naoLidas")}>Não lidas{totais.naoLidas ? ` · ${totais.naoLidas}` : ""}</button>
               {modo === "ADMIN" && <button className={`crm-chip${filtro === "semVendedor" ? " on" : ""}`} onClick={() => setFiltro("semVendedor")}>Sem vendedor</button>}
             </div>
             {modo === "ADMIN" && vendedores.length > 0 && (
-              <select className="crm-select" value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)}>
+              <select className="crm-select" value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)} aria-label="Filtrar por vendedor">
                 <option value="">Todos os vendedores</option>
                 {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
               </select>
@@ -212,84 +250,108 @@ export default function CaixaDeAtendimento({
             {erroLista && <div className="crm-erro" style={{ margin: 10 }}>{erroLista}</div>}
             {carregou && !erroLista && contatos.length === 0 && (
               <div className="crm-vazio">
-                <div style={{ fontSize: "1.6rem" }}>💬</div>
-                {busca || filtro !== "todas" ? "Nenhuma conversa com esse filtro." : modo === "ADMIN" ? "As conversas do número do FireHub aparecem aqui assim que ele estiver conectado." : "Quando o admin passar contatos para você, as conversas aparecem aqui."}
+                <MessageCircle size={34} strokeWidth={1.6} aria-hidden />
+                {busca || filtro !== "todas" ? "Nenhuma conversa com esse filtro." : modo === "ADMIN" ? "As conversas do WhatsApp do FireHub aparecem aqui assim que ele estiver conectado." : "Quando o admin passar contatos para você, as conversas aparecem aqui."}
               </div>
             )}
-            {contatos.map((x) => (
-              <div key={x.id} className={`crm-item${x.id === selecionado ? " ativo" : ""}`} onClick={() => { setSelecionado(x.id); setFichaAberta(false); }}>
-                <Iniciais texto={nomeDe(x)} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-                    <span className="crm-item-nome">{nomeDe(x)}</span>
-                    <span className="crm-sub" style={{ flexShrink: 0, fontSize: "0.68rem" }}>{quandoCurto(x.ultimaMensagemEm || x.criadoEm)}</span>
-                  </div>
-                  <div className="crm-item-previa">
-                    {x.ultimaMensagemDe && x.ultimaMensagemDe !== "CLIENTE" && x.ultimaMensagemDe !== "VENDEDOR" ? `${COR_DO_AUTOR[x.ultimaMensagemDe]?.rotulo.replace(/^\S+ /, "") || "Você"}: ` : ""}
-                    {x.ultimaMensagemTexto ? comNegrito(x.ultimaMensagemTexto) : x.telefone ? x.telefone : "sem mensagens"}
-                  </div>
-                  <div style={{ display: "flex", gap: 4, marginTop: 5, flexWrap: "wrap", alignItems: "center" }}>
-                    <SeloDaEtapa etapa={x.etapa} pequeno />
-                    {x.ehLojista && <span className="crm-selo" style={{ background: "#F1F5F9", color: "#334155", fontSize: "0.62rem", padding: "2px 6px" }}>🏪 loja</span>}
-                    {x.aguardandoHumano && <span className="crm-selo" style={{ background: "#FEE2E2", color: "#B91C1C", fontSize: "0.62rem", padding: "2px 6px" }}>🙋 pessoa</span>}
-                    {(x.roboPausadoAte || x.roboDesligado) && !x.aguardandoHumano && <span title="Robô pausado nesta conversa" style={{ fontSize: "0.7rem" }}>⏸</span>}
-                    {modo === "ADMIN" && x.vendedorNome && <span className="crm-sub" style={{ fontSize: "0.66rem" }}>· {x.vendedorNome.split(/\s+/)[0]}</span>}
-                    <span style={{ flex: 1 }} />
-                    {x.naoLidas > 0 && <span className="crm-bolinha">{x.naoLidas}</span>}
+            {contatos.map((x) => {
+              const autor = x.ultimaMensagemDe ? AUTORES[x.ultimaMensagemDe] : null;
+              return (
+                <div
+                  key={x.id}
+                  className={`crm-item${x.id === selecionado ? " ativo" : ""}${x.naoLidas > 0 ? " nao-lida" : ""}`}
+                  onClick={() => { setSelecionado(x.id); setFichaAberta(false); }}
+                >
+                  <span className="crm-avatar"><Iniciais texto={nomeDe(x)} tamanho={40} /></span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
+                      <span className="crm-item-nome">{nomeDe(x)}</span>
+                      <span className="crm-item-hora">{quandoCurto(x.ultimaMensagemEm || x.criadoEm)}</span>
+                    </div>
+                    <div className="crm-item-previa">
+                      {autor?.previa ? `${autor.previa}: ` : ""}
+                      {x.ultimaMensagemTexto ? comNegrito(x.ultimaMensagemTexto) : x.telefone ? x.telefone : "sem mensagens"}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <SeloDaEtapa etapa={x.etapa} pequeno />
+                      {x.ehLojista && <span className="crm-marca loja"><Store size={11} strokeWidth={2.4} aria-hidden />loja</span>}
+                      {x.aguardandoHumano && <span className="crm-marca pessoa"><Hand size={11} strokeWidth={2.4} aria-hidden />pessoa</span>}
+                      {(x.roboPausadoAte || x.roboDesligado) && !x.aguardandoHumano && (
+                        <span className="crm-marca pausa" title="Robô pausado nesta conversa"><Pause size={10} strokeWidth={2.6} aria-hidden />robô</span>
+                      )}
+                      {modo === "ADMIN" && x.vendedorNome && <span className="crm-item-hora">{x.vendedorNome.split(/\s+/)[0]}</span>}
+                      <span style={{ flex: 1 }} />
+                      {x.naoLidas > 0 && <span className="crm-bolinha" aria-label={`${x.naoLidas} não lidas`}>{x.naoLidas}</span>}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         {/* ── Conversa ── */}
         <div className="crm-conversa">
           {!c ? (
-            <div className="crm-vazio"><div style={{ fontSize: "1.8rem" }}>👈</div>Escolha uma conversa.</div>
+            <div className="crm-vazio">
+              <MessageCircle size={40} strokeWidth={1.4} aria-hidden />
+              <b>Escolha uma conversa</b>
+              <span>As mensagens aparecem aqui, com o que o robô, a equipe e o contato disseram.</span>
+            </div>
           ) : (
             <>
-              <div className="crm-conversa-topo">
-                <button className="crm-btn crm-btn-sm crm-voltar" onClick={() => setSelecionado(null)}>←</button>
-                <Iniciais texto={nomeDe(c)} tamanho={34} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 800, fontSize: "0.92rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nomeDe(c)}</div>
+              {/* Dois andares: quem é (em cima) e o robô nesta conversa (embaixo). */}
+              <div className="crm-faixa crm-faixa-conversa">
+                <button className="crm-faixa-btn crm-voltar" onClick={() => setSelecionado(null)} aria-label="Voltar para a lista"><ArrowLeft size={15} aria-hidden /></button>
+                <span className="crm-avatar"><Iniciais texto={nomeDe(c)} tamanho={38} /></span>
+                <div className="crm-conversa-quem">
+                  <b>{nomeDe(c)}</b>
                   <div className="crm-sub">{c.telefone || "sem telefone"}{c.vendedorNome ? ` · ${c.vendedorNome}` : ""}</div>
                 </div>
-                <SeloDaEtapa etapa={c.etapa} />
-                {c.roboDesligado ? (
-                  <span className="crm-selo" style={{ background: "#F1F5F9", color: "#475569" }}>Robô desligado aqui</span>
-                ) : c.roboPausadoAte || c.aguardandoHumano ? (
-                  <button className="crm-btn crm-btn-sm" onClick={() => acaoDoRobo("devolver")} title="O robô volta a responder esta conversa">🤖 Devolver ao robô</button>
+                <span className="crm-so-largo"><SeloDaEtapa etapa={c.etapa} /></span>
+                <button className="crm-faixa-btn" onClick={() => setFichaAberta((v) => !v)} title="Ficha do contato" aria-label="Ficha do contato">
+                  <PanelRight size={15} aria-hidden /><span className="crm-so-largo">Ficha</span>
+                </button>
+              </div>
+              <div className="crm-subfaixa">
+                {estadoDoRobo && <span className={`crm-pilula ${estadoDoRobo.tom}`}><i aria-hidden />{estadoDoRobo.texto}</span>}
+                <span style={{ flex: 1 }} />
+                {!c.roboDesligado && (c.roboPausadoAte || c.aguardandoHumano ? (
+                  <button className="crm-faixa-btn claro" onClick={() => acaoDoRobo("devolver")} title="O robô volta a responder esta conversa">
+                    <Bot size={15} aria-hidden /> Devolver ao robô
+                  </button>
                 ) : (
-                  <button className="crm-btn crm-btn-sm" onClick={() => acaoDoRobo("pausar")} title="O robô para de responder esta conversa até alguém devolver">⏸ Pausar robô</button>
-                )}
-                <button className="crm-btn crm-btn-sm" onClick={() => setFichaAberta((v) => !v)}>Ficha</button>
+                  <button className="crm-faixa-btn" onClick={() => acaoDoRobo("pausar")} title="O robô para de responder esta conversa até alguém devolver. Responder também pausa: 2 h pela tela, 10 min pelo celular.">
+                    <Pause size={14} aria-hidden /> Pausar robô
+                  </button>
+                ))}
               </div>
               {c.aguardandoHumano && (
-                <div className="crm-aviso" style={{ margin: "8px 12px 0", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ flex: 1 }}>🙋 Pediu uma pessoa {c.aguardandoHumanoDesde ? `(${dataHora(c.aguardandoHumanoDesde)})` : ""}. O robô está quieto até alguém responder.</span>
-                  <button className="crm-btn crm-btn-sm" onClick={() => acaoDoRobo("resolvido")}>✓ Já atendi</button>
+                <div className="crm-alerta">
+                  <Hand size={16} strokeWidth={2.2} aria-hidden style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1 }}>Pediu uma pessoa{c.aguardandoHumanoDesde ? ` às ${horaDe(c.aguardandoHumanoDesde)}` : ""}. O robô fica quieto até alguém responder.</span>
+                  <button className="crm-btn crm-btn-sm" onClick={() => acaoDoRobo("resolvido")}><Check size={13} aria-hidden /> Já atendi</button>
                 </div>
               )}
               <div className="crm-mensagens" ref={areaRef} onScroll={aoRolar}>
-                {mensagens.length === 0 && <div className="crm-vazio">Nenhuma mensagem ainda. Escreva abaixo para começar a conversa.</div>}
+                {mensagens.length === 0 && (
+                  <div className="crm-vazio"><b>Nenhuma mensagem ainda</b><span>Escreva abaixo para começar a conversa.</span></div>
+                )}
                 {blocos.map((b) => (
                   <React.Fragment key={b.dia}>
                     <div className="crm-dia">{b.dia}</div>
                     {b.itens.map((m) => {
-                      const cor = m.direcao === "SAIDA" ? COR_DO_AUTOR[m.autor] || COR_DO_AUTOR.ADMIN : null;
-                      const rotulo = m.direcao === "SAIDA"
-                        ? m.autor === "VENDEDOR" || m.autor === "ADMIN" ? m.autorNome || cor!.rotulo : cor!.rotulo
-                        : null;
+                      const autor = m.direcao === "SAIDA" ? AUTORES[m.autor] || AUTORES.ADMIN : null;
+                      const Icone = autor?.Icone;
+                      const rotulo = autor ? (m.autor === "VENDEDOR" || m.autor === "ADMIN" ? m.autorNome || autor.rotulo : autor.rotulo) : null;
                       return (
-                        <div key={m.id} className={`crm-balao ${m.direcao === "ENTRADA" ? "entrada" : "saida"}`}
-                          style={cor ? { background: cor.fundo, color: cor.texto, border: m.status === "FALHOU" ? "1.5px solid #EF4444" : undefined } : undefined}>
-                          {rotulo && <div className="quem">{rotulo}</div>}
+                        <div key={m.id} className={`crm-balao ${m.direcao === "ENTRADA" ? "entrada" : `saida ${autor!.classe}`}${m.status === "FALHOU" ? " falhou" : ""}`}>
+                          {rotulo && <div className="quem">{Icone && <Icone size={12} strokeWidth={2.4} aria-hidden />}{rotulo}</div>}
                           {comNegrito(m.texto)}
                           <div className="hora">
-                            {m.status === "FALHOU" && <b style={{ color: "#B91C1C", marginRight: 6 }}>⚠ não enviada</b>}
+                            {m.status === "FALHOU" && <span className="erro-envio"><TriangleAlert size={11} strokeWidth={2.6} aria-hidden /> não enviada</span>}
                             {horaDe(m.criadoEm)}
+                            {m.direcao === "SAIDA" && m.status !== "FALHOU" && <CheckCheck size={13} strokeWidth={2.2} aria-label="enviada" />}
                           </div>
                         </div>
                       );
@@ -300,23 +362,23 @@ export default function CaixaDeAtendimento({
               </div>
               <div className="crm-compor">
                 {erroEnvio && <div className="crm-erro" style={{ marginBottom: 8 }}>{erroEnvio}</div>}
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <div className="crm-compor-linha">
                   <textarea
                     className="crm-textarea"
-                    style={{ minHeight: 44, maxHeight: 160 }}
-                    rows={2}
-                    placeholder={c.podeResponder ? "Escreva a resposta… (Enter envia, Shift+Enter pula linha)" : "Este contato não tem WhatsApp."}
+                    rows={1}
+                    placeholder={c.podeResponder ? "Escreva a resposta…" : "Este contato não tem WhatsApp."}
+                    aria-label="Resposta"
                     disabled={!c.podeResponder}
                     value={texto}
                     onChange={(e) => setTexto(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void enviar(); } }}
                   />
-                  <button className="crm-btn crm-btn-primary" style={{ height: 44 }} disabled={enviando || !texto.trim() || !c.podeResponder} onClick={enviar}>
-                    {enviando ? "…" : "Enviar"}
+                  <button className="crm-enviar" disabled={enviando || !texto.trim() || !c.podeResponder} onClick={enviar} aria-label="Enviar" title="Enviar (Enter)">
+                    <SendHorizontal size={19} strokeWidth={2.2} aria-hidden />
                   </button>
                 </div>
-                <div className="crm-sub" style={{ marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                  <span>Sai pelo WhatsApp do FireHub. Responder pausa o robô nesta conversa por 2 h.</span>
+                <div className="crm-compor-dica">
+                  <span>Enter envia · Shift+Enter pula linha</span>
                   {modo === "VENDEDOR" && (
                     <label style={{ display: "inline-flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
                       <input type="checkbox" checked={assinar} onChange={(e) => setAssinar(e.target.checked)} /> assinar com meu nome
@@ -330,17 +392,22 @@ export default function CaixaDeAtendimento({
 
         {/* ── Ficha ── */}
         <div className="crm-ficha">
-          {detalhe ? (
-            <FichaDoContato
-              modo={modo}
-              detalhe={detalhe}
-              vendedores={vendedores}
-              aoAtualizar={() => { if (selecionado) void carregarDetalhe(selecionado); void carregarLista(); }}
-              aoFechar={fichaAberta ? () => setFichaAberta(false) : undefined}
-            />
-          ) : (
-            <div className="crm-vazio">A ficha do contato aparece aqui.</div>
-          )}
+          <div className="crm-faixa">
+            <h3 style={{ flex: 1 }}>Ficha do contato</h3>
+            {fichaAberta && <button className="crm-faixa-btn" onClick={() => setFichaAberta(false)} aria-label="Fechar a ficha"><X size={15} aria-hidden /></button>}
+          </div>
+          <div className="crm-ficha-corpo">
+            {detalhe ? (
+              <FichaDoContato
+                modo={modo}
+                detalhe={detalhe}
+                vendedores={vendedores}
+                aoAtualizar={() => { if (selecionado) void carregarDetalhe(selecionado); void carregarLista(); }}
+              />
+            ) : (
+              <div className="crm-vazio"><UserRound size={30} strokeWidth={1.6} aria-hidden />A ficha do contato aparece aqui.</div>
+            )}
+          </div>
         </div>
       </div>
     </div>

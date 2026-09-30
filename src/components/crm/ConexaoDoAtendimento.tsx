@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useState } from "react";
+import { Bot, Settings } from "lucide-react";
 import { Modal, api, haQuanto } from "./comum";
 
 type Config = {
@@ -50,7 +51,7 @@ export default function ConexaoDoAtendimento() {
   const alternarRobo = async () => {
     if (!config) return;
     const ligar = !config.roboLigado;
-    if (ligar && !confirm("Ligar o robô? A partir de agora ele responde sozinho as mensagens NOVAS que chegarem no WhatsApp do FireHub (as conversas em que alguém respondeu nas últimas horas continuam com a pessoa).")) return;
+    if (ligar && !confirm("Ligar o robô? A partir de agora ele responde sozinho as mensagens NOVAS que chegarem no WhatsApp do FireHub. Quando alguém da equipe responde, ele fica quieto naquela conversa (10 min depois do celular, 2 h depois da tela).")) return;
     setTrocandoRobo(true);
     const r = await api("/api/crm/atendimento", { method: "PUT", json: { roboLigado: ligar } });
     setTrocandoRobo(false);
@@ -68,28 +69,30 @@ export default function ConexaoDoAtendimento() {
 
   return (
     <>
-      <div className="crm-card" style={{ padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: "0.84rem" }}>
-          <i style={{ width: 9, height: 9, borderRadius: "50%", background: status.cor, display: "inline-block" }} />
-          WhatsApp do FireHub: {status.texto}
+      <div className="crm-conexao">
+        <span className="estado">
+          <i style={{ background: status.cor }} aria-hidden />
+          WhatsApp do FireHub <span>{status.texto}</span>
         </span>
-        {config && !cx?.conectado && <button className="crm-btn crm-btn-primary crm-btn-sm" onClick={() => setAberto(true)}>Conectar</button>}
+        {config && !cx?.conectado && <button className="crm-faixa-btn primario" onClick={() => setAberto(true)}>Conectar</button>}
         <span style={{ flex: 1 }} />
         {config && (
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }} title="Com o robô desligado as conversas só são gravadas; ninguém responde sozinho.">
-            <span style={{ color: config.roboLigado ? "#15803D" : "#64748B" }}>🤖 Robô {config.roboLigado ? "ligado" : "desligado"}</span>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }} title="Com o robô desligado as conversas só são gravadas; ninguém responde sozinho.">
+            <Bot size={16} aria-hidden style={{ color: config.roboLigado ? "#4ADE80" : "#A8A29E" }} />
+            <span style={{ color: config.roboLigado ? "#F5F0E8" : "#B5ADA5" }}>Robô {config.roboLigado ? "ligado" : "desligado"}</span>
             <button
               role="switch"
               aria-checked={config.roboLigado}
+              aria-label="Ligar ou desligar o robô"
               disabled={trocandoRobo}
               onClick={alternarRobo}
-              style={{ width: 42, height: 24, borderRadius: 12, border: "none", cursor: "pointer", position: "relative", background: config.roboLigado ? "#22C55E" : "#CBD5E1", transition: "background .15s" }}
+              style={{ width: 44, height: 26, borderRadius: 13, border: "none", cursor: "pointer", position: "relative", background: config.roboLigado ? "#22C55E" : "#57514A", transition: "background-color .15s ease-out" }}
             >
-              <span style={{ position: "absolute", top: 3, left: config.roboLigado ? 21 : 3, width: 18, height: 18, borderRadius: "50%", background: "#FFFFFF", transition: "left .15s", boxShadow: "0 1px 2px rgba(0,0,0,.2)" }} />
+              <span style={{ position: "absolute", top: 3, left: config.roboLigado ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#FFFFFF", transition: "left .15s ease-out", boxShadow: "0 1px 2px rgba(0,0,0,.3)" }} />
             </button>
           </label>
         )}
-        <button className="crm-btn crm-btn-sm" onClick={() => setAberto(true)}>⚙️ Conexão e robô</button>
+        <button className="crm-faixa-btn" onClick={() => setAberto(true)}><Settings size={14} aria-hidden /> Conexão e robô</button>
       </div>
       {erro && <div className="crm-erro" style={{ marginBottom: 12 }}>{erro}</div>}
       {aberto && config && <ModalDaConexao config={config} aoFechar={() => { setAberto(false); void carregar(); }} aoMudar={setConfig} />}
