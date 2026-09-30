@@ -266,11 +266,14 @@ export default function PrinterSetupClient({
       // tela os recebe no carregamento e, se os mandasse de volta, uma aba
       // aberta há horas apagaria o andar criado depois. O PUT mescla por chave.
       const { andares: _andaresDaTelaDeMesas, ...semAndares } = config as PrinterConfig & { andares?: unknown };
-      await fetch("/api/store/printer-config", {
+      const res = await fetch("/api/store/printer-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(semAndares),
       });
+      // O fetch não falha com 4xx/5xx: sem isto a tela dizia "✅ Salvo!" com
+      // o servidor tendo recusado.
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       // Este POST sai SEMPRE, mesmo sem nenhuma impressora cadastrada.
       //
@@ -1459,6 +1462,17 @@ export default function PrinterSetupClient({
                 </button>
               </div>
             )}
+
+            {/* Salvar no fim de cada impressora: quem acabou de mexer nas
+                opções lá embaixo não achava o botão do topo da página. É o
+                mesmo salvar — grava todas as impressoras de uma vez. */}
+            <button
+              onClick={saveConfig}
+              disabled={saving}
+              style={{ width: "100%", marginTop: "1rem", padding: "12px 24px", borderRadius: 12, background: saved ? "#0F766E" : "linear-gradient(135deg,#B71C1C,#C92E09)", color: "#fff", border: "none", fontWeight: 700, fontSize: "0.92rem", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s", opacity: saving ? 0.7 : 1 }}
+            >
+              {saving ? "Salvando..." : saved ? "✅ Salvo!" : "Salvar configurações"}
+            </button>
           </div>
         ))}
       </div>
