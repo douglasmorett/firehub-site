@@ -666,9 +666,17 @@ export default function VendaPresencialPage() {
              3º a LISTA DE ITENS — e ela tem piso, então nunca some.
            O botão de finalizar nunca é empurrado para fora: é o que o
            min-height do rodapé garante. */
+        /* A lista fica com a SOBRA (base 0), não com a altura dos itens.
+           Com base "auto" cada item lançado entrava na disputa pela altura:
+           com 10 itens a lista pedia ~700px, o rodapé era espremido até o
+           piso de 132px e a forma de pagamento sumia atrás do TOTAL — só 8%
+           dela à vista, até em monitor 1080p (vídeo da loja, 29/09/2026).
+           Agora muitos itens rolam dentro da lista, e o layout não muda
+           com a quantidade de itens. O piso (120px, quase 2 itens) é o que
+           a lista garante em tela baixa; o resto fica para o pagamento. */
         .pdv-itens {
-          flex: 1 1 auto;
-          min-height: clamp(96px, 20vh, 240px);
+          flex: 1 1 0;
+          min-height: clamp(120px, 20vh, 240px);
           overflow-y: auto;
         }
         .pdv-rodape {
@@ -722,7 +730,7 @@ export default function VendaPresencialPage() {
           }
           /* Aqui o painel inteiro já é curto: a lista se contenta com menos,
              senão ela empurraria o rodapé para fora. */
-          .pdv-itens { min-height: 76px; }
+          .pdv-itens { min-height: 120px; }
         }
 
         /* Tela baixa: o cabeçalho encolhe ANTES de a lista encolher.
@@ -738,7 +746,7 @@ export default function VendaPresencialPage() {
           /* Aqui o emoji vira enfeite caro: são 18px de altura vezes a linha
              inteira. O rótulo ("Balcão", "Mesa", "Delivery") já diz tudo. */
           .pdv-tipo-emoji { display: none !important; }
-          .pdv-itens { min-height: 88px; }
+          .pdv-itens { min-height: 120px; }
           .pdv-aviso-caixa-texto { display: none; }
         }
 
