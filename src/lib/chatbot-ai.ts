@@ -240,9 +240,15 @@ export async function processChatbotAI(
       // spread: SEM_PRODUTO_DE_INTEGRACAO também traz um NOT, e num objeto
       // literal o segundo NOT sobrescreve o primeiro — o filtro de complemento
       // parecia estar lá e não valia ("NOT is specified more than once").
+      //
+      // E o que a loja desligou no delivery: o robô É delivery. A embalagem da
+      // NIK (só no balcão) e o prato de salão da Delicias de Casa saíam no
+      // WhatsApp — 213 itens em 5 lojas em 29/09/2026 — enquanto o site, com a
+      // mesma marca, não os mostrava.
       where: {
         franchiseeId: targetFranchiseeId,
         active: true,
+        activeDelivery: true,
         AND: [{ NOT: { apenasEmCombo: true } }, SEM_PRODUTO_DE_INTEGRACAO],
       },
       select: {
