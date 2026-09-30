@@ -1,9 +1,15 @@
 "use client";
 import React, { useState, useMemo, useCallback } from "react";
+import Link from "next/link";
 import { minutosEntre } from "@/lib/order-stages";
 import FiltroMultiplo from "@/components/customer/FiltroMultiplo";
 import { chaveDaLoja, lojasDosPedidos, type PedidoDoRelatorio } from "@/lib/origem-do-relatorio";
-import { itemEntra, opcoesQueEntram, somarVendas } from "@/lib/soma-do-relatorio";
+import {
+  itemEntra, itensVendidosPorCategoria, opcoesQueEntram, perguntouPorItem, somarVendas, type FiltroDeItens,
+} from "@/lib/soma-do-relatorio";
+import {
+  atendimentosDaVenda, cent, entraNaVenda, reais, ticketMedio as ticketDaRegua, type PedidoDaRegua,
+} from "@/lib/relatorios/regua-da-venda";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import {
   TrendingUp,
@@ -162,6 +168,59 @@ const fmtMin = (v: number | null) => {
 
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
+// ── VENDAS E TICKET PELA RÉGUA ÚNICA ────────────────────────────────────────
+//
+// Puras e exportadas para scripts/teste-painel-de-vendas.ts conferir a MESMA
+// conta que a tela faz. A régua é lib/relatorios/regua-da-venda.ts: valor
+// vendido = Σ totalAmount dos pedidos de venda; vendas = pedido sem mesa + 1
+// por mesa (a de três rodadas é uma venda); ticket = valor ÷ vendas, ao centavo.
+
+type ItemDoPainel = Parameters<typeof itemEntra>[0] & Parameters<typeof opcoesQueEntram>[0];
+export type PedidoDoPainel = Omit<PedidoDaRegua, "items"> & { items: ItemDoPainel[] };
+
+/** Valor vendido, vendas, lançamentos e ticket do recorte — os do Vendas por período. */
+export function vendaDaRegua(pedidos: PedidoDaRegua[]) {
+  const at = atendimentosDaVenda(pedidos);
+  // Em centavos, como a régua soma: é o que dá o mesmo centavo do Vendas.
+  let c = 0;
+  for (const p of pedidos) if (entraNaVenda(p)) c += cent(p.totalAmount);
+  const valor = reais(c);
+  return { valor, vendas: at.vendas, lancamentos: at.lancamentos, ticket: ticketDaRegua(valor, at.vendas) };
+}
+
+/**
+ * O cartão "Vendas no filtro".
+ *
+ * SEM filtro de item (produto/categoria), o ticket é o da régua — valor
+ * vendido ÷ vendas —, o mesmo do "Ticket médio do período" logo abaixo e do
+ * Vendas por período. Até 24/09/2026 o cartão dividia a soma dos ITENS pelas
+ * vendas: outro número, na mesma tela, com o mesmo nome. NIK, 09–16/09/2026:
+ * R$ 62,99 no cartão (15.243,80 de itens ÷ 242) × R$ 55,00 no Movimento e no
+ * Vendas por período (13.309,45 ÷ 242); Pastel da Paulista: 67,99 × 70,16. Os
+ * itens não são o que a venda cobrou: falta a taxa de entrega e sobra o
+ * desconto (na NIK, R$ 3.458,64 de desconto na semana).
+ *
+ * COM filtro de item, "o ticket da venda inteira" não responde a pergunta —
+ * quem marcou "Bebidas" quer saber quanto de bebida cada venda levou. Aí o
+ * ticket é o dos ITENS do filtro ÷ as vendas que tiveram algum deles, e a tela
+ * o chama de "ticket dos itens" (`dosItens`), para não passar pelo outro.
+ * `receitaDosItens` é a do `somarVendas` que a tela já fez.
+ */
+export function cartaoDeVendas(pedidos: PedidoDoPainel[], filtro: FiltroDeItens, receitaDosItens: number) {
+  if (!perguntouPorItem(filtro)) {
+    const r = vendaDaRegua(pedidos);
+    return { vendas: r.vendas, lancamentos: r.lancamentos, ticket: r.ticket, dosItens: false };
+  }
+  // Os pedidos com algum item (ou opção) no filtro — a regra de somarVendas,
+  // repetida aqui só para saber QUAIS são, porque a mesa se agrupa pelo pedido.
+  const comAlgoNoFiltro = pedidos.filter((o) => o.items.some((i) => {
+    const entrou = itemEntra(i, filtro);
+    return entrou || opcoesQueEntram(i, filtro, entrou).length > 0;
+  }));
+  const at = atendimentosDaVenda(comAlgoNoFiltro);
+  return { vendas: at.vendas, lancamentos: at.lancamentos, ticket: ticketDaRegua(receitaDosItens, at.vendas), dosItens: true };
+}
+
 export default function RelatoriosClient({
   orders,
   products,
@@ -305,6 +364,13 @@ export default function RelatoriosClient({
     const soma = somarVendas(dateFilteredOrders, filtroDeItens);
     const totalProfit = soma.receita - soma.cmv;
 
+    // VENDAS, não lançamentos: a régua única (lib/relatorios/regua-da-venda.ts,
+    // atendimentosDaVenda) — a mesa de três rodadas são três pedidos e UMA
+    // venda. Contados como pedidos, o ticket da mesa de R$ 150 virava três de
+    // R$ 50, e o painel dava outro ticket que o Vendas por período. O ticket
+    // sem filtro de item é o da régua; com filtro, o dos itens (cartaoDeVendas).
+    const cartao = cartaoDeVendas(dateFilteredOrders as PedidoDoPainel[], filtroDeItens, soma.receita);
+
     return {
       revenue: soma.receita,
       cmv: soma.cmv,
@@ -315,8 +381,11 @@ export default function RelatoriosClient({
       // que o cartão explica embaixo do número, para ninguém procurar a borda
       // entre os itens do pedido.
       unidadesDeOpcao: soma.unidadesDeOpcao,
-      ordersCount: soma.pedidos,
-      ticketMedio: soma.pedidos > 0 ? soma.receita / soma.pedidos : 0,
+      ordersCount: cartao.vendas,
+      lancamentos: cartao.lancamentos,
+      ticketMedio: cartao.ticket,
+      /** O ticket é dos ITENS do filtro, não o da venda inteira (a tela diz). */
+      ticketDosItens: cartao.dosItens,
     };
   }, [dateFilteredOrders, filtroDeItens]);
 
@@ -333,6 +402,8 @@ export default function RelatoriosClient({
         cost: number;
         profit: number;
         price: number;
+        /** Quantas unidades vieram escolhidas DENTRO de um item que já está na conta. */
+        dentro: number;
       }
     > = {};
 
@@ -347,6 +418,7 @@ export default function RelatoriosClient({
         cost: 0,
         profit: 0,
         price: p.price,
+        dentro: 0,
       };
     });
 
@@ -366,6 +438,7 @@ export default function RelatoriosClient({
             cost: 0,
             profit: 0,
             price: item.price,
+            dentro: 0,
           };
         }
 
@@ -382,16 +455,22 @@ export default function RelatoriosClient({
         // categoria foi reconhecida. A MESMA regra dos cartões, da mesma lib:
         // só quando o lojista perguntou por categoria ou produto, e o dinheiro
         // só quando o item que carrega a opção ficou fora da conta.
-        for (const { opcao: op, valor } of opcoesQueEntram(item, filtroDeItens, itemEntra(item, filtroDeItens))) {
+        const oItemEntrou = itemEntra(item, filtroDeItens);
+        for (const { opcao: op, valor } of opcoesQueEntram(item, filtroDeItens, oItemEntrou)) {
           const chave = op.id || `opcao:${op.categoria}:${op.nome}`;
           if (!counts[chave]) {
             counts[chave] = {
               id: chave, name: op.nome, category: op.categoria,
-              qty: 0, revenue: 0, cost: 0, profit: 0, price: op.preco || 0,
+              qty: 0, revenue: 0, cost: 0, profit: 0, price: op.preco || 0, dentro: 0,
             };
           }
           const linha = counts[chave];
           linha.qty += op.quantidade;
+          // O sabor escolhido dentro da pizza que já está na conta: soma a
+          // unidade, e o dinheiro fica na pizza. É a linha "Portuguesa ·
+          // R$ 0,00" que fez a NIK perguntar (24/09/2026) — a tela tem que
+          // dizer onde está o valor.
+          if (oItemEntrou) linha.dentro += op.quantidade;
           linha.revenue += valor;
           linha.cost += (op.custo || 0) * op.quantidade;
           linha.profit = linha.revenue - linha.cost;
@@ -416,6 +495,41 @@ export default function RelatoriosClient({
       })
       .sort((a, b) => b.qty - a.qty || b.revenue - a.revenue);
   }, [dateFilteredOrders, products, categoriasMarcadas, produtosMarcados, searchQuery, idsDeEspelho, filtroDeItens]);
+
+  // ── ITENS VENDIDOS POR CATEGORIA (categoria → produto → escolhas) ─────────
+  //
+  // A segunda visão do cartão do ranking: a do relatório "Itens vendidos" da
+  // Saipos, que a NIK usava. O sabor aparece dentro da pizza que o carregou,
+  // em vez de numa linha própria de R$ 0,00. A conta está em
+  // lib/soma-do-relatorio.ts (itensVendidosPorCategoria).
+  const [visaoDoRanking, setVisaoDoRanking] = useState<"ranking" | "categoria">("ranking");
+  const [abertos, setAbertos] = useState<Set<string>>(() => new Set());
+  const alternar = useCallback((chave: string) => {
+    setAbertos((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(chave)) novo.delete(chave); else novo.add(chave);
+      return novo;
+    });
+  }, []);
+  const itensPorCategoria = useMemo(() => {
+    const arvore = itensVendidosPorCategoria(dateFilteredOrders as any, filtroDeItens);
+    const busca = searchQuery.trim().toLowerCase();
+    if (!busca) return arvore;
+    // A busca acha o produto pelo nome; a categoria fica com o que casou.
+    const categorias = arvore.categorias
+      .map((c) => ({ ...c, produtos: c.produtos.filter((p) => p.nome.toLowerCase().includes(busca)) }))
+      .filter((c) => c.produtos.length > 0)
+      .map((c) => ({
+        ...c,
+        quantidade: c.produtos.reduce((s, p) => s + p.quantidade, 0),
+        valor: c.produtos.reduce((s, p) => s + p.valor, 0),
+      }));
+    return {
+      categorias,
+      quantidade: categorias.reduce((s, c) => s + c.quantidade, 0),
+      valor: categorias.reduce((s, c) => s + c.valor, 0),
+    };
+  }, [dateFilteredOrders, filtroDeItens, searchQuery]);
 
   // ── ENTREGAS E O QUE ELAS CUSTARAM ───────────────────────────────────────
   //
@@ -478,15 +592,19 @@ export default function RelatoriosClient({
 
   // 4. De onde vem os pedidos (plataforma): quantidade, % e faturamento
   const sourceStats = useMemo(() => {
-    const stats: Record<string, { count: number; total: number }> = {};
+    const stats: Record<string, { count: number; total: number; vendas: number }> = {};
     let totalRevenue = 0;
+    // O ticket da plataforma é por VENDA (a régua única): a venda conta onde
+    // ela abre — o pedido comum, o primeiro lançamento da mesa.
+    const { abre } = atendimentosDaVenda(dateFilteredOrders);
 
     dateFilteredOrders.forEach((o) => {
       // A mesma chave do filtro de plataforma: a fatia "iFood" da rosca e a
       // opção "iFood" do filtro são os mesmos pedidos.
       const source = o.canal || "DESCONHECIDO";
-      if (!stats[source]) stats[source] = { count: 0, total: 0 };
+      if (!stats[source]) stats[source] = { count: 0, total: 0, vendas: 0 };
       stats[source].count++;
+      if (abre.has(o.id)) stats[source].vendas++;
       stats[source].total += o.totalAmount;
       totalRevenue += o.totalAmount;
     });
@@ -500,8 +618,9 @@ export default function RelatoriosClient({
         label: plat.label,
         color: plat.cor,
         count: value.count,
+        vendas: value.vendas,
         total: value.total,
-        ticket: value.count > 0 ? value.total / value.count : 0,
+        ticket: value.vendas > 0 ? value.total / value.vendas : 0,
         // pctQtd e a fatia do grafico: o lojista pergunta "quantos por cento
         // dos meus pedidos vem do iFood", nao quanto por cento do dinheiro.
         pctQtd: totalPedidos > 0 ? (value.count / totalPedidos) * 100 : 0,
@@ -625,7 +744,7 @@ export default function RelatoriosClient({
   const movimento = useMemo(() => {
     const porHora = Array.from({ length: 24 }, (_, h) => ({ hora: h, count: 0, total: 0 }));
     const porDia = Array.from({ length: 7 }, (_, d) => ({ dia: d, count: 0, total: 0 }));
-    let entrega = 0, retirada = 0, receitaTotal = 0;
+    let entrega = 0, retirada = 0;
 
     dateFilteredOrders.forEach((o) => {
       const d = new Date(o.createdAt);
@@ -634,7 +753,6 @@ export default function RelatoriosClient({
       porDia[d.getDay()].count++;
       porDia[d.getDay()].total += o.totalAmount;
       if (ehRetirada(o)) retirada++; else entrega++;
-      receitaTotal += o.totalAmount;
     });
 
     // Cancelados ficam de fora de dateFilteredOrders -- para a taxa, contamos
@@ -656,11 +774,23 @@ export default function RelatoriosClient({
     const maxHora = Math.max(1, ...porHora.map((h) => h.count));
     const maxDia = Math.max(1, ...porDia.map((h) => h.count));
     const totalValidos = dateFilteredOrders.length;
+    // O ticket do período é valor ÷ VENDAS (a régua única), como no Vendas por
+    // período: a mesa conta uma vez. Os gráficos de hora e dia continuam
+    // contando pedidos — são o movimento da cozinha, rodada a rodada.
+    //
+    // O "Faturamento com taxas" também sai da régua (vendaDaRegua), e não da
+    // soma crua de totalAmount de antes: é a MESMA função do cartão "Vendas no
+    // filtro", então os dois tickets da tela são um número só, e faturamento ÷
+    // vendas = ticket. A soma crua só diferia no que a régua tira da venda e
+    // este painel não tirava: o cancelado gravado em inglês (CANCELLED) e o
+    // pedido de valor impossível (R$ 1 milhão ou mais). Em 24/09/2026, nas
+    // semanas conferidas da NIK e da Pastel, as duas davam o mesmo centavo.
+    const regua = vendaDaRegua(dateFilteredOrders);
 
     return {
       porHora, porDia, maxHora, maxDia, picoHora, picoDia,
-      entrega, retirada, totalValidos, receitaTotal,
-      ticketMedio: totalValidos > 0 ? receitaTotal / totalValidos : 0,
+      entrega, retirada, totalValidos, receitaTotal: regua.valor, vendas: regua.vendas,
+      ticketMedio: regua.ticket,
       cancelados,
       brutoNoPeriodo,
       taxaCancelamento: brutoNoPeriodo > 0 ? (cancelados / brutoNoPeriodo) * 100 : 0,
@@ -668,33 +798,55 @@ export default function RelatoriosClient({
   }, [dateFilteredOrders, orders, from, to, passaNaOrigem]);
 
   // Exportar dados como CSV
+  //
+  // Ponto e vírgula e vírgula decimal: é o que o Excel em português abre
+  // direto em colunas. Com vírgula de separador a planilha inteira caía numa
+  // coluna só. E Blob em vez de data: URI — um "#" no nome do produto cortava
+  // o arquivo ali.
   const handleExportCSV = () => {
-    const headers = ["Rank", "Produto", "Categoria", "Preço Base", "Quantidade Vendida", "Faturamento", "Custo Total", "Lucro Líquido"];
-    const rows = productRanking.map((p, index) => [
-      index + 1,
-      `"${p.name.replace(/"/g, '""')}"`,
-      `"${p.category.replace(/"/g, '""')}"`,
-      p.price.toFixed(2),
-      p.qty,
-      p.revenue.toFixed(2),
-      p.cost.toFixed(2),
-      p.profit.toFixed(2),
-    ]);
+    const texto = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+    const reais = (v: number) => v.toFixed(2).replace(".", ",");
+    const periodo = `${from.toISOString().split("T")[0]}_a_${to.toISOString().split("T")[0]}`;
 
-    const csvContent =
-      "data:text/csv;charset=utf-8,\uFEFF" +
-      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-      
-    const encodedUri = encodeURI(csvContent);
+    let linhas: (string | number)[][];
+    let nome: string;
+    if (visaoDoRanking === "categoria") {
+      // A árvore achatada: uma linha por categoria, por produto e por escolha,
+      // cada uma dizendo a que nível pertence — dá para filtrar no Excel.
+      linhas = [["Categoria", "Produto", "Escolha", "Quantidade", "Valor"]];
+      for (const c of itensPorCategoria.categorias) {
+        linhas.push([texto(c.categoria), "", "", c.quantidade, reais(c.valor)]);
+        for (const p of c.produtos) {
+          linhas.push([texto(c.categoria), texto(p.nome), "", p.quantidade, reais(p.valor)]);
+          for (const e of p.escolhas) linhas.push([texto(c.categoria), texto(p.nome), texto(e.nome), e.quantidade, ""]);
+        }
+      }
+      nome = `itens_vendidos_${periodo}.csv`;
+    } else {
+      linhas = [["Rank", "Produto", "Categoria", "Preço Base", "Quantidade Vendida", "Dentro de outro item", "Faturamento", "Custo Total", "Lucro Líquido"]];
+      productRanking.forEach((p, index) => linhas.push([
+        index + 1,
+        texto(p.name),
+        texto(p.category),
+        reais(p.price),
+        p.qty,
+        p.dentro,
+        reais(p.revenue),
+        reais(p.cost),
+        reais(p.profit),
+      ]));
+      nome = `relatorio_vendas_${periodo}.csv`;
+    }
+
+    const blob = new Blob(["\uFEFF" + linhas.map((l) => l.join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute(
-      "download",
-      `relatorio_vendas_${from.toISOString().split("T")[0]}_a_${to.toISOString().split("T")[0]}.csv`
-    );
+    link.href = url;
+    link.download = nome;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const CARD_SECAO = { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, marginBottom: "1.5rem", padding: "1.25rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" };
@@ -704,10 +856,13 @@ export default function RelatoriosClient({
     <div style={{ padding: "1.5rem 1rem", maxWidth: 1280, margin: "0 auto", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       
       {/* ── HEADER ── */}
+      <Link href="/store/relatorios" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.8rem", fontWeight: 700, color: "#57534E", textDecoration: "none", marginBottom: 10 }}>
+        ← Relatórios
+      </Link>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
         <div>
           <h1 style={{ fontWeight: 900, fontSize: "1.8rem", color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
-            📈 Relatórios da Loja
+            📈 Painel de vendas
           </h1>
           <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#64748B", fontWeight: 500 }}>
             Operação, plataformas e vendas · <strong>{storeName}</strong>
@@ -974,9 +1129,23 @@ export default function RelatoriosClient({
             </span>
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Pedidos no Filtro</p>
-            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{processedData.ordersCount} ped.</p>
-            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Ticket Médio do filtro: {fmtR(processedData.ticketMedio)}</p>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Vendas no Filtro</p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{processedData.ordersCount} vendas</p>
+            {/* Dois tickets diferentes com o mesmo nome confundiam: sem filtro de
+                item é o ticket da venda (o do Movimento e do Vendas por período);
+                com filtro, é o dos itens marcados, e o texto diz isso. */}
+            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
+              {processedData.ticketDosItens
+                ? <>Ticket dos itens do filtro: {fmtR(processedData.ticketMedio)} — quanto desses itens cada venda levou</>
+                : <>Ticket médio: {fmtR(processedData.ticketMedio)} (valor vendido ÷ vendas)</>}
+            </p>
+            {/* Só quando há mesa com mais de uma rodada: sem isto, o lojista que
+                conta os pedidos da lista acha outro número e não sabe por quê. */}
+            {processedData.lancamentos !== processedData.ordersCount && (
+              <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#64748B", fontWeight: 600 }}>
+                {processedData.lancamentos} pedidos lançados — a mesa de várias rodadas (e o acréscimo de um pedido) conta uma venda só
+              </p>
+            )}
           </div>
         </div>
 
@@ -1144,7 +1313,9 @@ export default function RelatoriosClient({
                   <div style={{ background: "#F1F5F9", height: 7, borderRadius: 4, overflow: "hidden" }}>
                     <div style={{ background: f.color, height: "100%", width: `${f.pctQtd}%`, borderRadius: 4 }} />
                   </div>
-                  <p style={{ margin: "3px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Ticket médio: {fmtR(f.ticket)}</p>
+                  <p style={{ margin: "3px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
+                    Ticket médio: {fmtR(f.ticket)}{f.vendas !== f.count ? ` por venda (${f.vendas} vendas — a mesa conta uma vez)` : ""}
+                  </p>
                 </div>
               ))}
             </div>
@@ -1228,7 +1399,7 @@ export default function RelatoriosClient({
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: "0.8rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
-              <span style={{ color: "#64748B", fontWeight: 600 }}>Ticket médio do período</span>
+              <span style={{ color: "#64748B", fontWeight: 600 }}>Ticket médio do período{movimento.vendas !== movimento.totalValidos ? ` (${movimento.vendas} vendas)` : ""}</span>
               <strong style={{ color: "#0F172A" }}>{fmtR(movimento.ticketMedio)}</strong>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
@@ -1360,18 +1531,46 @@ export default function RelatoriosClient({
         <div style={{ padding: "1.25rem", borderBottom: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem", background: "#F8FAFC" }}>
           <div>
             <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
-              <BarChart2 size={18} color="#E8360C" /> Ranking Geral de Produtos ({productRanking.length})
+              <BarChart2 size={18} color="#E8360C" />
+              {visaoDoRanking === "ranking"
+                ? `Ranking Geral de Produtos (${productRanking.length})`
+                : `Itens vendidos por categoria (${itensPorCategoria.categorias.length})`}
             </h2>
             <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "#64748B" }}>
-              Ordenado por quantidade vendida (do campeão ao mais fraco)
+              {visaoDoRanking === "ranking"
+                ? "Ordenado por quantidade vendida (do campeão ao mais fraco)"
+                : "Abra a categoria e o produto para ver os sabores, bordas e opções escolhidos dentro dele"}
             </p>
+          </div>
+
+          <div role="tablist" aria-label="Como ver os produtos" style={{ display: "inline-flex", background: "#EEF2F6", borderRadius: 10, padding: 3, gap: 2 }}>
+            {([["ranking", "Ranking"], ["categoria", "Por categoria"]] as const).map(([valor, rotulo]) => {
+              const ativo = visaoDoRanking === valor;
+              return (
+                <button
+                  key={valor}
+                  role="tab"
+                  aria-selected={ativo}
+                  onClick={() => setVisaoDoRanking(valor)}
+                  style={{
+                    border: "none", borderRadius: 8, padding: "6px 14px", fontSize: "0.8rem", fontWeight: 700,
+                    fontFamily: "inherit", cursor: "pointer",
+                    background: ativo ? "#fff" : "transparent",
+                    color: ativo ? "#0F172A" : "#64748B",
+                    boxShadow: ativo ? "0 1px 3px rgba(15,23,42,0.12)" : "none",
+                  }}
+                >
+                  {rotulo}
+                </button>
+              );
+            })}
           </div>
 
           <div style={{ position: "relative", minWidth: 260 }}>
             <Search size={14} color="#94A3B8" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
             <input
               type="text"
-              placeholder="Buscar no ranking..."
+              placeholder={visaoDoRanking === "ranking" ? "Buscar no ranking..." : "Buscar produto..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -1388,7 +1587,103 @@ export default function RelatoriosClient({
           </div>
         </div>
 
+        {/* ── ITENS VENDIDOS POR CATEGORIA ───────────────────────────────
+            Categoria → produto → o que foi escolhido dentro dele. O valor
+            fica só no produto: o sabor e a borda já estão no preço dele. */}
+        {visaoDoRanking === "categoria" && (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
+              <thead>
+                <tr style={{ borderBottom: "1.5px solid #E2E8F0", background: "#fff", color: "#475569" }}>
+                  <th style={{ padding: "12px 1.25rem", fontWeight: 700 }}>Categoria · produto · escolhas</th>
+                  <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right", width: 130 }}>Quantidade</th>
+                  <th style={{ padding: "12px 1.25rem", fontWeight: 700, textAlign: "right", width: 150 }}>Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {itensPorCategoria.categorias.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} style={{ padding: "3rem", textAlign: "center", color: "#94A3B8" }}>
+                      Nenhum item vendido no período.
+                    </td>
+                  </tr>
+                ) : (
+                  itensPorCategoria.categorias.map((c) => {
+                    const chaveCat = `c:${c.categoria}`;
+                    const catAberta = abertos.has(chaveCat);
+                    return (
+                      <React.Fragment key={chaveCat}>
+                        <tr
+                          onClick={() => alternar(chaveCat)}
+                          aria-expanded={catAberta}
+                          style={{ borderBottom: "1px solid #F1F5F9", background: "#F8FAFC", cursor: "pointer" }}
+                        >
+                          <td style={{ padding: "11px 1.25rem", fontWeight: 800, color: "#0F172A" }}>
+                            <ChevronDown size={14} style={{ verticalAlign: -2, marginRight: 6, transition: "transform 0.15s", transform: catAberta ? "none" : "rotate(-90deg)" }} />
+                            {c.categoria}
+                          </td>
+                          <td style={{ padding: "11px 1rem", textAlign: "right", fontWeight: 800, color: "#0F172A" }}>{c.quantidade} u.</td>
+                          <td style={{ padding: "11px 1.25rem", textAlign: "right", fontWeight: 800, color: "#0F766E" }}>{fmtR(c.valor)}</td>
+                        </tr>
+                        {catAberta && c.produtos.map((p) => {
+                          const chaveProd = `p:${c.categoria}:${p.id}`;
+                          const temEscolhas = p.escolhas.length > 0;
+                          const prodAberto = abertos.has(chaveProd);
+                          return (
+                            <React.Fragment key={chaveProd}>
+                              <tr
+                                onClick={temEscolhas ? () => alternar(chaveProd) : undefined}
+                                aria-expanded={temEscolhas ? prodAberto : undefined}
+                                style={{ borderBottom: "1px solid #F1F5F9", cursor: temEscolhas ? "pointer" : "default" }}
+                              >
+                                <td style={{ padding: "10px 1.25rem 10px 2.5rem", fontWeight: 700, color: "#1E293B" }}>
+                                  {temEscolhas
+                                    ? <ChevronDown size={13} style={{ verticalAlign: -2, marginRight: 6, transition: "transform 0.15s", transform: prodAberto ? "none" : "rotate(-90deg)" }} />
+                                    : <span style={{ display: "inline-block", width: 19 }} />}
+                                  {p.nome}
+                                </td>
+                                <td style={{ padding: "10px 1rem", textAlign: "right", fontWeight: 700, color: "#1E293B" }}>{p.quantidade} u.</td>
+                                <td style={{ padding: "10px 1.25rem", textAlign: "right", fontWeight: 700, color: "#0F766E" }}>{fmtR(p.valor)}</td>
+                              </tr>
+                              {prodAberto && p.escolhas.map((e) => (
+                                <tr key={`${chaveProd}:${e.nome}`} style={{ borderBottom: "1px solid #F8FAFC", background: "#FCFCFD" }}>
+                                  <td style={{ padding: "7px 1.25rem 7px 4.4rem", color: "#475569" }}>{e.nome}</td>
+                                  <td style={{ padding: "7px 1rem", textAlign: "right", color: "#475569", fontWeight: 600 }}>{e.quantidade}</td>
+                                  <td style={{ padding: "7px 1.25rem", textAlign: "right", color: "#94A3B8", fontSize: "0.75rem" }}>no produto</td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+              {itensPorCategoria.categorias.length > 0 && (
+                <tfoot>
+                  <tr style={{ background: "#FFF4EF", borderTop: "2px solid #FFD3C2" }}>
+                    <td style={{ padding: "14px 1.25rem", fontWeight: 900, color: "#9A3412", fontSize: "0.86rem" }}>
+                      TOTAL
+                      <span style={{ display: "block", fontWeight: 600, fontSize: "0.72rem", color: "#9A3412", marginTop: 2 }}>
+                        Soma dos itens. A meia pizza conta como uma escolha do sabor.
+                      </span>
+                    </td>
+                    <td style={{ padding: "14px 1rem", textAlign: "right", fontWeight: 900, color: "#9A3412", fontSize: "0.95rem" }}>
+                      {itensPorCategoria.quantidade} u.
+                    </td>
+                    <td style={{ padding: "14px 1.25rem", textAlign: "right", fontWeight: 900, color: "#0F766E" }}>
+                      {fmtR(itensPorCategoria.valor)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        )}
+
         {/* Tabela do Ranking */}
+        {visaoDoRanking === "ranking" && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
             <thead>
@@ -1434,6 +1729,15 @@ export default function RelatoriosClient({
                       </td>
                       <td style={{ padding: "12px 1rem", fontWeight: 700, color: "#0F172A" }}>
                         {p.name}
+                        {/* O sabor e a borda escolhidos dentro de um item que
+                            já está na conta: a unidade conta aqui, o dinheiro
+                            fica no item. Sem este aviso a linha lia "vendi uma
+                            Portuguesa por R$ 0,00". */}
+                        {p.dentro > 0 && (
+                          <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 500, color: "#64748B", marginTop: 2 }}>
+                            {p.dentro === p.qty ? "Escolhido" : `${p.dentro} escolhido${p.dentro === 1 ? "" : "s"}`} dentro de outro item — o valor está no preço dele
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: "12px 1rem" }}>
                         <span style={{ fontSize: "0.72rem", fontWeight: 600, color: "#475569", background: "#F1F5F9", padding: "2px 8px", borderRadius: 6 }}>
@@ -1441,13 +1745,15 @@ export default function RelatoriosClient({
                         </span>
                       </td>
                       <td style={{ padding: "12px 1rem", textAlign: "right", color: "#475569" }}>
-                        {fmtR(p.price)}
+                        {p.dentro > 0 && p.price === 0 ? "—" : fmtR(p.price)}
                       </td>
                       <td style={{ padding: "12px 1rem", textAlign: "right", fontWeight: 800, color: isZero ? "#94A3B8" : "#0F172A" }}>
                         {p.qty} u.
                       </td>
                       <td style={{ padding: "12px 1rem", textAlign: "right", fontWeight: 700, color: isZero ? "#94A3B8" : "#0F766E" }}>
-                        {fmtR(p.revenue)}
+                        {p.dentro > 0 && p.dentro === p.qty && p.revenue === 0
+                          ? <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#94A3B8" }}>no item</span>
+                          : fmtR(p.revenue)}
                       </td>
                       <td style={{ padding: "12px 1rem", textAlign: "right", color: isZero ? "#94A3B8" : "#C92E09" }}>
                         {fmtR(p.cost)}
@@ -1495,6 +1801,7 @@ export default function RelatoriosClient({
             )}
           </table>
         </div>
+        )}
 
       </div>
 

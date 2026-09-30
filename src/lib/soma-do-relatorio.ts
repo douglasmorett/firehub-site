@@ -104,3 +104,69 @@ export function somarVendas(pedidos: { id: string; items: ItemSomavel[] }[], f: 
   }
   return { receita, cmv, unidades, unidadesDeOpcao, pedidos: comAlgo.size };
 }
+
+// ── ITENS VENDIDOS: CATEGORIA → PRODUTO → ESCOLHAS ───────────────────────────
+//
+// O relatório que a NIK usava na Saipos e pediu aqui (24/09/2026): abrir a
+// categoria, abrir o produto e ver o que foi escolhido dentro dele —
+// "PIZZA GRANDE (8 PEDAÇOS)": 12 Calabresa, 7 Portuguesa, 5 Borda Catupiry.
+//
+// O ranking de produtos põe o sabor numa linha própria, com R$ 0,00, porque o
+// dinheiro está na pizza. Isso é certo na conta e confunde na leitura — o
+// Danilo perguntou por que a Portuguesa estava zerada. Aqui o sabor aparece
+// DENTRO da pizza que o carregou, e o valor fica só no produto.
+//
+// O filtro de categoria e de produto vale para o ITEM, como nos cartões: marcar
+// "Pizzas" abre as pizzas com tudo o que foi escolhido nelas.
+
+type ItemComEscolhas = ItemSomavel & { productName?: string | null; escolhas?: [string, number][] };
+
+export type EscolhaVendida = { nome: string; quantidade: number };
+export type ProdutoVendido = { id: string; nome: string; quantidade: number; valor: number; escolhas: EscolhaVendida[] };
+export type CategoriaVendida = { categoria: string; quantidade: number; valor: number; produtos: ProdutoVendido[] };
+
+export function itensVendidosPorCategoria(
+  pedidos: { items: ItemComEscolhas[] }[],
+  f: FiltroDeItens,
+): { categorias: CategoriaVendida[]; quantidade: number; valor: number } {
+  const porCategoria = new Map<string, Map<string, { id: string; nome: string; quantidade: number; valor: number; escolhas: Map<string, number> }>>();
+  let quantidade = 0, valor = 0;
+  for (const o of pedidos) {
+    for (const item of o.items) {
+      if (!itemEntra(item, f)) continue;
+      const categoria = item.productCategory || "Outros";
+      // Pelo NOME dentro da categoria, não pelo id: o mesmo "Combo 1" chega do
+      // iFood, da Wabiz e do balcão com três ids, e para o dono é um produto só
+      // (NIK, 23/09/2026: "Combo 1" 14 u. e "Combo 1" 8 u. na mesma categoria).
+      const chave = String(item.productName || item.productId || "?").toLowerCase().replace(/\s+/g, " ").trim();
+      if (!porCategoria.has(categoria)) porCategoria.set(categoria, new Map());
+      const produtos = porCategoria.get(categoria)!;
+      if (!produtos.has(chave)) {
+        produtos.set(chave, { id: chave, nome: item.productName || "Produto Removido", quantidade: 0, valor: 0, escolhas: new Map() });
+      }
+      const p = produtos.get(chave)!;
+      p.quantidade += item.quantity;
+      p.valor += item.price * item.quantity;
+      quantidade += item.quantity;
+      valor += item.price * item.quantity;
+      for (const [nome, qtd] of item.escolhas || []) p.escolhas.set(nome, (p.escolhas.get(nome) || 0) + qtd);
+    }
+  }
+  const porQuantidade = <T extends { quantidade: number; valor?: number }>(a: T, b: T) =>
+    b.quantidade - a.quantidade || (b.valor || 0) - (a.valor || 0);
+  const categorias: CategoriaVendida[] = Array.from(porCategoria.entries()).map(([categoria, produtos]) => {
+    const lista: ProdutoVendido[] = Array.from(produtos.values()).map((p) => ({
+      id: p.id, nome: p.nome, quantidade: p.quantidade, valor: p.valor,
+      escolhas: Array.from(p.escolhas.entries())
+        .map(([nome, q]) => ({ nome, quantidade: q }))
+        .sort((a, b) => b.quantidade - a.quantidade || a.nome.localeCompare(b.nome, "pt-BR")),
+    })).sort(porQuantidade);
+    return {
+      categoria,
+      quantidade: lista.reduce((s, p) => s + p.quantidade, 0),
+      valor: lista.reduce((s, p) => s + p.valor, 0),
+      produtos: lista,
+    };
+  }).sort(porQuantidade);
+  return { categorias, quantidade, valor };
+}

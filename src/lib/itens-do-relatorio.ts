@@ -55,7 +55,7 @@ export type OpcaoDoRelatorio = {
  * resto do sistema (lib/preco-por-canal.ts): balcão e mesa no salão, totem no
  * totem, e site, robô e o que vier de fora no delivery.
  */
-function canalDePrecoDo(canal: string | null | undefined): CanalDePreco {
+export function canalDePrecoDo(canal: string | null | undefined): CanalDePreco {
   const c = String(canal || "").toUpperCase();
   if (c === "PDV" || c === "MESA") return "salao";
   if (c === "TOTEM") return "totem";
@@ -141,8 +141,22 @@ export function montarMapasDoRelatorio(produtos: ProdutoDoCadastro[]): (lojaId: 
     const soDeComplemento = new Set(
       Array.from(reaisPorCategoria.entries()).filter(([, l]) => l.total > 0 && l.complementos === l.total).map(([c]) => c),
     );
+    // ── A PIZZA INTEIRA QUE VIROU SABOR ────────────────────────────────────
+    //
+    // NIK, 23/09/2026: a Wabiz manda "Portuguesa" (R$ 57,90, grupo "Pizzas
+    // Grande"). O cadastro tem "Pizza Portuguesa" em Pizzas Tradicionais e o
+    // SABOR "Portuguesa", preço zero, em Sabores de Pizza. O nome batia inteiro
+    // com o sabor, e a pizza de R$ 57,90 saía no relatório como sabor — ao lado
+    // da linha do sabor de verdade, zerada. O Danilo perguntou por que a
+    // Portuguesa estava zerada.
+    //
+    // Categoria que só guarda opção não é destino de item vendido: o que se
+    // vende inteiro nunca mora nela. Fora deste mapa, o nome cai na regra do
+    // tipo do grupo ("Pizzas Grande" + "Portuguesa" = "Pizza Portuguesa"). A
+    // opção continua contando na categoria dela pelo mapa de complementos. O
+    // KDS não usa este mapa.
     mapas.set(lojaId, {
-      categorias: montarMapa(prods),
+      categorias: montarMapa(prods.filter((p) => !soDeComplemento.has(String(p.category || "").trim()))),
       complementos: montarMapaDeComplementos(
         prods
           .filter((p) => soOpcao.has(String(p.id)) && !ehProdutoEspelho(p) && String(p.category || "").trim())
@@ -237,6 +251,28 @@ export function opcoesDoItem(item: ItemDoPedido, mapas: MapasDaLoja, canal?: str
     }
   }
   return opcoes;
+}
+
+/**
+ * TUDO o que o cliente escolheu dentro do item, pelo nome, com a quantidade
+ * total — para o relatório "Itens vendidos" (categoria → produto → opções), o
+ * que a NIK usava na Saipos: abrir "PIZZA GRANDE (8 PEDAÇOS)" e ver quantas
+ * Calabresa, quantas Portuguesa, quantas Borda Catupiry.
+ *
+ * Diferente de `opcoesDoItem`, não precisa casar com o cadastro: sabor, borda,
+ * bebida do combo, tudo entra com o nome que o canal gravou. "1/2 Portuguesa"
+ * e "Portuguesa" são o mesmo sabor — a meia conta como uma escolha, como na
+ * Saipos. Par [nome, quantidade], compacto: são 365 dias de pedidos indo para
+ * o navegador.
+ */
+export function escolhasDoItem(item: { quantity: number; comboSelections?: unknown }): [string, number][] {
+  const soma = new Map<string, number>();
+  for (const op of parseComboSelections(item.comboSelections, item.quantity)) {
+    const nome = String(op.name || "").replace(/^\s*\d+\s*\/\s*\d+\s*/, "").trim();
+    if (!nome) continue;
+    soma.set(nome, (soma.get(nome) || 0) + (Number(op.quantity) || 1));
+  }
+  return Array.from(soma.entries());
 }
 
 /**

@@ -9,8 +9,8 @@
  * "Bordas" com o preço de cada borda, e as bordas são complementos de preço
  * zero. O balcão não grava o preço da opção no pedido; o iFood grava.
  */
-import { montarMapasDoRelatorio, opcoesDoItem, categoriaDoItem } from "../src/lib/itens-do-relatorio";
-import { somarVendas } from "../src/lib/soma-do-relatorio";
+import { montarMapasDoRelatorio, opcoesDoItem, categoriaDoItem, categoriaDoProduto, escolhasDoItem } from "../src/lib/itens-do-relatorio";
+import { somarVendas, itensVendidosPorCategoria } from "../src/lib/soma-do-relatorio";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -123,6 +123,62 @@ confere("combo cujas opções são produtos de verdade (esfihas): vale a categor
 confere("item de plataforma com o nome do cadastro: a categoria do cadastro",
   categoriaDoItem({ quantity: 1, productName: "X-Bacon", menuProduct: espelho99("X-Bacon") }, BRAZZA),
   "Burgers");
+
+// O cadastro da NIK em 24/09/2026: a pizza inteira "Pizza Portuguesa" e o
+// SABOR "Portuguesa" (preço zero, só dentro do combo). A Wabiz manda a pizza
+// inteira só com o nome do sabor.
+console.log("\n5) A pizza inteira com nome de sabor");
+const NIK = montarMapasDoRelatorio([
+  { id: "pp", franchiseeId: "n", name: "Pizza Portuguesa", category: "Pizzas Tradicionais", price: 57.9, cost: 0, active: true,
+    comboGroups: [{ items: [{ menuProductId: "sp", additionalPrice: 0 }] }] },
+  { id: "sp", franchiseeId: "n", name: "Portuguesa", category: "Sabores de Pizza", price: 0, cost: 0, active: true, apenasEmCombo: true },
+  { id: "wabiz-n-1", franchiseeId: "n", name: "Portuguesa", category: "Pizzas Grande", price: 57.9, cost: 0, active: false },
+] as any)("n");
+const espelhoWabiz = { id: "wabiz-n-1", name: "Portuguesa", category: "Pizzas Grande", active: false };
+confere("Portuguesa da Wabiz (R$ 57,90) é pizza, não sabor",
+  categoriaDoItem({ quantity: 1, productName: "Portuguesa", menuProduct: espelhoWabiz }, NIK),
+  "Pizzas Tradicionais");
+confere("a linha do espelho no ranking também",
+  categoriaDoProduto(espelhoWabiz as any, NIK).categoria,
+  "Pizzas Tradicionais");
+confere("o sabor escolhido dentro da pizza continua contando em Sabores de Pizza",
+  opcoesDoItem({ quantity: 1, menuProduct: { id: "ifood-x", name: "GRANDE 2 SABORES", category: "iFood" },
+    comboSelections: JSON.stringify([{ name: "1/2 Portuguesa", quantity: 1, price: 29.95 }]) }, NIK, "IFOOD")
+    .map((o) => [o.nome, o.categoria, o.quantidade]),
+  [["Portuguesa", "Sabores de Pizza", 1]]);
+
+console.log("\n6) Itens vendidos: categoria → produto → escolhas");
+confere("escolhas somam pelo nome, a meia é o mesmo sabor, multiplicadas pelo item",
+  escolhasDoItem({ quantity: 2, comboSelections: JSON.stringify([
+    { name: "1/2 Portuguesa", quantity: 1, price: 29.95 }, { name: "1/2 Calabresa", quantity: 1 }, { name: "Borda Catupiry", quantity: 1 },
+  ]) }),
+  [["Portuguesa", 2], ["Calabresa", 2], ["Borda Catupiry", 2]]);
+const arvore = itensVendidosPorCategoria([
+  { items: [
+    { productId: "g", productName: "PIZZA GRANDE", productCategory: "Pizzas", quantity: 1, price: 59.9, productCost: 0,
+      escolhas: [["Portuguesa", 1], ["Calabresa", 1]] },
+    { productId: "g", productName: "PIZZA GRANDE", productCategory: "Pizzas", quantity: 1, price: 69.9, productCost: 0,
+      escolhas: [["Calabresa", 1], ["Borda Catupiry", 1]] },
+    { productId: "c", productName: "Coca 2L", productCategory: "Bebidas", quantity: 3, price: 14, productCost: 0 },
+  ] },
+] as any, so([]));
+confere("categorias por quantidade, valor só no produto",
+  arvore.categorias.map((c) => [c.categoria, c.quantidade, Math.round(c.valor * 100) / 100]),
+  [["Bebidas", 3, 42], ["Pizzas", 2, 129.8]]);
+confere("as escolhas dentro da pizza, da mais pedida para a menos",
+  arvore.categorias[1].produtos[0].escolhas.map((e) => [e.nome, e.quantidade]),
+  [["Calabresa", 2], ["Borda Catupiry", 1], ["Portuguesa", 1]]);
+confere("o mesmo produto vindo de dois canais (ids diferentes) é uma linha só",
+  itensVendidosPorCategoria([{ items: [
+    { productId: "ifood-1", productName: "Combo 1", productCategory: "Combos Esfihas", quantity: 14, price: 31.9, productCost: 0 },
+    { productId: "wabiz-1", productName: "Combo  1", productCategory: "Combos Esfihas", quantity: 8, price: 31.9, productCost: 0 },
+  ] }] as any, so([])).categorias[0].produtos.map((p) => [p.nome, p.quantidade]),
+  [["Combo 1", 22]]);
+confere("filtro de categoria vale para o item",
+  itensVendidosPorCategoria([{ items: [
+    { productId: "c", productName: "Coca 2L", productCategory: "Bebidas", quantity: 3, price: 14, productCost: 0 },
+  ] }] as any, so(["Pizzas"])).quantidade,
+  0);
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

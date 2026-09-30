@@ -140,3 +140,13 @@ export function rotuloDoCanal(pedido: PedidoParaCanal | null | undefined): strin
 export function nomeDoCanal(pedido: PedidoParaCanal | null | undefined): string {
   return canalDoPedido(pedido).nome;
 }
+
+/**
+ * Todos os canais que o sistema conhece, na ordem do filtro dos relatórios
+ * (lib/relatorios/base.ts): marketplaces primeiro, depois os canais próprios.
+ */
+export function canaisConhecidos(): { chave: ChaveDeCanal; nome: string; emoji: string; ehMarketplace: boolean }[] {
+  return (Object.keys(CORES) as ChaveDeCanal[]).map((chave) => ({
+    chave, nome: CORES[chave].nome, emoji: CORES[chave].emoji, ehMarketplace: CORES[chave].marketplace,
+  }));
+}
