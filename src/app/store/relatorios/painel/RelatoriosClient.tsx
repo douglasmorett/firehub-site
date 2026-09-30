@@ -478,7 +478,28 @@ export default function RelatoriosClient({
       });
     });
 
-    return Object.values(counts)
+    // Uma linha por produto DE NOME, dentro da categoria. O "Esfiha Carne" do
+    // cardápio, o espelho do iFood e o da Wabiz são ids diferentes do mesmo
+    // produto — a NIK via "Esfiha Carne 7 u." no topo e "2 u." lá embaixo e
+    // tinha que somar à mão (vídeo de 30/09/2026). A mesma chave do "Por
+    // categoria" e do Itens vendidos. O preço mostrado é o da linha que mais
+    // vendeu; o filtro de produto vale se QUALQUER id do grupo foi marcado.
+    const juntos = new Map<string, (typeof counts)[string] & { ids: string[]; qtdDoPreco: number }>();
+    for (const p of Object.values(counts)) {
+      const nome = String(p.name || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const chave = `${p.category}\u0000${nome || p.id}`;
+      const j = juntos.get(chave);
+      if (!j) { juntos.set(chave, { ...p, ids: [p.id], qtdDoPreco: p.qty }); continue; }
+      j.ids.push(p.id);
+      j.qty += p.qty;
+      j.revenue += p.revenue;
+      j.cost += p.cost;
+      j.profit = j.revenue - j.cost;
+      j.dentro += p.dentro;
+      if (p.qty > j.qtdDoPreco) { j.price = p.price; j.qtdDoPreco = p.qty; }
+    }
+
+    return [...juntos.values()]
       .filter((p) => {
         const matchesCategory = categoriasMarcadas.size === 0 || categoriasMarcadas.has(p.category);
         // O FILTRO DE PRODUTO PASSOU A VALER AQUI TAMBÉM.
@@ -487,7 +508,7 @@ export default function RelatoriosClient({
         // dava o faturamento dela e uma tabela com o cardápio inteiro embaixo
         // — e o "Produto Campeão", que sai desta lista, mostrava outro
         // produto. Com três produtos marcados o desencontro ficaria gritante.
-        const matchesProduct = produtosMarcados.size === 0 || produtosMarcados.has(p.id);
+        const matchesProduct = produtosMarcados.size === 0 || p.ids.some((id) => produtosMarcados.has(id));
         const matchesSearch =
           searchQuery.trim() === "" ||
           p.name.toLowerCase().includes(searchQuery.toLowerCase());

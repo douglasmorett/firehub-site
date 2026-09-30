@@ -18,7 +18,7 @@ import { PALETA } from "@/lib/paleta-brasa";
 import { DIAS_CURTOS, fmtDia, fmtPct, fmtQtd, ROTULO_DO_TIPO, type TipoDeVenda } from "@/lib/relatorios/base";
 import {
   ETAPAS, fmtMin, ROTULO_DA_FAIXA,
-  type ChaveDaEtapa, type FaixaDoPrazo, type LinhaDoDia, type LinhaDoPedido, type LinhaDoTipo, type NoDaProducao,
+  type ChaveDaEtapa, type FaixaDoPrazo, type HoraDaProducao, type LinhaDoDia, type LinhaDoPedido, type LinhaDoTipo, type NoDaProducao, type PedidoDaProducao,
   type ResumoDaEtapa, type ResumoDaProducao, type ResumoDoPrazo,
 } from "@/lib/relatorios/tempos";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
@@ -426,36 +426,33 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
               )}
             </Bloco>
 
-            <Bloco titulo="Por hora do dia" subtitulo="Hora em que o pedido entrou na cozinha" semPadding>
-              {dados.producao.porHora.length === 0 ? <Vazio texto="Nenhum item com pronto no período." /> : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", minWidth: 360 }}>
-                    <thead>
-                      <tr style={cabecaDaTabela}>
-                        <th style={th}>Hora</th><th style={{ ...th, ...num }}>Itens</th><th style={{ ...th, ...num }}>Mediana</th>
-                        <th style={{ ...th, width: 90 }} aria-label="Mediana em barra" /><th style={{ ...th, ...num }}>Máx.</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dados.producao.porHora.map((x) => (
-                        <tr key={x.hora} style={{ borderBottom: `1px solid ${PALETA.areia}` }}>
-                          <td style={{ ...td, fontWeight: 700 }}>{String(x.hora).padStart(2, "0")}h</td>
-                          <td style={{ ...td, ...num }}>{fmtQtd(x.quantidade)}</td>
-                          <td style={{ ...td, ...num, fontWeight: 800 }}>{fmtMin(x.mediana)}</td>
-                          <td style={{ ...td, paddingTop: 14 }}><BarraDeMinutos valor={x.mediana} escala={Math.max(1, ...dados.producao.porHora.map((y) => y.mediana || 0))} cor={PALETA.carvao2} /></td>
-                          <td style={{ ...td, ...num }}>{fmtMin(x.maximo)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Bloco>
           </div>
+
+          <Bloco titulo="Por hora do dia" subtitulo="Hora em que o pedido entrou na cozinha. Toque na hora para ver os pedidos, o mais demorado primeiro." semPadding>
+            {dados.producao.porHora.length === 0 ? <Vazio texto="Nenhum item com pronto no período." /> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", minWidth: 640 }}>
+                  <thead>
+                    <tr style={cabecaDaTabela}>
+                      <th style={th}>Hora</th><th style={{ ...th, ...num }}>Pedidos</th><th style={{ ...th, ...num }}>Média</th>
+                      <th style={{ ...th, width: 90 }} aria-label="Média em barra" />
+                      <th style={th}>Mais rápido</th><th style={th}>Mais demorado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dados.producao.porHora.map((x) => (
+                      <LinhasDaHora key={x.hora} x={x} aberto={abertos.has(`h:${x.hora}`)} alternar={() => alternar(`h:${x.hora}`)}
+                        escala={Math.max(1, ...dados.producao.porHora.map((y) => y.mediaDoPedido || 0))} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Bloco>
 
           <p style={{ fontSize: "0.78rem", color: PALETA.areiaTinta, marginTop: "0.2rem", lineHeight: 1.5 }}>
             O pronto é da <strong>tela</strong> do KDS: quando o cozinheiro dá baixa, todos os itens daquela tela ganham a mesma hora — um produto que sai junto com outro mais demorado herda o tempo dele.
-            Qtd. são unidades; a mediana é por linha de pedido (“10 esfihas” é uma medição). Agendados não entram.
+            Qtd. são unidades; a mediana é por linha de pedido (“10 esfihas” é uma medição). Na hora do dia, o tempo do pedido vai da entrada na cozinha até o último item dele ficar pronto. Agendados não entram.
           </p>
         </>
       )}
@@ -524,6 +521,79 @@ function LinhasDaCategoria({ c, aberto, alternar, escala }: { c: NoDaProducao; a
           <td style={{ ...td, ...num }}>{fmtMin(f.maximo)}</td>
         </tr>
       ))}
+    </>
+  );
+}
+
+/** "#12 · 20:45", com o número do app quando houver — o pedido que ele vai procurar. */
+function RotuloDoPedido({ p, comDia }: { p: PedidoDaProducao; comDia: boolean }) {
+  return (
+    <span>
+      <strong>{p.numero != null ? `#${p.numero}` : "Sem número"}</strong>
+      <span style={suave}> · {comDia ? `${fmtDia(p.dia).slice(0, 5)} ` : ""}{p.entrada}{p.referencia ? ` · ${nomeDoCanal.get(p.canal) || p.canal} ${p.referencia}` : ""}</span>
+    </span>
+  );
+}
+
+/**
+ * A hora do expediente: a média dos pedidos, o mais rápido e o mais demorado.
+ * Aberta, a lista dos pedidos com o que cada um levou — o sabor, a borda —,
+ * que era o que a NIK olhava na Saipos ("teve um pedido que demorou 10 minutos
+ * na montagem: qual pedido, qual sabor, qual horário").
+ */
+function LinhasDaHora({ x, aberto, alternar, escala }: { x: HoraDaProducao; aberto: boolean; alternar: () => void; escala: number }) {
+  const temPedidos = x.lista.length > 0;
+  // Mais de um dia no período: o pedido precisa do dia para ser achado.
+  const comDia = new Set(x.lista.map((p) => p.dia)).size > 1 || (x.maisRapido?.dia !== x.maisDemorado?.dia);
+  const celulaDoPedido = (p: PedidoDaProducao | null, cor: string) =>
+    p ? <><span style={{ fontWeight: 900, color: cor }}>{fmtMin(p.minutos)}</span> <RotuloDoPedido p={p} comDia={comDia} /></> : "—";
+  return (
+    <>
+      <tr className={temPedidos ? "fh-tempos-abrivel" : undefined}
+        onClick={temPedidos ? alternar : undefined}
+        onKeyDown={temPedidos ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); alternar(); } } : undefined}
+        tabIndex={temPedidos ? 0 : undefined}
+        aria-expanded={temPedidos ? aberto : undefined}
+        style={{ borderBottom: `1px solid ${PALETA.areia}`, cursor: temPedidos ? "pointer" : "default", background: "#fff" }}>
+        <td style={{ ...td, fontWeight: 800, whiteSpace: "nowrap" }}>
+          <span style={{ display: "inline-block", width: 14, transition: "transform 0.15s", transform: aberto ? "rotate(90deg)" : "none" }} aria-hidden>{temPedidos ? "›" : ""}</span>
+          {String(x.hora).padStart(2, "0")}h
+        </td>
+        <td style={{ ...td, ...num }}>{fmtQtd(x.pedidos)}</td>
+        <td style={{ ...td, ...num, fontWeight: 900 }}>{fmtMin(x.mediaDoPedido)}</td>
+        <td style={{ ...td, paddingTop: 14 }}><BarraDeMinutos valor={x.mediaDoPedido} escala={escala} cor={PALETA.carvao2} /></td>
+        <td style={td}>{celulaDoPedido(x.maisRapido, PALETA.ok)}</td>
+        <td style={td}>{celulaDoPedido(x.maisDemorado, PALETA.grave)}</td>
+      </tr>
+      {aberto && (
+        <tr style={{ borderBottom: `1px solid ${PALETA.areia}`, background: "#FDFBF9" }}>
+          <td colSpan={6} style={{ padding: "0.4rem 0.8rem 0.8rem 2.2rem" }}>
+            {x.lista.map((p) => (
+              <div key={p.id} style={{ padding: "0.45rem 0", borderBottom: `1px dashed ${PALETA.areiaBorda}` }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 900, minWidth: 52, fontVariantNumeric: "tabular-nums" }}>{fmtMin(p.minutos)}</span>
+                  <RotuloDoPedido p={p} comDia={comDia} />
+                  <span style={suave}>{ROTULO_DO_TIPO[p.tipo]}</span>
+                </div>
+                <div style={{ marginLeft: 62, fontSize: "0.8rem", color: PALETA.carvao2 }}>
+                  {p.itens.map((i, k) => (
+                    <div key={k}>
+                      {i.quantidade > 1 ? `${fmtQtd(i.quantidade)}× ` : ""}{i.nome}
+                      {i.escolhas && <span style={suave}> — {i.escolhas}</span>}
+                      {p.itens.length > 1 && <span style={suave}> · {fmtMin(i.minutos)}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {x.pedidos > x.lista.length && (
+              <div style={{ ...suave, paddingTop: 6 }}>
+                Mostrando os {x.lista.length} mais demorados de {x.pedidos.toLocaleString("pt-BR")} pedidos. O mais rápido está na linha da hora.
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
     </>
   );
 }

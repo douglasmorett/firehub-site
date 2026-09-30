@@ -187,6 +187,8 @@ export type ItemParaTempos = {
   produtoId: string | null;
   quantidade: number;
   prontoEm: Instante;
+  /** Sabores, borda, bebida do combo — para a lista de pedidos da hora ("qual sabor que é"). */
+  escolhas?: string;
 };
 
 export type PedidoParaTempos = {
@@ -231,6 +233,8 @@ export type ConfigDosTempos = {
   apenasAtrasados?: boolean;
   /** Quantas linhas a lista devolve no máximo (a tela não precisa de 20 mil). */
   limiteDaLista?: number;
+  /** Quantos pedidos cada hora da produção devolve (padrão LIMITE_DE_PEDIDOS_POR_HORA). */
+  limitePorHora?: number;
 };
 
 // ── O QUE SAI ───────────────────────────────────────────────────────────────
@@ -352,8 +356,46 @@ export type ResumoDaProducao = Estatistica & {
   foraDaCurva: number;
   categorias: NoDaProducao[];
   /** Por hora do dia em que o pedido entrou na cozinha, na ordem do expediente (5h → 4h). */
-  porHora: ({ hora: number; quantidade: number } & Estatistica)[];
+  porHora: HoraDaProducao[];
 };
+
+/**
+ * Um pedido na produção: da entrada na cozinha até o ÚLTIMO item dele ficar
+ * pronto — é quanto a cozinha levou com ele. Com filtro de categoria/produto,
+ * só os itens do filtro contam.
+ */
+export type PedidoDaProducao = {
+  id: string;
+  numero: number | null;
+  referencia: string | null;
+  canal: string;
+  tipo: TipoDeVenda;
+  dia: string;
+  /** Hora em que entrou na cozinha ("20:45"). */
+  entrada: string;
+  minutos: number;
+  itens: { nome: string; quantidade: number; escolhas: string; minutos: number }[];
+};
+
+/**
+ * A hora do expediente, como a Saipos mostrava para a NIK: a média dos
+ * pedidos, o mais rápido e o mais demorado — e quais foram, para abrir e ver o
+ * sabor e o horário. A estatística por ITEM (mediana, máximo) continua na
+ * planilha e na tabela por produto.
+ */
+export type HoraDaProducao = { hora: number; quantidade: number } & Estatistica & {
+  /** Pedidos medidos na hora e a média/mediana do tempo DO PEDIDO. */
+  pedidos: number;
+  mediaDoPedido: number | null;
+  medianaDoPedido: number | null;
+  maisRapido: PedidoDaProducao | null;
+  maisDemorado: PedidoDaProducao | null;
+  /** Os pedidos da hora, o mais demorado primeiro (até LIMITE_DE_PEDIDOS_POR_HORA). */
+  lista: PedidoDaProducao[];
+};
+
+/** Quantos pedidos cada hora leva para a tela (a planilha não leva a lista: tem a aba Pedidos). */
+export const LIMITE_DE_PEDIDOS_POR_HORA = 40;
 
 export type ResultadoDosTempos = {
   /** Pedidos considerados (sem cancelado; com o filtro de categoria/produto). */
@@ -618,7 +660,7 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
   type AcumProduto = { chave: string; nome: string; quantidade: number; valores: number[] };
   type AcumCategoria = { nome: string; quantidade: number; valores: number[]; produtos: Map<string, AcumProduto> };
   const porCategoria = new Map<string, AcumCategoria>();
-  const porHora = new Map<number, { quantidade: number; valores: number[] }>();
+  const porHora = new Map<number, { quantidade: number; valores: number[]; pedidos: PedidoDaProducao[] }>();
   const valoresDaProducao: number[] = [];
   let quantidadeProduzida = 0, semPronto = 0, producaoForaDaCurva = 0;
 
@@ -674,7 +716,9 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
       const cozinhaLargada = etapas.cozinha.aplica && etapas.cozinha.minutos === null
         && (etapas.cozinha as { motivo: MotivoDeFora }).motivo === "foraDaCurva";
       const entrada = p.kdsProductionAt || p.createdAt;
-      const horaDaEntrada = naLoja(entrada, cfg.tz).hora;
+      const naCozinha = naLoja(entrada, cfg.tz);
+      const horaDaEntrada = naCozinha.hora;
+      const itensMedidos: PedidoDaProducao["itens"] = [];
       for (const item of p.itens) {
         if (comFiltroDeItem && !itemPassa(item)) continue;
         if (!ms(item.prontoEm)) { semPronto++; continue; }
@@ -692,9 +736,19 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
         prod.quantidade += qtd;
         prod.valores.push(m);
         let h = porHora.get(horaDaEntrada);
-        if (!h) { h = { quantidade: 0, valores: [] }; porHora.set(horaDaEntrada, h); }
+        if (!h) { h = { quantidade: 0, valores: [], pedidos: [] }; porHora.set(horaDaEntrada, h); }
         h.quantidade += qtd;
         h.valores.push(m);
+        itensMedidos.push({ nome: item.nome, quantidade: qtd, escolhas: item.escolhas || "", minutos: r1(m) });
+      }
+      if (itensMedidos.length) {
+        porHora.get(horaDaEntrada)!.pedidos.push({
+          id: p.id, numero: p.numero, referencia: p.referencia, canal: p.canal, tipo: p.tipo,
+          dia: criado.dia,
+          entrada: `${String(naCozinha.hora).padStart(2, "0")}:${String(naCozinha.minutos % 60).padStart(2, "0")}`,
+          minutos: Math.max(...itensMedidos.map((i) => i.minutos)),
+          itens: itensMedidos.sort((a, b) => b.minutos - a.minutos),
+        });
       }
     }
 
@@ -766,7 +820,20 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
   const ordemDaHora = (h: number) => (h - 5 + 24) % 24;
   const horas = [...porHora.entries()]
     .sort(([a], [b]) => ordemDaHora(a) - ordemDaHora(b))
-    .map(([hora, h]) => ({ hora, quantidade: h.quantidade, ...estatistica(h.valores) }));
+    .map(([hora, h]): HoraDaProducao => {
+      // O mais demorado primeiro; no empate, o que chegou antes.
+      const ordem = [...h.pedidos].sort((a, b) => b.minutos - a.minutos || a.dia.localeCompare(b.dia) || a.entrada.localeCompare(b.entrada));
+      const doPedido = estatistica(ordem.map((x) => x.minutos));
+      return {
+        hora, quantidade: h.quantidade, ...estatistica(h.valores),
+        pedidos: ordem.length,
+        mediaDoPedido: doPedido.media,
+        medianaDoPedido: doPedido.mediana,
+        maisDemorado: ordem[0] ?? null,
+        maisRapido: ordem[ordem.length - 1] ?? null,
+        lista: ordem.slice(0, cfg.limitePorHora ?? LIMITE_DE_PEDIDOS_POR_HORA),
+      };
+    });
 
   return {
     pedidos: pedidos.length,

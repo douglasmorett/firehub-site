@@ -20,9 +20,9 @@ import { catalogoDoRelatorio } from "@/lib/relatorios/catalogo";
 import { canalDoRelatorio, DIAS_CURTOS, fmtDia, ROTULO_DO_TIPO, tipoDeVenda } from "@/lib/relatorios/base";
 import {
   aceitoNaChegada, antesDoDado, DIA_DO_PRONTO_POR_ITEM, DIA_DOS_CARIMBOS, ETAPAS, limitesDoAlerta, ROTULO_DA_FAIXA, temposDoRelatorio,
-  TETO_DA_RUA_MIN, type ChaveDaEtapa, type ConfigDosTempos, type NoDaProducao, type PedidoParaTempos, type ResumoDoPrazo,
+  TETO_DA_RUA_MIN, type ChaveDaEtapa, type ConfigDosTempos, type NoDaProducao, type PedidoDaProducao, type PedidoParaTempos, type ResumoDoPrazo,
 } from "@/lib/relatorios/tempos";
-import { categoriaDoItem, SEM_CATEGORIA } from "@/lib/itens-do-relatorio";
+import { categoriaDoItem, escolhasDoItem, SEM_CATEGORIA } from "@/lib/itens-do-relatorio";
 import { nomeDoProduto } from "@/lib/relatorios/itens-vendidos";
 import { chaveDoNome } from "@/lib/categoria-do-item";
 import { canaisConhecidos, canalDoPedido } from "@/lib/canal-do-pedido";
@@ -94,6 +94,7 @@ export async function GET(req: NextRequest) {
           produtoId: i.menuProductId || i.menuProduct?.id || null,
           quantidade: Number(i.quantity) || 0,
           prontoEm: i.prontoEm,
+          escolhas: escolhasDoItem(i).map(([n, q]) => (q > 1 ? `${q}× ${n}` : n)).join(", "),
         };
       }),
     };
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest) {
     // A planilha leva todos os pedidos, com a coluna "Situação" para filtrar.
     apenasAtrasados: planilha ? false : sp.get("apenasAtrasados") !== "0",
     limiteDaLista: planilha ? Number.MAX_SAFE_INTEGER : LIMITE_DA_LISTA_NA_TELA,
+    limitePorHora: planilha ? 0 : undefined,
   };
   const resultado = temposDoRelatorio(paraConta, cfg);
   const cabecalho = cabecalhoDoRelatorio(ctx);
@@ -262,14 +264,22 @@ export async function GET(req: NextRequest) {
   ];
 
   // Aba 5 — produção por hora do dia.
+  // "30/09 20:45 · #12 (iFood 4231)" — o pedido que o lojista vai procurar.
+  const qualPedido = (x: PedidoDaProducao | null): Celula =>
+    x ? `${fmtDia(x.dia).slice(0, 5)} ${x.entrada} · ${x.numero != null ? `#${x.numero}` : "sem número"}${x.referencia ? ` (${x.referencia})` : ""}` : "";
   const abaPorHora: LinhaDaPlanilha[] = [
     ...topo("Tempo de produção por hora do dia"),
-    { celulas: ["Hora", "Medições", "Quantidade", "Mediana", "90% em até", "Máximo"], estilo: "cabecalho" },
+    { celulas: ["Hora", "Pedidos", "Média do pedido", "Mais rápido", "Tempo", "Mais demorado", "Tempo", "Itens", "Mediana por item", "90% em até"], estilo: "cabecalho" },
     ...pr.porHora.map((x) => ({
-      celulas: [`${String(x.hora).padStart(2, "0")}h`, qtd(x.medidos), qtd(x.quantidade), min(x.mediana), min(x.p90), min(x.maximo)] as Celula[],
+      celulas: [
+        `${String(x.hora).padStart(2, "0")}h`, qtd(x.pedidos), min(x.mediaDoPedido, true),
+        qualPedido(x.maisRapido), min(x.maisRapido?.minutos), qualPedido(x.maisDemorado), min(x.maisDemorado?.minutos),
+        qtd(x.quantidade), min(x.mediana), min(x.p90),
+      ] as Celula[],
     })),
     { celulas: [] },
     { celulas: [{ v: "A hora é a da entrada do pedido na cozinha, no relógio da loja; da 0h às 4h é o fim do expediente do dia anterior.", estilo: "suave" }] },
+    { celulas: [{ v: "Tempo do pedido: da entrada na cozinha até o ÚLTIMO item dele ficar pronto no KDS. Mediana por item: cada linha de pedido é uma medição.", estilo: "suave" }] },
   ];
 
   const buffer = montarPlanilha([
@@ -277,7 +287,7 @@ export async function GET(req: NextRequest) {
     { nome: "Por dia", congelarLinhas: 6, larguras: [12, 13, 10, 17, 12, 22, 10, 16, 14, 17, 18, 13], linhas: abaPorDia },
     { nome: "Pedidos", congelarLinhas: 6, larguras: [12, 7, 7, 15, 12, 10, 10, 13, 13, 14, 19, 20, 17, 12, 22, 10, 16, 14], linhas: abaPedidos },
     { nome: "Produção por produto", congelarLinhas: 6, larguras: [44, 11, 24, 11, 12, 10, 10, 10, 12, 10], linhas: abaProducao },
-    { nome: "Produção por hora", congelarLinhas: 6, larguras: [10, 11, 12, 10, 12, 10], linhas: abaPorHora },
+    { nome: "Produção por hora", congelarLinhas: 6, larguras: [8, 10, 15, 30, 9, 30, 9, 10, 16, 12], linhas: abaPorHora },
   ]);
   return respostaDePlanilha(buffer, `tempos_${ctx.filtros.de}_a_${ctx.filtros.ate}.xlsx`);
 }

@@ -262,5 +262,36 @@ confere("aceite automático desligado: a espera é de verdade", aceitoNaChegada(
 confere("antes de 03/09/2026 16:21 a coluna não valia (era false para todo mundo)",
   [aceitoNaChegada("SITE", h("2026-09-03 12:00"), true), aceitoNaChegada("SITE", h("2026-09-03 19:24"), true)], [false, true]);
 
+console.log("\n12) Produção por hora: média, o mais rápido e o mais demorado");
+// NIK, áudio de 30/09/2026: "de hora em hora, a média, qual pedido foi o
+// maior tempo e qual o menor — e ver qual pedido, qual sabor, qual horário".
+const c9 = h("2026-09-24 20:05");
+const c10 = h("2026-09-24 20:40");
+const c11 = h("2026-09-24 21:10");
+const rapido = pedido({ createdAt: c9, kdsProductionAt: c9, itens: [item("Esfiha Carne", "Esfihas", 6, mais(c9, 4))] });
+const lento = pedido({
+  createdAt: c10, kdsProductionAt: c10,
+  itens: [
+    { ...item("Pizza Grande", "Pizzas", 1, mais(c10, 18)), escolhas: "Calabresa, Portuguesa, Borda Catupiry" },
+    item("Esfiha Queijo", "Esfihas", 2, mais(c10, 6)),
+  ],
+});
+const outraHora = pedido({ createdAt: c11, kdsProductionAt: c11, itens: [item("Esfiha Carne", "Esfihas", 1, mais(c11, 7))] });
+const porHora = temposDoRelatorio([rapido, lento, outraHora], cfg()).producao.porHora;
+const as20 = porHora.find((x) => x.hora === 20)!;
+confere("duas horas, na ordem do expediente", porHora.map((x) => x.hora), [20, 21]);
+confere("o tempo do pedido é o do ÚLTIMO item pronto (18, não 6); média dos pedidos = 11",
+  [as20.pedidos, as20.mediaDoPedido, as20.maisDemorado?.minutos, as20.maisRapido?.minutos], [2, 11, 18, 4]);
+confere("o mais demorado diz qual pedido, a hora e o sabor",
+  [as20.maisDemorado?.numero, as20.maisDemorado?.entrada, as20.maisDemorado?.itens[0].escolhas],
+  [lento.numero, "20:40", "Calabresa, Portuguesa, Borda Catupiry"]);
+confere("a lista vem do mais demorado ao mais rápido", as20.lista.map((p) => p.id), [lento.id, rapido.id]);
+const soEsfiha = temposDoRelatorio([lento], cfg({ categorias: new Set(["Esfihas"]) })).producao.porHora[0];
+confere("com filtro de categoria, o pedido conta só os itens do filtro (a esfiha, 6 min)", soEsfiha.maisDemorado?.minutos, 6);
+confere("limite por hora: a lista corta, o mais rápido continua", (() => {
+  const x = temposDoRelatorio([rapido, lento], cfg({ limitePorHora: 1 })).producao.porHora[0];
+  return [x.lista.length, x.maisRapido?.id];
+})(), [1, rapido.id]);
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);
