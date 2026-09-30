@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Minus, Check } from "lucide-react";
-import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela, opcaoDisponivelNaTela } from "@/lib/preco-combo";
+import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela, opcaoDisponivelNaTela, grupoAguardaEscolha } from "@/lib/preco-combo";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
 export type ComboGroupData = {
@@ -209,8 +209,12 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
   // nenhuma opção por causa disso some inteira e não conta para fechar.
   const itensVisiveis = (group: ComboGroupData) =>
     (group.items || []).filter(i => i.menuProduct?.active !== false && opcaoDisponivelNaTela(i as any, selections));
-  const grupoEscondido = (group: ComboGroupData) =>
-    (group.items || []).some(i => i.menuProduct?.active !== false) && itensVisiveis(group).length === 0;
+  // E a pergunta que só existe num tamanho (a borda da Lapastine, uma por
+  // tamanho) espera o tamanho ser escolhido.
+  const grupoEscondido = (group: ComboGroupData) => {
+    const ativos = (group.items || []).filter(i => i.menuProduct?.active !== false);
+    return ativos.length > 0 && (itensVisiveis(group).length === 0 || grupoAguardaEscolha(ativos as any, selections));
+  };
   const gruposNaTela = groups.filter(g => !grupoEscondido(g));
 
   // Trocou para uma escolha que bloqueia o que já estava marcado (escolheu a

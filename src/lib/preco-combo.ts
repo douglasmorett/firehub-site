@@ -105,6 +105,23 @@ export function opcaoDisponivelNaTela(item: ItemDeGrupo, escolhas: EscolhasDoCom
 }
 
 /**
+ * A pergunta só faz sentido depois de outra escolha? Todas as opções dela são
+ * bloqueadas em algum tamanho e nenhum dos tamanhos que a tabela cita foi
+ * escolhido ainda. A tela a esconde até lá.
+ *
+ * Nasceu com a borda da Lapastine (30/09/2026), que é uma pergunta POR tamanho
+ * — no Menudino a Grande aceita 3 bordas iguais e a Média 1. Sem isto, antes
+ * de o cliente tocar no tamanho, as três perguntas de borda apareciam juntas.
+ */
+export function grupoAguardaEscolha(itens: (ItemDeGrupo | null | undefined)[], escolhas: EscolhasDoCombo): boolean {
+  const ativos = itens.filter(Boolean) as ItemDeGrupo[];
+  if (ativos.length === 0 || !ativos.every((i) => bloqueiosDaOpcao(i).length > 0)) return false;
+  const escolhidas = nomesEscolhidos(normalizarEscolhas(escolhas));
+  const citados = ativos.flatMap((i) => [...bloqueiosDaOpcao(i), ...tabelaDaOpcao(i).map(([nome]) => nome)]);
+  return !citados.some((nome) => escolhidas.has(nome));
+}
+
+/**
  * As opções ESCOLHIDAS que as outras escolhas bloqueiam, pelo nome — a meia
  * pizza que chegou junto com a Pequena. O POST do site e do totem recusam.
  */
@@ -116,8 +133,10 @@ export function opcoesBloqueadasEscolhidas(produto: ProdutoComCombo | null | und
   const saida: string[] = [];
   for (const e of escolhido) {
     const doGrupo = e.grupoId ? grupos.filter((g) => g?.id === e.grupoId) : grupos;
-    const item = (doGrupo.length ? doGrupo : grupos).flatMap((g) => g?.items || []).find((i) => String(i?.menuProduct?.name || "").trim() === e.nome);
-    if (item && !opcaoDisponivel(item, nomes)) saida.push(e.nome);
+    // Sem grupo (lista da mesa), o nome pode estar em várias perguntas — a
+    // borda da Lapastine tem uma por tamanho. Bloqueada só se TODAS estiverem.
+    const itens = (doGrupo.length ? doGrupo : grupos).flatMap((g) => g?.items || []).filter((i) => String(i?.menuProduct?.name || "").trim() === e.nome);
+    if (itens.length && itens.every((i) => !opcaoDisponivel(i, nomes))) saida.push(e.nome);
   }
   return saida;
 }
@@ -335,8 +354,14 @@ export function adicionaisDetalhados(
       const nome = item?.menuProduct?.name;
       if (!nome) continue;
       const add = precoDaOpcao(item, escolhidas);
+      if (g.id) porGrupoENome.set(`${g.id}::${nome}`, add);
+      // A opção que o tamanho escolhido bloqueia não é candidata do casamento
+      // por nome. A borda da Lapastine é uma pergunta por tamanho (lá a Grande
+      // aceita 3 bordas iguais e a Média 1): na lista da mesa, "BORDA DE
+      // CATUPIRY" com a Grande casaria com a da Média, e o menor preço (R$ 5)
+      // ficaria no lugar dos R$ 7.
+      if (!opcaoDisponivel(item, escolhidas)) continue;
       if (g.id) {
-        porGrupoENome.set(`${g.id}::${nome}`, add);
         if (!gruposDoNome.has(nome)) gruposDoNome.set(nome, new Set());
         gruposDoNome.get(nome)!.add(g.id);
       }

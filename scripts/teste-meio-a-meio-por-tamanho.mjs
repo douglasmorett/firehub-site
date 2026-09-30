@@ -4,7 +4,7 @@
  *
  *   node --experimental-strip-types scripts/teste-meio-a-meio-por-tamanho.mjs
  */
-import { precoUnitarioDoItem, precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, precoDaOpcaoNaTela, adicionaisDetalhados, bloqueiosDaOpcao, opcaoDisponivelNaTela, opcoesBloqueadasEscolhidas, tabelaDaOpcao } from "../src/lib/preco-combo.ts";
+import { precoUnitarioDoItem, precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, precoDaOpcaoNaTela, adicionaisDetalhados, bloqueiosDaOpcao, opcaoDisponivelNaTela, opcoesBloqueadasEscolhidas, tabelaDaOpcao, grupoAguardaEscolha } from "../src/lib/preco-combo.ts";
 import { meiaNaPizza, TITULO_DO_MEIO, regraDoTitulo } from "../src/lib/meio-a-meio.ts";
 
 let ok = 0;
@@ -93,6 +93,34 @@ igual("pedido: Pequena sem meia passa", opcoesBloqueadasEscolhidas(pizzaSoGrande
 igual("preço: Grande + meia Camarão = 75", precoUnitarioDoItem(pizzaSoGrande, { tam: { Grande: 1 }, meio: { "1/2 Camarão": 1 } }), 75);
 igual("preço: Pequena inteira = 40", precoUnitarioDoItem(pizzaSoGrande, { tam: { Pequena: 1 } }), 40);
 igual("a partir de continua a Pequena inteira", precoMinimoDoProduto(pizzaSoGrande), 40);
+
+// ── Sabor que só existe num tamanho (Filé e Fritas da Lapastine, 30/09/2026) ──
+const soGrande = { id: "fil", name: "Filé e Fritas", price: 75, comboGroups: [
+  { id: "tam", title: "Tamanho", minQty: 1, maxQty: 1, items: [{ additionalPrice: 0, menuProduct: { name: "Grande" } }] },
+] };
+const meiaFile = meiaNaPizza(calabresa, soGrande, "media");
+igual("meia só-Grande: bloqueada na Pequena", meiaFile.precoPorEscolha, { Pequena: null, Grande: 7.5 });
+igual("meia só-Grande: preço padrão é o da Grande", meiaFile.additionalPrice, 7.5);
+igual("meia só-Grande: nota só da Grande", meiaFile.optionNote, "Grande R$ 67,50");
+const meiaNoFile = meiaNaPizza(soGrande, calabresa, "media");
+igual("no card só-Grande: a meia usa a Grande da outra", meiaNoFile.precoPorEscolha, { Grande: -7.5 });
+// Grafia diferente ("GRANDE" x "Grande") não é tamanho faltando: segue como antes.
+const outraGrafia = { ...soGrande, comboGroups: [{ ...soGrande.comboGroups[0], items: [{ additionalPrice: 0, menuProduct: { name: "GRANDE" } }] }] };
+igual("grafia diferente não bloqueia", meiaNaPizza(calabresa, outraGrafia, "media").precoPorEscolha, { Pequena: 17.5, Grande: 7.5 });
+
+// ── Pergunta por tamanho (borda da Lapastine, 30/09/2026) ──
+const bordaDe = (tam, preco, teto) => ({ additionalPrice: preco, maxPerItem: teto, menuProduct: { name: "Borda Catupiry" },
+  precoPorEscolha: { Pequena: tam === "Pequena" ? preco : null, Grande: tam === "Grande" ? preco : null } });
+const bordaP = { id: "bP", title: "Borda?", minQty: 0, maxQty: 3, items: [bordaDe("Pequena", 5, 1)] };
+const bordaG = { id: "bG", title: "Borda?", minQty: 0, maxQty: 3, items: [bordaDe("Grande", 7, 3)] };
+const pizzaBorda = { price: 40, comboGroups: [tamanho(20), bordaP, bordaG] };
+igual("borda: espera o tamanho", [grupoAguardaEscolha(bordaP.items, {}), grupoAguardaEscolha(bordaG.items, {})], [true, true]);
+igual("borda: com a Grande, a da Grande aparece", grupoAguardaEscolha(bordaG.items, { tam: { Grande: 1 } }), false);
+igual("borda comum (sem tabela) não espera", grupoAguardaEscolha(borda.items, {}), false);
+igual("mesa (lista): Grande + borda = 60 + 7", precoUnitarioDoItem(pizzaBorda, [{ name: "Grande", quantity: 1 }, { name: "Borda Catupiry", quantity: 1 }]), 67);
+igual("mesa (lista): Pequena + borda = 40 + 5", precoUnitarioDoItem(pizzaBorda, [{ name: "Pequena", quantity: 1 }, { name: "Borda Catupiry", quantity: 1 }]), 45);
+igual("mesa (lista): borda com a Grande não é recusada", opcoesBloqueadasEscolhidas(pizzaBorda, [{ name: "Grande", quantity: 1 }, { name: "Borda Catupiry", quantity: 1 }]), []);
+igual("site: Grande + 3 bordas da Grande", precoUnitarioDoItem(pizzaBorda, { tam: { Grande: 1 }, bG: { "Borda Catupiry": 3 } }), 81);
 
 console.log(`${ok} ok, ${falhou} falhou`);
 process.exit(falhou ? 1 : 0);

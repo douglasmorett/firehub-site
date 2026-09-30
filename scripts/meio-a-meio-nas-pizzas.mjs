@@ -151,7 +151,16 @@ for (const p of ordenadas) {
   const tamanho = p.comboGroups.find((g) => ehPerguntaDeTamanho(g.title));
   for (const { q, meia } of meias) {
     const daOutra = precosPorTamanho(q);
-    for (const [t, precoEsta] of precosPorTamanho(p)) {
+    const daEsta = precosPorTamanho(p);
+    const mesmosTamanhos = !daOutra.has("") && [...daOutra.keys()].every((t) => daEsta.has(t));
+    for (const [t, precoEsta] of daEsta) {
+      // Sem meio a meio neste tamanho (--sem-meio, ou a outra não existe nele):
+      // a meia tem de ficar bloqueada ali, não com preço.
+      if (t && (SEM_MEIO.includes(t) || (mesmosTamanhos && !daOutra.has(t)))) {
+        conta.conferidas++;
+        if (meia.precoPorEscolha?.[t] !== null) erros.push(`${p.name} ${t} + ${meia.nome}: devia estar bloqueada`);
+        continue;
+      }
       const precoOutra = daOutra.get(t) ?? (daOutra.size === 1 ? [...daOutra.values()][0] : undefined);
       if (precoOutra === undefined) continue;
       const esperado = REGRA === "maior" ? Math.max(precoEsta, precoOutra) : Math.round(((precoEsta + precoOutra) / 2) * 100) / 100;

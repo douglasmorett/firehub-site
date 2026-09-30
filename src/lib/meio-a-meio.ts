@@ -97,9 +97,15 @@ export function meiaNaPizza(esta: PizzaDoMeio, outra: PizzaDoMeio, regra: RegraD
   const daOutra = precosPorTamanho(outra);
   const tabela: Record<string, number | null> = {};
   const finais: string[] = [];
+  // A outra usa os mesmos nomes de tamanho que esta, só que não todos: a Filé e
+  // Fritas da Lapastine (30/09/2026) só existe em Família. Meia dela na Média
+  // não existe — e herdar o preço do único tamanho dela cobrava uma pizza que
+  // a casa não faz. Nome que esta não conhece é grafia diferente, não tamanho
+  // faltando: aí segue a regra de baixo.
+  const mesmosTamanhos = !daOutra.has("") && [...daOutra.keys()].every((t) => daEsta.has(t));
   for (const [tamanho, precoEsta] of daEsta) {
     // Tamanho em que a casa não faz meio a meio: bloqueado, e a nota não o cita.
-    if (tamanho && semMeio.includes(tamanho)) {
+    if (tamanho && (semMeio.includes(tamanho) || (mesmosTamanhos && !daOutra.has(tamanho)))) {
       tabela[tamanho] = null;
       continue;
     }
