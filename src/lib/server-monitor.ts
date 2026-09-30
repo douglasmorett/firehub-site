@@ -88,6 +88,34 @@ export async function avisarNumeroPeloFireHub(phone: string, message: string): P
   }
 }
 
+/**
+ * Aviso para o LOJISTA ("seu robô desconectou").
+ *
+ * Nunca pela `instanciaDoFireHub()`: ela é o robô da Hakim Centro, e em
+ * 30/09/2026 o dono da China pow recebeu o aviso vindo do número da Hakim —
+ * uma loja falando com o cliente de outra. Sai só pela instância que o FireHub
+ * reservou para isso (env ALERTAS_LOJISTA_INSTANCIA); sem ela, o lojista vê a
+ * faixa do painel e não recebe WhatsApp.
+ */
+export async function avisarLojistaPeloFireHub(phone: string, message: string): Promise<boolean> {
+  const instanceName = (process.env.ALERTAS_LOJISTA_INSTANCIA || "").trim();
+  const numero = paraEnvioWhatsApp(phone);
+  if (!instanceName || !numero) return false;
+  const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
+  try {
+    const res = await fetch(`${gatewayUrl}/message/sendText/${instanceName}`, {
+      method: "POST",
+      headers: { apikey: segredoObrigatorio("EVOLUTION_API_KEY"), "Content-Type": "application/json" },
+      body: JSON.stringify({ number: numero, text: message }),
+      signal: AbortSignal.timeout(10000),
+    });
+    return res.ok;
+  } catch (err: any) {
+    console.error(`[Monitor] Falha ao avisar o lojista ${numero}:`, err.message);
+    return false;
+  }
+}
+
 async function sendWhatsAppAlert(message: string) {
   for (const phone of ALERT_PHONES) {
     await avisarNumeroPeloFireHub(phone, message);

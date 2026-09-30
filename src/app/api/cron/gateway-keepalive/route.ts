@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { segredoObrigatorio } from "@/lib/segredos";
 import { verifyCronAuth } from "@/lib/cron-auth";
-import { avisarNumeroPeloFireHub } from "@/lib/server-monitor";
+import { avisarLojistaPeloFireHub } from "@/lib/server-monitor";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
 
 export const dynamic = "force-dynamic";
@@ -177,7 +177,7 @@ export async function GET(req: NextRequest) {
         let avisoSaiu = false;
         if (deveAvisar) {
           const nomeDaLoja = user.storeName || user.name || "sua loja";
-          avisoSaiu = await avisarNumeroPeloFireHub(
+          avisoSaiu = await avisarLojistaPeloFireHub(
             numeroDoLojista,
             [
               `⚠️ *O robô de WhatsApp de ${nomeDaLoja} desconectou.*`,
