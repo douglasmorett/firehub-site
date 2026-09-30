@@ -91,10 +91,36 @@ async function permissoesAtuais(token: Record<string, unknown>): Promise<string>
   }
 }
 
+/**
+ * O caminho pedido é o cofre fiscal (lib/nfce/armazenamento)? Decodificado e
+ * com as barras juntadas: `/uploads/%5Ffiscal` e `/uploads//_fiscal` chegam
+ * ao mesmo arquivo que `/uploads/_fiscal`.
+ */
+function ehDoCofreFiscal(pathname: string): boolean {
+  let caminho = pathname;
+  try {
+    caminho = decodeURIComponent(pathname);
+  } catch {
+    /* segue com o caminho cru */
+  }
+  return caminho.replace(/\/+/g, "/").toLowerCase().startsWith("/uploads/_fiscal");
+}
+
 // Next 16 renomeou a convenção `middleware` para `proxy` (roda no runtime
 // Node.js). Mesma lógica de sempre; só o nome do arquivo e da função mudaram.
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // ─── O cofre fiscal não sai por URL ───
+  //
+  // O cofre da NFC-e (certificado A1 da loja, XML das notas) mora no volume
+  // dos uploads, que o Coolify monta em public/uploads — e o Next serve como
+  // arquivo estático tudo o que está em public quando o servidor sobe. Os
+  // arquivos são cifrados e têm nome opaco, mas não têm por que existir como
+  // endereço público. Antes de qualquer outra regra, inclusive o HTTPS.
+  if (ehDoCofreFiscal(pathname)) {
+    return new NextResponse(null, { status: 404 });
+  }
 
   // ─── Force HTTPS in production ───
   //

@@ -419,6 +419,12 @@ function secaoEstatica() {
   const taxa = leRota("store/orders/[id]/taxa-de-entrega/route.ts");
   verdade("[11] taxa-de-entrega lê fiscalStatus/fiscalInfo e aplica travaDaNotaFiscal", taxa.includes("fiscalStatus: true, fiscalInfo: true") && taxa.includes('travaDaNotaFiscal(order, "corrigir a taxa de entrega")'));
   verdade("[11] o UPDATE só passa com o mesmo fiscalStatus (nota emitida no meio)", taxa.includes("fiscalStatus: order.fiscalStatus,"));
+  // O cofre mora no volume montado em public/uploads, que o Next serve como
+  // estático: o proxy barra /uploads/_fiscal antes de qualquer outra regra.
+  const proxy = readFileSync(join(RAIZ, "src", "proxy.ts"), "utf8");
+  const barra = proxy.indexOf("if (ehDoCofreFiscal(pathname))");
+  verdade("[12] o proxy barra /uploads/_fiscal (404) antes do HTTPS e das outras regras", barra > 0 && barra < proxy.indexOf("Force HTTPS in production"));
+  verdade("[12] a conferência decodifica e junta barras (%5F, //)", proxy.includes("decodeURIComponent(pathname)") && proxy.includes('.replace(/\\/+/g, "/")'));
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
