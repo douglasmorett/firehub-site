@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { garantirEstruturaDoCrm } from "@/lib/garantir-colunas";
 import { nomesDaEquipe, quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
-import { criarContatoManual } from "@/lib/crm/contatos";
+import { ContatoDeOutraCarteira, criarContatoManual } from "@/lib/crm/contatos";
 import { origemValida } from "@/lib/crm/etapas";
 import { contatoParaLista } from "@/lib/crm/serializar";
 import { chaveDoTelefone } from "@/lib/crm/telefone";
@@ -45,10 +45,11 @@ export async function POST(req: NextRequest) {
     );
     if (!contato) return NextResponse.json({ error: "Não foi possível cadastrar." }, { status: 500 });
     if (jaExistia && quem.tipo === "VENDEDOR" && contato.vendedorId !== quem.id) {
-      return NextResponse.json({ error: "Esse número já está no CRM com outro vendedor. Fale com o admin." }, { status: 409 });
+      return NextResponse.json({ error: "Esse número já está no CRM e não é da sua carteira. Fale com o admin." }, { status: 409 });
     }
     return NextResponse.json({ contato: contatoParaLista(contato, await nomesDaEquipe()), jaExistia });
   } catch (err: any) {
+    if (err instanceof ContatoDeOutraCarteira) return NextResponse.json({ error: err.message }, { status: 403 });
     return NextResponse.json({ error: err?.message || "Erro ao cadastrar." }, { status: 500 });
   }
 }

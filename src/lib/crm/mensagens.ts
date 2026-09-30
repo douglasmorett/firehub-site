@@ -23,6 +23,9 @@ export type NovaMensagem = {
 
 export async function gravarMensagem(m: NovaMensagem) {
   const texto = String(m.texto || "").slice(0, 8000);
+  // Evento repetido é o caso comum (reconexão do gateway): confere antes, e a
+  // chave única fica como garantia para duas entregas no mesmo instante.
+  if (m.waId && (await prisma.crmMensagem.findUnique({ where: { waId: m.waId }, select: { id: true } }))) return null;
   let criada;
   try {
     criada = await prisma.crmMensagem.create({
@@ -46,17 +49,18 @@ export async function gravarMensagem(m: NovaMensagem) {
 
   const contato = await prisma.crmContato.findUnique({
     where: { id: m.contatoId },
-    select: { etapa: true, vendedorId: true, primeiroContatoEm: true },
+    select: { etapa: true, vendedorId: true, primeiroContatoEm: true, ultimaMensagemEm: true },
   });
   if (!contato) return criada;
 
   const saiuDeGente = m.direcao === "SAIDA" && (m.autor === "ADMIN" || m.autor === "VENDEDOR" || m.autor === "CELULAR");
+  // A resposta do robô pode entrar com carimbo anterior a uma mensagem que já
+  // chegou (robo.ts): o resumo da lista continua sendo a mais nova.
+  const eAMaisNova = !contato.ultimaMensagemEm || criada.criadoEm.getTime() >= contato.ultimaMensagemEm.getTime();
   await prisma.crmContato.update({
     where: { id: m.contatoId },
     data: {
-      ultimaMensagemEm: criada.criadoEm,
-      ultimaMensagemTexto: texto.slice(0, 160),
-      ultimaMensagemDe: m.autor,
+      ...(eAMaisNova ? { ultimaMensagemEm: criada.criadoEm, ultimaMensagemTexto: texto.slice(0, 160), ultimaMensagemDe: m.autor } : {}),
       ...(m.direcao === "ENTRADA" ? { naoLidas: { increment: 1 } } : {}),
       // Alguém respondeu de fato: a conversa já não espera uma pessoa.
       ...(saiuDeGente ? { aguardandoHumanoDesde: null } : {}),

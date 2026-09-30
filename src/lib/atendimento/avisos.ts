@@ -26,11 +26,25 @@ export async function avisarDono(texto: string): Promise<boolean> {
   return avisarNumeroPeloFireHub(destino, texto, { peloAtendimento: false }).catch(() => false);
 }
 
+/**
+ * O número é da própria equipe (o dono ou um vendedor)? Quem recebe os avisos
+ * pelo WhatsApp do FireHub às vezes responde "ok" — e isso não pode virar lead
+ * novo com o robô vendendo o sistema para o próprio vendedor.
+ */
+export async function numeroDaEquipe(telefone: string | null | undefined): Promise<boolean> {
+  if (!telefone) return false;
+  const config = await configDoAtendimento();
+  if (mesmoTelefone(telefone, WHATSAPP_DO_DOUGLAS) || (config.avisarNoWhatsApp && mesmoTelefone(telefone, config.avisarNoWhatsApp))) return true;
+  const equipe = await prisma.ambassador.findMany({ where: { isVendedor: true, phone: { not: null } }, select: { phone: true } });
+  return equipe.some((v) => mesmoTelefone(telefone, v.phone));
+}
+
 export async function avisarVendedor(vendedorId: string, texto: string): Promise<boolean> {
   const config = await configDoAtendimento();
   if (!config.avisoAoVendedor || config.conexao.conectado === false) return false;
-  const v = await prisma.ambassador.findUnique({ where: { id: vendedorId }, select: { phone: true, active: true } });
-  if (!v?.active || !v.phone) return false;
+  const v = await prisma.ambassador.findUnique({ where: { id: vendedorId }, select: { phone: true, active: true, isVendedor: true } });
+  // Quem saiu da equipe não recebe mais aviso de lead — nem continua ativo como embaixador.
+  if (!v?.active || !v.isVendedor || !v.phone) return false;
   if (config.conexao.telefone && mesmoTelefone(v.phone, config.conexao.telefone)) return false;
   const r = await enviarTexto(v.phone, texto);
   return r.ok;

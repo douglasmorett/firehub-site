@@ -9,7 +9,7 @@ import { configDoAtendimento, salvarConfigDoAtendimento } from "./config";
 import { baixarAudio, ehEcoDoFireHub } from "./whatsapp";
 import { transcreverAudio } from "./gemini";
 import { agendarRespostaDoRobo } from "./robo";
-import { avisarDono } from "./avisos";
+import { avisarDono, numeroDaEquipe } from "./avisos";
 
 /**
  * O QUE CHEGA DO NÚMERO DO FIREHUB — desviado no topo de /api/webhook/whatsapp.
@@ -125,7 +125,7 @@ async function chegouMensagem(body: any) {
   if (key.fromMe === true) {
     if (!texto && !audio) return;
     if (texto && ehEcoDoFireHub(jidsDaConversa, texto)) return;
-    const contato = await contatoDaConversa({ telefone, jid });
+    const contato = await silenciarSeForDaEquipe(await contatoDaConversa({ telefone, jid }), telefone);
     await gravarMensagem({
       contatoId: contato.id, waId, direcao: "SAIDA", autor: "CELULAR", autorNome: "Pelo celular",
       tipo: audio ? "AUDIO" : "TEXTO", texto: texto || "🎤 Áudio enviado pelo celular",
@@ -159,11 +159,23 @@ async function chegouMensagem(body: any) {
   if (!texto) return;
 
   const nome = typeof data.pushName === "string" ? data.pushName.trim() : "";
-  const contato = await contatoDaConversa({ telefone, jid, nome: nome || null });
+  const contato = await silenciarSeForDaEquipe(await contatoDaConversa({ telefone, jid, nome: nome || null }), telefone);
   const gravada = await gravarMensagem({ contatoId: contato.id, waId, direcao: "ENTRADA", autor: "CLIENTE", autorNome: contato.nome || nome || null, tipo, texto });
   if (!gravada) return; // evento repetido
 
   agendarRespostaDoRobo(contato.id);
+}
+
+/**
+ * Contato recém-criado que é da própria equipe (o dono ou um vendedor
+ * respondendo a um aviso): nasce com o robô desligado. Só no nascimento — se o
+ * dono religar o robô para esse número na tela, fica religado.
+ */
+async function silenciarSeForDaEquipe<C extends { id: string; roboDesligado: boolean; criadoEm: Date }>(contato: C, telefone: string | null): Promise<C> {
+  if (contato.roboDesligado || Date.now() - contato.criadoEm.getTime() > 60_000) return contato;
+  if (!(await numeroDaEquipe(telefone).catch(() => false))) return contato;
+  await prisma.crmContato.update({ where: { id: contato.id }, data: { roboDesligado: true } });
+  return { ...contato, roboDesligado: true };
 }
 
 /** Estado ao vivo, para a tela conferir sem esperar o próximo evento do gateway. */

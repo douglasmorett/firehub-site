@@ -167,7 +167,18 @@ export async function contatoDaConversa(entrada: { telefone: string | null; jid:
   }
 }
 
-/** Contato cadastrado à mão (admin ou vendedor). Número repetido devolve o que já existe. */
+/** O número é de uma loja que não está na carteira de quem tentou cadastrar. */
+export class ContatoDeOutraCarteira extends Error {}
+
+/**
+ * Contato cadastrado à mão (admin ou vendedor). Número repetido devolve o que
+ * já existe — quem chama decide se o vendedor pode usar (tem que ser DELE).
+ *
+ * Número de loja cadastrada: o vendedor só cadastra se a loja já é da carteira
+ * dele. Sem essa trava, bastava o telefone público de uma loja sem vendedor
+ * para ele se pôr na carteira dela e passar a receber os 3%. A carteira da loja
+ * só muda por aqui quando é o admin que cadastra.
+ */
 export async function criarContatoManual(
   dados: {
     telefone?: string | null; nome?: string | null; nomeDaLoja?: string | null; cidade?: string | null;
@@ -181,7 +192,12 @@ export async function criarContatoManual(
     if (existente) return { contato: existente, jaExistia: true };
   }
   const loja = chave ? await lojaDoTelefone(chave) : null;
-  const vendedorId = dados.vendedorId || loja?.vendedorId || null;
+  if (loja && autor.tipo === "VENDEDOR" && loja.vendedorId !== autor.id) {
+    throw new ContatoDeOutraCarteira("Esse número é de uma loja cadastrada que não está na sua carteira. Peça ao admin para passá-la para você.");
+  }
+  // O vendedor da loja, quando ela já tem um, vale mais que o escolhido no formulário:
+  // contato e carteira da loja não podem ficar com vendedores diferentes.
+  const vendedorId = autor.tipo === "VENDEDOR" ? autor.id : loja?.vendedorId || dados.vendedorId || null;
   const contato = await prisma.crmContato.create({
     data: {
       telefone: chave,
@@ -199,7 +215,7 @@ export async function criarContatoManual(
     },
   });
   await registrarEvento(contato.id, "CADASTRO", "Contato cadastrado à mão.", autor);
-  if (loja && !loja.vendedorId && vendedorId) await gravarVendedorNaLoja(loja.id, vendedorId);
+  if (loja && !loja.vendedorId && vendedorId && autor.tipo === "ADMIN") await gravarVendedorNaLoja(loja.id, vendedorId);
   return { contato, jaExistia: false };
 }
 
@@ -254,16 +270,36 @@ export async function atribuirVendedor(contatoId: string, vendedorId: string | n
   return atualizado;
 }
 
-/** Caminho inverso: a aba Lojistas trocou o vendedor da loja. */
+/**
+ * Caminho inverso: a aba Lojistas trocou o vendedor da loja.
+ *
+ * O filtro é explícito sobre o nulo: `NOT: { vendedorId }` vira
+ * `NOT ("vendedorId" = $1)` no SQL, que é NULO para contato sem vendedor — e
+ * justamente esse (o que veio do "Trazer as lojas") ficaria para trás.
+ */
 export async function espelharVendedorDaLoja(userId: string, vendedorId: string | null): Promise<void> {
   try {
     await prisma.crmContato.updateMany({
-      where: { userId, NOT: { vendedorId } },
+      where: vendedorId
+        ? { userId, OR: [{ vendedorId: null }, { vendedorId: { not: vendedorId } }] }
+        : { userId, vendedorId: { not: null } },
       data: { vendedorId, vendedorAtribuidoEm: vendedorId ? new Date() : null, primeiroContatoEm: null },
     });
   } catch (err: any) {
     // Sem as tabelas do CRM (boot falhou) a aba Lojistas continua funcionando.
     console.error(`[CRM] Espelho do vendedor da loja ${userId} falhou: ${err?.message}`);
+  }
+}
+
+/** O vendedor saiu da equipe: os contatos dele voltam para "sem vendedor", como as lojas. */
+export async function soltarContatosDoVendedor(vendedorId: string): Promise<void> {
+  try {
+    await prisma.crmContato.updateMany({
+      where: { vendedorId },
+      data: { vendedorId: null, vendedorAtribuidoEm: null, primeiroContatoEm: null },
+    });
+  } catch (err: any) {
+    console.error(`[CRM] Contatos do vendedor ${vendedorId} não foram soltos: ${err?.message}`);
   }
 }
 

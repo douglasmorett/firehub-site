@@ -55,6 +55,10 @@ export default function CaixaDeAtendimento({
   const fimRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const colarNoFim = useRef(true);
+  // A conversa que está aberta AGORA. Toda resposta do servidor confere com
+  // ela antes de mexer na tela: um clique rápido de A para B não pode fazer a
+  // resposta atrasada de A aparecer — nem a mensagem "para A" sair para B.
+  const abertaRef = useRef<string | null>(selecionado);
 
   useEffect(() => { if (abrirContatoId) setSelecionado(abrirContatoId); }, [abrirContatoId]);
 
@@ -87,6 +91,7 @@ export default function CaixaDeAtendimento({
 
   const carregarDetalhe = useCallback(async (id: string) => {
     const r = await api(`/api/crm/contatos/${id}`);
+    if (abertaRef.current !== id) return;
     if (!r.ok) { setDetalhe(null); setMensagens([]); setErroEnvio(r.erro); return; }
     setDetalhe({ contato: r.dados.contato, loja: r.dados.loja, reunioes: r.dados.reunioes, eventos: r.dados.eventos });
     setMensagens(r.dados.mensagens || []);
@@ -94,7 +99,12 @@ export default function CaixaDeAtendimento({
   }, []);
 
   useEffect(() => {
-    if (!selecionado) { setDetalhe(null); setMensagens([]); return; }
+    abertaRef.current = selecionado;
+    // Troca de conversa limpa a tela na hora: nada da anterior fica à mostra
+    // (nem habilita o envio) enquanto a nova carrega.
+    setDetalhe(null);
+    setMensagens([]);
+    if (!selecionado) return;
     colarNoFim.current = true;
     setErroEnvio(null);
     void carregarDetalhe(selecionado);
@@ -102,13 +112,14 @@ export default function CaixaDeAtendimento({
 
   // A conversa aberta pergunta só pelo que é novo.
   useEffect(() => {
-    if (!selecionado) return;
+    if (!selecionado || !detalhe || detalhe.contato.id !== selecionado) return;
     const i = setInterval(async () => {
       if (document.visibilityState !== "visible") return;
+      const id = selecionado;
       const ultima = mensagens[mensagens.length - 1];
       const desde = ultima?.criadoEm || new Date(0).toISOString();
-      const r = await api(`/api/crm/contatos/${selecionado}?desde=${encodeURIComponent(desde)}`);
-      if (!r.ok) return;
+      const r = await api(`/api/crm/contatos/${id}?desde=${encodeURIComponent(desde)}`);
+      if (!r.ok || abertaRef.current !== id) return;
       const novas: MensagemDaTela[] = r.dados.mensagens || [];
       if (novas.length > 0) {
         setMensagens((m) => {
@@ -119,7 +130,7 @@ export default function CaixaDeAtendimento({
       setDetalhe((d) => (d && d.contato.id === selecionado ? { ...d, contato: r.dados.contato } : d));
     }, 3000);
     return () => clearInterval(i);
-  }, [selecionado, mensagens]);
+  }, [selecionado, mensagens, detalhe]);
 
   useEffect(() => {
     if (colarNoFim.current) fimRef.current?.scrollIntoView({ block: "end" });
@@ -133,26 +144,31 @@ export default function CaixaDeAtendimento({
 
   const enviar = async () => {
     const conteudo = texto.trim();
-    if (!conteudo || !selecionado || enviando) return;
+    // Vai para o contato que a TELA mostra — e só quando ele é o selecionado.
+    const alvo = detalhe?.contato.id;
+    if (!conteudo || !alvo || alvo !== selecionado || enviando) return;
     setEnviando(true);
     setErroEnvio(null);
-    const r = await api(`/api/crm/contatos/${selecionado}/mensagens`, { method: "POST", json: { texto: conteudo, assinar } });
+    const r = await api(`/api/crm/contatos/${alvo}/mensagens`, { method: "POST", json: { texto: conteudo, assinar } });
     setEnviando(false);
+    if (abertaRef.current !== alvo) return;
     if (r.dados?.mensagem) {
       colarNoFim.current = true;
       setMensagens((m) => [...m, r.dados.mensagem]);
     }
     if (!r.ok) { setErroEnvio(r.dados?.erro || r.erro); return; }
     setTexto("");
-    void carregarDetalhe(selecionado);
+    void carregarDetalhe(alvo);
     void carregarLista();
   };
 
   const acaoDoRobo = async (acao: string) => {
-    if (!selecionado) return;
-    const r = await api(`/api/crm/contatos/${selecionado}/robo`, { method: "POST", json: { acao } });
+    const alvo = detalhe?.contato.id;
+    if (!alvo || alvo !== selecionado) return;
+    const r = await api(`/api/crm/contatos/${alvo}/robo`, { method: "POST", json: { acao } });
+    if (abertaRef.current !== alvo) return;
     if (!r.ok) { setErroEnvio(r.erro); return; }
-    void carregarDetalhe(selecionado);
+    void carregarDetalhe(alvo);
     void carregarLista();
   };
 

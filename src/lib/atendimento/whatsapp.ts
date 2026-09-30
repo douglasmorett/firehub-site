@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { segredoObrigatorio } from "@/lib/segredos";
+import { paraEnvioWhatsApp } from "@/lib/telefone";
 import { configDoAtendimento, INSTANCIA_DO_ATENDIMENTO } from "./config";
 
 /**
@@ -168,19 +169,20 @@ function lembrarEnvio(jid: string, texto: string) {
   }
 }
 
-/** Esta mensagem `fromMe` é o eco de algo que o FireHub mandou? Consome o registro. */
+/**
+ * Esta mensagem `fromMe` é o eco de algo que o FireHub mandou?
+ *
+ * O registro NÃO é consumido: o gateway pode entregar o mesmo eco duas vezes
+ * (reconexão), e o segundo viraria "digitado no celular" — calando o robô por
+ * 12 h numa conversa em que ninguém assumiu. Ele vence sozinho pela janela.
+ * (Mesmo desenho do `botSentHashes` do robô das lojas, lib/loop-guard.ts.)
+ */
 export function ehEcoDoFireHub(jids: string[], texto: string): boolean {
-  const mapa = envios();
-  const chave = hashDoTexto(texto);
-  const lista = mapa.get(chave);
+  const lista = envios().get(hashDoTexto(texto));
   if (!lista?.length) return false;
   const agora = Date.now();
   const conversas = new Set(jids.map(conversaDoJid).filter(Boolean));
-  const i = lista.findIndex((e) => agora - e.em < JANELA_DO_ECO_MS && conversas.has(e.conversa));
-  if (i < 0) return false;
-  lista.splice(i, 1);
-  if (lista.length === 0) mapa.delete(chave);
-  return true;
+  return lista.some((e) => agora - e.em < JANELA_DO_ECO_MS && conversas.has(e.conversa));
 }
 
 /**
@@ -200,8 +202,11 @@ export type ResultadoDoEnvio = { ok: boolean; erro?: string };
 export async function enviarTexto(destino: string, texto: string, opcoes: { comoRobo?: boolean } = {}): Promise<ResultadoDoEnvio> {
   const conteudo = String(texto || "").trim();
   if (!conteudo) return { ok: false, erro: "Mensagem vazia." };
-  const numero = destino.includes("@") ? destino : destino.replace(/\D/g, "");
-  if (!numero) return { ok: false, erro: "Contato sem número de WhatsApp." };
+  // Número digitado (vendedor, "me avisar neste WhatsApp") precisa do 55: "22999998888"
+  // sem ele o WhatsApp lê como DDI 229 e o gateway ACEITA — o aviso some e fica
+  // marcado como enviado (o mesmo defeito contado em cron/gateway-keepalive).
+  const numero = destino.includes("@") ? destino : paraEnvioWhatsApp(destino);
+  if (!numero) return { ok: false, erro: "Número de WhatsApp inválido (use DDD + número)." };
   lembrarEnvio(numero, conteudo);
   try {
     const { url, headers } = await gateway();

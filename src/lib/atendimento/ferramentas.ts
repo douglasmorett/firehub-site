@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { mesmoTelefone } from "@/lib/telefone";
 import { restartEvolutionInstance } from "@/lib/whatsapp-evolution";
 import { registrarEvento, AUTOR_ROBO } from "@/lib/crm/contatos";
 import { ANTECEDENCIA_MINIMA_MIN, dataDaAgenda, horaDaAgenda, NOMES_DOS_DIAS, diaDaSemana } from "@/lib/crm/agenda";
@@ -13,13 +14,36 @@ import { avisarDono, avisarVendedor } from "./avisos";
  * reiniciar o WhatsApp dela, e-mail de senha) só funciona para contato cuja
  * loja foi reconhecida PELO NÚMERO que está escrevendo (`contato.userId`,
  * gravado por lojaDoTelefone). Dizer "sou o dono da Pizzaria X" de outro
- * número não abre nada — o robô orienta e chama uma pessoa.
+ * número não abre nada — o robô orienta e chama uma pessoa. E a conferência
+ * é refeita na hora da ação (`lojaDoNumero`): o vínculo pode ter vindo pelo
+ * e-mail no cadastro (`aoCadastrarLoja`), e e-mail qualquer um digita na conversa.
  */
 
 type Contato = {
-  id: string; nome: string | null; nomeDaLoja: string | null; cidade: string | null; email: string | null;
+  id: string; telefone: string | null; nome: string | null; nomeDaLoja: string | null; cidade: string | null; email: string | null;
   userId: string | null; vendedorId: string | null; etapa: string; resumo: string | null;
 };
+
+/** As ferramentas que MUDAM alguma coisa — não podem rodar duas vezes numa resposta (robo.ts). */
+export const FERRAMENTAS_COM_EFEITO = new Set(["marcar_demonstracao", "chamar_pessoa", "enviar_link_de_senha", "reiniciar_whatsapp_da_loja"]);
+
+/** A loja do contato, se o número que está escrevendo é mesmo o dela (o da loja ou o do proprietário). */
+async function lojaDoNumero(contato: Contato) {
+  if (!contato.userId || !contato.telefone) return null;
+  const loja = await prisma.user.findUnique({
+    where: { id: contato.userId },
+    select: { id: true, email: true, storePhone: true, notificationPhone: true },
+  });
+  if (!loja) return null;
+  return mesmoTelefone(contato.telefone, loja.storePhone) || mesmoTelefone(contato.telefone, loja.notificationPhone) ? loja : null;
+}
+
+/** O vendedor do contato, quando ainda está na equipe: é com ele que a demonstração tem que ser. */
+async function vendedorAtivoDoContato(contato: Contato): Promise<string | null> {
+  if (!contato.vendedorId) return null;
+  const v = await prisma.ambassador.findUnique({ where: { id: contato.vendedorId }, select: { isVendedor: true, active: true } });
+  return v?.isVendedor && v.active ? contato.vendedorId : null;
+}
 
 export const DECLARACOES = [
   {
@@ -94,14 +118,16 @@ function quandoPorExtenso(inicio: Date): string {
 export async function executarFerramenta(nome: string, args: any, contato: Contato): Promise<Record<string, unknown>> {
   switch (nome) {
     case "estado_da_loja": {
-      if (!contato.userId) return soDaLoja;
-      const estado = await estadoDaLojaParaSuporte(contato.userId, { aoVivo: true });
+      const loja = await lojaDoNumero(contato);
+      if (!loja) return soDaLoja;
+      const estado = await estadoDaLojaParaSuporte(loja.id, { aoVivo: true });
       return estado ? { ...estado } : { erro: "Loja não encontrada." };
     }
 
     case "horarios_livres": {
       const dias = Math.max(1, Math.min(Number(args?.dias) || 5, 10));
-      const vagas = await vagasDaEquipe({ dias });
+      const doContato = await vendedorAtivoDoContato(contato);
+      const vagas = await vagasDaEquipe({ dias, ...(doContato ? { vendedorIds: [doContato] } : {}) });
       // Um horário conta uma vez, mesmo com dois vendedores livres nele.
       const porInicio = new Map<number, Date>();
       for (const v of vagas) for (const h of v.vagas) porInicio.set(h.inicio.getTime(), h.inicio);
@@ -114,6 +140,19 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
       const inicio = new Date(String(args?.inicio || ""));
       if (Number.isNaN(inicio.getTime())) return { erro: "Horário inválido. Use o 'inicio' que veio em horarios_livres." };
       if (inicio.getTime() < Date.now() + ANTECEDENCIA_MINIMA_MIN * 60_000) return { erro: "Esse horário já passou ou está em cima da hora. Ofereça outro." };
+      // Uma demonstração por lead: pedir de novo (ou o modelo repetir a chamada)
+      // devolve a que já está marcada em vez de pôr uma segunda na agenda.
+      const jaMarcada = await prisma.agendaReuniao.findFirst({
+        where: { contatoId: contato.id, tipo: "DEMONSTRACAO", status: "MARCADA", inicio: { gt: new Date() } },
+        orderBy: { inicio: "asc" },
+      });
+      if (jaMarcada) {
+        const v = await prisma.ambassador.findUnique({ where: { id: jaMarcada.vendedorId }, select: { name: true } });
+        return {
+          ok: true, jaEstavaMarcada: true, quando: quandoPorExtenso(jaMarcada.inicio), comQuem: v?.name || "um especialista da equipe",
+          aviso: "A pessoa JÁ tem esta demonstração marcada. Confirme este horário; se ela quiser trocar, use chamar_pessoa.",
+        };
+      }
       if (args?.nomeDaLoja || args?.nome) {
         await prisma.crmContato.update({
           where: { id: contato.id },
@@ -123,7 +162,8 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
           },
         });
       }
-      const vendedorId = await vendedorLivrePara(inicio, contato.vendedorId);
+      const doContato = await vendedorAtivoDoContato(contato);
+      const vendedorId = await vendedorLivrePara(inicio, doContato, !!doContato);
       if (!vendedorId) return { erro: "Esse horário acabou de ser ocupado. Chame horarios_livres de novo e ofereça outro." };
       const vendedor = await prisma.ambassador.findUnique({ where: { id: vendedorId }, select: { name: true } });
       try {
@@ -152,9 +192,9 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
     }
 
     case "enviar_link_de_senha": {
-      if (!contato.userId) return soDaLoja;
-      const loja = await prisma.user.findUnique({ where: { id: contato.userId }, select: { email: true } });
-      if (!loja?.email) return { erro: "A conta não tem e-mail." };
+      const loja = await lojaDoNumero(contato);
+      if (!loja) return soDaLoja;
+      if (!loja.email) return { erro: "A conta não tem e-mail." };
       // Pela própria rota do "Esqueci a senha": uma regra só para o e-mail e o token.
       const porta = process.env.PORT || "3000";
       const r = await fetch(`http://127.0.0.1:${porta}/api/auth/forgot-password`, {
@@ -169,8 +209,9 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
     }
 
     case "reiniciar_whatsapp_da_loja": {
-      if (!contato.userId) return soDaLoja;
-      const ok = await restartEvolutionInstance(contato.userId).catch(() => false);
+      const loja = await lojaDoNumero(contato);
+      if (!loja) return soDaLoja;
+      const ok = await restartEvolutionInstance(loja.id).catch(() => false);
       await registrarEvento(contato.id, "ROBO", ok ? "Reiniciou a conexão do WhatsApp da loja." : "Tentou reiniciar o WhatsApp da loja e o gateway recusou.", AUTOR_ROBO);
       return ok ? { ok: true, aviso: "Peça para testar mandando um 'oi' de outro celular em 1 minuto." } : { erro: "O reinício não funcionou. Chame uma pessoa." };
     }

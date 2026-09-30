@@ -6,7 +6,7 @@ import {
   dataDaAgenda, horaDaAgenda, instanteDaAgenda, minutosDoHorario, somarDias, vagasDoDia, ANTECEDENCIA_MINIMA_MIN,
 } from "@/lib/crm/agenda";
 import { disponibilidadesDos, marcarReuniao, reunioesEntre, vendedoresDaEquipe, HorarioOcupado } from "@/lib/crm/agenda-servidor";
-import { criarContatoManual } from "@/lib/crm/contatos";
+import { ContatoDeOutraCarteira, criarContatoManual } from "@/lib/crm/contatos";
 import { TIPOS_DE_REUNIAO, type TipoDeReuniao } from "@/lib/crm/etapas";
 import { reuniaoParaTela } from "@/lib/crm/serializar";
 import { avisarVendedor } from "@/lib/atendimento/avisos";
@@ -83,10 +83,13 @@ export async function POST(req: NextRequest) {
   const fim = new Date(inicio.getTime() + duracao * 60_000);
   const autor = { tipo: quem.tipo, id: quem.id, nome: quem.nome } as const;
 
+  // O vendedor só marca com contato DELE — contato sem vendedor também não:
+  // marcar uma reunião não é jeito de pegar lead (é o admin quem distribui).
+  const semPosse = NextResponse.json({ error: "Esse contato não está na sua carteira. Peça ao admin para passá-lo para você." }, { status: 403 });
   let contatoId: string | null = typeof b.contatoId === "string" && b.contatoId ? b.contatoId : null;
   if (contatoId && quem.tipo === "VENDEDOR") {
     const c = await prisma.crmContato.findUnique({ where: { id: contatoId }, select: { vendedorId: true } });
-    if (!c || (c.vendedorId && c.vendedorId !== quem.id)) return NextResponse.json({ error: "Esse contato é de outro vendedor." }, { status: 403 });
+    if (!c || c.vendedorId !== quem.id) return semPosse;
   }
   if (!contatoId && b.novoContato && typeof b.novoContato === "object" && tipo !== "BLOQUEIO") {
     const n = b.novoContato;
@@ -96,9 +99,10 @@ export async function POST(req: NextRequest) {
           { telefone: n.telefone, nome: n.nome, nomeDaLoja: n.nomeDaLoja, origem: "MANUAL", vendedorId },
           autor,
         );
+        if (quem.tipo === "VENDEDOR" && contato?.vendedorId !== quem.id) return semPosse;
         contatoId = contato?.id || null;
       } catch (err: any) {
-        return NextResponse.json({ error: err?.message || "Não consegui cadastrar o contato." }, { status: 400 });
+        return NextResponse.json({ error: err?.message || "Não consegui cadastrar o contato." }, { status: err instanceof ContatoDeOutraCarteira ? 403 : 400 });
       }
     }
   }

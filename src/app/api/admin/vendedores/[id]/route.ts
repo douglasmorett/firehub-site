@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { gerarSenhaTemporaria, percentualDoVendedor } from "@/lib/vendedores";
+import { soltarContatosDoVendedor } from "@/lib/crm/contatos";
 
 /**
  * PATCH: edita o vendedor. Lista fechada do que muda — `password` só por
@@ -32,6 +33,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         data: { vendedorId: null, vendedorStatus: null, vendedorAtribuidoEm: null, vendedorAtendidoEm: null },
       }),
     ]);
+    // Os contatos do CRM dele voltam para "sem vendedor" junto com as lojas —
+    // senão continuariam na conversa de quem já não está na equipe.
+    await soltarContatosDoVendedor(id);
     return NextResponse.json({ ok: true, lojasSoltas: soltas.count });
   }
 

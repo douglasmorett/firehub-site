@@ -94,13 +94,21 @@ export async function vagasDaEquipe(opcoes: { desde?: string; dias?: number; ven
  * Quem faz a demonstração deste horário: o vendedor do contato, se estiver
  * livre; senão o livre com menos reuniões no dia (divide a equipe sem regra
  * escondida). Livre = o horário cabe numa vaga dele.
+ *
+ * `somentePreferido`: contato que já tem vendedor fica com ELE — outro
+ * vendedor apresentaria para um lead que não consegue nem abrir.
  */
-export async function vendedorLivrePara(inicio: Date, preferido?: string | null): Promise<string | null> {
+export async function vendedorLivrePara(inicio: Date, preferido?: string | null, somentePreferido = false): Promise<string | null> {
   const data = dataDaAgenda(inicio);
-  const vagas = await vagasDaEquipe({ desde: data, dias: 1, agora: new Date(Math.min(Date.now(), inicio.getTime() - ANTECEDENCIA_MINIMA_MIN * 60_000)) });
+  const vagas = await vagasDaEquipe({
+    desde: data, dias: 1,
+    agora: new Date(Math.min(Date.now(), inicio.getTime() - ANTECEDENCIA_MINIMA_MIN * 60_000)),
+    ...(somentePreferido && preferido ? { vendedorIds: [preferido] } : {}),
+  });
   const livres = vagas.filter((v) => v.vagas.some((h) => h.inicio.getTime() === inicio.getTime()));
   if (livres.length === 0) return null;
   if (preferido && livres.some((l) => l.vendedorId === preferido)) return preferido;
+  if (somentePreferido) return null;
 
   const ids = livres.map((l) => l.vendedorId);
   const doDia = await reunioesEntre(instanteDaAgenda(data, "00:00"), instanteDaAgenda(somarDias(data, 1), "00:00"), ids);
@@ -126,7 +134,9 @@ export class HorarioOcupado extends Error {}
  * Marca na agenda. Horário ocupado é recusado (a agenda é compartilhada: dois
  * vendedores marcando ao mesmo tempo não podem pôr duas pessoas na mesma hora
  * do Victor). Demonstração com contato leva o contato para "Demonstração
- * marcada" e, se ninguém cuidava dele, para a carteira de quem vai apresentar.
+ * marcada" e, se ninguém cuidava dele, para quem vai apresentar — mas só
+ * quando quem marca é o admin ou o robô: vendedor marcando não distribui lead.
+ * A carteira da LOJA (os 3%) só o admin muda.
  */
 export async function marcarReuniao(dados: NovaReuniao, autor: Autor) {
   if (!(dados.fim.getTime() > dados.inicio.getTime())) throw new Error("O fim precisa ser depois do começo.");
@@ -172,12 +182,13 @@ export async function marcarReuniao(dados: NovaReuniao, autor: Autor) {
     if (tipo === "DEMONSTRACAO" && (contato.etapa === "NOVO" || contato.etapa === "CONVERSANDO" || contato.etapa === "PERDIDO")) {
       mudar.etapa = "DEMO_MARCADA";
     }
-    if (!contato.vendedorId) {
+    const distribui = autor.tipo === "ADMIN" || autor.tipo === "ROBO";
+    if (!contato.vendedorId && distribui) {
       mudar.vendedorId = dados.vendedorId;
       mudar.vendedorAtribuidoEm = new Date();
     }
     if (Object.keys(mudar).length > 0) await prisma.crmContato.update({ where: { id: contato.id }, data: mudar });
-    if (!contato.vendedorId && contato.userId) {
+    if (!contato.vendedorId && contato.userId && autor.tipo === "ADMIN") {
       await prisma.user.updateMany({
         where: { id: contato.userId, vendedorId: null },
         data: { vendedorId: dados.vendedorId, vendedorStatus: "AGUARDANDO", vendedorAtribuidoEm: new Date() },

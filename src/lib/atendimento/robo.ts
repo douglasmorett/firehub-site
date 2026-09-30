@@ -5,7 +5,7 @@ import { ROTULO_DA_ETAPA, type Etapa } from "@/lib/crm/etapas";
 import { configDoAtendimento } from "./config";
 import { clienteDoGemini } from "./gemini";
 import { CONHECIMENTO_DO_FIREHUB } from "./conhecimento";
-import { DECLARACOES, chamarPessoa, executarFerramenta } from "./ferramentas";
+import { DECLARACOES, FERRAMENTAS_COM_EFEITO, chamarPessoa, executarFerramenta } from "./ferramentas";
 import { enviarTexto } from "./whatsapp";
 
 /**
@@ -175,16 +175,22 @@ async function responder(contatoId: string) {
   const conversa = conversaParaOModelo(historico);
   if (conversa.length === 0) return;
 
+  // ── Um modelo, depois o outro — mas nunca refazer uma AÇÃO ─────────────────
+  // Se o primeiro já marcou a demonstração (ou chamou pessoa, ou mandou o
+  // e-mail) e caiu antes do texto, o segundo começaria do zero e faria de novo:
+  // duas reuniões, dois avisos. Depois de uma ação, a resposta vem da reserva.
+  const acoes: AcaoFeita[] = [];
   let resposta = "";
   for (const modelo of MODELOS) {
     try {
-      resposta = await conversarComFerramentas(ai, modelo, sistema, conversa.map((c) => ({ role: c.role, parts: [...(c.parts || [])] })), contato);
+      resposta = await conversarComFerramentas(ai, modelo, sistema, conversa.map((c) => ({ role: c.role, parts: [...(c.parts || [])] })), contato, acoes);
       if (resposta) break;
     } catch (err: any) {
       console.warn(`[Atendimento] ${modelo} falhou: ${err?.message}`);
     }
+    if (acoes.some((a) => FERRAMENTAS_COM_EFEITO.has(a.nome))) break;
   }
-  resposta = resposta.trim();
+  resposta = resposta.trim() || respostaDeReserva(acoes);
   if (!resposta) return;
 
   // Alguém assumiu enquanto o modelo pensava? Não fala por cima.
@@ -192,13 +198,47 @@ async function responder(contatoId: string) {
   if (!agora || agora.roboDesligado || (agora.roboPausadoAte && agora.roboPausadoAte.getTime() > Date.now())) return;
   const depois = await prisma.crmMensagem.findFirst({ where: { contatoId: contato.id }, orderBy: { criadoEm: "desc" }, select: { direcao: true, autor: true, id: true } });
   if (depois && depois.direcao === "SAIDA" && depois.autor !== "ROBO") return;
+  // O contato mandou mais coisa enquanto o modelo pensava: esta resposta já
+  // nasceu velha. Começa de novo com tudo (a nova mensagem já agendou o robô;
+  // agendar aqui também cobre a corrida com o fim desta volta).
+  const chegouOutra = !!(depois && depois.direcao === "ENTRADA" && depois.id !== ultima.id);
+  if (chegouOutra && acoes.length === 0) {
+    agendarRespostaDoRobo(contato.id);
+    return;
+  }
 
+  // Carimbo de ANTES do envio: mensagem que chegar durante o envio fica depois
+  // desta na conversa — e a próxima volta do robô a enxerga como a última. Se
+  // uma já chegou enquanto o modelo agia (a confirmação da ação sai mesmo
+  // assim), esta resposta entra logo depois da mensagem que ela respondeu.
+  const momento = chegouOutra ? new Date(ultima.criadoEm.getTime() + 1) : new Date();
   const envio = await enviarTexto(contato.jid, resposta, { comoRobo: true });
   await gravarMensagem({
     contatoId: contato.id, direcao: "SAIDA", autor: "ROBO", autorNome: config.nomeDoAtendente || "Robô",
-    texto: resposta, status: envio.ok ? "OK" : "FALHOU",
+    texto: resposta, status: envio.ok ? "OK" : "FALHOU", criadoEm: momento,
   });
   if (!envio.ok) console.error(`[Atendimento] Resposta do robô não saiu para ${contato.id}: ${envio.erro}`);
+  if (chegouOutra) agendarRespostaDoRobo(contato.id);
+}
+
+type AcaoFeita = { nome: string; resultado: Record<string, unknown> };
+
+/**
+ * O texto quando o modelo agiu mas não chegou a escrever (caiu, devolveu
+ * vazio): a pessoa não pode ficar sem saber que a demonstração foi marcada.
+ */
+function respostaDeReserva(acoes: AcaoFeita[]): string {
+  const ultima = (nome: string) => [...acoes].reverse().find((a) => a.nome === nome && (a.resultado as any)?.ok);
+  const demo = ultima("marcar_demonstracao");
+  if (demo) {
+    const r = demo.resultado as any;
+    return `Pronto! Sua demonstração do FireHub ficou marcada para ${r.quando} com ${r.comQuem}. Vamos te chamar por aqui na hora, com o link da chamada. 🔥`;
+  }
+  if (ultima("chamar_pessoa")) return "Já chamei alguém da nossa equipe — em instantes te respondem por aqui. 🙏";
+  const senha = ultima("enviar_link_de_senha");
+  if (senha) return `Mandei o link para criar uma senha nova no e-mail ${(senha.resultado as any).email}. Ele vale por 1 hora.`;
+  if (ultima("reiniciar_whatsapp_da_loja")) return "Reiniciei a conexão do WhatsApp da sua loja. Manda um \"oi\" de outro celular daqui a 1 minuto para testar?";
+  return "";
 }
 
 async function conversarComFerramentas(
@@ -207,6 +247,7 @@ async function conversarComFerramentas(
   sistema: string,
   conversa: Content[],
   contato: any,
+  acoes: AcaoFeita[],
 ): Promise<string> {
   for (let volta = 0; volta < 5; volta++) {
     const r = await ai.models.generateContent({
@@ -232,6 +273,7 @@ async function conversarComFerramentas(
       } catch (err: any) {
         resultado = { erro: `Falhou: ${err?.message || "erro"}` };
       }
+      acoes.push({ nome: chamada.name || "", resultado });
       respostas.push({ functionResponse: { id: chamada.id, name: chamada.name, response: resultado } });
       // O que a ferramenta mudou no contato vale para a próxima chamada da mesma volta.
       if (chamada.name === "atualizar_contato" || chamada.name === "marcar_demonstracao") {
