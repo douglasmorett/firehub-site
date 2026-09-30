@@ -4,6 +4,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { cancelamentoDaNota } from "@/lib/edicao-de-pedido";
 import { funcionarioAbre } from "@/lib/permissao-da-tela";
+import { normalizarConfigFiscal } from "@/lib/fiscal-config";
+import { porQueSemNota } from "@/lib/fiscal-modo";
 
 export async function GET(req: Request) {
   try {
@@ -29,6 +31,11 @@ export async function GET(req: Request) {
     }
 
     const franchiseeId = user.ownerId || user.id;
+    // A config da loja diz por que o pedido sem nota não tem nota (lib/fiscal-modo
+    // → porQueSemNota): emissão à mão, forma sem nota automática, entrega sem CPF
+    // ou ainda não é a hora. Sem isso a linha só dizia "Não emitida".
+    const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { fiscalConfig: true } });
+    const configDaLoja = normalizarConfigFiscal(loja?.fiscalConfig);
 
     const { searchParams } = new URL(req.url);
     const fromDate = searchParams.get("fromDate");
@@ -204,6 +211,15 @@ export async function GET(req: Request) {
         // pela trava da nota (lib/fiscal-momento → alertaDoCancelamento). Some
         // quando a nota é cancelada ou a devolução é registrada.
         alerta: fiscal.alerta && !fiscal.devolucao && (foiEmitida || fiscal.processando === true) ? fiscal.alerta : null,
+        // Sem nota, sem tentativa: o porquê em uma frase. A marca gravada pela
+        // automática (entrega sem CPF, conta sem valor) vale mais que a conta
+        // feita agora — é o que de fato aconteceu com o pedido.
+        semNota:
+          foiEmitida || notaCancelada || fiscal.processando || fiscal.ultimoErro
+            ? null
+            : fiscal.semNotaAutomatica?.motivo
+              ? { tipo: fiscal.semNotaAutomatica.falta === "documento" ? "falta_documento" : "outro", texto: String(fiscal.semNotaAutomatica.motivo) }
+              : porQueSemNota(configDaLoja, { ...order, tableSessionId: order.tableSessionId ?? null }),
         tableSessionId: order.tableSessionId ?? null,
         mesa: sessao
           ? {

@@ -108,6 +108,16 @@ import {
   type LojaParaNota,
   type NotaParaEmitir,
 } from "./fiscal-momento";
+import { chaveDoCanal } from "./canal-do-pedido";
+import {
+  ehIntegracaoDaNota,
+  entregaSemDocumento,
+  formasDoCanal,
+  modoDaEmissao,
+  nomeDaIntegracao,
+  MOTIVO_DA_EMISSAO_MANUAL,
+  MOTIVO_DA_ENTREGA_SEM_DOCUMENTO,
+} from "./fiscal-modo";
 
 // Reexportados: quem já importava daqui (e a frente 2, para consultar e
 // cancelar pela ref certa) não precisa conhecer o arquivo novo.
@@ -116,6 +126,10 @@ export { chaveDaFormaDePagamento, idDaNotaDoPedido };
 export type ConfigDaLoja = ConfiguracaoFiscal & {
   enabled?: boolean;
   autoEmitPaymentMethods?: string[];
+  /** "automatico" (padrão) ou "manual" — ver lib/fiscal-modo. */
+  modoDaEmissao?: string;
+  /** Lista própria por integração; canal ausente segue `autoEmitPaymentMethods`. */
+  formasPorIntegracao?: Partial<Record<string, string[]>>;
   /** "aceite" | "saida" (padrão) | "conclusao" — ver lib/fiscal-momento. */
   momentoDaEmissao?: string;
   /** A taxa de serviço da mesa vai na nota? Padrão: não (lib/fiscal-momento). */
@@ -743,6 +757,13 @@ const CAMPOS_DA_DECISAO = {
   gatewayPaymentId: true,
   fiscalStatus: true,
   fiscalInfo: true,
+  // O canal (lib/canal-do-pedido): cada integração pode ter a própria lista
+  // de formas (lib/fiscal-modo → formasDoCanal).
+  source: true,
+  openDeliveryChannel: true,
+  openDeliveryOrderId: true,
+  ifoodOrderId: true,
+  ifoodReference: true,
 } as const;
 
 /**
@@ -766,6 +787,10 @@ export async function emitirNfceAutomatica(orderId: string): Promise<ResultadoAu
     const loja = await lojaFiscal(order.franchiseeId);
     const config = loja.config;
     if (!config?.enabled) return ignorado("emissão desligada nesta loja");
+    // A loja escolheu emitir à mão (lib/fiscal-modo): a nota sai pelo pedido,
+    // com o CPF pedido na hora. Fora da automática também tira da fila do
+    // cron a falha de um clique que a automática nunca vai refazer.
+    if (modoDaEmissao(config) === "manual") return foraDaAutomatica(MOTIVO_DA_EMISSAO_MANUAL);
 
     const fiscalAtual = objeto(order.fiscalInfo);
     const estado = estadoFiscal(order.fiscalStatus, fiscalAtual);
@@ -795,9 +820,13 @@ export async function emitirNfceAutomatica(orderId: string): Promise<ResultadoAu
       return ignorado(`status ${order.status} ainda não é a hora da nota`);
     }
 
+    // A lista do canal: a integração com lista própria usa a dela; o resto,
+    // a das vendas da loja (lib/fiscal-modo → formasDoCanal).
+    const canal = chaveDoCanal(order);
     const chaves: ChaveDePagamento[] = chavesDoPagamento(order);
-    if (!formaEntraNaAutomatica(chaves, config.autoEmitPaymentMethods)) {
-      return foraDaAutomatica(`forma "${order.paymentMethod}" fora da emissão automática`);
+    if (!formaEntraNaAutomatica(chaves, formasDoCanal(config, canal))) {
+      const onde = ehIntegracaoDaNota(canal) ? ` do ${nomeDaIntegracao(canal)}` : "";
+      return foraDaAutomatica(`forma "${order.paymentMethod}" fora da emissão automática${onde}`);
     }
 
     // Loja sem cadastro completo: não tenta (e não marca FAILED — a pendência
@@ -827,6 +856,25 @@ export async function emitirNfceAutomatica(orderId: string): Promise<ResultadoAu
       extraSemResposta: ref !== order.id ? { idDaNota: ref } : {},
     };
     const nota: NotaParaEmitir = { ...montarNotaDoPedido(completo, loja), id: ref };
+
+    // Entrega sem CPF/CNPJ: a SEFAZ recusaria (787). Não vai, não gasta
+    // número e não vira "Falhou" — na NIK seriam 98% das entregas
+    // (lib/fiscal-modo). A marca tira o pedido da varredura (que só pega
+    // fiscalInfo vazio) e a tela mostra "Falta CPF"; a pessoa emite pelo
+    // pedido quando o cliente informar. Só grava se ninguém escreveu a nota
+    // no meio (a trava de nota viva e o fiscalInfo lido).
+    if (entregaSemDocumento(nota, config)) {
+      await prisma.customerOrder.updateMany({
+        where: { AND: [{ id: order.id }, SEM_NOTA_VIVA, oMesmoFiscalInfo(order.fiscalInfo)] },
+        data: {
+          fiscalInfo: {
+            ...semMarcasDaTentativaAnterior(fiscalAtual),
+            semNotaAutomatica: { motivo: MOTIVO_DA_ENTREGA_SEM_DOCUMENTO, falta: "documento", em: new Date().toISOString() },
+          } as Prisma.InputJsonValue,
+        },
+      });
+      return foraDaAutomatica(MOTIVO_DA_ENTREGA_SEM_DOCUMENTO);
+    }
     alvo.nota = dadosDaNota(nota);
 
     // Os pedidos da nota vão junto: o emissor próprio reserva o número no
@@ -1207,6 +1255,10 @@ export async function emitirNfceDaMesa(
       pagamentosDaNota = restante.pagos;
     }
 
+    // Emissão à mão (lib/fiscal-modo): a nota da conta sai quando alguém
+    // emite. O desconto da conta já ficou gravado acima, e é dele que a
+    // emissão pela tela vai ler.
+    if (!conta.manual && modoDaEmissao(config) === "manual") return foraDaAutomatica(MOTIVO_DA_EMISSAO_MANUAL);
     if (!conta.manual && !formaEntraNaAutomatica(chavesDaConta(pagamentos), config.autoEmitPaymentMethods)) {
       return foraDaAutomatica(`formas da conta (${pagamentos.map((p) => p.method).join(", ") || "nenhuma"}) fora da emissão automática`);
     }
@@ -1326,6 +1378,8 @@ export async function emitirNotasEsquecidas(opcoes: {
   try {
     const config = opcoes.config ?? (await configDaLoja(opcoes.franchiseeId));
     if (!config?.enabled || pendenciasParaEmitir(config).length > 0) return 0;
+    // Emissão à mão: nada é "esquecido" — a nota sai quando alguém emite.
+    if (modoDaEmissao(config) === "manual") return 0;
     const momento = momentoDaEmissao(config);
     const inicio = inicioDaVarredura({ agora: Date.now(), desde: opcoes.desde, emissaoLigadaEm: config.emissaoLigadaEm });
 
@@ -1338,13 +1392,17 @@ export async function emitirNotasEsquecidas(opcoes: {
         fiscalInfo: { equals: Prisma.AnyNull },
         OR: [{ fiscalStatus: null }, { fiscalStatus: "PENDING" }],
       },
-      select: { id: true, status: true, deliveryType: true, tableSessionId: true, paymentMethod: true, paymentMethods: true, gatewayPaymentId: true },
+      select: {
+        id: true, status: true, deliveryType: true, tableSessionId: true, paymentMethod: true, paymentMethods: true, gatewayPaymentId: true,
+        // O canal decide qual lista de formas vale (lib/fiscal-modo → formasDoCanal).
+        source: true, openDeliveryChannel: true, openDeliveryOrderId: true, ifoodOrderId: true, ifoodReference: true,
+      },
       // O mais recente primeiro: é o que ainda pode estar saindo da loja.
       orderBy: { createdAt: "desc" },
       take: 500,
     });
     const daVez = candidatos
-      .filter((c) => deveEmitirNoStatus(c, momento) && formaEntraNaAutomatica(chavesDoPagamento(c), config.autoEmitPaymentMethods))
+      .filter((c) => deveEmitirNoStatus(c, momento) && formaEntraNaAutomatica(chavesDoPagamento(c), formasDoCanal(config, chaveDoCanal(c))))
       .slice(0, opcoes.limite ?? 30);
 
     let tentadas = 0;

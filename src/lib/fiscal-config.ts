@@ -26,6 +26,7 @@
 import type { ConfiguracaoFiscal } from "./fiscal-emissao";
 import { cnpjValido, type Problema } from "./fiscal-validacao";
 import { ehNotaDaConta, idDaNotaDoPedido, pedidoDeMesaExigeNotaDaConta } from "./fiscal-momento";
+import { lerFormasPorIntegracao } from "./fiscal-modo";
 import { finalDoCsc } from "./focus-empresas";
 
 /** O que fica guardado no fiscalConfig além dos dados do emitente. */
@@ -62,6 +63,12 @@ export type ConfigFiscalGravada = ConfiguracaoFiscal & {
    * pedido anterior a isto — ver `carimbarEmissaoLigada`.
    */
   emissaoLigadaEm?: string | null;
+  /** Como a nota é emitida (lib/fiscal-modo): "automatico" (ausente) ou "manual". */
+  modoDaEmissao?: string;
+  /** Lista própria de formas por integração; canal ausente segue `autoEmitPaymentMethods`. */
+  formasPorIntegracao?: Partial<Record<string, string[]>>;
+  /** Entrega pelo FireHub sem CPF: "opcional" (ausente) ou "obrigatorio". */
+  cpfNaEntrega?: string;
   contador?: unknown;
   [chave: string]: unknown;
 };
@@ -392,6 +399,11 @@ const CAMPOS_PERMITIDOS = [
   "intermediadores",
   "pixEstatico",
   "entregaComoPresencial",
+  // Como a nota é emitida (lib/fiscal-modo): sozinha ou pelo pedido, a lista
+  // de formas de cada integração e se a entrega exige o CPF no pedido.
+  "modoDaEmissao",
+  "formasPorIntegracao",
+  "cpfNaEntrega",
 ] as const;
 
 /** Campos que só o responsável pela loja altera — são a identidade fiscal dela. */
@@ -430,6 +442,14 @@ const CAMPOS_DO_TITULAR = new Set<string>([
   "intermediadores",
   "pixEstatico",
   "entregaComoPresencial",
+  // Decidem se a venda tem nota e se o cliente é obrigado a dar o CPF: é o
+  // titular quem escolhe, com o contador — não o balcão. As formas da venda
+  // da loja entraram junto: a tela as mostra na mesma tabela das integrações
+  // ("Como a nota é emitida"), e metade da decisão não pode ser do balcão.
+  "autoEmitPaymentMethods",
+  "modoDaEmissao",
+  "formasPorIntegracao",
+  "cpfNaEntrega",
 ]);
 
 /** Os canais em que a loja pode ajustar o intermediador (lib/fiscal-emissao → intermediadorDoPedido). */
@@ -599,6 +619,19 @@ export function aplicarFormularioFiscal(
       const lido = lerIntermediadores(valor);
       config.intermediadores = lido.valor;
       avisos.push(...lido.avisos);
+      continue;
+    }
+    if (campo === "modoDaEmissao" || campo === "cpfNaEntrega") {
+      const escolha = String(valor ?? "").trim().toLowerCase();
+      const validos = campo === "modoDaEmissao" ? ["automatico", "manual"] : ["obrigatorio", "opcional"];
+      if (validos.includes(escolha)) (config as Record<string, unknown>)[campo] = escolha;
+      else avisos.push(`"${String(valor)}" não é uma opção de ${campo} (vale ${validos.join(" ou ")}) — mantido como estava.`);
+      continue;
+    }
+    if (campo === "formasPorIntegracao") {
+      // Canal fora da lista ou forma desconhecida não entram; o canal que a
+      // tela manda como `null` volta a seguir as vendas da loja.
+      config.formasPorIntegracao = lerFormasPorIntegracao(valor);
       continue;
     }
 

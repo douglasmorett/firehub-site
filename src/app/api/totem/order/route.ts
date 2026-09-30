@@ -9,6 +9,7 @@ import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
 import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
+import { lerDocumentoDoCliente, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +116,15 @@ export async function POST(req: NextRequest) {
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
     }
+
+    // "CPF na nota" (a loja que emite a nota sozinha pergunta — lib/fiscal-modo).
+    // Opcional no totem (é retirada: a nota sai sem destinatário), mas o que
+    // vier tem de ser um documento de verdade: é o destinatário da NFC-e.
+    if (normalizarDocumento(body.customerCpfCnpj)) {
+      const problema = problemaDoDocumento(body.customerCpfCnpj);
+      if (problema) return NextResponse.json({ error: problema }, { status: 400 });
+    }
+    const customerCpfCnpj = lerDocumentoDoCliente(body.customerCpfCnpj);
 
     // A chave vai gravada com o id da loja na frente: o índice é único no
     // sistema inteiro, e sem o prefixo duas lojas com sessões coincidentes
@@ -330,6 +340,7 @@ export async function POST(req: NextRequest) {
             dailyOrderNumber,
             customerName: customerName || `Totem ${licenca.label}`,
             customerPhone: "totem",
+            ...(customerCpfCnpj ? { customerCpfCnpj } : {}),
             deliveryType: "TAKEOUT", // Totem é sempre retirada no balcão
             paymentMethod: formaDePagamentoDoTotem(paymentMethod),
             totalAmount,

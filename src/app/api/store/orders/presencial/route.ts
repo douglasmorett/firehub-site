@@ -9,6 +9,8 @@ import { lerPager } from "@/lib/pager";
 import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
 import { normalizarDocumento, problemaDoDocumento, lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { problemaDoPagerObrigatorio } from "@/lib/balcao-config";
+import { normalizarConfigFiscal } from "@/lib/fiscal-config";
+import { documentoNoPedido, documentoObrigatorioNoPedido } from "@/lib/fiscal-modo";
 import { MENSAGEM_CAIXA_FECHADO, ERRO_CAIXA_FECHADO } from "@/lib/caixa-aberto";
 import { caixaEstaAberto } from "@/lib/caixa-aberto-servidor";
 import { avaliarEntrega, modoDaArea, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
@@ -111,10 +113,22 @@ export async function POST(req: Request) {
     : deliveryType === "DELIVERY" ? "DELIVERY"
     : "BALCAO";
   const configDaLoja = await prisma.user
-    .findUnique({ where: { id: targetFranchiseeId }, select: { balcaoConfig: true } as any })
+    .findUnique({ where: { id: targetFranchiseeId }, select: { balcaoConfig: true, fiscalConfig: true } as any })
     .catch(() => null);
   const problemaNoPager = problemaDoPagerObrigatorio((configDaLoja as any)?.balcaoConfig, tipoDeLancamento, pagerNumber);
   if (problemaNoPager) return NextResponse.json({ error: problemaNoPager }, { status: 400 });
+
+  // CPF/CNPJ na nota da ENTREGA: a loja que emite sozinha pode exigir
+  // (lib/fiscal-modo) — sem ele a SEFAZ não aceita a nota de entrega. A tela
+  // já pede; aqui é a trava de qualquer cliente desta rota. Falha ao ler a
+  // config não trava venda: sem regra, nada é obrigatório.
+  const regraDaNota = documentoNoPedido(normalizarConfigFiscal((configDaLoja as any)?.fiscalConfig));
+  if (!customerCpfCnpj && documentoObrigatorioNoPedido(regraDaNota, { deliveryType, paymentMethod, paymentMethods })) {
+    return NextResponse.json(
+      { error: "Para entrega, a nota fiscal precisa do CPF ou CNPJ do cliente. Pergunte e digite no campo \"CPF/CNPJ na nota\"." },
+      { status: 400 }
+    );
+  }
 
   // ISOLAMENTO ENTRE LOJAS: so aceita produto DESTA loja.
   // O corpo vinha cru — um menuProductId de outra loja entrava no pedido e a

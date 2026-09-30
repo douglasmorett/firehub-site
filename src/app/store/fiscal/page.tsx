@@ -17,6 +17,10 @@ import { mesmoTexto, sugestoesDaReceita, type SugestoesDaReceita } from "@/lib/n
 import {
   avisoComRotulos, camposEmTexto, JUSTIFICATIVA_DO_CANCELAMENTO, OBSERVACAO_DA_DEVOLUCAO, pendenciaEmTexto, rotuloDoCampoFiscal,
 } from "@/lib/textos-da-tela-fiscal";
+import { documentoDeVerdade, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
+import ComoANotaEEmitida from "./ComoANotaEEmitida";
+import { formasEmTexto, modoDaEmissao, type IntegracaoDaNota } from "@/lib/fiscal-modo";
+import { listaDaEmissaoAutomatica } from "@/lib/fiscal-momento";
 
 type FiscalConfig = {
   enabled: boolean;
@@ -74,6 +78,10 @@ type FiscalConfig = {
   intermediadores?: Record<string, { cnpj?: string | null; id?: string | null; ativo?: boolean }> | null;
   pixEstatico?: boolean;
   entregaComoPresencial?: boolean;
+  // ── Como a nota é emitida (ComoANotaEEmitida → lib/fiscal-modo) ──
+  modoDaEmissao?: string;
+  formasPorIntegracao?: Partial<Record<string, string[]>> | null;
+  cpfNaEntrega?: string;
   // ── Emissor próprio (api/store/fiscal → lib/nfce/cadastro-do-emissor) ──
   // Quem transmite de fato: o gravado, ou o padrão (loja nova → "sefaz").
   provedorEfetivo?: "sefaz" | "focusnfe";
@@ -156,6 +164,12 @@ type FiscalOrder = {
   // alertaDoCancelamento): o aviso fica até a nota ser cancelada ou a
   // devolução ser registrada.
   alerta?: { quando: string; origem: string; mensagem: string } | null;
+  /**
+   * Por que o pedido não tem nota, sem ter havido tentativa (lib/fiscal-modo →
+   * porQueSemNota, ou a marca que a automática gravou): emissão à mão, forma
+   * sem nota automática, entrega sem CPF, ainda não é a hora, mesa.
+   */
+  semNota?: { tipo: string; texto: string } | null;
   customerName: string;
   customerCpfCnpj?: string;
   customerPhone?: string;
@@ -205,6 +219,8 @@ const FAQ_ITEMS = [
   // A resposta anterior prometia "NFC-e e NF-e". NF-e (modelo 55) não existe
   // neste módulo — só NFC-e (modelo 65). Prometer na FAQ o que o botão não faz
   // é o mesmo tipo de mentira que o módulo fiscal falso antigo contava.
+  { q: "A nota sai sozinha ou eu preciso emitir?", a: "Você escolhe em Configurações → Como a nota é emitida. Automática: o FireHub emite sozinho nas formas de pagamento que você marcar (uma coluna para as vendas da loja e uma para cada integração, como iFood e 99Food), e o pedido já pergunta o CPF/CNPJ. Manual: nenhuma nota sai sozinha — em Pedidos, clique no 🧾 do pedido, digite o CPF/CNPJ se o cliente quiser e clique em Emitir NFC-e." },
+  { q: "O cliente precisa informar o CPF?", a: "No balcão, na retirada, na mesa e no totem, não: a nota sai sem destinatário, e o CPF é só para quem quiser a nota no nome. Na ENTREGA, sim: a SEFAZ só aceita a nota de entrega com o CPF/CNPJ e o endereço de quem recebe. Por isso a entrega sem documento fica em \"Falta CPF\" — ela não gasta número nem vira erro; se o cliente informar depois, você emite pelo pedido. Na emissão automática dá para tornar o CPF obrigatório na entrega do site, do robô e do balcão." },
   { q: "Preciso contratar um provedor (a Focus NFe) para emitir?", a: "Não. O Emissor do FireHub transmite a NFC-e direto à SEFAZ, com o certificado A1 da própria loja, sem custo por nota. A Focus NFe continua como alternativa para quem já tem conta lá — a escolha fica em Configurações → Quem transmite as notas." },
   { q: "Que tipos de notas podem ser emitidas?", a: "O sistema emite NFC-e (Nota Fiscal de Consumidor Eletrônica, modelo 65) — a nota do consumidor final, para delivery, balcão, mesa e totem. NF-e modelo 55 (para venda a outra empresa) ainda não é emitida por aqui." },
   { q: "Como as recompensas de fidelidade aparecem na nota?", a: "Entram junto com os demais descontos: são rateadas entre os itens na proporção do valor de cada um (vDesc do item) e somam no vDesc do total." },
@@ -217,18 +233,9 @@ const FAQ_ITEMS = [
   { q: "Como fica o campo de Indicador de presença?", a: "Pedido de delivery sai como Entrega a Domicílio (código 4). Retirada, balcão, mesa e totem saem como Operação Presencial (código 1). O CPF do cliente não muda esse campo." },
 ];
 
-const PAYMENT_OPTIONS = [
-  { key: "MONEY", label: "💵 Dinheiro", desc: "Pagamentos em espécie no balcão / entrega" },
-  { key: "PIX", label: "⚡ PIX", desc: "Chave Pix online ou QR Code no balcão" },
-  { key: "CREDIT_CARD", label: "💳 Cartão de Crédito", desc: "Crédito presencial ou online" },
-  { key: "DEBIT_CARD", label: "💳 Cartão de Débito", desc: "Débito maquininha presencial" },
-  { key: "VOUCHER", label: "🎟️ Voucher / Refeição", desc: "VR, VA, Alelo, Sodexo, Ticket" },
-  // Pago antes de o pedido existir aqui: no app do iFood/99Food ou no site
-  // (gateway). Sem esta opção o pedido do iFood pago na carteira ("iFood App
-  // (Pago Online)", 909 pedidos em 30 dias) nunca tinha nota automática —
-  // o servidor já sabia a chave (lib/fiscal-momento → chavesDoPagamento).
-  { key: "ONLINE", label: "🌐 Pago online", desc: "iFood, 99Food, site (pagamento feito no app ou no site)" },
-];
+// As formas de pagamento da emissão automática moraram aqui (PAYMENT_OPTIONS):
+// agora são uma coluna por canal em ComoANotaEEmitida.tsx, com as funções da
+// emissão (lib/fiscal-modo).
 
 /**
  * Cabeçalho de acordeão como BOTÃO: era um <div onClick>, que o teclado não
@@ -240,30 +247,6 @@ const ESTILO_DO_CABECALHO: CSSProperties = {
   width: "100%", padding: "1.2rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between",
   cursor: "pointer", background: "none", border: "none", textAlign: "left", font: "inherit", color: "inherit",
 };
-
-/** Quando a nota sai — os três valores que lib/fiscal-momento lê. */
-const MOMENTOS_DA_EMISSAO = [
-  {
-    valor: "saida",
-    nome: "Na saída (recomendado)",
-    explicacao:
-      "Entrega: quando o pedido sai (botão Saiu, rota despachada, motoboy puxando, despacho do parceiro). Retirada, " +
-      "balcão e totem: na conclusão, quando o cliente leva. É o que a regra pede — NFC-e autorizada antes de a mercadoria sair.",
-  },
-  {
-    valor: "aceite",
-    nome: "No aceite",
-    explicacao:
-      "A nota sai quando a loja aceita o pedido. O mais seguro quanto ao “antes da saída” e o mais caro no cancelamento: " +
-      "pedido cancelado depois dos 30 minutos fica com uma nota que não se cancela mais (devolução com o contador).",
-  },
-  {
-    valor: "conclusao",
-    nome: "Na conclusão",
-    explicacao:
-      "Tudo no ENTREGUE (o comportamento antigo). A nota da entrega sai depois de a comida chegar — só use se o seu contador pedir.",
-  },
-];
 
 /** Os canais em que dá para ajustar o intermediador (lib/fiscal-config → CANAIS_DO_INTERMEDIADOR). */
 const CANAIS_DE_MARKETPLACE = [
@@ -277,6 +260,13 @@ const CANAIS_PROPRIOS = [
 ];
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+
+/**
+ * O documento gravado no pedido, pronto para o campo do modal: com a máscara,
+ * e vazio quando é o "00000000000" que o JotaJá grava sem CPF — que o campo
+ * acusaria de inválido e travaria o Emitir.
+ */
+const documentoParaOModal = (gravado?: string | null) => mascararDocumentoDigitado(documentoDeVerdade(gravado) ?? "");
 
 /**
  * Sugestão ao lado de um campo da empresa que ainda não foi gravado.
@@ -402,6 +392,9 @@ export default function StoreFiscalPage() {
   // nasce com eles, e só o que a loja mudar é gravado.
   const [intermediadoresOficiais, setIntermediadoresOficiais] = useState<Record<string, { nome: string; razaoSocial: string; cnpj: string }>>({});
   const [salvandoRegras, setSalvandoRegras] = useState(false);
+  // As integrações que a loja usa (o GET conta pelos pedidos): a tabela de
+  // formas mostra uma coluna para cada uma.
+  const [integracoesDaLoja, setIntegracoesDaLoja] = useState<IntegracaoDaNota[]>([]);
 
   // Config sub-accordion state
   const [openConfigSection, setOpenConfigSection] = useState<string | null>("dados");
@@ -514,6 +507,7 @@ export default function StoreFiscalPage() {
         setPendenciasFiscais(Array.isArray(data.pendencias) ? data.pendencias : []);
         setPodeEmitir(Boolean(data.podeEmitir));
         setIntermediadoresOficiais(data.intermediadoresOficiais && typeof data.intermediadoresOficiais === "object" ? data.intermediadoresOficiais : {});
+        setIntegracoesDaLoja(Array.isArray(data.integracoesDaLoja) ? data.integracoesDaLoja : []);
         setProntidao(Array.isArray(data.prontidao) ? data.prontidao : null);
         setUfsDoEmissorProprio(Array.isArray(data.ufsDoEmissorProprio) ? data.ufsDoEmissorProprio : []);
       }
@@ -1145,8 +1139,8 @@ ${dados.aviso}` : "")
     }
     setSalvandoRegras(true);
     try {
+      // O momento da emissão saiu daqui: grava em "Como a nota é emitida".
       const r = await gravarCampos({
-        momentoDaEmissao: fiscalConfig.momentoDaEmissao || "saida",
         taxaDeServicoNaNota: fiscalConfig.taxaDeServicoNaNota === true,
         intermediadores,
         pixEstatico: fiscalConfig.pixEstatico === true,
@@ -1350,6 +1344,19 @@ ${dados.aviso}` : "")
      mesmo do módulo falso antigo: meses achando que emitiu, e a descoberta na
      fiscalização. Por isso a faixa é fixa, em todas as abas, e não some. */
   const emHomologacao = Number(fiscalConfig.ambiente) === 2;
+
+  // O documento do modal de emissão: obrigatório na ENTREGA (a nota vai com
+  // presença 4, e a SEFAZ recusa sem CPF/CNPJ — 787), opcional no resto. A
+  // mesa é presencial e a loja que declara a entrega como presencial também.
+  const documentoObrigatorioNoModal = Boolean(
+    selectedOrderForEmit &&
+      !selectedOrderForEmit.tableSessionId &&
+      String(selectedOrderForEmit.deliveryType || "").toUpperCase() === "DELIVERY" &&
+      fiscalConfig.entregaComoPresencial !== true
+  );
+  const problemaNoDocumentoDoModal = problemaDoDocumento(emitCpfInput);
+  const documentoDoModalServe = !problemaNoDocumentoDoModal && (!documentoObrigatorioNoModal || emitCpfInput.trim() !== "");
+
   const AvisoDeHomologacao = () =>
     !emHomologacao ? null : (
       <div style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#FFF7E6", border: "1px solid #FDE68A", borderLeft: "6px solid #B45309", borderRadius: 12 }}>
@@ -1498,8 +1505,13 @@ ${dados.aviso}` : "")
             </h1>
 
             <div className="fiscal-config-grade" style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 24, alignItems: "start" }}>
-              {/* Left Column: Accordion Cards */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* Left Column: Accordion Cards. `minWidth: 0`: sem ele o item da
+                  grade cresce até a largura mínima do conteúdo — a tabela de
+                  formas por canal (Como a nota é emitida) tem 490 px e, no
+                  celular, empurrava a coluna inteira para fora da tela (os
+                  cartões e a grade da numeração cortados à direita). Com ele,
+                  a tabela rola dentro da caixa dela. */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
 
                 {/* Emissão de NFC-e: liga/desliga e ambiente, sempre à vista.
                     O erro de emissão sempre mandou "ligar em Fiscal →
@@ -1790,7 +1802,10 @@ ${dados.aviso}` : "")
                   )}
                 </div>
 
-                {/* Accordion 2: Configurações Fiscais Gerais */}
+                {/* Accordion 2: Como a nota é emitida (lib/fiscal-modo). Era
+                    "Configurações fiscais gerais", só com as formas de
+                    pagamento: agora é a escolha automática × manual, uma
+                    coluna de formas por canal, o momento e o CPF da entrega. */}
                 <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
                   <button
                     type="button"
@@ -1803,33 +1818,26 @@ ${dados.aviso}` : "")
                       <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#F0FDFA", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <Check size={20} color="#0F766E" />
                       </div>
-                      <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>Configurações fiscais gerais</span>
+                      <div>
+                        <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B", display: "block" }}>Como a nota é emitida</span>
+                        <span style={{ fontSize: "0.75rem", color: "#64748B" }}>
+                          {modoDaEmissao(fiscalConfig) === "manual"
+                            ? "Manual — você emite pelo pedido"
+                            : `Automática — ${formasEmTexto(listaDaEmissaoAutomatica(fiscalConfig.autoEmitPaymentMethods)) || "nenhuma forma marcada"}`}
+                        </span>
+                      </div>
                     </div>
                     <ChevronRight aria-hidden size={18} color="#94A3B8" style={{ transform: openConfigSection === "gerais" ? "rotate(90deg)" : "none", transition: "0.2s" }} />
                   </button>
 
                   {openConfigSection === "gerais" && (
                     <div id="fiscal-secao-gerais" style={{ padding: "0 1.5rem 1.5rem", borderTop: "1px solid #F1F5F9" }}>
-                      <p style={{ fontSize: "0.82rem", color: "#64748B", marginTop: 12 }}>Selecione as formas de pagamento com emissão automática de NFC-e (basta uma forma do pedido estar marcada — no pagamento dividido a nota é da venda inteira):</p>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-                        {PAYMENT_OPTIONS.map(pm => {
-                          const active = fiscalConfig.autoEmitPaymentMethods.includes(pm.key);
-                          return (
-                            <label key={pm.key} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 }}>
-                              <input type="checkbox" checked={active} onChange={() => {
-                                const next = active ? fiscalConfig.autoEmitPaymentMethods.filter(k => k !== pm.key) : [...fiscalConfig.autoEmitPaymentMethods, pm.key];
-                                // Só este campo: antes o clique no checkbox gravava o
-                                // formulário inteiro, com o que estivesse meio digitado.
-                                setFiscalConfig(p => ({ ...p, autoEmitPaymentMethods: next }));
-                                gravarCampos({ autoEmitPaymentMethods: next }).then(r => {
-                                  if (!r.ok) explicarRecusa(r.dados, "Não consegui salvar as formas de pagamento.");
-                                });
-                              }} style={{ accentColor: "#1C1917", width: 16, height: 16 }} />
-                              {pm.label} — <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 400 }}>{pm.desc}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
+                      <ComoANotaEEmitida
+                        config={fiscalConfig}
+                        integracoesDaLoja={integracoesDaLoja}
+                        podeMudar={ehTitular}
+                        aoSalvar={gravarCampos}
+                      />
                     </div>
                   )}
                 </div>
@@ -1852,7 +1860,7 @@ ${dados.aviso}` : "")
                       </div>
                       <div>
                         <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B", display: "block" }}>Regras da nota</span>
-                        <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Quando a nota sai, taxa de serviço, marketplaces, Pix e entrega</span>
+                        <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Taxa de serviço, marketplaces, Pix e entrega</span>
                       </div>
                     </div>
                     <ChevronRight aria-hidden size={18} color="#94A3B8" style={{ transform: openConfigSection === "regras" ? "rotate(90deg)" : "none", transition: "0.2s" }} />
@@ -1868,22 +1876,9 @@ ${dados.aviso}` : "")
                     return (
                       <div id="fiscal-secao-regras" style={{ padding: "0 1.5rem 1.5rem", borderTop: "1px solid #F1F5F9" }}>
                         <fieldset disabled={!ehTitular} style={{ border: "none", padding: 0, margin: 0, minWidth: 0 }}>
-                          <legend style={rotulo}>Quando a nota sai</legend>
-                          {MOMENTOS_DA_EMISSAO.map(m => (
-                            <label key={m.valor} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 8, cursor: "pointer", fontSize: "0.82rem", fontWeight: 600, color: "#334155" }}>
-                              <input
-                                type="radio"
-                                name="fiscal-momento-da-emissao"
-                                checked={(fiscalConfig.momentoDaEmissao || "saida") === m.valor}
-                                onChange={() => setFiscalConfig(p => ({ ...p, momentoDaEmissao: m.valor }))}
-                                style={{ accentColor: "#1C1917", marginTop: 3 }}
-                              />
-                              <span>{m.nome}<span style={ajuda}>{m.explicacao}</span></span>
-                            </label>
-                          ))}
-                          <p style={{ ...ajuda, marginTop: 8 }}>Mesa: sempre uma nota por CONTA, no fechamento — as rodadas não têm nota própria.</p>
-
-                          <span style={rotulo}>Taxa de serviço da mesa</span>
+                          {/* "Quando a nota sai" mudou para "Como a nota é emitida":
+                              só vale na emissão automática, e é lá que ela se escolhe. */}
+                          <legend style={rotulo}>Taxa de serviço da mesa</legend>
                           <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", fontSize: "0.82rem", fontWeight: 600, color: "#334155" }}>
                             <input type="checkbox" checked={fiscalConfig.taxaDeServicoNaNota === true} onChange={e => setFiscalConfig(p => ({ ...p, taxaDeServicoNaNota: e.target.checked }))} style={{ accentColor: "#1C1917", width: 16, height: 16, marginTop: 2 }} />
                             <span>
@@ -2728,6 +2723,10 @@ ${dados.aviso}` : "")
                     const isPedidoCancelado = order.orderStatus === "CANCELADO";
                     // Contingência: EMITTED (o DANFE vale e aparece), marcada à parte.
                     const isContingencia = isEmitted && order.fiscalInfo?.contingencia === true;
+                    // Sem nota e sem tentativa: o porquê (lib/fiscal-modo). A entrega
+                    // sem CPF tem rótulo próprio — não é falha, é o dado que falta.
+                    const semNota = !isEmitted && !isProcessing && !isFailed && !isNotaCancelada && !isPedidoCancelado ? order.semNota ?? null : null;
+                    const faltaCpf = semNota?.tipo === "falta_documento";
                     const daMesa = Boolean(order.tableSessionId);
                     const devolucao = isEmitted ? order.fiscalInfo?.devolucao ?? null : null;
                     const emittedAtStr = order.fiscalInfo?.emittedAt
@@ -2780,15 +2779,21 @@ ${dados.aviso}` : "")
                             }
                             style={{
                               fontSize: "0.7rem", fontWeight: 700, padding: "3px 8px", borderRadius: 6,
-                              background: isHomologacao || isContingencia ? "#FFF7E6" : isEmitted ? "#F0FDFA" : isProcessing ? "#FFF7E6" : isFailed ? "#FEE2E2" : "#F1F5F9",
-                              color: isHomologacao || isContingencia ? "#92400E" : isEmitted ? "#0F766E" : isProcessing ? "#B45309" : isFailed ? "#B71C1C" : "#64748B",
+                              background: isHomologacao || isContingencia || faltaCpf ? "#FFF7E6" : isEmitted ? "#F0FDFA" : isProcessing ? "#FFF7E6" : isFailed ? "#FEE2E2" : "#F1F5F9",
+                              color: isHomologacao || isContingencia || faltaCpf ? "#92400E" : isEmitted ? "#0F766E" : isProcessing ? "#B45309" : isFailed ? "#B71C1C" : "#64748B",
                             }}
                           >
                             {isHomologacao ? "TESTE — sem valor fiscal"
                               : isContingencia ? "Contingência — aguardando SEFAZ"
                               : isEmitted ? (devolucao ? "Autorizada · devolução registrada" : "Autorizada")
-                              : isNotaCancelada ? "Nota cancelada" : isProcessing ? "Processando" : isFailed ? "Falhou" : "Não emitida"}
+                              : isNotaCancelada ? "Nota cancelada" : isProcessing ? "Processando" : isFailed ? "Falhou"
+                              : faltaCpf ? "Falta CPF" : semNota?.tipo === "aguardando" ? "Aguardando" : "Não emitida"}
                           </span>
+                          {semNota && semNota.tipo !== "mesa" && (
+                            <span style={{ display: "block", fontSize: "0.68rem", color: faltaCpf ? "#92400E" : "#64748B", marginTop: 4, maxWidth: 240, marginInline: "auto", lineHeight: 1.35 }}>
+                              {semNota.texto}
+                            </span>
+                          )}
                           {isContingencia && (
                             <span style={{ display: "block", fontSize: "0.68rem", color: "#92400E", marginTop: 4, maxWidth: 220, marginInline: "auto", lineHeight: 1.35 }}>
                               Vale para o cliente (imprima o DANFE); a SEFAZ ainda vai receber — a consulta automática acompanha.
@@ -2838,7 +2843,7 @@ ${dados.aviso}` : "")
                             // pedido continua valendo: sai uma nota NOVA, com número e
                             // ref novos; a cancelada fica guardada para o contador.
                             <button
-                              onClick={() => { setSelectedOrderForEmit(order); setEmitCpfInput(order.customerCpfCnpj || ""); }}
+                              onClick={() => { setSelectedOrderForEmit(order); setEmitCpfInput(documentoParaOModal(order.customerCpfCnpj)); }}
                               title={`Nota ${order.fiscalInfo?.nfceNumber ? `nº ${order.fiscalInfo.nfceNumber} ` : ""}cancelada. Emitir uma nova NFC-e para este pedido.`}
                               style={{ background: "#fff", border: "1px solid #94A3B8", color: "#334155", borderRadius: 6, padding: "4px 8px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer" }}
                             >
@@ -2863,12 +2868,12 @@ ${dados.aviso}` : "")
                             // (api/store/fiscal/emitir → emitirNfceDaMesa manual). Com a
                             // conta aberta não há nota a emitir ainda.
                             <button
-                              onClick={() => { setSelectedOrderForEmit(order); setEmitCpfInput(order.customerCpfCnpj || ""); }}
+                              onClick={() => { setSelectedOrderForEmit(order); setEmitCpfInput(documentoParaOModal(order.customerCpfCnpj)); }}
                               disabled={daMesa && order.mesa ? !order.mesa.contaFechada : false}
                               title={daMesa ? (order.mesa && !order.mesa.contaFechada ? "A conta desta mesa ainda está aberta: feche em Mesas para emitir a nota da conta." : "Emite UMA nota para a conta inteira da mesa (todas as rodadas).") : undefined}
                               style={{ background: "#FAF6F2", border: "1px solid #1C1917", color: "#1C1917", borderRadius: 6, padding: "4px 8px", fontSize: "0.75rem", fontWeight: 700, cursor: daMesa && order.mesa && !order.mesa.contaFechada ? "not-allowed" : "pointer", opacity: daMesa && order.mesa && !order.mesa.contaFechada ? 0.5 : 1 }}
                             >
-                              {daMesa ? "Emitir nota da conta" : "Emitir"}
+                              {daMesa ? "Emitir nota da conta" : faltaCpf ? "Emitir com CPF" : "Emitir"}
                             </button>
                           )}
                         </td>
@@ -3162,9 +3167,13 @@ ${dados.aviso}` : "")
                 Pedido com NFC-e autorizada fica travado para editar e cancelar. A nota só cancela enquanto a mercadoria não saiu e em até 30 minutos da autorização; depois disso a devolução é com o contador — e você registra aqui para liberar o pedido.
               </div>
 
-              {/* Alert 2: Laranja */}
+              {/* Alert 2: Laranja. Dizia "informar o CPF é opcional" para
+                  qualquer pedido — na entrega não é: sem CPF/CNPJ a SEFAZ
+                  recusa a nota (787/788) e a pessoa só descobria no erro. */}
               <div style={{ background: "#FFF4EF", border: "1px solid #FFD3C2", borderRadius: 10, padding: "12px", marginBottom: 16, fontSize: "0.82rem", color: "#9A3412", lineHeight: 1.4 }}>
-                Pedido de <strong>delivery</strong> sai na nota como <strong>entrega a domicílio</strong>; retirada, balcão, mesa e totem saem como <strong>operação presencial</strong>. Informar o CPF do cliente é opcional, mas é o que permite a ele usar a nota depois.
+                {documentoObrigatorioNoModal
+                  ? <>Pedido de <strong>entrega</strong>: a SEFAZ só aceita a nota com o <strong>CPF ou CNPJ</strong> e o endereço do cliente. Pergunte ao cliente e digite abaixo — sem o documento, a nota da entrega não sai.</>
+                  : <>Retirada, balcão, mesa e totem saem como <strong>operação presencial</strong>: o CPF/CNPJ é <strong>opcional</strong>. Informe se o cliente pedir — é o que permite a ele usar a nota depois.</>}
               </div>
 
               <p style={{ fontSize: "0.9rem", color: "#1E293B", margin: "0 0 16px", lineHeight: 1.5 }}>
@@ -3173,23 +3182,33 @@ ${dados.aviso}` : "")
                   : <>Emissão da <strong>NFC-e</strong> do pedido <strong>{selectedOrderForEmit.dailyOrderNumber}</strong> no valor de <strong>{fmt(selectedOrderForEmit.totalAmount)}</strong> feito no dia</>} <strong>{new Date(selectedOrderForEmit.createdAt).toLocaleDateString("pt-BR")} às {new Date(selectedOrderForEmit.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</strong>
               </p>
 
-              {/* CPF / CNPJ Input (Roxo) */}
+              {/* CPF / CNPJ — obrigatório só na entrega. O número é conferido
+                  enquanto se digita: errado, a SEFAZ recusaria depois. */}
               <div style={{ marginBottom: 20 }}>
-                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#1C1917", display: "block", marginBottom: 4 }}>CPF/CNPJ na nota</label>
+                <label htmlFor="fiscal-emitir-documento" style={{ fontSize: "0.75rem", fontWeight: 700, color: "#1C1917", display: "block", marginBottom: 4 }}>
+                  {documentoObrigatorioNoModal ? "CPF ou CNPJ do cliente (obrigatório na entrega)" : "CPF ou CNPJ na nota (opcional)"}
+                </label>
                 <input
+                  id="fiscal-emitir-documento"
                   value={emitCpfInput}
-                  onChange={e => setEmitCpfInput(e.target.value)}
-                  placeholder="Deixe em branco caso não queira informar"
-                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "2px solid #1C1917", fontSize: "0.88rem", outline: "none" }}
+                  onChange={e => setEmitCpfInput(mascararDocumentoDigitado(e.target.value))}
+                  inputMode="numeric"
+                  placeholder={documentoObrigatorioNoModal ? "Digite o CPF ou CNPJ do cliente" : "Deixe em branco se o cliente não quiser"}
+                  aria-describedby="fiscal-emitir-documento-ajuda"
+                  aria-invalid={Boolean(problemaNoDocumentoDoModal)}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `2px solid ${problemaNoDocumentoDoModal ? "#B71C1C" : "#1C1917"}`, fontSize: "0.88rem", outline: "none" }}
                 />
+                <span id="fiscal-emitir-documento-ajuda" style={{ display: "block", fontSize: "0.72rem", marginTop: 4, color: problemaNoDocumentoDoModal ? "#B71C1C" : "#64748B" }}>
+                  {problemaNoDocumentoDoModal || (documentoObrigatorioNoModal && !emitCpfInput.trim() ? "Sem o documento a nota da entrega não sai." : " ")}
+                </span>
               </div>
 
               {/* Footer Buttons */}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button onClick={() => handleEmitSingle(true)} disabled={emitting} style={{ padding: "10px 16px", borderRadius: 8, border: "1.5px solid #1C1917", background: "#fff", color: "#1C1917", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                <button onClick={() => handleEmitSingle(true)} disabled={emitting || !documentoDoModalServe} style={{ padding: "10px 16px", borderRadius: 8, border: "1.5px solid #1C1917", background: "#fff", color: "#1C1917", fontWeight: 700, fontSize: "0.85rem", cursor: documentoDoModalServe ? "pointer" : "not-allowed", opacity: documentoDoModalServe ? 1 : 0.5 }}>
                   EMITIR E IMPRIMIR
                 </button>
-                <button onClick={() => handleEmitSingle(false)} disabled={emitting} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: "#1C1917", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                <button onClick={() => handleEmitSingle(false)} disabled={emitting || !documentoDoModalServe} style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: "#1C1917", color: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: documentoDoModalServe ? "pointer" : "not-allowed", opacity: documentoDoModalServe ? 1 : 0.5 }}>
                   {emitting ? "EMITINDO..." : "EMITIR"}
                 </button>
               </div>

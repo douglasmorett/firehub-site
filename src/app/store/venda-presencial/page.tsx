@@ -10,6 +10,7 @@ import {
 import {
   lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento, tipoDoDocumento,
 } from "@/lib/documento-do-cliente";
+import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPedido } from "@/lib/fiscal-modo";
 import {
   BALCAO_CONFIG_PADRAO, numeroDaMesaEhObrigatorio, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
 } from "@/lib/balcao-config";
@@ -57,6 +58,8 @@ export default function VendaPresencialPage() {
   const [paymentConfig, setPaymentConfig] = useState<any>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("BALCAO");
+  // O CPF/CNPJ na nota fiscal da loja que emite sozinha (lib/fiscal-modo).
+  const [regraDaNota, setRegraDaNota] = useState<DocumentoNoPedido>(DOCUMENTO_NAO_PEDIDO);
   const [tableNum, setTableNum] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -106,6 +109,12 @@ export default function VendaPresencialPage() {
     // a rota do pedido, que lê a mesma regra do banco.
     fetch("/api/store-settings/balcao").then(r => r.ok ? r.json() : null)
       .then(d => d && setBalcaoConfig({ pagerObrigatorioBalcao: d.pagerObrigatorioBalcao === true, pagerObrigatorioMesa: d.pagerObrigatorioMesa === true }))
+      .catch(() => { /* fica no padrão */ });
+    // A nota fiscal (lib/fiscal-modo): a loja que emite sozinha pergunta o
+    // CPF/CNPJ também na ENTREGA, e pode exigi-lo. Falhou? Fica como antes:
+    // o campo só no balcão, nada obrigatório — a rota do pedido confere.
+    fetch("/api/store/fiscal/nota-do-pedido").then(r => r.ok ? r.json() : null)
+      .then(d => d?.documentoNoPedido && setRegraDaNota(d.documentoNoPedido))
       .catch(() => { /* fica no padrão */ });
   }, []);
 
@@ -384,6 +393,16 @@ export default function VendaPresencialPage() {
   const somaPartes = Math.round(partes.reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
   const faltaDividir = Math.round((total - somaPartes) * 100) / 100;
   const parteDinheiro = Math.round(partes.filter(p => p.metodo === "Dinheiro").reduce((s, p) => s + valorDaParte(p), 0) * 100) / 100;
+  // A entrega em que a loja exige o CPF/CNPJ na nota (lib/fiscal-modo): quem
+  // decide é a forma — no pagamento dividido, basta uma parte com nota.
+  const documentoObrigatorioAqui = documentoObrigatorioNoPedido(regraDaNota, {
+    deliveryType: orderType,
+    paymentMethod,
+    paymentMethods: dividir ? partes.filter(p => valorDaParte(p) > 0).map(p => ({ method: p.metodo, amount: valorDaParte(p) })) : null,
+  });
+  // O campo aparece no balcão (como sempre) e, na loja que emite a nota
+  // sozinha, também na entrega: o atendente está com o cliente no telefone.
+  const mostrarDocumento = orderType === "BALCAO" || (regraDaNota.perguntar && orderType === "DELIVERY");
   const limparDesconto = () => { setDesconto(SEM_DESCONTO); setMostrarDesconto(false); };
 
   const ligarDivisao = (ligar: boolean) => {
@@ -468,6 +487,11 @@ export default function VendaPresencialPage() {
     // destinatário da NFC-e depois (lib/documento-do-cliente.ts).
     const problemaNoDocumento = problemaDoDocumento(documento);
     if (problemaNoDocumento) return setMsg(`❌ ${problemaNoDocumento}`);
+    // Na entrega, a loja que emite sozinha pode exigir: sem o documento a
+    // SEFAZ não aceita a nota da entrega (lib/fiscal-modo).
+    if (documentoObrigatorioAqui && !lerDocumentoDoCliente(documento)) {
+      return setMsg("❌ Para entrega, a nota fiscal precisa do CPF ou CNPJ do cliente — pergunte e digite no campo \"CPF/CNPJ na nota\".");
+    }
     // Pager obrigatório, se a loja marcou (lib/balcao-config.ts). A mesma
     // função roda na rota do pedido — aqui é para o atendente ver antes de
     // montar o carrinho inteiro, não é a trava.
@@ -953,22 +977,24 @@ export default function VendaPresencialPage() {
           })()}
 
           {/* ── "CPF NA NOTA" ────────────────────────────────────────────────
-              Só no BALCÃO: é ali que o cliente está na frente do atendente e
-              pede. Em mesa e delivery o pedido é lançado sem a pessoa por
-              perto, e um campo a mais só atrasaria quem digita endereço.
+              No BALCÃO: é ali que o cliente está na frente do atendente e
+              pede. Na ENTREGA só quando a loja emite a nota sozinha
+              (lib/fiscal-modo): aí a nota da entrega precisa do documento,
+              e a loja pode exigir. Na mesa, não — a nota é da conta.
 
               Vazio por padrão — quem não pede, não digita, e nada muda. Quem
               digita vê o documento sair na comanda impressa, e o pedido chega
               na emissão da NFC-e com o destinatário já preenchido. */}
-          {orderType === "BALCAO" && (
+          {mostrarDocumento && (
             <div style={{ marginTop: 6 }}>
               <input
-                placeholder="CPF/CNPJ na nota (opcional)"
+                placeholder={documentoObrigatorioAqui ? "CPF/CNPJ na nota (obrigatório na entrega)" : "CPF/CNPJ na nota (opcional)"}
+                aria-label={documentoObrigatorioAqui ? "CPF ou CNPJ na nota, obrigatório na entrega" : "CPF ou CNPJ na nota, opcional"}
                 value={documento}
                 onChange={e => setDocumento(mascararDocumentoDigitado(e.target.value))}
                 inputMode="numeric"
                 style={{ width: "100%", padding: "7px 10px", borderRadius: 8,
-                  border: `1.5px solid ${problemaDoDocumento(documento) ? "#C92E09" : documento.trim() ? "#44403C" : "#E2E8F0"}`,
+                  border: `1.5px solid ${problemaDoDocumento(documento) ? "#C92E09" : documento.trim() ? "#44403C" : documentoObrigatorioAqui ? "#B45309" : "#E2E8F0"}`,
                   background: problemaDoDocumento(documento) ? "#FEF2F2" : documento.trim() ? "#FAF6F2" : "#FFF",
                   fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: documento.trim() ? 800 : 400 }}
               />

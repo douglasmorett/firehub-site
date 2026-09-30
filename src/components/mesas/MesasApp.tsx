@@ -12,6 +12,7 @@ import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 import { impressorasDaContaNoAndar, lerAndares, numerosDaFaixa, type AndarDaMesa } from "@/lib/andares-da-mesa";
 import { numeroDaMesa } from "@/lib/mesa-na-comanda";
+import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
@@ -90,6 +91,8 @@ interface ContaDividida {
     itens: { nome: string; quantidade: number; valor: number }[];
   }[];
   porIgual: number;
+  /** "CPF na nota?" no fechamento (lib/fiscal-modo) — a loja que emite sozinha. */
+  notaFiscal?: { perguntar: boolean };
 }
 
 interface SessionDetail {
@@ -395,6 +398,8 @@ export default function MesasApp({
   // Quem está pedindo agora. null = "é da mesa" (couvert, entrada para dividir).
   const [pessoaAtiva, setPessoaAtiva] = useState<string | null>(null);
   const [conta, setConta] = useState<ContaDividida | null>(null);
+  // CPF/CNPJ na nota da conta — opcional, só na loja que emite a nota sozinha.
+  const [documentoDaConta, setDocumentoDaConta] = useState("");
   const [carregandoConta, setCarregandoConta] = useState(false);
   /** Baixas já gravadas no servidor para esta mesa. */
   const [pagamentosDaMesa, setPagamentosDaMesa] = useState<PagamentoDaMesa[]>([]);
@@ -1055,6 +1060,7 @@ export default function MesasApp({
     }
     setShowCloseModal(true);
     setValorPagamento("");
+    setDocumentoDaConta("");
     await Promise.all([
       carregarConta(sessionId, useServiceFee ? taxa : 0, Number(waiterTip) || 0),
       carregarPagamentos(sessionId),
@@ -1068,6 +1074,13 @@ export default function MesasApp({
     // e deixa a mensagem mais clara para quem está com o cliente na frente.
     if (faltaPagar > 0.01) {
       showToast(`⚠️ Ainda faltam ${fmt(faltaPagar)} para fechar a mesa`);
+      return;
+    }
+    // O CPF da nota é opcional, mas digitado errado não fecha: seria o
+    // destinatário da nota da conta, recusado pela SEFAZ depois.
+    const problemaNoCpf = conta?.notaFiscal?.perguntar ? problemaDoDocumento(documentoDaConta) : null;
+    if (problemaNoCpf) {
+      showToast(`❌ ${problemaNoCpf}`);
       return;
     }
 
@@ -1084,7 +1097,9 @@ export default function MesasApp({
           serviceFeePercent: useServiceFee ? serviceFee : 0,
           waiterTip,
           // O servidor recalcula do tipo e do valor — nunca aceita o número pronto.
-          desconto: descontoDaMesa > 0 ? desconto : null
+          desconto: descontoDaMesa > 0 ? desconto : null,
+          // "CPF na nota" da conta (opcional): vai para a nota da mesa.
+          cpfCnpj: conta?.notaFiscal?.perguntar ? lerDocumentoDoCliente(documentoDaConta) : null,
         }),
       });
       if (res.ok) {
@@ -3300,6 +3315,28 @@ export default function MesasApp({
                 }}>
                   <span>{troco > 0.01 ? "💵 Troco" : "✅ Conta fechada"}</span>
                   <span>{troco > 0.01 ? fmt(troco) : fmt(totalRecebido)}</span>
+                </div>
+              )}
+
+              {/* "CPF na nota?" — só na loja que emite a nota sozinha (Fiscal →
+                  Como a nota é emitida). Opcional: a mesa é presencial e a nota
+                  da conta sai sem destinatário. */}
+              {conta?.notaFiscal?.perguntar && (
+                <div style={{ marginBottom: 10 }}>
+                  <input
+                    value={documentoDaConta}
+                    onChange={e => setDocumentoDaConta(mascararDocumentoDigitado(e.target.value))}
+                    inputMode="numeric"
+                    placeholder="CPF/CNPJ na nota (opcional)"
+                    aria-label="CPF ou CNPJ na nota da conta, opcional"
+                    style={{
+                      width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, fontSize: 14, fontFamily: "inherit",
+                      border: `1.5px solid ${problemaDoDocumento(documentoDaConta) ? "#C92E09" : "#CBD5E1"}`, outline: "none",
+                    }}
+                  />
+                  {problemaDoDocumento(documentoDaConta) && (
+                    <div style={{ fontSize: 11, color: "#B71C1C", fontWeight: 700, marginTop: 3 }}>{problemaDoDocumento(documentoDaConta)}</div>
+                  )}
                 </div>
               )}
 

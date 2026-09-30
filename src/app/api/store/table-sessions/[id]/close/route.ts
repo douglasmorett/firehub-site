@@ -5,6 +5,7 @@ import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 import { sanearTaxa } from "@/lib/conta-da-mesa";
+import { lerDocumentoDoCliente, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 
 /** Último degrau da taxa sugerida — o mesmo da conta impressa (imprimir-conta). */
 const TAXA_PADRAO = 10;
@@ -41,6 +42,14 @@ export async function POST(
 
     const data = await req.json();
     const { paymentMethods, serviceFeePercent, waiterTip, desconto } = data;
+    // "CPF na nota" do fechamento (opcional). O que vier tem de ser documento
+    // de verdade: é o destinatário da nota da conta (lib/fiscal-momento →
+    // montarNotaDaMesa, que lê o primeiro documento entre os pedidos).
+    if (normalizarDocumento(data.cpfCnpj)) {
+      const problema = problemaDoDocumento(data.cpfCnpj);
+      if (problema) return NextResponse.json({ error: problema, mensagem: problema }, { status: 400 });
+    }
+    const documentoDaConta = lerDocumentoDoCliente(data.cpfCnpj);
     // Garçom sem "pode dar desconto" no cadastro: o botão nem aparece para
     // ele, e um desconto que chegue mesmo assim não fecha a mesa.
     if (operador.tipo === "garcom" && !operador.garcom.podeDarDesconto && Number(desconto?.valor) > 0) {
@@ -208,6 +217,13 @@ export async function POST(
     // desconto vai junto porque a sessão não tem onde guardá-lo.
     // Fire-and-forget: a mesa fecha na hora e a nota que falhar aparece como
     // "Falhou" na aba Notas fiscais.
+    // O documento vai para TODOS os pedidos da conta antes da nota: é de lá
+    // que a nota da conta o lê, e a reemissão pela tela lê o mesmo.
+    if (documentoDaConta) {
+      await prisma.customerOrder
+        .updateMany({ where: { tableSessionId: id, franchiseeId: targetFranchiseeId }, data: { customerCpfCnpj: documentoDaConta } })
+        .catch((err) => console.error("[Table Sessions Close] CPF da nota não gravado:", err?.message));
+    }
     import("@/lib/fiscal-automatico")
       .then(({ emitirNfceDaMesa }) => emitirNfceDaMesa(id, { desconto: descontoEmReais }))
       .catch((err) => console.error("[Table Sessions Close] Erro ao disparar NFC-e da conta:", err?.message));

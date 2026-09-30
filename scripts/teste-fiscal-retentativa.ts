@@ -845,6 +845,91 @@ async function main() {
   const guarda = rotaDoCron.indexOf("motivoParaOCronFiscalNaoRodar(process.env)");
   confere("a rota confere antes de rodar a retentativa", guarda > 0 && guarda < rotaDoCron.indexOf("await retentarNotasFiscais("), true);
 
+  // ── 16. Como a nota é emitida (lib/fiscal-modo) ───────────────────────────
+  // A escolha do módulo: automática com uma lista de formas por integração,
+  // ou manual (nada sai sozinho). E a entrega sem CPF, que a SEFAZ recusa
+  // (787): na automática ela não vai, não gasta número e não vira "Falhou".
+  console.log("\n— Como a nota é emitida: modo, formas por integração e entrega sem CPF —");
+  const MODO = "loja-modo";
+  const configDoModo: Record<string, any> = {
+    ...db.user[0].fiscalConfig,
+    intermediadores: {},
+    autoEmitPaymentMethods: ["PIX"],
+    formasPorIntegracao: { IFOOD: ["ONLINE"] },
+  };
+  db.user.push({ id: MODO, ifoodMerchantId: "merchant-modo", food99MerchantId: null, fiscalConfig: configDoModo });
+  const doModo = (p: Partial<Linha>) => pedido({ franchiseeId: MODO, createdAt: haMin(20), ...p });
+  const chamouOProvedor = (id: string) => chamadas.some((c) => c.ref === `firehub-${id}` && c.metodo === "POST");
+
+  const balcaoPix = doModo({ source: "BALCAO", paymentMethod: "Pix" });
+  const balcaoDinheiro = doModo({ source: "BALCAO", paymentMethod: "Dinheiro" });
+  const ifoodOnline = doModo({ source: "IFOOD", ifoodOrderId: "if-1", paymentMethod: "iFood App (Pago Online)" });
+  const ifoodPix = doModo({ source: "IFOOD", ifoodOrderId: "if-2", paymentMethod: "Pix (Cobrar na entrega)" });
+  for (const p of [balcaoPix, balcaoDinheiro, ifoodOnline, ifoodPix]) respostas.set(`firehub-${p.id}`, "autoriza");
+  const rBalcaoPix = await emitirNfceAutomatica(balcaoPix.id);
+  const rBalcaoDinheiro = await emitirNfceAutomatica(balcaoDinheiro.id);
+  const rIfoodOnline = await emitirNfceAutomatica(ifoodOnline.id);
+  const rIfoodPix = await emitirNfceAutomatica(ifoodPix.id);
+  confere("vendas da loja seguem a lista da loja: Pix sai, Dinheiro não", [rBalcaoPix.acao, rBalcaoDinheiro.acao, rBalcaoDinheiro.foraDaAutomatica], ["emitida", "ignorado", true]);
+  confere("o iFood segue a lista DELE: pago online sai, Pix na entrega não", [rIfoodOnline.acao, rIfoodPix.acao, rIfoodPix.motivo.includes("do iFood")], ["emitida", "ignorado", true]);
+
+  // A varredura usa a mesma lista por canal.
+  const esquecidoIfood = doModo({ source: "IFOOD", ifoodOrderId: "if-3", paymentMethod: "iFood App (Pago Online)" });
+  const esquecidoDinheiro = doModo({ source: "BALCAO", paymentMethod: "Dinheiro" });
+  respostas.set(`firehub-${esquecidoIfood.id}`, "autoriza");
+  respostas.set(`firehub-${esquecidoDinheiro.id}`, "autoriza");
+  const { emitirNotasEsquecidas } = await import("../src/lib/fiscal-automatico");
+  await emitirNotasEsquecidas({ franchiseeId: MODO });
+  confere("varredura: o iFood pago online esquecido sai; o dinheiro do balcão fica", [doPedido(esquecidoIfood.id).fiscalStatus, chamouOProvedor(esquecidoDinheiro.id)], ["EMITTED", false]);
+
+  // Entrega sem CPF: não vai ao provedor e não vira FAILED.
+  const entrega = (p: Partial<Linha>) =>
+    doModo({ source: "SITE", deliveryType: "DELIVERY", status: "SAIU_ENTREGA", paymentMethod: "Pix", customerName: "Maria Souza", customerAddress: "Rua das Flores, 100 - Centro", ...p });
+  const entregaSemCpf = entrega({});
+  const entregaZeros = entrega({ customerCpfCnpj: "00000000000" });
+  const entregaComCpf = entrega({ customerCpfCnpj: "52998224725" });
+  for (const p of [entregaSemCpf, entregaZeros, entregaComCpf]) respostas.set(`firehub-${p.id}`, "autoriza");
+  const rSemCpf = await emitirNfceAutomatica(entregaSemCpf.id);
+  const rZeros = await emitirNfceAutomatica(entregaZeros.id);
+  const rComCpf = await emitirNfceAutomatica(entregaComCpf.id);
+  confere(
+    "entrega sem CPF: fora da automática, sem provedor, PENDING com a marca \"falta documento\"",
+    [rSemCpf.acao, rSemCpf.foraDaAutomatica, chamouOProvedor(entregaSemCpf.id), doPedido(entregaSemCpf.id).fiscalStatus, doPedido(entregaSemCpf.id).fiscalInfo?.semNotaAutomatica?.falta],
+    ["ignorado", true, false, "PENDING", "documento"]
+  );
+  confere("o 00000000000 do JotaJá é sem CPF (falta, não inválido)", [rZeros.acao, doPedido(entregaZeros.id).fiscalInfo?.semNotaAutomatica?.falta], ["ignorado", "documento"]);
+  confere("entrega com CPF sai", [rComCpf.acao, doPedido(entregaComCpf.id).fiscalStatus], ["emitida", "EMITTED"]);
+  const antesDaVarredura = chamadas.length;
+  await emitirNotasEsquecidas({ franchiseeId: MODO });
+  confere("a varredura não volta à entrega marcada sem CPF", chamadas.slice(antesDaVarredura).some((c) => c.ref === `firehub-${entregaSemCpf.id}`), false);
+
+  // Manual: nada sai sozinho — nem pelo gancho, nem pela varredura, nem a
+  // retentativa de um clique que falhou por comunicação.
+  configDoModo.modoDaEmissao = "manual";
+  const manualPix = doModo({ source: "BALCAO", paymentMethod: "Pix" });
+  const manualFalhou = doModo({
+    source: "BALCAO", paymentMethod: "Pix", fiscalStatus: "FAILED",
+    fiscalInfo: { motivo: "erro_de_comunicacao", ultimaTentativaEm: haMin(10).toISOString(), ultimoErro: "fora", tentativaAutomatica: false },
+  });
+  respostas.set(`firehub-${manualPix.id}`, "autoriza");
+  respostas.set(`firehub-${manualFalhou.id}`, "autoriza");
+  const rNoModoManual = await emitirNfceAutomatica(manualPix.id);
+  confere("manual: o gancho de status não emite (fora da automática)", [rNoModoManual.acao, rNoModoManual.foraDaAutomatica, chamouOProvedor(manualPix.id)], ["ignorado", true, false]);
+  confere("manual: a varredura não emite", await emitirNotasEsquecidas({ franchiseeId: MODO }), 0);
+  await retentarNotasFiscais({ orcamentoMs: 60_000 });
+  confere(
+    "manual: a retentativa encerra o clique que falhou, com o motivo (a pessoa emite de novo pelo pedido)",
+    [chamouOProvedor(manualFalhou.id), doPedido(manualFalhou.id).fiscalInfo.retentativaEncerrada, String(doPedido(manualFalhou.id).fiscalInfo.motivoDoFimDaRetentativa).includes("à mão")],
+    [false, true, true]
+  );
+  const fonte = readFileSync(join(process.cwd(), "src", "lib", "fiscal-automatico.ts"), "utf8");
+  const daMesa = fonte.slice(fonte.indexOf("export async function emitirNfceDaMesa("));
+  confere(
+    "manual: a conta da mesa só sai pelo clique (a guarda vem antes da lista de formas)",
+    daMesa.indexOf('modoDaEmissao(config) === "manual"') > 0 && daMesa.indexOf('modoDaEmissao(config) === "manual"') < daMesa.indexOf("formaEntraNaAutomatica(chavesDaConta("),
+    true
+  );
+
   console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
   if (falhas > 0) process.exit(1);
 }

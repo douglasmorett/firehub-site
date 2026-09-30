@@ -8,6 +8,8 @@ import { slugAtualDeUmAntigo } from "@/lib/slug-da-loja";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio";
+import { normalizarConfigFiscal } from "@/lib/fiscal-config";
+import { documentoNoPedido } from "@/lib/fiscal-modo";
 
 export const revalidate = 60; // ⚡ Cache de Borda (Edge) de 60 segundos
 
@@ -113,6 +115,13 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
     if (atual) redirect(`/loja/${atual}`);
     notFound();
   }
+
+  // O CPF/CNPJ na nota fiscal (lib/fiscal-modo → documentoNoPedido): só a
+  // regra pública vai para o cardápio. Lido À PARTE de propósito — o
+  // fiscalConfig tem tokens cifrados e o caminho do certificado, e o
+  // `franchisee` do select de cima vai inteiro para o HTML.
+  const fiscal = await prisma.user.findUnique({ where: { id: franchisee.id }, select: { fiscalConfig: true } }).catch(() => null);
+  const notaFiscal = documentoNoPedido(normalizarConfigFiscal(fiscal?.fiscalConfig));
 
   const showReviews = (franchisee as any).showReviewsOnMenu !== false;
   const avaliacoesQueEntram = filtroDoCardapio(minimoDeEstrelas((franchisee as any).reviewsMinStars));
@@ -264,6 +273,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
         // (lib/campanha-converter.ts). Cupom cadastrado à mão com o mesmo
         // código continua valendo o dele.
         storeCoupons: cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty),
+        notaFiscal,
       } as any}
       menuProducts={menuComPrecoDoCanal as any}
       storeCategories={storeCategories as any}

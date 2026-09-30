@@ -39,6 +39,9 @@ import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmerge
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
+import { DOCUMENTO_NAO_PEDIDO, documentoNoPedido, formasEmTexto, type DocumentoNoPedido } from "./fiscal-modo";
+import { normalizarConfigFiscal } from "./fiscal-config";
+import { lerDocumentoDoCliente } from "./documento-do-cliente";
 import { conferirEstoque, estoqueDaLojaOuVazio } from "./estoque-restante";
 import { STATUS_QUE_NAO_CONTAM } from "./estoque-do-cardapio";
 import { marcarAguardandoLoja } from "./finalizar-rascunho";
@@ -395,6 +398,16 @@ export async function processChatbotAI(
   const prazoDaLoja = prazoParaORobo((user as any).deliveryZones);
 
   const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
+  // O CPF/CNPJ na nota fiscal (lib/fiscal-modo): a loja que emite a nota
+  // sozinha pergunta no pedido — e o robô é pedido. Lido do DONO, à parte:
+  // o fiscalConfig tem segredo e não entra no select de cima (que também vai
+  // para o rascunho). Falhou a leitura? O robô não pergunta, como antes.
+  const regraDaNota: DocumentoNoPedido = aiOrderingEnabled
+    ? await prisma.user
+        .findUnique({ where: { id: targetFranchiseeId }, select: { fiscalConfig: true } })
+        .then((u) => documentoNoPedido(normalizarConfigFiscal(u?.fiscalConfig)))
+        .catch(() => DOCUMENTO_NAO_PEDIDO)
+    : DOCUMENTO_NAO_PEDIDO;
   const personality = chatbotConfig.personality || "SIMPATICO";
   const customPrompt = (chatbotConfig.customPrompt || chatbotConfig.customInstructions || "").trim();
   // Nome do atendente sai da configuração do chatbot da própria loja. Sem nome
@@ -1386,7 +1399,13 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
     - CAMPOS DO PEDIDO ALÉM DOS ITENS: se o pagamento for em dinheiro e o cliente disser para quanto precisa de troco,
       inclua "changeFor": 50 (a NOTA que ele vai entregar, não o valor do troco). Observação geral do pedido
       ("portão azul", "interfone quebrado, ligar ao chegar") vai em "observation": "...".
-    - ENDEREÇO EM PARTES: em pedido de ENTREGA, além de "address" (o endereço completo), mande também "street" (rua),
+${regraDaNota.perguntar ? `    - CPF/CNPJ NA NOTA FISCAL: esta loja emite nota fiscal de cada pedido. Junto com o que falta para fechar, pergunte
+      "Quer CPF ou CNPJ na nota?".${regraDaNota.obrigatorioNaEntrega
+        ? ` Em pedido de ENTREGA pago em ${formasEmTexto(regraDaNota.formas)}, o documento é OBRIGATÓRIO: sem ele NÃO feche o
+      pedido — explique "para entrega, a nota fiscal precisa do CPF ou CNPJ de quem recebe". Na retirada, é opcional.`
+        : " É opcional: se o cliente não quiser, siga sem."}
+      Quando o cliente informar, mande na tag "cpfCnpj": "só os dígitos". Nunca invente nem repita o CPF de outra conversa.
+` : ""}    - ENDEREÇO EM PARTES: em pedido de ENTREGA, além de "address" (o endereço completo), mande também "street" (rua),
       "number" (número) e "neighborhood" (bairro) separados, do jeito que o cliente disse. É com eles que o sistema acha a
       casa no mapa e calcula a taxa certa — no texto corrido o mapa muitas vezes só acha o bairro.
     - TIPO DO PEDIDO: mande sempre "deliveryType": "DELIVERY" (entrega) ou "deliveryType": "RETIRADA" (o cliente
@@ -3254,6 +3273,11 @@ async function syncAiOrderToDatabase({
     }
   } catch (_) { /* medir nunca pode impedir a gravação do pedido */ }
 
+  // CPF/CNPJ na nota (lib/fiscal-modo): só o documento que fecha os dígitos
+  // verificadores entra — o que o modelo errou fica de fora, e a loja pede de
+  // novo na emissão. Tag sem o campo não apaga o que o rascunho já tinha.
+  const documentoDaTag = lerDocumentoDoCliente(payload.cpfCnpj ?? payload.cpf ?? payload.documento ?? payload.customerCpfCnpj);
+
   // Troco e observação do PEDIDO (lib/item-do-robo.ts). O prompt manda perguntar
   // o troco desde sempre, e a tag nem tinha onde colocá-lo: `changeAmount` nunca
   // era escrito, e o motoboy saía sem saber que nota o cliente ia dar.
@@ -3327,6 +3351,7 @@ async function syncAiOrderToDatabase({
         customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || existingDraft.customerAddress || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null,
         paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
+        ...(documentoDaTag ? { customerCpfCnpj: documentoDaTag } : {}),
         changeAmount: trocoParaGravar,
         deliveryFee: deliveryFee,
         // Sem isto o rascunho ficava com o tipo da PRIMEIRA mensagem, gravado
@@ -3376,6 +3401,7 @@ async function syncAiOrderToDatabase({
         customerPhone: formattedCustomerPhone,
         customerAddress: payload.address || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null,
         paymentMethod: payload.paymentMethod || null,
+        ...(documentoDaTag ? { customerCpfCnpj: documentoDaTag } : {}),
         changeAmount: trocoParaGravar,
         deliveryFee: deliveryFee,
         totalAmount: totalOrderAmount,

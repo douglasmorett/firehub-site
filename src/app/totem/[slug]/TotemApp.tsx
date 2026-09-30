@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, precoDaOpcaoNaTela } from "@/lib/preco-combo";
+import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TOTEM DE AUTOATENDIMENTO
@@ -123,6 +124,7 @@ type Tela =
   | "CARDAPIO"
   | "CARRINHO"
   | "NOME"
+  | "DOCUMENTO"
   | "PAGAMENTO"
   | "ENVIANDO"
   | "MAQUININHA"
@@ -547,6 +549,45 @@ const LINHA_ACENTOS = ["Á", "À", "Â", "Ã", "É", "Ê", "Í", "Ó", "Ô", "Õ
  */
 const LINHA_PONTUACAO = [",", ".", "-", "/"];
 
+/**
+ * Teclado de números do "CPF na nota?". O TecladoVirtual é de letras (o nome),
+ * e CPF/CNPJ só tem dígitos: 0–9, apagar e limpar, com o mesmo alvo de toque.
+ */
+function TecladoNumerico({ texto, onTexto, maxLen }: { texto: string; onTexto: (novo: string) => void; maxLen: number }) {
+  const tecla: React.CSSProperties = {
+    height: ALVO_TOQUE + 16,
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 14,
+    color: "white",
+    fontSize: 32,
+    fontWeight: 800,
+    cursor: "pointer",
+  };
+  const noLimite = texto.length >= maxLen;
+  const digitar = (d: string) => {
+    if (!noLimite) onTexto(texto + d);
+  };
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, width: "100%", maxWidth: 480 }}>
+      {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+        <button key={d} type="button" onClick={() => digitar(d)} style={noLimite ? { ...tecla, opacity: 0.4 } : tecla}>
+          {d}
+        </button>
+      ))}
+      <button type="button" onClick={() => onTexto("")} style={{ ...tecla, fontSize: 20 }} aria-label="Limpar">
+        Limpar
+      </button>
+      <button type="button" onClick={() => digitar("0")} style={noLimite ? { ...tecla, opacity: 0.4 } : tecla}>
+        0
+      </button>
+      <button type="button" onClick={() => onTexto(texto.slice(0, -1))} style={{ ...tecla, fontSize: 20 }} aria-label="Apagar">
+        {"⌫"}
+      </button>
+    </div>
+  );
+}
+
 function TecladoVirtual({
   texto,
   onTexto,
@@ -786,6 +827,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
   const [carrinho, setCarrinho] = useState<ItemDoCarrinho[]>([]);
   const [nomeDoCliente, setNomeDoCliente] = useState("");
+  // "CPF na nota?" — só na loja que emite a nota sozinha (lib/fiscal-modo);
+  // a regra vem do /api/totem/auth. Dígitos, sem máscara.
+  const [documentoDoCliente, setDocumentoDoCliente] = useState("");
+  const [perguntarDocumento, setPerguntarDocumento] = useState(false);
   const [observacao, setObservacao] = useState("");
 
   const [comboAberto, setComboAberto] = useState<Produto | null>(null);
@@ -913,6 +958,8 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   const reiniciarSessao = useCallback(() => {
     setCarrinho([]);
     setNomeDoCliente("");
+    // O CPF é o dado que MENOS pode sobrar para o próximo cliente.
+    setDocumentoDoCliente("");
     setObservacao("");
     setBusca("");
     setComboAberto(null);
@@ -1004,6 +1051,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         mensagem: auth.dados?.store?.config?.welcomeMessage || null,
       });
       setMaquininha(extrairMaquininha(auth.dados));
+      setPerguntarDocumento(auth.dados?.store?.notaFiscal?.perguntar === true);
 
       // O totem abre com a LICENÇA dele, não com o horário do delivery.
       //
@@ -1197,7 +1245,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
    * o aviso aparece na hora de concluir.
    */
   useEffect(() => {
-    const emVenda = tela === "CARDAPIO" || tela === "CARRINHO" || tela === "NOME" || tela === "PAGAMENTO";
+    const emVenda = tela === "CARDAPIO" || tela === "CARRINHO" || tela === "NOME" || tela === "DOCUMENTO" || tela === "PAGAMENTO";
     if (!lojaAberta && emVenda) {
       setCarrinho([]);
       setComboAberto(null);
@@ -1225,10 +1273,11 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     tela === "CARDAPIO" ||
     tela === "CARRINHO" ||
     tela === "NOME" ||
+    tela === "DOCUMENTO" ||
     tela === "PAGAMENTO" ||
     (tela === "MAQUININHA" && pagamentoEncerrado);
   const temAlgoAPerder =
-    carrinho.length > 0 || nomeDoCliente.length > 0 || busca.length > 0 || comboAberto !== null || observacao.length > 0;
+    carrinho.length > 0 || nomeDoCliente.length > 0 || documentoDoCliente.length > 0 || busca.length > 0 || comboAberto !== null || observacao.length > 0;
 
   /**
    * O cliente que foi chamar o atendente NÃO está inativo — ele está fazendo
@@ -1491,6 +1540,8 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
             // O teclado do quiosque só tem caixa alta: sem isto a comanda e a
             // chamada da senha saem "JOÃO".
             customerName: nomeProprio(nomeDoCliente.trim()) || "Cliente Totem",
+            // "CPF na nota" — só o documento válido vai (a tela já barra o errado).
+            customerCpfCnpj: lerDocumentoDoCliente(documentoDoCliente) || undefined,
             notes: observacao.trim() || undefined,
             paymentMethod: formaDePagamento,
             items: carrinho.map((i) => ({
@@ -2917,10 +2968,85 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
           <button
             type="button"
             disabled={!nomeDoCliente.trim()}
-            onClick={() => setTela("PAGAMENTO")}
+            onClick={() => setTela(perguntarDocumento ? "DOCUMENTO" : "PAGAMENTO")}
             style={{ ...botaoPrimario, width: "100%", minHeight: 84, fontSize: 26, opacity: nomeDoCliente.trim() ? 1 : 0.45 }}
           >
             Ir para o pagamento <ChevronRight size={32} />
+          </button>
+        </div>
+
+        {sobreposicoes}
+      </div>
+    );
+  }
+
+  /* ──────────────────────────── TELA: DOCUMENTO ──────────────────────────── */
+
+  // "CPF na nota?" — só na loja que emite a nota sozinha (Fiscal → Como a nota
+  // é emitida → Automática). Opcional: o totem é retirada, a nota sai sem
+  // destinatário; com o documento, o cliente usa a nota depois. "Pular" vem
+  // primeiro de propósito — a maioria não quer.
+  if (tela === "DOCUMENTO") {
+    const problema = problemaDoDocumento(documentoDoCliente);
+    const mostrado = mascararDocumentoDigitado(documentoDoCliente);
+    return (
+      <div style={telaEscura}>
+        <div style={{ padding: "20px 28px", display: "flex", alignItems: "center", gap: 16 }}>
+          <button type="button" onClick={() => setTela("NOME")} style={botaoVoltar} aria-label="Voltar ao nome">
+            <ArrowLeft size={30} />
+          </button>
+          <div style={{ flex: 1 }} />
+          {botaoCancelarPedido}
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", padding: 28 }}>
+          <div style={{ margin: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 24, width: "100%" }}>
+            <h2 style={{ fontSize: 40, fontWeight: 800, margin: 0, textAlign: "center" }}>CPF ou CNPJ na nota?</h2>
+            <p style={{ fontSize: 20, color: "#94A3B8", margin: 0, textAlign: "center" }}>
+              É opcional. Se não quiser, toque em Pular.
+            </p>
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 560,
+                background: "rgba(255,255,255,0.06)",
+                borderRadius: 20,
+                padding: "22px 28px",
+                fontSize: 40,
+                fontWeight: 800,
+                textAlign: "center",
+                minHeight: 100,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                letterSpacing: 1,
+                border: problema ? "2px solid #F87171" : "2px solid transparent",
+              }}
+            >
+              {mostrado || <span style={{ color: "rgba(255,255,255,0.2)" }}>000.000.000-00</span>}
+            </div>
+            <p aria-live="polite" style={{ fontSize: 20, color: problema ? "#FCA5A5" : "#94A3B8", margin: 0, textAlign: "center", minHeight: 28 }}>
+              {problema || (documentoDoCliente.length === 14 ? "CNPJ" : documentoDoCliente.length === 11 ? "CPF" : "")}
+            </p>
+            <TecladoNumerico texto={documentoDoCliente} onTexto={(t) => setDocumentoDoCliente(t.slice(0, 14))} maxLen={14} />
+          </div>
+        </div>
+
+        <div style={{ padding: 24, background: "#1E293B", display: "flex", gap: 16 }}>
+          <button
+            type="button"
+            onClick={() => { setDocumentoDoCliente(""); setTela("PAGAMENTO"); }}
+            style={{ ...botaoPrimario, flex: 1, minHeight: 84, fontSize: 26 }}
+          >
+            Pular
+          </button>
+          <button
+            type="button"
+            disabled={!documentoDoCliente || Boolean(problema)}
+            onClick={() => setTela("PAGAMENTO")}
+            style={{ ...botaoPrimario, flex: 1, minHeight: 84, fontSize: 26, opacity: documentoDoCliente && !problema ? 1 : 0.45 }}
+          >
+            Usar este <ChevronRight size={32} />
           </button>
         </div>
 
@@ -2946,7 +3072,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     return (
       <div style={telaEscura}>
         <div style={{ padding: "20px 28px", display: "flex", alignItems: "center", gap: 16, borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-          <button type="button" onClick={() => setTela("NOME")} style={botaoVoltar} aria-label="Voltar">
+          <button type="button" onClick={() => setTela(perguntarDocumento ? "DOCUMENTO" : "NOME")} style={botaoVoltar} aria-label="Voltar">
             <ArrowLeft size={30} />
           </button>
           <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, flex: 1 }}>Como deseja pagar?</h1>

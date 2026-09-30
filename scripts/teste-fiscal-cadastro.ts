@@ -291,9 +291,16 @@ console.log("\n— aplicarFormularioFiscal");
   confere("provisionada: e a resposta avisa", cscManual.avisos.length, 1);
   confere("provisionada: o `cscId: \"\"` que a tela manda em todo Salvar passa calado", ok(gravar(PROVISIONADA(SO_HOMOLOGACAO), { cscId: "", razaoSocial: "X" })).avisos, []);
 
-  // STAFF salva o operacional, não a identidade fiscal nem o liga/desliga.
+  // STAFF salva o operacional, não a identidade fiscal nem o liga/desliga —
+  // e, desde a escolha "Como a nota é emitida" (30/09/2026), nem as formas
+  // da emissão automática: a tela as mostra na mesma tabela das integrações,
+  // e metade da decisão não pode ser do balcão.
   const staff = ok(gravar({ ...EMITENTE }, { enabled: true, cnpj: "55878184000189", autoEmitPaymentMethods: ["PIX"] }, "STAFF"));
-  confere("STAFF: não liga; CNPJ igual não conta como recusado; formas gravadas", [staff.config.enabled, staff.recusados, staff.config.autoEmitPaymentMethods], [undefined, ["enabled"], ["PIX"]]);
+  confere("STAFF: não liga; CNPJ igual não conta como recusado; formas ficam como a tela mostrou", [staff.config.enabled, staff.recusados, staff.config.autoEmitPaymentMethods], [undefined, ["enabled", "autoEmitPaymentMethods"], [...FORMAS_AUTOMATICAS_PADRAO]]);
+  const staffSemMudar = ok(gravar({ ...EMITENTE, autoEmitPaymentMethods: ["PIX"] }, { autoEmitPaymentMethods: ["PIX"], razaoSocial: EMITENTE.razaoSocial }, "STAFF"));
+  confere("STAFF: mandar a lista que a tela mostrou não conta como recusado", staffSemMudar.recusados, []);
+  const staffModo = ok(gravar({ ...EMITENTE }, { modoDaEmissao: "manual", cpfNaEntrega: "obrigatorio", formasPorIntegracao: { IFOOD: ["ONLINE"] } }, "STAFF"));
+  confere("STAFF: modo, CPF da entrega e formas das integrações são do titular", [staffModo.recusados, staffModo.config.modoDaEmissao, staffModo.config.cpfNaEntrega, staffModo.config.formasPorIntegracao], [["modoDaEmissao", "formasPorIntegracao", "cpfNaEntrega"], undefined, undefined, undefined]);
   confere("campo fora da lista não entra", "inventado" in ok(gravar({}, { inventado: 1 })).config, false);
   confere("o carimbo não vem do corpo", ok(gravar({}, { emissaoLigadaEm: "2020-01-01" })).config.emissaoLigadaEm, undefined);
 }

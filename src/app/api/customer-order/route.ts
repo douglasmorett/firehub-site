@@ -29,7 +29,10 @@ import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
 import { efeitoDoPremio } from "@/lib/trilha-premiada";
-import { cpfValido } from "@/lib/fiscal-validacao";
+import { cpfValido, documentoValido } from "@/lib/fiscal-validacao";
+import { normalizarConfigFiscal } from "@/lib/fiscal-config";
+import { documentoNoPedido, documentoObrigatorioNoPedido } from "@/lib/fiscal-modo";
+import { normalizarDocumento } from "@/lib/documento-do-cliente";
 import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 
 /**
@@ -80,6 +83,9 @@ export async function POST(req: Request) {
         deliveryZones: true, deliveryZoneType: true, storeLatLng: true, storeAddress: true, city: true,
         // Pix e cartão pelo site na conta Asaas da loja (lib/pix-online.ts).
         pixOnlineAtivo: true, cartaoOnlineAtivo: true, asaasChaveCifrada: true,
+        // O CPF/CNPJ na nota fiscal (lib/fiscal-modo): a loja que emite
+        // sozinha pode exigir o documento na entrega. Só o servidor lê.
+        fiscalConfig: true,
       }
     });
     if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
@@ -111,6 +117,26 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
+    }
+
+    // ── CPF/CNPJ NA NOTA FISCAL ─────────────────────────────────────────────
+    // A loja que emite a nota sozinha pergunta o documento no cardápio e pode
+    // exigi-lo na entrega (lib/fiscal-modo): a SEFAZ não aceita a nota de
+    // entrega sem ele. A regra é a MESMA do cardápio — a tela avisa antes, e o
+    // POST direto (ou a aba antiga) ouve a mesma coisa daqui. Documento
+    // errado não entra: seria rejeição certa na hora da nota. Antes só o CPF
+    // de quem paga pelo Asaas chegava aqui; agora o CNPJ também vale.
+    const documentoDigitado = normalizarDocumento(body.customerCpfCnpj);
+    const documentoDoCliente = documentoValido(documentoDigitado) ? documentoDigitado : null;
+    if (documentoDigitado && !documentoDoCliente) {
+      return NextResponse.json({ error: "O CPF/CNPJ informado para a nota fiscal não confere. Confira os números." }, { status: 400 });
+    }
+    const regraDaNota = documentoNoPedido(normalizarConfigFiscal(franchisee.fiscalConfig));
+    if (!documentoDoCliente && documentoObrigatorioNoPedido(regraDaNota, { deliveryType, paymentMethod })) {
+      return NextResponse.json(
+        { error: "Para entrega, a nota fiscal precisa do CPF ou CNPJ de quem recebe. Informe o documento para fechar o pedido." },
+        { status: 400 }
+      );
     }
 
     // Validar se agendamento está desativado
@@ -724,7 +750,9 @@ export async function POST(req: Request) {
         // ou quando a loja não usa GA4: o disparo simplesmente não acontece.
         // CPF de quem paga: o Pix pelo site exige; em qualquer forma ele vai
         // para a nota fiscal (NFC-e de entrega pede CPF). Só grava se válido.
-        customerCpfCnpj: cpfValido(cpfDoPagador) ? cpfDoPagador : null,
+        // O CPF de quem paga pelo Asaas, ou o CPF/CNPJ que o cliente pediu
+        // na nota — já conferido acima.
+        customerCpfCnpj: documentoDoCliente,
         gaClientId: typeof body.gaClientId === "string" ? body.gaClientId.slice(0, 64) : null,
         gaSessionId: typeof body.gaSessionId === "string" ? body.gaSessionId.slice(0, 32) : null,
         items: { create: orderItems }

@@ -61,6 +61,9 @@ export const ROTULO_DO_CAMPO_FISCAL: Readonly<Record<string, string>> = {
   cfopPadrao: "CFOP padrão",
   csosnPadrao: "CSOSN padrão",
   autoEmitPaymentMethods: "Formas de pagamento da emissão automática",
+  modoDaEmissao: "Como a nota é emitida (automática ou manual)",
+  formasPorIntegracao: "Formas com nota automática nas integrações",
+  cpfNaEntrega: "CPF/CNPJ obrigatório na entrega",
   // ── Cadastro na Focus (lib/focus-empresas → conferirPedidoDeCadastro) ──
   senhaCertificado: "Senha do certificado",
   "csc.homologacao": "CSC de homologação",

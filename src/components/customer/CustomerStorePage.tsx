@@ -52,6 +52,8 @@ import FileiraDeDestaques from "./FileiraDeDestaques";
 import CapaDaLoja from "./CapaDaLoja";
 import { lerTrilha, nomeDoPremio } from "@/lib/trilha-premiada";
 import { cpfValido } from "@/lib/fiscal-validacao";
+import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPedido } from "@/lib/fiscal-modo";
+import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
@@ -206,6 +208,11 @@ type Franchisee = {
   /** Pix e cartão pelo site, na conta Asaas da loja (lib/pix-online.ts). */
   pixOnlineAtivo?: boolean;
   cartaoOnlineAtivo?: boolean;
+  /**
+   * O CPF/CNPJ na nota fiscal (lib/fiscal-modo → documentoNoPedido): só a
+   * regra pública — a config fiscal da loja NUNCA vem para o cardápio.
+   */
+  notaFiscal?: DocumentoNoPedido;
 };
 
 type StoreRating = {
@@ -290,11 +297,14 @@ export default function CustomerStorePage({
   const [cpfDoPagador, setCpfDoPagador] = useState("");
   // O CPF lembrado neste aparelho (lerCpfLembrado) já entra preenchido.
   const [cpfLembrado, setCpfLembrado] = useState("");
+  // CPF/CNPJ na nota fiscal, quando a loja emite sozinha (franchisee.notaFiscal).
+  const [documentoNaNota, setDocumentoNaNota] = useState("");
   useEffect(() => {
     const cpf = lerCpfLembrado();
     if (!cpf) return;
     setCpfLembrado(cpf);
     setCpfDoPagador((atual) => atual || formatarCpf(cpf));
+    setDocumentoNaNota((atual) => atual || mascararDocumentoDigitado(cpf));
   }, []);
   // Os avisos da página, em pop-up — era alert() do navegador.
   const { avisar, perguntar, avisoNaTela } = useAvisoDoCardapio();
@@ -302,6 +312,13 @@ export default function CustomerStorePage({
   const pagaPeloAsaas =
     (paymentMethod === "PIX" && franchisee.pixOnlineAtivo === true) ||
     (paymentMethod === "CREDITO_ONLINE" && cartaoPeloAsaas);
+  // A nota fiscal: a loja que emite sozinha pergunta o CPF/CNPJ, e pode
+  // obrigar na entrega paga numa forma com nota automática (sem ele a SEFAZ
+  // não aceita a nota de entrega). Quem paga pelo Asaas já digita o CPF de
+  // quem paga — é ele que vai na nota, e o campo não se repete.
+  const notaFiscal = franchisee.notaFiscal ?? DOCUMENTO_NAO_PEDIDO;
+  const documentoObrigatorio = documentoObrigatorioNoPedido(notaFiscal, { deliveryType, paymentMethod });
+  const perguntarDocumento = notaFiscal.perguntar && !pagaPeloAsaas;
   // "Troco para quanto?" — sem isso o motoboy chega sem troco e a entrega
   // trava na porta. Vazio = não precisa de troco.
   const [trocoPara, setTrocoPara] = useState("");
@@ -2024,6 +2041,17 @@ export default function CustomerStorePage({
       });
       return;
     }
+    if (perguntarDocumento && (problemaDoDocumento(documentoNaNota) || (documentoObrigatorio && !normalizarDocumento(documentoNaNota)))) {
+      const digitou = normalizarDocumento(documentoNaNota).length > 0;
+      avisar({
+        titulo: digitou ? "Esse CPF/CNPJ não confere" : "Falta o CPF ou CNPJ da nota fiscal",
+        texto: digitou
+          ? problemaDoDocumento(documentoNaNota) || "Confira os números."
+          : "Para entrega, a nota fiscal precisa do CPF ou CNPJ de quem recebe.",
+        campo: "checkout-documento",
+      });
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/customer-order", {
@@ -2049,7 +2077,11 @@ export default function CustomerStorePage({
           customerNeighborhood: customerNeighborhood || null,
           deliveryType, paymentMethod, notes,
           // CPF de quem paga (Pix pelo site exige; também vai na nota fiscal).
-          customerCpfCnpj: pagaPeloAsaas ? cpfDoPagador.replace(/\D/g, "") || null : null,
+          customerCpfCnpj: pagaPeloAsaas
+            ? cpfDoPagador.replace(/\D/g, "") || null
+            : perguntarDocumento
+              ? normalizarDocumento(documentoNaNota) || null
+              : null,
           // Troco em dinheiro: vai para a cozinha/motoboy junto do pedido.
           changeAmount: (() => {
             if (paymentMethod !== "DINHEIRO" || !trocoPara.trim()) return null;
@@ -2075,6 +2107,9 @@ export default function CustomerStorePage({
         if (pagaPeloAsaas) {
           lembrarCpf(cpfDoPagador);
           setCpfLembrado(cpfDoPagador.replace(/\D/g, ""));
+        } else if (perguntarDocumento && normalizarDocumento(documentoNaNota).length === 11) {
+          // O CPF da nota também fica lembrado (CNPJ não: é o da empresa).
+          lembrarCpf(documentoNaNota);
         }
         // A venda para o Pixel e o GA4. Pedido pago na entrega registra agora;
         // pedido com Pix pelo site só quando o Pix cai (onPaid do modal) —
@@ -3421,6 +3456,40 @@ export default function CustomerStorePage({
                 </div>
               )}
             </div>
+
+            {/* ── CPF/CNPJ NA NOTA FISCAL ─────────────────────────────────
+                Só na loja que emite a nota sozinha (Fiscal → Como a nota é
+                emitida → Automática). Na entrega ela pode obrigar: sem o
+                documento a SEFAZ não aceita a nota de entrega. */}
+            {perguntarDocumento && (
+              <div>
+                <label className="checkout-label" htmlFor="checkout-documento">
+                  CPF ou CNPJ na nota fiscal{" "}
+                  {documentoObrigatorio
+                    ? <span style={{ color: "#DC2626" }}>(obrigatório na entrega)</span>
+                    : <span style={{ fontWeight: 500, color: "#64748B" }}>(opcional)</span>}
+                </label>
+                <input
+                  id="checkout-documento"
+                  data-campo="checkout-documento"
+                  className="checkout-input"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={documentoNaNota}
+                  onChange={e => setDocumentoNaNota(mascararDocumentoDigitado(e.target.value))}
+                  placeholder="000.000.000-00"
+                  maxLength={18}
+                  aria-invalid={Boolean(problemaDoDocumento(documentoNaNota))}
+                />
+                <div style={{ fontSize: "0.72rem", marginTop: "4px", fontWeight: problemaDoDocumento(documentoNaNota) ? 600 : 400, color: problemaDoDocumento(documentoNaNota) ? "#DC2626" : "#64748B" }}>
+                  {problemaDoDocumento(documentoNaNota) ||
+                    (documentoObrigatorio
+                      ? "Para entrega, a nota fiscal precisa do CPF ou CNPJ de quem recebe."
+                      : "Preencha se quiser a nota no seu CPF ou CNPJ.")}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="checkout-label">Observações do Pedido</label>

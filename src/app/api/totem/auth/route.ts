@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem, ipDaRequisicao } from "@/lib/totem-auth";
+import { normalizarConfigFiscal } from "@/lib/fiscal-config";
+import { documentoNoPedido } from "@/lib/fiscal-modo";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +58,9 @@ export async function POST(req: NextRequest) {
               totemConfig: true,
               storeHours: true,
               paymentFees: true,
+              // Só para a regra do CPF na nota (lib/fiscal-modo); o
+              // fiscalConfig em si não sai daqui.
+              fiscalConfig: true,
             },
           },
         },
@@ -80,6 +85,9 @@ export async function POST(req: NextRequest) {
         config: loja.totemConfig,
         hours: loja.storeHours,
         paymentFees: loja.paymentFees,
+        // A loja que emite a nota sozinha pergunta "CPF na nota?" antes do
+        // pagamento (lib/fiscal-modo). Só a regra — nunca a config fiscal.
+        notaFiscal: documentoNoPedido(normalizarConfigFiscal(loja.fiscalConfig)),
       },
     });
   } catch (err) {

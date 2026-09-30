@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
-import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil, Volume2, UtensilsCrossed, Bike } from "lucide-react";
+import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil, Volume2, UtensilsCrossed, Bike, Receipt } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import { lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { ESTADOS_DE_ENTREGADOR_IFOOD } from "@/lib/entrega-parceira";
@@ -28,6 +28,7 @@ import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperando
 import { motivoDeAguardarLoja } from "@/lib/finalizar-rascunho";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
+import NotaFiscalDoPedido, { NotaFiscalDaLojaProvider, useNotaFiscalDaLoja } from "@/components/customer/NotaFiscalDoPedido";
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
 import { PALETA } from "@/lib/paleta-brasa";
 
@@ -577,6 +578,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   // roteirização — onde se monta rota e é preciso saber o que é cada pino sem
   // clicar em todos (RoteirizacaoModal, popupDoPedido no mouseover).
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.NOVO;
+  // A loja emite NFC-e? Só então o card ganha o 🧾 (NotaFiscalDoPedido).
+  const notaDaLoja = useNotaFiscalDaLoja();
   const elapsedMs = now.getTime() - new Date(order.createdAt).getTime();
   const elapsedMins = Math.max(0, Math.floor(elapsedMs / 60000));
 
@@ -1283,6 +1286,24 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               <FileText size={15} />
             </button>
 
+            {/* 🧾 A nota fiscal do pedido: abre o Ver pedido já no painel da
+                nota, com o cursor no CPF. É o "clicar no pedido e emitir" da
+                emissão manual (Fiscal → Como a nota é emitida). Verde quando a
+                nota já saiu. Só com a emissão ligada. */}
+            {notaDaLoja?.ligada && order.status !== "CRIANDO_IA" && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  onOpenReceiptModal && onOpenReceiptModal(order.id, { nota: true });
+                }}
+                title={order.fiscalStatus === "EMITTED" ? "Nota fiscal emitida — ver ou reimprimir o cupom" : "Nota fiscal (NFC-e): emitir, com o CPF/CNPJ do cliente"}
+                aria-label={order.fiscalStatus === "EMITTED" ? "Nota fiscal emitida" : "Emitir nota fiscal"}
+                style={{ ...BOTAO_ICONE, color: order.fiscalStatus === "EMITTED" ? "#15803D" : BOTAO_ICONE.color }}
+              >
+                <Receipt size={15} />
+              </button>
+            )}
+
             {/* ── O LÁPIS: editar sem passar pela comanda ──────────────────
                 A mesma régua da aba dentro do modal (lib/edicao-de-pedido.ts):
                 quem não pode editar não vê o lápis, em vez de ver um lápis que
@@ -1807,6 +1828,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
   const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
   const [viewReceiptOrderId, setViewReceiptOrderId] = useState<string | null>(null);
+  // Veio pelo 🧾 do card: o Ver pedido abre focado na nota fiscal.
+  const [focarNotaFiscal, setFocarNotaFiscal] = useState(false);
   /** O rascunho do robô ("IA criando…") que a loja está finalizando à mão. */
   const [rascunhoParaFinalizar, setRascunhoParaFinalizar] = useState<string | null>(null);
   /** Avisos "Pedido do WhatsApp esperando você" que a pessoa já fechou nesta sessão. */
@@ -2167,9 +2190,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
   };
 
-  /** Abre o modal Ver pedido sempre na prévia do papel, nunca na edição. */
-  const abrirRecibo = (id: string) => {
+  /**
+   * Abre o modal Ver pedido sempre na prévia do papel, nunca na edição. O 🧾
+   * do card abre o mesmo modal com `nota`: o painel da nota fiscal rola para
+   * a vista e o cursor já fica no CPF.
+   */
+  const abrirRecibo = (id: string, opcoes?: { nota?: boolean }) => {
     setAbaDoRecibo("comanda");
+    setFocarNotaFiscal(Boolean(opcoes?.nota));
     setViewReceiptOrderId(id);
   };
 
@@ -3501,6 +3529,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
 
   return (
+    // A loja emite NFC-e? Lido uma vez: o 🧾 do card e o painel "Nota fiscal"
+    // do Ver pedido só aparecem com a emissão ligada (NotaFiscalDoPedido).
+    <NotaFiscalDaLojaProvider>
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
       {/* MODAL CANCELAR PEDIDO */}
       {cancelConfirmId && (() => {
@@ -3989,6 +4020,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </div>
                 );
               })()}
+
+              {/* A nota fiscal do pedido (NotaFiscalDoPedido): o estado, o
+                  porquê de não ter e o Emitir com o CPF/CNPJ. Acima de tudo
+                  quando se veio pelo 🧾 do card; senão, logo abaixo das
+                  abas, como a troca de pagamento. O `key` zera o painel
+                  quando o modal passa a outro pedido. */}
+              <NotaFiscalDoPedido
+                key={`nota-${order.id}`}
+                pedidoId={order.id}
+                focar={focarNotaFiscal}
+                aoMudar={async () => { await recarregarPedidos(); }}
+              />
 
               {/* Trocar a forma de pagamento — ACIMA das abas de propósito:
                   vale em qualquer status que não seja cancelado, inclusive
@@ -6024,7 +6067,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onAssignMotoboy={assignMotoboy}
                   onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                   onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                  onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                  onOpenReceiptModal={(id: string, opcoes?: { nota?: boolean }) => abrirRecibo(id, opcoes)}
                   onOpenEditModal={(id: string) => abrirEdicao(id)}
                   onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                   operador={operadorDaEdicao}
@@ -6095,7 +6138,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenReceiptModal={(id: string, opcoes?: { nota?: boolean }) => abrirRecibo(id, opcoes)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
@@ -6138,7 +6181,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenReceiptModal={(id: string, opcoes?: { nota?: boolean }) => abrirRecibo(id, opcoes)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
@@ -6177,7 +6220,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenReceiptModal={(id: string, opcoes?: { nota?: boolean }) => abrirRecibo(id, opcoes)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
@@ -6213,7 +6256,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenReceiptModal={(id: string, opcoes?: { nota?: boolean }) => abrirRecibo(id, opcoes)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
@@ -6249,7 +6292,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenReceiptModal={(id: string, opcoes?: { nota?: boolean }) => abrirRecibo(id, opcoes)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
@@ -6287,7 +6330,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onAssignMotoboy={assignMotoboy}
                 onOpenCancelModal={(id: string) => { setCancelConfirmId(id); setCancelReason(""); }}
                 onOpenPrintModal={(id: string) => setPrintSelectOrderId(id)}
-                onOpenReceiptModal={(id: string) => abrirRecibo(id)}
+                onOpenReceiptModal={(id: string, opcoes?: { nota?: boolean }) => abrirRecibo(id, opcoes)}
                 onOpenEditModal={(id: string) => abrirEdicao(id)}
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
@@ -6717,5 +6760,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         }
       `}</style>
     </div>
+    </NotaFiscalDaLojaProvider>
   );
 }

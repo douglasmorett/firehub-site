@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { calcularContaDaMesa, sanearTaxa } from "@/lib/conta-da-mesa";
+import { normalizarConfigFiscal } from "@/lib/fiscal-config";
+import { documentoNoPedido } from "@/lib/fiscal-modo";
 
 export const dynamic = "force-dynamic";
 
@@ -79,5 +81,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     ? { tipo: tipoDesconto as "percent" | "valor", valor: valorDesconto, motivo: req.nextUrl.searchParams.get("descontoMotivo") || "" }
     : null;
 
-  return NextResponse.json(calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta, desconto));
+  // "CPF na nota?" no fechamento (lib/fiscal-modo): só a regra, lida da loja —
+  // o garçom pelo link também fecha conta, e a pergunta vale para ele.
+  const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { fiscalConfig: true } }).catch(() => null);
+  const notaFiscal = documentoNoPedido(normalizarConfigFiscal(loja?.fiscalConfig));
+
+  return NextResponse.json({ ...calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta, desconto), notaFiscal });
 }

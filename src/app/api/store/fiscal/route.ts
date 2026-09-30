@@ -26,6 +26,8 @@ import {
 import { alterarFiscalConfig, ConflitoNaGravacao, LojaNaoEncontrada } from "@/lib/nfce/gravar-config-fiscal";
 import { ufsDoEmissorProprio } from "@/lib/nfce/pendencias";
 import { notasEmAndamentoDaLoja, respostaDeNotasEmAndamento } from "@/lib/fiscal-notas-em-andamento";
+import { chaveDoCanal } from "@/lib/canal-do-pedido";
+import { ehIntegracaoDaNota, INTEGRACOES_DA_NOTA, type IntegracaoDaNota } from "@/lib/fiscal-modo";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +40,32 @@ export const dynamic = "force-dynamic";
 
 /** As UF que o emissor próprio sabe transmitir (webservice e endereço do QR — lib/nfce/pendencias). */
 const UFS_DO_EMISSOR = ufsDoEmissorProprio();
+
+/**
+ * As integrações que a loja usa, pelos pedidos dos últimos 60 dias e pelo
+ * cadastro do iFood/99Food: a tabela "Em quais vendas a nota sai sozinha?"
+ * mostra uma coluna para cada — a loja que só tem iFood não precisa ver cinco.
+ * Falhou a leitura? A tela mostra só as vendas da loja e o botão "Mostrar as
+ * outras integrações".
+ */
+async function integracoesDaLoja(lojaId: string, loja: { ifoodMerchantId?: string | null; food99MerchantId?: string | null } | null): Promise<IntegracaoDaNota[]> {
+  const usadas = new Set<string>();
+  if (loja?.ifoodMerchantId) usadas.add("IFOOD");
+  if (loja?.food99MerchantId) usadas.add("99FOOD");
+  try {
+    const grupos = await prisma.customerOrder.groupBy({
+      by: ["source", "openDeliveryChannel"],
+      where: { franchiseeId: lojaId, createdAt: { gte: new Date(Date.now() - 60 * 24 * 60 * 60_000) } },
+    });
+    for (const g of grupos) {
+      const canal = chaveDoCanal({ source: g.source, openDeliveryChannel: g.openDeliveryChannel });
+      if (ehIntegracaoDaNota(canal)) usadas.add(canal);
+    }
+  } catch (err: any) {
+    console.error("[Fiscal Config GET] integrações da loja:", String(err?.message ?? "").slice(0, 200));
+  }
+  return INTEGRACOES_DA_NOTA.map((i) => i.canal).filter((c) => usadas.has(c));
+}
 
 /** Existe token que ABRE para este ambiente? (cifrado com chave trocada não conta) */
 function temTokenPara(config: ConfigFiscalGravada, ambiente: 1 | 2): boolean {
@@ -143,7 +171,7 @@ export async function GET() {
 
     const loja = await prisma.user.findUnique({
       where: { id: lojaId },
-      select: { id: true, storeName: true, cpfCnpj: true, fiscalConfig: true },
+      select: { id: true, storeName: true, cpfCnpj: true, fiscalConfig: true, ifoodMerchantId: true, food99MerchantId: true },
     });
 
     // A conferência é a do que está GRAVADO — a mesma do PUT de ligar e do
@@ -182,6 +210,8 @@ export async function GET() {
       // Sem a conta de revenda do FireHub na Focus, o cadastro automático não
       // tem como funcionar — a tela avisa ANTES de o lojista escolher o arquivo.
       cadastroAutomaticoDisponivel: Boolean(tokenDeRevenda()),
+      // As colunas da tabela de formas por canal (Como a nota é emitida).
+      integracoesDaLoja: await integracoesDaLoja(lojaId, loja),
       // Os CNPJs dos marketplaces que o código já conhece (conferidos na
       // Receita — lib/fiscal-emissao): a tela pré-preenche com eles e só grava
       // o que a loja mudar, para uma correção no código chegar a todo mundo.
