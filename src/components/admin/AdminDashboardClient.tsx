@@ -1,12 +1,17 @@
 "use client";
 import SairDaConta from "@/components/SairDaConta";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import AmbassadorsTab from "./AmbassadorsTab";
 import InscricoesEmbaixadorTab from "./InscricoesEmbaixadorTab";
 import AdminCostsTab from "./AdminCostsTab";
 import VendedoresTab from "./VendedoresTab";
+import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
+import ConexaoDoAtendimento from "@/components/crm/ConexaoDoAtendimento";
+import FunilDoCrm from "@/components/crm/FunilDoCrm";
+import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
+import DesempenhoDaEquipe from "@/components/crm/DesempenhoDaEquipe";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDate = (d: string) => new Date(d).toLocaleDateString("pt-BR");
@@ -36,7 +41,8 @@ type Vendedor = { id: string; name: string; active: boolean };
 type Embaixador = { id: string; name: string; code: string; active: boolean };
 
 type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes" | "inativos" | "nunca";
-type Tab = "overview" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos";
+type Tab = "overview" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda";
+const ABAS: Tab[] = ["overview", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda"];
 
 type KPIs = {
   totalLojistas: number; emTrial: number; assinantes: number;
@@ -52,6 +58,9 @@ const TITULOS: Record<Tab, string> = {
   ambassadors: "Embaixadores",
   inscricoes: "Inscrições para embaixador",
   custos: "Custos & P&L",
+  atendimento: "Atendimento — WhatsApp do FireHub",
+  crm: "CRM — contatos e funil",
+  agenda: "Agenda da equipe",
 };
 
 /** "hoje", "ontem", "há 12 dias", "nunca vendeu". */
@@ -77,6 +86,37 @@ export default function AdminDashboardClient({
   const [vendedorFilter, setVendedorFilter] = useState<string>("todos");
   const [tab, setTab] = useState<Tab>("overview");
   const [lojistas, setLojistas] = useState<Lojista[]>(initialLojistas);
+
+  // CRM: a conversa a abrir quando outra tela manda para o Atendimento, e o
+  // número de conversas pedindo uma pessoa (o selo vermelho da barra lateral).
+  const [contatoParaAbrir, setContatoParaAbrir] = useState<string | null>(null);
+  const [pedindoPessoa, setPedindoPessoa] = useState(0);
+  const abrirConversa = (id: string) => { setContatoParaAbrir(id); setTab("atendimento"); };
+
+  // /admin?aba=atendimento&contato=… — o link que vai nos avisos do WhatsApp.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const aba = p.get("aba") as Tab | null;
+    if (aba && ABAS.includes(aba)) setTab(aba);
+    const contato = p.get("contato");
+    if (contato) abrirConversa(contato);
+  }, []);
+
+  useEffect(() => {
+    let vivo = true;
+    const ver = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const r = await fetch("/api/crm/conversas?limite=1", { cache: "no-store" });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (vivo) setPedindoPessoa(d?.totais?.aguardando || 0);
+      } catch {}
+    };
+    void ver();
+    const i = setInterval(ver, 20_000);
+    return () => { vivo = false; clearInterval(i); };
+  }, []);
   const [atribuindo, setAtribuindo] = useState<string | null>(null);
 
   // Modal de concessão de dias
@@ -627,9 +667,24 @@ export default function AdminDashboardClient({
 
         <nav style={{ padding: "0 10px", flex: 1 }}>
           <p className="fha-nav-grupo">Gestão</p>
-          {navItens.map(n => (
+          {navItens.filter(n => n.key !== "vendedores").map(n => (
             <button key={n.key} onClick={() => setTab(n.key)} className={`fha-nav-item${tab === n.key ? " active" : ""}`}>
               <span style={{ width: 18, textAlign: "center" }}>{n.icone}</span> {n.rotulo}
+            </button>
+          ))}
+
+          <p className="fha-nav-grupo">Comercial</p>
+          {([
+            { key: "atendimento", icone: "💬", rotulo: "Atendimento", selo: pedindoPessoa },
+            { key: "crm", icone: "🎯", rotulo: "CRM" },
+            { key: "agenda", icone: "📅", rotulo: "Agenda" },
+            { key: "vendedores", icone: "💼", rotulo: "Vendedores" },
+          ] as { key: Tab; icone: string; rotulo: string; selo?: number }[]).map(n => (
+            <button key={n.key} onClick={() => setTab(n.key)} className={`fha-nav-item${tab === n.key ? " active" : ""}`}>
+              <span style={{ width: 18, textAlign: "center" }}>{n.icone}</span> {n.rotulo}
+              {!!n.selo && (
+                <span title="Conversas pedindo uma pessoa" style={{ marginLeft: "auto", background: "#E8360C", color: "#FFFFFF", borderRadius: 999, fontSize: "0.66rem", fontWeight: 800, padding: "1px 7px" }}>{n.selo}</span>
+              )}
             </button>
           ))}
 
@@ -663,7 +718,7 @@ export default function AdminDashboardClient({
               {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
             </p>
           </div>
-          {tab !== "lojistas" && tab !== "overview" && (
+          {tab !== "lojistas" && tab !== "overview" && tab !== "atendimento" && tab !== "crm" && tab !== "agenda" && (
             <button className="fha-btn" style={{ padding: "8px 14px" }} onClick={() => irParaLojistas()}>
               🔍 Buscar lojista
             </button>
@@ -792,8 +847,16 @@ export default function AdminDashboardClient({
           )}
 
           {tab === "vendedores" && (
-            <VendedoresTab onVerCarteira={(id) => irParaLojistas("todos", id)} />
+            <>
+              <VendedoresTab onVerCarteira={(id) => irParaLojistas("todos", id)} />
+              <DesempenhoDaEquipe />
+            </>
           )}
+          {tab === "atendimento" && (
+            <CaixaDeAtendimento modo="ADMIN" abrirContatoId={contatoParaAbrir} cabecalho={<ConexaoDoAtendimento />} />
+          )}
+          {tab === "crm" && <FunilDoCrm modo="ADMIN" aoAbrirConversa={abrirConversa} />}
+          {tab === "agenda" && <AgendaDaEquipe modo="ADMIN" aoAbrirConversa={abrirConversa} />}
           {tab === "ambassadors" && <AmbassadorsTab />}
           {tab === "inscricoes" && <InscricoesEmbaixadorTab />}
           {tab === "custos" && <AdminCostsTab />}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { espelharVendedorDaLoja } from "@/lib/crm/contatos";
 
 /**
  * PUT { vendedorId | null }: põe a loja na carteira de um vendedor (ou tira).
@@ -39,5 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       : { vendedorId: null, vendedorStatus: null, vendedorAtribuidoEm: null, vendedorAtendidoEm: null },
     select: { vendedorId: true, vendedorStatus: true, vendedorAtribuidoEm: true },
   });
+  // O contato desta loja no CRM acompanha a carteira (lib/crm/contatos.ts).
+  await espelharVendedorDaLoja(id, vendedorId);
   return NextResponse.json({ ok: true, ...atualizado });
 }

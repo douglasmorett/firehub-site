@@ -157,6 +157,14 @@ const jobs = [
     intervalMs: 5 * 60_000, // 5 minutos
   },
   {
+    // CRM do FireHub: religa o numero do atendimento se o gateway derrubou,
+    // lembra o contato 1 h antes da demonstracao e manda ao vendedor o aviso
+    // de agenda que nao saiu na hora (src/lib/crm/lembretes.ts).
+    name: 'crm-lembretes',
+    path: '/api/cron/crm-lembretes',
+    intervalMs: 5 * 60_000, // 5 minutos
+  },
+  {
     // Distancia da entrega nos pedidos que nasceram sem ela — e o numero que a
     // escada de km do entregador compara no fechamento. Quem chegou com
     // coordenada e conta local; quem so tem o texto do endereco e

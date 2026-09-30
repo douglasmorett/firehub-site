@@ -1,7 +1,18 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import SairDaConta from "@/components/SairDaConta";
 import type { AtividadeDaLoja } from "@/lib/atividade-da-loja";
+import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
+import FunilDoCrm from "@/components/crm/FunilDoCrm";
+import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
+
+type Aba = "carteira" | "conversas" | "contatos" | "agenda";
+const ABAS: { chave: Aba; rotulo: string }[] = [
+  { chave: "carteira", rotulo: "💼 Carteira" },
+  { chave: "conversas", rotulo: "💬 Conversas" },
+  { chave: "contatos", rotulo: "🎯 Contatos" },
+  { chave: "agenda", rotulo: "📅 Agenda" },
+];
 
 export type ClienteDaCarteira = {
   id: string;
@@ -55,6 +66,18 @@ export default function VendedorDashboard({
 }) {
   const [clientes, setClientes] = useState(iniciais);
   const [salvando, setSalvando] = useState<string | null>(null);
+  const [aba, setAba] = useState<Aba>("carteira");
+  const [contatoParaAbrir, setContatoParaAbrir] = useState<string | null>(null);
+  const abrirConversa = (id: string) => { setContatoParaAbrir(id); setAba("conversas"); };
+
+  // /vendedor?aba=conversas&contato=… — o link que vai no aviso do WhatsApp.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const pedida = p.get("aba") as Aba | null;
+    if (pedida && ABAS.some((a) => a.chave === pedida)) setAba(pedida);
+    const contato = p.get("contato");
+    if (contato) abrirConversa(contato);
+  }, []);
   const aguardando = clientes.filter((c) => c.atendimento === "AGUARDANDO");
   const [filtro, setFiltro] = useState<Filtro>(aguardando.length > 0 ? "aguardando" : "todos");
 
@@ -123,13 +146,17 @@ export default function VendedorDashboard({
         .vd-acoes { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 170px; }
         .vd-btn { border: none; border-radius: 10px; padding: 10px 14px; font-weight: 800; font-size: 0.82rem; cursor: pointer; font-family: inherit; text-align: center; text-decoration: none; }
         @media (max-width: 640px) { .vd-card { grid-template-columns: 1fr; } .vd-acoes { flex-direction: row; min-width: 0; } .vd-acoes > * { flex: 1; } }
+        .vd-abas { background: #FFFFFF; border-bottom: 1px solid #E5E7EB; display: flex; gap: 2px; padding: 0 12px; overflow-x: auto; }
+        .vd-aba { background: none; border: none; border-bottom: 3px solid transparent; padding: 12px 14px; font-weight: 700; font-size: 0.86rem; color: #64748B; cursor: pointer; font-family: inherit; white-space: nowrap; }
+        .vd-aba.on { color: #0F172A; border-bottom-color: #E8360C; }
+        .vd-largo { max-width: 1500px; margin: 0 auto; padding: 16px 16px 40px; }
       `}</style>
 
       <header className="vd-top">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src="/firehub-flame.png" alt="" style={{ width: 30, height: 30, borderRadius: 7 }} />
           <div>
-            <div style={{ fontWeight: 900 }}>Minha Carteira</div>
+            <div style={{ fontWeight: 900 }}>Área do vendedor</div>
             <div style={{ fontSize: "0.72rem", color: "#A1A1AA" }}>{vendedor.name} · {vendedor.email}</div>
           </div>
         </div>
@@ -138,7 +165,31 @@ export default function VendedorDashboard({
         </SairDaConta>
       </header>
 
-      <main className="vd-wrap">
+      <nav className="vd-abas">
+        {ABAS.map((a) => (
+          <button key={a.chave} className={`vd-aba${aba === a.chave ? " on" : ""}`} onClick={() => setAba(a.chave)}>{a.rotulo}</button>
+        ))}
+      </nav>
+
+      {aba === "conversas" && (
+        <main className="vd-largo">
+          {vendedor.ativo
+            ? <CaixaDeAtendimento modo="VENDEDOR" abrirContatoId={contatoParaAbrir} />
+            : <div className="vd-card">Sua conta de vendedor está pausada. Fale com o administrador.</div>}
+        </main>
+      )}
+      {aba === "contatos" && (
+        <main className="vd-largo">
+          {vendedor.ativo ? <FunilDoCrm modo="VENDEDOR" aoAbrirConversa={abrirConversa} /> : <div className="vd-card">Sua conta de vendedor está pausada.</div>}
+        </main>
+      )}
+      {aba === "agenda" && (
+        <main className="vd-largo">
+          {vendedor.ativo ? <AgendaDaEquipe modo="VENDEDOR" aoAbrirConversa={abrirConversa} /> : <div className="vd-card">Sua conta de vendedor está pausada.</div>}
+        </main>
+      )}
+
+      {aba === "carteira" && <main className="vd-wrap">
         {!vendedor.ativo && (
           <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: "0.85rem", fontWeight: 600 }}>
             Sua conta de vendedor está pausada. Fale com o administrador.
@@ -246,7 +297,7 @@ export default function VendedorDashboard({
             </div>
           );
         })}
-      </main>
+      </main>}
     </div>
   );
 }

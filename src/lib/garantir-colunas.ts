@@ -1017,6 +1017,149 @@ export async function garantirEstruturaDePrazos(): Promise<void> {
   }
 }
 
+/**
+ * ── CRM do FireHub: contatos, conversa do número do FireHub, agenda ─────────
+ *
+ * Seis tabelas NOVAS e nenhuma coluna em tabela existente — de propósito: o
+ * CRM não pode derrubar nada que já funciona. Se o CREATE falhar, só as telas
+ * do CRM e o número do FireHub ficam sem banco; loja, pedido e robô das lojas
+ * não leem nenhuma delas. (docs/superpowers/specs/2026-09-30-crm-atendimento-design.md)
+ */
+const INSTRUCOES_CRM = [
+  `CREATE TABLE IF NOT EXISTS "CrmContato" (
+     "id" TEXT NOT NULL,
+     "telefone" TEXT,
+     "jid" TEXT,
+     "nome" TEXT,
+     "nomeDaLoja" TEXT,
+     "cidade" TEXT,
+     "email" TEXT,
+     "origem" TEXT NOT NULL DEFAULT 'WHATSAPP',
+     "etapa" TEXT NOT NULL DEFAULT 'NOVO',
+     "motivoPerda" TEXT,
+     "userId" TEXT,
+     "vendedorId" TEXT,
+     "vendedorAtribuidoEm" TIMESTAMP(3),
+     "primeiroContatoEm" TIMESTAMP(3),
+     "notas" TEXT,
+     "resumo" TEXT,
+     "roboPausadoAte" TIMESTAMP(3),
+     "roboDesligado" BOOLEAN NOT NULL DEFAULT false,
+     "aguardandoHumanoDesde" TIMESTAMP(3),
+     "naoLidas" INTEGER NOT NULL DEFAULT 0,
+     "ultimaMensagemEm" TIMESTAMP(3),
+     "ultimaMensagemTexto" TEXT,
+     "ultimaMensagemDe" TEXT,
+     "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "atualizadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "CrmContato_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "CrmContato_telefone_key" ON "CrmContato"("telefone")`,
+  `CREATE INDEX IF NOT EXISTS "CrmContato_vendedorId_idx" ON "CrmContato"("vendedorId")`,
+  `CREATE INDEX IF NOT EXISTS "CrmContato_userId_idx" ON "CrmContato"("userId")`,
+  `CREATE INDEX IF NOT EXISTS "CrmContato_etapa_idx" ON "CrmContato"("etapa")`,
+  `CREATE INDEX IF NOT EXISTS "CrmContato_ultimaMensagemEm_idx" ON "CrmContato"("ultimaMensagemEm")`,
+  `CREATE TABLE IF NOT EXISTS "CrmMensagem" (
+     "id" TEXT NOT NULL,
+     "contatoId" TEXT NOT NULL,
+     "waId" TEXT,
+     "direcao" TEXT NOT NULL,
+     "autor" TEXT NOT NULL,
+     "autorId" TEXT,
+     "autorNome" TEXT,
+     "tipo" TEXT NOT NULL DEFAULT 'TEXTO',
+     "texto" TEXT NOT NULL,
+     "status" TEXT NOT NULL DEFAULT 'OK',
+     "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "CrmMensagem_pkey" PRIMARY KEY ("id"),
+     CONSTRAINT "CrmMensagem_contatoId_fkey" FOREIGN KEY ("contatoId")
+       REFERENCES "CrmContato"("id") ON DELETE CASCADE ON UPDATE CASCADE
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "CrmMensagem_waId_key" ON "CrmMensagem"("waId")`,
+  `CREATE INDEX IF NOT EXISTS "CrmMensagem_contatoId_criadoEm_idx" ON "CrmMensagem"("contatoId", "criadoEm")`,
+  `CREATE INDEX IF NOT EXISTS "CrmMensagem_autor_criadoEm_idx" ON "CrmMensagem"("autor", "criadoEm")`,
+  `CREATE TABLE IF NOT EXISTS "CrmEvento" (
+     "id" TEXT NOT NULL,
+     "contatoId" TEXT NOT NULL,
+     "tipo" TEXT NOT NULL,
+     "texto" TEXT NOT NULL,
+     "dados" JSONB,
+     "autorTipo" TEXT,
+     "autorId" TEXT,
+     "autorNome" TEXT,
+     "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "CrmEvento_pkey" PRIMARY KEY ("id"),
+     CONSTRAINT "CrmEvento_contatoId_fkey" FOREIGN KEY ("contatoId")
+       REFERENCES "CrmContato"("id") ON DELETE CASCADE ON UPDATE CASCADE
+   )`,
+  `CREATE INDEX IF NOT EXISTS "CrmEvento_contatoId_criadoEm_idx" ON "CrmEvento"("contatoId", "criadoEm")`,
+  `CREATE INDEX IF NOT EXISTS "CrmEvento_tipo_criadoEm_idx" ON "CrmEvento"("tipo", "criadoEm")`,
+  `CREATE TABLE IF NOT EXISTS "AgendaReuniao" (
+     "id" TEXT NOT NULL,
+     "vendedorId" TEXT NOT NULL,
+     "contatoId" TEXT,
+     "tipo" TEXT NOT NULL DEFAULT 'DEMONSTRACAO',
+     "titulo" TEXT NOT NULL,
+     "inicio" TIMESTAMP(3) NOT NULL,
+     "fim" TIMESTAMP(3) NOT NULL,
+     "local" TEXT,
+     "status" TEXT NOT NULL DEFAULT 'MARCADA',
+     "observacao" TEXT,
+     "criadoPorTipo" TEXT,
+     "criadoPorId" TEXT,
+     "criadoPorNome" TEXT,
+     "lembreteEm" TIMESTAMP(3),
+     "avisoVendedorEm" TIMESTAMP(3),
+     "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "atualizadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "AgendaReuniao_pkey" PRIMARY KEY ("id"),
+     CONSTRAINT "AgendaReuniao_contatoId_fkey" FOREIGN KEY ("contatoId")
+       REFERENCES "CrmContato"("id") ON DELETE SET NULL ON UPDATE CASCADE
+   )`,
+  `CREATE INDEX IF NOT EXISTS "AgendaReuniao_vendedorId_inicio_idx" ON "AgendaReuniao"("vendedorId", "inicio")`,
+  `CREATE INDEX IF NOT EXISTS "AgendaReuniao_inicio_idx" ON "AgendaReuniao"("inicio")`,
+  `CREATE INDEX IF NOT EXISTS "AgendaReuniao_contatoId_idx" ON "AgendaReuniao"("contatoId")`,
+  `CREATE TABLE IF NOT EXISTS "AgendaDisponibilidade" (
+     "vendedorId" TEXT NOT NULL,
+     "config" JSONB NOT NULL,
+     "atualizadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "AgendaDisponibilidade_pkey" PRIMARY KEY ("vendedorId")
+   )`,
+  `CREATE TABLE IF NOT EXISTS "CrmConfig" (
+     "id" TEXT NOT NULL,
+     "dados" JSONB NOT NULL,
+     "atualizadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "CrmConfig_pkey" PRIMARY KEY ("id")
+   )`,
+];
+
+let crmOk = false;
+
+/** As tabelas do CRM existem? Uma vez por processo — e só marca DEPOIS de conseguir. */
+export async function garantirEstruturaDoCrm(): Promise<boolean> {
+  if (crmOk) return true;
+
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia da estrutura do CRM.");
+    return false;
+  }
+
+  try {
+    for (const sql of INSTRUCOES_CRM) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    crmOk = true;
+    console.log("[Boot] ✅ Tabelas do CRM (contatos, conversa do FireHub, agenda) garantidas.");
+    return true;
+  } catch (err: any) {
+    // Sem as tabelas só o CRM e o número do FireHub param — nada das lojas lê
+    // nenhuma delas. As rotas do CRM chamam esta função de novo antes de ler.
+    console.error(`[Boot] 🛑 Estrutura do CRM falhou: ${err?.message}`);
+    return false;
+  }
+}
+
 let mesaOk = false;
 
 export async function garantirEstruturaDeMesa(): Promise<void> {

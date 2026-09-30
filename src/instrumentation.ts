@@ -18,6 +18,7 @@ export async function register() {
     garantirEstruturaDeCaixa,
     garantirEstruturaDeMesa,
     garantirEstruturaDePrazos,
+    garantirEstruturaDoCrm,
   } = await import("./lib/garantir-colunas");
   await garantirColunasDePreco();
   // As colunas que o schema.prisma declara e que nunca ganharam DDL — 39 no
@@ -47,6 +48,9 @@ export async function register() {
   // Conta da extensão FireHub Prazos (produto vendido fora do FireHub). Tabela
   // própria, sem relação com User: se faltar, só o login da extensão falha.
   await garantirEstruturaDePrazos();
+  // CRM do FireHub: contatos, conversa do número do FireHub e agenda da
+  // equipe. Tabelas próprias; se faltarem, só o CRM para.
+  await garantirEstruturaDoCrm();
   // Memória da conversa do robô (ChatbotConversationState.history). O schema NÃO
   // conhece a coluna de propósito — o acesso é por SQL cru e falha em silêncio
   // (lib/memoria-da-conversa-no-banco.ts). Aqui é só para o ALTER acontecer no

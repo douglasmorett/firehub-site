@@ -7,6 +7,7 @@ import { getCorsHeaders } from "@/lib/cors";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { diasDeTesteDoLink } from "@/lib/trial-do-cadastro";
 import { cpfValido } from "@/lib/fiscal-validacao";
+import { aoCadastrarLoja } from "@/lib/crm/contatos";
 
 // CORS headers for cross-origin requests from firehubfood.com.br
 export async function OPTIONS(req: NextRequest) {
@@ -210,6 +211,12 @@ export async function POST(req: NextRequest) {
         storeOrderCount: 0,
         planPercent: 1,
       },
+    });
+
+    // O lead do CRM vira "em teste" e, se um vendedor cuidava dele, a loja já
+    // nasce na carteira desse vendedor (os 3% dele). Nunca lança.
+    await aoCadastrarLoja({
+      id: user.id, storePhone: user.storePhone, email: user.email, storeName: user.storeName, name: user.name, city: user.city,
     });
 
     return NextResponse.json({

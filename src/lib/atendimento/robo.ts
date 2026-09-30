@@ -1,0 +1,244 @@
+import { ThinkingLevel, type Content, type Part } from "@google/genai";
+import { prisma } from "@/lib/prisma";
+import { gravarMensagem, mensagensDoContato } from "@/lib/crm/mensagens";
+import { ROTULO_DA_ETAPA, type Etapa } from "@/lib/crm/etapas";
+import { configDoAtendimento } from "./config";
+import { clienteDoGemini } from "./gemini";
+import { CONHECIMENTO_DO_FIREHUB } from "./conhecimento";
+import { DECLARACOES, chamarPessoa, executarFerramenta } from "./ferramentas";
+import { enviarTexto } from "./whatsapp";
+
+/**
+ * O ROBÔ DO FIREHUB — atende no número do próprio FireHub: suporte para quem
+ * já é loja, venda (até o teste grátis ou uma demonstração) para quem não é.
+ *
+ * ── Quando ele fala ─────────────────────────────────────────────────────────
+ *
+ * Só com TUDO isto verdadeiro (qualquer um falso = silêncio, e a conversa fica
+ * na tela para uma pessoa):
+ *   - o interruptor "Robô ligado" da tela (nasce desligado);
+ *   - o contato não está com o robô desligado nem pausado (alguém respondeu
+ *     pela tela ou pelo celular) nem esperando uma pessoa;
+ *   - a última mensagem da conversa é do contato, e é recente — ligar o robô
+ *     de manhã não faz ele responder o que chegou de madrugada;
+ *   - menos de 15 respostas dele nesta conversa em 24 h (depois chama pessoa).
+ *
+ * ── Espera o contato terminar de digitar ───────────────────────────────────
+ *
+ * Quem escreve "oi" / "tudo bem?" / "queria saber do sistema" em três
+ * mensagens recebe UMA resposta: cada mensagem nova reinicia a espera.
+ */
+
+const ESPERA_MS = 6_000;
+const MAXIMO_EM_24H = 15;
+const MENSAGEM_VELHA_MS = 20 * 60_000;
+const MODELOS = ["gemini-3.6-flash", "gemini-2.5-flash"];
+
+type Estado = { timers: Map<string, ReturnType<typeof setTimeout>>; rodando: Set<string>; deNovo: Set<string> };
+function estado(): Estado {
+  const g = globalThis as any;
+  if (!g.__roboDoFireHub) g.__roboDoFireHub = { timers: new Map(), rodando: new Set(), deNovo: new Set() };
+  return g.__roboDoFireHub;
+}
+
+export function agendarRespostaDoRobo(contatoId: string) {
+  const e = estado();
+  const anterior = e.timers.get(contatoId);
+  if (anterior) clearTimeout(anterior);
+  e.timers.set(contatoId, setTimeout(() => {
+    e.timers.delete(contatoId);
+    void rodar(contatoId);
+  }, ESPERA_MS));
+}
+
+async function rodar(contatoId: string) {
+  const e = estado();
+  if (e.rodando.has(contatoId)) {
+    e.deNovo.add(contatoId);
+    return;
+  }
+  e.rodando.add(contatoId);
+  try {
+    await responder(contatoId);
+  } catch (err: any) {
+    console.error(`[Atendimento] Robô falhou no contato ${contatoId}: ${err?.message}`);
+  } finally {
+    e.rodando.delete(contatoId);
+    if (e.deNovo.delete(contatoId)) agendarRespostaDoRobo(contatoId);
+  }
+}
+
+function agoraEmBrasilia(): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(new Date());
+}
+
+function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null): string {
+  const apresentacao = config.nomeDoAtendente
+    ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub no WhatsApp.`
+    : "Você é o assistente virtual do atendimento do FireHub no WhatsApp. Você não tem nome próprio: nunca invente um.";
+  const ficha = [
+    `- Nome: ${contato.nome || "não sabemos ainda"}`,
+    `- Loja: ${contato.nomeDaLoja || "não sabemos ainda"}${contato.cidade ? ` (${contato.cidade})` : ""}`,
+    contato.userId
+      ? "- É LOJISTA: a loja dele foi reconhecida pelo número que está escrevendo. Modo SUPORTE."
+      : "- Ainda NÃO é cliente (ou escreveu de um número que não é o da loja). Modo VENDA — mas se disser que já usa o FireHub, trate como suporte sem mexer na conta.",
+    `- Etapa no funil: ${ROTULO_DA_ETAPA[contato.etapa as Etapa] || contato.etapa}`,
+    vendedor ? `- Especialista que cuida dele: ${vendedor}` : "",
+    contato.resumo ? `- O que já sabemos: ${contato.resumo}` : "",
+  ].filter(Boolean).join("\n");
+
+  return `${apresentacao}
+
+# Como falar
+- Português do Brasil, jeito de conversa de WhatsApp: curto (1 a 4 frases), simpático, direto. Nada de textão nem listas longas.
+- Uma pergunta por vez. Negrito do WhatsApp (*assim*) só em algo muito importante. No máximo um emoji.
+- Se perguntarem se você é robô/humano: diga que é o assistente virtual e que uma pessoa da equipe pode assumir quando precisar.
+
+# Regras
+- Só afirme o que está na BASE abaixo (ou no que as ferramentas devolverem). Não sabe? Diga que vai confirmar com a equipe e use chamar_pessoa. Nunca invente função, preço, prazo, desconto ou integração.
+- Pediu atendente/pessoa/humano, está bravo, quer cancelar, contesta cobrança ou o problema não se resolve com a base → chamar_pessoa na hora e avise que alguém da equipe vai responder por aqui.
+- Não fale de Checklist, Ponto nem Auditoria (é outro produto).
+- Quem quer PEDIR comida (cliente final de um restaurante) não é lead: explique com gentileza que o FireHub é o sistema que os restaurantes usam e que o pedido é com o próprio restaurante. Não venda nada para essa pessoa.
+- Fornecedor, parceiro ou assunto pessoal: não venda; diga que vai passar o recado e use chamar_pessoa.
+- Senha: nunca mande link pelo WhatsApp; use enviar_link_de_senha (vai para o e-mail da conta).
+- Sempre que descobrir algo (nome, loja, cidade, e-mail, o que a pessoa precisa), use atualizar_contato.
+
+# Modo SUPORTE (lojista)
+- Problema na conta (impressão, robô do WhatsApp, iFood, pedido não chegou): chame estado_da_loja ANTES de responder e diga o que viu. Guie um passo por vez.
+- "Aguardando mensagem" ou robô da loja travado com o WhatsApp conectado: pode usar reiniciar_whatsapp_da_loja.
+- Fatura em aberto: pode informar o valor e o link que estado_da_loja trouxer.
+
+# Modo VENDA (interessado)
+- Entenda o negócio: tipo de loja, cidade, por onde vende hoje (iFood, 99, WhatsApp, site), se usa algum sistema e o que mais incomoda. Mostre o que do FireHub resolve ESSA dor.
+- Preço quando perguntarem (1%, mínimo R$ 100, máximo R$ 400). O objetivo é o teste grátis de 15 dias: firehubfood.com.br/cadastro
+- Quer ver funcionando ou falar com alguém? Ofereça uma demonstração: chame horarios_livres, ofereça 2 ou 3 opções e só use marcar_demonstracao depois que a pessoa escolher um horário e disser o nome da loja.
+
+# BASE
+${CONHECIMENTO_DO_FIREHUB}
+${config.instrucoesExtras.trim() ? `\n# Recados do dono (valem mais que a base)\n${config.instrucoesExtras.trim()}\n` : ""}
+# Quem está falando
+${ficha}
+
+# Agora
+${agoraEmBrasilia()} (horário de Brasília).`;
+}
+
+/** A conversa no formato do Gemini: contato = user; FireHub (robô ou pessoa) = model. */
+function conversaParaOModelo(historico: { direcao: string; autor: string; autorNome: string | null; texto: string }[]): Content[] {
+  const conteudos: Content[] = [];
+  for (const m of historico) {
+    const papel = m.direcao === "ENTRADA" ? "user" : "model";
+    const texto = m.direcao === "SAIDA" && m.autor !== "ROBO" ? `[${m.autorNome || "Pessoa da equipe"} respondeu]: ${m.texto}` : m.texto;
+    const ultimo = conteudos[conteudos.length - 1];
+    if (ultimo && ultimo.role === papel) ultimo.parts!.push({ text: texto });
+    else conteudos.push({ role: papel, parts: [{ text: texto }] });
+  }
+  // O Gemini quer a conversa começando pelo usuário.
+  while (conteudos.length && conteudos[0].role !== "user") conteudos.shift();
+  return conteudos;
+}
+
+async function responder(contatoId: string) {
+  const config = await configDoAtendimento();
+  if (!config.roboLigado || config.conexao.conectado === false) return;
+
+  const contato = await prisma.crmContato.findUnique({ where: { id: contatoId } });
+  if (!contato || contato.roboDesligado || !contato.jid) return;
+  if (contato.aguardandoHumanoDesde) return;
+  if (contato.roboPausadoAte && contato.roboPausadoAte.getTime() > Date.now()) return;
+
+  const historico = await mensagensDoContato(contato.id, 40);
+  const ultima = historico[historico.length - 1];
+  if (!ultima || ultima.direcao !== "ENTRADA") return;
+  if (Date.now() - ultima.criadoEm.getTime() > MENSAGEM_VELHA_MS) return;
+
+  const respostas = await prisma.crmMensagem.count({
+    where: { contatoId: contato.id, autor: "ROBO", criadoEm: { gte: new Date(Date.now() - 24 * 60 * 60_000) } },
+  });
+  if (respostas >= MAXIMO_EM_24H) {
+    await chamarPessoa(contato, `O robô já respondeu ${respostas} vezes em 24 h nesta conversa.`);
+    return;
+  }
+
+  const ai = await clienteDoGemini();
+  if (!ai) {
+    console.error("[Atendimento] Sem chave do Gemini: o robô do FireHub não responde.");
+    return;
+  }
+
+  const vendedor = contato.vendedorId
+    ? (await prisma.ambassador.findUnique({ where: { id: contato.vendedorId }, select: { name: true } }))?.name || null
+    : null;
+  const sistema = instrucoes(config, contato, vendedor);
+  const conversa = conversaParaOModelo(historico);
+  if (conversa.length === 0) return;
+
+  let resposta = "";
+  for (const modelo of MODELOS) {
+    try {
+      resposta = await conversarComFerramentas(ai, modelo, sistema, conversa.map((c) => ({ role: c.role, parts: [...(c.parts || [])] })), contato);
+      if (resposta) break;
+    } catch (err: any) {
+      console.warn(`[Atendimento] ${modelo} falhou: ${err?.message}`);
+    }
+  }
+  resposta = resposta.trim();
+  if (!resposta) return;
+
+  // Alguém assumiu enquanto o modelo pensava? Não fala por cima.
+  const agora = await prisma.crmContato.findUnique({ where: { id: contato.id }, select: { roboPausadoAte: true, roboDesligado: true } });
+  if (!agora || agora.roboDesligado || (agora.roboPausadoAte && agora.roboPausadoAte.getTime() > Date.now())) return;
+  const depois = await prisma.crmMensagem.findFirst({ where: { contatoId: contato.id }, orderBy: { criadoEm: "desc" }, select: { direcao: true, autor: true, id: true } });
+  if (depois && depois.direcao === "SAIDA" && depois.autor !== "ROBO") return;
+
+  const envio = await enviarTexto(contato.jid, resposta, { comoRobo: true });
+  await gravarMensagem({
+    contatoId: contato.id, direcao: "SAIDA", autor: "ROBO", autorNome: config.nomeDoAtendente || "Robô",
+    texto: resposta, status: envio.ok ? "OK" : "FALHOU",
+  });
+  if (!envio.ok) console.error(`[Atendimento] Resposta do robô não saiu para ${contato.id}: ${envio.erro}`);
+}
+
+async function conversarComFerramentas(
+  ai: NonNullable<Awaited<ReturnType<typeof clienteDoGemini>>>,
+  modelo: string,
+  sistema: string,
+  conversa: Content[],
+  contato: any,
+): Promise<string> {
+  for (let volta = 0; volta < 5; volta++) {
+    const r = await ai.models.generateContent({
+      model: modelo,
+      contents: conversa,
+      config: {
+        systemInstruction: sistema,
+        temperature: 0.4,
+        tools: [{ functionDeclarations: DECLARACOES as any }],
+        ...(modelo.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
+      },
+    });
+    const chamadas = r.functionCalls || [];
+    if (chamadas.length === 0) return r.text || "";
+
+    const doModelo = r.candidates?.[0]?.content;
+    if (doModelo) conversa.push(doModelo);
+    const respostas: Part[] = [];
+    for (const chamada of chamadas) {
+      let resultado: Record<string, unknown>;
+      try {
+        resultado = await executarFerramenta(chamada.name || "", chamada.args || {}, contato);
+      } catch (err: any) {
+        resultado = { erro: `Falhou: ${err?.message || "erro"}` };
+      }
+      respostas.push({ functionResponse: { id: chamada.id, name: chamada.name, response: resultado } });
+      // O que a ferramenta mudou no contato vale para a próxima chamada da mesma volta.
+      if (chamada.name === "atualizar_contato" || chamada.name === "marcar_demonstracao") {
+        Object.assign(contato, (await prisma.crmContato.findUnique({ where: { id: contato.id } })) || {});
+      }
+    }
+    conversa.push({ role: "user", parts: respostas });
+  }
+  return "";
+}

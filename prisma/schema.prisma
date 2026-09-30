@@ -1987,3 +1987,154 @@ model ChatbotConversationState {
   @@unique([userId, remoteJid])
   @@index([userId, degradedAt])
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// CRM DO FIREHUB — o número do próprio FireHub, os contatos, a agenda da equipe
+// (docs/superpowers/specs/2026-09-30-crm-atendimento-design.md)
+//
+// Tabelas próprias, criadas no boot (garantirEstruturaDoCrm, lib/garantir-
+// colunas.ts). Sem relação declarada com User nem Ambassador de propósito: o
+// vínculo é por id (userId, vendedorId), e assim nenhum dos dois modelos muda.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Quem fala com o FireHub: lead (ainda não é loja) ou lojista (userId).
+model CrmContato {
+  id                    String    @id @default(cuid())
+  /// Só dígitos, com o 55 (lib/crm/telefone.ts). Único: o número É o contato.
+  telefone              String?   @unique
+  /// Endereço para responder pelo WhatsApp (@s.whatsapp.net ou @lid).
+  jid                   String?
+  nome                  String?
+  nomeDaLoja            String?
+  cidade                String?
+  email                 String?
+  /// WHATSAPP · INSTAGRAM · SITE · INDICACAO · CADASTRO · MANUAL · EVENTO
+  origem                String    @default("WHATSAPP")
+  /// NOVO → CONVERSANDO → DEMO_MARCADA → EM_TESTE → CLIENTE, ou PERDIDO (lib/crm/etapas.ts)
+  etapa                 String    @default("NOVO")
+  motivoPerda           String?
+  /// A loja deste contato, quando ele já é (ou virou) lojista.
+  userId                String?
+  /// O vendedor (Ambassador.id). Em contato com loja, espelha User.vendedorId.
+  vendedorId            String?
+  vendedorAtribuidoEm   DateTime?
+  /// Primeira mensagem do vendedor (ou do admin) depois da atribuição — o "tempo até o contato".
+  primeiroContatoEm     DateTime?
+  notas                 String?
+  /// O que o robô entendeu da conversa (o que a pessoa quer, tamanho da loja).
+  resumo                String?
+  /// Robô calado nesta conversa até esta hora (alguém assumiu).
+  roboPausadoAte        DateTime?
+  /// Robô nunca responde este número (contato pessoal, fornecedor).
+  roboDesligado         Boolean   @default(false)
+  /// Pediu uma pessoa (ou o robô chamou) e ninguém respondeu ainda.
+  aguardandoHumanoDesde DateTime?
+  naoLidas              Int       @default(0)
+  ultimaMensagemEm      DateTime?
+  ultimaMensagemTexto   String?
+  ultimaMensagemDe      String?
+  criadoEm              DateTime  @default(now())
+  atualizadoEm          DateTime  @updatedAt
+
+  mensagens CrmMensagem[]
+  eventos   CrmEvento[]
+  reunioes  AgendaReuniao[]
+
+  @@index([vendedorId])
+  @@index([userId])
+  @@index([etapa])
+  @@index([ultimaMensagemEm])
+}
+
+/// O histórico da conversa no número do FireHub — durável, ao contrário da
+/// memória de 30 minutos do robô das lojas.
+model CrmMensagem {
+  id        String     @id @default(cuid())
+  contatoId String
+  contato   CrmContato @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+  /// Id da mensagem no WhatsApp, quando se sabe. Único: o mesmo evento duas vezes grava uma.
+  waId      String?    @unique
+  /// ENTRADA (do contato) · SAIDA (do número do FireHub)
+  direcao   String
+  /// CLIENTE · ROBO · ADMIN · VENDEDOR · CELULAR (digitado no aparelho) · SISTEMA
+  autor     String
+  autorId   String?
+  autorNome String?
+  /// TEXTO · AUDIO · IMAGEM · VIDEO · LOCALIZACAO
+  tipo      String     @default("TEXTO")
+  texto     String
+  /// OK · FALHOU (o gateway recusou o envio)
+  status    String     @default("OK")
+  criadoEm  DateTime   @default(now())
+
+  @@index([contatoId, criadoEm])
+  @@index([autor, criadoEm])
+}
+
+/// A linha do tempo do contato: etapa, vendedor, nota, reunião, cadastro.
+model CrmEvento {
+  id        String     @id @default(cuid())
+  contatoId String
+  contato   CrmContato @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+  /// ETAPA · VENDEDOR · NOTA · REUNIAO · CADASTRO · ROBO
+  tipo      String
+  texto     String
+  dados     Json?
+  /// ADMIN · VENDEDOR · ROBO · SISTEMA
+  autorTipo String?
+  autorId   String?
+  autorNome String?
+  criadoEm  DateTime   @default(now())
+
+  @@index([contatoId, criadoEm])
+  @@index([tipo, criadoEm])
+}
+
+/// Uma reunião na agenda da equipe (demonstração, acompanhamento, bloqueio).
+model AgendaReuniao {
+  id              String      @id @default(cuid())
+  /// Ambassador.id do vendedor dono da coluna.
+  vendedorId      String
+  contatoId       String?
+  contato         CrmContato? @relation(fields: [contatoId], references: [id], onDelete: SetNull)
+  /// DEMONSTRACAO · ACOMPANHAMENTO · TREINAMENTO · BLOQUEIO
+  tipo            String      @default("DEMONSTRACAO")
+  titulo          String
+  inicio          DateTime
+  fim             DateTime
+  /// Link da chamada, endereço ou "Chamada de vídeo no WhatsApp".
+  local           String?
+  /// MARCADA · REALIZADA · FALTOU · CANCELADA
+  status          String      @default("MARCADA")
+  observacao      String?
+  /// ADMIN · VENDEDOR · ROBO
+  criadoPorTipo   String?
+  criadoPorId     String?
+  criadoPorNome   String?
+  /// Lembrete ao contato enviado (1 h antes).
+  lembreteEm      DateTime?
+  /// Vendedor avisado de que marcaram na agenda dele.
+  avisoVendedorEm DateTime?
+  criadoEm        DateTime    @default(now())
+  atualizadoEm    DateTime    @updatedAt
+
+  @@index([vendedorId, inicio])
+  @@index([inicio])
+  @@index([contatoId])
+}
+
+/// Os horários de cada vendedor: { dias: { "1": [["09:00","12:00"]], ... },
+/// duracaoMin, intervaloMin } (lib/crm/agenda.ts). Sem linha = o padrão.
+model AgendaDisponibilidade {
+  vendedorId   String   @id
+  config       Json
+  atualizadoEm DateTime @updatedAt
+}
+
+/// Configuração do atendimento do FireHub, numa linha só (id "geral"):
+/// robô ligado, número para avisar o dono, lembretes, estado da conexão.
+model CrmConfig {
+  id           String   @id
+  dados        Json
+  atualizadoEm DateTime @updatedAt
+}

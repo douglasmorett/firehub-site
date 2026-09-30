@@ -36,6 +36,8 @@ import {
 } from '@/lib/falha-da-ia';
 import { comPrazo } from '@/lib/com-prazo';
 import { carregarMemoriaDaConversa, acrescentarNoHistorico, registrarMensagemDoCliente, registrarMensagemDaLoja, limparMemoriasVencidas } from '@/lib/memoria-da-conversa-no-banco';
+import { ehInstanciaDoAtendimento } from '@/lib/atendimento/config';
+import { receberEventoDoAtendimento } from '@/lib/atendimento/entrada';
 
 /**
  * O que o cliente lê quando a IA passa do prazo. NÃO é mensagem de erro: a
@@ -112,6 +114,15 @@ export async function POST(req: NextRequest) {
     const time = new Date().toISOString();
 
     console.log(`[${time}] [WhatsApp Webhook] Evento recebido: "${event}" para instância "${instance}"`);
+
+    // ── 0. O NÚMERO DO PRÓPRIO FIREHUB ───────────────────────────────────────
+    // O gateway manda todas as instâncias para esta rota, e a do atendimento do
+    // FireHub não é loja: vai inteira para lib/atendimento/entrada.ts (CRM,
+    // robô de suporte e venda). Nada abaixo daqui roda para ela.
+    if (ehInstanciaDoAtendimento(instance)) {
+      await receberEventoDoAtendimento(event, body);
+      return NextResponse.json({ status: "success" });
+    }
 
     // ── 1. MUDANÇA DE CONEXÃO — NOS DOIS SENTIDOS ────────────────────────────
     //
