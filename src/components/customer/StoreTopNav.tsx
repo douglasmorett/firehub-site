@@ -4,8 +4,11 @@ import SairDaConta from "@/components/SairDaConta";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check } from "lucide-react";
-import { useState, useTransition, useEffect, useRef } from "react";
+import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
+import {
+  avisarQueOCaixaMudou, EVENTO_ABRIR_MENU_DO_CAIXA, PARAMETRO_ABRIR_CAIXA, type PedidoDoCaixa,
+} from "@/lib/caixa-aberto";
 
 const NAV_ITEMS = [
   { href: "/store", label: "Início", icon: Home },
@@ -156,6 +159,10 @@ export default function StoreTopNav({
   // vendendo — e o atendente "abria" de novo. Não relê durante um clique.
   const togglingRef = useRef(toggling);
   togglingRef.current = toggling;
+  // O caixa como a barra sabe AGORA — para os ouvintes de evento, que não
+  // são recriados a cada render (lib/caixa-aberto).
+  const cashOpenRef = useRef(cashOpen);
+  cashOpenRef.current = cashOpen;
   useEffect(() => {
     const reler = () => {
       if (togglingRef.current || document.visibilityState !== "visible") return;
@@ -164,7 +171,12 @@ export default function StoreTopNav({
         .then(s => {
           if (!s || togglingRef.current) return;
           if (typeof s.storeOpen === "boolean") setStoreOpen(s.storeOpen);
-          if (typeof s.cashOpen === "boolean") setCashOpen(s.cashOpen);
+          if (typeof s.cashOpen === "boolean") {
+            // Outro aparelho abriu ou fechou o caixa: o Balcão e as Mesas desta
+            // aba reperguntam na hora, em vez de esperar o relógio deles.
+            if (s.cashOpen !== cashOpenRef.current) avisarQueOCaixaMudou(s.cashOpen);
+            setCashOpen(s.cashOpen);
+          }
         })
         .catch(() => {});
     };
@@ -280,11 +292,58 @@ export default function StoreTopNav({
   // desta barra, entao ela pede o menu por evento em vez de duplicar a tela.
   // Caixa fechado nao tem menu para abrir: cai no modal de abertura, que e o
   // passo seguinte de quem acabou de fechar.
+  //
+  // O Balcão e as Mesas, com o caixa FECHADO, pedem o modal de abertura
+  // (`detail.acao === "abrir"`, lib/caixa-aberto → pedirAberturaDoCaixa). Se
+  // esta barra acha que o caixa está aberto, um dos dois está velho: pergunta
+  // ao servidor antes — abrir por cima de um caixa aberto encerra o turno atual
+  // sem conferir a gaveta.
+  const atenderPedidoDoCaixa = useCallback((pediuAbertura: boolean) => {
+    if (!cashOpenRef.current) {
+      setShowOpenModal(true);
+      return;
+    }
+    if (!pediuAbertura) {
+      setShowCaixaMenu(true);
+      return;
+    }
+    fetch("/api/store/caixa-aberto", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (d?.aberto === false) {
+          setCashOpen(false);
+          setShowOpenModal(true);
+          return;
+        }
+        setShowCaixaMenu(true);
+        // Quem pediu ficou com o "fechado" velho: que repergunte.
+        if (d?.aberto === true) avisarQueOCaixaMudou(true);
+      })
+      .catch(() => setShowCaixaMenu(true));
+  }, []);
+
   useEffect(() => {
-    const abrir = () => (cashOpen ? setShowCaixaMenu(true) : setShowOpenModal(true));
-    window.addEventListener("firehub:abrir-menu-caixa", abrir);
-    return () => window.removeEventListener("firehub:abrir-menu-caixa", abrir);
-  }, [cashOpen]);
+    const atender = (e: Event) => {
+      // Avisa quem pediu que a barra está aqui e atendeu (senão ele navega
+      // para o histórico de caixas com ?abrirCaixa=1 — ver lib/caixa-aberto).
+      e.preventDefault();
+      atenderPedidoDoCaixa((e as CustomEvent<PedidoDoCaixa>).detail?.acao === "abrir");
+    };
+    window.addEventListener(EVENTO_ABRIR_MENU_DO_CAIXA, atender);
+    return () => window.removeEventListener(EVENTO_ABRIR_MENU_DO_CAIXA, atender);
+  }, [atenderPedidoDoCaixa]);
+
+  // O caminho de quem pediu o caixa numa página sem esta barra: chega com
+  // ?abrirCaixa=1 (lib/caixa-aberto → caminhoParaAbrirOCaixa). Abre o modal uma
+  // vez e tira o parâmetro do endereço — recarregar a página não abre de novo.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(PARAMETRO_ABRIR_CAIXA) !== "1") return;
+    params.delete(PARAMETRO_ABRIR_CAIXA);
+    const resto = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${resto ? `?${resto}` : ""}${window.location.hash}`);
+    atenderPedidoDoCaixa(true);
+  }, [atenderPedidoDoCaixa]);
 
   const salvarMov = async () => {
     setMovErro("");
@@ -374,6 +433,9 @@ export default function StoreTopNav({
       setCashOpen(true);
       setShowOpenModal(false);
       setOpeningAmount("");
+      // O Balcão e as Mesas desta aba reperguntam na hora: antes o "caixa
+      // fechado" continuava na tela por até 30 s depois de aberto aqui.
+      avisarQueOCaixaMudou(true);
       startTransition(() => router.refresh());
     }
   };
@@ -468,6 +530,9 @@ export default function StoreTopNav({
     setShowBlankWarn(false);
     setPerguntarImpressao(false);
     setActual({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
+    // Idem ao fechar: o Balcão e as Mesas travam na hora (e, se o fechamento
+    // não passou no servidor, a repergunta deles mostra o caixa ainda aberto).
+    avisarQueOCaixaMudou(false);
     startTransition(() => router.refresh());
   };
 

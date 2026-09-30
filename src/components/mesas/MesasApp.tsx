@@ -12,7 +12,7 @@ import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 import { impressorasDaContaNoAndar, lerAndares, numerosDaFaixa, type AndarDaMesa } from "@/lib/andares-da-mesa";
 import { numeroDaMesa } from "@/lib/mesa-na-comanda";
-import { CAMINHO_DO_CAIXA } from "@/lib/caixa-aberto";
+import { EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
   type DescontoManual,
@@ -814,10 +814,14 @@ export default function MesasApp({
   // Repergunta a cada 30s e quando a aba ganha foco: quem abre o caixa é o
   // painel, noutra tela e quase sempre noutro aparelho. Sem reperguntar, o
   // garçom ficaria olhando a faixa vermelha num caixa já aberto.
+  //
+  // E NA HORA quando a barra do topo do painel abre ou fecha o caixa
+  // (EVENTO_CAIXA_MUDOU, lib/caixa-aberto) — o "Abrir o caixa →" daqui abre o
+  // modal dela nesta mesma tela. No link do garçom não há barra: fica o relógio.
   useEffect(() => {
     let vivo = true;
     const conferir = () => {
-      chamar("/api/store/caixa-aberto")
+      chamar("/api/store/caixa-aberto", { cache: "no-store" })
         .then(r => (r.ok ? r.json() : null))
         .then(d => { if (vivo && d) setCaixaAberto(d.aberto === true); })
         .catch(() => { /* mantém o que já sabia; quem barra de verdade é o servidor */ });
@@ -825,7 +829,13 @@ export default function MesasApp({
     conferir();
     const relogio = setInterval(conferir, 30_000);
     window.addEventListener("focus", conferir);
-    return () => { vivo = false; clearInterval(relogio); window.removeEventListener("focus", conferir); };
+    window.addEventListener(EVENTO_CAIXA_MUDOU, conferir);
+    return () => {
+      vivo = false;
+      clearInterval(relogio);
+      window.removeEventListener("focus", conferir);
+      window.removeEventListener(EVENTO_CAIXA_MUDOU, conferir);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ehGarcom]);
 
@@ -2030,11 +2040,13 @@ export default function MesasApp({
               {ehGarcom ? " Avise quem abre o caixa na loja." : " Abra o caixa para liberar o salão."}
             </div>
           </div>
+          {/* Abre o modal de abertura da barra do topo aqui mesmo (lib/caixa-aberto →
+              pedirAberturaDoCaixa). Era um link para "/store/caixa", que não existe (404). */}
           {!ehGarcom && (
-            <a href={CAMINHO_DO_CAIXA} style={{
-              padding: "8px 14px", borderRadius: 10, background: "#fff", color: "#B71C1C",
-              fontWeight: 800, fontSize: "0.82rem", textDecoration: "none", whiteSpace: "nowrap",
-            }}>Abrir o caixa →</a>
+            <button type="button" onClick={() => pedirAberturaDoCaixa()} aria-haspopup="dialog" style={{
+              padding: "8px 14px", borderRadius: 10, border: "none", background: "#fff", color: "#B71C1C",
+              fontWeight: 800, fontSize: "0.82rem", fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
+            }}>Abrir o caixa →</button>
           )}
         </div>
       )}

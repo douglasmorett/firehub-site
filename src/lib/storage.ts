@@ -31,13 +31,13 @@ import { conferirVideo } from "@/lib/video-enviado";
  * que o volume mudar de lugar.
  */
 export const UPLOADS_ROOT =
-  process.env.UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
+  process.env.UPLOADS_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), "public", "uploads");
 
 /**
  * Segunda raiz que a rota consulta. Serve para quando UPLOADS_DIR aponta para
  * fora de public/: as imagens antigas continuam sendo encontradas aqui.
  */
-export const LEGACY_PUBLIC_ROOT = path.join(process.cwd(), "public", "uploads");
+export const LEGACY_PUBLIC_ROOT = path.join(/*turbopackIgnore: true*/ process.cwd(), "public", "uploads");
 
 /** Prefixo publico correspondente. */
 const PUBLIC_PREFIX = "/uploads";
@@ -151,10 +151,10 @@ export async function saveUploadedFile(file: File, folder?: string | null): Prom
 
   const dir = sanitizeFolder(folder);
   const fileName = safeBaseName(file.name, ext);
-  const destDir = path.join(UPLOADS_ROOT, dir);
+  const destDir = path.join(/*turbopackIgnore: true*/ UPLOADS_ROOT, dir);
 
   await mkdir(destDir, { recursive: true });
-  await writeFile(path.join(destDir, fileName), buffer);
+  await writeFile(path.join(/*turbopackIgnore: true*/ destDir, fileName), buffer);
 
   return {
     url: `${PUBLIC_PREFIX}/${dir}/${fileName}`,
@@ -178,10 +178,10 @@ export async function saveUploadedVideo(file: File, folder?: string | null): Pro
 
   const dir = sanitizeFolder(folder);
   const fileName = safeBaseName(file.name, conferido.extensao);
-  const destDir = path.join(UPLOADS_ROOT, dir);
+  const destDir = path.join(/*turbopackIgnore: true*/ UPLOADS_ROOT, dir);
 
   await mkdir(destDir, { recursive: true });
-  await writeFile(path.join(destDir, fileName), bytes);
+  await writeFile(path.join(/*turbopackIgnore: true*/ destDir, fileName), bytes);
 
   return {
     url: `${PUBLIC_PREFIX}/${dir}/${fileName}`,
@@ -213,10 +213,10 @@ export async function saveDataUrl(dataUrl: string, folder?: string | null): Prom
 
   const dir = sanitizeFolder(folder);
   const fileName = safeBaseName("imagem", finalExt);
-  const destDir = path.join(UPLOADS_ROOT, dir);
+  const destDir = path.join(/*turbopackIgnore: true*/ UPLOADS_ROOT, dir);
 
   await mkdir(destDir, { recursive: true });
-  await writeFile(path.join(destDir, fileName), buffer);
+  await writeFile(path.join(/*turbopackIgnore: true*/ destDir, fileName), buffer);
 
   return {
     url: `${PUBLIC_PREFIX}/${dir}/${fileName}`,

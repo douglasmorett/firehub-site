@@ -87,6 +87,10 @@ export default function FloatingContactWidget({
         />
       )}
 
+      {/* O contêiner tem o tamanho do menu mesmo com ele fechado: em
+          globals.css ele NÃO recebe clique (pointer-events: none) — só a
+          bolinha (onde mora o arraste) e o menu aberto. Antes a caixa
+          invisível engolia o clique do que estivesse embaixo, no canto. */}
       <div className="fcw-container" id="floating-contact-widget" style={arraste.estiloDoContainer}>
         {/* Channel options */}
         <div className={`fcw-menu ${open ? "fcw-menu-open" : ""}`}>

@@ -13,7 +13,7 @@ import {
 import {
   BALCAO_CONFIG_PADRAO, numeroDaMesaEhObrigatorio, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
 } from "@/lib/balcao-config";
-import { MENSAGEM_CAIXA_FECHADO, CAMINHO_DO_CAIXA } from "@/lib/caixa-aberto";
+import { MENSAGEM_CAIXA_FECHADO, EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
 import { useSession } from "next-auth/react";
 
@@ -115,10 +115,14 @@ export default function VendaPresencialPage() {
   // caixa noutra aba e voltar para cá, e sem reperguntar ele ficaria olhando o
   // aviso vermelho num caixa já aberto, sem entender por quê. Também volta a
   // perguntar quando a aba ganha foco, que é o caminho mais comum.
+  //
+  // E NA HORA quando a barra do topo abre ou fecha o caixa (EVENTO_CAIXA_MUDOU,
+  // lib/caixa-aberto): o "Abrir o caixa →" daqui abre o modal da barra nesta
+  // mesma tela, e o "🔒 Seu caixa está fechado" ficava até 30 s depois de aberto.
   useEffect(() => {
     let vivo = true;
     const conferir = () => {
-      fetch("/api/store/caixa-aberto")
+      fetch("/api/store/caixa-aberto", { cache: "no-store" })
         .then(r => (r.ok ? r.json() : null))
         .then(d => { if (vivo && d) setCaixaAberto(d.aberto === true); })
         .catch(() => { /* mantém o que já sabia; quem barra de verdade é a API do pedido */ });
@@ -126,7 +130,13 @@ export default function VendaPresencialPage() {
     conferir();
     const relogio = setInterval(conferir, 30_000);
     window.addEventListener("focus", conferir);
-    return () => { vivo = false; clearInterval(relogio); window.removeEventListener("focus", conferir); };
+    window.addEventListener(EVENTO_CAIXA_MUDOU, conferir);
+    return () => {
+      vivo = false;
+      clearInterval(relogio);
+      window.removeEventListener("focus", conferir);
+      window.removeEventListener(EVENTO_CAIXA_MUDOU, conferir);
+    };
   }, []);
 
   const getDisplayPrice = (p: any) => {
@@ -1253,8 +1263,11 @@ export default function VendaPresencialPage() {
               não no topo da tela: o carrinho rola, e um aviso lá em cima
               sumiria justamente no momento de finalizar.
 
-              Traz o atalho para abrir o caixa em outra aba — o carrinho fica
-              montado aqui, e ao voltar é só finalizar. Nada se perde. */}
+              O atalho abre o modal de abertura da barra do topo AQUI MESMO
+              (lib/caixa-aberto → pedirAberturaDoCaixa): o carrinho continua
+              montado, e a faixa some assim que o caixa abre. Era um link para
+              "/store/caixa", página que não existe (404). Sem a barra na
+              página, o histórico de caixas abre em outra aba já com o modal. */}
           {caixaAberto === false && (
             <div className="pdv-aviso-caixa" style={{ padding: "10px 12px", borderRadius: 12, marginBottom: 8, background: "#FEF2F2", border: "1.5px solid #FECACA", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 170 }}>
@@ -1268,14 +1281,14 @@ export default function VendaPresencialPage() {
                   Abra o caixa para lançar pedidos. O que você já montou aqui não se perde.
                 </div>
               </div>
-              <a
-                href={CAMINHO_DO_CAIXA}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ display: "inline-block", padding: "8px 14px", borderRadius: 10, background: "#B71C1C", color: "#fff", fontWeight: 800, fontSize: "0.8rem", textDecoration: "none", whiteSpace: "nowrap" }}
+              <button
+                type="button"
+                onClick={() => pedirAberturaDoCaixa({ novaAba: true })}
+                aria-haspopup="dialog"
+                style={{ display: "inline-block", padding: "8px 14px", borderRadius: 10, border: "none", background: "#B71C1C", color: "#fff", fontWeight: 800, fontSize: "0.8rem", fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}
               >
                 Abrir o caixa →
-              </a>
+              </button>
             </div>
           )}
 

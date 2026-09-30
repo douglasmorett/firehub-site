@@ -334,6 +334,11 @@ nav [style*="scroll"] {
   animation: fcwFadeIn .2s ease;
 }
 
+/* O contêiner tem o tamanho do MENU (300 px de largura e a altura dele, mesmo
+   fechado e invisível) mais a bolinha. Com o clique ligado nele, essa caixa
+   invisível de ~300×220 px no canto engolia o clique de tudo o que estava
+   embaixo — o "Cancelar" da nota fiscal ficou impossível de clicar a
+   1366×900. O contêiner não recebe clique; só a bolinha e o menu ABERTO. */
 .fcw-container {
   position: fixed;
   bottom: 24px;
@@ -343,10 +348,12 @@ nav [style*="scroll"] {
   flex-direction: column;
   align-items: flex-end;
   gap: 14px;
+  pointer-events: none;
 }
 
 /* ── FAB Button ── */
 .fcw-fab {
+  pointer-events: auto;
   width: 60px;
   height: 60px;
   border-radius: 50%;
@@ -429,6 +436,10 @@ nav [style*="scroll"] {
   opacity: 0;
   transform: translateY(12px) scale(.92);
   pointer-events: none;
+  /* Fechado, também fora do Tab e do leitor de tela: os links invisíveis do
+     menu eram alcançáveis pelo teclado. `visibility` entra na transição sem
+     cortar o fade (some só no fim ao fechar, aparece no início ao abrir). */
+  visibility: hidden;
   transition: all .3s cubic-bezier(.4,0,.2,1);
   transform-origin: bottom right;
 }
@@ -436,6 +447,7 @@ nav [style*="scroll"] {
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
+  visibility: visible;
 }
 
 .fcw-menu-header {
