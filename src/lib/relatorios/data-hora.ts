@@ -69,8 +69,7 @@
  * aqui contra R$ 34.660,54 no Vendas por período. Agora o valor é o lançado,
  * e o desconto no fechamento é informação à parte, no Vendas por período e no
  * Faturamento por dia, pelo dia em que a mesa fechou. (O Cupons e descontos
- * ainda o conta no dia dos lançamentos e o abate do "vendas" dele — ver
- * "Quem ainda não segue a régua" em regua-da-venda.ts.)
+ * segue a mesma regra — ver "Quem segue a régua" em regua-da-venda.ts.)
  *
  * O lançamento "MESA" antigo, sem sessão (deliveryType MESA pelo PDV — 109 dos
  * 393 pedidos da NIK em 17–23/09/2026), não tem como ser agrupado: cada um é

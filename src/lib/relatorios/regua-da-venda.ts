@@ -45,17 +45,17 @@
  * baixa grava a nota que o cliente entregou), e o valor vendido é a soma dos
  * pedidos. Quem precisa tirá-lo é o relatório de pagamentos, do Dinheiro.
  *
- * ── Quem ainda não segue a régua ────────────────────────────────────────────
+ * ── Quem segue a régua ──────────────────────────────────────────────────────
  *
- * O relatório Cupons e descontos (lib/relatorios/descontos.ts) usa a MESMA
- * fórmula do desconto na mesa (`descontoDaMesa` = `descontoNoFechamento`,
- * conferido em scripts/teste-vendas.ts), mas ainda o pendura no dia dos
- * LANÇAMENTOS da mesa, não no do fechamento (regra 4), e o abate do "vendas"
- * dele. Com a mesa lançada num dia e fechada noutro, os totais de desconto
- * diferem: Pastel da Paulista, mesa de cortesia lançada em 11/09/2026 e
- * fechada em 13/09 — no dia 13, R$ 125,40 de desconto na mesa aqui e nenhum
- * lá; no dia 11, o contrário. Até ele migrar, nenhuma tela diz que os dois
- * totais são "o mesmo". O Painel (/store/relatorios/painel) também não segue.
+ * Todas as telas de relatório, inclusive o Cupons e descontos e o Painel
+ * (/store/relatorios/painel). O Cupons e descontos (lib/relatorios/descontos.ts)
+ * usa a MESMA fórmula do desconto na mesa (`descontoDaMesa` =
+ * `descontoNoFechamento`, conferido em scripts/teste-vendas.ts) e as mesas
+ * FECHADAS no período (`mesasFechadasDoPeriodo`, regra 4): a mesa de cortesia
+ * da Pastel da Paulista, lançada em 11/09/2026 e fechada em 13/09, entra no
+ * dia 13 nos dois, e o desconto total de 13/09 dá R$ 286,49 em ambos. O Painel
+ * conta vendas e ticket por `atendimentosDaVenda`/`ticketMedio` daqui.
+ * scripts/conferir-relatorios-batem.mjs confere que os totais batem.
  *
  * ── Acréscimo ───────────────────────────────────────────────────────────────
  *

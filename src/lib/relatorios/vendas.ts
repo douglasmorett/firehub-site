@@ -68,9 +68,9 @@
  * FECHAR a mesa também só se deduz da sessão (consumo − (pago − serviço −
  * gorjeta), a mesma fórmula do relatório Descontos) e sai na mesma linha, à
  * parte, no período em que a mesa FECHOU: NÃO é abatido do valor vendido. O
- * Descontos ainda o pendura no dia dos lançamentos — com a mesa lançada num
- * dia e fechada noutro, os totais de desconto dos dois diferem (ver
- * "Quem ainda não segue a régua" em regua-da-venda.ts). Caso real: Pastel da Paulista, mesa
+ * Descontos usa a mesma regra (mesas fechadas no período), então os totais
+ * de desconto dos dois batem (ver "Quem segue a régua" em
+ * regua-da-venda.ts). Caso real: Pastel da Paulista, mesa
  * fechada em 13/09/2026 com R$ 125,40 de consumo e nada pago (cortesia) — o
  * valor vendido continua com os R$ 125,40 (foram lançados), e o "Total com
  * serviço e gorjeta", que é o que entrou, desconta. É um piso: troco deixado
