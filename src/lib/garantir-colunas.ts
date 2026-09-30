@@ -78,6 +78,10 @@ const INSTRUCOES = [
   // VÍDEO NA CAPA do cardápio (o CardápioWeb tem). Nulo = só a imagem, que é
   // como toda loja continua; com vídeo, a imagem da capa vira o pôster dele.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "storeBannerVideo" TEXT`,
+  // AVALIAÇÃO MÍNIMA NO CARDÁPIO: a partir de quantas estrelas a avaliação
+  // aparece e conta na nota do cardápio. Nulo = todas, como toda loja
+  // continua; o painel da loja sempre vê todas, para responder.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "reviewsMinStars" INTEGER`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -101,6 +105,7 @@ const ESPERADAS = [
   "MenuProduct.estoqueDesde",
   "MenuProduct.estoquePausar",
   "User.storeBannerVideo",
+  "User.reviewsMinStars",
 ];
 
 /**

@@ -7,6 +7,7 @@ import { notFound, redirect } from "next/navigation";
 import { slugAtualDeUmAntigo } from "@/lib/slug-da-loja";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
+import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio";
 
 export const revalidate = 60; // ⚡ Cache de Borda (Edge) de 60 segundos
 
@@ -92,6 +93,9 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
       pixOnlineAtivo: true,
       cartaoOnlineAtivo: true,
       showReviewsOnMenu: true,
+      // A partir de quantas estrelas a avaliação aparece e conta aqui
+      // (lib/avaliacoes-no-cardapio.ts).
+      reviewsMinStars: true,
       showAddressOnMenu: true,
       allowScheduledOrders: true,
     }
@@ -111,6 +115,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   }
 
   const showReviews = (franchisee as any).showReviewsOnMenu !== false;
+  const avaliacoesQueEntram = filtroDoCardapio(minimoDeEstrelas((franchisee as any).reviewsMinStars));
 
   const [menuProducts, storeCategories, reviewsData, recentReviews] = await Promise.all([
     prisma.menuProduct.findMany({
@@ -195,14 +200,14 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
     }),
     showReviews
       ? prisma.storeReview.aggregate({
-          where: { franchiseeId: franchisee.id },
+          where: { franchiseeId: franchisee.id, ...avaliacoesQueEntram },
           _avg: { rating: true },
           _count: { rating: true }
         })
       : Promise.resolve(null),
     showReviews
       ? prisma.storeReview.findMany({
-          where: { franchiseeId: franchisee.id, comment: { not: null } },
+          where: { franchiseeId: franchisee.id, comment: { not: null }, ...avaliacoesQueEntram },
           orderBy: { createdAt: "desc" },
           take: 15,
           include: {

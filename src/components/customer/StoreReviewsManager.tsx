@@ -16,6 +16,12 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
   const [reviews, setReviews] = useState<any[]>([]);
   const [filterRating, setFilterRating] = useState<number | "all">("all");
 
+  // A partir de quantas estrelas a avaliação aparece no cardápio (null = todas)
+  // e a nota que o cliente lê lá — lib/avaliacoes-no-cardapio.ts.
+  const [minStars, setMinStars] = useState<number | null>(null);
+  const [notaNoCardapio, setNotaNoCardapio] = useState<{ averageRating: number; totalReviews: number } | null>(null);
+  const [salvandoMinimo, setSalvandoMinimo] = useState(false);
+
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [savingReply, setSavingReply] = useState(false);
@@ -28,6 +34,8 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
         setShowOnMenu(data.showReviewsOnMenu ?? true);
         setStats(data.stats || { totalReviews: 0, averageRating: 5.0, distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
         setReviews(data.reviews || []);
+        setMinStars(typeof data.reviewsMinStars === "number" ? data.reviewsMinStars : null);
+        setNotaNoCardapio(data.noCardapio || null);
       }
     } catch {
       console.error("Erro ao carregar avaliações");
@@ -61,6 +69,29 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
     }
   };
 
+  const handleMinimo = async (valor: number | null) => {
+    if (valor === minStars) return;
+    setSalvandoMinimo(true);
+    try {
+      const res = await fetch("/api/store-reviews", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewsMinStars: valor }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMinStars(data.reviewsMinStars ?? null);
+        fetchReviews();
+      } else {
+        alert(data.error || "Não foi possível salvar.");
+      }
+    } catch {
+      alert("Erro de conexão.");
+    } finally {
+      setSalvandoMinimo(false);
+    }
+  };
+
   const handleSendReply = async (reviewId: string) => {
     if (!replyText.trim()) return;
     setSavingReply(true);
@@ -75,7 +106,10 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
         setReplyText("");
         fetchReviews();
       } else {
-        alert("Erro ao salvar resposta.");
+        // O motivo de verdade, não um "erro" genérico: a Ragnar (29/09/2026)
+        // não salvou uma resposta e não havia como saber por quê.
+        const data = await res.json().catch(() => ({}));
+        alert(`Não foi possível salvar a resposta: ${data.error || `erro ${res.status}`}`);
       }
     } catch {
       alert("Erro de conexão ao responder.");
@@ -131,6 +165,47 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
           )}
         </button>
       </div>
+
+      {/* Card 1b: a partir de quantas estrelas aparece no cardápio */}
+      {showOnMenu && (
+        <div style={{ background: "#FFFFFF", borderRadius: 18, padding: "1.25rem 1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <Star size={18} color="#B45309" fill="#B45309" />
+            <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 800, color: "#0F172A" }}>
+              Quais avaliações aparecem no cardápio?
+            </h3>
+          </div>
+          <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: "#64748B" }}>
+            As que ficarem abaixo não aparecem nem contam na nota do cardápio. Aqui no painel você continua vendo todas, para responder.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {([null, 2, 3, 4, 5] as (number | null)[]).map((v) => {
+              const ativo = minStars === v;
+              return (
+                <button
+                  key={String(v)}
+                  type="button"
+                  disabled={salvandoMinimo}
+                  onClick={() => handleMinimo(v)}
+                  style={{
+                    padding: "7px 14px", borderRadius: 30, cursor: "pointer", fontWeight: 800, fontSize: "0.82rem",
+                    border: ativo ? "none" : "1.5px solid #E2E8F0",
+                    background: ativo ? "#B45309" : "#FFFFFF", color: ativo ? "#FFFFFF" : "#475569",
+                  }}
+                >
+                  {v === null ? "Todas" : v === 5 ? "Só 5 ★" : `${v} ★ ou mais`}
+                </button>
+              );
+            })}
+            {salvandoMinimo && <Loader2 className="animate-spin" size={18} color="#B45309" />}
+          </div>
+          {notaNoCardapio && (
+            <p style={{ margin: "10px 0 0", fontSize: "0.82rem", color: "#92400E", fontWeight: 700 }}>
+              O cliente vê no cardápio: ⭐ {notaNoCardapio.averageRating.toFixed(1).replace(".", ",")} ({notaNoCardapio.totalReviews} {notaNoCardapio.totalReviews === 1 ? "avaliação" : "avaliações"})
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Info Card: NPS Automático via WhatsApp */}
       <div style={{ background: "#FAF6F2", borderRadius: 16, padding: "1rem 1.25rem", border: "1px solid #E7DDD3", display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -253,6 +328,11 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
                       <span style={{ fontSize: "0.75rem", background: "#E2E8F0", color: "#475569", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>
                         Pedido #{orderNum}
                       </span>
+                      {showOnMenu && minStars !== null && r.rating < minStars && (
+                        <span style={{ fontSize: "0.72rem", background: "#F1F5F9", color: "#64748B", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>
+                          Fora do cardápio
+                        </span>
+                      )}
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
