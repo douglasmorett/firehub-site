@@ -369,3 +369,73 @@ export async function vincularLoja(contatoId: string, userId: string | null, aut
   if (contato.vendedorId && !loja.vendedorId) await gravarVendedorNaLoja(loja.id, contato.vendedorId, !!contato.primeiroContatoEm);
   await registrarEvento(contatoId, "CADASTRO", `Vinculado à loja ${loja.storeName || loja.name}.`, autor, { userId: loja.id });
 }
+
+/**
+ * Traz as lojas já cadastradas para o CRM (botão do admin). Cada loja vira um
+ * contato com o vendedor e a data em que ele a recebeu — o desempenho da
+ * equipe e a distribuição passam a enxergar a carteira de hoje, e não só quem
+ * escreveu para o WhatsApp do FireHub depois do CRM existir.
+ *
+ * Repetir não duplica: loja que já tem contato fica como está; número que já é
+ * contato (o dono escreveu antes) só ganha o vínculo com a loja.
+ */
+export async function importarLojasParaOCrm(autor: Autor): Promise<{ criados: number; ligados: number; jaEstavam: number }> {
+  const lojas = await prisma.user.findMany({
+    where: { role: "FRANCHISEE" },
+    select: {
+      ...SELECT_DA_LOJA,
+      vendedorStatus: true, vendedorAtribuidoEm: true, vendedorAtendidoEm: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  const comContato = new Set(
+    (await prisma.crmContato.findMany({ where: { userId: { not: null } }, select: { userId: true } })).map((c) => c.userId),
+  );
+
+  let criados = 0;
+  let ligados = 0;
+  let jaEstavam = 0;
+  for (const loja of lojas) {
+    if (comContato.has(loja.id)) { jaEstavam++; continue; }
+    // O WhatsApp do Proprietário primeiro: é quem decide, e é o número que o sistema já usa para falar com o dono.
+    const telefone = loja.notificationPhone || loja.storePhone;
+    const chave = chaveDoTelefone(telefone);
+    const existente = chave ? await prisma.crmContato.findUnique({ where: { telefone: chave } }) : null;
+    if (existente && !existente.userId) {
+      await prisma.crmContato.update({
+        where: { id: existente.id },
+        data: {
+          userId: loja.id,
+          nomeDaLoja: existente.nomeDaLoja || loja.storeName,
+          cidade: existente.cidade || loja.city,
+          email: existente.email || loja.email,
+          ...(!existente.vendedorId && loja.vendedorId ? { vendedorId: loja.vendedorId, vendedorAtribuidoEm: loja.vendedorAtribuidoEm || new Date() } : {}),
+        },
+      });
+      await registrarEvento(existente.id, "CADASTRO", `Ligado à loja ${loja.storeName || loja.name}.`, autor);
+      ligados++;
+      continue;
+    }
+    const contato = await prisma.crmContato.create({
+      data: {
+        // Número já usado por outro contato (dono de duas lojas): fica só com o endereço.
+        telefone: existente ? null : chave,
+        jid: jidDoTelefone(telefone),
+        nome: loja.name,
+        nomeDaLoja: loja.storeName,
+        cidade: loja.city,
+        email: loja.email,
+        origem: "CADASTRO",
+        etapa: etapaDaLoja(loja),
+        userId: loja.id,
+        vendedorId: loja.vendedorId,
+        vendedorAtribuidoEm: loja.vendedorId ? loja.vendedorAtribuidoEm || new Date() : null,
+        primeiroContatoEm: loja.vendedorId && loja.vendedorStatus === "ATENDIDO" ? loja.vendedorAtendidoEm || loja.vendedorAtribuidoEm : null,
+        criadoEm: loja.createdAt,
+      },
+    });
+    await registrarEvento(contato.id, "CADASTRO", "Loja trazida para o CRM.", autor);
+    criados++;
+  }
+  return { criados, ligados, jaEstavam };
+}

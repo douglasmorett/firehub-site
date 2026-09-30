@@ -70,6 +70,16 @@ export async function pedirQrCode(): Promise<{ conectado: boolean; qr?: string; 
         signal: AbortSignal.timeout(10000),
       }).catch(() => null);
     }
+    // Evolution oficial manda cada instância para o webhook dela; o gateway das
+    // lojas usa um só (FIREHUB_WEBHOOK_URL) e responde 404 aqui — inofensivo.
+    const webhook = `${(process.env.NEXTAUTH_URL || "https://firehubfood.com.br").replace(/\/$/, "")}/api/webhook/whatsapp`;
+    const eventos = ["MESSAGES_UPSERT", "CONNECTION_UPDATE"];
+    await fetch(`${url}/webhook/set/${inst()}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ webhook: { enabled: true, url: webhook, webhookByEvents: true, events: eventos }, enabled: true, url: webhook, webhookByEvents: true, events: eventos }),
+      signal: AbortSignal.timeout(10000),
+    }).catch(() => null);
     const res = await fetch(`${url}/instance/connect/${inst()}`, { headers, signal: AbortSignal.timeout(15000) });
     const d = await res.json().catch(() => ({}));
     if (d?.connected || d?.instance?.state === "open") return { conectado: true };

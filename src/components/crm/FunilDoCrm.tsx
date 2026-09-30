@@ -26,6 +26,8 @@ export default function FunilDoCrm({ modo, aoAbrirConversa }: { modo: "ADMIN" | 
   const [loteVendedor, setLoteVendedor] = useState("");
   const [loteEtapa, setLoteEtapa] = useState("");
   const [aplicando, setAplicando] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
 
   useEffect(() => {
     void api("/api/crm/equipe").then((r) => { if (r.ok) setVendedores(r.dados.vendedores || []); });
@@ -78,6 +80,17 @@ export default function FunilDoCrm({ modo, aoAbrirConversa }: { modo: "ADMIN" | 
     setContatos((l) => l.map((c) => (c.id === id ? { ...c, etapa } : c)));
     const r = await api(`/api/crm/contatos/${id}`, { method: "PATCH", json: { etapa, motivoPerda } });
     if (!r.ok) { setErro(r.erro); void carregar(); }
+  };
+
+  const importarLojas = async () => {
+    if (!confirm("Criar um contato no CRM para cada loja cadastrada (com o vendedor e a etapa dela)? Quem já está no CRM não é duplicado.")) return;
+    setImportando(true);
+    setAviso(null);
+    const r = await api("/api/crm/contatos/importar-lojas", { method: "POST" });
+    setImportando(false);
+    if (!r.ok) { setErro(r.erro); return; }
+    setAviso(`${r.dados.criados} loja(s) entraram no CRM${r.dados.ligados ? `, ${r.dados.ligados} contato(s) ligados à loja` : ""}${r.dados.jaEstavam ? ` · ${r.dados.jaEstavam} já estavam` : ""}.`);
+    void carregar();
   };
 
   const aplicarLote = async (corpo: Record<string, unknown>) => {
@@ -142,14 +155,20 @@ export default function FunilDoCrm({ modo, aoAbrirConversa }: { modo: "ADMIN" | 
         </div>
         <span style={{ flex: 1 }} />
         <span className="crm-sub">{contatos.length} contato(s)</span>
+        {modo === "ADMIN" && (
+          <button className="crm-btn" disabled={importando} onClick={importarLojas} title="Cria um contato para cada loja cadastrada, com o vendedor dela. Repetir não duplica.">
+            {importando ? "Trazendo…" : "🏪 Trazer as lojas cadastradas"}
+          </button>
+        )}
         <button className="crm-btn crm-btn-primary" onClick={() => setNovo(true)}>+ Novo contato</button>
       </div>
 
       {erro && <div className="crm-erro" style={{ marginBottom: 12 }}>{erro}</div>}
+      {aviso && <div className="crm-ok" style={{ marginBottom: 12 }}>{aviso}</div>}
       {carregou && contatos.length === 0 && !busca && (
         <div className="crm-card crm-vazio" style={{ height: "auto", marginBottom: 12 }}>
           <div style={{ fontSize: "1.6rem" }}>🎯</div>
-          Nenhum contato ainda. Eles entram sozinhos quando alguém escreve para o WhatsApp do FireHub ou se cadastra no site — ou cadastre à mão em "+ Novo contato".
+          Nenhum contato ainda. Eles entram sozinhos quando alguém escreve para o WhatsApp do FireHub ou se cadastra no site — ou cadastre à mão em "+ Novo contato".{modo === "ADMIN" ? ' Para começar com os clientes de hoje, use "🏪 Trazer as lojas cadastradas".' : ""}
         </div>
       )}
 
