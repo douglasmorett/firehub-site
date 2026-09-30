@@ -451,8 +451,9 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
 
           {/* GROUPS LIST */}
           <div style={{ padding: "0.5rem 1.25rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-            {groups.map((group, gIdx) => {
-              if (grupoEscondido(group)) return null;
+            {/* Numera só as que estão na tela: a borda da Lapastine é uma
+                pergunta por tamanho, e contar as escondidas pulava de 4 para 6. */}
+            {gruposNaTela.map((group, gIdx) => {
               const total = getGroupTotal(group.id);
               const max = group.maxQty || 1;
               const min = groupMin(group);
