@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.27), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.28), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -1718,14 +1718,24 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   marcas.fimQrCliente = res.length;
 
   res = aplicarModelo();
-  res += LF + (avisoLigado("obrigado") ? centerLine("Obrigado pela preferencia!") : "") + LEFT + FEED + CUT;
+  // ── "NAO E DOCUMENTO FISCAL" ─────────────────────────────────────────────
+  //
+  // Este papel vai para a mao do cliente (grampeado no saco da entrega, a
+  // conta da mesa, o cupom do balcao) e tem itens, valores e total: cara de
+  // cupom. Comprovante nao fiscal entregue ao consumidor tem de dizer que nao
+  // e documento fiscal — obrigatorio desde 01/02/2025 (Ajuste SINIEF 32/24,
+  // cl. 10a, par. 4o, conforme a orientacao fiscal do projeto). Fixo, fora do
+  // modelo e dos avisos que a loja desliga: nao e escolha da loja. As vias
+  // internas (cozinha e bebidas, acima) nao vao ao cliente e ficam sem a linha.
+  res += LF + LEFT + BOLD_ON + centerLine("NAO E DOCUMENTO FISCAL") + BOLD_OFF;
+  res += (avisoLigado("obrigado") ? centerLine("Obrigado pela preferencia!") : "") + LEFT + FEED + CUT;
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.27";
-export const ASSINATURA_DO_CODIGO = "1146099da00b6bae";
+export const VERSAO_DO_ASSISTENTE = "1.2.28";
+export const ASSINATURA_DO_CODIGO = "8f51f103fbcf7623";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.27 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.28 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }

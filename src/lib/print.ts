@@ -99,7 +99,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.27";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.28";
 
 /** "1.2.10" é mais nova que "1.2.9": compara por número, não por texto. */
 export function versaoAssistenteAoMenos(versao: string | null | undefined, minima: string): boolean {
@@ -157,8 +157,8 @@ export const VERSAO_ASSISTENTE_COM_TAXA_SEPARADA = "1.2.15";
  * server.js → parametrosDeEstado); a fila (api/store/print-queue) guarda isso
  * no estado dele e só entrega o DANFE a quem anunciou — ver
  * `assistenteImprimeDanfe`. A versão fica só para o texto do aviso ("atualize
- * para a 1.2.28"): é a do package.json que tem `buildDanfeEscPos`, AINDA NÃO
- * LANÇADA — o lançamento (instalador + VERSAO_ASSISTENTE_ATUAL) é do dono.
+ * para a 1.2.28"): é a primeira com `buildDanfeEscPos`, lançada em 30/09/2026
+ * (instalador em public/downloads + VERSAO_ASSISTENTE_ATUAL no mesmo commit).
  */
 export const VERSAO_ASSISTENTE_COM_DANFE = "1.2.28";
 

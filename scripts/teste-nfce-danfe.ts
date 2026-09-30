@@ -802,9 +802,9 @@ async function principal() {
   confere("o kind do trabalho é o KIND_DANFE_NFCE de print.ts (a fila filtra por ele)", /KIND_DANFE_NFCE = "([^"]+)"/.exec(printTs)?.[1], KIND_DO_TRABALHO);
   const pacote = JSON.parse(readFileSync(join(RAIZ, "firehub-print-assistant", "package.json"), "utf8"));
   confere(
-    "versões: o aviso pede a 1.2.28 (a do package.json, com o DANFE, não lançada); VERSAO_ASSISTENTE_ATUAL intocada na 1.2.27",
+    "versões: o aviso pede a 1.2.28 (a do package.json, com o DANFE), e ela é a lançada (VERSAO_ASSISTENTE_ATUAL, 30/09/2026)",
     [VERSAO_ASSISTENTE_COM_DANFE, /VERSAO_ASSISTENTE_COM_DANFE = "([^"]+)"/.exec(printTs)?.[1], pacote.version, /VERSAO_ASSISTENTE_ATUAL = "([^"]+)"/.exec(printTs)?.[1]],
-    ["1.2.28", "1.2.28", "1.2.28", "1.2.27"]
+    ["1.2.28", "1.2.28", "1.2.28", "1.2.28"]
   );
   confere("o instalador leva o gerador de QR (package.json → build.files)", pacote.build.files.includes("qr-code.js"), true);
 
