@@ -71,8 +71,28 @@ confere("esfiha + pizza: só a esfiha", telaEsfiha(pedido(item("Carne", "Esfihas
 confere("só refrigerante (ninguém pediu): aparece", telaEsfiha(pedido(item("Guaraná", "Bebidas"))), ["Guaraná"]);
 confere("os donos são os mesmos de antes (união dos filtros salvos)", [...donosNik].sort(), ["combos esfihas", "esfihas tradicionais", "pizzas tradicionais", "sabores de pizza"]);
 
-console.log("\n— Finalização: o pedido inteiro —");
-confere("na finalização filtrada por esfirras, esfirra + coca sai inteiro", naTela(pedidoNaTela(pedido(item("Carne", "Esfirras Salgadas"), item("Coca", "Bebidas")), { filtroDestaTela: esfirras, donos: donosComBar, estagio: "finishing", config: null })), ["Carne", "Coca"]);
+console.log("\n— Finalização: cada tela com o que é dela (NIK, 29/09/2026) —");
+// "Quando o pedido é junto, pizza e esfirra, a pizza cai no KDS da esfirra…
+// teria como colocar só pedido de esfirra de um canto e pedido de pizza de outro?"
+const nikFim: TelaDoKds[] = [
+  { id: "fe", name: "Finalização Esfihas", stage: "finishing", categoryFilter: ["Esfihas Tradicionais", "Esfihas Doces"] },
+  { id: "fp", name: "Finalização Pizza", stage: "finishing", categoryFilter: ["Pizzas Tradicionais", "Sabores de Pizza"] },
+];
+const configNik = { soNaFinalizacao: ["Bebidas", "Molhos"] };
+const naFinalizacao = (tela: TelaDoKds, p: { items: Item[] }) =>
+  naTela(pedidoNaTela(p, {
+    filtroDestaTela: tela.categoryFilter!,
+    donos: new Set([...categoriasComDono(nikFim, "finishing", tela), ...tela.categoryFilter!.map((c) => c.toLowerCase())]),
+    estagio: "finishing",
+    config: configNik,
+  }));
+const misto = pedido(item("Carne", "Esfihas Tradicionais"), item("Calabresa", "Pizzas Tradicionais"), item("Coca", "Bebidas"));
+confere("pedido misto na Finalização Esfihas: a esfiha e a bebida, sem a pizza", naFinalizacao(nikFim[0], misto), ["Carne", "Coca"]);
+confere("pedido misto na Finalização Pizza: a pizza e a bebida, sem a esfiha", naFinalizacao(nikFim[1], misto), ["Calabresa", "Coca"]);
+confere("só pizza: não aparece na Finalização Esfihas", naFinalizacao(nikFim[0], pedido(item("Calabresa", "Pizzas Tradicionais"))), "—");
+confere("a bebida que é 'só na finalização' aparece aqui (e não na produção)", naFinalizacao(nikFim[1], pedido(item("Calabresa", "Pizzas Tradicionais"), item("Guaraná", "Bebidas"))), ["Calabresa", "Guaraná"]);
+confere("só bebida: aparece inteiro (senão sumiria da cozinha)", naFinalizacao(nikFim[0], pedido(item("Coca", "Bebidas"))), ["Coca"]);
+confere("finalização SEM filtro continua vendo o pedido inteiro", naTela(pedidoNaTela(misto, { filtroDestaTela: [], donos: null, estagio: "finishing", config: configNik })), ["Carne", "Calabresa", "Coca"]);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

@@ -200,5 +200,37 @@ confere("item sem menuProduct não explode", categoriaResolvida({ productName: "
   confere("Wabiz inteira, nome novo casa direto", categoriaResolvida(espelho("Pizza Calabresa"), pizzas), "Pizzas Tradicionais");
 }
 
+// ── O sabor sem o tipo: 99Food, iFood e Wabiz (NIK, 29/09/2026) ────────────
+// A pizza ficava sem categoria, aparecia na tela das esfihas e a baixa das
+// esfihas a carimbava junto — sumia da tela da pizza.
+{
+  const nik = montarMapa([
+    { id: "p1", name: "Pizza Moda da Casa", category: "Pizzas Especiais" },
+    { id: "p2", name: "Pizza Lombinho Especial", category: "Pizzas Especiais" },
+    { id: "p3", name: "Pizza Calabacon Cremoso", category: "Pizzas Especiais" },
+    { id: "p4", name: "Pizza Lombinho", category: "Pizzas Tradicionais" },
+    { id: "p5", name: "Pizza Costela com Catupiry", category: "Pizzas Especiais" },
+    { id: "e1", name: "Esfiha Costela com Catupiry", category: "Esfihas Especiais" },
+    { id: "e2", name: "Esfiha Carne", category: "Esfihas Tradicionais" },
+    { id: "e3", name: "Esfiha Cheddar", category: "Esfihas Especiais" },
+    { id: "a1", name: "Adicional Cheddar", category: "Adicionais" },
+    { id: "a2", name: "Adicional Bacon", category: "Adicionais" },
+    { id: "a3", name: "Adicional Catupiry", category: "Adicionais" },
+  ]);
+  const do99 = (nome: string) => ({ productName: nome, menuProduct: { id: "99food_x", active: true, name: nome, category: "99Food" } });
+  confere("99Food \"Moda da Casa\" → a pizza (só pizza tem esse sabor)", categoriaResolvida(do99("Moda da Casa"), nik), "Pizzas Especiais");
+  confere("99Food \"Lombinho Especial\" → a pizza", categoriaResolvida(do99("Lombinho Especial"), nik), "Pizzas Especiais");
+  confere("99Food \"Costela com Catupiry\": pizza E esfiha têm → fica sem categoria (não adivinha)", categoriaResolvida(do99("Costela com Catupiry"), nik), "");
+  const ifood = (opcoes: string[]) => ({
+    productName: "GRANDE 2 SABORES (8 PEDAÇOS)",
+    comboSelections: JSON.stringify(opcoes.map((name) => ({ name, quantity: 1 }))),
+    menuProduct: { id: "ifood-x", active: false, name: "GRANDE 2 SABORES (8 PEDAÇOS)", category: "iFood" },
+  });
+  confere("iFood \"1/2 Lombinho\" nas metades → a pizza", categoriaResolvida(ifood(["Massa Tradicional + Borda Tradicional", "1/2 Lombinho", "1/2 Moda da Casa"]), nik), "Pizzas Tradicionais");
+  confere("opção que não é metade não ganha tipo (\"Cheddar\" não vira adicional)", categoriaResolvida(ifood(["Cheddar"]), nik), "");
+  const wabiz = { productName: "Calabacon Cremoso | Cheddar", comboSelections: JSON.stringify([{ name: "Cheddar", quantity: 1 }]), menuProduct: { id: "wabiz-x", active: false, name: "Calabacon Cremoso", category: "Pizzas Grande" } };
+  confere("Wabiz \"Calabacon Cremoso | Cheddar\": o sabor do cabeçalho, não a borda", categoriaResolvida(wabiz, nik), "Pizzas Especiais");
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

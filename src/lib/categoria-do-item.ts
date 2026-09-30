@@ -281,7 +281,12 @@ function porOpcaoDoCombo(item: ItemComCategoria, mapa: MapaDeCategorias): string
     const nomeBruto = String((s as any)?.name ?? (s as any)?.nome ?? "").replace(/^\s*\d+\s*\/\s*\d+\s*/, "");
     const chave = chaveDoNome(nomeBruto);
     if (!chave) continue;
-    const categoria = mapa.porNome.get(chave) ?? porPrefixo(chave, mapa);
+    // "1/2 Lombinho" é o sabor; o cardápio diz "Pizza Lombinho". Só nas
+    // METADES: numa opção comum o tipo acharia o que não é — o "Cheddar" da
+    // borda virava "adicional cheddar", e as esfirras do Combo Imperial Mix da
+    // Hakim viravam "pizza …" e levavam o combo para a tela de pizza.
+    const ehMetade = /^\s*\d+\s*\/\s*\d+\s/.test(String((s as any)?.name ?? (s as any)?.nome ?? ""));
+    const categoria = mapa.porNome.get(chave) ?? porPrefixo(chave, mapa) ?? (ehMetade ? porTipoDoCardapio(chave, mapa) : null);
     if (!categoria) continue;
     if (!votos.has(categoria)) ordem.push(categoria);
     votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
@@ -293,6 +298,75 @@ function porOpcaoDoCombo(item: ItemComCategoria, mapa: MapaDeCategorias): string
   for (const categoria of ordem) {
     if ((votos.get(categoria) ?? 0) > (votos.get(melhor) ?? 0)) melhor = categoria;
   }
+  return melhor;
+}
+
+/**
+ * Os "tipos" do cardápio desta loja: a primeira palavra que se repete no nome
+ * dos produtos ("pizza", "esfiha"). Três produtos no mínimo, e palavra de 4
+ * letras ou mais — "de", "x" e o nome de um produto solto não viram tipo.
+ */
+const tiposPorMapa = new WeakMap<MapaDeCategorias, string[]>();
+function tiposDoCardapio(mapa: MapaDeCategorias): string[] {
+  const pronto = tiposPorMapa.get(mapa);
+  if (pronto) return pronto;
+  const conta = new Map<string, number>();
+  for (const nome of mapa.porNome.keys()) {
+    const primeira = nome.split(" ")[0];
+    if (primeira && primeira.length >= 4 && nome.includes(" ")) conta.set(primeira, (conta.get(primeira) ?? 0) + 1);
+  }
+  const tipos = [...conta].filter(([, n]) => n >= 3).map(([t]) => t);
+  tiposPorMapa.set(mapa, tipos);
+  return tipos;
+}
+
+/**
+ * A categoria de um SABOR que chegou sem o tipo, quando só um tipo o tem.
+ *
+ * ── A PIZZA QUE SUMIA DA TELA DA PIZZA (NIK, 29/09/2026) ─────────────────────
+ *
+ * O 99Food manda "Frango Catupiry", "Moda da Casa", "Lombinho Especial"; o
+ * iFood manda "1/2 Lombinho" dentro do "GRANDE 2 SABORES"; a Wabiz,
+ * "Calabacon Cremoso | Cheddar". O cardápio da loja chama de "Pizza Moda da
+ * Casa". Nada casava, o item ficava sem categoria — curinga, em TODA tela — e
+ * a tela das esfihas mostrava a pizza e, ao dar baixa nas esfihas, carimbava
+ * a pizza junto: ela sumia da tela da pizza. Em 7 dias, 9 pizzas assim.
+ *
+ * Põe cada tipo do cardápio na frente ("pizza moda da casa", "esfiha moda da
+ * casa") e só aceita quando a resposta é UMA categoria. "Frango Catupiry" que
+ * existe como pizza E como esfiha fica sem categoria, como antes: adivinhar
+ * mandaria a pizza para a tela das esfihas — o erro que isto existe para
+ * evitar (ver `porTipoDoGrupo`).
+ */
+function porTipoDoCardapio(chave: string, mapa: MapaDeCategorias): string | null {
+  if (!chave) return null;
+  const achadas = new Set<string>();
+  for (const tipo of tiposDoCardapio(mapa)) {
+    if (chave.startsWith(`${tipo} `)) continue; // já tem tipo: não é sabor solto
+    const categoria = mapa.porNome.get(`${tipo} ${chave}`);
+    if (categoria) achadas.add(categoria);
+  }
+  return achadas.size === 1 ? [...achadas][0] : null;
+}
+
+/**
+ * Os sabores do nome do item (as metades do meio a meio), pelo tipo do
+ * cardápio. Só o cabeçalho: depois do "|" a Wabiz põe a OPÇÃO ("Calabacon
+ * Cremoso | Cheddar" — a borda), e "esfiha cheddar" puxaria a pizza para a
+ * tela das esfihas.
+ */
+function porSaborSemTipo(nome: unknown, mapa: MapaDeCategorias): string | null {
+  const votos = new Map<string, number>();
+  const ordem: string[] = [];
+  for (const pedaco of pedacosDoNome(String(nome ?? "").split("|")[0])) {
+    const categoria = porTipoDoCardapio(chaveDoNome(pedaco), mapa);
+    if (!categoria) continue;
+    if (!votos.has(categoria)) ordem.push(categoria);
+    votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
+  }
+  if (votos.size === 0) return null;
+  let melhor = ordem[0];
+  for (const c of ordem) if ((votos.get(c) ?? 0) > (votos.get(melhor) ?? 0)) melhor = c;
   return melhor;
 }
 
@@ -370,6 +444,12 @@ export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategoria
   // do grupo do parceiro. É a última tentativa antes do curinga.
   const peloTipo = porTipoDoGrupo(item, mapa);
   if (peloTipo) return peloTipo;
+  // Nem o grupo diz o tipo (o espelho do 99Food e do iFood tem a categoria da
+  // plataforma): o tipo que o cardápio da loja usa, se só um deles tem o sabor.
+  for (const n of nomes) {
+    const peloSabor = porSaborSemTipo(n, mapa);
+    if (peloSabor) return peloSabor;
+  }
   return "";
 }
 

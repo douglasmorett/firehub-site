@@ -384,10 +384,19 @@ export function categoriasComDono(
  * pedido tivesse esfirra deveria aparecer tudo; como é só pizza, não tem nada
  * que faz parte do filtro dele, não deve aparecer" (NIK, 22/09/2026).
  *
- *   - Tem item do filtro desta tela: entra. Na finalização, inteiro (é onde a
- *     sacola é montada); na produção, só o que é desta tela mais o que não é
- *     de tela nenhuma (o acompanhamento), menos o que a loja deixou só para a
- *     finalização.
+ *   - Tem item do filtro desta tela: entra, com o que é desta tela mais o
+ *     que não é de tela nenhuma (o acompanhamento). Na produção, menos o que
+ *     a loja deixou só para a finalização; na finalização, esse entra.
+ *
+ * ── A FINALIZAÇÃO TAMBÉM SEPARA ─────────────────────────────────────────────
+ *
+ * Até 29/09/2026 a finalização mostrava o pedido INTEIRO ("é onde a sacola é
+ * montada"). A NIK, única loja com finalização dividida por categoria, pediu
+ * o contrário: "quando o pedido é junto, pizza e esfirra, a pizza cai no KDS
+ * da esfirra… teria como colocar só pedido de esfirra de um canto e pedido de
+ * pizza de outro?". Cada finalização fica com o que é dela; a bebida e o
+ * molho, que ninguém produz, acompanham as duas. Tela de finalização SEM
+ * filtro continua vendo tudo (primeira linha da função).
  *   - É TODO de categoria sem dono (a comanda só de refrigerante): entra
  *     inteiro em toda tela — senão não apareceria em nenhuma.
  *   - Senão, não entra.
@@ -414,14 +423,14 @@ export function pedidoNaTela<I extends ItemParaTela, P extends { items: I[] }>(
   const temItemDesteFiltro = cats.some((c) => c && ativos.includes(c));
   const pedidoTodoSemDono = cats.every(semDono);
   if (!temItemDesteFiltro && !pedidoTodoSemDono) return null;
-  if (texto(opts.estagio) === "finishing") return pedido;
   if (pedidoTodoSemDono) return pedido;
+  const naFinalizacao = texto(opts.estagio) === "finishing";
 
   const items = pedido.items.filter((item) => {
     const cat = categoriaDoItem(item);
     if (ativos.includes(cat)) return true;
     if (!semDono(cat)) return false;
-    return !categoriaSoNaFinalizacao(opts.config, cat, ativos);
+    return naFinalizacao || !categoriaSoNaFinalizacao(opts.config, cat, ativos);
   });
   return items.length > 0 ? { ...pedido, items } : null;
 }
