@@ -115,7 +115,11 @@ export async function POST(req: NextRequest) {
     // Marcaram na agenda de outra pessoa: ela fica sabendo na hora.
     if (!(quem.tipo === "VENDEDOR" && quem.id === vendedorId) && tipo !== "BLOQUEIO") {
       const [, m, d] = b.data.split("-");
-      void avisarVendedor(vendedorId, `📅 ${quem.nome} marcou na sua agenda: ${reuniao.titulo} — ${d}/${m} às ${horaDaAgenda(inicio)}.\nhttps://firehubfood.com.br/vendedor?aba=agenda`)
+      void avisarVendedor(vendedorId, {
+        assunto: `📅 Na sua agenda: ${d}/${m} às ${horaDaAgenda(inicio)}`,
+        texto: `${quem.nome} marcou na sua agenda: ${reuniao.titulo} — ${d}/${m} às ${horaDaAgenda(inicio)}.`,
+        link: "https://firehubfood.com.br/vendedor?aba=agenda",
+      })
         .then((ok) => (ok ? prisma.agendaReuniao.update({ where: { id: reuniao.id }, data: { avisoVendedorEm: new Date() } }) : null))
         .catch(() => null);
     }

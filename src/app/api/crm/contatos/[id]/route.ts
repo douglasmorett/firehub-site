@@ -107,7 +107,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         await atribuirVendedor(id, vendedorId, autor);
         if (vendedorId) {
           const quemE = contato.nomeDaLoja || contato.nome || "um contato";
-          void avisarVendedor(vendedorId, `🎯 Novo contato na sua carteira: ${quemE}.\nVeja e responda em https://firehubfood.com.br/vendedor?aba=conversas&contato=${id}`).catch(() => null);
+          void avisarVendedor(vendedorId, {
+            assunto: `🎯 Novo contato: ${quemE}`,
+            texto: `O admin passou ${quemE} para a sua carteira. Veja a conversa e responda pelo WhatsApp do FireHub, na aba Conversas.`,
+            link: `https://firehubfood.com.br/vendedor?aba=conversas&contato=${id}`,
+          }).catch(() => null);
         }
       }
     }

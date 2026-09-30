@@ -331,6 +331,17 @@ function DetalheDaReuniao({ reuniao, modo, vendedores, aoFechar, aoMudar, aoAbri
   const [observacao, setObservacao] = useState(reuniao.observacao || "");
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [lembreteEm, setLembreteEm] = useState<string | null>(reuniao.lembreteEm);
+
+  // Uma pessoa clica e o lembrete sai pelo WhatsApp do FireHub — nunca sozinho.
+  const lembrar = async () => {
+    if (!confirm(`Mandar agora o lembrete da reunião para ${reuniao.contato?.nomeDaLoja || reuniao.contato?.nome || "o contato"} pelo WhatsApp do FireHub?`)) return;
+    setErro(null); setOcupado(true);
+    const r = await api(`/api/crm/agenda/${reuniao.id}/lembrete`, { method: "POST" });
+    setOcupado(false);
+    if (!r.ok) { setErro(r.erro); return; }
+    setLembreteEm(r.dados.lembreteEm);
+  };
 
   const patch = async (corpo: Record<string, unknown>) => {
     setErro(null); setOcupado(true);
@@ -370,8 +381,14 @@ function DetalheDaReuniao({ reuniao, modo, vendedores, aoFechar, aoMudar, aoAbri
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button className="crm-btn crm-btn-sm" disabled={ocupado} onClick={() => patch({ status: "REALIZADA" })}>✓ Foi feita</button>
             <button className="crm-btn crm-btn-sm" disabled={ocupado} onClick={() => patch({ status: "FALTOU" })}>Não compareceu</button>
+            {reuniao.contato && new Date(reuniao.inicio).getTime() > Date.now() && (
+              <button className="crm-btn crm-btn-sm" disabled={ocupado} onClick={lembrar} title="Manda o lembrete agora, pelo WhatsApp do FireHub">
+                📲 {lembreteEm ? "Lembrar de novo" : "Mandar lembrete"}
+              </button>
+            )}
           </div>
         )}
+        {lembreteEm && <div className="crm-sub">Lembrete enviado em {new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(lembreteEm))}.</div>}
 
         <div style={{ borderTop: "1px solid #EEF0F3", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
           <span className="crm-rotulo">Remarcar</span>

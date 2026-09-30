@@ -68,7 +68,7 @@ export function reuniaoParaTela(r: any, nomes: Map<string, string>, mascarar = f
       id: r.id as string, vendedorId: r.vendedorId as string, vendedorNome: nomes.get(r.vendedorId) || "—",
       tipo: r.tipo === "BLOQUEIO" ? "BLOQUEIO" : "OCUPADO", titulo: r.tipo === "BLOQUEIO" ? "Bloqueado" : "Ocupado",
       inicio: new Date(r.inicio).toISOString(), fim: new Date(r.fim).toISOString(), status: r.status as string,
-      local: null, observacao: null, contato: null, criadoPorNome: null, mascarada: true,
+      local: null, observacao: null, contato: null, criadoPorNome: null, lembreteEm: null, mascarada: true,
     };
   }
   return {
@@ -86,6 +86,7 @@ export function reuniaoParaTela(r: any, nomes: Map<string, string>, mascarar = f
       ? { id: r.contato.id, nome: r.contato.nome, nomeDaLoja: r.contato.nomeDaLoja, telefone: telefoneParaExibir(r.contato.jid && !String(r.contato.jid).includes("@lid") ? r.contato.jid : r.contato.telefone) || null, etapa: r.contato.etapa }
       : null,
     criadoPorNome: (r.criadoPorNome as string | null) || null,
+    lembreteEm: r.lembreteEm ? new Date(r.lembreteEm).toISOString() : null,
     mascarada: false,
   };
 }

@@ -92,6 +92,15 @@ export default function FichaDoContato({
     aoAtualizar();
   };
 
+  // O lembrete só sai quando alguém clica: o WhatsApp do FireHub não manda nada sozinho.
+  const lembrar = async (r: ReuniaoDaTela) => {
+    if (!confirm("Mandar agora o lembrete desta reunião pelo WhatsApp do FireHub?")) return;
+    setErro(null); setOcupado(`l${r.id}`);
+    const resp = await api(`/api/crm/agenda/${r.id}/lembrete`, { method: "POST" });
+    setOcupado(null);
+    if (!resp.ok) setErro(resp.erro); else aoAtualizar();
+  };
+
   const statusDaReuniao = async (id: string, status: StatusDeReuniao) => {
     setOcupado(`r${id}`);
     const r = await api(`/api/crm/agenda/${id}`, { method: "PATCH", json: { status } });
@@ -259,8 +268,12 @@ export default function FichaDoContato({
                 <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => statusDaReuniao(r.id, "REALIZADA")}>✓ Feita</button>
                 <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => statusDaReuniao(r.id, "FALTOU")}>Não veio</button>
                 <button className="crm-btn crm-btn-sm crm-btn-perigo" disabled={!!ocupado} onClick={() => statusDaReuniao(r.id, "CANCELADA")}>Cancelar</button>
+                {new Date(r.inicio).getTime() > Date.now() && (
+                  <button className="crm-btn crm-btn-sm" disabled={!!ocupado} onClick={() => lembrar(r)} title="Manda o lembrete agora, pelo WhatsApp do FireHub">📲 Lembrar</button>
+                )}
               </div>
             )}
+            {r.lembreteEm && <div className="crm-sub" style={{ fontSize: "0.68rem", marginTop: 4 }}>Lembrete enviado em {dataHora(r.lembreteEm)}</div>}
           </div>
         ))}
         <button className="crm-btn crm-btn-sm crm-btn-primary" onClick={() => setMarcando(true)}>📅 Marcar demonstração</button>

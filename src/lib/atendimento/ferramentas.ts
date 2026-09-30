@@ -169,10 +169,11 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
       try {
         const reuniao = await marcarReuniao({ vendedorId, contatoId: contato.id, tipo: "DEMONSTRACAO", inicio, fim: new Date(inicio.getTime() + 45 * 60_000), local: "Chamada de vídeo" }, AUTOR_ROBO);
         const quando = quandoPorExtenso(inicio);
-        void avisarVendedor(
-          vendedorId,
-          `📅 Demonstração marcada pelo robô na sua agenda: ${quando}, com ${args?.nomeDaLoja || contato.nomeDaLoja || contato.nome || "um lead"}.\nVeja o contato em https://firehubfood.com.br/vendedor?aba=conversas&contato=${contato.id}`,
-        ).then((ok) => (ok ? prisma.agendaReuniao.update({ where: { id: reuniao.id }, data: { avisoVendedorEm: new Date() } }) : null)).catch(() => null);
+        void avisarVendedor(vendedorId, {
+          assunto: `📅 Demonstração marcada: ${quando}`,
+          texto: `O robô marcou uma demonstração na sua agenda: ${quando}, com ${args?.nomeDaLoja || contato.nomeDaLoja || contato.nome || "um lead"}. Chame o contato pela aba Conversas (WhatsApp do FireHub) com o link da chamada.`,
+          link: `https://firehubfood.com.br/vendedor?aba=conversas&contato=${contato.id}`,
+        }).then((ok) => (ok ? prisma.agendaReuniao.update({ where: { id: reuniao.id }, data: { avisoVendedorEm: new Date() } }) : null)).catch(() => null);
         return { ok: true, quando, comQuem: vendedor?.name || "um especialista da equipe", aviso: "Diga que o especialista vai chamar por aqui no horário com o link da chamada." };
       } catch (err: any) {
         if (err instanceof HorarioOcupado) return { erro: "Esse horário acabou de ser ocupado. Ofereça outro." };
@@ -235,6 +236,10 @@ export async function chamarPessoa(contato: Pick<Contato, "id" | "nome" | "nomeD
   const texto = `🙋 ${quem} precisa de uma pessoa no WhatsApp do FireHub.\nMotivo: ${motivo}\nResponda em https://firehubfood.com.br/admin?aba=atendimento&contato=${contato.id}`;
   void avisarDono(texto).catch(() => null);
   if (contato.vendedorId) {
-    void avisarVendedor(contato.vendedorId, `🙋 ${quem} (seu contato) pediu uma pessoa: ${motivo}\nResponda em https://firehubfood.com.br/vendedor?aba=conversas&contato=${contato.id}`).catch(() => null);
+    void avisarVendedor(contato.vendedorId, {
+      assunto: `🙋 ${quem} pediu uma pessoa`,
+      texto: `${quem} (seu contato) pediu uma pessoa no WhatsApp do FireHub.\nMotivo: ${motivo}`,
+      link: `https://firehubfood.com.br/vendedor?aba=conversas&contato=${contato.id}`,
+    }).catch(() => null);
   }
 }

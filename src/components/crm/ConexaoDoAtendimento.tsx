@@ -6,7 +6,6 @@ type Config = {
   roboLigado: boolean;
   nomeDoAtendente: string;
   avisarNoWhatsApp: string | null;
-  lembreteAoContato: boolean;
   avisoAoVendedor: boolean;
   instrucoesExtras: string;
   evolutionUrl: string | null;
@@ -109,7 +108,6 @@ function ModalDaConexao({ config, aoFechar, aoMudar }: { config: Config; aoFecha
   const [form, setForm] = useState({
     nomeDoAtendente: config.nomeDoAtendente,
     avisarNoWhatsApp: config.avisarNoWhatsApp || "",
-    lembreteAoContato: config.lembreteAoContato,
     avisoAoVendedor: config.avisoAoVendedor,
     instrucoesExtras: config.instrucoesExtras,
     evolutionUrl: config.evolutionUrl || "",
@@ -212,14 +210,13 @@ function ModalDaConexao({ config, aoFechar, aoMudar }: { config: Config; aoFecha
               <input className="crm-input" placeholder="Vazio = (22) 99885-1680" value={form.avisarNoWhatsApp} onChange={(e) => setForm({ ...form, avisarNoWhatsApp: e.target.value })} />
             </label>
           </div>
-          <div className="crm-sub">Chega aqui (num número diferente do atendimento): quando alguém pede uma pessoa e quando o WhatsApp do FireHub desconecta.</div>
-          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.84rem" }}>
-            <input type="checkbox" checked={form.lembreteAoContato} onChange={(e) => setForm({ ...form, lembreteAoContato: e.target.checked })} />
-            Lembrar o contato 1 hora antes da demonstração
-          </label>
+          <div className="crm-sub">
+            Chega aqui quando alguém pede uma pessoa e quando o WhatsApp do FireHub desconecta — pelo número dos alertas do sistema.
+            O WhatsApp do FireHub <b>nunca manda nada sozinho</b>: ele só responde quem escreveu.
+          </div>
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.84rem" }}>
             <input type="checkbox" checked={form.avisoAoVendedor} onChange={(e) => setForm({ ...form, avisoAoVendedor: e.target.checked })} />
-            Avisar o vendedor no WhatsApp dele (contato novo na carteira, reunião marcada, pedido de pessoa)
+            Avisar o vendedor por e-mail (contato novo na carteira, reunião marcada, pedido de pessoa)
           </label>
           <label><span className="crm-rotulo">Recados para o robô (valem mais que a base)</span>
             <textarea className="crm-textarea" rows={4} placeholder="Ex.: Esta semana, quem fechar ganha 30 dias de teste. Não atendemos fora do Brasil." value={form.instrucoesExtras} onChange={(e) => setForm({ ...form, instrucoesExtras: e.target.value })} />

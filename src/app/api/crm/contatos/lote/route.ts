@@ -34,7 +34,11 @@ export async function POST(req: NextRequest) {
       }
     }
     if (vendedorId && mudados > 0) {
-      void avisarVendedor(vendedorId, `🎯 ${mudados === 1 ? "Novo contato" : `${mudados} contatos novos`} na sua carteira.\nVeja em https://firehubfood.com.br/vendedor?aba=contatos`).catch(() => null);
+      void avisarVendedor(vendedorId, {
+        assunto: `🎯 ${mudados === 1 ? "Novo contato" : `${mudados} contatos novos`} na sua carteira`,
+        texto: `O admin passou ${mudados === 1 ? "um contato" : `${mudados} contatos`} para a sua carteira.`,
+        link: "https://firehubfood.com.br/vendedor?aba=contatos",
+      }).catch(() => null);
     }
   }
   if ("etapa" in b) {

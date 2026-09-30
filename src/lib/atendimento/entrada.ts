@@ -21,14 +21,20 @@ import { avisarDono, numeroDaEquipe } from "./avisos";
  *   2. mensagem do contato → contato achado/criado, mensagem gravada, robô
  *      agendado (só responde se estiver ligado — decisão do robo.ts);
  *   3. mensagem que SAIU do número digitada no celular → gravada como
- *      "pelo celular" e o robô cala naquela conversa por 12 h. O eco do que a
- *      tela/robô mandou é reconhecido e ignorado (já está gravado).
+ *      "pelo celular" e o robô cala naquela conversa enquanto a pessoa fala
+ *      (PAUSA_PELO_CELULAR_MS). O eco do que a tela/robô mandou é reconhecido
+ *      e ignorado (já está gravado).
  *
  * Nunca lança: o webhook devolve 200 ao gateway de qualquer jeito.
  */
 
-/** O robô fica quieto por este tempo depois de o dono responder pelo celular. */
-export const PAUSA_PELO_CELULAR_MS = 12 * 60 * 60_000;
+/**
+ * Quanto o robô espera depois da última mensagem digitada no celular. Cada
+ * mensagem renova a espera: enquanto a pessoa está na conversa, o robô fica
+ * quieto; 10 minutos sem ela falar, o robô volta a responder a próxima
+ * mensagem do contato. Era 12 h — o Douglas achou demais (30/09/2026).
+ */
+export const PAUSA_PELO_CELULAR_MS = 10 * 60_000;
 
 export async function receberEventoDoAtendimento(evento: string, body: any): Promise<void> {
   try {

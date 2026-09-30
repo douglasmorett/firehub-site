@@ -58,11 +58,7 @@ async function instanciaDoFireHub(): Promise<string> {
  * Devolve se o gateway aceitou — quem chama precisa saber para não marcar
  * como avisado um aviso que não saiu.
  */
-export async function avisarNumeroPeloFireHub(
-  phone: string,
-  message: string,
-  opcoes: { peloAtendimento?: boolean } = {},
-): Promise<boolean> {
+export async function avisarNumeroPeloFireHub(phone: string, message: string): Promise<boolean> {
   // Precisa sair com o 55. `storePhone` é o que o lojista digitou —
   // "(22) 99213-4504" vira "22992134504" só tirando os não-dígitos, e o
   // WhatsApp lê isso como DDI 22: o primeiro aviso de queda foi para um
@@ -70,18 +66,9 @@ export async function avisarNumeroPeloFireHub(
   const numero = paraEnvioWhatsApp(phone);
   if (!numero) return false;
 
-  // Primeiro pelo WhatsApp do atendimento do FireHub, quando está conectado:
-  // o aviso sai do número do FireHub (e não do da Hakim Centro) e a resposta
-  // do lojista cai na caixa de atendimento (lib/atendimento). Alerta interno
-  // de banco fora do ar não passa por aqui — esse caminho consulta o banco.
-  if (opcoes.peloAtendimento !== false) {
-    try {
-      const { avisoPeloNumeroDoFireHub } = await import("@/lib/atendimento/aviso-pelo-atendimento");
-      if (await avisoPeloNumeroDoFireHub(numero, message)) return true;
-    } catch {
-      // segue pelo número de sempre
-    }
-  }
+  // NUNCA pelo WhatsApp do atendimento do FireHub (lib/atendimento): aquele
+  // número só responde quem escreveu. O FireHub já perdeu um número por
+  // notificação automática — regra do Douglas, 30/09/2026.
 
   const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
   const apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
@@ -103,7 +90,7 @@ export async function avisarNumeroPeloFireHub(
 
 async function sendWhatsAppAlert(message: string) {
   for (const phone of ALERT_PHONES) {
-    await avisarNumeroPeloFireHub(phone, message, { peloAtendimento: false });
+    await avisarNumeroPeloFireHub(phone, message);
   }
 }
 
