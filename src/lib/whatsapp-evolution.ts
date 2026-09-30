@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { segredoObrigatorio } from "./segredos";
+import { levarAoGatewayNovoSeFor } from "./gateway-da-loja";
 
 export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
@@ -9,11 +10,9 @@ export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   let apiKey = segredoObrigatorio("EVOLUTION_API_KEY");
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { chatbotConfig: true },
-    });
-    const config = (user?.chatbotConfig as any) || {};
+    // Loja nova, ou fora há 10+ min, lê o QR no gateway de Baileys 7
+    // (lib/gateway-da-loja.ts). Quem está conectado fica onde está.
+    const config = ((await levarAoGatewayNovoSeFor(userId)) as any) || {};
     if (config.evolutionUrl) baseUrl = config.evolutionUrl.replace(/\/$/, "");
     if (config.evolutionApiKey) apiKey = config.evolutionApiKey;
   } catch {}

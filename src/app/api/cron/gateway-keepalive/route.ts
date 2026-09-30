@@ -198,11 +198,17 @@ export async function GET(req: NextRequest) {
           }
         }
 
+        // A loja pode ter ido para o gateway novo DURANTE esta rodada (pediu o
+        // QR: lib/gateway-da-loja.ts). Gravar o `config` lido no começo apagaria
+        // essa escolha — o gateway vem da leitura de agora.
+        const fresca = ((await prisma.user.findUnique({ where: { id: user.id }, select: { chatbotConfig: true } }))?.chatbotConfig as any) || {};
         await prisma.user.update({
           where: { id: user.id },
           data: {
             chatbotConfig: {
               ...config,
+              evolutionUrl: fresca.evolutionUrl ?? config.evolutionUrl,
+              evolutionApiKey: fresca.evolutionApiKey ?? config.evolutionApiKey,
               connected: false,
               jaConectouAlgumaVez: true,
               desconectadoDesde: new Date(caiuEm).toISOString(),

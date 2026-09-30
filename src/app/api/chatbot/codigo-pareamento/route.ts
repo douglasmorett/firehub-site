@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { gatewayDaLoja } from "@/lib/gateway-da-loja";
+import { gatewayDaLoja, levarAoGatewayNovoSeFor } from "@/lib/gateway-da-loja";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
   try {
     // O gateway DESTA loja: se ela estiver num gateway à parte, o código tem
     // que sair de lá, que é onde a instância dela vai viver.
-    const { baseUrl, apiKey } = gatewayDaLoja(loja?.chatbotConfig);
+    // Loja nova, ou fora há 10+ min, conecta no gateway de Baileys 7.
+    const { baseUrl, apiKey } = gatewayDaLoja((await levarAoGatewayNovoSeFor(lojaId)) ?? loja?.chatbotConfig);
     const res = await fetch(
       `${baseUrl}/instance/pairing-code/${instanceName}?number=${numero}`,
       {

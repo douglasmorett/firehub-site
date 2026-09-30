@@ -42,6 +42,13 @@ export async function GET() {
     );
     const waData = await Promise.race([waDataPromise, timeoutPromise]) as any;
 
+    // A consulta acima pode ter gravado o gateway novo (lib/gateway-da-loja.ts).
+    // As gravações abaixo partem da config de AGORA: a lida lá em cima não o
+    // tem, e reescrevê-la mandaria a loja de volta para o gateway antigo, onde
+    // a sessão dela não existe.
+    const fresca = await prisma.user.findUnique({ where: { id: user.id }, select: { chatbotConfig: true } });
+    Object.assign(chatbotConfig, (fresca?.chatbotConfig as any) || {});
+
     if (waData.connected && !chatbotConfig.connected) {
       const updatedConfig = {
         ...chatbotConfig,
