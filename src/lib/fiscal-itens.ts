@@ -1,5 +1,10 @@
-import type { ItemDaNota } from "./fiscal-emissao";
+import type { DescontoDetalhado, ItemDaNota, PagamentoInformado, PedidoParaNota } from "./fiscal-emissao";
 import { ratearEmCentavos } from "./rateio";
+import { canalDoPedido } from "./canal-do-pedido";
+import { ehPagoOnline } from "./pagamento-na-entrega";
+import { separacaoDoDesconto99 } from "./desconto-99food";
+import { documentoDeVerdade } from "./documento-do-cliente";
+import { infoDaEntrega } from "./entrega-parceira";
 
 // Reexportado para quem já importava daqui.
 export { ratearEmCentavos };
@@ -191,4 +196,154 @@ export function montarItensDaNota(itensDoPedido: ItemDoPedido[]): ItemDaNota[] {
   }
 
   return linhas;
+}
+
+// ─── O pedido inteiro vira a nota ───────────────────────────────────────────
+
+/**
+ * O pedido como o Prisma devolve (`customerOrder.findUnique` com
+ * `include: { items: { include: { menuProduct: true } } }`). Só os campos que
+ * a nota usa — o resto passa sem incomodar.
+ */
+export type PedidoDoBanco = {
+  id: string;
+  dailyOrderNumber?: number | null;
+  items: ItemDoPedido[];
+  totalAmount: number;
+  deliveryFee?: number | null;
+  discountTotal?: number | null;
+  discountIfood?: number | null;
+  discountMerchant?: number | null;
+  discountDetails?: unknown;
+  paymentMethod?: string | null;
+  paymentMethods?: unknown;
+  changeAmount?: number | null;
+  customerCpfCnpj?: string | null;
+  customerName?: string | null;
+  customerAddress?: string | null;
+  deliveryType?: string | null;
+  deliveryBy?: string | null;
+  source?: string | null;
+  status?: string | null;
+  openDeliveryChannel?: string | null;
+  openDeliveryOrderId?: string | null;
+  openDeliveryReference?: string | null;
+  ifoodOrderId?: string | null;
+  ifoodReference?: string | null;
+  ifoodStoreMerchant?: string | null;
+  food99AppShopId?: string | null;
+  food99ShopId?: string | null;
+  gatewayPaymentId?: string | null;
+  [campo: string]: unknown;
+};
+
+/**
+ * Tudo o que a NFC-e precisa saber do pedido, num lugar só.
+ *
+ * ── Por que existe ──────────────────────────────────────────────────────────
+ *
+ * A rota do botão Emitir e a emissão automática montavam o objeto da nota à
+ * mão, cada uma a sua cópia, com o mínimo: itens, total, taxa, desconto e o
+ * texto da forma de pagamento. Ficava de fora justamente o que decide se a
+ * SEFAZ aceita a nota: de qual canal veio (intermediador, rejeição 434/438),
+ * o endereço e o CPF da entrega (787/788), o pagamento dividido e o troco
+ * (865/866), quem pagou o cupom (iFood ou loja) e quem fez a entrega. Com
+ * uma função só, a regra nova chega aos dois caminhos de uma vez.
+ *
+ * `loja` é para o identificador na plataforma quando o pedido não o traz:
+ * `ifoodStoreMerchant` só vem preenchido em conta com mais de uma loja iFood
+ * (na Hakim Centro, 101 de 1.622 pedidos em 30 dias); fora disso vale o
+ * `User.ifoodMerchantId` da loja.
+ */
+export function pedidoParaNota(
+  pedido: PedidoDoBanco,
+  opcoes: {
+    /** CPF/CNPJ digitado no modal de emissão; vale mais que o gravado. */
+    documentoInformado?: string | null;
+    loja?: { ifoodMerchantId?: string | null; food99MerchantId?: string | null } | null;
+  } = {}
+): PedidoParaNota {
+  const canal = canalDoPedido(pedido as any);
+  const tipo = String(pedido.deliveryType ?? "").toUpperCase().trim();
+
+  const idNaPlataforma =
+    canal.chave === "IFOOD"
+      ? pedido.ifoodStoreMerchant || opcoes.loja?.ifoodMerchantId || null
+      : canal.chave === "99FOOD"
+      ? pedido.food99AppShopId || pedido.food99ShopId || opcoes.loja?.food99MerchantId || null
+      : null;
+
+  // Quem pagou o cupom do 99Food. O pedido do 99 grava `discountDetails` como
+  // OBJETO (não a lista do iFood), e os 128 pedidos anteriores a 18/09/2026
+  // não têm `discountIfood`/`discountMerchant`: lendo só a coluna, o cupom
+  // pago pelo 99 virava desconto da loja e a nota declarava menos do que a
+  // loja recebe (pedido cmtxn22ow073gn101rfhov71p: itens 65,00, cupom de
+  // 25,00 do 99, nota de 35,01). `separacaoDoDesconto99` é a régua que recibo,
+  // comanda e Assistente já usam: coluna quando há, `promocoes` quando não.
+  const descontoDaPlataforma =
+    canal.chave === "99FOOD"
+      ? separacaoDoDesconto99(pedido as any)?.plataforma ?? 0
+      : Number(pedido.discountIfood) || 0;
+
+  // Quem LEVA a mercadoria: o transportador da NFC-e de entrega (grupo X,
+  // lib/fiscal-emissao → transporteDaNota). A regra é a mesma do painel e da
+  // comanda (lib/entrega-parceira): `deliveryBy` explícito ou entregador do
+  // parceiro atribuído — nunca o código de coleta.
+  const entrega = infoDaEntrega(pedido);
+
+  return {
+    id: pedido.id,
+    numero: pedido.dailyOrderNumber ?? null,
+    itens: montarItensDaNota(pedido.items ?? []),
+    valorTotal: Number(pedido.totalAmount) || 0,
+    taxaEntrega: Number(pedido.deliveryFee) || 0,
+    desconto: Number(pedido.discountTotal) || 0,
+    descontoDaPlataforma,
+    descontosDetalhados: lerDescontosDetalhados(pedido.discountDetails),
+    formaDePagamento: String(pedido.paymentMethod ?? ""),
+    pagamentos: lerPagamentos(pedido.paymentMethods),
+    trocoPara: pedido.changeAmount ?? null,
+    // "00000000000" do JotaJá é "sem CPF", não um CPF errado (documentoDeVerdade).
+    documentoDoCliente: documentoDeVerdade(opcoes.documentoInformado) ?? documentoDeVerdade(pedido.customerCpfCnpj),
+    nomeDoCliente: pedido.customerName ?? null,
+    // Só "DELIVERY" é entrega. RETIRADA/TAKEOUT/PICKUP e MESA são entregues
+    // ao cliente dentro da loja.
+    entregaEmDomicilio: tipo === "DELIVERY",
+    // Entrega Parceira: o motoboy é do iFood e a taxa fica com o iFood.
+    entregaPelaPlataforma: String(pedido.deliveryBy ?? "").toUpperCase() === "IFOOD",
+    entregadorDaPlataforma: entrega.parceira ? entrega.parceiro || null : null,
+    enderecoDoCliente: pedido.customerAddress ?? null,
+    canal: canal.chave,
+    referenciaNoCanal: canal.referencia,
+    pagoOnline: ehPagoOnline(pedido as any),
+    idNaPlataforma,
+  };
+}
+
+/** `paymentMethods` é JSON livre: [{ method, amount }]. Só passa o que é usável. */
+function lerPagamentos(bruto: unknown): PagamentoInformado[] | null {
+  if (!Array.isArray(bruto)) return null;
+  const lidos: PagamentoInformado[] = [];
+  for (const p of bruto) {
+    if (!p || typeof p !== "object") continue;
+    const forma = String((p as any).method ?? (p as any).forma ?? "").trim();
+    const valor = Number((p as any).amount ?? (p as any).valor);
+    if (!forma || !Number.isFinite(valor) || valor <= 0) continue;
+    lidos.push({ forma, valor });
+  }
+  return lidos.length > 0 ? lidos : null;
+}
+
+/** `discountDetails` do iFood/99: [{ target, value, ifood, merchant, description }]. */
+function lerDescontosDetalhados(bruto: unknown): DescontoDetalhado[] | null {
+  if (!Array.isArray(bruto)) return null;
+  const lidos: DescontoDetalhado[] = [];
+  for (const d of bruto) {
+    if (!d || typeof d !== "object") continue;
+    const plataforma = Number((d as any).ifood ?? 0);
+    const loja = Number((d as any).merchant ?? 0);
+    if (!Number.isFinite(plataforma) || !Number.isFinite(loja)) continue;
+    lidos.push({ alvo: String((d as any).target ?? "CART"), plataforma: Math.max(0, plataforma), loja: Math.max(0, loja) });
+  }
+  return lidos.length > 0 ? lidos : null;
 }

@@ -1,0 +1,11 @@
+Respostas de exemplo da SEFAZ (SVRS, homologacao, UF 53) para os testes do emissor
+proprio de NFC-e. Montadas a partir do leiaute do MOC 7.0 (itens 4.1 a 4.6 e 5.8) e
+validadas contra os schemas de retorno em scripts/fixtures/nfce-xsd (o teste confere).
+Envelope SOAP 1.2 de servico .asmx com a resposta dentro de nfeResultMsg (NT 2016.002, 2.4).
+Os marcadores {{CHAVE}}, {{DIGVAL}}, {{DHRECBTO}}, {{IDLOTE}}, {{NINI}} e {{NFIM}} sao
+preenchidos pela SEFAZ falsa do teste com os dados do pedido que ela recebeu.
+Recuperacao (scripts/teste-nfce-recuperacao.ts): autorizacao-120 e consulta-120 (autorizada com alerta,
+cMsg/xMsg no protNFe - NT 2026.002 item 2), autorizacao-lote-656/280/999 (recusas do LOTE que nao sao
+da nota), autorizacao-103 + recibo-105/104 (lote assincrono), autorizacao-539 ({{DUPLICADA}} = a chave
+que o xMotivo informa), consulta-656, inutilizacao-256 (faixa ja inutilizada) e evento-135-substituicao
+(retEvento do 110112).

@@ -612,6 +612,8 @@ async function pollIfoodEvents(sessionUserId?: string) {
                   where: { ifoodOrderId: orderId } as any,
                   data: updateData,
                 });
+                // NFC-e: lib/fiscal-momento decide se este status é a hora; sem esta linha a nota só saía pela varredura do cron.
+                import("@/lib/fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ ifoodOrderId: orderId })).catch(() => {});
                 console.log(`[iFood Poll] 🔄 Status atualizado automaticamente: ${orderId} -> ${newStatus}`);
               }
             }
@@ -632,6 +634,8 @@ async function pollIfoodEvents(sessionUserId?: string) {
             where: { ifoodOrderId: orderId } as any,
             data: cancelData,
           });
+          // Cancelado pelo iFood com NFC-e de pé: não trava (o cliente já foi estornado lá), avisa na tela fiscal.
+          import("@/lib/fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ ifoodOrderId: orderId }, "iFood")).catch(() => {});
         }
 
         // O aviso de que ESTE pedido exige código de entrega na porta do
@@ -1100,6 +1104,10 @@ export async function GET(req: NextRequest) {
     for (const o of orders as any[]) {
       if (o.tableSession == null) delete o.tableSession;
     }
+
+    // NFC-e: só o status travava o "editar" de pedido com devolução registrada ou nota de homologação; vai o recorte que a trava lê.
+    const notas = await import("@/lib/fiscal-automatico").then((m) => m.notasParaOPainel(orders)).catch(() => null);
+    if (notas) for (const o of orders as any[]) if (notas.has(o.id)) o.fiscalInfo = notas.get(o.id);
 
     // O item do iFood/99Food/Wabiz herda a categoria REAL do produto da loja,
     // casado pelo nome (lib/categoria-do-item.ts) — a mesma regra do KDS e da

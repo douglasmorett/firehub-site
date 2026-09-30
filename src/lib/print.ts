@@ -143,6 +143,45 @@ export const VERSAO_ASSISTENTE_COM_DOCUMENTO = "1.2.20";
  */
 export const VERSAO_ASSISTENTE_COM_TAXA_SEPARADA = "1.2.15";
 
+/**
+ * O Assistente que imprime o DANFE NFC-e do emissor próprio (PrintRequest com
+ * `kind` KIND_DANFE_NFCE): as linhas do cupom fiscal que o site monta
+ * (lib/nfce/danfe.ts, danfeEmTexto) e o QR Code em ESC/POS.
+ *
+ * ── QUEM RECEBE O DANFE É DECIDIDO PELA CAPACIDADE, NÃO PELA VERSÃO ─────────
+ * Esta constante dizia "1.2.24", e as 1.2.24 a 1.2.27 foram lançadas SEM o
+ * DANFE (a versão andou com outras mudanças): a fila entregaria o DANFE a quem
+ * não sabe imprimi-lo — uma comanda vazia com cara de cupom, o `printedAt`
+ * carimbado pelo ack e o DANFE nunca mais de volta. Agora o Assistente que
+ * imprime ANUNCIA, na consulta da fila, `&danfe=1` (PARAMETRO_DO_DANFE;
+ * server.js → parametrosDeEstado); a fila (api/store/print-queue) guarda isso
+ * no estado dele e só entrega o DANFE a quem anunciou — ver
+ * `assistenteImprimeDanfe`. A versão fica só para o texto do aviso ("atualize
+ * para a 1.2.28"): é a do package.json que tem `buildDanfeEscPos`, AINDA NÃO
+ * LANÇADA — o lançamento (instalador + VERSAO_ASSISTENTE_ATUAL) é do dono.
+ */
+export const VERSAO_ASSISTENTE_COM_DANFE = "1.2.28";
+
+/**
+ * O parâmetro da consulta da fila com que o Assistente anuncia que imprime o
+ * DANFE NFC-e (`&danfe=1` — firehub-print-assistant/server.js →
+ * parametrosDeEstado). O Assistente que não sabe nem manda: fica sem DANFE.
+ */
+export const PARAMETRO_DO_DANFE = "danfe";
+
+/**
+ * O Assistente imprime o DANFE? Pelo estado que ELE contou na consulta da
+ * fila (api/store/print-queue → estadoInformado, gravado em
+ * User.printQueueEstado): só `imprimeDanfe: true`, que vem de `&danfe=1`. A
+ * versão não conta — ver VERSAO_ASSISTENTE_COM_DANFE.
+ */
+export function assistenteImprimeDanfe(estado: unknown): boolean {
+  return Boolean(estado && typeof estado === "object" && (estado as { imprimeDanfe?: unknown }).imprimeDanfe === true);
+}
+
+/** O `kind` do PrintRequest do DANFE NFC-e (lib/nfce/impressao-do-danfe.ts). */
+export const KIND_DANFE_NFCE = "DANFE_NFCE";
+
 export type EscPosProfile = "full" | "safe" | "legacy";
 
 export type PrinterEntry = {

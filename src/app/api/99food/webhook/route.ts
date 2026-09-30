@@ -729,6 +729,8 @@ export async function POST(req: NextRequest) {
           });
           aplicado = r?.count ?? 0;
           if (aplicado > 0) updated++;
+          // NFC-e: no avanço, lib/fiscal-momento decide se é a hora; no cancelamento, avisa na tela fiscal se havia nota (não trava).
+          if (aplicado > 0) import("@/lib/fiscal-automatico").then(async (m) => { if (newStatus === "CANCELADO") await m.alertarCancelamentoComNota({ openDeliveryOrderId: orderId }, "99Food"); else await m.emitirNfceDosPedidos({ openDeliveryOrderId: orderId }); }).catch(() => {});
         }
 
         // Logística do 99: não mexe no status do pedido, mas dizer QUEM vem

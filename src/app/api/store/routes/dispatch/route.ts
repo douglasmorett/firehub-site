@@ -13,6 +13,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
+    // ── A ROTA, O MOTOBOY E OS PEDIDOS TÊM DE SER DESTA LOJA ────────────────
+    //
+    // Esta rota nem carregava o usuário: qualquer sessão mandava o `routeId`
+    // de OUTRA loja e a despachava — pedidos dela em "Saiu para entrega",
+    // WhatsApp para os clientes dela, despacho no iFood/99 dela e a NFC-e
+    // dela emitida. Agora, antes de qualquer escrita: a rota é da loja de quem
+    // pede, o motoboy também, e só os pedidos da loja andam.
+    //
+    // "Da loja" é a loja ou um usuário dela: a rota nasce com o PRIMEIRO id de
+    // `getValidFranchiseeIds` (api/store/routes), que pode ser o de um
+    // funcionário da própria loja — exigir só `franchiseeId === loja`
+    // recusaria rota legítima.
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, ownerId: true },
+    });
+    if (!user) {
+      return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    }
+    const lojaId = user.ownerId || user.id;
+    const daLoja = { OR: [{ franchiseeId: lojaId }, { franchisee: { ownerId: lojaId } }] };
+
     const body = await req.json();
     const { routeId, motoboyId } = body;
 
@@ -20,12 +42,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "ID da rota não informado" }, { status: 400 });
     }
 
-    const route = await prisma.routeSchedule.findUnique({
-      where: { id: routeId },
-      include: {
-        orders: true,
-        motoboy: true,
-      },
+    // Rota de outra loja responde como rota inexistente: a resposta não conta
+    // que o id existe.
+    const route = await prisma.routeSchedule.findFirst({
+      where: { id: String(routeId), ...daLoja },
+      select: { id: true, routeNumber: true, motoboyId: true, franchiseeId: true },
     });
 
     if (!route) {
@@ -37,20 +58,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Selecione um motoboy para poder despachar a rota!" }, { status: 400 });
     }
 
-    const motoboy = await prisma.motoboy.findUnique({
-      where: { id: finalMotoboyId },
+    const motoboy = await prisma.motoboy.findFirst({
+      where: { id: String(finalMotoboyId), ...daLoja },
     });
 
     if (!motoboy) {
       return NextResponse.json({ error: "Motoboy não encontrado" }, { status: 404 });
     }
 
+    // Os pedidos da rota que são DESTA loja. A montagem da rota
+    // (api/store/routes) grava o `routeId` nos ids que o corpo mandou; um
+    // pedido de outra loja pendurado aqui não sai, não recebe aviso nem nota.
+    const pedidosDaRota = await prisma.customerOrder.findMany({
+      where: { routeId: route.id, ...daLoja },
+      select: {
+        id: true, franchiseeId: true, status: true, source: true, deliveryType: true, deliveryBy: true,
+        customerName: true, customerPhone: true, customerAddress: true, dailyOrderNumber: true,
+        ifoodOrderId: true, ifoodReference: true, ifoodStoreMerchant: true,
+        openDeliveryOrderId: true, openDeliveryChannel: true, openDeliveryReference: true,
+      },
+    });
+    const idsDaRota = pedidosDaRota.map((o) => o.id);
+
     // 1. Atualiza status da rota no banco
     await prisma.routeSchedule.update({
-      where: { id: routeId },
+      where: { id: route.id },
       data: {
         status: "DISPATCHED",
-        motoboyId: finalMotoboyId,
+        motoboyId: motoboy.id,
         dispatchedAt: new Date(),
       },
     });
@@ -64,26 +99,34 @@ export async function POST(req: NextRequest) {
     // e quem estava com a comida na mão levava 404 ao dar baixa. A tela já
     // impede selecionar esses pedidos; isto impede o resto.
     const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
-    await prisma.customerOrder.updateMany({
-      where: {
-        routeId,
-        status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS, "SAIU_ENTREGA"] },
-      },
-      data: {
-        status: "SAIU_ENTREGA",
-        motoboyId: finalMotoboyId,
-        isRoutePriority: false, // Pedido saiu da cozinha!
-      },
-    });
+    if (idsDaRota.length > 0) {
+      await prisma.customerOrder.updateMany({
+        where: {
+          id: { in: idsDaRota },
+          routeId: route.id,
+          status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS, "SAIU_ENTREGA"] },
+        },
+        data: {
+          status: "SAIU_ENTREGA",
+          motoboyId: motoboy.id,
+          isRoutePriority: false, // Pedido saiu da cozinha!
+        },
+      });
+      // NFC-e na SAÍDA (lib/fiscal-momento decide se é a hora): sem esta linha a nota da rota só saía pela varredura do cron.
+      import("@/lib/fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ id: { in: idsDaRota } })).catch(() => {});
+    }
 
-    const targetFranchiseeId = route.franchiseeId || "";
+    // O WhatsApp sai pela instância da LOJA (o nome dela vem do id da loja —
+    // lib/whatsapp-evolution). Era `route.franchiseeId`, que pode ser o id de
+    // um funcionário (ver acima): a instância não existia e nada saía.
+    const targetFranchiseeId = lojaId;
 
     // 2.5 Sync com plataformas externas (Jotajá + iFood) — assíncrono, não bloqueia resposta
     (async () => {
       const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
       const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
       const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
-      for (const ord of route.orders) {
+      for (const ord of pedidosDaRota) {
         // ── Sync Brendi ──
         //
         // Faltava. `ehPedidoBrendi` era importado só para EXCLUIR a Brendi do
@@ -172,7 +215,7 @@ export async function POST(req: NextRequest) {
 
 
     // 3. Notifica cada cliente via WhatsApp que o pedido saiu para entrega
-    for (const ord of route.orders) {
+    for (const ord of pedidosDaRota) {
       if (ord.customerPhone) {
         const phoneDigits = ord.customerPhone.replace(/\D/g, "");
         if (phoneDigits) {
@@ -186,7 +229,7 @@ export async function POST(req: NextRequest) {
 
     // 4. Monta o link da rota completa no Google Maps para o motoboy
     if (motoboy.phone) {
-      const addresses = route.orders
+      const addresses = pedidosDaRota
         .map((o) => o.customerAddress)
         .filter(Boolean) as string[];
 
@@ -196,10 +239,10 @@ export async function POST(req: NextRequest) {
         const mapsUrl = `https://www.google.com/maps/dir/${origin}/${waypoints}`;
 
         let summaryText = `🚀 *NOVA ROTA ATRIBUÍDA: ${route.routeNumber}*\n\n`;
-        summaryText += `📦 *Total de Pedidos:* ${route.orders.length}\n\n`;
+        summaryText += `📦 *Total de Pedidos:* ${pedidosDaRota.length}\n\n`;
         summaryText += `📍 *Paradas da Rota:*\n`;
 
-        route.orders.forEach((o, idx) => {
+        pedidosDaRota.forEach((o, idx) => {
           const displayNum = (o as any).dailyOrderNumber ? `#${(o as any).dailyOrderNumber}` : (o.ifoodReference || o.openDeliveryReference || "");
           summaryText += `${idx + 1}️⃣ *Pedido ${displayNum}*: ${o.customerName || "Cliente"}\n   🏠 ${o.customerAddress || "Sem endereço"}\n`;
         });

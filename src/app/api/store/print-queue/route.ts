@@ -11,6 +11,7 @@ import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
+import { KIND_DANFE_NFCE, PARAMETRO_DO_DANFE, assistenteImprimeDanfe } from "@/lib/print";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda, numeroDaMesa } from "@/lib/mesa-na-comanda";
@@ -407,7 +408,11 @@ export async function GET(req: NextRequest) {
     const versaoSalva = String((owner as any)?.printQueueEstado?.versao || "");
     const versaoAgora = String((estadoDoAssistente as any)?.versao || "");
     const versaoMudou = !!estadoDoAssistente && versaoAgora !== versaoSalva;
-    if (owner && "printQueuePolledAt" in owner && (versaoMudou || Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000)) {
+    // A capacidade de imprimir o DANFE também (`&danfe=1`): é ela que o aviso
+    // da emissão lê (lib/nfce/impressao-do-danfe) — gravada na hora em que muda.
+    const danfeMudou =
+      !!estadoDoAssistente && assistenteImprimeDanfe(estadoDoAssistente) !== assistenteImprimeDanfe((owner as any)?.printQueueEstado);
+    if (owner && "printQueuePolledAt" in owner && (versaoMudou || danfeMudou || Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000)) {
       const carimbo = { printQueuePolledAt: new Date() };
       prisma.user
         .update({
@@ -655,14 +660,27 @@ export async function GET(req: NextRequest) {
     // do caixa). A regra mora em src/lib/impressao-da-conta.ts, porque a tela
     // de mesas decide o mesmo para a impressora local.
     let avulsas: { id: string; payload: unknown; createdAt: Date; kind?: string }[] = [];
+    // O DANFE NFC-e só vai para o Assistente que sabe imprimi-lo (ver
+    // `jobsDanfe`, lá embaixo). Para o antigo ele nem SAI do banco: o payload
+    // do DANFE tem o cupom pronto em várias larguras, e esta consulta roda a
+    // cada 3 s — trazer, a cada consulta, DANFEs que ninguém vai imprimir era
+    // tráfego de banco jogado fora pelos 30 min da janela.
+    //
+    // Quem sabe é quem ANUNCIA, NESTA consulta (`&danfe=1` → estadoInformado),
+    // e não quem tem "versão ≥ X": as 1.2.24 a 1.2.27 saíram sem o DANFE, e o
+    // trabalho entregue a elas virava comanda vazia com o `printedAt`
+    // carimbado — o DANFE nunca mais voltava (lib/print.ts →
+    // assistenteImprimeDanfe).
+    const imprimeDanfe = assistenteImprimeDanfe(estadoDoAssistente);
     try {
       // Mesmo carimbo de "já saiu" do pedido (ver acima); mesma tolerância à
       // coluna ausente.
+      const semDanfe = imprimeDanfe ? {} : { kind: { not: KIND_DANFE_NFCE } };
       const buscar = (comCarimbo: boolean) =>
         prisma.printRequest.findMany({
           where: comCarimbo
-            ? { franchiseeId, createdAt: { gt: sinceDate }, printedAt: null }
-            : { franchiseeId, createdAt: { gt: sinceDate } },
+            ? { franchiseeId, createdAt: { gt: sinceDate }, printedAt: null, ...semDanfe }
+            : { franchiseeId, createdAt: { gt: sinceDate }, ...semDanfe },
           orderBy: { createdAt: "asc" },
           select: { id: true, payload: true, createdAt: true, kind: true },
         });
@@ -685,9 +703,14 @@ export async function GET(req: NextRequest) {
     // (lib/impressao-da-conta.ts → impressoraDoCaixa): não herda o "ninguém"
     // da conta da mesa e sai numa impressora só.
     const ehDoCaixa = (a: { kind?: string }) => String(a.kind || "").startsWith("CAIXA_");
-    const contas = avulsas.filter((a) => a.kind !== KIND_REIMPRESSAO && !ehDoCaixa(a));
+    // O DANFE NFC-e (lib/nfce/impressao-do-danfe.ts) também mora em
+    // PrintRequest, e não é conta da mesa: sem esta exclusão ele cairia em
+    // `contas` e iria para a impressora da conta como se fosse um pedido.
+    const ehDanfe = (a: { kind?: string }) => a.kind === KIND_DANFE_NFCE;
+    const contas = avulsas.filter((a) => a.kind !== KIND_REIMPRESSAO && !ehDoCaixa(a) && !ehDanfe(a));
     const doCaixa = avulsas.filter(ehDoCaixa);
     const reimpressoes = avulsas.filter((a) => a.kind === KIND_REIMPRESSAO);
+    const danfes = avulsas.filter(ehDanfe);
 
     const jobsReimpressos = reimpressoes.map((pedida) => {
       const order: any = pedida.payload || {};
@@ -832,7 +855,61 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ jobs: [...jobs, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos] });
+    // ── DANFE NFC-e (emissor próprio) ─────────────────────────────────────
+    //
+    // O cupom fiscal vai para a impressora do CAIXA — a mesma regra do papel
+    // do caixa, logo acima: é papel que vai para a mão do cliente (ou no saco
+    // da entrega), uma vez só, e nunca fica sem destino por escolha de
+    // impressora. As linhas já vêm prontas no payload (lib/nfce/
+    // trabalho-do-danfe.ts); as vias da contingência vão juntas, então a
+    // cópia é sempre 1.
+    //
+    // SÓ para o Assistente que anunciou, nesta consulta, que sabe imprimi-lo
+    // (`&danfe=1`): o que não sabe leria o trabalho como pedido e imprimiria
+    // uma comanda vazia com cara de cupom. O que não for entregue fica no
+    // PrintRequest e some sozinho em 24 h — enquanto isso a loja imprime pelo
+    // navegador (api/store/fiscal/danfe).
+    const jobsDanfe = (imprimeDanfe ? danfes : []).map((pedida) => {
+      const payload: any = pedida.payload || {};
+      return {
+        id: "job_" + pedida.id,
+        order: {
+          kind: KIND_DANFE_NFCE,
+          danfe: payload.danfe,
+          // Id próprio de cada pedido de impressão: a reimpressão (outro
+          // PrintRequest) não cai na trava de "já impresso" do Assistente.
+          id: "danfe_" + pedida.id,
+          items: [],
+          createdAt: pedida.createdAt.toISOString(),
+        },
+        storeName: owner?.storeName || owner?.name || "FIREHUB",
+        paperWidth: destinoDoCaixa?.paperWidth || printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",
+        columns: destinoDoCaixa?.columns ?? printers[0]?.columns,
+        escposProfile: destinoDoCaixa?.escposProfile ?? printers[0]?.escposProfile,
+        printerConfig: {
+          autoprint: pc?.autoprint !== false,
+          autoBeverageTag: pc?.autoBeverageTag !== false,
+          customBeverageKeywords: pc?.customBeverageKeywords || "",
+          defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
+          printers,
+        },
+        destinos: destinoDoCaixa
+          ? [{
+              printer: destinoDoCaixa.name,
+              copies: 1,
+              paperWidth: destinoDoCaixa.paperWidth || pc?.defaultPaperWidth || "80mm",
+              columns: destinoDoCaixa.columns ?? undefined,
+              escposProfile: destinoDoCaixa.escposProfile ?? undefined,
+              somenteBebidas: false,
+              separarItens: false,
+              items: [],
+            }]
+          : [],
+        createdAt: pedida.createdAt.toISOString(),
+      };
+    });
+
+    return NextResponse.json({ jobs: [...jobs, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe] });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.
@@ -846,7 +923,8 @@ export async function GET(req: NextRequest) {
  * `parametrosDeEstado`). Crivo porque a rota é pública: versão só em formato
  * de versão, contagem pequena, textos curtos, no máximo 30 nomes de impressora.
  * Assistente anterior à 1.2.7 não manda `v` — devolve null e o estado gravado
- * não é tocado.
+ * não é tocado. `imprimeDanfe` só existe quando ele ANUNCIA `&danfe=1` (a
+ * capacidade de imprimir o DANFE NFC-e — lib/print.ts → assistenteImprimeDanfe).
  */
 function estadoInformado(q: URLSearchParams): Record<string, unknown> | null {
   const versao = q.get("v") || "";
@@ -865,6 +943,7 @@ function estadoInformado(q: URLSearchParams): Record<string, unknown> | null {
     ...(Number.isFinite(porta) ? { porta } : {}),
     ...(erro ? { erro } : {}),
     impressoras,
+    ...(q.get(PARAMETRO_DO_DANFE) === "1" ? { imprimeDanfe: true } : {}),
     em: new Date().toISOString(),
   };
 }

@@ -132,6 +132,8 @@ export async function POST(req: NextRequest) {
         where: { id: order.id },
         data: dbUpdate,
       });
+      // Cancelado na Brendi com NFC-e de pé: não trava (a Brendi já cancelou lá), avisa na tela fiscal.
+      if (dbUpdate.status === "CANCELADO") import("@/lib/fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ id: order.id }, "Brendi")).catch(() => {});
     }
 
     console.log(`[Brendi Action] ✅ ${acao} — orderId=${uuidBrendi}`);

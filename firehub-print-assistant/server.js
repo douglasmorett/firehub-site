@@ -11,6 +11,8 @@ const { execSync, exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+// O QR do DANFE NFC-e como imagem, no perfil "legacy" (ver buildDanfeEscPos).
+const { matrizDoQrCode } = require("./qr-code");
 
 const PORT = 7891;
 const app = express();
@@ -2343,8 +2345,181 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   marcas.fimQrCliente = res.length;
 
   res = aplicarModelo();
-  res += LF + (avisoLigado("obrigado") ? centerLine("Obrigado pela preferencia!") : "") + LEFT + FEED + CUT;
+  // ── "NAO E DOCUMENTO FISCAL" ─────────────────────────────────────────────
+  //
+  // Este papel vai para a mao do cliente (grampeado no saco da entrega, a
+  // conta da mesa, o cupom do balcao) e tem itens, valores e total: cara de
+  // cupom. Comprovante nao fiscal entregue ao consumidor tem de dizer que nao
+  // e documento fiscal — obrigatorio desde 01/02/2025 (Ajuste SINIEF 32/24,
+  // cl. 10a, par. 4o, conforme a orientacao fiscal do projeto). Fixo, fora do
+  // modelo e dos avisos que a loja desliga: nao e escolha da loja. As vias
+  // internas (cozinha e bebidas, acima) nao vao ao cliente e ficam sem a linha.
+  res += LF + LEFT + BOLD_ON + centerLine("NAO E DOCUMENTO FISCAL") + BOLD_OFF;
+  res += (avisoLigado("obrigado") ? centerLine("Obrigado pela preferencia!") : "") + LEFT + FEED + CUT;
   return Buffer.from(res, "binary");
+}
+
+/* ─── DANFE NFC-e: o cupom fiscal do emissor proprio (1.2.28) ─────────
+ *
+ * Diferente da comanda, o DANFE NAO e montado aqui. O site le o XML da nota
+ * autorizada (ou da contingencia) e manda o cupom PRONTO, em linhas, uma
+ * variante por largura de bobina (src/lib/nfce/danfe.ts, danfeEmTexto, e
+ * src/lib/nfce/trabalho-do-danfe.ts). Motivo: o leiaute do DANFE e regra
+ * fiscal (Manual de Padroes do DANFE NFC-e v6.0) e muda com a lei, e o
+ * Assistente das lojas leva semanas para se atualizar. Com o texto pronto, uma
+ * correcao no cupom vale no dia seguinte em toda loja; aqui ficam so o
+ * negrito, a altura dobrada, o QR Code e o corte.
+ *
+ * A fila da nuvem so entrega o DANFE a quem ANUNCIA que sabe imprimi-lo
+ * (`&danfe=1` na consulta — parametrosDeEstado): as 1.2.24 a 1.2.27 sairam
+ * sem esta funcao, e a versao nao serve de prova.
+ *
+ * Contingencia: o trabalho traz DUAS vias (consumidor e estabelecimento), que
+ * saem em sequencia, com corte entre elas.
+ *
+ * O QR e OBRIGATORIO no DANFE (Ajuste SINIEF 19/16, cl. 10a, par. 2o, II;
+ * Manual do DANFE, item 4) — nunca sai DANFE sem ele:
+ *  - perfis "safe" e "full": o comando de QR da impressora (GS ( k);
+ *  - perfil "legacy" (impressora que imprime lixo com comando desconhecido,
+ *    inclusive o de QR): o Assistente desenha a matriz (qr-code.js) e a manda
+ *    como IMAGEM (GS v 0), que praticamente toda termica ESC/POS entende;
+ *  - sem o conteudo do QR, ou QR que nao da para desenhar: ERRO — o trabalho
+ *    falha com o motivo (vai para o painel como erro de impressao), e a loja
+ *    imprime o DANFE pelo navegador.
+ *
+ * Os bytes de controle sao montados com String.fromCharCode, sem escapes no
+ * fonte (a ferramenta de edicao ja trocou escape por caractere literal). */
+function ehTrabalhoDeDanfe(order) {
+  return Boolean(order && order.kind === "DANFE_NFCE" && order.danfe && Array.isArray(order.danfe.vias));
+}
+
+/* A variante do cupom para esta largura: a exata; senao a MAIOR que cabe;
+   senao (impressora mais estreita que tudo) a menor que veio. */
+function escolherVarianteDoDanfe(porColunas, columns) {
+  if (!porColunas || typeof porColunas !== "object") return null;
+  const larguras = Object.keys(porColunas)
+    .map((k) => Number(k))
+    .filter((n) => Number.isFinite(n) && n > 0 && porColunas[String(n)])
+    .sort((a, b) => a - b);
+  if (!larguras.length) return null;
+  const cabem = larguras.filter((n) => n <= columns);
+  return porColunas[String(cabem.length ? cabem[cabem.length - 1] : larguras[0])];
+}
+
+function buildDanfeEscPos(danfe, columns = 48, profile = "safe") {
+  const colsRaw = Number(columns);
+  columns = Number.isFinite(colsRaw) ? Math.max(24, Math.min(64, Math.floor(colsRaw))) : 48;
+  const b = (...codigos) => String.fromCharCode(...codigos);
+  const ESC = b(0x1b), GS = b(0x1d), LF = b(0x0a);
+  const INIT = ESC + "@";
+  const BOLD_ON = ESC + "E" + b(1), BOLD_OFF = ESC + "E" + b(0);
+  const CENTER = ESC + "a" + b(1), LEFT = ESC + "a" + b(0);
+  const ALTO_ON = GS + "!" + b(1), ALTO_OFF = GS + "!" + b(0);
+  const CUT = GS + "V" + b(0), FEED = ESC + "d" + b(4);
+
+  // Os MESMOS preambulos do buildEscPos, byte a byte — o perfil da impressora
+  // vale igual para o cupom fiscal. Repetidos aqui para nao mexer na funcao
+  // da comanda, que a previa do site copia (scripts/gerar-comanda-do-assistente.mjs).
+  const areaDots = Math.max(192, Math.min(576, columns * 12));
+  const PREAMBLE = {
+    legacy: INIT + ESC + "t" + b(3),
+    safe: INIT + ESC + "t" + b(3) + ESC + "M" + b(0) + ESC + "!" + b(0) + ESC + " " + b(0),
+    full: INIT + ESC + "t" + b(3) + ESC + "R" + b(0) + ESC + "M" + b(0) + ESC + "!" + b(0) + ESC + " " + b(0)
+      + ESC + "2" + GS + "L" + b(0, 0) + GS + "W" + b(areaDots & 0xff, (areaDots >> 8) & 0xff),
+  };
+
+  // QR em GS ( k — os mesmos bytes do qrEscPos da comanda: modelo 2, tamanho
+  // do modulo (o site calcula para dar ~28 mm, acima do minimo de 22 mm do
+  // Manual, 3.4), correcao M (Manual 4.5.2), dados, imprime.
+  const qr = (dados, modulo) => {
+    const d = String(dados);
+    const len = d.length + 3;
+    const m = Math.max(1, Math.min(16, Math.floor(Number(modulo) || 6)));
+    return GS + "(k" + b(4, 0, 0x31, 0x41, 0x32, 0)
+      + GS + "(k" + b(3, 0, 0x31, 0x43, m)
+      + GS + "(k" + b(3, 0, 0x31, 0x45, 0x31)
+      + GS + "(k" + b(len & 0xff, (len >> 8) & 0xff, 0x31, 0x50, 0x30) + d
+      + GS + "(k" + b(3, 0, 0x31, 0x51, 0x30);
+  };
+
+  // O MESMO QR como IMAGEM, para o perfil "legacy": GS v 0 m xL xH yL yH e os
+  // pontos (1 = preto, o bit mais alto e o ponto da esquerda). A matriz vem de
+  // qr-code.js (nivel M, modo byte); cada modulo tem `modulo` pontos, o mesmo
+  // tamanho que o site calculou para o GS ( k. A imagem ocupa a largura do
+  // papel (columns x 12 pontos, a Fonte A) com o QR no meio — centralizar
+  // pelo ESC a nao vale para imagem em toda impressora — e leva a zona de
+  // silencio de 4 modulos em cima e embaixo. Vai em faixas de ate 240 linhas:
+  // impressora de buffer pequeno engasga com a imagem inteira de uma vez.
+  const qrComoImagem = (dados, modulo) => {
+    const q = matrizDoQrCode(String(dados));
+    const zona = 4;
+    const porLinha = Math.ceil(areaDots / 8);
+    let m = Math.max(1, Math.min(16, Math.floor(Number(modulo) || 6)));
+    while (m > 1 && (q.tamanho + 2 * zona) * m > areaDots) m--;
+    const esquerda = Math.max(0, Math.floor((porLinha * 8 - q.tamanho * m) / 2));
+    const emTexto = (bytes) => String.fromCharCode.apply(null, bytes);
+    const branca = emTexto(new Array(porLinha).fill(0));
+    const linhas = [];
+    for (let i = 0; i < zona * m; i++) linhas.push(branca);
+    for (let r = 0; r < q.tamanho; r++) {
+      const bytes = new Array(porLinha).fill(0);
+      for (let c = 0; c < q.tamanho; c++) {
+        if (!q.modulos[r][c]) continue;
+        for (let x = esquerda + c * m; x < esquerda + (c + 1) * m; x++) bytes[x >> 3] |= 0x80 >> (x & 7);
+      }
+      const pontos = emTexto(bytes);
+      for (let i = 0; i < m; i++) linhas.push(pontos);
+    }
+    for (let i = 0; i < zona * m; i++) linhas.push(branca);
+    let imagem = "";
+    for (let y = 0; y < linhas.length; y += 240) {
+      const faixa = linhas.slice(y, y + 240);
+      imagem += GS + "v0" + b(0, porLinha & 0xff, (porLinha >> 8) & 0xff, faixa.length & 0xff, (faixa.length >> 8) & 0xff) + faixa.join("");
+    }
+    return imagem;
+  };
+  const erroSemQr = (motivo) =>
+    new Error(`DANFE nao impresso: ${motivo}. O QR Code e obrigatorio e este DANFE nao sai sem ele — imprima pelo navegador (Notas fiscais > DANFE).`);
+
+  // A linha ja vem na largura (centralizada com espacos pelo site): so o estilo.
+  const linha = (l) => {
+    const texto = cleanAscii(l && l.texto != null ? String(l.texto) : "");
+    const alto = Boolean(l && l.alto), negrito = Boolean(l && l.negrito);
+    return (alto ? ALTO_ON : "") + (negrito ? BOLD_ON : "") + texto + (negrito ? BOLD_OFF : "") + (alto ? ALTO_OFF : "") + LF;
+  };
+
+  const vias = danfe && Array.isArray(danfe.vias) ? danfe.vias : [];
+  let res = "";
+  for (const via of vias) {
+    const v = escolherVarianteDoDanfe(via && via.porColunas, columns);
+    if (!v || !Array.isArray(v.linhas) || !v.linhas.length) continue;
+    // Nunca um DANFE sem QR: sem o conteudo ou sem o lugar dele, o trabalho falha.
+    const conteudo = v.qr && v.qr.conteudo ? String(v.qr.conteudo) : "";
+    if (!conteudo) throw erroSemQr("o trabalho veio sem o conteudo do QR Code");
+    if (!v.linhas.some((l) => l && l.qr)) throw erroSemQr("o trabalho veio sem o lugar do QR Code");
+    res += PREAMBLE[profile] || PREAMBLE.safe;
+    for (const l of v.linhas) {
+      if (l && l.qr) {
+        if (profile === "legacy") {
+          let imagem;
+          try {
+            imagem = qrComoImagem(conteudo, v.qr.modulo);
+          } catch (e) {
+            throw erroSemQr(`o QR Code nao pode ser desenhado (${e.message})`);
+          }
+          // Linha em branco antes e depois; a imagem ja traz a zona de silencio.
+          res += LF + LEFT + imagem + LF;
+        } else {
+          // Linha em branco antes e depois: a margem segura do QR.
+          res += LF + CENTER + qr(conteudo, v.qr.modulo) + LF + LEFT;
+        }
+        continue;
+      }
+      res += linha(l);
+    }
+    res += LEFT + FEED + CUT;
+  }
+  return res ? Buffer.from(res, "binary") : null;
 }
 
 /* ─── Configuração Local & Fila da Nuvem ───────────────────── */
@@ -2768,11 +2943,15 @@ function parametrosDeEstado() {
   // `abertoHaSeg`: ha quanto tempo este Assistente esta aberto. E o teto zero
   // do servidor — nada criado antes da abertura vem na fila. Vai a IDADE, nao
   // a hora: o relogio do PC da loja pode estar adiantado ou atrasado.
+  // `danfe=1`: este Assistente imprime o DANFE NFC-e (buildDanfeEscPos). A fila
+  // so entrega o DANFE a quem anuncia isto — pela versao nao da, porque as
+  // 1.2.24 a 1.2.27 sairam sem o DANFE (src/lib/print.ts → assistenteImprimeDanfe).
   return `&v=${encodeURIComponent(VERSAO_ASSISTENTE)}&pendentes=${lista.length}` +
     `&abertoHaSeg=${Math.max(0, Math.floor((Date.now() - INICIADO_EM) / 1000))}` +
     (portaAtiva ? `&porta=${portaAtiva}` : "") +
     (comErro ? `&erro=${encodeURIComponent(String(comErro.erro).slice(0, 120))}` : "") +
-    (locais ? `&impressoras=${encodeURIComponent(locais)}` : "");
+    (locais ? `&impressoras=${encodeURIComponent(locais)}` : "") +
+    "&danfe=1";
 }
 
 /* ─── Fila Serial de Impressão (FIFO Queue — Evita gargalos, spooler lock e ordem errada) ─ */
@@ -2831,7 +3010,33 @@ async function processPrintQueue() {
       // Largura e perfil resolvidos POR IMPRESSORA (job -> printers[] -> global)
       const perfil = resolvePrinterProfile(targetPrinter, { paperWidth, columns, escposProfile });
       const cols = perfil.columns;
-      const data = buildEscPos(order || {}, storeName || "FIREHUB", cols, perfil.profile);
+      // DANFE NFC-e (1.2.28): o cupom fiscal vem pronto do site (ver
+      // buildDanfeEscPos); a fila, a trava de duplicidade, os pendentes e o
+      // ack sao os de sempre.
+      const ehDanfe = ehTrabalhoDeDanfe(order);
+      let data;
+      if (ehDanfe) {
+        try {
+          data = buildDanfeEscPos(order.danfe, cols, perfil.profile);
+        } catch (e) {
+          // DANFE que nao sai com o QR NAO sai (o QR e obrigatorio). O trabalho
+          // FALHA com o motivo, como a impressora que recusou: fica pendente
+          // (vai ao painel como erro de impressao, com o "imprima pelo
+          // navegador") e sem ack — o servidor nao o da por impresso.
+          markOrderAsPrinted(order, targetPrinter);
+          marcado = true;
+          throw e;
+        }
+      } else {
+        data = buildEscPos(order || {}, storeName || "FIREHUB", cols, perfil.profile);
+      }
+      if (ehDanfe && !data) {
+        // Payload sem via imprimivel (nao deveria acontecer: o site monta).
+        // Nao marca nem guarda pendente — nao ha papel a insistir.
+        console.error(`[DANFE] trabalho ${order && order.id} sem via imprimivel; ignorado.`);
+        resolve({ ok: true, skipped: true, message: "DANFE sem conteudo imprimivel." });
+        continue;
+      }
 
       // Impressora so de bebida num pedido sem bebida nenhuma: nao ha o que
       // imprimir. Marcar como impresso aqui seria pior do que inutil — a
@@ -2845,7 +3050,11 @@ async function processPrintQueue() {
       markOrderAsPrinted(order, targetPrinter);
       marcado = true;
 
-      for (let i = 0; i < copies; i++) {
+      // O DANFE sai UMA vez por trabalho: as vias da contingencia ja vem
+      // dentro dele, e as "copias" da impressora sao da comanda (duas vias
+      // para a cozinha nao viram dois cupons fiscais).
+      const vezes = ehDanfe ? 1 : copies;
+      for (let i = 0; i < vezes; i++) {
         await rawPrint(targetPrinter, data);
       }
       ultimaImpressaoEm = Date.now();
@@ -2854,7 +3063,7 @@ async function processPrintQueue() {
       await new Promise(r => setTimeout(r, 150));
 
       esquecerPendente(order, targetPrinter);
-      resolve({ ok: true, message: `Impresso em ${targetPrinter} (${copies}x - ${cols} cols - perfil ${perfil.profile})` });
+      resolve({ ok: true, message: `Impresso em ${targetPrinter} (${vezes}x - ${cols} cols - perfil ${perfil.profile})` });
     } catch (e) {
       console.error("[PrintServer] Erro ao imprimir job:", e.message);
       // Falha ANTES de marcar (largura, cupom) nao e "ja impresso": nao ha o

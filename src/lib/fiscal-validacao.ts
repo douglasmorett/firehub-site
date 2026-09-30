@@ -73,12 +73,35 @@ export function cpfValido(entrada: unknown): boolean {
   return digito(c.slice(0, 9), 10) === Number(c[9]) && digito(c.slice(0, 10), 11) === Number(c[10]);
 }
 
-/** CPF ou CNPJ, o que o tamanho indicar. Usado no destinatário da NFC-e. */
+/**
+ * CPF ou CNPJ, o que o tamanho indicar. Usado no destinatário da NFC-e.
+ *
+ * Tira só a máscara, NÃO as letras: o CNPJ alfanumérico está no schema da
+ * NF-e/NFC-e desde 01/07/2026 (NT 2026.004). Com `somenteDigitos`, um CNPJ
+ * "12ABC34501DE35" virava "123450135" — 9 caracteres, "documento inválido" —
+ * e o cliente empresa ficava sem nota. CPF continua só com dígitos: letra em
+ * CPF é erro de digitação, e `cpfValido` recusa.
+ */
 export function documentoValido(entrada: unknown): boolean {
-  const c = somenteDigitos(entrada);
-  if (c.length === 11) return cpfValido(c);
+  const c = String(entrada ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
+  if (c.length === 11) return /^\d{11}$/.test(c) && cpfValido(c);
   if (c.length === 14) return cnpjValido(c);
   return false;
+}
+
+/**
+ * Chave de acesso da NF-e/NFC-e: 44 posições.
+ *
+ * Desde a NT 2026.004 a chave pode ter LETRAS (ela carrega o CNPJ do
+ * emitente, e o CNPJ agora pode ser alfanumérico). E a Focus devolve a chave
+ * com o prefixo "NFe" ("NFe4119..."), que não faz parte dela — gravar com o
+ * prefixo dá 47 caracteres, e a consulta pública da SEFAZ não encontra.
+ *
+ * Devolve a chave limpa (maiúsculas, sem prefixo, sem espaço) ou null.
+ */
+export function chaveDeAcessoLimpa(entrada: unknown): string | null {
+  const c = String(entrada ?? "").trim().replace(/^NFe/i, "").toUpperCase().replace(/[^0-9A-Z]/g, "");
+  return /^[0-9A-Z]{44}$/.test(c) ? c : null;
 }
 
 // ─── Códigos fiscais ─────────────────────────────────────────────────────────
@@ -183,7 +206,7 @@ export type DadosDoEmitente = {
   inscricaoEstadual?: string | null;
   razaoSocial?: string | null;
   nomeFantasia?: string | null;
-  regimeTributario?: number | string | null; // CRT: 1 Simples, 2 Simples excesso, 3 Normal
+  regimeTributario?: number | string | null; // CRT: 1 Simples, 2 Simples excesso, 3 Normal, 4 MEI
   logradouro?: string | null;
   numero?: string | null;
   bairro?: string | null;
@@ -236,18 +259,32 @@ export function pendenciasDoEmitente(d: DadosDoEmitente): Problema[] {
   exigir(Boolean(d.razaoSocial?.trim()), "razaoSocial", d.razaoSocial, "Razão social é obrigatória — é o nome que consta no CNPJ.");
 
   const crt = Number(d.regimeTributario);
-  exigir([1, 2, 3].includes(crt), "regimeTributario", d.regimeTributario, "Informe o regime: 1 Simples Nacional, 2 Simples com excesso de sublimite, 3 Regime Normal.");
-  // Regime Normal exige o grupo completo de ICMS por item (CST + base +
-  // alíquota + valor), que o FireHub ainda não coleta nem envia. Deixar
-  // configurar CRT 3 gerava nota com situação tributária vazia — rejeição
-  // críptica do provedor em TODA emissão, sem tela para corrigir.
+  exigir(
+    [1, 2, 3, 4].includes(crt),
+    "regimeTributario",
+    d.regimeTributario,
+    "Informe o regime: 1 Simples Nacional, 2 Simples com excesso de sublimite, 3 Regime Normal, 4 MEI."
+  );
+  // MEI (CRT 4) emite NFC-e desde a NT 2024.001 (produção em 02/09/2024). Ele
+  // era recusado aqui só porque a lista parava no 3 — o microempreendedor
+  // configurava tudo e ouvia "regime inválido". As restrições do MEI são por
+  // ITEM (CFOP 5102 e CSOSN 102/300) e moram em `pendenciasDoProduto`.
+  //
+  // Regime Normal exige, por item, o grupo completo de ICMS (CST + base +
+  // alíquota + valor), FCP onde a UF cobra, cBenef nas UFs que exigem código
+  // de benefício (o RJ é uma delas) e, com a reforma, IBS/CBS — nada disso o
+  // FireHub coleta nem envia ainda. Deixar configurar CRT 3 gerava nota com
+  // situação tributária incompleta: rejeição em TODA emissão, sem tela para
+  // corrigir. Fica bloqueado com o motivo por extenso.
   if (crt === 3) {
     faltas.push({
       campo: "regimeTributario",
       valor: "3",
       mensagem:
-        "Regime Normal (CRT 3) ainda não é suportado pelo FireHub — hoje a emissão atende " +
-        "Simples Nacional (CRT 1 e 2). Fale com o suporte se sua loja é do Regime Normal.",
+        "Regime Normal (CRT 3) ainda não é suportado pelo FireHub: a nota desse regime precisa, " +
+        "item a item, de base e alíquota de ICMS, FCP, código de benefício fiscal (cBenef) e " +
+        "IBS/CBS, que o sistema ainda não coleta. Hoje a emissão atende Simples Nacional (CRT 1 e 2) " +
+        "e MEI (CRT 4). Fale com o suporte se sua loja é do Regime Normal.",
     });
   }
 
@@ -260,6 +297,16 @@ export function pendenciasDoEmitente(d: DadosDoEmitente): Problema[] {
   exigir(cepValido(d.cep), "cep", d.cep, "CEP com 8 dígitos.");
 
   exigir(Number(d.serie) >= 1, "serie", d.serie, "Série da NFC-e (normalmente 1). A SEFAZ exige série declarada.");
+  // Nota emitida pelo contribuinte (procEmi 0) com emitente CNPJ: série de 0
+  // a 889 (MOC 7.0, Anexo I: B26-10, rejeição 244, e C02-30, rejeição 503);
+  // a 890–919 é da nota avulsa do fisco. A mesma régua do emissor próprio
+  // (lib/nfce/pendencias → SERIE_MAXIMA).
+  exigir(
+    !(Number(d.serie) > 889),
+    "serie",
+    d.serie,
+    "Série da NFC-e de 1 a 889: a SEFAZ recusa série acima de 889 na nota emitida pela loja (rejeições 244 e 503)."
+  );
   exigir([1, 2].includes(Number(d.ambiente)), "ambiente", d.ambiente, "Ambiente: 2 para homologação (teste), 1 para produção (vale de verdade).");
 
   exigir(Boolean(d.cscId?.trim()), "cscId", d.cscId, "ID do CSC (idToken), obtido no portal da SEFAZ do seu estado.");
@@ -296,8 +343,106 @@ export function pendenciasDoProduto(p: DadosFiscaisDoProduto, regime: number): P
   // Simples Nacional usa CSOSN; Regime Normal usa CST. Cobrar os dois é errado.
   if (regime === 3) {
     exigir(cstIcmsValido(p.cst), "cst", p.cst, "CST de ICMS (2 dígitos) é obrigatório no Regime Normal.");
-  } else {
-    exigir(csosnValido(p.csosn), "csosn", p.csosn, "CSOSN (3 dígitos) é obrigatório no Simples Nacional. Restaurante costuma usar 102.");
+    return faltas;
+  }
+
+  exigir(csosnValido(p.csosn), "csosn", p.csosn, "CSOSN (3 dígitos) é obrigatório no Simples Nacional. Restaurante costuma usar 102.");
+  if (!csosnValido(p.csosn) || !cfopValido(p.cfop)) return faltas;
+
+  const csosn = String(p.csosn).trim();
+  const cfop = somenteDigitos(p.cfop);
+
+  // ── MEI (CRT 4): a NFC-e só aceita CFOP 5102 e CSOSN 102 ou 300 ──────────
+  // NT 2024.001, regras N12a-80/N12a-81 (rejeição 782) e I08 (rejeição 337):
+  // "Se NFC-e (mod=65) aceitar somente o CSOSN 102 e 300" e "aceitar somente o
+  // CFOP 5102". Uma bebida com CSOSN 500 (ST) no cadastro de um MEI derruba a
+  // nota inteira na SEFAZ — melhor dizer aqui, item por item.
+  if (regime === 4) {
+    exigir(
+      csosn === "102" || csosn === "300",
+      "csosn",
+      p.csosn,
+      "MEI só pode usar CSOSN 102 ou 300 na NFC-e (a SEFAZ rejeita outros com o código 782)."
+    );
+    exigir(
+      cfop === "5102",
+      "cfop",
+      p.cfop,
+      "MEI só pode usar o CFOP 5102 na NFC-e (a SEFAZ rejeita outros com o código 337)."
+    );
+    return faltas;
+  }
+
+  // ── CSOSN que exige campos que o FireHub não envia ───────────────────────
+  // 101 pede a alíquota e o valor do crédito do Simples (pCredSN/vCredICMSSN);
+  // 201/202/203 pedem o grupo de ICMS-ST (MVA, base e valor retido). A nota
+  // sairia com o grupo incompleto e voltaria rejeitada — e restaurante no
+  // Simples, na venda ao consumidor, usa 102 (ou 500 na bebida com ST).
+  if (["101", "201", "202", "203"].includes(csosn)) {
+    faltas.push({
+      campo: "csosn",
+      valor: csosn,
+      mensagem:
+        `CSOSN ${csosn} exige dados de crédito do Simples ou de substituição tributária que o FireHub ` +
+        "ainda não envia. Na venda ao consumidor, use 102 (ou 500 para produto que já veio com ST).",
+    });
+    return faltas;
+  }
+
+  // ── CSOSN 500 exige o CEST ───────────────────────────────────────────────
+  // Ajuste SINIEF 19/16, cl. 4ª, VIII: a NFC-e "deverá conter" o CEST, de
+  // preenchimento obrigatório no documento que acobertar operação com as
+  // mercadorias listadas em convênio (Conv. ICMS 142/18) — e o CSOSN 500 diz
+  // justamente que o ICMS da mercadoria já foi cobrado por substituição
+  // tributária. Na NF-e a SEFAZ recusa sem ele (MOC 7.0, N23-10, rejeição
+  // 806); na NFC-e a obrigação é do Ajuste. O lote de NCM já recusava a linha
+  // (lib/nfce/ncm-sugerido → problemaDaCombinacao); faltava o produto avulso e
+  // a emissão. CEST presente mas torto já é a pendência "cest" de formato.
+  //
+  // GTIN (cEAN) NÃO é conferido: o cadastro não tem o campo, e a nota vai com
+  // "SEM GTIN" (NT 2017.001). Quem vende produto com código de barras terá de
+  // informar o GTIN (Ajuste 19/16, cl. 4ª, VI) quando o cadastro ganhar o campo.
+  if (csosn === "500" && somenteDigitos(p.cest).length === 0) {
+    faltas.push({
+      campo: "cest",
+      valor: null,
+      mensagem:
+        "CSOSN 500 (substituição tributária) exige o CEST: produto com ICMS já cobrado por ST é mercadoria listada no " +
+        "Convênio ICMS 142/18, e a nota tem de trazer o CEST dele (Ajuste SINIEF 19/16, cl. 4ª, VIII). " +
+        "Refrigerante, água e cerveja têm CEST 03.xxx.xx — confira na tabela do convênio.",
+    });
+  }
+
+  // ── CFOP compatível com o CSOSN na NFC-e ─────────────────────────────────
+  // Regras N12a-40/N12a-44 (rejeição 386): CSOSN 102, 103, 300, 400 e 900 só
+  // com CFOP 5101, 5102, 5103, 5104, 5115 ou 5910; CSOSN 500 (ICMS já cobrado
+  // por ST) só com 5405, 5656, 5667 ou 5910. A combinação errada é o engano
+  // clássico do refrigerante: CSOSN 500 com CFOP 5102.
+  //
+  // O 5910 (remessa em bonificação, doação ou brinde) entrou nas duas listas
+  // e na de CFOP aceitos em NFC-e (I08-150, rejeição 725) pela NT 2026.002
+  // v1.10a (regras I08-150, N12a-40 e N12a-44), em produção desde
+  // 03/08/2026. Antes disso a SEFAZ o recusava, e esta tabela também.
+  const CFOP_POR_CSOSN: Record<string, string[]> = {
+    "102": ["5101", "5102", "5103", "5104", "5115", "5910"],
+    "103": ["5101", "5102", "5103", "5104", "5115", "5910"],
+    "300": ["5101", "5102", "5103", "5104", "5115", "5910"],
+    "400": ["5101", "5102", "5103", "5104", "5115", "5910"],
+    "900": ["5101", "5102", "5103", "5104", "5115", "5910"],
+    "500": ["5405", "5656", "5667", "5910"],
+  };
+  const permitidos = CFOP_POR_CSOSN[csosn];
+  if (permitidos && !permitidos.includes(cfop)) {
+    faltas.push({
+      campo: "cfop",
+      valor: cfop,
+      mensagem:
+        `Com CSOSN ${csosn}, a NFC-e só aceita CFOP ${permitidos.join(", ")} ` +
+        `(a SEFAZ rejeita com o código 386).` +
+        (csosn === "500"
+          ? " Produto com ICMS já cobrado por ST (bebida, por exemplo) vai com 5405."
+          : " Produção do próprio estabelecimento vai com 5101; revenda, com 5102."),
+    });
   }
 
   return faltas;

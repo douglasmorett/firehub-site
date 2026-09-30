@@ -40,6 +40,54 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Número de telefone do motoboy inválido." }, { status: 400 });
     }
 
+    // ── SÓ OS PEDIDOS DESTA LOJA ────────────────────────────────────────────
+    //
+    // Os `orderIds` vêm do corpo, e o `updateMany` não filtrava a loja: uma
+    // conta qualquer mandava ids de pedidos de OUTRA loja e os punha em "Saiu
+    // para entrega" — com WhatsApp para o cliente dela, despacho no iFood/99
+    // dela e, agora, a NFC-e dela emitida. Vale só o que esta loja enxerga no
+    // painel (a mesma régua do /api/customer-order/poll: a loja e o próprio
+    // usuário; mais os usuários da loja), e o resto da rota — nota, aviso ao
+    // cliente, parceiros — usa SÓ os ids que passaram por este filtro.
+    //
+    // ── O STATUS LIDO AQUI TEM QUE SER O ANTERIOR ───────────────────────────
+    //
+    // Esta rota grava SAIU_ENTREGA antes de sincronizar com o parceiro. Se os
+    // pedidos forem lidos DEPOIS, `ord.status` já é "SAIU_ENTREGA" — e o
+    // 99Food deixa de receber o `ready`, porque a função entende que o pedido
+    // já passou por ele. Loja que despacha direto de ACEITO (o normal na
+    // correria) mandaria confirm + dispatch sem ready, e o 99 recusa o
+    // despacho: o pedido fica "confirmado" para sempre lá. Este comentário já
+    // existia, mas a leitura estava DEPOIS do updateMany; agora é o filtro da
+    // loja, antes de qualquer escrita, que traz o status anterior.
+    const idsPedidos = Array.isArray(orderIds)
+      ? [...new Set(orderIds.map((x: unknown) => String(x ?? "").trim()).filter(Boolean))]
+      : [];
+    const daLojaEDespachavel = {
+      OR: [{ franchiseeId: { in: [targetFranchiseeId, user.id] } }, { franchisee: { ownerId: targetFranchiseeId } }],
+      status: { notIn: ["ENTREGUE", ...STATUS_CANCELADOS] },
+    };
+    const pedidosAntesDoDespacho = idsPedidos.length > 0
+      ? await prisma.customerOrder.findMany({
+          where: { id: { in: idsPedidos }, ...daLojaEDespachavel },
+          select: {
+            id: true, openDeliveryOrderId: true, ifoodOrderId: true, ifoodStoreMerchant: true,
+            status: true, franchiseeId: true,
+            openDeliveryChannel: true, source: true, deliveryBy: true,
+            openDeliveryReference: true, deliveryType: true,
+            motoboyId: true,
+            motoboy: { select: { id: true, name: true, phone: true } },
+          },
+        })
+      : [];
+    const idsDaLoja = pedidosAntesDoDespacho.map((p) => p.id);
+    if (idsPedidos.length > idsDaLoja.length) {
+      console.warn(
+        `[dispatch-whatsapp] ${idsPedidos.length - idsDaLoja.length} pedido(s) de fora da loja ${targetFranchiseeId} ` +
+          `(ou já entregues/cancelados) ignorados — usuário ${user.id}.`
+      );
+    }
+
     // UM envio, uma vez.
     //
     // Aqui havia um reenvio pela instância do próprio usuário quando o primeiro
@@ -50,40 +98,20 @@ export async function POST(req: NextRequest) {
     // deles nunca visto por ele. Era parte do "muitas mensagens" do relato.
     const success = await sendEvolutionMessage(targetFranchiseeId, fullPhone, routeText);
 
-    // Se vieram orderIds da rota, atualiza o status de todos para SAIU_ENTREGA e notifica cada cliente via WhatsApp
-    if (Array.isArray(orderIds) && orderIds.length > 0) {
+    // Se vieram pedidos da rota, atualiza o status deles para SAIU_ENTREGA e notifica cada cliente via WhatsApp
+    if (idsDaLoja.length > 0) {
       try {
         await prisma.customerOrder.updateMany({
-          where: { id: { in: orderIds }, status: { notIn: ["ENTREGUE", ...STATUS_CANCELADOS] } },
+          where: { id: { in: idsDaLoja }, ...daLojaEDespachavel },
           data: { status: "SAIU_ENTREGA" },
         });
+        // NFC-e na SAÍDA (lib/fiscal-momento decide se é a hora): sem esta linha a nota só saía pela varredura do cron.
+        import("@/lib/fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ id: { in: idsDaLoja } })).catch(() => {});
 
         const { sendOrderNotification } = await import("@/lib/order-notifications");
-        for (const orderId of orderIds) {
+        for (const orderId of idsDaLoja) {
           sendOrderNotification(orderId, "SAIU_ENTREGA").catch(() => {});
         }
-
-        // ── O STATUS LIDO AQUI TEM QUE SER O ANTERIOR ────────────────────
-        //
-        // Esta rota grava SAIU_ENTREGA antes de sincronizar com o parceiro. Se
-        // os pedidos forem lidos DEPOIS, `ord.status` já é "SAIU_ENTREGA" — e
-        // o 99Food deixa de receber o `ready`, porque a função entende que o
-        // pedido já passou por ele. Loja que despacha direto de ACEITO (o
-        // normal na correria) mandaria confirm + dispatch sem ready, e o 99
-        // recusa o despacho: o pedido fica "confirmado" para sempre lá. É a
-        // mesma reclamação que fomos consertar. O /store/routes/dispatch já lê
-        // antes; aqui não lia.
-        const pedidosAntesDoDespacho = await prisma.customerOrder.findMany({
-          where: { id: { in: orderIds } },
-          select: {
-            id: true, openDeliveryOrderId: true, ifoodOrderId: true, ifoodStoreMerchant: true,
-            status: true, franchiseeId: true,
-            openDeliveryChannel: true, source: true, deliveryBy: true,
-            openDeliveryReference: true, deliveryType: true,
-            motoboyId: true,
-            motoboy: { select: { id: true, name: true, phone: true } },
-          },
-        });
 
         // Sync com Jotajá e iFood (assíncrono, não bloqueia resposta)
         (async () => {

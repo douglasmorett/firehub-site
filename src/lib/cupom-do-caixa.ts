@@ -681,7 +681,12 @@ function montar(e: {
     customerName: `${e.cabecalho.dataHora} — ${e.cabecalho.operador}`,
     // Campos próprios do papel de caixa: o Assistente novo monta o cabeçalho
     // com eles em vez de imprimir "CLIENTE / Nome: 19/09/2026 14:32 — Fulano".
-    relatorio: e.relatorio,
+    //
+    // O fecho "NÃO É DOCUMENTO FISCAL" é obrigatório em todo comprovante não
+    // fiscal desde 01/02/2025 (Ajuste SINIEF 32/24, cl. 10ª §4º) — e este
+    // papel se chama "comprovante" no próprio texto. Em título de bloco, que o
+    // Assistente imprime em caixa e negrito: é para ser visto.
+    relatorio: e.relatorio ? [...e.relatorio, { tipo: "titulo" as const, texto: "NÃO É DOCUMENTO FISCAL" }] : e.relatorio,
     caixaQuando: e.cabecalho.dataHora,
     caixaOperador: e.cabecalho.operador,
     customerPhone: "",

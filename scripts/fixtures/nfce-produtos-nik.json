@@ -1,0 +1,1315 @@
+{
+ "fonte": "MenuProduct ativos da NIK ESFIHAS E PIZZAS (franchiseeId cmtn5q78c00ebte01zsqrggqx), lidos do banco de producao em transacao READ ONLY em 29/09/2026. Todos estavam com ncm nulo.",
+ "loja": {
+  "cnpj": "64568087000180",
+  "uf": "DF",
+  "regime": 1
+ },
+ "total": 163,
+ "produtos": [
+  {
+   "nome": "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L",
+   "categoria": "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L por R$49,90",
+   "preco": 49.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Calabresa",
+   "categoria": "99Food",
+   "preco": 83.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola 1,5l",
+   "categoria": "99Food",
+   "preco": 14,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola 2l",
+   "categoria": "99Food",
+   "preco": 16.5,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Combo 1",
+   "categoria": "99Food",
+   "preco": 45.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Combo 2",
+   "categoria": "99Food",
+   "preco": 83.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Combo 4",
+   "categoria": "99Food",
+   "preco": 149.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Costela com Catupiry",
+   "categoria": "99Food",
+   "preco": 106.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Calabresa",
+   "categoria": "99Food",
+   "preco": 13.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Carne",
+   "categoria": "99Food",
+   "preco": 13.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Carne e Queijo",
+   "categoria": "99Food",
+   "preco": 15.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Churrasco",
+   "categoria": "99Food",
+   "preco": 17.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Duplo Queijo com Bacon",
+   "categoria": "99Food",
+   "preco": 15.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Frango",
+   "categoria": "99Food",
+   "preco": 13.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Frango Especial",
+   "categoria": "99Food",
+   "preco": 16.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Frango com Catupiry",
+   "categoria": "99Food",
+   "preco": 15.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Muçarela",
+   "categoria": "99Food",
+   "preco": 13.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Nutella com Ninho",
+   "categoria": "99Food",
+   "preco": 19.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Palmito Cremoso",
+   "categoria": "99Food",
+   "preco": 15.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Pizza",
+   "categoria": "99Food",
+   "preco": 12.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Quatro Queijos",
+   "categoria": "99Food",
+   "preco": 17.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Frango Catupiry",
+   "categoria": "99Food",
+   "preco": 98.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Guarana Mineiro 2l",
+   "categoria": "99Food",
+   "preco": 12,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Guaraná Antártica 2L",
+   "categoria": "99Food",
+   "preco": 14,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Lombinho Especial",
+   "categoria": "99Food",
+   "preco": 91.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Moda da Casa",
+   "categoria": "99Food",
+   "preco": 89.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Moda do Chefe",
+   "categoria": "99Food",
+   "preco": 84.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Adicional Bacon",
+   "categoria": "Adicionais",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Adicional Catupiry Original",
+   "categoria": "Adicionais",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Adicional Cebola",
+   "categoria": "Adicionais",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Adicional Cheddar",
+   "categoria": "Adicionais",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Adicional Muçarela",
+   "categoria": "Adicionais",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Cerveja Amstel lata",
+   "categoria": "Bebidas",
+   "preco": 6.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Cerveja Heineken lata",
+   "categoria": "Bebidas",
+   "preco": 8,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola 1,5l",
+   "categoria": "Bebidas",
+   "preco": 12,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola 1,5l",
+   "categoria": "Bebidas",
+   "preco": 12,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola 2l",
+   "categoria": "Bebidas",
+   "preco": 14.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola Lata 310ml",
+   "categoria": "Bebidas",
+   "preco": 6.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola Zero 1,5l",
+   "categoria": "Bebidas",
+   "preco": 12,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola Zero 2l",
+   "categoria": "Bebidas",
+   "preco": 14.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Coca Cola Zero Lata 310ml",
+   "categoria": "Bebidas",
+   "preco": 6.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Fanta Laranja 2l",
+   "categoria": "Bebidas",
+   "preco": 11,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Fanta Laranja Lata 310ml",
+   "categoria": "Bebidas",
+   "preco": 6.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Guarana Mineiro 1,5l",
+   "categoria": "Bebidas",
+   "preco": 8.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Guarana Mineiro 2l",
+   "categoria": "Bebidas",
+   "preco": 10,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Guaraná Antartica Lata 350ml",
+   "categoria": "Bebidas",
+   "preco": 6.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Guaraná Antártica 2l",
+   "categoria": "Bebidas",
+   "preco": 12,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Guaraná Antártica Zero Lata 350ml",
+   "categoria": "Bebidas",
+   "preco": 6.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "H2O Limoneto 500ml",
+   "categoria": "Bebidas",
+   "preco": 8,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "H2O Limão 500ml",
+   "categoria": "Bebidas",
+   "preco": 8,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pepsi Lata Black 350ml",
+   "categoria": "Bebidas",
+   "preco": 6.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Sprite Lata 310ML",
+   "categoria": "Bebidas",
+   "preco": 6.5,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Suco Del Valle Lata - Uva",
+   "categoria": "Bebidas",
+   "preco": 8,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Suco Prats Laranja 300ml",
+   "categoria": "Bebidas",
+   "preco": 9,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Suco Prats Laranja 900ml",
+   "categoria": "Bebidas",
+   "preco": 16,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Água Com Gás",
+   "categoria": "Bebidas",
+   "preco": 4,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Água Sem Gás",
+   "categoria": "Bebidas",
+   "preco": 4,
+   "ehBebida": true,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Borda de Catupiry",
+   "categoria": "Bordas",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Borda de Cheddar",
+   "categoria": "Bordas",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Borda de Chocolate",
+   "categoria": "Bordas",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Borda de Cream Chesse",
+   "categoria": "Bordas",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Borda de Doce de Leite",
+   "categoria": "Bordas",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Borda tradicional",
+   "categoria": "Bordas",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Combo 1",
+   "categoria": "Combos Esfihas",
+   "preco": 31.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Combo 2",
+   "categoria": "Combos Esfihas",
+   "preco": 62.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Combo 3",
+   "categoria": "Combos Esfihas",
+   "preco": 89.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Combo 4",
+   "categoria": "Combos Esfihas",
+   "preco": 118.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Combo 1: Pizza Tradicional + Coca 1,5l",
+   "categoria": "Combos Pizza",
+   "preco": 65.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Combo 2: Pizza Especial + Borda + Guaraná Mineiro 1,5L",
+   "categoria": "Combos Pizza",
+   "preco": 65.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Cx 1 un",
+   "categoria": "Embalagens",
+   "preco": 1,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Cx 2 un",
+   "categoria": "Embalagens",
+   "preco": 1.5,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Cx 25 cm",
+   "categoria": "Embalagens",
+   "preco": 2,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Cx 35 cm",
+   "categoria": "Embalagens",
+   "preco": 2.8,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Vasilha Nik",
+   "categoria": "Embalagens",
+   "preco": 3,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Banana Nevada",
+   "categoria": "Esfihas Doces",
+   "preco": 11.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Banoffe",
+   "categoria": "Esfihas Doces",
+   "preco": 12.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Choco Duo",
+   "categoria": "Esfihas Doces",
+   "preco": 12.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Chocolate",
+   "categoria": "Esfihas Doces",
+   "preco": 9.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Confete",
+   "categoria": "Esfihas Doces",
+   "preco": 12.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Creme de Ninho com Kit Kat",
+   "categoria": "Esfihas Doces",
+   "preco": 14.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Doce de Leite com Provolone",
+   "categoria": "Esfihas Doces",
+   "preco": 11.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Nutella com Ninho",
+   "categoria": "Esfihas Doces",
+   "preco": 14.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Calabresa com Catupiry",
+   "categoria": "Esfihas Especiais",
+   "preco": 11.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Carne e Bacon",
+   "categoria": "Esfihas Especiais",
+   "preco": 10.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Carne e Queijo",
+   "categoria": "Esfihas Especiais",
+   "preco": 10.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Churrasco",
+   "categoria": "Esfihas Especiais",
+   "preco": 12.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Costela com Catupiry",
+   "categoria": "Esfihas Especiais",
+   "preco": 12.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Duplo Queijo com Bacon",
+   "categoria": "Esfihas Especiais",
+   "preco": 10.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Frango Especial",
+   "categoria": "Esfihas Especiais",
+   "preco": 11.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Frango com Catupiry",
+   "categoria": "Esfihas Especiais",
+   "preco": 10.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Palmito Cremoso",
+   "categoria": "Esfihas Especiais",
+   "preco": 10.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Quatro Queijos",
+   "categoria": "Esfihas Especiais",
+   "preco": 12.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Calabresa",
+   "categoria": "Esfihas Tradicionais",
+   "preco": 8.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Carne",
+   "categoria": "Esfihas Tradicionais",
+   "preco": 8.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Frango",
+   "categoria": "Esfihas Tradicionais",
+   "preco": 8.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Muçarela",
+   "categoria": "Esfihas Tradicionais",
+   "preco": 8.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Esfiha Pizza",
+   "categoria": "Esfihas Tradicionais",
+   "preco": 7.9,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Molho de Pimenta Nik",
+   "categoria": "Molhos",
+   "preco": 12,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Tradicional + Guaraná Mineiro 1,5L",
+   "categoria": "Pizza Tradicional + Guaraná Mineiro 1,5L por R$49,90 (Segunda a Quinta)",
+   "preco": 49.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Tradicional + Guaraná Mineiro 1,5L",
+   "categoria": "Pizza Tradicional + Guaraná Mineiro 1,5L por R$59,90",
+   "preco": 59.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Banana Nevada",
+   "categoria": "Pizzas Doces",
+   "preco": 68.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Chocolate",
+   "categoria": "Pizzas Doces",
+   "preco": 72.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Nik Uva",
+   "categoria": "Pizzas Doces",
+   "preco": 69.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Ninho com Oreo",
+   "categoria": "Pizzas Doces",
+   "preco": 64.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Nutella com Ninho",
+   "categoria": "Pizzas Doces",
+   "preco": 69.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Ouro Branco",
+   "categoria": "Pizzas Doces",
+   "preco": 67.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza 4 Queijos",
+   "categoria": "Pizzas Especiais",
+   "preco": 73.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Calabacon Cremoso",
+   "categoria": "Pizzas Especiais",
+   "preco": 75.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Churrasco com Creme de Alho",
+   "categoria": "Pizzas Especiais",
+   "preco": 84.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Costela com Catupiry",
+   "categoria": "Pizzas Especiais",
+   "preco": 86.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Frango Catupiry",
+   "categoria": "Pizzas Especiais",
+   "preco": 68.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Frango Especial",
+   "categoria": "Pizzas Especiais",
+   "preco": 78.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Lombinho Especial",
+   "categoria": "Pizzas Especiais",
+   "preco": 73.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Moda da Casa",
+   "categoria": "Pizzas Especiais",
+   "preco": 72.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Nik Turbinada",
+   "categoria": "Pizzas Especiais",
+   "preco": 86.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Provolombo",
+   "categoria": "Pizzas Especiais",
+   "preco": 81.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Toscana",
+   "categoria": "Pizzas Especiais",
+   "preco": 55.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Bauru",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 54.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Brasiliense",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 55.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Caipira",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 55.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Calabresa",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 56.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Lombinho",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 56.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Moda da Nik",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 56.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Moda do Chefe",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 55.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Muçarela",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 54.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Portuguesa",
+   "categoria": "Pizzas Tradicionais",
+   "preco": 57.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Na Compra de 2 Pizzas Especiais, Ganhe Grátis Uma Coca 2l",
+   "categoria": "Promoções",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza 4 Queijos",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 73.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Banana Nevada",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 68.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Bauru",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 54.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Brasiliense",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 55.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Caipira",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 55.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Calabacon Cremoso",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 75.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Calabresa",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 56.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Chocolate",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 72.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Churrasco com Creme de Alho",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 84.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Costela com Catupiry",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 86.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Frango Catupiry",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 68.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Frango Especial",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 78.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Lombinho",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 56.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Lombinho Especial",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 73.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Moda da Casa",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 72.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Moda da Nik",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 56.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Moda do Chefe",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 55.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Muçarela",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 54.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Nik Turbinada",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 86.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Nik Uva",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 69.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Ninho com Oreo",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 64.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Nutella com Ninho",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 69.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Ouro Branco",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 67.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Portuguesa",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 57.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Provolombo",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 81.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Pizza Toscana",
+   "categoria": "QUARTA COM BORDA GRÁTIS",
+   "preco": 65.9,
+   "ehBebida": false,
+   "ehCombo": true,
+   "apenasEmCombo": false
+  },
+  {
+   "nome": "Bauru",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Brasiliense",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Caipira",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Calabresa",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Lombinho",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Moda da Nik",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Moda do Chefe",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Muçarela",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Portuguesa",
+   "categoria": "Sabores de Pizza",
+   "preco": 0,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": true
+  },
+  {
+   "nome": "Ketchup e Maionese",
+   "categoria": "Sachês",
+   "preco": 2.5,
+   "ehBebida": false,
+   "ehCombo": false,
+   "apenasEmCombo": false
+  }
+ ]
+}

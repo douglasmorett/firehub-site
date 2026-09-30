@@ -214,6 +214,8 @@ export async function PUT(req: Request) {
         cancelDispute: { ...dispute, pending: false, resolved: "accepted", resolvedAt: new Date().toISOString(), ifoodResult, ifoodOk, ifoodErro },
       } as any,
     });
+    // Cancelamento aceito com NFC-e de pé: não trava (o parceiro já estornou o cliente), avisa na tela fiscal.
+    import("@/lib/fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ id: orderId }, "disputa aceita")).catch(() => {});
   } else if (action === "propose_refund") {
     await prisma.customerOrder.update({
       where: { id: orderId },

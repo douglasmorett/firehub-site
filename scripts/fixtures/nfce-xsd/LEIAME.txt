@@ -1,0 +1,16 @@
+Schemas oficiais da NF-e/NFC-e 4.00, copiados sem alteracao para os testes
+(scripts/teste-nfce-*.ts validam o XML gerado com lxml).
+
+Origem (Portal Nacional da NF-e, "Esquemas XML"):
+  - PL_010f_v1.04 (NT 2025.002 RTC / NT 2026.004 CNPJ alfa): leiauteNFe, nfe, tiposBasico_v4.00,
+    DFeTiposBasicos, xmldsig-core-schema.
+  - PL_009q (NT 2025.001): enviNFe, retEnviNFe, procNFe, consStatServ/retConsStatServ/leiauteConsStatServ,
+    inutNFe/retInutNFe, consReciNFe/retConsReciNFe.
+  - PL_010d_v1.03: consSitNFe/retConsSitNFe/leiauteConsSitNFe, leiauteInutNFe, procInutNFe, pasta evento/.
+O pacote mais novo (PL_010f) so traz a NF-e; os de servico vieram dos pacotes anteriores ainda vigentes.
+  - evento/cancsubst/ (NT 2018.004): pacote "Esquemas XML NFC-e - Evento Cancelamento por Substituicao
+    (Atualizado em 21/12/2018)" do Portal Nacional da NF-e (Evento_CancSubst_v1.01.zip, baixado em
+    30/09/2026), copiado sem alteracao e na PROPRIA pasta: o tiposBasico_v1.03.xsd dele e o de 2018
+    (CNPJ so numerico), diferente do da pasta evento/ (PL_010d, CNPJ alfanumerico), e o pacote e o
+    unico que valida o detEvento do 110112 (e110112_v1.00.xsd). O PL_010d_v1.03 so traz o evento
+    generico (detEvento livre).

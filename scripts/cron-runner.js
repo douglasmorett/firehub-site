@@ -76,6 +76,25 @@ const jobs = [
     intervalMs: 5 * 60_000, // 5 minutos
   },
   {
+    // NFC-e que não saiu de primeira: consulta as notas "processando" e as de
+    // contingência off-line (no ambiente em que cada uma saiu), reemite as que
+    // falharam por comunicação (espera dobrando, teto de 5, só no mesmo
+    // ambiente e depois de `emissaoLigadaEm`) e varre os pedidos e as contas
+    // de mesa que chegaram à hora da nota por um caminho sem gancho. A 2
+    // minutos porque é a rede de segurança da nota que tem de estar autorizada
+    // antes de a entrega chegar ao cliente. Sem loja com a emissão ligada, a
+    // rota faz uma leitura e volta — custo zero. Sem esta linha nada disso
+    // rodava em produção (lib/fiscal-automatico → retentarNotasFiscais).
+    name: 'fiscal-retentativa',
+    path: '/api/cron/fiscal-retentativa',
+    intervalMs: 2 * 60_000, // 2 minutos
+    // Rodada que ainda está no ar (SEFAZ esperando o timeout) não ganha
+    // outra por cima: a de agora é pulada. A proteção de verdade — que vale
+    // também quando esta chamada desiste aos 55 s e a rota continua rodando —
+    // é a concessão por loja (lib/fiscal-automatico → sqlPegarConcessaoDaRodada).
+    exclusivo: true,
+  },
+  {
     name: 'gateway-keepalive',
     path: '/api/cron/gateway-keepalive',
     intervalMs: 5 * 60_000, // 5 minutos
@@ -208,9 +227,23 @@ const jobs = [
 
 /** Falhas de conexão seguidas por job — só para não silenciar o que importa. */
 const falhasSeguidas = {};
+/** Job `exclusivo` com chamada ainda aberta: a próxima rodada é pulada. */
+const emAndamento = {};
 
 // ── Função para chamar um endpoint ───────────────────────────────────
 function callEndpoint(job) {
+  if (job.exclusivo) {
+    if (emAndamento[job.name]) {
+      console.warn(`[cron-runner] ⏭️ ${job.name}: a rodada anterior ainda está no ar — esta fica para a próxima.`);
+      return Promise.resolve();
+    }
+    emAndamento[job.name] = true;
+    return chamar(job).finally(() => { emAndamento[job.name] = false; });
+  }
+  return chamar(job);
+}
+
+function chamar(job) {
   return new Promise((resolve) => {
     const url = new URL(job.path, BASE_URL);
     const options = {

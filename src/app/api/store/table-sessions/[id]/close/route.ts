@@ -203,17 +203,14 @@ export async function POST(
       });
     });
 
-    // NFC-e automática dos pedidos da mesa (se a loja marcou a forma de
-    // pagamento na tela Fiscal). Fire-and-forget: a mesa fecha na hora e a
-    // nota que falhar aparece como "Falhou" na aba Notas fiscais.
-    try {
-      const { emitirNfceAutomatica } = await import("@/lib/fiscal-automatico");
-      const entregues = await prisma.customerOrder.findMany({
-        where: { tableSessionId: id, status: "ENTREGUE", fiscalStatus: { not: "EMITTED" } },
-        select: { id: true },
-      });
-      for (const pedido of entregues) emitirNfceAutomatica(pedido.id).catch(() => {});
-    } catch {}
+    // NFC-e automática: UMA nota para a conta (não uma por pedido), com o
+    // desconto e as formas em que a mesa pagou (lib/fiscal-automatico). O
+    // desconto vai junto porque a sessão não tem onde guardá-lo.
+    // Fire-and-forget: a mesa fecha na hora e a nota que falhar aparece como
+    // "Falhou" na aba Notas fiscais.
+    import("@/lib/fiscal-automatico")
+      .then(({ emitirNfceDaMesa }) => emitirNfceDaMesa(id, { desconto: descontoEmReais }))
+      .catch((err) => console.error("[Table Sessions Close] Erro ao disparar NFC-e da conta:", err?.message));
 
     return NextResponse.json({ success: true, message: "Session closed successfully" });
   } catch (error: any) {

@@ -45,6 +45,43 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   CANCELADO:     ALL_TARGET_STATUSES,
 };
 
+// ── SÓ AS COLUNAS QUE A ROTA USA — E NUNCA A LINHA DA LOJA ─────────────────
+//
+// O PUT carregava o pedido com `include: { franchisee: true }`: a linha User
+// inteira da loja vinha junto — hash da senha, `resetToken` em claro, tokens
+// do Mercado Pago, do iFood, do 99Food e do JotaJá, o fiscalConfig — e o
+// "status igual ao atual" devolvia o `order` inteiro na resposta. Um
+// funcionário pedia "esqueci a senha" em nome do dono e lia o `resetToken`
+// aqui: virava titular da loja. Da loja, a rota só precisa do `ownerId` (a
+// checagem de quem é dono do pedido); do pedido, só o que está abaixo — o que
+// as sincronizações com os parceiros (iFood, 99Food, Brendi, Wabiz, JotaJá) e a
+// trava da NFC-e (lib/edicao-de-pedido → travaDaNotaFiscal) leem.
+const CAMPOS_DO_PEDIDO = {
+  id: true,
+  franchiseeId: true,
+  status: true,
+  source: true,
+  deliveryType: true,
+  deliveryBy: true,
+  paymentMethod: true,
+  paymentPaidAt: true,
+  gatewayProvider: true,
+  gatewayPaymentId: true,
+  dailyOrderNumber: true,
+  notes: true,
+  kdsStage: true,
+  motoboyId: true,
+  fiscalStatus: true,
+  fiscalInfo: true,
+  ifoodOrderId: true,
+  ifoodStoreMerchant: true,
+  openDeliveryOrderId: true,
+  openDeliveryChannel: true,
+  openDeliveryReference: true,
+  food99AppShopId: true,
+  franchisee: { select: { ownerId: true } },
+} as const;
+
 // GET: Public status check (no auth required)
 export async function GET(req: NextRequest) {
   const orderId = req.nextUrl.searchParams.get("id");
@@ -92,7 +129,7 @@ export async function PUT(req: Request) {
 
   const order = await prisma.customerOrder.findUnique({
     where: { id: orderId },
-    include: { franchisee: true }
+    select: CAMPOS_DO_PEDIDO,
   });
 
   if (!order) {
@@ -138,8 +175,10 @@ export async function PUT(req: Request) {
   // Status igual ao atual não é transição: sem esta guarda, um segundo clique
   // em "Entregue" no painel (ENTREGUE → ENTREGUE, que o ADMIN passa direto)
   // disparava DE NOVO o WhatsApp "seu pedido chegou" e os efeitos da entrega.
+  // Responde só o status — nenhuma tela lia o `order` que ia aqui (e ele
+  // levava a linha da loja junto; ver CAMPOS_DO_PEDIDO).
   if (order.status === status) {
-    return NextResponse.json({ success: true, semMudanca: true, order });
+    return NextResponse.json({ success: true, semMudanca: true, status: order.status });
   }
 
   // Pix pelo site esperando o cliente pagar: quem tira o pedido da espera é o
@@ -167,6 +206,15 @@ export async function PUT(req: Request) {
         { status: 400 }
       );
     }
+  }
+
+  // Pedido com NFC-e autorizada não se cancela por baixo da nota: a venda
+  // continuaria declarada na SEFAZ. Antes de qualquer aviso a parceiro — o
+  // iFood não pode receber um cancelamento que aqui não vai acontecer.
+  if (status === "CANCELADO") {
+    const { travaDaNotaFiscal } = await import("@/lib/edicao-de-pedido");
+    const trava = travaDaNotaFiscal(order, "cancelar o pedido");
+    if (trava) return NextResponse.json({ error: trava }, { status: 409 });
   }
 
   const updateData: any = { status };
@@ -572,9 +620,11 @@ export async function PUT(req: Request) {
 
   // ── Emissão automática de NFC-e ──
   // Se a loja marcou a forma de pagamento deste pedido em "emissão automática"
-  // (tela Fiscal → Configurações), a nota sai sozinha na conclusão. Fire and
-  // forget: falha de emissão vira FAILED na aba Notas fiscais, nunca erro aqui.
-  if (status === "ENTREGUE") {
+  // (tela Fiscal → Configurações), a nota sai sozinha. QUANDO é decisão de
+  // lib/fiscal-momento (padrão: entrega no "Saiu", retirada na conclusão),
+  // então aqui dispara em toda mudança e a função ignora o que não é hora.
+  // Fire and forget: falha de emissão vira FAILED na aba Notas fiscais.
+  if (status !== "CANCELADO") {
     import("@/lib/fiscal-automatico")
       .then(({ emitirNfceAutomatica }) => emitirNfceAutomatica(orderId))
       .catch(err => console.error("[Fiscal Auto] Erro ao disparar:", err?.message));

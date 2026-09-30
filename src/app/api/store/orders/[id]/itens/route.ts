@@ -89,6 +89,9 @@ const CAMPOS_DO_PEDIDO = {
   customerAddress: true,
   deliveryType: true,
   editHistory: true,
+  // Nota autorizada trava a edição (travaDaNotaFiscal, em avaliarEdicao).
+  fiscalStatus: true,
+  fiscalInfo: true,
   items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true } },
 } as const;
 

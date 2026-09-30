@@ -379,6 +379,8 @@ export async function processarEventosIfood(opts: {
               where: { ifoodOrderId: orderId } as any,
               data: cancelData,
             });
+            // Cancelado pelo iFood com NFC-e de pé: não trava (o cliente já foi estornado lá), avisa na tela fiscal.
+            import("./fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ ifoodOrderId: orderId }, "iFood")).catch(() => {});
             log.push(`  🚫 Cancelado (existente): ${orderId}`);
           } else {
             // Pedido NÃO existe no nosso DB — importar como CANCELADO
@@ -848,6 +850,13 @@ export async function processarEventosIfood(opts: {
             });
             log.push(`  🔄 Status atualizado: ${orderId} → ${newStatus}`);
             updated++;
+
+            // NFC-e: o pedido que o iFood despacha ou conclui não passava por
+            // gancho nenhum e nunca tinha nota. lib/fiscal-automatico decide
+            // se este status é a hora; aqui só avisa, sem esperar.
+            import("./fiscal-automatico")
+              .then(({ emitirNfceDosPedidos }) => emitirNfceDosPedidos({ ifoodOrderId: orderId }))
+              .catch(() => {});
           }
         }
 

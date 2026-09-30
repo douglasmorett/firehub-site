@@ -69,6 +69,12 @@ export async function POST(req: NextRequest) {
               logradouro: rw.logradouro || "",
               numero: rw.numero || "",
               cep: rw.cep || "",
+              complemento: rw.complemento || "",
+              porte: rw.porte || "",
+              // A ReceitaWS traz o Simples e o MEI em objetos próprios; o código
+              // IBGE do município ela não tem (só a BrasilAPI).
+              opcao_pelo_simples: typeof rw.simples?.optante === "boolean" ? rw.simples.optante : null,
+              opcao_pelo_mei: typeof rw.simei?.optante === "boolean" ? rw.simei.optante : null,
               qsa: (rw.qsa || []).map((s: { nome: string; qual: string }) => ({
                 nome_socio: s.nome,
                 qualificacao_socio: s.qual,
@@ -104,6 +110,18 @@ export async function POST(req: NextRequest) {
         nome: s.nome_socio || "",
         qualificacao: s.qualificacao_socio || "",
       })),
+      // Para a tela fiscal pré-preencher o emitente (lib/nfce/dados-da-receita):
+      // o tipo do logradouro ("QUADRA"), o complemento, o código IBGE do
+      // município (vai no XML de toda nota) e o regime (Simples → CRT 1, MEI →
+      // CRT 4). Campos novos, somados aos de sempre — o cadastro não muda.
+      tipo_logradouro: data.descricao_tipo_de_logradouro || "",
+      complemento: data.complemento || "",
+      codigo_municipio_ibge: data.codigo_municipio_ibge ? String(data.codigo_municipio_ibge) : "",
+      opcao_pelo_simples: typeof data.opcao_pelo_simples === "boolean" ? data.opcao_pelo_simples : null,
+      opcao_pelo_mei: typeof data.opcao_pelo_mei === "boolean" ? data.opcao_pelo_mei : null,
+      porte: data.porte || "",
+      cnae_fiscal: data.cnae_fiscal ? String(data.cnae_fiscal) : "",
+      cnae_fiscal_descricao: data.cnae_fiscal_descricao || "",
     }, { headers: getCorsHeaders(req) });
   } catch (error) {
     console.error("CNPJ lookup error:", error);

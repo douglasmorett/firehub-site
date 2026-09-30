@@ -412,6 +412,8 @@ export async function processBrendiEvent(
         } as any,
         data: cancelData,
       });
+      // Cancelado pela Brendi com NFC-e de pé: não trava (o cliente já foi estornado lá), avisa na tela fiscal.
+      import("./fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ OR: [{ openDeliveryOrderId: orderId }, { openDeliveryOrderId: { startsWith: `${orderId}_` } }] }, "Brendi")).catch(() => {});
       return { action: "cancelled", orderId };
     }
 
@@ -1438,6 +1440,8 @@ export async function processBrendiEvent(
             where: { OR: updateConditions } as any,
             data: { status: newStatus },
           });
+          // NFC-e: lib/fiscal-momento decide se este status é a hora; sem esta linha a nota só saía pela varredura do cron.
+          import("./fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ OR: updateConditions })).catch(() => {});
           return { action: "updated", orderId, message: `→ ${newStatus}` };
         } else {
           return { action: "skipped", orderId, message: `ignorado regresso de status ${existing?.status} → ${newStatus}` };

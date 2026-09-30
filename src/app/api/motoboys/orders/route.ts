@@ -434,6 +434,11 @@ export async function POST(req: NextRequest) {
           const { sendOrderNotification } = await import("@/lib/order-notifications");
           sendOrderNotification(alvo.id, "SAIU_ENTREGA").catch(() => {});
         } catch {}
+        // Puxar é a SAÍDA: é aqui que a NFC-e tem de sair (lib/fiscal-momento).
+        try {
+          const { emitirNfceAutomatica } = await import("@/lib/fiscal-automatico");
+          emitirNfceAutomatica(alvo.id).catch(() => {});
+        } catch {}
       })();
     }
 
@@ -671,16 +676,23 @@ export async function PATCH(req: NextRequest) {
     // caderno (dono, 17/09/2026). Só quando não é pagamento online, e só se a
     // forma realmente mudou — confirmar "Dinheiro" num pedido em dinheiro não
     // vira registro. O rastro fica em editHistory, com o nome do entregador.
-    // A NFC-e automática (logo abaixo) lê o pedido do banco DEPOIS desta
-    // escrita, então já sai na forma certa.
+    //
+    // A NFC-e normalmente já saiu quando o pedido saiu (lib/fiscal-momento),
+    // com a forma de antes — e fica assim: a troca vale para o caixa e o
+    // acerto, não para a nota, e o rastro diz com que forma a nota ficou
+    // (avisoDaNotaNaTrocaDePagamento). Travar a troca por causa da nota
+    // deixava o "Débito (Cobrar na Entrega)" pago em dinheiro com a forma
+    // errada para sempre. Pedido que foi para a rua sem nota: a emissão logo
+    // abaixo lê o pedido DEPOIS desta escrita e já sai na forma certa.
     const formaInformada = String(pagamento || "").trim();
     let trocaDePagamento: Record<string, unknown> = {};
     if (formaInformada) {
       const { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica, podeTrocarPagamento } = await import("@/lib/pagamento-na-entrega");
-      const { empilharEdicao } = await import("@/lib/edicao-de-pedido");
+      const { avisoDaNotaNaTrocaDePagamento, empilharEdicao } = await import("@/lib/edicao-de-pedido");
       const valida = (FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(formaInformada);
       const mudou = formaCanonica(order.paymentMethod) !== formaInformada;
       if (valida && mudou && podeTrocarPagamento(order as any).pode) {
+        const notaFica = avisoDaNotaNaTrocaDePagamento(order, formaInformada);
         trocaDePagamento = {
           paymentMethod: formaInformada,
           // Troco é conta de dinheiro; em cartão, pix ou vale não existe.
@@ -690,7 +702,9 @@ export async function PATCH(req: NextRequest) {
             quando: new Date().toISOString(),
             quem: `Motoboy ${motoboyAtivo.name}`,
             acao: "PAGAMENTO",
-            descricao: `Pagamento: ${order.paymentMethod || "não informado"} → ${formaInformada} (informado na entrega)`,
+            descricao:
+              `Pagamento: ${order.paymentMethod || "não informado"} → ${formaInformada} (informado na entrega)` +
+              (notaFica ? ` — ${notaFica.rastro}` : ""),
             totalAntes: order.totalAmount,
             totalDepois: order.totalAmount,
           }),
@@ -847,7 +861,8 @@ export async function PATCH(req: NextRequest) {
         trackSaleForBilling(order.franchiseeId).catch(() => {});
       } catch {}
       // NFC-e automática, se a loja marcou esta forma de pagamento na tela
-      // fiscal. Mesmo caminho da entrega confirmada pelo painel.
+      // fiscal. Normalmente ela já saiu no "puxar" (a saída); aqui é o
+      // último momento para o pedido que foi para a rua sem passar por lá.
       try {
         const { emitirNfceAutomatica } = await import("@/lib/fiscal-automatico");
         emitirNfceAutomatica(order.id).catch(() => {});

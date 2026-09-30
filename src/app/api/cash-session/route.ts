@@ -416,6 +416,14 @@ export async function PUT(req: Request) {
     console.error("[CashSession Close] Erro ao finalizar pedidos travados:", err);
   }
 
+  // NFC-e do turno: o updateMany acima dá pedidos por entregues sem passar
+  // pelo gancho de status, e eles ficavam sem nota. A varredura emite os do
+  // turno que chegaram à hora da nota e nunca tiveram tentativa. Loja com a
+  // emissão desligada (hoje, todas) volta na primeira leitura.
+  import("@/lib/fiscal-automatico")
+    .then(({ emitirNotasEsquecidas }) => emitirNotasEsquecidas({ franchiseeId: user.targetId, desde: openSession?.openedAt ?? null }))
+    .catch((err) => console.error("[CashSession Close] Erro ao disparar NFC-e do turno:", err?.message));
+
   // Marcar caixa como fechado no user e no owner
   await prisma.user.updateMany({
     where: { OR: [{ id: user.targetId }, { ownerId: user.targetId }] },

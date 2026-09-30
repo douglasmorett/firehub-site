@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import {
-  pendenciasParaEmitir,
-  inutilizarNumeracao,
-  type ConfiguracaoFiscal,
-} from "@/lib/fiscal-emissao";
+import { pendenciasParaEmitir, inutilizarNumeracao } from "@/lib/fiscal-emissao";
+import { normalizarConfigFiscal } from "@/lib/fiscal-config";
+import { usaEmissorProprio } from "@/lib/nfce/config-da-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +59,14 @@ export async function POST(req: Request) {
       );
     }
 
+    // O ambiente da faixa (1 = produção, 2 = homologação): cada um tem a sua
+    // numeração na SEFAZ. Sem ele, vale o da loja — e a resposta DIZ qual foi,
+    // para ninguém guardar um protocolo de homologação achando que é o real.
+    const ambientePedido = body.ambiente === undefined || body.ambiente === null || body.ambiente === "" ? null : Number(body.ambiente);
+    if (ambientePedido !== null && ambientePedido !== 1 && ambientePedido !== 2) {
+      return NextResponse.json({ error: "Ambiente inválido: 1 (produção) ou 2 (homologação)." }, { status: 400 });
+    }
+
     // A SEFAZ exige justificativa com no mínimo 15 caracteres. Recusar aqui
     // evita a viagem e a rejeição 000-000 lá na frente.
     if (String(justificativa).trim().length < 15) {
@@ -82,7 +88,13 @@ export async function POST(req: Request) {
       select: { fiscalConfig: true },
     });
 
-    const config = (loja?.fiscalConfig as ConfiguracaoFiscal | null) ?? {};
+    // NORMALIZADA (lib/fiscal-config), como a emissão: o legado "producao"
+    // por extenso virava NaN e a inutilização ia para o servidor de
+    // HOMOLOGAÇÃO — o lojista guardaria o protocolo de um ambiente de teste
+    // achando que regularizou a faixa. A normalização também carimba de que
+    // ambiente é o token colado à mão. A loja cadastrada pela Focus (CSC só em
+    // `cscNaFocus`) passa na conferência: pendenciasParaEmitir aceita.
+    const config = normalizarConfigFiscal(loja?.fiscalConfig);
     const pendencias = pendenciasParaEmitir(config);
 
     // Nada de protocolo inventado: sem caminho até a SEFAZ, não houve
@@ -101,6 +113,45 @@ export async function POST(req: Request) {
         },
         { status: 409 }
       );
+    }
+
+    // ── Emissor próprio: direto na SEFAZ ─────────────────────────────────
+    // Antes de pedir, a faixa é conferida contra os pedidos da loja: número
+    // de nota emitida, em contingência (ainda vai ser transmitida COM ele) ou
+    // reservado não se inutiliza — e nada vai à SEFAZ. O ProcInutNFe vai para
+    // o cofre e o registro para fiscalConfig.inutilizacoes, gravado sem
+    // reescrever o resto do fiscalConfig (lib/nfce/inutilizacao-da-loja).
+    if (usaEmissorProprio(config)) {
+      const { inutilizarFaixaNaSefaz } = await import("@/lib/nfce/inutilizacao-da-loja");
+      const ambiente = ambientePedido === 1 || ambientePedido === 2 ? ambientePedido : Number(config.ambiente) === 1 ? 1 : 2;
+      const r = await inutilizarFaixaNaSefaz({
+        lojaId,
+        config,
+        serie: Number(serie),
+        numeroInicial: Number(numeroInicial),
+        numeroFinal: Number(numeroFinal),
+        justificativa: String(justificativa).trim(),
+        ambiente,
+        origem: "tela",
+      });
+      if (!r.ok) {
+        return NextResponse.json(
+          { error: r.motivo, mensagem: r.mensagem, detalhe: r.detalhe ?? null, conflitos: r.conflitos ?? [], pendencias: r.pendencias ?? [], ambiente, cStat: r.statusSefaz ?? null },
+          { status: r.motivo === "erro_de_comunicacao" ? 502 : 409 }
+        );
+      }
+      const qual = r.ambiente === 1 ? "PRODUÇÃO" : "HOMOLOGAÇÃO (teste, sem valor fiscal)";
+      return NextResponse.json({
+        success: true,
+        protocolo: r.protocolo || null,
+        ambiente: r.ambiente,
+        ...(r.semProtocolo ? { semProtocolo: true } : {}),
+        mensagem: r.semProtocolo
+          ? `A SEFAZ informa que a faixa ${r.numeroInicial}–${r.numeroFinal} da série ${r.serie} JÁ estava inutilizada em ${qual} ` +
+            `(${r.mensagemSefaz}). O registro ficou sem o protocolo — ele pode ser consultado no portal da SEFAZ.`
+          : `Inutilização homologada pela SEFAZ em ${qual} (${r.mensagemSefaz}). ` +
+            `Faixa ${r.numeroInicial}–${r.numeroFinal} da série ${r.serie}. Protocolo: ${r.protocolo}.`,
+      });
     }
 
     // Cadastro completo: transmite a inutilização de verdade pelo provedor.
@@ -139,6 +190,10 @@ export async function POST(req: Request) {
               mensagemSefaz: resultado.mensagemSefaz,
               justificativa: String(justificativa).trim(),
               homologadaEm: resultado.homologadaEm,
+              ambiente: Number(config.ambiente) === 1 ? 1 : 2,
+              // O XML da inutilização homologada é o que se guarda por 5 anos
+              // e vai no pacote do contador (lib/contador-pacote).
+              xmlUrl: resultado.urlDoXml,
             },
           ],
         },

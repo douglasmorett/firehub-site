@@ -104,6 +104,8 @@ export async function POST(req: NextRequest) {
         where: { id: (order as any).id },
         data: dbUpdate,
       });
+      // Cancelado no JotaJá com NFC-e de pé: não trava (o JotaJá já cancelou lá), avisa na tela fiscal.
+      if (dbUpdate.status === "CANCELADO") import("@/lib/fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ id: (order as any).id }, "JotaJá")).catch(() => {});
     }
 
     console.log(`[JotaJá Action] ✅ ${action} — orderId=${orderId}`);

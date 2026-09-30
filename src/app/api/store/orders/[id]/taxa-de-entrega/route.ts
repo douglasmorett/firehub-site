@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { avaliarEdicao, empilharEdicao, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
+import { avaliarEdicao, empilharEdicao, podeEditarPedidos, travaDaNotaFiscal, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
 import { ehPagoOnline } from "@/lib/pagamento-na-entrega";
 import { lerPartes, resumoDividido, validarDivisao } from "@/lib/pagamento-dividido";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
@@ -49,6 +49,12 @@ import {
  * Marketplace NÃO: a taxa de um pedido do iFood/99Food é dinheiro do app, e o
  * total tem que continuar batendo com o repasse dele.
  *
+ * NFC-e autorizada (ou na SEFAZ agora) também NÃO: a taxa entra no total, e o
+ * total é o que a nota declarou — a mesma trava da edição de itens
+ * (`travaDaNotaFiscal`). O `avaliarEdicao` já a chamava, mas o `select` desta
+ * rota não trazia `fiscalStatus` nem `fiscalInfo`: sem eles a trava via "pedido
+ * sem nota" e a taxa mudava por baixo da nota.
+ *
  * O motivo é OBRIGATÓRIO: é o contrapeso de deixar mexer em dinheiro de
  * pedido fechado. Vai no rastro (`editHistory`) e na observação do pedido,
  * que é o que a loja vê no painel.
@@ -68,6 +74,8 @@ const CAMPOS = {
   // O que decide canal (marketplace) e se o dinheiro já entrou (lib/pagamento-na-entrega.ts).
   paymentMethod: true, gatewayPaymentId: true, paymentMethods: true, paymentPaidAt: true,
   ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryChannel: true, openDeliveryReference: true,
+  // A nota do pedido: o que `travaDaNotaFiscal` lê (junto com status e deliveryType).
+  fiscalStatus: true, fiscalInfo: true,
 } as const;
 
 const reais = (n: number) => `R$ ${(Math.round(n * 100) / 100).toFixed(2).replace(".", ",")}`;
@@ -97,6 +105,14 @@ async function contexto(params: Promise<{ id: string }>) {
 
   if (RETIRADA.includes(String(order.deliveryType || "").trim().toUpperCase())) {
     return { erro: NextResponse.json({ error: "Este pedido não é de entrega." }, { status: 400 }) };
+  }
+
+  // A trava da nota com a frase DESTA ação (a de `avaliarEdicao` fala em
+  // "editar os itens"). Só para quem pode editar: quem não pode recebe, logo
+  // abaixo, o motivo da permissão.
+  if (podeEditarPedidos(operador)) {
+    const trava = travaDaNotaFiscal(order, "corrigir a taxa de entrega");
+    if (trava) return { erro: NextResponse.json({ error: trava }, { status: 403 }) };
   }
 
   const avaliacao = avaliarEdicao(order as any, operador);
@@ -258,9 +274,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     //
     // Dois atendentes corrigindo o mesmo pedido (ou a edição de itens no meio)
     // fariam a segunda correção partir de um total velho. O UPDATE só passa
-    // se taxa e total ainda são os que esta conta leu.
+    // se taxa e total ainda são os que esta conta leu — e a situação da nota
+    // também: a NFC-e autorizada entre a leitura e a gravação (a saída do
+    // pedido emite sozinha) não pode ver o total mudar por baixo dela.
     const gravados = await prisma.customerOrder.updateMany({
-      where: { id: order.id, franchiseeId: lojaId, deliveryFee: order.deliveryFee, totalAmount: order.totalAmount },
+      where: {
+        id: order.id, franchiseeId: lojaId, deliveryFee: order.deliveryFee, totalAmount: order.totalAmount,
+        fiscalStatus: order.fiscalStatus,
+      },
       data: {
         deliveryFee: conta.taxaDepois,
         totalAmount: conta.totalDepois,

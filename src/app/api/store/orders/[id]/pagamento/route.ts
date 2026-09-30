@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { empilharEdicao, podeEditarPedidos, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
+import { avisoDaNotaNaTrocaDePagamento, empilharEdicao, podeEditarPedidos, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
 import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
 
@@ -26,8 +26,12 @@ import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido"
  * lib/edicao-de-pedido.ts: trocar a forma mexe no caixa tanto quanto tirar
  * item. O rastro fica em editHistory, com quem e quando.
  *
- * O que NÃO muda: o total. E a NFC-e que já saiu na baixa continua com a forma
- * antiga — troca depois de entregue é acerto do caixa, não da nota.
+ * O que NÃO muda: o total, nem a NFC-e que já saiu. A troca é acerto do
+ * caixa, não da nota, e por isso não trava quando o pedido tem nota: travar
+ * deixava o "Cobrar na Entrega" pago de outro jeito na porta com a forma
+ * errada para sempre, porque a nota sai na saída do pedido, antes do
+ * pagamento. O rastro e a resposta dizem com que forma a nota ficou
+ * (`avisoDaNotaNaTrocaDePagamento`, lib/edicao-de-pedido.ts).
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions).catch(() => null);
@@ -53,6 +57,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     select: {
       id: true, status: true, deliveryType: true, tableSessionId: true, totalAmount: true,
       paymentMethod: true, changeAmount: true, paymentMethods: true, gatewayPaymentId: true, editHistory: true,
+      fiscalStatus: true, fiscalInfo: true,
     },
   });
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
@@ -102,13 +107,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ success: true, semMudanca: true, paymentMethod: forma, changeAmount: trocoPara });
   }
 
+  // Pedido com nota: a troca vale, a nota fica como saiu.
+  const notaFica = avisoDaNotaNaTrocaDePagamento(order, forma);
+
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem: operador.name || operador.email,
     acao: "PAGAMENTO",
     descricao:
       `Pagamento: ${order.paymentMethod || "não informado"} → ${forma}` +
-      (trocoPara ? ` (troco para R$ ${trocoPara.toFixed(2).replace(".", ",")})` : ""),
+      (trocoPara ? ` (troco para R$ ${trocoPara.toFixed(2).replace(".", ",")})` : "") +
+      (notaFica ? ` — ${notaFica.rastro}` : ""),
     totalAntes: order.totalAmount,
     totalDepois: order.totalAmount,
   };
@@ -131,5 +140,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   });
 
   console.log(`[Pagamento] pedido ${order.id}: ${order.paymentMethod} → ${forma} por ${registro.quem}`);
-  return NextResponse.json({ success: true, paymentMethod: forma, changeAmount: trocoPara, paymentMethods: divisao });
+  return NextResponse.json({
+    success: true,
+    paymentMethod: forma,
+    changeAmount: trocoPara,
+    paymentMethods: divisao,
+    ...(notaFica ? { avisoFiscal: notaFica.aviso } : {}),
+  });
 }
