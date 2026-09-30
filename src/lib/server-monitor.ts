@@ -101,6 +101,9 @@ export async function avisarLojistaPeloFireHub(phone: string, message: string): 
   const instanceName = (process.env.ALERTAS_LOJISTA_INSTANCIA || "").trim();
   const numero = paraEnvioWhatsApp(phone);
   if (!instanceName || !numero) return false;
+  // Nunca o WhatsApp do atendimento do FireHub: aquele número só responde quem
+  // escreveu (já perderam um número por aviso automático — regra do Douglas).
+  if (instanceName === (process.env.ATENDIMENTO_INSTANCIA || "firehub_atendimento").trim()) return false;
   const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
   try {
     const res = await fetch(`${gatewayUrl}/message/sendText/${instanceName}`, {
