@@ -3,7 +3,7 @@ import SairDaConta from "@/components/SairDaConta";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode } from "lucide-react";
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
 import {
@@ -136,6 +136,28 @@ export default function StoreTopNav({
     }
     setLinkCopiado(true);
     setTimeout(() => { setLinkCopiado(false); setMenuCardapio(false); }, 1400);
+  };
+
+  // QR do cardápio para panfleto, cardápio de balcão, adesivo. É o link
+  // gravado no próprio desenho (QR estático): não passa por serviço nenhum e
+  // não expira. 2000 px e correção Q aguentam gráfica e papel amassado.
+  const [baixandoQr, setBaixandoQr] = useState(false);
+  const baixarQrDoCardapio = async () => {
+    if (!storeUrl || baixandoQr) return;
+    setBaixandoQr(true);
+    try {
+      const QRCode = (await import("qrcode")).default;
+      const png = await QRCode.toDataURL(`${window.location.origin}${storeUrl}`, { errorCorrectionLevel: "Q", width: 2000, margin: 4 });
+      const a = document.createElement("a");
+      a.href = png;
+      a.download = `qrcode-cardapio-${storeUrl.split("/").filter(Boolean).pop() || "loja"}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setMenuCardapio(false);
+    } finally {
+      setBaixandoQr(false);
+    }
   };
 
   useEffect(() => {
@@ -1476,6 +1498,15 @@ export default function StoreTopNav({
                     style={{ display:"flex", alignItems:"center", gap:8, width:"100%", padding:"0.7rem 1rem", border:"none", borderBottom:"1px solid #F1F5F9", background: linkCopiado ? "#F0FDFA" : "#fff", color: linkCopiado ? "#0F766E" : "#1E293B", fontWeight:700, fontSize:"0.82rem", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}
                   >
                     {linkCopiado ? <Check size={15} /> : <Copy size={15} />} {linkCopiado ? "Link copiado!" : "Copiar link do cardápio"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={baixarQrDoCardapio}
+                    disabled={baixandoQr}
+                    title="Imagem em alta resolução para panfleto, adesivo ou cardápio impresso. Não expira."
+                    style={{ display:"flex", alignItems:"center", gap:8, width:"100%", padding:"0.7rem 1rem", border:"none", borderBottom:"1px solid #F1F5F9", background:"#fff", color:"#1E293B", fontWeight:700, fontSize:"0.82rem", cursor: baixandoQr ? "wait" : "pointer", fontFamily:"inherit", textAlign:"left" }}
+                  >
+                    <QrCode size={15} /> {baixandoQr ? "Gerando…" : "Baixar QR Code do cardápio"}
                   </button>
                   <a
                     href={storeUrl}
