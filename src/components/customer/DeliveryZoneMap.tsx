@@ -2632,6 +2632,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           box-shadow: 0 6px 18px rgba(15,23,42,0.3); pointer-events: none;
         }
         .fh-dica-calculando { color: #93C5FD; font-weight: 600; }
+        /* Clicar numa mancha (ou num círculo) dava foco ao desenho, e o Chrome
+           pintava o retângulo preto de foco em volta dele — o "quadrado" que
+           aparecia no meio do mapa depois de simular. */
+        .fh-entrega-mapa path.leaflet-interactive:focus,
+        .fh-entrega-mapa path.leaflet-interactive:focus-visible { outline: none; }
         .fh-resumo-faixas {
           background: rgba(255,255,255,0.94); border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #334155;
           display: flex; gap: 12px; flex-wrap: wrap; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
