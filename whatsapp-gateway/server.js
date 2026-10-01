@@ -17,6 +17,26 @@ const {
 } = require("@whiskeysockets/baileys");
 const saude = require("./saude-do-vinculo");
 
+// A libsignal escreve cada "Bad MAC" e cada sessão inteira no console: centenas
+// de linhas por segundo, e o processo parado escrevendo (queda geral de
+// 01/10/2026, ver `ruidoDoLibsignal`). Aqui elas só são CONTADAS, e uma linha
+// por minuto diz quantas foram. Tudo o que não é da libsignal sai como sempre.
+const ruidoContado = {};
+for (const metodo of ["log", "info", "warn", "error"]) {
+  const original = console[metodo].bind(console);
+  console[metodo] = (...args) => {
+    const categoria = saude.ruidoDoLibsignal(args[0]);
+    if (!categoria) return original(...args);
+    ruidoContado[categoria] = (ruidoContado[categoria] || 0) + 1;
+  };
+}
+setInterval(() => {
+  const partes = Object.entries(ruidoContado).filter(([, n]) => n > 0);
+  if (partes.length === 0) return;
+  console.log(`[WhatsApp Gateway] 🔇 libsignal no último minuto (só contado): ${partes.map(([c, n]) => `${c}=${n}`).join(", ")}`);
+  for (const [c] of partes) ruidoContado[c] = 0;
+}, 60_000).unref?.();
+
 // Saúde do vínculo de cada loja (retransmissões pedidas por contatos, aparelho
 // hospedado, pareamento com número pessoal). Ver saude-do-vinculo.js.
 const monitorDoVinculo = saude.criarMonitorDoVinculo();

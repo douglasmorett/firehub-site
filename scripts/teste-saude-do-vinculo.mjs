@@ -64,6 +64,17 @@ console.log("\n2b) O que o Baileys nem decifra (queda geral de 01/10/2026)");
   conferir("só barra o que o webhook já recusava", amostra.every(j => !ignorarNaEntrada(j) || !conversaVaiParaOWebhook(j)));
 }
 
+console.log("\n2c) O ruído da libsignal no console (queda geral de 01/10/2026)");
+{
+  const { ruidoDoLibsignal } = saude;
+  // As linhas exatas do log de produção.
+  conferir("Bad MAC", ruidoDoLibsignal("Session error:Error: Bad MAC") === "badMac");
+  conferir("sem sessão que decifre", ruidoDoLibsignal("Failed to decrypt message with any known session...") === "naoDecifrou");
+  conferir("sessão inteira impressa", ruidoDoLibsignal("Closing session:") === "trocaDeSessao" && ruidoDoLibsignal("Opening session:") === "trocaDeSessao" && ruidoDoLibsignal("Removing old closed session:") === "trocaDeSessao");
+  conferir("linha do gateway passa", ruidoDoLibsignal("[WhatsApp Gateway] ✅ Instância firehub_01wgox06ht conectada!") === null);
+  conferir("erro de verdade passa", ruidoDoLibsignal("[WhatsApp Gateway] Erro ao converter QR Code:") === null && ruidoDoLibsignal(new Error("Session error:")) === null && ruidoDoLibsignal(undefined) === null);
+}
+
 console.log("\n3) Localização e envelopes");
 {
   const msg = {

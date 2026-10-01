@@ -103,6 +103,40 @@ function ignorarNaEntrada(jid) {
   return j.endsWith("@g.us") || j.endsWith("@broadcast") || j.endsWith("@newsletter");
 }
 
+// ── O QUE A LIBSIGNAL ESCREVE NO CONSOLE ───────────────────────────────────
+//
+// A libsignal (dentro do Baileys) escreve direto no console, sem nível de log:
+// a pilha de cada "Bad MAC" e a SESSÃO INTEIRA a cada troca ("Closing session:
+// SessionEntry { _chains: … }", dezenas de linhas com chave de sessão).
+//
+// Ela é a segunda metade da queda de 01/10/2026: com os Status já ignorados, o
+// Railway ainda descartou 47.089 linhas de uma vez. No Linux, escrever no
+// stdout de um pipe é síncrono, então o processo inteiro para enquanto escreve.
+//
+// Cada prefixo abaixo vem de libsignal/src (session_cipher.js,
+// session_record.js, session_builder.js), copiado como está no fonte.
+const RUIDO_DO_LIBSIGNAL = [
+  ["Session error:", "badMac"],
+  ["Failed to decrypt message with any known session", "naoDecifrou"],
+  ["Decrypted message with closed session", "sessaoFechada"],
+  ["Closing session:", "trocaDeSessao"],
+  ["Opening session:", "trocaDeSessao"],
+  ["Removing old closed session:", "trocaDeSessao"],
+  ["Session already closed", "trocaDeSessao"],
+  ["Session already open", "trocaDeSessao"],
+  ["Closing open session in favor of incoming prekey bundle", "trocaDeSessao"],
+  ["Migrating session to:", "trocaDeSessao"],
+];
+
+/** A categoria do ruído da libsignal, ou null se a linha é de outra pessoa e deve sair. */
+function ruidoDoLibsignal(primeiroArgumento) {
+  if (typeof primeiroArgumento !== "string") return null;
+  for (const [prefixo, categoria] of RUIDO_DO_LIBSIGNAL) {
+    if (primeiroArgumento.startsWith(prefixo)) return categoria;
+  }
+  return null;
+}
+
 // ── CONTEÚDO DA MENSAGEM ───────────────────────────────────────────────────
 
 /** Tira o envelope de mensagem temporária / visualização única / documento com legenda. */
@@ -439,6 +473,7 @@ module.exports = {
   mascararJid,
   conversaVaiParaOWebhook,
   ignorarNaEntrada,
+  ruidoDoLibsignal,
   desembrulharMensagem,
   localizacaoDaMensagem,
   mensagemParaOWebhook,
