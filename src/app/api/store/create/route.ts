@@ -38,6 +38,25 @@ export async function POST(req: Request) {
     // Gera o e-mail virtual único
     const newEmail = `${slug}.${masterId.slice(0, 6)}@stores.firehub.app`;
 
+    // A loja nova é do mesmo cliente: vai para o vendedor que já cuida da
+    // conta (pedido do dono, 01/10/2026 — Yakisoba do san, do China Pow, nasceu
+    // sem vendedor e sem telefone). Nasce "AGUARDANDO", como na atribuição do
+    // admin, para aparecer no topo da carteira: tem loja nova para configurar.
+    const vendedorDaConta = masterStore.vendedorId
+      ? await prisma.ambassador.findFirst({
+          where: { id: masterStore.vendedorId, isVendedor: true, active: true },
+          select: { id: true },
+        })
+      : null;
+    // E o embaixador que indicou a conta leva a comissão da loja nova também:
+    // mesmo dono, mesmo link (dono, 01/10/2026). Ativo, como no cadastro.
+    const embaixadorDaConta = masterStore.ambassadorId
+      ? await prisma.ambassador.findFirst({
+          where: { id: masterStore.ambassadorId, active: true },
+          select: { id: true },
+        })
+      : null;
+
     const newStore = await prisma.user.create({
       data: {
         email: newEmail,
@@ -48,10 +67,17 @@ export async function POST(req: Request) {
         accountGroupId: masterId,
         isPrimaryStore: false,
         city: city || null,
-        storePhone: storePhone || null,
+        // Sem telefone no formulário, fica o da loja principal (mesmo dono).
+        storePhone: storePhone || masterStore.storePhone || null,
         storeAddress: storeAddress || null,
         cpfCnpj: cpfCnpj || null,
         slug: slug,
+        ...(vendedorDaConta && {
+          vendedorId: vendedorDaConta.id,
+          vendedorStatus: "AGUARDANDO",
+          vendedorAtribuidoEm: new Date(),
+        }),
+        ...(embaixadorDaConta && { ambassadorId: embaixadorDaConta.id }),
       }
     });
 

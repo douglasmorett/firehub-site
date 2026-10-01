@@ -35,6 +35,10 @@ type Lojista = {
   /** Quem INDICOU a loja (comissão de embaixador). Vínculo à parte do vendedor. */
   ambassadorId: string | null;
   atividade: Atividade | null;
+  /** Loja extra aberta pelo "Nova loja": a loja principal da conta. `email` e `storePhone` já vêm dela. */
+  contaPrincipal: { id: string; nome: string } | null;
+  /** Na loja principal: quantas lojas extras a conta tem. */
+  lojasExtras: number;
 };
 
 type Vendedor = { id: string; name: string; active: boolean };
@@ -156,7 +160,7 @@ export default function AdminDashboardClient({
 
   const matchesSearch = (l: Lojista) => {
     if (!term) return true;
-    if ([l.name, l.storeName, l.email, l.city, l.slug].some(v => v?.toLowerCase().includes(term))) return true;
+    if ([l.name, l.storeName, l.email, l.city, l.slug, l.contaPrincipal?.nome].some(v => v?.toLowerCase().includes(term))) return true;
     if (termDigits.length >= 3 && [l.storePhone, l.cpfCnpj].some(v => v && onlyDigits(v).includes(termDigits))) return true;
     return false;
   };
@@ -199,6 +203,11 @@ export default function AdminDashboardClient({
     } else {
       setTab("lojistas");
     }
+  };
+
+  /** As lojas do mesmo dono juntas: a busca pelo nome da principal acha ela e as extras. */
+  const verConta = (nomeDaPrincipal: string) => {
+    setStatusFilter("todos"); setVendedorFilter("todos"); setSearch(nomeDaPrincipal);
   };
 
   const handleImpersonate = async (l: Lojista) => {
@@ -441,6 +450,7 @@ export default function AdminDashboardClient({
           {([
             ["Nome completo", l.name || "—"],
             ["E-mail", l.email],
+            ["Conta", l.contaPrincipal ? `Loja extra de ${l.contaPrincipal.nome}` : l.lojasExtras > 0 ? `Principal · +${l.lojasExtras} na conta` : "Loja única"],
             ["WhatsApp", l.storePhone || "Não informado"],
             ["CPF/CNPJ", l.cpfCnpj || "Não informado"],
             ["Cidade", l.city || "—"],
@@ -487,6 +497,16 @@ export default function AdminDashboardClient({
       <div style={{ minWidth: 0 }}>
         <div style={{ fontWeight: 700, color: "#0F172A" }}>{l.storeName || l.name}</div>
         <div className="fha-sub">{l.email}</div>
+        {/* Clicar busca pelo nome da loja principal: a conta inteira aparece junta. */}
+        {l.contaPrincipal ? (
+          <button className="fha-conta" onClick={() => verConta(l.contaPrincipal!.nome)} title="Mesmo dono: ver as lojas da conta">
+            🔗 Já é cliente · loja extra de {l.contaPrincipal.nome}
+          </button>
+        ) : l.lojasExtras > 0 && (
+          <button className="fha-conta" onClick={() => verConta(l.storeName || l.name || l.email)} title="Ver as lojas da conta">
+            🔗 +{l.lojasExtras} {l.lojasExtras === 1 ? "loja" : "lojas"} na conta
+          </button>
+        )}
       </div>
     </div>
   );
@@ -620,6 +640,8 @@ export default function AdminDashboardClient({
         .fha-badge-active { background: #DCFCE7; color: #166534; }
         .fha-badge-pending { background: #FEE2E2; color: #B91C1C; }
         .fha-badge-exempt { background: #F1F5F9; color: #475569; }
+        .fha-conta { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 999px; border: 1px solid #99F6E4; background: #F0FDFA; color: #0F766E; font-size: 0.68rem; font-weight: 800; font-family: inherit; cursor: pointer; white-space: nowrap; }
+        .fha-conta:hover { border-color: #0F766E; }
         .fha-uso { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.78rem; white-space: nowrap; }
         .fha-uso i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
         .fha-uso-ativa { color: #15803D; } .fha-uso-ativa i { background: #22C55E; }

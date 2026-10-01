@@ -26,9 +26,22 @@ export default async function AdminPage() {
       mpSellerId: true, storeLogo: true, storePhone: true, trialEndsAt: true,
       cpfCnpj: true, repasseConfig: true, onboardingData: true,
       vendedorId: true, vendedorStatus: true, vendedorAtribuidoEm: true,
-      ambassadorId: true,
+      ambassadorId: true, accountGroupId: true,
     },
   });
+
+  // Loja aberta pelo "Nova loja" do painel nasce com e-mail virtual
+  // (…@stores.firehub.app) dentro da conta da loja principal (accountGroupId).
+  // A lista mostra o e-mail e o telefone de quem é o dono da conta, e marca
+  // as duas pontas: "loja extra de X" e "+N lojas na conta".
+  const porId = new Map(lojistas.map(l => [l.id, l]));
+  const contaPrincipalDe = (l: (typeof lojistas)[number]) =>
+    l.accountGroupId && l.accountGroupId !== l.id ? porId.get(l.accountGroupId) ?? null : null;
+  const lojasExtras = new Map<string, number>();
+  for (const l of lojistas) {
+    const principal = contaPrincipalDe(l);
+    if (principal) lojasExtras.set(principal.id, (lojasExtras.get(principal.id) || 0) + 1);
+  }
 
   // Está usando? O último pedido de cada loja, para achar quem parou.
   const atividade = await atividadeDasLojas(lojistas.map(l => l.id));
@@ -141,7 +154,7 @@ export default async function AdminPage() {
   const serialized = lojistas.map(l => ({
     id: l.id,
     name: l.name,
-    email: l.email,
+    email: contaPrincipalDe(l)?.email || l.email,
     slug: l.slug,
     storeName: l.storeName,
     city: l.city,
@@ -149,7 +162,9 @@ export default async function AdminPage() {
     storeOpen: l.storeOpen,
     isFranqueadoHakim: l.isFranqueadoHakim,
     storeLogo: l.storeLogo,
-    storePhone: l.storePhone,
+    storePhone: l.storePhone || contaPrincipalDe(l)?.storePhone || null,
+    contaPrincipal: (p => p ? { id: p.id, nome: p.storeName || p.name || p.email } : null)(contaPrincipalDe(l)),
+    lojasExtras: lojasExtras.get(l.id) || 0,
     cpfCnpj: l.cpfCnpj,
     repasseConfig: l.repasseConfig,
     onboardingData: l.onboardingData,
