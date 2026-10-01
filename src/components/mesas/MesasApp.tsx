@@ -5,6 +5,7 @@ import { parseComboSelections } from "@/lib/parse-combo";
 import { useRouter } from "next/navigation";
 import ComboModal from "@/components/customer/ComboModal";
 import AndaresConfig from "@/components/mesas/AndaresConfig";
+import QrDasMesas from "@/components/mesas/QrDasMesas";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
@@ -1394,7 +1395,7 @@ export default function MesasApp({
   const SEM_ANDAR = "__sem_andar__";
   const [andares, setAndares] = useState<AndarDaMesa[]>([]);
   const [andarFiltro, setAndarFiltro] = useState<string>("todos");
-  const [abaConfig, setAbaConfig] = useState<"mesas" | "andares">("mesas");
+  const [abaConfig, setAbaConfig] = useState<"mesas" | "andares" | "qr">("mesas");
   useEffect(() => {
     try {
       const salvo = localStorage.getItem(CHAVE_ANDAR);
@@ -3462,7 +3463,7 @@ export default function MesasApp({
               <button onClick={() => setShowConfigModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer" }}>✕</button>
             </div>
             <div style={{ display: "flex", gap: 6, padding: "10px 20px 0" }}>
-              {([["mesas", "🪑 Mesas"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`]] as const).map(([id, rotulo]) => (
+              {([["mesas", "🪑 Mesas"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`], ["qr", "📱 QR Code"]] as const).map(([id, rotulo]) => (
                 <button key={id} type="button" onClick={() => setAbaConfig(id)} style={{
                   flex: 1, padding: "9px 10px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
                   fontSize: 14, fontWeight: 800,
@@ -3473,7 +3474,9 @@ export default function MesasApp({
               ))}
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px" }}>
-              {abaConfig === "andares" ? (
+              {abaConfig === "qr" ? (
+                <QrDasMesas />
+              ) : abaConfig === "andares" ? (
                 <AndaresConfig
                   andaresSalvos={andares}
                   numerosDasMesas={tables.map(t => Number(t.number)).filter(n => Number.isInteger(n))}

@@ -215,6 +215,20 @@ type Franchisee = {
   notaFiscal?: DocumentoNoPedido;
 };
 
+/**
+ * O cardápio aberto pelo QR da mesa (app/loja/[slug]/mesa/[codigo]). O pedido
+ * entra na conta da mesa (api/loja/mesa/pedido): sem entrega, sem pagamento,
+ * sem telefone — o garçom fecha a conta no fim. `mesaId` nulo = QR geral, o
+ * cliente escolhe a mesa na lista.
+ */
+export type MesaDoQr = {
+  codigo: string;
+  mesaId: string | null;
+  numero: number | null;
+  rotulo: string | null;
+  mesas: { id: string; numero: number; rotulo: string | null }[];
+};
+
 type StoreRating = {
   average: number;
   count: number;
@@ -225,12 +239,14 @@ export default function CustomerStorePage({
   franchisee,
   menuProducts,
   storeCategories,
-  storeRating
+  storeRating,
+  mesa = null,
 }: {
   franchisee: Franchisee;
   menuProducts: MenuProduct[];
   storeCategories?: { id: string; name: string; sortOrder: number }[];
   storeRating?: StoreRating;
+  mesa?: MesaDoQr | null;
 }) {
   // Configuração de medição do Google DESTA loja. Só o que ela preencheu na
   // tela de Integrações — nunca uma medição do FireHub.
@@ -245,7 +261,9 @@ export default function CustomerStorePage({
   // WhatsApp, atualizar a página ou o navegador descartar a aba = sacola
   // zerada e venda perdida. Persiste por loja, com validade curta (preço de
   // cardápio muda; e quem manda no valor final é sempre o servidor).
-  const cartStorageKey = `fh_cart_${franchisee.slug || franchisee.id}`;
+  // A sacola da MESA é outra: preço do salão, e o que ficou no delivery não
+  // pode aparecer na mesa (nem o contrário).
+  const cartStorageKey = `fh_cart_${mesa ? "mesa_" : ""}${franchisee.slug || franchisee.id}`;
   const cartHydrated = useRef(false);
   useEffect(() => {
     try {
@@ -582,7 +600,9 @@ export default function CustomerStorePage({
   const storeStatus = isStoreOpen(franchisee.storeHours as any, undefined, franchisee.storeTimezone);
   // Fechada AGORA por qualquer motivo: horário, chave manual ou pausa. É o
   // que desarma o botão de finalizar antes de o cliente preencher tudo.
-  const lojaFechadaAgora = !storeStatus.open || franchisee.storeOpen === false;
+  // Na mesa não vale: o site pode estar fechado com o salão funcionando —
+  // quem decide é o caixa aberto, no servidor (api/loja/mesa/pedido).
+  const lojaFechadaAgora = !mesa && (!storeStatus.open || franchisee.storeOpen === false);
 
   // Verificar pausa programada
   const isPaused = (() => {
@@ -907,8 +927,10 @@ export default function CustomerStorePage({
           ? cartTotal * (Number((couponApplied as any).pct) / 100)
           : couponApplied.discount)
     : 0;
-  const itemsTotal = Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha);
-  const finalTotal = itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
+  // Na mesa o total é o dos itens a preço do salão: cupom, cashback, prêmio
+  // e taxa de entrega não existem na conta da mesa (lib/lancar-na-mesa.ts).
+  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha);
+  const finalTotal = mesa ? cartTotal : itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   // ── ESTOQUE DISPONÍVEL ─────────────────────────────────────────────────
@@ -2248,6 +2270,27 @@ export default function CustomerStorePage({
     setIsCheckout(true);
   };
 
+  // ===== MESA (QR): o estado =====
+  // Lidos depois de montar (no servidor não há storage: ler no useState daria
+  // uma tela no servidor e outra no navegador).
+  const [mesaEscolhida, setMesaEscolhida] = useState("");
+  const [nomeNaMesa, setNomeNaMesa] = useState("");
+  const [obsDaMesa, setObsDaMesa] = useState("");
+  useEffect(() => {
+    if (!mesa) return;
+    try {
+      const nome = localStorage.getItem("fh_nome_na_mesa");
+      if (nome) setNomeNaMesa((atual) => atual || nome);
+      const salva = mesa.mesaId ? null : sessionStorage.getItem(`fh_mesa_${franchisee.slug}`);
+      if (salva && mesa.mesas.some((m) => m.id === salva)) setMesaEscolhida((atual) => atual || salva);
+    } catch { /* sem storage */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!mesa || mesa.mesaId || !mesaEscolhida) return;
+    try { sessionStorage.setItem(`fh_mesa_${franchisee.slug}`, mesaEscolhida); } catch { /* sem storage */ }
+  }, [mesa, mesaEscolhida, franchisee.slug]);
+
   // ===== ORDER TRACKING =====
   const [trackingStatus, setTrackingStatus] = useState("NOVO");
   const STATUSES = [
@@ -2427,11 +2470,104 @@ export default function CustomerStorePage({
   };
   const enderecoEscritoNoMapa = [`${customerStreet} ${customerNumber}`.trim(), customerNeighborhood.trim()].filter(Boolean).join(", ");
 
+  // ===== PEDIDO PELO QR DA MESA =====
+  // Nome (o garçom chama pelo nome), observação e a mesa — no QR geral, a que
+  // o cliente escolheu. A mesa escolhida fica lembrada na aba: o segundo
+  // pedido da noite não pergunta de novo.
+  // (O estado da mesa mora antes do `if (orderSuccess) return`: hook depois
+  // de retorno antecipado quebra o React.)
+  const mesaDoPedido = mesa ? (mesa.mesaId ? { id: mesa.mesaId, numero: mesa.numero, rotulo: mesa.rotulo } : mesa.mesas.find((m) => m.id === mesaEscolhida) || null) : null;
+  const nomeDaMesa = (m: { numero: number | null; rotulo: string | null } | null) => (m ? (m.rotulo ? `Mesa ${m.numero} · ${m.rotulo}` : `Mesa ${m.numero}`) : "");
+
+  const enviarPedidoDaMesa = async () => {
+    if (!mesa || loading) return;
+    if (!mesaDoPedido) {
+      avisar({ titulo: "Qual é a sua mesa?", texto: "Escolha o número da mesa onde você está.", campo: "mesa-escolha" });
+      return;
+    }
+    if (!nomeNaMesa.trim()) {
+      avisar({ titulo: "Qual é o seu nome?", texto: "O garçom chama você pelo nome.", campo: "mesa-nome" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/loja/mesa/pedido", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          codigo: mesa.codigo,
+          slug: franchisee.slug,
+          mesaId: mesa.mesaId ? null : mesaDoPedido.id,
+          nome: nomeNaMesa.trim(),
+          observacao: obsDaMesa.trim(),
+          itens: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
+        }),
+      });
+      const d = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        avisar({ tipo: "erro", titulo: "O pedido não foi enviado", texto: d?.error || "Tente de novo ou chame o garçom." });
+        return;
+      }
+      try { localStorage.setItem("fh_nome_na_mesa", nomeNaMesa.trim()); } catch { /* sem storage */ }
+      clearCart();
+      setObsDaMesa("");
+      setIsCheckout(false);
+      setMobileCartOpen(false);
+      avisar({
+        tipo: "sucesso",
+        titulo: "Pedido enviado para a cozinha!",
+        texto: `Pedido #${d.numero} na ${nomeDaMesa(mesaDoPedido)}. Quer mais alguma coisa? É só pedir de novo por aqui. A conta você fecha com o garçom.`,
+        botao: "OK",
+      });
+    } catch {
+      avisar({ tipo: "erro", titulo: "Sem conexão", texto: "O pedido não foi enviado. Confira a internet e tente de novo, ou chame o garçom." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formDaMesaJSX = mesa ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "0.75rem 0.9rem", fontSize: "0.85rem", color: "#166534", lineHeight: 1.45 }}>
+        <strong>🍽️ {mesaDoPedido ? nomeDaMesa(mesaDoPedido) : "Pedido na mesa"}</strong><br />
+        O pedido vai direto para a cozinha. Não precisa pagar agora: a conta você fecha com o garçom.
+      </div>
+      {!mesa.mesaId && (
+        <div>
+          <label className="checkout-label" htmlFor="mesa-escolha">Sua mesa *</label>
+          <select id="mesa-escolha" value={mesaEscolhida} onChange={(e) => setMesaEscolhida(e.target.value)} className="checkout-input" style={{ width: "100%" }}>
+            <option value="">Escolha o número da mesa</option>
+            {mesa.mesas.map((m) => <option key={m.id} value={m.id}>{nomeDaMesa(m)}</option>)}
+          </select>
+        </div>
+      )}
+      <div>
+        <label className="checkout-label" htmlFor="mesa-nome">Seu nome *</label>
+        <input id="mesa-nome" value={nomeNaMesa} onChange={(e) => setNomeNaMesa(e.target.value)} maxLength={60} autoComplete="given-name" placeholder="Como o garçom chama você" className="checkout-input" style={{ width: "100%" }} />
+      </div>
+      <div>
+        <label className="checkout-label" htmlFor="mesa-obs">Observação (opcional)</label>
+        <textarea id="mesa-obs" value={obsDaMesa} onChange={(e) => setObsDaMesa(e.target.value)} maxLength={300} rows={2} placeholder="Ex.: trazer junto com a bebida" className="checkout-input" style={{ width: "100%", resize: "vertical" }} />
+      </div>
+      <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: 4, fontSize: "0.84rem", color: "#475569" }}>
+        {cart.map((i, k) => (
+          <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>{i.quantity}× {i.name}</span>
+            <span style={{ fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap" }}>R$ {(i.price * i.quantity).toFixed(2).replace(".", ",")}</span>
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0F172A", fontSize: "1rem", marginTop: 4, paddingTop: 6, borderTop: "1px dashed #E2E8F0" }}>
+          <span>Total deste pedido</span>
+          <span>R$ {cartTotal.toFixed(2).replace(".", ",")}</span>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   // ===== CART SIDEBAR CONTENT =====
   const cartContentJSX = (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", overflow: "hidden" }}>
       {/* BANNER GAMIFICADO DE FRETE GRÁTIS */}
-      {freeShippingThreshold && (
+      {!mesa && freeShippingThreshold && (
         <div style={{
           padding: "10px 14px",
           background: isFreeShippingByMin ? "linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)" : "linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)",
@@ -2695,6 +2831,12 @@ export default function CustomerStorePage({
                 );
               })}
 
+              {mesa ? (
+                <div style={{ borderTop: "1px solid #E2E8F0", marginTop: "0.5rem", paddingTop: "0.75rem", display: "flex", justifyContent: "space-between", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A" }}>
+                  <span>Total</span>
+                  <span>R$ {cartTotal.toFixed(2).replace(".", ",")}</span>
+                </div>
+              ) : (<>
               {/* CUPOM DE DESCONTO */}
               <div style={{ marginTop: "0.25rem", padding: "0.75rem 0" }}>
                 {/* ── SEU PRIMEIRO PEDIDO TEM DESCONTO ─────────────────────
@@ -2900,8 +3042,11 @@ export default function CustomerStorePage({
                   <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
                 </div>
               </div>
+              </>)}
             </div>
           )
+        ) : mesa ? (
+          formDaMesaJSX
         ) : (
           /* TELA DE IDENTIFICAÇÃO E FINALIZAÇÃO COM CAMPOS SEPARADOS */
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -3564,6 +3709,7 @@ export default function CustomerStorePage({
             <button
               type="button"
               onClick={() => {
+                if (mesa) { setIsCheckout(true); return; }
                 if (isBelowCartMin) {
                   avisar({
                     tipo: "falta",
@@ -3601,7 +3747,7 @@ export default function CustomerStorePage({
                 padding: "13px",
                 borderRadius: "12px",
                 border: "none",
-                background: isBelowCartMin ? "#94A3B8" : "#0F172A",
+                background: isBelowCartMin && !mesa ? "#94A3B8" : "#0F172A",
                 color: "#FFFFFF",
                 fontWeight: 800,
                 fontSize: "0.95rem",
@@ -3613,7 +3759,7 @@ export default function CustomerStorePage({
                 transition: "all 0.2s ease"
               }}
             >
-              <span>{isBelowCartMin ? `Falta R$ ${remainingForCartMin.toFixed(2).replace(".", ",")}` : "Continuar pedido"}</span>
+              <span>{isBelowCartMin && !mesa ? `Falta R$ ${remainingForCartMin.toFixed(2).replace(".", ",")}` : "Continuar pedido"}</span>
               <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
             </button>
           ) : (
@@ -3622,7 +3768,7 @@ export default function CustomerStorePage({
                   para levar um alert genérico no último clique. */}
               <button
                 type="button"
-                onClick={handleCheckout}
+                onClick={mesa ? enviarPedidoDaMesa : handleCheckout}
                 disabled={loading || lojaFechadaAgora}
                 style={{
                   width: "100%",
@@ -3641,7 +3787,9 @@ export default function CustomerStorePage({
                   gap: "6px"
                 }}
               >
-                {lojaFechadaAgora
+                {mesa
+                  ? (loading ? "Enviando para a cozinha..." : `🍽️ Enviar para a cozinha • R$ ${cartTotal.toFixed(2).replace(".", ",")}`)
+                  : lojaFechadaAgora
                   ? `🔴 Loja fechada${!storeStatus.open && storeStatus.text ? ` • ${storeStatus.text}` : ""}`
                   : loading
                     ? "Enviando pedido..."
@@ -3679,8 +3827,25 @@ export default function CustomerStorePage({
         <GoogleAnalytics measurementId={gaMeasurementId} gtmId={gtmContainerId} />
       )}
 
+      {/* A MESA: quem escaneou o QR sabe onde está pedindo, e que não paga agora. */}
+      {mesa && (
+        <div style={{ background: "linear-gradient(135deg,#065F46,#059669)", color: "#fff", padding: "0.8rem 1.25rem", textAlign: "center" }}>
+          <p style={{ fontWeight: 900, fontSize: "1.05rem", margin: 0 }}>
+            🍽️ {mesaDoPedido ? `Você está na ${nomeDaMesa(mesaDoPedido)}` : "Pedido na mesa"}
+          </p>
+          {!mesa.mesaId && (
+            <select aria-label="Sua mesa" value={mesaEscolhida} onChange={(e) => setMesaEscolhida(e.target.value)}
+              style={{ margin: "6px 0 2px", padding: "6px 10px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: "0.9rem", color: "#065F46", maxWidth: "100%" }}>
+              <option value="">{mesaDoPedido ? "Trocar de mesa" : "Escolha a sua mesa"}</option>
+              {mesa.mesas.map((m) => <option key={m.id} value={m.id}>{nomeDaMesa(m)}</option>)}
+            </select>
+          )}
+          <p style={{ fontSize: "0.8rem", opacity: 0.92, margin: "3px 0 0" }}>Peça por aqui: vai direto para a cozinha. A conta você fecha com o garçom.</p>
+        </div>
+      )}
+
       {/* BANNER DE PAUSA */}
-      {isPaused && (
+      {!mesa && isPaused && (
         <div style={{ background: "linear-gradient(135deg,#B91C1C,#DC2626)", color: "#fff", padding: "1rem 1.5rem", textAlign: "center" }}>
           <p style={{ fontWeight: 800, fontSize: "1.05rem", marginBottom: "4px" }}>📅 Loja Temporariamente Fechada</p>
           <p style={{ fontSize: "0.85rem", opacity: 0.9, margin: 0 }}>
@@ -3690,7 +3855,7 @@ export default function CustomerStorePage({
       )}
 
       {/* Loja manualmente fechada */}
-      {!isPaused && franchisee.storeOpen === false && (
+      {!mesa && !isPaused && franchisee.storeOpen === false && (
         <div style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
           🔴 Loja fechada no momento · Em breve voltamos!
         </div>
@@ -3800,6 +3965,9 @@ export default function CustomerStorePage({
               </button>
             )}
 
+            {/* Na mesa não há "meus pedidos" nem conta do cliente: o pedido é
+                da conta da mesa, que o garçom fecha. */}
+            {!mesa && (
             <button
               onClick={() => {
                 setShowMyOrdersModal(true);
@@ -3823,6 +3991,7 @@ export default function CustomerStorePage({
             >
               <Package size={14} /> Pedidos
             </button>
+            )}
 
             {customer && customerCashbackBalance > 0 && (
               <div
@@ -3917,7 +4086,7 @@ export default function CustomerStorePage({
               </div>
             )}
 
-            {customer ? (
+            {mesa ? null : customer ? (
               <button onClick={() => setShowHistory(!showHistory)} style={{ background: "rgba(15, 23, 42, 0.06)", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "6px 12px", cursor: "pointer", color: "#1E293B", fontSize: "0.78rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
                 <User size={14} /> {customer.name.split(" ")[0]}
               </button>
