@@ -90,7 +90,16 @@ export const pedidoJaEstaPronto = (order: any): boolean => {
 };
 
 /**
- * O que aparece ao clicar no pino do mapa.
+ * Quanto tempo o mouse fica parado no pino antes da caixa do pedido abrir.
+ *
+ * Imediato atrapalhava o clique; 3 s (a primeira ideia) faz a caixa parecer
+ * quebrada — quem quer conferir desiste antes. 1 s separa "passei por cima"
+ * de "parei para ler".
+ */
+const ESPERA_DA_CAIXA_DO_PINO_MS = 1000;
+
+/**
+ * O que aparece ao passar o mouse no pino do mapa.
  *
  * O lojista mostrou o que o outro sistema entrega aqui: número, cliente, taxa
  * de entrega, taxa do entregador, endereço com complemento, prazo, forma de
@@ -1373,8 +1382,29 @@ export default function RoteirizacaoModal({
       });
 
       const orderMarker = L.marker([coords.lat, coords.lng], { icon: orderIcon, zIndexOffset: zIdx })
-        .addTo(map)
-        .bindPopup(popupDoPedido(order, jaDespachado, prontoNaCozinha));
+        .addTo(map);
+
+      // ── A CAIXA NÃO PODE TAMPAR O PINO ───────────────────────────────
+      //
+      // O pino é desenhado ACIMA do ponto do endereço (a gota sobe
+      // `alturaCentro` px a partir da ponta), e a caixa abria ancorada no
+      // mesmo ponto, crescendo para cima: ela cobria o próprio pino, e o
+      // clique para montar a rota caía na caixa. Abrindo sozinha ao passar o
+      // mouse, ainda arrastava o mapa para caber (autoPan) e o pino fugia do
+      // cursor. Só dava para selecionar pela lista do lado (Douglas,
+      // 01/10/2026).
+      //
+      // Agora a ponta da caixa fica no TOPO da gota (seguindo o leque e a
+      // escala do pino) e o mapa não se mexe.
+      const escala = parseFloat(scaleCss.replace(/[^\d.]/g, "")) || 1;
+      const angulo = (fan.angulo * Math.PI) / 180;
+      const topoDoPino: [number, number] = [
+        Math.round(Math.sin(angulo) * alturaCentro * escala),
+        -Math.round((Math.cos(angulo) * alturaCentro + 26) * escala),
+      ];
+      const caixaDoPedido = L.popup({ autoPan: false, closeButton: false, offset: topoDoPino })
+        .setLatLng([coords.lat, coords.lng])
+        .setContent(popupDoPedido(order, jaDespachado, prontoNaCozinha));
 
       // ── O PEDIDO INTEIRO SÓ DE PASSAR O MOUSE ────────────────────────
       //
@@ -1385,9 +1415,29 @@ export default function RoteirizacaoModal({
       //
       // O Leaflet mantém um popup aberto por vez, então passar para o pino
       // vizinho troca o conteúdo sozinho, sem acumular caixas na tela.
-      orderMarker.on("mouseover", () => orderMarker.openPopup());
+      //
+      // Abre só com o mouse PARADO no pino por um instante: quem só passa a
+      // caminho do pino vizinho, ou vai direto clicar, não ganha caixa no
+      // caminho. Saiu do pino, ela fecha.
+      let esperaDaCaixa: ReturnType<typeof setTimeout> | null = null;
+      const cancelarEspera = () => {
+        if (esperaDaCaixa) clearTimeout(esperaDaCaixa);
+        esperaDaCaixa = null;
+      };
+      const fecharCaixa = () => {
+        cancelarEspera();
+        if (map.hasLayer(caixaDoPedido)) map.closePopup(caixaDoPedido);
+      };
+      orderMarker.on("mouseover", () => {
+        cancelarEspera();
+        esperaDaCaixa = setTimeout(() => caixaDoPedido.openOn(map), ESPERA_DA_CAIXA_DO_PINO_MS);
+      });
+      orderMarker.on("mouseout", fecharCaixa);
+      // O mapa redesenha os pinos a cada seleção: pino que sai leva a caixa.
+      orderMarker.on("remove", fecharCaixa);
 
       orderMarker.on("click", () => {
+        fecharCaixa();
         // ── PINO AZUL E VERDE SÃO INFORMATIVOS, NÃO SELECIONÁVEIS ────────
         //
         // Desde que o pedido despachado passou a ficar no mapa, o pino dele
