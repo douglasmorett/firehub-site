@@ -15,6 +15,7 @@ import {
   BALCAO_CONFIG_PADRAO, numeroDaMesaEhObrigatorio, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
 } from "@/lib/balcao-config";
 import { MENSAGEM_CAIXA_FECHADO, EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
+import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
 import { useSession } from "next-auth/react";
 
@@ -148,20 +149,14 @@ export default function VendaPresencialPage() {
     };
   }, []);
 
+  // Mesmo cálculo do cardápio e da mesa. O daqui pegava a opção mais barata
+  // de QUALQUER pergunta, até de adicional opcional: a Mini Broto da Forno
+  // D'oro (sabor de R$ 22 a 29) aparecia "a partir de R$ 5,00" — o preço da
+  // maionese extra.
   const getDisplayPrice = (p: any) => {
-    if (p.price && p.price > 0) return fmt(p.price);
-    const groups = getEffectiveComboGroups(p);
-    if (groups && groups.length > 0) {
-      let minPrice = Infinity;
-      groups.forEach((g: any) => {
-        (g.items || []).forEach((it: any) => {
-          const pr = (Number(it.additionalPrice) || 0) + (it.menuProduct?.price || 0);
-          if (pr > 0 && pr < minPrice) minPrice = pr;
-        });
-      });
-      if (minPrice !== Infinity) return `a partir de ${fmt(minPrice)}`;
-    }
-    return fmt(0);
+    const comGrupos = { ...p, comboGroups: getEffectiveComboGroups(p) };
+    const minimo = precoMinimoDoProduto(comGrupos);
+    return precoVariaPorEscolha(comGrupos) ? `a partir de ${fmt(minimo)}` : fmt(minimo);
   };
 
   const DAY_ALIASES: Record<string, string[]> = {
