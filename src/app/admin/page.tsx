@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import AdminDashboardClient from "@/components/admin/AdminDashboardClient";
-import { getCurrentYearMonth, intervaloDoMes } from "@/lib/billing";
+import { getCurrentYearMonth, intervaloDoMes, isExemptAccount } from "@/lib/billing";
 import { inicioDoDiaDaLojaAtras } from "@/lib/fuso";
 import { atividadeDasLojas } from "@/lib/atividade-da-loja";
 
@@ -47,18 +47,31 @@ export default async function AdminPage() {
     select: { id: true, name: true, code: true, active: true },
   });
 
-  // Lojistas isentos de cobrança do FireHub
-  const exemptSet = new Set(lojistas.filter(l => l.isFranqueadoHakim).map(l => l.id));
+  // Lojistas isentos de cobrança do FireHub — as mesmas regras do fechamento
+  // (lib/billing.ts). Só `isFranqueadoHakim` deixava a Hakim Centro (isenta
+  // pelo e-mail) somar um boleto cancelado de julho em "Pendências" e no MRR.
+  const exemptSet = new Set(
+    lojistas.filter(l => l.isFranqueadoHakim || isExemptAccount(l.email)).map(l => l.id)
+  );
 
   // ── Billing cycles ────────────────────────────────────────
+  // Só os ciclos que viraram BOLETO. Paga, a mensalidade passa a PAID
+  // (lib/pagamento-da-mensalidade.ts): ler só CLOSED fazia a loja que pagou
+  // sumir do MRR e deixava "Total arrecadado" em zero para sempre.
   const billings = await prisma.franchiseeBillingCycle.findMany({
-    where: { status: "CLOSED" },
+    where: { asaasPaymentId: { not: null }, status: { in: ["CLOSED", "PAID"] } },
     orderBy: { closedAt: "desc" },
     select: {
-      franchiseeId: true, amountDue: true, amountPending: true,
-      amountOffset: true, closedAt: true, status: true,
+      franchiseeId: true, yearMonth: true, amountDue: true, amountPending: true,
+      closedAt: true, status: true, paidAt: true, paidValue: true, asaasStatus: true,
     },
   });
+  // O valor do boleto: mensalidade + lojas adicionais no iFood/99 + tráfego +
+  // totem. `amountDue` é só a mensalidade — somar ele deixava de fora R$ 400
+  // das taxas de setembro/2026.
+  const valorDoBoleto = (b: (typeof billings)[number]) =>
+    b.status === "PAID" ? (b.paidValue ?? b.amountDue) : b.amountPending;
+  const boletoCancelado = (b: (typeof billings)[number]) => ["DELETED", "REFUNDED"].includes(String(b.asaasStatus || ""));
 
   const isLojistaInTrial = (l: { createdAt: Date; trialEndsAt: Date | null }) => {
     if (l.trialEndsAt) {
@@ -89,23 +102,25 @@ export default async function AdminPage() {
   const startOfWeek = inicioDoDiaDaLojaAtras(7);
   const novosSemana = lojistas.filter(l => new Date(l.createdAt) >= startOfWeek).length;
 
-  // MRR = soma dos amountDue do último billing de cada lojista
+  // MRR = o último boleto de cada lojista (mais recente primeiro).
   const lastBillingMap: Record<string, number> = {};
   billings.forEach(b => {
-    if (!exemptSet.has(b.franchiseeId) && !lastBillingMap[b.franchiseeId]) {
-      lastBillingMap[b.franchiseeId] = b.amountDue;
+    if (!exemptSet.has(b.franchiseeId) && !boletoCancelado(b) && lastBillingMap[b.franchiseeId] === undefined) {
+      lastBillingMap[b.franchiseeId] = valorDoBoleto(b);
     }
   });
   const mrr = Object.values(lastBillingMap).reduce((sum, v) => sum + v, 0);
+  const pagantes = Object.keys(lastBillingMap).length;
 
-  // Total arrecadado = amountDue - amountPending (o que efetivamente foi pago)
-  const totalArrecadado = billings.reduce((sum, b) => sum + Math.max(0, b.amountDue - b.amountPending), 0);
+  // Total arrecadado = boletos que o Asaas confirmou pagos.
+  const totalArrecadado = billings.reduce((sum, b) => sum + (b.status === "PAID" && b.paidAt ? valorDoBoleto(b) : 0), 0);
 
-  // Pendências (ignorando lojistas isentos)
+  // Pendências: TODO boleto em aberto da loja (de qualquer mês), menos isentas
+  // e boleto cancelado no Asaas.
   const pendingMap: Record<string, number> = {};
   billings.forEach(b => {
-    if (!exemptSet.has(b.franchiseeId) && !pendingMap[b.franchiseeId] && b.amountPending > 0) {
-      pendingMap[b.franchiseeId] = b.amountPending;
+    if (!exemptSet.has(b.franchiseeId) && b.status === "CLOSED" && b.amountPending > 0 && !boletoCancelado(b)) {
+      pendingMap[b.franchiseeId] = (pendingMap[b.franchiseeId] || 0) + b.amountPending;
     }
   });
   const totalPendente = Object.values(pendingMap).reduce((sum, v) => sum + v, 0);
@@ -157,7 +172,7 @@ export default async function AdminPage() {
     <AdminDashboardClient
       adminName={session?.user?.name || "Admin"}
       kpis={{
-        totalLojistas, emTrial, assinantes,
+        totalLojistas, emTrial, assinantes, pagantes,
         novosMes, novosSemana,
         mrr, totalArrecadado, totalPendente, comPendencia,
       }}

@@ -46,6 +46,8 @@ const ABAS: Tab[] = ["overview", "lojistas", "financeiro", "vendedores", "ambass
 
 type KPIs = {
   totalLojistas: number; emTrial: number; assinantes: number;
+  /** Lojas com boleto de mensalidade emitido (o resto fora do teste ainda não gerou cobrança). */
+  pagantes: number;
   novosMes: number; novosSemana: number;
   mrr: number; totalArrecadado: number; totalPendente: number; comPendencia: number;
 };
@@ -532,7 +534,7 @@ export default function AdminDashboardClient({
           { key: "todos", label: `Todos (${lojistas.length})` },
           { key: "mes", label: `Novos este mês (${kpis.novosMes})` },
           { key: "trial", label: `Em teste (${kpis.emTrial})` },
-          { key: "assinantes", label: `Assinantes (${kpis.assinantes})` },
+          { key: "assinantes", label: `Fora do teste (${kpis.assinantes})` },
           { key: "pendencia", label: `Com pendência (${kpis.comPendencia})`, alerta: true },
           { key: "inativos", label: `Paradas · 7+ dias sem pedido (${inativas})`, alerta: true },
           { key: "nunca", label: `Nunca venderam (${nuncaVenderam})`, alerta: true },
@@ -732,10 +734,10 @@ export default function AdminDashboardClient({
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 14 }}>
                 {[
-                  { label: "Lojistas", val: kpis.totalLojistas, sub: `${kpis.emTrial} em teste · ${kpis.assinantes} assinantes`, color: "#0F172A" },
+                  { label: "Lojistas", val: kpis.totalLojistas, sub: `${kpis.emTrial} em teste · ${kpis.assinantes} fora do teste · ${kpis.pagantes} com boleto`, color: "#0F172A" },
                   { label: "Novos este mês", val: kpis.novosMes, sub: `${kpis.novosSemana} nesta semana`, color: "#0F172A", ir: () => irParaLojistas("mes") },
-                  { label: "MRR estimado", val: fmt(kpis.mrr), sub: "Receita recorrente mensal", color: "#0F172A" },
-                  { label: "Total arrecadado", val: fmt(kpis.totalArrecadado), sub: "Histórico de pagamentos", color: "#15803D" },
+                  { label: "MRR estimado", val: fmt(kpis.mrr), sub: `último boleto de ${kpis.pagantes} lojas`, color: "#0F172A" },
+                  { label: "Total arrecadado", val: fmt(kpis.totalArrecadado), sub: "boletos pagos no Asaas", color: "#15803D" },
                   { label: "Pendências", val: fmt(kpis.totalPendente), sub: `${kpis.comPendencia} lojistas com débito`, color: "#B91C1C", ir: () => irParaLojistas("pendencia") },
                 ].map(k => (
                   <div key={k.label} className={`fha-kpi${k.ir ? " clicavel" : ""}`} onClick={k.ir}>

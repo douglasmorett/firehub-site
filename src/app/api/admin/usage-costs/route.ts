@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getAllUsageSummaries } from '@/lib/usage-tracker';
 import { rateioInfra, CUSTO_INFRA_MENSAL_BRL, SERVICOS_PAGOS } from '@/lib/custos-plataforma';
+import { getCurrentYearMonth } from '@/lib/billing';
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,11 +16,8 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     let yearMonth = searchParams.get('yearMonth');
 
-    if (!yearMonth) {
-      const now = new Date();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      yearMonth = `${now.getFullYear()}-${month}`;
-    }
+    // Mês corrente EM BRASÍLIA — getMonth() do container (UTC) virava o mês às 21h.
+    if (!yearMonth) yearMonth = getCurrentYearMonth();
 
     const usageData = await getAllUsageSummaries(yearMonth);
     
@@ -96,11 +94,21 @@ export async function GET(req: NextRequest) {
         total: (usage?.geminiChat.cost || 0) + (usage?.geminiVision.cost || 0) + hosting,
       };
 
-      const amountPaid = (billing?.amountDue || 0) - (billing?.amountPending || 0);
+      // Receita = o BOLETO (mensalidade + lojas adicionais no iFood/99 + tráfego
+      // + totem), não só `amountDue`, que é a mensalidade: setembro/2026 saía
+      // R$ 400 menor. Pago = o que o Asaas confirmou (lib/pagamento-da-mensalidade.ts);
+      // a conta antiga `amountDue - amountPending` dava "pago" para boleto que
+      // só tinha taxa a mais, e zero para quem pagou de verdade.
+      const pagoNoAsaas = billing?.status === 'PAID' && !!billing.paidAt;
+      const faturado = !billing
+        ? 0
+        : pagoNoAsaas
+          ? billing.paidValue ?? billing.amountDue
+          : billing.amountPending > 0 ? billing.amountPending : billing.amountDue;
       const revenue = {
         totalSales: billing?.totalSales || 0,
-        amountDue: billing?.amountDue || 0,
-        amountPaid: Math.max(0, amountPaid),
+        amountDue: faturado,
+        amountPaid: pagoNoAsaas ? faturado : 0,
       };
 
       const profit = revenue.amountDue - costs.total;
