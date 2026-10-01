@@ -1,20 +1,75 @@
-name: Deploy to Coolify
+name: Montar e publicar
+
+# ── Por que a montagem saiu do servidor (01/10/2026) ──────────────────────────
+#
+# O Coolify montava a imagem NO MESMO servidor que atende as lojas (2 vCPU,
+# 4 GB), e este arquivo mandava "force": true — montagem SEM cache, que
+# reinstalava os ~1.500 pacotes a cada push. Medido no DigitalOcean: cada
+# publicação levava a CPU de ~20% para ~60%, o disco de 0 para 15 MB/s e
+# baixava ~240 MB. Em 01/10, às 9h50, o site ficou 9 minutos fora do ar
+# durante uma delas.
+#
+# Agora a imagem é montada aqui, na máquina do GitHub, e guardada no registro
+# (ghcr.io/douglasmorett/firehub-site:<commit>). No Coolify, o campo
+# "Container image" aponta para esse registro: ele encontra a imagem do commit
+# e PULA a montagem — só baixa e troca o container.
+#
+# NÃO voltar com "force": true. É ele que obriga o Coolify a montar tudo de
+# novo no servidor, e pelo mesmo motivo: nunca usar "Force deploy" no painel.
+#
+# Ramos ci/** só montam (para testar a montagem sem publicar nada).
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'ci/**']
+
+# Push novo em cima de um que ainda monta: vale só o último. Publicar a versão
+# do meio, que já vai ser trocada, é carga à toa no servidor.
+concurrency:
+  group: montar-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
-    name: Trigger Coolify Deploy
+  montar:
+    name: Montar a imagem
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # O Coolify procura a imagem pelo commit COMPLETO (40 caracteres) — é a
+      # marca que ele mostra no log ("commit sha 4df02208a5d0...").
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/douglasmorett/firehub-site:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publicar:
+    name: Publicar no Coolify
+    needs: montar
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy latest commit to Coolify
+      - name: Pedir a publicação do commit (sem forçar montagem)
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://107.170.79.194:8000/api/v1/deploy" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"uuid":"binibyxzlgkm4qhfcydy6ocj","force":true,"commit":"${{ github.sha }}"}' \
+            -d '{"uuid":"binibyxzlgkm4qhfcydy6ocj","commit":"${{ github.sha }}"}' \
             --max-time 30)
           HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
           BODY=$(echo "$RESPONSE" | head -n -1)
