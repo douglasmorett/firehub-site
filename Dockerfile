@@ -22,6 +22,14 @@ COPY . .
 # Generate Prisma Client
 RUN npx prisma generate
 
+# lib/prisma.ts e lib/auth.ts param na importação quando estas variáveis não
+# existem, e o `next build` importa as rotas para coletar dados. O build não
+# conecta no banco: na montagem do GitHub (.github/workflows/deploy.yml) chegam
+# valores de mentira; quando o Coolify monta, ele passa os de verdade. ARG vale
+# só nesta etapa — não chega à imagem final.
+ARG DATABASE_URL
+ARG NEXTAUTH_SECRET
+
 # Build Next.js standalone (sem rodar prisma db push)
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npx next build

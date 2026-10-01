@@ -55,6 +55,12 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ghcr.io/douglasmorett/firehub-site:${{ github.sha }}
+          # Só para o `next build` importar lib/prisma.ts e lib/auth.ts, que
+          # param sem elas. Não são as de produção: o build não conecta no
+          # banco, e as verdadeiras chegam ao container pelo Coolify.
+          build-args: |
+            DATABASE_URL=postgresql://montagem@127.0.0.1:5432/montagem
+            NEXTAUTH_SECRET=so-para-a-montagem
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
