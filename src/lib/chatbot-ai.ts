@@ -48,6 +48,7 @@ import { marcarAguardandoLoja } from "./finalizar-rascunho";
 import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-fonte";
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
+import { tempoDeEntregaParaGravar } from "./previsao-da-entrega";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -3188,6 +3189,9 @@ async function syncAiOrderToDatabase({
     });
   })();
   const avisosDaEntrega = deliveryType === "DELIVERY" ? avisosDaEntregaNaNota(vereditoDaArea, Boolean(coords)) : [];
+  // O tempo da área que o robô disse ao cliente: a comanda imprime a PREVISÃO
+  // DE ENTREGA com ele (lib/previsao-da-entrega.ts).
+  const tempoDaEntrega = deliveryType === "DELIVERY" ? tempoDeEntregaParaGravar(vereditoDaArea?.tempoMin) : null;
 
   /** Rascunho reescrito: o que a entrega grava por cima do que ele tinha. */
   const entregaNoRascunho: Prisma.CustomerOrderUpdateInput = {};
@@ -3200,6 +3204,7 @@ async function syncAiOrderToDatabase({
       if (!pontoDoPedido) entregaNoRascunho.customerLatLng = Prisma.DbNull;
       entregaNoRascunho.deliveryDistance = distanciaDoPedido;
       entregaNoRascunho.motoboyFee = repasseDoEntregador;
+      entregaNoRascunho.tempoEntregaMin = tempoDaEntrega;
       entregaNoRascunho.entregaGratis = entregaGratis ?? Prisma.DbNull;
     }
   } else if (isFinal) {
@@ -3207,6 +3212,7 @@ async function syncAiOrderToDatabase({
     entregaNoRascunho.customerLatLng = Prisma.DbNull;
     entregaNoRascunho.deliveryDistance = null;
     entregaNoRascunho.motoboyFee = null;
+    entregaNoRascunho.tempoEntregaMin = null;
     entregaNoRascunho.entregaGratis = Prisma.DbNull;
   }
 
@@ -3416,6 +3422,7 @@ async function syncAiOrderToDatabase({
         ...(distanciaDoPedido != null ? { deliveryDistance: distanciaDoPedido } : {}),
         ...(pontoDoPedido ? { customerLatLng: pontoDoPedido } : {}),
         ...(repasseDoEntregador != null ? { motoboyFee: repasseDoEntregador } : {}),
+        ...(tempoDaEntrega != null ? { tempoEntregaMin: tempoDaEntrega } : {}),
         ...(entregaGratis ? { entregaGratis } : {}),
         ...(cupomAplicado ? descontoParaGravar : {}),
         source: "WHATSAPP_IA",

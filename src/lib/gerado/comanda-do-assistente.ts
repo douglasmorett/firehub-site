@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.28), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.29), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -575,7 +575,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
         order.localizador || order.ifoodLocalizer || order.ifoodOrderId ||
         order.openDeliveryReference || order.ifoodReference || ""
       ),
-      previsao: cleanAscii(order.previsao || order.deliveryWindow || ""),
+      previsao: cleanAscii(order.previsao || order.deliveryWindow || (previsaoDoPedido ? previsaoDoPedido.hora : "")),
       taxaServico: Number(order.serviceFee || 0) > 0
         ? "R$ " + Number(order.serviceFee).toFixed(2).replace(".", ",") : "",
       bandeira: cleanAscii(order.bandeira || order.cardBrand || ""),
@@ -603,6 +603,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           // O garcom anda com o numero da mesa, no mesmo corpo da linha do
           // canal no layout padrao — nao some porque a loja montou modelo.
           if (linhaDoGarcom) out += linha(linhaDoGarcom, { alinhamento: f.alinhamento || "centro", tamanho: 1.5, negrito: true });
+          // A previsao de entrega anda com o numero pelo mesmo motivo: e o
+          // topo do papel em qualquer modelo que a loja tenha montado.
+          if (linhaDaPrevisao) out += linha(linhaDaPrevisao, { alinhamento: f.alinhamento || "centro", tamanho: 1.5, negrito: true });
           break;
         }
         // A MARCA quando a conta tem varias no mesmo painel (Ragnar Pizza x
@@ -821,6 +824,34 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   })();
   const garcomDaMesa = ehPedidoDeMesa ? cleanAscii(order.garcom || "").replace(/\s+/g, " ").trim().slice(0, 40) : "";
   const linhaDoGarcom = garcomDaMesa ? ("GARCOM: " + garcomDaMesa).toUpperCase() : "";
+
+  // ── A PREVISAO DE ENTREGA ────────────────────────────────────────────
+  //
+  // O dono (01/10/2026): "preciso que saia o horario de previsao de entrega
+  // para o cliente nas notas impressas, proximo do topo". A comanda tinha a
+  // hora em que o pedido ENTROU e nada sobre quando ele tem que CHEGAR.
+  //
+  // Quem decide o horario e o site (src/lib/previsao-da-entrega.ts): prazo do
+  // iFood/99, agendamento do cliente ou o tempo da area de entrega que o
+  // cliente viu no checkout. Aqui so se formata — no relogio DESTE PC, que e
+  // o fuso da loja (o servidor roda em UTC). Sem `previsaoEntrega`, nada: o
+  // papel nao inventa prazo. Desligavel na aba Avisos.
+  const previsaoDoPedido = (() => {
+    if (ehConta) return null;
+    const p = order.previsaoEntrega;
+    if (!p || typeof p !== "object") return null;
+    const em = new Date(p.em);
+    if (!Number.isFinite(em.getTime())) return null;
+    const hora = em.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    if (p.tipo === "AGENDADO") {
+      const dia = em.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      return { hora: dia + " " + hora, linha: "AGENDADO PARA: " + dia + " " + hora };
+    }
+    return { hora, linha: (p.tipo === "RETIRADA" ? "PREVISAO DE RETIRADA: " : "PREVISAO DE ENTREGA: ") + hora };
+  })();
+  // A aba Avisos desliga a LINHA do topo; a variavel {previsao} do texto
+  // livre continua valendo para quem a usa no modelo.
+  const linhaDaPrevisao = previsaoDoPedido && avisoLigado("previsaoEntrega") ? previsaoDoPedido.linha : "";
   // "(3) MESA 4". A loja que trocou a palavra do topo ("PEDIDO") ganha a mesa
   // por extenso depois dela — "(3) PEDIDO 4" nao diria que o 4 e a mesa.
   const tagDoTopo = !mesaDoPedido
@@ -938,6 +969,12 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // O garcom logo abaixo da mesa: e a quem a cozinha entrega o prato pronto.
   if (linhaDoGarcom) {
     res += DOUBLE_HEIGHT + BOLD_ON + centerLine(linhaDoGarcom) + BOLD_OFF + DOUBLE_OFF;
+  }
+  // Logo abaixo do numero: e por ele que a cozinha decide o que sai primeiro.
+  // Altura dobrada, largura normal — "PREVISAO DE RETIRADA: 20:45" tem 27
+  // letras e cabe inteiro ate na bobina de 58 mm (32 colunas).
+  if (linhaDaPrevisao) {
+    res += DOUBLE_HEIGHT + BOLD_ON + centerLine(linhaDaPrevisao) + BOLD_OFF + DOUBLE_OFF;
   }
   // ── DE ONDE VEIO ESTE PEDIDO ─────────────────────────────────────────
   //
@@ -1732,10 +1769,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.28";
-export const ASSINATURA_DO_CODIGO = "8f51f103fbcf7623";
+export const VERSAO_DO_ASSISTENTE = "1.2.29";
+export const ASSINATURA_DO_CODIGO = "7391c38d83fbc5a4";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.28 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.29 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }

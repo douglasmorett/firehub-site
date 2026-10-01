@@ -19,6 +19,8 @@
  * mandava a loja não despachar motoboy num pedido que ninguém mais ia buscar.
  */
 
+import { camposDaPrevisaoParaImpressao } from "./previsao-da-entrega";
+
 export type InfoDeEntrega = {
   parceira: boolean;
   parceiro: string;
@@ -105,6 +107,11 @@ export function infoDaEntrega(pedido: any): InfoDeEntrega {
  * regra antiga não tem como concluir errado. Os campos `deliveryBy` e
  * `entregaParceira` vão junto para o Assistente novo decidir direito — campo
  * que o Assistente antigo não conhece ele ignora sem erro.
+ *
+ * A PREVISÃO DE ENTREGA viaja por aqui também (lib/previsao-da-entrega.ts):
+ * esta função é a que os três trilhos da impressão já chamam — fila da nuvem,
+ * reimpressão e navegador —, e uma previsão que só um deles mandasse faria o
+ * mesmo pedido sair com ou sem o horário dependendo de quem imprimiu.
  */
 export function camposDeEntregaParaImpressao(pedido: any) {
   const info = infoDaEntrega(pedido);
@@ -115,5 +122,6 @@ export function camposDeEntregaParaImpressao(pedido: any) {
     parceiroDaEntrega: info.parceira ? info.parceiro : "",
     ifoodPickupCode: info.parceira ? (pedido?.ifoodPickupCode || undefined) : undefined,
     openDeliveryPickupCode: info.parceira ? (pedido?.openDeliveryPickupCode || undefined) : undefined,
+    ...camposDaPrevisaoParaImpressao(pedido),
   };
 }

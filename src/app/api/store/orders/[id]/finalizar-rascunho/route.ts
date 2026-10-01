@@ -16,6 +16,7 @@ import {
   notasDaEntrega,
   type EntregaDoPedido,
 } from "@/lib/entrega-do-pedido";
+import { tempoDeEntregaParaGravar } from "@/lib/previsao-da-entrega";
 import {
   lerFinalizacao,
   notasDaFinalizacao,
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // sem ela, do mapa, com prazo — e sem medida o pedido sai assim mesmo,
     // com a etiqueta de conferência (o cron de distâncias mede depois).
     let campos: ReturnType<typeof camposDaEntrega> | null = null;
+    let tempoDaEntrega: number | null = null;
     let notasDeEntrega: string[] = [];
     if (f.tipo === "DELIVERY" && loja) {
       try {
@@ -187,6 +189,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           entrega = entregaDoVeredicto(avaliacao?.noPrazo ? avaliacao.valor : null, null, modo);
         }
         campos = camposDaEntrega(entrega, lerRegraDeRepasse(loja.deliveryConfig), loja.deliveryZones);
+        tempoDaEntrega = tempoDeEntregaParaGravar(entrega.tempoMin);
         notasDeEntrega = notasDaEntrega(entrega, { canal: "balcao", taxaCobrada: f.taxa });
       } catch (e: any) {
         console.error(`[Finalizar rascunho] entrega do pedido ${order.id} sem medida:`, e?.message || e);
@@ -230,8 +233,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               ...(campos?.deliveryDistance != null ? { deliveryDistance: campos.deliveryDistance } : {}),
               ...(campos?.customerLatLng ? { customerLatLng: campos.customerLatLng as any } : {}),
               ...(campos?.motoboyFee != null ? { motoboyFee: campos.motoboyFee } : {}),
+              // A PREVISÃO DE ENTREGA da comanda (lib/previsao-da-entrega.ts).
+              tempoEntregaMin: tempoDaEntrega,
             }
-          : { deliveryDistance: null, motoboyFee: null }),
+          : { deliveryDistance: null, motoboyFee: null, tempoEntregaMin: null }),
         // Entrega cobrada deixou de ser grátis: a nota não pode mostrar "grátis" ao lado da taxa.
         ...(f.taxa > 0 && order.entregaGratis != null ? { entregaGratis: Prisma.DbNull } : {}),
         notes: notasDaFinalizacao(order.notes, quem, f.observacao, notasDeEntrega),

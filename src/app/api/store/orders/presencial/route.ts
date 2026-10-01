@@ -25,6 +25,7 @@ import {
   notasDaEntrega,
   type EntregaDoPedido,
 } from "@/lib/entrega-do-pedido";
+import { tempoDeEntregaParaGravar } from "@/lib/previsao-da-entrega";
 
 /**
  * Quanto o balcão espera o mapa quando o PDV não mandou a cotação. O atendente
@@ -171,6 +172,7 @@ export async function POST(req: Request) {
   // pedido para a loja conferir, junto com a taxa que a tabela daria.
   const taxaCobrada = Math.max(0, Math.round((Number(deliveryFee) || 0) * 100) / 100);
   let camposDeEntrega: ReturnType<typeof camposDaEntrega> | null = null;
+  let tempoDaEntrega: number | null = null;
   let notasDeEntrega: string[] = [];
   if (tipoDeLancamento === "DELIVERY") {
     try {
@@ -216,6 +218,7 @@ export async function POST(req: Request) {
           entrega = entregaDoVeredicto(avaliacao?.noPrazo ? avaliacao.valor : null, coords, modo);
         }
         camposDeEntrega = camposDaEntrega(entrega, lerRegraDeRepasse(loja.deliveryConfig), loja.deliveryZones);
+        tempoDaEntrega = tempoDeEntregaParaGravar(entrega.tempoMin);
         notasDeEntrega = notasDaEntrega(entrega, { canal: "balcao", taxaCobrada });
       }
     } catch (e: any) {
@@ -288,6 +291,9 @@ export async function POST(req: Request) {
       ...(camposDeEntrega?.deliveryDistance != null ? { deliveryDistance: camposDeEntrega.deliveryDistance } : {}),
       ...(camposDeEntrega?.customerLatLng ? { customerLatLng: camposDeEntrega.customerLatLng } : {}),
       ...(camposDeEntrega?.motoboyFee != null ? { motoboyFee: camposDeEntrega.motoboyFee } : {}),
+      // O tempo da área de entrega: a comanda imprime a PREVISÃO DE ENTREGA
+      // com ele (lib/previsao-da-entrega.ts).
+      ...(tempoDaEntrega != null ? { tempoEntregaMin: tempoDaEntrega } : {}),
       status: "ACEITO",
       source: "PRESENCIAL",
       items: {

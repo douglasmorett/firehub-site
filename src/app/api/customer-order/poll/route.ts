@@ -1030,6 +1030,9 @@ export async function GET(req: NextRequest) {
         // precisa: a fila da nuvem já filtra por `printedAt`.
         printedAt: true,
         createdAt: true, updatedAt: true, scheduledDatetime: true,
+        // A PREVISÃO DE ENTREGA da comanda que este painel imprime
+        // (lib/previsao-da-entrega.ts) — a mesma da fila da nuvem.
+        tempoEntregaMin: true,
         cancelledBy: true, cancelReason: true, cancelDispute: true,
         motoboyId: true, motoboyFee: true,
         // Quando o ENTREGADOR puxou pelo app (QR/número): o select é explícito,

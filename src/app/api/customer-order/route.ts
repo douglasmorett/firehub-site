@@ -25,6 +25,7 @@ import {
   taxaDaLojaSemPonto,
   type EntregaDoPedido,
 } from "@/lib/entrega-do-pedido";
+import { tempoDeEntregaParaGravar } from "@/lib/previsao-da-entrega";
 import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
@@ -681,6 +682,9 @@ export async function POST(req: Request) {
       ? camposDaEntrega(entrega, lerRegraDeRepasse(franchisee.deliveryConfig), franchisee.deliveryZones)
       : { deliveryDistance: null, customerLatLng: null, motoboyFee: null };
     const repasseDoEntregador = doPedido.motoboyFee;
+    // O "chega em até ~40 min" que o cliente viu no checkout. A comanda
+    // imprime a PREVISÃO DE ENTREGA com ele (lib/previsao-da-entrega.ts).
+    const tempoDaEntrega = ehEntrega && entrega ? tempoDeEntregaParaGravar(entrega.tempoMin) : null;
     const distanciaDaEntrega = doPedido.deliveryDistance;
 
     const pmUpper = (paymentMethod || "").toUpperCase().trim();
@@ -731,6 +735,7 @@ export async function POST(req: Request) {
         // entregador não tem o que comparar e o acerto cai no valor por
         // entrega (lib/distancia-da-entrega.ts).
         ...(distanciaDaEntrega != null ? { deliveryDistance: distanciaDaEntrega } : {}),
+        ...(tempoDaEntrega != null ? { tempoEntregaMin: tempoDaEntrega } : {}),
         status: initialStatus,
         kdsStage: initialKdsStage,
         kdsProductionAt: initialKdsProductionAt,

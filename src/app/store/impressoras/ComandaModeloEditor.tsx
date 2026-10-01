@@ -118,6 +118,9 @@ const FRASES_DE_AVISO: { prefixo: string; chave: ChaveDeAviso }[] = [
   { prefixo: "!! CONTEM BEBIDA", chave: "contemBebida" },
   { prefixo: "!! ATENCAO: POSSUI BEBIDA", chave: "contemBebida" },
   { prefixo: "OBRIGADO PELA PREFERENCIA", chave: "obrigado" },
+  { prefixo: "PREVISAO DE ENTREGA", chave: "previsaoEntrega" },
+  { prefixo: "PREVISAO DE RETIRADA", chave: "previsaoEntrega" },
+  { prefixo: "AGENDADO PARA", chave: "previsaoEntrega" },
 ];
 
 type AlvoDaLinha =

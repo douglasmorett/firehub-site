@@ -99,7 +99,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.28";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.29";
 
 /** "1.2.10" é mais nova que "1.2.9": compara por número, não por texto. */
 export function versaoAssistenteAoMenos(versao: string | null | undefined, minima: string): boolean {
@@ -459,6 +459,11 @@ async function printToDevice(
           // para decidir, então todo pedido do iFood com código saía com
           // "MOTOBOY IFOOD (ENTREGA PARCEIRA) - NAO USAR MOTOBOY DA LOJA!",
           // mesmo sendo entrega da própria loja. Ver lib/entrega-parceira.ts.
+          //
+          // A previsão de entrega vem pronta de quem chamou (o painel e o
+          // ouvinte a calculam do pedido inteiro); o spread abaixo só a
+          // substitui quando consegue calcular de novo. Assistente antigo ignora.
+          previsaoEntrega: (order as any).previsaoEntrega,
           ...camposDeEntregaParaImpressao(order),
           source: (order as any).source,
           // Conta da mesa (src/lib/conta-da-mesa.ts): o Assistente novo imprime
@@ -469,6 +474,16 @@ async function printToDevice(
           consumo: (order as any).consumo,
           taxaServico: (order as any).taxaServico,
           gorjeta: (order as any).gorjeta,
+          // ── A TAXA DE SERVIÇO EM LINHA PRÓPRIA ─────────────────────────
+          // Sem `taxaSeparada` o Assistente não sabe que a taxa ficou FORA dos
+          // itens e desenha o rodapé de pedido comum: "Subtotal R$ 83,40" e
+          // "Total R$ 91,74", sem dizer de onde vieram os R$ 8,34 (Delícias de
+          // Casa, mesa 2, 01/10/2026). Era este trilho — o "Imprimir conta" do
+          // painel sai primeiro pela impressora local — que descartava a marca;
+          // a cópia certa da fila da nuvem chegava depois e era deduplicada.
+          // O desconto da conta caía junto, pelo mesmo motivo.
+          taxaSeparada: (order as any).taxaSeparada,
+          descontoDaConta: (order as any).descontoDaConta,
           tableSessionId: (order as any).tableSessionId,
           // A mesa e o garçom (lib/mesa-na-comanda.ts): o Assistente 1.2.24 põe
           // "(3) MESA 4" no topo e o garçom logo abaixo. O antigo ignora — para

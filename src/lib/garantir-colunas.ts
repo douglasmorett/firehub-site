@@ -756,6 +756,9 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // O número do pager do cliente que espera no balcão. Texto porque a loja
   // numera do jeito dela ("12", "A3", "07").
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "pagerNumber" TEXT`,
+  // O tempo de entrega que o cliente viu no checkout. A comanda imprime a
+  // PREVISÃO DE ENTREGA com ele (lib/previsao-da-entrega.ts).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "tempoEntregaMin" INTEGER`,
   // O índice é o que faz "este pedido tem acréscimo?" não virar varredura na
   // tabela mais quente do sistema — o painel pergunta isso por pedido listado.
   `CREATE INDEX IF NOT EXISTS "CustomerOrder_parentOrderId_idx" ON "CustomerOrder"("parentOrderId")`,

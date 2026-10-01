@@ -310,11 +310,16 @@ export type ChaveDeAviso =
   | "troco"
   | "faixaObservacao"
   | "contemBebida"
-  | "obrigado";
+  | "obrigado"
+  | "previsaoEntrega";
 
 export type AvisosDesligados = Partial<Record<ChaveDeAviso, false>>;
 
 export const AVISOS_DA_COMANDA: { chave: ChaveDeAviso; nome: string; exemplo: string; ajuda?: string }[] = [
+  {
+    chave: "previsaoEntrega", nome: "Previsão de entrega (no topo)", exemplo: "PREVISAO DE ENTREGA: 20:45",
+    ajuda: "O horário que o cliente espera receber: o prazo do iFood/99, o agendamento ou o tempo da sua área de entrega. Precisa do Assistente 1.2.29.",
+  },
   { chave: "cobrarDoCliente", nome: "Cobrar do cliente na entrega", exemplo: "!! COBRAR DO CLIENTE NA ENTREGA: R$ 65,90 !!" },
   { chave: "cobrarNaEntrega", nome: "Cobrar na entrega (junto da forma de pagamento)", exemplo: "(COBRAR NA ENTREGA)" },
   { chave: "pagoOnline", nome: "Pago online — não cobrar", exemplo: "(Pago via iFood - NAO COBRAR)" },

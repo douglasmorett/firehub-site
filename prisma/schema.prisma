@@ -789,6 +789,9 @@ model CustomerOrder {
   deliveryFee      Float               @default(0)
   motoboyFee       Float?
   deliveryDistance Float?
+  // O tempo da área de entrega que o cliente viu no checkout ("chega em até ~40 min").
+  // A comanda imprime criação + isto como PREVISÃO DE ENTREGA (lib/previsao-da-entrega.ts).
+  tempoEntregaMin  Int?
   motoboyId        String?
   /// Quando o ENTREGADOR puxou o pedido pelo app (QR da comanda ou número
   /// digitado) — em oposição a "a loja atribuiu". É a única testemunha quando

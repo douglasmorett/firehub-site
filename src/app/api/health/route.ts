@@ -97,6 +97,9 @@ export async function GET(req: NextRequest) {
       // checkout que aplica o prêmio quebra na gravação — e o pedido some.
       ["CustomerOrder", "trilhaPremio"],
       ["CustomerOrder", "entregaGratis"],
+      // A previsão de entrega da comanda (lib/previsao-da-entrega.ts). A fila
+      // da impressão lê o pedido SEM select: coluna ausente para a impressão.
+      ["CustomerOrder", "tempoEntregaMin"],
       ["Motoboy", "faixasDeKm"],
       ["CustomerOrder", "posOrderId"], ["CustomerOrder", "posTerminalId"],
       ["CustomerOrder", "posStatus"], ["CustomerOrder", "posDadosTransacao"],

@@ -1,5 +1,6 @@
 "use client";
 import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
+import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
@@ -327,6 +328,9 @@ export default function GlobalPrintListener() {
                     printerConfig: activePrinterConfig,
                     customBeverageKeywords: activePrinterConfig?.customBeverageKeywords || "",
                     autoBeverageTag: activePrinterConfig?.autoBeverageTag !== false,
+                    // A PREVISÃO DE ENTREGA no topo da comanda, igual à fila da
+                    // nuvem (lib/previsao-da-entrega.ts).
+                    ...camposDaPrevisaoParaImpressao(order),
                     notes: order.notes,
                     createdAt: order.createdAt,
                   };

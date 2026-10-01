@@ -11,6 +11,7 @@
 import { comandaDoAssistente } from "@/lib/gerado/comanda-do-assistente";
 import { lerPapel, type LinhaDoPapel } from "@/lib/papel-da-impressora";
 import { blocosParaOAssistente, saneiaAvisos, type AvisosDesligados, type Bloco } from "@/lib/comanda-modelo";
+import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 
 /**
  * Três pedidos, porque um só não mostra todos os avisos: o pago na entrega
@@ -74,6 +75,8 @@ function pedidoDeExemplo(exemplo: ExemploDaPrevia) {
       deliveryFee: 7,
       totalAmount: Math.round((subtotal + 7) * 100) / 100,
       createdAt,
+      // O prazo que o iFood manda (lib/previsao-da-entrega.ts): 50 min depois.
+      scheduledDatetime: "2026-09-23T22:35:00.000Z",
     };
   }
   return {
@@ -91,6 +94,8 @@ function pedidoDeExemplo(exemplo: ExemploDaPrevia) {
     deliveryFee: 7,
     totalAmount: Math.round((subtotal + 7) * 100) / 100,
     createdAt,
+    // O tempo da área de entrega que o cliente viu no checkout.
+    tempoEntregaMin: 40,
   };
 }
 
@@ -109,8 +114,11 @@ export type EntradaDaPrevia = {
 /** As linhas do papel, exatamente como o Assistente atual as imprime. */
 export function papelDaPrevia(e: EntradaDaPrevia): LinhaDoPapel[] {
   const avisos = saneiaAvisos(e.avisos);
+  const pedido = pedidoDeExemplo(e.exemplo);
   const order = {
-    ...pedidoDeExemplo(e.exemplo),
+    ...pedido,
+    // A previsão de entrega pela mesma regra do papel de verdade.
+    ...camposDaPrevisaoParaImpressao(pedido),
     blocos: blocosParaOAssistente(e.lista),
     ...(avisos ? { avisos } : {}),
     ...(e.via === "cozinha" ? { semValores: true } : {}),

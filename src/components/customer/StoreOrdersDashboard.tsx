@@ -27,6 +27,7 @@ import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
 import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperandoLoja";
 import { motivoDeAguardarLoja } from "@/lib/finalizar-rascunho";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
+import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
 import NotaFiscalDoPedido, { NotaFiscalDaLojaProvider, useNotaFiscalDaLoja } from "@/components/customer/NotaFiscalDoPedido";
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
@@ -2120,6 +2121,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       franchiseeId: (order as any).franchiseeId,
       openDeliveryReference: order.openDeliveryReference,
       source: order.source,
+      // A PREVISÃO DE ENTREGA no topo da comanda (lib/previsao-da-entrega.ts).
+      // Calculada aqui, do pedido inteiro: este objeto não leva o prazo cru.
+      ...camposDaPrevisaoParaImpressao(order),
       notes: order.notes,
       createdAt: order.createdAt,
     };
