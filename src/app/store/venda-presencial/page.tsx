@@ -400,9 +400,12 @@ export default function VendaPresencialPage() {
     paymentMethod,
     paymentMethods: dividir ? partes.filter(p => valorDaParte(p) > 0).map(p => ({ method: p.metodo, amount: valorDaParte(p) })) : null,
   });
-  // O campo aparece no balcão (como sempre) e, na loja que emite a nota
-  // sozinha, também na entrega: o atendente está com o cliente no telefone.
-  const mostrarDocumento = orderType === "BALCAO" || (regraDaNota.perguntar && orderType === "DELIVERY");
+  // O campo aparece no balcão e na MESA (como sempre, opcional) e, na loja que
+  // emite a nota sozinha, também na entrega: o atendente está com o cliente no
+  // telefone. A mesa daqui é venda paga na hora, sem conta aberta — a nota é
+  // do pedido, como a do balcão (lib/fiscal-momento.ts); a conta de mesa do
+  // módulo Mesas pede o documento no fechamento.
+  const mostrarDocumento = orderType === "BALCAO" || orderType === "MESA" || (regraDaNota.perguntar && orderType === "DELIVERY");
   const limparDesconto = () => { setDesconto(SEM_DESCONTO); setMostrarDesconto(false); };
 
   const ligarDivisao = (ligar: boolean) => {
@@ -977,10 +980,11 @@ export default function VendaPresencialPage() {
           })()}
 
           {/* ── "CPF NA NOTA" ────────────────────────────────────────────────
-              No BALCÃO: é ali que o cliente está na frente do atendente e
-              pede. Na ENTREGA só quando a loja emite a nota sozinha
+              No BALCÃO e na MESA: é ali que o cliente está na frente do
+              atendente e pede (a mesa daqui é venda paga na hora; a nota é do
+              pedido). Na ENTREGA só quando a loja emite a nota sozinha
               (lib/fiscal-modo): aí a nota da entrega precisa do documento,
-              e a loja pode exigir. Na mesa, não — a nota é da conta.
+              e a loja pode exigir.
 
               Vazio por padrão — quem não pede, não digita, e nada muda. Quem
               digita vê o documento sair na comanda impressa, e o pedido chega
