@@ -64,6 +64,29 @@ console.log("\n2b) O que o Baileys nem decifra (queda geral de 01/10/2026)");
   conferir("só barra o que o webhook já recusava", amostra.every(j => !ignorarNaEntrada(j) || !conversaVaiParaOWebhook(j)));
 }
 
+console.log("\n2d) Sessão inchada (queda geral de 01/10/2026)");
+{
+  const { sessoesInchadas, TETO_DA_SESSAO_BYTES } = saude;
+  // Os tamanhos reais do disco do gateway naquele dia.
+  const pasta = [
+    { nome: "session-177906756145329.0.json", bytes: 512192 },
+    { nome: "session-22862312296488.0.json", bytes: 158969 },
+    { nome: "session-5511913180927.0.json", bytes: 51247 },
+    { nome: "session-208606947483693.0.json", bytes: 17704 },
+    { nome: "session-5522999999999.0.json", bytes: 3100 },
+    { nome: "creds.json", bytes: 900000 },
+    { nome: "pre-key-12.json", bytes: 90000 },
+    { nome: "app-state-sync-key-AAAA.json", bytes: 90000 },
+    { nome: "sender-key-1203@g.us--5522.json", bytes: 90000 },
+  ];
+  const fora = sessoesInchadas(pasta).map((a) => a.nome);
+  conferir("teto de 40 KB", TETO_DA_SESSAO_BYTES === 40 * 1024);
+  conferir("as três inchadas saem", fora.length === 3 && fora.includes("session-177906756145329.0.json") && fora.includes("session-5511913180927.0.json"), fora);
+  conferir("sessão normal fica", !fora.includes("session-5522999999999.0.json") && !fora.includes("session-208606947483693.0.json"));
+  conferir("creds, pre-key, app-state e sender-key NUNCA saem, de qualquer tamanho", !fora.some((n) => !n.startsWith("session-")));
+  conferir("pasta vazia ou ilegível não quebra", sessoesInchadas(undefined).length === 0 && sessoesInchadas([{}]).length === 0);
+}
+
 console.log("\n2c) O ruído da libsignal no console (queda geral de 01/10/2026)");
 {
   const { ruidoDoLibsignal } = saude;

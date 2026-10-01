@@ -128,6 +128,28 @@ const RUIDO_DO_LIBSIGNAL = [
   ["Migrating session to:", "trocaDeSessao"],
 ];
 
+// ── SESSÃO INCHADA ────────────────────────────────────────────────────────
+//
+// O registro de sessão de um contato (`session-<id>.<aparelho>.json`) guarda a
+// sessão aberta e até 40 fechadas, cada uma com as chaves de mensagens puladas.
+// Normal: poucos KB. Em 01/10/2026 havia arquivos de 512, 166, 158 e 94 KB, a
+// maioria do próprio celular da loja, e o de 158 KB crescia a olho nu. Cada
+// mensagem desse contato faz a libsignal ler o arquivo inteiro e tentar decifrar
+// com cada sessão velha. Foram 17 mil "Bad MAC" por minuto para uns 150 recados,
+// e era isso que segurava o processo, mesmo com o console já calado.
+//
+// Tirar o arquivo é o que a autocura já faz (apagar session-<numero>.*.json):
+// a próxima mensagem chega como pkmsg e nasce uma sessão nova e limpa. Nunca
+// toca em creds.json, pre-key, app-state nem sender-key, só em `session-`.
+const TETO_DA_SESSAO_BYTES = 40 * 1024;
+
+/** Dos arquivos de uma pasta de instância ({ nome, bytes }), os registros de sessão inchados. */
+function sessoesInchadas(arquivos, teto = TETO_DA_SESSAO_BYTES) {
+  return (arquivos || []).filter(
+    (a) => /^session-.+\.json$/.test(String(a?.nome || "")) && Number(a?.bytes) > teto,
+  );
+}
+
 /** A categoria do ruído da libsignal, ou null se a linha é de outra pessoa e deve sair. */
 function ruidoDoLibsignal(primeiroArgumento) {
   if (typeof primeiroArgumento !== "string") return null;
@@ -474,6 +496,8 @@ module.exports = {
   conversaVaiParaOWebhook,
   ignorarNaEntrada,
   ruidoDoLibsignal,
+  TETO_DA_SESSAO_BYTES,
+  sessoesInchadas,
   desembrulharMensagem,
   localizacaoDaMensagem,
   mensagemParaOWebhook,

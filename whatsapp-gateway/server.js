@@ -1954,8 +1954,47 @@ app.delete("/instance/logout/:instanceName", async (req, res) => {
   return res.json({ status: "logged_out" });
 });
 
+/**
+ * Tira de circulação o registro de sessão inchado (ver `sessoesInchadas`). Ele
+ * é MOVIDO para data/sessoes-inchadas/<instância>/, não apagado, para dar para
+ * voltar atrás se algum dia precisar. O WhatsApp renegocia uma sessão limpa na
+ * próxima mensagem daquele contato.
+ */
+function aliviarSessoesInchadas() {
+  const sessionsDir = path.join(__dirname, "data", "sessions");
+  const destino = path.join(__dirname, "data", "sessoes-inchadas");
+  let movidas = 0;
+  let pastas = [];
+  try { pastas = fs.readdirSync(sessionsDir); } catch { return 0; }
+  for (const instancia of pastas) {
+    const pasta = path.join(sessionsDir, instancia);
+    let arquivos;
+    try {
+      arquivos = fs.readdirSync(pasta)
+        .filter((nome) => nome.startsWith("session-"))
+        .map((nome) => ({ nome, bytes: fs.statSync(path.join(pasta, nome)).size }));
+    } catch { continue; }
+    for (const { nome, bytes } of saude.sessoesInchadas(arquivos)) {
+      try {
+        const dir = path.join(destino, instancia);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.renameSync(path.join(pasta, nome), path.join(dir, `${Date.now()}-${nome}`));
+        movidas++;
+        console.log(`[WhatsApp Gateway] 🪶 ${instancia}: sessão inchada ${nome} (${Math.round(bytes / 1024)} KB) tirada de circulação. O WhatsApp renegocia uma limpa.`);
+      } catch (err) {
+        console.warn(`[WhatsApp Gateway] Não consegui tirar a sessão inchada ${instancia}/${nome}: ${err?.message}`);
+      }
+    }
+  }
+  return movidas;
+}
+setInterval(aliviarSessoesInchadas, 10 * 60 * 1000).unref?.();
+
 app.listen(PORT, () => {
   console.log(`[FireHub WhatsApp Gateway] 🚀 Servidor rodando na porta ${PORT}`);
+  // Antes de reconectar qualquer loja: nenhuma sessão abre já carregando o
+  // registro de 512 KB que derrubou o gateway em 01/10/2026.
+  aliviarSessoesInchadas();
 
   // Auto-reconectar sessões salvas com delay (evita OOM no boot)
   const sessionsDir = path.join(__dirname, "data", "sessions");
