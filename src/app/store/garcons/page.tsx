@@ -70,24 +70,32 @@ export default function GarconsPage() {
 
   // Link de acesso do garçom
   const [acesso, setAcesso] = useState<AcessoDoGarcom | null>(null);
-  const [copiado, setCopiado] = useState(false);
+  /** Qual dos dois links acabou de ser copiado. */
+  const [copiado, setCopiado] = useState<string | null>(null);
   // Montado no navegador: é o domínio que o gerente está usando de fato.
   const linkDoGarcom = acesso?.caminho && typeof window !== "undefined"
     ? `${window.location.origin}${acesso.caminho}`
     : "";
+  // Mesmo login, outra tela: a de celular (/garcom/<slug>/celular). A completa
+  // continua no link de sempre, para quem já mandou ele para a equipe.
+  const linksDoGarcom = linkDoGarcom
+    ? [
+        { id: "link-do-garcom", titulo: "Módulo garçom", detalhe: "Tela completa, para tablet e computador.", url: linkDoGarcom },
+        { id: "link-do-garcom-celular", titulo: "Módulo garçom para celular", detalhe: "Uma coisa por tela, botões grandes: mesa, categoria, produto e enviar.", url: `${linkDoGarcom}/celular` },
+      ]
+    : [];
 
-  const copiarLink = async () => {
-    if (!linkDoGarcom) return;
+  const copiarLink = async (id: string, url: string) => {
     try {
-      await navigator.clipboard.writeText(linkDoGarcom);
+      await navigator.clipboard.writeText(url);
     } catch {
       // Navegador sem clipboard (http, webview antigo): seleciona para o gerente copiar.
-      const campo = document.getElementById("link-do-garcom") as HTMLInputElement | null;
+      const campo = document.getElementById(id) as HTMLInputElement | null;
       campo?.select();
       try { document.execCommand("copy"); } catch { /* fica selecionado */ }
     }
-    setCopiado(true);
-    setTimeout(() => setCopiado(false), 2000);
+    setCopiado(id);
+    setTimeout(() => setCopiado(null), 2000);
   };
 
   // Report states
@@ -279,25 +287,33 @@ export default function GarconsPage() {
               <strong style={{ color: "#0F172A", fontSize: 15 }}>Link de acesso do garçom</strong>
             </div>
             <p style={{ margin: "0 0 12px", fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
-              Mande este link para a equipe. O garçom entra com o login e a senha que você define no cadastro dele
-              e vê só o módulo de mesas — nada mais do painel.
+              Mande um destes links para a equipe. O garçom entra com o login e a senha que você define no cadastro dele
+              e vê só o módulo de mesas, nada mais do painel. O login é o mesmo nos dois; muda só a tela.
             </p>
             {linkDoGarcom ? (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <input id="link-do-garcom" readOnly value={linkDoGarcom} onFocus={e => e.target.select()}
-                  style={{ flex: 1, minWidth: 220, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#fff", fontSize: 13, fontFamily: "inherit", color: "#1E293B" }} />
-                <button type="button" onClick={copiarLink} style={{
-                  background: copiado ? "#0F766E" : "#475569", color: "#fff", border: "none", padding: "10px 14px",
-                  borderRadius: 10, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-                }}>
-                  {copiado ? <Check size={16} /> : <Copy size={16} />} {copiado ? "Copiado!" : "Copiar link"}
-                </button>
-                <a href={linkDoGarcom} target="_blank" rel="noreferrer" style={{
-                  background: "#fff", color: "#334155", border: "1.5px solid #CBD5E1", padding: "10px 14px",
-                  borderRadius: 10, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6,
-                }}>
-                  <ExternalLink size={16} /> Abrir
-                </a>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {linksDoGarcom.map((l) => (
+                  <div key={l.id}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#0F172A" }}>{l.titulo}</div>
+                    <div style={{ fontSize: 12, color: "#64748B", margin: "2px 0 6px" }}>{l.detalhe}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <input id={l.id} readOnly value={l.url} onFocus={e => e.target.select()}
+                        style={{ flex: 1, minWidth: 220, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", background: "#fff", fontSize: 13, fontFamily: "inherit", color: "#1E293B" }} />
+                      <button type="button" onClick={() => copiarLink(l.id, l.url)} style={{
+                        background: copiado === l.id ? "#0F766E" : "#475569", color: "#fff", border: "none", padding: "10px 14px",
+                        borderRadius: 10, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+                      }}>
+                        {copiado === l.id ? <Check size={16} /> : <Copy size={16} />} {copiado === l.id ? "Copiado!" : "Copiar link"}
+                      </button>
+                      <a href={l.url} target="_blank" rel="noreferrer" style={{
+                        background: "#fff", color: "#334155", border: "1.5px solid #CBD5E1", padding: "10px 14px",
+                        borderRadius: 10, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 6,
+                      }}>
+                        <ExternalLink size={16} /> Abrir
+                      </a>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : acesso && !acesso.slug ? (
               <p style={{ margin: 0, fontSize: 13, color: "#B45309", fontWeight: 600 }}>

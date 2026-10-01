@@ -619,6 +619,54 @@ export async function garantirEstruturaDeCaixa(): Promise<void> {
   }
 }
 
+/**
+ * Despesas lançadas à mão no DRE. Até aqui o DRE só via despesa que nasce do
+ * pedido (taxa, motoboy) e o custo fixo mensal: o gás, a embalagem e o conserto
+ * da semana não tinham onde entrar, e o lucro aparecia maior do que era.
+ *
+ * MESMA CATEGORIA das garantias acima: fixas, aditivas, idempotentes.
+ */
+const INSTRUCOES_DESPESAS = [
+  `CREATE TABLE IF NOT EXISTS "DespesaLancada" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "dia" TEXT NOT NULL,
+     "categoria" TEXT NOT NULL,
+     "descricao" TEXT,
+     "valor" DOUBLE PRECISION NOT NULL,
+     "criadoPor" TEXT,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "DespesaLancada_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE INDEX IF NOT EXISTS "DespesaLancada_franchiseeId_dia_idx" ON "DespesaLancada"("franchiseeId", "dia")`,
+];
+
+let despesasOk = false;
+
+export async function garantirEstruturaDeDespesas(): Promise<boolean> {
+  if (despesasOk) return true;
+
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia das despesas lançadas.");
+    despesasOk = true;
+    return true;
+  }
+
+  try {
+    for (const sql of INSTRUCOES_DESPESAS) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    despesasOk = true;
+    console.log("[Boot] ✅ Tabela DespesaLancada (despesas do DRE) garantida.");
+  } catch (err: any) {
+    // Sem a tabela só o lançamento manual do DRE some; o resto do financeiro
+    // segue inteiro.
+    console.error(`[Boot] 🛑 Estrutura de despesas lançadas falhou: ${err?.message}`);
+  }
+  return despesasOk;
+}
+
 /** Mesmo degrau de `temEstruturaDeLotes`, para o caixa. */
 let cacheTemCaixa: boolean | null = null;
 

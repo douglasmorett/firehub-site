@@ -7,7 +7,7 @@ import ComboModal from "@/components/customer/ComboModal";
 import AndaresConfig from "@/components/mesas/AndaresConfig";
 import QrDasMesas from "@/components/mesas/QrDasMesas";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
-import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
+import { montarCardapioDaMesa, gruposDoProduto } from "@/lib/cardapio-da-mesa";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
 import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
@@ -117,19 +117,7 @@ function elapsed(from: string) {
   return `${h}h${m % 60 > 0 ? ` ${m % 60}min` : ""}`;
 }
 
-const getEffectiveComboGroups = (prod: any) => {
-  if (prod?.comboGroups && Array.isArray(prod.comboGroups) && prod.comboGroups.length > 0) {
-    return prod.comboGroups;
-  }
-  if (!prod?.comboConfig) return [];
-  try {
-    const config = typeof prod.comboConfig === "string" ? JSON.parse(prod.comboConfig) : prod.comboConfig;
-    if (Array.isArray(config)) return config;
-    if (config.groups && Array.isArray(config.groups)) return config.groups;
-    if (config.comboGroups && Array.isArray(config.comboGroups)) return config.comboGroups;
-  } catch {}
-  return [];
-};
+const getEffectiveComboGroups = gruposDoProduto;
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 /**
@@ -543,102 +531,12 @@ export default function MesasApp({
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          // Esconde itens stub de integração (iFood, JotaJá, 99Food)
-          const HIDDEN_CATS = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
-          // O prefixo do id diz como o registro NASCEU, não o que ele É hoje:
-          // cardápio importado do sistema antigo reaproveita ids `ifood-…` (o
-          // porquê está em SEM_PRODUTO_DE_INTEGRACAO, cardapio-interno.ts — o
-          // servidor já filtra assim). Condenar por prefixo escondia desta tela
-          // 8 dos 13 pastéis de carne da Pastelaria da Paulista — ativos, com
-          // categoria própria e combo montado — e sem aparecer nem no aviso de
-          // ocultos, porque espelho fica fora dele de propósito. Prefixo só
-          // condena o espelho que ninguém adotou: o inativo.
-          const isIntegration = (p: any) => {
-            const temPrefixoDeEspelho =
-              p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-");
-            if (temPrefixoDeEspelho && p.active === false) return true;
-            return HIDDEN_CATS.has((p.category || "").toUpperCase().trim());
-          };
-
-          // Adicionais e sabores são MenuProduct de R$ 0,00 que existem só para
-          // preencher a pergunta do combo. Viravam card no cardápio do garçom.
-          //
-          // Quem decide isso é o SERVIDOR, em `apenasOpcaoDeCombo`. Aqui o
-          // `price` já veio trocado pelo preço do salão, então um item que a
-          // loja precificou só no delivery chega como zero — e calcular a regra
-          // com esse número escondia item vendável da mesa, calado. O cálculo
-          // local fica como reserva para um payload antigo, sem a bandeira.
-          const temBandeira = data.some((p: any) => p.apenasOpcaoDeCombo !== undefined);
-          const soOpcaoDeCombo = temBandeira
-            ? new Set(data.filter((p: any) => p.apenasOpcaoDeCombo).map((p: any) => String(p.id)))
-            : idsSoDeOpcaoDeCombo(data);
-
-          const paraItem = (p: any) => ({
-            id: p.id,
-            name: p.name,
-            price: p.price,
-            // A categoria REAL, sempre. Antes todo combo virava "Combos" e perdia
-            // a dele — e numa loja onde quase todo item é combo (a Pastelaria da
-            // Paulista tem 69 de 186) isso apagava as abas de "Pastéis de carne",
-            // "Pastéis Doces", "Pastéis especiais"... O garçom procurava a aba,
-            // não achava, e concluía que os pastéis não estavam no sistema.
-            // Combo continua tendo aba própria: ela é montada à parte, abaixo.
-            category: p.category || "Outros",
-            isCombo: p.isCombo,
-            imageUrl: p.imageUrl || null,
-            comboGroups: p.comboGroups,
-            comboConfig: p.comboConfig,
-          });
-
-          // Vendáveis de verdade: o que passa por todos os filtros.
-          const items = data
-            .filter((p: any) => p.active !== false && !isIntegration(p))
-            // O cadastro tem um interruptor por canal e esta tela era a única
-            // que ignorava o dela: o que a loja desligava para a mesa continuava
-            // aparecendo aqui. Balcão já olha activePDV, totem já olha activeTotem.
-            .filter((p: any) => p.activeGarcom !== false)
-            .filter((p: any) => p.esgotado !== true)
-            .filter((p: any) => !soOpcaoDeCombo.has(String(p.id)))
-            .map(paraItem);
-          setMenuItems(items);
-
-          // ── TUDO que não entrou, e o motivo de cada um ──────────────────────
-          //
-          // Antes a tela só descartava. Quando a loja dizia "sumiu item do
-          // cardápio da mesa", não havia como saber qual nem por quê sem abrir o
-          // banco — e são quatro motivos diferentes, com consertos diferentes.
-          // Espelho de integração fica de fora da lista de propósito: aquilo
-          // nunca foi cardápio da loja e só faria ruído.
-          const motivoDeOcultar = (p: any): string | null => {
-            if (isIntegration(p)) return null;
-            if (p.active === false) return "pausado no cardápio";
-            if (p.activeGarcom === false) return "desligado para o garçom no cadastro";
-            if (p.esgotado === true) return "estoque zerou — pausado até repor (Cardápio → 📦 Estoque)";
-            if (p.apenasEmCombo === true) return "complemento de combo — aparece dentro da pergunta do combo";
-            if (soOpcaoDeCombo.has(String(p.id))) return "sem preço em nenhum canal — não dá para lançar na comanda";
-            return null;
-          };
-
-          setMenuOcultos(
-            data
-              .map((p: any) => {
-                const motivo = motivoDeOcultar(p);
-                return motivo ? { ...paraItem(p), motivo } : null;
-              })
-              .filter(Boolean) as (MenuItem & { motivo: string })[]
-          );
-          // "Combos" é uma aba TRANSVERSAL: o combo aparece na categoria dele e
-          // também aqui, para quem quer ver só os montados. Só entra na lista se
-          // a loja tiver algum — e não tiver uma categoria chamada "Combos",
-          // senão apareciam duas abas iguais.
-          //
-          // A ORDEM é a da loja ("Reordenar Cardápio"): o servidor já entrega os
-          // produtos nela (lib/cardapio-da-loja.ts). Sem `.sort()` alfabético.
-          const reais = Array.from(new Set(items.map((i: MenuItem) => i.category || "Outros")));
-          const temCombo = items.some((i: MenuItem) => i.isCombo);
-          const temCategoriaCombos = reais.some((c) => String(c).trim().toLowerCase() === "combos");
-          const cats = ["Todos", ...(temCombo && !temCategoriaCombos ? ["Combos"] : []), ...reais];
-          setMenuCategories(cats as string[]);
+          // A regra do que entra (e do que fica oculto, com o motivo) é a mesma
+          // da tela de celular: lib/cardapio-da-mesa.ts.
+          const { itens, ocultos, categorias } = montarCardapioDaMesa(data);
+          setMenuItems(itens);
+          setMenuOcultos(ocultos);
+          setMenuCategories(categorias);
         }
       }
     } catch { /* silent */ }
@@ -2105,6 +2003,11 @@ export default function MesasApp({
               padding: "6px 12px", fontWeight: 700, fontSize: 13,
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             }}>👤 {garcom?.name}</span>
+            <a href={ehGarcom ? `/garcom/${encodeURIComponent(slug)}/celular` : "/store/mesas/celular"}
+              title="Versão para celular: uma coisa por tela, botões grandes" style={{
+              background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0", borderRadius: 10,
+              padding: "8px 12px", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap",
+            }}>📱 Celular</a>
             <button onClick={sairDoGarcom} style={{
               background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0", borderRadius: 10,
               padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer",
@@ -2112,6 +2015,11 @@ export default function MesasApp({
           </div>
         ) : (
           <div style={{ display: "flex", gap: 6 }}>
+            <a href={ehGarcom ? `/garcom/${encodeURIComponent(slug)}/celular` : "/store/mesas/celular"}
+              title="Versão para celular: uma coisa por tela, botões grandes" style={{
+              background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0", borderRadius: 10,
+              padding: "8px 12px", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap",
+            }}>📱 Celular</a>
             <button onClick={() => setShowNewTableModal(true)} style={{
               background: "#475569", color: "#fff", border: "none", borderRadius: 10,
               padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer",

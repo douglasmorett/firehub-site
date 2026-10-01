@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import DREClient from "./DREClient";
+import { garantirEstruturaDeDespesas } from "@/lib/garantir-colunas";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +144,22 @@ export default async function StoreFinanceiroPage() {
     paidDate: p.paidDate ? p.paidDate.toISOString().slice(0, 10) : null,
   }));
 
+  // ── DESPESAS LANÇADAS À MÃO ───────────────────────────────────────────────
+  // O que não nasce do pedido nem é custo fixo (gás, embalagem, conserto). O
+  // dia já é texto "YYYY-MM-DD", então o recorte do ano compara texto.
+  let despesas: { id: string; dia: string; categoria: string; descricao: string | null; valor: number }[] = [];
+  try {
+    if (await garantirEstruturaDeDespesas()) {
+      despesas = await prisma.despesaLancada.findMany({
+        where: { franchiseeId: targetFranchiseeId, dia: { gte: since.toISOString().slice(0, 10) } },
+        orderBy: [{ dia: "desc" }, { createdAt: "desc" }],
+        select: { id: true, dia: true, categoria: true, descricao: true, valor: true },
+      });
+    }
+  } catch (err) {
+    console.error("[Financeiro] Erro ao buscar despesas lançadas:", err);
+  }
+
   return (
     <DREClient
       orders={serialized}
@@ -154,6 +171,7 @@ export default async function StoreFinanceiroPage() {
       initialGoals={financialGoals}
       initialRepasseConfig={(user.repasseConfig as any) || {}}
       payables={payablesSerialized}
+      initialDespesas={despesas}
     />
   );
 }

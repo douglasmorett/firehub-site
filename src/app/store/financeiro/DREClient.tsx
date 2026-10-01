@@ -11,6 +11,7 @@ import { isExemptAccount } from "@/lib/billing";
 import InvoicesClient from "@/components/InvoicesClient";
 import ContasAPagarClient, { type PayableDTO } from "./ContasAPagarClient";
 import AjudaModulo from "@/components/AjudaModulo";
+import DespesasLancadas, { type DespesaDTO } from "./DespesasLancadas";
 
 type BillingCycle = {
   yearMonth: string; totalSales: number; amountDue: number;
@@ -138,7 +139,7 @@ function DRERow({ label, value, indent = 0, bold = false, color = "#0F172A", bor
   );
 }
 
-export default function DREClient({ orders, paymentFees, storeName, storeCreatedAt, produtosSemCusto = [], initialFixedCosts = [], initialGoals = {}, initialRepasseConfig = {}, payables = [] }: {
+export default function DREClient({ orders, paymentFees, storeName, storeCreatedAt, produtosSemCusto = [], initialFixedCosts = [], initialGoals = {}, initialRepasseConfig = {}, payables = [], initialDespesas = [] }: {
   orders: Order[];
   paymentFees: any;
   storeName: string;
@@ -148,6 +149,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
   initialGoals?: Record<string, any>;
   initialRepasseConfig?: any;
   payables?: PayableDTO[];
+  initialDespesas?: DespesaDTO[];
 }) {
   const { data: session } = useSession();
   const userEmailClean = session?.user?.email;
@@ -286,6 +288,21 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
       const d = new Date(o.createdAt);
       return d >= from && d <= to && o.status !== "CANCELADO";
     }), [orders, from, to]);
+
+  // ===== DESPESAS LANÇADAS À MÃO =====
+  // O dia é texto "YYYY-MM-DD"; o período vira texto no fuso do navegador, que
+  // é o mesmo em que a loja escolheu a data da despesa.
+  const [despesas, setDespesas] = useState<DespesaDTO[]>(initialDespesas);
+  const despesasDoPeriodo = useMemo(() => {
+    const dia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const de = dia(from), ate = dia(to);
+    return despesas.filter(d => d.dia >= de && d.dia <= ate);
+  }, [despesas, from, to]);
+  const despesasPorCategoria = useMemo(() => {
+    const g: Record<string, number> = {};
+    for (const d of despesasDoPeriodo) g[d.categoria] = (g[d.categoria] || 0) + d.valor;
+    return Object.entries(g).sort((a, b) => b[1] - a[1]);
+  }, [despesasDoPeriodo]);
 
   const cancelled = useMemo(() => orders.filter(o => {
     const d = new Date(o.createdAt); return d >= from && d <= to && o.status === "CANCELADO";
@@ -470,7 +487,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
     // DRE
     const lucro1 = receitaSemFrete - cmv;  // Lucro Bruto
-    const despesasOp = taxaGateway + custoMotoboy;
+    // Despesas lançadas à mão: valor real do período, sem proporção.
+    const despesasLancadas = despesasDoPeriodo.reduce((s, d) => s + d.valor, 0);
+    const despesasOp = taxaGateway + custoMotoboy + despesasLancadas;
     const ebitda = lucro1 - despesasOp;
     const lucroAntesFixos = ebitda - taxaFireHub;
     const lucroLiquido = lucroAntesFixos - custosFixosPeriodo; // ← impacto dos custos fixos
@@ -485,12 +504,12 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
     return {
       receitaBruta, totalFrete, receitaSemFrete, cmv, taxaGateway,
-      custoMotoboy, taxaFireHub, lucro1, despesasOp, ebitda,
+      custoMotoboy, despesasLancadas, taxaFireHub, lucro1, despesasOp, ebitda,
       lucroAntesFixos, custosFixosPeriodo, lucroLiquido,
       totalPedidos, ticketMedio, delivery, retirada, margemLiquida, margemCMV,
       cancelados: cancelled.length, diasNoPeriodo, proporcaoPeriodo
     };
-  }, [filtered, cancelled, paymentFees, totalFixedCosts, from, to]);
+  }, [filtered, cancelled, paymentFees, totalFixedCosts, from, to, despesasDoPeriodo]);
 
   // Grupos por forma de pagamento
   const paymentGroups = useMemo(() => {
@@ -858,6 +877,15 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             </div>
             <DRERow label="(-) Taxa de Pagamento (Gateway)" value={-dre.taxaGateway} color="#C92E09" />
             <DRERow label="(-) Custo de Entrega (Motoboy)" value={-dre.custoMotoboy} color="#C92E09" />
+            {despesasPorCategoria.length > 0 && (
+              <>
+                <DRERow label="(-) Despesas lançadas" value={-dre.despesasLancadas} color="#C92E09" />
+                {despesasPorCategoria.map(([categoria, total]) => (
+                  <DRERow key={categoria} label={categoria} value={-total} color="#C92E09" indent={1} />
+                ))}
+              </>
+            )}
+            <DespesasLancadas todas={despesas} doPeriodo={despesasDoPeriodo} onMudou={setDespesas} />
             <DRERow label="(=) EBITDA" value={dre.ebitda} bold color={dre.ebitda >= 0 ? "#0F766E" : "#C92E09"} border />
 
             {/* TAXA FIREHUB */}

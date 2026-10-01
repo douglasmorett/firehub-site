@@ -1586,6 +1586,29 @@ model CashMovement {
 }
 
 
+/// Despesa que o lojista lança à mão no DRE (gás, embalagem, conserto,
+/// anúncio, diária de ajudante). Entra no DRE do período em que o `dia` cai.
+///
+/// `dia` é TEXTO "YYYY-MM-DD", e não DateTime: é uma data de calendário, não um
+/// instante. Gravado como meia-noite UTC, o navegador em UTC-3 leria o dia
+/// anterior e a despesa de 1º de outubro cairia no DRE de setembro.
+///
+/// A TABELA É CRIADA NO BOOT por src/lib/garantir-colunas.ts, no mesmo commit
+/// deste model.
+model DespesaLancada {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  dia          String
+  categoria    String
+  descricao    String?
+  /// SEMPRE positivo: é saída por definição.
+  valor        Float
+  criadoPor    String?
+  createdAt    DateTime @default(now())
+
+  @@index([franchiseeId, dia])
+}
+
 // ========== FATURAMENTO: USE FIRST, PAY LATER ==========
 // Ciclo mensal de cobrança por franqueado. 
 // O franqueado usa o sistema o mês todo, e paga no fechamento.

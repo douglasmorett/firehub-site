@@ -23,11 +23,14 @@ export default function LoginDoGarcom({
   nomeDaLoja,
   logo,
   motivo,
+  destino,
 }: {
   slug: string;
   nomeDaLoja: string;
   logo: string | null;
   motivo: string | null;
+  /** Tela das mesas para onde voltar: a completa ou a de celular. */
+  destino?: string;
 }) {
   const aviso = motivo ? AVISOS[motivo] || null : null;
   const [login, setLogin] = useState("");
@@ -57,7 +60,9 @@ export default function LoginDoGarcom({
       }
       // Navegação completa, e não router.push: a página de mesas é renderizada
       // no servidor lendo o cookie que acabou de ser gravado.
-      window.location.assign(data?.destino || `/garcom/${encodeURIComponent(slug)}/mesas`);
+      // O destino da página vence o da API: quem entrou pelo link do celular
+      // volta para a tela do celular.
+      window.location.assign(destino || data?.destino || `/garcom/${encodeURIComponent(slug)}/mesas`);
     } catch {
       setErro("Sem conexão. Verifique a internet e tente de novo.");
     } finally {

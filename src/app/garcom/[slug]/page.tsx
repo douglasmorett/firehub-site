@@ -17,10 +17,12 @@ export default async function PaginaDeLoginDoGarcom({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ motivo?: string }>;
+  searchParams: Promise<{ motivo?: string; tela?: string }>;
 }) {
   const { slug } = await params;
-  const { motivo } = await searchParams;
+  const { motivo, tela } = await searchParams;
+  // ?tela=celular: o garçom entrou pelo link da versão de celular e volta para ela.
+  const destino = `/garcom/${encodeURIComponent(slug)}/${tela === "celular" ? "celular" : "mesas"}`;
 
   const loja = await prisma.user.findUnique({
     where: { slug },
@@ -30,7 +32,7 @@ export default async function PaginaDeLoginDoGarcom({
 
   const auth = await autenticarGarcom();
   if (auth.ok && auth.garcom.franchiseeId === loja.id) {
-    redirect(`/garcom/${encodeURIComponent(slug)}/mesas`);
+    redirect(destino);
   }
 
   return (
@@ -39,6 +41,7 @@ export default async function PaginaDeLoginDoGarcom({
       nomeDaLoja={loja.storeName || loja.name || "Restaurante"}
       logo={loja.storeLogo}
       motivo={motivo || null}
+      destino={destino}
     />
   );
 }
