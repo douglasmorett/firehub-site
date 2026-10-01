@@ -18,7 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
-import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { mandarParaOsNumerosDoDono, numerosDoDono } from "@/lib/alertas-do-dono";
 
 export const dynamic = "force-dynamic";
 
@@ -179,7 +179,9 @@ export async function GET(req: NextRequest) {
 
       // Mesmo destino dos alertas de caixa. Loja que nunca preencheu o telefone
       // de notificação não tem para onde receber — fica só no log.
-      if (!loja.notificationPhone) {
+      // O principal e os outros números do dono (aba Alertas do chatbot).
+      const numerosDoAviso = numerosDoDono(loja.notificationPhone, loja.chatbotConfig);
+      if (numerosDoAviso.length === 0) {
         resumo.semTelefone++;
         continue;
       }
@@ -229,7 +231,7 @@ export async function GET(req: NextRequest) {
       });
 
       const mensagem = montarMensagem(loja.storeName || "sua loja", devidos);
-      const enviado = await sendEvolutionMessage(loja.id, loja.notificationPhone, mensagem);
+      const enviado = (await mandarParaOsNumerosDoDono(loja.id, numerosDoAviso, mensagem)) > 0;
 
       // Só carimba o que realmente saiu. Gateway fora do ar marcando os insumos
       // como avisados esconderia a falta pelas 24h seguintes.

@@ -21,6 +21,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { registerBotReply } from "@/lib/loop-guard";
+import { lerOutrosNumerosDoDono, numerosDoDono } from "@/lib/numeros-do-dono";
 
 export type TipoDeAlerta =
   /** Cliente com problema no pedido — o robô saiu e alguém precisa entrar. */
@@ -113,6 +114,37 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   pix_online: "Pix pelo site: estorno pendente, Pix pago em pedido cancelado, chave do Asaas desativada",
 };
 
+// Os números do dono (principal + outros) moram em lib/numeros-do-dono.ts,
+// sem banco, para a tela e o robô usarem a mesma regra.
+export { MAX_OUTROS_NUMEROS_DO_DONO, lerOutrosNumerosDoDono, numerosDoDono, ehNumeroDoDono } from "@/lib/numeros-do-dono";
+
+/**
+ * Manda a mesma mensagem para cada número, pela instância da loja. Devolve
+ * quantos saíram. Nunca lança.
+ */
+export async function mandarParaOsNumerosDoDono(
+  lojaQueEnvia: string,
+  numeros: string[],
+  mensagem: string,
+): Promise<number> {
+  const envios = await Promise.all(
+    numeros.map(async (numero) => {
+      try {
+        const jid = `${numero}@s.whatsapp.net`;
+        // Registrar antes de enviar: o eco do WhatsApp chega em milissegundos
+        // e, sem o hash gravado, o robô leria o próprio aviso como "o lojista
+        // assumiu" e se calaria na conversa daquele número.
+        await registerBotReply(lojaQueEnvia, jid, mensagem).catch(() => {});
+        return Boolean(await sendEvolutionMessage(lojaQueEnvia, jid, mensagem));
+      } catch (err: any) {
+        console.warn(`[Alertas] Aviso para …${numero.slice(-4)} falhou:`, err?.message);
+        return false;
+      }
+    }),
+  );
+  return envios.filter(Boolean).length;
+}
+
 /** O dono ligou este alerta? Sem config salva, vale o padrão. */
 export function alertaLigado(chatbotConfig: any, tipo: TipoDeAlerta): boolean {
   const escolhido = chatbotConfig?.alertas?.[tipo];
@@ -145,7 +177,7 @@ export async function avisarDono(
     let destino = loja?.notificationPhone;
     let config = loja?.chatbotConfig as any;
 
-    if (!destino && loja?.ownerId) {
+    if (!destino && lerOutrosNumerosDoDono(config).length === 0 && loja?.ownerId) {
       const dono = await prisma.user.findUnique({
         where: { id: loja.ownerId },
         select: { notificationPhone: true, chatbotConfig: true },
@@ -154,39 +186,39 @@ export async function avisarDono(
       config = dono?.chatbotConfig as any;
     }
 
-    // As duas desistências abaixo eram MUDAS. "Ninguém foi avisado" não pode
+    // As desistências abaixo eram MUDAS. "Ninguém foi avisado" não pode
     // ser invisível: é a diferença entre "o dono ignorou o alerta" e "o alerta
     // nunca existiu", e só o log conta qual das duas aconteceu.
-    const numero = (destino || "").replace(/\D/g, "");
-    if (!numero || numero.length < 10) {
-      console.warn(`[Alertas] Alerta "${tipo}" NÃO enviado: a loja ${userId} não tem "WhatsApp do Proprietário" cadastrado (Minha Loja).`);
-      return false;
-    }
-
     if (!alertaLigado(config, tipo)) {
       console.warn(`[Alertas] Alerta "${tipo}" não enviado: desligado pela loja ${userId} em Chatbot IA → Alertas.`);
       return false;
     }
 
     // ── O robô não pode avisar a si mesmo ────────────────────────────────
-    // Se o número de alerta for o mesmo que está conectado ao robô, a mensagem
-    // sai e volta como mensagem recebida da própria loja — conversa do robô
-    // com ele mesmo, com chamada de IA a cada volta.
-    const numeroDoRobo = String(config?.phone || "").replace(/\D/g, "");
-    if (numeroDoRobo && numeroDoRobo.slice(-10) === numero.slice(-10)) {
+    // Número de alerta igual ao conectado ao robô faria a mensagem sair e
+    // voltar como recebida da própria loja — conversa do robô com ele mesmo,
+    // com chamada de IA a cada volta. `numerosDoDono` já o deixa de fora.
+    const numeros = numerosDoDono(destino, config);
+    if (numeros.length === 0) {
+      const soORobo = String(destino || "").replace(/\D/g, "").length >= 10;
       console.warn(
-        `[Alertas] Alerta "${tipo}" não enviado: o número de notificação é o próprio número do robô.`
+        soORobo
+          ? `[Alertas] Alerta "${tipo}" não enviado: o número de notificação é o próprio número do robô.`
+          : `[Alertas] Alerta "${tipo}" NÃO enviado: a loja ${userId} não tem "WhatsApp do Proprietário" cadastrado (Minha Loja).`
       );
       return false;
     }
 
-    const jid = `${numero.startsWith("55") ? numero : `55${numero}`}@s.whatsapp.net`;
-
-    // Registrar antes de enviar, pelo mesmo motivo de `replyToCustomer`: o eco
-    // do WhatsApp chega em milissegundos e, sem o hash gravado, o robô leria o
-    // próprio alerta como "o lojista assumiu" e se calaria na conversa dele.
-    await registerBotReply(userId, jid, mensagem).catch(() => {});
-    await sendEvolutionMessage(userId, jid, mensagem);
+    // Sai pela instância de quem recebeu o evento (`userId`): é a loja
+    // conectada ao robô que reporta, para cada número.
+    //
+    // O retorno continua "havia para quem mandar", como sempre foi: os crons
+    // carimbam o turno por ele, e devolver falso com o gateway fora repetiria
+    // a tentativa a cada minuto.
+    const saiu = await mandarParaOsNumerosDoDono(userId, numeros, mensagem);
+    if (saiu < numeros.length) {
+      console.warn(`[Alertas] Alerta "${tipo}" da loja ${userId}: saiu para ${saiu} de ${numeros.length} número(s).`);
+    }
     return true;
   } catch (err: any) {
     console.error(`[Alertas] Falha ao avisar o dono (${tipo}):`, err?.message);

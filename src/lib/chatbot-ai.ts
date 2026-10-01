@@ -33,6 +33,7 @@ import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-inter
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
+import { ehNumeroDoDono } from "./numeros-do-dono";
 import { inicioDoExpedienteDaLoja } from "./fuso";
 import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
 import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmergencia } from "./status-para-o-cliente";
@@ -1172,7 +1173,9 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
   // Era `notificationPhone.includes(telefoneDoCliente.slice(-8))`: oito dígitos
   // é o número local SEM DDD, então cliente de outro DDD com o mesmo final
   // recebia faturamento do dia, total de pedidos e status do caixa da loja.
-  if (user.notificationPhone && mesmoTelefone(user.notificationPhone, clientPhoneDigits)) {
+  // O principal ou um dos outros números do dono (aba Alertas do chatbot).
+  const ehODonoFalando = ehNumeroDoDono(user.notificationPhone, user.chatbotConfig, clientPhoneDigits);
+  if (ehODonoFalando) {
     try {
       // O modo dono sabia três coisas: caixa, faturamento e nº de pedidos.
       // "Tenho conta vencendo?", "tem pedido atrasado?", "qual meu prazo de
@@ -1187,7 +1190,7 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
 
       ownerContext = `
 ATENÇÃO (MODO ASSISTENTE DO DONO/GERENTE):
-O número de WhatsApp falando com você AGORA é o PROPRIETÁRIO OFICIAL da loja (telefone verificado: ${user.notificationPhone}).
+O número de WhatsApp falando com você AGORA é o PROPRIETÁRIO OFICIAL da loja (telefone verificado: ${clientPhoneDigits}).
 - SEU PAPEL AGORA: Você NÃO deve atuar como vendedor de comida com ele. Você é o ASSISTENTE GERENCIAL do sistema FireHub trabalhando para ele.
 - Ele pode perguntar QUALQUER COISA sobre a operação: faturamento, pedidos, atrasos, prazo de entrega, contas a pagar, estoque, caixa. Você tem autorização total para revelar tudo isto a ele.
 

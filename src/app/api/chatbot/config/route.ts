@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
+import { lerOutrosNumerosDoDono } from "@/lib/numeros-do-dono";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -135,6 +136,8 @@ export async function POST(req: NextRequest) {
       // Link de avaliação no Google, pedido no agradecimento do pedido
       // entregue (lib/order-notifications.ts).
       "googleReviewUrl",
+      // Outros números que recebem os avisos junto com o principal.
+      "outrosNumerosDoDono",
     ] as const;
 
     const permitido: Record<string, any> = {};
@@ -160,6 +163,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Só dígitos, com DDI, sem repetir e no máximo o teto — é a mesma limpeza
+    // que quem envia faz (lib/alertas-do-dono.ts).
+    if ("outrosNumerosDoDono" in permitido) {
+      permitido.outrosNumerosDoDono = lerOutrosNumerosDoDono({ outrosNumerosDoDono: permitido.outrosNumerosDoDono });
+    }
     if (recusados.length > 0) {
       console.warn(
         `[chatbot/config] Campos recusados para a loja ${user.id} (não editáveis por aqui):`,

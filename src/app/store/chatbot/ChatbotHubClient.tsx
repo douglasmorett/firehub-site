@@ -34,6 +34,11 @@ import {
 import FaixaDoVinculo from "./FaixaDoVinculo";
 import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 import {
+  MAX_OUTROS_NUMEROS_DO_DONO,
+  digitosDoTelefoneDoDono,
+  lerOutrosNumerosDoDono,
+} from "@/lib/numeros-do-dono";
+import {
   leituraAoVivoDaResposta,
   momentoDaResposta,
   saudeDoVinculoNaTela,
@@ -332,6 +337,10 @@ export default function ChatbotHubClient() {
   const [testPhone, setTestPhone] = useState("");
   const [testMessage, setTestMessage] = useState("Olá! Este é um teste oficial de envio do WhatsApp do FireHub Food! 🚀");
   const [sendingTest, setSendingTest] = useState(false);
+
+  // Aba Alertas: o número que está sendo digitado para receber os avisos junto
+  // com o principal.
+  const [novoNumeroDoDono, setNovoNumeroDoDono] = useState("");
 
   // Toast State
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
@@ -1915,6 +1924,46 @@ export default function ChatbotHubClient() {
               numeroDoRobo.length >= 10 &&
               soDigitos(telefoneDeAlerta).slice(-10) === numeroDoRobo.slice(-10);
 
+            // ── OUTROS NÚMEROS QUE RECEBEM OS ALERTAS ──────────────────────
+            // Sócio, gerente: recebem os mesmos avisos do principal, enviados
+            // pelo WhatsApp da loja conectado aqui. Mesma limpeza e mesmo teto
+            // do servidor (lib/numeros-do-dono.ts).
+            const MAX_OUTROS = MAX_OUTROS_NUMEROS_DO_DONO;
+            const comDdi = digitosDoTelefoneDoDono;
+            const outrosNumeros = lerOutrosNumerosDoDono(config);
+            const mesmoNumero = (a: string, b: string) => a.length >= 10 && b.length >= 10 && a.slice(-10) === b.slice(-10);
+            const formatarNumero = (d: string) => {
+              const local = d.startsWith("55") ? d.slice(2) : d;
+              if (local.length === 11) return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
+              if (local.length === 10) return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
+              return d;
+            };
+            const temPrincipal = soDigitos(telefoneDeAlerta).length >= 10;
+            const adicionarNumero = () => {
+              const d = comDdi(novoNumeroDoDono);
+              const local = d.startsWith("55") ? d.slice(2) : d;
+              if (!d || local.length < 10 || local.length > 11) {
+                showToast("⚠️ Digite o número com DDD, por exemplo (22) 99999-8888.", "#C92E09");
+                return;
+              }
+              if (mesmoNumero(d, numeroDoRobo)) {
+                showToast("⚠️ Esse é o número do próprio robô — ele não pode avisar a si mesmo.", "#C92E09");
+                return;
+              }
+              if (mesmoNumero(d, soDigitos(telefoneDeAlerta)) || outrosNumeros.some((x) => mesmoNumero(x, d))) {
+                showToast("Esse número já recebe os alertas.", "#475569");
+                return;
+              }
+              if (outrosNumeros.length >= MAX_OUTROS) {
+                showToast(`⚠️ No máximo ${MAX_OUTROS} números além do principal.`, "#C92E09");
+                return;
+              }
+              handleSaveConfig({ outrosNumerosDoDono: [...outrosNumeros, d] });
+              setNovoNumeroDoDono("");
+            };
+            const removerNumero = (d: string) =>
+              handleSaveConfig({ outrosNumerosDoDono: outrosNumeros.filter((x) => x !== d) });
+
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
 
@@ -1989,7 +2038,9 @@ export default function ChatbotHubClient() {
                     </div>
                   ) : telefoneDeAlerta ? (
                     <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: "10px", padding: "10px 12px", fontSize: "0.78rem", color: "#0F766E", marginBottom: 12 }}>
-                      Os alertas vão para <strong>{telefoneDeAlerta}</strong>. Para trocar, vá em{" "}
+                      Os alertas vão para <strong>{telefoneDeAlerta}</strong>
+                      {outrosNumeros.length > 0 && <> e mais <strong>{outrosNumeros.length}</strong> {outrosNumeros.length === 1 ? "número" : "números"} (abaixo)</>}.
+                      {" "}Para trocar o principal, vá em{" "}
                       <a href="/store/minha-loja" style={{ color: "#0F766E", fontWeight: 800 }}>Minha Loja</a>.
                     </div>
                   ) : (
@@ -1999,6 +2050,86 @@ export default function ChatbotHubClient() {
                       no campo &quot;WhatsApp do Proprietário&quot;.
                     </div>
                   )}
+
+                  {/* Outros números: recebem os mesmos alertas do principal. */}
+                  <div style={{ border: "1px solid #E2E8F0", borderRadius: "10px", padding: "12px", marginBottom: 12, background: "#F8FAFC" }}>
+                    <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#0F172A" }}>Outras pessoas que recebem os alertas</div>
+                    <p style={{ margin: "2px 0 10px", fontSize: "0.75rem", color: "#64748B", lineHeight: 1.5 }}>
+                      Sócio, gerente, quem mais precisar saber. Cada um recebe os mesmos alertas marcados abaixo
+                      (e os avisos de caixa e de estoque), enviados pelo WhatsApp da loja conectado aqui.
+                      Até {MAX_OUTROS} números além do principal.
+                    </p>
+
+                    {outrosNumeros.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: 10 }}>
+                        {outrosNumeros.map((d) => (
+                          <span
+                            key={d}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 6px 5px 10px",
+                              borderRadius: "999px", background: "#fff", border: "1px solid #CBD5E1",
+                              fontSize: "0.8rem", fontWeight: 700, color: "#0F172A",
+                            }}
+                          >
+                            {formatarNumero(d)}
+                            <button
+                              type="button"
+                              onClick={() => removerNumero(d)}
+                              disabled={saving}
+                              title="Parar de enviar alertas para este número"
+                              aria-label={`Remover ${formatarNumero(d)}`}
+                              style={{
+                                border: "none", background: "#F1F5F9", color: "#475569", borderRadius: "999px",
+                                width: 22, height: 22, cursor: "pointer", fontWeight: 900, lineHeight: 1,
+                              }}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {temPrincipal ? (
+                      outrosNumeros.length < MAX_OUTROS ? (
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <input
+                            type="tel"
+                            inputMode="tel"
+                            placeholder="(22) 99999-8888"
+                            value={novoNumeroDoDono}
+                            onChange={(e) => setNovoNumeroDoDono(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); adicionarNumero(); } }}
+                            style={{
+                              flex: "1 1 180px", minWidth: 0, padding: "9px 12px", borderRadius: "10px",
+                              border: "1px solid #CBD5E1", fontSize: "0.85rem", background: "#fff",
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={adicionarNumero}
+                            disabled={saving || soDigitos(novoNumeroDoDono).length < 10}
+                            style={{
+                              padding: "9px 16px", borderRadius: "10px", border: "none", fontWeight: 800, fontSize: "0.82rem",
+                              background: soDigitos(novoNumeroDoDono).length >= 10 ? "#0F766E" : "#E2E8F0",
+                              color: soDigitos(novoNumeroDoDono).length >= 10 ? "#fff" : "#94A3B8",
+                              cursor: soDigitos(novoNumeroDoDono).length >= 10 ? "pointer" : "not-allowed",
+                            }}
+                          >
+                            + Adicionar
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: "0.75rem", color: "#64748B" }}>
+                          Limite de {MAX_OUTROS} números atingido. Remova um para colocar outro.
+                        </div>
+                      )
+                    ) : (
+                      <div style={{ fontSize: "0.75rem", color: "#B71C1C" }}>
+                        Cadastre primeiro o número principal em Minha Loja; os outros recebem junto com ele.
+                      </div>
+                    )}
+                  </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                     {TIPOS_DE_ALERTA.map((t) => (

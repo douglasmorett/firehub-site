@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { estadoDaLoja, turnoAgora, FUSO_PADRAO } from "@/lib/loja-aberta";
-import { alertaLigado, avisarDono, type TipoDeAlerta } from "@/lib/alertas-do-dono";
+import { alertaLigado, avisarDono, numerosDoDono, type TipoDeAlerta } from "@/lib/alertas-do-dono";
 import { disponibilidadeNoIfood } from "@/lib/ifood-disponibilidade";
 import {
   avisosDevidos, consultarIfoodAgora, decidirAbertura, decidirIfood, limparIfoodForaDoTurno, marcarAviso,
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
       }
 
       // ── 2. Avisos ao dono ──────────────────────────────────────────────
-      if (soDigitos(loja.notificationPhone).length >= 10) {
+      if (numerosDoDono(loja.notificationPhone, loja.chatbotConfig).length > 0) {
         const config = loja.chatbotConfig as any;
 
         const precisaDoCaixa = !!turno && alertaLigado(config, "caixa_nao_aberto");

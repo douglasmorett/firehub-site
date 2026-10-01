@@ -20,6 +20,7 @@ import { contaOficialDoWhatsApp } from '@/lib/contas-oficiais-whatsapp';
 import { descartavelNoCooldown, desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, textoDaLocalizacao } from '@/lib/localizacao-do-whatsapp';
 import { avisarDono, avisarAdminDoSistema, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
 import { mesmoTelefone } from '@/lib/telefone';
+import { ehNumeroDoDono } from '@/lib/numeros-do-dono';
 import { detectarPedidoDeAtendente, FRASE_DE_CHAMAR_ATENDENTE } from '@/lib/pedido-de-atendente';
 import { pausarRobo, roboEstaPausado, retomarRobo } from '@/lib/pausa-do-robo';
 import { registrarIncidenteDaIa, registrarSucessoDaIa } from '@/lib/saude-da-ia';
@@ -963,7 +964,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   // roda antes e não consultava — e o vocabulário dele é maior (gerente,
   // motoboy, atendente) e a trava agora é durável no banco.
   const ehODono = Boolean(
-    (user as any).notificationPhone && mesmoTelefone((user as any).notificationPhone, cleanPhone)
+    ehNumeroDoDono((user as any).notificationPhone, (user as any).chatbotConfig, cleanPhone)
   );
 
   // A conversa já é da equipe (pediu atendente, reclamou): o robô fica

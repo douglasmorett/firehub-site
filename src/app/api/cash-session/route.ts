@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { mandarParaOsNumerosDoDono, numerosDoDono } from "@/lib/alertas-do-dono";
 import { FUSO_PADRAO } from "@/lib/fuso";
 // Só o fechamento imprime sozinho. O cupom de abertura continua em
 // lib/cupom-do-caixa, para o botão "imprimir de novo" do histórico.
@@ -221,7 +221,7 @@ export async function POST(req: Request) {
     data: { cashOpen: true },
   });
 
-  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true } });
+  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true, chatbotConfig: true } });
 
   // ── A ABERTURA NÃO IMPRIME SOZINHA ─────────────────────────────────────
   //
@@ -237,10 +237,13 @@ export async function POST(req: Request) {
   // troco inicial tira um, quando quiser. O que sumiu foi a impressão
   // automática, não o documento.
 
-  if (ownerInfo?.notificationPhone) {
+  // Para o principal e os outros números do dono (aba Alertas do chatbot),
+  // pela instância da própria loja.
+  const numerosDoAviso = numerosDoDono(ownerInfo?.notificationPhone, ownerInfo?.chatbotConfig);
+  if (ownerInfo && numerosDoAviso.length > 0) {
     const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
     const msg = `🟢 *Caixa Aberto*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *ABERTO* às ${timeStr} com R$ ${Number(openingAmount).toFixed(2).replace('.', ',')} de troco.\n\n_Ass: Seu Assistente FireHub 🔥_`;
-    sendEvolutionMessage(user.targetId, ownerInfo.notificationPhone, msg).catch(() => {});
+    mandarParaOsNumerosDoDono(user.targetId, numerosDoAviso, msg).catch(() => 0);
   }
 
   return NextResponse.json({ success: true, session: cashSession, encerradaSemConferencia });
@@ -432,7 +435,7 @@ export async function PUT(req: Request) {
     data: { cashOpen: false, cashClosedAt: new Date() },
   });
 
-  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true } });
+  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true, chatbotConfig: true } });
 
   // ── O PAPEL DO FECHAMENTO ──────────────────────────────────────────────
   //
@@ -490,10 +493,11 @@ export async function PUT(req: Request) {
     }
   }
 
-  if (ownerInfo?.notificationPhone) {
+  const numerosDoAviso = numerosDoDono(ownerInfo?.notificationPhone, ownerInfo?.chatbotConfig);
+  if (ownerInfo && numerosDoAviso.length > 0) {
     const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
     const msg = `🔴 *Caixa Fechado*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *FECHADO* às ${timeStr}.\n\nDiferença no caixa: R$ ${difference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n_Ass: Seu Assistente FireHub 🔥_`;
-    sendEvolutionMessage(user.targetId, ownerInfo.notificationPhone, msg).catch(() => {});
+    mandarParaOsNumerosDoDono(user.targetId, numerosDoAviso, msg).catch(() => 0);
   }
 
   // A tela precisa saber se o papel vai sair de verdade: sem o Assistente
