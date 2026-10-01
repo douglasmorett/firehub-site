@@ -50,6 +50,16 @@ const METODOS_DE_COBRANCA: { chave: string; emoji: string; nome: string; ajuda: 
   },
 ];
 
+/**
+ * A cor da faixa do km percorrido: verde perto da loja, indo a vermelho na
+ * mais longe — a leitura de "mais perto, mais barato" que o mapa do iFood dá.
+ */
+function corDaFaixaPelaRua(indice: number, total: number): string {
+  const t = total <= 1 ? 0 : Math.max(0, indice) / (total - 1);
+  const matiz = Math.round(150 - 145 * t);
+  return `hsl(${matiz}, 70%, 40%)`;
+}
+
 const CORES_DA_AREA = ["#0F766E", "#1C1917", "#44403C", "#E8590C", "#0F766E", "#C92E09"];
 
 // ── O QUE A TELA EDITA ──────────────────────────────────────────────────────
@@ -733,6 +743,53 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     return () => { vivo = false; };
   }, [leafletLoaded, latLng]);
 
+  // ── A ÁREA PELAS RUAS (km percorrido) ─────────────────────────────────────
+  //
+  // Pedida ao servidor com as faixas e o pino que estão NA TELA, um instante
+  // depois da última mudança — digitar "4,5" não pode virar três cálculos.
+  const [areasPelaRua, setAreasPelaRua] = useState<{ km: number; poligonos: [number, number][][][] }[] | null>(null);
+  const [areaStatus, setAreaStatus] = useState<"" | "carregando" | "erro">("");
+  const kmsDaTela = porRota
+    ? [...new Set(faixas.map((f) => f.km).filter((k): k is number => k != null && k > 0))].sort((a, b) => a - b).join(",")
+    : "";
+  const pinoDaTela = latLng ? `${latLng.lat.toFixed(5)},${latLng.lng.toFixed(5)}` : "";
+  useEffect(() => {
+    if (!porRota || !kmsDaTela || !pinoDaTela) {
+      setAreasPelaRua(null);
+      setAreaStatus("");
+      return;
+    }
+    setAreaStatus("carregando");
+    const controle = new AbortController();
+    const [deLat, deLng] = pinoDaTela.split(",");
+    const t = setTimeout(async () => {
+      for (let tentativa = 0; tentativa < 3; tentativa++) {
+        try {
+          const r = await fetch(`/api/store/area-pela-rua?km=${kmsDaTela}&deLat=${deLat}&deLng=${deLng}`, { signal: controle.signal, cache: "no-store" });
+          const d = await r.json().catch(() => null);
+          if (controle.signal.aborted) return;
+          // 429: outro cálculo acabou de sair desta conta — espera e tenta de novo.
+          if (r.status === 429) { await new Promise((res) => setTimeout(res, 4200)); continue; }
+          if (r.ok && Array.isArray(d?.areas) && d.areas.length) {
+            setAreasPelaRua(d.areas);
+            setAreaStatus("");
+          } else {
+            setAreasPelaRua(null);
+            setAreaStatus("erro");
+          }
+          return;
+        } catch (e: any) {
+          if (e?.name === "AbortError") return;
+          setAreasPelaRua(null);
+          setAreaStatus("erro");
+          return;
+        }
+      }
+      if (!controle.signal.aborted) { setAreasPelaRua(null); setAreaStatus("erro"); }
+    }, 1200);
+    return () => { clearTimeout(t); controle.abort(); };
+  }, [porRota, kmsDaTela, pinoDaTela]);
+
   // ── OS CÍRCULOS DAS FAIXAS ────────────────────────────────────────────────
   const drawCircles = useCallback(() => {
     if (!leafletMapRef.current) return;
@@ -770,6 +827,41 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     const items = faixas
       .filter((z) => z.km != null && z.km > 0)
       .map((z) => ({ id: z.id, km: z.km as number, time: z.time ?? 0, fee: z.fee ?? 0 }));
+
+    // ── KM PERCORRIDO: MANCHAS PELAS RUAS, NÃO CÍRCULOS ──────────────────
+    //
+    // O círculo é linha reta e atravessa rio, muro e mar. Aqui cada faixa é a
+    // área até onde a moto chega pela rua (lib/area-pela-rua.ts), pintada
+    // como as zonas do iFood: da mais longe para a mais perto, cada uma com
+    // a sua cor. Enquanto calcula, nada de círculo — ele é justamente o que
+    // confundia. Só se o cálculo falhar os círculos voltam, avisados.
+    if (porRota && areasPelaRua) {
+      const ordem = [...areasPelaRua].sort((a, b) => b.km - a.km);
+      const kmsCrescentes = [...areasPelaRua].map((a) => a.km).sort((a, b) => a - b);
+      ordem.forEach((area) => {
+        const faixa = items.find((z) => Math.abs(z.km - area.km) < 0.005);
+        const cor = corDaFaixaPelaRua(kmsCrescentes.indexOf(area.km), kmsCrescentes.length);
+        const emFoco = !!faixa && zonaEmFoco === faixa.id;
+        const algumEmFoco = zonaEmFoco !== null;
+        const camada = L.polygon(area.poligonos, {
+          color: cor,
+          weight: emFoco ? 3.5 : 1.5,
+          fillColor: cor,
+          fillOpacity: emFoco ? 0.4 : algumEmFoco ? 0.06 : 0.16,
+        }).addTo(map);
+        camada.bindTooltip(
+          `<div style="font-family:'Inter',sans-serif; line-height:1.35;">
+            <div style="font-weight:800; color:#0F172A;">🛣️ até ${formatarKm(area.km)} km pela rua</div>
+            ${faixa ? `<div style="color:#64748B; font-size:0.78rem;">⏱️ ${faixa.time} min · 💰 <b style="color:#0F172A">${formatarReais(faixa.fee)}</b></div>` : ""}
+          </div>`,
+          { sticky: true, direction: "top", className: "ifood-clean-tooltip" },
+        );
+        circlesRef.current.push(camada);
+      });
+      return;
+    }
+    if (porRota && areaStatus !== "erro") return;
+
     const sorted = [...items].sort((a, b) => b.km - a.km);
     const CIRCLE_COLORS = ["#C92E09", "#E8590C", "#B45309", "#0F766E", "#1C1917", "#475569"];
 
@@ -819,7 +911,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
 
       circlesRef.current.push(circle);
     });
-  }, [latLng, faixas, bairros, porBairro, porDistancia, porRota, zonaEmFoco]);
+  }, [latLng, faixas, bairros, porBairro, porDistancia, porRota, zonaEmFoco, areasPelaRua, areaStatus]);
 
   useEffect(() => {
     drawCircles();
@@ -1659,6 +1751,16 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             </div>
           )}
 
+          {/* ── O QUE FAZER NESTE MAPA ─────────────────────────────────────
+              Tocar no mapa para simular era uma linha perdida no simulador;
+              o dono pediu "algo em cima bem claro" (01/10/2026). */}
+          {confirmed && porDistancia && (
+            <div className="fh-dica-do-mapa">
+              👆 <b>Clique no mapa</b> onde mora o cliente para ver {porRota ? "o km pela rua, o caminho" : "a distância"} e a taxa
+              {porRota && areaStatus === "carregando" && <span className="fh-dica-calculando"> · calculando a área pelas ruas…</span>}
+            </div>
+          )}
+
           {/* Map instructions */}
           {!latLng && (
             <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1000, background: "rgba(255,255,255,0.92)", borderRadius: "12px", padding: "16px 20px", textAlign: "center", fontSize: "0.85rem", color: "#475569", pointerEvents: "none" }}>
@@ -1671,11 +1773,32 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           {/* Rodapé do mapa: a legenda do modo ROTA e o resumo das faixas. */}
           {porDistancia && faixasComKm.length > 0 && (
             <div className="fh-mapa-rodape">
-              {porRota && (
+              {porRota && areasPelaRua && (() => {
+                // A legenda das manchas, da faixa mais perto para a mais longe,
+                // com a taxa de cada uma — o que o mapa do iFood mostra ao lado
+                // das zonas.
+                const kms = areasPelaRua.map((a) => a.km).sort((a, b) => a - b);
+                return (
+                  <div className="fh-legenda-manchas">
+                    <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>🛣️ Até onde a moto chega pela rua</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px" }}>
+                      {kms.map((km, i) => {
+                        const faixa = faixas.find((f) => f.km != null && Math.abs(f.km - km) < 0.005);
+                        return (
+                          <span key={km} style={{ display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+                            <span style={{ width: 11, height: 11, borderRadius: 3, background: corDaFaixaPelaRua(i, kms.length), display: "inline-block" }} />
+                            até {formatarKm(km)} km{faixa?.fee != null ? ` · ${formatarReais(faixa.fee)}` : ""}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+              {porRota && areaStatus === "erro" && (
                 <div className="fh-legenda-rota">
-                  🛣️ <b>Os círculos são só referência, em linha reta</b> — a taxa é pelo caminho da rua.
-                  <b> Toque no mapa</b> onde mora um cliente para ver o caminho e a taxa
-                  <span className="fh-legenda-longa"> (pela rua costuma dar de 1,2 a 1,9 vez a linha reta)</span>.
+                  🛣️ <b>Não consegui calcular a área pelas ruas agora</b> — os círculos são em linha reta, só referência.
+                  A taxa continua sendo pelo caminho da rua: clique no mapa para conferir.
                 </div>
               )}
               <div className="fh-resumo-faixas">
@@ -2495,6 +2618,20 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           border-radius: 9px; padding: 7px 10px; font-size: 0.72rem; line-height: 1.4;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
+        .fh-legenda-manchas {
+          max-width: 520px; background: rgba(255,255,255,0.97); border: 1px solid #E2E8F0; color: #334155;
+          border-radius: 9px; padding: 8px 11px; font-size: 0.74rem; line-height: 1.4;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        }
+        /* A dica do mapa: escura e no alto, para ninguém deixar de ver. */
+        .fh-dica-do-mapa {
+          position: absolute; top: 58px; left: 12px; right: 430px; z-index: 1000;
+          margin: 0 auto; width: fit-content;
+          background: #0F172A; color: #fff; border-radius: 999px;
+          padding: 9px 16px; font-size: 0.86rem; line-height: 1.35; text-align: center;
+          box-shadow: 0 6px 18px rgba(15,23,42,0.3); pointer-events: none;
+        }
+        .fh-dica-calculando { color: #93C5FD; font-weight: 600; }
         .fh-resumo-faixas {
           background: rgba(255,255,255,0.94); border-radius: 8px; padding: 6px 12px; font-size: 0.75rem; color: #334155;
           display: flex; gap: 12px; flex-wrap: wrap; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -2566,6 +2703,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           }
           .fh-painel-corpo { overflow-y: visible; }
           .fh-confirmar-pino, .fh-mapa-rodape { right: 12px; }
+          .fh-dica-do-mapa { right: 12px; max-width: none; font-size: 0.76rem; padding: 7px 12px; border-radius: 12px; }
+          .fh-legenda-manchas { max-width: none; font-size: 0.68rem; padding: 6px 9px; }
           /* No celular o mapa tem 340 px: a legenda inteira cobriria metade dele. */
           .fh-legenda-rota { max-width: none; font-size: 0.68rem; padding: 5px 8px; }
           .fh-legenda-longa { display: none; }
