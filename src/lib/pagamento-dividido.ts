@@ -28,7 +28,7 @@
  * fecham em centavos e não fecham em float.
  */
 
-import { FORMAS_DE_PAGAMENTO_NA_ENTREGA } from "@/lib/pagamento-na-entrega";
+import { formaCanonica } from "@/lib/pagamento-na-entrega";
 
 export type ParteDoPagamento = { method: string; amount: number };
 
@@ -74,16 +74,19 @@ export type ResultadoDaDivisao =
  * conhecidas, e a soma fechando com o total.
  */
 export function validarDivisao(bruto: unknown, total: number): ResultadoDaDivisao {
-  const partes = lerPartes(bruto);
-  if (partes.length < 2) {
+  const lidas = lerPartes(bruto);
+  if (lidas.length < 2) {
     return { ok: false, erro: "Para dividir o pagamento, informe pelo menos duas formas com valor." };
   }
-  const desconhecida = partes.find(
-    (p) => !(FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(p.method)
-  );
+  // Cada tela escreve a forma do seu jeito: o balcão manda "PIX" e
+  // "Voucher/Vale", o painel manda "Pix" e "Vale-refeição". Comparar o texto
+  // exato recusava o Pix do balcão (NIK, 01/10/2026). Grava-se a forma
+  // canônica, a mesma que o fechamento de caixa entende.
+  const desconhecida = lidas.find((p) => !formaCanonica(p.method));
   if (desconhecida) {
     return { ok: false, erro: `Forma de pagamento inválida: "${desconhecida.method}".` };
   }
+  const partes = lidas.map((p) => ({ ...p, method: formaCanonica(p.method)! }));
   const soma = somarPartes(partes);
   if (Math.abs(emCentavos(soma) - emCentavos(total)) > TOLERANCIA_CENTAVOS) {
     return {
