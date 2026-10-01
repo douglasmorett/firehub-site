@@ -772,6 +772,94 @@ export async function rotaEntre(origem: Ponto, destino: Ponto, opcoes?: { prazo?
   return ouRotaVelha({ ok: false, tipo: "transitoria", motivo: ultimoMotivo });
 }
 
+// ── O DESENHO DO CAMINHO (só para a tela da loja) ─────────────────────────
+//
+// A loja que cobra por km percorrido via no mapa só os círculos em linha
+// reta, que atravessam rio, muro e mar — e não tinha como ver por onde a moto
+// passa. A Deeds (Londrina, 01/10/2026) comparou com o Google: "3 km no raio
+// tá muito longo", o caminho de verdade dava 4,7 km. O simulador agora desenha
+// o caminho, como o Google faz.
+//
+// Fica FORA do cache e da cotação: é uma pergunta de quem configura a tela,
+// rara, e a taxa continua saindo de `rotaEntre` (o desenho pode vir de outro
+// roteador da cadeia e diferir em metros). Respeita o limitador de cada um.
+
+export type DesenhoDaRota =
+  | { ok: true; km: number; minutos: number | null; pontos: [number, number][]; servidor: string }
+  | { ok: false; motivo: string };
+
+/** Linhas GeoJSON ([lng, lat]) → uma lista só de [lat, lng], sem pontos inválidos. */
+function pontosDoGeoJson(geometria: any): [number, number][] {
+  const linhas: unknown[] =
+    geometria?.type === "MultiLineString" && Array.isArray(geometria.coordinates) ? geometria.coordinates : [geometria?.coordinates];
+  const pontos: [number, number][] = [];
+  for (const linha of linhas) {
+    if (!Array.isArray(linha)) continue;
+    for (const c of linha) {
+      const lng = Number((c as any)?.[0]);
+      const lat = Number((c as any)?.[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) pontos.push([lat, lng]);
+    }
+  }
+  return pontos;
+}
+
+export async function desenhoDaRota(origem: Ponto, destino: Ponto): Promise<DesenhoDaRota> {
+  if (!Number.isFinite(origem?.lat) || !Number.isFinite(origem?.lng) || !Number.isFinite(destino?.lat) || !Number.isFinite(destino?.lng)) {
+    return { ok: false, motivo: "ponto inválido" };
+  }
+  const tentativas: { id: IdDoRoteador; nome: string; intervaloMs: number; pedir: () => Promise<Response | Extract<Resposta, { ok: false }>>; ler: (d: any) => { metros: number; segundos: number; geometria: any } | null }[] = [];
+  const geoapify = chaveDoGeoapify();
+  if (geoapify) {
+    const wp = encodeURIComponent(`${origem.lat},${origem.lng}|${destino.lat},${destino.lng}`);
+    tentativas.push({
+      id: "geoapify", nome: "Geoapify", intervaloMs: INTERVALO_DO_GEOAPIFY_MS,
+      pedir: () => buscar(`https://api.geoapify.com/v1/routing?waypoints=${wp}&mode=drive&apiKey=${encodeURIComponent(geoapify)}`, PRAZO_PRIMEIRA_MS),
+      ler: (d) => {
+        const f = Array.isArray(d?.features) ? d.features[0] : null;
+        return f?.properties ? { metros: Number(f.properties.distance), segundos: Number(f.properties.time), geometria: f.geometry } : null;
+      },
+    });
+  }
+  const ors = chaveDoOrs();
+  if (ors) {
+    tentativas.push({
+      id: "ors", nome: "openrouteservice", intervaloMs: INTERVALO_DO_ORS_MS,
+      pedir: () => buscar(URL_DO_ORS, PRAZO_PRIMEIRA_MS, {
+        method: "POST",
+        headers: { Authorization: ors, "Content-Type": "application/json", Accept: "application/geo+json, application/json" },
+        body: JSON.stringify({ coordinates: [[origem.lng, origem.lat], [destino.lng, destino.lat]], instructions: false, radiuses: [-1, -1] }),
+      }),
+      ler: (d) => {
+        const f = Array.isArray(d?.features) ? d.features[0] : null;
+        const s = f?.properties?.summary;
+        return s ? { metros: Number(s.distance ?? 0), segundos: Number(s.duration ?? 0), geometria: f.geometry } : null;
+      },
+    });
+  }
+  let motivo = "nenhum roteador com desenho configurado";
+  for (const t of tentativas) {
+    if (disjuntorAberto(t.id)) { motivo = `${t.nome} fora (disjuntor aberto)`; continue; }
+    const espera = reservarVaga(t, ESPERA_MAXIMA_PADRAO_MS);
+    if (espera === null) { motivo = `${t.nome}: limitador sem vez`; continue; }
+    if (espera > 0) await dormir(espera);
+    const r = await t.pedir();
+    if (!(r instanceof Response)) { motivo = `${t.nome}: ${r.motivo}`; continue; }
+    if (!r.ok) { motivo = `${t.nome}: HTTP ${r.status}`; continue; }
+    const lido = t.ler(await lerJson(r));
+    const pontos = lido ? pontosDoGeoJson(lido.geometria) : [];
+    if (!lido || pontos.length < 2 || !Number.isFinite(lido.metros)) { motivo = `${t.nome}: sem desenho`; continue; }
+    return {
+      ok: true,
+      km: arredondar(lido.metros / 1000),
+      minutos: Number.isFinite(lido.segundos) ? Math.round(lido.segundos / 60) : null,
+      pontos,
+      servidor: t.nome,
+    };
+  }
+  return { ok: false, motivo };
+}
+
 /**
  * Quantos km de rua entre os dois pontos, ou `null` quando não deu para saber.
  * A forma antiga, para quem só quer o número; o motivo da falha está em

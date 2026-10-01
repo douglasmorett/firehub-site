@@ -306,6 +306,14 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const markerRef = useRef<any>(null);
   const circlesRef = useRef<any[]>([]);
   const simMarcadorRef = useRef<any>(null);
+  /** O caminho pela rua até o cliente simulado (só no modo km percorrido). */
+  const simCaminhoRef = useRef<any>(null);
+  /**
+   * O que o clique no mapa faz quando não está desenhando nem mexendo no
+   * endereço: simular a entrega naquele ponto. Em ref porque o `map.on("click")`
+   * é ligado uma vez só, na criação do mapa.
+   */
+  const simularNoPontoRef = useRef<((lat: number, lng: number) => void) | null>(null);
   const observadorDoTamanho = useRef<ResizeObserver | null>(null);
   const editingAddressRef = useRef(!pontoInicial);
 
@@ -657,7 +665,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           setDesenhando((atual) => [...(atual || []), p]);
           return;
         }
-        if (!editingAddressRef.current) return;
+        if (!editingAddressRef.current) {
+          // Com o endereço confirmado, tocar no mapa é perguntar "e se o
+          // cliente morasse aqui?" — como no Google, sem digitar endereço.
+          simularNoPontoRef.current?.(e.latlng.lat, e.latlng.lng);
+          return;
+        }
         const pos = e.latlng;
         colocarPinoDaLoja(pos.lat, pos.lng, true);
         updateLocationAndAddress(pos.lat, pos.lng);
@@ -770,7 +783,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         radius: zone.km * 1000,
         color: strokeColor,
         fillColor: strokeColor,
-        fillOpacity: isHovered ? 0.35 : anyHovered ? 0.04 : 0.14,
+        // No km percorrido o círculo é só referência: mancha fraca, para não
+        // parecer que a área de entrega é ele.
+        fillOpacity: isHovered ? 0.35 : anyHovered ? 0.04 : porRota ? 0.05 : 0.14,
         weight: isHovered ? 4.5 : 2.5,
         dashArray: isHovered ? undefined : "6,4",
       }).addTo(map);
@@ -1342,15 +1357,28 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const simular = async () => {
     const rua = simRua.trim(), numero = simNumero.trim(), bairro = simBairro.trim();
     if (!rua && !bairro) { setSimErro("Digite pelo menos a rua ou o bairro."); return; }
+    const consulta = [rua && `${rua}${numero ? `, ${numero}` : ""}`, bairro].filter(Boolean).join(" - ");
+    await pedirCotacao(new URLSearchParams({ street: rua, number: numero, neighborhood: bairro, address: consulta }), consulta);
+  };
+
+  // Tocar no mapa: o ponto vai como pino do cliente — o mesmo que o cliente
+  // faz no cardápio ao arrastar o pino —, sem passar pela busca de endereço.
+  const simularNoPonto = async (lat: number, lng: number) => {
+    await pedirCotacao(
+      new URLSearchParams({ lat: String(lat), lng: String(lng), origem: "pino" }),
+      "Ponto marcado no mapa",
+    );
+  };
+  simularNoPontoRef.current = porBairro ? null : (lat, lng) => { simularNoPonto(lat, lng); };
+
+  const pedirCotacao = async (qs: URLSearchParams, consulta: string) => {
     simControle.current?.abort();
     const controle = new AbortController();
     simControle.current = controle;
     setSimulando(true);
     setSimErro("");
-    const consulta = [rua && `${rua}${numero ? `, ${numero}` : ""}`, bairro].filter(Boolean).join(" - ");
     const alterada = currentZoneType !== salvo.tipo || pontoMudou || faixasMudaram;
     try {
-      const qs = new URLSearchParams({ street: rua, number: numero, neighborhood: bairro, address: consulta });
       const r = await fetch(`/api/delivery-fee?${qs.toString()}`, { signal: controle.signal, cache: "no-store" });
       if (controle.signal.aborted) return;
       if (r.status === 429) { setSimErro("Muitas simulações seguidas. Espere alguns segundos e tente de novo."); return; }
@@ -1390,6 +1418,52 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [simulacao, mapaPronto]);
+
+  // ── O CAMINHO PELA RUA, COMO NO GOOGLE ────────────────────────────────────
+  //
+  // No km percorrido os círculos são linha reta: atravessam rio, muro e mar, e
+  // a loja não tinha como ver por onde a moto passa. A Deeds (Londrina,
+  // 01/10/2026) achou "3 km no raio muito longo" porque o Google dava 4,7 km
+  // pela rua. Aqui o simulador desenha o caminho da loja até o cliente.
+  // O número que vale continua sendo o da cotação (mesma régua do cardápio);
+  // o desenho é para ver por onde.
+  const [caminho, setCaminho] = useState<{ pontos: [number, number][]; km: number } | null>(null);
+  const [caminhoErro, setCaminhoErro] = useState("");
+  useEffect(() => {
+    setCaminho(null);
+    setCaminhoErro("");
+    const p = simulacao?.ponto;
+    if (!porRota || !p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return;
+    const controle = new AbortController();
+    fetch(`/api/store/desenho-da-rota?lat=${p.lat}&lng=${p.lng}`, { signal: controle.signal, cache: "no-store" })
+      .then(async (r) => {
+        const d = await r.json().catch(() => null);
+        if (controle.signal.aborted) return;
+        if (r.ok && Array.isArray(d?.pontos) && d.pontos.length >= 2) setCaminho({ pontos: d.pontos, km: Number(d.km) });
+        else setCaminhoErro(d?.error || "Não consegui desenhar o caminho agora.");
+      })
+      .catch((e) => { if (e?.name !== "AbortError") setCaminhoErro("Não consegui desenhar o caminho agora."); });
+    return () => controle.abort();
+  }, [simulacao, porRota]);
+
+  useEffect(() => {
+    const ref = leafletMapRef.current;
+    if (!ref) return;
+    const { map, L } = ref;
+    if (simCaminhoRef.current) { map.removeLayer(simCaminhoRef.current); simCaminhoRef.current = null; }
+    if (!caminho) return;
+    // Contorno branco por baixo da linha azul: aparece em cima de qualquer
+    // mancha de faixa, como a rota do Google.
+    const grupo = L.layerGroup([
+      L.polyline(caminho.pontos, { color: "#ffffff", weight: 9, opacity: 0.95, interactive: false }),
+      L.polyline(caminho.pontos, { color: "#1D4ED8", weight: 5, opacity: 0.95, interactive: false }),
+    ]).addTo(map);
+    simCaminhoRef.current = grupo;
+    try {
+      const largo = typeof window !== "undefined" && window.innerWidth > 1080;
+      map.fitBounds(L.latLngBounds(caminho.pontos), { paddingTopLeft: [60, 60], paddingBottomRight: [largo ? 440 : 40, 60], maxZoom: 16 });
+    } catch {}
+  }, [caminho, mapaPronto]);
 
   const limparSimulacao = () => {
     simControle.current?.abort();
@@ -1599,9 +1673,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             <div className="fh-mapa-rodape">
               {porRota && (
                 <div className="fh-legenda-rota">
-                  🛣️ <b>Os círculos são em linha reta.</b> Pela rua a distância é maior
-                  <span className="fh-legenda-longa"> — costuma ser de 1,2 a 1,9 vez a linha reta. Quem mora perto da
-                  borda pode ficar fora. Confira um endereço no simulador</span>.
+                  🛣️ <b>Os círculos são só referência, em linha reta</b> — a taxa é pelo caminho da rua.
+                  <b> Toque no mapa</b> onde mora um cliente para ver o caminho e a taxa
+                  <span className="fh-legenda-longa"> (pela rua costuma dar de 1,2 a 1,9 vez a linha reta)</span>.
                 </div>
               )}
               <div className="fh-resumo-faixas">
@@ -2063,7 +2137,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           <div className="fh-simulador">
             <div style={{ fontSize: "0.9rem", fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>🧪 Simular um endereço</div>
             <p style={{ margin: "0 0 9px", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45 }}>
-              Digite como o cliente digitaria no cardápio. A resposta é a mesma que ele veria, com a configuração <b>salva</b>.
+              Digite como o cliente digitaria no cardápio{!porBairro && <>, ou <b>toque no mapa</b> onde mora o cliente</>}. A resposta é a mesma que ele veria, com a configuração <b>salva</b>.
+              {porRota && <> O caminho pela rua aparece em azul no mapa.</>}
             </p>
             <form
               onSubmit={(e) => { e.preventDefault(); simular(); }}
@@ -2102,6 +2177,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                     <button type="button" onClick={limparSimulacao} style={{ ...adjBtn, padding: "3px 8px" }}>Limpar</button>
                   </div>
                   <div style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "2px 0 7px" }}>{s.consulta}</div>
+                  {porRota && s.ponto && (caminho || caminhoErro) && (
+                    <div style={{ fontSize: "0.72rem", color: caminho ? "#1D4ED8" : "#B45309", fontWeight: 700, margin: "-3px 0 7px" }}>
+                      {caminho ? "🛣️ O caminho pela rua está desenhado em azul no mapa." : `🛣️ ${caminhoErro}`}
+                    </div>
+                  )}
                   <dl className="fh-sim-linhas">
                     {s.distanceKm != null && (<><dt>Distância</dt><dd>{formatarKm(s.distanceKm)} km {medida && <span style={{ color: s.medida === "estimada" ? "#B45309" : "#64748B", fontWeight: 600 }}>({medida})</span>}</dd></>)}
                     {s.faixaKm != null && (<><dt>Faixa</dt><dd>até {formatarKm(s.faixaKm)} km</dd></>)}
