@@ -1,11 +1,16 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { TrendingUp, DollarSign, ShoppingCart, Users, CreditCard, Banknote, Smartphone, ArrowUpRight, ArrowDownRight, Filter, Calendar, Store as StoreIcon } from "lucide-react";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import StoreDashboardMap from "@/components/customer/StoreDashboardMap";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { nomeDoItem } from "@/lib/nome-do-item";
+
+/** O mesmo teto de /api/store/inicio (src/lib/pedidos-do-inicio.ts). Não é
+ *  importado de lá porque aquele arquivo puxa o Prisma. */
+const MAIOR_PERIODO_EM_DIAS = 93;
 
 type Order = {
   id: string; totalAmount: number; status: string; deliveryType: string;
@@ -57,7 +62,10 @@ const STATUS_LABELS: Record<string, { label: string; emoji: string; color: strin
 
 type DateFilter = "hoje" | "ontem" | "semana" | "mes" | "custom";
 
-export default function StoreDashboard({ orders: allOrders, paymentFees = {}, completedOnboardingSteps = [], isAdmin = false, storeList = [], selectedStoreId = "todas", pontoDaLoja = null, cidadeDaLoja = "" }: { orders: Order[]; paymentFees?: Record<string, any>; completedOnboardingSteps?: string[]; isAdmin?: boolean; storeList?: StoreOption[]; selectedStoreId?: string;
+export default function StoreDashboard({ orders: ordersDaTela, carregadoDesde, paymentFees = {}, completedOnboardingSteps = [], isAdmin = false, storeList = [], selectedStoreId = "todas", pontoDaLoja = null, cidadeDaLoja = "" }: { orders: Order[]; paymentFees?: Record<string, any>; completedOnboardingSteps?: string[]; isAdmin?: boolean; storeList?: StoreOption[]; selectedStoreId?: string;
+  /** Desde quando `orders` vem carregado (ISO). Período mais antigo é buscado
+   *  em /api/store/inicio. Ver src/lib/pedidos-do-inicio.ts. */
+  carregadoDesde?: string;
   /** Onde fica a loja, para o mapa abrir no lugar certo e ter âncora para
    *  localizar os endereços das entregas. Ver lib/ponto-da-loja-servidor. */
   pontoDaLoja?: { lat: number; lng: number } | null;
@@ -68,21 +76,26 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
 
-  const filteredOrders = useMemo(() => {
+  // O período escolhido e o anterior (para o "vs período anterior"), no fuso
+  // do navegador — que é o da loja.
+  const periodo = useMemo(() => {
     const now = new Date();
     const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+    const diasAtras = (n: number) => { const d = new Date(now); d.setDate(d.getDate() - n); return d; };
 
     let start: Date, end: Date;
+    let anterior: { start: Date; end: Date } | null = null;
     switch (dateFilter) {
       case "hoje":
-        start = startOfDay(now); end = endOfDay(now); break;
+        start = startOfDay(now); end = endOfDay(now);
+        anterior = { start: startOfDay(diasAtras(1)), end: endOfDay(diasAtras(1)) }; break;
       case "ontem":
-        const y = new Date(now); y.setDate(y.getDate() - 1);
-        start = startOfDay(y); end = endOfDay(y); break;
+        start = startOfDay(diasAtras(1)); end = endOfDay(diasAtras(1));
+        anterior = { start: startOfDay(diasAtras(2)), end: endOfDay(diasAtras(2)) }; break;
       case "semana":
-        const w = new Date(now); w.setDate(w.getDate() - 7);
-        start = startOfDay(w); end = endOfDay(now); break;
+        start = startOfDay(diasAtras(7)); end = endOfDay(now);
+        anterior = { start: startOfDay(diasAtras(14)), end: endOfDay(diasAtras(7)) }; break;
       case "mes":
         start = new Date(now.getFullYear(), now.getMonth(), 1);
         end = endOfDay(now); break;
@@ -92,11 +105,53 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
       default:
         start = startOfDay(now); end = endOfDay(now);
     }
+    return { start, end, anterior };
+  }, [dateFilter, customStart, customEnd]);
+
+  // ── O que a tela não trouxe ────────────────────────────────────────────
+  // A tela vem só com o mês / as duas últimas semanas (era 90 dias, e a
+  // Início levava 4 s para abrir). Período que começa antes disso é buscado
+  // aqui, uma vez por escolha.
+  const precisaDesde = periodo.anterior && periodo.anterior.start < periodo.start ? periodo.anterior.start : periodo.start;
+  const coberto = !carregadoDesde || precisaDesde >= new Date(carregadoDesde);
+  const longoDemais = !coberto && periodo.end.getTime() - precisaDesde.getTime() > MAIOR_PERIODO_EM_DIAS * 24 * 60 * 60 * 1000;
+  const chaveDoPeriodo = `${precisaDesde.toISOString()}|${periodo.end.toISOString()}|${selectedStoreId}`;
+  const [doPeriodo, setDoPeriodo] = useState<{ chave: string; pedidos: Order[] } | null>(null);
+  const [erroDoPeriodo, setErroDoPeriodo] = useState("");
+
+  useEffect(() => {
+    if (coberto || longoDemais || doPeriodo?.chave === chaveDoPeriodo) return;
+    let vivo = true;
+    setErroDoPeriodo("");
+    const qs = new URLSearchParams({ de: precisaDesde.toISOString(), ate: periodo.end.toISOString() });
+    if (isAdmin && selectedStoreId !== "todas") qs.set("loja", selectedStoreId);
+    fetch(`/api/store/inicio?${qs}`)
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!vivo) return;
+        if (!r.ok) { setErroDoPeriodo(j.error || "Não consegui carregar o período."); return; }
+        setDoPeriodo({ chave: chaveDoPeriodo, pedidos: j.pedidos || [] });
+      })
+      .catch(() => { if (vivo) setErroDoPeriodo("Não consegui falar com o servidor. Tente de novo."); });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveDoPeriodo, coberto, longoDemais]);
+
+  const carregandoPeriodo = !coberto && !longoDemais && !erroDoPeriodo && doPeriodo?.chave !== chaveDoPeriodo;
+  // O erro é do período que foi buscado: voltou para "Hoje", some.
+  const erroVisivel = !coberto && !longoDemais ? erroDoPeriodo : "";
+  const allOrders = useMemo(
+    () => (coberto ? ordersDaTela : doPeriodo?.chave === chaveDoPeriodo ? doPeriodo.pedidos : []),
+    [coberto, ordersDaTela, doPeriodo, chaveDoPeriodo],
+  );
+
+  const filteredOrders = useMemo(() => {
+    const { start, end } = periodo;
     return allOrders.filter(o => {
       const d = new Date(o.createdAt);
       return d >= start && d <= end;
     });
-  }, [allOrders, dateFilter, customStart, customEnd]);
+  }, [allOrders, periodo]);
 
   const activeOrders = filteredOrders.filter(o => o.status !== "CANCELADO");
   const totalVendas = activeOrders.reduce((s, o) => s + o.totalAmount, 0);
@@ -128,25 +183,10 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
 
   // Comparação com período anterior
   const prevOrders = useMemo(() => {
-    const now = new Date();
-    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-    let start: Date, end: Date;
-    switch (dateFilter) {
-      case "hoje":
-        const y = new Date(now); y.setDate(y.getDate() - 1);
-        start = startOfDay(y); end = endOfDay(y); break;
-      case "ontem":
-        const a = new Date(now); a.setDate(a.getDate() - 2);
-        start = startOfDay(a); end = endOfDay(a); break;
-      case "semana":
-        const ws = new Date(now); ws.setDate(ws.getDate() - 14);
-        const we = new Date(now); we.setDate(we.getDate() - 7);
-        start = startOfDay(ws); end = endOfDay(we); break;
-      default: return [];
-    }
+    if (!periodo.anterior) return [];
+    const { start, end } = periodo.anterior;
     return allOrders.filter(o => { const d = new Date(o.createdAt); return d >= start && d <= end && o.status !== "CANCELADO"; });
-  }, [allOrders, dateFilter]);
+  }, [allOrders, periodo]);
 
   const prevTotal = prevOrders.reduce((s, o) => s + o.totalAmount, 0);
   const crescimento = prevTotal > 0 ? ((totalVendas - prevTotal) / prevTotal * 100) : 0;
@@ -290,6 +330,17 @@ export default function StoreDashboard({ orders: allOrders, paymentFees = {}, co
             <span style={{ color: "#94A3B8", fontSize: "0.8rem" }}>até</span>
             <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} style={{ padding: "0.35rem 0.5rem", borderRadius: "6px", border: "1.5px solid #E2E8F0", fontSize: "0.8rem" }} />
           </div>
+        )}
+        {carregandoPeriodo && (
+          <span role="status" style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600 }}>Carregando o período…</span>
+        )}
+        {erroVisivel && (
+          <span role="alert" style={{ fontSize: "0.8rem", color: "#C92E09", fontWeight: 600 }}>{erroVisivel}</span>
+        )}
+        {longoDemais && (
+          <span role="alert" style={{ fontSize: "0.8rem", color: "#B45309", fontWeight: 600 }}>
+            Aqui o período vai até 3 meses. Para mais, use <Link href="/store/relatorios" style={{ color: "inherit" }}>Relatórios</Link>.
+          </span>
         )}
       </div>
 

@@ -15,7 +15,7 @@
  * quem opera o dia inteiro no KDS quer a tela, não o menu.
  */
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -307,6 +307,7 @@ export default function StoreSidebar({
                             {item.selo && <span className={`fh-menu-selo${item.selo === "EM TESTES" ? " teste" : ""}`}>{item.selo}</span>}
                           </>
                         )}
+                        <SinalDoClique />
                       </Link>
                       {temFilhos && (
                         <button
@@ -350,6 +351,7 @@ export default function StoreSidebar({
               <Link href="/store/admin/lojistas" className={`fh-menu-item admin${pathname?.startsWith("/store/admin") ? " ativo" : ""}`} title={enxuta ? "Lojistas" : undefined}>
                 <Store size={17} className="fh-menu-icone" />
                 {!enxuta && <span className="fh-menu-label">Lojistas</span>}
+                <SinalDoClique />
               </Link>
             </div>
           )}
@@ -401,6 +403,20 @@ export default function StoreSidebar({
       </aside>
     </>
   );
+}
+
+/**
+ * O traço que corre embaixo do item clicado enquanto a tela não troca.
+ *
+ * Com o loading.tsx do painel, o clique já troca a tela na hora — mas só
+ * depois que o pré-carregamento chegou. Na internet ruim da loja (ou logo
+ * depois de abrir o painel) ele ainda não chegou, e sem este sinal o clique
+ * parecia não ter pegado: o lojista clicava de novo, e de novo.
+ * Precisa morar DENTRO do <Link> (useLinkStatus lê o Link mais próximo).
+ */
+function SinalDoClique() {
+  const { pending } = useLinkStatus();
+  return <span aria-hidden className={`fh-menu-sinal${pending ? " ativo" : ""}`} />;
 }
 
 const ESTILO = `
@@ -469,12 +485,26 @@ const ESTILO = `
   color:#64748B; padding:8px 10px 5px;
 }
 .fh-menu-item{
+  position:relative;
   display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:9px;
   color:#CBD5E1; text-decoration:none; font-size:.8rem; font-weight:600; margin-bottom:1px;
   min-height:36px;
   transition:background .12s ease, color .12s ease;
 }
 .fh-menu-item:hover{ background:rgba(255,255,255,.07); color:#fff; }
+/* Sinal do clique (SinalDoClique): só aparece se a tela demorar mais de
+   ~150 ms — clique rápido não pisca nada. Absoluto, para não empurrar o item. */
+.fh-menu-sinal{ position:absolute; left:10px; right:10px; bottom:3px; height:2px; border-radius:2px;
+  background:currentColor; opacity:0; transform-origin:left; transform:scaleX(0); pointer-events:none; }
+.fh-menu-sinal.ativo{ animation:fh-menu-sinal 1s ease-in-out .15s infinite; }
+@keyframes fh-menu-sinal{
+  0%{ opacity:.8; transform:scaleX(0); }
+  70%{ opacity:.8; transform:scaleX(1); }
+  100%{ opacity:0; transform:scaleX(1); }
+}
+@media (prefers-reduced-motion: reduce){
+  .fh-menu-sinal.ativo{ animation:none; opacity:.6; transform:scaleX(1); }
+}
 .fh-menu-item.ativo{ background:#C92E09; color:#fff; font-weight:800; }
 .fh-menu-item.ativo .fh-menu-icone{ color:#fff; }
 .fh-menu-icone{ flex-shrink:0; color:#94A3B8; }

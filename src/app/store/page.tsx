@@ -2,9 +2,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { nomeDoItem } from "@/lib/nome-do-item";
 import StoreDashboard from "@/components/customer/StoreDashboard";
 import { lojaNoMapaPorId } from "@/lib/ponto-da-loja-servidor";
+import { inicioDaJanela, pedidosDoInicio } from "@/lib/pedidos-do-inicio";
 
 export const dynamic = "force-dynamic";
 
@@ -21,12 +21,13 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
 
   const resolvedParams = await searchParams;
 
+  // Só o que os filtros rápidos usam; "Período" mais antigo vem pela API.
+  // Ver src/lib/pedidos-do-inicio.ts.
+  const desde = inicioDaJanela();
+
   // ── ADMIN: acessa TODAS as lojas ─────────────────────────────────────────
   if (role === "ADMIN") {
     try {
-      const since = new Date();
-      since.setDate(since.getDate() - 90);
-
       const franchisees = await prisma.user.findMany({
         where: { role: "FRANCHISEE" },
         select: { id: true, name: true, slug: true, storeLogo: true },
@@ -35,57 +36,10 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
 
       const selectedId = resolvedParams.loja || "todas";
 
-      const whereClause = selectedId === "todas"
-        ? { createdAt: { gte: since } }
-        : { franchiseeId: selectedId, createdAt: { gte: since } };
-
-      const orders = await prisma.customerOrder.findMany({
-        where: whereClause,
-        include: {
-          items: { include: { menuProduct: { select: { name: true, cost: true } } } },
-          franchisee: { select: { name: true, slug: true } }
-        },
-        orderBy: { createdAt: "desc" },
+      const serialized = await pedidosDoInicio({
+        franchiseeId: selectedId === "todas" ? null : selectedId,
+        desde,
       });
-
-      const serialized = orders.map(o => ({
-        id: o.id,
-        totalAmount: o.totalAmount,
-        status: o.status,
-        deliveryType: o.deliveryType,
-        paymentMethod: o.paymentMethod || undefined,
-        customerName: o.customerName,
-        customerPhone: o.customerPhone,
-        customerAddress: o.customerAddress || undefined,
-        // O ponto que o parceiro mandou com o pedido: o mapa de calor usa
-        // direto, sem gastar uma busca de endereço. Ver StoreDashboardMap.
-        customerLatLng: o.customerLatLng || undefined,
-        ifoodReference: o.ifoodReference || undefined,
-        openDeliveryReference: o.openDeliveryReference || undefined,
-        source: o.source || undefined,
-        notes: o.notes || undefined,
-        createdAt: o.createdAt.toISOString(),
-        storeName: (o as any).franchisee?.name || "—",
-        storeSlug: (o as any).franchisee?.slug || "",
-        items: o.items.map(i => {
-          let itemName = nomeDoItem(i, "");
-          if (!itemName || itemName === "Item de Integração" || itemName === "Produto excluído") {
-            if (i.comboSelections) {
-              try {
-                const cs = typeof i.comboSelections === "string" ? JSON.parse(i.comboSelections) : i.comboSelections;
-                itemName = cs?.name || cs?.title || cs?.productName || cs?.itemTitle || "";
-              } catch {}
-            }
-          }
-          if (!itemName) itemName = "Item (Integração)";
-          return {
-            id: i.id, quantity: i.quantity, price: i.price,
-            name: itemName,
-            cost: i.menuProduct?.cost || null,
-            menuProduct: { name: itemName }
-          };
-        })
-      }));
 
       const storeList = [
         { id: "todas", name: "🏢 Todas as Lojas", slug: "" },
@@ -100,6 +54,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
       return (
         <StoreDashboard
           orders={serialized}
+          carregadoDesde={desde.toISOString()}
           paymentFees={{}}
           completedOnboardingSteps={["logo", "hours", "payment", "delivery", "first_order", "menu"]}
           isAdmin={true}
@@ -132,16 +87,16 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   const targetFranchiseeId = (user as any).ownerId || user.id;
 
   try {
-    const since = new Date();
-    since.setDate(since.getDate() - 90);
-
-    const menuCount = await prisma.menuProduct.count({ where: { franchiseeId: targetFranchiseeId } });
-
-    const orders = await prisma.customerOrder.findMany({
-      where: { franchiseeId: targetFranchiseeId, createdAt: { gte: since } },
-      include: { items: { include: { menuProduct: { select: { name: true, cost: true } } } } },
-      orderBy: { createdAt: "desc" }
-    });
+    // Independentes entre si: em paralelo, cada ida ao banco a menos é
+    // tempo a menos com o clique esperando.
+    const [menuCount, serialized, noMapa] = await Promise.all([
+      prisma.menuProduct.count({ where: { franchiseeId: targetFranchiseeId } }),
+      pedidosDoInicio({ franchiseeId: targetFranchiseeId, desde }),
+      // Onde fica a loja: pino salvo ou, quando ele nunca foi salvo, o endereço
+      // do cadastro. É daqui que o mapa de calor parte e é esta a âncora que
+      // permite localizar os endereços das entregas.
+      lojaNoMapaPorId(targetFranchiseeId),
+    ]);
 
     const completedSteps: string[] = [];
     if (user.storeLogo) completedSteps.push("logo_logo_upload");
@@ -169,54 +124,19 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
       completedSteps.push("delivery");
     }
 
-    if ((user.storeOrderCount || 0) > 0 || orders.length > 0) completedSteps.push("first_order");
+    // A janela da tela é curta: a loja que vendeu antes dela também já fez o
+    // primeiro pedido.
+    const jaVendeu = (user.storeOrderCount || 0) > 0 || serialized.length > 0 ||
+      !!(await prisma.customerOrder.findFirst({ where: { franchiseeId: targetFranchiseeId }, select: { id: true } }));
+    if (jaVendeu) completedSteps.push("first_order");
     if (menuCount > 0) completedSteps.push("menu");
     if (menuCount >= 5) completedSteps.push("menu_menu_prod");
-
-    const serialized = orders.map(o => ({
-      id: o.id,
-      totalAmount: o.totalAmount,
-      status: o.status,
-      deliveryType: o.deliveryType,
-      paymentMethod: o.paymentMethod || undefined,
-      customerName: o.customerName,
-      customerPhone: o.customerPhone,
-      customerAddress: o.customerAddress || undefined,
-      customerLatLng: o.customerLatLng || undefined,
-      ifoodReference: o.ifoodReference || undefined,
-      openDeliveryReference: o.openDeliveryReference || undefined,
-      source: o.source || undefined,
-      notes: o.notes || undefined,
-      createdAt: o.createdAt.toISOString(),
-      items: o.items.map(i => {
-        let itemName = nomeDoItem(i, "");
-        if (!itemName || itemName === "Item de Integração" || itemName === "Produto excluído") {
-          if (i.comboSelections) {
-            try {
-              const cs = typeof i.comboSelections === "string" ? JSON.parse(i.comboSelections) : i.comboSelections;
-              itemName = cs?.name || cs?.title || cs?.productName || cs?.itemTitle || "";
-            } catch {}
-          }
-        }
-        if (!itemName) itemName = "Item (Integração)";
-        return {
-          id: i.id, quantity: i.quantity, price: i.price,
-          name: itemName,
-          cost: i.menuProduct?.cost || null,
-          menuProduct: { name: itemName }
-        };
-      })
-    }));
-
-    // Onde fica a loja: pino salvo ou, quando ele nunca foi salvo, o endereço
-    // do cadastro. É daqui que o mapa de calor parte e é esta a âncora que
-    // permite localizar os endereços das entregas.
-    const noMapa = await lojaNoMapaPorId(targetFranchiseeId);
 
     return (
       <>
         <StoreDashboard
           orders={serialized}
+          carregadoDesde={desde.toISOString()}
           paymentFees={(user.paymentFees as any) || {}}
           completedOnboardingSteps={completedSteps}
           pontoDaLoja={noMapa.ponto}

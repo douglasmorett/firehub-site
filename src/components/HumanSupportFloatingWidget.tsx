@@ -191,8 +191,16 @@ export default function HumanSupportFloatingWidget() {
     // inteiro, para desenhar um botão que ninguém vê.
     if (escondido) return;
     fetchChats();
-    const interval = setInterval(fetchChats, 4000);
-    return () => clearInterval(interval);
+    // Aba escondida não pergunta: o painel fica aberto o dia inteiro em ~30
+    // lojas, e eram 15 chamadas por minuto por aba disputando o servidor com
+    // quem está clicando. Ao voltar para a aba, busca na hora.
+    const interval = setInterval(() => { if (!document.hidden) fetchChats(); }, 4000);
+    const aoVoltar = () => { if (!document.hidden) fetchChats(); };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", aoVoltar);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [escondido]);
 
