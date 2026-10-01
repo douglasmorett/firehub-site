@@ -3089,8 +3089,8 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ aiOrderingEnabled: true })}
                     style={{
                       padding: "8px 16px", borderRadius: "8px", border: "none",
-                      background: config.aiOrderingEnabled === true ? "#475569" : "#E2E8F0",
-                      color: config.aiOrderingEnabled === true ? "#fff" : "#475569",
+                      background: config.aiOrderingEnabled !== false ? "#475569" : "#E2E8F0",
+                      color: config.aiOrderingEnabled !== false ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
                   >
@@ -3100,8 +3100,8 @@ export default function ChatbotHubClient() {
                     onClick={() => handleSaveConfig({ aiOrderingEnabled: false })}
                     style={{
                       padding: "8px 16px", borderRadius: "8px", border: "none",
-                      background: config.aiOrderingEnabled !== true ? "#64748B" : "#E2E8F0",
-                      color: config.aiOrderingEnabled !== true ? "#fff" : "#475569",
+                      background: config.aiOrderingEnabled === false ? "#64748B" : "#E2E8F0",
+                      color: config.aiOrderingEnabled === false ? "#fff" : "#475569",
                       fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
                     }}
                   >

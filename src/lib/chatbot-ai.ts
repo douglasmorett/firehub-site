@@ -397,7 +397,10 @@ export async function processChatbotAI(
   // com tempo, o robô não promete minutos — era "45 a 60" para todo mundo.
   const prazoDaLoja = prazoParaORobo((user as any).deliveryZones);
 
-  const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled === true;
+  // Anotar pedido é o padrão: só não anota quem marcou NÃO no painel. Antes o
+  // padrão era desligado, e loja que nunca abriu a opção (Forno D'Oro, 30/09)
+  // respondia "por aqui não consigo anotar" a cliente querendo pedir.
+  const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled !== false;
   // O CPF/CNPJ na nota fiscal (lib/fiscal-modo): a loja que emite a nota
   // sozinha pergunta no pedido — e o robô é pedido. Lido do DONO, à parte:
   // o fiscalConfig tem segredo e não entra no select de cima (que também vai
