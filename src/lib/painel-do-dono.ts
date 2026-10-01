@@ -16,7 +16,7 @@
  * ao WhatsApp — o dono está esperando a mensagem.
  */
 import { prisma } from "@/lib/prisma";
-import { inicioDoDiaDaLoja } from "@/lib/fuso";
+import { inicioDoDiaDaLoja, inicioDoExpedienteDaLoja } from "@/lib/fuso";
 
 /**
  * Status que significam "ainda está na loja".
@@ -64,19 +64,27 @@ export type PedidoAtrasado = {
  * "Não saiu" é o corte certo: depois que o motoboy pega, o atraso vira estrada,
  * que a loja não controla e sobre a qual o alerta não ajudaria em nada. Antes
  * disso é cozinha, e cozinha tem quem resolva.
+ *
+ * Só conta o EXPEDIENTE corrente (vira às 5h, igual ao aviso de cancelamento).
+ * Pedido de um turno que já acabou e ainda está em NOVO/ACEITO não é atraso de
+ * cozinha: é pedido que ninguém baixou no sistema. Sem esse corte, quatro
+ * pedidos de 31/07 do Hakim Centro (JOTAJA) foram cobrados de hora em hora,
+ * "88.617 min além do prazo", de 01/09 a 01/10/2026.
  */
 export async function pedidosAtrasados(
   franchiseeId: string,
   prazoMin: number,
-  agora: Date = new Date()
+  agora: Date = new Date(),
+  timezone?: string | null
 ): Promise<PedidoAtrasado[]> {
   const limite = new Date(agora.getTime() - prazoMin * 60_000);
+  const inicioDoExpediente = inicioDoExpedienteDaLoja(timezone, agora);
 
   const pedidos = await prisma.customerOrder.findMany({
     where: {
       franchiseeId,
       status: { in: STATUS_EM_ABERTO },
-      createdAt: { lt: limite },
+      createdAt: { lt: limite, gte: inicioDoExpediente },
       // Agendado para mais tarde não está atrasado: o cliente pediu assim.
       OR: [{ scheduledDatetime: null }, { scheduledDatetime: { lt: agora } }],
     },
@@ -152,6 +160,9 @@ export async function montarResumoGerencial(
   const daquiUmaSemana = new Date(agora.getTime() + 7 * 24 * 60 * 60_000);
 
   const prazoMin = prazoDeEntregaMin(opts.deliveryZones);
+  // "Em aberto" no mesmo recorte do atraso: pedido esquecido de outro turno não
+  // está na cozinha, e contá-lo faria o robô dizer ao dono que há pedido parado.
+  const inicioDoExpediente = inicioDoExpedienteDaLoja(opts.timezone, agora);
 
   const [pedidosDoDia, emAberto, atrasados, vencidas, hojeVence, naSemana, insumos] =
     await Promise.all([
@@ -159,8 +170,10 @@ export async function montarResumoGerencial(
         where: { franchiseeId, createdAt: { gte: inicioDoDia }, status: { not: "CANCELADO" } },
         select: { totalAmount: true, source: true },
       }),
-      prisma.customerOrder.count({ where: { franchiseeId, status: { in: STATUS_EM_ABERTO } } }),
-      pedidosAtrasados(franchiseeId, prazoMin, agora),
+      prisma.customerOrder.count({
+        where: { franchiseeId, status: { in: STATUS_EM_ABERTO }, createdAt: { gte: inicioDoExpediente } },
+      }),
+      pedidosAtrasados(franchiseeId, prazoMin, agora, opts.timezone),
       prisma.payable.aggregate({
         where: { franchiseeId, status: "PENDING", dueDate: { lt: inicioDoDia } },
         _count: true, _sum: { value: true },

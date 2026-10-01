@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
       if (config?.alertas?.pedido_atrasado === false) continue;
 
       const prazoMin = prazoDeEntregaMin(loja.deliveryZones);
-      const atrasados = await pedidosAtrasados(loja.id, prazoMin, agora);
+      const atrasados = await pedidosAtrasados(loja.id, prazoMin, agora, loja.storeTimezone);
       if (atrasados.length === 0) continue;
 
       const carimbos: Record<string, number> = { ...(config[CHAVE_AVISOS] || {}) };
