@@ -51,6 +51,10 @@ export async function register() {
   // CRM do FireHub: contatos, conversa do número do FireHub e agenda da
   // equipe. Tabelas próprias; se faltarem, só o CRM para.
   await garantirEstruturaDoCrm();
+  // Loja extra criada antes de 01/10/2026 fica com o vendedor e o embaixador
+  // da principal. Uma vez só (a marca mora na CrmConfig, por isso depois dela).
+  const { acertarLojasExtrasUmaVez } = await import("./lib/loja-extra-da-conta");
+  await acertarLojasExtrasUmaVez();
   // Memória da conversa do robô (ChatbotConversationState.history). O schema NÃO
   // conhece a coluna de propósito — o acesso é por SQL cru e falha em silêncio
   // (lib/memoria-da-conversa-no-banco.ts). Aqui é só para o ALTER acontecer no
