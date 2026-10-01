@@ -99,7 +99,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.29";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.30";
 
 /** "1.2.10" é mais nova que "1.2.9": compara por número, não por texto. */
 export function versaoAssistenteAoMenos(versao: string | null | undefined, minima: string): boolean {

@@ -1972,7 +1972,12 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
       if (comboSels.length > 0) {
         comboSels.forEach((sel) => {
-          const totalQty = sel.quantity || 1;
+          // A quantidade da opcao vem POR UNIDADE do item (1 Fanta em cada X
+          // Tudo). Com "2x X Tudo" a cozinha precisa ler "2x Fanta": a linha
+          // saia "- Fanta" e mandavam uma so (Map Grill, 01/10/2026). E a mesma
+          // conta do KDS (parseComboSelections com a quantidade do item). Com
+          // itens separados a linha desenhada ja tem qty 1, e fica como era.
+          const totalQty = (Number(sel.quantity) || 1) * (Number(qty) || 1);
           const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
           let selName = cleanAscii(sel.name || "");
           selName = selName.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
@@ -1986,8 +1991,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           // diferenca — a loja nao tinha como conferir item a item, nem
           // responder ao cliente que perguntasse. Queixa da Delicias de Casa.
           //
-          // Valor da LINHA (unitario x quantidade): e o que ele pagou por
-          // aquele adicional. O "2x" ja aparece antes do nome.
+          // Valor da LINHA (unitario x quantidade total, a do item inclusa): e
+          // o que ele pagou por aquele adicional, na mesma regua do preco do
+          // item, que tambem sai multiplicado. O "2x" ja aparece antes do nome.
           //
           // Na via da COZINHA (semValores) nada disto sai: la o papel nunca
           // leva valor nenhum, e e proposital.

@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.29), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.30), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -1345,7 +1345,12 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 
       if (comboSels.length > 0) {
         comboSels.forEach((sel) => {
-          const totalQty = sel.quantity || 1;
+          // A quantidade da opcao vem POR UNIDADE do item (1 Fanta em cada X
+          // Tudo). Com "2x X Tudo" a cozinha precisa ler "2x Fanta": a linha
+          // saia "- Fanta" e mandavam uma so (Map Grill, 01/10/2026). E a mesma
+          // conta do KDS (parseComboSelections com a quantidade do item). Com
+          // itens separados a linha desenhada ja tem qty 1, e fica como era.
+          const totalQty = (Number(sel.quantity) || 1) * (Number(qty) || 1);
           const qPrefix = totalQty > 1 ? `${totalQty}x ` : "";
           let selName = cleanAscii(sel.name || "");
           selName = selName.replace(/\s*\[\s*◄\s*BEBIDA\s*►\s*\]/gi, "").replace(/\s*<===\s*BEBIDA/gi, "").trim();
@@ -1359,8 +1364,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           // diferenca — a loja nao tinha como conferir item a item, nem
           // responder ao cliente que perguntasse. Queixa da Delicias de Casa.
           //
-          // Valor da LINHA (unitario x quantidade): e o que ele pagou por
-          // aquele adicional. O "2x" ja aparece antes do nome.
+          // Valor da LINHA (unitario x quantidade total, a do item inclusa): e
+          // o que ele pagou por aquele adicional, na mesma regua do preco do
+          // item, que tambem sai multiplicado. O "2x" ja aparece antes do nome.
           //
           // Na via da COZINHA (semValores) nada disto sai: la o papel nunca
           // leva valor nenhum, e e proposital.
@@ -1769,10 +1775,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.29";
-export const ASSINATURA_DO_CODIGO = "7391c38d83fbc5a4";
+export const VERSAO_DO_ASSISTENTE = "1.2.30";
+export const ASSINATURA_DO_CODIGO = "b7a212b8d0abfff1";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.29 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.30 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }
