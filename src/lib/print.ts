@@ -3,7 +3,7 @@ import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
-import { categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "./roteamento-de-impressao";
+import { categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
@@ -200,6 +200,8 @@ export type PrinterEntry = {
   somenteBebidas?: boolean;
   /** Recebe o pedido que é SÓ bebida, e só ele (lib/roteamento-de-impressao.ts). */
   pedidoSoDeBebida?: boolean;
+  /** Com pedidoSoDeBebida: também o pedido de comida com bebida, inteiro. */
+  pedidoComBebida?: boolean;
   /** true = uma linha por unidade ("1x X-Bacon" cinco vezes). Ausente = agrupado. */
   separarItens?: boolean;
   /* Quais mundos esta impressora atende: salao, delivery, ou os dois.
@@ -604,20 +606,10 @@ export async function printOrder(
     printerConfig?.customBeverageKeywords
   );
 
-  // Deduplica impressoras para a mesma impressora física não receber o pedido 2x
-  const semRepetir = (lista: PrinterEntry[]) => {
-    const saida: PrinterEntry[] = [];
-    const vistas = new Set<string>();
-    for (const p of lista) {
-      const key = (p.name || "").toLowerCase().trim();
-      if (key && !vistas.has(key)) {
-        vistas.add(key);
-        saida.push(p);
-      }
-    }
-    return saida;
-  };
-  const uniquePrinters = semRepetir(printersToUse);
+  // Deduplica impressoras para a mesma impressora física não receber o pedido
+  // 2x — com a linha de pedido só de bebida vencendo a comum (mesma regra da
+  // fila, roteamento-de-impressao.ts → umaPorImpressora).
+  const uniquePrinters = umaPorImpressora(printersToUse);
 
   let printed = 0;
   // Alguma impressora respondeu "pendente no Assistente": ele vai insistir.

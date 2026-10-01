@@ -41,6 +41,11 @@ export type ImpressoraConfigurada = {
    * com qualquer comida não vem para ela. Ver `impressorasPeloPedidoSoDeBebida`.
    */
   pedidoSoDeBebida?: boolean | null;
+  /**
+   * Com `pedidoSoDeBebida`: recebe TAMBÉM o pedido de comida com bebida — a
+   * comanda inteira, a mesma da cozinha. Pedido só de comida continua fora.
+   */
+  pedidoComBebida?: boolean | null;
   /** true = uma linha por unidade no papel desta impressora. */
   separarItens?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
@@ -200,7 +205,9 @@ export function itensDaImpressora<T extends ItemDoPedido>(
   const itens = pedido?.items || [];
 
   // A do pedido só de bebida recebe o pedido inteiro: quem decidiu que ele
-  // vem para cá foi `impressorasPeloPedidoSoDeBebida`, e tudo nele é bebida.
+  // vem para cá foi `impressorasPeloPedidoSoDeBebida` — ou tudo nele é
+  // bebida, ou é comida com bebida e ela está marcada para receber esse
+  // também (a mesma comanda da cozinha).
   if (impressora.pedidoSoDeBebida === true) return itens as T[];
 
   // Só bebida NÃO passa pelo filtro de categoria, e isso é o ponto: o combo tem
@@ -348,11 +355,33 @@ export function pedidoEhSoBebida(
 }
 
 /**
+ * Alguma bebida no pedido: item que é bebida, ou bebida escolhida dentro do
+ * combo — a Coca do "Combo Pizza G + Coca 2L", quando a escolha casa com um
+ * produto da loja de categoria de bebida (`opcoesParaImpressao`, de
+ * lib/categoria-do-item.ts). O combo em si continua sendo comida.
+ */
+export function pedidoTemBebida(
+  pedido: { source?: unknown; items?: ItemDoPedido[] | null },
+  palavrasDaLoja?: string | string[] | null
+): boolean {
+  return (pedido?.items || []).some(
+    (item) =>
+      itemEhBebida(item, pedido?.source, palavrasDaLoja) ||
+      (item?.opcoesParaImpressao || []).some((op) =>
+        itemEhBebida({ name: op.name, category: op.category }, pedido?.source, palavrasDaLoja)
+      )
+  );
+}
+
+/**
  * Tira ou deixa só as impressoras de "pedido só de bebida".
  *
  *   - Pedido só de bebida, e alguma dessas atende o módulo dele: só elas.
+ *   - Comida com bebida: as de sempre, e também a marcada com
+ *     `pedidoComBebida` (NIK, 30/09/2026: a pizza com refrigerante sai inteira
+ *     na cozinha E no balcão, que é onde se separa a bebida).
  *   - Qualquer outro caso: todas MENOS elas — a do pedido só de bebida nunca
- *     recebe comida, nem parte de pedido com comida.
+ *     recebe o pedido só de comida.
  *
  * O módulo é o que limita a regra: a do balcão marcada só em "Salão" pega o
  * refrigerante do balcão e da mesa; o refrigerante sozinho do iFood continua
@@ -366,7 +395,36 @@ export function impressorasPeloPedidoSoDeBebida<P extends ImpressoraConfigurada>
   const modulo = moduloDoPedido(pedido?.source as any);
   const deBebida = impressoras.filter((p) => p.pedidoSoDeBebida === true && impressoraAtendeModulo(p.modulos as any, modulo));
   if (deBebida.length > 0 && pedidoEhSoBebida(pedido, palavrasDaLoja)) return deBebida;
-  return impressoras.filter((p) => p.pedidoSoDeBebida !== true);
+  const comBebida = deBebida.some((p) => p.pedidoComBebida === true) && pedidoTemBebida(pedido, palavrasDaLoja);
+  return impressoras.filter(
+    (p) => p.pedidoSoDeBebida !== true || (comBebida && p.pedidoComBebida === true && deBebida.includes(p))
+  );
+}
+
+/**
+ * Uma linha por impressora FÍSICA (o nome do Windows): duas linhas com o
+ * mesmo nome fariam o mesmo papel sair duas vezes. Fica a primeira da lista —
+ * menos quando a outra linha da mesma impressora é a de "pedido só de bebida".
+ * Essa só chega aqui quando o pedido é dela (`impressorasPeloPedidoSoDeBebida`)
+ * e leva o pedido INTEIRO; a linha comum levaria um pedaço dele, ou nada. A NIK
+ * tem a EPSON do balcão em duas linhas (30/09/2026): com a primeira vencendo,
+ * a pizza com refrigerante não sairia no balcão.
+ */
+export function umaPorImpressora<P extends ImpressoraConfigurada>(lista: P[]): P[] {
+  const saida: P[] = [];
+  const posicao = new Map<string, number>();
+  for (const imp of lista) {
+    const chave = texto(imp?.name);
+    if (!chave) continue;
+    const ondeEsta = posicao.get(chave);
+    if (ondeEsta === undefined) {
+      posicao.set(chave, saida.length);
+      saida.push(imp);
+    } else if (imp.pedidoSoDeBebida === true && saida[ondeEsta].pedidoSoDeBebida !== true) {
+      saida[ondeEsta] = imp;
+    }
+  }
+  return saida;
 }
 
 /**
@@ -408,20 +466,8 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   // o balcão parava de receber o pedido com pizza.
   const candidatasComRepeticao = impressorasPeloPedidoSoDeBebida(validas, pedido, opcoes.palavrasDeBebida);
 
-  // Deduplica pela impressora FÍSICA: duas linhas apontando para o mesmo nome
-  // do Windows fariam o mesmo papel sair duas vezes.
-  const semRepetir = (lista: ImpressoraConfigurada[]) => {
-    const vistas = new Set<string>();
-    const saida: ImpressoraConfigurada[] = [];
-    for (const imp of lista) {
-      const chave = texto(imp.name);
-      if (vistas.has(chave)) continue;
-      vistas.add(chave);
-      saida.push(imp);
-    }
-    return saida;
-  };
-  const candidatas = semRepetir(candidatasComRepeticao);
+  // Deduplica pela impressora FÍSICA (ver `umaPorImpressora`).
+  const candidatas = umaPorImpressora(candidatasComRepeticao);
 
   // ── DE QUE MUNDO É ESTE PEDIDO ──
   // Nenhuma impressora marcada para este mundo = todas atendem. É o resgate

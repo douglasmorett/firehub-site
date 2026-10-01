@@ -12,6 +12,8 @@ import {
   destinosDoPedido,
   impressorasPeloPedidoSoDeBebida,
   pedidoEhSoBebida,
+  pedidoTemBebida,
+  umaPorImpressora,
   type ImpressoraConfigurada,
 } from "../src/lib/roteamento-de-impressao";
 
@@ -92,6 +94,49 @@ for (const [nome, lista] of [["normal antes", NIK_DUAS_LINHAS], ["só bebida ant
   confere(`duas linhas (${nome}): pizza + refrigerante → COZINHA e a via do BALCAO, como sempre`, para(lista, { source: "PRESENCIAL", items: [PIZZA, COCA] }), ["COZINHA:Pizza Calabresa G+Coca-Cola Lata", "BALCAO:Pizza Calabresa G+Coca-Cola Lata"]);
   confere(`duas linhas (${nome}): iFood só refrigerante → COZINHA`, para(lista, { source: "IFOOD", items: [COCA] }), ["COZINHA:Coca-Cola Lata"]);
 }
+
+// ── Comida com bebida TAMBÉM na impressora da bebida (NIK, 30/09/2026) ──
+// "Se for só bebida, sai na impressora que a gente configurou; se for lanche e
+// bebida, sai nas duas" — a mesma comanda inteira na cozinha e no balcão.
+const NIK_COM_BEBIDA: ImpressoraConfigurada[] = [
+  { name: "COZINHA", categories: [] },
+  { name: "BALCAO", modulos: ["salao"], pedidoSoDeBebida: true, pedidoComBebida: true },
+];
+const COMBO_COM_COCA = item("Combo Pizza G + Coca 2L", "Combos", {
+  opcoesParaImpressao: [
+    { name: "Calabresa", quantity: 1, category: "Pizzas Tradicionais" },
+    { name: "Coca-Cola 2L", quantity: 1, category: "Bebidas" },
+  ],
+});
+const COMBO_SEM_BEBIDA = item("Combo 2 Pizzas", "Combos", {
+  opcoesParaImpressao: [{ name: "Calabresa", quantity: 2, category: "Pizzas Tradicionais" }],
+});
+confere("também com comida: pizza + refrigerante → inteiro na COZINHA e no BALCAO", para(NIK_COM_BEBIDA, { source: "PRESENCIAL", items: [PIZZA, COCA] }), ["COZINHA:Pizza Calabresa G+Coca-Cola Lata", "BALCAO:Pizza Calabresa G+Coca-Cola Lata"]);
+confere("também com comida: mesa, pizza + cerveja → nas duas", para(NIK_COM_BEBIDA, { source: "MESA", items: [PIZZA, item("Heineken Long Neck", "Cervejas")] }), ["COZINHA:Pizza Calabresa G+Heineken Long Neck", "BALCAO:Pizza Calabresa G+Heineken Long Neck"]);
+confere("também com comida: só refrigerante → só no BALCAO", para(NIK_COM_BEBIDA, { source: "PRESENCIAL", items: [COCA] }), ["BALCAO:Coca-Cola Lata"]);
+confere("também com comida: só pizza → só na COZINHA", para(NIK_COM_BEBIDA, { source: "PRESENCIAL", items: [PIZZA] }), ["COZINHA:Pizza Calabresa G"]);
+confere("também com comida: combo com a Coca escolhida → nas duas", para(NIK_COM_BEBIDA, { source: "PRESENCIAL", items: [COMBO_COM_COCA] }), ["COZINHA:Combo Pizza G + Coca 2L", "BALCAO:Combo Pizza G + Coca 2L"]);
+confere("também com comida: combo sem bebida → só na COZINHA", para(NIK_COM_BEBIDA, { source: "PRESENCIAL", items: [COMBO_SEM_BEBIDA] }), ["COZINHA:Combo 2 Pizzas"]);
+confere("também com comida: o módulo limita — iFood pizza + refrigerante → só COZINHA", para(NIK_COM_BEBIDA, { source: "IFOOD", items: [PIZZA, COCA] }), ["COZINHA:Pizza Calabresa G+Coca-Cola Lata"]);
+confere("pedidoTemBebida: Coca do combo conta", pedidoTemBebida({ items: [COMBO_COM_COCA] }), true);
+confere("pedidoTemBebida: combo só de pizza não", pedidoTemBebida({ items: [COMBO_SEM_BEBIDA] }), false);
+confere("'também' sem 'pedido só de bebida' não faz nada", para([{ name: "COZINHA" }, { name: "BALCAO", modulos: ["salao"], pedidoComBebida: true }], { source: "PRESENCIAL", items: [PIZZA, COCA] }), ["COZINHA:Pizza Calabresa G+Coca-Cola Lata", "BALCAO:Pizza Calabresa G+Coca-Cola Lata"]);
+
+// A EPSON do balcão em duas linhas — a comum com categoria própria — e a
+// cozinha listando as suas, como a NIK. A linha comum não leva nada da pizza
+// com Coca; se ela vencesse a deduplicação, o balcão ficaria sem a comanda.
+const NIK_EPSON_DUAS: ImpressoraConfigurada[] = [
+  { name: "ELGIN", categories: ["Pizzas Tradicionais", "Refrigerantes"] },
+  { name: "EPSON", categories: ["Embalagens"] },
+  { name: "EPSON", pedidoSoDeBebida: true, pedidoComBebida: true },
+];
+const EPSON_INVERTIDA = [NIK_EPSON_DUAS[0], NIK_EPSON_DUAS[2], NIK_EPSON_DUAS[1]];
+for (const [nome, lista] of [["comum antes", NIK_EPSON_DUAS], ["de bebida antes", EPSON_INVERTIDA]] as const) {
+  confere(`EPSON em duas linhas (${nome}): pizza + refrigerante → ELGIN e EPSON inteiros, uma vez cada`, para(lista, { source: "PRESENCIAL", items: [PIZZA, COCA] }), ["ELGIN:Pizza Calabresa G+Coca-Cola Lata", "EPSON:Pizza Calabresa G+Coca-Cola Lata"]);
+  confere(`EPSON em duas linhas (${nome}): só pizza → só ELGIN`, para(lista, { source: "PRESENCIAL", items: [PIZZA] }), ["ELGIN:Pizza Calabresa G"]);
+  confere(`EPSON em duas linhas (${nome}): só refrigerante → só EPSON`, para(lista, { source: "PRESENCIAL", items: [COCA] }), ["EPSON:Coca-Cola Lata"]);
+}
+confere("duas linhas comuns da mesma impressora: fica a primeira", umaPorImpressora([{ name: "EPSON", label: "1" }, { name: "epson ", label: "2" }]).map((p) => p.label), ["1"]);
 
 if (falhas > 0) {
   console.log(`\n❌ ${falhas} falha(s)`);

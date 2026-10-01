@@ -64,6 +64,8 @@ type PrinterEntry = {
   // Pedido SO de bebida: recebe o pedido que e todo bebida, e so ele; as
   // outras nao imprimem esse pedido (lib/roteamento-de-impressao.ts).
   pedidoSoDeBebida?: boolean;
+  // Com pedidoSoDeBebida: recebe tambem o pedido de comida com bebida, inteiro.
+  pedidoComBebida?: boolean;
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
@@ -1282,12 +1284,32 @@ export default function PrinterSetupClient({
                 </div>
                 <div style={{ fontSize: "0.76rem", fontWeight: 500, marginTop: 3, lineHeight: 1.4, opacity: 0.9 }}>
                   Marcado, esta impressora recebe o pedido que é <strong>todo bebida</strong> — e ele não sai
-                  nas outras. Pedido com qualquer comida não vem para cá: sai inteiro, bebida junto, nas
-                  impressoras de sempre.
+                  nas outras. Pedido com comida sai inteiro, bebida junto, nas impressoras de sempre.
                 </div>
               </button>
               {printer.pedidoSoDeBebida && (
                 <div style={{ fontSize: "0.74rem", color: "#475569", margin: "6px 0 0", lineHeight: 1.45 }}>
+                  {/* NIK (30/09/2026): a pizza com refrigerante sai inteira na
+                      cozinha E aqui — o balcão é quem separa a bebida. Pedido
+                      só de comida continua fora (lib/roteamento-de-impressao.ts). */}
+                  <button
+                    onClick={() => updatePrinter(printer.id, { pedidoComBebida: !printer.pedidoComBebida })}
+                    style={{
+                      width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                      padding: "10px 12px", borderRadius: 10, margin: "0 0 8px",
+                      border: printer.pedidoComBebida ? "2px solid #1C1917" : "1.5px solid #E2E8F0",
+                      background: printer.pedidoComBebida ? "#FAF6F2" : "#fff",
+                      color: printer.pedidoComBebida ? "#1C1917" : "#64748B",
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: "0.82rem" }}>
+                      {printer.pedidoComBebida ? "✓" : "○"} Também o pedido de comida com bebida
+                    </div>
+                    <div style={{ fontSize: "0.74rem", fontWeight: 500, marginTop: 2, lineHeight: 1.4, opacity: 0.9 }}>
+                      A pizza com refrigerante sai inteira na cozinha <strong>e aqui</strong>, a mesma comanda.
+                      Vale também para a bebida escolhida dentro do combo. Pedido só de comida continua só na cozinha.
+                    </div>
+                  </button>
                   <p style={{ margin: 0 }}>
                     Vale para o que está marcado em <strong>Quando esta impressora imprime</strong>: marcada só
                     em Balcão e mesa, pega a bebida sozinha do balcão e da mesa; a do delivery segue na impressora do delivery.
