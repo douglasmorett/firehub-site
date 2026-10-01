@@ -42,6 +42,7 @@ import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
 import { foraDoLimiteDeAtendimento } from "@/lib/limite-de-atendimento";
 import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
+import { buscarCep, digitosDoCep } from "@/lib/cep";
 
 export type LojaParaEntrega = {
   storeAddress?: string | null;
@@ -339,6 +340,14 @@ function coordenadaDoCliente(c: { lat: number; lng: number } | null | undefined)
 
 const kmBr = (n: number) => String(Math.round(n * 100) / 100).replace(".", ",");
 
+/** "86078-260", "86078260", "CEP 86078-260": o endereço é só um CEP. Devolve os 8 dígitos. */
+export function cepDigitadoSozinho(texto: unknown): string | null {
+  const t = String(texto ?? "").trim();
+  if (!/^(cep[:\s.]*)?\d{2}\.?\d{3}-?\d{3}$/i.test(t)) return null;
+  const d = digitosDoCep(t);
+  return d.length === 8 ? d : null;
+}
+
 /** O mapa não respondeu (≠ "o mapa não conhece o endereço"). */
 function falhaDoCheck(check: DeliveryZoneCheckResult | null): VeredictoDeEntrega["falhaDoMapa"] {
   const m = check?.motivoDaFalha;
@@ -371,19 +380,46 @@ export async function avaliarEntrega(
   opcoes?: { prazoMs?: number; donos?: string[] },
 ): Promise<VeredictoDeEntrega> {
   const modo = modoDaArea(loja);
-  const endereco = String(pedido.endereco || "").trim();
+  let endereco = String(pedido.endereco || "").trim();
   const prazo = Date.now() + (opcoes?.prazoMs ?? PRAZO_DA_VERIFICACAO_MS);
   const coords = coordenadaDoCliente(pedido.coords);
   const origemDasCoords: "pino" | "gps" = pedido.origemDasCoords === "pino" ? "pino" : "gps";
   // O bairro que veio em campo separado também ancora a busca no mapa (níveis
   // de rua + bairro e o centro do bairro): sem ele, o robô nunca tinha o
   // centro do bairro como reserva.
-  const partes = pedido.partes || pedido.bairro
+  let partes = pedido.partes || pedido.bairro
     ? {
         ...(pedido.partes || {}),
         neighborhood: pedido.partes?.neighborhood?.trim() || pedido.bairro?.trim() || undefined,
       }
     : undefined;
+
+  // ── SÓ O CEP ─────────────────────────────────────────────────────────
+  //
+  // No balcão o atendente digita só o CEP no campo do endereço. O mapa não
+  // conhece CEP: caía no centro da cidade e cobrava pela distância de lá —
+  // Deeds Delivery (Londrina, 01/10/2026): CEP 86078-260 é a Rua das Perdizes,
+  // a 500 m da loja, e saía "5,87 km · R$ 5,99" em vez de R$ 2,99. Com a rua e
+  // o bairro dos Correios no lugar do número, o mapa acha a rua. O checkout do
+  // cardápio já preenche pelo CEP no navegador (lib/cep.ts); isto cobre quem
+  // manda o CEP cru. Sem resposta do ViaCEP, segue como antes.
+  const cepSozinho = coords ? null : cepDigitadoSozinho(endereco);
+  if (cepSozinho && !partes?.street?.trim()) {
+    const restante = prazo - Date.now();
+    const consulta = restante > 1500
+      ? await buscarCep(cepSozinho, { prazoMs: Math.min(4000, restante - 1000) })
+      : null;
+    if (consulta?.ok) {
+      const { rua, bairro, cidade } = consulta.endereco;
+      endereco = [rua, bairro, cidade].filter(Boolean).join(", ") || endereco;
+      partes = {
+        ...(partes || {}),
+        street: rua || undefined,
+        neighborhood: partes?.neighborhood?.trim() || bairro || undefined,
+        city: cidade || partes?.city,
+      };
+    }
+  }
   const opcoesDoMapa = {
     geocodificador: opcoes?.donos?.length ? geocodificadorDaTaxaPara(opcoes.donos) : geocodificadorDaTaxa,
     prazo,
