@@ -782,6 +782,10 @@ async function criarSocket(instanceName) {
     },
     cachedGroupMetadata: async () => undefined,
     fireInitQueries: false,
+    // Status, grupo, lista de transmissão e canal são descartados ANTES de
+    // decifrar. Só o Status já derrubou o gateway inteiro em 01/10/2026: ver
+    // `ignorarNaEntrada` em saude-do-vinculo.js.
+    shouldIgnoreJid: saude.ignorarNaEntrada,
   });
 
   session = { sock, state: "connecting", qrBase64: null, phone: null };

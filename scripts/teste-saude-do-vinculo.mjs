@@ -52,6 +52,18 @@ conferir("lista de transmissão NÃO vai", !conversaVaiParaOWebhook("55229999999
 conferir("maiúscula não fura", !conversaVaiParaOWebhook("STATUS@BROADCAST") && !conversaVaiParaOWebhook("1203@NEWSLETTER"));
 conferir("vazio não vai", !conversaVaiParaOWebhook("") && !conversaVaiParaOWebhook(undefined));
 
+console.log("\n2b) O que o Baileys nem decifra (queda geral de 01/10/2026)");
+{
+  const { ignorarNaEntrada } = saude;
+  conferir("status é ignorado antes de decifrar", ignorarNaEntrada("status@broadcast") && ignorarNaEntrada("STATUS@BROADCAST"));
+  conferir("grupo, lista e canal também", ignorarNaEntrada("559181470811-1459812710@g.us") && ignorarNaEntrada("5522999999999@broadcast") && ignorarNaEntrada("120363172867223601@newsletter"));
+  conferir("cliente 1:1 e LID passam", !ignorarNaEntrada("5522999999999@s.whatsapp.net") && !ignorarNaEntrada("220104809820350@lid"));
+  conferir("servidor e vazio passam (recibos e notificações do Baileys)", !ignorarNaEntrada("s.whatsapp.net") && !ignorarNaEntrada("@s.whatsapp.net") && !ignorarNaEntrada("") && !ignorarNaEntrada(undefined));
+  // Tudo o que ignorarNaEntrada barra já era barrado do webhook: nada que o robô usava some.
+  const amostra = ["status@broadcast", "1@g.us", "2@broadcast", "3@newsletter", "5522@s.whatsapp.net", "9@lid"];
+  conferir("só barra o que o webhook já recusava", amostra.every(j => !ignorarNaEntrada(j) || !conversaVaiParaOWebhook(j)));
+}
+
 console.log("\n3) Localização e envelopes");
 {
   const msg = {

@@ -81,6 +81,28 @@ function conversaVaiParaOWebhook(remoteJid) {
   return true;
 }
 
+/**
+ * O Baileys nem tenta decifrar o que vem daqui (`shouldIgnoreJid`): só devolve
+ * o recibo, e o WhatsApp não reenvia.
+ *
+ * Em 01/10/2026 o gateway inteiro caiu, com as 32 lojas juntas, e o reinício
+ * não adiantou. A cada reconexão o WhatsApp despejava os Status pendentes dos
+ * contatos de cada loja (267 em segundos, contra 18 conversas e 17 grupos).
+ * Cada Status falhava na decifragem ("Bad MAC", com a pilha inteira impressa
+ * pelo libsignal) e pedia reenvio. Eram mais de 500 linhas de log por segundo:
+ * o processo parava 30 a 40 s, as conexões estouravam o tempo, e tudo
+ * recomeçava. O robô nunca usou nada disso, porque `conversaVaiParaOWebhook`
+ * já jogava fora, mas jogava fora DEPOIS de decifrar.
+ *
+ * Só nega o que é positivamente grupo, `@broadcast` ou canal. Jid vazio ou de
+ * servidor segue o caminho normal, porque o Baileys também consulta isto para
+ * recibos e notificações.
+ */
+function ignorarNaEntrada(jid) {
+  const j = String(jid || "").trim().toLowerCase();
+  return j.endsWith("@g.us") || j.endsWith("@broadcast") || j.endsWith("@newsletter");
+}
+
 // ── CONTEÚDO DA MENSAGEM ───────────────────────────────────────────────────
 
 /** Tira o envelope de mensagem temporária / visualização única / documento com legenda. */
@@ -416,6 +438,7 @@ module.exports = {
   decodificarJid,
   mascararJid,
   conversaVaiParaOWebhook,
+  ignorarNaEntrada,
   desembrulharMensagem,
   localizacaoDaMensagem,
   mensagemParaOWebhook,
