@@ -27,6 +27,7 @@ import {
 import { menuDaLoja, type ItemDoMenu } from "@/lib/menu-do-painel";
 import StoreSelector from "./StoreSelector";
 import SairDaConta from "@/components/SairDaConta";
+import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 
 const ICONES: Record<string, LucideIcon> = {
   BarChart2, Bike, BookOpen, Bot, CheckCircle2, ClipboardList, Home, LineChart, MapPin,
@@ -365,6 +366,18 @@ export default function StoreSidebar({
             seria o terceiro jeito de sair do sistema, cada um com um
             comportamento. */}
         <div className="fh-menu-rodape" title={enxuta ? "Sair da conta" : undefined}>
+          {/* Dono que também é vendedor/embaixador: vai ao portal sem sair.
+              Some sozinho para quem só tem a loja (components/paineis). */}
+          <AtalhoDoOutroPainel
+            className="fh-menu-sair fh-menu-trocar"
+            style={{ fontSize: ".8rem", fontWeight: 600 }}
+            soIcone={enxuta}
+            classeDoIcone="fh-menu-icone"
+            classeDoRotulo="fh-menu-label"
+            avisoAntes={caixaAberto
+              ? "O caixa está aberto. Neste navegador, as telas da loja (pedidos, KDS e impressão) param de receber até você voltar para a loja."
+              : undefined}
+          />
           <SairDaConta
             caixaAberto={caixaAberto}
             nomeDaLoja={nomeDaLoja}
@@ -442,6 +455,10 @@ const ESTILO = `
 .fh-menu-sair:hover{ background:rgba(239,68,68,.14); color:#FCA5A5; }
 .fh-menu-sair:hover .fh-menu-icone{ color:#FCA5A5; }
 .fh-menu.recolhida .fh-menu-sair{ justify-content:center; padding:10px 0; }
+/* Trocar de painel não tira ninguém do sistema: hover neutro, não o vermelho do sair. */
+.fh-menu-trocar{ color:#CBD5E1; }
+.fh-menu-trocar:hover{ background:rgba(255,255,255,.07); color:#fff; }
+.fh-menu-trocar:hover .fh-menu-icone{ color:#fff; }
 
 .fh-menu-lista{ flex:1; overflow-y:auto; padding:2px 8px 8px; }
 .fh-menu-lista::-webkit-scrollbar{ width:6px; }

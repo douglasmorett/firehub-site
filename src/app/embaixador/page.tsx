@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
 import PortalDoParceiro from "@/components/parceiro/PortalDoParceiro";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
+import { lojaQueAbreOPortal } from "@/lib/paineis-do-dono";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Portal do parceiro - FireHub" };
@@ -17,7 +18,9 @@ export const metadata = { title: "Portal do parceiro - FireHub" };
 export default async function EmbaixadorPage() {
   const session = await getServerSession(authOptions);
   const sessionUser = session?.user as any;
-  if (!sessionUser?.email || sessionUser.role !== "AMBASSADOR") return <AmbassadorLoginForm />;
+  if (!sessionUser?.email || sessionUser.role !== "AMBASSADOR") {
+    return <AmbassadorLoginForm logadoNaLoja={await lojaQueAbreOPortal(sessionUser)} />;
+  }
 
   const ambassador = await prisma.ambassador.findFirst({
     where: {

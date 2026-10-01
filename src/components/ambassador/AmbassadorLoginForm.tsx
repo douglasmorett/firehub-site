@@ -1,18 +1,43 @@
 "use client";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
+import { trocarDePainel } from "@/components/paineis/TrocarDePainel";
 
 /**
  * Login do portal do embaixador — e do vendedor, que é a mesma conta
  * (lib/vendedores.ts). `modo="vendedor"` só troca os textos e o destino.
  */
-export default function AmbassadorLoginForm({ modo = "embaixador" }: { modo?: "embaixador" | "vendedor" }) {
+export default function AmbassadorLoginForm({
+  modo = "embaixador",
+  logadoNaLoja,
+}: {
+  modo?: "embaixador" | "vendedor";
+  /**
+   * Quem chegou aqui está logado na loja e a sessão já provou o portal também
+   * (lib/paineis-do-dono.ts): entra sem digitar senha. O destino é o da conta
+   * — só-embaixador que abre /vendedor vai para /embaixador.
+   */
+  logadoNaLoja?: { loja: string; vendedor: boolean; destino: string } | null;
+}) {
   const vendedor = modo === "vendedor";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [trocando, setTrocando] = useState(false);
+
+  const entrarSemSenha = async () => {
+    setTrocando(true);
+    setError("");
+    const r = await trocarDePainel("parceiro");
+    if (r.ok) {
+      window.location.href = logadoNaLoja?.destino || (vendedor ? "/vendedor" : "/embaixador");
+      return;
+    }
+    setTrocando(false);
+    setError(r.erro || "Não deu para entrar direto. Use seu e-mail e senha abaixo.");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +157,17 @@ export default function AmbassadorLoginForm({ modo = "embaixador" }: { modo?: "e
           </p>
         </div>
 
+        {logadoNaLoja && (
+          <div style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: 12, padding: "14px", marginBottom: 20, textAlign: "center" }}>
+            <p style={{ fontSize: "0.85rem", color: "#1E3A8A", margin: "0 0 10px", lineHeight: 1.45 }}>
+              Você está logado na loja <strong>{logadoNaLoja.loja}</strong>.
+            </p>
+            <button type="button" className="amb-btn" style={{ marginTop: 0, background: "#1D4ED8" }} onClick={entrarSemSenha} disabled={trocando}>
+              {trocando ? "Abrindo..." : logadoNaLoja.vendedor ? "Abrir meu painel de vendedor" : "Abrir meu portal de embaixador"}
+            </button>
+          </div>
+        )}
+
         {error && (
           <div
             style={{
@@ -164,7 +200,7 @@ export default function AmbassadorLoginForm({ modo = "embaixador" }: { modo?: "e
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            autoFocus
+            autoFocus={!logadoNaLoja}
           />
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>

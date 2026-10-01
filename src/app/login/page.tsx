@@ -1,11 +1,32 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
+import EscolhaDePainel from "@/components/paineis/EscolhaDePainel";
+import type { PaineisDaSessao } from "@/lib/paineis-do-dono";
 
 const CHAVE_LEMBRAR = "fh_remember";
 const CHAVE_EMAIL = "fh_remember_email";
+
+/**
+ * Lojista que também é embaixador/vendedor escolhe o painel
+ * (components/paineis). O admin segue direto para /admin: a escolha é para
+ * quem apresenta o sistema, não para o suporte.
+ */
+async function paineisParaEscolher(): Promise<PaineisDaSessao | null> {
+  try {
+    const r = await fetch("/api/me/paineis", { cache: "no-store" });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const p: PaineisDaSessao | null = d?.paineis ?? null;
+    if (!p?.loja || !p?.parceiro) return null;
+    if (p.ativo === "loja" && p.loja.admin) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
 
 export default function FireHubLoginPage() {
   const [email, setEmail] = useState("");
@@ -16,6 +37,13 @@ export default function FireHubLoginPage() {
   const [error, setError] = useState("");
   const router = useRouter();
   const passwordRef = useRef<HTMLInputElement>(null);
+  const [escolha, setEscolha] = useState<PaineisDaSessao | null>(null);
+
+  // Já logado com loja E portal (a aba da loja cai aqui quando outra aba
+  // trocou para o portal): pergunta o painel em vez de pedir a senha de novo.
+  useEffect(() => {
+    paineisParaEscolher().then((e) => e && setEscolha(e));
+  }, []);
 
   // Restaura o acesso lembrado: checkbox marcado e e-mail já preenchido.
   // Quem desmarcou no login anterior não tem nada guardado e cai no formulário limpo.
@@ -91,6 +119,13 @@ export default function FireHubLoginPage() {
 
       if (destino) {
         window.location.href = destino;
+        return;
+      }
+
+      // Loja + portal do parceiro: pergunta qual abrir.
+      const paraEscolher = await paineisParaEscolher();
+      if (paraEscolher) {
+        setEscolha(paraEscolher);
         return;
       }
 
@@ -257,6 +292,17 @@ export default function FireHubLoginPage() {
           </div>
         </div>
 
+        {escolha ? (
+          <EscolhaDePainel
+            paineis={escolha}
+            aoEntrarComOutraConta={async () => {
+              await signOut({ redirect: false }).catch(() => {});
+              setEscolha(null);
+              setPassword("");
+            }}
+          />
+        ) : (
+        <>
         <p className="fhl-subtitle">Acesse sua conta para gerenciar seu restaurante</p>
 
         {error && <div className="fhl-error">⚠️ {error}</div>}
@@ -400,6 +446,8 @@ export default function FireHubLoginPage() {
             Acesse aqui →
           </span>
         </a>
+        </>
+        )}
 
         <a href="https://www.firehubfood.com.br" className="fhl-back">← Voltar para o site</a>
       </div>

@@ -9,6 +9,14 @@ import {
   limparFreioDeLogin,
   origemDaRequisicao,
 } from "./login-throttle";
+import {
+  contasDoMesmoDono,
+  identidadeDaLoja,
+  identidadeDoParceiro,
+  papeisDaSessao,
+  tokenDaSessaoAtual,
+  trocarDePainel,
+} from "./paineis-do-dono";
 
 if (!process.env.NEXTAUTH_SECRET) {
   throw new Error('NEXTAUTH_SECRET environment variable is not defined. Please set it in your .env file.');
@@ -24,7 +32,8 @@ export const authOptions: NextAuthOptions = {
         impersonateId: { label: "Impersonate", type: "text" },
         returnToAdmin: { label: "ReturnToAdmin", type: "text" },
         isAmbassador: { label: "IsAmbassador", type: "text" },
-        loginType: { label: "LoginType", type: "text" }
+        loginType: { label: "LoginType", type: "text" },
+        trocarPara: { label: "TrocarPara", type: "text" }
       },
       async authorize(credentials, req) {
         if (credentials?.impersonateId) {
@@ -102,6 +111,14 @@ export const authOptions: NextAuthOptions = {
           }
         }
 
+        // ── Trocar entre a loja e o portal do parceiro, sem sair ────────────
+        // Quem é lojista E embaixador/vendedor (o Victor). A regra mora em
+        // lib/paineis-do-dono.ts: conta já provada nesta sessão troca direto,
+        // a outra pede a senha dela.
+        if (credentials?.trocarPara === "loja" || credentials?.trocarPara === "parceiro") {
+          return (await trocarDePainel(credentials.trocarPara, credentials.password, req)) as any;
+        }
+
         if (!credentials?.email || !credentials?.password) return null;
 
         const emailInput = credentials.email.trim();
@@ -128,77 +145,36 @@ export const authOptions: NextAuthOptions = {
           );
         }
 
-        // Se veio do portal do embaixador, prioriza a busca na tabela Ambassador
-        if (wantsAmbassador) {
-          const ambassador = await prisma.ambassador.findFirst({
-            where: { email: { equals: emailInput, mode: "insensitive" } }
-          });
-          if (ambassador && ambassador.password) {
-            const ambPasswordMatch = await bcrypt.compare(credentials.password.trim(), ambassador.password);
-            if (ambPasswordMatch) {
-              limparFreioDeLogin(emailInput);
-              return {
-                id: ambassador.id,
-                name: ambassador.name,
-                email: ambassador.email,
-                role: "AMBASSADOR",
-                city: null,
-                storeName: ambassador.name,
-                permissions: "[]"
-              };
-            }
-          }
+        // A senha é conferida nas DUAS contas do dono (loja e portal do
+        // parceiro, lib/paineis-do-dono.ts): quem usa a mesma senha nas duas
+        // sai daqui com as duas provadas e troca de painel sem digitar de novo.
+        const senha = credentials.password.trim();
+        const contas = await contasDoMesmoDono(emailInput);
+        const lojaOk = !!contas.loja && (await bcrypt.compare(senha, contas.loja.password));
+        const parceiroOk = !!contas.parceiro?.password && (await bcrypt.compare(senha, contas.parceiro.password));
+
+        // Quem ENTRA é a conta do e-mail digitado, como sempre foi: no /login a
+        // loja primeiro e o portal se a senha for a dele; no portal
+        // (`wantsAmbassador`), só o portal. A conta vinculada de outro e-mail
+        // nunca entra pelo login — só aparece provada para a troca.
+        const entraLoja = !wantsAmbassador && lojaOk && contas.lojaPeloEmail;
+        const entraParceiro = !entraLoja && parceiroOk && contas.parceiroPeloEmail;
+
+        if (!entraLoja && !entraParceiro) {
+          // E-mail inexistente ou senha errada. As duas contam igual, porque
+          // distinguir uma da outra já entrega quais e-mails têm conta.
           registrarFalhaDeLogin(emailInput, origem);
           return null;
         }
+        limparFreioDeLogin(emailInput);
 
-        // Fluxo padrão: busca primeiro na tabela User
-        const user = await prisma.user.findFirst({
-          where: {
-            email: { equals: emailInput, mode: "insensitive" }
-          }
-        });
+        // Entrar no portal estando na loja (ou o contrário) não esquece a que
+        // já estava provada neste navegador.
+        const papeis = papeisDaSessao(await tokenDaSessaoAtual(req), contas);
+        if (lojaOk) papeis.loja = contas.loja!.id;
+        if (parceiroOk) papeis.parceiro = contas.parceiro!.id;
 
-        if (user) {
-          const passwordMatch = await bcrypt.compare(credentials.password.trim(), user.password);
-          if (passwordMatch) {
-            limparFreioDeLogin(emailInput);
-            return {
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              role: user.role as string,
-              city: user.city as string | null,
-              storeName: user.storeName || user.name,
-              permissions: user.permissions as string
-            };
-          }
-        }
-
-        // Se não encontrou em User ou senha não bateu em User, tenta Ambassador
-        const fallbackAmbassador = await prisma.ambassador.findFirst({
-          where: { email: { equals: emailInput, mode: "insensitive" } }
-        });
-        if (fallbackAmbassador && fallbackAmbassador.password) {
-          const ambPasswordMatch = await bcrypt.compare(credentials.password.trim(), fallbackAmbassador.password);
-          if (ambPasswordMatch) {
-            limparFreioDeLogin(emailInput);
-            return {
-              id: fallbackAmbassador.id,
-              name: fallbackAmbassador.name,
-              email: fallbackAmbassador.email,
-              role: "AMBASSADOR",
-              city: null,
-              storeName: fallbackAmbassador.name,
-              permissions: "[]"
-            };
-          }
-        }
-
-        // Chegou aqui: e-mail inexistente ou senha errada. As duas contam igual,
-        // porque distinguir uma da outra já entrega quais e-mails têm conta.
-        registrarFalhaDeLogin(emailInput, origem);
-        return null;
+        return (entraLoja ? identidadeDaLoja(contas.loja!, papeis) : identidadeDoParceiro(contas.parceiro!, papeis)) as any;
       }
     })
   ],
@@ -214,6 +190,9 @@ export const authOptions: NextAuthOptions = {
         // não carrega o campo. Só gravar quando existe deixaria o admin com a
         // marca de impersonação grudada depois de voltar.
         (token as any).impersonatedBy = (user as any).impersonatedBy ?? null;
+        // As contas que esta sessão provou (lib/paineis-do-dono.ts). Mesma
+        // regra do campo acima: login sem o campo APAGA o anterior.
+        (token as any).papeis = (user as any).papeis ?? null;
       }
       return token;
     },
@@ -225,6 +204,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).storeName = token.storeName;
         (session.user as any).permissions = token.permissions;
         (session.user as any).impersonatedBy = (token as any).impersonatedBy || null;
+        (session.user as any).papeis = (token as any).papeis || null;
       }
       return session;
     }

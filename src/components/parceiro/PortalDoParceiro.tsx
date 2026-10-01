@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Briefcase, CalendarClock, ChartNoAxesColumn, Handshake, LogOut, MessageCircle, Network, Target } from "lucide-react";
 import SairDaConta from "@/components/SairDaConta";
+import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
@@ -96,9 +97,14 @@ export default function PortalDoParceiro({
                 <ArrowLeft size={15} aria-hidden /> Voltar ao admin
               </a>
             ) : (
+              <>
+              {/* Parceiro que também tem loja (o Victor): abre a loja sem
+                  sair. Some para quem só tem o portal. */}
+              <AtalhoDoOutroPainel className="pp-sair" tamanhoDoIcone={15} />
               <SairDaConta callbackUrl={saida} className="pp-sair">
                 <LogOut size={15} aria-hidden /> Sair
               </SairDaConta>
+              </>
             )}
           </div>
         </div>
