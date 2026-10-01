@@ -38,9 +38,10 @@ import { ganhaComoVendedor } from "@/lib/vendedores";
  * vendedor responsável (+3%) só entra em loja que não é indicação dele, então
  * ele não empilha em cima dos 30%. Acima
  * disso o boleto sai sem split e o erro vai para o log — é quase certo que
- * alguém errou o número no admin.
+ * alguém errou o número no admin. O número mora em lib/parceiro/regras.ts: o
+ * portal do parceiro avisa a loja que passaria do teto com a mesma conta.
  */
-const TETO_DE_SPLIT = 40;
+import { TETO_DE_SPLIT } from "@/lib/parceiro/regras";
 
 /**
  * ── O QUE CONTA COMO VENDA PARA A MENSALIDADE ───────────────────────────────
@@ -539,6 +540,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 
   if (!cycle) throw new Error(`Ciclo ${yearMonth} não encontrado para ${franchiseeId}`);
   if (cycle.status !== "OPEN" && cycle.status !== "PAID") return { charged: false, message: `Ciclo já está ${cycle.status}` };
+  // PAID com boleto é mensalidade PAGA no Asaas (lib/pagamento-da-mensalidade.ts).
+  // Refechar geraria um segundo boleto do mesmo mês para quem já pagou — o
+  // PAID que ainda pode ser refeito é só o "nada a cobrar", que não tem boleto.
+  if (cycle.status === "PAID" && cycle.asaasPaymentId) return { charged: false, message: "Ciclo já pago no Asaas" };
 
   const userEmailClean = cycle.franchisee?.email?.toLowerCase().replace(/\s+/g, "");
   const isSpecialStore = isExemptAccount(cycle.franchisee?.email) || cycle.franchisee?.planPercent === 0 || cycle.franchisee?.isFranqueadoHakim === true || userEmailClean === "contatohakim@gmail.com";

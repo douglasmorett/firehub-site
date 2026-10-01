@@ -13,7 +13,11 @@ import { useEffect, useState } from "react";
 type Membro = {
   id: string; name: string; email: string; phone: string | null; code: string;
   active: boolean; asaasWalletId: string | null; sellerPercent: number; tambemEmbaixador: boolean;
-  clientes: number; atendidos: number; aguardando: number; inativos: number; comissaoMes: number;
+  clientes: number; atendidos: number; aguardando: number; inativos: number;
+  /** Os % de vendedor do mês até agora (lib/parceiro/relatorio.ts). */
+  comissaoMes: number;
+  /** Tudo que ele recebe no mês: indicação + rede + carteira. */
+  comissaoTotal: number;
 };
 type Embaixador = { id: string; name: string; email: string; asaasWalletId: string | null };
 
@@ -218,7 +222,10 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
                     <td style={{ fontWeight: 700, color: m.inativos ? "#B91C1C" : "#94A3B8" }}>{m.inativos}</td>
                     <td>
                       <div style={{ fontWeight: 800, color: "#0F172A" }}>{brl(m.comissaoMes)}</div>
-                      <div className="fha-sub">{m.sellerPercent}% da mensalidade</div>
+                      <div className="fha-sub">{m.sellerPercent}% da carteira</div>
+                      {m.comissaoTotal > m.comissaoMes && (
+                        <div className="fha-sub" title="Somando a indicação e a rede dele">{brl(m.comissaoTotal)} no total</div>
+                      )}
                     </td>
                     <td>
                       {m.asaasWalletId
@@ -228,6 +235,7 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
                     <td>{m.active ? <span className="fha-badge fha-badge-active">Ativo</span> : <span className="fha-badge fha-badge-exempt">Pausado</span>}</td>
                     <td>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <a className="fha-btn fha-btn-dark" href={`/admin/parceiros/${m.id}?de=vendedores`} title="O mesmo relatório que ele vê no portal">Relatório</a>
                         <button className="fha-btn" onClick={() => abrirEdicao(m)}>Editar</button>
                         <button className="fha-btn" onClick={() => novaSenha(m)}>Nova senha</button>
                         <button className="fha-btn" onClick={() => alternarAtivo(m)}>{m.active ? "Pausar" : "Reativar"}</button>

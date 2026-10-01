@@ -24,16 +24,11 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * O vendedor leva `sellerPercent` desta loja? Não quando já ganha nela como
- * embaixador: indicou a loja (nível 1) ou trouxe quem indicou (nível 2).
+ * embaixador: indicou a loja (nível 1) ou trouxe quem indicou (nível 2). Mora
+ * em lib/parceiro/regras.ts, junto com o resto das regras do parceiro que o
+ * portal mostra — o split do fechamento e o portal leem a mesma função.
  */
-export function ganhaComoVendedor(
-  vendedorId: string,
-  loja: { ambassadorId?: string | null; ambassador?: { parentAmbassadorId?: string | null } | null }
-): boolean {
-  if (loja.ambassadorId && loja.ambassadorId === vendedorId) return false;
-  if (loja.ambassador?.parentAmbassadorId && loja.ambassador.parentAmbassadorId === vendedorId) return false;
-  return true;
-}
+export { ganhaComoVendedor } from "@/lib/parceiro/regras";
 
 /** Campos da loja que `ganhaComoVendedor` precisa, para os `select` da carteira. */
 export const SELECT_DO_EMBAIXADOR_DA_LOJA = {

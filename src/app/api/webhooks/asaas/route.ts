@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { cicloDaReferencia, registrarCobrancaDaMensalidade } from "@/lib/pagamento-da-mensalidade";
 
 export async function POST(req: Request) {
   try {
@@ -23,6 +24,16 @@ export async function POST(req: Request) {
 
     if (!payment?.id) {
       return NextResponse.json({ received: true });
+    }
+
+    // Boleto da MENSALIDADE (lib/billing.ts emite com "billing:<ciclo>"). Caía
+    // no "Pedido não encontrado" abaixo e o pagamento nunca era registrado: o
+    // ciclo ficava CLOSED e o painel da loja travava depois do prazo mesmo
+    // com o boleto pago.
+    if (cicloDaReferencia(payment.externalReference)) {
+      const resultado = await registrarCobrancaDaMensalidade(payment, event);
+      console.log(`[webhook/asaas] Mensalidade ${payment.externalReference}: ${resultado} (${event})`);
+      return NextResponse.json({ success: true, mensalidade: resultado });
     }
 
     // Procurar o pedido: primeiro por asaasPaymentId, depois por externalReference (orderId)

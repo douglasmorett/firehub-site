@@ -4,8 +4,8 @@ import bcrypt from "bcryptjs";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { atividadeDasLojas } from "@/lib/atividade-da-loja";
-import { comissaoDasLojas, SELECT_DA_LOJA_NA_CARTEIRA } from "@/lib/comissao-da-carteira";
-import { gerarCodigoUnico, gerarSenhaTemporaria, ganhaComoVendedor, percentualDoVendedor, SELECT_DO_EMBAIXADOR_DA_LOJA } from "@/lib/vendedores";
+import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
+import { gerarCodigoUnico, gerarSenhaTemporaria, percentualDoVendedor } from "@/lib/vendedores";
 
 async function ehAdmin() {
   const session = await getServerSession(authOptions);
@@ -28,7 +28,7 @@ export async function GET() {
       id: true, name: true, email: true, phone: true, code: true, active: true,
       asaasWalletId: true, sellerPercent: true, commissionPercent: true,
       _count: { select: { referredStores: true } },
-      carteira: { select: { ...SELECT_DA_LOJA_NA_CARTEIRA, ...SELECT_DO_EMBAIXADOR_DA_LOJA, vendedorStatus: true, vendedorAtribuidoEm: true } },
+      carteira: { select: { id: true, vendedorStatus: true } },
     },
   });
 
@@ -36,8 +36,9 @@ export async function GET() {
 
   const equipe = await Promise.all(
     vendedores.map(async (v) => {
-      // Loja que ele mesmo indicou fica fora dos 3% (lib/vendedores.ts).
-      const lojas = await comissaoDasLojas(v.carteira, (l) => (ganhaComoVendedor(v.id, l) ? v.sellerPercent : 0));
+      // A MESMA conta do portal dele (lib/parceiro/relatorio.ts): loja que ele
+      // indicou conta como indicação, não soma os 3% de vendedor.
+      const rel = await relatorioDoParceiro(v.id);
       return {
         id: v.id,
         name: v.name,
@@ -53,7 +54,8 @@ export async function GET() {
         atendidos: v.carteira.filter((l) => l.vendedorStatus === "ATENDIDO").length,
         aguardando: v.carteira.filter((l) => l.vendedorStatus !== "ATENDIDO").length,
         inativos: v.carteira.filter((l) => atividade.get(l.id)?.situacao !== "ATIVA").length,
-        comissaoMes: lojas.reduce((s, l) => s + l.ambassadorProfit, 0),
+        comissaoMes: rel?.resumo.mesAtual.porPapel.VENDEDOR.comissao ?? 0,
+        comissaoTotal: rel?.resumo.mesAtual.comissao ?? 0,
       };
     })
   );

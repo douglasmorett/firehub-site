@@ -207,6 +207,14 @@ const jobs = [
     intervalMs: 60 * 60_000, // 1 hora (verifica internamente se é dia 1 às 03h)
   },
   {
+    // Boleto da mensalidade pago no Asaas vira ciclo PAID (o webhook faz na
+    // hora; isto confere o que o webhook perdeu). Sem isso a loja que pagou
+    // tinha o painel travado depois do prazo (src/lib/pagamento-da-mensalidade.ts).
+    name: 'mensalidades-pagas',
+    path: '/api/cron/mensalidades-pagas',
+    intervalMs: 30 * 60_000, // 30 minutos
+  },
+  {
     name: 'meta-ads-sync',
     path: '/api/cron/meta-ads-sync',
     intervalMs: 6 * 60 * 60_000, // 6 horas

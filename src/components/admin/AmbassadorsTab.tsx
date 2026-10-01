@@ -311,7 +311,14 @@ export default function AmbassadorsTab() {
                     </span>
                   </td>
                   <td style={{ padding: "12px 16px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                    <button 
+                    {/* O mesmo relatório que ele vê no portal: papéis, comissão do mês, inadimplência. */}
+                    <a
+                      href={`/admin/parceiros/${amb.id}?de=ambassadors`}
+                      style={{ background: "#1C1917", color: "#FFF", border: "1px solid #1C1917", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, textDecoration: "none" }}
+                    >
+                      Relatório
+                    </a>
+                    <button
                       onClick={() => copyInviteLink(amb.code)}
                       style={{ background: copiedCode === amb.code ? "#0F766E" : "#F1F5F9", color: copiedCode === amb.code ? "#FFF" : "#334155", border: "1px solid #CBD5E1", padding: "6px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}
                     >

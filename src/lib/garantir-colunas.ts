@@ -831,6 +831,17 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "vendedorAtendidoEm" TIMESTAMP(3)`,
   `CREATE INDEX IF NOT EXISTS "User_vendedorId_idx" ON "User"("vendedorId")`,
 
+  // ── Mensalidade paga (lib/pagamento-da-mensalidade.ts) ──
+  // O webhook do Asaas nunca registrava o boleto da mensalidade pago: o ciclo
+  // ficava CLOSED para sempre, o painel da loja travava depois do prazo mesmo
+  // com o boleto quitado e o portal do parceiro chamava de inadimplente quem
+  // pagou (levantamento de 30/09/2026). Nuláveis: o fechamento lê o ciclo em
+  // toda loja e não pode depender delas.
+  `ALTER TABLE "FranchiseeBillingCycle" ADD COLUMN IF NOT EXISTS "asaasStatus" TEXT`,
+  `ALTER TABLE "FranchiseeBillingCycle" ADD COLUMN IF NOT EXISTS "paidAt" TIMESTAMP(3)`,
+  `ALTER TABLE "FranchiseeBillingCycle" ADD COLUMN IF NOT EXISTS "paidValue" DOUBLE PRECISION`,
+  `ALTER TABLE "FranchiseeBillingCycle" ADD COLUMN IF NOT EXISTS "paidNetValue" DOUBLE PRECISION`,
+
   // ── Tabelas que também nasceram nesta janela ──
   // Se a tabela não existir no banco desta loja, estas seis falham sozinhas e
   // as 33 de cima continuam valendo. É por isso que o catch é por instrução.

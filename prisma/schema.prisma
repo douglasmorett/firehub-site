@@ -1617,6 +1617,14 @@ model FranchiseeBillingCycle {
   asaasBoletoUrl   String?
   asaasBoletoCode  String?
   asaasPixQrCode   String?   @db.Text
+  // O que o Asaas disse do boleto (lib/pagamento-da-mensalidade.ts): o webhook
+  // e a conferência de meia em meia hora gravam aqui. Boleto pago = PAID,
+  // `amountPending` volta a zero e o valor cobrado fica em `paidValue`;
+  // `paidNetValue` é o líquido da tarifa, a base do split.
+  asaasStatus      String?
+  paidAt           DateTime?
+  paidValue        Float?
+  paidNetValue     Float?
   // Log de abatimentos: [{ date, orderId, amount, pagarmeOrderId }]
   offsetLog        Json?
   notes            String?
