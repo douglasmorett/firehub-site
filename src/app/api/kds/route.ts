@@ -324,7 +324,9 @@ export async function PUT(req: NextRequest) {
   // `tela` é a chave da tela que está dando baixa (ver lib/kds-telas.ts).
   // Ausente = tela aberta por link antigo ou loja de uma tela só: a baixa
   // continua valendo para o pedido inteiro, como sempre valeu.
-  const { orderId, action, stationId, tela } = body;
+  // `itens`: no desfazer da produção, os itens que aquela baixa carimbou
+  // (devolvidos por `finish_production` em `carimbados`).
+  const { orderId, action, stationId, tela, itens: itensDaBaixa } = body;
   const chaveDaTelaQueDeuBaixa = String(tela ?? "").trim();
 
   if (!orderId || !action) {
@@ -444,6 +446,10 @@ export async function PUT(req: NextRequest) {
     // é como o KDS sempre funcionou, e vale mais que travar o pedido.
     const aCarimbar = minhaTela ? itensDaTela(minhaTela, itens) : itens;
     const ids = aCarimbar.map((i: any) => i?.id).filter(Boolean);
+    // Os que ESTA baixa carimba agora (os já prontos ficam como estão). É a
+    // lista que o desfazer apaga — e só ela, para não tirar o pronto que
+    // outra tela deu.
+    const carimbados = aCarimbar.filter((i: any) => i?.id && !i?.prontoEm).map((i: any) => i.id);
     if (ids.length) {
       await prisma.customerOrderItem.updateMany({
         where: { id: { in: ids }, orderId, prontoEm: null },
@@ -481,6 +487,7 @@ export async function PUT(req: NextRequest) {
       success: true,
       stage: "FINISHING",
       itensCarimbados: ids.length,
+      carimbados,
       // O que ainda falta ficar pronto, para a tela avisar em vez de deixar o
       // pedido sumir calado.
       aindaFalta,
@@ -633,28 +640,78 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ success: true, stage: "FINISHED" });
   }
 
+  // ── DESFAZER: O PEDIDO TEM QUE VOLTAR PARA A TELA ───────────────────────
+  //
+  // O desfazer respondia "ok" e o pedido não voltava. A baixa da produção
+  // carimba os ITENS (`prontoEm`), e o desfazer só mexia no `kdsStage`: o
+  // pedido voltava para PRODUCTION com tudo carimbado, a tela de produção
+  // (que esconde pedido sem item seu por fazer) não o mostrava, e a de
+  // finalização também não, porque ele não estava mais em FINISHING. Ficava
+  // invisível nas duas até alguém mexer pelo painel.
+  //
+  // Pedido que já saiu da cozinha não se desfaz por aqui: o parceiro já foi
+  // avisado do pronto e o cliente pode já estar com ele.
+  const encerrado = ["CANCELADO", "ENTREGUE", "ENCERRADO"].includes(String(order.status || "").toUpperCase());
+
   if (action === "revert_production" || action === "undo_production") {
+    if (encerrado || order.kdsStage === "FINISHED") {
+      return NextResponse.json(
+        { error: encerrado ? "Este pedido já foi encerrado." : "Este pedido já foi finalizado na expedição." },
+        { status: 409 },
+      );
+    }
+    const itens = await itensResolvidos();
+    const doPedido = new Set(itens.map((i: any) => i?.id).filter(Boolean));
+    // Os itens que AQUELA baixa carimbou. Sem a lista (baixa feita antes desta
+    // versão, guardada no aparelho), os itens que esta tela mostra; sem a
+    // tela, todos — o mesmo alcance que a baixa teve.
+    let aDescarimbar: string[];
+    if (Array.isArray(itensDaBaixa) && itensDaBaixa.length > 0) {
+      aDescarimbar = itensDaBaixa.map((v: unknown) => String(v)).filter((id: string) => doPedido.has(id));
+    } else {
+      const minhaTela = chaveDaTelaQueDeuBaixa
+        ? (await telasDaLoja()).find((t) => chaveDaTela(t) === chaveDaTelaQueDeuBaixa)
+        : undefined;
+      aDescarimbar = (minhaTela ? itensDaTela(minhaTela, itens) : itens).map((i: any) => i?.id).filter(Boolean);
+    }
+    if (aDescarimbar.length) {
+      await prisma.customerOrderItem.updateMany({
+        where: { id: { in: aDescarimbar }, orderId },
+        data: { prontoEm: null },
+      });
+    }
+    // Se outra tela já tinha carimbado a parte dela, o pedido continua na
+    // finalização (com o ○ no que voltou) e reaparece nesta tela pela busca
+    // dos adiantados. Se nada ficou pronto, volta inteiro para a produção.
+    const aindaPronto = itens.some((i: any) => i?.prontoEm && !aDescarimbar.includes(i.id));
     await prisma.customerOrder.update({
       where: { id: orderId },
-      data: {
-        kdsStage: "PRODUCTION",
-        kdsFinishingAt: null,
-        // Voltar atrás apaga as baixas por tela: sem isto, a tela que já
-        // tinha terminado nunca mais veria o pedido que voltou para ela.
-        kdsTelasProntas: [] as any,
-      },
+      data: aindaPronto
+        ? { kdsStage: "FINISHING" }
+        : { kdsStage: "PRODUCTION", kdsFinishingAt: null, kdsTelasProntas: [] as any },
     });
-    return NextResponse.json({ success: true, stage: "PRODUCTION" });
+    return NextResponse.json({ success: true, stage: aindaPronto ? "FINISHING" : "PRODUCTION" });
   }
 
   if (action === "revert_finishing" || action === "undo_finishing") {
+    if (encerrado) {
+      return NextResponse.json({ error: "Este pedido já foi encerrado." }, { status: 409 });
+    }
     const isPickup = order.deliveryType !== "DELIVERY";
+    // Sai da lista só a tela que está desfazendo. Zerar a lista inteira fazia
+    // a OUTRA estação de finalização, que já tinha fechado a parte dela, ver
+    // o pedido de novo.
+    const prontas = lerTelasProntas(order.kdsTelasProntas);
     const updateData: any = {
       kdsStage: "FINISHING",
-      // Mesma razão do revert de produção: quem já deu baixa precisa
-      // voltar a enxergar o pedido.
-      kdsTelasProntas: [] as any,
+      kdsTelasProntas: (chaveDaTelaQueDeuBaixa ? prontas.filter((c) => c !== chaveDaTelaQueDeuBaixa) : []) as any,
     };
+    if (order.kdsStage === "FINISHED") {
+      // Não está mais pronto: a próxima baixa carimba as horas de novo, e a
+      // fila de impressão de "só no fim do KDS" não o toma por finalizado.
+      updateData.kdsFinishedAt = null;
+      updateData.readyAt = null;
+    }
     if (isPickup && order.status === "SAIU_ENTREGA") {
       updateData.status = "PREPARANDO";
     }
@@ -662,7 +719,9 @@ export async function PUT(req: NextRequest) {
       where: { id: orderId },
       data: updateData,
     });
-    return NextResponse.json({ success: true, stage: "FINISHING" });
+    // O "pronto" que já foi para a plataforma não tem volta pela API dela.
+    const parceiroAvisado = order.kdsStage === "FINISHED" && Boolean(order.ifoodOrderId || order.openDeliveryOrderId);
+    return NextResponse.json({ success: true, stage: "FINISHING", parceiroAvisado });
   }
 
   return NextResponse.json({ error: "Action inválida" }, { status: 400 });

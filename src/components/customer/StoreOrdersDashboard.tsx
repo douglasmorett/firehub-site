@@ -3182,6 +3182,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
     resetCard(touchRef.current.el);
 
+    // Só é arrasto se o fantasma chegou a nascer (movimento horizontal, em
+    // handleTouchMove). Sem isto, tocar no cartão ou rolar a coluna com o dedo
+    // em cima dele contava como "soltar" na coluna onde o dedo saiu — e
+    // soltar em Prontos é dar o pedido por pronto na cozinha.
+    const arrastou = Boolean(ghostRef.current);
+
     // Remove ghost
     if (ghostRef.current) {
       ghostRef.current.remove();
@@ -3201,7 +3207,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
     });
 
-    if (droppedColumn && droppedColumn !== "col-novos" && touchRef.current) {
+    if (arrastou && droppedColumn && droppedColumn !== "col-novos" && touchRef.current) {
       const order = orders.find(o => o.id === touchRef.current!.orderId);
       if (order) {
         // Coluna Prontos: é o selo de cozinha, não um status (ver handleDrop).

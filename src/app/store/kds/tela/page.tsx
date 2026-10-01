@@ -239,9 +239,13 @@ export default function KDSTelaPage() {
   >(initialFilter);
   const [tick, setTick] = useState(0); // forces timer re-render every second
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [toast, setToast] = useState<{ orderId: string; label: string } | null>(
-    null,
-  );
+  // `tipo` decide a frase e a cor: o aviso dizia "— PRONTO!" com ✅ até no
+  // desfazer e na baixa que falhou ("Pedido ↩️ 12 Restaurado! — PRONTO!").
+  const [toast, setToast] = useState<{
+    orderId: string;
+    label: string;
+    tipo?: "pronto" | "info" | "desfeito" | "erro";
+  } | null>(null);
   const [exitingOrderIds, setExitingOrderIds] = useState<Set<string>>(
     new Set(),
   );
@@ -258,6 +262,8 @@ export default function KDSTelaPage() {
   const [lastCompletedOrder, setLastCompletedOrder] = useState<{
     order: Order;
     previousStage: "production" | "finishing";
+    /** Itens que a baixa da produção carimbou: é exatamente o que o desfazer apaga. */
+    carimbados?: string[];
   } | null>(null);
   const [isUndoing, setIsUndoing] = useState(false);
 
@@ -283,7 +289,11 @@ export default function KDSTelaPage() {
         localStorage.removeItem(chaveDaBaixa);
         return;
       }
-      setLastCompletedOrder({ order: salvo.order, previousStage: salvo.previousStage });
+      setLastCompletedOrder({
+        order: salvo.order,
+        previousStage: salvo.previousStage,
+        carimbados: Array.isArray(salvo.carimbados) ? salvo.carimbados : undefined,
+      });
     } catch {
       // Navegador com armazenamento bloqueado: o botão volta a valer só nesta
       // sessão, que é exatamente o comportamento de antes. Nada quebra.
@@ -512,8 +522,14 @@ export default function KDSTelaPage() {
 
   // ─── Poll orders every 3 seconds ───────────────────────────────────────────
 
+  // Sobe a cada baixa e a cada desfazer. Uma consulta que saiu ANTES deles
+  // traz a fila velha: chegando depois da consulta nova, ela tirava da tela o
+  // pedido que o desfazer acabou de devolver (e ele só voltava 3,5 s depois).
+  const geracaoRef = useRef(0);
+
   const fetchOrders = useCallback(async () => {
     if (!stage) return;
+    const geracao = geracaoRef.current;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout prevents stalled requests
     try {
@@ -534,6 +550,7 @@ export default function KDSTelaPage() {
       }
       const data: Order[] = await res.json();
       setIsReconnecting(false);
+      if (geracao !== geracaoRef.current) return;
 
       if (Array.isArray(data)) {
         // Limpa da trava de concluídos qualquer ID que o servidor já confirmou que sumiu da lista do banco
@@ -758,6 +775,8 @@ export default function KDSTelaPage() {
 
   const exitingOrderIdsRef = useRef<Set<string>>(new Set());
   const completedOrderIdsRef = useRef<Set<string>>(new Set());
+  /** Baixas ainda a caminho do servidor, por pedido (true = chegou). */
+  const baixasEmAndamentoRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
   // ─── Mark as pronto ─────────────────────────────────────────────────────────
 
@@ -776,6 +795,7 @@ export default function KDSTelaPage() {
       setExitingOrderIds(new Set(exitingOrderIdsRef.current));
       setOrders((prev) => prev.filter((o) => o.id !== order.id));
       lastJsonRef.current = "";
+      geracaoRef.current++;
 
       const action =
         stage === "production" ? "finish_production" : "finish_order";
@@ -788,7 +808,7 @@ export default function KDSTelaPage() {
       } catch { /* sem armazenamento, vale só nesta sessão */ }
 
       // Show toast
-      setToast({ orderId: order.id, label: `#${getDisplayOrderNumber(order)}` });
+      setToast({ orderId: order.id, label: `#${getDisplayOrderNumber(order)}`, tipo: "pronto" });
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setToast(null), 2000);
 
@@ -818,13 +838,28 @@ export default function KDSTelaPage() {
               // vista e a cozinha para de procurar — que é o jeito de comida
               // pronta ficar esquecida no balcão.
               const corpo = await res.json().catch(() => null);
+              // O desfazer apaga só o que ESTA baixa carimbou.
+              if (Array.isArray(corpo?.carimbados)) {
+                const carimbados = corpo.carimbados.map((v: unknown) => String(v));
+                setLastCompletedOrder((atual) =>
+                  atual?.order.id === order.id ? { ...atual, carimbados } : atual,
+                );
+                try {
+                  const bruto = localStorage.getItem(chaveDaBaixa);
+                  const salvo = bruto ? JSON.parse(bruto) : null;
+                  if (salvo?.order?.id === order.id) {
+                    localStorage.setItem(chaveDaBaixa, JSON.stringify({ ...salvo, carimbados }));
+                  }
+                } catch { /* sem armazenamento, vale só nesta sessão */ }
+              }
               if (corpo?.aguardandoOutraTela) {
                 const quem = Array.isArray(corpo.faltando) && corpo.faltando.length
                   ? corpo.faltando.join(", ")
                   : "outra tela";
                 setToast({
                   orderId: order.id,
-                  label: `#${getDisplayOrderNumber(order)} · aguardando ${quem}`,
+                  label: `#${getDisplayOrderNumber(order)} pronto aqui · aguardando ${quem}`,
+                  tipo: "info",
                 });
                 if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
                 toastTimerRef.current = setTimeout(() => setToast(null), 4000);
@@ -841,7 +876,20 @@ export default function KDSTelaPage() {
         return false;
       };
 
-      const success = await sendBaixaWithRetry(3);
+      // Guardada para o desfazer esperar por ela: desfazer enquanto a baixa
+      // ainda está a caminho fazia o "voltar" chegar ao servidor ANTES da
+      // baixa — o servidor desfazia nada, a baixa chegava depois, e a tela
+      // dizia "restaurado" com o pedido sumido.
+      const envio = sendBaixaWithRetry(3);
+      baixasEmAndamentoRef.current.set(order.id, envio);
+      const success = await envio;
+      baixasEmAndamentoRef.current.delete(order.id);
+      // A trava de clique duplo acaba com a baixa. Ficando para sempre, o
+      // pedido que voltasse para esta tela (desfeito em outro aparelho, pelo
+      // painel) não saía mais com o toque.
+      exitingOrderIdsRef.current.delete(order.id);
+      setExitingOrderIds(new Set(exitingOrderIdsRef.current));
+      geracaoRef.current++;
 
       if (!success) {
         // ── A BAIXA QUE NÃO CHEGOU VOLTA PARA A TELA ─────────────────────
@@ -860,7 +908,8 @@ export default function KDSTelaPage() {
         lastJsonRef.current = "";
         setToast({
           orderId: order.id,
-          label: `⚠️ #${getDisplayOrderNumber(order)}: a baixa não chegou. Toque de novo.`,
+          label: `#${getDisplayOrderNumber(order)}: a baixa não chegou. Toque de novo.`,
+          tipo: "erro",
         });
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
         toastTimerRef.current = setTimeout(() => setToast(null), 5000);
@@ -883,43 +932,109 @@ export default function KDSTelaPage() {
         ? "revert_production"
         : "revert_finishing";
     const restoredLabel = getDisplayOrderNumber(lastCompletedOrder.order);
-
-    try {
-      completedOrderIdsRef.current.delete(lastCompletedOrder.order.id);
-      exitingOrderIdsRef.current.delete(lastCompletedOrder.order.id);
-      setExitingOrderIds(new Set(exitingOrderIdsRef.current));
-      await fetch("/api/kds", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          orderId: lastCompletedOrder.order.id,
-          action: targetAction,
-          tela: chaveDaTela,
-        }),
-      });
-
-      setToast({
-        orderId: lastCompletedOrder.order.id,
-        label: `↩️ ${restoredLabel} Restaurado!`,
-      });
+    const orderId = lastCompletedOrder.order.id;
+    const avisar = (label: string, tipo: "desfeito" | "erro", ms: number) => {
+      setToast({ orderId, label, tipo });
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = setTimeout(() => setToast(null), 3000);
-
+      toastTimerRef.current = setTimeout(() => setToast(null), ms);
+    };
+    const esquecerBaixa = () => {
       setLastCompletedOrder(null);
       try { localStorage.removeItem(chaveDaBaixa); } catch {}
+    };
+
+    try {
+      // A baixa ainda a caminho termina primeiro (ver markAsPronto). Se ela
+      // não chegou, o pedido já voltou sozinho e não há o que desfazer.
+      const emAndamento = baixasEmAndamentoRef.current.get(orderId);
+      if (emAndamento) {
+        const chegou = await emAndamento;
+        if (!chegou) {
+          esquecerBaixa();
+          return;
+        }
+      }
+      // Os carimbos podem ter chegado agora, com a resposta da baixa.
+      let carimbados = lastCompletedOrder.carimbados;
+      try {
+        const salvo = JSON.parse(localStorage.getItem(chaveDaBaixa) || "null");
+        if (salvo?.order?.id === orderId && Array.isArray(salvo.carimbados)) carimbados = salvo.carimbados;
+      } catch {}
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let res: Response;
+      try {
+        res = await fetch("/api/kds", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          signal: controller.signal,
+          body: JSON.stringify({
+            orderId,
+            action: targetAction,
+            tela: chaveDaTela,
+            ...(carimbados && carimbados.length ? { itens: carimbados } : {}),
+          }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      const corpo = await res.json().catch(() => null);
+
+      // ── SÓ DIZ QUE VOLTOU QUANDO VOLTOU ─────────────────────────────────
+      // A resposta não era lida: com erro, a tela dizia "Restaurado!" e o
+      // botão apagava, sem o pedido voltar e sem chance de tentar de novo.
+      if (!res.ok) {
+        if (res.status === 409) {
+          // Já saiu da cozinha (finalizado na expedição, entregue, cancelado):
+          // não tem volta por aqui, e o botão não deve continuar oferecendo.
+          esquecerBaixa();
+          avisar(`#${restoredLabel}: ${corpo?.error || "não dá mais para desfazer."}`, "erro", 6000);
+        } else {
+          avisar(`#${restoredLabel}: não consegui desfazer. Toque de novo.`, "erro", 5000);
+        }
+        return;
+      }
+
+      completedOrderIdsRef.current.delete(orderId);
+      exitingOrderIdsRef.current.delete(orderId);
+      setExitingOrderIds(new Set(exitingOrderIdsRef.current));
+      esquecerBaixa();
+      avisar(
+        corpo?.parceiroAvisado
+          ? `#${restoredLabel} voltou para a tela (a plataforma já tinha recebido o pronto)`
+          : `#${restoredLabel} voltou para a tela`,
+        "desfeito",
+        corpo?.parceiroAvisado ? 6000 : 3000,
+      );
       lastJsonRef.current = "";
+      geracaoRef.current++;
       await fetchOrders();
     } catch (err) {
       console.error("Erro ao desfazer baixa KDS:", err);
+      avisar(`#${restoredLabel}: sem conexão para desfazer. Toque de novo.`, "erro", 5000);
     } finally {
       setIsUndoing(false);
     }
-  }, [lastCompletedOrder, isUndoing, fetchOrders]);
+  }, [lastCompletedOrder, isUndoing, fetchOrders, chaveDaBaixa, chaveDaTela]);
 
   // ─── Keyboard support ──────────────────────────────────────────────────────
 
   const ultimaBaixaPorTeclaRef = useRef(0);
+
+  /** Desde quando cada pedido está na posição atual (para a baixa pelo teclado). */
+  const posicaoDesdeRef = useRef<Map<string, { pos: number; desde: number }>>(new Map());
+  useEffect(() => {
+    const agora = Date.now();
+    const antes = posicaoDesdeRef.current;
+    const depois = new Map<string, { pos: number; desde: number }>();
+    filteredOrders.forEach((o, pos) => {
+      const ja = antes.get(o.id);
+      depois.set(o.id, ja && ja.pos === pos ? ja : { pos, desde: agora });
+    });
+    posicaoDesdeRef.current = depois;
+  }, [filteredOrders]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -964,12 +1079,16 @@ export default function KDSTelaPage() {
       // Numpad 0-9 codes: Numpad0-Numpad9, Digit0-Digit9
       let num: number | null = null;
 
+      // ── ENTER NÃO DÁ BAIXA ───────────────────────────────────────────────
+      // Enter valia "pronto no primeiro da fila". Só que Enter é o OK do
+      // controle remoto da TV, é o que o leitor de código manda no fim de
+      // cada leitura e é o que se aperta num botão focado — o pedido mais
+      // antigo saía da tela sem ninguém ter dado pronto ("lancei no balcão e
+      // ele deu pronto sozinho"). O "0" continua fazendo isso de propósito.
       if (e.code.startsWith("Digit")) {
         num = parseInt(e.code.replace("Digit", ""), 10);
       } else if (e.code.startsWith("Numpad")) {
         num = parseInt(e.code.replace("Numpad", ""), 10);
-      } else if (e.code === "Enter") {
-        num = 0;
       }
 
       if (num === null || isNaN(num)) return;
@@ -983,18 +1102,15 @@ export default function KDSTelaPage() {
       if (agora - ultimaBaixaPorTeclaRef.current < INTERVALO_ENTRE_BAIXAS_POR_TECLA_MS) return;
       ultimaBaixaPorTeclaRef.current = agora;
 
-      if (num === 0) {
-        // Mark FIRST (oldest) order
-        if (filteredOrders.length > 0) {
-          markAsPronto(filteredOrders[0]);
-        }
-      } else {
-        // num 1-9 → position index num-1
-        const idx = num - 1;
-        if (idx < filteredOrders.length) {
-          markAsPronto(filteredOrders[idx]);
-        }
-      }
+      // 0 = o primeiro (mais antigo); 1–9 = a posição em destaque no cartão.
+      const alvoDaTecla = filteredOrders[num === 0 ? 0 : num - 1];
+      if (!alvoDaTecla) return;
+      // O mesmo cuidado do toque: o pedido que ACABOU de chegar a esta
+      // posição (novo, ou subindo no lugar do que saiu) não é o que o
+      // cozinheiro estava olhando quando apertou.
+      const chegada = posicaoDesdeRef.current.get(alvoDaTecla.id);
+      if (chegada && agora - chegada.desde < TOQUE_PROTEGIDO_MS) return;
+      markAsPronto(alvoDaTecla);
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -1688,7 +1804,9 @@ export default function KDSTelaPage() {
               bottom: 80,
               left: "50%",
               transform: "translateX(-50%)",
-              background: "linear-gradient(135deg, #0F766E, #0F766E)",
+              background:
+                toast.tipo === "erro" ? "#B91C1C" : toast.tipo === "desfeito" ? "#B45309" : "#0F766E",
+              maxWidth: "calc(100vw - 32px)",
               color: "#fff",
               padding: "14px 32px",
               borderRadius: 16,
@@ -1702,8 +1820,14 @@ export default function KDSTelaPage() {
               gap: 12,
             }}
           >
-            <span style={{ fontSize: 26 }}>✅</span>
-            <span>Pedido {toast.label} — PRONTO!</span>
+            <span style={{ fontSize: 26 }}>
+              {toast.tipo === "erro" ? "⚠️" : toast.tipo === "desfeito" ? "↩️" : "✅"}
+            </span>
+            <span>
+              {toast.tipo === "pronto" || !toast.tipo
+                ? `Pedido ${toast.label} — PRONTO!`
+                : `Pedido ${toast.label}`}
+            </span>
           </div>
         )}
       </div>
