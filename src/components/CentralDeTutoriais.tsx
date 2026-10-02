@@ -27,7 +27,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
-import { Check, PlayCircle, X } from "lucide-react";
+import { Check, PlayCircle, Search, X } from "lucide-react";
+import { buscarNosTutoriais, type IndiceDaBusca } from "@/lib/busca-nos-tutoriais";
 import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import { ABRIR_CENTRAL, CHAVE_VISTO, ESTILO, useNaAreaVisivel, VELOCIDADES } from "@/components/TutorialDaTela";
 import {
@@ -51,6 +52,16 @@ const ESTILO_CENTRAL = `
 .fh-central-marca{flex:none;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #CBD5E1;color:#fff}
 .fh-central-marca.visto{background:#16A34A;border-color:#16A34A}
 .fh-central-dur{margin-left:auto;padding-left:6px;font-size:.7rem;color:#94A3B8;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fh-central-busca{display:flex;align-items:center;gap:7px;margin:0 0 8px;padding:0 10px;height:36px;border:1px solid #E2E8F0;border-radius:10px;background:#F8FAFC;color:#94A3B8}
+.fh-central-busca:focus-within{border-color:#E8360C;background:#fff;box-shadow:0 0 0 3px rgba(232,54,12,.12)}
+.fh-central-busca input{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:.84rem;color:#0F172A}
+.fh-central-busca input::-webkit-search-cancel-button{display:none}
+.fh-central-busca button{border:0;background:none;color:#94A3B8;cursor:pointer;padding:2px;display:inline-flex}
+.fh-central-vazio{margin:8px;font-size:.8rem;color:#64748B;line-height:1.45}
+.fh-central-achado{margin-bottom:6px}
+.fh-central-trecho{display:flex;gap:8px;width:100%;text-align:left;border:0;background:none;padding:4px 8px 4px 37px;border-radius:8px;cursor:pointer;font-size:.76rem;color:#475569;font-family:inherit;line-height:1.35}
+.fh-central-trecho:hover{background:#FFF1EC;color:#9A2A0A}
+.fh-central-trecho time{color:#C2410C;font-variant-numeric:tabular-nums;min-width:30px}
 .fh-central-capitulos{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .fh-central-capitulos button{border:1px solid #E2E8F0;background:#fff;border-radius:999px;padding:4px 10px;font-size:.74rem;cursor:pointer;color:#334155;font-family:inherit}
 .fh-central-capitulos button[aria-current="true"]{background:#FFF1EC;border-color:#FDBA9A;color:#9A2A0A;font-weight:700}
@@ -123,6 +134,11 @@ export default function CentralDeTutoriais({
   const [tocar, setTocar] = useState(false);
   const [segundo, setSegundo] = useState(0);
   const [velocidade, setVelocidade] = useState(1);
+  const [busca, setBusca] = useState("");
+  // O índice (o que a voz diz em cada capítulo, ~60 KB) só vem quando alguém começa a buscar.
+  const [indice, setIndice] = useState<IndiceDaBusca | null>(null);
+  // Capítulo escolhido na busca em OUTRO vídeo: o pulo acontece quando o vídeo novo carrega.
+  const pulo = useRef<number | null>(null);
   const [vistos, setVistos] = useState<Set<string>>(() => new Set());
   const [seta, setSeta] = useState<Seta | null>(null);
   const abriuSozinha = useRef(false);
@@ -231,6 +247,21 @@ export default function CentralDeTutoriais({
     v.play().catch(() => {});
   };
 
+  const irParaCapitulo = (i: number, em: number) => {
+    if (i === qual) return irPara(em);
+    pulo.current = em;
+    setQual(i);
+    setSegundo(em);
+    setTocar(true);
+  };
+
+  const digitar = (texto: string) => {
+    setBusca(texto);
+    if (!indice) import("@/lib/tutoriais-busca.json").then((m) => setIndice(m.default as IndiceDaBusca)).catch(() => {});
+  };
+  const buscando = busca.trim().length >= 2;
+  const resultados = buscando && indice ? buscarNosTutoriais(busca, lista, indice) : [];
+
   const titulo = contaNova
     ? `Boas-vindas ao FireHub${primeiroNome ? `, ${primeiroNome}` : ""}!`
     : "Tutoriais do FireHub";
@@ -272,6 +303,7 @@ export default function CentralDeTutoriais({
                     const faixa = e.currentTarget.textTracks?.[0];
                     if (faixa && faixa.mode === "disabled") faixa.mode = "showing";
                     e.currentTarget.playbackRate = velocidade;
+                    if (pulo.current != null) { e.currentTarget.currentTime = pulo.current; pulo.current = null; }
                   }}
                   onPlay={() => { setTocar(true); marcarVisto(); }}
                   onTimeUpdate={(e) => setSegundo(e.currentTarget.currentTime)}
@@ -306,8 +338,44 @@ export default function CentralDeTutoriais({
 
               <div>
                 <div className="fh-tutorial-lista-titulo">Passo a passo</div>
+                <label className="fh-central-busca">
+                  <Search size={14} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={busca}
+                    onChange={(e) => digitar(e.target.value)}
+                    placeholder="Buscar: ex. aplicativo do motoboy"
+                    aria-label="Buscar nos tutoriais"
+                  />
+                  {busca && (
+                    <button type="button" onClick={() => setBusca("")} aria-label="Limpar a busca"><X size={13} /></button>
+                  )}
+                </label>
                 <div className="fh-central-lista">
-                  {grupos.map((g) => (
+                  {buscando && !indice && <p className="fh-central-vazio">Procurando…</p>}
+                  {buscando && indice && !resultados.length && (
+                    <p className="fh-central-vazio">Nenhum vídeo fala de “{busca.trim()}”. Tente outra palavra, como o nome da tela.</p>
+                  )}
+                  {buscando && resultados.map(({ tutorial: t, capitulos }) => {
+                    const i = lista.indexOf(t);
+                    return (
+                      <div key={t.id} className="fh-central-achado">
+                        <button type="button" className="fh-central-item" aria-current={i === qual} onClick={() => escolher(i)}>
+                          <span className={vistos.has(t.id) ? "fh-central-marca visto" : "fh-central-marca"}>
+                            {vistos.has(t.id) && <Check size={12} strokeWidth={3} />}
+                          </span>
+                          {t.titulo}
+                          <span className="fh-central-dur">{duracaoEmMinutos(t.duracao)}</span>
+                        </button>
+                        {capitulos.map((c) => (
+                          <button key={c.em} type="button" className="fh-central-trecho" onClick={() => irParaCapitulo(i, c.em)}>
+                            <time>{relogio(c.em)}</time>{c.titulo}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {!buscando && grupos.map((g) => (
                     <div key={g.titulo}>
                       <div className="fh-central-grupo">{g.titulo}</div>
                       {g.tutoriais.map((t) => {

@@ -15,7 +15,10 @@ Este documento é para quem vai produzir o próximo vídeo ou mexer no que já e
   com todos os vídeos em sequência (um termina, o próximo começa) e o texto ensinando que o tutorial
   de cada aba fica no topo. "Fechar" vale até o próximo login; "Já vi, não mostrar mais" cala de vez
   naquele aparelho. Ao fechar, uma seta destaca o botão "Tutorial". Reabre por "Todos os tutoriais",
-  na janela do vídeo de cada tela. Não abre sozinha no Totem, na tela cheia da cozinha nem para o
+  na janela do vídeo de cada tela. Tem **busca** ("aplicativo do motoboy"): procura no título, nos
+  capítulos e no que a voz fala (`src/lib/tutoriais-busca.json`, gerado por `indexar-busca.mjs`, que o
+  `publicar.mjs` chama), sem acento, com sinônimos de loja (app = aplicativo, entregador = motoboy), e
+  leva direto ao capítulo. Não abre sozinha no Totem, na tela cheia da cozinha nem para o
   suporte que entrou pelo "Acessar" do admin.
 - **Janela por cima da tela**, sem sair de onde está. Fecha no X, no Esc ou clicando fora.
 - **Capítulos ao lado** ("Aceitar o pedido", "Cancelar um pedido"): um clique leva direto ao ponto.

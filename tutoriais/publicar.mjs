@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { indexar } from "./indexar-busca.mjs";
 
 const id = process.argv[2];
 if (!id) {
@@ -32,4 +33,6 @@ const fichas = JSON.parse(fs.readFileSync(arquivoDasFichas, "utf8"));
 fichas[id] = { id, titulo: ficha.titulo, duracao: ficha.duracao, capitulos: ficha.capitulos, versao };
 fs.writeFileSync(arquivoDasFichas, JSON.stringify(fichas, null, 2) + "\n", "utf8");
 
+// A busca da central procura no que a voz diz: o índice acompanha a ficha.
+indexar();
 console.log(`publicado: ${destino}`);
