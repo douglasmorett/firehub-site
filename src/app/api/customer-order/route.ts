@@ -53,6 +53,7 @@ import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 import { acharCupom, avaliarCupom } from "@/lib/cupons";
 import { fatosDoCupom } from "@/lib/cupons-no-banco";
 import { descontoDoPagamentoOnline } from "@/lib/desconto-pagamento-online";
+import { formaDesligada } from "@/lib/formas-do-cardapio";
 
 export async function POST(req: Request) {
   try {
@@ -100,6 +101,16 @@ export async function POST(req: Request) {
     // esperando um pagamento que nenhum gateway ia gerar. E o Asaas só gera a
     // cobrança com o CPF de quem paga: melhor recusar aqui, com a frase certa,
     // do que depois, com o pedido já criado.
+    // Forma na entrega que a loja desligou (Minha Loja → Formas de Pagamento):
+    // o cardápio já esconde; aqui barra a aba antiga e o POST direto.
+    const formaFora = formaDesligada(franchisee.paymentFees, paymentMethod);
+    if (formaFora) {
+      return NextResponse.json(
+        { error: `Esta loja não está aceitando ${formaFora} agora. Escolha outra forma de pagamento.` },
+        { status: 400 },
+      );
+    }
+
     const pmOnline = String(paymentMethod || "").toUpperCase().trim();
     const cpfDoPagador = String(body.customerCpfCnpj || "").replace(/\D/g, "");
     const formaPeloSite =
