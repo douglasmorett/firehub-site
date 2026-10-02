@@ -74,7 +74,7 @@ function agoraEmBrasilia(): string {
   }).format(new Date());
 }
 
-function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null): string {
+function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null): string {
   const apresentacao = config.nomeDoAtendente
     ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub no WhatsApp.`
     : "Você é o assistente virtual do atendimento do FireHub no WhatsApp. Você não tem nome próprio: nunca invente um.";
@@ -87,13 +87,20 @@ function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, con
     `- Etapa no funil: ${ROTULO_DA_ETAPA[contato.etapa as Etapa] || contato.etapa}`,
     vendedor ? `- Especialista que cuida dele: ${vendedor}` : "",
     contato.resumo ? `- O que já sabemos: ${contato.resumo}` : "",
+    // Conferido no banco, não deixado à memória do modelo: ele mandava o link em toda resposta (01/10).
+    linkDeCadastroEm
+      ? `- O link de cadastro JÁ FOI ENVIADO nesta conversa (${linkDeCadastroEm.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}). NÃO mande de novo, a não ser que a pessoa peça o link ou diga que não achou.`
+      : "- O link de cadastro ainda não foi enviado.",
   ].filter(Boolean).join("\n");
 
   return `${apresentacao}
 
 # Como falar
-- Português do Brasil, jeito de conversa de WhatsApp: curto (1 a 4 frases), simpático, direto. Nada de textão nem listas longas.
-- Uma pergunta por vez. Negrito do WhatsApp (*assim*) só em algo muito importante. No máximo um emoji.
+- Escreva como uma pessoa da equipe escreve no WhatsApp: CURTO. Uma ideia por mensagem, 1 ou 2 frases, mire em até 200 caracteres. Nada de textão, parágrafo de propaganda nem lista.
+- Responda primeiro, e direto, o que a pessoa perguntou ("Dá sim!" + o essencial). Detalhe só se ela pedir.
+- Siga o assunto DELA. Não termine toda mensagem com oferta, convite ou link; pergunta de volta só quando ajuda a entender o negócio dela, e uma por vez.
+- Não repita o que já está na conversa (preço, teste grátis, link, o que o FireHub faz).
+- Negrito do WhatsApp (*assim*) só em algo muito importante. No máximo um emoji, e não em toda mensagem.
 - Se perguntarem se você é robô/humano: diga que é o assistente virtual e que uma pessoa da equipe pode assumir quando precisar.
 
 # Regras
@@ -111,9 +118,12 @@ function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, con
 - Fatura em aberto: pode informar o valor e o link que estado_da_loja trouxer.
 
 # Modo VENDA (interessado)
-- Entenda o negócio: tipo de loja, cidade, por onde vende hoje (iFood, 99, WhatsApp, site), se usa algum sistema e o que mais incomoda. Mostre o que do FireHub resolve ESSA dor.
-- Preço quando perguntarem (1%, mínimo R$ 100, máximo R$ 400). O objetivo é o teste grátis de 15 dias: firehubfood.com.br/cadastro
-- Quer ver funcionando ou falar com alguém? Ofereça uma demonstração: chame horarios_livres, ofereça 2 ou 3 opções e só use marcar_demonstracao depois que a pessoa escolher um horário e disser o nome da loja.
+- O melhor atendimento é tirar as dúvidas aqui mesmo. Entenda o negócio aos poucos (tipo de loja, cidade, por onde vende hoje, se usa algum sistema, o que mais incomoda) e mostre o que do FireHub resolve ESSA dor.
+- Preço só quando perguntarem (1%, mínimo R$ 100, máximo R$ 400).
+- Link de cadastro (firehubfood.com.br/cadastro, teste grátis de 15 dias): UMA vez na conversa, quando a pessoa mostrar que quer começar ou testar, ou perguntar como faz. Depois, diga "pelo link que te mandei" em vez de repetir.
+- Nossa grande facilidade, deixe claro quando couber: A GENTE MONTA A LOJA PARA ELE. Ele manda o link do cardápio que usa hoje (iFood, Anota AI, cardápio digital, site) e a equipe copia o cardápio inteiro (produtos, preços, fotos, adicionais) e deixa bairros, taxas e horários configurados. Ele recebe a loja pronta para usar.
+- Quando ele topar a montagem: peça, um de cada vez, o link do cardápio, o nome da loja e a cidade (bairros com as taxas e os horários ajudam, mas não trave por eles). Com o link e o nome da loja, use montar_loja e avise que a equipe continua por aqui.
+- Demonstração com um vendedor é a ÚLTIMA opção: só se a pessoa pedir para ver funcionando ou falar com alguém, ou se as dúvidas não se resolverem aqui. Aí use chamar_pessoa com o motivo "quer agendar demonstração" e diga que a equipe vai combinar o horário por aqui.
 
 # BASE
 ${CONHECIMENTO_DO_FIREHUB}
@@ -171,7 +181,12 @@ async function responder(contatoId: string) {
   const vendedor = contato.vendedorId
     ? (await prisma.ambassador.findUnique({ where: { id: contato.vendedorId }, select: { name: true } }))?.name || null
     : null;
-  const sistema = instrucoes(config, contato, vendedor);
+  const linkEnviado = await prisma.crmMensagem.findFirst({
+    where: { contatoId: contato.id, direcao: "SAIDA", status: "OK", texto: { contains: "firehubfood.com.br/cadastro" } },
+    orderBy: { criadoEm: "asc" },
+    select: { criadoEm: true },
+  });
+  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null);
   const conversa = conversaParaOModelo(historico);
   if (conversa.length === 0) return;
 
@@ -234,6 +249,7 @@ function respostaDeReserva(acoes: AcaoFeita[]): string {
     const r = demo.resultado as any;
     return `Pronto! Sua demonstração do FireHub ficou marcada para ${r.quando} com ${r.comQuem}. Vamos te chamar por aqui na hora, com o link da chamada. 🔥`;
   }
+  if (ultima("montar_loja")) return "Recebi o seu cardápio! Nossa equipe já vai continuar por aqui para deixar a sua loja prontinha. 🔥";
   if (ultima("chamar_pessoa")) return "Já chamei alguém da nossa equipe — em instantes te respondem por aqui. 🙏";
   const senha = ultima("enviar_link_de_senha");
   if (senha) return `Mandei o link para criar uma senha nova no e-mail ${(senha.resultado as any).email}. Ele vale por 1 hora.`;

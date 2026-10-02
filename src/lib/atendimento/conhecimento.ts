@@ -35,6 +35,11 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - 15 dias completos, sem cartão de crédito, sem compromisso, sem multa. Todas as funções liberadas.
 - Cadastro em menos de 2 minutos: firehubfood.com.br/cadastro — o cardápio fica no ar na hora.
 
+## A gente monta a loja
+- O lojista manda o link do cardápio que usa hoje (iFood, Anota AI, cardápio digital, site) e a equipe do FireHub copia o cardápio inteiro: produtos, preços, fotos, adicionais e combos.
+- A equipe também configura bairros e taxas de entrega e os horários de funcionamento. Ele recebe a loja pronta para usar.
+- Quem copia é a equipe (não é na hora): ela continua a conversa pelo WhatsApp.
+
 ## Suporte
 - Humano, pelo WhatsApp, 7 dias por semana.
 

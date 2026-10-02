@@ -25,7 +25,15 @@ type Contato = {
 };
 
 /** As ferramentas que MUDAM alguma coisa — não podem rodar duas vezes numa resposta (robo.ts). */
-export const FERRAMENTAS_COM_EFEITO = new Set(["marcar_demonstracao", "chamar_pessoa", "enviar_link_de_senha", "reiniciar_whatsapp_da_loja"]);
+export const FERRAMENTAS_COM_EFEITO = new Set(["marcar_demonstracao", "chamar_pessoa", "montar_loja", "enviar_link_de_senha", "reiniciar_whatsapp_da_loja"]);
+
+/**
+ * O robô marca a demonstração sozinho na agenda dos vendedores? Desligado
+ * (Douglas, 01/10): demonstração é a última opção e quem combina o horário é
+ * uma pessoa — o robô chama pela chamar_pessoa. As duas ferramentas continuam
+ * aqui para quando a agenda da equipe estiver em uso.
+ */
+const DEMONSTRACAO_PELA_AGENDA = false;
 
 /** A loja do contato, se o número que está escrevendo é mesmo o dela (o da loja ou o do proprietário). */
 async function lojaDoNumero(contato: Contato) {
@@ -45,7 +53,7 @@ async function vendedorAtivoDoContato(contato: Contato): Promise<string | null> 
   return v?.isVendedor && v.active ? contato.vendedorId : null;
 }
 
-export const DECLARACOES = [
+const TODAS_AS_DECLARACOES = [
   {
     name: "estado_da_loja",
     description: "Raio-x da loja do lojista que está falando: robô do WhatsApp conectado, Assistente de Impressão (última consulta, versão), canais (iFood, 99Food, JotaJá), teste grátis, fatura em aberto (com link), último pedido. Só funciona quando a loja foi reconhecida pelo número.",
@@ -105,7 +113,26 @@ export const DECLARACOES = [
       required: ["motivo"],
     },
   },
+  {
+    name: "montar_loja",
+    description: "A pessoa quer que a equipe monte a loja dela (copiar o cardápio pelo link e configurar bairros, taxas e horários). Use quando tiver o link do cardápio e o nome da loja: passa tudo para a equipe, que continua a conversa por aqui.",
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        linkDoCardapio: { type: "string", description: "O link do cardápio que a loja usa hoje, exatamente como a pessoa mandou." },
+        nomeDaLoja: { type: "string" },
+        cidade: { type: "string" },
+        bairros: { type: "string", description: "Bairros atendidos e as taxas, se a pessoa disse." },
+        horarios: { type: "string", description: "Dias e horários de funcionamento, se a pessoa disse." },
+      },
+      required: ["linkDoCardapio", "nomeDaLoja"],
+    },
+  },
 ] as const;
+
+export const DECLARACOES = TODAS_AS_DECLARACOES.filter(
+  (d) => DEMONSTRACAO_PELA_AGENDA || (d.name !== "horarios_livres" && d.name !== "marcar_demonstracao"),
+);
 
 const soDaLoja = { erro: "A loja não foi reconhecida por este número. Oriente com a base e, se precisar mexer na conta, chame uma pessoa." };
 
@@ -221,6 +248,26 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
       const motivo = String(args?.motivo || "Pediu para falar com uma pessoa.").slice(0, 300);
       await chamarPessoa(contato, motivo);
       return { ok: true, aviso: "Avise que uma pessoa da equipe vai responder por aqui em breve. Não continue o atendimento." };
+    }
+
+    case "montar_loja": {
+      const link = String(args?.linkDoCardapio || "").trim().slice(0, 500);
+      const nomeDaLoja = String(args?.nomeDaLoja || "").trim().slice(0, 120);
+      if (!/^(https?:\/\/)?[\w-]+(\.[\w-]+)+\S*$/i.test(link)) return { erro: "Isso não parece um link. Peça o link do cardápio (o endereço que o cliente dele abre para pedir)." };
+      if (!nomeDaLoja) return { erro: "Falta o nome da loja. Pergunte antes." };
+      const cidade = String(args?.cidade || "").trim().slice(0, 120);
+      await prisma.crmContato.update({
+        where: { id: contato.id },
+        data: { nomeDaLoja, ...(cidade ? { cidade } : {}) },
+      });
+      const detalhes = [
+        `Montar a loja ${nomeDaLoja}${cidade ? ` (${cidade})` : ""}.`,
+        `Cardápio: ${link}`,
+        args?.bairros ? `Bairros/taxas: ${String(args.bairros).slice(0, 400)}` : "",
+        args?.horarios ? `Horários: ${String(args.horarios).slice(0, 300)}` : "",
+      ].filter(Boolean).join("\n");
+      await chamarPessoa({ ...contato, nomeDaLoja }, detalhes);
+      return { ok: true, aviso: "Diga, curto, que a equipe já recebeu o cardápio e continua por aqui para deixar a loja pronta. Não continue o atendimento." };
     }
 
     default:
