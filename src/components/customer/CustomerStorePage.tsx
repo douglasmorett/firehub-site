@@ -56,6 +56,7 @@ import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPed
 import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
 import { descontoDoPagamentoOnline, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
+import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/cliente-lembrado";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
@@ -1591,6 +1592,49 @@ export default function CustomerStorePage({
     setPontoCarimbado(valor);
   };
 
+  // ── O CLIENTE QUE JÁ PEDIU NESTE APARELHO ─────────────────────────────
+  // Volta com nome, WhatsApp e o endereço desta loja preenchidos — e com o
+  // ponto que ele confirmou no mapa, para não pedir o pino de novo
+  // (lib/cliente-lembrado.ts). Só preenche campo vazio: quem entrou na conta
+  // (storeCustomer) ou já começou a digitar não é sobrescrito.
+  const lojaDoCliente = franchisee.slug || franchisee.id;
+  const [clienteLembrado, setClienteLembrado] = useState(false);
+  useEffect(() => {
+    if (mesa) return;
+    const c = lerClienteLembrado(lojaDoCliente);
+    if (!c) return;
+    setCustomerName((a) => a || c.nome);
+    setCustomerPhone((a) => a || c.telefone);
+    const e = c.endereco;
+    // Na loja por bairros, o bairro tem de continuar na lista dela.
+    const bairroValido = e && (!isNeighborhoodType || availableNeighborhoods.some((n) => n.name === e.bairro));
+    if (e && bairroValido) {
+      setCustomerStreet((a) => a || e.rua);
+      setCustomerNumber((a) => a || e.numero);
+      setCustomerNeighborhood((a) => a || e.bairro);
+      setCustomerComplement((a) => a || e.complemento);
+      setCustomerCep((a) => a || e.cep);
+      if (e.ponto && !pontoDoClienteRef.current) {
+        definirPontoDoCliente(e.ponto, { street: e.rua, number: e.numero, neighborhood: e.bairro });
+      }
+    }
+    setClienteLembrado(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lojaDoCliente]);
+
+  const limparClienteLembrado = () => {
+    esquecerCliente();
+    setClienteLembrado(false);
+    setCustomerName("");
+    setCustomerPhone("");
+    setCustomerStreet("");
+    setCustomerNumber("");
+    setCustomerNeighborhood("");
+    setCustomerComplement("");
+    setCustomerCep("");
+    definirPontoDoCliente(null);
+  };
+
   /** O ponto do cliente, se ainda for DESTE endereço (lido pela ref: vale dentro de callbacks). */
   const pontoValendo = (endereco: EnderecoDigitado = enderecoNaTela.current): PontoDoCliente | null => {
     const atual = pontoDoClienteRef.current;
@@ -2175,6 +2219,25 @@ export default function CustomerStorePage({
         } else if (perguntarDocumento && normalizarDocumento(documentoNaNota).length === 11) {
           // O CPF da nota também fica lembrado (CNPJ não: é o da empresa).
           lembrarCpf(documentoNaNota);
+        }
+        // Nome, WhatsApp e o endereço desta loja ficam lembrados para o
+        // próximo pedido (lib/cliente-lembrado.ts). Retirada não mexe no
+        // endereço guardado.
+        if (!mesa) {
+          lembrarCliente(lojaDoCliente, {
+            nome: customerName,
+            telefone: customerPhone,
+            endereco: deliveryType === "DELIVERY"
+              ? {
+                  rua: customerStreet,
+                  numero: customerNumber,
+                  bairro: customerNeighborhood,
+                  complemento: customerComplement,
+                  cep: customerCep,
+                  ponto: pontoDoClienteRef.current?.ponto || null,
+                }
+              : null,
+          });
         }
         // A venda para o Pixel e o GA4. Pedido pago na entrega registra agora;
         // pedido com Pix pelo site só quando o Pix cai (onPaid do modal) —
@@ -3156,6 +3219,18 @@ export default function CustomerStorePage({
 
             {/* SEU NOME */}
             <div>
+              {clienteLembrado && customerName && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: "0.75rem", color: "#64748B", marginBottom: 6 }}>
+                  <span>✓ Preenchemos com os dados do seu último pedido.</span>
+                  <button
+                    type="button"
+                    onClick={limparClienteLembrado}
+                    style={{ background: "none", border: "none", padding: 0, color: "#C92E09", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline", whiteSpace: "nowrap" }}
+                  >
+                    Não é você? Limpar
+                  </button>
+                </div>
+              )}
               <label className="checkout-label">Seu Nome Completo *</label>
               <input
                 data-campo="checkout-nome"
