@@ -229,7 +229,7 @@ async function responder(contatoId: string) {
     }
     if (acoes.some((a) => FERRAMENTAS_COM_EFEITO.has(a.nome))) break;
   }
-  resposta = resposta.trim() || respostaDeReserva(acoes);
+  resposta = paraOWhatsApp(resposta) || respostaDeReserva(acoes);
   if (!resposta) return;
 
   // Alguém assumiu enquanto o modelo pensava? Não fala por cima.
@@ -261,6 +261,19 @@ async function responder(contatoId: string) {
 }
 
 type AcaoFeita = { nome: string; resultado: Record<string, unknown> };
+
+/**
+ * O modelo escreve em Markdown mesmo pedido o contrário: **negrito** chega ao
+ * cliente com os asteriscos (o WhatsApp só entende *um*), e a linha em branco
+ * entre frases vira "textão" na tela do celular.
+ */
+function paraOWhatsApp(texto: string): string {
+  return String(texto || "")
+    .replace(/\*\*(.+?)\*\*/g, "*$1*")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
 
 /**
  * O texto quando o modelo agiu mas não chegou a escrever (caiu, devolveu
