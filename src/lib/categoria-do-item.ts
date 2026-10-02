@@ -59,6 +59,12 @@ export function ehCategoriaDeIntegracao(categoria: unknown): boolean {
  * promoção ("6 Esfihas Tradicionais + Guaraná Mineiro 1,5l por R$59,90") e
  * ele muda a cada campanha: na NIK o cadastro dizia "por R$49,90" e o pedido
  * chegava "por R$59,90" — mesmo produto, e não casava por três dígitos.
+ *
+ * A UNIDADE cola no número: "Açaí 400 Ml" ≡ "Açaí 400ml". A 99Food mandou
+ * "Açaí 400 Ml" para a Divinos Burger (01/10/2026), o cadastro dizia
+ * "Açaí 400ml", e o item ficou sem categoria. O "Açaí 1L" do mesmo pedido
+ * casou e foi para a impressora do açaí; o de 400 caiu no resgate e saiu na
+ * cozinha. Um pedido virou duas comandas, cada uma com um açaí.
  */
 export function chaveDoNome(nome: unknown): string {
   return String(nome ?? "")
@@ -68,6 +74,7 @@ export function chaveDoNome(nome: unknown): string {
     .replace(/\bpor\s*r\$?\s*[\d.,]+/g, " ")
     .replace(/r\$\s*[\d.,]+/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
+    .replace(/(\d) (ml|l|lt|g|gr|kg|cm)\b/g, "$1$2")
     .trim();
 }
 
