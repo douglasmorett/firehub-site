@@ -47,6 +47,7 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 
 # Onde fica cada coisa no painel (firehubfood.com.br/store, entrar em firehubfood.com.br/login)
 - Pedidos: menu "Pedidos".
+- Pedido que entrou como delivery mas o cliente está no salão (ou vai retirar): em "Pedidos", clicar no lápis do pedido → "Trocar para mesa ou balcão" → escolher a mesa (livre abre no nome do cliente; ocupada, o pedido entra na conta dela) ou o balcão. A taxa de entrega sai sozinha. Só antes de o pedido sair; pedido de iFood/99Food não troca; pedido já pago online não vai para a mesa (só para o balcão).
 - Cardápio (produtos, preços, fotos, adicionais, combos): firehubfood.com.br/store/cardapio
 - Horários, endereço, área e taxa de entrega, WhatsApp do proprietário: menu "Minha Loja".
 - Robô do WhatsApp: menu "Chatbot IA". Para conectar: abrir o WhatsApp Business no celular da loja → Aparelhos conectados → Conectar aparelho → ler o QR que aparece na tela. Sem câmera: "Conectar com número de telefone" e digitar o código de 8 letras que o painel mostra.

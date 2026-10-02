@@ -22,6 +22,7 @@ import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
+import TrocarTipoDoPedidoPainel from "@/components/customer/TrocarTipoDoPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
@@ -4130,6 +4131,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               />
 
               {abaDoRecibo === "editar" ? (
+                <>
+                {/* Delivery que vira mesa ou balcão (lib/troca-de-tipo.ts):
+                    o cliente está no salão e pediu pelo cardápio do delivery
+                    (Ragnar, 01/10/2026). Fica no lápis, acima dos itens. */}
+                <TrocarTipoDoPedidoPainel
+                  key={`tipo-${order.id}`}
+                  pedido={order}
+                  operador={operadorDaEdicao}
+                  aoTrocar={async (r) => {
+                    showToast(
+                      r.mesa != null ? `Pedido #${order.dailyOrderNumber ?? ""} passou para a Mesa ${r.mesa}.` : `Pedido #${order.dailyOrderNumber ?? ""} passou para o balcão.`,
+                      "#0F766E"
+                    );
+                    await recarregarPedidos();
+                  }}
+                />
                 <EditarPedidoPainel
                   pedido={order}
                   operador={{ role: user?.role, permissions: user?.permissions }}
@@ -4161,6 +4178,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     if (atual) reimprimirAposEdicao(pedidoComAcrescimos(atual, atualizados || []));
                   }}
                 />
+                </>
               ) : (
               <>
 
