@@ -15,7 +15,8 @@
  */
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import type { CupomDoCaixa } from "@/lib/cupom-do-caixa";
+import { cupomDeMovimentacaoDeCaixa, type CupomDoCaixa } from "@/lib/cupom-do-caixa";
+import { FUSO_PADRAO } from "@/lib/fuso";
 
 /**
  * O Assistente desta loja está puxando a fila da nuvem agora? (consultou nos
@@ -57,5 +58,45 @@ export async function enfileirarCupomDoCaixa(
   } catch (e: any) {
     console.error("[Caixa] Não consegui enfileirar o cupom do caixa:", e?.message);
     return false;
+  }
+}
+
+/**
+ * Manda para a fila o comprovante de UMA sangria/suprimento desta loja
+ * (lib/cupom-do-caixa.ts → cupomDeMovimentacaoDeCaixa). Serve ao "lançar e
+ * imprimir" e ao ícone de impressora da lista de movimentações.
+ *
+ * O id vem do navegador: a busca leva o franchiseeId junto, e lançamento de
+ * outra loja é "não encontrado". NUNCA lança, como o resto deste arquivo.
+ */
+export async function imprimirMovimentacaoDoCaixa(
+  franchiseeId: string,
+  movimentacaoId: string,
+  operador: string,
+  opcoes: { segundaVia?: boolean } = {}
+): Promise<{ ok: true; assistenteOuvindo: boolean | null } | { ok: false; erro: string; status: number }> {
+  try {
+    const mov = await prisma.cashMovement.findFirst({
+      where: { id: movimentacaoId, franchiseeId },
+      select: { id: true, tipo: true, valor: true, descricao: true, criadoPor: true, createdAt: true, cashSession: { select: { openedAt: true } } },
+    });
+    if (!mov) return { ok: false, erro: "Lançamento não encontrado.", status: 404 };
+    const dono = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { storeName: true, storeTimezone: true } });
+    const cupom = cupomDeMovimentacaoDeCaixa({
+      movimentacao: mov,
+      loja: dono?.storeName || "",
+      fuso: dono?.storeTimezone || FUSO_PADRAO,
+      operador,
+      caixaAbertoEm: mov.cashSession?.openedAt ?? null,
+      segundaVia: opcoes.segundaVia,
+    });
+    // Cada impressão é um pedido de impressão novo: o id do cupom ganha o
+    // instante, senão a 2ª via teria o mesmo id da 1ª.
+    const ok = await enfileirarCupomDoCaixa(franchiseeId, { ...cupom, id: `${cupom.id}_${Date.now()}` }, operador);
+    if (!ok) return { ok: false, erro: "Não consegui enviar para a impressora.", status: 500 };
+    return { ok: true, assistenteOuvindo: await assistenteOuvindoAFila(franchiseeId) };
+  } catch (e: any) {
+    console.error("[Caixa] Não consegui imprimir a movimentação:", e?.message);
+    return { ok: false, erro: "Não consegui enviar para a impressora.", status: 500 };
   }
 }

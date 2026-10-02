@@ -37,6 +37,7 @@ import { PALETA } from "@/lib/paleta-brasa";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
 import { pedidoComAcrescimos } from "@/lib/acrescimo-na-comanda";
+import { origemDaVenda } from "@/lib/origem-da-venda";
 
 const BOTAO_ACAO: React.CSSProperties = {
   padding: "5px 14px", borderRadius: "8px", border: "none",
@@ -3305,14 +3306,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // Cada pedido tem UM tipo, decidido nesta ordem — mesa antes de tudo (pedido
   // de mesa lançado no balcão continua sendo mesa), delivery antes de balcão
   // (delivery lançado no balcão é delivery), e o que sobra é retirada.
-  const tipoDoPedido = (o: any): "mesa" | "delivery" | "balcao" | "retirada" => {
-    const dt = String(o.deliveryType || "").toUpperCase();
-    if (dt === "MESA" || o.tableSessionId) return "mesa";
-    if (dt === "DELIVERY") return "delivery";
-    const src = String(o.source || "").toUpperCase();
-    if (src === "PRESENCIAL" || src === "PDV" || src === "TOTEM") return "balcao";
-    return "retirada";
-  };
+  //
+  // A regra mora em lib/origem-da-venda.ts desde 02/10/2026: o fechamento do
+  // caixa passou a separar as vendas por tipo e tinha de usar a MESMA conta
+  // deste filtro — senão o quadro diria "12 balcão" e o papel do caixa, 13.
+  // De quebra, o balcão aqui passou a reconhecer também BALCAO/MANUAL/CAIXA,
+  // que a lib já lia.
+  const tipoDoPedido = (o: any): "mesa" | "delivery" | "balcao" | "retirada" =>
+    origemDaVenda(o).toLowerCase() as "mesa" | "delivery" | "balcao" | "retirada";
   const matchesTypeFilter = (o: any) => selectedTypes[tipoDoPedido(o)];
 
   const filteredOrders = orders.filter(o => {

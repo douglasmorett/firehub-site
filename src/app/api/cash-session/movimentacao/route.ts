@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { temEstruturaDeCaixa, garantirEstruturaDeCaixa } from "@/lib/garantir-colunas";
+import { imprimirMovimentacaoDoCaixa } from "@/lib/imprimir-caixa";
 
 /**
  * Sangria e reforço de caixa.
@@ -23,7 +24,8 @@ async function lojaDaSessao() {
     select: { id: true, ownerId: true, email: true },
   });
   if (!u) return null;
-  return { franchiseeId: u.ownerId || u.id, email: u.email };
+  // `nome` é quem aparece como operador no comprovante impresso.
+  return { franchiseeId: u.ownerId || u.id, email: u.email, nome: session.user.name || u.email || "" };
 }
 
 const TIPOS = ["ENTRADA", "SAIDA"] as const;
@@ -142,7 +144,17 @@ export async function POST(req: Request) {
     },
   });
 
-  return NextResponse.json({ ok: true, movimentacao: mov });
+  // ── O COMPROVANTE NO LANÇAMENTO ───────────────────────────────────────
+  // Pedido da Delícia de Casa (02/10/2026): imprimir a sangria na hora em que
+  // ela é lançada. Só com `imprimir: true` — sangria sem papel continua sendo
+  // o padrão, como a abertura (bobina que ninguém pediu é desperdício). A
+  // impressão nunca desfaz o lançamento: falhou, o lançamento fica e a tela
+  // avisa.
+  const impressao = corpo?.imprimir === true
+    ? await imprimirMovimentacaoDoCaixa(loja.franchiseeId, mov.id, loja.nome)
+    : undefined;
+
+  return NextResponse.json({ ok: true, movimentacao: mov, ...(impressao ? { impressao } : {}) });
 }
 
 /** DELETE — desfaz um lançamento errado, enquanto o turno estiver aberto. */
