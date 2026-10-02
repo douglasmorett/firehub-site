@@ -188,8 +188,20 @@ function linhaDaOpcao<T extends ItemDoPedido>(item: T, op: { name: string; quant
       ? { menuProduct: { ...(papel.menuProduct as Record<string, unknown>), name: nome, category: op.category, isBeverage: false } }
       : {}),
   };
-  if (item.item) return { ...item, name: nome, category: op.category, opcoesParaImpressao: null, item: papelNovo } as T;
-  return { ...item, ...papelNovo, category: op.category } as T;
+  if (item.item) return { ...item, name: nome, category: op.category, opcoesParaImpressao: null, item: papelNovo, daOpcaoDoCombo: true } as T;
+  return { ...item, ...papelNovo, category: op.category, daOpcaoDoCombo: true } as T;
+}
+
+/**
+ * Quantos itens do PEDIDO esta impressora recebeu, para decidir a via do
+ * entregador. A linha da opção do combo ("Fanta (do Combo Berserker)") não
+ * conta: ela é só o aviso para a outra cozinha separar a bebida, e o pedido
+ * fica pronto onde o combo é montado. Contando, o combo de burger com Fanta
+ * empatava 1 a 1 com a cozinha da pizza e a via saía lá (Ragnar, #85,
+ * 01/10/2026).
+ */
+export function itensQueContamParaAVia(itens: unknown[] | null | undefined): number {
+  return (itens || []).filter((i) => !(i as { daOpcaoDoCombo?: boolean } | null)?.daOpcaoDoCombo).length;
 }
 
 /**

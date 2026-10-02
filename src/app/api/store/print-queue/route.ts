@@ -1,7 +1,7 @@
 import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { destinosDoPedido, impressoraDaViaDoEntregador, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "@/lib/roteamento-de-impressao";
+import { destinosDoPedido, impressoraDaViaDoEntregador, itensQueContamParaAVia, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "@/lib/roteamento-de-impressao";
 import { impressorasDaContaDaMesa, impressoraDoCaixa, impressoraUnicaDoPc } from "@/lib/impressao-da-conta";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -620,7 +620,7 @@ export async function GET(req: NextRequest) {
     const blocosDaVia = blocosDaViaDoEntregador(pc);
     const avisosDaVia = avisosDoPedido(pc);
     const jobsDasVias = jobs.flatMap((job: any) => {
-      const imp = impressoraDaViaDoEntregador(printers, job.order, (job.destinos || []).map((d: any) => ({ nome: d.printer, itens: (d.items || []).length })));
+      const imp = impressoraDaViaDoEntregador(printers, job.order, (job.destinos || []).map((d: any) => ({ nome: d.printer, itens: itensQueContamParaAVia(d.items) })));
       if (!imp) return [];
       const idDaVia = String(job.order.id) + SUFIXO_DA_VIA_DO_ENTREGADOR;
       return [{

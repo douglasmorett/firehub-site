@@ -3,7 +3,7 @@ import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
-import { categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
+import { categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, itensQueContamParaAVia, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
@@ -642,7 +642,7 @@ export async function printOrder(
     // burger. (Antes saía o pedido inteiro — ver roteamento-de-impressao.ts.)
     if (daImpressora === null) continue;
     const itemsToPrint = daImpressora.map(i => i.item);
-    receberam.push({ nome: printer.name, itens: itemsToPrint.length });
+    receberam.push({ nome: printer.name, itens: itensQueContamParaAVia(itemsToPrint) });
 
     // O que foi para as outras impressoras, para o papel desta dizer "Em outra
     // impressora (2 itens)" em vez de "Outros valores do pedido" (mesma regra
