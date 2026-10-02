@@ -151,6 +151,7 @@ const TODAS_AS_DECLARACOES = [
       properties: {
         linkDoCardapio: { type: "string", description: "O link do cardápio que a loja usa hoje, exatamente como a pessoa mandou. Vazio quando ela mandou fotos." },
         cardapioEmFotos: { type: "boolean", description: "true quando a pessoa mandou fotos do cardápio (físico, impresso) em vez de link." },
+        semContaPorEscolha: { type: "boolean", description: "true só se a pessoa ainda não tem conta e DISSE que não quer passar os dados agora. Sem conta e sem isso, crie a conta antes (criar_conta)." },
         nomeDaLoja: { type: "string" },
         cidade: { type: "string" },
         bairros: { type: "string", description: "Bairros atendidos e as taxas, se a pessoa disse." },
@@ -339,6 +340,12 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
         : 0;
       if (!ehLink && fotos === 0) return { erro: "Falta o cardápio: peça o link (o endereço que o cliente abre para pedir) ou fotos do cardápio." };
       if (!nomeDaLoja) return { erro: "Falta o nome da loja. Pergunte antes." };
+      // Passar a montagem cala o robô (chama pessoa). Feito antes da conta, a
+      // pessoa mandava os dados que o próprio robô tinha pedido e ficava sem
+      // resposta (teste de 02/10). Conta primeiro, a não ser que ela recuse.
+      if (!contato.userId && args?.semContaPorEscolha !== true) {
+        return { erro: "Ainda sem conta. Guarde o cardápio (já está na conversa) e peça os dados para criar a conta agora; depois de criar_conta, use montar_loja. Só passe sem conta se a pessoa disser que não quer passar os dados." };
+      }
       // A equipe já foi chamada para esta montagem hoje: não manda o aviso de novo.
       const jaPedida = await prisma.crmEvento.findFirst({
         where: { contatoId: contato.id, texto: { startsWith: "Chamou uma pessoa: Montar a loja" }, criadoEm: { gte: new Date(Date.now() - 24 * 60 * 60_000) } },
