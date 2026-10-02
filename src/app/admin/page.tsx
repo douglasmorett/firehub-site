@@ -53,6 +53,16 @@ export default async function AdminPage() {
     if (principal) lojasExtras.set(principal.id, (lojasExtras.get(principal.id) || 0) + 1);
   }
 
+  // Clientes do Acompanhamento iFood (aba própria). Tabela criada no boot; se
+  // não existir, a lista só fica sem o selo.
+  const acompanhadas = new Set<string>();
+  try {
+    const linhas = await prisma.$queryRaw<{ lojaId: string }[]>`
+      SELECT "lojaId" FROM "AcompanhamentoIfood" WHERE "lojaId" IS NOT NULL AND status <> 'ENCERRADO'
+    `;
+    linhas.forEach(l => acompanhadas.add(l.lojaId));
+  } catch {}
+
   // Está usando? O último pedido de cada loja, para achar quem parou.
   const atividade = await atividadeDasLojas(lojistas.map(l => l.id));
 
@@ -191,6 +201,7 @@ export default async function AdminPage() {
     vendedorAtribuidoEm: l.vendedorAtribuidoEm ? l.vendedorAtribuidoEm.toISOString() : null,
     ambassadorId: l.ambassadorId,
     atividade: atividade.get(l.id) || null,
+    acompanhamentoIfood: acompanhadas.has(l.id),
   }));
 
   return (

@@ -20,6 +20,7 @@ export async function register() {
     garantirEstruturaDePrazos,
     garantirEstruturaDoCrm,
     garantirEstruturaDeDespesas,
+    garantirEstruturaDeAcompanhamento,
   } = await import("./lib/garantir-colunas");
   await garantirColunasDePreco();
   // As colunas que o schema.prisma declara e que nunca ganharam DDL — 39 no
@@ -58,6 +59,9 @@ export async function register() {
   await acertarLojasExtrasUmaVez();
   // Despesas lançadas à mão no DRE. Se faltar, só o lançamento manual some.
   await garantirEstruturaDeDespesas();
+  // Clientes e relatórios do Acompanhamento iFood (aba do admin). Tabelas
+  // próprias; se faltarem, só essa aba para.
+  await garantirEstruturaDeAcompanhamento();
   // Memória da conversa do robô (ChatbotConversationState.history). O schema NÃO
   // conhece a coluna de propósito — o acesso é por SQL cru e falha em silêncio
   // (lib/memoria-da-conversa-no-banco.ts). Aqui é só para o ALTER acontecer no
