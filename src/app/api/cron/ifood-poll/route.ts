@@ -394,7 +394,18 @@ export async function GET(req: NextRequest) {
       console.error("[iFood Cron distribuído]", e);
     }
 
+    // Código de entrega que o iFood barrou na hora (403, sem rede): manda de
+    // novo, senão o pedido fica aberto lá (lib/codigo-de-entrega.ts).
+    let codigosDeEntrega = { conferidos: 0, tentados: 0 };
+    try {
+      const { reconferirCodigosPendentes } = await import("@/lib/codigo-de-entrega-reconferir");
+      codigosDeEntrega = await reconferirCodigosPendentes(log);
+    } catch (e: any) {
+      log.push(`[código de entrega] erro: ${e?.message}`);
+    }
+
     return NextResponse.json({
+      codigosDeEntrega,
       ok: true,
       events: events.length,
       created,

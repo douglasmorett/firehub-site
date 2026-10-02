@@ -13,7 +13,7 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync("src/lib/codigo-de-entrega.ts", "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { lerRespostaCodigoIfood, jaSaiuNoParceiro } = await import(
+const { lerRespostaCodigoIfood, jaSaiuNoParceiro, deveReconferir } = await import(
   "data:text/javascript," + encodeURIComponent(js)
 );
 
@@ -104,6 +104,24 @@ for (const [status, esperado] of [
 ]) {
   igual(`${JSON.stringify(status)} -> ${esperado}`, jaSaiuNoParceiro(status), esperado);
 }
+
+console.log("\n5) Nova tentativa do código que o iFood barrou (Frangoso, 30/09)");
+const T0 = Date.parse("2026-10-01T00:08:58.593Z");
+const min = 60_000;
+// O que o #8 de 30/09 gravou: 403 "Access Denied" com o código certo.
+const barrado = { canal: "iFood", endpoint: "order", digitado: "6943", status: 403, origem: "central", resultado: "indisponivel", quando: "2026-10-01T00:08:58.593Z" };
+igual("403 gravado: tenta no minuto seguinte", deveReconferir(barrado, T0 + 1 * min)?.digitado, "6943");
+igual("tentou há 2 min: espera", deveReconferir({ ...barrado, ultimaTentativa: new Date(T0 + 10 * min).toISOString() }, T0 + 12 * min), null);
+igual("tentou há 5 min: tenta de novo", deveReconferir({ ...barrado, ultimaTentativa: new Date(T0 + 10 * min).toISOString() }, T0 + 15 * min)?.digitado, "6943");
+igual("passou da janela de 3 h: para", deveReconferir(barrado, T0 + 181 * min), null);
+igual("fetch failed (status 0) também tenta", deveReconferir({ ...barrado, status: 0, resposta: "fetch failed" }, T0 + min)?.digitado, "6943");
+igual("conferido não tenta", deveReconferir({ ...barrado, resultado: "conferido" }, T0 + min), null);
+igual("errado não tenta (foi o iFood que disse)", deveReconferir({ ...barrado, resultado: "errado" }, T0 + min), null);
+igual("sem código (cliente não tinha) não tenta", deveReconferir({ canal: "iFood", digitado: null, resultado: "sem-codigo", quando: barrado.quando }, T0 + min), null);
+igual("99Food não entra", deveReconferir({ ...barrado, canal: "99Food" }, T0 + min), null);
+igual("sem data não tenta", deveReconferir({ ...barrado, quando: undefined }, T0 + min), null);
+igual("nada gravado não tenta", deveReconferir(null, T0), null);
+igual("zero à esquerda fica", deveReconferir({ ...barrado, digitado: "0403" }, T0 + min)?.digitado, "0403");
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)\n` : "\n✅ tudo certo\n");
 process.exit(falhas ? 1 : 0);

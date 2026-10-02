@@ -100,3 +100,51 @@ export function lerRespostaCodigoIfood(r: {
 export function jaSaiuNoParceiro(status?: string | null): boolean {
   return status === "SAIU_ENTREGA" || status === "SAIU_PARA_ENTREGA";
 }
+
+/**
+ * A conferência que o iFood não atendeu na hora — tentar de novo, e quando.
+ *
+ * ── O caso (30/09/2026, Frangoso - Trindade) ────────────────────────────────
+ *
+ * Às 21:08 os pedidos #8 e #9 tiveram o código digitado pelo motoboy e o iFood
+ * respondeu 403 "Access Denied" (o bloqueio em HTML da plataforma, com as duas
+ * credenciais); às 23:53 o #23 de novo. O app fez o que devia — não prendeu o
+ * entregador na porta, gravou o código em ifoodDropCodeInfo como
+ * `indisponivel` — mas ninguém mais tentava. O pedido seguia aberto no iFood e
+ * o dono, com o motoboy vendo "código correto", reclamou que "não tá
+ * finalizando no iFood". Em 01/10 o #8 teve "fetch failed" e ficou igual.
+ *
+ * O código que o cliente ditou continua valendo: é o mesmo
+ * verifyDeliveryCode, com os mesmos 4 dígitos, mandado de novo pelo cron do
+ * iFood até o bloqueio passar.
+ *
+ * ── Os limites ──────────────────────────────────────────────────────────────
+ *
+ * Só `indisponivel` com dígitos gravados (o `errado` foi resposta do iFood, e o
+ * `sem-codigo` não tem o que mandar). Uma tentativa a cada INTERVALO, contada
+ * da última — o bloqueio do iFood é por rajada, insistir a cada minuto só o
+ * prolonga. E só dentro da JANELA desde a entrega: depois disso o iFood já
+ * concluiu o pedido sozinho (conclusão automática da entrega própria) e a
+ * conferência não muda mais nada.
+ */
+export const RECONFERIR_INTERVALO_MS = 5 * 60_000;
+export const RECONFERIR_JANELA_MS = 3 * 60 * 60_000;
+
+export function deveReconferir(
+  info: unknown,
+  agora: number = Date.now(),
+): { digitado: string } | null {
+  const i = (info ?? null) as Record<string, unknown> | null;
+  if (!i || typeof i !== "object") return null;
+  if (i.canal !== "iFood" || i.resultado !== "indisponivel") return null;
+  const digitado = String(i.digitado ?? "").replace(/\D/g, "");
+  if (!digitado) return null;
+
+  const quando = Date.parse(String(i.quando ?? ""));
+  if (!Number.isFinite(quando) || agora - quando > RECONFERIR_JANELA_MS) return null;
+
+  const ultima = Date.parse(String(i.ultimaTentativa ?? ""));
+  if (Number.isFinite(ultima) && agora - ultima < RECONFERIR_INTERVALO_MS) return null;
+
+  return { digitado };
+}

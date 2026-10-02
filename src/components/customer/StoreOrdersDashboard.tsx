@@ -4121,7 +4121,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     } else {
                       showToast("Pedido alterado. Reimprimindo a comanda...", "#0F766E");
                     }
-                    if (atual) reimprimirAposEdicao(atual);
+                    // O acréscimo de marketplace já sai no papel dele; o original
+                    // só volta à impressora se ele mesmo mudou.
+                    if (atual && resultado?.reimprimirOriginal !== false) reimprimirAposEdicao(atual);
                   }}
                 />
               ) : (
