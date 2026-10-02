@@ -194,7 +194,11 @@ export default function HumanSupportFloatingWidget() {
     // Aba escondida não pergunta: o painel fica aberto o dia inteiro em ~30
     // lojas, e eram 15 chamadas por minuto por aba disputando o servidor com
     // quem está clicando. Ao voltar para a aba, busca na hora.
-    const interval = setInterval(() => { if (!document.hidden) fetchChats(); }, 4000);
+    //
+    // Janela FECHADA consulta a cada 10 s: ali só se desenha o número de
+    // conversas esperando no botão. Aberta, 4 s — é quando alguém está lendo e
+    // respondendo. Abrir a janela já busca na hora (o efeito roda de novo).
+    const interval = setInterval(() => { if (!document.hidden) fetchChats(); }, open ? 4000 : 10000);
     const aoVoltar = () => { if (!document.hidden) fetchChats(); };
     document.addEventListener("visibilitychange", aoVoltar);
     return () => {
@@ -202,7 +206,7 @@ export default function HumanSupportFloatingWidget() {
       document.removeEventListener("visibilitychange", aoVoltar);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [escondido]);
+  }, [escondido, open]);
 
   const activeChat = chats.find((c) => c.jid === selectedChatJid);
 
