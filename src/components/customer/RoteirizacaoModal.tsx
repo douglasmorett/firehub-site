@@ -220,15 +220,36 @@ interface RoteirizacaoModalProps {
   modoIndependente?: boolean;
 }
 
+/**
+ * As cores do ESTADO do pedido no mapa — ditadas pelo lojista, a mesma
+ * convenção do outro sistema que ele usa: vermelho na cozinha, roxo pronto,
+ * azul saiu para entrega, verde entregue agora.
+ *
+ * Não seguem a paleta do painel de propósito. A troca para a paleta Brasa
+ * (23/09/2026) deixou o pronto cinza e o "saiu" quase preto, e a Frangoso
+ * passou a ver "outra cor" onde esperava o azul (Lucas, 29/09).
+ */
+const COR_DO_ESTADO = {
+  cozinha: "#EF4444",
+  pronto: "#7C3AED",
+  rota: "#2563EB",
+  entregue: "#16A34A",
+} as const;
+
+/**
+ * Cor da rota que está sendo montada. Nenhuma pode ser parecida com as do
+ * estado: com "#C92E09" na lista, a rota pintava os pinos do mesmo vermelho
+ * da cozinha e o mapa da Frangoso ficou inteiro vermelho (29/09/2026).
+ */
 const ROUTE_COLORS = [
-  "#0F766E", // Verde
-  "#1C1917", // Azul
-  "#B45309", // Amarelo
-  "#0D9488", // Ciano
-  "#C92E09", // Rosa
-  "#64748B", // Roxo
-  "#E8590C", // Laranja
-  "#14B8A6"  // Verde Água
+  "#F59E0B", // Âmbar
+  "#EC4899", // Rosa
+  "#06B6D4", // Ciano
+  "#F97316", // Laranja
+  "#84CC16", // Lima
+  "#92400E", // Marrom
+  "#DB2777", // Pink escuro
+  "#0891B2"  // Petróleo
 ];
 
 export default function RoteirizacaoModal({
@@ -1303,7 +1324,7 @@ export default function RoteirizacaoModal({
       const estadoDoPino = recemEntregue ? "entregue" : jaDespachado ? "rota" : prontoNaCozinha ? "pronto" : "cozinha";
       if (!estadosNoMapa[estadoDoPino as keyof typeof estadosNoMapa]) return;
 
-      let bgColor = recemEntregue ? "#0F766E" : jaDespachado ? "#1C1917" : prontoNaCozinha ? "#475569" : "#C92E09";
+      let bgColor: string = COR_DO_ESTADO[estadoDoPino];
       let labelText = getOrderDisplayNumber(order);
       let borderColor = "#ffffff";
       let scaleCss = "scale(1)";
@@ -1322,7 +1343,9 @@ export default function RoteirizacaoModal({
         borderColor = "#E7DDD3";
         scaleCss = "scale(1.2)";
         zIdx = 900;
-      } else if (assignedRoute) {
+      } else if (assignedRoute && !jaDespachado && !recemEntregue) {
+        // A cor da rota só enquanto ela é montada. Saiu com o motoboy, o pino
+        // volta a dizer o estado — "em entrega é azul" é o que o lojista lê.
         bgColor = assignedRoute.color || "#0F766E"; // Route specific color
         borderColor = "#ffffff";
         zIdx = 500;
@@ -2523,10 +2546,10 @@ export default function RoteirizacaoModal({
                 O que aparece no mapa
               </div>
               {([
-                { chave: "cozinha" as const, cor: "#C92E09", rotulo: "Na cozinha" },
-                { chave: "pronto" as const, cor: "#475569", rotulo: "Pronto" },
-                { chave: "rota" as const, cor: "#1C1917", rotulo: "Saiu para entrega" },
-                { chave: "entregue" as const, cor: "#0F766E", rotulo: "Entregue agora" },
+                { chave: "cozinha" as const, cor: COR_DO_ESTADO.cozinha, rotulo: "Na cozinha" },
+                { chave: "pronto" as const, cor: COR_DO_ESTADO.pronto, rotulo: "Pronto" },
+                { chave: "rota" as const, cor: COR_DO_ESTADO.rota, rotulo: "Saiu para entrega" },
+                { chave: "entregue" as const, cor: COR_DO_ESTADO.entregue, rotulo: "Entregue agora" },
               ]).map((e) => {
                 const quantos = deliveryOrders.filter((o: any) => {
                   const pronto = estaPronto(o);
