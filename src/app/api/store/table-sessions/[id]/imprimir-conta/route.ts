@@ -46,7 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // O dono vem da MESA (Table.franchiseeId é a relação de verdade), como
       // no fechamento e nos pagamentos.
       table: { select: { number: true, label: true, franchiseeId: true } },
-      waiter: { select: { name: true, commissionRate: true } },
+      waiter: { select: { name: true } },
       orders: {
         select: {
           status: true,
@@ -80,19 +80,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     select: { id: true, name: true },
   });
 
-  // Mesma escada da tela das mesas: comissão do garçom, senão a taxa padrão
-  // da LOJA (User.taxaServicoPadrao), senão 10. Antes o último degrau era 10
-  // cravado, e a casa que cobra 12% imprimia 10% quando a mesa não tinha
-  // garçom vinculado.
+  // Sem taxa no pedido, vale a da LOJA (User.taxaServicoPadrao), senão 10 —
+  // a mesma da tela das mesas. A comissão do garçom não entra: é quanto a
+  // loja repassa a ele, não o que o cliente paga.
   const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { taxaServicoPadrao: true } });
   const taxaDaLoja = sanearTaxa(loja?.taxaServicoPadrao, TAXA_PADRAO);
-  const taxaDoGarcom = mesa.waiter?.commissionRate;
-  const taxaPadrao = taxaDoGarcom !== null && taxaDoGarcom !== undefined ? sanearTaxa(taxaDoGarcom, taxaDaLoja) : taxaDaLoja;
-  const taxaPct = sanearTaxa(body?.taxa, taxaPadrao);
+  const taxaPct = sanearTaxa(body?.taxa, taxaDaLoja);
   // Garçom sem "pode tirar a taxa": a conta impressa por ele sai com a taxa
-  // sugerida, nunca abaixo — o campo está travado na tela dele.
-  if (operador.tipo === "garcom" && !operador.garcom.podeTirarTaxa && taxaPct < taxaPadrao) {
-    return NextResponse.json({ error: `Este garçom não tira a taxa de serviço (${taxaPadrao}%). A conta sem taxa sai pelo painel da loja.` }, { status: 403 });
+  // da loja, nunca abaixo — o campo está travado na tela dele.
+  if (operador.tipo === "garcom" && !operador.garcom.podeTirarTaxa && taxaPct < taxaDaLoja) {
+    return NextResponse.json({ error: `Este garçom não tira a taxa de serviço (${taxaDaLoja}%). A conta sem taxa sai pelo painel da loja.` }, { status: 403 });
   }
   const gorjeta =
     body?.gorjeta !== undefined && body?.gorjeta !== null && body?.gorjeta !== ""

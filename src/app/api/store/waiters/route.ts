@@ -105,13 +105,15 @@ export async function POST(req: Request) {
 
     const credenciais = await credenciaisDoCorpo(data, null);
     if ("erro" in credenciais) return NextResponse.json({ error: credenciais.erro }, { status: 400 });
+    const comissao = comissaoDoCorpo(data);
+    if (comissao === "invalida") return NextResponse.json({ error: COMISSAO_INVALIDA }, { status: 400 });
 
     const waiter = await prisma.waiter.create({
       data: {
         franchiseeId,
         name: data.name,
         phone: data.phone || null,
-        commissionRate: data.commissionRate !== undefined ? Number(data.commissionRate) : 10,
+        commissionRate: comissao ?? 10,
         podeFecharConta: data.podeFecharConta !== undefined ? data.podeFecharConta === true : true,
         podeDarDesconto: data.podeDarDesconto !== undefined ? data.podeDarDesconto === true : true,
         podeLiberarMesa: data.podeLiberarMesa !== undefined ? data.podeLiberarMesa === true : true,
@@ -133,6 +135,19 @@ export async function POST(req: Request) {
   }
 }
 
+const COMISSAO_INVALIDA = "Comissão do garçom tem de ser um percentual entre 0 e 100";
+
+/**
+ * A comissão do garçom (% do consumo que a loja repassa a ele — a taxa que o
+ * cliente paga é a da loja, lib/conta-da-mesa comissaoDoGarcom). Ausente =
+ * não mexer; vazia ou fora de 0–100 é erro, nunca vira 0 calado.
+ */
+function comissaoDoCorpo(data: any): number | undefined | "invalida" {
+  if (data.commissionRate === undefined) return undefined;
+  const n = data.commissionRate === null || data.commissionRate === "" ? NaN : Number(data.commissionRate);
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : "invalida";
+}
+
 export async function PUT(req: Request) {
   try {
     const franchiseeId = await getFranchiseeId();
@@ -149,13 +164,15 @@ export async function PUT(req: Request) {
 
     const credenciais = await credenciaisDoCorpo(data, atual);
     if ("erro" in credenciais) return NextResponse.json({ error: credenciais.erro }, { status: 400 });
+    const comissao = comissaoDoCorpo(data);
+    if (comissao === "invalida") return NextResponse.json({ error: COMISSAO_INVALIDA }, { status: 400 });
 
     const waiter = await prisma.waiter.update({
       where: { id: data.id, franchiseeId },
       data: {
         name: data.name,
         phone: data.phone,
-        commissionRate: data.commissionRate !== undefined ? Number(data.commissionRate) : undefined,
+        commissionRate: comissao,
         podeFecharConta: data.podeFecharConta !== undefined ? data.podeFecharConta === true : undefined,
         podeDarDesconto: data.podeDarDesconto !== undefined ? data.podeDarDesconto === true : undefined,
         podeLiberarMesa: data.podeLiberarMesa !== undefined ? data.podeLiberarMesa === true : undefined,

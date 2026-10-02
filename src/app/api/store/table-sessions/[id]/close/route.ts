@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
-import { sanearTaxa } from "@/lib/conta-da-mesa";
+import { comissaoDoGarcom, sanearTaxa } from "@/lib/conta-da-mesa";
 import { lerDocumentoDoCliente, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 
 /** Último degrau da taxa sugerida — o mesmo da conta impressa (imprimir-conta). */
@@ -60,7 +60,8 @@ export async function POST(
       where: { id },
       include: {
         table: true,
-        orders: true
+        orders: true,
+        waiter: { select: { commissionRate: true } },
       }
     });
 
@@ -92,16 +93,16 @@ export async function POST(
 
     // ── PERMISSÕES DO GARÇOM PELO LINK (cadastro do garçom) ───────────────
     // Liberar mesa é fechar sem consumo; tirar a taxa é fechar com taxa
-    // abaixo da sugerida para ele (comissão dele, senão a padrão da loja).
-    // O botão/caixa nem aparece para ele; aqui a porta fica fechada também.
+    // abaixo da taxa da loja (a comissão dele não conta: é o repasse, não o
+    // que o cliente paga). O botão/caixa nem aparece para ele; aqui a porta
+    // fica fechada também.
     if (operador.tipo === "garcom") {
       if (!operador.garcom.podeLiberarMesa && subtotal <= 0) {
         return NextResponse.json({ error: "Este garçom não libera mesa. Peça ao caixa para liberar pelo painel." }, { status: 403 });
       }
       if (!operador.garcom.podeTirarTaxa) {
         const loja = await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { taxaServicoPadrao: true } });
-        const taxaDaLoja = sanearTaxa(loja?.taxaServicoPadrao, TAXA_PADRAO);
-        const taxaMinima = operador.garcom.commissionRate != null ? sanearTaxa(operador.garcom.commissionRate, taxaDaLoja) : taxaDaLoja;
+        const taxaMinima = sanearTaxa(loja?.taxaServicoPadrao, TAXA_PADRAO);
         if ((Number(serviceFeePercent) || 0) < taxaMinima) {
           return NextResponse.json({ error: `Este garçom não tira a taxa de serviço (${taxaMinima}%). Peça ao caixa para fechar pelo painel.` }, { status: 403 });
         }
@@ -188,11 +189,17 @@ export async function POST(
         });
       }
 
-      // Calculate waiter commission if linked
-      let waiterCommission = 0;
-      if (tableSession.waiterId) {
-        waiterCommission = serviceFee + tipAmount;
-      }
+      // O que vai para o garçom da mesa: a parte da taxa que a loja repassa
+      // (comissão dele) mais a gorjeta. Antes era a taxa inteira, mesmo na
+      // casa que cobra 12% e repassa 10%.
+      const waiterCommission = tableSession.waiterId
+        ? comissaoDoGarcom({
+            consumoCobrado,
+            taxaCobradaPct: taxaPct,
+            comissaoPct: tableSession.waiter?.commissionRate,
+            gorjeta: tipAmount,
+          })
+        : 0;
 
       // 2. Update session to CLOSED
       await tx.tableSession.update({

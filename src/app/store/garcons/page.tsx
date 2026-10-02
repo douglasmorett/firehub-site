@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Plus, Edit2, Trash2, Users, DollarSign, Loader2, ArrowLeft, Calendar, FileText, CheckCircle2, XCircle, Link2, Copy, Check, KeyRound, Eye, EyeOff, ExternalLink } from "lucide-react";
+import { Plus, Edit2, Trash2, Users, DollarSign, Loader2, ArrowLeft, Calendar, FileText, CheckCircle2, XCircle, Link2, Copy, Check, KeyRound, Eye, EyeOff, ExternalLink, Percent } from "lucide-react";
 import { useSession } from "next-auth/react";
 import RelatorioDeMesas from "./RelatorioDeMesas";
 
@@ -37,7 +37,7 @@ const PERMISSOES_DO_LINK: { campo: "podeFecharConta" | "podeDarDesconto" | "pode
   { campo: "podeFecharConta", titulo: "Pode fechar a conta pelo link do garçom", ajuda: "Desmarcado, o garçom lança pedidos e imprime a conta, mas o botão \"Fechar Conta\" só aparece no painel da loja." },
   { campo: "podeDarDesconto", titulo: "Pode dar desconto pelo link do garçom", ajuda: "Desmarcado, o botão \"Dar desconto\" some para ele; o desconto na conta fica só com o painel da loja." },
   { campo: "podeLiberarMesa", titulo: "Pode liberar mesa pelo link do garçom", ajuda: "Desmarcado, o botão \"Liberar Mesa\" some para ele; quem libera a mesa é o painel da loja." },
-  { campo: "podeTirarTaxa", titulo: "Pode tirar a taxa de serviço pelo link do garçom", ajuda: "Desmarcado, a taxa fica travada para ele — não desmarca nem baixa o percentual; só o painel da loja mexe." },
+  { campo: "podeTirarTaxa", titulo: "Pode tirar a taxa de serviço pelo link do garçom", ajuda: "Desmarcado, a taxa da loja fica travada para ele — não desmarca nem baixa o percentual; só o painel da loja mexe." },
   { campo: "podeRemoverItem", titulo: "Pode remover item já lançado pelo link do garçom", ajuda: "Desmarcado, ele só acrescenta: não remove item, não diminui quantidade nem cancela pedido da mesa. Ajuste é com o caixa." },
 ];
 
@@ -67,6 +67,14 @@ export default function GarconsPage() {
   const [erroDoForm, setErroDoForm] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [salvando, setSalvando] = useState(false);
+
+  // Taxa de serviço da LOJA: o que o cliente paga na conta da mesa, igual
+  // para todo garçom. Mora em User.taxaServicoPadrao (PUT /api/store/tables);
+  // a comissão de cada garçom é outra coisa — o quanto a loja repassa a ele.
+  const [taxaDaLoja, setTaxaDaLoja] = useState<number | null>(null);
+  const [taxaDigitada, setTaxaDigitada] = useState("");
+  const [salvandoTaxa, setSalvandoTaxa] = useState(false);
+  const [avisoDaTaxa, setAvisoDaTaxa] = useState<{ ok: boolean; texto: string } | null>(null);
 
   // Link de acesso do garçom
   const [acesso, setAcesso] = useState<AcessoDoGarcom | null>(null);
@@ -115,16 +123,24 @@ export default function GarconsPage() {
   const fetchWaiters = async () => {
     try {
       setLoading(true);
-      const [res, resAcesso] = await Promise.all([
+      const [res, resAcesso, resMesas] = await Promise.all([
         fetch("/api/store/waiters"),
         // Se o link falhar, a lista de garçons não pode ficar vazia por causa dele.
         fetch("/api/store/waiters/acesso").catch(() => null),
+        fetch("/api/store/tables").catch(() => null),
       ]);
       if (res.ok) {
         setWaiters(await res.json());
       }
       if (resAcesso?.ok) {
         setAcesso(await resAcesso.json());
+      }
+      if (resMesas?.ok) {
+        const dados = await resMesas.json().catch(() => null);
+        if (typeof dados?.taxaServicoPadrao === "number") {
+          setTaxaDaLoja(dados.taxaServicoPadrao);
+          setTaxaDigitada(String(dados.taxaServicoPadrao));
+        }
       }
     } finally {
       setLoading(false);
@@ -213,6 +229,35 @@ export default function GarconsPage() {
     }
   };
 
+  const salvarTaxaDaLoja = async () => {
+    const pct = Number(taxaDigitada.replace(",", "."));
+    if (taxaDigitada.trim() === "" || !Number.isFinite(pct) || pct < 0 || pct > 100) {
+      setAvisoDaTaxa({ ok: false, texto: "Digite um percentual entre 0 e 100." });
+      return;
+    }
+    setSalvandoTaxa(true);
+    setAvisoDaTaxa(null);
+    try {
+      const res = await fetch("/api/store/tables", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taxaServicoPadrao: pct }),
+      });
+      const dados = await res.json().catch(() => ({}));
+      if (res.ok && typeof dados?.taxaServicoPadrao === "number") {
+        setTaxaDaLoja(dados.taxaServicoPadrao);
+        setTaxaDigitada(String(dados.taxaServicoPadrao));
+        setAvisoDaTaxa({ ok: true, texto: `Salvo: as contas das mesas saem com ${dados.taxaServicoPadrao}% de taxa de serviço.` });
+      } else {
+        setAvisoDaTaxa({ ok: false, texto: dados?.error || "Não deu para salvar a taxa." });
+      }
+    } catch {
+      setAvisoDaTaxa({ ok: false, texto: "Sem conexão. Tente de novo." });
+    } finally {
+      setSalvandoTaxa(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm("Tem certeza que deseja remover este garçom?")) return;
     const res = await fetch(`/api/store/waiters?id=${id}`, { method: "DELETE" });
@@ -221,7 +266,8 @@ export default function GarconsPage() {
 
   const openNew = () => {
     setEditingId(null);
-    setFormData(FORM_VAZIO);
+    // Garçom novo nasce recebendo a taxa inteira; quem repassa menos ajusta.
+    setFormData({ ...FORM_VAZIO, commissionRate: taxaDaLoja ?? FORM_VAZIO.commissionRate });
     setErroDoForm("");
     setMostrarSenha(false);
     setShowModal(true);
@@ -229,7 +275,7 @@ export default function GarconsPage() {
 
   const openEdit = (w: Waiter) => {
     setEditingId(w.id);
-    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate || 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, podeDarDesconto: w.podeDarDesconto !== false, podeLiberarMesa: w.podeLiberarMesa !== false, podeTirarTaxa: w.podeTirarTaxa !== false, podeRemoverItem: w.podeRemoverItem !== false, login: w.login || "", password: "" });
+    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate ?? taxaDaLoja ?? 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, podeDarDesconto: w.podeDarDesconto !== false, podeLiberarMesa: w.podeLiberarMesa !== false, podeTirarTaxa: w.podeTirarTaxa !== false, podeRemoverItem: w.podeRemoverItem !== false, login: w.login || "", password: "" });
     setErroDoForm("");
     setMostrarSenha(false);
     setShowModal(true);
@@ -278,6 +324,43 @@ export default function GarconsPage() {
                 <Plus size={18} /> Novo Garçom
               </button>
             </div>
+          </div>
+
+          {/* ─── TAXA DE SERVIÇO DA LOJA ─── */}
+          <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: 18, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <Percent size={18} color="#475569" />
+              <strong style={{ color: "#0F172A", fontSize: 15 }}>Taxa de serviço cobrada do cliente</strong>
+            </div>
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
+              É o percentual que sai na conta de todas as mesas, seja qual for o garçom. Quanto dela vai para cada
+              garçom é a comissão, no cadastro dele.
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ position: "relative" }}>
+                <input type="number" min="0" max="100" step="0.5" inputMode="decimal" value={taxaDigitada}
+                  onChange={e => { setTaxaDigitada(e.target.value); setAvisoDaTaxa(null); }}
+                  onKeyDown={e => { if (e.key === "Enter") salvarTaxaDaLoja(); }}
+                  disabled={taxaDaLoja === null}
+                  aria-label="Taxa de serviço da loja em porcentagem"
+                  style={{ width: 110, padding: "10px 30px 10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 15, fontWeight: 700, fontFamily: "inherit", color: "#1E293B" }} />
+                <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#64748B", fontWeight: 700 }}>%</span>
+              </div>
+              <button type="button" onClick={salvarTaxaDaLoja}
+                disabled={salvandoTaxa || taxaDaLoja === null || Number(taxaDigitada.replace(",", ".")) === taxaDaLoja}
+                style={{
+                  background: "#475569", color: "#fff", border: "none", padding: "10px 16px", borderRadius: 10, fontWeight: 700, cursor: "pointer",
+                  opacity: salvandoTaxa || taxaDaLoja === null || Number(taxaDigitada.replace(",", ".")) === taxaDaLoja ? 0.5 : 1,
+                }}>
+                {salvandoTaxa ? "Salvando..." : "Salvar"}
+              </button>
+              <span style={{ fontSize: 12, color: "#64748B" }}>Use 0 para não cobrar. No fechamento ainda dá para mudar numa conta só.</span>
+            </div>
+            {avisoDaTaxa && (
+              <div role="status" style={{ marginTop: 10, fontSize: 13, fontWeight: 600, color: avisoDaTaxa.ok ? "#0F766E" : "#B71C1C" }}>
+                {avisoDaTaxa.texto}
+              </div>
+            )}
           </div>
 
           {/* ─── LINK DE ACESSO DO GARÇOM ─── */}
@@ -426,7 +509,7 @@ export default function GarconsPage() {
                 <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.totalPaid)}</div>
               </div>
               <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
-                <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Taxa de Serviço (10%)</div>
+                <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Taxa de Serviço Cobrada</div>
                 <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.totalServiceFee)}</div>
               </div>
               <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
@@ -448,7 +531,7 @@ export default function GarconsPage() {
                   <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Mesa</th>
                   <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Data / Fechamento</th>
                   <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Total da Conta</th>
-                  <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Serviço (10%)</th>
+                  <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Taxa de Serviço</th>
                   <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Gorjeta Extra</th>
                   <th style={{ padding: "14px 16px", color: "#1E293B", fontWeight: 800, fontSize: 13 }}>Comissão</th>
                 </tr>
@@ -509,6 +592,19 @@ export default function GarconsPage() {
                 <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, color: "#475569" }}>Telefone</label>
                 <input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })}
                   style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit" }} />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 700, color: "#475569" }}>Comissão do garçom (%)</label>
+                <input type="number" min="0" max="100" step="0.5" inputMode="decimal" required
+                  value={Number.isFinite(formData.commissionRate) ? formData.commissionRate : ""}
+                  onChange={e => setFormData({ ...formData, commissionRate: e.target.value === "" ? NaN : Number(e.target.value) })}
+                  style={{ width: 120, padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit" }} />
+                <p style={{ margin: "6px 0 0", fontSize: 11, color: "#64748B", lineHeight: 1.4 }}>
+                  Quanto ele recebe, em % do consumo das mesas dele. Não muda o que o cliente paga
+                  {taxaDaLoja !== null ? ` (a taxa da loja, ${taxaDaLoja}%)` : ""}: igual à taxa, ele recebe a taxa inteira;
+                  menor, a diferença fica com a loja. Nunca passa da taxa cobrada na conta. Gorjeta é sempre dele.
+                </p>
               </div>
 
               {/* Acesso pelo link do garçom */}

@@ -229,6 +229,27 @@ export function sanearTaxa(valor: unknown, padrao: number): number {
   return Math.max(0, Math.min(100, n));
 }
 
+/**
+ * Quanto da conta vai para o garçom. A TAXA DE SERVIÇO é da loja (o que o
+ * cliente paga, igual para todo garçom); a COMISSÃO é quanto dela a loja
+ * repassa: % do consumo cobrado, nunca mais do que a taxa cobrada naquela
+ * conta. Loja que cobra 12% e repassa 10% → 10% do consumo para o garçom,
+ * 2% ficam na casa. Conta fechada sem taxa → nada a repassar. Sem comissão
+ * cadastrada, repassa a taxa inteira. A gorjeta é sempre dele, inteira.
+ */
+export function comissaoDoGarcom(p: {
+  consumoCobrado: number;
+  taxaCobradaPct: number;
+  comissaoPct: number | null | undefined;
+  gorjeta: number;
+}): number {
+  const taxa = sanearTaxa(p.taxaCobradaPct, 0);
+  const pct = Math.min(sanearTaxa(p.comissaoPct, taxa), taxa);
+  const consumo = Math.max(0, Number(p.consumoCobrado) || 0);
+  const gorjeta = Math.max(0, Number(p.gorjeta) || 0);
+  return (consumo * pct) / 100 + gorjeta;
+}
+
 const fmtReais = (v: number) => `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
 
 /**

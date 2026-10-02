@@ -866,21 +866,13 @@ export default function MesasApp({
 
   /** Abre o fechamento e busca a conta já rateada pelo servidor. */
   /**
-   * Taxa de serviço sugerida: a comissão cadastrada do garçom da mesa (aba
-   * Garçons). Sem garçom vinculado, ou sem comissão, cai na taxa padrão da
-   * LOJA — antes caía em 10 cravado, e a casa que cobra 12% redigitava a cada
-   * fechamento. O gerente pode mudar no modal ou na própria tela da mesa;
-   * aqui é só o ponto de partida.
+   * Taxa de serviço sugerida: a taxa da LOJA, sempre. É o que o cliente paga
+   * e independe de quem atendeu. A comissão do garçom (aba Garçons) é quanto
+   * a loja repassa a ele e não entra aqui — antes entrava, e a casa que cobra
+   * 12% via a conta sair com os 10% cadastrados no garçom. O gerente pode
+   * mudar no modal ou na própria tela da mesa; aqui é só o ponto de partida.
    */
-  const taxaSugeridaDaMesa = (t: TableItem | null): number => {
-    const padrao = taxaSalva;
-    // 0% é comissão válida (garçom de salário fixo); só nulo/inválido cai no padrão.
-    const valida = (v: unknown) => v != null && Number.isFinite(Number(v)) ? Number(v) : null;
-    if (ehGarcom) return valida(garcom?.commissionRate) ?? padrao;
-    const waiterId = t?.openSession?.waiterId;
-    const w = waiterId ? waiters.find((x) => x.id === waiterId) : null;
-    return valida(w?.commissionRate) ?? padrao;
-  };
+  const taxaSugeridaDaMesa = (_t: TableItem | null): number => taxaSalva;
 
   /** Sessão para a qual a taxa já foi sugerida: reabrir o modal não desfaz o que o gerente ajustou. */
   const sessaoComTaxaSugerida = useRef<string | null>(null);

@@ -256,7 +256,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
 
       <p style={{ margin: "12px 4px 0", fontSize: 12, color: "#94A3B8", lineHeight: 1.5 }}>
         Mesa: o que entrou pelas mesas fechadas no período, já sem taxa de serviço e gorjeta (é o consumo). Balcão, delivery e retirada: pedidos não cancelados criados no período.
-        A taxa de serviço não entra em "Vendido" — ela é do garçom.
+        A taxa de serviço não entra em "Vendido" — é cobrada à parte; quanto dela vai para cada garçom está no relatório dele (comissão).
       </p>
     </>
   );
