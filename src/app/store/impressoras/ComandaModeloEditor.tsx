@@ -996,7 +996,7 @@ function stepper(valor: number, aoMudar: (t: (typeof TAMANHOS)[number]) => void)
   };
   return (
     <span
-      title="Tamanho da letra. A impressora só consegue estes degraus: 1x, 1,5x, 2x e 3x — quanto maior, menos letras cabem na linha."
+      title="Tamanho da letra. A impressora só consegue estes degraus: 1x, 1,5x, 2x e 3x. O 1,5x é a mesma letra, só mais alta; do 2x em diante cabem menos letras na linha."
       style={{ display: "inline-flex", alignItems: "center", gap: 4, border: BORDA, background: "#F8FAFC", borderRadius: 7, padding: "2px 6px" }}
     >
       <button type="button" onClick={() => aoMudar(TAMANHOS[Math.max(0, i - 1)])} style={passo}>A−</button>
