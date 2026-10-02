@@ -7,7 +7,7 @@ export {};
 process.env.EVOLUTION_API_KEY ||= "teste";
 
 (async () => {
-const { vaiParaOGatewayNovo, FORA_HA_PELO_MENOS_MS, GATEWAY_DAS_NOVAS_CONEXOES } = await import("../src/lib/gateway-da-loja");
+const { vaiParaOGatewayNovo, hospedadoVaiParaOGatewayNovo, FORA_HA_PELO_MENOS_MS, GATEWAY_DAS_NOVAS_CONEXOES } = await import("../src/lib/gateway-da-loja");
 
 let ok = 0;
 let falhou = 0;
@@ -31,6 +31,14 @@ igual("caiu há 2 min fica (reconexão normal)", vaiParaOGatewayNovo({ connected
 igual("caiu há 10 min vai", vaiParaOGatewayNovo({ connected: false, jaConectouAlgumaVez: true, desconectadoDesde: ha(FORA_HA_PELO_MENOS_MS) }, agora), true);
 igual("caiu há 3 h vai", vaiParaOGatewayNovo({ connected: false, jaConectouAlgumaVez: true, desconectadoDesde: ha(3 * 3600 * 1000) }, agora), true);
 igual("já conectou, sem data de queda, fica", vaiParaOGatewayNovo({ connected: false, jaConectouAlgumaVez: true }, agora), false);
+
+// Conectou no gateway antigo com aparelho hospedado (Na Goma, 02/10/2026).
+igual("hospedado no gateway antigo vai", hospedadoVaiParaOGatewayNovo({ connected: true }, { aparelhoHospedado: true }), true);
+igual("hospedado já no gateway novo fica", hospedadoVaiParaOGatewayNovo({ connected: true, evolutionUrl: GATEWAY_DAS_NOVAS_CONEXOES }, { aparelhoHospedado: true }), false);
+igual("hospedado em outro gateway à parte fica", hospedadoVaiParaOGatewayNovo({ evolutionUrl: "https://outro" }, { aparelhoHospedado: true }), false);
+igual("sem hospedado fica", hospedadoVaiParaOGatewayNovo({ connected: true }, { aparelhoHospedado: false }), false);
+igual("saúde ausente fica", hospedadoVaiParaOGatewayNovo({ connected: true }, null), false);
+igual("hospedado só como texto não conta", hospedadoVaiParaOGatewayNovo({}, { aparelhoHospedado: "true" }), false);
 
 console.log(`${ok} ok, ${falhou} falhou`);
 process.exit(falhou ? 1 : 0);

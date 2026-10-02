@@ -136,6 +136,20 @@ async function main() {
     conferir("Divinos: vistoEm é a hora da leitura ao vivo", r.vistoEm === T0 + 30_000, r.vistoEm);
   }
 
+  // 3b. A mesma leitura com a loja já no gateway de Baileys 7: lá o hospedado
+  // funciona (China pow, 30/09) — só o doente aparece, sem "desligue o outro sistema".
+  {
+    const r = saudeDoVinculoNaTela({
+      conectado: true,
+      aoVivo: leituraAoVivoDaResposta(respostaDoQr(doenteComHospedado), T0 + 30_000),
+      noGatewayNovo: true,
+    });
+    const tipos = r.problemas.map((p) => p.tipo);
+    conferir("gateway novo: hospedado não é problema", JSON.stringify(tipos) === JSON.stringify(["vinculo-doente"]), tipos);
+    conferir("gateway novo: ninguém manda desligar o outro sistema",
+      !r.problemas.some((p) => p.passos.some((x) => /desligue a integração/i.test(x))), r.problemas.map((p) => p.passos));
+  }
+
   // 4. Só doente (sem hospedado): o passo a passo começa em Aparelhos conectados.
   {
     const m = gateway.criarMonitorDoVinculo();

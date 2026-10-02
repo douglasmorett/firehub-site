@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { registrarEstadoDoRobo } from '@/lib/whatsapp-estado';
+import { hospedadoVaiParaOGatewayNovo, levarHospedadoAoGatewayNovo } from '@/lib/gateway-da-loja';
 import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
 import { processChatbotAI } from '@/lib/chatbot-ai';
 import { trackWhatsAppMessage } from '@/lib/usage-tracker';
@@ -199,6 +200,13 @@ export async function POST(req: NextRequest) {
               }
             : config;
 
+          // Conectou no gateway antigo com aparelho hospedado: ficaria surdo.
+          // Vai para o gateway novo e o lojista lê o QR uma vez (lib/gateway-da-loja.ts).
+          if (conectada && hospedadoVaiParaOGatewayNovo(config, configParaGravar.saudeDoVinculo)) {
+            await levarHospedadoAoGatewayNovo(user.id, configParaGravar);
+            return NextResponse.json({ status: "ok", levadaAoGatewayNovo: true });
+          }
+
           await registrarEstadoDoRobo(user.id, configParaGravar, conectada, formattedPhone, user.storePhone);
 
           console.log(
@@ -225,10 +233,15 @@ export async function POST(req: NextRequest) {
           const loja = candidatas[0];
           const config = (loja.chatbotConfig as any) || {};
           const d = body.data || {};
-          await prisma.user.update({
-            where: { id: loja.id },
-            data: { chatbotConfig: { ...config, saudeDoVinculo: saudeDoVinculo(d) } },
-          });
+          const saude = saudeDoVinculo(d);
+          if (config.connected === true && hospedadoVaiParaOGatewayNovo(config, saude)) {
+            await levarHospedadoAoGatewayNovo(loja.id, { ...config, saudeDoVinculo: saude });
+          } else {
+            await prisma.user.update({
+              where: { id: loja.id },
+              data: { chatbotConfig: { ...config, saudeDoVinculo: saude } },
+            });
+          }
           console.warn(
             `[WhatsApp Webhook] ${d.vinculoDoente ? "🚨 Vínculo DOENTE" : "💚 Vínculo sadio"} em ${instance}` +
               `${d.aparelhoHospedado ? " · aparelho hospedado na conta" : ""}${d.motivo ? ` — ${String(d.motivo).slice(0, 200)}` : ""}`

@@ -753,6 +753,7 @@ export default function ChatbotHubClient() {
     saudeSalva: config.saudeDoVinculo,
     aparelhoSalvo: config.vinculoDoAparelho,
     numeroComumConfirmado: Boolean(numeroConectado) && numerosComunsDaLoja.includes(numeroConectado),
+    noGatewayNovo: Boolean(config.evolutionUrl),
   });
   const vinculoComProblema = saudeDoVinculo.problemas.length > 0;
 

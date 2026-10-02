@@ -179,6 +179,13 @@ export function saudeDoVinculoNaTela(entrada: {
   aparelhoSalvo?: unknown;
   /** O lojista já disse que o WhatsApp comum É o número da loja (vale para este número). */
   numeroComumConfirmado?: boolean;
+  /**
+   * A loja está no gateway de Baileys 7 (`chatbotConfig.evolutionUrl`). Lá o
+   * aparelho hospedado funciona — China pow respondeu com o Anota AI ligado
+   * (30/09/2026) —, então ele não é problema e ninguém manda desligar o outro
+   * sistema.
+   */
+  noGatewayNovo?: boolean;
 }): SaudeDoVinculoNaTela {
   const vazio: SaudeDoVinculoNaTela = { problemas: [], plataforma: null, nomeDaPlataforma: null, vistoEm: null };
   // Desconectado, a faixa de "robô fora do ar" já diz o que fazer; e os avisos
@@ -229,6 +236,7 @@ export function saudeDoVinculoNaTela(entrada: {
 
   const doente = doDoente?.doente === true;
   const hospedado =
+    !entrada.noGatewayNovo &&
     Boolean(doAparelho) &&
     (doAparelho!.hospedado === true || doAparelho!.avisos.some((x) => x.tipo === "aparelho-hospedado"));
   const avisoHospedado = doAparelho?.avisos.find((x) => x.tipo === "aparelho-hospedado") || null;
