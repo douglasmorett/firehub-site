@@ -7,9 +7,17 @@
  * vídeo é o da tela aberta (lib/tutoriais.ts) e, se não houver, não desenha
  * nada. Sutil de propósito — é ajuda para quem procura, não propaganda: sem
  * abrir sozinho, sem balão, sem piscar. O único chamariz é uma bolinha até a
- * pessoa assistir uma vez. O rótulo é curto ("Tutorial") porque a barra do
- * topo já anda cheia: com "Como usar esta tela" ela quebrava em duas linhas
- * em tela de 1366 px, e uma barra mais alta empurra a tela inteira para baixo.
+ * pessoa assistir uma vez. O rótulo diz de qual tela é o vídeo ("Tutorial
+ * Pedidos", lib/tutoriais.ts › NOMES). Só quando cabe: a barra do topo quebra
+ * linha quando falta espaço, e o espaço livre depende do nome da loja, do menu
+ * recolhido, dos botões do iFood. O botão mede — se o nome faz a barra quebrar,
+ * fica só "Tutorial"; se volta a sobrar espaço, o nome volta. Barra em duas
+ * linhas empurra a tela inteira para baixo (foi o que a gravação de 1366 px
+ * mostrou com "Tutorial Início").
+ *
+ * Todos os vídeos juntos, um depois do outro, ficam na central de tutoriais
+ * (CentralDeTutoriais), que abre depois do login; o link "Todos os tutoriais"
+ * da janela leva até ela.
  *
  * A janela abre por cima da tela, sem trocar de página: o lojista assiste,
  * fecha e continua de onde estava. Capítulos ao lado levam direto ao ponto
@@ -17,16 +25,20 @@
  * balcão são barulhentos.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { PlayCircle, X } from "lucide-react";
-import { arquivosDoTutorial, duracaoEmMinutos, indiceInicial, relogio, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
+import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
+import { arquivosDoTutorial, duracaoEmMinutos, indiceInicial, nomeDaTela, relogio, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
 
-const CHAVE_VISTO = "firehub_tutorial_visto:";
-const VELOCIDADES = [1, 1.25, 1.5];
+export const CHAVE_VISTO = "firehub_tutorial_visto:";
+export const VELOCIDADES = [1, 1.25, 1.5];
 
-const ESTILO = `
+/** Evento que abre a central com todos os vídeos (quem escuta: CentralDeTutoriais). */
+export const ABRIR_CENTRAL = "firehub:abrir-central-de-tutoriais";
+
+export const ESTILO = `
 .fh-tutorial-botao{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:9px;
   background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;font-weight:700;font-size:.72rem;
   cursor:pointer;white-space:nowrap;position:relative;font-family:inherit}
@@ -41,6 +53,8 @@ const ESTILO = `
   box-shadow:0 24px 60px rgba(0,0,0,.35);color:#0F172A}
 .fh-tutorial-topo{display:flex;align-items:center;gap:12px;padding:14px 16px 12px 20px}
 .fh-tutorial-topo h2{margin:0;font-size:1.02rem;font-weight:800;flex:1;min-width:0}
+.fh-tutorial-todos{border:1px solid #E2E8F0;background:#fff;border-radius:9px;height:34px;padding:0 12px;font-weight:700;font-size:.78rem;cursor:pointer;color:#334155;font-family:inherit;white-space:nowrap}
+.fh-tutorial-todos:hover{background:#F8FAFC}
 .fh-tutorial-fechar{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;border:1px solid #E2E8F0;background:#F8FAFC;cursor:pointer;color:#334155}
 .fh-tutorial-corpo{display:grid;grid-template-columns:minmax(0,1fr) 264px;gap:16px;padding:0 16px 16px 20px}
 .fh-tutorial-video{width:100%;aspect-ratio:16/9;background:#0F172A;border-radius:12px;display:block}
@@ -73,7 +87,8 @@ export default function TutorialDaTela({
   tom?: "escuro" | "claro";
 } = {}) {
   const pathname = usePathname();
-  const tutoriais = tutoriaisDaTela(rota || pathname);
+  const tutoriais = tutoriaisDaTela(rota || pathname, useTutoriaisEnviados());
+  const nome = nomeDaTela(rota || pathname);
   const [aberto, setAberto] = useState(false);
   const [qual, setQual] = useState(0);
   const [jaViu, setJaViu] = useState(true); // começa "visto" para a bolinha não piscar antes de ler o navegador
@@ -81,6 +96,31 @@ export default function TutorialDaTela({
   const [velocidade, setVelocidade] = useState(1);
   const video = useRef<HTMLVideoElement>(null);
   const fecharRef = useRef<HTMLButtonElement>(null);
+  const botaoRef = useRef<HTMLButtonElement>(null);
+  const [comNome, setComNome] = useState(true);
+  const larguraDoNome = useRef(0);
+
+  // O nome no botão só fica se a barra do topo continua numa linha só.
+  // Estrutura da StoreTopNav: barra (flex, quebra linha) > [grupo da esquerda, grupo com este botão].
+  useLayoutEffect(() => {
+    const botao = botaoRef.current;
+    const grupo = botao?.parentElement;
+    const barra = grupo?.parentElement;
+    const esquerda = barra?.firstElementChild;
+    if (!nome || !botao || !grupo || !barra || !esquerda || esquerda === grupo || typeof ResizeObserver === "undefined") return;
+    const medir = () => {
+      const n = botao.querySelector<HTMLElement>(".fh-tutorial-nome");
+      if (n && n.offsetWidth) larguraDoNome.current = n.offsetWidth;
+      const g = grupo.getBoundingClientRect();
+      const e = esquerda.getBoundingClientRect();
+      const quebrou = g.top > e.top + e.height / 2 || g.height > botao.offsetHeight * 1.6;
+      setComNome((tinha) => (tinha ? !quebrou : !quebrou && g.left - e.right >= larguraDoNome.current + 12));
+    };
+    medir();
+    const observador = new ResizeObserver(medir);
+    observador.observe(barra);
+    return () => observador.disconnect();
+  }, [nome]);
 
   const tutorial: Tutorial | undefined = tutoriais[Math.min(qual, tutoriais.length - 1)];
   const primeiroId = tutoriais[0]?.id;
@@ -145,13 +185,14 @@ export default function TutorialDaTela({
       <style dangerouslySetInnerHTML={{ __html: ESTILO }} />
       <button
         type="button"
+        ref={botaoRef}
         className={tom === "claro" ? "fh-tutorial-botao claro" : "fh-tutorial-botao"}
         onClick={abrir}
         title={`Vídeo de ${duracaoEmMinutos(tutorial.duracao)}: ${tutorial.titulo}`}
-        aria-label="Tutorial: como usar esta tela"
+        aria-label={nome ? `Tutorial da tela ${nome}` : "Tutorial: como usar esta tela"}
       >
         <PlayCircle size={15} />
-        <span>Tutorial</span>
+        <span>Tutorial{nome && comNome && <b className="fh-tutorial-nome"> {nome}</b>}</span>
         {!jaViu && <i className="fh-tutorial-novo" aria-hidden="true" />}
       </button>
 
@@ -160,6 +201,9 @@ export default function TutorialDaTela({
           <div className="fh-tutorial-janela" role="dialog" aria-modal="true" aria-label={tutorial.titulo}>
             <div className="fh-tutorial-topo">
               <h2>{tutorial.titulo}</h2>
+              <button type="button" className="fh-tutorial-todos" onClick={() => { fechar(); window.dispatchEvent(new Event(ABRIR_CENTRAL)); }}>
+                Todos os tutoriais
+              </button>
               <button ref={fecharRef} type="button" className="fh-tutorial-fechar" onClick={fechar} aria-label="Fechar o vídeo">
                 <X size={17} />
               </button>

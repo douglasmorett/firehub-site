@@ -21,6 +21,13 @@ export const VOZ = {
     "Leia em português do Brasil, com sotaque brasileiro neutro. Voz simpática e clara, de quem mostra a um colega como usar um sistema. Ritmo natural de conversa, sem pressa e sem arrastar. Leia exatamente o texto:",
 };
 
+/**
+ * Pronúncia que vale para TODOS os roteiros. "FireHub" junto a voz lia
+ * "fíre-rúbi"; o Douglas ouviu as opções em 02/10/2026 e escolheu "Fire Hub"
+ * separado. Só a voz muda: a legenda continua "FireHub".
+ */
+export const PRONUNCIA_FIXA = { FireHub: "Fire Hub" };
+
 const PASTA = path.join(process.cwd(), "tutoriais", "saida", "_vozes");
 const API = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -109,7 +116,7 @@ export function duracaoDoAudio(arquivo) {
 export async function narrar(texto, { pronuncia = {} } = {}) {
   fs.mkdirSync(PASTA, { recursive: true });
   let falado = texto;
-  for (const [de, para] of Object.entries(pronuncia)) falado = falado.split(de).join(para);
+  for (const [de, para] of Object.entries({ ...PRONUNCIA_FIXA, ...pronuncia })) falado = falado.split(de).join(para);
   const resumo = crypto.createHash("sha1").update(`${VOZ.modelo}|${VOZ.nome}|${VOZ.estilo}|${falado}`).digest("hex").slice(0, 16);
   const arquivo = path.join(PASTA, `${resumo}.wav`);
   if (fs.existsSync(arquivo)) return { arquivo, ms: duracaoDoAudio(arquivo), novo: false };

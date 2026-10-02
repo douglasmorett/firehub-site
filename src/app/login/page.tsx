@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import EscolhaDePainel from "@/components/paineis/EscolhaDePainel";
 import type { PaineisDaSessao } from "@/lib/paineis-do-dono";
+import { esquecerCentralFechada } from "@/lib/tutoriais";
 
 const CHAVE_LEMBRAR = "fh_remember";
 const CHAVE_EMAIL = "fh_remember_email";
@@ -75,6 +76,8 @@ export default function FireHubLoginPage() {
     setLoading(false);
 
     if (res?.ok) {
+      // A central de tutoriais fechada com "Fechar" volta a abrir a cada login.
+      esquecerCentralFechada();
       // Preferência de lembrar acesso: gravada quando marcada, apagada quando não.
       try {
         if (rememberMe) {

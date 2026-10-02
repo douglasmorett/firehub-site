@@ -38,6 +38,8 @@ const TIPOS: Record<string, string> = {
   // Vídeo da capa do cardápio (lib/video-enviado.ts).
   ".mp4": "video/mp4",
   ".webm": "video/webm",
+  // Legenda dos tutoriais em vídeo (uploads/tutoriais, ver lib/tutoriais-no-servidor.ts).
+  ".vtt": "text/vtt; charset=utf-8",
 };
 
 /**

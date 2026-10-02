@@ -45,6 +45,13 @@ export async function entrar(navegador, { email, senha }) {
   await pagina.fill('input[type=password]', senha);
   await pagina.locator('button[type=submit]').first().click();
   await pagina.waitForURL(/\/store/, { timeout: 120_000 });
+  // A central de tutoriais (CentralDeTutoriais) abre sozinha depois do login.
+  // Calada aqui, a escolha vai junto no storageState e nenhum vídeo a mostra.
+  const naoMostrar = pagina.getByRole("button", { name: "Já vi, não mostrar mais" });
+  if (await naoMostrar.waitFor({ state: "visible", timeout: 10_000 }).then(() => true, () => false)) {
+    await naoMostrar.click();
+    await pagina.waitForTimeout(300);
+  }
   const estado = await contexto.storageState();
   await contexto.close();
   return estado;

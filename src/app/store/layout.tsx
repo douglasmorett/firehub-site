@@ -16,6 +16,9 @@ import AvisoImpressaoParada from "@/components/customer/AvisoImpressaoParada";
 import { AvisoDispensavel, BotaoNaoVerMais } from "@/components/customer/NaoVerMais";
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
+import CentralDeTutoriais from "@/components/CentralDeTutoriais";
+import { TutoriaisEnviados } from "@/components/TutoriaisEnviados";
+import { tutoriaisEnviados } from "@/lib/tutoriais-no-servidor";
 
 export const dynamic = "force-dynamic";
 
@@ -122,6 +125,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
 
   return (
     <CartProvider>
+      <TutoriaisEnviados ids={tutoriaisEnviados()}>
       <GlobalPrintListener />
       {/* O aviso de cancelamento e disputa NÃO mora aqui: montado no layout,
           ele abria em cima do KDS e de qualquer outra tela. Fica só na tela
@@ -171,6 +175,17 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           semNavegacao
           lojaDeDemonstracao={ehLojaDeDemonstracao(storeOwner?.id || user?.id)}
         />
+        {/* A tela de orientação com todos os vídeos, que abre depois do login.
+            Não abre para o suporte que entrou pelo "Acessar" do admin: quem
+            precisa aprender o painel é a loja, não quem a está atendendo. */}
+        {isFranqueado && user?.id && !(session.user as any)?.impersonatedBy && (
+          <CentralDeTutoriais
+            usuarioId={user.id}
+            // Conta antiga guarda o nome da LOJA em `name`: aí a saudação vai sem nome.
+            primeiroNome={user.name && user.name.trim() !== (storeOwner?.storeName || user.storeName || "").trim() ? user.name.trim().split(/\s+/)[0] : ""}
+            contaNova={!!ownerCreatedAt && Date.now() - new Date(ownerCreatedAt).getTime() < 30 * 24 * 60 * 60 * 1000}
+          />
+        )}
 
         {/* ── AVISOS DA OPERAÇÃO ────────────────────────────────────────
             Ficavam só no painel inicial (/store). Quem passa o expediente na
@@ -290,6 +305,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         <HumanSupportFloatingWidget />
         </div>
       </div>
+      </TutoriaisEnviados>
     </CartProvider>
   );
 }

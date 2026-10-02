@@ -8,14 +8,21 @@ Este documento é para quem vai produzir o próximo vídeo ou mexer no que já e
 
 ## 1. O que o lojista vê
 
-- **Botão "Tutorial"** na barra vermelha do topo, sempre no mesmo lugar. Só aparece na tela que
-  tem vídeo. Uma bolinha amarela marca o vídeo que a pessoa ainda não abriu; depois some.
+- **Botão "Tutorial <tela>"** na barra vermelha do topo ("Tutorial Pedidos", "Tutorial KDS Cozinha"),
+  sempre no mesmo lugar. Só aparece na tela que tem vídeo. Uma bolinha amarela marca o vídeo que a
+  pessoa ainda não abriu; depois some. Em tela mais estreita o nome sai e fica "Tutorial".
+- **Central de tutoriais** (`CentralDeTutoriais`): depois do login, abre sozinha a tela de orientação
+  com todos os vídeos em sequência (um termina, o próximo começa) e o texto ensinando que o tutorial
+  de cada aba fica no topo. "Fechar" vale até o próximo login; "Já vi, não mostrar mais" cala de vez
+  naquele aparelho. Ao fechar, uma seta destaca o botão "Tutorial". Reabre por "Todos os tutoriais",
+  na janela do vídeo de cada tela. Não abre sozinha no Totem, na tela cheia da cozinha nem para o
+  suporte que entrou pelo "Acessar" do admin.
 - **Janela por cima da tela**, sem sair de onde está. Fecha no X, no Esc ou clicando fora.
 - **Capítulos ao lado** ("Aceitar o pedido", "Cancelar um pedido"): um clique leva direto ao ponto.
 - **Legenda ligada** de saída (cozinha e balcão são barulhentos) e velocidade 1x, 1,25x e 1,5x.
 - Tela grande (Cardápio) leva vários vídeos curtos, escolhidos no alto da janela.
 
-Nada abre sozinho, nada pisca, nada tampa a tela. É ajuda para quem procura.
+Fora a central depois do login, nada abre sozinho, nada pisca, nada tampa a tela.
 
 ## 2. Como um vídeo é feito: tutorial é código
 
@@ -81,7 +88,7 @@ e no Histórico de caixas. Em Minha loja, a âncora da URL (`#entrega`) escolhe 
 
 ## 5. A lista
 
-Os 28 vídeos estão gravados, conferidos e aguardando aprovação do Douglas.
+Os 28 vídeos foram aprovados pelo Douglas em 02/10/2026.
 
 | # | Grupo | Vídeo (id) | Tela |
 |---|-------|-----------|------|
@@ -139,20 +146,25 @@ Para escrever um roteiro novo, siga `ROTEIRO.md`.
 O relógio da gravação é sempre "noite de movimento": escolhe-se o fuso em que agora são 20h
 (`ambiente/relogio.mjs`), para o vídeo nunca mostrar uma loja lotada às 4 da manhã.
 
-## 7. Onde os vídeos ficam (decisão em aberto)
+## 7. Onde os vídeos ficam
 
 Os arquivos de vídeo **não entram no repositório** (`/public/tutoriais/` está no `.gitignore`).
-O painel busca em `NEXT_PUBLIC_TUTORIAIS_URL`. **Sem a variável, nenhum botão aparece**: publicar
-este código antes de decidir a hospedagem não muda nada para o lojista.
+Em produção moram no **volume de uploads do servidor**, em `uploads/tutoriais/<id>/<versao>/`, servidos
+pela rota `/uploads/[...path]` (vídeo em pedaços, legenda `.vtt`). A versão no caminho faz cada gravação
+ter endereço próprio: cache eterno, e regravar nunca mostra o vídeo velho.
 
-| Opção | A favor | Contra |
-|-------|---------|--------|
-| **Armazenamento externo** (Cloudflare R2 ou parecido) — recomendado | Não pesa no servidor; envio por script; player próprio | Criar a conta e o bucket uma vez |
-| Pasta `public/` do site | Nada a configurar | ~8 MB por vídeo no repositório e na imagem; vídeo servido pelo mesmo Node que já aperta no pico |
-| Volume de uploads do servidor | Fora do repositório | Mesma carga no Node; envio manual ao servidor |
-| YouTube não listado | Grátis, leve em qualquer internet | Perde capítulos e legenda próprios, mostra marca do YouTube, regravar muda o link |
+**O botão de uma tela só aparece quando o vídeo dela já está no disco** (`lib/tutoriais-no-servidor.ts`,
+lido pelo layout do painel). Por isso o deploy do código pode ir antes dos vídeos: nada quebra, e cada
+vídeo aparece sozinho quando chega.
 
-Vídeo não precisa de backup: é regerável pelo roteiro.
+**Enviar para o servidor:** `POST /api/admin/tutoriais` (só ADMIN), em pedaços de até 6 MB porque o proxy
+do Next corta corpo acima de 10 MB. Só aceita a versão atual de um tutorial de `tutoriais-fichas.json`.
+`GET /api/admin/tutoriais` diz o que já chegou. O envio é feito do navegador logado como admin
+(`tutoriais/enviar-no-navegador.js`), com os arquivos preparados por `tutoriais/preparar-envio.mjs`.
+
+A gravação local usa `NEXT_PUBLIC_TUTORIAIS_URL=/tutoriais` (a pasta public). Para um armazenamento
+externo (ex.: Cloudflare R2), basta a variável com o endereço dele. Vídeo não precisa de backup: é
+regerável pelo roteiro.
 
 ## 8. Custo e manutenção
 

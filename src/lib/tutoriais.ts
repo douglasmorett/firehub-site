@@ -61,6 +61,36 @@ const TELAS: Record<string, string[]> = {
 };
 
 /**
+ * O nome da tela no botão ("Tutorial Pedidos", "Tutorial KDS Cozinha"). Pedido
+ * do Douglas em 02/10/2026: só "Tutorial" não dizia DE QUÊ — o lojista precisa
+ * ler no botão que aquele vídeo é o da tela em que ele está. Nome curto, como
+ * o do menu (lib/menu-do-painel.ts), porque mora na barra do topo.
+ */
+const NOMES: Record<string, string> = {
+  "/store": "Início",
+  "/store/pedidos-clientes": "Pedidos",
+  "/store/kds": "KDS Cozinha",
+  "/store/mesas": "Mesas",
+  "/store/venda-presencial": "Balcão",
+  "/store/caixa": "Caixa",
+  "/store/cardapio": "Cardápio",
+  "/store/fiscal": "Fiscal",
+  "/store/impressoras": "Impressoras",
+  "/store/minha-loja": "Minha loja",
+  "/store/integracoes": "Integrações",
+  "/store/chatbot": "Chatbot",
+  "/store/roteirizacao": "Roteirização",
+  "/store/motoboys": "Motoboys",
+  "/store/garcons": "Garçons",
+  "/store/marketing": "Marketing",
+  "/store/estoque": "Estoque",
+  "/store/financeiro": "Financeiro",
+  "/store/relatorios": "Relatórios",
+  "/store/etiquetas": "Etiquetas",
+  "/store/funcionarios": "Fiado",
+};
+
+/**
  * Em Minha loja, cada seção tem o seu vídeo: a âncora da URL (#entrega) escolhe
  * qual abre primeiro. Sem âncora conhecida, abre o primeiro da lista.
  */
@@ -81,19 +111,26 @@ export function indiceInicial(tutoriais: Tutorial[], hash: string | null | undef
 const FICHAS = fichas as Record<string, Tutorial>;
 
 /**
- * Onde os arquivos de vídeo moram: NEXT_PUBLIC_TUTORIAIS_URL.
+ * Onde os arquivos de vídeo moram. Em produção, o volume de uploads do
+ * servidor (`/uploads/tutoriais`, enviados por /api/admin/tutoriais). A
+ * gravação local usa a pasta public (`NEXT_PUBLIC_TUTORIAIS_URL=/tutoriais`),
+ * e um armazenamento externo seria só trocar a variável.
  *
- * Sem a variável, NENHUM botão aparece. É de propósito: os vídeos não entram
- * no repositório, então um deploy deste código sem a hospedagem decidida
- * mostraria um botão que abre um vídeo inexistente. A variável é o interruptor
- * — "/tutoriais" para servir da pasta public do próprio site, ou o endereço do
- * armazenamento externo. Nenhuma tela muda quando ela muda.
+ * Os vídeos não entram no repositório. O botão de uma tela só aparece quando o
+ * vídeo dela já chegou ao servidor (lib/tutoriais-no-servidor.ts): deploy sem
+ * os vídeos não mostra botão quebrado.
  */
-const BASE = (process.env.NEXT_PUBLIC_TUTORIAIS_URL || "").replace(/\/+$/, "");
+export const BASE_DOS_TUTORIAIS = (process.env.NEXT_PUBLIC_TUTORIAIS_URL || "/uploads/tutoriais").replace(/\/+$/, "");
+const BASE = BASE_DOS_TUTORIAIS;
 
-/** Os vídeos da tela que a rota está mostrando — a rota mais específica vence. */
-export function tutoriaisDaTela(pathname: string | null | undefined): Tutorial[] {
-  if (!BASE) return [];
+export const ARQUIVOS_DO_TUTORIAL = ["video.mp4", "capa.jpg", "legendas.vtt"] as const;
+
+/** Ids que já estão no servidor; null = todos (não há como saber). */
+export type TutoriaisEnviados = ReadonlySet<string> | null;
+const enviado = (enviados: TutoriaisEnviados) => (t: Tutorial | undefined): t is Tutorial => !!t && (!enviados || enviados.has(t.id));
+
+/** A rota de TELAS que a URL está mostrando — a mais específica vence. */
+function telaDaRota(pathname: string | null | undefined): string {
   const p = String(pathname || "");
   let achada = "";
   for (const rota of Object.keys(TELAS)) {
@@ -101,14 +138,45 @@ export function tutoriaisDaTela(pathname: string | null | undefined): Tutorial[]
     const casa = p === rota || (rota !== "/store" && p.startsWith(`${rota}/`));
     if (casa && rota.length > achada.length) achada = rota;
   }
+  return achada;
+}
+
+/** Os vídeos da tela que a rota está mostrando. */
+export function tutoriaisDaTela(pathname: string | null | undefined, enviados: TutoriaisEnviados = null): Tutorial[] {
+  const achada = telaDaRota(pathname);
   if (!achada) return [];
-  return TELAS[achada].map((id) => FICHAS[id]).filter(Boolean);
+  return TELAS[achada].map((id) => FICHAS[id]).filter(enviado(enviados));
+}
+
+/**
+ * Todos os vídeos, na ordem da central de tutoriais (components/CentralDeTutoriais):
+ * a janela de orientação que abre depois do login e mostra um vídeo depois do
+ * outro. Os grupos são os do menu (lib/menu-do-painel.ts), na ordem em que o
+ * lojista novo precisa: primeiro operar, depois o cardápio, por último ajustes.
+ */
+const GRUPOS: { titulo: string; ids: string[] }[] = [
+  { titulo: "Operação", ids: ["inicio", "pedidos", "kds", "mesas", "balcao", "caixa", "roteirizacao"] },
+  { titulo: "Cardápio", ids: ["cardapio-produto", "cardapio-precos", "cardapio-combos", "cardapio-organizar"] },
+  { titulo: "Vendas", ids: ["marketing", "chatbot"] },
+  { titulo: "Gestão", ids: ["financeiro", "relatorios", "fiscal", "estoque", "etiquetas"] },
+  { titulo: "Equipe", ids: ["motoboys", "garcons", "fiado"] },
+  { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes"] },
+];
+
+export function todosOsTutoriais(enviados: TutoriaisEnviados = null): { titulo: string; tutoriais: Tutorial[] }[] {
+  return GRUPOS.map((g) => ({ titulo: g.titulo, tutoriais: g.ids.map((id) => FICHAS[id]).filter(enviado(enviados)) }))
+    .filter((g) => g.tutoriais.length > 0);
+}
+
+/** O nome que vai no botão: "Tutorial Pedidos". */
+export function nomeDaTela(pathname: string | null | undefined): string {
+  return NOMES[telaDaRota(pathname)] || "";
 }
 
 export function arquivosDoTutorial(t: Tutorial) {
-  const pasta = `${BASE}/${t.id}`;
-  const v = `?v=${t.versao}`;
-  return { video: `${pasta}/video.mp4${v}`, capa: `${pasta}/capa.jpg${v}`, legendas: `${pasta}/legendas.vtt${v}` };
+  // A versão é pasta, não ?v=: cada gravação tem endereço próprio e cache eterno.
+  const pasta = `${BASE}/${t.id}/${t.versao}`;
+  return { video: `${pasta}/video.mp4`, capa: `${pasta}/capa.jpg`, legendas: `${pasta}/legendas.vtt` };
 }
 
 /** "3 min", "1 min" — arredondado para cima: ninguém se sente enganado por sobrar tempo. */
@@ -119,4 +187,18 @@ export function duracaoEmMinutos(segundos: number): string {
 export function relogio(segundos: number): string {
   const s = Math.max(0, Math.floor(segundos));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * "Fechar" a central de tutoriais vale até o próximo login: a marca é um cookie
+ * de sessão (some quando o navegador fecha) e o login apaga a marca ao entrar.
+ * "Já vi, não mostrar mais" é outra coisa e mora no localStorage, por usuário.
+ */
+export const MARCA_CENTRAL_FECHADA = "fh_central_tutoriais_fechada";
+export const CHAVE_CENTRAL_NAO_MOSTRAR = "fh_central_tutoriais_nao_mostrar:";
+
+export function esquecerCentralFechada() {
+  try {
+    document.cookie = `${MARCA_CENTRAL_FECHADA}=; Max-Age=0; path=/; SameSite=Lax`;
+  } catch {}
 }
