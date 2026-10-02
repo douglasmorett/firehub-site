@@ -514,6 +514,8 @@ export default function MesasApp({
           // Só encosta no campo enquanto o garçom não mexeu nele, senão o
           // refresh de 10 em 10 segundos apagaria o que ele acabou de digitar.
           setServiceFee((atual) => (atual === taxaSalvaRef.current ? data.taxaServicoPadrao : atual));
+          // Loja que não cobra taxa (0%) abre a conta com a caixa desmarcada.
+          if (data.taxaServicoPadrao !== taxaSalvaRef.current) setUseServiceFee(data.taxaServicoPadrao > 0);
           taxaSalvaRef.current = data.taxaServicoPadrao;
         }
       }
@@ -874,6 +876,49 @@ export default function MesasApp({
    */
   const taxaSugeridaDaMesa = (_t: TableItem | null): number => taxaSalva;
 
+  /** Marcar a taxa numa conta de loja que não cobra não pode cobrar 0%. */
+  const marcarTaxa = (marcar: boolean) => {
+    setUseServiceFee(marcar);
+    if (marcar && !(serviceFee > 0)) setServiceFee(taxaSalva > 0 ? taxaSalva : 10);
+  };
+
+  // ── Taxa de serviço da loja (engrenagem › Taxa) ──
+  const [cobrarTaxaCfg, setCobrarTaxaCfg] = useState(true);
+  const [taxaCfg, setTaxaCfg] = useState("10");
+  const [salvandoTaxaCfg, setSalvandoTaxaCfg] = useState(false);
+  const [avisoTaxaCfg, setAvisoTaxaCfg] = useState<{ ok: boolean; texto: string } | null>(null);
+  const abrirConfigDaTaxa = () => {
+    setCobrarTaxaCfg(taxaSalva > 0);
+    setTaxaCfg(String(taxaSalva > 0 ? taxaSalva : 10));
+    setAvisoTaxaCfg(null);
+  };
+  const salvarConfigDaTaxa = async () => {
+    const pct = cobrarTaxaCfg ? Number(taxaCfg.replace(",", ".")) : 0;
+    if (cobrarTaxaCfg && (!Number.isFinite(pct) || pct <= 0 || pct > 100)) {
+      setAvisoTaxaCfg({ ok: false, texto: "Digite a porcentagem da taxa (entre 0,5 e 100) ou desmarque \"Cobrar taxa de serviço\"." });
+      return;
+    }
+    setSalvandoTaxaCfg(true);
+    setAvisoTaxaCfg(null);
+    try {
+      const r = await chamar("/api/store/tables", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taxaServicoPadrao: pct }),
+      });
+      if (!r.ok) throw new Error();
+      setTaxaSalva(pct);
+      taxaSalvaRef.current = pct;
+      setUseServiceFee(pct > 0);
+      setServiceFee(pct > 0 ? pct : 10);
+      setAvisoTaxaCfg({ ok: true, texto: pct > 0 ? `Salvo: a conta das mesas sai com ${pct}% de taxa de serviço.` : "Salvo: a conta das mesas sai sem taxa de serviço." });
+    } catch {
+      setAvisoTaxaCfg({ ok: false, texto: "Não deu para salvar. Confira a internet e tente de novo." });
+    } finally {
+      setSalvandoTaxaCfg(false);
+    }
+  };
+
   /** Sessão para a qual a taxa já foi sugerida: reabrir o modal não desfaz o que o gerente ajustou. */
   const sessaoComTaxaSugerida = useRef<string | null>(null);
 
@@ -947,13 +992,15 @@ export default function MesasApp({
     if (sessaoComTaxaSugerida.current !== sessionId) {
       sessaoComTaxaSugerida.current = sessionId;
       taxa = taxaSugeridaDaMesa(selectedTable);
-      setServiceFee(taxa);
+      // Loja que não cobra: caixa desmarcada, e marcar volta com 10%.
+      setServiceFee(taxa > 0 ? taxa : 10);
+      setUseServiceFee(taxa > 0);
     }
     setShowCloseModal(true);
     setValorPagamento("");
     setDocumentoDaConta("");
     await Promise.all([
-      carregarConta(sessionId, useServiceFee ? taxa : 0, Number(waiterTip) || 0),
+      carregarConta(sessionId, taxa, Number(waiterTip) || 0),
       carregarPagamentos(sessionId),
     ]);
   };
@@ -1285,7 +1332,7 @@ export default function MesasApp({
   const SEM_ANDAR = "__sem_andar__";
   const [andares, setAndares] = useState<AndarDaMesa[]>([]);
   const [andarFiltro, setAndarFiltro] = useState<string>("todos");
-  const [abaConfig, setAbaConfig] = useState<"mesas" | "andares" | "qr">("mesas");
+  const [abaConfig, setAbaConfig] = useState<"mesas" | "taxa" | "andares" | "qr">("mesas");
   useEffect(() => {
     try {
       const salvo = localStorage.getItem(CHAVE_ANDAR);
@@ -2573,7 +2620,7 @@ export default function MesasApp({
                 <input
                   type="checkbox"
                   checked={useServiceFee}
-                  onChange={e => setUseServiceFee(e.target.checked)}
+                  onChange={e => marcarTaxa(e.target.checked)}
                   disabled={!podeTirarTaxa}
                   title={podeTirarTaxa ? undefined : "A taxa de serviço só o caixa tira"}
                   style={{ accentColor: "#475569", width: 16, height: 16 }}
@@ -2935,7 +2982,7 @@ export default function MesasApp({
                   </div>
                 )}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, marginBottom: 8, cursor: "pointer" }}>
-                  <input type="checkbox" checked={useServiceFee} onChange={e => setUseServiceFee(e.target.checked)} disabled={!podeTirarTaxa} title={podeTirarTaxa ? undefined : "A taxa de serviço só o caixa tira"} style={{ accentColor: "#475569", width: 18, height: 18 }} />
+                  <input type="checkbox" checked={useServiceFee} onChange={e => marcarTaxa(e.target.checked)} disabled={!podeTirarTaxa} title={podeTirarTaxa ? undefined : "A taxa de serviço só o caixa tira"} style={{ accentColor: "#475569", width: 18, height: 18 }} />
                   Taxa de serviço
                   <input type="number" value={serviceFee} onChange={e => setServiceFee(Number(e.target.value))} disabled={!podeTirarTaxa}
                     style={{ width: 54, padding: "6px 8px", borderRadius: 6, border: "1px solid #E2E8F0", textAlign: "center", fontFamily: "inherit" }} />%
@@ -3363,8 +3410,8 @@ export default function MesasApp({
               <button onClick={() => setShowConfigModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer" }}>✕</button>
             </div>
             <div style={{ display: "flex", gap: 6, padding: "10px 20px 0" }}>
-              {([["mesas", "🪑 Mesas"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`], ["qr", "📱 QR Code"]] as const).map(([id, rotulo]) => (
-                <button key={id} type="button" onClick={() => setAbaConfig(id)} style={{
+              {([["mesas", "🪑 Mesas"], ["taxa", "💰 Taxa"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`], ["qr", "📱 QR Code"]] as const).filter(([id]) => id !== "taxa" || !ehGarcom).map(([id, rotulo]) => (
+                <button key={id} type="button" onClick={() => { setAbaConfig(id); if (id === "taxa") abrirConfigDaTaxa(); }} style={{
                   flex: 1, padding: "9px 10px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
                   fontSize: 14, fontWeight: 800,
                   background: abaConfig === id ? "#334155" : "#F1F5F9",
@@ -3374,7 +3421,56 @@ export default function MesasApp({
               ))}
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px" }}>
-              {abaConfig === "qr" ? (
+              {abaConfig === "taxa" ? (
+                <div style={{ padding: "10px 0 14px" }}>
+                  <p style={{ margin: "0 0 14px", fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+                    É a taxa que sai na conta de todas as mesas, seja qual for o garçom. Quanto dela vai para cada garçom
+                    é a comissão, no cadastro dele (menu Garçons).
+                  </p>
+                  <label style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+                    border: `1.5px solid ${cobrarTaxaCfg ? "#334155" : "#E2E8F0"}`, background: cobrarTaxaCfg ? "#F8FAFC" : "#fff",
+                  }}>
+                    <input type="checkbox" checked={cobrarTaxaCfg}
+                      onChange={e => { setCobrarTaxaCfg(e.target.checked); setAvisoTaxaCfg(null); if (e.target.checked && !(Number(taxaCfg) > 0)) setTaxaCfg("10"); }}
+                      style={{ accentColor: "#334155", width: 20, height: 20 }} />
+                    <span>
+                      <span style={{ display: "block", fontSize: 15, fontWeight: 800, color: "#0F172A" }}>Cobrar taxa de serviço</span>
+                      <span style={{ display: "block", fontSize: 12, color: "#64748B" }}>
+                        {cobrarTaxaCfg ? "A conta da mesa já abre com a taxa abaixo." : "A conta da mesa sai sem taxa de serviço."}
+                      </span>
+                    </span>
+                  </label>
+                  {cobrarTaxaCfg && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>Valor da taxa</span>
+                      <div style={{ position: "relative" }}>
+                        <input type="number" min="0.5" max="100" step="0.5" inputMode="decimal" value={taxaCfg}
+                          onChange={e => { setTaxaCfg(e.target.value); setAvisoTaxaCfg(null); }}
+                          onKeyDown={e => { if (e.key === "Enter") salvarConfigDaTaxa(); }}
+                          aria-label="Porcentagem da taxa de serviço"
+                          style={{ width: 100, padding: "10px 30px 10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 16, fontWeight: 800, fontFamily: "inherit", color: "#0F172A" }} />
+                        <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#64748B", fontWeight: 800 }}>%</span>
+                      </div>
+                    </div>
+                  )}
+                  <p style={{ margin: "12px 0 0", fontSize: 12, color: "#64748B", lineHeight: 1.5 }}>
+                    No fechamento de cada conta ainda dá para tirar ou mudar a taxa só daquela mesa.
+                  </p>
+                  {avisoTaxaCfg && (
+                    <div role="status" style={{ marginTop: 10, fontSize: 13, fontWeight: 700, color: avisoTaxaCfg.ok ? "#0F766E" : "#B71C1C" }}>
+                      {avisoTaxaCfg.texto}
+                    </div>
+                  )}
+                  <button type="button" onClick={salvarConfigDaTaxa} disabled={salvandoTaxaCfg} style={{
+                    marginTop: 14, width: "100%", padding: "12px", borderRadius: 12, border: "none",
+                    background: "#334155", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer",
+                    fontFamily: "inherit", opacity: salvandoTaxaCfg ? 0.6 : 1,
+                  }}>
+                    {salvandoTaxaCfg ? "Salvando..." : "Salvar taxa"}
+                  </button>
+                </div>
+              ) : abaConfig === "qr" ? (
                 <QrDasMesas />
               ) : abaConfig === "andares" ? (
                 <AndaresConfig
