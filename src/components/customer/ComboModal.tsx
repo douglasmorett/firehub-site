@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Minus, Check } from "lucide-react";
 import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela, opcaoDisponivelNaTela, grupoAguardaEscolha } from "@/lib/preco-combo";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
+import { itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
 
 export type ComboGroupData = {
   id: string;
@@ -131,6 +132,8 @@ interface ComboModalProps {
     precoDe?: number | null;
     imageUrl?: string | null;
     comboGroups: ComboGroupData[];
+    /** Combo de verdade: o item que ele sempre leva vai na caixa "Vem no combo". */
+    isCombo?: boolean | null;
   };
   onClose: () => void;
   onConfirm: (selections: Selections, extraSum: number, qty: number, notes?: string) => void;
@@ -234,6 +237,20 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
     return ativos.length > 0 && (itensVisiveis(group).length === 0 || grupoAguardaEscolha(ativos as any, selections));
   };
   const gruposNaTela = groups.filter(g => !grupoEscondido(g));
+
+  // O que o combo SEMPRE leva ("4× X-Salada") não é pergunta: o cliente não
+  // escolhe nada ali. Vai numa caixa "Vem no combo", já marcado desde a
+  // abertura (`preenchimentoForcado`), e as perguntas de verdade numeram sem
+  // ele. Item fixo PAUSADO continua como pergunta, para o modal dizer o que
+  // falta em vez de esconder (lib/combo-e-pergunta.ts).
+  const fixoDoGrupo = (g: ComboGroupData) => {
+    if (!product.isCombo) return null;
+    const fixo = itemFixoDoGrupo(g as any);
+    if (!fixo || g.items?.[0]?.menuProduct?.active === false) return null;
+    return (selections[g.id]?.[g.items[0].menuProduct.name] || 0) === fixo.qtd ? fixo : null;
+  };
+  const fixosNaTela = gruposNaTela.map(g => fixoDoGrupo(g)).filter(Boolean) as { id: string; nome: string; qtd: number }[];
+  const perguntasNaTela = gruposNaTela.filter(g => !fixoDoGrupo(g));
 
   // Trocou para uma escolha que bloqueia o que já estava marcado (escolheu a
   // meia e depois a Pequena): a marcação sai, senão iria no pedido.
@@ -498,7 +515,18 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
           <div style={{ padding: "0.5rem 1.25rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             {/* Numera só as que estão na tela: a borda da Lapastine é uma
                 pergunta por tamanho, e contar as escondidas pulava de 4 para 6. */}
-            {gruposNaTela.map((group, gIdx) => {
+            {fixosNaTela.length > 0 && (
+              <div style={{ backgroundColor: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: "14px", padding: "0.75rem 1rem" }}>
+                <div style={{ fontSize: "0.92rem", fontWeight: 800, color: "#0F766E", marginBottom: "6px" }}>Vem no combo</div>
+                {fixosNaTela.map(f => (
+                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.88rem", fontWeight: 600, color: "#1E293B", padding: "3px 0" }}>
+                    <Check size={14} strokeWidth={3} color="#0F766E" />
+                    {f.qtd > 1 ? `${f.qtd}× ` : ""}{f.nome}
+                  </div>
+                ))}
+              </div>
+            )}
+            {perguntasNaTela.map((group, gIdx) => {
               const total = getGroupTotal(group.id);
               const max = group.maxQty || 1;
               const min = groupMin(group);
