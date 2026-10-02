@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, toLocalISODate, getInstantUTC } from "@/lib/timezone";
+import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 
 // GET /api/motoboy-report?motoboyId=xxx&from=2026-05-01&to=2026-05-31
 export async function GET(req: Request) {
@@ -37,14 +38,20 @@ export async function GET(req: Request) {
   // turno do entregador que entrou às 18h do dia 1 e saiu às 2h do dia 2: por
   // dia inteiro, esse filtro traria os dois dias completos — o dobro das
   // entregas dele, e um acerto errado. Sem hora, nada muda: dia inteiro.
+  //
+  // Sem hora, o DIA é o expediente: das 5h às 5h do dia seguinte, como o app
+  // do motoboy, o quadro de pedidos e a numeração. Pela meia-noite, a entrega
+  // da 1h ficava fora do "Ontem" e caía no "Hoje" — contada no acerto da noite
+  // seguinte (Frangoso, 02/10/2026: a loja via 9, o motoboy 10).
+  const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
   if (from) {
-    fromDate = getInstantUTC(from, tz) ?? getStartOfDayUTC(from, tz);
+    fromDate = getInstantUTC(from, tz) ?? new Date(getStartOfDayUTC(from, tz).getTime() + VIRADA_MS);
   } else {
-    fromDate = getStartOfMonthUTC(new Date(), tz);
+    fromDate = new Date(getStartOfMonthUTC(new Date(), tz).getTime() + VIRADA_MS);
   }
 
   if (to) {
-    toDate = getInstantUTC(to, tz) ?? getEndOfDayUTC(to, tz);
+    toDate = getInstantUTC(to, tz) ?? new Date(getEndOfDayUTC(to, tz).getTime() + VIRADA_MS);
   } else {
     toDate = new Date();
   }
@@ -128,9 +135,10 @@ export async function GET(req: Request) {
     const totalDeliveries = orders.length;
     const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
 
-    // Calcular dias únicos trabalhados no fuso horário do restaurante
+    // Dias trabalhados = EXPEDIENTES, no fuso da loja. É o que paga a diária:
+    // pelo calendário, o turno das 18h às 2h contava dois dias.
     const uniqueDays = orders.length > 0
-      ? new Set(orders.map((o) => toLocalISODate(new Date(o.createdAt), tz))).size
+      ? new Set(orders.map((o) => toLocalISODate(new Date(new Date(o.createdAt).getTime() - VIRADA_MS), tz))).size
       : 0;
 
     // Soma das taxas dos pedidos

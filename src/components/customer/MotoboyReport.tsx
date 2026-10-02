@@ -34,7 +34,9 @@ function formatarYMD(d: Date): string {
 
 function getRange(period: string, tz = "America/Sao_Paulo") {
   const now = new Date();
-  const spNow = new Date(now.toLocaleString("en-US", { timeZone: tz }));
+  // O "hoje" é o do EXPEDIENTE (vira às 5h, como o servidor lê a data): à 1h
+  // da manhã, o turno que está acabando ainda é o de ontem.
+  const spNow = new Date(new Date(now.toLocaleString("en-US", { timeZone: tz })).getTime() - 5 * 60 * 60 * 1000);
   const hoje = formatarYMD(spNow);
 
   if (period === "today") return { from: hoje, to: hoje };
@@ -168,8 +170,8 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
               )}
             </div>
             <div style={{ marginTop: 6, fontSize: "0.73rem", color: "#94A3B8", lineHeight: 1.45 }}>
-              A hora é opcional — em branco, vale o dia inteiro. Para o turno que vira a noite,
-              use <strong>18:00</strong> no dia 1 e <strong>02:00</strong> no dia 2.
+              A hora é opcional — em branco, vale o expediente inteiro: das <strong>5h</strong> do dia
+              até as <strong>5h</strong> do dia seguinte, então o turno que vira a noite já entra completo.
             </div>
             {customFrom && customTo && customFrom > customTo && (
               <div style={{ marginTop: 6, fontSize: "0.75rem", color: "#B71C1C", fontWeight: 600 }}>

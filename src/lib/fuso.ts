@@ -153,3 +153,17 @@ export function inicioDoExpedienteDaLoja(timeZone: string | null | undefined = F
   }
   return hoje;
 }
+
+/**
+ * O instante em que o expediente atual COMEÇOU: as 5h do dia operacional.
+ *
+ * `inicioDoExpedienteDaLoja` devolve a MEIA-NOITE do dia operacional — larga de
+ * propósito para quem só quer "não perder o pedido das 23:30" (robô, avisos,
+ * numeração). Para CONTAR o que aconteceu no turno ela erra: às 22h a janela
+ * começa às 00:00 e engole a madrugada, que é do turno anterior. Foi assim
+ * que a entrega da 1h da Frangoso contava duas vezes no app do motoboy, uma
+ * em cada noite (Lucas, 02/10/2026: "pra mim bate nove, pra ele bate dez").
+ */
+export function viradaDoExpedienteDaLoja(timeZone: string | null | undefined = FUSO_PADRAO, agora: Date = new Date()): Date {
+  return new Date(inicioDoExpedienteDaLoja(timeZone, agora).getTime() + HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000);
+}

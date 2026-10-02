@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
+import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { cobrancaNaEntrega } from "@/lib/pagamento-na-entrega";
@@ -47,7 +47,11 @@ export async function GET(req: NextRequest) {
     // "CONCLUÍDAS HOJE" zerava às 00:00 no meio do turno, enquanto a tela de
     // motoboys da loja — que já usa expediente — seguia mostrando o total e
     // pagando a diária em cima dele.
-    const todayStart = inicioDoExpedienteDaLoja(tz);
+    // E começa às 5h, não à meia-noite do dia operacional: com a meia-noite, a
+    // entrega da 1h contava no turno dela e de novo no da noite seguinte
+    // (viradaDoExpedienteDaLoja). Vale o carimbo da ENTREGA (deliveredAt), que
+    // não muda depois; `updatedAt` só para pedido antigo sem carimbo.
+    const todayStart = viradaDoExpedienteDaLoja(tz);
 
     // Piso para os PENDENTES: pedido esquecido de semanas atrás ficava na tela
     // do entregador para sempre, ocupando vaga do take:100 e abrindo espaço
@@ -66,10 +70,8 @@ export async function GET(req: NextRequest) {
           // 1. Pedidos ativos pendentes de entrega (até 7 dias)
           { status: { notIn: [...STATUS_FINALIZADOS] }, createdAt: { gte: pisoPendentes } },
           // 2. Pedidos entregues NESTE EXPEDIENTE por este motoboy
-          {
-            status: { in: [...STATUS_FINALIZADOS] },
-            updatedAt: { gte: todayStart }
-          }
+          { status: { in: [...STATUS_FINALIZADOS] }, deliveredAt: { gte: todayStart } },
+          { status: { in: [...STATUS_FINALIZADOS] }, deliveredAt: null, updatedAt: { gte: todayStart } },
         ]
       },
       // ⚠️ `select` explícito, não `include`. O include trazia TODAS as colunas

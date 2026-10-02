@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
+import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
 
 export const dynamic = "force-dynamic";
 
@@ -118,7 +118,9 @@ export async function POST(req: NextRequest) {
     // Expediente da loja: o contador de rotas zerava as 21:00 de Brasilia (fuso
     // do container e UTC) e a rota da noite nascia como "Rota #1" de novo,
     // duplicando o numero com a rota da tarde.
-    const todayStart = inicioDoExpedienteDaLoja();
+    // Das 5h, não da meia-noite: a rota da noite seguia a contagem das rotas
+    // da madrugada, que são do turno anterior.
+    const todayStart = viradaDoExpedienteDaLoja();
 
     const existingTodayCount = await prisma.routeSchedule.count({
       where: {
