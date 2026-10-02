@@ -996,7 +996,9 @@ export default function CustomerStorePage({
   };
 
   const addToCart = (product: MenuProduct, cs?: any, extraSum: number = 0, qty: number = 1, itemNotes?: string) => {
-    if (product.isCombo && (product.comboGroups?.length || product.comboConfig) && !cs) {
+    // Quem abre as escolhas é ter PERGUNTA, não ser combo: pastel com sabor e
+    // refrigerante com tamanho não são combo (lib/combo-e-pergunta.ts).
+    if ((product.comboGroups?.length || (product.isCombo && product.comboConfig)) && !cs) {
       if (!cabeNoEstoque(product, 1)) return;
       setComboProduct(product);
       return;
@@ -4309,11 +4311,12 @@ export default function CustomerStorePage({
                       <div className="product-info">
                         <div className="product-name">
                           {p.name}
-                          {/* `isCombo` só diz que o produto tem perguntas — pizza por
-                              tamanho, lanche com adicionais. O selo é para o que a loja
-                              chama de combo (Pizzaria 17, 28/09/2026: "nas pizzas não
-                              pode aparecer essa palavrinha combo"). */}
-                          {p.isCombo && /combo/i.test(`${p.name} ${p.category || ""}`) && <span className="product-combo-tag">📦 COMBO</span>}
+                          {/* O selo é do COMBO, não de quem tem pergunta: pizza por
+                              tamanho e lanche com adicionais não levam (Pizzaria 17,
+                              28/09/2026: "nas pizzas não pode aparecer essa palavrinha
+                              combo"). Desde 02/10 `isCombo` quer dizer combo de verdade
+                              — lib/combo-e-pergunta.ts. */}
+                          {p.isCombo && <span className="product-combo-tag">📦 COMBO</span>}
                         </div>
                         {p.description && <p className="product-desc">{p.description}</p>}
                         {(p as any).tags && (() => {
@@ -4674,11 +4677,12 @@ export default function CustomerStorePage({
             // modal mostrava o mesmo produto sem desconto nenhum.
             precoDe: comboProduct.precoDe,
             imageUrl: comboProduct.imageUrl,
-            comboGroups: (comboProduct.isCombo && comboProduct.comboGroups) || []
+            comboGroups: comboProduct.comboGroups || [],
+            isCombo: comboProduct.isCombo
           }}
           onClose={() => setComboProduct(null)}
           onConfirm={(selections, extraSum, qty, comboNotes) => {
-            const temGrupos = Boolean(comboProduct.isCombo && comboProduct.comboGroups?.length);
+            const temGrupos = Boolean(comboProduct.comboGroups?.length);
             // Produto sem grupos não carrega comboSelections vazio — senão a
             // sacola e a cozinha tratariam um item simples como combo.
             addToCart(

@@ -1420,7 +1420,8 @@ export default function VendaPresencialPage() {
             name: comboProduct.name,
             price: comboProduct.price,
             imageUrl: comboProduct.imageUrl,
-            comboGroups: comboProduct.comboGroups || []
+            comboGroups: comboProduct.comboGroups || [],
+            isCombo: comboProduct.isCombo
           }}
           onClose={() => setComboProduct(null)}
           onConfirm={(selections, extraSum, qty, notes) => {

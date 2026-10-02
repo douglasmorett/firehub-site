@@ -656,6 +656,7 @@ export default function EditarPedidoPainel({
             price: produtoComOpcoes.price,
             imageUrl: produtoComOpcoes.imageUrl ?? null,
             comboGroups: (produtoComOpcoes.comboGroups || []) as any,
+            isCombo: (produtoComOpcoes as any).isCombo,
           }}
           onClose={() => setProdutoComOpcoes(null)}
           onConfirm={(selections, extraSum, qty, notes) => {

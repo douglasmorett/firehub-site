@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, precoDaOpcaoNaTela } from "@/lib/preco-combo";
+import { itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
 import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -318,6 +319,21 @@ function opcoesUtilizaveis(grupo: GrupoDeCombo): OpcaoDeGrupo[] {
 
 function gruposDoProduto(produto: Produto): GrupoDeCombo[] {
   return [...(produto.comboGroups || [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+}
+
+/**
+ * O que o combo SEMPRE leva ("4× X-Salada"): uma opção só, mínimo = máximo.
+ * Entra já marcado — o cliente do totem não tem o que escolher ali — e com a
+ * opção pausada fica de fora, para a pergunta mostrar o que falta.
+ */
+function escolhasFixas(produto: Produto): EscolhasNaTela {
+  const fixas: EscolhasNaTela = {};
+  for (const grupo of gruposDoProduto(produto)) {
+    const fixo = itemFixoDoGrupo(grupo as any);
+    const opcao = opcoesUtilizaveis(grupo)[0];
+    if (fixo && opcao && (grupo.items || []).length === 1) fixas[grupo.id] = { [opcao.id]: fixo.qtd };
+  }
+  return fixas;
 }
 
 function precisaMontar(produto: Produto): boolean {
@@ -1414,7 +1430,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     if (precisaMontar(produto)) {
       if (!comboMontavel(produto)) return;
       setComboAberto(produto);
-      setEscolhas({});
+      setEscolhas(escolhasFixas(produto));
       return;
     }
     adicionarAoCarrinho(produto, null, []);
@@ -2552,6 +2568,19 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                     const exigido = minimoExigidoDoGrupo(grupo);
                     const escolhido = escolhidosNoGrupo(escolhas, grupo.id);
                     const completo = escolhido >= exigido;
+
+                    // Item que o combo sempre leva: uma linha, sem botão.
+                    const fixo = comboAberto.isCombo ? itemFixoDoGrupo(grupo as any) : null;
+                    if (fixo && opcoes.length === 1 && completo) {
+                      return (
+                        <div key={grupo.id} style={{ marginBottom: 20, background: "rgba(22,163,74,0.12)", padding: 20, borderRadius: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                          <Check size={26} color="#4ADE80" />
+                          <span style={{ fontSize: 22, fontWeight: 800, color: "white" }}>
+                            Vem no combo: {fixo.qtd > 1 ? `${fixo.qtd}× ` : ""}{opcoes[0].menuProduct?.name}
+                          </span>
+                        </div>
+                      );
+                    }
 
                     return (
                       <div key={grupo.id} style={{ marginBottom: 36 }}>

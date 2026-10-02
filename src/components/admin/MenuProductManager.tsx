@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { ehProdutoDeIntegracao, idsSoDeOpcaoDeCombo, combosQueUsamOpcao, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import { perguntaTravadaPelaPausa } from "@/lib/opcao-pausada";
+import { combosQueDependemDoItem, combosParaReativar, itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
 
@@ -916,7 +917,10 @@ export default function MenuProductManager({
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(true);
   const [activeGarcom, setActiveGarcom] = useState(true);
-  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; priceRule: string | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null; precoPorEscolha?: Record<string, number> | null; promoAdditionalPrice?: number | null }[] }[]>([]);
+  // `fixo`: só da tela — o item que o COMBO sempre leva ("4× X-Salada"), que
+  // aparece em "O que o combo leva" e não como pergunta. No banco é uma
+  // pergunta de uma opção só com mínimo = máximo (lib/combo-e-pergunta.ts).
+  const [comboGroups, setComboGroups] = useState<{ fixo?: boolean; title: string; maxQty: number; minQty: number | null; priceRule: string | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null; precoPorEscolha?: Record<string, number> | null; promoAdditionalPrice?: number | null }[] }[]>([]);
   /** Mostra os três campos de preço por canal em cada opção do combo. */
   const [precosCanalNoCombo, setPrecosCanalNoCombo] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1094,8 +1098,9 @@ export default function MenuProductManager({
     setActiveDelivery(p.activeDelivery ?? true);
     setActiveTotem(p.activeTotem ?? true);
     setActiveGarcom(p.activeGarcom ?? true);
-    if (p.isCombo && p.comboGroups) {
+    if (p.comboGroups?.length) {
       setComboGroups(p.comboGroups.map((g: any) => ({
+        fixo: Boolean(p.isCombo && itemFixoDoGrupo(g)),
         title: g.title, maxQty: g.maxQty,
         // Como esta pergunta cobra várias escolhas (lib/preco-combo.ts).
         // Nulo = somar, que é a regra de todo grupo já gravado.
@@ -1192,7 +1197,9 @@ export default function MenuProductManager({
           category,
           imageUrl: imageUrl || null, active, isCombo, isBeverage,
           activePDV, activeDelivery, activeTotem, activeGarcom,
-          comboGroups: isCombo ? comboGroups : undefined
+          // Pergunta não é exclusividade de combo: pastel com sabor e
+          // refrigerante com tamanho têm pergunta e não são combo.
+          comboGroups: comboGroups.map(({ fixo: _fixo, ...g }) => g)
         })
       });
       if (res.ok) { resetForm(); router.refresh(); }
@@ -1231,14 +1238,13 @@ export default function MenuProductManager({
     const product = products.find(p => p.id === id);
     const newActive = !cur;
 
-    // Se estiver PAUSANDO um item avulso, verificar se há combos que o contêm
-    if (!newActive && product && !product.isCombo) {
-      const affectedCombos = products.filter(p =>
-        p.isCombo &&
-        p.comboGroups?.some((g: any) =>
-          g.items?.some((i: any) => i.menuProduct?.id === id || i.menuProductId === id)
-        )
-      );
+    // Item avulso que um combo LEVA (ou a última opção de uma escolha
+    // obrigatória): pausar oferece pausar o combo junto, e reativar oferece
+    // reativar os combos pausados que voltam a fechar com ele
+    // (lib/combo-e-pergunta.ts). Opção entre várias não pergunta nada — ela só
+    // sai da escolha e o combo segue à venda.
+    if (product && !product.isCombo) {
+      const affectedCombos = newActive ? combosParaReativar(id, products) : combosQueDependemDoItem(id, products);
       if (affectedCombos.length > 0) {
         setPauseModal({ id, name: product.name, affectedCombos, newActive });
         return;
@@ -1352,6 +1358,38 @@ export default function MenuProductManager({
   };
 
   const addGroup = () => setComboGroups(prev => [...prev, { title: "", maxQty: 1, minQty: 1, priceRule: null, items: [] }]);
+
+  // ─── O QUE O COMBO LEVA ─────────────────────────────────────────────────
+  // Combo é feito de itens que JÁ existem no cardápio. Cada um vira uma
+  // pergunta fixa (uma opção, mínimo = máximo = quantidade): o ComboModal e o
+  // totem a marcam sozinhos, a escolha sai na impressora da categoria do item
+  // e pausar o item oferece pausar o combo (lib/combo-e-pergunta.ts).
+  const [seletorFixo, setSeletorFixo] = useState(false);
+  const [buscaFixo, setBuscaFixo] = useState("");
+  const addItemFixo = (itemId: string) => {
+    setComboGroups(prev => {
+      const ja = prev.findIndex(g => g.fixo && g.items[0]?.id === itemId);
+      if (ja >= 0) return prev.map((g, i) => i === ja ? { ...g, maxQty: g.maxQty + 1, minQty: g.maxQty + 1 } : g);
+      const fixo = { fixo: true, title: "Vem no combo", maxQty: 1, minQty: 1, priceRule: null,
+        items: [{ id: itemId, additionalPrice: 0, additionalPriceSalao: null, additionalPriceDelivery: null, additionalPriceTotem: null, maxPerItem: null, optionNote: null }] };
+      // Os itens do combo ficam antes das escolhas, na ordem em que entram.
+      const primeiraPergunta = prev.findIndex(g => !g.fixo);
+      return primeiraPergunta < 0 ? [...prev, fixo] : [...prev.slice(0, primeiraPergunta), fixo, ...prev.slice(primeiraPergunta)];
+    });
+  };
+  const mudarQtdFixo = (gIdx: number, passo: number) => {
+    setComboGroups(prev => prev.map((g, i) => {
+      if (i !== gIdx) return g;
+      const qtd = Math.max(1, Math.min(99, g.maxQty + passo));
+      return { ...g, maxQty: qtd, minQty: qtd };
+    }));
+  };
+  const escolherSeEhCombo = (sim: boolean) => {
+    setIsCombo(sim);
+    // Deixou de ser combo: o que era "item do combo" volta a ser pergunta
+    // comum, visível e editável — nada some sem a loja ver.
+    if (!sim) setComboGroups(prev => prev.map(g => g.fixo ? { ...g, fixo: false } : g));
+  };
   const removeGroup = (idx: number) => setComboGroups(prev => prev.filter((_, i) => i !== idx));
   const updateGroup = (idx: number, key: string, val: any) => {
     setComboGroups(prev => prev.map((g, i) => i === idx ? { ...g, [key]: val } : g));
@@ -1729,11 +1767,23 @@ export default function MenuProductManager({
             </div>
 
             <h3 style={{ textAlign: "center", fontWeight: 900, fontSize: "1.15rem", color: "#0F172A", marginBottom: "0.4rem" }}>
-              Pausar item vinculado a combos
+              {pauseModal.newActive ? "Reativar os combos também?" : "Pausar os combos também?"}
             </h3>
             <p style={{ textAlign: "center", color: "#64748B", fontSize: "0.88rem", marginBottom: "1rem", lineHeight: 1.5 }}>
-              <strong style={{ color: "#B45309" }}>“{pauseModal.name}”</strong> faz parte de{" "}
-              <strong style={{ color: "#0F172A" }}>{pauseModal.affectedCombos.length} combo{pauseModal.affectedCombos.length > 1 ? "s" : ""}</strong>:
+              {pauseModal.newActive ? (
+                <>
+                  {pauseModal.affectedCombos.length > 1 ? "Estes combos levam" : "Este combo leva"}{" "}
+                  <strong style={{ color: "#0F766E" }}>“{pauseModal.name}”</strong> e{" "}
+                  {pauseModal.affectedCombos.length > 1 ? "estão pausados" : "está pausado"}:
+                </>
+              ) : (
+                <>
+                  Sem <strong style={{ color: "#B45309" }}>“{pauseModal.name}”</strong>,{" "}
+                  {pauseModal.affectedCombos.length > 1
+                    ? <>estes <strong style={{ color: "#0F172A" }}>{pauseModal.affectedCombos.length} combos</strong> não fecham</>
+                    : <>este combo não fecha</>}:
+                </>
+              )}
             </p>
 
             {/* Lista de combos afetados */}
@@ -1752,34 +1802,67 @@ export default function MenuProductManager({
 
             {/* Três opções */}
             <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-              <button
-                onClick={() => { doToggle(pauseModal.id, false); showToast(`✅ Só “${pauseModal.name}” foi pausado.`); }}
-                disabled={pausing}
-                style={{
-                  padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #B45309",
-                  background: "#FFF7E6", color: "#92400E", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
-                }}>
-                ⏸️ Pausar só este item
-                <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#B45309", marginTop: "2px" }}>
-                  Os combos continuarão ativos (mas sem este item disponível)
-                </span>
-              </button>
-
-              <button
-                onClick={() => {
-                  doToggle(pauseModal.id, false, pauseModal.affectedCombos.map((c: any) => c.id));
-                  showToast(`✅ “${pauseModal.name}” e ${pauseModal.affectedCombos.length} combo(s) foram pausados.`);
-                }}
-                disabled={pausing}
-                style={{
-                  padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #C92E09",
-                  background: "#FEF2F2", color: "#B71C1C", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
-                }}>
-                ⏸️ Pausar este item + todos os {pauseModal.affectedCombos.length} combo(s)
-                <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#C92E09", marginTop: "2px" }}>
-                  Recomendado quando o item é essencial para o combo
-                </span>
-              </button>
+              {pauseModal.newActive ? (
+                <>
+                  <button
+                    onClick={() => {
+                      doToggle(pauseModal.id, true, pauseModal.affectedCombos.map((c: any) => c.id));
+                      showToast(`✅ “${pauseModal.name}” e ${pauseModal.affectedCombos.length} combo(s) voltaram ao cardápio.`);
+                    }}
+                    disabled={pausing}
+                    style={{
+                      padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #0F766E",
+                      background: "#F0FDFA", color: "#0F766E", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
+                    }}>
+                    ▶️ Reativar este item + {pauseModal.affectedCombos.length > 1 ? `os ${pauseModal.affectedCombos.length} combos` : "o combo"}
+                    <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#0F766E", marginTop: "2px" }}>
+                      Os combos voltam a ser vendidos com ele
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => { doToggle(pauseModal.id, true); showToast(`✅ Só “${pauseModal.name}” foi reativado.`); }}
+                    disabled={pausing}
+                    style={{
+                      padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #CBD5E1",
+                      background: "#FFF", color: "#334155", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
+                    }}>
+                    ▶️ Reativar só este item
+                    <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#64748B", marginTop: "2px" }}>
+                      Os combos continuam pausados
+                    </span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      doToggle(pauseModal.id, false, pauseModal.affectedCombos.map((c: any) => c.id));
+                      showToast(`✅ “${pauseModal.name}” e ${pauseModal.affectedCombos.length} combo(s) foram pausados.`);
+                    }}
+                    disabled={pausing}
+                    style={{
+                      padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #C92E09",
+                      background: "#FEF2F2", color: "#B71C1C", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
+                    }}>
+                    ⏸️ Pausar este item + {pauseModal.affectedCombos.length > 1 ? `os ${pauseModal.affectedCombos.length} combos` : "o combo"}
+                    <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#C92E09", marginTop: "2px" }}>
+                      Recomendado: o combo sai do cardápio até o item voltar
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => { doToggle(pauseModal.id, false); showToast(`✅ Só “${pauseModal.name}” foi pausado.`); }}
+                    disabled={pausing}
+                    style={{
+                      padding: "0.7rem 1rem", borderRadius: "10px", fontWeight: 700, border: "1.5px solid #B45309",
+                      background: "#FFF7E6", color: "#92400E", cursor: "pointer", fontSize: "0.9rem", textAlign: "left",
+                    }}>
+                    ⏸️ Pausar só este item
+                    <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#B45309", marginTop: "2px" }}>
+                      O combo continua aparecendo, mas não dá para pedir sem o item
+                    </span>
+                  </button>
+                </>
+              )}
 
               <button
                 onClick={() => setPauseModal(null)}
@@ -1943,6 +2026,36 @@ export default function MenuProductManager({
                     <>Nenhum combo o oferece ainda: adicione-o a uma pergunta de combo, ou exclua-o.</>
                   )}
                 </p>
+              </div>
+            )}
+
+            {/* É UM COMBO? Pergunta é uma coisa, combo é outra: pastel com
+                sabor e refrigerante com tamanho têm perguntas e NÃO são combo.
+                Combo junta itens que já estão no cardápio — e por isso pausar
+                um deles oferece pausar o combo. Ver lib/combo-e-pergunta.ts. */}
+            {!editandoOpcao && (
+              <div style={{ marginBottom: "1.25rem" }}>
+                <p style={{ margin: "0 0 8px", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>Isto é um combo?</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px" }}>
+                  {[
+                    { sim: false, titulo: "Não, é um produto", texto: "Pode ter perguntas: sabor, tamanho, adicionais, ponto da carne." },
+                    { sim: true, titulo: "Sim, é um combo", texto: "Junta itens que já estão no cardápio (ex.: 2 X-Tudo + Batata)." },
+                  ].map(op => {
+                    const marcado = isCombo === op.sim;
+                    return (
+                      <button key={String(op.sim)} type="button" onClick={() => escolherSeEhCombo(op.sim)} aria-pressed={marcado}
+                        style={{
+                          textAlign: "left", padding: "11px 13px", borderRadius: "12px", cursor: "pointer", fontFamily: "inherit",
+                          border: `2px solid ${marcado ? "#C92E09" : "#E2E8F0"}`, background: marcado ? "#FEF2F2" : "#FFF",
+                        }}>
+                        <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: marcado ? "#C92E09" : "#0F172A" }}>
+                          {op.sim ? "📦 " : "🍔 "}{op.titulo}
+                        </span>
+                        <span style={{ display: "block", fontSize: "0.74rem", color: "#64748B", marginTop: "3px", lineHeight: 1.4 }}>{op.texto}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -2678,12 +2791,79 @@ export default function MenuProductManager({
                 Catupiry" no combo, a loja precisava abandonar o formulário,
                 cadastrar o produto no cardápio e voltar a montar o combo do
                 zero. */}
-            {isCombo && (
+            {isCombo && !editandoOpcao && (() => {
+              const fixos = comboGroups.map((g, gIdx) => ({ g, gIdx })).filter(x => x.g.fixo);
+              const candidatosFixos = catalogoDeOpcoes
+                .filter(item => item.id !== editingId && !ehOpcaoDeCombo(item))
+                .filter(item => (item.name || "").toLowerCase().includes(buscaFixo.trim().toLowerCase()));
+              return (
+                <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#F0FDFA", borderRadius: "14px", border: "2px solid #99F6E4" }}>
+                  <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>📦 O que o combo leva</h4>
+                  <p style={{ fontSize: "0.75rem", color: "#475569", margin: "4px 0 0.8rem", lineHeight: 1.5 }}>
+                    Itens do cardápio que sempre vêm no combo. O cliente não escolhe nada aqui, cada item sai na
+                    impressora da categoria dele, e pausar o item oferece pausar o combo junto.
+                  </p>
+                  {fixos.length === 0 && (
+                    <p style={{ fontSize: "0.8rem", color: "#64748B", margin: "0 0 0.7rem", padding: "10px", background: "#FFF", border: "1px dashed #99F6E4", borderRadius: "10px", textAlign: "center" }}>
+                      Nenhum item ainda. Ex.: 2× X-Tudo e 1× Porção de Batata.
+                    </p>
+                  )}
+                  {fixos.map(({ g, gIdx }) => {
+                    const produto = catalogoDeOpcoes.find(p => p.id === g.items[0]?.id);
+                    const pausado = produto?.active === false;
+                    return (
+                      <div key={gIdx} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", marginBottom: "6px", background: "#FFF", border: "1px solid #CCFBF1", borderRadius: "10px" }}>
+                        <div style={{ display: "flex", alignItems: "center", border: "1px solid #E2E8F0", borderRadius: "8px", overflow: "hidden", flexShrink: 0 }}>
+                          <button type="button" onClick={() => mudarQtdFixo(gIdx, -1)} disabled={g.maxQty <= 1} aria-label="Menos"
+                            style={{ padding: "4px 9px", border: "none", background: "#F8FAFC", cursor: g.maxQty <= 1 ? "default" : "pointer", color: g.maxQty <= 1 ? "#CBD5E1" : "#0F172A", fontWeight: 800 }}>−</button>
+                          <span style={{ minWidth: "28px", textAlign: "center", fontWeight: 800, fontSize: "0.88rem" }}>{g.maxQty}×</span>
+                          <button type="button" onClick={() => mudarQtdFixo(gIdx, 1)} aria-label="Mais"
+                            style={{ padding: "4px 9px", border: "none", background: "#F8FAFC", cursor: "pointer", color: "#0F172A", fontWeight: 800 }}>+</button>
+                        </div>
+                        <span style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: "0.86rem", color: produto ? "#0F172A" : "#C92E09" }}>
+                          {produto?.name || "Item excluído do cardápio"}
+                          {pausado && <span style={{ marginLeft: "6px", fontSize: "0.68rem", fontWeight: 800, color: "#B45309", background: "#FFF7E6", padding: "1px 6px", borderRadius: "6px" }}>⏸ PAUSADO</span>}
+                        </span>
+                        <button type="button" onClick={() => removeGroup(gIdx)} title="Tirar do combo"
+                          style={{ padding: "5px", borderRadius: "7px", border: "1px solid #FECACA", background: "#FEF2F2", color: "#C92E09", cursor: "pointer" }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button type="button" onClick={() => { setSeletorFixo(v => !v); setBuscaFixo(""); }}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "9px", border: "1.5px solid #0F766E", background: seletorFixo ? "#0F766E" : "#FFF", color: seletorFixo ? "#FFF" : "#0F766E", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer" }}>
+                    <Plus size={13} style={{ marginRight: "5px", verticalAlign: "-2px" }} /> Adicionar item do cardápio
+                  </button>
+                  {seletorFixo && (
+                    <div style={{ marginTop: "8px", padding: "10px", background: "#FFF", border: "1px solid #CCFBF1", borderRadius: "10px" }}>
+                      <input autoFocus value={buscaFixo} onChange={e => setBuscaFixo(e.target.value)} placeholder="Buscar no cardápio…"
+                        className="input" style={{ width: "100%", marginBottom: "8px" }} />
+                      <div style={{ maxHeight: "220px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+                        {candidatosFixos.slice(0, 60).map(item => (
+                          <button key={item.id} type="button" onClick={() => { addItemFixo(item.id); setBuscaFixo(""); }}
+                            style={{ textAlign: "left", padding: "7px 10px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: "0.84rem", fontWeight: 600, color: "#0F172A" }}>
+                            {item.name}{item.active === false ? " (pausado)" : ""}
+                          </button>
+                        ))}
+                        {candidatosFixos.length === 0 && <p style={{ fontSize: "0.8rem", color: "#94A3B8", margin: 0 }}>Nada encontrado. O item precisa estar cadastrado no cardápio.</p>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {!editandoOpcao && (
               <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#F8FAFC", borderRadius: "14px", border: "2px dashed #CBD5E1" }}>
                 <div style={{ marginBottom: "0.9rem" }}>
-                  <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>📦 Perguntas do combo</h4>
+                  <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>
+                    {isCombo ? "🙋 Escolhas do cliente no combo" : "❓ Perguntas do produto"}
+                  </h4>
                   <p style={{ fontSize: "0.75rem", color: "#64748B", margin: "4px 0 0" }}>
-                    Cada pergunta é uma escolha que o cliente faz. A ordem aqui é a ordem em que ele vê.
+                    {isCombo
+                      ? "Opcional. Ex.: “Escolha o refrigerante”, com as bebidas do cardápio. A ordem aqui é a ordem em que o cliente vê."
+                      : "Opcional. Ex.: tamanho, sabor, adicionais, ponto da carne. A ordem aqui é a ordem em que o cliente vê."}
                   </p>
                 </div>
 
@@ -2750,7 +2930,7 @@ export default function MenuProductManager({
                   </p>
                 )}
 
-                {comboGroups.length === 0 && (
+                {comboGroups.filter(g => !g.fixo).length === 0 && (
                   <div style={{ padding: "1.1rem", background: "#FFF", border: "1px dashed #CBD5E1", borderRadius: "12px", textAlign: "center", marginBottom: "0.9rem" }}>
                     <p style={{ fontSize: "0.85rem", fontWeight: 700, color: "#475569", margin: 0 }}>Nenhuma pergunta ainda.</p>
                     <p style={{ fontSize: "0.75rem", color: "#94A3B8", margin: "4px 0 0" }}>
@@ -2760,12 +2940,17 @@ export default function MenuProductManager({
                 )}
 
                 {comboGroups.map((group, gIdx) => {
+                  if (group.fixo) return null;
+                  const numeroDaPergunta = comboGroups.slice(0, gIdx + 1).filter(g => !g.fixo).length;
                   const minimoDoGrupo = group.minQty ?? group.maxQty;
                   const obrigatorio = minimoDoGrupo > 0;
                   const formularioAberto = novaOpcao?.gIdx === gIdx;
                   const seletorDesteGrupo = seletorAberto === gIdx;
                   const candidatos = catalogoDeOpcoes
                     .filter(item => item.id !== editingId)
+                    // No combo a opção é um item do cardápio: é ele que imprime
+                    // na categoria certa e que, pausado, sai da escolha.
+                    .filter(item => !isCombo || !ehOpcaoDeCombo(item))
                     .filter(item => !group.items.some((it: any) => it.id === item.id))
                     .filter(item => (item.name || "").toLowerCase().includes(buscaOpcao.trim().toLowerCase()));
 
@@ -2774,7 +2959,7 @@ export default function MenuProductManager({
 
                       <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "0.6rem" }}>
                         <span style={{ padding: "3px 10px", borderRadius: "20px", background: "#FAF6F2", color: "#1C1917", fontSize: "0.7rem", fontWeight: 800 }}>
-                          Pergunta {gIdx + 1}
+                          Pergunta {numeroDaPergunta}
                         </span>
                         <div style={{ flex: 1 }} />
                         <button type="button" onClick={() => moverGrupo(gIdx, -1)} disabled={gIdx === 0} title="Subir pergunta"
@@ -3052,12 +3237,12 @@ export default function MenuProductManager({
                           <Search size={13} style={{ marginRight: "5px", verticalAlign: "-2px" }} />
                           Item que já existe
                         </button>
-                        <button type="button"
+                        {!isCombo && <button type="button"
                           onClick={() => { setNovaOpcao(formularioAberto ? null : { gIdx, nome: "", acrescimo: "", obs: "" }); setSeletorAberto(null); }}
                           style={{ flex: 1, minWidth: "180px", padding: "9px 12px", borderRadius: "9px", border: "1.5px solid #0F766E", background: formularioAberto ? "#0F766E" : "#F0FDFA", color: formularioAberto ? "#FFF" : "#0F766E", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer" }}>
                           <Sparkles size={13} style={{ marginRight: "5px", verticalAlign: "-2px" }} />
                           Cadastrar item novo
-                        </button>
+                        </button>}
                       </div>
 
                       {seletorDesteGrupo && (
@@ -3413,11 +3598,15 @@ export default function MenuProductManager({
                                     <h4 style={{ margin: 0, fontSize: "0.92rem", fontWeight: 800, color: "#0F172A" }}>{p.name}</h4>
                                     {p.isCombo ? (
                                       <span style={{ fontSize: "0.68rem", fontWeight: 800, padding: "2px 7px", borderRadius: "6px", background: "#FAF6F2", color: "#1C1917", border: "1.5px solid #E7DDD3", display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                                        📦 COMBO {p.comboGroups?.length ? `• ${p.comboGroups.length} grupos` : ""}
+                                        📦 COMBO {(() => {
+                                          const leva = (p.comboGroups || []).filter((g: any) => itemFixoDoGrupo(g)).length;
+                                          const escolhas = (p.comboGroups?.length || 0) - leva;
+                                          return [leva ? `• leva ${leva} ${leva > 1 ? "itens" : "item"}` : "", escolhas ? `• ${escolhas} ${escolhas > 1 ? "escolhas" : "escolha"}` : ""].join(" ");
+                                        })()}
                                       </span>
                                     ) : (
                                       <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "2px 6px", borderRadius: "6px", background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0" }}>
-                                        🍔 ITEM
+                                        🍔 ITEM{p.comboGroups?.length ? ` • ${p.comboGroups.length} ${p.comboGroups.length > 1 ? "perguntas" : "pergunta"}` : ""}
                                       </span>
                                     )}
                                     {!p.active && (
