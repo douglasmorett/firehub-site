@@ -78,10 +78,17 @@ function agoraEmBrasilia(): string {
 
 /**
  * A oferta da montagem já saiu? O robô a repetia em toda resposta (teste de
- * 01/10: três seguidas). Reconhecida pelo jeito como ela é dita — montar/lançar/
- * deixar a loja + de graça/sem cobrar —, nas mensagens do robô.
+ * 01/10: três seguidas). Reconhecida por três sinais na mesma mensagem do
+ * robô: montar/lançar/deixar, cardápio ou loja, e sem custo. "Grátis" solto
+ * não conta (é o "teste grátis" de toda conversa); "sem TE cobrar" conta (a
+ * versão por janela de texto deixou passar esse, 02/10).
  */
-const OFERTA_DA_MONTAGEM = /(mont|lan[çc]|deix|cadastr|igualzinh)[^?!]{0,160}(gr[aá]tis|de gra[çc]a|sem cobrar|sem custo|n[ãa]o cobra)|(gr[aá]tis|de gra[çc]a|sem cobrar|sem custo|n[ãa]o cobra)[^?!]{0,160}(mont|lan[çc]|igualzinh)/i;
+const SINAIS_DA_OFERTA = [
+  /(mont|lan[çc]|deix|cadastr|igualzinh|copi)/i,
+  /(card[aá]pio|loja)/i,
+  /(de gra[çc]a|sem (?:te |lhe )?cobrar|sem (?:nenhum |qualquer )?custo|n[ãa]o (?:te |lhe )?cobra|gratuitamente)/i,
+];
+const ehOfertaDaMontagem = (texto: string) => SINAIS_DA_OFERTA.every((r) => r.test(texto));
 
 function instrucoes(
   config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null, ofereceuMontagem: boolean,
@@ -219,7 +226,7 @@ async function responder(contatoId: string) {
     orderBy: { criadoEm: "asc" },
     select: { criadoEm: true },
   });
-  const ofereceuMontagem = historico.some((m) => m.direcao === "SAIDA" && OFERTA_DA_MONTAGEM.test(m.texto));
+  const ofereceuMontagem = historico.some((m) => m.direcao === "SAIDA" && ehOfertaDaMontagem(m.texto));
   // A loja que a pessoa DISSE ser (identificar_loja), quando o número não é de nenhuma.
   const informada = contato.userId
     ? null
@@ -251,12 +258,27 @@ async function responder(contatoId: string) {
   // ── A revisão: o que não tem fonte não sai (conferente.ts) ────────────────
   // A resposta de reserva é texto fixo nosso e não passa por ela.
   if (doModelo) {
-    const veredito = await conferirResposta(ai, {
+    const paraConferir = {
       base: CONHECIMENTO_DO_FIREHUB + (config.instrucoesExtras.trim() ? `\n\n# Recados do dono\n${config.instrucoesExtras.trim()}` : ""),
       conversa: conversaParaORevisor(historico.slice(-12)),
       ferramentas: acoes.map((a) => `${a.nome}: ${JSON.stringify(a.resultado).slice(0, 1500)}`).join("\n"),
-      resposta: doModelo,
-    });
+    };
+    let veredito = await conferirResposta(ai, { ...paraConferir, resposta: doModelo });
+    // ── Uma frase sem fonte não cala a conversa ──────────────────────────────
+    // No teste de 02/10, "Anota sim! … tira dúvidas sobre os sabores" foi
+    // barrado inteiro por um enfeite: chamou pessoa e o robô ficou mudo no meio
+    // da venda (foto, dados e confirmação do lead sem resposta, de madrugada).
+    // Antes de desistir, a mesma resposta é reescrita SEM o trecho e conferida
+    // de novo; o trecho fica na ficha para a base ganhar o que faltava.
+    if (veredito?.inventou) {
+      const corrigida = await reescreverSemOTrecho(ai, sistema, conversa, doModelo, veredito.trecho);
+      const segunda = corrigida ? await conferirResposta(ai, { ...paraConferir, resposta: corrigida }) : null;
+      if (corrigida && segunda && !segunda.inventou) {
+        await registrarEvento(contato.id, "ROBO", `Revisão tirou da resposta (sem fonte na base): "${veredito.trecho}"`, AUTOR_ROBO);
+        resposta = corrigida;
+        veredito = segunda;
+      }
+    }
     if (veredito?.inventou) {
       console.warn(`[Atendimento] Revisor barrou a resposta para ${contato.id}: "${veredito.trecho}"`);
       resposta = RESPOSTA_DE_QUEM_NAO_SABE;
@@ -299,6 +321,34 @@ async function responder(contatoId: string) {
 }
 
 type AcaoFeita = { nome: string; resultado: Record<string, unknown> };
+
+/**
+ * A resposta de novo, sem a frase que a revisão barrou. Sem ferramentas (a
+ * ação, se houve, já foi feita) e no primeiro modelo. `null` quando não sobra
+ * resposta sem o trecho — aí vale o "vou confirmar com a equipe".
+ */
+async function reescreverSemOTrecho(
+  ai: NonNullable<Awaited<ReturnType<typeof clienteDoGemini>>>, sistema: string, conversa: Content[], resposta: string, trecho: string,
+): Promise<string | null> {
+  try {
+    const r = await ai.models.generateContent({
+      model: MODELOS[0],
+      contents: [
+        ...conversa,
+        {
+          role: "user",
+          parts: [{ text: `[REVISÃO INTERNA — o contato não vê isto] Você ia responder:\n"${resposta}"\nO trecho "${trecho}" não está na BASE. Reescreva a mesma resposta SEM essa afirmação nem nada parecido, curta, no mesmo tom, só com o que a BASE diz. Se sem ela não sobrar resposta, escreva apenas: SEM_RESPOSTA` }],
+        },
+      ],
+      config: { systemInstruction: sistema, temperature: 0.2, ...(MODELOS[0].startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}) },
+    });
+    const texto = paraOWhatsApp(r.text || "");
+    return texto && !texto.includes("SEM_RESPOSTA") ? texto : null;
+  } catch (err: any) {
+    console.warn(`[Atendimento] Reescrita depois da revisão falhou: ${err?.message}`);
+    return null;
+  }
+}
 
 /**
  * O modelo escreve em Markdown mesmo pedido o contrário: **negrito** chega ao
