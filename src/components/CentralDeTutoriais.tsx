@@ -29,7 +29,7 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { Check, PlayCircle, X } from "lucide-react";
 import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
-import { ABRIR_CENTRAL, CHAVE_VISTO, ESTILO, VELOCIDADES } from "@/components/TutorialDaTela";
+import { ABRIR_CENTRAL, CHAVE_VISTO, ESTILO, useNaAreaVisivel, VELOCIDADES } from "@/components/TutorialDaTela";
 import {
   arquivosDoTutorial, CHAVE_CENTRAL_NAO_MOSTRAR, duracaoEmMinutos, MARCA_CENTRAL_FECHADA, relogio, todosOsTutoriais,
 } from "@/lib/tutoriais";
@@ -102,11 +102,14 @@ export default function CentralDeTutoriais({
   usuarioId,
   primeiroNome,
   contaNova,
+  abrirSozinha = true,
 }: {
   usuarioId: string;
   primeiroNome?: string;
   /** Conta criada há pouco: o título dá as boas-vindas. Loja antiga vê "Tutoriais do FireHub". */
   contaNova: boolean;
+  /** false: só abre pelo botão (o suporte no "Acessar" de uma loja não ganha a central sozinha). */
+  abrirSozinha?: boolean;
 }) {
   const pathname = usePathname();
   const enviados = useTutoriaisEnviados();
@@ -123,6 +126,7 @@ export default function CentralDeTutoriais({
   const [vistos, setVistos] = useState<Set<string>>(() => new Set());
   const [seta, setSeta] = useState<Seta | null>(null);
   const abriuSozinha = useRef(false);
+  const fundoRef = useNaAreaVisivel(aberto);
   const video = useRef<HTMLVideoElement>(null);
   const fecharRef = useRef<HTMLButtonElement>(null);
 
@@ -143,7 +147,7 @@ export default function CentralDeTutoriais({
 
   // Abre sozinha uma vez, quando o painel monta depois do login.
   useEffect(() => {
-    if (!lista.length || !usuarioId) return;
+    if (!abrirSozinha || !lista.length || !usuarioId) return;
     if (SEM_ABRIR_SOZINHA.some((r) => (pathname || "").startsWith(r))) return;
     let calada = false;
     try {
@@ -230,7 +234,7 @@ export default function CentralDeTutoriais({
       <style dangerouslySetInnerHTML={{ __html: ESTILO + ESTILO_CENTRAL }} />
 
       {aberto && createPortal(
-        <div className="fh-tutorial-fundo">
+        <div ref={fundoRef} className="fh-tutorial-fundo">
           <div className="fh-tutorial-janela fh-central-janela" role="dialog" aria-modal="true" aria-labelledby="fh-central-titulo">
             <div className="fh-tutorial-topo">
               <h2 id="fh-central-titulo">{titulo}</h2>

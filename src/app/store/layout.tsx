@@ -175,11 +175,13 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           semNavegacao
           lojaDeDemonstracao={ehLojaDeDemonstracao(storeOwner?.id || user?.id)}
         />
-        {/* A tela de orientação com todos os vídeos, que abre depois do login.
-            Não abre para o suporte que entrou pelo "Acessar" do admin: quem
-            precisa aprender o painel é a loja, não quem a está atendendo. */}
-        {isFranqueado && user?.id && !(session.user as any)?.impersonatedBy && (
+        {/* A tela de orientação com todos os vídeos, que abre depois do login
+            e pelo botão "Tutoriais em vídeo" do menu lateral. Não abre SOZINHA
+            para o suporte que entrou pelo "Acessar" do admin: quem precisa
+            aprender o painel é a loja, não quem a está atendendo. */}
+        {user?.id && (
           <CentralDeTutoriais
+            abrirSozinha={isFranqueado && !(session.user as any)?.impersonatedBy}
             usuarioId={user.id}
             // Conta antiga guarda o nome da LOJA em `name`: aí a saudação vai sem nome.
             primeiroNome={user.name && user.name.trim() !== (storeOwner?.storeName || user.storeName || "").trim() ? user.name.trim().split(/\s+/)[0] : ""}

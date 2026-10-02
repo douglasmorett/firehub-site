@@ -19,13 +19,15 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  BarChart2, Bike, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
+  BarChart2, Bike, PlayCircle, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
   Home, LineChart, LogOut, MapPin, Menu, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
   Send, ShoppingBag, Store, TabletSmartphone, Tag, Truck, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
 } from "lucide-react";
 import { menuDaLoja, type ItemDoMenu } from "@/lib/menu-do-painel";
 import StoreSelector from "./StoreSelector";
+import { ABRIR_CENTRAL } from "@/components/TutorialDaTela";
+import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import SairDaConta from "@/components/SairDaConta";
 import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 
@@ -141,6 +143,8 @@ export default function StoreSidebar({
   }, []);
   /** Recolhida só faz sentido na barra fixa; na gaveta ela é sempre inteira. */
   const enxuta = recolhida && !ehCelular;
+  const enviados = useTutoriaisEnviados();
+  const temTutoriais = !enviados || enviados.size > 0;
 
   // Gaveta aberta trava o fundo. Sem isto o dedo rolava a página atrás da
   // cortina e, ao fechar, a tela estava em outro lugar.
@@ -274,6 +278,21 @@ export default function StoreSidebar({
           <a href={`/loja/${slug}`} target="_blank" rel="noopener noreferrer" className="fh-menu-cardapio">
             Ver meu cardápio
           </a>
+        )}
+
+        {/* Tutoriais: abre a central com todos os vídeos (CentralDeTutoriais),
+            a mesma que a loja nova vê depois do login. Destacado de propósito:
+            é aqui que o lojista procura ajuda antes de chamar o suporte. */}
+        {temTutoriais && (
+          <button
+            type="button"
+            className={`fh-menu-tutoriais${enxuta ? " enxuta" : ""}`}
+            title="Tutoriais em vídeo"
+            onClick={() => { setAberta(false); window.dispatchEvent(new Event(ABRIR_CENTRAL)); }}
+          >
+            <PlayCircle size={16} />
+            {!enxuta && <span>Tutoriais em vídeo</span>}
+          </button>
         )}
 
         <nav className="fh-menu-lista">
@@ -485,6 +504,15 @@ const ESTILO = `
   color:#E2E8F0; font-size:.74rem; font-weight:700; text-decoration:none;
 }
 .fh-menu-cardapio:hover{ background:rgba(255,255,255,.12); }
+
+.fh-menu-tutoriais{
+  margin:0 12px 10px; display:flex; align-items:center; justify-content:center; gap:7px;
+  padding:8px 10px; border-radius:9px; border:0; cursor:pointer; font-family:inherit;
+  font-size:.78rem; font-weight:800; color:#fff;
+  background:linear-gradient(135deg,#F97316,#E8360C); box-shadow:0 4px 14px rgba(232,54,12,.35);
+}
+.fh-menu-tutoriais:hover{ filter:brightness(1.08); }
+.fh-menu-tutoriais.enxuta{ margin:0 10px 10px; padding:9px 0; }
 
 /* O rodapé não rola com a lista: quem tem flex:1 é a lista, então o que vem
    depois dela encosta no fim da barra e fica sempre visível. */

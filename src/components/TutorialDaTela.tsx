@@ -35,6 +35,42 @@ import { arquivosDoTutorial, duracaoEmMinutos, indiceInicial, nomeDaTela, relogi
 export const CHAVE_VISTO = "firehub_tutorial_visto:";
 export const VELOCIDADES = [1, 1.25, 1.5];
 
+/**
+ * Encaixa a janela por cima na parte da tela que a pessoa VÊ.
+ *
+ * No celular, tela com conteúdo mais largo que o aparelho (o Início tinha
+ * cartões de 400 px numa tela de 390) faz o navegador alargar a página
+ * inteira: `position: fixed; inset: 0` passa a cobrir 482 × 1044 enquanto a
+ * pessoa enxerga 390 × 844, e a janela do vídeo sai cortada, com o rodapé fora
+ * de alcance. O `visualViewport` diz a área visível; quando ela difere da
+ * página, o fundo é posto exatamente sobre ela.
+ */
+export function useNaAreaVisivel(ativo: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const el = ref.current;
+    if (!ativo || !vv || !el) return;
+    const ajustar = () => {
+      const igual = Math.abs(window.innerWidth - vv.width) < 2 && Math.abs(window.innerHeight - vv.height) < 2;
+      el.style.left = igual ? "" : `${vv.offsetLeft}px`;
+      el.style.top = igual ? "" : `${vv.offsetTop}px`;
+      el.style.width = igual ? "" : `${vv.width}px`;
+      el.style.height = igual ? "" : `${vv.height}px`;
+      el.style.right = igual ? "" : "auto";
+      el.style.bottom = igual ? "" : "auto";
+    };
+    ajustar();
+    vv.addEventListener("resize", ajustar);
+    vv.addEventListener("scroll", ajustar);
+    return () => {
+      vv.removeEventListener("resize", ajustar);
+      vv.removeEventListener("scroll", ajustar);
+    };
+  }, [ativo]);
+  return ref;
+}
+
 /** Evento que abre a central com todos os vídeos (quem escuta: CentralDeTutoriais). */
 export const ABRIR_CENTRAL = "firehub:abrir-central-de-tutoriais";
 
@@ -49,7 +85,7 @@ export const ESTILO = `
 .fh-tutorial-novo{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#FDE047;border:2px solid #C92E09}
 @media (max-width:1180px){.fh-tutorial-botao span{display:none}.fh-tutorial-botao{padding:0;width:32px;justify-content:center}}
 .fh-tutorial-fundo{position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;padding:16px}
-.fh-tutorial-janela{background:#fff;border-radius:16px;width:min(1080px,100%);max-height:calc(100vh - 32px);overflow:auto;
+.fh-tutorial-janela{background:#fff;border-radius:16px;width:min(1080px,100%);max-height:100%;overflow:auto;
   box-shadow:0 24px 60px rgba(0,0,0,.35);color:#0F172A}
 .fh-tutorial-topo{display:flex;align-items:center;gap:12px;padding:14px 16px 12px 20px}
 .fh-tutorial-topo h2{margin:0;font-size:1.02rem;font-weight:800;flex:1;min-width:0}
@@ -97,6 +133,7 @@ export default function TutorialDaTela({
   const video = useRef<HTMLVideoElement>(null);
   const fecharRef = useRef<HTMLButtonElement>(null);
   const botaoRef = useRef<HTMLButtonElement>(null);
+  const fundoRef = useNaAreaVisivel(aberto);
   const [comNome, setComNome] = useState(true);
   const larguraDoNome = useRef(0);
 
@@ -197,7 +234,7 @@ export default function TutorialDaTela({
       </button>
 
       {aberto && typeof document !== "undefined" && createPortal(
-        <div className="fh-tutorial-fundo" onMouseDown={(e) => { if (e.target === e.currentTarget) fechar(); }}>
+        <div ref={fundoRef} className="fh-tutorial-fundo" onMouseDown={(e) => { if (e.target === e.currentTarget) fechar(); }}>
           <div className="fh-tutorial-janela" role="dialog" aria-modal="true" aria-label={tutorial.titulo}>
             <div className="fh-tutorial-topo">
               <h2>{tutorial.titulo}</h2>
