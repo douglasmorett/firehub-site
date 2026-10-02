@@ -174,7 +174,7 @@ async function processPayload(body: any) {
     const aiPromise = processChatbotAI(user.id, text || '', chatbotHistory, from, audioData || undefined, pushName);
 
     try {
-      const result = await Promise.race([aiPromise, timeoutPromise]) as { reply: string };
+      const result = await Promise.race([aiPromise, timeoutPromise]) as { reply: string; chavePix?: string };
 
       if (result && result.reply) {
         // Send reply
@@ -182,6 +182,12 @@ async function processPayload(body: any) {
         
         // Track Outbound Message
         trackWhatsAppMessage(user.id, 'OUTBOUND', 'SERVICE');
+
+        // A chave Pix da loja vai sozinha, para o cliente copiar (lib/pix-da-loja.ts).
+        if (result.chavePix) {
+          await sendCloudApiMessage(phoneNumberId, accessToken, from, result.chavePix).catch(console.error);
+          trackWhatsAppMessage(user.id, 'OUTBOUND', 'SERVICE');
+        }
 
         // Update history
         history.push({ role: 'user', content: text || '[Audio]', ts: now });

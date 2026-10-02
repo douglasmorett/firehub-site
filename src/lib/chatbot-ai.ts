@@ -50,6 +50,7 @@ import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-font
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
 import { tempoDeEntregaParaGravar } from "./previsao-da-entrega";
+import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -403,6 +404,8 @@ export async function processChatbotAI(
   // padrão era desligado, e loja que nunca abriu a opção (Forno D'Oro, 30/09)
   // respondia "por aqui não consigo anotar" a cliente querendo pedir.
   const aiOrderingEnabled = chatbotConfig.aiOrderingEnabled !== false;
+  // A chave Pix da loja (lib/pix-da-loja.ts): o modelo pede o envio, o sistema manda a chave gravada.
+  const pixDaLoja = lerPixDaLoja(chatbotConfig);
   // O CPF/CNPJ na nota fiscal (lib/fiscal-modo): a loja que emite a nota
   // sozinha pergunta no pedido — e o robô é pedido. Lido do DONO, à parte:
   // o fiscalConfig tem segredo e não entra no select de cima (que também vai
@@ -1367,6 +1370,7 @@ ${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESE
     - O cliente está APENAS colando o comprovante de um pedido que ele JÁ REALIZOU pelo Jotajá ou iFood!
     - O pedido JÁ ENTROU no sistema da cozinha da loja! É TOTALMENTE PROIBIDO CRIAR QUALQUER RASCUNHO OU SEGUNDO PEDIDO! NUNCA GERE TAG [[PEDIDO_IA:...]]!
     - Responda apenas com simpatia e curto: "Recebido! Seu pedido já deu entrada na nossa cozinha 🚀"
+20.5. ${regraDoPixNoPrompt(pixDaLoja, aiOrderingEnabled)}
 ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPLETO E PROATIVO!):
     - FOCO ABSOLUTO NO PEDIDO ATUAL:
       Ao anotar, alterar ou adicionar itens ao pedido do cliente (ex: "acrescenta mais 2", "muda pra pix", "troca o refri"):
@@ -1803,7 +1807,9 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         const MARCA_CARDAPIO = /\[\[\s*ENVIAR[_\s]?CARDAPIO[^\]]*\]\]/gi;
         const modeloChamouAtendente = MARCA_ATENDENTE.test(generatedText);
         const modeloMandouCardapio = MARCA_CARDAPIO.test(generatedText);
-        generatedText = generatedText.replace(MARCA_ATENDENTE, "").replace(MARCA_CARDAPIO, "");
+        // A chave Pix também: a limpeza tiraria o "_" e a rede de segurança, o resto.
+        const modeloPediuPix = generatedText.search(MARCA_ENVIAR_PIX) >= 0;
+        generatedText = generatedText.replace(MARCA_ATENDENTE, "").replace(MARCA_CARDAPIO, "").replace(MARCA_ENVIAR_PIX, "");
 
         let cleanText = generatedText
           .replace(/^(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|RESPONSE|RESPOSTA|PLAN|STEPS):\s*/gi, "")
@@ -2007,6 +2013,12 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         let resultadoDoSync: SyncResultado | null = null;
         let payloadQueriaFinalizar = false;
 
+        // [[ENVIAR_PIX]] (já fora do texto, lá em cima): a chave gravada, nunca
+        // a que o modelo escreveria, vai numa mensagem separada — só se a loja
+        // cadastrou uma.
+        let enviarChavePix = modeloPediuPix && pixDaLoja != null;
+        if (enviarChavePix && !cleanText) cleanText = "Segue a chave Pix 👇";
+
         if (rawJsonPayload) {
           try {
             let orderPayload: any = null;
@@ -2120,6 +2132,12 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
               : `\n\nℹ️ Conferi no mapa: a taxa de entrega para o seu endereço é ${reais(taxaGravada)}, então o total fica ${reais(resultadoDoSync.total)}.`;
             console.warn(`[Chatbot AI] 💬 Taxa corrigida na mensagem ao cliente: modelo disse ${taxaDita}, gravado ${taxaGravada} (pedido ${resultadoDoSync.orderId}).`);
           }
+          // Pago no Pix com a chave cadastrada: valor e titular aqui, a chave
+          // sozinha na mensagem seguinte. Quem confere o comprovante é a loja.
+          if (pixDaLoja && pagaNoPix(resultadoDoSync.formaDePagamento)) {
+            cleanText += textoDoPixNoPedido(pixDaLoja, resultadoDoSync.total);
+            enviarChavePix = true;
+          }
           console.log(`[Chatbot AI] ✅ Confirmação com lastro: pedido ${resultadoDoSync.orderId} (nº ${numero ?? "—"}) gravado com ${resultadoDoSync.itens} item(ns), R$ ${resultadoDoSync.total.toFixed(2)}.`);
         } else if (resultadoDoSync?.gravado === true && !resultadoDoSync.finalizado) {
           // Rascunho: o resumo que o cliente vai confirmar precisa do total com o
@@ -2166,6 +2184,8 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         // fora da janela quando alguém ia investigar.
         return {
           reply: cleanText,
+          // A chave Pix da loja, para o webhook mandar sozinha depois da resposta.
+          ...(enviarChavePix && pixDaLoja ? { chavePix: pixDaLoja.chave } : {}),
           pedido: resultadoDoSync
             ? (resultadoDoSync.gravado
                 ? { ok: true as const, id: resultadoDoSync.orderId, numero: resultadoDoSync.numero, finalizado: resultadoDoSync.finalizado, itens: resultadoDoSync.itens }
@@ -2305,6 +2325,8 @@ type SyncResultado =
       cupomRecusado?: string | null;
       /** O total que o modelo escreveu na tag. */
       totalDitoPelaIa?: number | null;
+      /** A forma de pagamento gravada ("Pix", "Dinheiro"...). */
+      formaDePagamento?: string | null;
     }
   | {
       gravado: false;
@@ -3496,6 +3518,7 @@ async function syncAiOrderToDatabase({
     cupom: cupomAplicado,
     cupomRecusado,
     totalDitoPelaIa: Number.isFinite(Number(payload?.totalAmount)) && payload?.totalAmount != null ? centavos(Number(payload.totalAmount)) : null,
+    formaDePagamento: payload.paymentMethod || (existingDraft as any)?.paymentMethod || null,
   };
 }
 

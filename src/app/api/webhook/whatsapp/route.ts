@@ -1476,6 +1476,16 @@ async function handleIncomingMessage(body: any, instance: string) {
         });
       }
 
+      // A chave Pix da loja (lib/pix-da-loja.ts) vai SOZINHA, logo depois da
+      // resposta: no WhatsApp, segurar e copiar copia a mensagem inteira — com
+      // a chave no meio do texto, o cliente colaria a frase toda no banco.
+      const chavePix = typeof aiResponse.chavePix === "string" ? aiResponse.chavePix : "";
+      if (chavePix && enviou && !silenciarResposta) {
+        if (await replyToCustomer(user.id, remoteJid, chavePix, recipientTarget)) {
+          trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
+        }
+      }
+
       // O arquivo vai DEPOIS do texto, nunca como legenda: no WhatsApp a legenda
       // de mídia fica escondida atrás do "ver mais" e o cliente não lê. Se o envio
       // falhar, não deixamos a conversa no vácuo — a IA já prometeu o cardápio,

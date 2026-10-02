@@ -32,6 +32,7 @@ import {
   Trash2
 } from "lucide-react";
 import FaixaDoVinculo from "./FaixaDoVinculo";
+import PixDaLojaNoRobo from "./PixDaLojaNoRobo";
 import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 import {
   MAX_OUTROS_NUMEROS_DO_DONO,
@@ -798,7 +799,12 @@ export default function ChatbotHubClient() {
 
       const data = await res.json();
       if (data.reply) {
-        setMessages((prev) => [...prev, { sender: "bot", text: data.reply, time: timeStr }]);
+        setMessages((prev) => [
+          ...prev,
+          { sender: "bot", text: data.reply, time: timeStr },
+          // A chave Pix vai numa mensagem só dela, como no WhatsApp.
+          ...(data.chavePix ? [{ sender: "bot" as const, text: data.chavePix, time: timeStr }] : []),
+        ]);
       } else {
         setMessages((prev) => [
           ...prev,
@@ -3241,6 +3247,13 @@ export default function ChatbotHubClient() {
                 </div>
               </div>
             </div>
+
+            {/* CHAVE PIX DA LOJA, QUE O ROBÔ MANDA AO CLIENTE */}
+            <PixDaLojaNoRobo
+              valor={config.pixDaLoja}
+              onSalvo={(pix) => setConfig((prev: any) => ({ ...prev, pixDaLoja: pix }))}
+              avisar={showToast}
+            />
 
             {/* PAUSAR ROBÔ QUANDO PEDIR ATENDENTE HUMANO */}
             <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>

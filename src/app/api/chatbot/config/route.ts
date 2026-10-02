@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 import { lerOutrosNumerosDoDono } from "@/lib/numeros-do-dono";
+import { limparPixDaLoja } from "@/lib/pix-da-loja";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -138,6 +139,8 @@ export async function POST(req: NextRequest) {
       "googleReviewUrl",
       // Outros números que recebem os avisos junto com o principal.
       "outrosNumerosDoDono",
+      // A chave Pix da loja, que o robô manda ao cliente (lib/pix-da-loja.ts).
+      "pixDaLoja",
     ] as const;
 
     const permitido: Record<string, any> = {};
@@ -168,6 +171,20 @@ export async function POST(req: NextRequest) {
     if ("outrosNumerosDoDono" in permitido) {
       permitido.outrosNumerosDoDono = lerOutrosNumerosDoDono({ outrosNumerosDoDono: permitido.outrosNumerosDoDono });
     }
+    // A chave vai para o dinheiro do cliente: só entra reconhecida (CPF/CNPJ
+    // com dígito certo, celular, e-mail, aleatória) e com o titular. Recusada,
+    // a que estava continua — e a tela mostra o porquê.
+    let erroDoPix: string | null = null;
+    if ("pixDaLoja" in permitido) {
+      const limpo = limparPixDaLoja(permitido.pixDaLoja);
+      if (limpo && "erro" in limpo) {
+        erroDoPix = limpo.erro;
+        delete permitido.pixDaLoja;
+        recusados.push("pixDaLoja");
+      } else {
+        permitido.pixDaLoja = limpo;
+      }
+    }
     if (recusados.length > 0) {
       console.warn(
         `[chatbot/config] Campos recusados para a loja ${user.id} (não editáveis por aqui):`,
@@ -184,7 +201,7 @@ export async function POST(req: NextRequest) {
 
     // `recusados` volta para a tela: sem isso o lojista via "salvo!" em verde
     // enquanto o campo era descartado aqui, e ninguém descobria por meses.
-    return NextResponse.json({ success: true, config: updatedConfig, recusados });
+    return NextResponse.json({ success: true, config: updatedConfig, recusados, ...(erroDoPix ? { erroDoPix } : {}) });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Erro ao salvar configurações" }, { status: 500 });
   }
