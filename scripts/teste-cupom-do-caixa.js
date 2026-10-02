@@ -133,10 +133,24 @@ const cupom = cupomDeFechamentoDeCaixa({
         { nome: "PDV", qtd: 8, valor: 700.0, formas: [{ nome: "Debito", qtd: 6, valor: 610.0 }, { nome: "Fiado", qtd: 2, valor: 90.0 }] },
         { nome: "Mesa", qtd: 4, valor: 300.0, formas: [{ nome: "Credito", qtd: 4, valor: 300.0 }] },
       ],
+      // Um bloco por tipo (lib/apuracao-do-turno.ts, 02/10/2026): formas,
+      // produtos, taxas, desconto, ajustes e o total de cada tipo.
       porTipo: [
-        { nome: "Entrega", qtd: 26, valor: 2200.0 },
-        { nome: "Balcao", qtd: 12, valor: 1000.0 },
-        { nome: "Mesa", qtd: 4, valor: 300.0 },
+        { chave: "DELIVERY", nome: "Delivery", qtd: 26, valor: 2200.0,
+          formas: [{ nome: "Dinheiro", qtd: 14, valor: 1220.0 }, { nome: "Pago online iFood", qtd: 12, valor: 820.0 }, { nome: "Pix", qtd: 4, valor: 80.0 }, { nome: "Cupom da plataforma", qtd: 5, valor: 80.0 }],
+          canais: [{ nome: "Site", qtd: 14, valor: 1300.0 }, { nome: "iFood", qtd: 12, valor: 900.0 }],
+          produtos: 2030.0, taxaDeEntrega: { qtd: 26, valor: 210.0 }, servico: { qtd: 0, valor: 0 }, gorjeta: 0,
+          desconto: { qtd: 3, valor: 45.0 }, ajustes: 5.0, troco: { qtd: 0, valor: 0 } },
+        { chave: "BALCAO", nome: "Balcao", qtd: 12, valor: 1000.0,
+          formas: [{ nome: "Debito", qtd: 6, valor: 320.0 }, { nome: "Pix", qtd: 4, valor: 100.0 }, { nome: "Dinheiro", qtd: 2, valor: 580.0 }],
+          canais: [{ nome: "PDV", qtd: 12, valor: 1000.0 }],
+          produtos: 1000.0, taxaDeEntrega: { qtd: 0, valor: 0 }, servico: { qtd: 0, valor: 0 }, gorjeta: 0,
+          desconto: { qtd: 0, valor: 0 }, ajustes: 0, troco: { qtd: 0, valor: 0 } },
+        { chave: "MESA", nome: "Mesas", qtd: 4, valor: 300.0,
+          formas: [{ nome: "Credito", qtd: 4, valor: 300.0 }],
+          canais: [{ nome: "Mesa", qtd: 4, valor: 300.0 }],
+          produtos: 270.0, taxaDeEntrega: { qtd: 0, valor: 0 }, servico: { qtd: 4, valor: 30.0 }, gorjeta: 0,
+          desconto: { qtd: 0, valor: 0 }, ajustes: 0, troco: { qtd: 0, valor: 0 } },
       ],
       cupomDaLoja: { qtd: 3, valor: 45.0, porCanal: [{ nome: "Site", qtd: 2, valor: 30.0 }, { nome: "iFood", qtd: 1, valor: 15.0 }] },
       cupomDaPlataforma: [{ nome: "iFood", qtd: 5, valor: 80.0 }, { nome: "99Food", qtd: 2, valor: 25.0 }],
@@ -200,7 +214,8 @@ if (!fingirAntigo) {
     /Pago pela loja \(3\)/.test(saida) && /Pago pelo iFood \(5\)/.test(saida) && /Pago pelo 99Food \(2\)/.test(saida));
   exigir("canal com as formas de pagamento", /- Pago online \(12\)/.test(saida));
   exigir("entregador com o que recebe", /A pagar ao entregador/.test(saida));
-  exigir("tipo de venda com ticket", /Entrega \(26\)/.test(saida) && /ticket medio/.test(saida));
+  exigir("um bloco por tipo de venda, com total e ticket", /VENDAS DELIVERY/.test(saida) && /TOTAL DELIVERY \(26\)/.test(saida) && /ticket medio/.test(saida));
+  exigir("bloco com valor dos produtos e taxa de servico da mesa", /Valor dos produtos/.test(saida) && /Taxa de servico \(4\)/.test(saida));
   exigir("total faturado", /TOTAL FATURADO/.test(saida));
   exigir("mesas abertas aparecem", /Mesas ainda abertas/.test(saida));
   exigir("nao imprime rodape de pedido", !/Subtotal:/.test(saida));

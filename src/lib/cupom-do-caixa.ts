@@ -64,6 +64,40 @@ export type LinhaDoRelatorio =
 export type ParteDoRetrato = { nome: string; qtd: number; valor: number };
 
 /**
+ * Um TIPO de venda no fechamento — "VENDAS MESAS", "VENDAS RETIRADA"… com as
+ * formas que entraram, o valor dos produtos, as taxas, o desconto e o total.
+ *
+ * Pedido do Douglas a partir da Delícia de Casa (02/10/2026), com a foto do
+ * papel de outro sistema: o lojista quer ver o salão separado da entrega no
+ * mesmo fechamento. `valor` é o total do bloco e fecha por construção:
+ *
+ *   produtos + taxa de entrega + serviço + gorjeta − desconto + ajustes = valor
+ *   Σ formas (com o cupom da plataforma) = valor
+ *   Σ valor dos blocos = vendas.valor (o TOTAL FATURADO do papel)
+ */
+export type BlocoDoTipo = ParteDoRetrato & {
+  /** DELIVERY | RETIRADA | BALCAO | MESA | TOTEM — a régua dos relatórios (lib/relatorios/base.ts). */
+  chave: string;
+  formas: ParteDoRetrato[];
+  canais: ParteDoRetrato[];
+  /** Σ preço × quantidade dos itens; na mesa, o consumo lançado (Σ pedidos da conta). */
+  produtos: number;
+  taxaDeEntrega: { qtd: number; valor: number };
+  servico: { qtd: number; valor: number };
+  gorjeta: number;
+  /** Na entrega/balcão, o `discountMerchant`; na mesa, o que a conta fechou abaixo do consumo. */
+  desconto: { qtd: number; valor: number };
+  /**
+   * O que sobra para a conta fechar: a taxa de serviço do app (iFood/99, varia
+   * por pedido — ver a-conta-do-pedido-nao-fecha-sozinha), cupom sem dono, o
+   * pago a mais no cartão/Pix da mesa. Nunca um valor fixo inventado.
+   */
+  ajustes: number;
+  /** Só mesa: o troco devolvido, já tirado do Dinheiro deste bloco. */
+  troco: { qtd: number; valor: number };
+};
+
+/**
  * O retrato do turno. Nada aqui entra em conta — é tudo informação.
  *
  * Apurado em lib/esperado-do-turno.ts na MESMA varredura da conferência, com a
@@ -75,7 +109,8 @@ export type DetalheDoTurno = {
   vendas: { qtd: number; valor: number };
   porForma: ParteDoRetrato[];
   porCanal: (ParteDoRetrato & { formas: ParteDoRetrato[] })[];
-  porTipo: ParteDoRetrato[];
+  /** Um bloco por tipo de venda, na ordem Delivery, Retirada, Balcão, Mesas, Totem. Tipo sem venda não vem. */
+  porTipo: BlocoDoTipo[];
   /** Desconto que saiu do bolso da loja — cupom da casa, desconto no balcão. */
   cupomDaLoja: { qtd: number; valor: number; porCanal: ParteDoRetrato[] };
   /** Cupom que a plataforma pagou, por canal. Ela repassa: é venda da loja. */
@@ -83,7 +118,12 @@ export type DetalheDoTurno = {
   /** O pago online da conferência, por canal (já com o cupom da plataforma). */
   onlinePorCanal: ParteDoRetrato[];
   taxaDeEntrega: { qtd: number; valor: number };
-  mesas: { servico: number; servicoQtd: number; gorjeta: number };
+  /**
+   * `troco`: o que as contas de mesa receberam além de consumo + serviço +
+   * gorjeta e devolveram em dinheiro. O retrato já o tira do Dinheiro; a
+   * conferência da gaveta ainda conta a nota inteira (ver "Dinheiro na gaveta").
+   */
+  mesas: { servico: number; servicoQtd: number; gorjeta: number; troco?: number; trocoQtd?: number };
   gaveta: { vendasEmDinheiro: number; reforcosQtd: number; sangriasQtd: number };
   movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date | string }[];
   fiado: { hora: Date | string; numero: string; nome: string; valor: number }[];
@@ -195,6 +235,73 @@ export function cupomDeAberturaDeCaixa(entrada: {
     items,
     total: Number(entrada.trocoInicial || 0),
     rodape: "Guarde este comprovante. Ele e o ponto de partida da conferencia.",
+    relatorio,
+  });
+}
+
+/**
+ * O comprovante de uma SANGRIA (saída) ou de um SUPRIMENTO (entrada) de caixa.
+ *
+ * Pedido da Delícia de Casa (02/10/2026): "conseguir imprimir a entrada ou a
+ * retirada quando lançamos no caixa". O dinheiro que sai da gaveta no meio do
+ * turno (pagar o motoboy, mandar para o cofre) só tinha a linha na tela; quem
+ * leva o dinheiro e quem entrega não assinavam nada, e no fim do dia a
+ * sangria sem papel vira palavra contra palavra.
+ *
+ * Curto de propósito: tipo, valor, forma, motivo, quem lançou, quando, e duas
+ * linhas de assinatura. Mesmo envelope e mesma fila do papel do caixa — sai
+ * na impressora que a loja escolheu para o caixa (kind CAIXA_*).
+ */
+export function cupomDeMovimentacaoDeCaixa(entrada: {
+  movimentacao: { id: string; tipo: string; valor: number; descricao: string | null; criadoPor: string | null; createdAt: Date };
+  loja: string;
+  fuso: string;
+  /** Quem está imprimindo agora (o cabeçalho do papel). */
+  operador: string;
+  /** Abertura do turno do lançamento, quando se sabe. */
+  caixaAbertoEm?: Date | null;
+  /** Reimpressão pela lista: o papel diz que é 2ª via. */
+  segundaVia?: boolean;
+}) {
+  const m = entrada.movimentacao;
+  const ehEntrada = m.tipo === "ENTRADA";
+  const nome = ehEntrada ? "SUPRIMENTO DE CAIXA" : "SANGRIA DE CAIXA";
+  const c = cabecalho(entrada.segundaVia ? `2a VIA - ${nome}` : nome, entrada.loja, new Date(), entrada.fuso, entrada.operador);
+  const quando = hhmm(new Date(m.createdAt), entrada.fuso);
+  const valorComSinal = ehEntrada ? m.valor : -m.valor;
+
+  const relatorio: LinhaDoRelatorio[] = [
+    { tipo: "titulo", texto: ehEntrada ? "Entrada (suprimento)" : "Retirada (sangria)" },
+    { tipo: "destaque", texto: "VALOR", valor: reais(m.valor) },
+    { tipo: "linha", texto: "Forma", valor: "Dinheiro" },
+    { tipo: "linha", texto: ehEntrada ? "Entrou na gaveta em" : "Saiu da gaveta em", valor: quando },
+  ];
+  if (m.criadoPor) relatorio.push({ tipo: "linha", texto: "Lancado por", valor: m.criadoPor });
+  if (entrada.caixaAbertoEm) relatorio.push({ tipo: "linha", texto: "Caixa aberto em", valor: hhmm(entrada.caixaAbertoEm, entrada.fuso) });
+  relatorio.push({ tipo: "texto", texto: `Motivo: ${m.descricao ? m.descricao : "(nao informado)"}` });
+  relatorio.push({ tipo: "separador" });
+  // Duas assinaturas: quem tirou (ou trouxe) o dinheiro e quem estava no
+  // caixa. Uma só não prova nada quando são duas pessoas. A linha vazia é uma
+  // "linha" sem texto nem valor: o Assistente descarta o texto só de espaço,
+  // e sem o vão ninguém consegue assinar em cima do traço.
+  const vao = (): LinhaDoRelatorio => ({ tipo: "linha", texto: "", valor: "" });
+  relatorio.push(vao(), vao());
+  relatorio.push({ tipo: "texto", texto: "______________________________" });
+  relatorio.push({ tipo: "texto", texto: ehEntrada ? "Quem entregou o dinheiro" : "Quem retirou o dinheiro" });
+  relatorio.push(vao(), vao());
+  relatorio.push({ tipo: "texto", texto: "______________________________" });
+  relatorio.push({ tipo: "texto", texto: "Responsavel pelo caixa" });
+
+  return montar({
+    id: `caixa_mov_${m.id}`,
+    kind: "CAIXA_MOVIMENTACAO",
+    titulo: c.titulo,
+    cabecalho: c,
+    // Assistente antigo (sem `relatorio`) imprime isto como um pedido de uma
+    // linha só: o tipo, o valor com sinal e o motivo embaixo.
+    items: [{ name: ehEntrada ? "Suprimento (entrada)" : "Sangria (retirada)", qty: 1, price: valorComSinal, notes: m.descricao || undefined }],
+    total: valorComSinal,
+    rodape: `${ehEntrada ? "Entrada" : "Saida"} de dinheiro em ${quando}${m.criadoPor ? ` por ${m.criadoPor}` : ""}`,
     relatorio,
   });
 }
@@ -321,12 +428,62 @@ function posicaoDaForma(nome: string): number {
 const naOrdemDasFormas = (l: ParteDoRetrato[]) =>
   [...l].sort((a, b) => posicaoDaForma(a.nome) - posicaoDaForma(b.nome) || b.valor - a.valor);
 
-const ORDEM_DOS_TIPOS = ["Entrega", "Retirada", "Balcao", "Mesa", "Totem"];
-const naOrdemDosTipos = (l: ParteDoRetrato[]) =>
+// A mesma ordem de lib/apuracao-do-turno.ts (ORDEM_DOS_TIPOS), repetida aqui
+// para este arquivo continuar sem import: o harness do papel o carrega solto.
+const ORDEM_DOS_TIPOS = ["DELIVERY", "RETIRADA", "BALCAO", "MESA", "TOTEM"];
+const naOrdemDosTipos = (l: BlocoDoTipo[]) =>
   [...l].sort((a, b) => {
-    const pa = ORDEM_DOS_TIPOS.indexOf(a.nome), pb = ORDEM_DOS_TIPOS.indexOf(b.nome);
+    const pa = ORDEM_DOS_TIPOS.indexOf(a.chave), pb = ORDEM_DOS_TIPOS.indexOf(b.chave);
     return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
   });
+
+/**
+ * As linhas de UM tipo de venda no papel, no formato que a loja já conhece de
+ * outro sistema: as formas, o valor dos produtos, o que soma e o que desconta,
+ * e o TOTAL do tipo em destaque. Linha zerada não sai — tipo sem taxa de
+ * entrega não precisa dizer "Taxa de entrega R$ 0,00".
+ */
+function linhasDoBloco(L: LinhaDoRelatorio[], b: BlocoDoTipo, totalFaturado: number) {
+  const linha = (texto: string, valor: string, nota?: string) => L.push({ tipo: "linha", texto, valor, nota });
+  L.push({ tipo: "titulo", texto: `Vendas ${b.nome}` });
+  for (const f of naOrdemDasFormas(b.formas)) {
+    const nota =
+      f.nome === "Fiado" ? "acertado fora do caixa"
+      : f.nome === "Forma nao identificada" ? "vale conferir o que e"
+      : f.nome === "Cupom da plataforma" ? "a plataforma repassa"
+      : undefined;
+    linha(`${f.nome} (${f.qtd})`, reais(f.valor), nota);
+  }
+  L.push({ tipo: "separador" });
+  linha("Valor dos produtos", reais(b.produtos));
+  if (b.taxaDeEntrega.valor > 0.005) linha(`+ Taxa de entrega (${b.taxaDeEntrega.qtd})`, reais(b.taxaDeEntrega.valor));
+  if (b.servico.valor > 0.005) linha(`+ Taxa de servico (${b.servico.qtd})`, reais(b.servico.valor));
+  if (b.gorjeta > 0.005) linha("+ Gorjeta", reais(b.gorjeta));
+  if (b.desconto.valor > 0.005) {
+    linha(`- ${b.chave === "MESA" ? "Desconto no fechamento" : "Desconto da loja"} (${b.desconto.qtd})`, reais(-b.desconto.valor));
+  }
+  if (Math.abs(b.ajustes) > 0.005) {
+    // Nunca um valor fixo: a taxa de serviço do app varia por pedido
+    // (a-conta-do-pedido-nao-fecha-sozinha). O papel diz o que costuma ser.
+    const nota = b.chave === "MESA"
+      ? "pago a mais no cartao ou no Pix"
+      : "taxa de servico do app e outros ajustes do pedido";
+    linha(`${b.ajustes > 0 ? "+" : "-"} Outras taxas e ajustes`, reais(b.ajustes), nota);
+  }
+  const pct = totalFaturado > 0 ? Math.round((b.valor / totalFaturado) * 100) : 0;
+  L.push({
+    tipo: "destaque",
+    texto: `TOTAL ${b.nome.toUpperCase()} (${b.qtd})`,
+    valor: reais(b.valor),
+    nota: `${pct}% do faturado | ticket medio ${reais(b.qtd > 0 ? b.valor / b.qtd : 0)}`,
+  });
+  if (b.troco.valor > 0.005) linha(`Troco devolvido (${b.troco.qtd})`, reais(b.troco.valor), "ja tirado do Dinheiro acima");
+  // Por canal só quando há mais de um: "Delivery: iFood (5), Site (7)". Um
+  // canal só repetiria o total do bloco.
+  if (b.canais.length > 1) {
+    for (const c of b.canais) linha(`- ${c.nome} (${c.qtd})`, reais(c.valor));
+  }
+}
 
 function rotuloDaDiferenca(d: number) {
   return d < -0.01 ? "(FALTA)" : d > 0.01 ? "(SOBRA)" : "(confere)";
@@ -461,7 +618,24 @@ function relatorioDoFechamento(
   if (d) {
     titulo("Dinheiro na gaveta");
     linha("Troco de abertura", reais(entrada.trocoInicial));
-    linha("+ Vendas em dinheiro", reais(d.gaveta.vendasEmDinheiro));
+    // ── O TROCO DA MESA, À VISTA ───────────────────────────────────────────
+    //
+    // A conferência soma a baixa da mesa como foi digitada — a NOTA que o
+    // cliente entregou (pago-da-mesa-inclui-troco) —, e o faturamento lá
+    // embaixo já conta sem o troco. Sem separar aqui, o "Dinheiro" do
+    // faturamento e as "vendas em dinheiro" da gaveta diriam dois números, e a
+    // falta do tamanho do troco não teria explicação no papel.
+    const trocoDasMesas = d.mesas.troco || 0;
+    if (trocoDasMesas > 0.01) {
+      linha("+ Vendas em dinheiro", reais(d.gaveta.vendasEmDinheiro - trocoDasMesas));
+      linha(
+        `+ Troco das mesas (${d.mesas.trocoQtd || 0})`,
+        reais(trocoDasMesas),
+        "a conferencia conta a nota entregue na mesa; o troco que saiu daqui vira falta"
+      );
+    } else {
+      linha("+ Vendas em dinheiro", reais(d.gaveta.vendasEmDinheiro));
+    }
     if (entradas > 0.01) linha(`+ Reforcos (${d.gaveta.reforcosQtd})`, reais(entradas));
     if (saidas > 0.01) linha(`- Sangrias (${d.gaveta.sangriasQtd})`, reais(saidas));
     const somaDasParcelas = Number((entrada.trocoInicial + d.gaveta.vendasEmDinheiro + entradas - saidas).toFixed(2));
@@ -509,18 +683,32 @@ function relatorioDoFechamento(
     if (d.taxaDeEntrega.valor > 0.01) linha(`Incluso: taxa de entrega (${d.taxaDeEntrega.qtd})`, reais(d.taxaDeEntrega.valor));
     if (d.mesas.servico > 0.01) linha(`Incluso: taxa de servico (${vezes(d.mesas.servicoQtd, "mesa", "mesas")})`, reais(d.mesas.servico));
     if (d.mesas.gorjeta > 0.01) linha("Incluso: gorjeta", reais(d.mesas.gorjeta));
+    if ((d.mesas.troco || 0) > 0.01) {
+      linha(`Troco devolvido nas mesas (${d.mesas.trocoQtd || 0})`, reais(d.mesas.troco || 0), "ja tirado do Dinheiro acima");
+    }
   } else {
     titulo("Faturamento");
     texto("Nenhuma venda paga neste turno.");
   }
 
-  // ── POR TIPO DE VENDA ───────────────────────────────────────────────────
+  // ── UM BLOCO POR TIPO DE VENDA ──────────────────────────────────────────
+  //
+  // Era uma linha por tipo ("Entrega (26) R$ 2.200,00"). A Delícia de Casa
+  // (02/10/2026) mostrou o papel de outro sistema, com um bloco por tipo —
+  // "VENDAS RETIRADA / DINHEIRO / VALOR DOS PRODUTOS / TOTAL" — e o Douglas
+  // pediu igual: o salão separado da entrega, cada um com o que entrou em
+  // cada forma. Tudo sai da mesma apuração (lib/apuracao-do-turno.ts), e a
+  // última linha prova que a soma dos blocos é o TOTAL FATURADO.
   if (d.porTipo.length > 0) {
-    titulo("Por tipo de venda");
-    for (const t of naOrdemDosTipos(d.porTipo)) {
-      const pct = d.vendas.valor > 0 ? Math.round((t.valor / d.vendas.valor) * 100) : 0;
-      linha(`${t.nome} (${t.qtd})`, reais(t.valor), `${pct}% do faturado | ticket medio ${reais(t.qtd > 0 ? t.valor / t.qtd : 0)}`);
-    }
+    for (const b of naOrdemDosTipos(d.porTipo)) linhasDoBloco(L, b, d.vendas.valor);
+    const soma = Number(d.porTipo.reduce((s, b) => s + b.valor, 0).toFixed(2));
+    const bate = Math.abs(soma - d.vendas.valor) < 0.005;
+    L.push({ tipo: "separador" });
+    linha(
+      `Soma dos tipos (${d.porTipo.length})`,
+      reais(soma),
+      bate ? "igual ao TOTAL FATURADO" : `difere do TOTAL FATURADO (${reais(d.vendas.valor)})`
+    );
   }
 
   // ── POR CANAL, COM O PAGAMENTO DE CADA UM ───────────────────────────────

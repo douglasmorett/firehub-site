@@ -1,4 +1,5 @@
 import BotaoImprimirCaixa from "@/components/customer/BotaoImprimirCaixa";
+import { VendasPorTipoDoHistorico } from "@/components/customer/VendasPorTipoDoCaixa";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -129,6 +130,12 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
               {/* Segunda via: papel some, e a conferência do dinheiro não pode
                   depender de alguém transcrever a tela à mão. */}
               <BotaoImprimirCaixa sessionId={s.id} />
+            </div>
+            {/* O extrato do caixa por tipo de venda (Delivery, Retirada,
+                Balcão, Mesas, Totem), apurado só quando o lojista pede — o
+                papel reimpresso traz o mesmo, bloco por bloco. */}
+            <div style={{ padding: "0 16px 10px" }}>
+              <VendasPorTipoDoHistorico sessionId={s.id} />
             </div>
           </div>
         );

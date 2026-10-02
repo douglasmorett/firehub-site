@@ -40,6 +40,9 @@ export async function GET() {
         pendentesValor: 0, pendentesQuantidade: 0, movimentacaoEntradas: 0, movimentacaoSaidas: 0, onlineProprio: 0,
       };
   const { expected, foraDaConferencia, pendentesValor, pendentesQuantidade, movimentacaoEntradas, movimentacaoSaidas, onlineProprio } = dados;
+  // As vendas do turno separadas por tipo (Delivery, Retirada, Balcão, Mesas,
+  // Totem) — a mesma apuração que vai para o papel do fechamento.
+  const detalhe = "detalhe" in dados ? dados.detalhe : null;
 
   // ── O DINHEIRO DA GAVETA PODE SER DE ANTES DESTE TURNO ─────────────────
   //
@@ -137,6 +140,12 @@ export async function GET() {
     },
     ultimoFechamento: ultimoFechamento
       ? { cash: ultimoFechamento.closingCash || 0, em: ultimoFechamento.closedAt?.toISOString() || null }
+      : null,
+    // Só informação, como no papel: a soma dos tipos é o total faturado
+    // (vendas.valor), não o esperado da conferência — o esperado tem o troco
+    // de abertura e as movimentações, e não tem o fiado.
+    vendasPorTipo: detalhe
+      ? { vendas: detalhe.vendas, porTipo: detalhe.porTipo, trocoDasMesas: { valor: detalhe.mesas.troco || 0, qtd: detalhe.mesas.trocoQtd || 0 } }
       : null,
   });
 }

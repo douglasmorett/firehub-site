@@ -7,6 +7,7 @@ import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, U
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
 import SimularPedidos from "./SimularPedidos";
+import VendasPorTipoDoCaixa, { type VendasPorTipo } from "./VendasPorTipoDoCaixa";
 import {
   avisarQueOCaixaMudou, EVENTO_ABRIR_MENU_DO_CAIXA, PARAMETRO_ABRIR_CAIXA, type PedidoDoCaixa,
 } from "@/lib/caixa-aberto";
@@ -40,6 +41,51 @@ const NAV_ITEMS = [
 ];
 
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+
+// ── Aviso que desce do topo e some sozinho (no lugar do alert()) ──────────
+// Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
+// foi publicado: quando ele estiver no master, basta trocar este bloco pelo
+// import. Acima dos modais do caixa (zIndex 1000): o aviso da impressão sai
+// com o modal ainda aberto.
+type Aviso = { tipo: "ok" | "erro" | "atencao" | "info"; titulo: string; detalhe?: string };
+const COR_DO_AVISO: Record<Aviso["tipo"], { cor: string; fundo: string }> = {
+  ok: { cor: "#059669", fundo: "#ECFDF5" },
+  erro: { cor: "#DC2626", fundo: "#FEF2F2" },
+  atencao: { cor: "#D97706", fundo: "#FFFBEB" },
+  info: { cor: "#2563EB", fundo: "#EFF6FF" },
+};
+function AvisoNoTopo({ aviso, onFechar }: { aviso: Aviso | null; onFechar: () => void }) {
+  useEffect(() => {
+    if (!aviso) return;
+    const t = setTimeout(onFechar, aviso.tipo === "erro" || aviso.tipo === "atencao" ? 12000 : 6000);
+    return () => clearTimeout(t);
+  }, [aviso, onFechar]);
+  if (!aviso) return null;
+  const { cor, fundo } = COR_DO_AVISO[aviso.tipo];
+  return (
+    <div
+      role={aviso.tipo === "erro" ? "alert" : "status"}
+      onClick={onFechar}
+      style={{
+        position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 2000,
+        width: "min(440px, calc(100vw - 24px))", background: fundo, borderLeft: `4px solid ${cor}`,
+        borderRadius: 12, padding: "12px 14px", boxShadow: "0 10px 30px rgba(15,23,42,.18)", cursor: "pointer",
+      }}
+    >
+      <div style={{ fontWeight: 800, fontSize: 14, color: "#0F172A" }}>{aviso.titulo}</div>
+      {aviso.detalhe && <div style={{ fontSize: 13, color: "#475569", marginTop: 2, lineHeight: 1.45 }}>{aviso.detalhe}</div>}
+    </div>
+  );
+}
+
+/** "Lembrar" a escolha de imprimir o comprovante da sangria, por navegador. */
+const CHAVE_IMPRIMIR_MOV = "firehub:caixa:imprimir-movimentacao";
+function lerImprimirMov(): boolean {
+  try { return window.localStorage.getItem(CHAVE_IMPRIMIR_MOV) === "1"; } catch { return false; }
+}
+function gravarImprimirMov(v: boolean) {
+  try { window.localStorage.setItem(CHAVE_IMPRIMIR_MOV, v ? "1" : "0"); } catch { /* aba anônima: só não lembra */ }
+}
 
 const METHODS = [
   { key: "cash",    label: "💵 Dinheiro" },
@@ -309,6 +355,10 @@ export default function StoreTopNav({
   const [showPendingWarn, setShowPendingWarn] = useState(false);
   const [pendingDeliveryCount, setPendingDeliveryCount] = useState(0);
   const [diff, setDiff]         = useState(0);
+  // As vendas do turno por tipo (Delivery, Retirada, Balcão, Mesas, Totem).
+  const [vendasPorTipo, setVendasPorTipo] = useState<VendasPorTipo | null>(null);
+  const [aviso, setAviso] = useState<Aviso | null>(null);
+  const fecharAviso = useCallback(() => setAviso(null), []);
 
   // ── SANGRIA E REFORÇO ───────────────────────────────────────────
   //
@@ -324,6 +374,43 @@ export default function StoreTopNav({
   const [movErro, setMovErro] = useState("");
   const [movs, setMovs] = useState<any[]>([]);
   const [movTotais, setMovTotais] = useState({ entradas: 0, saidas: 0, saldo: 0 });
+  // ── O COMPROVANTE DA SANGRIA ────────────────────────────────────────
+  // Pedido da Delícia de Casa (02/10/2026): imprimir a entrada ou a retirada
+  // quando lança. Desligado até a loja marcar uma vez — depois o navegador
+  // lembra; loja que não usa não ganha bobina gasta.
+  const [movImprimir, setMovImprimir] = useState(false);
+  const [movImprimindo, setMovImprimindo] = useState<string | null>(null);
+  useEffect(() => { setMovImprimir(lerImprimirMov()); }, []);
+
+  /** O que dizer depois de mandar o comprovante para a fila. */
+  const avisarImpressaoDaMov = (r: { ok?: boolean; assistenteOuvindo?: boolean | null; erro?: string; error?: string } | null | undefined) => {
+    if (!r || r.ok === false || r.error) {
+      setAviso({ tipo: "erro", titulo: "O comprovante não foi para a impressora", detalhe: r?.erro || r?.error || "Tente de novo pelo ícone da impressora na lista." });
+      return;
+    }
+    if (r.assistenteOuvindo === false) {
+      setAviso({ tipo: "atencao", titulo: "Comprovante na fila, mas não vai sair agora", detalhe: "O Assistente de Impressão desta loja não está consultando a fila. No computador do caixa, clique em “Vincular agora” no aviso do topo e imprima de novo pelo ícone da impressora." });
+      return;
+    }
+    setAviso({ tipo: "ok", titulo: "Comprovante enviado para a impressora" });
+  };
+
+  const imprimirMov = async (id: string) => {
+    setMovImprimindo(id);
+    try {
+      const res = await fetch("/api/cash-session/movimentacao/imprimir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const j = await res.json().catch(() => null);
+      avisarImpressaoDaMov(res.ok ? j : { ok: false, erro: j?.error });
+    } catch {
+      avisarImpressaoDaMov({ ok: false, erro: "Sem conexão." });
+    } finally {
+      setMovImprimindo(null);
+    }
+  };
 
   const carregarMovs = () =>
     fetch("/api/cash-session/movimentacao")
@@ -409,10 +496,11 @@ export default function StoreTopNav({
       const res = await fetch("/api/cash-session/movimentacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo: movTipo, valor: valorNum, descricao: movDescricao }),
+        body: JSON.stringify({ tipo: movTipo, valor: valorNum, descricao: movDescricao, imprimir: movImprimir }),
       });
       const d = await res.json();
       if (!res.ok) { setMovErro(d.error || "Não consegui registrar. Tente de novo."); return; }
+      if (movImprimir) avisarImpressaoDaMov(d.impressao);
       setMovTipo(null); setMovValor(""); setMovDescricao("");
       await carregarMovs();
     } catch {
@@ -438,6 +526,7 @@ export default function StoreTopNav({
       if (d.foraDaConferencia) setForaConf(d.foraDaConferencia);
       if (d.foraDoTurno) setForaDoTurno(d.foraDoTurno);
       if (d.ultimoFechamento !== undefined) setUltimoFechamento(d.ultimoFechamento);
+      setVendasPorTipo(d.vendasPorTipo || null);
     });
     // Buscar pedidos pendentes em SAIU_ENTREGA
     fetch("/api/customer-order/pending-count").then(r => r.json()).then(d => {
@@ -564,11 +653,14 @@ export default function StoreTopNav({
     if (imprimir) {
       const r = await resposta.json().catch(() => null);
       if (r?.impressao?.assistenteOuvindo === false) {
-        alert(
-          "Caixa fechado. Mas o fechamento NÃO vai sair no papel agora: o Assistente de Impressão desta loja não está consultando a fila.\n\n" +
-          "No computador do caixa, abra o painel e clique em \"Vincular agora\" no aviso laranja do topo (ou abra Impressoras e salve). " +
-          "Depois, imprima de novo em Caixa → Histórico de caixas."
-        );
+        // Aviso no topo, não alert() (aviso-e-no-topo-nao-alert).
+        setAviso({
+          tipo: "atencao",
+          titulo: "Caixa fechado — mas o fechamento NÃO vai sair no papel agora",
+          detalhe:
+            "O Assistente de Impressão desta loja não está consultando a fila. No computador do caixa, clique em “Vincular agora” no aviso laranja do topo (ou abra Impressoras e salve). " +
+            "Depois, imprima de novo em Caixa → Histórico de caixas.",
+        });
       }
     }
     setClosing(false);
@@ -722,6 +814,7 @@ export default function StoreTopNav({
 
   return (
     <>
+      <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
       {/* ── MODAL: PAUSAR LOJA ────────────────────────────── */}
       {showPauseModal && (
         <div style={overlay} onClick={() => setShowPauseModal(false)}>
@@ -983,6 +1076,13 @@ export default function StoreTopNav({
                   <div style={{ background:"#FEF2F2", border:"1px solid #FECACA", borderRadius:12, padding:"12px 14px", fontSize:"0.85rem", color:"#B71C1C", fontWeight:700 }}>{movErro}</div>
                 )}
 
+                <label style={{ display:"flex", alignItems:"center", gap:9, fontSize:"0.86rem", color:"#334155", fontWeight:700, cursor:"pointer", userSelect:"none" }}>
+                  <input type="checkbox" checked={movImprimir}
+                         onChange={e => { setMovImprimir(e.target.checked); gravarImprimirMov(e.target.checked); }}
+                         style={{ width:18, height:18, accentColor:"#0F766E" }} />
+                  <Printer size={16} /> Imprimir comprovante com linha para assinatura
+                </label>
+
                 <button onClick={salvarMov} disabled={movSalvando}
                         style={{ height:58, borderRadius:14, border:"none", background: movTipo === "ENTRADA" ? "#0F766E" : "#D14300", color:"#fff", fontWeight:900, fontSize:"1rem", cursor: movSalvando ? "default" : "pointer", opacity: movSalvando ? 0.7 : 1, fontFamily:"inherit" }}>
                   {movSalvando ? "Registrando..." : movTipo === "ENTRADA" ? "Registrar entrada" : "Registrar saída"}
@@ -1018,10 +1118,15 @@ export default function StoreTopNav({
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontWeight:800, fontSize:"0.88rem", color:"#0F172A" }}>{fmt(m.valor)}</div>
                           {m.descricao && <div style={{ fontSize:"0.76rem", color:"#64748B", marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.descricao}</div>}
+                          {m.criadoPor && <div style={{ fontSize:"0.7rem", color:"#94A3B8", marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.tipo === "ENTRADA" ? "Suprimento" : "Sangria"} · por {m.criadoPor}</div>}
                         </div>
                         <div style={{ fontSize:"0.72rem", color:"#94A3B8", flexShrink:0 }}>
                           {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour:"2-digit", minute:"2-digit", timeZone:"America/Sao_Paulo" })}
                         </div>
+                        <button onClick={() => imprimirMov(m.id)} disabled={movImprimindo === m.id} title="Imprimir comprovante"
+                                style={{ background:"none", border:"none", cursor: movImprimindo === m.id ? "default" : "pointer", color: movImprimindo === m.id ? "#CBD5E1" : "#64748B", padding:2, display:"flex", flexShrink:0 }}>
+                          <Printer size={15} />
+                        </button>
                         <button onClick={() => apagarMov(m.id)} title="Apagar lançamento"
                                 style={{ background:"none", border:"none", cursor:"pointer", color:"#CBD5E1", padding:2, display:"flex", flexShrink:0 }}>
                           <Trash2 size={15} />
@@ -1390,6 +1495,10 @@ export default function StoreTopNav({
                     )}
                   </tfoot>
                 </table>
+                {/* As vendas do turno separadas por tipo — informação, não
+                    conferência: a soma dos tipos é o total faturado, que não é
+                    o esperado acima (este tem troco e sangrias; aquele, fiado). */}
+                <VendasPorTipoDoCaixa dados={vendasPorTipo} />
                 {/* Gruda no rodapé do cartão enquanto a tabela rola: o botão
                     de encerrar fica sempre à vista, seja qual for a altura da
                     tela. */}
