@@ -82,6 +82,13 @@ function canTouch(scope: Scope, franchiseeId: string | null): boolean {
 const comboItemId = (it: any): string | null =>
   typeof it === "string" ? it : (it?.id || it?.menuProductId || null);
 
+/** Acréscimo promocional da opção: número ≥ 0, ou NULL (sem promoção). */
+const promoDaOpcao = (v: any): number | null => {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
 /**
  * Monta o payload de um grupo de combo. POST e PUT gravam pelo mesmo caminho —
  * antes cada um montava o seu, e um campo novo entrava só na metade dos casos.
@@ -128,6 +135,9 @@ function dadosDoGrupo(g: any, gIdx: number) {
           additionalPriceSalao: typeof it === "object" ? porCanal(it?.additionalPriceSalao) : null,
           additionalPriceDelivery: typeof it === "object" ? porCanal(it?.additionalPriceDelivery) : null,
           additionalPriceTotem: typeof it === "object" ? porCanal(it?.additionalPriceTotem) : null,
+          // Promoção da opção: aqui o zero VALE ("Grande pelo preço da
+          // Pequena"); vazio e lixo viram NULL = sem promoção.
+          promoAdditionalPrice: typeof it === "object" ? promoDaOpcao(it?.promoAdditionalPrice) : null,
           maxPerItem: Number.isFinite(maxItem) && maxItem > 0 ? Math.trunc(maxItem) : null,
           optionNote:
             typeof it === "object" && typeof it?.optionNote === "string" && it.optionNote.trim()

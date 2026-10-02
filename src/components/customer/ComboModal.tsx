@@ -26,6 +26,12 @@ export type ComboGroupData = {
     optionNote?: string | null;
     /** Preço conforme outra escolha — a meia pizza por tamanho (lib/preco-combo.ts). */
     precoPorEscolha?: unknown;
+    /**
+     * Acréscimo de tabela, só quando a OPÇÃO está em promoção (a "Grande de
+     * + R$ 15 por + R$ 0"): `additionalPrice` já é o promocional, este é só
+     * para riscar. Vem de lib/preco-por-canal.ts (`aplicarPrecoDaOpcao`).
+     */
+    adicionalDe?: number;
     menuProduct: {
       id: string;
       name: string;
@@ -52,6 +58,16 @@ export type Selections = Record<string, Record<string, number>>;
  * Só vale quando as opções cabem EXATAMENTE no teto do grupo — havendo
  * qualquer liberdade de escolha, quem decide é o cliente.
  */
+/**
+ * A opção está em promoção NESTA conta? Só quando o que vai ser cobrado é o
+ * acréscimo promocional — a meia pizza, por exemplo, cobra pela tabela do
+ * tamanho (`precoPorEscolha`), e ali não há o que riscar.
+ */
+function opcaoEmPromocao(item: ComboGroupData["items"][number], cobrado: number): boolean {
+  const de = Number(item.adicionalDe);
+  return Number.isFinite(de) && de > cobrado && cobrado === (Number(item.additionalPrice) || 0);
+}
+
 /**
  * A frase que diz ao cliente COMO a conta vai ser feita, antes de ele escolher.
  *
@@ -326,7 +342,25 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
    * achar que a Grande tinha ficado fora da promoção (02/10/2026).
    */
   const precoDe = Number(product.precoDe);
-  const emPromocao = precoDe > basePrice;
+  // O que as opções escolhidas em promoção deixam de cobrar ("a Grande").
+  // Só nas perguntas que SOMAM: em "mais caro"/"média" o acréscimo não entra
+  // inteiro na conta, e o riscado mentiria.
+  const descontoDasOpcoes = useMemo(() => {
+    let soma = 0;
+    for (const g of groups) {
+      const regra = regraDoGrupo(g);
+      if (regra === "MAIOR" || regra === "MEDIA") continue;
+      for (const item of g.items || []) {
+        const qtd = selections[g.id]?.[item.menuProduct.name] || 0;
+        if (!qtd) continue;
+        const cobrado = precoDaOpcaoNaTela(item, selections);
+        if (opcaoEmPromocao(item, cobrado)) soma += (Number(item.adicionalDe) - cobrado) * qtd;
+      }
+    }
+    return soma;
+  }, [groups, selections]);
+  const precoDeTabela = (precoDe > basePrice ? precoDe : basePrice) + extraSum + descontoDasOpcoes;
+  const emPromocao = precoDeTabela > unitFinalPrice + 0.001;
 
   const handleSubmit = () => {
     if (!allComplete) {
@@ -432,7 +466,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   o modal não decide nada, repete o par que o card já mostrou. */}
               {emPromocao && (
                 <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#94A3B8", textDecoration: "line-through" }}>
-                  R$ {(precoDe + extraSum).toFixed(2).replace(".", ",")}
+                  R$ {precoDeTabela.toFixed(2).replace(".", ",")}
                 </span>
               )}
               <span style={{ fontSize: "1.15rem", fontWeight: 800, color: emPromocao ? "#C92E09" : "#0F766E" }}>
@@ -636,7 +670,21 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                   {item.optionNote}
                                 </div>
                               )}
-                              {addPrice > 0 ? (
+                              {opcaoEmPromocao(item, addPrice) ? (
+                                /* Promoção SÓ desta opção ("a Grande"): o acréscimo de
+                                   tabela riscado na frente do que vai ser cobrado. */
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", fontSize: "0.75rem", fontWeight: 700, marginTop: "2px" }}>
+                                  <span style={{ color: "#94A3B8", textDecoration: "line-through" }}>
+                                    + R$ {Number(item.adicionalDe).toFixed(2).replace(".", ",")}
+                                  </span>
+                                  <span style={{ color: "#C92E09" }}>
+                                    {addPrice > 0 ? `+ R$ ${addPrice.toFixed(2).replace(".", ",")}` : "Incluso"}
+                                  </span>
+                                  <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: "#C92E09", padding: "1px 6px", borderRadius: "10px" }}>
+                                    PROMOÇÃO
+                                  </span>
+                                </div>
+                              ) : addPrice > 0 ? (
                                 <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#0F766E", marginTop: "2px" }}>
                                   + R$ {addPrice.toFixed(2).replace(".", ",")}
                                 </div>

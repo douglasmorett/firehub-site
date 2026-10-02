@@ -52,7 +52,7 @@ export async function refazerMeiasDaLoja(franchiseeId: string | null | undefined
       price: true,
       promoPrice: true,
       comboGroups: {
-        select: { title: true, items: { select: { additionalPrice: true, menuProduct: { select: { name: true } } } } },
+        select: { title: true, items: { select: { additionalPrice: true, promoAdditionalPrice: true, menuProduct: { select: { name: true } } } } },
       },
     },
   });

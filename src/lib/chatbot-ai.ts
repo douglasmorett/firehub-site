@@ -288,6 +288,7 @@ export async function processChatbotAI(
                 additionalPrice: true, additionalPriceDelivery: true,
                 // Meia pizza que custa conforme o tamanho (lib/meio-a-meio.ts).
                 precoPorEscolha: true,
+                promoAdditionalPrice: true,
                 // `active` e o teto da opção: a pausada não é oferecida, e o
                 // combo que ficou sem como fechar é marcado (logo abaixo).
                 maxPerItem: true,

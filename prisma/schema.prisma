@@ -754,6 +754,17 @@ model ComboGroupItem {
   ///
   /// A COLUNA EXISTE NO BANCO ANTES deste campo: src/lib/garantir-colunas.ts.
   precoPorEscolha Json?
+  /// PREÇO PROMOCIONAL DA OPÇÃO — o "Grande de + R$ 15 por + R$ 0". Nulo = sem.
+  ///
+  /// A promoção do produto (`MenuProduct.promoPrice`) desconta a base, e na
+  /// pizza a base é a Pequena: a Serpa Pizzaria quis "a promoção só para a
+  /// pizza grande" (02/10/2026) e não tinha onde pôr. Aqui o zero VALE (a
+  /// Grande pelo preço da Pequena); só conta se for menor que o acréscimo do
+  /// canal. Quem resolve é src/lib/preco-por-canal.ts (`aplicarPrecoDaOpcao`),
+  /// na origem, como o resto do preço.
+  ///
+  /// A COLUNA EXISTE NO BANCO ANTES deste campo: src/lib/garantir-colunas.ts.
+  promoAdditionalPrice Float?
   /// A ORDEM EM QUE A OPÇÃO APARECE DENTRO DA PERGUNTA.
   ///
   /// A tela de cadastro sempre teve as setinhas de subir e descer opção, mas

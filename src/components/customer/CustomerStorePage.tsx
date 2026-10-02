@@ -149,6 +149,15 @@ const emReais = (n: number) => n.toFixed(2).replace(".", ",");
 function PrecoDoCard({ produto, tamanho, cor }: { produto: any; tamanho: string; cor: string }) {
   const de = precoMinimoAntesDaPromocao(produto);
   const agora = precoMinimoDoProduto(produto);
+  // Promoção só numa opção ("a Grande"): o "a partir de" é o da Pequena, não
+  // há o que riscar nele — o card diz QUAL opção está em promoção.
+  const opcoesEmPromocao: string[] = [];
+  for (const g of produto?.comboGroups || []) {
+    for (const i of g?.items || []) {
+      const nome = i?.menuProduct?.name;
+      if (Number(i?.adicionalDe) > 0 && nome && !opcoesEmPromocao.includes(nome)) opcoesEmPromocao.push(nome);
+    }
+  }
 
   return (
     <span style={{ display: "inline-flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
@@ -166,6 +175,11 @@ function PrecoDoCard({ produto, tamanho, cor }: { produto: any; tamanho: string;
       {de !== null && (
         <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: "#DC2626", borderRadius: "999px", padding: "1px 6px" }}>
           -{Math.round(((de - agora) / de) * 100)}%
+        </span>
+      )}
+      {de === null && opcoesEmPromocao.length > 0 && (
+        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: "#DC2626", borderRadius: "999px", padding: "1px 7px" }}>
+          🏷️ {opcoesEmPromocao.slice(0, 2).join(" e ")} em promoção
         </span>
       )}
     </span>
@@ -693,6 +707,8 @@ export default function CustomerStorePage({
       // produto. O resto continua valendo para quem marca promoção por etiqueta
       // ou pelo nome da categoria, que é como a loja fazia antes do campo existir.
       if (Number((p as any).precoDe) > 0) return true;
+      // Promoção só numa opção ("a pizza Grande"): o produto também é oferta.
+      if (((p as any).comboGroups || []).some((g: any) => (g?.items || []).some((i: any) => Number(i?.adicionalDe) > 0))) return true;
       return tags.includes("Promoção") || tags.includes("Oferta") || name.includes("promo") || cat.includes("promo");
     });
   }, [activeTodayProducts]);

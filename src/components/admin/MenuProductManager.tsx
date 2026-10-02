@@ -916,7 +916,7 @@ export default function MenuProductManager({
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(true);
   const [activeGarcom, setActiveGarcom] = useState(true);
-  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; priceRule: string | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null; precoPorEscolha?: Record<string, number> | null }[] }[]>([]);
+  const [comboGroups, setComboGroups] = useState<{ title: string; maxQty: number; minQty: number | null; priceRule: string | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null; precoPorEscolha?: Record<string, number> | null; promoAdditionalPrice?: number | null }[] }[]>([]);
   /** Mostra os três campos de preço por canal em cada opção do combo. */
   const [precosCanalNoCombo, setPrecosCanalNoCombo] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1118,6 +1118,8 @@ export default function MenuProductManager({
           // Meio a meio por tamanho (lib/meio-a-meio.ts): a tela não edita,
           // mas precisa DEVOLVER no salvamento, que recria as opções.
           precoPorEscolha: i.precoPorEscolha ?? null,
+          // Promoção só desta opção: zero vale, nulo = sem promoção.
+          promoAdditionalPrice: i.promoAdditionalPrice === null || i.promoAdditionalPrice === undefined ? null : Number(i.promoAdditionalPrice),
         }))
       })));
       // Já abre destravado quando o combo tem preço por canal em alguma opção:
@@ -2942,6 +2944,24 @@ export default function MenuProductManager({
                                   onChange={e => updateGroupItemPrice(gIdx, it.id, parseFloat(e.target.value) || 0)}
                                   title="Quanto este item soma ao preço do combo."
                                   style={{ width: "76px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
+                                />
+                                {/* PROMOÇÃO SÓ DESTA OPÇÃO — "a promoção só para a pizza
+                                    grande" (Serpa, 02/10/2026). O cardápio risca o "+R$" de
+                                    cima e cobra este. Zero vale (Grande pelo preço da
+                                    Pequena); vazio = sem promoção. */}
+                                <label style={{ fontSize: "0.72rem", color: it.promoAdditionalPrice != null && it.promoAdditionalPrice !== "" ? "#C92E09" : "#64748B", fontWeight: 700 }}>Promo +R$</label>
+                                <input
+                                  type="number"
+                                  step="0.50"
+                                  min="0"
+                                  placeholder="—"
+                                  value={it.promoAdditionalPrice ?? ""}
+                                  onChange={e => updateGroupItemField(gIdx, it.id, "promoAdditionalPrice", e.target.value === "" ? null : Math.max(0, parseFloat(e.target.value) || 0))}
+                                  title="Preço promocional SÓ desta opção (ex.: Grande de +15 por +0). O cardápio mostra o preço normal riscado. Vale em todos os canais enquanto for menor que o preço da opção. Vazio = sem promoção."
+                                  style={{
+                                    width: "68px", padding: "4px 8px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, textAlign: "right",
+                                    border: `1.5px solid ${it.promoAdditionalPrice != null && it.promoAdditionalPrice !== "" ? "#C92E09" : "#CBD5E1"}`,
+                                  }}
                                 />
                                 {it.precoPorEscolha && Object.keys(it.precoPorEscolha).length > 0 && (
                                   <span

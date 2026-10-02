@@ -152,6 +152,8 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
                 optionNote: true,
                 // Meia pizza que custa conforme o tamanho (lib/meio-a-meio.ts).
                 precoPorEscolha: true,
+                // Promoção da opção ("só a Grande"): resolvida com o canal.
+                promoAdditionalPrice: true,
                 // priceSalao: a opção que é produto cobra o preço do salão na
                 // conta da mesa (lib/lancar-na-mesa.ts) — a vitrine da mesa
                 // tem que mostrar o mesmo. No delivery é retirado sem efeito.

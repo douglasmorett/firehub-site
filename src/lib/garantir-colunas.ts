@@ -860,6 +860,8 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // Preço da opção conforme outra escolha — a meia pizza que custa diferente
   // na Pequena e na Grande (lib/preco-combo.ts, lib/meio-a-meio.ts).
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "precoPorEscolha" JSONB`,
+  // Promoção na OPÇÃO — "a promoção só para a pizza grande" (lib/preco-por-canal.ts).
+  `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "promoAdditionalPrice" DOUBLE PRECISION`,
   // A ordem das OPÇÕES dentro da pergunta. As setinhas de subir/descer opção
   // existiam na tela desde sempre, mas não havia coluna para guardar o que o
   // lojista arrumou — e as leituras, sem ORDER BY, devolviam a ordem física do

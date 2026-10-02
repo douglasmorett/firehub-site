@@ -595,7 +595,7 @@ async function montarItensNovos(
           items: {
             select: {
               additionalPrice: true, additionalPriceDelivery: true, additionalPriceSalao: true,
-              additionalPriceTotem: true, maxPerItem: true, precoPorEscolha: true,
+              additionalPriceTotem: true, maxPerItem: true, precoPorEscolha: true, promoAdditionalPrice: true,
               menuProduct: { select: { name: true, price: true } },
             },
           },

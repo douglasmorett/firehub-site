@@ -115,10 +115,26 @@ export type OpcaoComPrecos = {
   additionalPriceSalao?: number | null;
   additionalPriceDelivery?: number | null;
   additionalPriceTotem?: number | null;
+  promoAdditionalPrice?: number | null;
 };
 
 /**
- * O quanto esta opção soma NESTE canal.
+ * O acréscimo promocional VÁLIDO desta opção neste canal, ou null.
+ *
+ * Diferente da promoção do produto, aqui o ZERO vale: é a "Grande pelo preço
+ * da Pequena" da Serpa Pizzaria. O resto da regra é a mesma — só conta se for
+ * menor que o acréscimo de tabela do canal, então promoção que encarece não
+ * existe e opção que já não cobra nada não entra em promoção.
+ */
+export function promocaoDaOpcao(opcao: OpcaoComPrecos, canal: CanalDePreco): number | null {
+  const bruto = opcao?.promoAdditionalPrice;
+  if (bruto === null || bruto === undefined || (bruto as unknown) === "") return null;
+  const promo = Number(bruto);
+  return Number.isFinite(promo) && promo >= 0 && promo < precoDaOpcao(opcao, canal) ? promo : null;
+}
+
+/**
+ * O quanto esta opção soma NESTE canal, ANTES da promoção (é o de tabela).
  *
  * Mesma regra do produto, e pelo mesmo motivo: zero e negativo não contam como
  * preço cadastrado. A diferença é que aqui o zero é comum e legítimo no campo
@@ -141,15 +157,21 @@ export function precoDaOpcao(opcao: OpcaoComPrecos, canal: CanalDePreco): number
  * A opção com `additionalPrice` JÁ TROCADO, e sem as colunas por canal — para
  * não sobrar no payload duas versões do mesmo número, que é como alguém acaba
  * somando a errada.
+ *
+ * Em promoção, `additionalPrice` é o promocional (é o que se paga) e
+ * `adicionalDe` traz o de tabela, só para a tela riscar — o mesmo par
+ * `price`/`precoDe` do produto.
  */
 export function aplicarPrecoDaOpcao<T extends OpcaoComPrecos>(
   opcao: T,
   canal: CanalDePreco
-): Omit<T, "additionalPriceSalao" | "additionalPriceDelivery" | "additionalPriceTotem"> & { additionalPrice: number } {
+): Omit<T, "additionalPriceSalao" | "additionalPriceDelivery" | "additionalPriceTotem" | "promoAdditionalPrice"> & { additionalPrice: number; adicionalDe?: number } {
   const {
-    additionalPriceSalao: _s, additionalPriceDelivery: _d, additionalPriceTotem: _t, ...resto
+    additionalPriceSalao: _s, additionalPriceDelivery: _d, additionalPriceTotem: _t, promoAdditionalPrice: _p, ...resto
   } = opcao as any;
-  return { ...resto, additionalPrice: precoDaOpcao(opcao, canal) };
+  const promo = promocaoDaOpcao(opcao, canal);
+  if (promo === null) return { ...resto, additionalPrice: precoDaOpcao(opcao, canal) };
+  return { ...resto, additionalPrice: promo, adicionalDe: precoDaOpcao(opcao, canal) };
 }
 
 /**

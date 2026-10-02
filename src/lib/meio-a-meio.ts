@@ -57,9 +57,18 @@ export type PizzaDoMeio = {
   promoPrice?: number | null;
   comboGroups?: {
     title?: string | null;
-    items?: { additionalPrice?: number | null; menuProduct?: { name?: string | null } | null }[] | null;
+    items?: { additionalPrice?: number | null; promoAdditionalPrice?: number | null; menuProduct?: { name?: string | null } | null }[] | null;
   }[] | null;
 };
+
+/** O acréscimo que o tamanho COBRA: o promocional quando vale (zero vale), senão o de tabela. */
+function acrescimoDoTamanho(it: { additionalPrice?: number | null; promoAdditionalPrice?: number | null }): number {
+  const tabela = Number(it?.additionalPrice) || 0;
+  const bruto = it?.promoAdditionalPrice;
+  if (bruto === null || bruto === undefined) return tabela;
+  const promo = Number(bruto);
+  return Number.isFinite(promo) && promo >= 0 && promo < tabela ? promo : tabela;
+}
 
 /**
  * Preço da pizza INTEIRA em cada tamanho: base + o acréscimo do tamanho. Sem
@@ -69,7 +78,8 @@ export type PizzaDoMeio = {
  * regra de lib/preco-por-canal.ts — positivo e menor que o preço). Pela tabela,
  * a Calabresa do Chef da Serpa em promoção (de R$ 65 por R$ 50) entrava como
  * Grande R$ 80, e a mesma meia Bacon/Calabresa do Chef saía R$ 57,50 num card
- * e R$ 72,50 no outro (02/10/2026).
+ * e R$ 72,50 no outro (02/10/2026). Idem para a promoção só do tamanho
+ * (`promoAdditionalPrice`, "a Grande de + R$ 15 por + R$ 0").
  */
 export function precosPorTamanho(pizza: PizzaDoMeio): Map<string, number> {
   const tabela = Number(pizza.price) || 0;
@@ -79,7 +89,7 @@ export function precosPorTamanho(pizza: PizzaDoMeio): Map<string, number> {
   const saida = new Map<string, number>();
   for (const it of tamanho?.items || []) {
     const nome = String(it?.menuProduct?.name || "").trim();
-    if (nome) saida.set(nome, r2(base + (Number(it?.additionalPrice) || 0)));
+    if (nome) saida.set(nome, r2(base + acrescimoDoTamanho(it)));
   }
   if (saida.size === 0) saida.set("", r2(base));
   return saida;
