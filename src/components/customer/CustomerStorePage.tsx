@@ -57,6 +57,7 @@ import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } f
 import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
 import { descontoDoPagamentoOnline, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
 import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/cliente-lembrado";
+import { bandeirasDeValeLigadas, formaLigada } from "@/lib/formas-do-cardapio";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
@@ -1522,28 +1523,28 @@ export default function CustomerStorePage({
     //
     // Continua junto do Pix pelo site: quem não quer informar CPF, ou prefere
     // pagar ao receber, ainda paga com Pix.
-    base.push({ k: "PIX_ENTREGA", l: "💰 Pix (na entrega)" });
-
-    base.push(
-      { k: "DINHEIRO", l: "💵 Dinheiro" },
-      { k: "DEBITO", l: "💳 Débito (Entrega)" },
-      { k: "CREDITO", l: "💳 Crédito (Entrega)" }
-    );
-    const fees = franchisee.paymentFees as any;
-    if (fees?.VOUCHER?.active && fees.VOUCHER.brands) {
-      const activeBrands = fees.VOUCHER.brands.filter((b: any) => b.active);
-      if (activeBrands.length > 0) {
-        activeBrands.forEach((b: any) => {
-          base.push({ k: `VOUCHER_${b.name}`, l: `🎟️ ${b.name}` });
-        });
-      } else {
-        base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
-      }
-    } else {
-      base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
+    // Cada forma na entrega obedece ao liga/desliga de Minha Loja → Formas de
+    // Pagamento (lib/formas-do-cardapio.ts). O Voucher desligado aparecia
+    // assim mesmo, e Dinheiro/Débito/Crédito nem eram lidos.
+    const fees = franchisee.paymentFees;
+    if (formaLigada(fees, "PIX")) base.push({ k: "PIX_ENTREGA", l: "💰 Pix (na entrega)" });
+    if (formaLigada(fees, "DINHEIRO")) base.push({ k: "DINHEIRO", l: "💵 Dinheiro" });
+    if (formaLigada(fees, "DEBITO")) base.push({ k: "DEBITO", l: "💳 Débito (Entrega)" });
+    if (formaLigada(fees, "CREDITO")) base.push({ k: "CREDITO", l: "💳 Crédito (Entrega)" });
+    if (formaLigada(fees, "VOUCHER")) {
+      const bandeiras = bandeirasDeValeLigadas(fees);
+      if (bandeiras.length > 0) bandeiras.forEach((nome) => base.push({ k: `VOUCHER_${nome}`, l: `🎟️ ${nome}` }));
+      else base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
     }
     return base;
   })();
+  // A forma escolhida tem de estar na lista: o padrão é "DINHEIRO", e a loja
+  // que desligou o dinheiro deixaria selecionada uma forma que nem aparece.
+  const chavesDasFormas = paymentOptions.map((p) => p.k).join("|");
+  useEffect(() => {
+    const chaves = chavesDasFormas.split("|").filter(Boolean);
+    if (chaves.length > 0 && !chaves.includes(paymentMethod)) setPaymentMethod(chaves[0]);
+  }, [chavesDasFormas, paymentMethod]);
 
   const isNeighborhoodType = franchisee.deliveryZoneType === "NEIGHBORHOOD" || (
     franchisee.deliveryZoneType !== "RADIUS" && franchisee.deliveryZoneType !== "DISTANCE" && franchisee.deliveryZoneType !== "KM" &&
