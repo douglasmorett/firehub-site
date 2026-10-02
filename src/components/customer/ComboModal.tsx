@@ -111,6 +111,8 @@ interface ComboModalProps {
     name: string;
     description?: string | null;
     price: number;
+    /** Preço de tabela riscado — só vem quando a promoção vale (lib/preco-por-canal.ts). */
+    precoDe?: number | null;
     imageUrl?: string | null;
     comboGroups: ComboGroupData[];
   };
@@ -316,8 +318,15 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
    * tabela, para riscar) só vem quando a promoção vale naquele canal, e
    * `product.price` já é o promocional — que é o número somado aqui em cima,
    * então o total do modal sai promocional sem nenhuma conta extra.
+   *
+   * O desconto vale para o produto INTEIRO, em qualquer escolha: a Calabresa
+   * do Chef da Serpa (de R$ 65 por R$ 50, Grande + R$ 15) sai de R$ 80 por
+   * R$ 65 na Grande. Por isso, com algo escolhido, o par riscado/cobrado é o
+   * da escolha — mostrar "R$ 65 riscado, R$ 50 + R$ 15 adicionais" fez o dono
+   * achar que a Grande tinha ficado fora da promoção (02/10/2026).
    */
-  const emPromocao = Number((product as any).precoDe) > basePrice;
+  const precoDe = Number(product.precoDe);
+  const emPromocao = precoDe > basePrice;
 
   const handleSubmit = () => {
     if (!allComplete) {
@@ -423,7 +432,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   o modal não decide nada, repete o par que o card já mostrou. */}
               {emPromocao && (
                 <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#94A3B8", textDecoration: "line-through" }}>
-                  R$ {Number((product as any).precoDe).toFixed(2).replace(".", ",")}
+                  R$ {(precoDe + extraSum).toFixed(2).replace(".", ",")}
                 </span>
               )}
               <span style={{ fontSize: "1.15rem", fontWeight: 800, color: emPromocao ? "#C92E09" : "#0F766E" }}>
@@ -432,16 +441,18 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                     (Baby R$ 15,90) anuncia "A partir de R$ 0,00" no topo do modal,
                     enquanto o card na lista já mostra o preço certo. Mesma conta
                     de src/lib/preco-combo.ts, que é a fonte única. */}
-                {product.price > 0
-                  ? `R$ ${product.price.toFixed(2).replace(".", ",")}`
-                  : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
+                {emPromocao
+                  ? `R$ ${unitFinalPrice.toFixed(2).replace(".", ",")}`
+                  : product.price > 0
+                    ? `R$ ${product.price.toFixed(2).replace(".", ",")}`
+                    : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
               </span>
               {emPromocao && (
                 <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#FFF", background: "#C92E09", padding: "2px 8px", borderRadius: "12px" }}>
                   🏷️ PROMOÇÃO
                 </span>
               )}
-              {extraSum > 0 && (
+              {extraSum > 0 && !emPromocao && (
                 <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#B45309", backgroundColor: "#FFF7E6", padding: "2px 8px", borderRadius: "12px" }}>
                   + R$ {extraSum.toFixed(2).replace(".", ",")} adicionais
                 </span>

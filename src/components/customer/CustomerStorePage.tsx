@@ -4551,6 +4551,9 @@ export default function CustomerStorePage({
             name: comboProduct.name,
             description: comboProduct.description,
             price: comboProduct.price,
+            // Sem ele o modal não sabe da promoção: o card riscava o preço e o
+            // modal mostrava o mesmo produto sem desconto nenhum.
+            precoDe: comboProduct.precoDe,
             imageUrl: comboProduct.imageUrl,
             comboGroups: (comboProduct.isCombo && comboProduct.comboGroups) || []
           }}

@@ -50,6 +50,7 @@ export async function refazerMeiasDaLoja(franchiseeId: string | null | undefined
       id: true,
       name: true,
       price: true,
+      promoPrice: true,
       comboGroups: {
         select: { title: true, items: { select: { additionalPrice: true, menuProduct: { select: { name: true } } } } },
       },
