@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { mesmoTelefone } from "@/lib/telefone";
+import { lerOutrosNumerosDoDono } from "@/lib/numeros-do-dono";
 import { chaveDoTelefone, jidDoTelefone } from "./telefone";
 import { ROTULO_DA_ETAPA, type Etapa } from "./etapas";
 
@@ -65,12 +66,25 @@ const SELECT_DA_LOJA = {
 } as const;
 
 /**
+ * Os números que a PRÓPRIA loja declarou como dela: o WhatsApp da loja, o do
+ * proprietário, o número conectado no robô dela e os "outros números do dono"
+ * (Chatbot IA → Alertas). Antes só os dois primeiros contavam, e o dono da
+ * Serpa Pizzaria que escreveu do outro celular virou lead (01/10).
+ */
+export function numerosDaLoja(loja: { storePhone: string | null; notificationPhone: string | null; chatbotConfig?: unknown }): string[] {
+  const c = (loja.chatbotConfig && typeof loja.chatbotConfig === "object" ? loja.chatbotConfig : {}) as any;
+  return [loja.storePhone, loja.notificationPhone, typeof c.phone === "string" ? c.phone : null, ...lerOutrosNumerosDoDono(c)].filter(
+    (n): n is string => !!n,
+  );
+}
+
+/**
  * A loja deste telefone — dono que escreve para o FireHub pelo celular dele.
  *
- * Confere `storePhone` e `notificationPhone` ("WhatsApp do Proprietário") com
- * a régua de lib/telefone.ts. O SQL só estreita pelos 8 últimos dígitos; quem
- * decide é `mesmoTelefone`, que não deixa DDD diferente passar por igual.
- * Mais de uma loja com o mesmo número (dono de rede) → a mais recente.
+ * Confere os números da loja (numerosDaLoja) com a régua de lib/telefone.ts.
+ * O SQL só estreita pelos 8 últimos dígitos; quem decide é `mesmoTelefone`,
+ * que não deixa DDD diferente passar por igual. Mais de uma loja com o mesmo
+ * número (dono de rede) → a mais recente.
  */
 export async function lojaDoTelefone(telefone: string | null | undefined) {
   const chave = chaveDoTelefone(telefone);
@@ -81,17 +95,24 @@ export async function lojaDoTelefone(telefone: string | null | undefined) {
       SELECT "id" FROM "User"
       WHERE "role" = 'FRANCHISEE'
         AND (regexp_replace(COALESCE("storePhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + final}
-          OR regexp_replace(COALESCE("notificationPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + final})
+          OR regexp_replace(COALESCE("notificationPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + final}
+          OR regexp_replace(COALESCE("chatbotConfig"->>'phone', ''), '[^0-9]', '', 'g') LIKE ${"%" + final}
+          -- A lista vira uma tira de dígitos: o LIKE só estreita, mesmoTelefone confere número a número.
+          OR regexp_replace(COALESCE("chatbotConfig"->>'outrosNumerosDoDono', ''), '[^0-9]', '', 'g') LIKE ${"%" + final + "%"})
       ORDER BY "createdAt" DESC
       LIMIT 10
     `;
     if (candidatas.length === 0) return null;
     const lojas = await prisma.user.findMany({
       where: { id: { in: candidatas.map((c) => c.id) } },
-      select: SELECT_DA_LOJA,
+      select: { ...SELECT_DA_LOJA, chatbotConfig: true },
       orderBy: { createdAt: "desc" },
     });
-    return lojas.find((l) => mesmoTelefone(l.storePhone, chave) || mesmoTelefone(l.notificationPhone, chave)) || null;
+    const achada = lojas.find((l) => numerosDaLoja(l).some((n) => mesmoTelefone(n, chave)));
+    if (!achada) return null;
+    // A config do robô só serviu para conferir os números: não sai daqui.
+    const { chatbotConfig: _config, ...loja } = achada;
+    return loja;
   } catch (err: any) {
     console.error(`[CRM] Busca da loja pelo telefone falhou: ${err?.message}`);
     return null;
@@ -125,12 +146,29 @@ export async function contatoDaConversa(entrada: { telefone: string | null; jid:
     const chave = chaveDoTelefone(entrada.telefone);
     if (chave && !existente.telefone) mudar.telefone = chave;
     if (!existente.nome && entrada.nome) mudar.nome = entrada.nome.slice(0, 120);
-    if (Object.keys(mudar).length === 0) return existente;
-    try {
-      return await prisma.crmContato.update({ where: { id: existente.id }, data: mudar });
-    } catch {
-      return existente;
+    let atual = existente;
+    if (Object.keys(mudar).length > 0) {
+      try {
+        atual = await prisma.crmContato.update({ where: { id: existente.id }, data: mudar });
+      } catch {
+        /* segue com o que já tinha */
+      }
     }
+    // Contato que nasceu como lead pode ser de uma loja que só depois cadastrou
+    // este número (outros números do dono, WhatsApp da loja trocado): confere de
+    // novo a cada mensagem enquanto não tem loja. É uma consulta só.
+    if (!atual.userId) {
+      const loja = await lojaDoTelefone(entrada.telefone || atual.telefone);
+      if (loja) {
+        try {
+          await vincularLoja(atual.id, loja.id, AUTOR_SISTEMA);
+          return (await prisma.crmContato.findUnique({ where: { id: atual.id } })) || atual;
+        } catch {
+          /* segue sem a loja */
+        }
+      }
+    }
+    return atual;
   }
 
   const chave = chaveDoTelefone(entrada.telefone);

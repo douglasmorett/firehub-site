@@ -83,6 +83,7 @@ const OFERTA_DA_MONTAGEM = /(mont|lan[çc]|deix|cadastr|igualzinh)[^?!]{0,160}(g
 
 function instrucoes(
   config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null, ofereceuMontagem: boolean,
+  lojaInformada: string | null,
 ): string {
   const apresentacao = config.nomeDoAtendente
     ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub no WhatsApp.`
@@ -92,7 +93,9 @@ function instrucoes(
     `- Loja: ${contato.nomeDaLoja || "não sabemos ainda"}${contato.cidade ? ` (${contato.cidade})` : ""}`,
     contato.userId
       ? "- É LOJISTA: a loja dele foi reconhecida pelo número que está escrevendo. Modo SUPORTE."
-      : "- Ainda NÃO é cliente (ou escreveu de um número que não é o da loja). Modo VENDA — mas se disser que já usa o FireHub, trate como suporte sem mexer na conta.",
+      : lojaInformada
+        ? `- Diz ser da loja ${lojaInformada}, mas escreve de um número que NÃO está cadastrado nela. Modo SUPORTE só com a base: nada de dados da conta (fatura, pedidos, senha, reiniciar). Não venda nem ofereça cadastro.`
+        : "- O número NÃO é de nenhuma loja cadastrada. Modo VENDA — mas se a pessoa der sinal de que já usa o FireHub (\"minha loja\", \"meu painel\", \"já uso\", \"sou cliente\"), pare de vender: pergunte o nome da loja ou o e-mail da conta e use identificar_loja.",
     `- Etapa no funil: ${ROTULO_DA_ETAPA[contato.etapa as Etapa] || contato.etapa}`,
     vendedor ? `- Especialista que cuida dele: ${vendedor}` : "",
     contato.resumo ? `- O que já sabemos: ${contato.resumo}` : "",
@@ -202,7 +205,12 @@ async function responder(contatoId: string) {
     select: { criadoEm: true },
   });
   const ofereceuMontagem = historico.some((m) => m.direcao === "SAIDA" && OFERTA_DA_MONTAGEM.test(m.texto));
-  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem);
+  // A loja que a pessoa DISSE ser (identificar_loja), quando o número não é de nenhuma.
+  const informada = contato.userId
+    ? null
+    : await prisma.crmEvento.findFirst({ where: { contatoId: contato.id, texto: { startsWith: "Diz ser da loja " } }, orderBy: { criadoEm: "desc" }, select: { texto: true } });
+  const lojaInformada = informada ? informada.texto.replace(/^Diz ser da loja /, "").replace(/ \(firehubfood[\s\S]*$/, "") : null;
+  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem, lojaInformada);
   const conversa = conversaParaOModelo(historico);
   if (conversa.length === 0) return;
 

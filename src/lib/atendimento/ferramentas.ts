@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { mesmoTelefone } from "@/lib/telefone";
 import { restartEvolutionInstance } from "@/lib/whatsapp-evolution";
-import { registrarEvento, AUTOR_ROBO } from "@/lib/crm/contatos";
+import { registrarEvento, AUTOR_ROBO, lojaDoTelefone, numerosDaLoja } from "@/lib/crm/contatos";
 import { ANTECEDENCIA_MINIMA_MIN, dataDaAgenda, horaDaAgenda, NOMES_DOS_DIAS, diaDaSemana } from "@/lib/crm/agenda";
 import { marcarReuniao, vagasDaEquipe, vendedorLivrePara, HorarioOcupado } from "@/lib/crm/agenda-servidor";
 import { estadoDaLojaParaSuporte } from "./estado-da-loja";
@@ -41,12 +41,11 @@ async function lojaDoNumero(contato: Contato) {
   if (!contato.userId || !contato.telefone) return null;
   const loja = await prisma.user.findUnique({
     where: { id: contato.userId },
-    select: { id: true, email: true, storePhone: true, notificationPhone: true },
+    select: { id: true, email: true, storePhone: true, notificationPhone: true, chatbotConfig: true },
   });
   if (!loja) return null;
-  return mesmoTelefone(contato.telefone, loja.storePhone) || mesmoTelefone(contato.telefone, loja.notificationPhone) ? loja : null;
+  return numerosDaLoja(loja).some((n) => mesmoTelefone(contato.telefone, n)) ? { id: loja.id, email: loja.email } : null;
 }
-
 /** O vendedor do contato, quando ainda está na equipe: é com ele que a demonstração tem que ser. */
 async function vendedorAtivoDoContato(contato: Contato): Promise<string | null> {
   if (!contato.vendedorId) return null;
@@ -112,6 +111,18 @@ const TODAS_AS_DECLARACOES = [
       type: "object",
       properties: { motivo: { type: "string", description: "Em uma frase, o que a pessoa precisa." } },
       required: ["motivo"],
+    },
+  },
+  {
+    name: "identificar_loja",
+    description: "A pessoa diz que JÁ USA o FireHub, mas o número dela não foi reconhecido. Acha a loja pelo e-mail da conta, pelo WhatsApp cadastrado na loja ou pelo nome da loja, e anota na ficha. NÃO libera nada da conta (fatura, raio-x, senha): isso só pelo número cadastrado.",
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        email: { type: "string", description: "E-mail da conta, se a pessoa disse." },
+        telefoneDaLoja: { type: "string", description: "O WhatsApp cadastrado na loja (da loja ou do proprietário), se a pessoa disse." },
+        nomeDaLoja: { type: "string", description: "Nome da loja, se a pessoa disse." },
+      },
     },
   },
   {
@@ -268,6 +279,43 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
       const motivo = String(args?.motivo || "Pediu para falar com uma pessoa.").slice(0, 300);
       await chamarPessoa(contato, motivo);
       return { ok: true, aviso: "Avise que uma pessoa da equipe vai responder por aqui em breve. Não continue o atendimento." };
+    }
+
+    case "identificar_loja": {
+      if (await lojaDoNumero(contato)) return { ok: true, aviso: "Este número já é da loja dele: siga no modo suporte." };
+      const email = String(args?.email || "").trim().toLowerCase();
+      const telefone = String(args?.telefoneDaLoja || "").trim();
+      const nome = String(args?.nomeDaLoja || "").trim();
+      const SELECT = { id: true, storeName: true, name: true, city: true, slug: true } as const;
+      let lojas: { id: string; storeName: string | null; name: string | null; city: string | null; slug: string | null }[] = [];
+      if (email) lojas = await prisma.user.findMany({ where: { role: "FRANCHISEE", email: { equals: email, mode: "insensitive" } }, select: SELECT, take: 3 });
+      if (lojas.length === 0 && telefone) {
+        const l = await lojaDoTelefone(telefone);
+        if (l) lojas = await prisma.user.findMany({ where: { id: l.id }, select: SELECT });
+      }
+      if (lojas.length === 0 && nome.length >= 3) {
+        lojas = await prisma.user.findMany({ where: { role: "FRANCHISEE", storeName: { contains: nome, mode: "insensitive" } }, select: SELECT, take: 5 });
+      }
+      if (lojas.length === 0) return { achou: false, aviso: "Não achei a loja. Peça o e-mail da conta ou o WhatsApp cadastrado na loja; se ainda assim não achar, use chamar_pessoa." };
+      if (lojas.length > 1) {
+        return { achou: false, opcoes: lojas.map((l) => `${l.storeName || l.name}${l.city ? ` (${l.city})` : ""}`), aviso: "Mais de uma loja com esse nome: pergunte a cidade ou o e-mail da conta." };
+      }
+      const loja = lojas[0];
+      await prisma.crmContato.update({
+        where: { id: contato.id },
+        data: { nomeDaLoja: loja.storeName || loja.name, ...(!contato.cidade && loja.city ? { cidade: loja.city } : {}) },
+      });
+      // Só a anotação: o vínculo de verdade (userId, vendedor, etapa) vem do NÚMERO,
+      // senão qualquer um que dissesse "sou da loja X" entrava na carteira dela.
+      await registrarEvento(
+        contato.id, "CADASTRO",
+        `Diz ser da loja ${loja.storeName || loja.name} (firehubfood.com.br/loja/${loja.slug}). Este número não está cadastrado na loja — confirmar antes de mexer na conta.`,
+        AUTOR_ROBO, { lojaInformada: loja.id },
+      );
+      return {
+        ok: true, loja: loja.storeName || loja.name,
+        aviso: "Atenda como suporte só com a BASE, sem dados da conta (fatura, pedidos, senha, reiniciar). Explique, curto, que para o atendimento reconhecer este número é só cadastrá-lo no painel: Chatbot IA → Notificações → 'Outras pessoas que recebem os alertas' (ou escrever do WhatsApp cadastrado na loja). Se ele precisar de algo da conta agora, use chamar_pessoa.",
+      };
     }
 
     case "criar_conta": {
