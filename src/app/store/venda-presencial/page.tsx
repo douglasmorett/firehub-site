@@ -80,6 +80,8 @@ export default function VendaPresencialPage() {
   const [caixaAberto, setCaixaAberto] = useState<boolean | null>(null);
   const [address, setAddress] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Dinheiro");
+  /** Bandeira do vale (Banri, Ticket...) quando a loja cadastrou as suas. */
+  const [voucherBrand, setVoucherBrand] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -270,14 +272,26 @@ export default function VendaPresencialPage() {
     return true;
   });
 
+  // As bandeiras do vale que a loja aceita — as mesmas que o cardápio online
+  // mostra ao cliente. O balcão só tinha "Voucher/Vale": a Forno D'oro não
+  // achava o Banri e o Green Card para lançar (01/10/2026), e o caixa não
+  // sabia qual vale entrou.
+  const bandeirasDoVale = useMemo<{ name: string; rate: number }[]>(() => {
+    if (!paymentConfig?.VOUCHER?.active) return [];
+    const brands: any[] = paymentConfig.VOUCHER.brands || [];
+    return brands.filter((b: any) => b?.active && String(b.name || "").trim()).map((b: any) => ({ name: String(b.name).trim(), rate: Number(b.rate) || 0 }));
+  }, [paymentConfig]);
+  const bandeiraEscolhida = bandeirasDoVale.find(b => b.name === voucherBrand) || null;
+
   const voucherRate = useMemo(() => {
     if (!paymentConfig?.VOUCHER?.active) return 0;
+    if (bandeiraEscolhida) return bandeiraEscolhida.rate;
     const brands: any[] = paymentConfig.VOUCHER.brands || [];
     if (brands.length === 0) return paymentConfig.VOUCHER.rate || 0;
     const activeBrands = brands.filter((b: any) => b.active);
     if (activeBrands.length === 0) return 0;
     return activeBrands.reduce((s: number, b: any) => s + b.rate, 0) / activeBrands.length;
-  }, [paymentConfig]);
+  }, [paymentConfig, bandeiraEscolhida]);
 
   // Desconto na mão: "faz 10% pra mim" e "tira 5 reais" são as duas
   // conversas do balcão; o motivo é o que explica o furo no fechamento.
@@ -468,6 +482,9 @@ export default function VendaPresencialPage() {
     if (cart.length === 0) return setMsg("❌ Adicione pelo menos um produto.");
     if (orderType === "MESA" && !tableNum.trim() && numeroDaMesaEhObrigatorio(balcaoConfig)) return setMsg("❌ Informe o número da mesa.");
     if (orderType === "DELIVERY" && !address) return setMsg("❌ Informe o endereço de entrega.");
+    if (!dividir && paymentMethod === "Voucher/Vale" && bandeirasDoVale.length > 0 && !bandeiraEscolhida) {
+      return setMsg("❌ Escolha a bandeira do vale.");
+    }
     // A taxa da entrega é decisão consciente: a cotação preenche; quando ela
     // não preenche (fora da área, endereço que o mapa não achou, falha), o
     // campo fica VAZIO e o atendente digita — 0 se for de graça. Vazio ia
@@ -528,7 +545,11 @@ export default function VendaPresencialPage() {
       customerCpfCnpj: lerDocumentoDoCliente(documento),
       customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? nomeDaMesa : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
-      paymentMethod,
+      // "Voucher/Vale - Banri": a bandeira vai junto, e o texto continua sendo
+      // lido como vale pelo caixa e pela nota (lib/pagamento-na-entrega).
+      paymentMethod: !dividir && paymentMethod === "Voucher/Vale" && bandeiraEscolhida
+        ? `Voucher/Vale - ${bandeiraEscolhida.name}`
+        : paymentMethod,
       ...(partesValidas ? { paymentMethods: partesValidas } : {}),
       change: !dividir && paymentMethod === "Dinheiro" && change ? Number(change) : null,
       employeeId: selectedEmployeeId || null,
@@ -575,7 +596,7 @@ export default function VendaPresencialPage() {
       // pessoa errada ou o CPF de outro impresso na nota é o tipo de erro que
       // ninguém percebe até alguém reclamar. O pager já ficava para trás antes
       // deste campo existir — mesma falha, consertada junto.
-      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento("");
+      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento(""); setVoucherBrand("");
       setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null); setCotacaoDoBalcao(null);
       if (dividir) ligarDivisao(false);
     } else {
@@ -1068,7 +1089,7 @@ export default function VendaPresencialPage() {
             <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 3 }}>Pagamento</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {[...PAYMENT_METHODS, ...(employeeAccountEnabled ? ["Conta Funcionário"] : [])].map(m => (
-                <button key={m} type="button" onClick={() => setPaymentMethod(m)}
+                <button key={m} type="button" onClick={() => { setPaymentMethod(m); if (m !== "Voucher/Vale") setVoucherBrand(""); else if (bandeirasDoVale.length === 1) setVoucherBrand(bandeirasDoVale[0].name); }}
                   style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${paymentMethod === m ? "#C92E09" : "#CBD5E1"}`,
                     background: paymentMethod === m ? "#C92E09" : "#fff",
                     color: paymentMethod === m ? "#fff" : "#334155",
@@ -1086,6 +1107,23 @@ export default function VendaPresencialPage() {
               </button>
             </div>
           </div>
+
+          {!dividir && paymentMethod === "Voucher/Vale" && bandeirasDoVale.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 3 }}>Qual vale?</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {bandeirasDoVale.map(b => (
+                  <button key={b.name} type="button" onClick={() => setVoucherBrand(b.name)}
+                    style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${voucherBrand === b.name ? "#B45309" : "#FDE68A"}`,
+                      background: voucherBrand === b.name ? "#B45309" : "#FFFBEB",
+                      color: voucherBrand === b.name ? "#fff" : "#92400E",
+                      fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}>
+                    🎟️ {b.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {dividir && (
             <div style={{ marginBottom: 6, background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 8, padding: "8px" }}>
