@@ -26,7 +26,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Check, ChevronRight, Minus, Plus, Printer, RefreshCw, Search,
-  StickyNote, Trash2, User, LogOut, Monitor, X, Users,
+  StickyNote, Trash2, User, LogOut, Monitor, X, Users, ArrowLeftRight,
 } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
 import { montarCardapioDaMesa, gruposDoProduto, type ItemDaMesa } from "@/lib/cardapio-da-mesa";
@@ -204,6 +204,8 @@ const CSS = `
 .mc-mesa.ocupada { background:var(--ocupada); border-color:var(--ocupada); color:#fff; }
 .mc-mesa.ocupada small { color:#FFEDD5; }
 .mc-mesa.minha { box-shadow:0 0 0 3px #FDBA74; }
+.mc-mesa[aria-pressed="true"] { background:var(--ok); border-color:var(--ok); color:#fff; }
+.mc-mesa[aria-pressed="true"] small { color:#CCFBF1; }
 .mc-grade { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .mc-cat { min-height:76px; border-radius:14px; border:none; background:#0F172A; color:#fff; padding:12px;
           text-align:left; font-weight:800; font-size:15px; cursor:pointer; display:flex; flex-direction:column;
@@ -356,6 +358,12 @@ export default function MesasCelular({
   const [mexendo, setMexendo] = useState(false);
   const [imprimindo, setImprimindo] = useState(false);
 
+  // ── Mudar de mesa ────────────────────────────────────────────────────────
+  const [mudandoMesa, setMudandoMesa] = useState(false);
+  const [destinoMesa, setDestinoMesa] = useState<Mesa | null>(null);
+  /** Quando a conta trocou de mesa por ESTE aparelho (ver o efeito abaixo). */
+  const trocouDeMesaEm = useRef(0);
+
   // ── Carregamento ─────────────────────────────────────────────────────────
   const carregarMesas = useCallback(async () => {
     try {
@@ -427,7 +435,10 @@ export default function MesasCelular({
   }, [ehGarcom, chamar]);
 
   // A mesa fechou em outro aparelho enquanto o garçom olhava para ela.
+  // Logo depois de mudar de mesa por aqui, uma leitura da grade que saiu
+  // antes da troca ainda mostra a mesa nova livre — não é mesa fechada.
   useEffect(() => {
+    if (Date.now() - trocouDeMesaEm.current < 5000) return;
     if (tela !== "mesas" && mesaId && !carregando && !mesa?.openSession) {
       setTela("mesas");
       setMesaId(null);
@@ -665,6 +676,51 @@ export default function MesasCelular({
     }
   };
 
+  /**
+   * Leva a conta inteira para outra mesa: o cliente sentou na 5 e subiu para
+   * a 60. Pedidos, pessoas e pagamentos continuam na mesma conta; só a mesa
+   * muda. Antes daqui o celular mandava para a tela completa, que as
+   * atendentes do Ragnar já não usam (01/10/2026).
+   */
+  const mudarDeMesa = async () => {
+    if (!sessionId || !mesa?.openSession || !destinoMesa || ocupado) return;
+    const origem = mesa;
+    const destino = destinoMesa;
+    setOcupado(true);
+    try {
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/transferir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toTableId: destino.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        avisar("erro", `A conta não foi para a mesa ${destino.number}`, data?.error);
+        carregarMesas();
+        return;
+      }
+      // A grade muda aqui mesmo, junto com a mesa aberta na tela: esperar a
+      // próxima leitura deixaria a mesa antiga sem conta e a tela voltaria
+      // para a grade dizendo que ela foi fechada.
+      trocouDeMesaEm.current = Date.now();
+      setMesas((antes) => antes.map((m) =>
+        m.id === origem.id ? { ...m, openSession: null }
+          : m.id === destino.id ? { ...m, openSession: origem.openSession }
+            : m
+      ));
+      setMesaId(destino.id);
+      setMudandoMesa(false);
+      setDestinoMesa(null);
+      avisar("ok", `Conta movida da mesa ${data.de ?? origem.number} para a mesa ${data.para ?? destino.number}`);
+      carregarMesas();
+      carregarDetalhe(sessionId);
+    } catch {
+      avisar("erro", "Sem conexão. A conta continua na mesma mesa.");
+    } finally {
+      setOcupado(false);
+    }
+  };
+
   const adicionarPessoa = async () => {
     const nome = novaPessoa.trim();
     if (!sessionId || !nome) return;
@@ -717,6 +773,21 @@ export default function MesasCelular({
     return lista;
   }, [mesas, filtro, faixas, minhasId]);
   const ocupadas = mesas.filter((m) => m.openSession).length;
+
+  /** Mesas livres para onde a conta pode ir, separadas por andar quando a loja tem. */
+  const destinosPorAndar = useMemo(() => {
+    const livres = mesas.filter((m) => !m.openSession && m.id !== mesaId).sort((a, b) => a.number - b.number);
+    if (faixas.length === 0) return [{ nome: "", lista: livres }];
+    const usadas = new Set<string>();
+    const grupos = faixas.map((f) => {
+      const lista = livres.filter((m) => f.numeros.has(m.number) && !usadas.has(m.id));
+      lista.forEach((m) => usadas.add(m.id));
+      return { nome: f.nome, lista };
+    });
+    const resto = livres.filter((m) => !usadas.has(m.id));
+    if (resto.length) grupos.push({ nome: "Outras", lista: resto });
+    return grupos.filter((g) => g.lista.length > 0);
+  }, [mesas, mesaId, faixas]);
 
   const qtdNoCarrinho = carrinho.reduce((s, l) => s + l.qty, 0);
   const totalDoCarrinho = carrinho.reduce((s, l) => s + l.unitPrice * l.qty, 0);
@@ -947,8 +1018,13 @@ export default function MesasCelular({
               </>
             )}
 
+            <button className="mc-btn secundario" style={{ width: "100%", marginTop: 4 }}
+              onClick={() => { setDestinoMesa(null); setMudandoMesa(true); carregarMesas(); }}>
+              <ArrowLeftRight size={18} /> Mudar de mesa
+            </button>
+
             <a href={enderecoCompleto} style={{ display: "block", textAlign: "center", color: "#64748B", fontSize: 13, padding: "8px 0" }}>
-              Fechar conta, dividir ou transferir: versão completa
+              Fechar conta ou dividir: versão completa
             </a>
           </main>
           <div className="mc-barra">
@@ -1216,6 +1292,35 @@ export default function MesasCelular({
             </button>
           </>
         )}
+      </Folha>
+
+      {/* ── Mudar de mesa ── */}
+      <Folha aberta={mudandoMesa && !!mesa?.openSession} onFechar={() => { if (!ocupado) { setMudandoMesa(false); setDestinoMesa(null); } }}>
+        <h3>Mudar a mesa {mesa?.number} para…</h3>
+        <p style={{ margin: "0 0 4px", color: "#64748B", fontSize: 14 }}>
+          A conta vai inteira, com os pedidos e as pessoas. Só aparecem as mesas livres.
+        </p>
+        {destinosPorAndar.length === 0 ? (
+          <p className="mc-vazio">Nenhuma mesa livre agora.</p>
+        ) : (
+          destinosPorAndar.map((g) => (
+            <div key={g.nome || "todas"}>
+              {g.nome && <span className="mc-rotulo">{g.nome}</span>}
+              <div className="mc-grade-mesas" style={{ marginTop: g.nome ? 0 : 12 }}>
+                {g.lista.map((m) => (
+                  <button key={m.id} className="mc-mesa" aria-pressed={destinoMesa?.id === m.id}
+                    onClick={() => setDestinoMesa(m)} aria-label={`Mesa ${m.number}`}>
+                    <b>{String(m.number).padStart(2, "0")}</b>
+                    <small>{m.label || "livre"}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
+        <button className="mc-btn primario" style={{ width: "100%", marginTop: 16 }} disabled={!destinoMesa || ocupado} onClick={mudarDeMesa}>
+          {ocupado ? "Mudando..." : destinoMesa ? `Levar a conta para a mesa ${destinoMesa.number}` : "Escolha a mesa nova"}
+        </button>
       </Folha>
 
       {/* ── Sair da mesa com itens não enviados ── */}
