@@ -1,0 +1,380 @@
+/**
+ * /src/lib/relatorio-do-entregador.ts
+ *
+ * O relatório do entregador — UMA conta, para as duas telas que o mostram:
+ * Motoboys → Relatório (o lojista, /api/motoboy-report) e o app do próprio
+ * motoboy (/api/motoboys/relatorio). Antes cada lado contava do seu jeito e
+ * não batia: a Frangoso via 9 entregas e o motoboy 10, pela entrega da 1h
+ * (Lucas, 02/10/2026). Com o mesmo período (data E hora, de/até) e a mesma
+ * função, os dois números são o mesmo número.
+ *
+ * ── O período ───────────────────────────────────────────────────────────────
+ * `de`/`ate` aceitam HORA ("2026-09-01T18:00"): é o que fecha o turno de quem
+ * entrou às 18h do dia 1 e saiu às 2h do dia 2. Sem hora, o DIA é o
+ * expediente, das 5h às 5h do dia seguinte (lib/fuso.ts).
+ *
+ * ── Cancelado não é entrega ─────────────────────────────────────────────────
+ * O relatório da loja contava pedido CANCELADO com motoboy como entrega e
+ * somava o ganho dele (22 pedidos em 30 dias, em 10 lojas), enquanto a
+ * prestação de contas do dinheiro já o pulava e o app do motoboy nunca o
+ * mostrou. Agora fica fora da conta e volta à parte, em `cancelados`, para o
+ * lojista ver e acertar na mão se pagou a saída.
+ */
+import { canalDoPedido } from "@/lib/canal-do-pedido";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
+import { prisma } from "@/lib/prisma";
+import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, toLocalISODate, getInstantUTC } from "@/lib/timezone";
+import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
+
+const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
+
+/** O período pedido, no fuso da loja. Sem `de`: começo do mês; sem `ate`: agora. */
+export function periodoDoRelatorio(de: string | null | undefined, ate: string | null | undefined, tz: string) {
+  const fromDate = de
+    ? getInstantUTC(de, tz) ?? new Date(getStartOfDayUTC(de, tz).getTime() + VIRADA_MS)
+    : new Date(getStartOfMonthUTC(new Date(), tz).getTime() + VIRADA_MS);
+  const toDate = ate
+    ? getInstantUTC(ate, tz) ?? new Date(getEndOfDayUTC(ate, tz).getTime() + VIRADA_MS)
+    : new Date();
+  return { fromDate, toDate };
+}
+
+const ehCancelado = (status: string | null | undefined) => String(status || "").toUpperCase().includes("CANCEL");
+
+export async function montarRelatorioDosEntregadores(opts: {
+  lojaId: string;
+  motoboyId?: string | null;
+  fromDate: Date;
+  toDate: Date;
+  tz: string;
+}) {
+  const { lojaId, motoboyId, fromDate, toDate, tz } = opts;
+  // Buscar motoboys do franqueado
+  const motoboyFilter = motoboyId ? { id: motoboyId } : {};
+  // ── O REPASSE POR FAIXA DE DISTÂNCIA ─────────────────────────────────────
+  //
+  // A loja pode pagar ao entregador um valor diferente do que cobra do
+  // cliente (tela de Entrega, coluna "Motoboy"). Quando ela separa os dois, é
+  // esse valor que vale no acerto — e ele é por FAIXA, então depende da
+  // distância daquela entrega.
+  const donoDaLoja = await prisma.user.findUnique({
+    where: { id: lojaId },
+    select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true },
+  }).catch(() => null);
+  const regraDeRepasse = lerRegraDeRepasse(donoDaLoja?.deliveryConfig);
+
+  const motoboys = await prisma.motoboy.findMany({
+    where: { franchiseeId: lojaId, ...motoboyFilter },
+    orderBy: { name: "asc" },
+  });
+
+  // Otimização N+1: Buscar todos os pedidos no período para todos os motoboys de uma só vez
+  const motoboyIds = motoboys.map(mb => mb.id);
+  const allOrders = await prisma.customerOrder.findMany({
+    where: {
+      franchiseeId: lojaId,
+      motoboyId: { in: motoboyIds },
+      createdAt: { gte: fromDate, lte: toDate },
+      deliveryType: "DELIVERY",
+    },
+    select: {
+      id: true,
+      createdAt: true,
+      totalAmount: true,
+      deliveryFee: true,
+      motoboyFee: true,
+      discountTotal: true,
+      discountIfood: true,
+      discountMerchant: true,
+      source: true,
+      deliveryDistance: true,
+      customerName: true,
+      customerPhone: true,
+      customerAddress: true,
+      status: true,
+      motoboyId: true,
+      paymentMethod: true,
+      changeAmount: true,
+      items: true,
+      notes: true,
+      dailyOrderNumber: true,
+      ifoodReference: true,
+      openDeliveryReference: true,
+      // O canal sai de lib/canal-do-pedido.ts e precisa destes: sem eles todo
+      // pedido parece do site, e a regra do app nunca se aplicaria.
+      ifoodOrderId: true,
+      openDeliveryChannel: true,
+      openDeliveryOrderId: true,
+      tableSessionId: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  // Agrupar pedidos em memória por motoboyId
+  const ordersByMotoboy: Record<string, typeof allOrders> = {};
+  for (const o of allOrders) {
+    if (o.motoboyId) {
+      if (!ordersByMotoboy[o.motoboyId]) {
+        ordersByMotoboy[o.motoboyId] = [];
+      }
+      ordersByMotoboy[o.motoboyId].push(o);
+    }
+  }
+
+  // Mapear motoboys em memória sem chamadas adicionais ao banco
+  const report = motoboys.map((mb) => {
+    // Cancelado sai de TODA a conta (entregas, dias, ganho, dinheiro) e volta
+    // à parte — ver o cabeçalho.
+    const todosDoMotoboy = ordersByMotoboy[mb.id] || [];
+    const cancelados = todosDoMotoboy.filter((o) => ehCancelado(o.status));
+    const orders = todosDoMotoboy.filter((o) => !ehCancelado(o.status));
+
+    const totalDeliveries = orders.length;
+    const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
+
+    // Dias trabalhados = EXPEDIENTES, no fuso da loja. É o que paga a diária:
+    // pelo calendário, o turno das 18h às 2h contava dois dias.
+    const uniqueDays = orders.length > 0
+      ? new Set(orders.map((o) => toLocalISODate(new Date(new Date(o.createdAt).getTime() - VIRADA_MS), tz))).size
+      : 0;
+
+    // Soma das taxas dos pedidos
+    const deliveryFeeSum = orders.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
+    const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
+
+    // Classificação de pagamentos recebidos pelo motoboy na entrega vs online
+    let cashCollectedSum = 0, cashOrdersCount = 0, changeGivenSum = 0, cashOrdersValueSum = 0;
+    let debitTotal = 0, debitCount = 0;
+    let creditTotal = 0, creditCount = 0;
+    let voucherTotal = 0, voucherCount = 0;
+    let onlineTotal = 0, onlineCount = 0;
+
+    for (const o of orders) {
+      const st = (o.status || "").toUpperCase();
+      if (st.includes("CANCEL")) continue; // Pedido cancelado: não cobrar prestação de contas do motoboy
+
+      const pm = (o.paymentMethod || "").toUpperCase();
+      const isCash = pm === "CASH" || pm.includes("DINHEIR") || pm.includes("DINHEIRO");
+
+      if (isCash) {
+        const orderTotal = Number(o.totalAmount || 0);
+        let changeFor: number | null = null;
+
+        // 1. Verificar se há valor de troco estruturado (changeAmount)
+        if (typeof o.changeAmount === "number" && o.changeAmount > orderTotal) {
+          changeFor = o.changeAmount;
+        } else if (o.notes) {
+          // 2. Extrair troco de notas/observações (ex: "Troco para 100", "Troco p/ 100", "Troco para R$ 100,00", "Troco: 100", "Levar troco para 50")
+          const notesUpper = String(o.notes).toUpperCase();
+          const match =
+            notesUpper.match(/TROCO\s*(?:PARA|P\/|DE|PRA)?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i) ||
+            notesUpper.match(/TROCO\s*[:=]?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i);
+          if (match && match[1]) {
+            const parsed = parseFloat(match[1].replace(",", "."));
+            if (!isNaN(parsed) && parsed > orderTotal) {
+              changeFor = parsed;
+            }
+          }
+        }
+
+        // O valor que o motoboy recebe fisicamente do cliente e entrega para a loja
+        const cashCollected = changeFor ? changeFor : orderTotal;
+        const changeGiven = changeFor ? (changeFor - orderTotal) : 0;
+
+        cashCollectedSum += cashCollected;
+        cashOrdersCount++;
+        changeGivenSum += changeGiven;
+        cashOrdersValueSum += orderTotal;
+      } else if (pm.includes("DEBIT") || pm.includes("DEBITO") || pm.includes("DÉBITO")) {
+        debitTotal += o.totalAmount;
+        debitCount++;
+      } else if (pm.includes("VOUCHER") || pm.includes("VALE") || pm.includes("VR") || pm.includes("VA")) {
+        voucherTotal += o.totalAmount;
+        voucherCount++;
+      } else if (pm.includes("CARD") || pm.includes("CART") || pm.includes("CREDIT") || pm.includes("MAQUININHA") || pm.includes("MAQUINA")) {
+        creditTotal += o.totalAmount;
+        creditCount++;
+      } else {
+        // PIX Online, iFood Pago Online, etc.
+        onlineTotal += o.totalAmount;
+        onlineCount++;
+      }
+    }
+
+    const cardPosTotal = debitTotal + creditTotal + voucherTotal;
+    const cardPosCount = debitCount + creditCount + voucherCount;
+
+    // Só vale o que o TIPO escolhido usa — a regra mora em
+    // lib/ganho-do-entregador.ts, junto com a conta que a usa.
+    const acerto = lerAcerto(mb as any);
+    const { tipo, dailyRate, perDeliveryRate, perKmRate } = acerto;
+
+    // ── QUANTO ESTE PEDIDO RENDE PARA O MOTOBOY ──────────────────────────
+    //
+    // Uma função só, e o total é a SOMA dela pedido a pedido. Antes o total
+    // era calculado aqui (entregas × valor) e a lista detalhada mostrava
+    // `deliveryFee` — a taxa que o CLIENTE pagou ao marketplace. Os dois
+    // números não tinham relação, e o lojista via "Taxa: R$ 6,94" numa
+    // entrega que ele paga R$ 2,00 (reclamação do Lucas, 12/09/2026).
+    //
+    // Pior no 99Food: lá o `deliveryFee` é o que sobrou para o cliente pagar
+    // DEPOIS do desconto que o 99 bancou. O pedido #266009 tinha taxa de
+    // R$ 12,00 com R$ 11,00 abatidos pelo 99Food, e o relatório mostrava
+    // "Taxa: R$ 1,00" — um valor que não existe em lugar nenhum do acerto
+    // entre a loja e o entregador.
+    // A conta é da lib (lib/ganho-do-entregador.ts): a mesma que o papel do
+    // fechamento de caixa usa (lib/esperado-do-turno.ts), para os dois nunca
+    // divergirem.
+    const ganhoDoPedido = (o: { deliveryFee?: number | null; motoboyFee?: number | null; deliveryDistance?: number | null; source?: string | null; [k: string]: any }) =>
+      calcularGanho({
+        acerto,
+        pedido: o,
+        regraDaLoja: regraDeRepasse,
+        zonas: donoDaLoja?.deliveryZones,
+        ehMarketplace: canalDoPedido(o).ehMarketplace,
+      });
+
+    const ganhos = orders.map((o) => ({ pedido: o, ...ganhoDoPedido(o) }));
+    const quantosDe = (origem: OrigemDoGanho) => ganhos.filter((g) => g.origem === origem).length;
+    /** Caiu mesmo na taxa do cliente — não é suposição pela configuração. */
+    const usandoTaxaDoCliente = quantosDe("TAXA_DO_CLIENTE") > 0;
+    /** Entregas que a escada/km não conseguiu precificar por falta de distância. */
+    const entregasSemDistancia = quantosDe("SEM_DISTANCIA");
+
+    // A diária só existe nos tipos que a oferecem — `dailyRate` já vem zerado
+    // nos outros, então não há mais o que descontar aqui.
+    const dailyTotal = uniqueDays * dailyRate;
+    const feeTotal = Math.round(ganhos.reduce((s, g) => s + g.valor, 0) * 100) / 100;
+
+    const totalWithDaily = dailyTotal + feeTotal;
+    const totalFeeOnly = feeTotal;
+
+    return {
+      motoboy: {
+        id: mb.id,
+        name: mb.name,
+        paymentType: mb.paymentType,
+        dailyRate,
+        perDeliveryRate,
+        perKmRate,
+        faixasDeKm: acerto.faixas,
+        active: mb.active,
+        // A tela precisa dizer ao lojista QUE CONTA foi feita — e avisar
+        // quando caiu na taxa do cliente por falta de configuração.
+        usandoTaxaDoCliente,
+        // Entregas que a escada de km não pôde precificar porque o pedido veio
+        // sem distância. Elas entram como R$ 0,00: a tela mostra a contagem
+        // para o lojista conferir o endereço em vez de descobrir no bolso.
+        entregasSemDistancia,
+      },
+      stats: {
+        totalDeliveries,
+        totalDistance,
+        uniqueDays,
+        deliveryFeeSum,
+        motoboyFeeSum,
+        cashCollectedSum,
+        cashOrdersCount,
+        cashOrdersValueSum,
+        changeGivenSum,
+        cardPosTotal,
+        cardPosCount,
+        debitTotal,
+        debitCount,
+        creditTotal,
+        creditCount,
+        voucherTotal,
+        voucherCount,
+        onlineTotal,
+        onlineCount,
+        dailyTotal,
+        feeTotal,
+        totalWithDaily,
+        totalFeeOnly,
+      },
+      cancelados: {
+        qtd: cancelados.length,
+        lista: cancelados.map((o) => ({
+          id: o.id,
+          createdAt: o.createdAt,
+          dailyOrderNumber: o.dailyOrderNumber,
+          ifoodReference: o.ifoodReference,
+          openDeliveryReference: o.openDeliveryReference,
+          customerName: o.customerName,
+          totalAmount: o.totalAmount,
+        })),
+      },
+      orders: orders.map(o => {
+        const pm = (o.paymentMethod || "").toUpperCase();
+        const isCash = pm === "CASH" || pm.includes("DINHEIR") || pm.includes("DINHEIRO");
+        const orderTotal = Number(o.totalAmount || 0);
+        let changeFor: number | null = null;
+        if (typeof o.changeAmount === "number" && o.changeAmount > orderTotal) {
+          changeFor = o.changeAmount;
+        } else if (o.notes) {
+          const notesUpper = String(o.notes).toUpperCase();
+          const match =
+            notesUpper.match(/TROCO\s*(?:PARA|P\/|DE|PRA)?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i) ||
+            notesUpper.match(/TROCO\s*[:=]?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i);
+          if (match && match[1]) {
+            const parsed = parseFloat(match[1].replace(",", "."));
+            if (!isNaN(parsed) && parsed > orderTotal) {
+              changeFor = parsed;
+            }
+          }
+        }
+        const cashToDeliver = isCash ? (changeFor || orderTotal) : 0;
+        const changeGiven = isCash && changeFor ? (changeFor - orderTotal) : 0;
+
+        return {
+          id: o.id,
+          createdAt: o.createdAt,
+          date: o.createdAt,
+          // O que ESTE pedido rende para o motoboy, pela mesma função que
+          // soma o total. É o que faz a lista detalhada bater com o valor a
+          // pagar — antes ela mostrava a taxa que o cliente pagou ao
+          // marketplace, que não tem relação com o acerto da loja.
+          ganhoDoMotoboy: Math.round(ganhoDoPedido(o).valor * 100) / 100,
+          // De onde saiu esse valor: a linha da lista pode dizer "faixa de
+          // 4 km" ou "sem distância" em vez de deixar o lojista adivinhar.
+          origemDoGanho: ganhoDoPedido(o).origem,
+          totalAmount: o.totalAmount,
+          changeAmount: o.changeAmount,
+          changeFor,
+          changeGiven,
+          cashToDeliver,
+          deliveryFee: o.deliveryFee,
+          motoboyFee: o.motoboyFee,
+          // Para o "Ver Pedido" mostrar a conta fechando, com o desconto e a
+          // taxa — que e o que o lojista confere com o entregador.
+          discountTotal: o.discountTotal,
+          discountIfood: (o as any).discountIfood,
+          discountMerchant: (o as any).discountMerchant,
+          source: o.source,
+          deliveryDistance: o.deliveryDistance,
+          customerName: o.customerName,
+          customerPhone: o.customerPhone,
+          customerAddress: o.customerAddress,
+          paymentMethod: o.paymentMethod,
+          status: o.status,
+          notes: o.notes,
+          items: o.items,
+          dailyOrderNumber: o.dailyOrderNumber,
+          ifoodReference: o.ifoodReference,
+          openDeliveryReference: o.openDeliveryReference,
+        };
+      }),
+    };
+  });
+
+  return {
+    period: {
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      fromFormatted: fromDate.toLocaleDateString("pt-BR", { timeZone: tz }),
+      toFormatted: toDate.toLocaleDateString("pt-BR", { timeZone: tz }),
+    },
+    report,
+  };
+}

@@ -403,6 +403,15 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         O endereço é medido automaticamente em alguns minutos — se continuar assim, confira o endereço desses pedidos.
                       </div>
                     )}
+                    {/* Cancelado não é entrega (lib/relatorio-do-entregador.ts):
+                        some da conta, mas a loja vê quantos foram, para acertar
+                        na mão se pagou a saída. */}
+                    {(r.cancelados?.qtd ?? 0) > 0 && (
+                      <div style={{ fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45 }}>
+                        {r.cancelados.qtd} pedido{r.cancelados.qtd > 1 ? "s" : ""} cancelado{r.cancelados.qtd > 1 ? "s" : ""} com este motoboy no período
+                        ({r.cancelados.lista.map((c: any) => `#${c.dailyOrderNumber ?? c.ifoodReference ?? c.openDeliveryReference ?? "—"}`).join(", ")}) — fora da conta.
+                      </div>
+                    )}
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>
                       <span>TOTAL {calcMode === "fee_only" ? "(SÓ TAXAS)" : "(DIÁRIA + TAXAS)"}</span>
                       <span style={{ color: "#C92E09" }}>{fmt(payAmount)}</span>

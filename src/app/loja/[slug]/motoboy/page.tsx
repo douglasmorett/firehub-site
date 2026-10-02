@@ -20,6 +20,7 @@ import {
 import { getBeveragesFromOrder } from "@/lib/beverage";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica } from "@/lib/pagamento-na-entrega";
 import VerPedido from "@/components/motoboy/VerPedido";
+import MeuRelatorio from "@/components/motoboy/MeuRelatorio";
 
 export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
@@ -47,6 +48,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
 
   // ── Estado de sincronização VISÍVEL ─────────────────────────────────────
   // Antes, falha de rede só ia para console.error: a lista congelava e a tela
@@ -980,6 +982,23 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             </p>
           </div>
         </div>
+
+        {/* O relatório do entregador com filtro de data e hora — o mesmo da
+            loja (components/motoboy/MeuRelatorio.tsx), para os dois
+            conferirem o mesmo período e verem o mesmo número. */}
+        <button
+          onClick={() => setMostrarRelatorio(true)}
+          style={{
+            width: "100%", marginBottom: "1rem", padding: "11px", borderRadius: "12px",
+            border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#0F172A",
+            fontWeight: 800, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
+          }}
+        >
+          📊 Meu relatório (data e hora)
+        </button>
+        {mostrarRelatorio && session && (
+          <MeuRelatorio motoboyId={session.motoboyId} storeId={session.storeId} aoFechar={() => setMostrarRelatorio(false)} />
+        )}
 
         {/* Tarja de sync quebrado — a lista pode estar VELHA e o entregador
             precisa saber. Tocável para tentar de novo na hora. */}
