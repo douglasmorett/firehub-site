@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import MenuProductManager from "@/components/admin/MenuProductManager";
+import CopiamosSeuCardapio from "@/components/customer/CopiamosSeuCardapio";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export default async function StoreCardapioPage() {
   // Buscar o usuário FORA do try/catch para que redirect() propague
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, role: true, ownerId: true },
+    select: { id: true, role: true, ownerId: true, storeName: true },
   }).catch((err) => {
     console.error("[Cardapio] Erro ao buscar usuário:", err);
     return null;
@@ -39,9 +40,12 @@ export default async function StoreCardapioPage() {
   let products: any[] = [];
   let availableItems: any[] = [];
   let categories: any[] = [];
+  // Nome da loja para a mensagem do WhatsApp da oferta de cópia. Funcionário
+  // tem o nome da loja no cadastro do dono.
+  let nomeDaLoja: string | null = user.storeName || null;
 
   try {
-    [products, availableItems, categories] = await Promise.all([
+    [products, availableItems, categories, nomeDaLoja] = await Promise.all([
       prisma.menuProduct.findMany({
         where: franchiseeFilter,
         orderBy: await orderByCardapio(),
@@ -68,6 +72,12 @@ export default async function StoreCardapioPage() {
         where: user.role === "ADMIN" ? {} : { franchiseeId: targetFranchiseeId },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
+      targetFranchiseeId === user.id
+        ? Promise.resolve(nomeDaLoja)
+        : prisma.user
+            .findUnique({ where: { id: targetFranchiseeId }, select: { storeName: true } })
+            .then((dono) => dono?.storeName || null)
+            .catch(() => null),
     ]);
   } catch (err) {
     console.error("[Cardapio] Erro ao buscar dados:", err);
@@ -125,6 +135,16 @@ export default async function StoreCardapioPage() {
           📊 Cadastrar CMV em Massa
         </a>
       </div>
+
+      {/* Cardápio vazio: janela oferecendo a cópia pela equipe; sempre, uma
+          tarja pequena no topo. O administrador vê todas as lojas — não é para ele. */}
+      {user.role !== "ADMIN" && (
+        <CopiamosSeuCardapio
+          cardapioVazio={products.length === 0}
+          lojaId={targetFranchiseeId}
+          nomeDaLoja={nomeDaLoja}
+        />
+      )}
 
       {/* O "Importar Cardápio do iFood" saiu daqui em 29/09/2026: a sincronização
           pela API e a planilha não funcionam, e o FireHub ainda não puxa
