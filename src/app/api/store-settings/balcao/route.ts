@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { lerBalcaoConfig, BALCAO_CONFIG_PADRAO } from "@/lib/balcao-config";
+import { bairrosAtendidos, modoDaArea } from "@/lib/area-de-entrega";
 
 /**
  * As regras do lançamento presencial da loja (lib/balcao-config.ts).
@@ -26,15 +27,25 @@ export async function GET() {
   const targetId = await donoDaLoja(session.user.email);
   if (!targetId) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+  // Os bairros que a loja entrega, para o Delivery do balcão escolher numa
+  // lista. Só na loja que entrega POR BAIRRO: lá é o bairro que decide a
+  // taxa, e o atendente digitava "Rua X, 35" sem bairro e via "bairro não
+  // atendido" sem saber quais existem. Em raio ou área desenhada quem decide
+  // é o mapa, e uma lista de nomes só confundiria.
+  const bairros = await prisma.user
+    .findUnique({ where: { id: targetId }, select: { deliveryZones: true, deliveryZoneType: true } })
+    .then((loja) => (loja && modoDaArea(loja as any) === "BAIRRO" ? bairrosAtendidos(loja as any).map((b) => ({ name: b.name, fee: b.fee })) : []))
+    .catch(() => []);
+
   try {
     const dono = await prisma.user.findUnique({ where: { id: targetId }, select: { balcaoConfig: true } });
-    return NextResponse.json(lerBalcaoConfig((dono as any)?.balcaoConfig));
+    return NextResponse.json({ ...lerBalcaoConfig((dono as any)?.balcaoConfig), bairros });
   } catch (err) {
     // Coluna ainda ausente (o boot não rodou o ADD COLUMN): a tela abre no
     // padrão em vez de dar erro. Nada obrigatório é exatamente o que vale
     // enquanto não há o que gravar.
     console.error("[Balcão] leitura da config:", (err as any)?.code || err);
-    return NextResponse.json({ ...BALCAO_CONFIG_PADRAO });
+    return NextResponse.json({ ...BALCAO_CONFIG_PADRAO, bairros });
   }
 }
 
