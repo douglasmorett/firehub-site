@@ -6,6 +6,7 @@ import { impressorasDaContaDaMesa, impressoraDoCaixa, impressoraUnicaDoPc } from
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
+import { camposDoEnderecoParaImpressao } from "@/lib/endereco-impresso";
 import { comboParaImpressao } from "@/lib/parse-combo";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
@@ -189,18 +190,20 @@ export async function GET(req: NextRequest) {
       storeLoyalty?: unknown;
       printQueuePolledAt?: Date | null;
       printQueueEstado?: unknown;
+      /** Cidade da loja: separa "…, Operário, Rio das Ostras" em bairro e cidade (lib/endereco-impresso.ts). */
+      city?: string | null;
     };
     let owner: DonoDaFila | null = null;
     try {
       owner = await prisma.user.findUnique({
         where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, printQueuePolledAt: true, printQueueEstado: true },
+        select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, city: true, printQueuePolledAt: true, printQueueEstado: true },
       });
     } catch (err) {
       console.error("[PrintQueue] printQueuePolledAt ausente? (falta db push)", (err as any)?.code || err);
       owner = await prisma.user.findUnique({
         where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true },
+        select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, city: true },
       });
     }
     const pc: any = (owner?.printerConfig as any) || null;
@@ -534,6 +537,10 @@ export async function GET(req: NextRequest) {
       // instalada nas lojas hoje, não tem mais como concluir errado.
       order: {
         ...order,
+        // O ENDEREÇO EM LINHAS (Rua / Número / Bairro…) e o mesmo endereço
+        // rotulado numa linha só no customerAddress, para o Assistente antigo
+        // (lib/endereco-impresso.ts). A via do entregador sai deste objeto.
+        ...camposDoEnderecoParaImpressao(order as any, owner?.city),
         ...camposDeEntregaParaImpressao(order),
         // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
         // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
@@ -740,6 +747,7 @@ export async function GET(req: NextRequest) {
         id: "job_" + pedida.id,
         order: {
           ...order,
+          ...camposDoEnderecoParaImpressao(order, owner?.city),
           ...camposDeEntregaParaImpressao(order),
           // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
           // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.

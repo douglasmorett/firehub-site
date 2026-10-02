@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.30), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.31), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -1060,7 +1060,29 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
     res += LF + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LF;
     marcas.entrega = res.length;
-    res += comNegrito(wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2), "entrega", "endereco", false);
+    // ── O ENDERECO EM LINHAS (1.2.31) ───────────────────────────────────────
+    //
+    // Pedido do Douglas pela Delicia de Casa (02/10/2026): o endereco saia
+    // "todo embolado, separado por virgulas" e o motoboy procurava o bairro
+    // no meio do texto. O site separa (src/lib/endereco-impresso.ts) e manda
+    // `order.enderecoImpresso` = [{ rotulo: "Rua", valor }, { "Numero" }, ...]
+    // so quando conseguiu separar sem perder nada; aqui cada um vira a sua
+    // linha. Sem o campo (pedido antigo, endereco que o site nao separou),
+    // sai o texto de sempre. O `customerAddress` NAO da para quebrar pelo
+    // site: o `wrap` junta qualquer quebra de linha num paragrafo so — por
+    // isso as linhas viajam em campo proprio.
+    const linhasDoEndereco = (Array.isArray(order.enderecoImpresso) ? order.enderecoImpresso : [])
+      .map((l) => {
+        const rotulo = cleanAscii(l && l.rotulo != null ? String(l.rotulo) : "").trim();
+        const valor = cleanAscii(l && l.valor != null ? String(l.valor) : "").trim();
+        return valor ? (rotulo ? rotulo + ": " : "") + valor : "";
+      })
+      .filter(Boolean);
+    if (linhasDoEndereco.length) {
+      for (const l of linhasDoEndereco) res += comNegrito(wrapLines(l, 2), "entrega", "endereco", false);
+    } else {
+      res += comNegrito(wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2), "entrega", "endereco", false);
+    }
   }
 
   /* ── O RECADO DO CLIENTE ────────────────────────────────────────────────
@@ -1775,10 +1797,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.30";
-export const ASSINATURA_DO_CODIGO = "b7a212b8d0abfff1";
+export const VERSAO_DO_ASSISTENTE = "1.2.31";
+export const ASSINATURA_DO_CODIGO = "ad67777fc4c63401";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.30 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.31 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }

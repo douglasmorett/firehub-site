@@ -1,4 +1,5 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
+import { camposDoEnderecoParaImpressao } from "./endereco-impresso";
 import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
@@ -466,6 +467,12 @@ async function printToDevice(
           previsaoEntrega: (order as any).previsaoEntrega,
           ...camposDeEntregaParaImpressao(order),
           source: (order as any).source,
+          // O ENDEREÇO EM LINHAS (Rua / Número / Bairro…), e o mesmo endereço
+          // rotulado numa linha só no customerAddress para o Assistente que
+          // ainda não lê as linhas. Mesma regra da fila da nuvem
+          // (lib/endereco-impresso.ts); a cidade da loja vem com a config
+          // (/api/store/printer-config).
+          ...camposDoEnderecoParaImpressao(order as any, (printerConfig as any)?.cidadeDaLoja),
           // Conta da mesa (src/lib/conta-da-mesa.ts): o Assistente novo imprime
           // o bloco por pessoa a partir de `rateio` e limpa o cupom por `kind`;
           // o antigo ignora campo que nao conhece.
