@@ -169,16 +169,20 @@ const soRetirada = buildEscPos(
   "Salz Burgueria", 48, "safe");
 conferir("nao imprimiu papel em branco", legivel(soRetirada).includes("Esfirra Duo"));
 
-console.log("\n8) Tamanho 1,5x usa Fonte B (ESC M 1) e o dobro (GS ! 0x11)");
-const grande = buildEscPos(
-  { ...PEDIDO, blocos: [{ tipo: "numeroPedido", ligado: true, tamanho: 1.5 }, { tipo: "itens", ligado: true }] },
+console.log("\n8) Tamanho 1,5x e a mesma letra so mais alta (GS ! 0x01), nunca a Fonte B");
+// Divinos, 02/10/2026: a Fonte B dobrada era outra letra, e a comanda em 1,5x
+// parecia de outro sistema ao lado da comanda em 2x.
+for (const perfil of ["safe", "legacy"]) {
+  const alto = buildEscPos(
+    { ...PEDIDO, blocos: [{ tipo: "numeroPedido", ligado: true, tamanho: 1.5 }, { tipo: "itens", ligado: true }] },
+    "Salz Burgueria", 48, perfil).toString("binary");
+  conferir(`${perfil}: nao troca para a Fonte B`, !alto.includes("\x1BM\x01"));
+  conferir(`${perfil}: emitiu GS ! 0x01 (altura dobrada)`, alto.includes("\x1D!\x01"));
+}
+const itensAltos = buildEscPos(
+  { ...PEDIDO, blocos: [{ tipo: "itens", ligado: true, corpos: { linhaDoItem: 1.5 } }] },
   "Salz Burgueria", 48, "safe").toString("binary");
-conferir("emitiu ESC M 1", grande.includes("\x1BM\x01"));
-conferir("emitiu GS ! 0x11", grande.includes("\x1D!\x11"));
-const legado = buildEscPos(
-  { ...PEDIDO, blocos: [{ tipo: "numeroPedido", ligado: true, tamanho: 1.5 }, { tipo: "itens", ligado: true }] },
-  "Salz Burgueria", 48, "legacy").toString("binary");
-conferir("perfil legacy nao troca de fonte", !legado.includes("\x1BM\x01"));
+conferir("itens em 1,5x tambem sem Fonte B", !itensAltos.includes("\x1BM\x01") && itensAltos.includes("\x1D!\x01"));
 
 console.log("\n9) Via da cozinha (semValores) obedece o modelo e nao leva preco");
 const cozinha = legivel(buildEscPos(
@@ -201,7 +205,8 @@ for (const tamanho of [1, 1.5, 2, 3]) {
   const linha = saida.split("\n").find((l) => l.includes("(79)")) || "";
   const texto = linha.trim();
   const esquerda = linha.length - linha.trimStart().length;
-  const direita = 48 - esquerda - Math.round(texto.length * tamanho);
+  // 1,5x e so mais alta: ocupa a largura do 1x.
+  const direita = 48 - esquerda - texto.length * (tamanho >= 2 ? tamanho : 1);
   // Sobra impar nao divide igual: 1 coluna de diferenca e o maximo aceitavel.
   conferir(`${tamanho}x centralizado (${esquerda} a esquerda, ${direita} a direita)`,
     Math.abs(esquerda - direita) <= 1);

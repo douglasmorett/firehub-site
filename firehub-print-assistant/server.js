@@ -852,16 +852,29 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // antes do comando de tamanho. E a mesma regra de `linha()` em
   // aplicarModelo(); as duas existem porque uma vale para o modelo da loja e
   // outra para o papel de fabrica, e nenhuma pode divergir da previa do site.
+  //
+  // ── O 1,5x E A MESMA LETRA, SO MAIS ALTA ─────────────────────────────
+  //
+  // O multiplicador do GS ! e INTEIRO. O 1,5x saia da Fonte B dobrada (64/2 =
+  // 32 colunas = 48/1,5), mas a Fonte B e OUTRA letra, mais fina: na Divinos
+  // (02/10/2026) a comanda em 1,5x e a em 2x pareciam de sistemas diferentes,
+  // e o pedido foi "manter a mesma letra". Agora o 1,5x e a Fonte A com a
+  // altura dobrada e a largura normal — o mesmo desenho do 2x, so que estreito
+  // — e cabem as mesmas letras por linha que no 1x. Altura dobrada e comando
+  // que toda impressora conhece (o cabecalho ja usa), entao o perfil "legacy"
+  // tambem sai assim. A mesma conta de `larguraDoTamanho` em
+  // src/lib/comanda-modelo.ts.
+  const larguraDoCorpo = (n) => (n >= 3 ? 3 : n >= 2 ? 2 : 1);
+  const comandoDoCorpo = (n) => GS + "!" + String.fromCharCode(n >= 3 ? 0x22 : n >= 2 ? 0x11 : n > 1 ? 0x01 : 0x00);
   const ampliado = (texto, mult, opcoes = {}) => {
     const n = Number(mult) || 1;
-    const fonteB = n > 1 && n < 2 && profile !== "legacy";
-    const cmd = ESC + "M" + String.fromCharCode(fonteB ? 1 : 0)
-              + GS + "!" + String.fromCharCode(n >= 3 ? 0x22 : n >= 1.5 ? 0x11 : 0x00);
-    const reset = ESC + "M" + String.fromCharCode(0) + GS + "!" + String.fromCharCode(0);
-    const partes = wrap(texto, Math.max(4, Math.floor(columns / n)));
+    const cmd = comandoDoCorpo(n);
+    const reset = GS + "!" + String.fromCharCode(0);
+    const larg = larguraDoCorpo(n);
+    const partes = wrap(texto, Math.max(4, Math.floor(columns / larg)));
     let s = "";
     for (const p of partes) {
-      const sobra = Math.max(0, columns - Math.round(p.length * n));
+      const sobra = Math.max(0, columns - p.length * larg);
       const recuo = opcoes.centro ? Math.floor(sobra / 2) : 0;
       s += " ".repeat(recuo) + cmd + (opcoes.negrito ? BOLD_ON : "") + p
          + (opcoes.negrito ? BOLD_OFF : "") + reset + LF;
@@ -966,10 +979,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     // curta: "!! CONTEM BEBIDA !!" tem 19 letras, 38 colunas em 2x. A
     // impressora quebrava onde queria e a segunda linha saia preta pela
     // metade. Agora o corpo desce (3 → 2 → 1,5 → 1) ate a forma curta caber.
-    // O 1,5 e a fonte B dobrada, igual ao resto da comanda (`formatoDe`); no
-    // perfil legacy nao ha fonte B, e 1,5 ocupa o mesmo que 2.
+    // O 1,5 e a letra so alta, igual ao resto da comanda (`larguraDoCorpo`):
+    // ocupa a largura do 1x.
     const pedido = Number(mult) || 1;
-    const larguraDe = (n) => (n > 1 && n < 2 ? (profile === "legacy" ? 2 : 1.5) : n);
+    const larguraDe = larguraDoCorpo;
     let n = pedido;
     for (const tentativa of [3, 2, 1.5, 1]) {
       if (tentativa > pedido) continue;
@@ -982,11 +995,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     const left = Math.floor(total / 2);
     const linha = " ".repeat(left) + t + " ".repeat(total - left);
     if (n <= 1) return ON + linha + OFF + LF;
-    const fonteB = n > 1 && n < 2 && profile !== "legacy";
-    const cmd = ESC + "M" + String.fromCharCode(fonteB ? 1 : 0)
-              + GS + "!" + String.fromCharCode(n >= 3 ? 0x22 : 0x11);
-    const reset = ESC + "M" + String.fromCharCode(0) + GS + "!" + String.fromCharCode(0);
-    return cmd + ON + linha + OFF + reset + LF;
+    const reset = GS + "!" + String.fromCharCode(0);
+    return comandoDoCorpo(n) + ON + linha + OFF + reset + LF;
   };
 
   // Separador horizontal sólido entre itens
@@ -1086,22 +1096,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       return b > a ? res.slice(a, b) : "";
     };
 
-    // Fonte A ocupa 12 pontos de largura, Fonte B ocupa 9. O multiplicador do
-    // GS ! e INTEIRO, entao 1,5x nao sai dele: sai da Fonte B dobrada, que da
-    // 64/2 = 32 colunas em 80 mm — exatamente 48/1,5. No perfil "legacy" a
-    // troca de fonte nao e tentada e o 1,5x sai como 2x: maior do que foi
-    // pedido, nunca ilegivel.
-    const formatoDe = (t) => {
-      const n = Number(t) || 1;
-      const fonteB = n > 1 && n < 2 && profile !== "legacy";
-      const mult = n >= 3 ? 0x22 : n >= 1.5 ? 0x11 : 0x00;
-      return ESC + "M" + String.fromCharCode(fonteB ? 1 : 0) + GS + "!" + String.fromCharCode(mult);
-    };
-    const RESET = ESC + "M" + String.fromCharCode(0) + GS + "!" + String.fromCharCode(0) + LEFT;
-    const larguraDe = (t) => {
-      const n = Number(t) || 1;
-      return Math.max(4, Math.floor(columns / (n < 1 ? 1 : n)));
-    };
+    // O 1,5x e a Fonte A so alta (ver `larguraDoCorpo`, la em cima): ocupa a
+    // largura do 1x. Nao ha mais troca para a Fonte B em lugar nenhum.
+    const formatoDe = (t) => comandoDoCorpo(Number(t) || 1);
+    const RESET = GS + "!" + String.fromCharCode(0) + LEFT;
+    const larguraDe = (t) => Math.max(4, Math.floor(columns / larguraDoCorpo(Number(t) || 1)));
 
     // Alinhamento no CODIGO, nunca no ESC a: o ESC a centraliza sobre a largura
     // FISICA da impressora enquanto o resto do cupom e montado sobre
@@ -1133,7 +1132,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     const INV_OFF = "\x1d\x42\x00";
 
     const linha = (texto, f) => {
-      const n = Math.min(3, Math.max(1, Number(f.tamanho) || 1));
+      const n = larguraDoCorpo(Number(f.tamanho) || 1);
       const partes = wrap(texto, larguraDe(f.tamanho));
       if (!partes.length) return LF;
       let s = "";

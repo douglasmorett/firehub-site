@@ -73,23 +73,23 @@ export type Alinhamento = "esquerda" | "centro" | "direita";
  * degrau depois do normal já é o dobro — grande demais para título de seção
  * e come bobina à toa.
  *
- * A saída é que a impressora tem DUAS fontes embutidas: a Fonte A, de 12
- * pontos de largura (48 colunas em 80 mm), e a Fonte B, de 9 (64 colunas).
- * Combinando fonte e multiplicador dá para chegar em degraus intermediários
- * de verdade, não arredondados:
+ * O degrau do meio, 1,5x, é a MESMA letra com a altura dobrada e a largura
+ * normal (GS ! 0x01):
  *
- *   1,0x = Fonte A sem multiplicar ...... 48 colunas em 80 mm
- *   1,5x = Fonte B multiplicada por 2 ... 32 colunas  (64 / 2 = 32 = 48/1,5)
- *   2,0x = Fonte A multiplicada por 2 ... 24 colunas
- *   3,0x = Fonte A multiplicada por 3 ... 16 colunas
+ *   1,0x = letra normal ................. 48 colunas em 80 mm
+ *   1,5x = letra normal, só mais alta ... 48 colunas (ocupa a largura do 1x)
+ *   2,0x = dobrada nos dois sentidos .... 24 colunas
+ *   3,0x = triplicada ................... 16 colunas
  *
- * 2,5x NÃO existe nesta escada e não adianta pedir: a única combinação
- * entre 2 e 3 é Fonte B x3, que dá 2,25x — perto demais de 2 para valer um
- * degrau a mais na tela.
+ * Até o Assistente 1.2.31 o 1,5x saía da Fonte B (a segunda fonte embutida,
+ * de 9 pontos) dobrada, que dava 32 colunas — 48/1,5 certinho, mas a Fonte B
+ * é OUTRA letra, mais fina. Na Divinos (02/10/2026) a comanda em 1,5x e a em
+ * 2x pareciam de sistemas diferentes, e o pedido foi "manter a mesma letra".
+ * Altura dobrada é comando que toda impressora conhece, então não há mais
+ * exceção para o perfil "legacy".
  *
- * Se a impressora ignorar a troca de fonte (acontece em modelo muito antigo,
- * o mesmo que pede o perfil "legacy"), o 1,5x sai como 2x: maior do que foi
- * pedido, nunca ilegível.
+ * 2,5x NÃO existe nesta escada e não adianta pedir: a impressora só
+ * multiplica por número inteiro.
  */
 export type Tamanho = 1 | 1.5 | 2 | 3;
 
@@ -103,9 +103,15 @@ export function tamanhoValido(t: unknown): Tamanho {
     Math.abs(cand - n) < Math.abs(melhor - n) ? cand : melhor, 1 as Tamanho);
 }
 
+/** De quantas colunas normais cada letra deste tamanho ocupa o lugar (1,5x = 1: só é mais alta). */
+export function larguraDaLetra(tamanho?: Tamanho | number): number {
+  const n = tamanhoValido(tamanho);
+  return n >= 3 ? 3 : n >= 2 ? 2 : 1;
+}
+
 /** Quantas letras cabem na linha neste tamanho. Papel e prévia usam esta. */
 export function larguraDoTamanho(colunas: number, tamanho?: Tamanho | number): number {
-  return Math.max(4, Math.floor(colunas / tamanhoValido(tamanho)));
+  return Math.max(4, Math.floor(colunas / larguraDaLetra(tamanho)));
 }
 
 /**
@@ -1498,7 +1504,7 @@ export function linhasDoPapel(linhas: LinhaDaComanda[], colunas: number): LinhaR
     const partes = quebrar(l.texto, larguraDoTamanho(colunas, n));
     if (partes.length === 0) { out.push({ ...origem, recuo: 0, texto: "", tamanho: 1, parte: 0 }); continue; }
     partes.forEach((p, parte) => {
-      const sobra = Math.max(0, colunas - p.length * n);
+      const sobra = Math.max(0, colunas - p.length * larguraDaLetra(n));
       const recuo =
         l.alinhamento === "centro" ? Math.floor(sobra / 2)
           : l.alinhamento === "direita" ? sobra
