@@ -21,11 +21,12 @@
  * dos dois lados estranhar o número. Dinheiro a prestar contas, não: ninguém
  * pagou o pedido cancelado.
  */
-import { canalDoPedido } from "@/lib/canal-do-pedido";
+import { canalDoPedido, chaveDoCanal } from "@/lib/canal-do-pedido";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 import { prisma } from "@/lib/prisma";
-import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, toLocalISODate, getInstantUTC } from "@/lib/timezone";
+import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, getInstantUTC } from "@/lib/timezone";
+import { resumoDasEntregas, ehCancelado, ehDinheiro, trocoParaDoPedido } from "@/lib/resumo-do-entregador";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
@@ -40,8 +41,6 @@ export function periodoDoRelatorio(de: string | null | undefined, ate: string | 
     : new Date();
   return { fromDate, toDate };
 }
-
-const ehCancelado = (status: string | null | undefined) => String(status || "").toUpperCase().includes("CANCEL");
 
 export async function montarRelatorioDosEntregadores(opts: {
   lojaId: string;
@@ -130,81 +129,6 @@ export async function montarRelatorioDosEntregadores(opts: {
     const orders = ordersByMotoboy[mb.id] || [];
     const cancelados = orders.filter((o) => ehCancelado(o.status));
 
-    const totalDeliveries = orders.length;
-    const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
-
-    // Dias trabalhados = EXPEDIENTES, no fuso da loja. É o que paga a diária:
-    // pelo calendário, o turno das 18h às 2h contava dois dias.
-    const uniqueDays = orders.length > 0
-      ? new Set(orders.map((o) => toLocalISODate(new Date(new Date(o.createdAt).getTime() - VIRADA_MS), tz))).size
-      : 0;
-
-    // Soma das taxas dos pedidos
-    const deliveryFeeSum = orders.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
-    const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
-
-    // Classificação de pagamentos recebidos pelo motoboy na entrega vs online
-    let cashCollectedSum = 0, cashOrdersCount = 0, changeGivenSum = 0, cashOrdersValueSum = 0;
-    let debitTotal = 0, debitCount = 0;
-    let creditTotal = 0, creditCount = 0;
-    let voucherTotal = 0, voucherCount = 0;
-    let onlineTotal = 0, onlineCount = 0;
-
-    for (const o of orders) {
-      const st = (o.status || "").toUpperCase();
-      if (st.includes("CANCEL")) continue; // Pedido cancelado: não cobrar prestação de contas do motoboy
-
-      const pm = (o.paymentMethod || "").toUpperCase();
-      const isCash = pm === "CASH" || pm.includes("DINHEIR") || pm.includes("DINHEIRO");
-
-      if (isCash) {
-        const orderTotal = Number(o.totalAmount || 0);
-        let changeFor: number | null = null;
-
-        // 1. Verificar se há valor de troco estruturado (changeAmount)
-        if (typeof o.changeAmount === "number" && o.changeAmount > orderTotal) {
-          changeFor = o.changeAmount;
-        } else if (o.notes) {
-          // 2. Extrair troco de notas/observações (ex: "Troco para 100", "Troco p/ 100", "Troco para R$ 100,00", "Troco: 100", "Levar troco para 50")
-          const notesUpper = String(o.notes).toUpperCase();
-          const match =
-            notesUpper.match(/TROCO\s*(?:PARA|P\/|DE|PRA)?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i) ||
-            notesUpper.match(/TROCO\s*[:=]?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i);
-          if (match && match[1]) {
-            const parsed = parseFloat(match[1].replace(",", "."));
-            if (!isNaN(parsed) && parsed > orderTotal) {
-              changeFor = parsed;
-            }
-          }
-        }
-
-        // O valor que o motoboy recebe fisicamente do cliente e entrega para a loja
-        const cashCollected = changeFor ? changeFor : orderTotal;
-        const changeGiven = changeFor ? (changeFor - orderTotal) : 0;
-
-        cashCollectedSum += cashCollected;
-        cashOrdersCount++;
-        changeGivenSum += changeGiven;
-        cashOrdersValueSum += orderTotal;
-      } else if (pm.includes("DEBIT") || pm.includes("DEBITO") || pm.includes("DÉBITO")) {
-        debitTotal += o.totalAmount;
-        debitCount++;
-      } else if (pm.includes("VOUCHER") || pm.includes("VALE") || pm.includes("VR") || pm.includes("VA")) {
-        voucherTotal += o.totalAmount;
-        voucherCount++;
-      } else if (pm.includes("CARD") || pm.includes("CART") || pm.includes("CREDIT") || pm.includes("MAQUININHA") || pm.includes("MAQUINA")) {
-        creditTotal += o.totalAmount;
-        creditCount++;
-      } else {
-        // PIX Online, iFood Pago Online, etc.
-        onlineTotal += o.totalAmount;
-        onlineCount++;
-      }
-    }
-
-    const cardPosTotal = debitTotal + creditTotal + voucherTotal;
-    const cardPosCount = debitCount + creditCount + voucherCount;
-
     // Só vale o que o TIPO escolhido usa — a regra mora em
     // lib/ganho-do-entregador.ts, junto com a conta que a usa.
     const acerto = lerAcerto(mb as any);
@@ -242,10 +166,15 @@ export async function montarRelatorioDosEntregadores(opts: {
     /** Entregas que a escada/km não conseguiu precificar por falta de distância. */
     const entregasSemDistancia = quantosDe("SEM_DISTANCIA");
 
+    // A soma (entregas, km, dias, dinheiro por forma, ganho) mora em
+    // lib/resumo-do-entregador.ts — a mesma que a tela refaz quando o lojista
+    // filtra o cartão do motoboy por integração.
+    const resumo = resumoDasEntregas(ganhos.map((g) => ({ ...g.pedido, ganho: g.valor })), tz);
+
     // A diária só existe nos tipos que a oferecem — `dailyRate` já vem zerado
     // nos outros, então não há mais o que descontar aqui.
-    const dailyTotal = uniqueDays * dailyRate;
-    const feeTotal = Math.round(ganhos.reduce((s, g) => s + g.valor, 0) * 100) / 100;
+    const dailyTotal = resumo.uniqueDays * dailyRate;
+    const feeTotal = resumo.feeTotal;
 
     const totalWithDaily = dailyTotal + feeTotal;
     const totalFeeOnly = feeTotal;
@@ -269,25 +198,7 @@ export async function montarRelatorioDosEntregadores(opts: {
         entregasSemDistancia,
       },
       stats: {
-        totalDeliveries,
-        totalDistance,
-        uniqueDays,
-        deliveryFeeSum,
-        motoboyFeeSum,
-        cashCollectedSum,
-        cashOrdersCount,
-        cashOrdersValueSum,
-        changeGivenSum,
-        cardPosTotal,
-        cardPosCount,
-        debitTotal,
-        debitCount,
-        creditTotal,
-        creditCount,
-        voucherTotal,
-        voucherCount,
-        onlineTotal,
-        onlineCount,
+        ...resumo,
         dailyTotal,
         feeTotal,
         totalWithDaily,
@@ -306,24 +217,9 @@ export async function montarRelatorioDosEntregadores(opts: {
         })),
       },
       orders: orders.map(o => {
-        const pm = (o.paymentMethod || "").toUpperCase();
-        const isCash = pm === "CASH" || pm.includes("DINHEIR") || pm.includes("DINHEIRO");
+        const isCash = ehDinheiro(o.paymentMethod);
         const orderTotal = Number(o.totalAmount || 0);
-        let changeFor: number | null = null;
-        if (typeof o.changeAmount === "number" && o.changeAmount > orderTotal) {
-          changeFor = o.changeAmount;
-        } else if (o.notes) {
-          const notesUpper = String(o.notes).toUpperCase();
-          const match =
-            notesUpper.match(/TROCO\s*(?:PARA|P\/|DE|PRA)?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i) ||
-            notesUpper.match(/TROCO\s*[:=]?\s*R?\$?\s*(\d+(?:[.,]\d{1,2})?)/i);
-          if (match && match[1]) {
-            const parsed = parseFloat(match[1].replace(",", "."));
-            if (!isNaN(parsed) && parsed > orderTotal) {
-              changeFor = parsed;
-            }
-          }
-        }
+        const changeFor = isCash ? trocoParaDoPedido(o) : null;
         // Cancelado: a corrida conta, o dinheiro não — ninguém pagou o pedido.
         const cancelado = ehCancelado(o.status);
         const cashToDeliver = isCash && !cancelado ? (changeFor || orderTotal) : 0;
@@ -354,6 +250,9 @@ export async function montarRelatorioDosEntregadores(opts: {
           discountIfood: (o as any).discountIfood,
           discountMerchant: (o as any).discountMerchant,
           source: o.source,
+          // De onde veio — é por esta chave que o cartão do motoboy filtra
+          // (só iFood, só 99, só site próprio...).
+          canal: chaveDoCanal(o),
           deliveryDistance: o.deliveryDistance,
           customerName: o.customerName,
           customerPhone: o.customerPhone,
