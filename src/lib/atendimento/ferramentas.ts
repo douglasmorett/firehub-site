@@ -134,17 +134,18 @@ const TODAS_AS_DECLARACOES = [
   },
   {
     name: "montar_loja",
-    description: "A pessoa quer que a equipe monte a loja dela (copiar o cardápio pelo link e configurar bairros, taxas e horários). Use quando tiver o link do cardápio e o nome da loja: passa tudo para a equipe, que continua a conversa por aqui.",
+    description: "Passa para a equipe a montagem da loja (lançar o cardápio inteiro, de graça, e configurar bairros, taxas e horários). Use quando tiver o nome da loja e o link do cardápio OU as fotos do cardápio enviadas na conversa. A equipe continua a conversa por aqui.",
     parametersJsonSchema: {
       type: "object",
       properties: {
-        linkDoCardapio: { type: "string", description: "O link do cardápio que a loja usa hoje, exatamente como a pessoa mandou." },
+        linkDoCardapio: { type: "string", description: "O link do cardápio que a loja usa hoje, exatamente como a pessoa mandou. Vazio quando ela mandou fotos." },
+        cardapioEmFotos: { type: "boolean", description: "true quando a pessoa mandou fotos do cardápio (físico, impresso) em vez de link." },
         nomeDaLoja: { type: "string" },
         cidade: { type: "string" },
         bairros: { type: "string", description: "Bairros atendidos e as taxas, se a pessoa disse." },
         horarios: { type: "string", description: "Dias e horários de funcionamento, se a pessoa disse." },
       },
-      required: ["linkDoCardapio", "nomeDaLoja"],
+      required: ["nomeDaLoja"],
     },
   },
 ] as const;
@@ -283,7 +284,12 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
     case "montar_loja": {
       const link = String(args?.linkDoCardapio || "").trim().slice(0, 500);
       const nomeDaLoja = String(args?.nomeDaLoja || "").trim().slice(0, 120);
-      if (!/^(https?:\/\/)?[\w-]+(\.[\w-]+)+\S*$/i.test(link)) return { erro: "Isso não parece um link. Peça o link do cardápio (o endereço que o cliente dele abre para pedir)." };
+      const ehLink = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+\S*$/i.test(link);
+      // "Mandou foto" é conferido na conversa, não na palavra do modelo: a equipe abre o WhatsApp esperando as fotos.
+      const fotos = args?.cardapioEmFotos === true
+        ? await prisma.crmMensagem.count({ where: { contatoId: contato.id, direcao: "ENTRADA", tipo: "IMAGEM" } })
+        : 0;
+      if (!ehLink && fotos === 0) return { erro: "Falta o cardápio: peça o link (o endereço que o cliente abre para pedir) ou fotos do cardápio." };
       if (!nomeDaLoja) return { erro: "Falta o nome da loja. Pergunte antes." };
       const cidade = String(args?.cidade || "").trim().slice(0, 120);
       await prisma.crmContato.update({
@@ -294,7 +300,8 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
       const detalhes = [
         `Montar a loja ${nomeDaLoja}${cidade ? ` (${cidade})` : ""}.`,
         conta ? `Conta: firehubfood.com.br/loja/${conta.slug} (${conta.email})` : "Ainda sem conta no FireHub.",
-        `Cardápio: ${link}`,
+        ehLink ? `Cardápio: ${link}` : "",
+        fotos ? `Cardápio em ${fotos} foto(s) na conversa — ver no WhatsApp do FireHub.` : "",
         args?.bairros ? `Bairros/taxas: ${String(args.bairros).slice(0, 400)}` : "",
         args?.horarios ? `Horários: ${String(args.horarios).slice(0, 300)}` : "",
       ].filter(Boolean).join("\n");

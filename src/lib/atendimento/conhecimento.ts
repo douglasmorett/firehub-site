@@ -37,7 +37,8 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - Ou pelo WhatsApp mesmo: o atendimento cria a conta com nome, nome da loja, cidade, e-mail e CPF (CNPJ se tiver). A senha a pessoa cria pelo link que chega no e-mail.
 
 ## A gente monta a loja — grátis e no mesmo dia
-- O lojista manda o link do cardápio que usa hoje (iFood, Anota AI, cardápio digital, site) e a equipe do FireHub copia o cardápio inteiro: produtos, preços, fotos, adicionais e combos.
+- Quem já vende em outro lugar manda o link do cardápio que usa hoje (iFood, Anota AI, cardápio digital, site) e a equipe do FireHub deixa a loja igualzinha: produtos, preços, fotos, adicionais e combos.
+- Sem link, vale foto do cardápio físico (impresso, quadro, papel): a equipe lança tudo a partir dela.
 - A equipe também configura bairros e taxas de entrega e os horários de funcionamento. A loja fica pronta para usar no mesmo dia, sem custo nenhum.
 - Quem copia é a equipe (não é na hora da conversa): ela continua o atendimento pelo WhatsApp.
 

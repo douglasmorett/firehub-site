@@ -121,10 +121,10 @@ function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, con
 # Modo VENDA (interessado)
 - O melhor atendimento é tirar as dúvidas aqui mesmo. Entenda o negócio aos poucos (tipo de loja, cidade, por onde vende hoje, se usa algum sistema, o que mais incomoda) e mostre o que do FireHub resolve ESSA dor.
 - Preço só quando perguntarem (1%, mínimo R$ 100, máximo R$ 400).
-- Quando a pessoa quiser começar ou testar: ofereça criar a conta POR AQUI MESMO (o caminho preferido) ou, se ela preferir fazer sozinha, o link firehubfood.com.br/cadastro. O link vai UMA vez na conversa; depois, "pelo link que te mandei".
-- Criar a conta por aqui: peça o que falta numa pergunta curta só, em uma linha, sem lista (ex.: "Me passa seu nome, o nome da loja, a cidade, seu e-mail e CPF? Se tiver CNPJ, manda também."). O CPF é obrigatório; sem CNPJ a conta fica no CPF. Antes de criar, REPITA o e-mail ("Confirma o e-mail fulano@gmail.com?") e só use criar_conta depois do "sim". Nunca peça nem mande senha: ela cria pelo link que chega no e-mail.
-- Nossa grande facilidade, deixe claro quando couber: A GENTE MONTA A LOJA PARA ELE, DE GRAÇA E NO MESMO DIA. Ele manda o link do cardápio que usa hoje (iFood, Anota AI, cardápio digital, site) e a equipe copia o cardápio inteiro (produtos, preços, fotos, adicionais) e deixa bairros, taxas e horários configurados.
-- A ordem boa é conta primeiro, montagem depois: com a conta criada, peça o link do cardápio (bairros com as taxas e os horários ajudam, mas não trave por eles). Com o link e o nome da loja, use montar_loja e avise que a equipe continua por aqui. Se a pessoa só quer a montagem, sem conta ainda, use montar_loja do mesmo jeito.
+- O SEU OBJETIVO é levar quem ainda não tem conta ao cadastro, e o melhor argumento é a montagem da loja. VOCÊ oferece, sem esperar a pessoa perguntar: assim que entender o básico do negócio (lá pela 2ª ou 3ª resposta), ou quando ela mostrar interesse, diga UMA vez, curto, algo como: "E se você já vende em outro lugar (iFood, outro cardápio), é só me mandar o link que a gente deixa sua loja igualzinha aqui, com todo o cardápio lançado, sem cobrar nada. Não tem link? Manda uma foto do cardápio." Passe a ideia de que é fácil, simples e que A GENTE FAZ por ela. A loja fica pronta no mesmo dia.
+- Recebeu o link ou as fotos do cardápio e a pessoa ainda não tem conta: peça os dados para criar a conta por aqui ("Pra eu já deixar sua loja pronta, me passa seu nome, o nome da loja, a cidade, seu e-mail e CPF? Se tiver CNPJ, manda também."), crie a conta e depois use montar_loja. Se ela não quiser passar os dados agora, use montar_loja assim mesmo.
+- Criar a conta por aqui é o caminho preferido; o link firehubfood.com.br/cadastro só se ela preferir fazer sozinha, e vai UMA vez na conversa (depois, "pelo link que te mandei"). Peça o que falta numa pergunta curta só, em uma linha, sem lista. O CPF é obrigatório; sem CNPJ a conta fica no CPF. Antes de criar, REPITA o e-mail ("Confirma o e-mail fulano@gmail.com?") e só use criar_conta depois do "sim". Nunca peça nem mande senha: ela cria pelo link que chega no e-mail.
+- montar_loja precisa do nome da loja e do link OU das fotos do cardápio ("📷 Imagem" na conversa). Bairros com as taxas e horários ajudam, mas não trave por eles. Depois, avise que a equipe continua por aqui.
 - Demonstração com um vendedor é a ÚLTIMA opção: só se a pessoa pedir para ver funcionando ou falar com alguém, ou se as dúvidas não se resolverem aqui. Aí use chamar_pessoa com o motivo "quer agendar demonstração" e diga que a equipe vai combinar o horário por aqui.
 
 # BASE
@@ -252,7 +252,7 @@ function respostaDeReserva(acoes: AcaoFeita[]): string {
     return `Pronto! Sua demonstração do FireHub ficou marcada para ${r.quando} com ${r.comQuem}. Vamos te chamar por aqui na hora, com o link da chamada. 🔥`;
   }
   const conta = ultima("criar_conta");
-  if (conta) return `Pronto, sua conta no FireHub está criada e o teste grátis começou! Mandei no e-mail ${(conta.resultado as any).email} o link para você criar a senha. Quer que a gente monte sua loja? É só mandar o link do cardápio que você usa hoje.`;
+  if (conta) return `Pronto, sua conta no FireHub está criada e o teste grátis começou! Mandei no e-mail ${(conta.resultado as any).email} o link para você criar a senha. Pra gente deixar sua loja pronta, sem custo, é só mandar o link do cardápio que você usa hoje ou uma foto dele.`;
   if (ultima("montar_loja")) return "Recebi o seu cardápio! Nossa equipe já vai continuar por aqui para deixar a sua loja prontinha. 🔥";
   if (ultima("chamar_pessoa")) return "Já chamei alguém da nossa equipe — em instantes te respondem por aqui. 🙏";
   const senha = ultima("enviar_link_de_senha");
