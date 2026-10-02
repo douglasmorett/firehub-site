@@ -2,10 +2,32 @@
 import { useState, useCallback } from "react";
 import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loader2, X } from "lucide-react";
 import { contaDoPedido, emReais as emReaisConta } from "@/lib/conta-do-pedido";
+import type { ChaveDeCanal } from "@/lib/canal-do-pedido";
+import { resumoDasEntregas } from "@/lib/resumo-do-entregador";
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
 const fmt = (v: number) => `R$ ${(v || 0).toFixed(2).replace(".", ",")}`;
+/**
+ * Os botões do filtro de integrações no cartão de cada motoboy. Os quatro
+ * primeiros aparecem sempre (é o que o lojista procura: iFood, 99, site,
+ * balcão); os outros só quando aquele motoboy tem entrega de lá — botão de
+ * canal que a loja nem usa só enche o cartão.
+ */
+const CANAIS_DO_FILTRO: { chave: ChaveDeCanal; nome: string; logo?: string; emoji?: string; sempre?: boolean }[] = [
+  { chave: "IFOOD", nome: "iFood", logo: "/images/logos/ifood.png", sempre: true },
+  { chave: "99FOOD", nome: "99Food", logo: "/images/logos/99.svg", sempre: true },
+  { chave: "SITE", nome: "Site próprio", emoji: "🌐", sempre: true },
+  { chave: "PDV", nome: "Balcão", emoji: "🧾", sempre: true },
+  { chave: "MESA", nome: "Mesa", emoji: "🍽️" },
+  { chave: "WHATSAPP_IA", nome: "Robô WhatsApp", emoji: "🤖" },
+  { chave: "TOTEM", nome: "Totem", emoji: "🖥️" },
+  { chave: "BRENDI", nome: "Brendi", logo: "/images/logos/brendi.webp" },
+  { chave: "WABIZ", nome: "Wabiz", emoji: "📱" },
+  { chave: "JOTAJA", nome: "Jotajá", logo: "/images/logos/jotaja.png" },
+  { chave: "DESCONHECIDO", nome: "Outro canal", emoji: "❔" },
+];
+
 // Sem "Personalizado": as caixas de data ficam SEMPRE na tela. O botão só
 // preenchia as mesmas duas caixas, e escondê-las até alguém achar o botão fazia
 // o lojista pensar que não dava para escolher a data.
@@ -88,6 +110,14 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
   const [loaded, setLoaded] = useState(false);
   const [periodInfo, setPeriodInfo] = useState<any>(null);
   const [selectedOrderModal, setSelectedOrderModal] = useState<any | null>(null);
+  // Integrações DESLIGADAS no cartão de cada motoboy (id → canais). Começa
+  // tudo ligado, como o filtro do painel de pedidos.
+  const [canaisOcultos, setCanaisOcultos] = useState<Record<string, ChaveDeCanal[]>>({});
+  const alternarCanal = (motoboyId: string, canal: ChaveDeCanal) =>
+    setCanaisOcultos((atual) => {
+      const ocultos = atual[motoboyId] || [];
+      return { ...atual, [motoboyId]: ocultos.includes(canal) ? ocultos.filter((c) => c !== canal) : [...ocultos, canal] };
+    });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,11 +143,40 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
     setLoading(false);
   }, [period, customFrom, customTo, horaInicio, horaFim, selectedMotoboy, calcMode]);
 
-  const getMotoboyPay = (r: any) => calcMode === "fee_only" ? r.stats.totalFeeOnly : r.stats.totalWithDaily;
-  const totalPay = report.reduce((s, r) => s + getMotoboyPay(r), 0);
-  const totalDeliveries = report.reduce((s, r) => s + r.stats.totalDeliveries, 0);
-  const totalCashCollected = report.reduce((s, r) => s + (r.stats.cashCollectedSum || 0), 0);
-  const totalCardPos = report.reduce((s, r) => s + (r.stats.cardPosTotal || 0), 0);
+  /**
+   * Cada cartão com o filtro de integrações aplicado. Sem filtro vale a soma do
+   * servidor; com filtro a tela refaz a MESMA soma (lib/resumo-do-entregador)
+   * só com as entregas visíveis. A diária sai: ela é por dia trabalhado e não
+   * se divide entre iFood e 99 — o total filtrado é só o ganho daquelas
+   * entregas. Os totais do topo somam o que os cartões mostram.
+   */
+  const cards = report.map((r) => {
+    const ocultos = canaisOcultos[r.motoboy.id] || [];
+    const visiveis: any[] = ocultos.length ? r.orders.filter((o: any) => !ocultos.includes(o.canal)) : r.orders;
+    const filtrado = visiveis.length !== r.orders.length;
+    const st = filtrado
+      ? (() => {
+          const resumo = resumoDasEntregas(visiveis.map((o: any) => ({ ...o, ganho: o.ganhoDoMotoboy ?? 0 })), tzLoja);
+          return { ...r.stats, ...resumo, dailyTotal: 0, totalWithDaily: resumo.feeTotal, totalFeeOnly: resumo.feeTotal };
+        })()
+      : r.stats;
+    const semDistancia = filtrado
+      ? visiveis.filter((o: any) => o.origemDoGanho === "SEM_DISTANCIA").length
+      : r.motoboy.entregasSemDistancia ?? 0;
+    const cancelados = filtrado
+      ? (() => { const lista = visiveis.filter((o: any) => o.cancelado); return { qtd: lista.length, lista }; })()
+      : r.cancelados;
+    const porCanal = new Map<string, number>();
+    for (const o of r.orders) porCanal.set(o.canal, (porCanal.get(o.canal) || 0) + 1);
+    const botoes = CANAIS_DO_FILTRO.filter((c) => c.sempre || porCanal.has(c.chave));
+    return { r, st, visiveis, filtrado, ocultos, semDistancia, cancelados, porCanal, botoes };
+  });
+
+  const getMotoboyPay = (st: any) => calcMode === "fee_only" ? st.totalFeeOnly : st.totalWithDaily;
+  const totalPay = cards.reduce((s, c) => s + getMotoboyPay(c.st), 0);
+  const totalDeliveries = cards.reduce((s, c) => s + c.st.totalDeliveries, 0);
+  const totalCashCollected = cards.reduce((s, c) => s + (c.st.cashCollectedSum || 0), 0);
+  const totalCardPos = cards.reduce((s, c) => s + (c.st.cardPosTotal || 0), 0);
 
   const PAYMENT_TYPE_LABEL: Record<string, string> = {
     PER_DELIVERY: "Por entrega",
@@ -242,8 +301,8 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
               <Bike size={40} style={{ margin: "0 auto 10px" }} color="#CBD5E1" />
               <p>Nenhuma entrega encontrada no período.</p>
             </div>
-          ) : report.map(r => {
-            const payAmount = getMotoboyPay(r);
+          ) : cards.map(({ r, st, visiveis, filtrado, ocultos, semDistancia, cancelados, porCanal, botoes }) => {
+            const payAmount = getMotoboyPay(st);
             return (
               <div key={r.motoboy.id} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: 20, marginBottom: 14 }}>
                 {/* Header motoboy */}
@@ -259,18 +318,76 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: "0.7rem", color: "#94A3B8", textTransform: "uppercase", fontWeight: 700 }}>
-                      Total a pagar ao motoboy {calcMode === "fee_only" ? "(Só Taxa)" : ""}
+                      Total a pagar ao motoboy {filtrado ? "(filtrado)" : calcMode === "fee_only" ? "(Só Taxa)" : ""}
                     </div>
                     <div style={{ fontWeight: 900, fontSize: "1.4rem", color: "#C92E09" }}>{fmt(payAmount)}</div>
                   </div>
                 </div>
 
+                {/* ── FILTRO DE INTEGRAÇÕES DO CARTÃO ─────────────────────────
+                    Mesmo jeito do filtro do painel de pedidos: começa tudo
+                    ligado e cada clique liga/desliga um canal. Os quadrados,
+                    a lista de entregas e o total abaixo passam a contar só o
+                    que está ligado (pedido do Douglas, 02/10/2026). */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: 2 }}>
+                      Filtro de integrações
+                    </span>
+                    {ocultos.length > 0 && (
+                      <button type="button" onClick={() => setCanaisOcultos((atual) => ({ ...atual, [r.motoboy.id]: [] }))}
+                        style={{ background: "none", border: "none", padding: 0, color: "#C92E09", fontWeight: 700, fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit" }}>
+                        Mostrar todas
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 5, background: "#F8FAFC", padding: "4px 6px", borderRadius: 10, border: "1px solid #E2E8F0" }}>
+                    {botoes.map((c) => {
+                      const ligado = !ocultos.includes(c.chave);
+                      const qtd = porCanal.get(c.chave) || 0;
+                      return (
+                        <button
+                          key={c.chave}
+                          type="button"
+                          onClick={() => alternarCanal(r.motoboy.id, c.chave)}
+                          aria-pressed={ligado}
+                          title={`${c.nome}: ${ligado ? "aparecendo (clique para esconder)" : "escondido (clique para mostrar)"} — ${qtd} entrega(s)`}
+                          style={{
+                            height: 28, flexShrink: 0, padding: "2px 8px", borderRadius: 7,
+                            border: `1.5px solid ${ligado ? "#1C1917" : "#E7DDD3"}`,
+                            background: ligado ? "#fff" : "#FAF6F2",
+                            color: ligado ? "#1C1917" : "#A8A29E",
+                            filter: ligado ? "none" : "grayscale(100%) opacity(0.45)",
+                            cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+                            fontSize: "0.74rem", fontWeight: 800, fontFamily: "inherit",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          {c.logo
+                            ? <img src={c.logo} alt={c.nome} style={{ height: 16, maxWidth: 52, objectFit: "contain", display: "block" }} />
+                            : <><span style={{ fontSize: "0.85rem" }}>{c.emoji}</span><span>{c.nome}</span></>}
+                          <span style={{ background: ligado ? "#F1F5F9" : "transparent", color: "#475569", borderRadius: 10, padding: "0 6px", fontSize: "0.68rem", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+                            {qtd}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {filtrado && (
+                    <div style={{ marginTop: 5, fontSize: "0.72rem", color: "#92400E", fontWeight: 600, paddingLeft: 2 }}>
+                      {visiveis.length === 0
+                        ? "Nenhuma integração ligada — clique num botão para ver as entregas dela."
+                        : `Mostrando ${visiveis.length} de ${r.orders.length} entregas. A diária fica fora: ela não se divide por integração.`}
+                    </div>
+                  )}
+                </div>
+
                 {/* Stats */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, background: "#F8FAFC", borderRadius: 10, padding: 12, marginBottom: 14 }}>
                   {[
-                    { label: "Entregas", value: r.stats.totalDeliveries },
-                    { label: "Dias trab.", value: r.stats.uniqueDays },
-                    { label: "KM total", value: r.stats.totalDistance + " km" },
+                    { label: "Entregas", value: st.totalDeliveries },
+                    { label: "Dias trab.", value: st.uniqueDays },
+                    { label: "KM total", value: st.totalDistance + " km" },
                     { label: "Taxa/KM", value: r.motoboy.perKmRate ? fmt(r.motoboy.perKmRate) + "/km" : "-" },
                   ].map(s => (
                     <div key={s.label} style={{ textAlign: "center" }}>
@@ -284,29 +401,29 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                 <div style={{ background: "#F8FAFC", border: "1.5px solid #E2E8F0", borderRadius: 14, padding: 16, marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                     <span style={{ fontSize: "0.85rem", fontWeight: 900, color: "#0F172A", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
-                      📋 CONFERÊNCIA DO MOTOBOY ({r.stats.totalDeliveries} entregas)
+                      📋 CONFERÊNCIA DO MOTOBOY ({st.totalDeliveries} entregas)
                     </span>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#0F766E", background: "#F0FDFA", padding: "4px 10px", borderRadius: 20 }}>
-                        💵 Entregar Dinheiro: {fmt(r.stats.cashCollectedSum || 0)}
+                        💵 Entregar Dinheiro: {fmt(st.cashCollectedSum || 0)}
                       </span>
                       <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#334155", background: "#FAF6F2", padding: "4px 10px", borderRadius: 20 }}>
-                        💳 Total Maquininha: {fmt(r.stats.cardPosTotal || 0)}
+                        💳 Total Maquininha: {fmt(st.cardPosTotal || 0)}
                       </span>
                     </div>
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
                     {/* Quadrado Dinheiro */}
-                    <div style={{ background: (r.stats.cashCollectedSum || 0) > 0 ? "#F0FDFA" : "#fff", border: `1.5px solid ${(r.stats.cashCollectedSum || 0) > 0 ? "#99F6E4" : "#CBD5E1"}`, borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: "0.72rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#0F766E" : "#64748B", fontWeight: 700 }}>💵 Dinheiro (em mãos)</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#0F766E" : "#0F172A", marginTop: 2 }}>{fmt(r.stats.cashCollectedSum || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: (r.stats.cashCollectedSum || 0) > 0 ? "#0F766E" : "#94A3B8", marginTop: 2 }}>
-                        {r.stats.cashOrdersCount || 0} pedido(s)
+                    <div style={{ background: (st.cashCollectedSum || 0) > 0 ? "#F0FDFA" : "#fff", border: `1.5px solid ${(st.cashCollectedSum || 0) > 0 ? "#99F6E4" : "#CBD5E1"}`, borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ fontSize: "0.72rem", color: (st.cashCollectedSum || 0) > 0 ? "#0F766E" : "#64748B", fontWeight: 700 }}>💵 Dinheiro (em mãos)</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: (st.cashCollectedSum || 0) > 0 ? "#0F766E" : "#0F172A", marginTop: 2 }}>{fmt(st.cashCollectedSum || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: (st.cashCollectedSum || 0) > 0 ? "#0F766E" : "#94A3B8", marginTop: 2 }}>
+                        {st.cashOrdersCount || 0} pedido(s)
                       </div>
-                      {(r.stats.changeGivenSum || 0) > 0 && (
+                      {(st.changeGivenSum || 0) > 0 && (
                         <div style={{ fontSize: "0.65rem", color: "#0F766E", marginTop: 3, fontWeight: 600, borderTop: "1px dashed #99F6E4", paddingTop: 3 }}>
-                          {fmt(r.stats.cashOrdersValueSum || 0)} ped. + {fmt(r.stats.changeGivenSum || 0)} troco
+                          {fmt(st.cashOrdersValueSum || 0)} ped. + {fmt(st.changeGivenSum || 0)} troco
                         </div>
                       )}
                     </div>
@@ -314,30 +431,30 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                     {/* Quadrado Débito */}
                     <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
                       <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>💳 Débito (Máquina)</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(r.stats.debitTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{r.stats.debitCount || 0} pedido(s)</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(st.debitTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{st.debitCount || 0} pedido(s)</div>
                     </div>
 
                     {/* Quadrado Crédito */}
                     <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
                       <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>💳 Crédito (Máquina)</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(r.stats.creditTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{r.stats.creditCount || 0} pedido(s)</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(st.creditTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{st.creditCount || 0} pedido(s)</div>
                     </div>
 
                     {/* Quadrado Voucher */}
                     <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
                       <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>🎟️ Voucher (Vale)</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(r.stats.voucherTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{r.stats.voucherCount || 0} pedido(s)</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(st.voucherTotal || 0)}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{st.voucherCount || 0} pedido(s)</div>
                     </div>
 
                     {/* Quadrado Pago Online */}
-                    {r.stats.onlineTotal > 0 && (
+                    {st.onlineTotal > 0 && (
                       <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 10, padding: "10px 12px" }}>
                         <div style={{ fontSize: "0.72rem", color: "#0F766E", fontWeight: 700 }}>⚡ Pago Online</div>
-                        <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F766E", marginTop: 2 }}>{fmt(r.stats.onlineTotal)}</div>
-                        <div style={{ fontSize: "0.68rem", color: "#0F766E", marginTop: 2 }}>{r.stats.onlineCount} pedido(s) site/app</div>
+                        <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F766E", marginTop: 2 }}>{fmt(st.onlineTotal)}</div>
+                        <div style={{ fontSize: "0.68rem", color: "#0F766E", marginTop: 2 }}>{st.onlineCount} pedido(s) site/app</div>
                       </div>
                     )}
                   </div>
@@ -347,21 +464,27 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                 <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10 }}>
                   <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", marginBottom: 6 }}>Composição do Pagamento</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {r.stats.dailyTotal > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", opacity: calcMode === "fee_only" ? 0.45 : 1 }}>
-                        <span style={{ textDecoration: calcMode === "fee_only" ? "line-through" : "none" }}>
-                          Diária: {fmt(r.motoboy.dailyRate || 0)} × {r.stats.uniqueDays} dias {calcMode === "fee_only" ? "(Desconsiderada)" : ""}
-                        </span>
-                        <span style={{ fontWeight: 700, textDecoration: calcMode === "fee_only" ? "line-through" : "none" }}>{fmt(r.stats.dailyTotal)}</span>
-                      </div>
-                    )}
+                    {r.stats.dailyTotal > 0 && (() => {
+                      // Com filtro de integração a diária sai da conta: ela é
+                      // do dia trabalhado, não do iFood nem do 99. Fica
+                      // riscada, com o valor cheio, para ninguém achar que sumiu.
+                      const fora = calcMode === "fee_only" || filtrado;
+                      return (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", opacity: fora ? 0.45 : 1 }}>
+                          <span style={{ textDecoration: fora ? "line-through" : "none" }}>
+                            Diária: {fmt(r.motoboy.dailyRate || 0)} × {r.stats.uniqueDays} dias {filtrado ? "(não se divide por integração)" : calcMode === "fee_only" ? "(Desconsiderada)" : ""}
+                          </span>
+                          <span style={{ fontWeight: 700, textDecoration: fora ? "line-through" : "none" }}>{fmt(r.stats.dailyTotal)}</span>
+                        </div>
+                      );
+                    })()}
                     {/* ── A LINHA DAS TAXAS ─────────────────────────────────
                         Ela lia `perDeliveryTotal` e `perKmTotal`, que a API
                         nunca devolveu: o campo chama `feeTotal`. Resultado —
                         R$ 18,00 apareciam dentro do TOTAL sem nenhuma linha
                         explicando de onde vinham, e a composição não fechava
                         com o total logo abaixo dela. */}
-                    {r.stats.feeTotal > 0 && (
+                    {st.feeTotal > 0 && (
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", gap: 10 }}>
                         {/* O rótulo tem de dizer o acerto DELE. Escrito fixo
                             como "Por entrega", ele anunciava R$ 2,00/entrega
@@ -370,14 +493,14 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                             não seguia o que ele tinha cadastrado. */}
                         <span>
                           {r.motoboy.paymentType === "FAIXA_KM"
-                            ? `Por faixa de distância (${r.stats.totalDeliveries} entregas, ${r.stats.totalDistance.toFixed(1)} km no total)`
+                            ? `Por faixa de distância (${st.totalDeliveries} entregas, ${st.totalDistance.toFixed(1)} km no total)`
                             : r.motoboy.paymentType === "PER_KM"
-                            ? `Por km: ${fmt(r.motoboy.perKmRate || 0)} × ${r.stats.totalDistance.toFixed(1)} km`
+                            ? `Por km: ${fmt(r.motoboy.perKmRate || 0)} × ${st.totalDistance.toFixed(1)} km`
                             : r.motoboy.usandoTaxaDoCliente
-                              ? `Taxa de entrega dos pedidos (${r.stats.totalDeliveries})`
-                              : `Por entrega: ${fmt(r.motoboy.perDeliveryRate || 0)} × ${r.stats.totalDeliveries} entregas`}
+                              ? `Taxa de entrega dos pedidos (${st.totalDeliveries})`
+                              : `Por entrega: ${fmt(r.motoboy.perDeliveryRate || 0)} × ${st.totalDeliveries} entregas`}
                         </span>
-                        <span style={{ fontWeight: 700 }}>{fmt(r.stats.feeTotal)}</span>
+                        <span style={{ fontWeight: 700 }}>{fmt(st.feeTotal)}</span>
                       </div>
                     )}
 
@@ -385,7 +508,7 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         que o CLIENTE pagou ao marketplace — que no 99Food já
                         vem descontada pelo cupom deles. Precisa estar escrito,
                         senão o lojista confere com um número que não é dele. */}
-                    {r.motoboy.usandoTaxaDoCliente && r.stats.feeTotal > 0 && (
+                    {r.motoboy.usandoTaxaDoCliente && st.feeTotal > 0 && (
                       <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", fontSize: "0.74rem", color: "#92400E", lineHeight: 1.45 }}>
                         ⚠️ Este entregador não tem <b>valor por entrega</b> cadastrado, então está sendo usada a
                         taxa que o cliente pagou. Em pedido de iFood e 99Food essa taxa é do marketplace, não sua —
@@ -396,37 +519,37 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         porque o pedido chegou sem distância. Ela entra como
                         R$ 0,00 — inventar a taxa do marketplace aqui foi o
                         erro original. O lojista precisa VER quantas são. */}
-                    {(r.motoboy.entregasSemDistancia ?? 0) > 0 && (
+                    {semDistancia > 0 && (
                       <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "7px 10px", fontSize: "0.74rem", color: "#92400E", lineHeight: 1.45 }}>
-                        ⚠️ {r.motoboy.entregasSemDistancia} {r.motoboy.entregasSemDistancia === 1 ? "entrega está" : "entregas estão"} sem a distância medida,
-                        então a faixa de km não pôde ser aplicada e {r.motoboy.entregasSemDistancia === 1 ? "ela entrou" : "elas entraram"} como R$ 0,00.
+                        ⚠️ {semDistancia} {semDistancia === 1 ? "entrega está" : "entregas estão"} sem a distância medida,
+                        então a faixa de km não pôde ser aplicada e {semDistancia === 1 ? "ela entrou" : "elas entraram"} como R$ 0,00.
                         O endereço é medido automaticamente em alguns minutos — se continuar assim, confira o endereço desses pedidos.
                       </div>
                     )}
                     {/* Cancelado com o motoboy CONTA na corrida e não no
                         dinheiro (lib/relatorio-do-entregador.ts). A linha diz
                         quais foram, para ninguém estranhar o número. */}
-                    {(r.cancelados?.qtd ?? 0) > 0 && (
+                    {(cancelados?.qtd ?? 0) > 0 && (
                       <div style={{ fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45 }}>
-                        {r.cancelados.qtd} pedido{r.cancelados.qtd > 1 ? "s" : ""} cancelado{r.cancelados.qtd > 1 ? "s" : ""} com este motoboy
-                        ({r.cancelados.lista.map((c: any) => `#${c.dailyOrderNumber ?? c.ifoodReference ?? c.openDeliveryReference ?? "—"}`).join(", ")}) — a corrida conta, sem dinheiro a prestar contas.
+                        {cancelados.qtd} pedido{cancelados.qtd > 1 ? "s" : ""} cancelado{cancelados.qtd > 1 ? "s" : ""} com este motoboy
+                        ({cancelados.lista.map((c: any) => `#${c.dailyOrderNumber ?? c.ifoodReference ?? c.openDeliveryReference ?? "—"}`).join(", ")}) — a corrida conta, sem dinheiro a prestar contas.
                       </div>
                     )}
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>
-                      <span>TOTAL {calcMode === "fee_only" ? "(SÓ TAXAS)" : "(DIÁRIA + TAXAS)"}</span>
+                      <span>TOTAL {filtrado ? "(SÓ TAXAS DAS INTEGRAÇÕES MARCADAS)" : calcMode === "fee_only" ? "(SÓ TAXAS)" : "(DIÁRIA + TAXAS)"}</span>
                       <span style={{ color: "#C92E09" }}>{fmt(payAmount)}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Entregas detalhadas */}
-                {r.orders.length > 0 && (
+                {visiveis.length > 0 && (
                   <details style={{ marginTop: 12 }}>
                     <summary style={{ fontSize: "0.8rem", fontWeight: 700, color: "#64748B", cursor: "pointer" }}>
-                      📦 Ver {r.orders.length} entrega(s) detalhada(s)
+                      📦 Ver {visiveis.length} entrega(s) detalhada(s)
                     </summary>
                     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
-                      {r.orders.map((o: any) => {
+                      {visiveis.map((o: any) => {
                         const isCash = (o.paymentMethod || "").toUpperCase() === "CASH" || (o.paymentMethod || "").toUpperCase().includes("DINHEIR");
                         const dateStr = o.createdAt || o.date;
                         const numDisplay = o.dailyOrderNumber ? `#${o.dailyOrderNumber}` : o.ifoodReference ? `#${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : "";
