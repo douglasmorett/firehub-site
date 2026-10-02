@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import AdminDashboardClient from "@/components/admin/AdminDashboardClient";
-import { getCurrentYearMonth, intervaloDoMes, isExemptAccount } from "@/lib/billing";
+import { getCurrentYearMonth, intervaloDoMes, lojaIsenta } from "@/lib/billing";
 import { inicioDoDiaDaLojaAtras } from "@/lib/fuso";
 import { atividadeDasLojas } from "@/lib/atividade-da-loja";
 
@@ -27,8 +27,18 @@ export default async function AdminPage() {
       cpfCnpj: true, repasseConfig: true, onboardingData: true,
       vendedorId: true, vendedorStatus: true, vendedorAtribuidoEm: true,
       ambassadorId: true, accountGroupId: true,
+      planPercent: true, ambassadorAccount: { select: { active: true, isVendedor: true } },
     },
   });
+
+  // Por que a loja não paga mensalidade (lojaIsenta, em lib/billing.ts), para
+  // o selo da linha não dizer "Teste" de quem nunca vai ser cobrado.
+  const motivoDaIsencao = (l: typeof lojistas[0]): string | null => {
+    if (l.isFranqueadoHakim) return "Hakim";
+    if (l.ambassadorAccount?.active) return l.ambassadorAccount.isVendedor ? "vendedor" : "embaixador";
+    if (lojaIsenta(l)) return "";
+    return null;
+  };
 
   // Loja aberta pelo "Nova loja" do painel nasce com e-mail virtual
   // (…@stores.firehub.app) dentro da conta da loja principal (accountGroupId).
@@ -61,11 +71,10 @@ export default async function AdminPage() {
   });
 
   // Lojistas isentos de cobrança do FireHub — as mesmas regras do fechamento
-  // (lib/billing.ts). Só `isFranqueadoHakim` deixava a Hakim Centro (isenta
-  // pelo e-mail) somar um boleto cancelado de julho em "Pendências" e no MRR.
-  const exemptSet = new Set(
-    lojistas.filter(l => l.isFranqueadoHakim || isExemptAccount(l.email)).map(l => l.id)
-  );
+  // (lojaIsenta, em lib/billing.ts). Só `isFranqueadoHakim` deixava a Hakim
+  // Centro (isenta pelo e-mail) somar um boleto cancelado de julho em
+  // "Pendências" e no MRR.
+  const exemptSet = new Set(lojistas.filter(l => motivoDaIsencao(l) !== null).map(l => l.id));
 
   // ── Billing cycles ────────────────────────────────────────
   // Só os ciclos que viraram BOLETO. Paga, a mensalidade passa a PAID
@@ -161,6 +170,7 @@ export default async function AdminPage() {
     createdAt: l.createdAt.toISOString(),
     storeOpen: l.storeOpen,
     isFranqueadoHakim: l.isFranqueadoHakim,
+    isencao: motivoDaIsencao(l),
     storeLogo: l.storeLogo,
     storePhone: l.storePhone || contaPrincipalDe(l)?.storePhone || null,
     contaPrincipal: (p => p ? { id: p.id, nome: p.storeName || p.name || p.email } : null)(contaPrincipalDe(l)),

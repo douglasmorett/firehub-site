@@ -27,6 +27,8 @@ type Lojista = {
   id: string; name: string | null; email: string; slug: string | null;
   storeName: string | null; city: string | null; createdAt: string;
   storeOpen: boolean; isFranqueadoHakim: boolean; storeLogo: string | null;
+  /** null = paga mensalidade; texto = motivo da isenção ("" quando não há um nome curto). */
+  isencao: string | null;
   storePhone: string | null; cpfCnpj: string | null; repasseConfig: any; onboardingData?: any;
   diasCadastro: number; emTrial: boolean;
   diasRestantesTrial?: number; trialEndsAt?: string | null;
@@ -374,7 +376,7 @@ export default function AdminDashboardClient({
   // ── Peças da linha do lojista (as duas tabelas usam as mesmas) ──────────
 
   const Situacao = ({ l }: { l: Lojista }) =>
-    l.isFranqueadoHakim ? <span className="fha-badge fha-badge-exempt">Isento (Hakim)</span>
+    l.isencao !== null ? <span className="fha-badge fha-badge-exempt">{l.isencao ? `Isento (${l.isencao})` : "Isento"}</span>
       : l.pendente > 0 ? <span className="fha-badge fha-badge-pending">Débito {fmt(l.pendente)}</span>
         : l.emTrial ? <span className="fha-badge fha-badge-trial">Teste · {l.diasRestantesTrial ?? 0}d</span>
           : <span className="fha-badge fha-badge-active">Assinante</span>;

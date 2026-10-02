@@ -58,28 +58,24 @@ export const SERVICOS_PAGOS: ServicoPago[] = [
     chave: "hospedagem",
     nome: "DigitalOcean (VPS do Coolify)",
     papel: "Roda a aplicação Next.js, o cron-runner e o Coolify. É quem serve firehubfood.com.br.",
-    mensalBRL: 12.97 * USD_BRL,
+    mensalBRL: 68 * USD_BRL,
     rateio: "pedidos",
     observacao:
-      "Confirmado no painel em 01/09/2026: US$ 12,97 de droplets em agosto/2026 (média de US$ 0,26/dia). " +
-      "Droplet 107.170.79.194, região NYC (AS14061). É o serviço mais barato da lista e o que sustenta a produção inteira.",
+      "Plano de US$ 68/mês a partir de 01/10/2026 (antes: 2 vCPU / 4 GB / 120 GB por US$ 32; agosto/2026 fechou em US$ 12,97). " +
+      "Droplet 107.170.79.194, região NYC (AS14061). É o serviço que sustenta a produção inteira.",
   },
   {
     chave: "vercel",
-    nome: "Vercel (Plano Pro)",
-    papel: "Hospedava o site antes do Coolify. Hoje só guarda o Blob e continua buildando cada commit.",
-    mensalBRL: 30 * USD_BRL,
+    nome: "Vercel",
+    papel: "Hospedava o site e as imagens antes do Coolify. O FireHub não usa mais nada de lá.",
+    mensalBRL: 0,
     rateio: "pedidos",
     observacao:
-      "⚠️ MAIOR OPORTUNIDADE ABERTA — e é do FireHub mesmo, não de outro projeto: dos US$ 90,11 do ciclo " +
-      "14/08–14/09/2026, US$ 86,06 são do projeto `firehub-site` (firecheck US$ 2,74, landing-page US$ 0,89, " +
-      "hakim-portal US$ 0,40). O gasto foi Vercel Functions + 853 GB de Fast Data Transfer: o mesmo polling de 3s " +
-      "que inflou o Neon, cobrado nas duas contas. " +
-      "HOJE O DEPLOY DE LÁ ESTÁ QUEBRADO: firehub-site.vercel.app responde 500 e /api/health acusa " +
-      "'Can't reach database server' (aponta para o host do Neon SEM o -pooler). Ou seja, não serve ninguém — " +
-      "mas segue custando US$ 20/mês de plano Pro + build a cada push, porque o auto-deploy no repo nunca foi desligado. " +
-      "O código já não tem @vercel/blob e as 278 imagens de produto migraram para /uploads no VPS. " +
-      "Falta só migrar 11 arquivos (6 logos + 5 banners de loja, Hakim Centro entre elas) para cancelar o Pro.",
+      "Saída concluída em 01/09/2026: repositório desconectado (último build da Vercel em 01/09 23h44 UTC — " +
+      "os commits seguintes só passam pelo GitHub Actions → Coolify), 41 imagens do Blob migradas para /uploads " +
+      "e nenhuma coluna do banco cita mais \"vercel\". Até ago/2026 era o maior custo depois do Neon (US$ 86 do " +
+      "projeto firehub-site num ciclo). O plano Pro (US$ 20) continua por causa do FireCheck e do EvoPDV, " +
+      "que ainda são servidos pela Vercel — é custo desses projetos, não do FireHub.",
   },
   {
     chave: "railway",
@@ -91,16 +87,6 @@ export const SERVICOS_PAGOS: ServicoPago[] = [
       "Confirmado em 01/09/2026: plano Hobby, ciclo 31/08–30/09 com uso de US$ 0,34 dentro dos US$ 5 inclusos; " +
       "fatura estimada US$ 3,20. ⚠️ A assinatura estava marcada como PAST DUE — se não for paga, a Railway " +
       "suspende o serviço e o robô de WhatsApp das lojas cai junto.",
-  },
-  {
-    chave: "blob",
-    nome: "Vercel Blob",
-    papel: "Imagens do cardápio e fotos enviadas pelas lojas.",
-    mensalBRL: 0.07 * USD_BRL,
-    rateio: "pedidos",
-    observacao:
-      "Medido em 01/09/2026: 1 GB armazenado (US$ 0,03) + 800 MB de transferência (US$ 0,04). " +
-      "É o que prende o sistema à Vercel — e custa 7 centavos de dólar. Não é o Blob que pesa: é o plano Pro em volta dele.",
   },
   {
     chave: "gemini",
