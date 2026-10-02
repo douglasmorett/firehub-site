@@ -291,6 +291,12 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
         : 0;
       if (!ehLink && fotos === 0) return { erro: "Falta o cardápio: peça o link (o endereço que o cliente abre para pedir) ou fotos do cardápio." };
       if (!nomeDaLoja) return { erro: "Falta o nome da loja. Pergunte antes." };
+      // A equipe já foi chamada para esta montagem hoje: não manda o aviso de novo.
+      const jaPedida = await prisma.crmEvento.findFirst({
+        where: { contatoId: contato.id, texto: { startsWith: "Chamou uma pessoa: Montar a loja" }, criadoEm: { gte: new Date(Date.now() - 24 * 60 * 60_000) } },
+        select: { id: true },
+      });
+      if (jaPedida) return { ok: true, jaEstavaPedida: true, aviso: "A equipe já recebeu este pedido de montagem. Diga, curto, que ela continua por aqui." };
       const cidade = String(args?.cidade || "").trim().slice(0, 120);
       await prisma.crmContato.update({
         where: { id: contato.id },

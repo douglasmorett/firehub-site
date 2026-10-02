@@ -74,7 +74,16 @@ function agoraEmBrasilia(): string {
   }).format(new Date());
 }
 
-function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null): string {
+/**
+ * A oferta da montagem já saiu? O robô a repetia em toda resposta (teste de
+ * 01/10: três seguidas). Reconhecida pelo jeito como ela é dita — montar/lançar/
+ * deixar a loja + de graça/sem cobrar —, nas mensagens do robô.
+ */
+const OFERTA_DA_MONTAGEM = /(mont|lan[çc]|deix|cadastr|igualzinh)[^?!]{0,160}(gr[aá]tis|de gra[çc]a|sem cobrar|sem custo|n[ãa]o cobra)|(gr[aá]tis|de gra[çc]a|sem cobrar|sem custo|n[ãa]o cobra)[^?!]{0,160}(mont|lan[çc]|igualzinh)/i;
+
+function instrucoes(
+  config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null, ofereceuMontagem: boolean,
+): string {
   const apresentacao = config.nomeDoAtendente
     ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub no WhatsApp.`
     : "Você é o assistente virtual do atendimento do FireHub no WhatsApp. Você não tem nome próprio: nunca invente um.";
@@ -91,6 +100,9 @@ function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, con
     linkDeCadastroEm
       ? `- O link de cadastro JÁ FOI ENVIADO nesta conversa (${linkDeCadastroEm.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}). NÃO mande de novo, a não ser que a pessoa peça o link ou diga que não achou.`
       : "- O link de cadastro ainda não foi enviado.",
+    ofereceuMontagem
+      ? "- A montagem grátis da loja JÁ FOI OFERECIDA nesta conversa. Não ofereça de novo nem peça o link/foto do cardápio outra vez: responda só o que a pessoa perguntou. Se ela mandar o link ou a foto, aí sim siga com a montagem."
+      : "- A montagem grátis da loja ainda não foi oferecida.",
   ].filter(Boolean).join("\n");
 
   return `${apresentacao}
@@ -117,11 +129,12 @@ function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, con
 - Problema na conta (impressão, robô do WhatsApp, iFood, pedido não chegou): chame estado_da_loja ANTES de responder e diga o que viu. Guie um passo por vez.
 - "Aguardando mensagem" ou robô da loja travado com o WhatsApp conectado: pode usar reiniciar_whatsapp_da_loja.
 - Fatura em aberto: pode informar o valor e o link que estado_da_loja trouxer.
+- Conta criada agora há pouco nesta conversa, ou loja que ainda não lançou o cardápio: a montagem grátis vale igual (link ou foto do cardápio → montar_loja).
 
 # Modo VENDA (interessado)
 - O melhor atendimento é tirar as dúvidas aqui mesmo. Entenda o negócio aos poucos (tipo de loja, cidade, por onde vende hoje, se usa algum sistema, o que mais incomoda) e mostre o que do FireHub resolve ESSA dor.
 - Preço só quando perguntarem (1%, mínimo R$ 100, máximo R$ 400).
-- O SEU OBJETIVO é levar quem ainda não tem conta ao cadastro, e o melhor argumento é a montagem da loja. VOCÊ oferece, sem esperar a pessoa perguntar: assim que entender o básico do negócio (lá pela 2ª ou 3ª resposta), ou quando ela mostrar interesse, diga UMA vez, curto, algo como: "E se você já vende em outro lugar (iFood, outro cardápio), é só me mandar o link que a gente deixa sua loja igualzinha aqui, com todo o cardápio lançado, sem cobrar nada. Não tem link? Manda uma foto do cardápio." Passe a ideia de que é fácil, simples e que A GENTE FAZ por ela. A loja fica pronta no mesmo dia.
+- O SEU OBJETIVO é levar quem ainda não tem conta ao cadastro, e o melhor argumento é a montagem da loja. VOCÊ oferece, sem esperar a pessoa perguntar, UMA VEZ SÓ na conversa: não na primeira resposta (nela, só responda e entenda o negócio), mas na 2ª ou 3ª, ou antes se ela mostrar interesse. Responda a pergunta dela em uma frase e, na mesma mensagem, faça a oferta em outra, curta, algo como: "E se você já vende em outro lugar (iFood, outro cardápio), é só me mandar o link que a gente deixa sua loja igualzinha aqui, com todo o cardápio lançado, sem cobrar nada. Não tem link? Manda uma foto do cardápio." Passe a ideia de que é fácil, simples e que A GENTE FAZ por ela. A loja fica pronta no mesmo dia.
 - Recebeu o link ou as fotos do cardápio e a pessoa ainda não tem conta: peça os dados para criar a conta por aqui ("Pra eu já deixar sua loja pronta, me passa seu nome, o nome da loja, a cidade, seu e-mail e CPF? Se tiver CNPJ, manda também."), crie a conta e depois use montar_loja. Se ela não quiser passar os dados agora, use montar_loja assim mesmo.
 - Criar a conta por aqui é o caminho preferido; o link firehubfood.com.br/cadastro só se ela preferir fazer sozinha, e vai UMA vez na conversa (depois, "pelo link que te mandei"). Peça o que falta numa pergunta curta só, em uma linha, sem lista. O CPF é obrigatório; sem CNPJ a conta fica no CPF. Antes de criar, REPITA o e-mail ("Confirma o e-mail fulano@gmail.com?") e só use criar_conta depois do "sim". Nunca peça nem mande senha: ela cria pelo link que chega no e-mail.
 - montar_loja precisa do nome da loja e do link OU das fotos do cardápio ("📷 Imagem" na conversa). Bairros com as taxas e horários ajudam, mas não trave por eles. Depois, avise que a equipe continua por aqui.
@@ -188,7 +201,8 @@ async function responder(contatoId: string) {
     orderBy: { criadoEm: "asc" },
     select: { criadoEm: true },
   });
-  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null);
+  const ofereceuMontagem = historico.some((m) => m.direcao === "SAIDA" && OFERTA_DA_MONTAGEM.test(m.texto));
+  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem);
   const conversa = conversaParaOModelo(historico);
   if (conversa.length === 0) return;
 
