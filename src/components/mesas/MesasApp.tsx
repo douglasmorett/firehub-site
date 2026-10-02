@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import ComboModal from "@/components/customer/ComboModal";
 import AndaresConfig from "@/components/mesas/AndaresConfig";
 import QrDasMesas from "@/components/mesas/QrDasMesas";
+import ImpressaoDaMesaConfig from "@/components/mesas/ImpressaoDaMesaConfig";
+import SelecionarItensParaImpressao, { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { montarCardapioDaMesa, gruposDoProduto } from "@/lib/cardapio-da-mesa";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
@@ -415,6 +417,14 @@ export default function MesasApp({
   const [editLabel, setEditLabel] = useState("");
   const [showFreeConfirm, setShowFreeConfirm] = useState(false);
   const [imprimindoConta, setImprimindoConta] = useState(false);
+  /** "Selecionar itens para impressão" aberto (components/mesas/SelecionarItensParaImpressao). */
+  const [selecionandoImpressao, setSelecionandoImpressao] = useState(false);
+  /** Retorno da seleção de impressão, no aviso que desce do topo (nada de alert()). */
+  const [aviso, setAviso] = useState<Aviso | null>(null);
+  const fecharAviso = useCallback(() => setAviso(null), []);
+  // Trocou de mesa (ou fechou o painel): a seleção era da mesa anterior.
+  const sessaoAberta = selectedTable?.openSession?.id || null;
+  useEffect(() => { setSelecionandoImpressao(false); }, [sessaoAberta]);
 
   // Open table form
   const [openCustomerName, setOpenCustomerName] = useState("");
@@ -1332,7 +1342,7 @@ export default function MesasApp({
   const SEM_ANDAR = "__sem_andar__";
   const [andares, setAndares] = useState<AndarDaMesa[]>([]);
   const [andarFiltro, setAndarFiltro] = useState<string>("todos");
-  const [abaConfig, setAbaConfig] = useState<"mesas" | "taxa" | "andares" | "qr">("mesas");
+  const [abaConfig, setAbaConfig] = useState<"mesas" | "taxa" | "andares" | "qr" | "impressao">("mesas");
   useEffect(() => {
     try {
       const salvo = localStorage.getItem(CHAVE_ANDAR);
@@ -2422,8 +2432,20 @@ export default function MesasApp({
 
             {/* Orders */}
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 18px" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-                Pedidos da mesa
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 1 }}>
+                  Pedidos da mesa
+                </span>
+                {/* Imprimir (ou reimprimir) só os itens marcados — ao lado da
+                    lista, e não na grade de cima: no celular cada linha a mais
+                    de botões empurra o Total para fora do painel. */}
+                {sessionDetail?.orders?.some(o => o.status !== "CANCELADO" && o.status !== "CANCELED" && o.status !== "CANCELLED" && o.items.length > 0) && (
+                  <button onClick={() => setSelecionandoImpressao(true)} style={{
+                    padding: "7px 10px", borderRadius: 8, border: "1.5px solid #99F6E4",
+                    background: "#F0FDFA", color: "#0F766E", fontWeight: 800, fontSize: 12,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}>🖨️ Selecionar itens para impressão</button>
+                )}
               </div>
               {sessionDetail?.orders && sessionDetail.orders.length > 0 ? (
                 sessionDetail.orders.map((order, i) => {
@@ -3394,6 +3416,19 @@ export default function MesasApp({
         </div>
       )}
 
+      {/* ─── SELECIONAR ITENS PARA IMPRESSÃO ─── */}
+      {selecionandoImpressao && selectedTable?.openSession && sessionDetail && (
+        <SelecionarItensParaImpressao
+          sessionId={selectedTable.openSession.id}
+          pedidos={sessionDetail.orders}
+          chamar={chamar}
+          nomeDaPessoa={(id) => pessoas.find(p => p.id === id)?.name || "cliente"}
+          onFechar={() => setSelecionandoImpressao(false)}
+          onAviso={setAviso}
+        />
+      )}
+      <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
+
       {/* ─── CONFIG MODAL ─── */}
       {showConfigModal && (
         <div style={{
@@ -3409,8 +3444,10 @@ export default function MesasApp({
               <h3 style={{ margin: 0, fontWeight: 800 }}>⚙️ Gerenciar Mesas</h3>
               <button onClick={() => setShowConfigModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer" }}>✕</button>
             </div>
-            <div style={{ display: "flex", gap: 6, padding: "10px 20px 0" }}>
-              {([["mesas", "🪑 Mesas"], ["taxa", "💰 Taxa"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`], ["qr", "📱 QR Code"]] as const).filter(([id]) => id !== "taxa" || !ehGarcom).map(([id, rotulo]) => (
+            {/* Quebra em duas linhas quando não cabe: com "🖨️ Impressão" são
+                cinco abas, e no celular a quinta sumia da borda. */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "10px 20px 0" }}>
+              {([["mesas", "🪑 Mesas"], ["taxa", "💰 Taxa"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`], ["qr", "📱 QR Code"], ["impressao", "🖨️ Impressão"]] as const).filter(([id]) => (id !== "taxa" && id !== "impressao") || !ehGarcom).map(([id, rotulo]) => (
                 <button key={id} type="button" onClick={() => { setAbaConfig(id); if (id === "taxa") abrirConfigDaTaxa(); }} style={{
                   flex: 1, padding: "9px 10px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
                   fontSize: 14, fontWeight: 800,
@@ -3470,6 +3507,8 @@ export default function MesasApp({
                     {salvandoTaxaCfg ? "Salvando..." : "Salvar taxa"}
                   </button>
                 </div>
+              ) : abaConfig === "impressao" ? (
+                <ImpressaoDaMesaConfig />
               ) : abaConfig === "qr" ? (
                 <QrDasMesas />
               ) : abaConfig === "andares" ? (

@@ -155,7 +155,12 @@ O que você mudou nele se perde. As impressoras que usam este modelo continuam u
     try {
       // Sem os andares do salão: são da tela de Mesas, e esta cópia pode ser
       // velha (o PUT mescla por chave — ver PrinterSetupClient).
-      const { andares: _andaresDaTelaDeMesas, ...semAndares } = (config || {}) as { andares?: unknown };
+      // Nem a opção das bebidas da mesa (engrenagem das Mesas, lib/bebida-da-mesa.ts).
+      const {
+        andares: _andaresDaTelaDeMesas,
+        mesaSemBebidaNaComanda: _bebidaDaTelaDeMesas,
+        ...semAndares
+      } = (config || {}) as { andares?: unknown; mesaSemBebidaNaComanda?: unknown };
       const r = await fetch("/api/store/printer-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

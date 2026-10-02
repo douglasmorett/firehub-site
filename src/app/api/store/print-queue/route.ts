@@ -16,6 +16,7 @@ import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
 import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda, numeroDaMesa } from "@/lib/mesa-na-comanda";
 import { impressorasDaContaNoAndar, lerAndares } from "@/lib/andares-da-mesa";
+import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import { lembrarAssistente } from "@/lib/assistente-da-loja";
 import { getClientIp } from "@/lib/rateLimit";
 import { corteDaVolta } from "@/lib/volta-do-assistente";
@@ -445,6 +446,8 @@ export async function GET(req: NextRequest) {
     const andares = lerAndares(pc);
     const slugDaLoja = owner?.slug || "";
 
+    /** Pedidos de mesa só de bebida com a opção ligada: nada a imprimir. */
+    const semPapel: string[] = [];
     const jobs = recentOrders.map(({ tableSession, ...pedidoDoBanco }) => {
       // O Assistente só sabe ler `comboSelections` em array, e o combo do
       // cardápio online é gravado como `{ grupoId: { nome: qtd } }`: o objeto
@@ -454,7 +457,7 @@ export async function GET(req: NextRequest) {
       // pedido inteiro e para cada destino (o roteamento parte deste mesmo
       // objeto).
       const comMesa = { ...pedidoDoBanco, tableSession };
-      const order = {
+      const orderCompleto = {
         ...pedidoDoBanco,
         // O PAGER, O "CPF NA NOTA", A MESA E O GARÇOM ENTRAM PELO NOME, igual
         // aos trilhos do navegador — a regra é uma só, em
@@ -490,6 +493,16 @@ export async function GET(req: NextRequest) {
           comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct),
         })),
       };
+      // ── A BEBIDA LANÇADA NA MESA, QUANDO A LOJA DESLIGOU (lib/bebida-da-mesa.ts) ──
+      // Sai do pedido INTEIRO, não só dos destinos: o Assistente que não
+      // conhece `destinos` imprime `order.items`. Lançamento só de bebida não
+      // tem papel nenhum — e é carimbado abaixo como resolvido, senão voltaria
+      // nesta consulta a cada 3 s pelos 30 min da janela.
+      const order = comandaDaMesaSemBebida(orderCompleto, pc);
+      if (!order) {
+        semPapel.push(pedidoDoBanco.id);
+        return null;
+      }
       const destinos = destinosDoPedido(printers, order as any, { palavrasDeBebida: pc?.customBeverageKeywords });
       // ── QR "PUXAR PEDIDO" ──────────────────────────────────────────
       //
@@ -613,7 +626,16 @@ export async function GET(req: NextRequest) {
       })),
       createdAt: order.createdAt.toISOString(),
       };
-    });
+    }).filter((job): job is NonNullable<typeof job> => job !== null);
+
+    // O lançamento de mesa só de bebida (opção da loja) não tem comanda: o
+    // carimbo diz "resolvido" — mesmo efeito do /ack, sem papel. O ouvinte do
+    // navegador (GlobalPrintListener) faz o mesmo quando é ele quem decide.
+    if (semPapel.length > 0) {
+      prisma.customerOrder
+        .updateMany({ where: { id: { in: semPapel }, franchiseeId, printedAt: null }, data: { printedAt: new Date() } })
+        .catch(() => { /* coluna ausente: o pedido só volta a ser pulado no próximo poll */ });
+    }
 
     // ── A VIA DO ENTREGADOR (lib/roteamento-de-impressao.ts) ──────────────
     //

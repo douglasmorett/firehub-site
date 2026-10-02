@@ -1033,7 +1033,9 @@ export async function GET(req: NextRequest) {
           select: {
             id: true, quantity: true, price: true, notes: true,
             productName: true, comboSelections: true,
-            menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true } },
+            // `isBeverage`: a opção "não imprimir as bebidas da mesa"
+            // (lib/bebida-da-mesa.ts) decide pelo cadastro, como a fila da nuvem.
+            menuProduct: { select: { id: true, name: true, cost: true, price: true, imageUrl: true, category: true, active: true, isBeverage: true } },
           },
         },
         motoboy: { select: { id: true, name: true, phone: true } },

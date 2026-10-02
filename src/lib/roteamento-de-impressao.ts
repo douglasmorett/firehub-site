@@ -58,7 +58,7 @@ export type ImpressoraConfigurada = {
   lojas?: string[] | null;
 };
 
-type ItemDoPedido = {
+export type ItemDoPedido = {
   name?: string | null;
   productName?: string | null;
   category?: string | null;
@@ -340,8 +340,13 @@ export function restoDoPedido(
  * Na dúvida o item NÃO é bebida — o erro manda a comanda para a cozinha, que
  * é como a loja imprimia até hoje, e nunca tira a comida da cozinha. */
 
-/** Um item do pedido é bebida por si só (não o combo que tem bebida dentro). */
-function itemEhBebida(item: ItemDoPedido | null | undefined, source: unknown, palavrasDaLoja?: string | string[] | null): boolean {
+/**
+ * Um item do pedido é bebida por si só (não o combo que tem bebida dentro).
+ * Exportada para a opção "não imprimir as bebidas da mesa"
+ * (lib/bebida-da-mesa.ts), que tem de usar ESTA definição de bebida — e não
+ * uma segunda lista que um dia discorda desta.
+ */
+export function itemEhBebida(item: ItemDoPedido | null | undefined, source: unknown, palavrasDaLoja?: string | string[] | null): boolean {
   if (!item) return false;
   if (item.isBeverage === true || item.menuProduct?.isBeverage === true) return true;
 

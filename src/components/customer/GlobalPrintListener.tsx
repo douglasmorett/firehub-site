@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
+import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { criarFeedDePedidos, type FeedDePedidos } from "@/lib/feed-de-pedidos";
 
@@ -345,9 +346,31 @@ export default function GlobalPrintListener() {
                     createdAt: order.createdAt,
                   };
 
+                  // ── BEBIDA DA MESA, QUANDO A LOJA DESLIGOU (lib/bebida-da-mesa.ts) ──
+                  // Mesma regra da fila da nuvem. O item de papel não leva o
+                  // `isBeverage` do cadastro; ele vem do pedido, pela posição.
+                  // Lançamento só de bebida: nada a imprimir — carimba como a
+                  // fila faz, para o Assistente também não imprimir.
+                  const comanda = comandaDaMesaSemBebida(
+                    formattedOrder,
+                    activePrinterConfig as any,
+                    (_item, k) => order.items?.[k]?.menuProduct?.isBeverage === true
+                  );
+                  if (!comanda) {
+                    fetch("/api/store/print-queue/ack", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        franchiseeId: order.franchiseeId || (session.user as any)?.ownerId || (session.user as any)?.id,
+                        ids: [order.id],
+                      }),
+                    }).catch(() => {});
+                    continue;
+                  }
+
                   const storeName = (printerConfig as any)?.storeName || (session.user as any)?.storeName || "FIREHUB";
                   const result = await printOrder(
-                    formattedOrder as any,
+                    comanda as any,
                     storeName,
                     activePrinterConfig,
                     {},
@@ -405,7 +428,7 @@ export default function GlobalPrintListener() {
                       body: JSON.stringify({
                         franchiseeId:
                           (session.user as any)?.ownerId || (session.user as any)?.id,
-                        order: formattedOrder,
+                        order: comanda,
                         storeName,
                         paperWidth:
                           activePrinterConfig?.printers?.[0]?.paperWidth ||

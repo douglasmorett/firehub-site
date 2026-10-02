@@ -20,6 +20,7 @@ import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { pagoPeloSite } from "@/lib/pagamento-na-entrega";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
+import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
@@ -2144,12 +2145,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       createdAt: order.createdAt,
     };
 
+    // ── BEBIDA DA MESA, QUANDO A LOJA DESLIGOU (lib/bebida-da-mesa.ts) ──
+    // SÓ o automático, igual ao KDS acima: o botão Imprimir é a pessoa pedindo
+    // o papel do pedido inteiro, e escolha explícita vence. Lançamento só de
+    // bebida não tem papel: carimba como a fila da nuvem e para aqui.
+    const comanda = isManual
+      ? formattedOrder
+      : comandaDaMesaSemBebida(formattedOrder, activeConfig as any, (_item, k) => order.items?.[k]?.menuProduct?.isBeverage === true);
+    if (!comanda) {
+      if (order?.id) {
+        fetch("/api/store/print-queue/ack", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ franchiseeId: order.franchiseeId, ids: [order.id] }),
+        }).catch(() => {});
+      }
+      if (orderKey) printingInProgressRef.current.delete(orderKey);
+      return;
+    }
+
     let printedLocally = false;
 
     // 2. Tenta enviar diretamente para o Assistente FireHub de Impressão Térmica RAW
     try {
       const { printOrder } = await import("@/lib/print");
-      const result = await printOrder(formattedOrder as any, storeName, activeConfig, {}, isManual, semValores);
+      const result = await printOrder(comanda as any, storeName, activeConfig, {}, isManual, semValores);
       if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#0F766E");
         printedLocally = true;
@@ -2189,7 +2209,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           franchiseeId: user.ownerId || user.id,
           // O "Cupom da cozinha" pela nuvem também sai sem valores: o
           // Assistente lê `order.semValores` em todos os destinos.
-          order: semValores ? { ...formattedOrder, semValores: true } : formattedOrder,
+          order: semValores ? { ...comanda, semValores: true } : comanda,
           storeName,
           paperWidth: receiptPaperSize || "80mm",
         }),

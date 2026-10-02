@@ -29,6 +29,7 @@ import {
   StickyNote, Trash2, User, LogOut, Monitor, X, Users, ArrowLeftRight,
 } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
+import SelecionarItensParaImpressao from "@/components/mesas/SelecionarItensParaImpressao";
 import { montarCardapioDaMesa, gruposDoProduto, type ItemDaMesa } from "@/lib/cardapio-da-mesa";
 import { numerosDaFaixa, type AndarDaMesa, lerAndares } from "@/lib/andares-da-mesa";
 import { caminhoParaAbrirOCaixa } from "@/lib/caixa-aberto";
@@ -357,6 +358,8 @@ export default function MesasCelular({
   } | null>(null);
   const [mexendo, setMexendo] = useState(false);
   const [imprimindo, setImprimindo] = useState(false);
+  /** "Selecionar itens para impressão" aberto (components/mesas/SelecionarItensParaImpressao). */
+  const [selecionandoImpressao, setSelecionandoImpressao] = useState(false);
 
   // ── Mudar de mesa ────────────────────────────────────────────────────────
   const [mudandoMesa, setMudandoMesa] = useState(false);
@@ -867,6 +870,17 @@ export default function MesasCelular({
     <div className="mc">
       <style>{CSS}</style>
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
+      {/* Só na tela da mesa: o voltar do Android troca a tela e a seleção some junto. */}
+      {selecionandoImpressao && tela === "mesa" && sessionId && detalhe && (
+        <SelecionarItensParaImpressao
+          sessionId={sessionId}
+          pedidos={detalhe.orders}
+          chamar={chamar}
+          nomeDaPessoa={(id) => nomeDaPessoa(id)}
+          onFechar={() => setSelecionandoImpressao(false)}
+          onAviso={setAviso}
+        />
+      )}
 
       {/* ═══ MESAS ═══ */}
       {tela === "mesas" && (
@@ -984,6 +998,10 @@ export default function MesasCelular({
               <p className="mc-vazio">Nada lançado nesta mesa ainda.</p>
             ) : (
               <>
+              {/* Imprimir (ou reimprimir) só os itens marcados: a mesma tela do tablet. */}
+              <button className="mc-btn secundario" style={{ width: "100%", marginBottom: 8 }} onClick={() => setSelecionandoImpressao(true)}>
+                <Printer size={18} /> Selecionar itens para impressão
+              </button>
               <p style={{ margin: "4px 2px 8px", fontSize: 12, color: "#64748B" }}>Toque num item para mudar a quantidade ou remover.</p>
               {itensLancados.map((o) => (
                 <div key={o.id} className="mc-cartao" style={{ padding: 0, overflow: "hidden" }}>
