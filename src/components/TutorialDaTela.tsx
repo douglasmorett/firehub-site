@@ -74,8 +74,12 @@ export function useNaAreaVisivel(ativo: boolean) {
 /** Evento que abre a central com todos os vídeos (quem escuta: CentralDeTutoriais). */
 export const ABRIR_CENTRAL = "firehub:abrir-central-de-tutoriais";
 
-/** "Não mostrar mais tutoriais" da faixa no alto das telas (por aparelho). */
-const CHAVE_FAIXA_OCULTA = "firehub_faixa_tutorial_oculta";
+/**
+ * "Não mostrar mais nesta tela" da faixa no alto das telas: vale só para a tela
+ * em que foi clicado (pedido do Douglas em 02/10/2026), por aparelho. A chave
+ * leva o primeiro vídeo da tela, que é o que identifica a tela em lib/tutoriais.ts.
+ */
+const CHAVE_FAIXA_OCULTA = "firehub_faixa_tutorial_oculta:";
 
 export const ESTILO = `
 .fh-tutorial-faixa{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #F1E4DA;border-radius:14px;padding:10px 14px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
@@ -160,7 +164,7 @@ export default function TutorialDaTela({
   variante?: "botao" | "faixa";
   /** Primeira linha da faixa. */
   chamada?: string;
-  /** Faixa com "Não mostrar mais tutoriais" (a das telas). A do App Motoboys não some. */
+  /** Faixa com "Não mostrar mais nesta tela" (a das telas). A do App Motoboys não some. */
   ocultavel?: boolean;
   /** Margem da faixa onde ela é montada. */
   estilo?: React.CSSProperties;
@@ -179,15 +183,18 @@ export default function TutorialDaTela({
   const fundoRef = useNaAreaVisivel(aberto);
   const [comNome, setComNome] = useState(true);
   // Começa escondida: quem já pediu "não mostrar mais" não vê a faixa piscar antes de ler o navegador.
-  const [faixaOculta, setFaixaOculta] = useState(true);
+  // A resposta guarda de qual tela ela é: ao trocar para uma tela escondida, a faixa não pisca.
+  const [faixaLiberada, setFaixaLiberada] = useState<string | null>(null);
+  const telaDaFaixa = tutoriais[0]?.id;
+  // A faixa mora no layout e não remonta ao trocar de tela: relê a escolha a cada tela.
   useEffect(() => {
-    if (variante !== "faixa") return;
+    if (variante !== "faixa" || !telaDaFaixa) return;
     let oculta = false;
     try {
-      oculta = ocultavel && localStorage.getItem(CHAVE_FAIXA_OCULTA) === "1";
+      oculta = ocultavel && localStorage.getItem(CHAVE_FAIXA_OCULTA + telaDaFaixa) === "1";
     } catch {}
-    setFaixaOculta(oculta);
-  }, [variante, ocultavel]);
+    setFaixaLiberada(oculta ? null : telaDaFaixa);
+  }, [variante, ocultavel, telaDaFaixa]);
   const larguraDoNome = useRef(0);
 
   // O nome no botão só fica se a barra do topo continua numa linha só.
@@ -272,11 +279,11 @@ export default function TutorialDaTela({
 
   const ocultarFaixa = () => {
     try {
-      localStorage.setItem(CHAVE_FAIXA_OCULTA, "1");
+      if (telaDaFaixa) localStorage.setItem(CHAVE_FAIXA_OCULTA + telaDaFaixa, "1");
     } catch {}
-    setFaixaOculta(true);
+    setFaixaLiberada(null);
   };
-  if (variante === "faixa" && faixaOculta) return null;
+  if (variante === "faixa" && faixaLiberada !== telaDaFaixa) return null;
 
   return (
     <>
@@ -300,7 +307,7 @@ export default function TutorialDaTela({
               <Play size={13} fill="currentColor" /> Assistir
             </button>
             {ocultavel && (
-              <button type="button" className="fh-tutorial-ocultar" onClick={ocultarFaixa}>Não mostrar mais tutoriais</button>
+              <button type="button" className="fh-tutorial-ocultar" onClick={ocultarFaixa}>Não mostrar mais nesta tela</button>
             )}
           </div>
         </div>
