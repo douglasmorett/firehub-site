@@ -104,7 +104,7 @@
  * Puro: recebe pedidos e contas de mesa já buscados (a rota busca).
  */
 import { lerPagamentos, emCentavos } from "@/lib/pagamentos-da-mesa";
-import { formaCanonica } from "@/lib/pagamento-na-entrega";
+import { formaCanonica, ehFormaInformadaPelaLoja } from "@/lib/pagamento-na-entrega";
 import { cupomBancadoPelo99, ehDo99Food } from "@/lib/cupom-do-parceiro";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
 import { STATUS_FORA_DA_VENDA, canalDoRelatorio, diasNoPeriodo, naLoja, somarDias } from "@/lib/relatorios/base";
@@ -222,7 +222,7 @@ export function foiPagoOnline(p: PedidoParaForma): boolean {
     pm.includes("ifood") ||
     pm.includes("pago_online") ||
     (!ehVendaDeSalao && Boolean(p.paymentPaidAt || p.gatewayProvider)) ||
-    (src === "IFOOD" && !pm.includes("dinheiro") && !pm.includes("cash") && !pm.includes("debito") && !pm.includes("débito") &&
+    (src === "IFOOD" && !ehFormaInformadaPelaLoja(p.paymentMethod) && !pm.includes("dinheiro") && !pm.includes("cash") && !pm.includes("debito") && !pm.includes("débito") &&
       !pm.includes("credito") && !pm.includes("crédito") && !pm.includes("maquininha") && !pm.includes("cobrar"));
   if (!online) return false;
   // Os três ramos do caixa (99Food online, iFood online, online fora do salão)

@@ -37,6 +37,13 @@ const casos: [string, Parameters<typeof formaDoPedido>[0], string][] = [
   // de produção). O caixa o leva para "pago online" e ele some da gaveta.
   ["iFood 'CASH' é dinheiro na porta, não pago online", { source: "IFOOD", paymentMethod: "CASH" }, "DINHEIRO"],
   ["iFood 'Dinheiro' continua dinheiro", { source: "IFOOD", paymentMethod: "Dinheiro" }, "DINHEIRO"],
+  // Frangoso #27 (29/09/2026): "Dinheiro (Cobrar na Entrega)" trocado para
+  // "Pix" na entrega. Ia para pago online e sumia do Pix do fechamento.
+  ["iFood trocado para 'Pix' na entrega é Pix", { source: "IFOOD", paymentMethod: "Pix" }, "PIX"],
+  ["iFood trocado para 'Vale-refeição' na entrega é vale", { source: "IFOOD", paymentMethod: "Vale-refeição" }, "VALE"],
+  // O código cru do iFood para Pix pago no app continua online (118 pedidos em 90 dias).
+  ["iFood 'PIX' cru continua pago online", { source: "IFOOD", paymentMethod: "PIX" }, "ONLINE"],
+  ["iFood 'DIGITAL_WALLET' continua pago online", { source: "IFOOD", paymentMethod: "DIGITAL_WALLET" }, "ONLINE"],
   ["Wabiz pago online", { source: "WABIZ", paymentMethod: "Pagamento Online (Wabiz) (Pago Online)" }, "ONLINE"],
   ["Wabiz 'Cartão Deb Master' é DÉBITO (o caixa diria crédito)", { source: "WABIZ", paymentMethod: "Cartão Deb Master (Cobrar na Entrega)" }, "DEBITO"],
   ["Wabiz 'Cartão Elo Credito'", { source: "WABIZ", paymentMethod: "Cartão Elo Credito (Cobrar na Entrega)" }, "CREDITO"],

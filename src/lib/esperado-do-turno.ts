@@ -28,6 +28,7 @@ import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { ehMesa, ehRetirada } from "@/lib/status-para-o-cliente";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido, lerAcerto } from "@/lib/ganho-do-entregador";
+import { ehFormaInformadaPelaLoja } from "@/lib/pagamento-na-entrega";
 import type { DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
 
 type Soma = { qtd: number; valor: number };
@@ -429,7 +430,9 @@ export async function calcularEsperadoDoTurno(
         pm.includes("ifood") ||
         pm.includes("pago_online") ||
         (!ehVendaDeSalao && !!(o.paymentPaidAt || o.gatewayProvider)) ||
-        (src === "IFOOD" && !pm.includes("dinheiro") && !pm.includes("debito") && !pm.includes("débito") && !pm.includes("credito") && !pm.includes("crédito") && !pm.includes("maquininha") && !pm.includes("cobrar"));
+        // Forma trocada na entrega ("Pix", "Vale-refeição") é pagamento na
+        // porta, mesmo sem "cobrar" no texto (ver ehFormaInformadaPelaLoja).
+        (src === "IFOOD" && !ehFormaInformadaPelaLoja(o.paymentMethod) && !pm.includes("dinheiro") && !pm.includes("debito") && !pm.includes("débito") && !pm.includes("credito") && !pm.includes("crédito") && !pm.includes("maquininha") && !pm.includes("cobrar"));
 
       // Fiado: consumo da equipe e venda anotada. Tem ficha propria e e
       // acertado depois -- nunca passa pela gaveta no fechamento do dia.

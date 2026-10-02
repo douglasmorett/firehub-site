@@ -118,6 +118,25 @@ export const FORMAS_DE_PAGAMENTO_NA_ENTREGA = ["Dinheiro", "Cartão Débito", "C
 export type FormaNaEntrega = (typeof FORMAS_DE_PAGAMENTO_NA_ENTREGA)[number];
 
 /**
+ * O texto é uma forma que a LOJA informou (troca na entrega, pelo motoboy ou
+ * pelo painel)? A troca grava exatamente um dos rótulos acima, sem o
+ * "(Cobrar na Entrega)" que o pedido trazia.
+ *
+ * Existe por causa do ramo do iFood nas réguas de "pago online" (caixa e
+ * relatórios): pedido do iFood sem dinheiro/débito/crédito/cobrar no texto é
+ * tido como pago no app. O iFood da Frangoso #27 (29/09/2026) chegou
+ * "Dinheiro (Cobrar na Entrega)", o cliente pagou R$ 91,76 no Pix, a loja
+ * trocou para "Pix" — e o fechamento mandou o valor para "iFood Pago Online":
+ * esperado R$ 46,98 no Pix com R$ 118,75 na conta. A troca só é permitida em
+ * pedido que NÃO é online (`podeTrocarPagamento`), então rótulo de troca é
+ * prova de pagamento na porta. A comparação é exata de propósito: o código cru
+ * do iFood para Pix pago no app é "PIX", em maiúsculas.
+ */
+export function ehFormaInformadaPelaLoja(texto: string | null | undefined): boolean {
+  return (FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(String(texto ?? "").trim());
+}
+
+/**
  * "Crédito (Cobrar na Entrega)" → "Cartão Crédito". Serve para pré-selecionar
  * a forma atual na tela e para não registrar troca quando o entregador só
  * confirmou o que já estava. Texto sem forma conhecida → null.
