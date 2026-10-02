@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { funcionarioAbre } from "@/lib/permissao-da-tela";
 import { MAIOR_PERIODO_EM_DIAS, pedidosDoInicio } from "@/lib/pedidos-do-inicio";
+import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 
 export const dynamic = "force-dynamic";
 
@@ -42,12 +43,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `Período maior que ${MAIOR_PERIODO_EM_DIAS} dias` }, { status: 400 });
   }
 
-  let franchiseeId: string | null;
+  let franchiseeId: string | string[] | null;
   if (usuario.role === "ADMIN") {
     const loja = p.get("loja");
     franchiseeId = loja && loja !== "todas" ? loja : null;
   } else {
-    franchiseeId = usuario.ownerId || usuario.id;
+    // A mesma visão da tela: a loja da sessão ou o grupo em "Todas as Lojas".
+    franchiseeId = (await lojasDaVisao(usuario, req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value)).lojaIds;
   }
 
   const pedidos = await pedidosDoInicio({ franchiseeId, desde: de, ate });

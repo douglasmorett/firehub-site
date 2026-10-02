@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import StoreDashboard from "@/components/customer/StoreDashboard";
 import { lojaNoMapaPorId } from "@/lib/ponto-da-loja-servidor";
 import { inicioDaJanela, pedidosDoInicio } from "@/lib/pedidos-do-inicio";
+import { cookies } from "next/headers";
+import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 
 export const dynamic = "force-dynamic";
 
@@ -85,13 +87,19 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   if (!user) redirect("/login");
 
   const targetFranchiseeId = (user as any).ownerId || user.id;
+  // "Todas as Lojas" soma o grupo no Início; senão é a loja da sessão
+  // (lib/loja-ativa.ts).
+  const { lojaIds } = await lojasDaVisao(
+    { id: user.id, ownerId: (user as any).ownerId, role: (session.user as any)?.role },
+    (await cookies()).get(COOKIE_DA_LOJA_ATIVA)?.value,
+  );
 
   try {
     // Independentes entre si: em paralelo, cada ida ao banco a menos é
     // tempo a menos com o clique esperando.
     const [menuCount, serialized, noMapa] = await Promise.all([
       prisma.menuProduct.count({ where: { franchiseeId: targetFranchiseeId } }),
-      pedidosDoInicio({ franchiseeId: targetFranchiseeId, desde }),
+      pedidosDoInicio({ franchiseeId: lojaIds, desde }),
       // Onde fica a loja: pino salvo ou, quando ele nunca foi salvo, o endereço
       // do cadastro. É daqui que o mapa de calor parte e é esta a âncora que
       // permite localizar os endereços das entregas.

@@ -27,6 +27,10 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showNewStoreModal, setShowNewStoreModal] = useState(false);
+  /** A loja que a SESSÃO representa (a "Todas" fica na principal). */
+  const [sessaoLojaId, setSessaoLojaId] = useState<string>("");
+  const [trocando, setTrocando] = useState(false);
+  const [erroDaTroca, setErroDaTroca] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   // Carregar lojas do grupo
@@ -37,6 +41,7 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
         if (data.stores && data.stores.length > 0) {
           setStores(data.stores);
           setActiveStoreId(data.activeStoreId || data.stores[0]?.id);
+          setSessaoLojaId(data.sessaoLojaId || data.activeStoreId || "");
         }
         setLoading(false);
       })
@@ -52,16 +57,45 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  /**
+   * Trocar de loja troca a CONTA da sessão (lib/auth.ts, `trocarLoja`): é o
+   * que faz o Início, os pedidos, o cardápio e o "Ver cardápio" virarem os da
+   * loja escolhida — só o cookie, que era o que isto fazia, quase nenhuma
+   * tela lia (China Pow → Yakisoba do San, 02/10/2026). "Todas as Lojas" põe
+   * a sessão na PRINCIPAL e marca a visão do grupo (lib/loja-ativa.ts).
+   */
   const handleSwitch = async (storeId: string) => {
-    setActiveStoreId(storeId);
-    setOpen(false);
-    await fetch("/api/store/switch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeId }),
-    });
-    // Recarregar a página para atualizar os dados
-    window.location.reload();
+    if (trocando) return;
+    setErroDaTroca("");
+    const alvo = storeId === "all"
+      ? (stores.find(s => s.isPrimaryStore)?.id || stores[0]?.id)
+      : storeId;
+    if (!alvo) return;
+    setTrocando(true);
+    try {
+      if (alvo !== sessaoLojaId) {
+        const { signIn } = await import("next-auth/react");
+        const r = await signIn("credentials", { trocarLoja: alvo, redirect: false });
+        if (!r || r.error || !r.ok) {
+          setErroDaTroca("Não consegui trocar de loja. Entre de novo e tente outra vez.");
+          setTrocando(false);
+          return;
+        }
+      }
+      await fetch("/api/store/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId }),
+      });
+      setActiveStoreId(storeId);
+      setOpen(false);
+      // Recarrega inteira: o que está na tela (pedidos, cardápio, config) é da
+      // loja anterior até o servidor montar de novo.
+      window.location.reload();
+    } catch {
+      setErroDaTroca("Sem conexão — a loja não foi trocada.");
+      setTrocando(false);
+    }
   };
 
   // Se só tem 1 loja, não mostra seletor (mostra só o nome)
@@ -114,8 +148,13 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
             fontSize: "0.7rem", fontWeight: 700, color: "#94A3B8",
             textTransform: "uppercase", letterSpacing: "0.5px",
           }}>
-            Suas Lojas
+            {trocando ? "Trocando de loja…" : "Suas Lojas"}
           </div>
+          {erroDaTroca && (
+            <div style={{ padding: "0.5rem 1rem", background: "#FEF2F2", color: "#B91C1C", fontSize: "0.75rem", fontWeight: 700 }}>
+              {erroDaTroca}
+            </div>
+          )}
 
           {/* Lista de lojas */}
           {stores.map(store => (

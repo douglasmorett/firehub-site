@@ -7,6 +7,7 @@ import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
+import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
 
 export const dynamic = "force-dynamic";
@@ -870,7 +871,7 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     let user = email
-      ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, storeTimezone: true } })
+      ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, storeTimezone: true, role: true } })
       : null;
 
     if (!user) {
@@ -889,10 +890,18 @@ export async function GET(req: NextRequest) {
       console.error("[Poll] Erro no polling:", err);
     }
 
+    // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts) soma o grupo. Sem
+    // isto a tela de Pedidos abria com as lojas todas e, na primeira rodada
+    // deste feed, voltava a mostrar só a loja da sessão.
+    const visao = await lojasDaVisao(
+      { id: user.id, ownerId: user.ownerId, role: (user as any).role },
+      req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value,
+    );
     const validFranchiseeIds = Array.from(new Set([
       targetFranchiseeId,
       user.id,
-      user.ownerId
+      user.ownerId,
+      ...(visao.todas ? visao.lojaIds : []),
     ].filter(Boolean))) as string[];
 
     // ── O FEED SÓ DEVOLVE O QUE A TELA DESENHA ───────────────────────────────

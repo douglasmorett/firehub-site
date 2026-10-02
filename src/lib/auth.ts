@@ -17,6 +17,7 @@ import {
   tokenDaSessaoAtual,
   trocarDePainel,
 } from "./paineis-do-dono";
+import { podeTrocarParaLoja } from "./loja-ativa";
 
 if (!process.env.NEXTAUTH_SECRET) {
   throw new Error('NEXTAUTH_SECRET environment variable is not defined. Please set it in your .env file.');
@@ -33,7 +34,8 @@ export const authOptions: NextAuthOptions = {
         returnToAdmin: { label: "ReturnToAdmin", type: "text" },
         isAmbassador: { label: "IsAmbassador", type: "text" },
         loginType: { label: "LoginType", type: "text" },
-        trocarPara: { label: "TrocarPara", type: "text" }
+        trocarPara: { label: "TrocarPara", type: "text" },
+        trocarLoja: { label: "TrocarLoja", type: "text" }
       },
       async authorize(credentials, req) {
         if (credentials?.impersonateId) {
@@ -117,6 +119,32 @@ export const authOptions: NextAuthOptions = {
         // a outra pede a senha dela.
         if (credentials?.trocarPara === "loja" || credentials?.trocarPara === "parceiro") {
           return (await trocarDePainel(credentials.trocarPara, credentials.password, req)) as any;
+        }
+
+        // ── Multiloja: trocar para outra loja DO MESMO GRUPO, sem senha ─────
+        //
+        // O seletor "Suas Lojas" só gravava um cookie que quase nenhuma tela
+        // lia; a sessão continuava na loja do login (China Pow → Yakisoba do
+        // San, 02/10/2026). Agora a sessão vira a da loja escolhida, como no
+        // modo suporte (lib/loja-ativa.ts).
+        //
+        // Quem decide é o token ATUAL, nunca o corpo da requisição: a conta da
+        // sessão tem que ser loja (não funcionário — viraria dono da outra) e o
+        // destino tem que ser do grupo dela (a principal ou uma filial que
+        // aponta para a principal). Quem entrou pelo modo suporte continua
+        // marcado (`impersonatedBy`), para o "Voltar ao admin" seguir valendo.
+        if (credentials?.trocarLoja) {
+          const atual = await tokenDaSessaoAtual(req);
+          const atualId = (atual as any)?.id || (atual as any)?.sub;
+          if (!atualId) return null;
+          const conta = await prisma.user.findUnique({ where: { id: String(atualId) } });
+          const destino = await prisma.user.findUnique({ where: { id: String(credentials.trocarLoja) } });
+          if (!destino || !podeTrocarParaLoja(conta as any, destino as any)) return null;
+          const papeisAtuais = ((atual as any)?.papeis || {}) as Record<string, string>;
+          return {
+            ...identidadeDaLoja(destino as any, { ...papeisAtuais, loja: destino.id } as any),
+            impersonatedBy: (atual as any)?.impersonatedBy ?? null,
+          } as any;
         }
 
         if (!credentials?.email || !credentials?.password) return null;

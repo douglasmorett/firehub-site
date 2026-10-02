@@ -71,14 +71,18 @@ export async function pedidosDoInicio({
   desde,
   ate,
 }: {
-  franchiseeId: string | null;
+  /** Uma loja; várias (o grupo, em "Todas as Lojas" — lib/loja-ativa.ts); ou null = todas da plataforma (ADMIN). */
+  franchiseeId: string | string[] | null;
   desde: Date;
   ate?: Date;
 }): Promise<PedidoDoInicio[]> {
-  const comLoja = franchiseeId === null;
+  const varias = Array.isArray(franchiseeId) && franchiseeId.length > 1;
+  const comLoja = franchiseeId === null || varias;
   const pedidos = await prisma.customerOrder.findMany({
     where: {
-      ...(franchiseeId ? { franchiseeId } : {}),
+      ...(Array.isArray(franchiseeId)
+        ? { franchiseeId: { in: franchiseeId } }
+        : franchiseeId ? { franchiseeId } : {}),
       createdAt: ate ? { gte: desde, lte: ate } : { gte: desde },
     },
     orderBy: { createdAt: "desc" },

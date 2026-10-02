@@ -124,9 +124,7 @@ export default function StoreTopNav({
   const [menuCardapio, setMenuCardapio] = useState(false);
   const [linkCopiado, setLinkCopiado] = useState(false);
   const cardapioRef = useRef<HTMLDivElement>(null);
-  const copiarLinkDoCardapio = async () => {
-    if (!storeUrl) return;
-    const link = `${window.location.origin}${storeUrl}`;
+  const copiarTexto = async (link: string) => {
     try {
       await navigator.clipboard.writeText(link);
     } catch {
@@ -138,9 +136,31 @@ export default function StoreTopNav({
       try { document.execCommand("copy"); } catch { /* sem cópia: o link fica visível no menu */ }
       campo.remove();
     }
+  };
+  const copiarLinkDoCardapio = async () => {
+    if (!storeUrl) return;
+    await copiarTexto(`${window.location.origin}${storeUrl}`);
     setLinkCopiado(true);
     setTimeout(() => { setLinkCopiado(false); setMenuCardapio(false); }, 1400);
   };
+
+  // ── OS LINKS DE TODAS AS LOJAS DO GRUPO ─────────────────────────────────
+  // Quem tem mais de uma loja divulga mais de um cardápio: o menu mostra o
+  // link de cada uma, para copiar sem precisar trocar de loja antes (China
+  // Pow + Yakisoba do San, 02/10/2026). Só busca quando o menu abre.
+  const [linksDasLojas, setLinksDasLojas] = useState<{ id: string; nome: string; slug: string }[] | null>(null);
+  const [linkDaLojaCopiado, setLinkDaLojaCopiado] = useState<string | null>(null);
+  useEffect(() => {
+    if (!menuCardapio || linksDasLojas !== null) return;
+    fetch("/api/store/list")
+      .then((r) => r.json())
+      .then((d) => setLinksDasLojas(
+        (d?.stores || [])
+          .filter((s: any) => s.slug)
+          .map((s: any) => ({ id: s.id, nome: String(s.storeName || "Loja").trim(), slug: s.slug })),
+      ))
+      .catch(() => setLinksDasLojas([]));
+  }, [menuCardapio, linksDasLojas]);
 
   // QR do cardápio para panfleto, cardápio de balcão, adesivo. É o link
   // gravado no próprio desenho (QR estático): não passa por serviço nenhum e
@@ -1552,6 +1572,48 @@ export default function StoreTopNav({
                   >
                     <ExternalLink size={15} /> Abrir o cardápio
                   </a>
+                  {linksDasLojas && linksDasLojas.length > 1 && (
+                    <div style={{ borderTop:"1.5px solid #E2E8F0", background:"#F8FAFC" }}>
+                      <div style={{ padding:"0.55rem 1rem 0.3rem", fontSize:"0.68rem", fontWeight:800, color:"#64748B", textTransform:"uppercase", letterSpacing:"0.04em" }}>
+                        Links das suas lojas
+                      </div>
+                      {linksDasLojas.map((l) => {
+                        const caminho = `/loja/${l.slug}`;
+                        const copiado = linkDaLojaCopiado === l.id;
+                        return (
+                          <div key={l.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"0.45rem 1rem" }}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontWeight:800, fontSize:"0.8rem", color:"#0F172A", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l.nome}</div>
+                              <div style={{ fontSize:"0.68rem", color:"#64748B", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                                {typeof window !== "undefined" ? `${window.location.host}${caminho}` : caminho}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await copiarTexto(`${window.location.origin}${caminho}`);
+                                setLinkDaLojaCopiado(l.id);
+                                setTimeout(() => setLinkDaLojaCopiado((v) => (v === l.id ? null : v)), 1400);
+                              }}
+                              title={`Copiar o link do cardápio de ${l.nome}`}
+                              style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"5px 9px", borderRadius:8, border:"1px solid #CBD5E1", background: copiado ? "#F0FDFA" : "#fff", color: copiado ? "#0F766E" : "#1E293B", fontWeight:700, fontSize:"0.72rem", cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}
+                            >
+                              {copiado ? <Check size={13} /> : <Copy size={13} />} {copiado ? "Copiado" : "Copiar"}
+                            </button>
+                            <a
+                              href={caminho}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Abrir o cardápio de ${l.nome}`}
+                              style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:28, height:28, borderRadius:8, border:"1px solid #CBD5E1", background:"#fff", color:"#1E293B", flexShrink:0 }}
+                            >
+                              <ExternalLink size={13} />
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

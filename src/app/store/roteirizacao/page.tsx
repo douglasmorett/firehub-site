@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import RoteirizacaoIndependente from "@/components/customer/RoteirizacaoIndependente";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
+import { lojasDaVisao } from "@/lib/loja-ativa";
 
 export const dynamic = "force-dynamic";
 
@@ -55,19 +56,11 @@ export default async function RoteirizacaoPage() {
   const cookieStore = await cookies();
   const activeStore = cookieStore.get("firehub_active_store")?.value;
 
-  let franchiseeIds: string[] = [targetFranchiseeId];
-  if (activeStore === "all") {
-    const groupStores = await prisma.user.findMany({
-      where: { OR: [{ id: targetFranchiseeId }, { accountGroupId: targetFranchiseeId }] },
-      select: { id: true },
-    });
-    if (groupStores.length > 0) franchiseeIds = groupStores.map((s) => s.id);
-  } else if (activeStore && activeStore !== targetFranchiseeId) {
-    const targetStore = await prisma.user.findUnique({ where: { id: activeStore }, select: { id: true, accountGroupId: true } });
-    if (targetStore && (targetStore.id === targetFranchiseeId || targetStore.accountGroupId === targetFranchiseeId)) {
-      franchiseeIds = [activeStore];
-    }
-  }
+  // A loja da SESSÃO, ou o grupo em "Todas as Lojas" (lib/loja-ativa.ts).
+  const { lojaIds: franchiseeIds } = await lojasDaVisao(
+    { id: user.id, ownerId: (user as any).ownerId, role: (user as any).role },
+    activeStore,
+  );
 
   // ── O MAPA ABRE ONDE A LOJA ESTÁ ──────────────────────────────────────────
   //

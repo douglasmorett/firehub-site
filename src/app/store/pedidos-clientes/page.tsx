@@ -10,6 +10,7 @@ import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed } from "@/lib/filtro-do-feed";
+import { lojasDaVisao } from "@/lib/loja-ativa";
 
 export const dynamic = "force-dynamic";
 
@@ -81,20 +82,13 @@ export default async function FranchiseeCustomerOrdersPage() {
   const cookieStore = await cookies();
   const activeStore = cookieStore.get('firehub_active_store')?.value;
 
-  let franchiseeIds: string[] = [targetFranchiseeId];
-
-  if (activeStore === 'all') {
-    const groupStores = await prisma.user.findMany({
-      where: { OR: [{ id: targetFranchiseeId }, { accountGroupId: targetFranchiseeId }] },
-      select: { id: true }
-    });
-    if (groupStores.length > 0) franchiseeIds = groupStores.map(s => s.id);
-  } else if (activeStore && activeStore !== targetFranchiseeId) {
-    const targetStore = await prisma.user.findUnique({ where: { id: activeStore }, select: { id: true, accountGroupId: true } });
-    if (targetStore && (targetStore.id === targetFranchiseeId || targetStore.accountGroupId === targetFranchiseeId)) {
-      franchiseeIds = [activeStore];
-    }
-  }
+  // A loja é a da SESSÃO (a troca de loja troca a conta); o cookie só liga o
+  // "Todas as Lojas" (lib/loja-ativa.ts). A mesma regra do feed
+  // (/api/customer-order/poll), senão a lista inicial e a do feed divergem.
+  const { lojaIds: franchiseeIds } = await lojasDaVisao(
+    { id: user.id, ownerId: (user as any).ownerId, role },
+    activeStore,
+  );
 
   // O ponto da loja no mapa só depende de QUAL loja: corre em paralelo com
   // os pedidos em vez de esperar por eles.
