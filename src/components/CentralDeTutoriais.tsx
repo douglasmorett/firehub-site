@@ -292,7 +292,7 @@ export default function CentralDeTutoriais({
                 <video
                   key={tutorial.id}
                   ref={video}
-                  className="fh-tutorial-video"
+                  className={tutorial.emPe ? "fh-tutorial-video em-pe" : "fh-tutorial-video"}
                   src={arquivos.video}
                   poster={arquivos.capa}
                   controls

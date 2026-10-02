@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { abrirNavegador, entrar, Palco, BASE, dormir } from "./motor/palco.mjs";
+import { abrirNavegador, entrar, Palco, BASE, dormir, definirTela, TELA } from "./motor/palco.mjs";
 import { narrar } from "./motor/narrar.mjs";
 import { montar } from "./motor/montar.mjs";
 import { banco, semear, LOJA } from "./ambiente/semente.mjs";
@@ -23,6 +23,7 @@ if (!id) {
   process.exit(2);
 }
 const roteiro = (await import(pathToFileURL(path.join(process.cwd(), "tutoriais", "roteiros", `${id}.mjs`)).href)).default;
+definirTela(roteiro.tela);
 const pasta = path.join(process.cwd(), "tutoriais", "saida", id);
 fs.mkdirSync(pasta, { recursive: true });
 
@@ -108,7 +109,7 @@ if (!soMontar) {
     }
     const fita = await palco.pararDeGravar();
     fs.writeFileSync(path.join(pasta, "gravacao.json"), JSON.stringify({
-      ...fita, cenas,
+      ...fita, cenas, tela: TELA,
       camera: palco.pedidosDeCamera || [],
       sons: palco.sons || [],
       letreiros: letreiros.map((l) => ({ arquivo: l.arquivo, t: cenas[roteiro.cenas.indexOf(l.cena)].inicio + 350 })),

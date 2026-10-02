@@ -83,7 +83,8 @@ export const ESTILO = `
 .fh-tutorial-botao.claro:hover{background:#F3ECE4}
 .fh-tutorial-botao.claro .fh-tutorial-novo{border-color:#fff;background:#E8360C}
 .fh-tutorial-novo{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#FDE047;border:2px solid #C92E09}
-@media (max-width:1180px){.fh-tutorial-botao span{display:none}.fh-tutorial-botao{padding:0;width:32px;justify-content:center}}
+@media (max-width:1180px){.fh-tutorial-botao:not(.fixo) span{display:none}.fh-tutorial-botao:not(.fixo){padding:0;width:32px;justify-content:center}}
+.fh-tutorial-video.em-pe{aspect-ratio:auto;height:min(70vh,660px);width:auto;max-width:100%;margin:0 auto;background:#0F172A}
 .fh-tutorial-fundo{position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;padding:16px}
 .fh-tutorial-janela{background:#fff;border-radius:16px;width:min(1080px,100%);max-height:100%;overflow:auto;
   box-shadow:0 24px 60px rgba(0,0,0,.35);color:#0F172A}
@@ -113,6 +114,8 @@ export const ESTILO = `
 export default function TutorialDaTela({
   rota,
   tom = "escuro",
+  rotulo,
+  foraDoPainel = false,
 }: {
   /**
    * De qual tela é o vídeo, quando não é a da URL: a Roteirização também abre
@@ -121,6 +124,10 @@ export default function TutorialDaTela({
   rota?: string;
   /** "claro" para cabeçalho de fundo claro (Roteirização); o padrão é a barra vermelha do topo. */
   tom?: "escuro" | "claro";
+  /** Texto fixo do botão, que não some no celular (o app do motoboy: "Tutorial", "Como usar o aplicativo"). */
+  rotulo?: string;
+  /** Fora do painel (app do motoboy) não há a central: some o "Todos os tutoriais". */
+  foraDoPainel?: boolean;
 } = {}) {
   const pathname = usePathname();
   const tutoriais = tutoriaisDaTela(rota || pathname, useTutoriaisEnviados());
@@ -223,13 +230,13 @@ export default function TutorialDaTela({
       <button
         type="button"
         ref={botaoRef}
-        className={tom === "claro" ? "fh-tutorial-botao claro" : "fh-tutorial-botao"}
+        className={`fh-tutorial-botao${tom === "claro" ? " claro" : ""}${rotulo ? " fixo" : ""}`}
         onClick={abrir}
         title={`Vídeo de ${duracaoEmMinutos(tutorial.duracao)}: ${tutorial.titulo}`}
         aria-label={nome ? `Tutorial da tela ${nome}` : "Tutorial: como usar esta tela"}
       >
         <PlayCircle size={15} />
-        <span>Tutorial{nome && comNome && <b className="fh-tutorial-nome"> {nome}</b>}</span>
+        <span>{rotulo || <>Tutorial{nome && comNome && <b className="fh-tutorial-nome"> {nome}</b>}</>}</span>
         {!jaViu && <i className="fh-tutorial-novo" aria-hidden="true" />}
       </button>
 
@@ -238,9 +245,9 @@ export default function TutorialDaTela({
           <div className="fh-tutorial-janela" role="dialog" aria-modal="true" aria-label={tutorial.titulo}>
             <div className="fh-tutorial-topo">
               <h2>{tutorial.titulo}</h2>
-              <button type="button" className="fh-tutorial-todos" onClick={() => { fechar(); window.dispatchEvent(new Event(ABRIR_CENTRAL)); }}>
+              {!foraDoPainel && <button type="button" className="fh-tutorial-todos" onClick={() => { fechar(); window.dispatchEvent(new Event(ABRIR_CENTRAL)); }}>
                 Todos os tutoriais
-              </button>
+              </button>}
               <button ref={fecharRef} type="button" className="fh-tutorial-fechar" onClick={fechar} aria-label="Fechar o vídeo">
                 <X size={17} />
               </button>
@@ -261,7 +268,7 @@ export default function TutorialDaTela({
                 <video
                   key={tutorial.id}
                   ref={video}
-                  className="fh-tutorial-video"
+                  className={tutorial.emPe ? "fh-tutorial-video em-pe" : "fh-tutorial-video"}
                   src={arquivos.video}
                   poster={arquivos.capa}
                   controls

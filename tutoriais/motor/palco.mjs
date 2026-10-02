@@ -18,7 +18,15 @@ import { fusoDaNoite } from "../ambiente/relogio.mjs";
 
 export const BASE = process.env.TUTORIAL_BASE || "http://localhost:3121";
 /** 1366×768 é a tela mais comum no computador de balcão. */
-export const TELA = { width: 1366, height: 768 };
+export let TELA = { width: 1366, height: 768 };
+
+/**
+ * Roteiro de tela de celular (o app do motoboy) pede `tela: { width: 390, height: 844, celular: true }`:
+ * o navegador emula o aparelho (toque, layout de celular) e a seta vira um dedo.
+ */
+export function definirTela(tela) {
+  if (tela) TELA = { ...tela };
+}
 /** Captura com o dobro de pontos: é o que deixa a aproximação da câmera nítida. */
 export const DENSIDADE = 2;
 
@@ -37,7 +45,7 @@ export async function abrirNavegador() {
 
 /** Entra no painel uma vez e devolve a sessão, para a gravação já começar na tela. */
 export async function entrar(navegador, { email, senha }) {
-  const contexto = await navegador.newContext({ viewport: TELA });
+  const contexto = await navegador.newContext({ viewport: { width: TELA.width, height: TELA.height } });
   const pagina = await contexto.newPage();
   await pagina.goto(`${BASE}/login`, { waitUntil: "load", timeout: 180_000 });
   await pagina.locator("input[type=password]").waitFor({ state: "visible", timeout: 120_000 });
@@ -58,7 +66,8 @@ export async function entrar(navegador, { email, senha }) {
 }
 
 // Roda dentro da página, antes de qualquer script dela.
-function desenharCursor() {
+function desenharCursor(opcoes) {
+  const toque = !!(opcoes && opcoes.toque);
   const montar = () => {
     if (document.getElementById("tutorial-cursor")) return;
     const estilo = document.createElement("style");
@@ -78,17 +87,21 @@ function desenharCursor() {
     document.documentElement.appendChild(estilo);
     const seta = document.createElement("div");
     seta.id = "tutorial-cursor";
-    seta.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26"><path d="M4 2 L4 20 L9 15.5 L12.2 22.5 L15 21.2 L11.8 14.4 L18.5 14.2 Z" fill="#111827" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+    // No celular não existe seta: o que aparece é a ponta do dedo.
+    seta.innerHTML = toque
+      ? '<svg viewBox="0 0 26 26" width="26" height="26"><circle cx="13" cy="13" r="11" fill="rgba(17,24,39,.35)" stroke="#ffffff" stroke-width="2.4"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="26" height="26"><path d="M4 2 L4 20 L9 15.5 L12.2 22.5 L15 21.2 L11.8 14.4 L18.5 14.2 Z" fill="#111827" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+    const [dx, dy] = toque ? [13, 13] : [4, 2];
     document.documentElement.appendChild(seta);
     const foco = document.createElement("div");
     foco.id = "tutorial-foco";
     document.documentElement.appendChild(foco);
     window.addEventListener("mousemove", (e) => {
-      seta.style.transform = `translate(${e.clientX - 4}px,${e.clientY - 2}px)`;
+      seta.style.transform = `translate(${e.clientX - dx}px,${e.clientY - dy}px)`;
     }, true);
     // Durante um arrastar-e-soltar o navegador não manda mousemove; quem dá a posição é o dragover.
     window.addEventListener("dragover", (e) => {
-      seta.style.transform = `translate(${e.clientX - 4}px,${e.clientY - 2}px)`;
+      seta.style.transform = `translate(${e.clientX - dx}px,${e.clientY - dy}px)`;
     }, true);
     window.addEventListener("mousedown", (e) => {
       const onda = document.createElement("div");
@@ -140,10 +153,11 @@ export class Palco {
 
   static async abrir(navegador, { estado, pastaDosQuadros }) {
     const contexto = await navegador.newContext({
-      viewport: TELA, deviceScaleFactor: DENSIDADE, storageState: estado,
+      viewport: { width: TELA.width, height: TELA.height }, deviceScaleFactor: DENSIDADE, storageState: estado,
       permissions: ["notifications"], locale: "pt-BR", timezoneId: fusoDaNoite(),
+      ...(TELA.celular ? { isMobile: true, hasTouch: true } : {}),
     });
-    await contexto.addInitScript(desenharCursor);
+    await contexto.addInitScript(desenharCursor, { toque: !!TELA.celular });
     const pagina = await contexto.newPage();
     pagina.setDefaultTimeout(30_000);
     return new Palco(pagina, pastaDosQuadros);

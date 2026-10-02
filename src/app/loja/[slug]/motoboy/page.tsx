@@ -21,6 +21,7 @@ import { getBeveragesFromOrder } from "@/lib/beverage";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica } from "@/lib/pagamento-na-entrega";
 import VerPedido from "@/components/motoboy/VerPedido";
 import MeuRelatorio from "@/components/motoboy/MeuRelatorio";
+import TutorialDaTela from "@/components/TutorialDaTela";
 
 export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
@@ -852,6 +853,11 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             🔒 Acesso restrito e isolado para motoboys cadastrados da loja.<br />
             💡 <b>Senha padrão:</b> 123456
           </div>
+
+          {/* O vídeo de como usar o app: a primeira dúvida do entregador é como entrar. */}
+          <div style={{ marginTop: "1rem", display: "flex", justifyContent: "center" }}>
+            <TutorialDaTela rota="/motoboy-app" tom="claro" rotulo="Como usar o aplicativo" foraDoPainel />
+          </div>
         </div>
       </div>
     );
@@ -902,6 +908,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               {session.storeName}
             </div>
           </div>
+          <TutorialDaTela rota="/motoboy-app" rotulo="Tutorial" foraDoPainel />
           {[
             { titulo: "Atualizar a lista", onClick: fetchMotoboyOrders, icone: <RefreshCw size={17} style={loadingOrders ? { animation: "spin 1s linear infinite" } : undefined} />, fundo: "#1E293B", cor: "#E2E8F0" },
             { titulo: "Alterar senha", onClick: () => setShowPassModal(true), icone: <Lock size={17} />, fundo: "#1E293B", cor: "#E2E8F0" },

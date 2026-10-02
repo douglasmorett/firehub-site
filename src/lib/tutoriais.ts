@@ -28,6 +28,8 @@ export type Tutorial = {
   capitulos: CapituloDoTutorial[];
   /** Muda a cada regravação: entra no endereço para o navegador não mostrar o vídeo velho. */
   versao: string;
+  /** Gravado em tela de celular (o app do motoboy): o player mostra em pé. */
+  emPe?: boolean;
 };
 
 /**
@@ -58,6 +60,8 @@ const TELAS: Record<string, string[]> = {
   "/store/relatorios": ["relatorios"],
   "/store/etiquetas": ["etiquetas"],
   "/store/funcionarios": ["fiado"],
+  // O app do entregador não é tela do painel (/loja/<slug>/motoboy): o botão dele passa a rota.
+  "/motoboy-app": ["app-motoboy"],
 };
 
 /**
@@ -159,7 +163,7 @@ const GRUPOS: { titulo: string; ids: string[] }[] = [
   { titulo: "Cardápio", ids: ["cardapio-produto", "cardapio-precos", "cardapio-combos", "cardapio-organizar"] },
   { titulo: "Vendas", ids: ["marketing", "chatbot"] },
   { titulo: "Gestão", ids: ["financeiro", "relatorios", "fiscal", "estoque", "etiquetas"] },
-  { titulo: "Equipe", ids: ["motoboys", "garcons", "fiado"] },
+  { titulo: "Equipe", ids: ["motoboys", "app-motoboy", "garcons", "fiado"] },
   { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes"] },
 ];
 

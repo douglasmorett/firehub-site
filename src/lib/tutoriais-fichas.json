@@ -1298,5 +1298,54 @@
       }
     ],
     "versao": "eb21f2ca"
+  },
+  "app-motoboy": {
+    "id": "app-motoboy",
+    "titulo": "O aplicativo do entregador",
+    "duracao": 126,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "Como entrar"
+      },
+      {
+        "em": 13.4,
+        "titulo": "As suas entregas"
+      },
+      {
+        "em": 23.6,
+        "titulo": "O cartão da entrega"
+      },
+      {
+        "em": 38.7,
+        "titulo": "Ver o pedido"
+      },
+      {
+        "em": 46.5,
+        "titulo": "Ir até o cliente"
+      },
+      {
+        "em": 60.1,
+        "titulo": "Confirmar a entrega"
+      },
+      {
+        "em": 88.3,
+        "titulo": "Pegar um pedido pela comanda"
+      },
+      {
+        "em": 100.6,
+        "titulo": "Meu relatório"
+      },
+      {
+        "em": 109.5,
+        "titulo": "Localização e senha"
+      },
+      {
+        "em": 119.6,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "371201e5",
+    "emPe": true
   }
 }

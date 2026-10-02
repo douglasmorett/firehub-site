@@ -30,7 +30,7 @@ for (const arquivo of ["video.mp4", "capa.jpg", "legendas.vtt"]) fs.copyFileSync
 
 const arquivoDasFichas = path.join(process.cwd(), "src", "lib", "tutoriais-fichas.json");
 const fichas = JSON.parse(fs.readFileSync(arquivoDasFichas, "utf8"));
-fichas[id] = { id, titulo: ficha.titulo, duracao: ficha.duracao, capitulos: ficha.capitulos, versao };
+fichas[id] = { id, titulo: ficha.titulo, duracao: ficha.duracao, capitulos: ficha.capitulos, versao, ...(ficha.emPe ? { emPe: true } : {}) };
 fs.writeFileSync(arquivoDasFichas, JSON.stringify(fichas, null, 2) + "\n", "utf8");
 
 // A busca da central procura no que a voz diz: o índice acompanha a ficha.

@@ -19,8 +19,7 @@ export const SAIDA = { largura: 1366, altura: 768, qps: 30 };
 const suave = (t) => t * t * (3 - 2 * t);
 
 /** Converte a lista de pedidos de câmera em estados { zoom, cx, cy } com hora de início e fim. */
-function trilhaDaCamera(pedidos) {
-  const { largura: L, altura: A } = SAIDA;
+function trilhaDaCamera(pedidos, L, A) {
   const inteiro = { zoom: 1, cx: L / 2, cy: A / 2 };
   const trilha = [];
   const estadoEm = (t) => {
@@ -93,16 +92,20 @@ const SOM_DE_PEDIDO_NOVO =
 
 export async function montar(pasta, { id, titulo }) {
   const g = JSON.parse(fs.readFileSync(path.join(pasta, "gravacao.json"), "utf8"));
-  const { largura: L, altura: A, qps } = SAIDA;
+  // Gravação de celular (o app do motoboy) sai em pé, no tamanho do aparelho com o dobro de pontos:
+  // L e A são o tamanho da tela gravada (as contas da câmera), OL e OA o do vídeo.
+  const L = g.tela?.width ?? SAIDA.largura, A = g.tela?.height ?? SAIDA.altura, { qps } = SAIDA;
+  const fator = g.tela?.celular ? 2 : 1;
+  const OL = Math.round(L * fator / 2) * 2, OA = Math.round(A * fator / 2) * 2;
   const duracao = g.fim - g.inicio;
   const totalDeQuadros = Math.ceil((duracao / 1000) * qps);
   const quadros = g.quadros.map((q) => ({ ...q, t: q.quando - g.inicio })).sort((a, b) => a.t - b.t);
   const primeiro = await sharp(path.join(pasta, "quadros", quadros[0].nome)).metadata();
   const escala = primeiro.width / L; // 2 quando a captura veio com o dobro de pontos
-  const camera = trilhaDaCamera(g.camera || []);
+  const camera = trilhaDaCamera(g.camera || [], L, A);
 
   // ── entradas do ffmpeg ──
-  const entradas = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", `${L}x${A}`, "-r", String(qps), "-i", "pipe:0"];
+  const entradas = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", `${OL}x${OA}`, "-r", String(qps), "-i", "pipe:0"];
   const filtros = [];
   let n = 1;
   let video = "[0:v]";
@@ -167,7 +170,7 @@ export async function montar(pasta, { id, titulo }) {
     if (chave !== ultimaChave) {
       ultimo = await sharp(path.join(pasta, "quadros", quadros[fonte].nome))
         .extract({ left: esq, top: topo, width: larg, height: alt })
-        .resize(L, A, { kernel: "lanczos3", fit: "fill" })
+        .resize(OL, OA, { kernel: "lanczos3", fit: "fill" })
         .removeAlpha().raw().toBuffer();
       ultimaChave = chave;
     }
@@ -182,7 +185,7 @@ export async function montar(pasta, { id, titulo }) {
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-ss", capaEm.toFixed(2), "-i", destino, "-frames:v", "1", "-q:v", "3", path.join(pasta, "capa.jpg")]);
   escreverLegendas(g.cenas, path.join(pasta, "legendas.vtt"));
   const capitulos = g.cenas.filter((c) => c.capitulo).map((c) => ({ em: Math.round(c.inicio / 100) / 10, titulo: c.capitulo }));
-  const ficha = { id, titulo, duracao: Math.round(duracao / 1000), capitulos, geradoEm: new Date().toISOString().slice(0, 10) };
+  const ficha = { id, titulo, duracao: Math.round(duracao / 1000), capitulos, ...(g.tela?.celular ? { emPe: true } : {}), geradoEm: new Date().toISOString().slice(0, 10) };
   fs.writeFileSync(path.join(pasta, "tutorial.json"), JSON.stringify(ficha, null, 2), "utf8");
   return { destino, ficha, bytes: fs.statSync(destino).size };
 }
