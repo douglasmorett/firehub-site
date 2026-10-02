@@ -2934,35 +2934,43 @@ export default function MenuProductManager({
                                   title="Linha curta sob o nome da opção no cardápio."
                                   style={{ width: "104px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.78rem" }}
                                 />
-                                <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>+R$</label>
-                                <input
-                                  type="number"
-                                  step="0.50"
-                                  min="0"
-                                  placeholder="0.00"
-                                  value={it.additionalPrice || 0}
-                                  onChange={e => updateGroupItemPrice(gIdx, it.id, parseFloat(e.target.value) || 0)}
-                                  title="Quanto este item soma ao preço do combo."
-                                  style={{ width: "76px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
-                                />
+                                {/* Rótulo e campo andam JUNTOS (nowrap). Soltos, no celular a
+                                    linha quebrava entre eles e o "Promo +R$" ficava colado à
+                                    direita do "+R$" normal: o dono da Serpa leu o acréscimo da
+                                    Grande (20) como o campo da promoção (02/10/2026). */}
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", whiteSpace: "nowrap" }}>
+                                  <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>+R$</label>
+                                  <input
+                                    type="number"
+                                    step="0.50"
+                                    min="0"
+                                    placeholder="0.00"
+                                    value={it.additionalPrice || 0}
+                                    onChange={e => updateGroupItemPrice(gIdx, it.id, parseFloat(e.target.value) || 0)}
+                                    title="Quanto este item soma ao preço do combo."
+                                    style={{ width: "76px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
+                                  />
+                                </span>
                                 {/* PROMOÇÃO SÓ DESTA OPÇÃO — "a promoção só para a pizza
                                     grande" (Serpa, 02/10/2026). O cardápio risca o "+R$" de
                                     cima e cobra este. Zero vale (Grande pelo preço da
                                     Pequena); vazio = sem promoção. */}
-                                <label style={{ fontSize: "0.72rem", color: it.promoAdditionalPrice != null && it.promoAdditionalPrice !== "" ? "#C92E09" : "#64748B", fontWeight: 700 }}>Promo +R$</label>
-                                <input
-                                  type="number"
-                                  step="0.50"
-                                  min="0"
-                                  placeholder="—"
-                                  value={it.promoAdditionalPrice ?? ""}
-                                  onChange={e => updateGroupItemField(gIdx, it.id, "promoAdditionalPrice", e.target.value === "" ? null : Math.max(0, parseFloat(e.target.value) || 0))}
-                                  title="Preço promocional SÓ desta opção (ex.: Grande de +15 por +0). O cardápio mostra o preço normal riscado. Vale em todos os canais enquanto for menor que o preço da opção. Vazio = sem promoção."
-                                  style={{
-                                    width: "68px", padding: "4px 8px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, textAlign: "right",
-                                    border: `1.5px solid ${it.promoAdditionalPrice != null && it.promoAdditionalPrice !== "" ? "#C92E09" : "#CBD5E1"}`,
-                                  }}
-                                />
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", whiteSpace: "nowrap" }}>
+                                  <label style={{ fontSize: "0.72rem", color: it.promoAdditionalPrice != null && it.promoAdditionalPrice !== "" ? "#C92E09" : "#64748B", fontWeight: 700 }}>Promo +R$</label>
+                                  <input
+                                    type="number"
+                                    step="0.50"
+                                    min="0"
+                                    placeholder="—"
+                                    value={it.promoAdditionalPrice ?? ""}
+                                    onChange={e => updateGroupItemField(gIdx, it.id, "promoAdditionalPrice", e.target.value === "" ? null : Math.max(0, parseFloat(e.target.value) || 0))}
+                                    title="Preço promocional SÓ desta opção (ex.: Grande de +15 por +0). O cardápio mostra o preço normal riscado. Vale em todos os canais enquanto for menor que o preço da opção. Vazio = sem promoção."
+                                    style={{
+                                      width: "68px", padding: "4px 8px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 700, textAlign: "right",
+                                      border: `1.5px solid ${it.promoAdditionalPrice != null && it.promoAdditionalPrice !== "" ? "#C92E09" : "#CBD5E1"}`,
+                                    }}
+                                  />
+                                </span>
                                 {it.precoPorEscolha && Object.keys(it.precoPorEscolha).length > 0 && (
                                   <span
                                     title="Meia pizza: o acréscimo muda com o tamanho e é recalculado sozinho quando o preço de uma pizza muda."
@@ -2973,19 +2981,41 @@ export default function MenuProductManager({
                                       .join(" · ")}
                                   </span>
                                 )}
-                                <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Máx</label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  placeholder="—"
-                                  value={it.maxPerItem ?? ""}
-                                  onChange={e => updateGroupItemField(gIdx, it.id, "maxPerItem", e.target.value ? Math.max(1, parseInt(e.target.value)) : null)}
-                                  title="Quantas vezes ESTE item pode ser repetido. Vazio = só o limite da pergunta."
-                                  style={{ width: "56px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
-                                />
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", whiteSpace: "nowrap" }}>
+                                  <label style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600 }}>Máx</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="—"
+                                    value={it.maxPerItem ?? ""}
+                                    onChange={e => updateGroupItemField(gIdx, it.id, "maxPerItem", e.target.value ? Math.max(1, parseInt(e.target.value)) : null)}
+                                    title="Quantas vezes ESTE item pode ser repetido. Vazio = só o limite da pergunta."
+                                    style={{ width: "56px", padding: "4px 8px", borderRadius: "6px", border: "1.5px solid #CBD5E1", fontSize: "0.8rem", fontWeight: 700, textAlign: "right" }}
+                                  />
+                                </span>
                                 <button type="button" onClick={() => removeGroupItem(gIdx, it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C92E09" }} title="Tirar item da pergunta">
                                   <Trash2 size={15} />
                                 </button>
+
+                                {/* A promoção dita em reais. "Promo +R$" é acréscimo sobre o
+                                    preço do produto, e quem lê o campo pensa no preço final
+                                    ("nesse 20 eu coloco o valor da promoção?"). */}
+                                {it.promoAdditionalPrice != null && it.promoAdditionalPrice !== "" && (() => {
+                                  const promo = Number(it.promoAdditionalPrice);
+                                  const normal = Number(it.additionalPrice) || 0;
+                                  const base = parseFloat(String(price).replace(",", ".")) || 0;
+                                  const reais = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+                                  const vale = promo < normal;
+                                  return (
+                                    <div style={{ flexBasis: "100%", fontSize: "0.74rem", fontWeight: 700, lineHeight: 1.4, color: vale ? "#C92E09" : "#92400E" }}>
+                                      {vale
+                                        ? <>🏷️ Na promoção sai <b>{reais(base + promo)}</b> <span style={{ textDecoration: "line-through", color: "#94A3B8", fontWeight: 600 }}>{reais(base + normal)}</span>{base > 0 && <span style={{ color: "#64748B", fontWeight: 600 }}> ({reais(base)} do produto + {reais(promo)})</span>}</>
+                                        : normal <= 0
+                                          ? <>⚠️ Sem efeito: esta opção não soma nada ao preço, não há o que baixar. Apague o “Promo +R$”.</>
+                                          : <>⚠️ Sem efeito: o “Promo +R$” é quanto a opção SOMA na promoção e precisa ser menor que o “+R$” ({reais(normal)}). Ex.: para sair por {reais(base + normal / 2)}, coloque {reais(normal / 2)}.</>}
+                                    </div>
+                                  );
+                                })()}
 
                                 {precosCanalNoCombo && (
                                   <div style={{ flexBasis: "100%", display: "flex", alignItems: "stretch", gap: "8px", flexWrap: "wrap", marginTop: "6px", padding: "9px 10px", background: "#F8FAFC", borderRadius: "10px", border: "1.5px solid #E2E8F0" }}>
