@@ -1,6 +1,6 @@
 /**
  * /api/admin/tutoriais — envio dos arquivos dos tutoriais em vídeo para o
- * volume de uploads do servidor. Só ADMIN.
+ * volume de uploads do servidor. Só ADMIN (ou admin no "Acessar" de uma loja).
  *
  * GET  → o que já chegou, tutorial por tutorial (versão atual de cada um).
  * POST ?id=&versao=&arquivo=&inicio=&tamanho=  (corpo: os bytes do pedaço)
@@ -19,6 +19,7 @@ import { getServerSession } from "next-auth/next";
 import { appendFile, mkdir, rename, stat, writeFile } from "fs/promises";
 import path from "path";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import fichas from "@/lib/tutoriais-fichas.json";
 import { ARQUIVOS_DO_TUTORIAL } from "@/lib/tutoriais";
 import { caminhoDoArquivoDoTutorial, esquecerTutoriaisEnviados, tutoriaisEnviados } from "@/lib/tutoriais-no-servidor";
@@ -29,12 +30,20 @@ export const dynamic = "force-dynamic";
 const PEDACO_MAXIMO = 6 * 1024 * 1024;
 const ARQUIVO_MAXIMO = 60 * 1024 * 1024;
 
+/**
+ * Admin — inclusive o que está no "Acessar" de uma loja: a sessão é da loja,
+ * mas `impersonatedBy` (assinado no token, lib/auth.ts) diz quem entrou, e o
+ * cargo dele é conferido agora, no banco.
+ */
 async function ehAdmin() {
-  const sessao = await getServerSession(authOptions);
-  return (sessao?.user as { role?: string } | undefined)?.role === "ADMIN";
+  const usuario = (await getServerSession(authOptions))?.user as { role?: string; impersonatedBy?: string | null } | undefined;
+  if (usuario?.role === "ADMIN") return true;
+  if (!usuario?.impersonatedBy) return false;
+  const quemEntrou = await prisma.user.findUnique({ where: { id: String(usuario.impersonatedBy) }, select: { role: true } });
+  return quemEntrou?.role === "ADMIN";
 }
 
-const tamanhoDe = (caminho: string) => stat(caminho).then((s) => s.size, () => null);
+const tamanhoDe = (caminho: string) => stat(/*turbopackIgnore: true*/ caminho).then((s) => s.size, () => null);
 
 export async function GET() {
   if (!(await ehAdmin())) return NextResponse.json({ error: "Só admin" }, { status: 403 });
@@ -66,18 +75,18 @@ export async function POST(req: NextRequest) {
   if (inicio + pedaco.length > tamanho) return NextResponse.json({ error: "Pedaço passa do tamanho do arquivo" }, { status: 400 });
 
   const parcial = `${destino}.parcial`;
-  await mkdir(path.dirname(destino), { recursive: true });
+  await mkdir(/*turbopackIgnore: true*/ path.dirname(destino), { recursive: true });
   if (inicio === 0) {
-    await writeFile(parcial, pedaco);
+    await writeFile(/*turbopackIgnore: true*/ parcial, pedaco);
   } else {
     const jaTem = await tamanhoDe(parcial);
     if (jaTem !== inicio) return NextResponse.json({ error: "Pedaço fora de ordem", recomecarDe: jaTem ?? 0 }, { status: 409 });
-    await appendFile(parcial, pedaco);
+    await appendFile(/*turbopackIgnore: true*/ parcial, pedaco);
   }
 
   const recebido = inicio + pedaco.length;
   if (recebido < tamanho) return NextResponse.json({ recebido });
-  await rename(parcial, destino);
+  await rename(/*turbopackIgnore: true*/ parcial, /*turbopackIgnore: true*/ destino);
   esquecerTutoriaisEnviados();
   return NextResponse.json({ recebido, pronto: true });
 }

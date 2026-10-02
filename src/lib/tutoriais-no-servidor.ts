@@ -51,7 +51,7 @@ export function tutoriaisEnviados(): string[] | null {
   let ids: string[] | null = null;
   if (pasta) {
     ids = Object.values(FICHAS)
-      .filter((f) => ARQUIVOS_DO_TUTORIAL.every((a) => fs.existsSync(path.join(/*turbopackIgnore: true*/ pasta, f.id, f.versao, a))))
+      .filter((f) => ARQUIVOS_DO_TUTORIAL.every((a) => fs.existsSync(/*turbopackIgnore: true*/ path.join(/*turbopackIgnore: true*/ pasta, f.id, f.versao, a))))
       .map((f) => f.id);
   }
   lembrado = { em: Date.now(), ids };
