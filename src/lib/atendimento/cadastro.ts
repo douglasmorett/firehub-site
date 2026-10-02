@@ -82,6 +82,8 @@ export async function criarContaPeloWhatsApp(contato: Contato, d: DadosDoCadastr
     subject: "🔥 Sua loja no FireHub está criada — falta só a senha",
     html: emailDeBoasVindas(d.nome.trim().split(/\s+/)[0], resposta.storeName, `${APP_URL}/redefinir-senha?token=${token}`, `${APP_URL}/loja/${resposta.slug}`),
   }).catch((err: any) => ({ success: false, error: err?.message }));
+  // Na ficha, para quem assumir a conversa (a montagem chama pessoa logo depois e o aviso dela não fala do e-mail).
+  if (!email_.success) await registrarEvento(contato.id, "CADASTRO", `O e-mail para criar a senha NÃO saiu (${email}). Mandar o acesso à mão.`, AUTOR_ROBO, { userId });
 
   return {
     ok: true,
