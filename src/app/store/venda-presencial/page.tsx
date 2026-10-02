@@ -78,6 +78,16 @@ export default function VendaPresencialPage() {
    */
   const [caixaAberto, setCaixaAberto] = useState<boolean | null>(null);
   const [address, setAddress] = useState("");
+  /**
+   * Loja que entrega POR BAIRRO: os bairros cadastrados (com a taxa) e o que
+   * o atendente escolheu. Sem a lista, ele digitava "Rua X, 35", via "bairro
+   * não atendido" e não tinha onde saber quais bairros existem. O bairro
+   * escolhido vai no fim do endereço ("Rua X, 35 - Centro"): é o MESMO texto
+   * que a cotação mede, que o pedido grava e que sai na comanda do motoboy.
+   */
+  const [bairrosDaLoja, setBairrosDaLoja] = useState<{ name: string; fee: number }[]>([]);
+  const [bairro, setBairro] = useState("");
+  const enderecoDaEntrega = [address.trim(), bairro].filter(Boolean).join(" - ");
   const [paymentMethod, setPaymentMethod] = useState("Dinheiro");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
@@ -108,7 +118,19 @@ export default function VendaPresencialPage() {
     // parar porque uma configuração não carregou. Quem tem a palavra final é
     // a rota do pedido, que lê a mesma regra do banco.
     fetch("/api/store-settings/balcao").then(r => r.ok ? r.json() : null)
-      .then(d => d && setBalcaoConfig({ pagerObrigatorioBalcao: d.pagerObrigatorioBalcao === true, pagerObrigatorioMesa: d.pagerObrigatorioMesa === true }))
+      .then(d => {
+        if (!d) return;
+        setBalcaoConfig({ pagerObrigatorioBalcao: d.pagerObrigatorioBalcao === true, pagerObrigatorioMesa: d.pagerObrigatorioMesa === true });
+        if (Array.isArray(d.bairros)) {
+          setBairrosDaLoja(
+            d.bairros
+              .filter((b: any) => b && typeof b.name === "string" && b.name.trim())
+              .map((b: any) => ({ name: b.name.trim(), fee: Number(b.fee) || 0 }))
+              .filter((b: { name: string }, i: number, todos: { name: string }[]) => todos.findIndex(o => o.name === b.name) === i)
+              .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, "pt-BR")),
+          );
+        }
+      })
       .catch(() => { /* fica no padrão */ });
     // A nota fiscal (lib/fiscal-modo): a loja que emite sozinha pergunta o
     // CPF/CNPJ também na ENTREGA, e pode exigi-lo. Falhou? Fica como antes:
@@ -324,12 +346,13 @@ export default function VendaPresencialPage() {
 
   // Endereço novo = cotação nova. Inclusive quando o atendente tinha mexido na
   // taxa: a combinação era com AQUELE endereço.
-  useEffect(() => { setTaxaNaMao(false); }, [address]);
+  useEffect(() => { setTaxaNaMao(false); }, [enderecoDaEntrega]);
 
   useEffect(() => {
     if (orderType !== "DELIVERY") { setTaxaAviso(null); setCotandoTaxa(false); return; }
-    const consulta = address.trim();
-    if (consulta.length < 6) {
+    const consulta = enderecoDaEntrega;
+    // Bairro escolhido na lista já basta para cotar (a taxa é do bairro).
+    if (consulta.length < 6 && !bairro) {
       setTaxaAviso(null);
       setCotandoTaxa(false);
       if (!taxaNaMao) setTaxaEntrega("");
@@ -379,7 +402,7 @@ export default function VendaPresencialPage() {
     // cotação): a sessão chega depois da tela, e a cotação feita sem ela não
     // casaria com o POST.
     return () => { vivo = false; controle?.abort(); clearTimeout(agendado); setCotandoTaxa(false); };
-  }, [orderType, address, taxaNaMao, cidadeDaLoja]);
+  }, [orderType, enderecoDaEntrega, bairro, taxaNaMao, cidadeDaLoja]);
 
   const isVoucher = paymentMethod === "Voucher/Vale";
   const subtotal = cart.reduce((s, i) => s + (i.unitPrice ?? i.product.price) * i.qty, 0);
@@ -472,7 +495,7 @@ export default function VendaPresencialPage() {
     if (caixaAberto === false) return setMsg(`❌ ${MENSAGEM_CAIXA_FECHADO}`);
     if (cart.length === 0) return setMsg("❌ Adicione pelo menos um produto.");
     if (orderType === "MESA" && !tableNum.trim() && numeroDaMesaEhObrigatorio(balcaoConfig)) return setMsg("❌ Informe o número da mesa.");
-    if (orderType === "DELIVERY" && !address) return setMsg("❌ Informe o endereço de entrega.");
+    if (orderType === "DELIVERY" && !enderecoDaEntrega) return setMsg("❌ Informe o endereço de entrega.");
     // A taxa da entrega é decisão consciente: a cotação preenche; quando ela
     // não preenche (fora da área, endereço que o mapa não achou, falha), o
     // campo fica VAZIO e o atendente digita — 0 se for de graça. Vazio ia
@@ -531,7 +554,7 @@ export default function VendaPresencialPage() {
       pagerNumber: pager.trim() || null,
       // "CPF na nota". Vai só com os dígitos; a máscara é coisa da tela.
       customerCpfCnpj: lerDocumentoDoCliente(documento),
-      customerAddress: orderType === "DELIVERY" ? address : orderType === "MESA" ? nomeDaMesa : "Balcão",
+      customerAddress: orderType === "DELIVERY" ? enderecoDaEntrega : orderType === "MESA" ? nomeDaMesa : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
       paymentMethod,
       ...(partesValidas ? { paymentMethods: partesValidas } : {}),
@@ -551,7 +574,7 @@ export default function VendaPresencialPage() {
       // de novo. `taxaDigitadaNoBalcao` diz que o valor acima foi combinado
       // na mão — no balcão a taxa é editável, e vale o que o atendente
       // digitou. E as mesmas partes do endereço que a cotação usou.
-      ...(orderType === "DELIVERY" ? entregaNoPedidoDoBalcao(address, cotacaoDoBalcao, taxaNaMao, cidadeDaLoja) : {}),
+      ...(orderType === "DELIVERY" ? entregaNoPedidoDoBalcao(enderecoDaEntrega, cotacaoDoBalcao, taxaNaMao, cidadeDaLoja) : {}),
       items: cart.map(i => ({
         menuProductId: i.product.id,
         quantity: i.qty,
@@ -580,7 +603,7 @@ export default function VendaPresencialPage() {
       // pessoa errada ou o CPF de outro impresso na nota é o tipo de erro que
       // ninguém percebe até alguém reclamar. O pager já ficava para trás antes
       // deste campo existir — mesma falha, consertada junto.
-      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento("");
+      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setBairro(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento("");
       setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null); setCotacaoDoBalcao(null);
       if (dividir) ligarDivisao(false);
     } else {
@@ -617,6 +640,7 @@ export default function VendaPresencialPage() {
       if (salvo.customerName) setCustomerName(salvo.customerName);
       if (salvo.customerPhone) setCustomerPhone(salvo.customerPhone);
       if (salvo.address) setAddress(salvo.address);
+      if (salvo.bairro) setBairro(salvo.bairro);
       if (salvo.tableNum) setTableNum(salvo.tableNum);
       if (salvo.pager) setPager(salvo.pager);
       if (salvo.documento) setDocumento(salvo.documento);
@@ -648,6 +672,7 @@ export default function VendaPresencialPage() {
           customerName,
           customerPhone,
           address,
+          bairro,
           tableNum,
           pager,
           documento,
@@ -658,7 +683,7 @@ export default function VendaPresencialPage() {
       // Cota estourada ou armazenamento bloqueado: seguir sem rascunho é
       // melhor do que derrubar a tela de venda.
     }
-  }, [cart, orderType, customerName, customerPhone, address, tableNum, pager, documento, notes]);
+  }, [cart, orderType, customerName, customerPhone, address, bairro, tableNum, pager, documento, notes]);
 
   const cartQty = cart.reduce((s, i) => s + i.qty, 0);
 
@@ -906,8 +931,20 @@ export default function VendaPresencialPage() {
           )}
           {orderType === "DELIVERY" && (
             <>
-              <input placeholder="Endereço de entrega *" value={address} onChange={e => setAddress(e.target.value)}
+              <input placeholder={bairrosDaLoja.length > 0 ? "Rua e número *" : "Endereço de entrega *"} value={address} onChange={e => setAddress(e.target.value)}
                 style={{ width: "100%", marginBottom: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #C92E09", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }} />
+
+              {/* Loja que entrega por bairro: escolher na lista dos cadastrados
+                  em vez de adivinhar a grafia. A taxa vem do bairro escolhido. */}
+              {bairrosDaLoja.length > 0 && (
+                <select value={bairro} onChange={e => setBairro(e.target.value)}
+                  style={{ width: "100%", marginBottom: 6, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${bairro ? "#C92E09" : "#E2E8F0"}`, fontSize: "0.88rem", outline: "none", fontFamily: "inherit", background: "#fff", color: bairro ? "#1C1917" : "#64748B" }}>
+                  <option value="">Bairro — escolha na lista *</option>
+                  {bairrosDaLoja.map(b => (
+                    <option key={b.name} value={b.name}>{b.name} — R$ {b.fee.toFixed(2).replace(".", ",")}</option>
+                  ))}
+                </select>
+              )}
 
               {/* A taxa que a área de entrega da loja manda — e que o atendente
                   pode trocar quando combinar outra coisa com o cliente. */}
