@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
+import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
 
 /**
  * Casca da página /store/roteirizacao: mantém a lista de pedidos viva e
@@ -29,16 +30,17 @@ export default function RoteirizacaoIndependente({
 }) {
   const [orders, setOrders] = useState<any[]>(initialOrders);
   const ultimoCorpo = useRef<string>("");
+  // Só o que mudou a cada 8 s, completa a cada 60 s (lib/feed-de-pedidos.ts).
+  const feed = useRef(criarFeedDePedidos());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const carregar = useCallback(async () => {
     try {
-      const res = await fetch(`/api/customer-order/poll?t=${Date.now()}`, {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+      const rodada = await feed.current.buscar("", {
+        init: { cache: "no-store", headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" } },
       });
-      if (!res.ok) return;
-      const corpo = await res.text();
+      if (!rodada.ok) return;
+      const corpo = rodada.texto;
       if (corpo === ultimoCorpo.current) return;
       ultimoCorpo.current = corpo;
       const lista = JSON.parse(corpo);

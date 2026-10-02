@@ -7,6 +7,7 @@ import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
+import { criarFeedDePedidos, type FeedDePedidos } from "@/lib/feed-de-pedidos";
 
 const LOCK_PREFIX = "firehub_autoprinted_v4_";
 
@@ -138,6 +139,9 @@ function jaFalhouAntes(order: any): boolean {
 export default function GlobalPrintListener() {
   const { data: session } = useSession();
   const lastPollHash = useRef("");
+  // Só o que mudou a cada 5 s, lista completa a cada 60 s (lib/feed-de-pedidos.ts).
+  // A impressão abaixo continua rodando sobre a LISTA INTEIRA remontada.
+  const feedRef = useRef<FeedDePedidos | null>(null);
   const isPollingRef = useRef(false);
   const isFirstPollRef = useRef(true);
   const [printerConfig, setPrinterConfig] = useState<any>(null);
@@ -189,9 +193,10 @@ export default function GlobalPrintListener() {
           return;
         }
 
-        const res = await fetch("/api/customer-order/poll");
-        if (res.ok && active) {
-          const text = await res.text();
+        if (!feedRef.current) feedRef.current = criarFeedDePedidos();
+        const rodada = await feedRef.current.buscar("");
+        if (rodada.ok && active) {
+          const text = rodada.texto;
           if (text !== lastPollHash.current) {
             lastPollHash.current = text;
             const orders = JSON.parse(text);
