@@ -19,18 +19,21 @@
  *   customerCpfCnpj  = CPF de quem paga (o Asaas exige)
  *   taxaOnline       = a taxa do pagamento online e o que houve com o split
  */
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { decifrar } from "@/lib/cofre";
+import { cifrar, decifrar } from "@/lib/cofre";
 import {
   ambienteDaChave,
   clienteSemAvisos,
   cobrancaEstornada,
   cobrancaPaga,
+  conferirWebhookDaLoja,
   consultarCobranca,
   criarCobranca,
   estornarCobranca,
   excluirCobranca,
   asaasDaLoja,
+  ligarWebhookNaLoja,
   mesmoDominio,
   walletDoFireHub,
 } from "@/lib/asaas-da-loja";
@@ -756,5 +759,94 @@ export async function verificarChaveDaLoja(lojaId: string): Promise<"ok" | "recu
     situacao: String(r.dados?.general || (loja?.asaasConexao as any)?.situacao || ""),
   };
   await prisma.user.update({ where: { id: lojaId }, data: { asaasConexao: conexao } });
+  await consertarAvisosDaLoja(lojaId).catch(() => null);
   return "ok";
+}
+
+// ─── O AVISO DE PAGAMENTO (WEBHOOK) ─────────────────────────────────────────
+
+/** Onde o Asaas da loja avisa. Sem endereço público (teste local), sem webhook. */
+export function urlDoWebhook(lojaId: string): string | null {
+  const base = (process.env.ASAAS_WEBHOOK_BASE_URL || process.env.NEXTAUTH_URL || "").trim().replace(/\/$/, "");
+  if (!/^https:\/\//i.test(base)) return null;
+  if (/localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/i.test(base)) return null;
+  return `${base}/api/webhooks/asaas-loja/${lojaId}`;
+}
+
+export type AvisosDePagamento = {
+  webhookId: string | null;
+  webhookTokenCifrado: string | null;
+  webhookUrl: string | null;
+  /** Por que não ligou, na língua do lojista. Null = ligado. */
+  aviso: string | null;
+};
+
+/** Liga (ou adota o que já existe) o webhook com um token só desta loja. */
+export async function ligarAvisosDePagamento(lojaId: string, chave: string, email: string): Promise<AvisosDePagamento> {
+  const url = urlDoWebhook(lojaId);
+  if (!url) {
+    return {
+      webhookId: null,
+      webhookTokenCifrado: null,
+      webhookUrl: null,
+      aviso: "Servidor sem endereço público: o aviso automático de pagamento não foi ligado (ambiente de teste).",
+    };
+  }
+  const token = crypto.randomBytes(32).toString("base64url");
+  const w = await ligarWebhookNaLoja(chave, {
+    url,
+    email: (process.env.ASAAS_WEBHOOK_EMAIL || email || "").trim(),
+    authToken: token,
+  });
+  if (w.ok && w.dados?.id) {
+    return { webhookId: w.dados.id, webhookTokenCifrado: cifrar(token), webhookUrl: url, aviso: null };
+  }
+  return {
+    webhookId: null,
+    webhookTokenCifrado: null,
+    webhookUrl: null,
+    aviso:
+      `O aviso automático de pagamento não foi ligado no Asaas (${w.erro}). O pagamento funciona assim mesmo: ` +
+      "o FireHub confere o pagamento pela tela do cliente e a cada 2 minutos.",
+  };
+}
+
+/**
+ * Deixa o aviso de pagamento da loja funcionando: liga o que falta (conexão
+ * gravada sem webhook) e reativa fila interrompida. Roda no "Conferir de
+ * novo" e uma vez por dia no cron, então loja nenhuma fica presa num webhook
+ * quebrado esperando alguém reconectar.
+ */
+export async function consertarAvisosDaLoja(lojaId: string): Promise<"ok" | "ligado" | "reativado" | "sem_chave" | "falha"> {
+  const loja = await prisma.user.findUnique({
+    where: { id: lojaId },
+    select: { asaasChaveCifrada: true, asaasConexao: true, email: true },
+  });
+  const chave = decifrar(loja?.asaasChaveCifrada);
+  if (!chave) return "sem_chave";
+  const conexao = ((loja?.asaasConexao as any) || {}) as ConexaoAsaas;
+
+  if (conexao.webhookId && decifrar(conexao.webhookTokenCifrado)) {
+    const r = await conferirWebhookDaLoja(chave, conexao.webhookId);
+    if (r === "ok" || r === "reativado") return r;
+    if (r === "falha") return "falha";
+    // "sumiu": a loja apagou no painel do Asaas — liga de novo.
+  }
+
+  const novo = await ligarAvisosDePagamento(lojaId, chave, loja?.email || "");
+  if (!novo.webhookId) return "falha";
+  // Relê antes de gravar: a conexão pode ter mudado durante as chamadas ao Asaas.
+  const atual = await prisma.user.findUnique({ where: { id: lojaId }, select: { asaasConexao: true } });
+  await prisma.user.update({
+    where: { id: lojaId },
+    data: {
+      asaasConexao: {
+        ...((atual?.asaasConexao as any) || {}),
+        webhookId: novo.webhookId,
+        webhookTokenCifrado: novo.webhookTokenCifrado,
+        webhookUrl: novo.webhookUrl,
+      },
+    },
+  });
+  return "ligado";
 }

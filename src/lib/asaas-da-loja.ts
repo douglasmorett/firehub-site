@@ -214,24 +214,69 @@ export const EVENTOS_DO_WEBHOOK = [
   "ACCESS_TOKEN_EXPIRED",
 ] as const;
 
-export async function criarWebhookNaLoja(
-  chave: string,
-  opts: { url: string; email: string; authToken: string },
-): Promise<RespostaAsaas<{ id: string }>> {
-  return asaasDaLoja(chave, "/webhooks", {
-    method: "POST",
-    body: {
-      name: "FireHub — pagamento pelo cardápio",
-      url: opts.url,
-      email: opts.email,
-      enabled: true,
-      interrupted: false,
-      apiVersion: 3,
-      authToken: opts.authToken,
-      sendType: "SEQUENTIALLY",
-      events: EVENTOS_DO_WEBHOOK,
-    },
+type OpcoesDoWebhook = { url: string; email: string; authToken: string };
+
+const corpoDoWebhook = (opts: OpcoesDoWebhook) => ({
+  name: "FireHub — pagamento pelo cardápio",
+  url: opts.url,
+  email: opts.email,
+  enabled: true,
+  interrupted: false,
+  apiVersion: 3,
+  authToken: opts.authToken,
+  sendType: "SEQUENTIALLY",
+  events: EVENTOS_DO_WEBHOOK,
+});
+
+const caminhoDaUrl = (url: unknown) => {
+  try {
+    return new URL(String(url || "")).pathname.replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+};
+
+export async function criarWebhookNaLoja(chave: string, opts: OpcoesDoWebhook): Promise<RespostaAsaas<{ id: string }>> {
+  return asaasDaLoja(chave, "/webhooks", { method: "POST", body: corpoDoWebhook(opts) });
+}
+
+/**
+ * Liga o aviso de pagamento na conta da loja e devolve o id do webhook.
+ *
+ * O Asaas recusa um segundo webhook com os mesmos eventos ("Já existe uma
+ * configuração para os eventos com os mesmos atributos"). Na prática é o do
+ * FireHub de uma conexão anterior que não foi tirado: ficou com o token velho,
+ * o FireHub responde 401 a ele e o Asaas interrompe a fila (Showrrascão,
+ * 02/10). Esse é adotado pelo endereço: recebe o token novo e a fila volta.
+ */
+export async function ligarWebhookNaLoja(chave: string, opts: OpcoesDoWebhook): Promise<RespostaAsaas<{ id: string }>> {
+  const criado = await criarWebhookNaLoja(chave, opts);
+  if (criado.ok && criado.dados?.id) return criado;
+
+  const lista = await asaasDaLoja<{ data?: Array<{ id?: string; url?: string }> }>(chave, "/webhooks?limit=100");
+  const nosso = (lista.dados?.data || []).find((w) => w.id && caminhoDaUrl(w.url) === caminhoDaUrl(opts.url));
+  if (!nosso?.id) return criado;
+
+  const atualizado = await asaasDaLoja(chave, `/webhooks/${encodeURIComponent(nosso.id)}`, {
+    method: "PUT",
+    body: corpoDoWebhook(opts),
   });
+  return atualizado.ok ? { ...atualizado, dados: { id: nosso.id } } : atualizado;
+}
+
+/**
+ * O webhook que o FireHub guardou ainda está lá e com a fila andando?
+ * Fila interrompida (o FireHub ficou fora do ar e o Asaas desistiu depois de
+ * 15 tentativas) é reativada; os eventos parados voltam a chegar.
+ */
+export async function conferirWebhookDaLoja(chave: string, webhookId: string): Promise<"ok" | "reativado" | "sumiu" | "falha"> {
+  const caminho = `/webhooks/${encodeURIComponent(webhookId)}`;
+  const r = await asaasDaLoja<{ interrupted?: boolean; enabled?: boolean }>(chave, caminho);
+  if (r.status === 404) return "sumiu";
+  if (!r.ok || !r.dados) return "falha";
+  if (!r.dados.interrupted && r.dados.enabled !== false) return "ok";
+  const p = await asaasDaLoja(chave, caminho, { method: "PUT", body: { enabled: true, interrupted: false } });
+  return p.ok ? "reativado" : "falha";
 }
 
 export async function removerWebhookDaLoja(chave: string, webhookId: string) {

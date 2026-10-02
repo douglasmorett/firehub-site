@@ -15,7 +15,6 @@
  * A chave nunca volta para a tela. Ela é cifrada (lib/cofre.ts) antes de ir
  * ao banco e só é aberta no servidor, na hora de falar com o Asaas.
  */
-import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -24,7 +23,6 @@ import { cifrar, decifrar } from "@/lib/cofre";
 import {
   ambienteDaChave,
   criarChavePixAleatoria,
-  criarWebhookNaLoja,
   lerContaDoAsaas,
   mesmoDominio,
   normalizarChave,
@@ -38,7 +36,13 @@ import {
   VERSAO_DAS_REGRAS,
   type FormaOnline,
 } from "@/lib/pix-online";
-import { cardapioDaLoja, siteDoFireHub, type ConexaoAsaas } from "@/lib/pix-online-pedido";
+import {
+  cardapioDaLoja,
+  consertarAvisosDaLoja,
+  ligarAvisosDePagamento,
+  siteDoFireHub,
+  type ConexaoAsaas,
+} from "@/lib/pix-online-pedido";
 import { avisarDono } from "@/lib/alertas-do-dono";
 
 export const dynamic = "force-dynamic";
@@ -57,14 +61,6 @@ async function quemPede() {
 /** Chave de Sandbox em produção geraria QR que banco nenhum paga. */
 function sandboxPermitido(): boolean {
   return process.env.NODE_ENV !== "production" || process.env.ASAAS_PERMITIR_SANDBOX === "true";
-}
-
-/** Onde o Asaas da loja vai avisar. Sem endereço público, sem webhook. */
-function urlDoWebhook(lojaId: string): string | null {
-  const base = (process.env.ASAAS_WEBHOOK_BASE_URL || process.env.NEXTAUTH_URL || "").trim().replace(/\/$/, "");
-  if (!/^https:\/\//i.test(base)) return null;
-  if (/localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/i.test(base)) return null;
-  return `${base}/api/webhooks/asaas-loja/${lojaId}`;
 }
 
 const mascararDocumento = (doc?: string | null) => {
@@ -159,6 +155,8 @@ async function releConta(lojaId: string) {
     verificadoEm: new Date().toISOString(),
   };
   await prisma.user.update({ where: { id: lojaId }, data: { asaasConexao: conexao } });
+  // Conexão gravada sem aviso de pagamento, ou com a fila interrompida: conserta aqui.
+  await consertarAvisosDaLoja(lojaId).catch(() => null);
   return { chave, conta: r.dados, erro: null };
 }
 
@@ -269,28 +267,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Webhook com token só desta loja.
-    let webhookId: string | null = null;
-    let webhookTokenCifrado: string | null = null;
-    let avisoDoWebhook: string | null = null;
-    const url = urlDoWebhook(lojaId);
-    if (url) {
-      const token = crypto.randomBytes(32).toString("base64url");
-      const w = await criarWebhookNaLoja(chave, {
-        url,
-        email: (process.env.ASAAS_WEBHOOK_EMAIL || anterior?.email || quem.email || "").trim(),
-        authToken: token,
-      });
-      if (w.ok && w.dados?.id) {
-        webhookId = w.dados.id;
-        webhookTokenCifrado = cifrar(token);
-      } else {
-        avisoDoWebhook =
-          `O aviso automático de pagamento não foi ligado no Asaas (${w.erro}). O pagamento funciona assim mesmo: ` +
-          "o FireHub confere o pagamento pela tela do cliente e a cada 2 minutos.";
-      }
-    } else {
-      avisoDoWebhook = "Servidor sem endereço público: o aviso automático de pagamento não foi ligado (ambiente de teste).";
-    }
+    const avisos = await ligarAvisosDePagamento(lojaId, chave, anterior?.email || quem.email || "");
 
     const agora = new Date().toISOString();
     const conexao: ConexaoAsaas = {
@@ -301,9 +278,9 @@ export async function POST(req: NextRequest) {
       situacao: conta.situacao,
       chavePix: conta.chavesPixAtivas[0]?.chave || null,
       site: conta.site,
-      webhookId,
-      webhookTokenCifrado,
-      webhookUrl: webhookId ? url : null,
+      webhookId: avisos.webhookId,
+      webhookTokenCifrado: avisos.webhookTokenCifrado,
+      webhookUrl: avisos.webhookUrl,
       conectadoEm: agora,
       conectadoPor: quem.name || quem.email || quem.id,
       regrasAceitasEm: agora,
@@ -330,7 +307,7 @@ export async function POST(req: NextRequest) {
       ligadoAgora: liga.pix || liga.cartao,
       falta,
       chavePixCriada,
-      aviso: avisoDoWebhook,
+      aviso: avisos.aviso,
     });
   }
 
