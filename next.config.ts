@@ -179,6 +179,17 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // O relatório do Acompanhamento iFood é um HTML inteiro servido no
+        // domínio do admin. Mesmo CSP + sandbox SEM allow-same-origin: o script
+        // do relatório roda, mas numa origem opaca, sem enxergar a sessão. A
+        // regra vem DEPOIS da geral porque, no next.config, o último header
+        // de mesmo nome vence — o que a rota manda é sobrescrito.
+        source: "/api/admin/acompanhamento-ifood/relatorios/:relId/arquivo",
+        headers: [
+          { key: "Content-Security-Policy", value: `${csp}; sandbox allow-scripts allow-popups allow-modals allow-downloads` },
+        ],
+      },
     ];
   },
 };

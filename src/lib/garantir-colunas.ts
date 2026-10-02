@@ -1371,3 +1371,90 @@ export async function garantirColunasDoSchema(): Promise<void> {
     );
   }
 }
+
+/**
+ * ── Acompanhamento iFood: os clientes da consultoria e os relatórios ────────
+ *
+ * Duas tabelas NOVAS, sem coluna em tabela existente: se o CREATE falhar, só a
+ * aba "Acompanhamento iFood" do admin fica sem banco. O relatório guarda o
+ * arquivo em BYTEA (ver o comentário no schema).
+ */
+const INSTRUCOES_ACOMPANHAMENTO = [
+  `CREATE TABLE IF NOT EXISTS "AcompanhamentoIfood" (
+     "id" TEXT NOT NULL,
+     "lojaId" TEXT,
+     "nome" TEXT NOT NULL,
+     "responsavel" TEXT,
+     "telefone" TEXT,
+     "cidade" TEXT,
+     "ifoodMerchantId" TEXT,
+     "modelo" TEXT NOT NULL DEFAULT 'PERCENTUAL',
+     "percentual" DOUBLE PRECISION NOT NULL DEFAULT 5,
+     "baseSemanal" DOUBLE PRECISION NOT NULL DEFAULT 0,
+     "tetoSemanal" DOUBLE PRECISION DEFAULT 250,
+     "valorFixoSemanal" DOUBLE PRECISION,
+     "inicioEm" TIMESTAMP(3),
+     "status" TEXT NOT NULL DEFAULT 'ATIVO',
+     "observacoes" TEXT,
+     "criadoPor" TEXT,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "AcompanhamentoIfood_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "AcompanhamentoIfood_lojaId_key" ON "AcompanhamentoIfood"("lojaId")`,
+  `CREATE TABLE IF NOT EXISTS "AcompanhamentoRelatorio" (
+     "id" TEXT NOT NULL,
+     "clienteId" TEXT NOT NULL,
+     "mes" TEXT NOT NULL,
+     "titulo" TEXT,
+     "resumo" TEXT,
+     "numeros" JSONB,
+     "status" TEXT NOT NULL DEFAULT 'RASCUNHO',
+     "enviadoEm" TIMESTAMP(3),
+     "arquivo" BYTEA,
+     "arquivoNome" TEXT,
+     "arquivoTipo" TEXT,
+     "criadoPor" TEXT,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "AcompanhamentoRelatorio_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE INDEX IF NOT EXISTS "AcompanhamentoRelatorio_clienteId_mes_idx" ON "AcompanhamentoRelatorio"("clienteId", "mes")`,
+];
+
+let acompanhamentoOk = false;
+
+/** As tabelas do acompanhamento existem? Uma vez por processo — e só marca DEPOIS de conseguir. */
+export async function garantirEstruturaDeAcompanhamento(): Promise<boolean> {
+  if (acompanhamentoOk) return true;
+
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia do Acompanhamento iFood.");
+    return false;
+  }
+
+  try {
+    for (const sql of INSTRUCOES_ACOMPANHAMENTO) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    // A chave estrangeira vem depois do CREATE, e só se faltar: Postgres não
+    // tem ADD CONSTRAINT IF NOT EXISTS.
+    const existe: unknown[] = await prisma.$queryRaw`
+      SELECT 1 FROM pg_constraint WHERE conname = 'AcompanhamentoRelatorio_clienteId_fkey'
+    `;
+    if (existe.length === 0) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "AcompanhamentoRelatorio" ADD CONSTRAINT "AcompanhamentoRelatorio_clienteId_fkey" ` +
+          `FOREIGN KEY ("clienteId") REFERENCES "AcompanhamentoIfood"("id") ON DELETE CASCADE ON UPDATE CASCADE`
+      );
+    }
+    acompanhamentoOk = true;
+    console.log("[Boot] ✅ Tabelas do Acompanhamento iFood garantidas.");
+    return true;
+  } catch (err: any) {
+    // Só a aba do admin depende delas. As rotas chamam esta função de novo.
+    console.error(`[Boot] 🛑 Estrutura do Acompanhamento iFood falhou: ${err?.message}`);
+    return false;
+  }
+}

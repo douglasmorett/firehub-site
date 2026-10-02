@@ -7,6 +7,7 @@ import AmbassadorsTab from "./AmbassadorsTab";
 import InscricoesEmbaixadorTab from "./InscricoesEmbaixadorTab";
 import AdminCostsTab from "./AdminCostsTab";
 import VendedoresTab from "./VendedoresTab";
+import AcompanhamentoIfoodTab from "./AcompanhamentoIfoodTab";
 import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
 import ConexaoDoAtendimento from "@/components/crm/ConexaoDoAtendimento";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
@@ -41,14 +42,16 @@ type Lojista = {
   contaPrincipal: { id: string; nome: string } | null;
   /** Na loja principal: quantas lojas extras a conta tem. */
   lojasExtras: number;
+  /** Cliente pagante do Acompanhamento iFood (aba Acompanhamento iFood). */
+  acompanhamentoIfood: boolean;
 };
 
 type Vendedor = { id: string; name: string; active: boolean };
 type Embaixador = { id: string; name: string; code: string; active: boolean };
 
 type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes" | "inativos" | "nunca";
-type Tab = "overview" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda";
-const ABAS: Tab[] = ["overview", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda"];
+type Tab = "overview" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda" | "acompanhamento";
+const ABAS: Tab[] = ["overview", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda", "acompanhamento"];
 
 type KPIs = {
   totalLojistas: number; emTrial: number; assinantes: number;
@@ -69,6 +72,7 @@ const TITULOS: Record<Tab, string> = {
   atendimento: "Atendimento — WhatsApp do FireHub",
   crm: "CRM — contatos e funil",
   agenda: "Agenda da equipe",
+  acompanhamento: "Acompanhamento iFood",
 };
 
 /** "hoje", "ontem", "há 12 dias", "nunca vendeu". */
@@ -509,6 +513,11 @@ export default function AdminDashboardClient({
             🔗 +{l.lojasExtras} {l.lojasExtras === 1 ? "loja" : "lojas"} na conta
           </button>
         )}
+        {l.acompanhamentoIfood && (
+          <button className="fha-conta fha-acomp" onClick={() => setTab("acompanhamento")} title="Cliente do Acompanhamento iFood">
+            🛵 Acompanhamento iFood
+          </button>
+        )}
       </div>
     </div>
   );
@@ -644,6 +653,8 @@ export default function AdminDashboardClient({
         .fha-badge-exempt { background: #F1F5F9; color: #475569; }
         .fha-conta { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 999px; border: 1px solid #99F6E4; background: #F0FDFA; color: #0F766E; font-size: 0.68rem; font-weight: 800; font-family: inherit; cursor: pointer; white-space: nowrap; }
         .fha-conta:hover { border-color: #0F766E; }
+        .fha-acomp { border-color: #FDBA9C; background: #FFF7F3; color: #C2410C; margin-left: 4px; }
+        .fha-acomp:hover { border-color: #C2410C; }
         .fha-uso { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 0.78rem; white-space: nowrap; }
         .fha-uso i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
         .fha-uso-ativa { color: #15803D; } .fha-uso-ativa i { background: #22C55E; }
@@ -705,6 +716,7 @@ export default function AdminDashboardClient({
             { key: "crm", icone: "🎯", rotulo: "CRM" },
             { key: "agenda", icone: "📅", rotulo: "Agenda" },
             { key: "vendedores", icone: "💼", rotulo: "Vendedores" },
+            { key: "acompanhamento", icone: "🛵", rotulo: "Acompanhamento iFood" },
           ] as { key: Tab; icone: string; rotulo: string; selo?: number }[]).map(n => (
             <button key={n.key} onClick={() => setTab(n.key)} className={`fha-nav-item${tab === n.key ? " active" : ""}`}>
               <span style={{ width: 18, textAlign: "center" }}>{n.icone}</span> {n.rotulo}
@@ -886,6 +898,7 @@ export default function AdminDashboardClient({
           {tab === "ambassadors" && <AmbassadorsTab />}
           {tab === "inscricoes" && <InscricoesEmbaixadorTab />}
           {tab === "custos" && <AdminCostsTab />}
+          {tab === "acompanhamento" && <AcompanhamentoIfoodTab />}
 
         </div>
       </main>

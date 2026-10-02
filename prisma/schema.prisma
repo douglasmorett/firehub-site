@@ -2186,3 +2186,66 @@ model CrmConfig {
   dados        Json
   atualizadoEm DateTime @updatedAt
 }
+
+/// Cliente do ACOMPANHAMENTO iFOOD — a consultoria paga (contrato da Divinos,
+/// 30/09/2026: % do repasse acima de uma base semanal, com teto). Pode ser
+/// loja do FireHub (`lojaId`) ou alguém de fora do sistema (só o nome).
+/// Tabela própria, sem coluna em `User`: quem não usa o FireHub também entra,
+/// e nada do sistema das lojas lê esta tabela. Criada no boot
+/// (garantirEstruturaDeAcompanhamento).
+model AcompanhamentoIfood {
+  id               String    @id @default(cuid())
+  /// Loja do FireHub, quando o cliente usa o sistema. Uma loja, um acompanhamento.
+  lojaId           String?   @unique
+  nome             String
+  responsavel      String?
+  telefone         String?
+  cidade           String?
+  /// merchantId do Portal do Parceiro (financial-bff), para buscar os números.
+  ifoodMerchantId  String?
+  /// PERCENTUAL (% do repasse acima da base, até o teto) · FIXO (valor por semana)
+  modelo           String    @default("PERCENTUAL")
+  percentual       Float     @default(5)
+  /// Repasse da semana que já existia antes do acompanhamento (Anexo I do contrato).
+  baseSemanal      Float     @default(0)
+  tetoSemanal      Float?    @default(250)
+  valorFixoSemanal Float?
+  inicioEm         DateTime?
+  /// ATIVO · PAUSADO · ENCERRADO
+  status           String    @default("ATIVO")
+  observacoes      String?
+  criadoPor        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  relatorios AcompanhamentoRelatorio[]
+}
+
+/// O relatório do mês de um cliente do acompanhamento — o histórico dele.
+/// O arquivo (o HTML do modelo ou um PDF) fica no BANCO, não em
+/// public/uploads: o volume de uploads não tem cópia fora da máquina, e o
+/// relatório é o que responde a qualquer contestação do cliente.
+model AcompanhamentoRelatorio {
+  id            String              @id @default(cuid())
+  clienteId     String
+  cliente       AcompanhamentoIfood @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  /// AAAA-MM do mês analisado.
+  mes           String
+  titulo        String?
+  /// A frase do mês: o que aconteceu e por qual alavanca.
+  resumo        String?
+  /// { vendas, totalFaturamento, pedidos, ticketMedio, visitas, conversao, nota,
+  ///   cancelamentos, honorario } — tudo opcional, como veio do portal.
+  numeros       Json?
+  /// RASCUNHO · ENVIADO
+  status        String              @default("RASCUNHO")
+  enviadoEm     DateTime?
+  arquivo       Bytes?
+  arquivoNome   String?
+  arquivoTipo   String?
+  criadoPor     String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([clienteId, mes])
+}
