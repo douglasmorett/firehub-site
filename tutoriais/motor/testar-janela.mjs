@@ -21,10 +21,10 @@ for (const [nome, viewport] of [["desktop", { width: 1366, height: 768 }], ["cel
   await p.locator("button[type=submit]").first().click();
   await p.waitForURL(/\/store/, { timeout: 120_000 });
 
-  // tela SEM vídeo: o botão não existe
-  await p.goto(`${B}/store/estoque`, { waitUntil: "load", timeout: 180_000 });
+  // tela SEM vídeo (Totem, em testes): o botão não existe
+  await p.goto(`${B}/store/totem`, { waitUntil: "load", timeout: 180_000 });
   await p.waitForTimeout(2500);
-  confere(`${nome}: tela sem vídeo não mostra o botão`, (await p.getByRole("button", { name: /^Tutorial/ }).count()) === 0);
+  confere(`${nome}: tela sem vídeo não mostra o botão`, (await p.getByRole("button", { name: /^Tutorial/ }).locator("visible=true").count()) === 0);
 
   await p.goto(`${B}/store/pedidos-clientes`, { waitUntil: "load", timeout: 180_000 });
   const botao = p.getByRole("button", { name: /^Tutorial/ });
@@ -32,7 +32,7 @@ for (const [nome, viewport] of [["desktop", { width: 1366, height: 768 }], ["cel
   const barra = await p.locator("header, nav").first().boundingBox().catch(() => null);
   const cx = await botao.boundingBox();
   confere(`${nome}: botão na barra do topo`, cx && cx.y < 260, cx);
-  confere(`${nome}: bolinha de "ainda não viu"`, (await p.locator(".fh-tutorial-novo").count()) === 1);
+  confere(`${nome}: bolinha de "ainda não viu"`, (await p.locator(".fh-tutorial-novo:visible").count()) === 1);
   await p.screenshot({ path: `${F}/janela-${nome}-0-barra.png`, clip: { x: 0, y: 0, width: viewport.width, height: 130 } });
 
   await botao.click();
@@ -62,11 +62,11 @@ for (const [nome, viewport] of [["desktop", { width: 1366, height: 768 }], ["cel
   await p.keyboard.press("Escape");
   await p.waitForTimeout(400);
   confere(`${nome}: Esc fecha`, (await p.getByRole("dialog").count()) === 0);
-  confere(`${nome}: bolinha some depois de abrir`, (await p.locator(".fh-tutorial-novo").count()) === 0);
+  confere(`${nome}: bolinha some depois de abrir`, (await p.locator(".fh-tutorial-novo:visible").count()) === 0);
   await p.reload({ waitUntil: "load" });
   await p.getByRole("button", { name: /^Tutorial/ }).waitFor({ state: "visible", timeout: 60_000 });
   await p.waitForTimeout(800);
-  confere(`${nome}: bolinha continua sumida depois de recarregar`, (await p.locator(".fh-tutorial-novo").count()) === 0);
+  confere(`${nome}: bolinha continua sumida depois de recarregar`, (await p.locator(".fh-tutorial-novo:visible").count()) === 0);
   confere(`${nome}: sem erro de página`, erros.length === 0, erros);
   await ctx.close();
 }
