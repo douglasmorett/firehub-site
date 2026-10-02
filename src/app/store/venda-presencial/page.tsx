@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
-import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
+import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, notaDoDesconto, problemaDoDesconto, valorDoDesconto,
   type DescontoManual,
@@ -212,7 +212,17 @@ export default function VendaPresencialPage() {
     return [];
   };
 
+  // Produto com HORÁRIO (a marmita das 9h às 14h) sai do balcão sozinho na
+  // hora: este relógio de 1 min refaz as abas e a grade, porque a tela fica
+  // aberta o dia inteiro.
+  const [minutoDoRelogio, setMinutoDoRelogio] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setMinutoDoRelogio((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   const isAvailableToday = (p: any, dayCode: string): boolean => {
+    if (lerHorarioDoProduto(p.availableHours)) return disponivelAgora(p);
     const days = parseAvailableDays(p.availableDays);
     if (days.length === 0) return true;
     const allowedAliases = DAY_ALIASES[dayCode] || [dayCode];
@@ -265,7 +275,7 @@ export default function VendaPresencialPage() {
     const reais = Array.from(new Set(activeTodayProducts.map(p => p.category || "Outros")));
     const temCombo = activeTodayProducts.some(p => p.isCombo);
     return ["Todos", ...(temCombo && !temCategoriaCombos ? ["Combos"] : []), ...reais];
-  }, [products, currentDayCode, temCategoriaCombos]);
+  }, [products, currentDayCode, temCategoriaCombos, minutoDoRelogio]);
 
   const filtered = products.filter(p => {
     if (p.active === false) return false;

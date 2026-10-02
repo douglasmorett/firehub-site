@@ -45,7 +45,7 @@ import {
   type CotacaoNaTela, type EnderecoDigitado, type Ponto, type PontoDoCliente,
 } from "@/lib/entrega-no-checkout";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
-import { diaDaSemanaEmSaoPaulo } from "@/lib/cardapio-interno";
+import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/TrilhaDoCliente";
 import FileiraDeDestaques from "./FileiraDeDestaques";
@@ -635,10 +635,22 @@ export default function CustomerStorePage({
   };
 
   const isAvailableToday = (p: any, dayCode: string): boolean => {
+    // Produto com horário (a marmita das 9h às 14h) decide pelo relógio da
+    // loja, dia e hora juntos — mesma conta do servidor.
+    if (lerHorarioDoProduto(p.availableHours)) return disponivelAgora(p, franchisee.storeTimezone);
     const days = parseAvailableDays(p.availableDays);
     if (days.length === 0) return true;
     return days.map(d => d.toUpperCase()).includes(dayCode.toUpperCase());
   };
+
+  // A vitrine vem do servidor já cortada, mas o cliente pode deixar o
+  // cardápio aberto: às 14h a marmita sai da tela sem precisar recarregar.
+  const [minutoDoRelogio, setMinutoDoRelogio] = useState(0);
+  useEffect(() => {
+    if (!menuProducts.some((p: any) => lerHorarioDoProduto(p.availableHours))) return;
+    const t = setInterval(() => setMinutoDoRelogio((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, [menuProducts]);
 
   // "99food" entrou na lista: o webhook do 99Food cria pseudo-produtos nessa
   // categoria (retratos do pedido, para a comanda) e eles estavam aparecendo
@@ -652,7 +664,7 @@ export default function CustomerStorePage({
 
   const activeTodayProducts = useMemo(() => {
     return menuProducts.filter(p => isAvailableToday(p, currentDayCode) && !isIntegrationCategory(p.category));
-  }, [menuProducts, currentDayCode]);
+  }, [menuProducts, currentDayCode, minutoDoRelogio]);
 
   const categories = useMemo(() => {
     const activeCats = Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))));

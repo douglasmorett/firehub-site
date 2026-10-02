@@ -5,7 +5,7 @@ import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
-import { disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
+import { motivoForaDoCardapio, textoDoHorario } from "@/lib/cardapio-interno";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
 import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
@@ -353,10 +353,16 @@ export async function POST(req: Request) {
       // Promoção de dia específico não pode ser comprada fora do dia dela. A
       // vitrine já esconde o item, mas a aba aberta desde ontem — ou um POST
       // direto na rota — ainda mandava a esfirra de segunda no domingo, pelo
-      // preço de promoção. Mesma regra do totem (api/totem/order).
-      if (!disponivelHoje((product as any).availableDays, diaDaSemanaDaLoja(franchisee.storeTimezone))) {
+      // preço de promoção. Mesma regra do totem (api/totem/order). O horário
+      // do produto (a marmita das 9h às 14h) entra na mesma conferência.
+      const foraDoCardapio = motivoForaDoCardapio(product as any, franchisee.storeTimezone);
+      if (foraDoCardapio) {
         throw Object.assign(
-          new Error(`"${product.name}" só está disponível em dias específicos e hoje não é um deles.`),
+          new Error(
+            foraDoCardapio === "horario"
+              ? `"${product.name}" só é vendido ${textoDoHorario((product as any).availableHours)}.`
+              : `"${product.name}" só está disponível em dias específicos e hoje não é um deles.`
+          ),
           { statusCode: 400 }
         );
       }

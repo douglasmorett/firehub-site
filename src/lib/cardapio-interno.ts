@@ -161,6 +161,91 @@ export function disponivelHoje(availableDays: unknown, hoje = diaDaSemanaDaLoja(
 }
 
 /**
+ * HORÁRIO DO PRODUTO: a marmita que só se vende das 9h às 14h.
+ *
+ * `availableHours` é um JSON `{"de":"09:00","ate":"14:00"}`, no relógio da
+ * loja. O "até" é o minuto em que o item SAI (14:00 já não vende). "Até" menor
+ * ou igual ao "de" atravessa a meia-noite: o caldo das 18h às 02h. Ausente,
+ * vazio ou ilegível = o dia todo — mesma regra de `availableDays`: campo mal
+ * gravado nunca esconde produto.
+ *
+ * Antes disso o lojista pausava e despausava o item na mão todo dia. O Gama,
+ * de onde veio a Showrrascão, tem horário por categoria (Marmitas 9h–14h) e a
+ * cópia do cardápio não tinha onde gravar.
+ */
+export type HorarioDoProduto = { de: string; ate: string };
+
+const HORA = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const emMinutos = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+export function lerHorarioDoProduto(availableHours: unknown): HorarioDoProduto | null {
+  if (!availableHours) return null;
+  try {
+    const h = typeof availableHours === "string" ? JSON.parse(availableHours) : availableHours;
+    const de = String(h?.de ?? "");
+    const ate = String(h?.ate ?? "");
+    if (!HORA.test(de) || !HORA.test(ate) || de === ate) return null;
+    return { de, ate };
+  } catch {
+    return null;
+  }
+}
+
+/** "das 09:00 às 14:00" — ou "" para o produto do dia todo. */
+export function textoDoHorario(availableHours: unknown): string {
+  const h = lerHorarioDoProduto(availableHours);
+  return h ? `das ${h.de} às ${h.ate}` : "";
+}
+
+/** Minutos desde a meia-noite NO RELÓGIO DA LOJA (o servidor roda em UTC). */
+export function minutoDaLoja(timeZone?: string | null, ref: Date = new Date()): number {
+  const partes = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timeZone || "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(ref);
+  const valor = (t: string) => Number(partes.find((p) => p.type === t)?.value ?? 0);
+  return (valor("hour") % 24) * 60 + valor("minute");
+}
+
+/**
+ * Por que o produto não se vende AGORA: "dia", "horario" ou null (vende).
+ *
+ * Dia e horário se conferem juntos por causa da madrugada: o caldo de sexta
+ * das 18h às 02h ainda é de SEXTA à 01h de sábado. Na parte depois da
+ * meia-noite, o dia que vale é o de ontem.
+ */
+export function motivoForaDoCardapio(
+  produto: { availableDays?: unknown; availableHours?: unknown } | null | undefined,
+  timeZone?: string | null,
+  ref: Date = new Date()
+): "dia" | "horario" | null {
+  const horario = lerHorarioDoProduto(produto?.availableHours);
+  if (!horario) return disponivelHoje(produto?.availableDays, diaDaSemanaDaLoja(timeZone, ref)) ? null : "dia";
+
+  const agora = minutoDaLoja(timeZone, ref);
+  const de = emMinutos(horario.de);
+  const ate = emMinutos(horario.ate);
+  const viraODia = ate < de;
+  const dentro = viraODia ? agora >= de || agora < ate : agora >= de && agora < ate;
+  if (!dentro) return "horario";
+
+  const madrugadaDeOntem = viraODia && agora < ate;
+  const dia = diaDaSemanaDaLoja(timeZone, madrugadaDeOntem ? new Date(ref.getTime() - 24 * 60 * 60 * 1000) : ref);
+  return disponivelHoje(produto?.availableDays, dia) ? null : "dia";
+}
+
+/** O produto se vende agora (dia E horário, no relógio da loja)? */
+export function disponivelAgora(
+  produto: { availableDays?: unknown; availableHours?: unknown } | null | undefined,
+  timeZone?: string | null,
+  ref: Date = new Date()
+): boolean {
+  return motivoForaDoCardapio(produto, timeZone, ref) === null;
+}
+
+/**
  * IDs dos produtos que existem SÓ para ser opção dentro de um combo.
  *
  * "4 Nuggets", "Adicional de Catupiry", "Adicional carne seca": para o banco

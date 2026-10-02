@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { ehProdutoDeIntegracao, idsSoDeOpcaoDeCombo, combosQueUsamOpcao } from "@/lib/cardapio-interno";
+import { ehProdutoDeIntegracao, idsSoDeOpcaoDeCombo, combosQueUsamOpcao, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import { perguntaTravadaPelaPausa } from "@/lib/opcao-pausada";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
@@ -882,6 +882,11 @@ export default function MenuProductManager({
 
   const [availableDaysMode, setAvailableDaysMode] = useState<"all" | "specific">("all");
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  // Horário do produto (a marmita das 9h às 14h): fora dele o item sai do
+  // cardápio, do totem, do balcão e do robô sozinho (lib/cardapio-interno.ts).
+  const [horarioMode, setHorarioMode] = useState<"all" | "specific">("all");
+  const [horarioDe, setHorarioDe] = useState("09:00");
+  const [horarioAte, setHorarioAte] = useState("14:00");
 
   // Form state
   const [name, setName] = useState("");
@@ -1041,6 +1046,7 @@ export default function MenuProductManager({
     setPrecosCanalNoCombo(false);
     setActivePDV(true); setActiveDelivery(true); setActiveTotem(true); setActiveGarcom(true);
     setAvailableDaysMode("all"); setSelectedDays([]);
+    setHorarioMode("all"); setHorarioDe("09:00"); setHorarioAte("14:00");
     setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
     setShowForm(false); setEditingId(null);
   };
@@ -1077,6 +1083,10 @@ export default function MenuProductManager({
       setAvailableDaysMode("all");
       setSelectedDays([]);
     }
+    const horario = lerHorarioDoProduto(p.availableHours);
+    setHorarioMode(horario ? "specific" : "all");
+    setHorarioDe(horario?.de || "09:00");
+    setHorarioAte(horario?.ate || "14:00");
 
     setCategory(p.category); setImageUrl(p.imageUrl || ""); setActive(p.active);
     setIsCombo(p.isCombo); setIsBeverage(p.isBeverage ?? false);
@@ -1154,6 +1164,8 @@ export default function MenuProductManager({
     }
     if (dynCategories.length === 0) { alert("Cadastre pelo menos uma categoria antes de salvar."); return; }
     if (!category || category.trim() === "") { alert("Selecione uma categoria válida."); return; }
+    const horarioPayload = horarioMode === "specific" ? lerHorarioDoProduto({ de: horarioDe, ate: horarioAte }) : null;
+    if (horarioMode === "specific" && !horarioPayload) { alert("Horário do produto: escolha o início e o fim, diferentes um do outro."); return; }
     setLoading(true);
 
     try {
@@ -1174,6 +1186,7 @@ export default function MenuProductManager({
           cost: cost ? parseFloat(cost) : 0,
           tags: tags.length > 0 ? tags : null,
           availableDays: availableDaysPayload,
+          availableHours: horarioPayload,
           category,
           imageUrl: imageUrl || null, active, isCombo, isBeverage,
           activePDV, activeDelivery, activeTotem, activeGarcom,
@@ -2520,6 +2533,84 @@ export default function MenuProductManager({
                   {selectedDays.length === 0 && (
                     <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#C92E09", fontWeight: 700 }}>
                       ⚠️ Selecione pelo menos 1 dia da semana para o produto ficar visível.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* HORÁRIO DO PRODUTO: a marmita das 9h às 14h sai sozinha do cardápio */}
+            <div style={{ marginTop: "0.75rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", gap: "8px", flexWrap: "wrap" }}>
+                <p style={{ fontWeight: 700, fontSize: "0.85rem", color: "#0F172A", margin: 0 }}>
+                  🕘 Horário no Cardápio
+                </p>
+                <span style={{ fontSize: "0.7rem", fontWeight: 700, background: horarioMode === "all" ? "#F0FDFA" : "#FFF7E6", color: horarioMode === "all" ? "#0F766E" : "#92400E", padding: "2px 8px", borderRadius: "6px" }}>
+                  {horarioMode === "all" ? "🟢 O dia todo" : `🕘 ${horarioDe} às ${horarioAte}`}
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: horarioMode === "specific" ? "0.875rem" : 0 }}>
+                <button
+                  type="button"
+                  onClick={() => setHorarioMode("all")}
+                  style={{
+                    padding: "10px 14px", borderRadius: "10px", fontSize: "0.82rem", fontWeight: 700,
+                    border: `1.5px solid ${horarioMode === "all" ? "#0F766E" : "#CBD5E1"}`,
+                    background: horarioMode === "all" ? "#F0FDFA" : "#FFF",
+                    color: horarioMode === "all" ? "#0F766E" : "#64748B",
+                    cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+                    textAlign: "left"
+                  }}
+                >
+                  <span style={{ fontSize: "1rem" }}>🟢</span>
+                  <div>
+                    <div style={{ fontWeight: 800 }}>O Dia Todo</div>
+                    <div style={{ fontSize: "0.68rem", fontWeight: 400, color: "#64748B" }}>Vende enquanto a loja estiver aberta</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHorarioMode("specific")}
+                  style={{
+                    padding: "10px 14px", borderRadius: "10px", fontSize: "0.82rem", fontWeight: 700,
+                    border: `1.5px solid ${horarioMode === "specific" ? "#E8360C" : "#CBD5E1"}`,
+                    background: horarioMode === "specific" ? "#FEF2F2" : "#FFF",
+                    color: horarioMode === "specific" ? "#C92E09" : "#64748B",
+                    cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+                    textAlign: "left"
+                  }}
+                >
+                  <span style={{ fontSize: "1rem" }}>🕘</span>
+                  <div>
+                    <div style={{ fontWeight: 800 }}>Só num Horário</div>
+                    <div style={{ fontSize: "0.68rem", fontWeight: 400, color: "#64748B" }}>Fora dele o item some sozinho</div>
+                  </div>
+                </button>
+              </div>
+
+              {horarioMode === "specific" && (
+                <div style={{ padding: "10px", background: "#FFF", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", gap: "6px" }}>
+                      Das
+                      <input type="time" value={horarioDe} onChange={(e) => setHorarioDe(e.target.value)}
+                        style={{ padding: "6px 8px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 700, color: "#0F172A" }} />
+                    </label>
+                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", gap: "6px" }}>
+                      às
+                      <input type="time" value={horarioAte} onChange={(e) => setHorarioAte(e.target.value)}
+                        style={{ padding: "6px 8px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 700, color: "#0F172A" }} />
+                    </label>
+                  </div>
+                  <p style={{ margin: "8px 0 0", fontSize: "0.72rem", color: "#64748B", lineHeight: 1.4 }}>
+                    Fora desse horário o item sai do cardápio, do totem, do balcão e do robô, sem precisar pausar. Vale junto com os dias acima.
+                    {horarioDe && horarioAte && horarioAte < horarioDe ? " Passa da meia-noite: vende até o dia seguinte." : ""}
+                  </p>
+                  {(!horarioDe || !horarioAte || horarioDe === horarioAte) && (
+                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#C92E09", fontWeight: 700 }}>
+                      ⚠️ Escolha o início e o fim, diferentes um do outro.
                     </p>
                   )}
                 </div>

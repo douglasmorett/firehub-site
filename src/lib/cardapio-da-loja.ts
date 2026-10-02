@@ -38,7 +38,7 @@ export const SELECT_DO_CARDAPIO = {
   // Opcao que so existe dentro de combo: a tela de cadastro precisa do campo
   // para marcar, e o cardapio de venda para esconder do avulso.
   apenasEmCombo: true,
-  cost: true, tags: true, availableDays: true, description: true,
+  cost: true, tags: true, availableDays: true, availableHours: true, description: true,
   comboConfig: true,
   comboGroups: {
     orderBy: { sortOrder: "asc" },

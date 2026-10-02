@@ -29,7 +29,7 @@ import { trackGeminiUsage, trackDivergenciaDePreco } from "@/lib/usage-tracker";
 import { conferirPrecosDitos, extrairPrecosDoTexto, compararTotalDitoComGravado } from "@/lib/precos-ditos";
 import { normalizeStoreHours } from "@/lib/store-hours";
 import { precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, tabelaDaOpcao } from "./preco-combo";
-import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, motivoForaDoCardapio, textoDoHorario } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
@@ -258,7 +258,7 @@ export async function processChatbotAI(
       },
       select: {
         id: true, name: true, description: true, price: true, priceDelivery: true, promoPrice: true, category: true,
-        isCombo: true, isBeverage: true, availableDays: true, tags: true,
+        isCombo: true, isBeverage: true, availableDays: true, availableHours: true, tags: true,
         // Sem os grupos, o robô não sabe que o "Nugget" custa R$ 0,00 de base e
         // tem o valor todo nas opções — e acabava lançando o pedido por zero.
         comboGroups: {
@@ -653,6 +653,19 @@ export async function processChatbotAI(
       } else {
         dayNotice = ` [⚠️ INDISPONÍVEL HOJE (${currentDayName})! Item válido apenas em: ${dayNamesList}]`;
       }
+    }
+
+    // HORÁRIO DO PRODUTO (a marmita das 9h às 14h). Fora dele o item não se
+    // oferece nem se anota — como o esgotado —, mas o robô sabe o horário para
+    // responder "a marmita é das 9h às 14h". Dentro dele, o horário vai junto
+    // para o robô não prometer marmita para depois que ela sai.
+    const horarioDoItem = textoDoHorario(p.availableHours);
+    if (horarioDoItem && isToday) {
+      if (motivoForaDoCardapio({ availableHours: p.availableHours }, tz) === "horario") {
+        unavailableTodayProducts.push(`- "${rawCleanName}" (${p.category}): [🕘 FORA DO HORÁRIO — só é vendido ${horarioDoItem}. PROIBIDO OFERECER OU ANOTAR AGORA; se perguntarem, diga o horário]`);
+        return;
+      }
+      dayNotice += ` [SÓ É VENDIDO ${horarioDoItem.toUpperCase()}]`;
     }
 
     let tagsNotice = "";

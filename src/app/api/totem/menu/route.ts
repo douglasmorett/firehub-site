@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { orderByCardapio } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
-import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja, idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelAgora, idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { aplicarEstoqueNaVitrine, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: auth.erro, code: auth.codigo }, { status: auth.status });
     }
     const lojaId = auth.licenca.franchiseeId;
-    const hojeNaLoja = diaDaSemanaDaLoja(await fusoDaLoja(lojaId));
+    const fuso = await fusoDaLoja(lojaId);
 
     const products = await prisma.menuProduct.findMany({
       where: {
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       select: {
         id: true, name: true, description: true, price: true, priceTotem: true, imageUrl: true,
         apenasEmCombo: true, priceSalao: true, priceDelivery: true, promoPrice: true,
-        category: true, isCombo: true, isBeverage: true, tags: true, availableDays: true,
+        category: true, isCombo: true, isBeverage: true, tags: true, availableDays: true, availableHours: true,
         comboConfig: true,
         comboGroups: {
           orderBy: { sortOrder: "asc" },
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     // Esgotado (estoque disponível zerado) sai do quiosque como o fora do dia.
     const doDia = aplicarPrecoNoCardapio(
       aplicarEstoqueNaVitrine(
-        products.filter((p) => disponivelHoje(p.availableDays, hojeNaLoja)),
+        products.filter((p) => disponivelAgora(p, fuso)),
         await estoqueDaLojaOuVazio(lojaId)
       ) as any[],
       "totem"

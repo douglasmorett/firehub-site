@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
-import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { SELECT_DO_CARDAPIO, ordemDasCategorias, ordenarComoALoja } from "@/lib/cardapio-da-loja";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
@@ -390,6 +390,23 @@ async function normalizarImagem(rest: any) {
  * número que a tela leu antes das vendas desse meio tempo. O restante e a
  * marca de esgotado que a tela de venda recebe também não voltam ao banco.
  */
+/**
+ * Horário do produto (`availableHours`): chega `{de, ate}` ou nulo e vai para
+ * o banco como JSON. Nulo = o dia todo. Horário que não se lê é recusado em
+ * vez de gravado: gravado, ele valeria como "o dia todo" sem ninguém saber.
+ */
+function saneiaHorario(dados: any): string | null {
+  if (dados?.availableHours === undefined) return null;
+  if (dados.availableHours === null || dados.availableHours === "") {
+    dados.availableHours = null;
+    return null;
+  }
+  const horario = lerHorarioDoProduto(dados.availableHours);
+  if (!horario) return "Horário do produto: informe o início e o fim (HH:MM), diferentes um do outro.";
+  dados.availableHours = JSON.stringify(horario);
+  return null;
+}
+
 function saneiaEstoque(dados: any): string | null {
   const informado = dados?.estoque;
   const pausar = dados?.estoquePausar;
@@ -434,6 +451,8 @@ export async function POST(req: NextRequest) {
   if (erroPromo) return NextResponse.json({ error: erroPromo }, { status: 400 });
   const erroEstoque = saneiaEstoque(rest);
   if (erroEstoque) return NextResponse.json({ error: erroEstoque }, { status: 400 });
+  const erroHorario = saneiaHorario(rest);
+  if (erroHorario) return NextResponse.json({ error: erroHorario }, { status: 400 });
 
   await normalizarImagem(rest);
   const safeComboGroups = await keepOwnComboItems(comboGroups, franchiseeId);
@@ -480,6 +499,8 @@ export async function PUT(req: NextRequest) {
   if (erroPromo) return NextResponse.json({ error: erroPromo }, { status: 400 });
   const erroEstoque = saneiaEstoque(updateData);
   if (erroEstoque) return NextResponse.json({ error: erroEstoque }, { status: 400 });
+  const erroHorario = saneiaHorario(updateData);
+  if (erroHorario) return NextResponse.json({ error: erroHorario }, { status: 400 });
 
   if (updateData.tags) {
     updateData.tags = JSON.stringify(updateData.tags);
@@ -501,7 +522,9 @@ export async function PUT(req: NextRequest) {
   // A pausa de verdade (`active`, e o desligar no delivery) também: com o
   // pausar de 1 clique na opção do combo, o sabor que acabou seguia na vitrine
   // por até um minuto — e o POST do site o recusava (lib/opcao-pausada.ts).
-  if ("estoqueQtd" in updateData || "estoquePausar" in updateData || "active" in updateData || "activeDelivery" in updateData) {
+  // Dia e horário também: a marmita que passou a ir até as 15h não pode
+  // continuar fora da vitrine até o cache vencer.
+  if ("estoqueQtd" in updateData || "estoquePausar" in updateData || "active" in updateData || "activeDelivery" in updateData || "availableDays" in updateData || "availableHours" in updateData) {
     const loja = await prisma.user.findUnique({ where: { id: existing.franchiseeId || "" }, select: { slug: true } }).catch(() => null);
     if (loja?.slug) {
       try { revalidatePath(`/loja/${loja.slug}`); } catch {}

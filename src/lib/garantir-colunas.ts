@@ -82,6 +82,9 @@ const INSTRUCOES = [
   // aparece e conta na nota do cardápio. Nulo = todas, como toda loja
   // continua; o painel da loja sempre vê todas, para responder.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "reviewsMinStars" INTEGER`,
+  // HORÁRIO DO PRODUTO (a marmita das 9h às 14h): JSON {"de","ate"} no
+  // relógio da loja. Nulo = o dia todo, como todo produto continua.
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "availableHours" TEXT`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -106,6 +109,7 @@ const ESPERADAS = [
   "MenuProduct.estoquePausar",
   "User.storeBannerVideo",
   "User.reviewsMinStars",
+  "MenuProduct.availableHours",
 ];
 
 /**

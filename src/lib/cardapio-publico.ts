@@ -10,7 +10,7 @@
 import { prisma } from "@/lib/prisma";
 import { orderByCardapio } from "@/lib/menu-order";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
-import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelAgora } from "@/lib/cardapio-interno";
 import { aplicarEstoqueNaVitrine, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio";
@@ -122,6 +122,9 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
         // undefined — e "sem dias" quer dizer "todo dia". A esfirra de segunda
         // aparecia no domingo, e a saída do lojista era desativar o item na mão.
         availableDays: true,
+        // Idem para o horário (a marmita das 9h às 14h): sem ele no SELECT, o
+        // item de horário vendia o dia todo.
+        availableHours: true,
         comboGroups: {
           orderBy: { sortOrder: 'asc' },
           select: {
@@ -204,13 +207,15 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // `new Date().getDay()` responde pelo fuso do APARELHO de quem abre o
   // cardápio, e no render do servidor responde em UTC — depois das 21h de
   // Brasília os dois já viraram o dia, e a promoção de sexta aparecia na
-  // quinta à noite. `disponivelHoje` decide pelo fuso de São Paulo.
+  // quinta à noite. `disponivelAgora` decide pelo fuso da loja — o dia e,
+  // desde 02/10/2026, o horário do produto (a marmita das 9h às 14h). A página
+  // é cacheada por 60 s: o item entra e sai da vitrine com até 1 min de atraso,
+  // e o POST do pedido confere de novo na hora de gravar.
   //
   // Item fora do dia nem entra no payload: além de não aparecer, não vai no
   // HTML público. Quem é opção DENTRO de combo continua intacto — as opções
   // vêm pela consulta aninhada, que este filtro não toca.
-  const hojeNaLoja = diaDaSemanaDaLoja(franchisee.storeTimezone);
-  const menuDoDia = (menuProducts as any[]).filter((p) => disponivelHoje(p.availableDays, hojeNaLoja));
+  const menuDoDia = (menuProducts as any[]).filter((p) => disponivelAgora(p, franchisee.storeTimezone));
 
   // Estoque disponível: o que esgotou fecha, igual ao iFood. O que ainda tem
   // leva o restante junto, para o carrinho não deixar pedir mais do que há —

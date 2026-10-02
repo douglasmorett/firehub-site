@@ -14,7 +14,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { generateDailyOrderNumber } from "@/lib/order-number";
-import { SEM_PRODUTO_DE_INTEGRACAO, disponivelHoje, diaDaSemanaDaLoja } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelAgora } from "@/lib/cardapio-interno";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import { conferirEstoque } from "@/lib/estoque-restante";
@@ -49,7 +49,7 @@ export async function lancarNaMesa(opcoes: {
     return { ok: false, status: 400, error: "Items are required" };
   }
 
-  const hojeNaLoja = diaDaSemanaDaLoja(await fusoDaLoja(targetFranchiseeId));
+  const fuso = await fusoDaLoja(targetFranchiseeId);
 
   const tableSession = await prisma.tableSession.findUnique({
     where: { id },
@@ -101,9 +101,9 @@ export async function lancarNaMesa(opcoes: {
       recusados.push(String(item?.menuProductId ?? "?"));
       continue;
     }
-    // Produto de dia específico não sai fora do dia; a tela pode estar
-    // aberta desde ontem.
-    if (!disponivelHoje(produto.availableDays, hojeNaLoja)) {
+    // Produto de dia ou horário específico não sai fora dele; a tela pode
+    // estar aberta desde ontem.
+    if (!disponivelAgora(produto, fuso)) {
       recusados.push(produto.name);
       continue;
     }

@@ -577,6 +577,9 @@ model MenuProduct {
   cost            Float?
   tags            String?             // JSON array: ["Novo","Mais Vendido","Promoção","Esgotado","Vegano","Picante"]
   availableDays   String?             // JSON array: ["SEG","TER","QUA","QUI","SEX","SAB","DOM"] (null/empty = todos os dias)
+  /// Horário do produto no relógio da loja: JSON {"de":"09:00","ate":"14:00"} (nulo = o dia todo).
+  /// Coluna garantida no boot (src/lib/garantir-colunas.ts). Regra em lib/cardapio-interno.ts.
+  availableHours  String?
   imageUrl        String?
   category        String              @default("Lanches")
   /// Ordem do produto DENTRO da categoria, definida pela loja na tela de

@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
       isCombo: p.isCombo,
       isBeverage: p.isBeverage,
       availableDays: p.availableDays,
+      availableHours: p.availableHours,
       tags: p.tags,
       comboGroups: p.comboGroups.map((g) => ({
         id: g.id,
