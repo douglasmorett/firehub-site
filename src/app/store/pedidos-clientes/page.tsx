@@ -9,7 +9,7 @@ import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
-import { CHEGOU_A_LOJA } from "@/lib/pagamento-na-entrega";
+import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed } from "@/lib/filtro-do-feed";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +70,9 @@ export default async function FranchiseeCustomerOrdersPage() {
   //
   // `.catch` porque isto é enfeite do cartão: uma consulta a mais não pode
   // derrubar a tela de pedidos, que é a tela onde a loja trabalha.
-  const lojasDeOrigem: LojaDeOrigem[] = await lojasDeOrigemDaConta(
+  // Não depende de nada abaixo: começa já e é esperada no fim, junto com o
+  // ponto do mapa — cada ida ao banco em fila era tempo a mais no clique.
+  const lojasDeOrigemP: Promise<LojaDeOrigem[]> = lojasDeOrigemDaConta(
     targetFranchiseeId,
     (user as any).accountGroupId || null,
   ).catch(() => []);
@@ -94,32 +96,67 @@ export default async function FranchiseeCustomerOrdersPage() {
     }
   }
 
+  // O ponto da loja no mapa só depende de QUAL loja: corre em paralelo com
+  // os pedidos em vez de esperar por eles.
+  const idDaLojaNoMapa = franchiseeIds.length === 1 ? franchiseeIds[0] : targetFranchiseeId;
+  const noMapaP = (async () => {
+    const lojaDoMapa =
+      idDaLojaNoMapa === user.id
+        ? user
+        : (await prisma.user
+            .findUnique({
+              where: { id: idDaLojaNoMapa },
+              select: { id: true, storeAddress: true, city: true, storeLatLng: true },
+            })
+            .catch(() => null)) || user;
+    return resolverLojaNoMapa(lojaDoMapa, { prazoMs: 1200 });
+  })();
+  // Falha aqui continua estourando lá embaixo, onde é esperada (como antes);
+  // isto só impede o Node de tratá-la como "rejeição sem dono" enquanto os
+  // pedidos ainda estão sendo lidos.
+  noMapaP.catch(() => {});
+
   // Busca do caixa aberto, motoboys e pedidos
   let orders: any[] = [];
   let activeCashSessionOpenedAt: string | null = null;
   let motoboys: any[] = [];
   try {
+    // ── A LISTA INICIAL É A MESMA DO FEED ─────────────────────────────────
+    //
+    // Vinham os 200 pedidos mais recentes da loja, de QUALQUER data e com
+    // todas as colunas — e a tela troca essa lista inteira pela do feed
+    // (/api/customer-order/poll) na primeira rodada, segundos depois. Agora a
+    // abertura usa o MESMO filtro do feed (lib/filtro-do-feed.ts) na janela
+    // padrão dele (últimas 24 h + o que está em andamento), que cobre tudo o
+    // que a primeira rodada mostra: o que a tela "já conhecia" ao abrir
+    // continua sendo o que ela conhecia antes — nada vira pedido "novo"
+    // (bipe/impressão) por engano.
+    const agoraDaAbertura = Date.now();
     let [ordersRes, cashSessionRes, motoboysRes] = await Promise.all([
       prisma.customerOrder.findMany({
-        where: {
-          franchiseeId: { in: franchiseeIds },
-          // CRIANDO_IA entra aqui de propósito.
-          //
-          // O painel TEM o cartão "🤖 IA criando pedido..." pronto
-          // (StoreOrdersDashboard: rótulo, cor e o bucket de "novos"), e o feed
-          // de polling (/api/customer-order/poll) devolve esses rascunhos. Só a
-          // carga inicial da página os excluía — então, ao abrir o painel, o
-          // pedido que a IA estava montando ficava invisível até o primeiro
-          // poll. Era o relato do dono: "quando alguns começam a fazer o pedido
-          // ele não demonstra na caixinha no nosso painel".
-          //
-          // Rascunho continua fora da impressão e da cozinha; quem cuida disso é
-          // o GlobalPrintListener e o /api/kds, cada um com seu próprio filtro.
-          //
-          // Pedido pelo site cancelado sem nunca ter sido pago fica de fora,
-          // como no feed: não é cancelamento da loja (lib/pagamento-na-entrega.ts).
-          AND: [CHEGOU_A_LOJA],
-        },
+        where: filtroDoFeed({
+          validFranchiseeIds: franchiseeIds,
+          from: new Date(agoraDaAbertura - 24 * 60 * 60 * 1000),
+          to: new Date(agoraDaAbertura + 24 * 60 * 60 * 1000),
+          ATIVO_SEM_PERIODO_DESDE: new Date(agoraDaAbertura - DIAS_ATIVO_SEM_PERIODO * 24 * 60 * 60 * 1000),
+        }),
+        // O filtro do feed já inclui o que estava aqui:
+        //
+        // CRIANDO_IA entra aqui de propósito.
+        //
+        // O painel TEM o cartão "🤖 IA criando pedido..." pronto
+        // (StoreOrdersDashboard: rótulo, cor e o bucket de "novos"), e o feed
+        // de polling (/api/customer-order/poll) devolve esses rascunhos. Só a
+        // carga inicial da página os excluía — então, ao abrir o painel, o
+        // pedido que a IA estava montando ficava invisível até o primeiro
+        // poll. Era o relato do dono: "quando alguns começam a fazer o pedido
+        // ele não demonstra na caixinha no nosso painel".
+        //
+        // Rascunho continua fora da impressão e da cozinha; quem cuida disso é
+        // o GlobalPrintListener e o /api/kds, cada um com seu próprio filtro.
+        //
+        // Pedido pelo site cancelado sem nunca ter sido pago fica de fora,
+        // como no feed: não é cancelamento da loja (lib/pagamento-na-entrega.ts).
         include: {
           // A mesa e o garçom da conta, como no feed (/api/customer-order/poll):
           // a comanda impressa antes do primeiro poll sai igual à de depois.
@@ -152,14 +189,6 @@ export default async function FranchiseeCustomerOrdersPage() {
         orderBy: { name: "asc" },
         select: { id: true, name: true, phone: true },
       }),
-      prisma.customerOrder.findMany({
-        where: {
-          franchiseeId: { in: franchiseeIds },
-          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-        },
-        select: { id: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
-      }),
     ]);
 
     orders = ordersRes;
@@ -178,20 +207,7 @@ export default async function FranchiseeCustomerOrdersPage() {
   // O modal de roteirização recebe daqui o ponto da loja. Ele vinha do usuário
   // logado e, sem `storeLatLng` salvo, virava Rio das Ostras — o padrão antigo
   // do código — mesmo com o endereço cadastrado. Ver lib/ponto-da-loja-servidor.
-  const idDaLojaNoMapa = franchiseeIds.length === 1 ? franchiseeIds[0] : targetFranchiseeId;
-  const lojaDoMapa =
-    idDaLojaNoMapa === user.id
-      ? user
-      : (await prisma.user
-          .findUnique({
-            where: { id: idDaLojaNoMapa },
-            select: { id: true, storeAddress: true, city: true, storeLatLng: true },
-          })
-          .catch(() => null)) || user;
-  // Prazo curto: esta é a tela onde a loja trabalha, e ela não pode esperar um
-  // geocodificador de fora. Se não der tempo na primeira vez, o resultado cai
-  // no cache e a próxima abertura (ou a aba /store/roteirizacao) já tem o ponto.
-  const noMapa = await resolverLojaNoMapa(lojaDoMapa, { prazoMs: 1200 });
+  const [lojasDeOrigem, noMapa] = await Promise.all([lojasDeOrigemP, noMapaP]);
 
   return (
     <>

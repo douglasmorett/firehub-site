@@ -16,7 +16,7 @@
  */
 
 import Link, { useLinkStatus } from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   BarChart2, Bike, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
@@ -71,6 +71,7 @@ export default function StoreSidebar({
   permissoesDoFuncionario?: string | null;
 }) {
   const pathname = usePathname();
+  const navegarNoAperto = useNavegarNoAperto();
   const [recolhida, setRecolhida] = useState(false);
   const [aberta, setAberta] = useState(false); // gaveta do celular
   const [logoFalhou, setLogoFalhou] = useState(false);
@@ -294,6 +295,7 @@ export default function StoreSidebar({
                           pedidos de onde veio. */}
                       <Link
                         href={item.href}
+                        {...(item.novaAba ? {} : navegarNoAperto(item.href))}
                         target={item.novaAba ? "_blank" : undefined}
                         rel={item.novaAba ? "noopener noreferrer" : undefined}
                         className={`fh-menu-item${ativo ? " ativo" : ""}${temFilhos ? " com-filhos" : ""}`}
@@ -348,7 +350,7 @@ export default function StoreSidebar({
           {isAdmin && (
             <div className="fh-menu-grupo">
               {!enxuta && <span className="fh-menu-grupo-titulo">Admin</span>}
-              <Link href="/store/admin/lojistas" className={`fh-menu-item admin${pathname?.startsWith("/store/admin") ? " ativo" : ""}`} title={enxuta ? "Lojistas" : undefined}>
+              <Link href="/store/admin/lojistas" {...navegarNoAperto("/store/admin/lojistas")} className={`fh-menu-item admin${pathname?.startsWith("/store/admin") ? " ativo" : ""}`} title={enxuta ? "Lojistas" : undefined}>
                 <Store size={17} className="fh-menu-icone" />
                 {!enxuta && <span className="fh-menu-label">Lojistas</span>}
                 <SinalDoClique />
@@ -403,6 +405,36 @@ export default function StoreSidebar({
       </aside>
     </>
   );
+}
+
+/**
+ * Navega quando o botão do mouse DESCE, e não quando sobe.
+ *
+ * Entre apertar e soltar passam ~80–120 ms, e o clique só começava a buscar a
+ * tela no fim disso. Agora a busca sai no aperto; o clique que vem depois é
+ * engolido para não navegar duas vezes. Só mouse, botão principal, sem
+ * Ctrl/Shift/Alt/Cmd (abrir em outra aba continua igual) — no toque o dedo
+ * que encosta também pode estar rolando o menu, então lá segue no clique.
+ *
+ * Pré-carregar ao passar o mouse por cima foi descartado de propósito: o Next
+ * guarda o pré-carregado por pelo menos 30 s, e a tela de pedidos abriria com
+ * uma lista velha — o pedido que entrou nesse meio tempo pareceria "novo" e
+ * tocaria/imprimiria de novo. Aqui a tela vem fresca, como no clique.
+ */
+function useNavegarNoAperto() {
+  const router = useRouter();
+  const navegouNoAperto = useRef<string | null>(null);
+  return (href: string) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLAnchorElement>) => {
+      if (e.pointerType !== "mouse" || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      navegouNoAperto.current = href;
+      router.push(href);
+    },
+    onClick: (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (navegouNoAperto.current === href) e.preventDefault();
+      navegouNoAperto.current = null;
+    },
+  });
 }
 
 /**
