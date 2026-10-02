@@ -50,6 +50,9 @@ interface Order {
   updatedAt: string;
   dailyOrderNumber?: number | null;
   isRoutePriority?: boolean;
+  /** Reposição de item faltante / troca (lib/reposicao.ts): topo da fila, faixa própria. */
+  prioridadeNaCozinha?: boolean;
+  reposicao?: { pedidoId: string; numero: string; motivo: "FALTOU" | "TROCA" } | null;
   routeSchedule?: { routeNumber: string } | null;
   items: OrderItem[];
 }
@@ -1935,6 +1938,33 @@ function OrderCard({
         />
       )}
 
+      {/* 🔁 REPOSIÇÃO: item que faltou num pedido que já saiu (lib/reposicao.ts).
+          Cliente esperando por erro da loja — vem antes de tudo. */}
+      {order.reposicao && (
+        <div
+          style={{
+            width: "100%",
+            padding: "6px 12px",
+            borderRadius: 10,
+            background: "linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)",
+            color: "#FFFFFF",
+            fontSize: 14,
+            fontWeight: 900,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            letterSpacing: "0.5px",
+            boxShadow: order.prioridadeNaCozinha ? "0 0 16px rgba(124, 58, 237, 0.6)" : "none",
+            border: "1px solid #C4B5FD",
+            animation: order.prioridadeNaCozinha ? "kds-pulse-empty 2s ease-in-out infinite" : undefined,
+          }}
+        >
+          <span>{order.reposicao.motivo === "TROCA" ? "🔁 TROCA" : "🔁 ITEM FALTANTE"}{order.prioridadeNaCozinha ? " · PRIORIDADE" : ""}</span>
+          <span style={{ fontSize: 12, opacity: 0.9 }}>do #{order.reposicao.numero} · JÁ PAGO</span>
+        </div>
+      )}
+
       {/* 🚨 BANNER DE PRIORIDADE PARA ROTA NO KDS */}
       {(order.isRoutePriority || order.routeSchedule?.routeNumber) && (
         <div
@@ -2258,6 +2288,8 @@ function OrderCard({
             if (l.startsWith("🏷️")) return false;
             if (l.startsWith("Fonte:")) return false;
             if (l.startsWith("📦")) return false;
+            // O cabeçalho da reposição já está na faixa roxa do card.
+            if (order.reposicao && (l.startsWith("***") || l.startsWith("JÁ PAGO"))) return false;
             if (l.match(/^(Ref|ID|iFood|Jotajá|Jotaja|#\d)/i)) return false;
             return true;
           })

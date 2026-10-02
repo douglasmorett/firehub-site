@@ -664,8 +664,9 @@ export type RegistroDeEdicao = {
    * (api/store/orders/[id]/taxa-de-entrega); o total muda só a diferença.
    * DEVOLUCAO_FISCAL: a loja registrou a devolução/ajuste que o contador fez
    * sobre a NFC-e — é o que libera a trava da nota (`travaDaNotaFiscal`).
+   * REPOSICAO: saiu um pedido de reposição (item faltante/troca) — lib/reposicao.ts.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "REPOSICAO";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;

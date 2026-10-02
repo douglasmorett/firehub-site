@@ -150,6 +150,9 @@ export async function GET(req: NextRequest) {
           ifoodStoreName: true,
           openDeliveryReference: true,
           isRoutePriority: true,
+          // Reposição (item faltante / troca): vai para o topo — lib/reposicao.ts.
+          prioridadeNaCozinha: true,
+          reposicao: true,
           routeId: true,
           routeSchedule: {
             select: {
@@ -205,7 +208,7 @@ export async function GET(req: NextRequest) {
       });
 
     const orders = await withRetry(() =>
-      buscarPedidos(where, [{ isRoutePriority: "desc" }, { createdAt: "asc" }]),
+      buscarPedidos(where, [{ prioridadeNaCozinha: "desc" }, { isRoutePriority: "desc" }, { createdAt: "asc" }]),
     );
     // Sem `.catch(() => [])` aqui, e é de propósito: lista vazia por falha de
     // banco é indistinguível de cozinha vazia para quem olha a TV. O erro sobe

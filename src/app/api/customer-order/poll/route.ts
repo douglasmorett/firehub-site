@@ -1016,6 +1016,8 @@ export async function GET(req: NextRequest) {
         // junto, e o pagamento dele se acerta no próprio pedido
         // (lib/pagamento-na-entrega.ts).
         isRoutePriority: true, routeId: true, tableSessionId: true,
+        // Reposição (item faltante / troca): etiqueta no card — lib/reposicao.ts.
+        reposicao: true, prioridadeNaCozinha: true,
         // O acréscimo de marketplace (pedido colado) não imprime sozinho: os
         // itens dele saem no papel do pedido principal (lib/acrescimo-na-comanda.ts).
         parentOrderId: true,

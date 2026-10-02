@@ -859,6 +859,13 @@ model CustomerOrder {
   parentOrderId    String?
   parentOrder      CustomerOrder?  @relation("PedidoAcrescimo", fields: [parentOrderId], references: [id], onDelete: SetNull)
   acrescimos       CustomerOrder[] @relation("PedidoAcrescimo")
+  /// Pedido de REPOSIÇÃO: o item que faltou (ou veio errado) num pedido que já
+  /// saiu. { pedidoId, numero, motivo: "FALTOU" | "TROCA" }. NÃO usa
+  /// parentOrderId de propósito: o acréscimo colado não imprime sozinho e entra
+  /// na comanda do pai; a reposição precisa de papel próprio. Ver lib/reposicao.ts.
+  reposicao        Json?
+  /// Vai para o topo da produção no KDS, acima da rota prioritária.
+  prioridadeNaCozinha Boolean        @default(false)
   /// Rastro de quem tirou/acrescentou item depois do pedido lançado, em ordem:
   /// [{ quando, quem, acao, descricao, totalAntes, totalDepois }].
   /// Ver lib/edicao-de-pedido.ts. É o contrapeso de deixar apagar item de

@@ -14,7 +14,8 @@ import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
-import { avaliarEdicao } from "@/lib/edicao-de-pedido";
+import { avaliarEdicao, podeEditarPedidos } from "@/lib/edicao-de-pedido";
+import { pedidoJaSaiu } from "@/lib/reposicao";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
@@ -22,6 +23,7 @@ import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
+import ReposicaoPainel from "@/components/customer/ReposicaoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
@@ -774,6 +776,19 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             }}
           >
             #{seqNum} — {order.customerName}
+            {/* Pedido de REPOSIÇÃO (lib/reposicao.ts): R$ 0,00 no card não é
+                erro — o item faltante do pedido original, já pago. */}
+            {(order as any).reposicao && (
+              <span
+                style={{
+                  display: "inline-flex", alignItems: "center", marginLeft: 8, padding: "2px 8px", borderRadius: 6,
+                  background: "#EDE9FE", border: "1px solid #C4B5FD", color: "#5B21B6",
+                  fontWeight: 900, fontSize: "0.72rem", verticalAlign: "middle", whiteSpace: "nowrap",
+                }}
+              >
+                🔁 {(order as any).reposicao.motivo === "TROCA" ? "Troca" : "Item faltante"} do #{(order as any).reposicao.numero} · já pago
+              </span>
+            )}
             {/* O PAGER, quando a loja usa.
                 Vem como selo separado, e não colado no nome, porque a pergunta
                 que ele responde é outra: não é "de quem é o pedido", é "qual
@@ -1840,7 +1855,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   /** Avisos "Pedido do WhatsApp esperando você" que a pessoa já fechou nesta sessão. */
   const [avisosDispensados, setAvisosDispensados] = useState<string[]>([]);
   /** Qual aba do modal Ver pedido está aberta: a prévia do papel ou a edição. */
-  const [abaDoRecibo, setAbaDoRecibo] = useState<"comanda" | "editar">("comanda");
+  const [abaDoRecibo, setAbaDoRecibo] = useState<"comanda" | "editar" | "faltou">("comanda");
   const [confirmarPagamentoOrder, setConfirmarPagamentoOrder] = useState<any | null>(null);
   const [deliveryInfoModalOrder, setDeliveryInfoModalOrder] = useState<any | null>(null);
   const showToast = (text: string, color = "#0F766E") => {
@@ -4045,15 +4060,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   avaliarEdicao (lib/edicao-de-pedido.ts), a mesma função que a
                   API consulta — senão existiria aba que o servidor recusa. */}
               {(() => {
-                const avaliacao = avaliarEdicao(order, { role: user?.role, permissions: user?.permissions });
-                if (avaliacao.modo === "BLOQUEADO") return null;
+                const operadorDaAba = { role: user?.role, permissions: user?.permissions };
+                const avaliacao = avaliarEdicao(order, operadorDaAba);
+                // "Faltou item": pedido que já saiu (lib/reposicao.ts). Não
+                // depende da trava da nota — a reposição não mexe no pedido
+                // nem no dinheiro dele, é um pedido novo de R$ 0,00.
+                const podeFaltou = pedidoJaSaiu(order.status) && !(order as any).reposicao && podeEditarPedidos(operadorDaAba);
+                const abas: [typeof abaDoRecibo, string][] = [["comanda", "🧾 Comanda"]];
+                if (avaliacao.modo !== "BLOQUEADO") abas.push(["editar", "✏️ Editar itens"]);
+                if (podeFaltou) abas.push(["faltou", "📦 Faltou item"]);
+                if (abas.length === 1) return null;
                 return (
                   <div style={{ display: "flex", gap: "6px", marginBottom: "12px" }}>
-                    {([["comanda", "🧾 Comanda"], ["editar", "✏️ Editar itens"]] as const).map(([chave, rotulo]) => (
+                    {abas.map(([chave, rotulo]) => (
                       <button
                         key={chave}
                         type="button"
-                        onClick={() => setAbaDoRecibo(chave as "comanda" | "editar")}
+                        onClick={() => setAbaDoRecibo(chave)}
                         style={{
                           flex: 1, padding: "8px 10px", borderRadius: "10px", cursor: "pointer", fontFamily: "inherit",
                           fontSize: "0.82rem", fontWeight: 800,
@@ -4129,7 +4152,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 }}
               />
 
-              {abaDoRecibo === "editar" ? (
+              {abaDoRecibo === "faltou" ? (
+                <ReposicaoPainel
+                  key={`faltou-${order.id}`}
+                  pedido={order}
+                  aoFechar={() => setAbaDoRecibo("comanda")}
+                  aoSalvar={async (r) => {
+                    // O pedido de reposição imprime sozinho (fila da nuvem /
+                    // GlobalPrintListener), como qualquer pedido novo.
+                    setAbaDoRecibo("comanda");
+                    setViewReceiptOrderId(null);
+                    showToast(`Reposição #${r.numero ?? ""} enviada para a cozinha: ${r.descricao}.`, "#6D28D9");
+                    await recarregarPedidos();
+                  }}
+                />
+              ) : abaDoRecibo === "editar" ? (
                 <EditarPedidoPainel
                   pedido={order}
                   operador={{ role: user?.role, permissions: user?.permissions }}
