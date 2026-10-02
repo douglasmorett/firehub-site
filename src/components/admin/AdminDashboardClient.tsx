@@ -46,7 +46,7 @@ type Lojista = {
 type Vendedor = { id: string; name: string; active: boolean };
 type Embaixador = { id: string; name: string; code: string; active: boolean };
 
-type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes" | "inativos" | "nunca";
+type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes" | "usando" | "inativos" | "nunca";
 type Tab = "overview" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda";
 const ABAS: Tab[] = ["overview", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda"];
 
@@ -173,6 +173,7 @@ export default function AdminDashboardClient({
       case "assinantes": return !l.emTrial;
       case "pendencia": return !l.isFranqueadoHakim && l.pendente > 0;
       case "mes": return new Date(l.createdAt).getTime() >= startOfMonthTs;
+      case "usando": return l.atividade?.situacao === "ATIVA";
       case "inativos": return l.atividade?.situacao === "INATIVA";
       case "nunca": return !l.atividade || l.atividade.situacao === "NUNCA_VENDEU";
       default: return true;
@@ -558,6 +559,7 @@ export default function AdminDashboardClient({
           { key: "trial", label: `Em teste (${kpis.emTrial})` },
           { key: "assinantes", label: `Fora do teste (${kpis.assinantes})` },
           { key: "pendencia", label: `Com pendência (${kpis.comPendencia})`, alerta: true },
+          { key: "usando", label: `Usando · pedido nos últimos 7 dias (${usando})` },
           { key: "inativos", label: `Paradas · 7+ dias sem pedido (${inativas})`, alerta: true },
           { key: "nunca", label: `Nunca venderam (${nuncaVenderam})`, alerta: true },
         ] as { key: StatusFilter; label: string; alerta?: boolean }[]).map(opt => (
@@ -775,7 +777,7 @@ export default function AdminDashboardClient({
               {/* Uso: quem está vendendo, quem parou, quem nunca começou */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 24 }}>
                 {[
-                  { label: "Usando", val: usando, sub: "Pedido nos últimos 7 dias", color: "#15803D", ir: () => irParaLojistas() },
+                  { label: "Usando", val: usando, sub: "Pedido nos últimos 7 dias", color: "#15803D", ir: () => irParaLojistas("usando") },
                   { label: "Paradas", val: inativas, sub: "Sem pedido há 7+ dias", color: "#B91C1C", ir: () => irParaLojistas("inativos") },
                   { label: "Nunca venderam", val: nuncaVenderam, sub: "Nenhum pedido até hoje", color: "#64748B", ir: () => irParaLojistas("nunca") },
                   { label: "Sem vendedor", val: semVendedor, sub: "Ninguém acompanhando", color: "#B45309", ir: () => irParaLojistas("todos", "sem") },
