@@ -102,90 +102,90 @@
   "caixa": {
     "id": "caixa",
     "titulo": "Como abrir e fechar o caixa",
-    "duracao": 130,
+    "duracao": 129,
     "capitulos": [
       {
         "em": 0,
         "titulo": "Onde fica o caixa"
       },
       {
-        "em": 7.9,
+        "em": 8.8,
         "titulo": "Com o caixa fechado"
       },
       {
-        "em": 18.4,
+        "em": 19.4,
         "titulo": "Abrir o caixa"
       },
       {
-        "em": 36.7,
+        "em": 38.1,
         "titulo": "Sangria e reforço"
       },
       {
-        "em": 59.5,
+        "em": 59.4,
         "titulo": "Encerrar o caixa"
       },
       {
-        "em": 72.5,
+        "em": 72.3,
         "titulo": "Contar e conferir"
       },
       {
-        "em": 82.3,
+        "em": 81.9,
         "titulo": "Sobra ou falta"
       },
       {
-        "em": 105.1,
+        "em": 104,
         "titulo": "Histórico de caixas"
       },
       {
-        "em": 120.3,
+        "em": 118.6,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "985a979f"
+    "versao": "61744dbc"
   },
   "cardapio-combos": {
     "id": "cardapio-combos",
     "titulo": "Cardápio: combos, adicionais e meio a meio",
-    "duracao": 156,
+    "duracao": 175,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que este vídeo mostra"
       },
       {
-        "em": 13.2,
+        "em": 15.6,
         "titulo": "As perguntas de um combo"
       },
       {
-        "em": 34.3,
+        "em": 43.6,
         "titulo": "Pausar uma opção"
       },
       {
-        "em": 45,
+        "em": 52.1,
         "titulo": "Editar perguntas e opções"
       },
       {
-        "em": 64.5,
+        "em": 82.3,
         "titulo": "Adicionais e preço da opção"
       },
       {
-        "em": 92.6,
+        "em": 110.3,
         "titulo": "Lanche com adicionais"
       },
       {
-        "em": 103.8,
+        "em": 121.5,
         "titulo": "Pizza meio a meio"
       },
       {
-        "em": 129.5,
+        "em": 146.9,
         "titulo": "Como o cliente vê"
       },
       {
-        "em": 145.7,
+        "em": 164.3,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "bedb4065"
+    "versao": "bdd36582"
   },
   "cardapio-organizar": {
     "id": "cardapio-organizar",
@@ -645,95 +645,95 @@
         "titulo": "O que é esta tela"
       },
       {
-        "em": 17.7,
+        "em": 17.5,
         "titulo": "Escolher o período"
       },
       {
-        "em": 27,
+        "em": 26.9,
         "titulo": "Os números do período"
       },
       {
-        "em": 40.1,
+        "em": 39.9,
         "titulo": "De onde vem a receita"
       },
       {
-        "em": 51.9,
+        "em": 51.8,
         "titulo": "O custo dos produtos"
       },
       {
-        "em": 64.2,
+        "em": 64,
         "titulo": "Taxas e entrega"
       },
       {
-        "em": 76.5,
+        "em": 76.3,
         "titulo": "Lançar uma despesa"
       },
       {
-        "em": 97.8,
+        "em": 97.9,
         "titulo": "Custos fixos"
       },
       {
-        "em": 109.8,
+        "em": 109.4,
         "titulo": "O resultado"
       },
       {
-        "em": 135.7,
+        "em": 135.1,
         "titulo": "As outras abas"
       },
       {
-        "em": 152.9,
+        "em": 152.2,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "2ec85c1c"
+    "versao": "a799bcd4"
   },
   "fiscal": {
     "id": "fiscal",
     "titulo": "Fiscal: como ligar e usar a nota (NFC-e)",
-    "duracao": 154,
+    "duracao": 237,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que é esta tela"
       },
       {
-        "em": 10.4,
+        "em": 37.1,
         "titulo": "O que falta para emitir"
       },
       {
-        "em": 19.4,
+        "em": 57.6,
         "titulo": "Ligar a emissão"
       },
       {
-        "em": 32.9,
+        "em": 75.7,
         "titulo": "O caminho, passo a passo"
       },
       {
-        "em": 40.1,
+        "em": 83.5,
         "titulo": "Certificado digital e CSC"
       },
       {
-        "em": 56.9,
+        "em": 125.1,
         "titulo": "Dados da empresa"
       },
       {
-        "em": 65.9,
+        "em": 134.2,
         "titulo": "Automática ou manual"
       },
       {
-        "em": 83.4,
+        "em": 161.3,
         "titulo": "O momento e o CPF"
       },
       {
-        "em": 110.2,
+        "em": 192.9,
         "titulo": "Acompanhar as notas"
       },
       {
-        "em": 144.2,
+        "em": 226.5,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "f49dae6a"
+    "versao": "c62c752a"
   },
   "garcons": {
     "id": "garcons",
@@ -826,138 +826,138 @@
   "impressoras": {
     "id": "impressoras",
     "titulo": "Impressoras: o Assistente e o que cada uma imprime",
-    "duracao": 146,
+    "duracao": 144,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que é esta tela"
       },
       {
-        "em": 9.6,
+        "em": 8.9,
         "titulo": "O Assistente FireHub"
       },
       {
-        "em": 28.3,
+        "em": 26.6,
         "titulo": "Impressão automática"
       },
       {
-        "em": 45.2,
+        "em": 42.5,
         "titulo": "Cadastrar a impressora"
       },
       {
-        "em": 60.8,
+        "em": 58.1,
         "titulo": "De onde vem o pedido"
       },
       {
-        "em": 77.8,
+        "em": 75.4,
         "titulo": "Bebida, motoboy e mesa"
       },
       {
-        "em": 98.6,
+        "em": 96.2,
         "titulo": "Categorias"
       },
       {
-        "em": 110.9,
+        "em": 108.5,
         "titulo": "Testar e salvar"
       },
       {
-        "em": 127.3,
+        "em": 125.8,
         "titulo": "O modelo da comanda"
       },
       {
-        "em": 137.4,
+        "em": 135.8,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "b1b2c4bb"
+    "versao": "ae226951"
   },
   "inicio": {
     "id": "inicio",
     "titulo": "Um passeio pelo painel",
-    "duracao": 158,
+    "duracao": 260,
     "capitulos": [
       {
         "em": 0,
         "titulo": "Bem-vindo ao FireHub"
       },
       {
-        "em": 7.7,
+        "em": 36.8,
         "titulo": "A tela Início"
       },
       {
-        "em": 17.8,
+        "em": 56.5,
         "titulo": "O resumo do dia"
       },
       {
-        "em": 44.6,
+        "em": 105.8,
         "titulo": "O menu lateral"
       },
       {
-        "em": 58.6,
+        "em": 128.9,
         "titulo": "Abrir uma tela"
       },
       {
-        "em": 70.5,
+        "em": 163.7,
         "titulo": "Os grupos do menu"
       },
       {
-        "em": 109.7,
+        "em": 211.4,
         "titulo": "Recolher o menu"
       },
       {
-        "em": 117.8,
+        "em": 219.5,
         "titulo": "A barra do topo"
       },
       {
-        "em": 134.1,
+        "em": 235.7,
         "titulo": "Ver cardápio e Integrações"
       },
       {
-        "em": 151.4,
+        "em": 252.7,
         "titulo": "Cada tela tem o seu vídeo"
       }
     ],
-    "versao": "78cdec3b"
+    "versao": "4badfbc8"
   },
   "integracoes": {
     "id": "integracoes",
     "titulo": "Integrações: conectar iFood e 99Food",
-    "duracao": 156,
+    "duracao": 216,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que é esta tela"
       },
       {
-        "em": 17.6,
+        "em": 37.1,
         "titulo": "Os aplicativos de pedido"
       },
       {
-        "em": 38.7,
+        "em": 76.5,
         "titulo": "Conectar o iFood"
       },
       {
-        "em": 79.7,
+        "em": 125.7,
         "titulo": "Conectar o 99Food"
       },
       {
-        "em": 95.4,
+        "em": 146,
         "titulo": "JotaJá, Brendi e Wabiz"
       },
       {
-        "em": 109.9,
+        "em": 161.1,
         "titulo": "Os pedidos do aplicativo"
       },
       {
-        "em": 126.7,
+        "em": 185.6,
         "titulo": "Conferir se está ativa"
       },
       {
-        "em": 145.9,
+        "em": 205.5,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "24caebea"
+    "versao": "9d5cb3ff"
   },
   "kds": {
     "id": "kds",
