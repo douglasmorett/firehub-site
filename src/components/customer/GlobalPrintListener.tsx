@@ -231,6 +231,11 @@ export default function GlobalPrintListener() {
                 // IGNORAR RASCUNHOS IA (CRIANDO_IA) — Rascunho não deve ser impresso até o pedido ser finalizado pelo cliente!
                 if (statusUpper === "CRIANDO_IA" || statusUpper === "AGUARDANDO_PAGAMENTO") continue;
 
+                // Acréscimo de marketplace (pedido colado): não tem papel
+                // próprio. Os itens dele saem na comanda do pedido principal,
+                // que a tela de pedidos reimprime ao salvar (lib/acrescimo-na-comanda.ts).
+                if (order.parentOrderId) { claimOrderPrint(order); continue; }
+
                 // ATOMIC CHECK: Se já foi impresso ou reclamado, ignora!
                 if (isOrderPrinted(order)) continue;
                 // Falhou há pouco: espera o prazo da nova tentativa.

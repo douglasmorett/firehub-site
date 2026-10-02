@@ -291,6 +291,15 @@ export async function GET(req: NextRequest) {
     const where: any = {
       status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO", ...STATUS_CANCELADOS] },
       franchiseeId,
+      // ── ACRÉSCIMO NÃO TEM PAPEL PRÓPRIO ─────────────────────────────────
+      //
+      // O acréscimo de marketplace nasce como pedido colado (parentOrderId)
+      // por causa do repasse e do caixa — mas na cozinha ele é o MESMO pedido.
+      // Saindo sozinho, ele virava um "pedido 11" só com a bebida ao lado da
+      // 2a via do 10, e a Frangoso despachava errado (Lucas, 02/10/2026). Os
+      // itens dele saem na comanda do pedido principal, que a tela de pedidos
+      // reimprime inteira ao salvar (lib/acrescimo-na-comanda.ts).
+      parentOrderId: null,
       OR: [
         { createdAt: { gt: sinceDate } },
         ...(inicioDoAtraso

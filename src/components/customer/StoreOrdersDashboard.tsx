@@ -33,6 +33,7 @@ import NotaFiscalDoPedido, { NotaFiscalDaLojaProvider, useNotaFiscalDaLoja } fro
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
 import { PALETA } from "@/lib/paleta-brasa";
 import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
+import { pedidoComAcrescimos } from "@/lib/acrescimo-na-comanda";
 
 const BOTAO_ACAO: React.CSSProperties = {
   padding: "5px 14px", borderRadius: "8px", border: "none",
@@ -1999,6 +2000,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       showToast("⚠️ O pedido ainda está sendo montado pela IA no WhatsApp. Aguarde a finalização para imprimir.", "#B45309");
       return;
     }
+    // ── ACRÉSCIMO: UM PAPEL SÓ, COM O PEDIDO INTEIRO (lib/acrescimo-na-comanda.ts)
+    //
+    // O pedido colado não imprime sozinho; o botão Imprimir nele imprime o
+    // pedido principal. E todo papel do principal leva os itens do acréscimo.
+    if (order.parentOrderId) {
+      if (!isManual) return;
+      const pai = orders.find((o: any) => o.id === order.parentOrderId);
+      if (pai) order = pai;
+    }
+    order = pedidoComAcrescimos(order, orders);
     const orderKey = order.id || order.ifoodReference || order.openDeliveryReference;
     if (!isManual && orderKey && (printingInProgressRef.current.has(orderKey) || isAutoPrinted(order))) {
       console.log(`[Print] ⚠️ Impressão já em andamento ou pedido já impresso para ${orderKey}. Ignorando chamada duplicada.`);
@@ -4121,9 +4132,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     } else {
                       showToast("Pedido alterado. Reimprimindo a comanda...", "#0F766E");
                     }
-                    // O acréscimo de marketplace já sai no papel dele; o original
-                    // só volta à impressora se ele mesmo mudou.
-                    if (atual && resultado?.reimprimirOriginal !== false) reimprimirAposEdicao(atual);
+                    // Um papel só, com o pedido inteiro: o acréscimo de
+                    // marketplace (pedido colado, que não imprime sozinho) entra
+                    // junto, lido da lista que acabou de ser relida.
+                    if (atual) reimprimirAposEdicao(pedidoComAcrescimos(atual, atualizados || []));
                   }}
                 />
               ) : (

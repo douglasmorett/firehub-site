@@ -85,7 +85,7 @@ export default function EditarPedidoPainel({
   operador: { role?: string | null; permissions?: string | null };
   aoFechar: () => void;
   /** Chamada depois que o servidor confirmou. Recarrega a lista e reimprime. */
-  aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number; reimprimirOriginal?: boolean }) => void;
+  aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number }) => void;
 }) {
   const avaliacao = useMemo(() => avaliarEdicao(pedido, operador), [pedido, operador]);
   const modo: ModoDeEdicao = avaliacao.modo;
@@ -264,12 +264,7 @@ export default function EditarPedidoPainel({
         setErro(data?.error || "Não consegui salvar a alteração.");
         return;
       }
-      // No marketplace o acréscimo nasce como pedido COLADO, e esse pedido sai
-      // sozinho na impressora como qualquer pedido novo. Se o original não
-      // mudou, reimprimi-lo como "2ª via - pedido alterado" punha na cozinha um
-      // papel repetido ao lado do papel do acréscimo — a batata a mais da
-      // Brendi #3002 da Frangoso saiu assim, em dois papéis (30/09/2026).
-      aoSalvar({ ...data, reimprimirOriginal: !ehMarketplace || acrescimos.length === 0 || mexeuNosOriginais });
+      aoSalvar(data);
     } catch {
       setErro("Sem conexão — nada foi alterado.");
     } finally {

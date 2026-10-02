@@ -1007,6 +1007,9 @@ export async function GET(req: NextRequest) {
         // junto, e o pagamento dele se acerta no próprio pedido
         // (lib/pagamento-na-entrega.ts).
         isRoutePriority: true, routeId: true, tableSessionId: true,
+        // O acréscimo de marketplace (pedido colado) não imprime sozinho: os
+        // itens dele saem no papel do pedido principal (lib/acrescimo-na-comanda.ts).
+        parentOrderId: true,
         // A mesa e o garçom da conta, para a comanda que ESTE painel imprime
         // sair igual à da fila da nuvem (lib/mesa-na-comanda.ts).
         tableSession: MESA_DA_COMANDA,
