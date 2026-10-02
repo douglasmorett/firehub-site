@@ -71,3 +71,7 @@ tmp-*.js
 
 # Saídas (capturas e logs) do teste de ponta a ponta da entrega
 scripts/e2e-entrega/saida/
+
+# Tutoriais em vídeo: o que se grava e os arquivos de vídeo não entram no repositório
+/tutoriais/saida/
+/public/tutoriais/

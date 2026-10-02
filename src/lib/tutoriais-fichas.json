@@ -1,0 +1,54 @@
+{
+  "pedidos": {
+    "id": "pedidos",
+    "titulo": "Como usar a tela de Pedidos",
+    "duracao": 181,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 11.7,
+        "titulo": "As colunas"
+      },
+      {
+        "em": 25.8,
+        "titulo": "Pedido novo chegando"
+      },
+      {
+        "em": 35,
+        "titulo": "O cartão do pedido"
+      },
+      {
+        "em": 58.4,
+        "titulo": "Aceitar o pedido"
+      },
+      {
+        "em": 78.3,
+        "titulo": "Motoboy e saída para entrega"
+      },
+      {
+        "em": 106.6,
+        "titulo": "Concluir a entrega"
+      },
+      {
+        "em": 113.1,
+        "titulo": "Os botões menores do cartão"
+      },
+      {
+        "em": 136.5,
+        "titulo": "Cancelar um pedido"
+      },
+      {
+        "em": 144.1,
+        "titulo": "Busca, filtros e resumo"
+      },
+      {
+        "em": 170.8,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "8b6a57fc"
+  }
+}

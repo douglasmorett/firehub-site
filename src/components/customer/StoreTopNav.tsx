@@ -3,6 +3,7 @@ import SairDaConta from "@/components/SairDaConta";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import TutorialDaTela from "@/components/TutorialDaTela";
 import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode } from "lucide-react";
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
@@ -1518,6 +1519,9 @@ export default function StoreTopNav({
           {/* Saiu o botão "Indique e Ganhe": o programa de indicação aberto a
               qualquer lojista foi encerrado. Embaixador agora é cadastrado à mão
               pela equipe, e quem quiser se candidatar usa /seja-embaixador. */}
+          {/* O vídeo de como usar a tela aberta. Some sozinho em tela sem vídeo
+              (lib/tutoriais.ts) — por isso mora aqui, uma vez, e não em cada página. */}
+          <TutorialDaTela />
           <a href="/store/impressoras" title="Impressora" style={{ display:"inline-flex", alignItems:"center", justifyContent:"center", width:32, height:32, borderRadius:9, background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.25)", color:"#fff", textDecoration:"none" }}>
             <Printer size={15} />
           </a>
