@@ -188,6 +188,34 @@ export function isExemptAccount(email?: string | null): boolean {
   return exemptList.includes(clean);
 }
 
+/**
+ * Loja que não paga mensalidade. Além da lista acima, do percentual zerado e
+ * das lojas Hakim: a loja do próprio embaixador ou vendedor (conta de parceiro
+ * ativa ligada a ela por `Ambassador.linkedUserId`). Dono, 01/10/2026:
+ * "vendedor e embaixador não paga mensalidade em suas lojas" — antes isso
+ * dependia de alguém zerar o `planPercent` à mão.
+ */
+export function lojaIsenta(loja?: {
+  email?: string | null;
+  planPercent?: number | null;
+  isFranqueadoHakim?: boolean | null;
+  ambassadorAccount?: { active: boolean } | null;
+} | null): boolean {
+  if (!loja) return false;
+  return isExemptAccount(loja.email)
+    || loja.planPercent === 0
+    || loja.isFranqueadoHakim === true
+    || loja.ambassadorAccount?.active === true;
+}
+
+/** O pedaço do `select` do User que `lojaIsenta` precisa. */
+const CAMPOS_DA_ISENCAO = {
+  email: true,
+  planPercent: true,
+  isFranqueadoHakim: true,
+  ambassadorAccount: { select: { active: true } },
+} as const;
+
 export function getCurrentYearMonth(offset = 0, timezone = "America/Sao_Paulo"): string {
   // Usa o fuso horário da loja (ou Brasília) para garantir que
   // o fechamento do mês acontece à meia-noite local, não UTC.
@@ -294,10 +322,10 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
 
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { email: true, planPercent: true },
+    select: CAMPOS_DA_ISENCAO,
   });
 
-  const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
+  const isExempt = lojaIsenta(user);
 
   return prisma.franchiseeBillingCycle.create({
     data: {
@@ -322,7 +350,7 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
 export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { email: true, planPercent: true, storeTimezone: true, isFranqueadoHakim: true, trialEndsAt: true },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true },
   });
 
   const tz = user?.storeTimezone || "America/Sao_Paulo";
@@ -330,7 +358,7 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
 
   const cycle = await ensureCycle(franchiseeId, mes);
 
-  const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0 || user?.isFranqueadoHakim === true || user?.email?.toLowerCase() === "contatohakim@gmail.com";
+  const isExempt = lojaIsenta(user);
 
   const { monthStart, monthEnd } = intervaloDoMes(mes, tz);
 
@@ -533,6 +561,8 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
           ambassador: { include: { parentAmbassador: true } },
           // O vendedor que o admin pôs para acompanhar a loja (lib/vendedores.ts).
           vendedor: true,
+          // A loja é do próprio embaixador/vendedor? (lojaIsenta)
+          ambassadorAccount: { select: { active: true } },
         },
       },
     },
@@ -545,8 +575,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   // PAID que ainda pode ser refeito é só o "nada a cobrar", que não tem boleto.
   if (cycle.status === "PAID" && cycle.asaasPaymentId) return { charged: false, message: "Ciclo já pago no Asaas" };
 
-  const userEmailClean = cycle.franchisee?.email?.toLowerCase().replace(/\s+/g, "");
-  const isSpecialStore = isExemptAccount(cycle.franchisee?.email) || cycle.franchisee?.planPercent === 0 || cycle.franchisee?.isFranqueadoHakim === true || userEmailClean === "contatohakim@gmail.com";
+  const isSpecialStore = lojaIsenta(cycle.franchisee);
 
   // Recalcula valores finais (pedidos confirmados do mês)
   const [y, m] = yearMonth.split("-").map(Number);
@@ -864,10 +893,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 export async function getCurrentCycleView(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { email: true, planPercent: true, storeTimezone: true, trialEndsAt: true },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true },
   });
 
-  const isExempt = isExemptAccount(user?.email) || user?.planPercent === 0;
+  const isExempt = lojaIsenta(user);
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const yearMonth = getCurrentYearMonth(0, tz);
 
