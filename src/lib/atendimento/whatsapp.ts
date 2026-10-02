@@ -16,7 +16,10 @@ import { configDoAtendimento, INSTANCIA_DO_ATENDIMENTO } from "./config";
 async function gateway() {
   const config = await configDoAtendimento();
   const url = (config.evolutionUrl || process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");
-  const apiKey = config.evolutionApiKey || segredoObrigatorio("EVOLUTION_API_KEY");
+  // A chave própria só vale junto com a URL própria. Sem URL a chamada vai ao
+  // gateway padrão, que só aceita a chave do ambiente — uma chave avulsa ali
+  // (01/10: o Chrome preencheu a senha do login no campo) derruba o número inteiro.
+  const apiKey = (config.evolutionUrl && config.evolutionApiKey) || segredoObrigatorio("EVOLUTION_API_KEY");
   return {
     url,
     headers: { apikey: apiKey, "Content-Type": "application/json", "Bypass-Tunnel-Remainder": "true", "User-Agent": "FireHub" },

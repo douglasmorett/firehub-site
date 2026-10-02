@@ -28,6 +28,9 @@ export async function PUT(req: NextRequest) {
   // A chave só é trocada quando vem preenchida (a tela nunca recebe a atual).
   if (typeof b.evolutionApiKey === "string" && b.evolutionApiKey.trim()) mudancas.evolutionApiKey = b.evolutionApiKey.trim();
   if (b.limparChaveDoGateway === true) mudancas.evolutionApiKey = null;
+  // Chave própria sem URL própria não tem para onde ir: o gateway padrão só aceita a do ambiente.
+  const urlFinal = "evolutionUrl" in mudancas ? mudancas.evolutionUrl : (await configDoAtendimento()).evolutionUrl;
+  if (!urlFinal) mudancas.evolutionApiKey = null;
   const config = await salvarConfigDoAtendimento(mudancas);
   return NextResponse.json({ config: configParaTela(config) });
 }
