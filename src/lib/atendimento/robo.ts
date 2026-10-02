@@ -5,6 +5,8 @@ import { ROTULO_DA_ETAPA, type Etapa } from "@/lib/crm/etapas";
 import { configDoAtendimento } from "./config";
 import { clienteDoGemini } from "./gemini";
 import { CONHECIMENTO_DO_FIREHUB } from "./conhecimento";
+import { conferirResposta, RESPOSTA_DE_QUEM_NAO_SABE } from "./conferente";
+import { registrarEvento, AUTOR_ROBO } from "@/lib/crm/contatos";
 import { DECLARACOES, FERRAMENTAS_COM_EFEITO, chamarPessoa, executarFerramenta } from "./ferramentas";
 import { enviarTexto } from "./whatsapp";
 
@@ -121,6 +123,9 @@ function instrucoes(
 
 # Regras
 - Só afirme o que está na BASE abaixo (ou no que as ferramentas devolverem). Não sabe? Diga que vai confirmar com a equipe e use chamar_pessoa. Nunca invente função, preço, prazo, desconto ou integração.
+- "Dá para fazer X?" / "Como faço X no painel?": só responda se a BASE descreve X. Se não descreve, você NÃO SABE, nem que sim nem que não: não diga que dá, não diga que não dá, não descreva botão, aba nem passo a passo. Diga que vai confirmar com a equipe e use chamar_pessoa. Ex.: a base diz só "Pedidos: menu Pedidos"; isso NÃO quer dizer que dá para mudar o tipo do pedido por ali.
+- O que alguém da equipe respondeu antes nesta conversa vale para aquele assunto, não é manual do sistema: não tire dali como funciona outra coisa.
+- Toda resposta passa por uma revisão antes de sair: o que não estiver na base é barrado e vira "vou confirmar com a equipe". Na dúvida, já diga isso você.
 - Pediu atendente/pessoa/humano, está bravo, quer cancelar, contesta cobrança ou o problema não se resolve com a base → chamar_pessoa na hora e avise que alguém da equipe vai responder por aqui.
 - Não fale de Checklist, Ponto nem Auditoria (é outro produto).
 - Quem quer PEDIR comida (cliente final de um restaurante) não é lead: explique com gentileza que o FireHub é o sistema que os restaurantes usam e que o pedido é com o próprio restaurante. Não venda nada para essa pessoa.
@@ -166,6 +171,16 @@ function conversaParaOModelo(historico: { direcao: string; autor: string; autorN
   // O Gemini quer a conversa começando pelo usuário.
   while (conteudos.length && conteudos[0].role !== "user") conteudos.shift();
   return conteudos;
+}
+
+/** A conversa em texto corrido para o revisor, dizendo quem falou: o que a equipe disse conta como fonte. */
+function conversaParaORevisor(historico: { direcao: string; autor: string; autorNome: string | null; texto: string }[]): string {
+  return historico
+    .map((m) => {
+      const quem = m.direcao === "ENTRADA" ? "Contato" : m.autor === "ROBO" ? "Robô" : `Equipe (${m.autorNome || "pessoa"})`;
+      return `${quem}: ${m.texto}`;
+    })
+    .join("\n");
 }
 
 async function responder(contatoId: string) {
@@ -229,8 +244,31 @@ async function responder(contatoId: string) {
     }
     if (acoes.some((a) => FERRAMENTAS_COM_EFEITO.has(a.nome))) break;
   }
-  resposta = paraOWhatsApp(resposta) || respostaDeReserva(acoes);
+  const doModelo = paraOWhatsApp(resposta);
+  resposta = doModelo || respostaDeReserva(acoes);
   if (!resposta) return;
+
+  // ── A revisão: o que não tem fonte não sai (conferente.ts) ────────────────
+  // A resposta de reserva é texto fixo nosso e não passa por ela.
+  if (doModelo) {
+    const veredito = await conferirResposta(ai, {
+      base: CONHECIMENTO_DO_FIREHUB + (config.instrucoesExtras.trim() ? `\n\n# Recados do dono\n${config.instrucoesExtras.trim()}` : ""),
+      conversa: conversaParaORevisor(historico.slice(-12)),
+      ferramentas: acoes.map((a) => `${a.nome}: ${JSON.stringify(a.resultado).slice(0, 1500)}`).join("\n"),
+      resposta: doModelo,
+    });
+    if (veredito?.inventou) {
+      console.warn(`[Atendimento] Revisor barrou a resposta para ${contato.id}: "${veredito.trecho}"`);
+      resposta = RESPOSTA_DE_QUEM_NAO_SABE;
+      // Quem atende precisa ver o que o robô ia dizer, para responder certo
+      // (e para a base ganhar o que estava faltando).
+      if (!acoes.some((a) => a.nome === "chamar_pessoa")) {
+        await chamarPessoa(contato, `Pergunta que a base não cobre: "${ultima.texto.slice(0, 200)}". O robô ia responder: "${doModelo.slice(0, 400)}" (sem fonte: "${veredito.trecho}"). Barrado pela revisão.`);
+      } else {
+        await registrarEvento(contato.id, "ROBO", `Revisão barrou: "${doModelo.slice(0, 400)}" (sem fonte: "${veredito.trecho}")`, AUTOR_ROBO);
+      }
+    }
+  }
 
   // Alguém assumiu enquanto o modelo pensava? Não fala por cima.
   const agora = await prisma.crmContato.findUnique({ where: { id: contato.id }, select: { roboPausadoAte: true, roboDesligado: true } });
