@@ -672,8 +672,9 @@ export type RegistroDeEdicao = {
    * lib/troca-de-tipo.ts); a taxa sai e o total cai junto.
    * DESCONTO: desconto dado na aba Editar itens (`descontoNaEdicao`), sem
    * mexer em item; com item junto, a ação é a do item e o desconto vai na descrição.
+   * REPOSICAO: saiu um pedido de reposição (item faltante/troca) — lib/reposicao.ts.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;

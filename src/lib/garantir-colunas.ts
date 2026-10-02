@@ -808,6 +808,9 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // O número do pager do cliente que espera no balcão. Texto porque a loja
   // numera do jeito dela ("12", "A3", "07").
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "pagerNumber" TEXT`,
+  // Pedido de reposição — o item que faltou num pedido que já saiu (lib/reposicao.ts).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "reposicao" JSONB`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "prioridadeNaCozinha" BOOLEAN NOT NULL DEFAULT false`,
   // O tempo de entrega que o cliente viu no checkout. A comanda imprime a
   // PREVISÃO DE ENTREGA com ele (lib/previsao-da-entrega.ts).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "tempoEntregaMin" INTEGER`,

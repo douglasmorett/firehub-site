@@ -245,11 +245,12 @@ export function telaTemPendencia<T extends ItemParaTela & { prontoEm?: Date | st
  *
  * Esta função só junta e ordena. Quem decide se o pedido adiantado ainda é
  * desta tela é `telaTemPendencia`: ela tira os que não têm item desta tela sem
- * carimbo. Ordem de sempre da cozinha: rota prioritária na frente, depois o
+ * carimbo. Ordem de sempre da cozinha: reposição (item faltante) na frente,
+ * depois a rota prioritária, depois o
  * que chegou primeiro — o adiantado volta para a posição que já era dele.
  */
 export function juntarPedidosDaProducao<
-  T extends { id?: string | null; isRoutePriority?: boolean | null; createdAt?: Date | string | null },
+  T extends { id?: string | null; isRoutePriority?: boolean | null; prioridadeNaCozinha?: boolean | null; createdAt?: Date | string | null },
 >(naProducao: T[] | null | undefined, adiantados: T[] | null | undefined): T[] {
   const porId = new Map<string, T>();
   for (const p of naProducao || []) if (p?.id) porId.set(p.id, p);
@@ -259,7 +260,10 @@ export function juntarPedidosDaProducao<
     return Number.isFinite(ms) ? ms : 0;
   };
   return [...porId.values()].sort(
-    (a, b) => Number(!!b.isRoutePriority) - Number(!!a.isRoutePriority) || quando(a) - quando(b),
+    (a, b) =>
+      Number(!!b.prioridadeNaCozinha) - Number(!!a.prioridadeNaCozinha) ||
+      Number(!!b.isRoutePriority) - Number(!!a.isRoutePriority) ||
+      quando(a) - quando(b),
   );
 }
 
