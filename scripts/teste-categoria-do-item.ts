@@ -232,5 +232,70 @@ confere("item sem menuProduct não explode", categoriaResolvida({ productName: "
   confere("Wabiz \"Calabacon Cremoso | Cheddar\": o sabor do cabeçalho, não a borda", categoriaResolvida(wabiz, nik), "Pizzas Especiais");
 }
 
+// ── A pizza do combo que virou bebida (NIK, Wabiz 4001, 02/10/2026) ──────────
+//
+// "Combos de Pizza" é grupo da Wabiz, não categoria da loja. As opções do
+// combo são a borda (sem produto) e o refrigerante (Bebidas): ler as opções
+// antes do nome fazia a pizza inteira virar "Bebidas" — que a NIK deixa só na
+// finalização, então o pedido não apareceu em produção nenhuma. 5 pizzas
+// assim em 7 dias.
+{
+  const nik = montarMapa([
+    { id: "p1", name: "Pizza Calabacon Cremoso", category: "Pizzas Especiais" },
+    { id: "p2", name: "Pizza Lombinho Especial", category: "Pizzas Especiais" },
+    { id: "p3", name: "Pizza Portuguesa", category: "Pizzas Tradicionais" },
+    { id: "p4", name: "Pizza Moda do Chefe", category: "Pizzas Especiais" },
+    { id: "e1", name: "Moda do Chefe", category: "Esfihas Especiais" },
+    { id: "b1", name: "Guaraná Mineiro 1,5L", category: "Bebidas" },
+    { id: "b2", name: "Coca Cola Zero 1,5l", category: "Bebidas" },
+    { id: "b3", name: "Coca Cola 1,5l", category: "Bebidas" },
+  ]);
+  const combo = (nome: string, opcoes: string[]) => ({
+    productName: nome,
+    comboSelections: JSON.stringify(opcoes.map((name) => ({ name, quantity: 1, price: 0 }))),
+    menuProduct: { id: "wabiz-loja-1+2", active: false, name: nome.split(" | ")[0], category: "Combos de Pizza" },
+  });
+  confere(
+    "Wabiz 4001: pizza do combo não vira bebida",
+    categoriaResolvida(combo("Pizza 1/2 Calabacon Cremoso + 1/2 Lombinho Especial | Borda Cheddar | Guaraná Mineiro 1,5L", ["Borda Cheddar", "Guaraná Mineiro 1,5L"]), nik),
+    "Pizzas Especiais",
+  );
+  // A segunda metade vem sem "Pizza" na frente: herda o tipo da primeira e
+  // NÃO casa com a esfiha de mesmo sabor. (Aqui a primeira metade é a que não
+  // tem pizza cadastrada: sem ela confirmar o tipo, o nome não decide nada.)
+  const semPizzaDoChefe = montarMapa([
+    { id: "p3", name: "Pizza Portuguesa", category: "Pizzas Tradicionais" },
+    { id: "p5", name: "Pizza Calabresa", category: "Pizzas Tradicionais" },
+    { id: "p6", name: "Pizza Bauru", category: "Pizzas Tradicionais" },
+    { id: "e1", name: "Esfiha Moda do Chefe", category: "Esfihas Especiais" },
+    { id: "e2", name: "Moda do Chefe", category: "Esfihas Especiais" },
+    { id: "b2", name: "Coca Cola Zero 1,5l", category: "Bebidas" },
+  ]);
+  confere(
+    "Segunda metade sem a pizza cadastrada não puxa a esfiha",
+    categoriaResolvida(combo("Pizza 1/2 Moda do Chefe + 1/2 Moda do Chefe + 1/2 Portuguesa | Coca Cola Zero 1,5l", ["Coca Cola Zero 1,5l"]), semPizzaDoChefe),
+    "Pizzas Tradicionais",
+  );
+  confere(
+    "Wabiz 3842: pizza com Coca no combo é pizza",
+    categoriaResolvida(combo("Pizza 1/2 Portuguesa + 1/2 Moda do Chefe | Coca Cola Zero 1,5l", ["Coca Cola Zero 1,5l"]), nik),
+    "Pizzas Tradicionais",
+  );
+  // Combo cujo nome não diz nada e só a bebida casa: sem categoria (aparece em
+  // toda tela), nunca "Bebidas" (não aparece em nenhuma).
+  confere(
+    "Combo mudo com só a bebida casando fica curinga",
+    categoriaResolvida(combo("GRANDE 2 SABORES (8 PEDAÇOS)", ["Borda Cheddar", "Guaraná Mineiro 1,5L"]), nik),
+    "",
+  );
+  // O refrigerante vendido sozinho continua bebida.
+  confere(
+    "Coca sozinha continua Bebidas",
+    categoriaResolvida({ productName: "Coca Cola 1,5l", menuProduct: { id: "wabiz-loja-9", active: false, name: "Coca Cola 1,5l", category: "Bebidas Wabiz" } }, nik),
+    "Bebidas",
+  );
+}
+
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

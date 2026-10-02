@@ -39,6 +39,7 @@
 import { prisma } from "@/lib/prisma";
 import { CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO } from "@/lib/cardapio-interno";
 import { parseComboSelections } from "@/lib/parse-combo";
+import { isBeverageCategory } from "@/lib/beverage";
 
 /**
  * As categorias que marcam espelho de plataforma. A lista do cardápio interno
@@ -295,6 +296,11 @@ function porOpcaoDoCombo(item: ItemComCategoria, mapa: MapaDeCategorias): string
     const ehMetade = /^\s*\d+\s*\/\s*\d+\s/.test(String((s as any)?.name ?? (s as any)?.nome ?? ""));
     const categoria = mapa.porNome.get(chave) ?? porPrefixo(chave, mapa) ?? (ehMetade ? porTipoDoCardapio(chave, mapa) : null);
     if (!categoria) continue;
+    // O refrigerante ESCOLHIDO no combo não faz do item uma bebida. Na NIK
+    // (Wabiz 4001, 02/10/2026) a pizza + guaraná tinha só a borda e o guaraná
+    // nas opções; o guaraná era o único que casava, a pizza virou "Bebidas" —
+    // que a loja deixa só na finalização — e não apareceu em produção nenhuma.
+    if (isBeverageCategory(categoria)) continue;
     if (!votos.has(categoria)) ordem.push(categoria);
     votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
   }
@@ -378,6 +384,43 @@ function porSaborSemTipo(nome: unknown, mapa: MapaDeCategorias): string | null {
 }
 
 /**
+ * As METADES do nome, quando a primeira já diz o tipo.
+ *
+ * ── A PIZZA DO COMBO QUE VIROU BEBIDA (NIK, Wabiz 4001, 02/10/2026) ─────────
+ *
+ * A Wabiz manda o combo pizza + refrigerante como "Pizza 1/2 Calabacon Cremoso
+ * + 1/2 Lombinho Especial | Borda Cheddar | Guaraná Mineiro 1,5L", no grupo
+ * "Combos de Pizza" (que não é categoria da loja). As opções são a borda e o
+ * guaraná, e as metades estão no nome — mas `porSaborSemTipo` não as lê: a
+ * primeira já tem o tipo (é pulada) e "Lombinho Especial" existe como pizza E
+ * como esfiha (ambíguo). Sem voto nenhum, a pizza ficava com a categoria do
+ * guaraná.
+ *
+ * A primeira metade diz o tipo, e as outras o herdam: "Lombinho Especial" →
+ * "Pizza Lombinho Especial", nunca a esfiha de mesmo sabor. O pedaço sem tipo
+ * não é procurado sozinho. O tipo tem que ser tipo do cardápio
+ * (`tiposDoCardapio`), não a primeira palavra de um sabor solto.
+ */
+function porMetadesDoNome(nome: unknown, mapa: MapaDeCategorias): string | null {
+  const pedacos = pedacosDoNome(String(nome ?? "").split("|")[0]).map(chaveDoNome).filter(Boolean);
+  if (pedacos.length < 2) return null;
+  const tipo = tiposDoCardapio(mapa).find((t) => pedacos[0].startsWith(`${t} `));
+  if (!tipo) return null;
+  const votos = new Map<string, number>();
+  const ordem: string[] = [];
+  for (const pedaco of pedacos) {
+    const categoria = mapa.porNome.get(pedaco.startsWith(`${tipo} `) ? pedaco : `${tipo} ${pedaco}`);
+    if (!categoria || isBeverageCategory(categoria)) continue;
+    if (!votos.has(categoria)) ordem.push(categoria);
+    votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
+  }
+  if (votos.size === 0) return null;
+  let melhor = ordem[0];
+  for (const c of ordem) if ((votos.get(c) ?? 0) > (votos.get(melhor) ?? 0)) melhor = c;
+  return melhor;
+}
+
+/**
  * A categoria que este item deve ter para quem separa por categoria.
  *
  *   - item de produto real → a categoria dele, intocada;
@@ -442,6 +485,12 @@ export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategoria
     const chave = chaveDoNome(n);
     const categoria = chave ? porPrefixo(chave, mapa) : null;
     if (categoria) return categoria;
+  }
+  // As metades do nome ("Pizza 1/2 X + 1/2 Y") dizem mais que as opções, que
+  // no combo da Wabiz são só a borda e o refrigerante.
+  for (const n of nomes) {
+    const pelasMetades = porMetadesDoNome(n, mapa);
+    if (pelasMetades) return pelasMetades;
   }
   // O nome do combo não diz nada ("GRANDE 2 SABORES"), mas o que foi escolhido
   // dentro dele diz. É a última chance antes do curinga.
