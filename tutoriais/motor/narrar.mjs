@@ -121,12 +121,17 @@ export async function narrar(texto, { pronuncia = {} } = {}) {
     const ms = duracaoDoAudio(arquivo);
     const ritmo = palavras / (ms / 1000); // palavras por segundo
     const ouvido = await transcrever(arquivo);
-    const nota = semelhanca(falado, ouvido.split("\n")[0] || "");
+    // Com `pronuncia`, a voz diz "cá dê esse" e a transcrição devolve "KDS": vale a melhor
+    // nota entre o texto falado e o texto original, senão fala curta com sigla nunca passava.
+    const dito = ouvido.split("\n")[0] || "";
+    const nota = Math.max(semelhanca(falado, dito), semelhanca(texto, dito));
     const portugal = /SOTAQUE\s*=\s*PORTUGAL/i.test(ouvido);
     ultimo = `fiel ${(nota * 100).toFixed(0)}% · ${ritmo.toFixed(1)} palavras/s${portugal ? " · sotaque de Portugal" : ""}`;
     // Fala curta tem ritmo irregular por natureza; a régua de ritmo vale a partir de 8 palavras.
     const ritmoBom = palavras < 8 || (ritmo >= 1.9 && ritmo <= 3.4);
-    if (nota >= 0.9 && !portugal && ritmoBom) return { arquivo, ms, novo: true, conferencia: ultimo };
+    // Em fala curta, uma palavra transcrita diferente já derruba abaixo de 90%: tolera-se UMA.
+    const minimo = Math.min(0.9, 1 - 1.01 / Math.max(2, palavras));
+    if (nota >= minimo && !portugal && ritmoBom) return { arquivo, ms, novo: true, conferencia: ultimo };
     console.log(`   refazendo a fala (tentativa ${tentativa}: ${ultimo})`);
   }
   fs.rmSync(arquivo, { force: true });

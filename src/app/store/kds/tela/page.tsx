@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import TutorialDaTela from "@/components/TutorialDaTela";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
@@ -1390,6 +1391,9 @@ export default function KDSTelaPage() {
                   ✕ Limpar ({activeCategories.length})
                 </button>
               )}
+
+              {/* Esta tela cobre a barra do topo do painel, que é onde o botão Tutorial mora. */}
+              <TutorialDaTela />
 
               <button
                 onClick={() => setShowCategoryPopup((prev) => !prev)}

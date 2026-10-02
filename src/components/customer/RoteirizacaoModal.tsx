@@ -24,6 +24,7 @@ import {
   parseAddressDetails as parseEnderecoDaEntrega,
 } from "@/lib/geocodificacao";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
+import TutorialDaTela from "@/components/TutorialDaTela";
 
 interface Motoboy {
   id: string;
@@ -1943,6 +1944,9 @@ export default function RoteirizacaoModal({
                 <ExternalLink size={16} /> Abrir em aba separada
               </a>
             )}
+
+            {/* Esta tela abre por cima da barra do topo, que é onde o botão Tutorial mora. */}
+            <TutorialDaTela rota="/store/roteirizacao" tom="claro" />
 
             <button
               onClick={() => setShowConfigModal(true)}

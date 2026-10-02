@@ -39,7 +39,9 @@ const TELAS: Record<string, string[]> = {
   "/store/pedidos-clientes": ["pedidos"],
   "/store/kds": ["kds"],
   "/store/mesas": ["mesas"],
-  "/store/venda-presencial": ["balcao"],
+  // O caixa abre e fecha pelo botão da barra do topo e não tem tela própria (só o histórico):
+  // o vídeo dele aparece também no Balcão, que é onde o caixa fechado trava a venda.
+  "/store/venda-presencial": ["balcao", "caixa"],
   "/store/caixa": ["caixa"],
   "/store/cardapio": ["cardapio-produto", "cardapio-precos", "cardapio-combos", "cardapio-organizar"],
   "/store/fiscal": ["fiscal"],

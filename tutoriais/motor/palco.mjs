@@ -94,6 +94,29 @@ function desenharCursor() {
   };
   if (document.documentElement) montar();
   document.addEventListener("DOMContentLoaded", montar);
+
+  // Links que a tela monta com o endereço de onde o painel está aberto (cardápio,
+  // app do motoboy, link do garçom) sairiam como "localhost:3131" — endereço que
+  // nenhum lojista vê. Na imagem entra o endereço do site de verdade; o que a
+  // página guarda e copia não muda.
+  const SITE = "https://firehubfood.com.br";
+  const LOCAL = /https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/g;
+  const SEM_PROTOCOLO = /(^|[^/\w])(localhost|127\.0\.0\.1)(:\d+)?(?=\/)/g;
+  const limpar = (t) => t.replace(LOCAL, SITE).replace(SEM_PROTOCOLO, "$1firehubfood.com.br");
+  const varrer = (raiz) => {
+    if (!raiz) return;
+    const andarilho = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+    for (let n = andarilho.nextNode(); n; n = andarilho.nextNode()) {
+      if (n.nodeValue && n.nodeValue.includes("localhost") || (n.nodeValue || "").includes("127.0.0.1")) {
+        const novo = limpar(n.nodeValue);
+        if (novo !== n.nodeValue) n.nodeValue = novo;
+      }
+    }
+    for (const campo of document.querySelectorAll("input, textarea")) {
+      if (campo.value && /localhost|127\.0\.0\.1/.test(campo.value)) campo.value = limpar(campo.value);
+    }
+  };
+  setInterval(() => varrer(document.body), 150);
 }
 
 const suave = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
@@ -167,12 +190,16 @@ export class Palco {
     const destino = await this.centroDe(alvo);
     const distancia = Math.hypot(destino.x - this.x, destino.y - this.y);
     const duracao = ms ?? Math.min(1100, Math.max(380, distancia * 1.5));
-    const passos = Math.max(8, Math.round(duracao / 16));
+    // Pelo relógio, não por número de passos: com a captura ligada e a máquina ocupada cada
+    // passo custa 40–60 ms em vez de 16, e um gesto de 700 ms levava 2 s e estourava a fala.
     const de = { x: this.x, y: this.y };
-    for (let i = 1; i <= passos; i++) {
-      const k = suave(i / passos);
+    const comeco = Date.now();
+    for (;;) {
+      const f = Math.min(1, (Date.now() - comeco) / duracao);
+      const k = suave(f);
       await this.pagina.mouse.move(de.x + (destino.x - de.x) * k, de.y + (destino.y - de.y) * k);
-      await dormir(16);
+      if (f >= 1) break;
+      await dormir(12);
     }
     this.x = destino.x;
     this.y = destino.y;
@@ -234,8 +261,9 @@ export class Palco {
 
   /**
    * Rola devagar a caixa de rolagem MAIS PRÓXIMA do alvo (a coluna, a janela
-   * aberta) até ele aparecer. A página em si não se mexe: scrollIntoView rola
-   * todos os ancestrais de uma vez e a tela inteira escorregava junto.
+   * aberta) até ele aparecer — e só ela: scrollIntoView rola todos os ancestrais
+   * de uma vez e a tela inteira escorregava junto. Se não há caixa de rolagem
+   * por perto, quem rola é a página.
    */
   async rolarAte(alvo, { bloco = "center" } = {}) {
     await alvo.evaluate((el, b) => {
@@ -245,25 +273,58 @@ export class Palco {
         if (/(auto|scroll)/.test(estilo.overflowY) && rolo.scrollHeight > rolo.clientHeight + 4) break;
         rolo = rolo.parentElement;
       }
-      if (!rolo || rolo === document.body || rolo === document.documentElement) return;
+      if (!rolo || rolo === document.body || rolo === document.documentElement) {
+        // Nenhuma caixa de rolagem por perto: quem rola é a própria página (Fiscal, Impressoras, Minha loja).
+        const r = el.getBoundingClientRect();
+        const passo = b === "end" ? r.bottom - innerHeight + 24
+          : b === "start" ? r.top - 90
+          : r.top + r.height / 2 - innerHeight / 2;
+        window.scrollBy({ top: passo, behavior: "smooth" });
+        return;
+      }
       const r = el.getBoundingClientRect(), c = rolo.getBoundingClientRect();
       const passo = b === "end" ? r.bottom - c.bottom + 14
         : b === "start" ? r.top - c.top - 14
         : r.top + r.height / 2 - (c.top + c.height / 2);
       rolo.scrollTo({ top: rolo.scrollTop + passo, behavior: "smooth" });
     }, bloco);
-    await dormir(750);
+    await this.esperarRolagemParar(alvo);
+  }
+
+  /**
+   * Espera o alvo parar de se mexer na tela. Tempo fixo não serve: com a máquina
+   * ocupada a rolagem suave passa de 750 ms, e o destaque seguinte media o alvo
+   * no meio do caminho e contornava o vizinho.
+   */
+  async esperarRolagemParar(alvo, { maximo = 3000 } = {}) {
+    const limite = Date.now() + maximo;
+    let antes = null, parado = 0;
+    await dormir(120);
+    while (Date.now() < limite) {
+      const c = alvo ? await alvo.boundingBox().catch(() => null) : await this.pagina.evaluate(() => ({ y: window.scrollY }));
+      const agora = c ? Math.round(c.y) : null;
+      parado = agora !== null && agora === antes ? parado + 1 : 0;
+      if (parado >= 3) return;
+      antes = agora;
+      await dormir(70);
+    }
   }
 
   async rolarPagina(y) {
     await this.pagina.evaluate((alvoY) => window.scrollTo({ top: alvoY, behavior: "smooth" }), y);
-    await dormir(750);
+    await this.esperarRolagemParar(null);
   }
 
   /** Digita como gente: letra por letra. */
   async digitar(alvo, texto) {
     await this.clicar(alvo);
-    await this.pagina.keyboard.type(texto, { delay: 95 });
+    // Uma letra a cada ~90 ms pelo relógio: tecla por tecla, com a máquina ocupada, custava 0,5 s por letra.
+    const comeco = Date.now();
+    for (const [i, letra] of [...texto].entries()) {
+      await this.pagina.keyboard.insertText(letra);
+      const falta = comeco + (i + 1) * 90 - Date.now();
+      if (falta > 0) await dormir(falta);
+    }
     await dormir(300);
   }
 
@@ -275,11 +336,13 @@ export class Palco {
     await dormir(200);
     await this.pagina.mouse.down();
     await dormir(150);
-    const passos = 45;
-    for (let i = 1; i <= passos; i++) {
-      const k = suave(i / passos);
+    const comeco = Date.now(), duracao = 1100;
+    for (;;) {
+      const f = Math.min(1, (Date.now() - comeco) / duracao);
+      const k = suave(f);
       await this.pagina.mouse.move(de.x + (para.x - de.x) * k, de.y + (para.y - de.y) * k);
-      await dormir(22);
+      if (f >= 1) break;
+      await dormir(14);
     }
     this.x = para.x;
     this.y = para.y;

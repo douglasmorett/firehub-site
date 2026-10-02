@@ -578,7 +578,9 @@ export default function GarconsPage() {
       {/* MODAL DE CADASTRO/EDIÇÃO */}
       {showModal && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
-          <div style={{ background: "#fff", padding: 24, borderRadius: 16, width: "90%", maxWidth: 400, boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
+          {/* Altura máxima + rolagem: com as cinco permissões a janela passou de 960 px e, em tela de
+              1366×768, Cancelar e Salvar ficavam fora da tela — só dava para salvar apertando Enter. */}
+          <div style={{ background: "#fff", padding: 24, borderRadius: 16, width: "90%", maxWidth: 400, maxHeight: "calc(100vh - 32px)", overflowY: "auto", boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
             <h2 style={{ margin: "0 0 20px 0", fontSize: 20 }}>{editingId ? "Editar Garçom" : "Novo Garçom"}</h2>
             
             <form onSubmit={handleSubmit}>

@@ -29,6 +29,7 @@ node tutoriais/produzir.mjs pedidos --rascunho   # sem voz: rápido e de graça,
 node tutoriais/produzir.mjs pedidos --so-montar  # remonta a gravação que já existe
 node tutoriais/motor/revisar.mjs pedidos         # folhas de contato: fotos de cada cena para revisar
 node tutoriais/motor/ouvir.mjs pedidos           # transcreve a trilha pronta e confere cada fala com o roteiro
+node tutoriais/motor/testar-janela.mjs           # prova o botão e a janela do vídeo no Chrome (desktop e celular)
 node tutoriais/publicar.mjs pedidos              # depois de APROVADO: leva para o painel
 ```
 
@@ -73,68 +74,67 @@ O botão (`src/components/TutorialDaTela.tsx`) mora uma vez só, na barra do top
 (`StoreTopNav`), e descobre o vídeo pela rota. Título, duração e capítulos vêm de
 `src/lib/tutoriais-fichas.json`, escrito pelo `publicar.mjs` (não editar à mão).
 
-Tela que não mostra a barra do topo (KDS em tela cheia, mesa no celular) recebe o mesmo
-componente dentro da própria página.
+Tela que cobre a barra do topo recebe o mesmo componente no próprio cabeçalho: a tela cheia
+da cozinha (`store/kds/tela`) e a Roteirização (`RoteirizacaoModal`, com `rota` e `tom="claro"`).
+O Caixa não tem tela própria: o vídeo dele aparece no Balcão (onde o caixa fechado trava a venda)
+e no Histórico de caixas. Em Minha loja, a âncora da URL (`#entrega`) escolhe qual vídeo abre.
 
-## 5. A lista, em ordem
+## 5. A lista
 
-Ordem pelo que mais gera dúvida no dia a dia. Cada linha é um vídeo de até 3 minutos.
+Os 28 vídeos estão gravados, conferidos e aguardando aprovação do Douglas.
 
-| # | Tela | Vídeo | Estado |
-|---|------|-------|--------|
-| 1 | Pedidos | Como usar a tela de Pedidos | **piloto, aguardando aprovação** |
-| 2 | KDS da cozinha | A tela da cozinha: produção, pronto e desfazer | a fazer |
-| 3 | Mesas | Abrir mesa, lançar pedido e fechar a conta | a fazer |
-| 4 | Balcão | Lançar uma venda no balcão, do produto ao pagamento | a fazer |
-| 5 | Caixa | Abrir e fechar o caixa, sangria e conferência | a fazer |
-| 6 | Cardápio | Cadastrar e editar um produto (nome, preço, foto, pausar) | a fazer |
-| 7 | Cardápio | Preço promocional e preço por canal | a fazer |
-| 8 | Cardápio | Combos, adicionais, sabores e meio a meio | a fazer |
-| 9 | Cardápio | Categorias, ordem e disponibilidade (dias, canais, esgotado) | a fazer |
-| 10 | Fiscal | Ligar a NFC-e, automática ou manual, e emitir pelo pedido | a fazer |
-| 11 | Impressoras | Instalar o Assistente e escolher o que cada impressora imprime | a fazer |
-| 12 | Minha loja › Entrega | Taxa de entrega: bairros, raio, km e área de atendimento | a fazer |
-| 13 | Minha loja › Horários | Horários e abertura automática | a fazer |
-| 14 | Minha loja › Pagamento | Formas de pagamento e Pix online | a fazer |
-| 15 | Integrações | Conectar iFood e 99Food | a fazer |
-| 16 | Chatbot IA | Conectar o WhatsApp e o que o robô faz | a fazer |
-| 17 | Roteirização | Montar a rota e despachar os motoboys | a fazer |
-| 18 | Motoboys | Cadastro, app do entregador e acerto do dia | a fazer |
-| 19 | Garçons | Link do garçom, QR da mesa e comissão | a fazer |
-| 20 | Minha loja › Equipe | Criar funcionário e escolher as telas dele | a fazer |
-| 21 | Marketing & cupons | Criar cupom e campanha | a fazer |
-| 22 | Minha loja › Fidelidade | Cashback e trilha premiada | a fazer |
-| 23 | Estoque | Controle de estoque e reposição | a fazer |
-| 24 | Financeiro | Ler o DRE: quanto sobrou no mês | a fazer |
-| 25 | Relatórios | Os relatórios e o que cada um responde | a fazer |
-| 26 | Validade & etiquetas | Imprimir etiqueta de validade | a fazer |
-| 27 | Fiado | Lançar e cobrar fiado | a fazer |
-| 28 | Início | Um passeio pelo painel em 2 minutos | a fazer (por último: mostra as outras telas prontas) |
+| # | Grupo | Vídeo (id) | Tela |
+|---|-------|-----------|------|
+| 1 | Operação | Um passeio pelo painel (`inicio`) | Início |
+| 2 | Operação | Como usar a tela de Pedidos (`pedidos`) | Pedidos |
+| 3 | Operação | Como usar a tela da cozinha (`kds`) | KDS da cozinha e tela cheia |
+| 4 | Operação | Como usar as Mesas (`mesas`) | Mesas |
+| 5 | Operação | Como vender no balcão (`balcao`) | Balcão |
+| 6 | Operação | Como abrir e fechar o caixa (`caixa`) | Balcão e Histórico de caixas |
+| 7 | Operação | Roteirização: montar a rota e despachar (`roteirizacao`) | Roteirização |
+| 8 | Cardápio | Cadastrar e editar um produto (`cardapio-produto`) | Cardápio |
+| 9 | Cardápio | Preço promocional e preço por canal (`cardapio-precos`) | Cardápio |
+| 10 | Cardápio | Combos, adicionais e meio a meio (`cardapio-combos`) | Cardápio |
+| 11 | Cardápio | Categorias, ordem e disponibilidade (`cardapio-organizar`) | Cardápio |
+| 12 | Vendas | Marketing e cupons (`marketing`) | Marketing & cupons |
+| 13 | Vendas | Chatbot IA: o robô do WhatsApp (`chatbot`) | Chatbot IA |
+| 14 | Gestão | Financeiro: quanto sobrou no mês (`financeiro`) | Financeiro |
+| 15 | Gestão | Relatórios: o que cada um responde (`relatorios`) | Relatórios |
+| 16 | Gestão | Fiscal: como ligar e usar a nota (`fiscal`) | Fiscal |
+| 17 | Gestão | Estoque (`estoque`) | Estoque |
+| 18 | Gestão | Validade e etiquetas (`etiquetas`) | Validade & etiquetas |
+| 19 | Equipe | Motoboys: cadastro, app e acerto do dia (`motoboys`) | Motoboys |
+| 20 | Equipe | Garçons: cadastro, link e comissão (`garcons`) | Garçons |
+| 21 | Equipe | Fiado: lançar e cobrar (`fiado`) | Fiado |
+| 22 | Config. | Horários e abertura automática (`horarios`) | Minha loja › Horários |
+| 23 | Config. | Taxa de entrega (`entrega`) | Minha loja › Entrega |
+| 24 | Config. | Formas de pagamento (`pagamento`) | Minha loja › Pagamento |
+| 25 | Config. | Equipe e permissões (`equipe`) | Minha loja › Equipe |
+| 26 | Config. | Fidelidade: cashback e trilha (`fidelidade`) | Minha loja › Fidelidade |
+| 27 | Config. | Impressoras: o Assistente e o que cada uma imprime (`impressoras`) | Impressoras |
+| 28 | Config. | Integrações: conectar iFood e 99Food (`integracoes`) | Integrações |
 
-Cada vídeo novo pede três coisas: os dados daquela tela na semente (mesas, produtos com opção,
-caixa com movimento), o roteiro, e a revisão das folhas de contato antes de gastar com a voz.
+Fora dos vídeos: Totem e Tráfego pago (EM TESTES) e Checklist e ponto (FireCheck).
 
 ## 6. O ambiente de gravação
 
-Tudo local, nada encosta em produção:
+Tudo local, nada encosta em produção. Cada **ambiente numerado** tem banco PGlite e painel
+próprios, para gravar vários vídeos ao mesmo tempo (toda gravação recomeça o banco do zero):
 
 ```
-# 1. banco descartável (pasta fora do repositório)
-cd C:\Users\Micro\tutoriais-teste && npx pglite-server --db=./dados --port=5451 --max-connections=10
-
-# 2. .env.local desta pasta (NÃO pode haver .env de produção aqui)
-DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5451/postgres?sslmode=disable&connection_limit=1&pgbouncer=true"
-NEXTAUTH_SECRET=tutoriais-local
-NEXTAUTH_URL=http://localhost:3121
-COTACAO_SECRET=tutoriais-local
-NEXT_PUBLIC_TUTORIAIS_URL=/tutoriais
-
-# 3. tabelas e painel
-npx prisma db push --skip-generate && npx next dev -p 3121
+npx next build                                   # uma build serve a todos os ambientes
+node tutoriais/ambiente/ambiente.mjs subir 1     # banco na 5461, painel (next start) na 3131
+eval "$(node tutoriais/ambiente/ambiente.mjs variaveis 1)" && node tutoriais/produzir.mjs pedidos
+node tutoriais/ambiente/ambiente.mjs parar 1
 ```
 
-Precisa de `ffmpeg` no PATH e da chave `GEMINI_API_KEY` (lida do `.env` do checkout principal,
-ou da variável de ambiente). A semente recusa qualquer banco que não seja local.
+O banco fica em `C:\Users\Micro\tutoriais-teste\dados-N` (descartável). A build lê o
+`.env.local` desta pasta, que não pode ter nada de produção: só `NEXT_PUBLIC_TUTORIAIS_URL=/tutoriais`
+e valores locais. `next build` e `next start` brigam pelo `.next`: pare os ambientes antes de buildar.
+
+Precisa de `ffmpeg` no PATH, do Chrome instalado e da chave `GEMINI_API_KEY` (lida do `.env` do
+checkout principal, ou da variável de ambiente). A semente recusa qualquer banco que não seja local.
+Para escrever um roteiro novo, siga `ROTEIRO.md`.
 
 O relógio da gravação é sempre "noite de movimento": escolhe-se o fuso em que agora são 20h
 (`ambiente/relogio.mjs`), para o vídeo nunca mostrar uma loja lotada às 4 da manhã.

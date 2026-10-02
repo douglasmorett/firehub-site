@@ -2,7 +2,7 @@
   "pedidos": {
     "id": "pedidos",
     "titulo": "Como usar a tela de Pedidos",
-    "duracao": 181,
+    "duracao": 174,
     "capitulos": [
       {
         "em": 0,
@@ -21,34 +21,1282 @@
         "titulo": "O cartão do pedido"
       },
       {
-        "em": 58.4,
+        "em": 56.2,
         "titulo": "Aceitar o pedido"
       },
       {
-        "em": 78.3,
+        "em": 76,
         "titulo": "Motoboy e saída para entrega"
       },
       {
-        "em": 106.6,
+        "em": 104,
         "titulo": "Concluir a entrega"
       },
       {
-        "em": 113.1,
+        "em": 110.5,
         "titulo": "Os botões menores do cartão"
       },
       {
-        "em": 136.5,
+        "em": 131,
         "titulo": "Cancelar um pedido"
       },
       {
-        "em": 144.1,
+        "em": 138.6,
         "titulo": "Busca, filtros e resumo"
       },
       {
-        "em": 170.8,
+        "em": 164.4,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "8b6a57fc"
+    "versao": "287d5809"
+  },
+  "balcao": {
+    "id": "balcao",
+    "titulo": "Como vender no balcão",
+    "duracao": 142,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 12.4,
+        "titulo": "Escolher os produtos"
+      },
+      {
+        "em": 32,
+        "titulo": "Quantidade e observação"
+      },
+      {
+        "em": 45.9,
+        "titulo": "Balcão, Mesa ou Delivery"
+      },
+      {
+        "em": 57.1,
+        "titulo": "Venda para entrega"
+      },
+      {
+        "em": 81.7,
+        "titulo": "Pagamento e troco"
+      },
+      {
+        "em": 98.1,
+        "titulo": "Dividir o pagamento"
+      },
+      {
+        "em": 111.4,
+        "titulo": "Finalizar a venda"
+      },
+      {
+        "em": 121.9,
+        "titulo": "Onde o pedido aparece"
+      },
+      {
+        "em": 133.8,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "77672746"
+  },
+  "caixa": {
+    "id": "caixa",
+    "titulo": "Como abrir e fechar o caixa",
+    "duracao": 130,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "Onde fica o caixa"
+      },
+      {
+        "em": 7.9,
+        "titulo": "Com o caixa fechado"
+      },
+      {
+        "em": 18.4,
+        "titulo": "Abrir o caixa"
+      },
+      {
+        "em": 36.7,
+        "titulo": "Sangria e reforço"
+      },
+      {
+        "em": 59.5,
+        "titulo": "Encerrar o caixa"
+      },
+      {
+        "em": 72.5,
+        "titulo": "Contar e conferir"
+      },
+      {
+        "em": 82.3,
+        "titulo": "Sobra ou falta"
+      },
+      {
+        "em": 105.1,
+        "titulo": "Histórico de caixas"
+      },
+      {
+        "em": 120.3,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "985a979f"
+  },
+  "cardapio-combos": {
+    "id": "cardapio-combos",
+    "titulo": "Cardápio: combos, adicionais e meio a meio",
+    "duracao": 156,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que este vídeo mostra"
+      },
+      {
+        "em": 13.2,
+        "titulo": "As perguntas de um combo"
+      },
+      {
+        "em": 34.3,
+        "titulo": "Pausar uma opção"
+      },
+      {
+        "em": 45,
+        "titulo": "Editar perguntas e opções"
+      },
+      {
+        "em": 64.5,
+        "titulo": "Adicionais e preço da opção"
+      },
+      {
+        "em": 92.6,
+        "titulo": "Lanche com adicionais"
+      },
+      {
+        "em": 103.8,
+        "titulo": "Pizza meio a meio"
+      },
+      {
+        "em": 129.5,
+        "titulo": "Como o cliente vê"
+      },
+      {
+        "em": 145.7,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "bedb4065"
+  },
+  "cardapio-organizar": {
+    "id": "cardapio-organizar",
+    "titulo": "Cardápio: categorias, ordem e disponibilidade",
+    "duracao": 148,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que este vídeo mostra"
+      },
+      {
+        "em": 10,
+        "titulo": "Criar uma categoria"
+      },
+      {
+        "em": 39.2,
+        "titulo": "Mudar a ordem"
+      },
+      {
+        "em": 62.5,
+        "titulo": "Em quais canais o produto aparece"
+      },
+      {
+        "em": 77.3,
+        "titulo": "Dias da semana"
+      },
+      {
+        "em": 91.3,
+        "titulo": "Etiquetas e destaque"
+      },
+      {
+        "em": 111.8,
+        "titulo": "Estoque e pausa"
+      },
+      {
+        "em": 134,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "dc8e67ae"
+  },
+  "cardapio-precos": {
+    "id": "cardapio-precos",
+    "titulo": "Cardápio: preço promocional e preço por canal",
+    "duracao": 152,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que este vídeo mostra"
+      },
+      {
+        "em": 10.9,
+        "titulo": "Colocar em promoção"
+      },
+      {
+        "em": 48.2,
+        "titulo": "Como o cliente vê"
+      },
+      {
+        "em": 68.2,
+        "titulo": "Preço por canal"
+      },
+      {
+        "em": 91.9,
+        "titulo": "Promoção e canal juntos"
+      },
+      {
+        "em": 111.2,
+        "titulo": "Tirar a promoção"
+      },
+      {
+        "em": 121.1,
+        "titulo": "Preço por canal nas opções"
+      },
+      {
+        "em": 137.3,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "4cd20e32"
+  },
+  "cardapio-produto": {
+    "id": "cardapio-produto",
+    "titulo": "Cardápio: cadastrar e editar um produto",
+    "duracao": 147,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 11.8,
+        "titulo": "A lista de produtos"
+      },
+      {
+        "em": 27.7,
+        "titulo": "Cadastrar um produto"
+      },
+      {
+        "em": 41.2,
+        "titulo": "A foto"
+      },
+      {
+        "em": 46.9,
+        "titulo": "Descrição e comanda"
+      },
+      {
+        "em": 72.8,
+        "titulo": "Editar um produto"
+      },
+      {
+        "em": 89.5,
+        "titulo": "Pausar e ativar"
+      },
+      {
+        "em": 110.7,
+        "titulo": "Como o cliente vê"
+      },
+      {
+        "em": 134.1,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "d72dd3ac"
+  },
+  "chatbot": {
+    "id": "chatbot",
+    "titulo": "Chatbot IA: o robô do WhatsApp",
+    "duracao": 159,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 11.2,
+        "titulo": "Conectar o WhatsApp"
+      },
+      {
+        "em": 48.1,
+        "titulo": "Nome e tom de voz"
+      },
+      {
+        "em": 59.3,
+        "titulo": "Confirmação do pedido"
+      },
+      {
+        "em": 71.1,
+        "titulo": "Anotar pedido pelo WhatsApp"
+      },
+      {
+        "em": 86,
+        "titulo": "Quando o cliente pede atendente"
+      },
+      {
+        "em": 98.4,
+        "titulo": "Notificações e alertas"
+      },
+      {
+        "em": 126.3,
+        "titulo": "Assumir uma conversa"
+      },
+      {
+        "em": 147.5,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "affbfae4"
+  },
+  "entrega": {
+    "id": "entrega",
+    "titulo": "Taxa de entrega: bairros, raio, km e área de atendimento",
+    "duracao": 140,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 13.2,
+        "titulo": "Frete grátis"
+      },
+      {
+        "em": 29.3,
+        "titulo": "Os métodos de cobrança"
+      },
+      {
+        "em": 48.8,
+        "titulo": "Faixas de distância"
+      },
+      {
+        "em": 58.2,
+        "titulo": "Cadastro por bairro"
+      },
+      {
+        "em": 75,
+        "titulo": "Quanto o motoboy recebe"
+      },
+      {
+        "em": 96.4,
+        "titulo": "Salvar"
+      },
+      {
+        "em": 109,
+        "titulo": "Simular um endereço"
+      },
+      {
+        "em": 121.2,
+        "titulo": "Onde entrega e onde não entrega"
+      },
+      {
+        "em": 130.4,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "8e731942"
+  },
+  "equipe": {
+    "id": "equipe",
+    "titulo": "Equipe e permissões: criar funcionário e escolher as telas dele",
+    "duracao": 130,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 13.8,
+        "titulo": "Cadastrar um funcionário"
+      },
+      {
+        "em": 28.2,
+        "titulo": "Escolher as telas"
+      },
+      {
+        "em": 39,
+        "titulo": "A permissão é por tela"
+      },
+      {
+        "em": 68.5,
+        "titulo": "Salvar o acesso"
+      },
+      {
+        "em": 79.9,
+        "titulo": "O que o funcionário vê"
+      },
+      {
+        "em": 89.3,
+        "titulo": "Mudar permissões e senha"
+      },
+      {
+        "em": 111.3,
+        "titulo": "Remover o acesso"
+      },
+      {
+        "em": 119.6,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "3867049e"
+  },
+  "estoque": {
+    "id": "estoque",
+    "titulo": "Estoque: controlar o que tem e repor",
+    "duracao": 158,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 21.5,
+        "titulo": "Os números do alto"
+      },
+      {
+        "em": 39.7,
+        "titulo": "A lista de insumos"
+      },
+      {
+        "em": 52.3,
+        "titulo": "Cadastrar um insumo"
+      },
+      {
+        "em": 72.6,
+        "titulo": "Repor o estoque"
+      },
+      {
+        "em": 97,
+        "titulo": "Saída e perda"
+      },
+      {
+        "em": 105.3,
+        "titulo": "Ficha técnica"
+      },
+      {
+        "em": 126.2,
+        "titulo": "Baixa automática na venda"
+      },
+      {
+        "em": 139,
+        "titulo": "Histórico"
+      },
+      {
+        "em": 148.6,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "6e917e1e"
+  },
+  "etiquetas": {
+    "id": "etiquetas",
+    "titulo": "Validade e etiquetas",
+    "duracao": 153,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 13.2,
+        "titulo": "Cadastrar um item"
+      },
+      {
+        "em": 21.7,
+        "titulo": "A ficha do produto"
+      },
+      {
+        "em": 48.8,
+        "titulo": "O que sai no papel"
+      },
+      {
+        "em": 64.5,
+        "titulo": "As datas"
+      },
+      {
+        "em": 73.7,
+        "titulo": "Quantas etiquetas"
+      },
+      {
+        "em": 83.7,
+        "titulo": "A prévia"
+      },
+      {
+        "em": 97.1,
+        "titulo": "Imprimir"
+      },
+      {
+        "em": 117.5,
+        "titulo": "Acompanhar os vencimentos"
+      },
+      {
+        "em": 143.2,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "34d65a99"
+  },
+  "fiado": {
+    "id": "fiado",
+    "titulo": "Fiado: lançar e cobrar",
+    "duracao": 159,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 12.5,
+        "titulo": "Os totais"
+      },
+      {
+        "em": 22.5,
+        "titulo": "Cadastrar a pessoa"
+      },
+      {
+        "em": 45,
+        "titulo": "Lançar no fiado"
+      },
+      {
+        "em": 62.7,
+        "titulo": "Fiado na venda do Balcão"
+      },
+      {
+        "em": 95.7,
+        "titulo": "O extrato"
+      },
+      {
+        "em": 107.5,
+        "titulo": "Receber o pagamento"
+      },
+      {
+        "em": 131.7,
+        "titulo": "Busca e período"
+      },
+      {
+        "em": 149.1,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "3ce8c2b2"
+  },
+  "fidelidade": {
+    "id": "fidelidade",
+    "titulo": "Fidelidade: cashback e trilha premiada",
+    "duracao": 143,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 15.2,
+        "titulo": "A Trilha Premiada"
+      },
+      {
+        "em": 25.4,
+        "titulo": "Montar as paradas"
+      },
+      {
+        "em": 41.9,
+        "titulo": "Escolher o prêmio"
+      },
+      {
+        "em": 55.5,
+        "titulo": "Prazo e pedidos que contam"
+      },
+      {
+        "em": 79.5,
+        "titulo": "Ligar a trilha"
+      },
+      {
+        "em": 85.1,
+        "titulo": "Cashback"
+      },
+      {
+        "em": 104.6,
+        "titulo": "Salvar"
+      },
+      {
+        "em": 112.6,
+        "titulo": "O que o cliente vê"
+      },
+      {
+        "em": 134,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "1d79e255"
+  },
+  "financeiro": {
+    "id": "financeiro",
+    "titulo": "Financeiro: quanto sobrou no mês",
+    "duracao": 162,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 17.7,
+        "titulo": "Escolher o período"
+      },
+      {
+        "em": 27,
+        "titulo": "Os números do período"
+      },
+      {
+        "em": 40.1,
+        "titulo": "De onde vem a receita"
+      },
+      {
+        "em": 51.9,
+        "titulo": "O custo dos produtos"
+      },
+      {
+        "em": 64.2,
+        "titulo": "Taxas e entrega"
+      },
+      {
+        "em": 76.5,
+        "titulo": "Lançar uma despesa"
+      },
+      {
+        "em": 97.8,
+        "titulo": "Custos fixos"
+      },
+      {
+        "em": 109.8,
+        "titulo": "O resultado"
+      },
+      {
+        "em": 135.7,
+        "titulo": "As outras abas"
+      },
+      {
+        "em": 152.9,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "2ec85c1c"
+  },
+  "fiscal": {
+    "id": "fiscal",
+    "titulo": "Fiscal: como ligar e usar a nota (NFC-e)",
+    "duracao": 154,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 10.4,
+        "titulo": "O que falta para emitir"
+      },
+      {
+        "em": 19.4,
+        "titulo": "Ligar a emissão"
+      },
+      {
+        "em": 32.9,
+        "titulo": "O caminho, passo a passo"
+      },
+      {
+        "em": 40.1,
+        "titulo": "Certificado digital e CSC"
+      },
+      {
+        "em": 56.9,
+        "titulo": "Dados da empresa"
+      },
+      {
+        "em": 65.9,
+        "titulo": "Automática ou manual"
+      },
+      {
+        "em": 83.4,
+        "titulo": "O momento e o CPF"
+      },
+      {
+        "em": 110.2,
+        "titulo": "Acompanhar as notas"
+      },
+      {
+        "em": 144.2,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "f49dae6a"
+  },
+  "garcons": {
+    "id": "garcons",
+    "titulo": "Garçons: cadastro, link e comissão",
+    "duracao": 138,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 8.3,
+        "titulo": "Cadastrar um garçom"
+      },
+      {
+        "em": 18.8,
+        "titulo": "Login e senha do garçom"
+      },
+      {
+        "em": 31.7,
+        "titulo": "As permissões"
+      },
+      {
+        "em": 59,
+        "titulo": "O link do garçom"
+      },
+      {
+        "em": 76.7,
+        "titulo": "A lista de garçons"
+      },
+      {
+        "em": 85.6,
+        "titulo": "A comissão do garçom"
+      },
+      {
+        "em": 116.6,
+        "titulo": "Relatório de Mesas"
+      },
+      {
+        "em": 129.1,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "3e66f015"
+  },
+  "horarios": {
+    "id": "horarios",
+    "titulo": "Horários da loja e abertura automática",
+    "duracao": 119,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 12.3,
+        "titulo": "Dias e horários"
+      },
+      {
+        "em": 24.6,
+        "titulo": "Mais de um turno"
+      },
+      {
+        "em": 37.6,
+        "titulo": "Salvar"
+      },
+      {
+        "em": 46.5,
+        "titulo": "Horário no iFood"
+      },
+      {
+        "em": 53.9,
+        "titulo": "Pausa e férias"
+      },
+      {
+        "em": 68.9,
+        "titulo": "Abrir e fechar o site"
+      },
+      {
+        "em": 89.4,
+        "titulo": "Abertura automática"
+      },
+      {
+        "em": 109.9,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "27298243"
+  },
+  "impressoras": {
+    "id": "impressoras",
+    "titulo": "Impressoras: o Assistente e o que cada uma imprime",
+    "duracao": 146,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 9.6,
+        "titulo": "O Assistente FireHub"
+      },
+      {
+        "em": 28.3,
+        "titulo": "Impressão automática"
+      },
+      {
+        "em": 45.2,
+        "titulo": "Cadastrar a impressora"
+      },
+      {
+        "em": 60.8,
+        "titulo": "De onde vem o pedido"
+      },
+      {
+        "em": 77.8,
+        "titulo": "Bebida, motoboy e mesa"
+      },
+      {
+        "em": 98.6,
+        "titulo": "Categorias"
+      },
+      {
+        "em": 110.9,
+        "titulo": "Testar e salvar"
+      },
+      {
+        "em": 127.3,
+        "titulo": "O modelo da comanda"
+      },
+      {
+        "em": 137.4,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "b1b2c4bb"
+  },
+  "inicio": {
+    "id": "inicio",
+    "titulo": "Um passeio pelo painel",
+    "duracao": 158,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "Bem-vindo ao FireHub"
+      },
+      {
+        "em": 7.7,
+        "titulo": "A tela Início"
+      },
+      {
+        "em": 17.8,
+        "titulo": "O resumo do dia"
+      },
+      {
+        "em": 44.6,
+        "titulo": "O menu lateral"
+      },
+      {
+        "em": 58.6,
+        "titulo": "Abrir uma tela"
+      },
+      {
+        "em": 70.5,
+        "titulo": "Os grupos do menu"
+      },
+      {
+        "em": 109.7,
+        "titulo": "Recolher o menu"
+      },
+      {
+        "em": 117.8,
+        "titulo": "A barra do topo"
+      },
+      {
+        "em": 134.1,
+        "titulo": "Ver cardápio e Integrações"
+      },
+      {
+        "em": 151.4,
+        "titulo": "Cada tela tem o seu vídeo"
+      }
+    ],
+    "versao": "78cdec3b"
+  },
+  "integracoes": {
+    "id": "integracoes",
+    "titulo": "Integrações: conectar iFood e 99Food",
+    "duracao": 156,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 17.6,
+        "titulo": "Os aplicativos de pedido"
+      },
+      {
+        "em": 38.7,
+        "titulo": "Conectar o iFood"
+      },
+      {
+        "em": 79.7,
+        "titulo": "Conectar o 99Food"
+      },
+      {
+        "em": 95.4,
+        "titulo": "JotaJá, Brendi e Wabiz"
+      },
+      {
+        "em": 109.9,
+        "titulo": "Os pedidos do aplicativo"
+      },
+      {
+        "em": 126.7,
+        "titulo": "Conferir se está ativa"
+      },
+      {
+        "em": 145.9,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "24caebea"
+  },
+  "kds": {
+    "id": "kds",
+    "titulo": "Como usar a tela da cozinha",
+    "duracao": 143,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é o KDS"
+      },
+      {
+        "em": 11.5,
+        "titulo": "Criar as telas"
+      },
+      {
+        "em": 42,
+        "titulo": "Abrir a tela na cozinha"
+      },
+      {
+        "em": 48.5,
+        "titulo": "Os pedidos na tela"
+      },
+      {
+        "em": 69.6,
+        "titulo": "O relógio e as cores"
+      },
+      {
+        "em": 82.7,
+        "titulo": "Dar o pronto"
+      },
+      {
+        "em": 91.5,
+        "titulo": "Desfazer"
+      },
+      {
+        "em": 98.6,
+        "titulo": "Os filtros da tela"
+      },
+      {
+        "em": 109.6,
+        "titulo": "A tela de Finalização"
+      },
+      {
+        "em": 124.3,
+        "titulo": "O selo Pronto Cozinha"
+      },
+      {
+        "em": 133.4,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "e0302b6f"
+  },
+  "marketing": {
+    "id": "marketing",
+    "titulo": "Marketing e cupons",
+    "duracao": 127,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 14.7,
+        "titulo": "Disparo em massa"
+      },
+      {
+        "em": 26.8,
+        "titulo": "Automação recorrente"
+      },
+      {
+        "em": 50.2,
+        "titulo": "Base de clientes"
+      },
+      {
+        "em": 61.1,
+        "titulo": "Onde se cria o cupom"
+      },
+      {
+        "em": 68.2,
+        "titulo": "Criar um cupom"
+      },
+      {
+        "em": 82.4,
+        "titulo": "As regras do cupom"
+      },
+      {
+        "em": 95.3,
+        "titulo": "Cupom de primeiro pedido"
+      },
+      {
+        "em": 103.4,
+        "titulo": "Pausar e salvar"
+      },
+      {
+        "em": 118.6,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "7998f94a"
+  },
+  "mesas": {
+    "id": "mesas",
+    "titulo": "Como usar as Mesas",
+    "duracao": 155,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 8,
+        "titulo": "O mapa de mesas"
+      },
+      {
+        "em": 33.7,
+        "titulo": "Abrir uma mesa"
+      },
+      {
+        "em": 45.8,
+        "titulo": "Lançar o pedido"
+      },
+      {
+        "em": 63.9,
+        "titulo": "A conta e a taxa de serviço"
+      },
+      {
+        "em": 85.8,
+        "titulo": "Dividir a conta"
+      },
+      {
+        "em": 102.9,
+        "titulo": "Receber o pagamento"
+      },
+      {
+        "em": 119.6,
+        "titulo": "Fechar a mesa"
+      },
+      {
+        "em": 129.7,
+        "titulo": "Cadastro de mesas"
+      },
+      {
+        "em": 146.5,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "6292be29"
+  },
+  "motoboys": {
+    "id": "motoboys",
+    "titulo": "Motoboys: cadastro, app do entregador e acerto do dia",
+    "duracao": 158,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 9.7,
+        "titulo": "Cadastrar um motoboy"
+      },
+      {
+        "em": 17.5,
+        "titulo": "Como ele é pago"
+      },
+      {
+        "em": 35,
+        "titulo": "A senha do aplicativo"
+      },
+      {
+        "em": 49.1,
+        "titulo": "Pedidos de aplicativo"
+      },
+      {
+        "em": 62.5,
+        "titulo": "O aplicativo do entregador"
+      },
+      {
+        "em": 85.2,
+        "titulo": "O acerto do dia"
+      },
+      {
+        "em": 97.6,
+        "titulo": "Os totais do período"
+      },
+      {
+        "em": 107.8,
+        "titulo": "A conferência de cada motoboy"
+      },
+      {
+        "em": 135.3,
+        "titulo": "Entrega por entrega"
+      },
+      {
+        "em": 147.6,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "ce4d04f9"
+  },
+  "pagamento": {
+    "id": "pagamento",
+    "titulo": "Formas de pagamento da loja",
+    "duracao": 113,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 9.6,
+        "titulo": "Pagamento na entrega"
+      },
+      {
+        "em": 22.5,
+        "titulo": "Bandeiras"
+      },
+      {
+        "em": 38.7,
+        "titulo": "Salvar"
+      },
+      {
+        "em": 45,
+        "titulo": "Pix e cartão pelo site"
+      },
+      {
+        "em": 77.4,
+        "titulo": "O que o cliente vê"
+      },
+      {
+        "em": 103.6,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "a9a02a13"
+  },
+  "relatorios": {
+    "id": "relatorios",
+    "titulo": "Relatórios: o que cada um responde",
+    "duracao": 162,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 8.9,
+        "titulo": "Vendas por período"
+      },
+      {
+        "em": 15.6,
+        "titulo": "Período e filtros"
+      },
+      {
+        "em": 48.8,
+        "titulo": "Itens vendidos"
+      },
+      {
+        "em": 67,
+        "titulo": "Vendas por dia e hora"
+      },
+      {
+        "em": 83.3,
+        "titulo": "Os outros relatórios de vendas"
+      },
+      {
+        "em": 114.1,
+        "titulo": "Tempo e estoque"
+      },
+      {
+        "em": 130.4,
+        "titulo": "Atalhos para outras telas"
+      },
+      {
+        "em": 143.3,
+        "titulo": "Busca e favoritos"
+      },
+      {
+        "em": 152.3,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "c54c2f5a"
+  },
+  "roteirizacao": {
+    "id": "roteirizacao",
+    "titulo": "Roteirização: montar a rota e despachar",
+    "duracao": 149,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é esta tela"
+      },
+      {
+        "em": 9.4,
+        "titulo": "O mapa"
+      },
+      {
+        "em": 19.8,
+        "titulo": "As cores dos pinos"
+      },
+      {
+        "em": 31.8,
+        "titulo": "Os motoboys no mapa"
+      },
+      {
+        "em": 42.2,
+        "titulo": "O resumo do pedido"
+      },
+      {
+        "em": 52.4,
+        "titulo": "Os pedidos que faltam sair"
+      },
+      {
+        "em": 69.3,
+        "titulo": "Montar a rota"
+      },
+      {
+        "em": 98.2,
+        "titulo": "Criar a rota"
+      },
+      {
+        "em": 109.9,
+        "titulo": "Despachar com o motoboy"
+      },
+      {
+        "em": 115.7,
+        "titulo": "A rota despachada"
+      },
+      {
+        "em": 127.9,
+        "titulo": "Na tela de Pedidos"
+      },
+      {
+        "em": 142.2,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "eb21f2ca"
   }
 }

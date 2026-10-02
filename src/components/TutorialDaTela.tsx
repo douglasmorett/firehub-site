@@ -31,6 +31,9 @@ const ESTILO = `
   background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;font-weight:700;font-size:.72rem;
   cursor:pointer;white-space:nowrap;position:relative;font-family:inherit}
 .fh-tutorial-botao:hover{background:rgba(255,255,255,.24)}
+.fh-tutorial-botao.claro{background:#FAF6F2;border-color:#E7DDD3;color:#1C1917;height:36px;border-radius:8px;font-size:.85rem;font-weight:800}
+.fh-tutorial-botao.claro:hover{background:#F3ECE4}
+.fh-tutorial-botao.claro .fh-tutorial-novo{border-color:#fff;background:#E8360C}
 .fh-tutorial-novo{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#FDE047;border:2px solid #C92E09}
 @media (max-width:1180px){.fh-tutorial-botao span{display:none}.fh-tutorial-botao{padding:0;width:32px;justify-content:center}}
 .fh-tutorial-fundo{position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -57,9 +60,20 @@ const ESTILO = `
 @media (max-width:860px){.fh-tutorial-corpo{grid-template-columns:1fr;padding:0 12px 14px}.fh-tutorial-topo{padding:12px}.fh-tutorial-outros{padding:0 12px 10px}}
 `;
 
-export default function TutorialDaTela() {
+export default function TutorialDaTela({
+  rota,
+  tom = "escuro",
+}: {
+  /**
+   * De qual tela é o vídeo, quando não é a da URL: a Roteirização também abre
+   * como janela por cima de Pedidos, e ali o vídeo certo continua sendo o dela.
+   */
+  rota?: string;
+  /** "claro" para cabeçalho de fundo claro (Roteirização); o padrão é a barra vermelha do topo. */
+  tom?: "escuro" | "claro";
+} = {}) {
   const pathname = usePathname();
-  const tutoriais = tutoriaisDaTela(pathname);
+  const tutoriais = tutoriaisDaTela(rota || pathname);
   const [aberto, setAberto] = useState(false);
   const [qual, setQual] = useState(0);
   const [jaViu, setJaViu] = useState(true); // começa "visto" para a bolinha não piscar antes de ler o navegador
@@ -131,7 +145,7 @@ export default function TutorialDaTela() {
       <style dangerouslySetInnerHTML={{ __html: ESTILO }} />
       <button
         type="button"
-        className="fh-tutorial-botao"
+        className={tom === "claro" ? "fh-tutorial-botao claro" : "fh-tutorial-botao"}
         onClick={abrir}
         title={`Vídeo de ${duracaoEmMinutos(tutorial.duracao)}: ${tutorial.titulo}`}
         aria-label="Tutorial: como usar esta tela"
