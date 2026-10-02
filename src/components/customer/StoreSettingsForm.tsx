@@ -1232,6 +1232,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
 
           <DeliveryZoneMap
           initialAddress={storeAddress}
+          nomeDaLoja={storeName}
           initialLatLng={(user.storeLatLng as any) || null}
           initialZones={(user.deliveryZones as any) || []}
           zoneType={user.deliveryZoneType || "KM"}

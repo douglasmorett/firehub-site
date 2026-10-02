@@ -19,6 +19,7 @@ import {
   formatarReais,
   type Problema,
 } from "@/lib/cadastro-da-entrega";
+import MandeSeusBairros from "@/components/customer/MandeSeusBairros";
 import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from "lucide-react";
 
 const ZONE_COLORS = ["#C92E09", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
@@ -181,6 +182,8 @@ interface Props {
    * recebe" já abre nele, sem o palpite até o GET voltar (repasseNaAbertura).
    */
   initialRepasseSeparado?: boolean | null;
+  /** Nome da loja, para a mensagem pronta da tarja "mande seus bairros" (MandeSeusBairros). */
+  nomeDaLoja?: string | null;
   /**
    * `storeAddress` só vem quando a loja marcou para TROCAR o endereço do
    * cadastro pelo do mapa — ausente, o servidor mantém o que está gravado.
@@ -295,7 +298,7 @@ function CampoNumerico({
   );
 }
 
-export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialAreasDeRisco, initialLimiteDeAtendimento, initialRepasseSeparado, onSave }: Props) {
+export default function DeliveryZoneMap({ initialAddress, initialLatLng, initialZones, zoneType, initialAreasDeRisco, initialLimiteDeAtendimento, initialRepasseSeparado, nomeDaLoja, onSave }: Props) {
   const pontoInicial = useMemo(() => lerPontoDaLoja(initialLatLng), [initialLatLng]);
   // O cadastro gravado, lido como o MOTOR lê (lib/cadastro-da-entrega.ts,
   // lerZonasGravadas): lista, ou a lista em TEXTO, com o contorno das áreas
@@ -1601,6 +1604,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       <p style={{ color: "#64748B", fontSize: "0.88rem", marginBottom: "0.8rem" }}>
         Defina onde fica sua loja no mapa e escolha a regra de cobrança da entrega.
       </p>
+
+      {/* Entrega por bairros: a equipe cadastra a lista no mesmo dia. */}
+      <MandeSeusBairros temAreaCadastrada={zonasIniciais.length > 0} nomeDaLoja={nomeDaLoja} />
 
       {msg && (
         <div style={{ padding: "10px 14px", borderRadius: "8px", marginBottom: "1rem",
