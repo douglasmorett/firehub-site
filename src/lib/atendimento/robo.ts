@@ -120,9 +120,10 @@ function instrucoes(config: Awaited<ReturnType<typeof configDoAtendimento>>, con
 # Modo VENDA (interessado)
 - O melhor atendimento é tirar as dúvidas aqui mesmo. Entenda o negócio aos poucos (tipo de loja, cidade, por onde vende hoje, se usa algum sistema, o que mais incomoda) e mostre o que do FireHub resolve ESSA dor.
 - Preço só quando perguntarem (1%, mínimo R$ 100, máximo R$ 400).
-- Link de cadastro (firehubfood.com.br/cadastro, teste grátis de 15 dias): UMA vez na conversa, quando a pessoa mostrar que quer começar ou testar, ou perguntar como faz. Depois, diga "pelo link que te mandei" em vez de repetir.
-- Nossa grande facilidade, deixe claro quando couber: A GENTE MONTA A LOJA PARA ELE. Ele manda o link do cardápio que usa hoje (iFood, Anota AI, cardápio digital, site) e a equipe copia o cardápio inteiro (produtos, preços, fotos, adicionais) e deixa bairros, taxas e horários configurados. Ele recebe a loja pronta para usar.
-- Quando ele topar a montagem: peça, um de cada vez, o link do cardápio, o nome da loja e a cidade (bairros com as taxas e os horários ajudam, mas não trave por eles). Com o link e o nome da loja, use montar_loja e avise que a equipe continua por aqui.
+- Quando a pessoa quiser começar ou testar: ofereça criar a conta POR AQUI MESMO (o caminho preferido) ou, se ela preferir fazer sozinha, o link firehubfood.com.br/cadastro. O link vai UMA vez na conversa; depois, "pelo link que te mandei".
+- Criar a conta por aqui: peça o que falta numa pergunta curta só (ex.: "Me passa seu nome, o nome da loja, a cidade, seu e-mail e CPF? Se tiver CNPJ, manda também."). O CPF é obrigatório; sem CNPJ a conta fica no CPF. Antes de criar, REPITA o e-mail ("Confirma o e-mail fulano@gmail.com?") e só use criar_conta depois do "sim". Nunca peça nem mande senha: ela cria pelo link que chega no e-mail.
+- Nossa grande facilidade, deixe claro quando couber: A GENTE MONTA A LOJA PARA ELE, DE GRAÇA E NO MESMO DIA. Ele manda o link do cardápio que usa hoje (iFood, Anota AI, cardápio digital, site) e a equipe copia o cardápio inteiro (produtos, preços, fotos, adicionais) e deixa bairros, taxas e horários configurados.
+- A ordem boa é conta primeiro, montagem depois: com a conta criada, peça o link do cardápio (bairros com as taxas e os horários ajudam, mas não trave por eles). Com o link e o nome da loja, use montar_loja e avise que a equipe continua por aqui. Se a pessoa só quer a montagem, sem conta ainda, use montar_loja do mesmo jeito.
 - Demonstração com um vendedor é a ÚLTIMA opção: só se a pessoa pedir para ver funcionando ou falar com alguém, ou se as dúvidas não se resolverem aqui. Aí use chamar_pessoa com o motivo "quer agendar demonstração" e diga que a equipe vai combinar o horário por aqui.
 
 # BASE
@@ -249,6 +250,8 @@ function respostaDeReserva(acoes: AcaoFeita[]): string {
     const r = demo.resultado as any;
     return `Pronto! Sua demonstração do FireHub ficou marcada para ${r.quando} com ${r.comQuem}. Vamos te chamar por aqui na hora, com o link da chamada. 🔥`;
   }
+  const conta = ultima("criar_conta");
+  if (conta) return `Pronto, sua conta no FireHub está criada e o teste grátis começou! Mandei no e-mail ${(conta.resultado as any).email} o link para você criar a senha. Quer que a gente monte sua loja? É só mandar o link do cardápio que você usa hoje.`;
   if (ultima("montar_loja")) return "Recebi o seu cardápio! Nossa equipe já vai continuar por aqui para deixar a sua loja prontinha. 🔥";
   if (ultima("chamar_pessoa")) return "Já chamei alguém da nossa equipe — em instantes te respondem por aqui. 🙏";
   const senha = ultima("enviar_link_de_senha");
@@ -292,7 +295,7 @@ async function conversarComFerramentas(
       acoes.push({ nome: chamada.name || "", resultado });
       respostas.push({ functionResponse: { id: chamada.id, name: chamada.name, response: resultado } });
       // O que a ferramenta mudou no contato vale para a próxima chamada da mesma volta.
-      if (chamada.name === "atualizar_contato" || chamada.name === "marcar_demonstracao") {
+      if (chamada.name === "atualizar_contato" || chamada.name === "marcar_demonstracao" || chamada.name === "criar_conta") {
         Object.assign(contato, (await prisma.crmContato.findUnique({ where: { id: contato.id } })) || {});
       }
     }

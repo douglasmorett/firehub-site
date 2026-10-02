@@ -6,6 +6,7 @@ import { ANTECEDENCIA_MINIMA_MIN, dataDaAgenda, horaDaAgenda, NOMES_DOS_DIAS, di
 import { marcarReuniao, vagasDaEquipe, vendedorLivrePara, HorarioOcupado } from "@/lib/crm/agenda-servidor";
 import { estadoDaLojaParaSuporte } from "./estado-da-loja";
 import { avisarDono, avisarVendedor } from "./avisos";
+import { criarContaPeloWhatsApp } from "./cadastro";
 
 /**
  * AS FERRAMENTAS DO ROBÔ DO FIREHUB — o que ele pode consultar e fazer.
@@ -25,7 +26,7 @@ type Contato = {
 };
 
 /** As ferramentas que MUDAM alguma coisa — não podem rodar duas vezes numa resposta (robo.ts). */
-export const FERRAMENTAS_COM_EFEITO = new Set(["marcar_demonstracao", "chamar_pessoa", "montar_loja", "enviar_link_de_senha", "reiniciar_whatsapp_da_loja"]);
+export const FERRAMENTAS_COM_EFEITO = new Set(["marcar_demonstracao", "chamar_pessoa", "montar_loja", "criar_conta", "enviar_link_de_senha", "reiniciar_whatsapp_da_loja"]);
 
 /**
  * O robô marca a demonstração sozinho na agenda dos vendedores? Desligado
@@ -111,6 +112,24 @@ const TODAS_AS_DECLARACOES = [
       type: "object",
       properties: { motivo: { type: "string", description: "Em uma frase, o que a pessoa precisa." } },
       required: ["motivo"],
+    },
+  },
+  {
+    name: "criar_conta",
+    description: "Cria a conta da loja no FireHub pela conversa (começa o teste grátis) e manda para o e-mail o link para a pessoa criar a senha. Só depois de ter todos os dados e de a pessoa CONFIRMAR o e-mail que você repetiu para ela.",
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        nome: { type: "string", description: "Nome do responsável." },
+        nomeDaLoja: { type: "string" },
+        cidade: { type: "string", description: "Cidade e estado, ex.: Cabo Frio - RJ." },
+        email: { type: "string", description: "O e-mail exatamente como a pessoa confirmou." },
+        cpf: { type: "string", description: "CPF do responsável (obrigatório, mesmo com CNPJ)." },
+        cnpj: { type: "string", description: "CNPJ da empresa, se tiver. Sem CNPJ a conta fica no CPF." },
+        whatsappDaLoja: { type: "string", description: "Só se a pessoa disse que o WhatsApp da loja é outro número que não este." },
+        emailConfirmado: { type: "boolean", description: "true só se você repetiu o e-mail e a pessoa confirmou que está certo." },
+      },
+      required: ["nome", "nomeDaLoja", "cidade", "email", "cpf", "emailConfirmado"],
     },
   },
   {
@@ -250,6 +269,17 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
       return { ok: true, aviso: "Avise que uma pessoa da equipe vai responder por aqui em breve. Não continue o atendimento." };
     }
 
+    case "criar_conta": {
+      // O e-mail errado prende a conta (o link da senha vai para ele): sem a confirmação, não cria.
+      if (args?.emailConfirmado !== true) return { erro: "Repita o e-mail para a pessoa e peça para confirmar antes de criar a conta." };
+      const atual = await prisma.crmContato.findUnique({ where: { id: contato.id }, select: { userId: true, jid: true } });
+      return criarContaPeloWhatsApp({ ...contato, userId: atual?.userId ?? contato.userId, jid: atual?.jid }, {
+        nome: String(args?.nome || ""), nomeDaLoja: String(args?.nomeDaLoja || ""), cidade: String(args?.cidade || ""),
+        email: String(args?.email || ""), cpf: String(args?.cpf || ""), cnpj: args?.cnpj ? String(args.cnpj) : undefined,
+        whatsappDaLoja: args?.whatsappDaLoja ? String(args.whatsappDaLoja) : undefined,
+      });
+    }
+
     case "montar_loja": {
       const link = String(args?.linkDoCardapio || "").trim().slice(0, 500);
       const nomeDaLoja = String(args?.nomeDaLoja || "").trim().slice(0, 120);
@@ -260,8 +290,10 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
         where: { id: contato.id },
         data: { nomeDaLoja, ...(cidade ? { cidade } : {}) },
       });
+      const conta = contato.userId ? await prisma.user.findUnique({ where: { id: contato.userId }, select: { slug: true, email: true } }) : null;
       const detalhes = [
         `Montar a loja ${nomeDaLoja}${cidade ? ` (${cidade})` : ""}.`,
+        conta ? `Conta: firehubfood.com.br/loja/${conta.slug} (${conta.email})` : "Ainda sem conta no FireHub.",
         `Cardápio: ${link}`,
         args?.bairros ? `Bairros/taxas: ${String(args.bairros).slice(0, 400)}` : "",
         args?.horarios ? `Horários: ${String(args.horarios).slice(0, 300)}` : "",
