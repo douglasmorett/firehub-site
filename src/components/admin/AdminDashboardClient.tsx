@@ -152,6 +152,28 @@ export default function AdminDashboardClient({
   // Expandir detalhes do lojista
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Copiar o link do cardápio sem entrar na loja: o Douglas manda loja de
+  // demonstração pelo WhatsApp, e abrir a conta só para copiar da barra do
+  // navegador era o caminho (02/10/2026).
+  const [linkCopiadoId, setLinkCopiadoId] = useState<string | null>(null);
+  const copiarLinkDoCardapio = async (l: Lojista) => {
+    if (!l.slug) return;
+    const link = `${window.location.origin}/loja/${l.slug}`;
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      // Clipboard API bloqueada (aba sem foco, navegador antigo): o jeito velho.
+      const campo = document.createElement("textarea");
+      campo.value = link;
+      document.body.appendChild(campo);
+      campo.select();
+      try { document.execCommand("copy"); } catch { /* sem cópia: o link está em Dados */ }
+      campo.remove();
+    }
+    setLinkCopiadoId(l.id);
+    setTimeout(() => setLinkCopiadoId(atual => (atual === l.id ? null : atual)), 1600);
+  };
+
   const onlyDigits = (v: string) => v.replace(/\D/g, "");
   const startOfMonthTs = (() => {
     const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.getTime();
@@ -485,6 +507,15 @@ export default function AdminDashboardClient({
       <button onClick={() => abrirReset(l)} className="fha-btn" title="Voltar a senha da conta para 123456">Senha</button>
       <button onClick={() => setExpandedId(expandedId === l.id ? null : l.id)} className={`fha-btn${expandedId === l.id ? " on" : ""}`} title="Ver dados completos do cadastro">
         Dados
+      </button>
+      <button
+        onClick={() => copiarLinkDoCardapio(l)}
+        disabled={!l.slug}
+        className="fha-btn"
+        style={{ gridColumn: "1 / -1", color: linkCopiadoId === l.id ? "#15803D" : "#0F172A", fontWeight: 700 }}
+        title={l.slug ? `Copiar o link do cardápio (/loja/${l.slug})` : "Loja sem endereço de cardápio"}
+      >
+        {linkCopiadoId === l.id ? "✓ Link copiado" : "🔗 Copiar link"}
       </button>
       <button onClick={() => abrirExcluir(l)} className="fha-btn" style={{ color: "#B91C1C", gridColumn: "1 / -1" }} title="Excluir a loja inteira (pede EXCLUIR duas vezes)">
         🗑️ Excluir
