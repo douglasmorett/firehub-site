@@ -55,6 +55,7 @@ import { cpfValido } from "@/lib/fiscal-validacao";
 import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPedido } from "@/lib/fiscal-modo";
 import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
+import { descontoDoPagamentoOnline, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
@@ -955,9 +956,20 @@ export default function CustomerStorePage({
           ? cartTotal * (Number((couponApplied as any).pct) / 100)
           : couponApplied.discount)
     : 0;
+  // O % que a loja dá a quem paga pelo site. A conta é a mesma do servidor
+  // (lib/desconto-pagamento-online.ts): o Asaas cobra o total que ele grava.
+  const descontoOnline = mesa
+    ? null
+    : descontoDoPagamentoOnline({
+        paymentFees: franchisee.paymentFees,
+        paymentMethod,
+        ligada: { pix: franchisee.pixOnlineAtivo === true, cartao: cartaoPeloAsaas },
+        base: cartTotal - discount - descontoDaTrilha,
+      });
+  const descontoDoPagamento = descontoOnline?.valor || 0;
   // Na mesa o total é o dos itens a preço do salão: cupom, cashback, prêmio
   // e taxa de entrega não existem na conta da mesa (lib/lancar-na-mesa.ts).
-  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha);
+  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDoPagamento);
   const finalTotal = mesa ? cartTotal : itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
@@ -1487,11 +1499,14 @@ export default function CustomerStorePage({
 
   const paymentOptions = (() => {
     const base: { k: string; l: string }[] = [];
+    // "· 5% off" no botão: o desconto só vale para quem paga pelo site.
+    const pctOnline = descontoOnlineDaLoja(franchisee.paymentFees);
+    const off = (pct: number) => (pct > 0 ? ` · ${String(pct).replace(".", ",")}% off` : "");
     if (pixPeloSite) {
-      base.push({ k: "PIX", l: "⚡ Pix agora (pelo site)" });
+      base.push({ k: "PIX", l: `⚡ Pix agora (pelo site)${franchisee.pixOnlineAtivo === true ? off(pctOnline.pix) : ""}` });
     }
     if (cartaoPeloAsaas) {
-      base.push({ k: "CREDITO_ONLINE", l: "💳 Cartão pelo site" });
+      base.push({ k: "CREDITO_ONLINE", l: `💳 Cartão pelo site${off(pctOnline.cartao)}` });
     } else if (hasOnlinePayment) {
       base.push({ k: "CREDITO_ONLINE", l: "💳 Cartão de Crédito (Online)" });
     }
@@ -3065,6 +3080,12 @@ export default function CustomerStorePage({
                     <span style={{ fontWeight: 700 }}>- R$ {cashbackDiscountApplied.toFixed(2).replace(".", ",")}</span>
                   </div>
                 )}
+                {descontoOnline && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A" }}>
+                    <span>{descontoOnline.rotulo}</span>
+                    <span style={{ fontWeight: 700 }}>- R$ {descontoOnline.valor.toFixed(2).replace(".", ",")}</span>
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", marginTop: "4px", paddingTop: "6px", borderTop: "1px dashed #E2E8F0" }}>
                   <span>Total</span>
                   <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
@@ -3709,6 +3730,12 @@ export default function CustomerStorePage({
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A", fontWeight: 700 }}>
                   <span>Desconto (Cupom):</span>
                   <span>- R$ {discount.toFixed(2).replace(".", ",")}</span>
+                </div>
+              )}
+              {descontoOnline && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A", fontWeight: 700 }}>
+                  <span>{descontoOnline.rotulo}:</span>
+                  <span>- R$ {descontoOnline.valor.toFixed(2).replace(".", ",")}</span>
                 </div>
               )}
               {premioDaTrilha && (premioDaTrilha.tipo !== "frete" || premioZeraFrete) && (

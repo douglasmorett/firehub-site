@@ -8,6 +8,7 @@ import { Save, Copy, ExternalLink, Upload, Trash2, Plus, Tag, CreditCard, Bankno
 import { DAYS, DAY_MAP, normalizeStoreHours, defaultHours } from "@/lib/store-hours";
 import { FUSOS_DO_BRASIL, fusoPorEndereco, rotuloDoFuso } from "@/lib/fuso-por-endereco";
 import { DICA_DO_VIDEO, MAX_VIDEO_BYTES } from "@/lib/video-enviado";
+import { DESCONTO_ONLINE_MAXIMO, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
 
 /**
  * O cupom como fica gravado em `storeCoupons`. A régua que lê isto é
@@ -31,6 +32,30 @@ type Coupon = {
   /** Só para quem nunca pediu pelo site; o site aplica sozinho e avisa. */
   primeiroPedido?: boolean;
 };
+
+/**
+ * O % de desconto do pagamento pelo site. Texto próprio enquanto digita:
+ * campo numérico controlado engolia o "2," de "2,5".
+ */
+function CampoDePercentual({ valor, onMudar }: { valor: number; onMudar: (n: number) => void }) {
+  const [texto, setTexto] = useState(valor ? String(valor).replace(".", ",") : "");
+  return (
+    <input
+      type="text" inputMode="decimal" placeholder="0" value={texto}
+      onChange={(e) => {
+        const t = e.target.value.replace(/[^\d,.]/g, "").slice(0, 5);
+        setTexto(t);
+        const n = Number(t.replace(",", "."));
+        if (Number.isFinite(n)) onMudar(Math.max(0, Math.min(DESCONTO_ONLINE_MAXIMO, n)));
+      }}
+      onBlur={() => {
+        const n = Math.max(0, Math.min(DESCONTO_ONLINE_MAXIMO, Number(texto.replace(",", ".")) || 0));
+        setTexto(n ? String(n).replace(".", ",") : "");
+      }}
+      style={{ width: 70, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", textAlign: "center" }}
+    />
+  );
+}
 
 // Botão de salvar inline por seção
 function SectionSaveBtn({ dirty, saving, onSave, label = "Salvar alterações" }: { dirty: boolean; saving: boolean; onSave: () => void; label?: string }) {
@@ -999,21 +1024,60 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             das vendas online"). O pagamento online estava desligado desde
             23/08/2026. O que existe de verdade agora é Pix e cartão na conta
             Asaas do próprio lojista, com as regras em lib/pix-online.ts. A
-            conexão mora em Integrações → Asaas; aqui fica o atalho. */}
-        <a
-          href="/store/integracoes?abrir=asaas"
-          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.5rem", textDecoration: "none", color: "inherit" }}
-        >
-          <div>
-            <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>⚡ Pix e cartão pelo site (Asaas)</div>
-            <div style={{ fontSize: "0.8rem", color: "#64748B", lineHeight: 1.45 }}>
-              O cliente paga na hora, no cardápio, e o dinheiro cai na sua conta Asaas. Conecte, ligue ou desligue em Integrações → Asaas.
+            conexão mora em Integrações → Asaas; aqui ficam o estado e o % de
+            desconto de cada forma (lib/desconto-pagamento-online.ts). */}
+        {(() => {
+          const online = user.pagamentoOnline || { conectado: false, pix: false, cartao: false };
+          const ativo = online.conectado && (online.pix || online.cartao);
+          const desconto = descontoOnlineDaLoja(paymentConfig);
+          const mudarDesconto = (forma: "pix" | "cartao", n: number) => {
+            setPaymentConfig((p: any) => ({ ...p, descontoOnline: { ...descontoOnlineDaLoja(p), [forma]: n } }));
+            setDirtyPayment(true);
+          };
+          const linha = (forma: "pix" | "cartao", nome: string, ligada: boolean) => (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", padding: "0.6rem 0", borderTop: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#0F172A" }}>{nome}</span>
+                <span style={{ fontSize: "0.7rem", fontWeight: 800, padding: "2px 8px", borderRadius: 99, background: ligada ? "#DCFCE7" : "#F1F5F9", color: ligada ? "#15803D" : "#64748B" }}>
+                  {ligada ? "ATIVO" : "DESLIGADO"}
+                </span>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8rem", color: "#334155" }}>
+                Desconto
+                <CampoDePercentual valor={desconto[forma]} onMudar={(v) => mudarDesconto(forma, v)} />
+                %
+              </label>
             </div>
-          </div>
-          <span style={{ padding: "8px 14px", borderRadius: 10, background: "#059669", color: "#fff", fontWeight: 700, fontSize: "0.82rem", whiteSpace: "nowrap" }}>
-            Abrir Integrações →
-          </span>
-        </a>
+          );
+          return (
+            <div style={{ background: ativo ? "#F0FDF4" : "#F8FAFC", border: `1px solid ${ativo ? "#BBF7D0" : "#E2E8F0"}`, borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: online.conectado ? "0.6rem" : 0 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>
+                    {ativo ? "✅ Pagamento online ativo" : "⚡ Pix e cartão pelo site (Asaas)"}
+                  </div>
+                  <div style={{ fontSize: "0.8rem", color: "#64748B", lineHeight: 1.45 }}>
+                    {online.conectado
+                      ? "O cliente paga na hora, no cardápio, e o dinheiro cai na sua conta Asaas. Dê um desconto para incentivar quem paga pelo site."
+                      : "O cliente paga na hora, no cardápio, e o dinheiro cai na sua conta Asaas. Conecte sua conta para ligar."}
+                  </div>
+                </div>
+                <a href="/store/integracoes?abrir=asaas" style={{ padding: "8px 14px", borderRadius: 10, background: "#059669", color: "#fff", fontWeight: 700, fontSize: "0.82rem", whiteSpace: "nowrap", textDecoration: "none" }}>
+                  {online.conectado ? "Ligar / desligar →" : "Conectar Asaas →"}
+                </a>
+              </div>
+              {online.conectado && (
+                <>
+                  {linha("pix", "⚡ Pix pelo site", online.pix)}
+                  {linha("cartao", "💳 Cartão pelo site", online.cartao)}
+                  <p style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 6, lineHeight: 1.45 }}>
+                    O desconto vale só para quem paga pelo site, sobre os itens (a taxa de entrega fica de fora). O cardápio mostra o % no botão e o valor no resumo do pedido. Pix na entrega não leva desconto.
+                  </p>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── SEÇÃO PAGAMENTO NA ENTREGA ── */}
         <h4 style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A", marginBottom: "0.85rem" }}>Pagamento na entrega (Maquininha / Dinheiro)</h4>

@@ -52,6 +52,7 @@ import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 // código e a consulta do cliente precisam da MESMA resposta que este checkout.
 import { acharCupom, avaliarCupom } from "@/lib/cupons";
 import { fatosDoCupom } from "@/lib/cupons-no-banco";
+import { descontoDoPagamentoOnline } from "@/lib/desconto-pagamento-online";
 
 export async function POST(req: Request) {
   try {
@@ -84,6 +85,8 @@ export async function POST(req: Request) {
         deliveryZones: true, deliveryZoneType: true, storeLatLng: true, storeAddress: true, city: true,
         // Pix e cartão pelo site na conta Asaas da loja (lib/pix-online.ts).
         pixOnlineAtivo: true, cartaoOnlineAtivo: true, asaasChaveCifrada: true,
+        // O % de desconto de quem paga pelo site (lib/desconto-pagamento-online.ts).
+        paymentFees: true,
         // O CPF/CNPJ na nota fiscal (lib/fiscal-modo): a loja que emite
         // sozinha pode exigir o documento na entrega. Só o servidor lê.
         fiscalConfig: true,
@@ -572,6 +575,9 @@ export async function POST(req: Request) {
     // desconto de um cupom abaixo do mínimo sem dizer nada, e o cliente via o
     // total subir na hora de pagar sem saber por quê.
     let discount = 0;
+    // A parte de `discount` que é a taxa de entrega zerada pelo cupom de frete
+    // grátis — fica fora da base do desconto do pagamento pelo site.
+    let descontoNaTaxa = 0;
     if (couponCode) {
       const coupon = acharCupom(cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty), couponCode);
       if (coupon) {
@@ -588,6 +594,7 @@ export async function POST(req: Request) {
         }
         if (veredito.zeraTaxa) {
           discount = fee;
+          descontoNaTaxa = fee;
           if (fee > 0) entregaGratis = { valor: fee, motivo: `Cupom ${coupon.code}` };
           fee = 0;
         } else {
@@ -650,6 +657,24 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── DESCONTO DE QUEM PAGA PELO SITE ──────────────────────────────────
+    //
+    // O % que a loja deu ao Pix ou ao cartão pelo site, sobre os itens já com
+    // cupom e prêmio. Entra em `totalAmount` ANTES da cobrança nascer: o Asaas
+    // cobra esse total e a confirmação recusa valor diferente. O cardápio faz a
+    // mesma conta (lib/desconto-pagamento-online.ts).
+    const conectadaAoAsaas = Boolean(franchisee.asaasChaveCifrada);
+    const descontoOnline = descontoDoPagamentoOnline({
+      paymentFees: franchisee.paymentFees,
+      paymentMethod,
+      ligada: {
+        pix: conectadaAoAsaas && franchisee.pixOnlineAtivo === true,
+        cartao: conectadaAoAsaas && franchisee.cartaoOnlineAtivo === true,
+      },
+      base: totalAmount - (discount - descontoNaTaxa),
+    });
+    if (descontoOnline) discount += descontoOnline.valor;
+
     // Arredonda para centavos ANTES de gravar. Em JS 29.9*3 = 89.69999999999999,
     // e era esse número que ia para o banco (`totalAmount Float`) e daí cru como
     // `transaction_amount` para o gateway — que recusa moeda com mais de 2 casas.
@@ -659,8 +684,12 @@ export async function POST(req: Request) {
     // total deixaria os dois divergindo em frações de centavo.
     fee = centavos(fee);
     let orderNotes = notes || "";
-    if (couponCode && discount > 0) {
+    if (couponCode && discount - (descontoOnline?.valor || 0) > 0) {
       orderNotes = `[Cupom: ${couponCode.trim().toUpperCase()}] ${orderNotes}`.trim();
+    }
+    if (descontoOnline) {
+      // Na comanda e no painel: sem isto o total parece errado para a loja.
+      orderNotes = `[${descontoOnline.rotulo}: -R$ ${descontoOnline.valor.toFixed(2).replace(".", ",")}] ${orderNotes}`.trim();
     }
     if (freeShippingNote) {
       orderNotes = `${orderNotes} ${freeShippingNote}`.trim();

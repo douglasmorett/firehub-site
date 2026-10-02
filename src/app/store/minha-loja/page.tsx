@@ -43,6 +43,12 @@ export default async function StoreSettingsPage() {
       storePause: (storeOwner as any).storePause || null,
       storeCoupons: (storeOwner as any).storeCoupons || [],
       paymentFees: storeOwner.paymentFees || null,
+      // Só o estado: a chave cifrada do Asaas não sai do servidor.
+      pagamentoOnline: {
+        conectado: Boolean((storeOwner as any).asaasChaveCifrada),
+        pix: (storeOwner as any).pixOnlineAtivo === true,
+        cartao: (storeOwner as any).cartaoOnlineAtivo === true,
+      },
       deliveryZoneType: storeOwner.deliveryZoneType || null,
       deliveryZones: storeOwner.deliveryZones || null,
       storeLatLng: storeOwner.storeLatLng || null,
