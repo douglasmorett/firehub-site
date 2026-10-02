@@ -220,6 +220,20 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
   if (!acesso) return naoRecebe;
   const { chave, conexao } = acesso;
 
+  // Chave recusada (expirou, foi excluída ou desativada no Asaas): desliga o
+  // pagamento pelo site NA HORA e avisa o dono — senão cada cliente seguinte
+  // bate no mesmo erro até a verificação diária (Showrrascão, 02/10: a chave
+  // foi criada com expiração e o cardápio ficou 15 h oferecendo um Pix morto).
+  // O cliente lê a frase de sempre, não o erro técnico do Asaas.
+  const seChaveRecusada = async (status: number) => {
+    if (status !== 401) return null;
+    await desligarPixOnline(
+      pedido.franchiseeId,
+      "O Asaas recusou a chave de API da loja na hora de gerar a cobrança de um cliente (chave expirada, excluída ou desativada).",
+    ).catch(() => {});
+    return naoRecebe;
+  };
+
   const resposta = (cobrancaId: string, extra: Partial<CobrancaDoPedido>): Resultado<CobrancaDoPedido> => ({
     ok: true,
     dados: {
@@ -309,6 +323,8 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
     });
     if (!cliente.ok || !cliente.dados?.id) {
       await liberarTrava();
+      const recusada = await seChaveRecusada(cliente.status);
+      if (recusada) return recusada;
       return { ok: false, status: 502, erro: `Não foi possível gerar a cobrança: ${cliente.erro || "cadastro do pagador recusado"}.` };
     }
 
@@ -336,6 +352,8 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
     });
     if (!cobranca.ok || !cobranca.dados) {
       await liberarTrava();
+      const recusada = await seChaveRecusada(cobranca.status);
+      if (recusada) return recusada;
       return { ok: false, status: 502, erro: `Não foi possível gerar a cobrança: ${cobranca.erro}` };
     }
     const c = cobranca.dados;
@@ -734,7 +752,7 @@ export async function desligarPixOnline(lojaId: string, motivo: string) {
     await avisarLoja(
       lojaId,
       `🔴 *Pagamento pelo site desligado*\n${motivo}\n\nO cardápio continua aceitando as outras formas de pagamento. ` +
-        "Para voltar, gere uma chave nova no Asaas (Integrações → Chaves de API) e conecte de novo no FireHub, em Integrações → Asaas.",
+        "Para voltar, gere uma chave nova no Asaas (Integrações → Chaves de API), *sem preencher a data de expiração*, e conecte de novo no FireHub, em Integrações → Asaas.",
     );
   }
 }
