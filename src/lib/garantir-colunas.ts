@@ -870,6 +870,11 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
 
   // ── Cliente da loja ──
   `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "birthDate" TEXT`,
+  // A loja que trouxe este cadastro de outro sistema (importação): é o que
+  // deixa o balcão dela achar o cliente por prefixo do telefone antes do
+  // primeiro pedido (lib/busca-de-clientes.ts). Nulo = cadastro do site/robô.
+  `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "lojaDeOrigemId" TEXT`,
+  `CREATE INDEX IF NOT EXISTS "StoreCustomer_lojaDeOrigemId_idx" ON "StoreCustomer"("lojaDeOrigemId")`,
 
   // ── Totem ──
   `ALTER TABLE "TotemLicense" ADD COLUMN IF NOT EXISTS "posTerminalId" TEXT`,

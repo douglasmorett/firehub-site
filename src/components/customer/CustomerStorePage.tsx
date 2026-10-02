@@ -57,6 +57,7 @@ import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } f
 import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
 import { descontoDoPagamentoOnline, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
 import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/cliente-lembrado";
+import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
 import { bandeirasDeValeLigadas, formaLigada } from "@/lib/formas-do-cardapio";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 
@@ -1635,6 +1636,106 @@ export default function CustomerStorePage({
     setCustomerCep("");
     definirPontoDoCliente(null);
   };
+
+  // ── O CLIENTE RECONHECIDO PELO TELEFONE ───────────────────────────────
+  // Digitou o WhatsApp e esta loja já entregou para ele: o nome e os
+  // endereços em que ela entregou vêm do servidor (api/store-customer/
+  // reconhecer, regra em lib/cliente-reconhecido.ts) para ele CONFIRMAR em
+  // vez de digitar — em qualquer aparelho, não só no que lembrou (acima).
+  // Pedido do Douglas pela Showrrascão (02/10/2026). Só preenche campo
+  // vazio; o que ele já digitou não é sobrescrito, e "Não sou eu" limpa.
+  const [clienteReconhecido, setClienteReconhecido] = useState<ClienteReconhecido | null>(null);
+  /** O telefone da última consulta: não se repete a cada tecla. */
+  const telefoneReconhecido = useRef("");
+  /** O telefone em que ele disse "não sou eu": não se pergunta de novo. */
+  const telefoneRecusado = useRef("");
+  const bairrosParaCasar = () => availableNeighborhoods.map((z) => ({ name: z.name, fee: z.fee, time: Number(z.time) || 45 }));
+  /** Na loja por bairros, só vale endereço cujo bairro continua na lista dela. */
+  const enderecoServeNestaLoja = (e: EnderecoReconhecido) => !isNeighborhoodType || !!bairroCadastrado(e.bairro, bairrosParaCasar());
+  const enderecosReconhecidos = useMemo(
+    () => (clienteReconhecido?.enderecos || []).filter(enderecoServeNestaLoja),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clienteReconhecido, isNeighborhoodType, availableNeighborhoods],
+  );
+  /** Qual dos endereços oferecidos está na tela agora (-1 = outro, ou nenhum). */
+  const indiceDoEnderecoNaTela = enderecosReconhecidos.findIndex((e) =>
+    mesmoEndereco(e, { rua: customerStreet, numero: customerNumber, bairro: customerNeighborhood }),
+  );
+
+  const usarEnderecoReconhecido = (e: EnderecoReconhecido) => {
+    setCustomerStreet(e.rua);
+    setCustomerNumber(e.numero);
+    setCustomerComplement(e.complemento);
+    setCustomerCep(e.cep);
+    if (isNeighborhoodType) {
+      // Pelo bairro da lista: calcDeliveryFee grava o bairro e a taxa dele.
+      const achado = bairroCadastrado(e.bairro, bairrosParaCasar());
+      if (achado) calcDeliveryFee({ bairro: achado.name, forcar: true });
+      else setCustomerNeighborhood(e.bairro);
+    } else {
+      // Por km/rota: o efeito de rua+número+bairro cota sozinho.
+      setCustomerNeighborhood(e.bairro);
+    }
+    const carimbo: EnderecoDigitado = { street: e.rua, number: e.numero, neighborhood: e.bairro };
+    if (e.ponto) definirPontoDoCliente(e.ponto, carimbo);
+    else if (pontoDoClienteRef.current && !pontoValeParaEndereco(pontoDoClienteRef.current.carimbo, carimbo)) definirPontoDoCliente(null);
+  };
+
+  /** "Outro endereço": os campos voltam vazios para ele digitar. */
+  const limparEnderecoDaTela = () => {
+    setCustomerStreet("");
+    setCustomerNumber("");
+    setCustomerNeighborhood("");
+    setCustomerComplement("");
+    setCustomerCep("");
+    setNeighborhoodSearch("");
+    definirPontoDoCliente(null);
+    esquecerCotacaoDaEntrega();
+    setDeliveryFee(null);
+    setDeliveryFeeCalculated(false);
+    setDeliveryAvailable(true);
+    setDeliveryMessage("");
+  };
+
+  const naoSouEu = () => {
+    telefoneRecusado.current = telefoneReconhecido.current;
+    setClienteReconhecido(null);
+    setCustomerName("");
+    limparEnderecoDaTela();
+  };
+
+  useEffect(() => {
+    if (mesa) return;
+    const tel = String(customer?.phone || customerPhone || "").replace(/\D/g, "");
+    // Mudou o telefone: o que se sabia era de outro número.
+    if (tel !== telefoneReconhecido.current && clienteReconhecido) setClienteReconhecido(null);
+    if (tel.length < 10 || tel === telefoneReconhecido.current || tel === telefoneRecusado.current) return;
+    const t = setTimeout(async () => {
+      telefoneReconhecido.current = tel;
+      try {
+        const r = await fetch(`/api/store-customer/reconhecer?phone=${encodeURIComponent(tel)}&franchiseeId=${encodeURIComponent(franchisee.id)}`);
+        const d = r.ok ? await r.json() : null;
+        const c: ClienteReconhecido | null = d?.cliente && typeof d.cliente === "object" ? d.cliente : null;
+        // Ele continuou digitando: esta resposta é de outro número.
+        if (telefoneReconhecido.current !== tel || !c) return;
+        setClienteReconhecido({ nome: String(c.nome || ""), enderecos: Array.isArray(c.enderecos) ? c.enderecos : [] });
+        if (c.nome) setCustomerName((a) => (a.trim() ? a : c.nome));
+      } catch {
+        /* reconhecer é conforto: sem resposta, o cliente digita */
+      }
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.phone, customerPhone]);
+
+  // O endereço mais recente entra sozinho quando os campos estão vazios — ao
+  // reconhecer e também quando ele troca de retirada para entrega depois.
+  useEffect(() => {
+    if (deliveryType !== "DELIVERY" || enderecosReconhecidos.length === 0) return;
+    if (enderecoNaTela.current.street?.trim() || enderecoNaTela.current.neighborhood?.trim()) return;
+    usarEnderecoReconhecido(enderecosReconhecidos[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveryType, enderecosReconhecidos]);
 
   /** O ponto do cliente, se ainda for DESTE endereço (lido pela ref: vale dentro de callbacks). */
   const pontoValendo = (endereco: EnderecoDigitado = enderecoNaTela.current): PontoDoCliente | null => {
@@ -3262,10 +3363,71 @@ export default function CustomerStorePage({
                 onChange={e => setCustomerPhone(e.target.value.replace(/[^\d\s()+-]/g, ""))}
                 placeholder="Ex: (11) 99999-9999"
               />
+              {clienteReconhecido && !clienteLembrado && (clienteReconhecido.nome || enderecosReconhecidos.length > 0) && (
+                <div data-campo="checkout-reconhecido" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: "0.75rem", color: "#15803D", marginTop: 6 }}>
+                  <span>✓ {clienteReconhecido.nome ? `Olá, ${primeiroNome(clienteReconhecido.nome)}! ` : ""}Já conhecemos você por aqui.</span>
+                  <button
+                    type="button"
+                    onClick={naoSouEu}
+                    style={{ background: "none", border: "none", padding: 0, color: "#C92E09", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline", whiteSpace: "nowrap" }}
+                  >
+                    Não sou eu
+                  </button>
+                </div>
+              )}
             </div>
 
             {deliveryType === "DELIVERY" && (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", background: "#F8FAFC", padding: "12px", borderRadius: "14px", border: "1px solid #E2E8F0" }}>
+                {/* Os endereços em que a loja já entregou para este WhatsApp:
+                    ele toca no de sempre (ou em outro) e os campos abaixo
+                    vêm preenchidos — e continuam editáveis. */}
+                {enderecosReconhecidos.length > 0 && (
+                  <div data-campo="checkout-enderecos-salvos">
+                    <div style={{ fontSize: "0.8rem", fontWeight: 800, color: "#1E293B", marginBottom: 6 }}>
+                      📍 Entregar no endereço de sempre?
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {enderecosReconhecidos.map((e, i) => {
+                        const marcado = i === indiceDoEnderecoNaTela;
+                        return (
+                          <button
+                            key={`${e.rua}|${e.numero}|${e.bairro}`}
+                            type="button"
+                            onClick={() => usarEnderecoReconhecido(e)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "8px 10px",
+                              borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
+                              background: marcado ? "#ECFDF5" : "#fff", border: `1.5px solid ${marcado ? "#10B981" : "#E2E8F0"}`,
+                            }}
+                          >
+                            <span style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0, border: `2px solid ${marcado ? "#10B981" : "#CBD5E1"}`, background: marcado ? "#10B981" : "#fff", boxShadow: marcado ? "inset 0 0 0 3px #fff" : "none" }} />
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ display: "block", fontSize: "0.84rem", fontWeight: 700, color: "#1E293B", lineHeight: 1.3 }}>
+                                {e.rua}, {e.numero}{e.complemento ? ` · ${e.complemento}` : ""}
+                              </span>
+                              <span style={{ display: "block", fontSize: "0.72rem", color: "#64748B" }}>
+                                {e.bairro}{e.vezes > 1 ? ` · ${e.vezes} entregas` : ""}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={limparEnderecoDaTela}
+                        style={{
+                          width: "100%", padding: "8px 10px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: "0.8rem", fontWeight: 700,
+                          background: indiceDoEnderecoNaTela === -1 ? "#EFF6FF" : "#fff", color: "#1D4ED8",
+                          border: `1.5px ${indiceDoEnderecoNaTela === -1 ? "solid #93C5FD" : "dashed #CBD5E1"}`,
+                        }}
+                      >
+                        ➕ Outro endereço
+                      </button>
+                    </div>
+                    <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 4 }}>Pode corrigir qualquer campo abaixo.</div>
+                  </div>
+                )}
                 {!isNeighborhoodType && (
                   <button
                     type="button"

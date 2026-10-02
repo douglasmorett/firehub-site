@@ -17,6 +17,7 @@ import {
 import { MENSAGEM_CAIXA_FECHADO, EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
+import { lerConsulta, preencherBalcao, type ClienteSugerido } from "@/lib/busca-de-clientes";
 import { useSession } from "next-auth/react";
 
 const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
@@ -89,6 +90,84 @@ export default function VendaPresencialPage() {
   const [bairrosDaLoja, setBairrosDaLoja] = useState<{ name: string; fee: number }[]>([]);
   const [bairro, setBairro] = useState("");
   const enderecoDaEntrega = [address.trim(), bairro].filter(Boolean).join(" - ");
+
+  // ── CLIENTE POR NÚMERO PARECIDO ────────────────────────────────────────
+  // Começou a digitar o telefone (ou o nome) e a lista oferece os clientes
+  // da loja que casam, para clicar e copiar — nome, telefone e o último
+  // endereço de entrega (lib/busca-de-clientes.ts, api/store/clientes/
+  // buscar). O exemplo é o Gama (Douglas, 02/10/2026). Tudo segue editável.
+  const [sugestoes, setSugestoes] = useState<ClienteSugerido[]>([]);
+  /** Em qual campo a lista está aberta. */
+  const [listaAberta, setListaAberta] = useState<"" | "telefone" | "nome">("");
+  const buscaEmVoo = useRef(0);
+  const buscarClientes = (campo: "telefone" | "nome", texto: string) => {
+    const minha = ++buscaEmVoo.current;
+    const consulta = lerConsulta(texto);
+    if (!consulta || (campo === "telefone" ? !consulta.digitos : !consulta.nome)) {
+      setSugestoes([]);
+      return;
+    }
+    setTimeout(async () => {
+      if (minha !== buscaEmVoo.current) return;
+      try {
+        const r = await fetch(`/api/store/clientes/buscar?q=${encodeURIComponent(texto)}`);
+        const d = r.ok ? await r.json() : null;
+        // O atendente continuou digitando: esta resposta é de outro texto.
+        if (minha !== buscaEmVoo.current) return;
+        setSugestoes(Array.isArray(d?.clientes) ? d.clientes : []);
+        setListaAberta(campo);
+      } catch {
+        /* a busca é conforto: sem ela, digita como sempre */
+      }
+    }, 250);
+  };
+  const usarCliente = (c: ClienteSugerido) => {
+    const p = preencherBalcao(c, bairrosDaLoja);
+    if (p.nome) setCustomerName(p.nome);
+    setCustomerPhone(p.telefone);
+    // O endereço entra mesmo no balcão/mesa: se virar delivery, já está lá.
+    if (p.endereco) {
+      setAddress(p.endereco);
+      setBairro(p.bairro);
+    }
+    setSugestoes([]);
+    setListaAberta("");
+  };
+  const listaDeSugestoes = (campo: "telefone" | "nome") => listaAberta === campo && sugestoes.length > 0 && (
+    <div
+      data-campo="balcao-sugestoes"
+      style={{
+        position: "absolute", top: "calc(100% + 4px)", zIndex: 40,
+        ...(campo === "telefone" ? { right: 0 } : { left: 0 }),
+        width: 340, maxWidth: "calc(100vw - 32px)", maxHeight: 280, overflowY: "auto",
+        background: "#fff", border: "1.5px solid #CBD5E1", borderRadius: 10, boxShadow: "0 12px 30px rgba(15,23,42,0.18)",
+      }}
+    >
+      {sugestoes.map((c) => (
+        <button
+          key={c.telefone}
+          type="button"
+          // O mousedown não pode tirar o foco do campo (o blur fecharia a lista antes do clique).
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => usarCliente(c)}
+          style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "none", border: "none", borderBottom: "1px solid #F1F5F9", cursor: "pointer", fontFamily: "inherit" }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.82rem" }}>
+            <span style={{ fontWeight: 800, color: "#1C1917", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nome || "Sem nome"}</span>
+            <span style={{ color: "#475569", whiteSpace: "nowrap", fontWeight: 600 }}>{c.telefoneBonito}</span>
+          </div>
+          {(c.endereco?.texto || c.enderecoTexto) && (
+            <div style={{ fontSize: "0.72rem", color: "#64748B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              📍 {c.endereco?.texto || c.enderecoTexto}
+            </div>
+          )}
+          <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>
+            {c.pedidos > 0 ? `${c.pedidos} pedido${c.pedidos > 1 ? "s" : ""} na loja` : "cadastro importado"}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
   const [paymentMethod, setPaymentMethod] = useState("Dinheiro");
   /** Bandeira do vale (Banri, Ticket...) quando a loja cadastrou as suas. */
   const [voucherBrand, setVoucherBrand] = useState("");
@@ -1007,10 +1086,24 @@ export default function VendaPresencialPage() {
             </>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-            <input placeholder={orderType === "BALCAO" ? "Nome (opcional)" : "Nome do cliente"} value={customerName} onChange={e => setCustomerName(e.target.value)}
-              style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none", fontFamily: "inherit" }} />
-            <input placeholder="Telefone" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
-              style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none", fontFamily: "inherit" }} />
+            <div style={{ position: "relative" }}>
+              <input placeholder={orderType === "BALCAO" ? "Nome (opcional)" : "Nome do cliente"} value={customerName} autoComplete="off"
+                onChange={e => { setCustomerName(e.target.value); buscarClientes("nome", e.target.value); }}
+                onFocus={() => { if (sugestoes.length > 0 && lerConsulta(customerName)?.nome) setListaAberta("nome"); }}
+                onBlur={() => setListaAberta("")}
+                onKeyDown={e => { if (e.key === "Escape") setListaAberta(""); }}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none", fontFamily: "inherit" }} />
+              {listaDeSugestoes("nome")}
+            </div>
+            <div style={{ position: "relative" }}>
+              <input placeholder="Telefone" value={customerPhone} autoComplete="off" inputMode="tel"
+                onChange={e => { setCustomerPhone(e.target.value); buscarClientes("telefone", e.target.value); }}
+                onFocus={() => { if (sugestoes.length > 0 && lerConsulta(customerPhone)?.digitos) setListaAberta("telefone"); }}
+                onBlur={() => setListaAberta("")}
+                onKeyDown={e => { if (e.key === "Escape") setListaAberta(""); }}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none", fontFamily: "inherit" }} />
+              {listaDeSugestoes("telefone")}
+            </div>
           </div>
 
           {/* Pager: só onde o cliente ESPERA (balcão e mesa). Em delivery não

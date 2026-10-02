@@ -1285,6 +1285,8 @@ model StoreCustomer {
   birthDate        String?         // Data de aniversário (para mimos e cupons automáticos)
   cashbackBalance  Float           @default(0) // Saldo atual de cashback (R$)
   cashbackHistory  Json?           // Array: [{ orderId, amount, type: earn|redeem, date, storeId }]
+  /// A loja que trouxe o cadastro de outro sistema (importação). Nulo = site/robô.
+  lojaDeOrigemId   String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   orders           CustomerOrder[]
