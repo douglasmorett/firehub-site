@@ -32,6 +32,7 @@ import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais
 import NotaFiscalDoPedido, { NotaFiscalDaLojaProvider, useNotaFiscalDaLoja } from "@/components/customer/NotaFiscalDoPedido";
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
 import { PALETA } from "@/lib/paleta-brasa";
+import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
 
 const BOTAO_ACAO: React.CSSProperties = {
   padding: "5px 14px", borderRadius: "8px", border: "none",
@@ -1891,6 +1892,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // a próxima rodada já usar o período novo sem remontar o intervalo.
   const periodoRef = useRef({ from: dateFrom, to: dateTo });
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // O poll traz só o que mudou e remonta a lista inteira (lib/feed-de-pedidos.ts):
+  // tudo abaixo continua lendo o mesmo formato de antes.
+  const feedRef = useRef(criarFeedDePedidos());
   const pollAgoraRef = useRef<() => void>(() => {});
   const ultimoPollRef = useRef(0);
 
@@ -1908,12 +1912,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     try {
       const { from, to } = periodoRef.current;
       const janela = `&from=${encodeURIComponent(new Date(from).toISOString())}&to=${encodeURIComponent(new Date(to).toISOString())}`;
-      const res = await fetch(`/api/customer-order/poll?t=${Date.now()}${janela}`, {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+      // Completa de propósito: é a lista que vai para a reimpressão.
+      const rodada = await feedRef.current.buscar(janela, {
+        completa: true,
+        init: { cache: "no-store", headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" } },
       });
-      if (!res.ok) return null;
-      const novos = await res.json();
+      if (!rodada.ok) return null;
+      const novos = JSON.parse(rodada.texto);
       if (Array.isArray(novos)) {
         setOrders(novos);
         return novos;
@@ -2325,11 +2330,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           // navegador, não o container (que roda em UTC).
           const { from, to } = periodoRef.current;
           const janela = `&from=${encodeURIComponent(new Date(from).toISOString())}&to=${encodeURIComponent(new Date(to).toISOString())}`;
-          const res = await fetch(`/api/customer-order/poll?t=${Date.now()}${janela}`, {
-            cache: "no-store",
-            headers: { "Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache" }
+          const rodada = await feedRef.current.buscar(janela, {
+            init: { cache: "no-store", headers: { "Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache" } },
           });
-          if (res.ok && active) {
+          if (rodada.ok && active) {
             // ── A HORA É A DO SERVIDOR, NÃO A DESTE PC ────────────────────
             //
             // O bipe de chegada mede a idade do pedido, e media com o relógio
@@ -2341,9 +2345,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             // (18/09/2026) o pedido do 99Food não tocou; em outra loja, com
             // relógio certo, o mesmo código tocava. O cabeçalho Date da própria
             // resposta é a hora de quem gravou o pedido (resolução de 1 s).
-            const dataDoServidor = new Date(res.headers.get("date") || "").getTime();
+            const dataDoServidor = rodada.dataDoServidor;
             const agoraDoServidor = Number.isFinite(dataDoServidor) ? dataDoServidor : Date.now();
-            const text = await res.text();
+            const text = rodada.texto;
             // Only update if data actually changed — prevents re-render closing dropdowns
             if (text !== lastPollHash.current) {
               lastPollHash.current = text;

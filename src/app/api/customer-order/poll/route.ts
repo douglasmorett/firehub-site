@@ -7,7 +7,7 @@ import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
-import { CHEGOU_A_LOJA } from "@/lib/pagamento-na-entrega";
+import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -912,85 +912,48 @@ export async function GET(req: NextRequest) {
     // `from`/`to` chegam do próprio navegador, que é quem sabe o fuso do
     // lojista. Sem os parâmetros o padrão é as últimas 24h, que cobre o SSR e
     // qualquer chamada antiga que não os envie.
-    const ACTIVE_STATUSES = ["NOVO", "CRIANDO_IA", "ACEITO", "PREPARANDO", "PRONTO", "SAIU_ENTREGA"];
 
     const parseDate = (raw: string | null, fallback: Date) => {
       if (!raw) return fallback;
       const d = new Date(raw);
       return isNaN(d.getTime()) ? fallback : d;
     };
-    // Teto de idade do pedido "em andamento" que ignora o período (ver o OR abaixo).
-    const DIAS_ATIVO_SEM_PERIODO = 7;
     const ATIVO_SEM_PERIODO_DESDE = new Date(Date.now() - DIAS_ATIVO_SEM_PERIODO * 24 * 60 * 60 * 1000);
     const from = parseDate(req.nextUrl.searchParams.get("from"), new Date(Date.now() - 24 * 60 * 60 * 1000));
     const to = parseDate(req.nextUrl.searchParams.get("to"), new Date(Date.now() + 24 * 60 * 60 * 1000));
 
+    // ── SÓ O QUE MUDOU (`desde`) ──────────────────────────────────────────────
+    //
+    // Este feed devolvia a lista INTEIRA a cada 5–8 s por aba: no pico de
+    // 01/10/2026 eram ~660 mil linhas de pedido por minuto saindo do banco, com
+    // o servidor a ~70% de um núcleo só para isso. Com `desde`, vem só o pedido
+    // atualizado depois daquele instante, mais os ids que mudaram e SAÍRAM do
+    // filtro (`removidos`); o navegador remonta a lista inteira
+    // (lib/feed-de-pedidos.ts) e o resto do painel segue lendo o mesmo formato.
+    // Sem `desde` a resposta é a de sempre — aba aberta antes da publicação
+    // continua funcionando.
+    //
+    // `agora` é anotado ANTES da consulta: o próximo `desde` parte dele (menos
+    // uma folga de 30 s no navegador), então nada gravado durante a leitura se
+    // perde. Todo dado que o painel mostra muda o `updatedAt` do pedido — a
+    // edição de itens grava o total na mesma transação; o que não muda (nome
+    // do motoboy, garçom da mesa, nome no cardápio) volta na lista completa
+    // que o navegador pede a cada 60 s.
+    const desdeBruto = req.nextUrl.searchParams.get("desde");
+    const desdeData = desdeBruto ? new Date(desdeBruto) : null;
+    const desde = desdeData && !isNaN(desdeData.getTime()) ? desdeData : null;
+    const agora = new Date();
+
+    // O que mudou na loja desde `desde` (lib/filtro-do-feed.ts). Mudança em
+    // massa volta como lista completa, por segurança.
+    const mudados = desde
+      ? await withRetry(() => idsQueMudaram(prisma, { validFranchiseeIds, from, ATIVO_SEM_PERIODO_DESDE, desde }))
+      : null;
+    const modoDelta = desde !== null && mudados !== null;
+    const filtro = filtroDoFeed({ validFranchiseeIds, from, to, ATIVO_SEM_PERIODO_DESDE });
+
     const orders = await withRetry(() => prisma.customerOrder.findMany({
-      where: {
-        franchiseeId: { in: validFranchiseeIds },
-        // ENCERRADO nunca é desenhado no painel — `filteredOrders` o descarta
-        // na primeira linha. Trazê-lo era transferência pura sem destino.
-        status: { not: "ENCERRADO" },
-        AND: [{
-          OR: [
-            // Em andamento: visível mesmo fora do período escolhido, porque é o
-            // pedido que a loja ainda precisa tocar. Mas com um teto de idade.
-            //
-            // Sem o teto, um pedido que travou em NOVO/ACEITO e nunca foi
-            // entregue nem cancelado voltava ao painel TODO DIA, para sempre.
-            // Foi o que aconteceu com quatro pedidos duplicados do JotaJá de
-            // 31/07 e 01/08/2026: seguiram entulhando o painel e a
-            // roteirização por mais de um mês, e não havia saída limpa — o
-            // cancelamento pela tela dispara WhatsApp ao cliente, e marcar
-            // ENTREGUE emitiria NFC-e e contaria a venda.
-            //
-            // Nada é apagado: passado o teto, o pedido volta a obedecer ao
-            // período, então basta abrir a data dele para encontrá-lo e
-            // resolvê-lo. Sete dias é folgado para qualquer operação real —
-            // pedido em andamento há uma semana não é operação, é resíduo.
-            {
-              AND: [
-                { status: { in: ACTIVE_STATUSES } },
-                { createdAt: { gte: ATIVO_SEM_PERIODO_DESDE } },
-              ],
-            },
-            // Finalizado/cancelado: só dentro do período que a tela mostra.
-            { createdAt: { gte: from, lte: to } },
-            // Agendado para o período, ainda que criado antes dele. Continua
-            // valendo para o agendamento distante, que não tem teto de idade.
-            { scheduledDatetime: { gte: from, lte: to } },
-          ],
-        },
-        // Pedido pelo site cancelado sem nunca ter sido pago não é cancelamento
-        // da loja (lib/pagamento-na-entrega.ts).
-        CHEGOU_A_LOJA],
-        // ── PENDENTE DE PAGAMENTO: O DO BALCÃO APARECE, O DO CHECKOUT NÃO ─────
-        //
-        // Este feed escondia TODO AGUARDANDO_PAGAMENTO. Como é ele que alimenta
-        // o painel de pedidos, o pedido do totem — que nasce nesse status — dava
-        // as caras por um segundo (o SSR o traz) e sumia assim que o primeiro
-        // poll substituía a lista inteira. O cliente que escolhe "Pagar no
-        // caixa" entrega o dinheiro no balcão e o atendente não tinha o pedido
-        // em tela NENHUMA para liberar: comanda nunca ia para a cozinha,
-        // paymentPaidAt nunca era carimbado, estoque não baixava. Dinheiro na
-        // gaveta sem venda registrada.
-        //
-        // Devolver todo AGUARDANDO_PAGAMENTO trocaria um problema por outro: o
-        // checkout do site usa o MESMO status enquanto o cliente está na tela do
-        // gateway (api/customer-order/route.ts:257), e ali quem confirma é o
-        // webhook — sem nada para uma pessoa fazer. Cada carrinho abandonado no
-        // Pix online viraria card permanente no painel.
-        //
-        // O critério é "precisa de gente": no totem o cliente está de pé no
-        // balcão e só o atendente move o pedido adiante. Por isso só a origem
-        // TOTEM atravessa o filtro. A impressão continua protegida à parte
-        // (print-queue e GlobalPrintListener excluem este status), então
-        // aparecer no painel não imprime comanda antes da hora.
-        OR: [
-          { status: { notIn: ["AGUARDANDO_PAGAMENTO"] } },
-          { status: "AGUARDANDO_PAGAMENTO", source: "TOTEM" },
-        ],
-      },
+      where: modoDelta ? soOQueMudou(filtro, desde!) : filtro,
       // `include` puxava as 87 colunas do pedido — nota fiscal, dados da
       // maquininha, QR do Pix, tokens de gateway — e o painel usa 41 delas.
       // No JSON o custo não é só o valor: cada chave nula ainda viaja com o
@@ -1127,13 +1090,22 @@ export async function GET(req: NextRequest) {
       checkAndCleanupStaleAiDrafts(targetFranchiseeId).catch(() => {});
     } catch {}
 
-    return NextResponse.json(ordersWithDailyNum, {
-      headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0",
-      },
-    });
+    const headers = {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+      // De onde o próximo `desde` parte (lib/feed-de-pedidos.ts). Vai no
+      // cabeçalho para a resposta completa continuar sendo a lista pura.
+      "X-Feed-Agora": agora.toISOString(),
+    };
+    if (modoDelta) {
+      // Mudou e não voltou na lista = saiu do filtro (encerrado, checkout do
+      // site cancelado sem pagar…). O navegador tira da lista dele.
+      const voltaram = new Set((ordersWithDailyNum as any[]).map((o) => o.id));
+      const removidos = (mudados || []).filter((id) => !voltaram.has(id));
+      return NextResponse.json({ pedidos: ordersWithDailyNum, removidos, agora: agora.toISOString() }, { headers });
+    }
+    return NextResponse.json(ordersWithDailyNum, { headers });
   } catch (err: any) {
     console.error("[Poll GET Error]:", err?.message || err);
     return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
