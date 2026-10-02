@@ -227,8 +227,9 @@ function ModalDaConexao({ config, aoFechar, aoMudar }: { config: Config; aoFecha
           <details>
             <summary className="crm-sub" style={{ cursor: "pointer" }}>Gateway próprio (avançado)</summary>
             <div className="crm-grade2" style={{ marginTop: 8 }}>
-              <input className="crm-input" placeholder="URL do gateway (vazio = o padrão)" value={form.evolutionUrl} onChange={(e) => setForm({ ...form, evolutionUrl: e.target.value })} />
-              <input className="crm-input" type="password" placeholder={config.temChaveDoGateway ? "Chave salva (deixe vazio para manter)" : "Chave do gateway"} value={form.evolutionApiKey} onChange={(e) => setForm({ ...form, evolutionApiKey: e.target.value })} />
+              {/* Sem autoComplete o Chrome põe o e-mail e a SENHA DO LOGIN aqui, escondidos dentro do <details>, e o Salvar grava (01/10). */}
+              <input className="crm-input" name="gateway-url" autoComplete="off" placeholder="URL do gateway (vazio = o padrão)" value={form.evolutionUrl} onChange={(e) => setForm({ ...form, evolutionUrl: e.target.value })} />
+              <input className="crm-input" type="password" name="gateway-chave" autoComplete="new-password" placeholder={config.temChaveDoGateway ? "Chave salva (deixe vazio para manter)" : "Chave do gateway"} value={form.evolutionApiKey} onChange={(e) => setForm({ ...form, evolutionApiKey: e.target.value })} />
             </div>
           </details>
           <button className="crm-btn crm-btn-dark" style={{ alignSelf: "flex-start" }} disabled={ocupado === "salvar"} onClick={salvar}>{ocupado === "salvar" ? "Salvando…" : "Salvar"}</button>
