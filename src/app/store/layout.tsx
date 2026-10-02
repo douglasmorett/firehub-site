@@ -17,6 +17,7 @@ import { AvisoDispensavel, BotaoNaoVerMais } from "@/components/customer/NaoVerM
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
 import CentralDeTutoriais from "@/components/CentralDeTutoriais";
+import TutorialDaTela from "@/components/TutorialDaTela";
 import { TutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import { tutoriaisEnviados } from "@/lib/tutoriais-no-servidor";
 
@@ -203,6 +204,10 @@ export default async function StoreLayout({ children }: { children: React.ReactN
             /store/orders, e é justamente na tela de pedidos que o caixa passa
             o expediente — o aviso de impressão parada precisa aparecer LÁ. O
             próprio componente se esconde em /store/compras. */}
+        {/* "Tem um tutorial desta tela": a faixa no alto de cada tela que tem
+            vídeo (some sozinha onde não tem). Acréscimo ao botão do topo e ao
+            do menu lateral, que continuam. */}
+        <TutorialDaTela variante="faixa" estilo={{ margin: "0.75rem 1.5rem 0" }} />
         <AvisoImpressaoParada />
         <HideOnCompras>
           <div style={{ padding: "1rem 1.5rem 0" }}>

@@ -33,6 +33,7 @@ import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais
 import NotaFiscalDoPedido, { NotaFiscalDaLojaProvider, useNotaFiscalDaLoja } from "@/components/customer/NotaFiscalDoPedido";
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
 import { PALETA } from "@/lib/paleta-brasa";
+import TutorialDaTela from "@/components/TutorialDaTela";
 import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
 import { pedidoComAcrescimos } from "@/lib/acrescimo-na-comanda";
 
@@ -6558,6 +6559,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 ✕
               </button>
             </div>
+
+            {/* O vídeo do app do entregador, para a loja assistir e mostrar ao motoboy. */}
+            <TutorialDaTela
+              rota="/motoboy-app"
+              variante="faixa"
+              chamada="Tutorial do aplicativo do entregador"
+              ocultavel={false}
+              estilo={{ marginBottom: "1rem" }}
+            />
 
             <div style={{
               background: "#F8FAFC", border: "1.5px solid #CBD5E1", borderRadius: "10px",

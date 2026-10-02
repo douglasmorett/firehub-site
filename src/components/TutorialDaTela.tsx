@@ -28,7 +28,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
-import { PlayCircle, X } from "lucide-react";
+import { Play, PlayCircle, X } from "lucide-react";
 import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import { arquivosDoTutorial, duracaoEmMinutos, indiceInicial, nomeDaTela, relogio, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
 
@@ -74,7 +74,27 @@ export function useNaAreaVisivel(ativo: boolean) {
 /** Evento que abre a central com todos os vídeos (quem escuta: CentralDeTutoriais). */
 export const ABRIR_CENTRAL = "firehub:abrir-central-de-tutoriais";
 
+/** "Não mostrar mais tutoriais" da faixa no alto das telas (por aparelho). */
+const CHAVE_FAIXA_OCULTA = "firehub_faixa_tutorial_oculta";
+
 export const ESTILO = `
+.fh-tutorial-faixa{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #F1E4DA;border-radius:14px;padding:10px 14px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.fh-tutorial-miniatura{position:relative;flex:none;width:96px;height:54px;border-radius:9px;overflow:hidden;border:0;padding:0;cursor:pointer;background:#0F172A}
+.fh-tutorial-miniatura img{width:100%;height:100%;object-fit:cover;display:block;opacity:.9}
+.fh-tutorial-miniatura .fh-tutorial-play{position:absolute;inset:0;margin:auto;width:28px;height:28px;border-radius:50%;background:#fff;color:#C92E09;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.fh-tutorial-miniatura:hover img{opacity:1}
+.fh-tutorial-faixa-texto{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.fh-tutorial-faixa-texto b{font-size:.88rem;color:#1C1917;font-weight:800}
+.fh-tutorial-faixa-texto span{font-size:.78rem;color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fh-tutorial-acoes{display:flex;align-items:center;gap:12px;flex:none}
+.fh-tutorial-assistir{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:9px;border:0;background:#E8360C;color:#fff;font-weight:800;font-size:.8rem;cursor:pointer;font-family:inherit}
+.fh-tutorial-assistir:hover{background:#C92E09}
+.fh-tutorial-ocultar{border:0;background:none;color:#94A3B8;font-size:.72rem;text-decoration:underline;cursor:pointer;font-family:inherit;white-space:nowrap;padding:0}
+.fh-tutorial-ocultar:hover{color:#475569}
+@media (max-width:640px){.fh-tutorial-faixa{flex-wrap:wrap;gap:8px 10px;padding:10px}.fh-tutorial-miniatura{width:80px;height:45px}
+  .fh-tutorial-faixa-texto b{font-size:.84rem}
+  .fh-tutorial-faixa-texto span{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .fh-tutorial-acoes{width:100%;justify-content:space-between}.fh-tutorial-assistir{height:32px}.fh-tutorial-ocultar{font-size:.7rem}}
 .fh-tutorial-botao{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:9px;
   background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;font-weight:700;font-size:.72rem;
   cursor:pointer;white-space:nowrap;position:relative;font-family:inherit}
@@ -116,6 +136,10 @@ export default function TutorialDaTela({
   tom = "escuro",
   rotulo,
   foraDoPainel = false,
+  variante = "botao",
+  chamada = "Tem um tutorial desta tela",
+  ocultavel = true,
+  estilo,
 }: {
   /**
    * De qual tela é o vídeo, quando não é a da URL: a Roteirização também abre
@@ -128,6 +152,18 @@ export default function TutorialDaTela({
   rotulo?: string;
   /** Fora do painel (app do motoboy) não há a central: some o "Todos os tutoriais". */
   foraDoPainel?: boolean;
+  /**
+   * "faixa": o cartão no alto da tela (miniatura com ▶, "Tem um tutorial desta
+   * tela", título e duração, Assistir). Pedido do Douglas em 02/10/2026, no
+   * modelo do Avalyo: é um ACRÉSCIMO — o botão do topo e o do menu lateral continuam.
+   */
+  variante?: "botao" | "faixa";
+  /** Primeira linha da faixa. */
+  chamada?: string;
+  /** Faixa com "Não mostrar mais tutoriais" (a das telas). A do App Motoboys não some. */
+  ocultavel?: boolean;
+  /** Margem da faixa onde ela é montada. */
+  estilo?: React.CSSProperties;
 } = {}) {
   const pathname = usePathname();
   const tutoriais = tutoriaisDaTela(rota || pathname, useTutoriaisEnviados());
@@ -142,6 +178,16 @@ export default function TutorialDaTela({
   const botaoRef = useRef<HTMLButtonElement>(null);
   const fundoRef = useNaAreaVisivel(aberto);
   const [comNome, setComNome] = useState(true);
+  // Começa escondida: quem já pediu "não mostrar mais" não vê a faixa piscar antes de ler o navegador.
+  const [faixaOculta, setFaixaOculta] = useState(true);
+  useEffect(() => {
+    if (variante !== "faixa") return;
+    let oculta = false;
+    try {
+      oculta = ocultavel && localStorage.getItem(CHAVE_FAIXA_OCULTA) === "1";
+    } catch {}
+    setFaixaOculta(oculta);
+  }, [variante, ocultavel]);
   const larguraDoNome = useRef(0);
 
   // O nome no botão só fica se a barra do topo continua numa linha só.
@@ -224,9 +270,41 @@ export default function TutorialDaTela({
     if (video.current) video.current.playbackRate = v;
   };
 
+  const ocultarFaixa = () => {
+    try {
+      localStorage.setItem(CHAVE_FAIXA_OCULTA, "1");
+    } catch {}
+    setFaixaOculta(true);
+  };
+  if (variante === "faixa" && faixaOculta) return null;
+
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: ESTILO }} />
+      {variante === "faixa" ? (
+        <div className="fh-tutorial-faixa" style={estilo}>
+          <button type="button" className="fh-tutorial-miniatura" onClick={abrir} aria-label={`Assistir: ${tutorial.titulo}`}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={arquivosDoTutorial(tutoriais[0]).capa} alt="" loading="lazy" />
+            <span className="fh-tutorial-play"><Play size={14} fill="currentColor" /></span>
+          </button>
+          <div className="fh-tutorial-faixa-texto">
+            <b>{chamada}</b>
+            <span>
+              {tutoriais[0].titulo} · {relogio(tutoriais[0].duracao)}
+              {tutoriais.length > 1 && ` · e mais ${tutoriais.length - 1} ${tutoriais.length === 2 ? "vídeo" : "vídeos"} desta tela`}
+            </span>
+          </div>
+          <div className="fh-tutorial-acoes">
+            <button type="button" className="fh-tutorial-assistir" onClick={abrir}>
+              <Play size={13} fill="currentColor" /> Assistir
+            </button>
+            {ocultavel && (
+              <button type="button" className="fh-tutorial-ocultar" onClick={ocultarFaixa}>Não mostrar mais tutoriais</button>
+            )}
+          </div>
+        </div>
+      ) : (
       <button
         type="button"
         ref={botaoRef}
@@ -239,6 +317,7 @@ export default function TutorialDaTela({
         <span>{rotulo || <>Tutorial{nome && comNome && <b className="fh-tutorial-nome"> {nome}</b>}</>}</span>
         {!jaViu && <i className="fh-tutorial-novo" aria-hidden="true" />}
       </button>
+      )}
 
       {aberto && typeof document !== "undefined" && createPortal(
         <div ref={fundoRef} className="fh-tutorial-fundo" onMouseDown={(e) => { if (e.target === e.currentTarget) fechar(); }}>
