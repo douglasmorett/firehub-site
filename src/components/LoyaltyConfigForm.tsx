@@ -572,6 +572,10 @@ export default function LoyaltyConfigForm({
                 <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
                   Devolva uma porcentagem das compras do cliente como crédito em saldo para os próximos pedidos.
                 </p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.5 }}>
+                  Vale nos pedidos feitos pelo site da loja. O crédito entra quando o pedido é entregue
+                  e só pode ser usado nesta loja; pedido cancelado não gera, e o saldo que ele usou volta.
+                </p>
               </div>
 
               <button

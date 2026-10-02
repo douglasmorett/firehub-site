@@ -30,6 +30,8 @@ import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
 import { efeitoDoPremio } from "@/lib/trilha-premiada";
+import { cashbackDoPedido, lerCashback, resgateMaximo } from "@/lib/cashback";
+import { cashbackDoCliente } from "@/lib/cashback-no-banco";
 import { cpfValido, documentoValido } from "@/lib/fiscal-validacao";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido, documentoObrigatorioNoPedido } from "@/lib/fiscal-modo";
@@ -686,6 +688,36 @@ export async function POST(req: Request) {
     });
     if (descontoOnline) discount += descontoOnline.valor;
 
+    // ── CASHBACK ──────────────────────────────────────────────────────────
+    //
+    // Mesmo princípio do prêmio acima: o corpo só PEDE para usar o saldo
+    // (`usarCashback`); quanto existe é o servidor que calcula, relendo os
+    // pedidos deste telefone NESTA loja (lib/cashback-no-banco.ts). O que o
+    // pedido gera fica gravado nele e só vira saldo quando ele é entregue
+    // (lib/cashback.ts). Como o prêmio, o cashback nunca impede o pedido.
+    let cashbackUsado = 0;
+    let cashbackGerado = 0;
+    const regraDoCashback = lerCashback(franchisee.storeLoyalty);
+    if (regraDoCashback.ativo) {
+      try {
+        const doCliente = await cashbackDoCliente(franchisee.id, franchisee.storeLoyalty, customerPhone);
+        if (body.usarCashback === true && doCliente && doCliente.saldo > 0) {
+          cashbackUsado = resgateMaximo(regraDoCashback, doCliente.saldo, Math.max(0, totalAmount - discount));
+          discount += cashbackUsado;
+        }
+        cashbackGerado = cashbackDoPedido(
+          regraDoCashback,
+          totalAmount,
+          Math.max(0, totalAmount - discount),
+          doCliente?.taxa ?? regraDoCashback.taxa,
+        );
+      } catch (e) {
+        console.error("[customer-order] cashback:", e);
+        cashbackUsado = 0;
+        cashbackGerado = 0;
+      }
+    }
+
     // Arredonda para centavos ANTES de gravar. Em JS 29.9*3 = 89.69999999999999,
     // e era esse número que ia para o banco (`totalAmount Float`) e daí cru como
     // `transaction_amount` para o gateway — que recusa moeda com mais de 2 casas.
@@ -695,7 +727,7 @@ export async function POST(req: Request) {
     // total deixaria os dois divergindo em frações de centavo.
     fee = centavos(fee);
     let orderNotes = notes || "";
-    if (couponCode && discount - (descontoOnline?.valor || 0) > 0) {
+    if (couponCode && discount - (descontoOnline?.valor || 0) - cashbackUsado > 0) {
       orderNotes = `[Cupom: ${couponCode.trim().toUpperCase()}] ${orderNotes}`.trim();
     }
     if (descontoOnline) {
@@ -704,6 +736,10 @@ export async function POST(req: Request) {
     }
     if (freeShippingNote) {
       orderNotes = `${orderNotes} ${freeShippingNote}`.trim();
+    }
+    if (cashbackUsado > 0) {
+      // Na comanda e no painel: o total menor tem de ter explicação à vista.
+      orderNotes = `[Cashback usado: R$ ${cashbackUsado.toFixed(2).replace(".", ",")}] ${orderNotes}`.trim();
     }
     if (resgateDaTrilha) {
       // Sai na comanda: quem monta o pedido precisa ver o brinde, e o motoboy
@@ -768,6 +804,10 @@ export async function POST(req: Request) {
         ...(discount > 0 ? { discountTotal: centavos(discount), discountMerchant: centavos(discount) } : {}),
         ...(resgateDaTrilha ? { trilhaPremio: resgateDaTrilha } : {}),
         ...(entregaGratis ? { entregaGratis } : {}),
+        // O que este pedido usou e o que ele gera. O saldo do cliente sai da
+        // soma destas duas colunas (lib/cashback.ts) — não há contador.
+        ...(cashbackUsado > 0 ? { cashbackUsed: centavos(cashbackUsado) } : {}),
+        ...(cashbackGerado > 0 ? { cashbackEarned: cashbackGerado } : {}),
         // ── O QUE A LOJA PAGA AO ENTREGADOR ─────────────────────────────
         //
         // Gravado na VENDA, não calculado no relatório: a loja reajusta a

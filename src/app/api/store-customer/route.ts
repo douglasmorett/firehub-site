@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
 import { hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
+import { cashbackDoCliente } from "@/lib/cashback-no-banco";
 import {
   calcularProgresso,
   chamadaDaTrilha,
@@ -196,11 +197,26 @@ export async function GET(req: Request) {
   });
 
   // `customer: null` de propósito: os dados pessoais só saem pelo login.
-  const [trilha, cupomPrimeiroPedido] = await Promise.all([
+  const [trilha, cupomPrimeiroPedido, cashback] = await Promise.all([
     trilhaDoCliente(franchiseeId, cleanPhone),
     cupomDePrimeiroPedidoDoCliente(franchiseeId, cleanPhone),
+    saldoDeCashbackDoCliente(franchiseeId, cleanPhone),
   ]);
-  return NextResponse.json({ orders, customer: null, trilha, cupomPrimeiroPedido });
+  return NextResponse.json({ orders, customer: null, trilha, cupomPrimeiroPedido, cashback });
+}
+
+/**
+ * O saldo de cashback deste telefone NESTA loja (lib/cashback.ts), ou null
+ * quando a loja não tem cashback. Sai só o valor e o próximo vencimento — o
+ * mesmo nível de informação do progresso da trilha, que já sai daqui.
+ */
+async function saldoDeCashbackDoCliente(franchiseeId: string, cleanPhone: string) {
+  try {
+    const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { storeLoyalty: true } });
+    return await cashbackDoCliente(franchiseeId, loja?.storeLoyalty, cleanPhone);
+  } catch {
+    return null;
+  }
 }
 
 /**

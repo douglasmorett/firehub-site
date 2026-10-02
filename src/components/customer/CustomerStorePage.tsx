@@ -422,6 +422,12 @@ export default function CustomerStorePage({
   // junto da consulta de pedidos (lib/trilha-premiada.ts decide prêmio: no
   // navegador a regra seria editável com o inspetor aberto).
   const [trilhaProgresso, setTrilhaProgresso] = useState<ProgressoDoCliente | null>(null);
+  /**
+   * O cashback deste telefone NESTA loja, dito pelo servidor (/api/store-customer,
+   * lib/cashback.ts). O `cashbackBalance` que vinha no login era um saldo único
+   * para todas as lojas da plataforma, e nunca foi creditado: não serve mais.
+   */
+  const [cashbackDoServidor, setCashbackDoServidor] = useState<{ saldo: number; taxa: number; proximoVencimento: { valor: number; em: string } | null } | null>(null);
   // "Guardar para a próxima": 20% de desconto numa sacola de R$ 25 é jogar
   // fora um prêmio que valeria bem mais num pedido maior. Quem decide é o
   // cliente, e o servidor respeita (dispensarPremioDaTrilha no pedido).
@@ -913,21 +919,13 @@ export default function CustomerStorePage({
     };
   }, [monthlySpent, goldMinSpend, silverMinSpend, goldCashback, silverCashback, bronzeCashback]);
 
-  // Taxa total de cashback somando o bônus VIP do cliente
-  const cashbackRate = baseCashbackRate + (customer && isVipActive ? vipTier.bonus : 0);
+  // Taxa total de cashback somando o bônus VIP do cliente. Quando o servidor já
+  // respondeu, vale a dele (o nível VIP lá conta todos os pedidos, não só os 10
+  // que a tela recebe).
+  const cashbackRate = cashbackDoServidor?.taxa ?? (baseCashbackRate + (customer && isVipActive ? vipTier.bonus : 0));
 
   const [useCashback, setUseCashback] = useState(false);
-  const customerCashbackBalance = Number(customer?.cashbackBalance || 0);
-
-  const maxCashbackDiscount = Math.min(
-    customerCashbackBalance,
-    (cartTotal * cashbackMaxRedeemPercent) / 100
-  );
-  const cashbackDiscountApplied = useCashback ? maxCashbackDiscount : 0;
-
-  const cashbackEarnedOnOrder = isCashbackActive && cartTotal >= cashbackMinOrder
-    ? (cartTotal * (cashbackRate / 100))
-    : 0;
+  const customerCashbackBalance = isCashbackActive ? Number(cashbackDoServidor?.saldo || 0) : 0;
 
   const isFreeShippingConfigActive = Boolean(delivConfig.freeShippingActive === true || delivConfig.freeShippingActive === "true");
   const freeShippingThreshold = isFreeShippingConfigActive && Number(delivConfig.freeShippingMinValue) > 0 ? Number(delivConfig.freeShippingMinValue) : null;
@@ -970,6 +968,57 @@ export default function CustomerStorePage({
         base: cartTotal - discount - descontoDaTrilha,
       });
   const descontoDoPagamento = descontoOnline?.valor || 0;
+
+  // ── CASHBACK NA CONTA ──────────────────────────────────────────────────
+  //
+  // Espelho de exibição da mesma conta que o servidor faz em /api/customer-order
+  // (lib/cashback.ts): o saldo paga até X% dos produtos já com cupom e prêmio, e
+  // o cashback que o pedido gera incide sobre o que foi pago pelos produtos.
+  // Vem DEPOIS do desconto do pagamento online, como no servidor.
+  const produtosAPagar = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDoPagamento);
+  const maxCashbackDiscount = mesa ? 0 : Math.round(Math.min(
+    customerCashbackBalance,
+    (produtosAPagar * cashbackMaxRedeemPercent) / 100
+  ) * 100) / 100;
+  const cashbackDiscountApplied = useCashback ? maxCashbackDiscount : 0;
+  const cashbackEarnedOnOrder = !mesa && isCashbackActive && cartTotal > 0 && cartTotal >= cashbackMinOrder
+    ? Math.round(Math.max(0, produtosAPagar - cashbackDiscountApplied) * cashbackRate) / 100
+    : 0;
+
+  /**
+   * "Usar meu saldo": o botão que faltava. Até 02/10/2026 o desconto do saldo
+   * existia na conta (`useCashback`), mas nada na tela o ligava.
+   */
+  const usarSaldoJSX = () => {
+    if (mesa || !isCashbackActive || customerCashbackBalance <= 0 || cartTotal <= 0) return null;
+    const vence = cashbackDoServidor?.proximoVencimento;
+    return (
+      <label style={{
+        display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", margin: "4px 0",
+        border: `1.5px solid ${useCashback ? "#7C3AED" : "#DDD6FE"}`, borderRadius: 12,
+        background: useCashback ? "#F5F3FF" : "#FFFFFF", cursor: "pointer",
+      }}>
+        <input
+          type="checkbox"
+          checked={useCashback}
+          onChange={(e) => setUseCashback(e.target.checked)}
+          style={{ width: 18, height: 18, accentColor: "#7C3AED", flexShrink: 0 }}
+        />
+        <span style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.8rem", color: "#4C1D95", lineHeight: 1.35 }}>
+          <strong style={{ fontSize: "0.84rem" }}>
+            Usar meu cashback: R$ {customerCashbackBalance.toFixed(2).replace(".", ",")} de saldo
+          </strong>
+          <span style={{ color: "#6D28D9" }}>
+            {maxCashbackDiscount < customerCashbackBalance
+              ? `Neste pedido dá para usar até R$ ${maxCashbackDiscount.toFixed(2).replace(".", ",")} (${cashbackMaxRedeemPercent}% dos produtos).`
+              : `Abate R$ ${maxCashbackDiscount.toFixed(2).replace(".", ",")} deste pedido.`}
+            {vence ? ` R$ ${vence.valor.toFixed(2).replace(".", ",")} vence em ${new Date(vence.em).toLocaleDateString("pt-BR")}.` : ""}
+          </span>
+        </span>
+      </label>
+    );
+  };
+
   // Na mesa o total é o dos itens a preço do salão: cupom, cashback, prêmio
   // e taxa de entrega não existem na conta da mesa (lib/lancar-na-mesa.ts).
   const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDoPagamento);
@@ -1276,6 +1325,7 @@ export default function CustomerStorePage({
         const d = await res.json();
         setMyOrdersList(d.orders || []);
         setTrilhaProgresso(d.trilha || null);
+        setCashbackDoServidor(d.cashback || null);
         // O direito ao cupom de primeiro pedido vem na mesma resposta: quem
         // decide se este telefone "nunca pediu" é o servidor.
         setCupomPrimeiroPedido(d.cupomPrimeiroPedido || null);
@@ -2302,6 +2352,7 @@ export default function CustomerStorePage({
           deliveryFee: effectiveDeliveryFee,
           couponCode: couponApplied?.code || null,
           cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
+          usarCashback: cashbackDiscountApplied > 0,
           dispensarPremioDaTrilha: guardarPremioDaTrilha,
           items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
@@ -3182,6 +3233,8 @@ export default function CustomerStorePage({
                 </div>
               )}
 
+              {usarSaldoJSX()}
+
               {/* RESUMO DOS VALORES */}
               <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "5px", fontSize: "0.84rem", color: "#64748B" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -3958,6 +4011,7 @@ export default function CustomerStorePage({
                   )}
                 </span>
               </div>
+              {usarSaldoJSX()}
               {cashbackDiscountApplied > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED", fontWeight: 700 }}>
                   <span>Desconto Cashback:</span>
