@@ -865,137 +865,158 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       position: "relative", boxSizing: "border-box"
     }}>
 
-      {/* Top Header */}
+      {/* ── CABEÇALHO ─────────────────────────────────────────────────────
+          Uma linha só: quem é, de qual loja, e os ícones de apoio. No celular
+          o cabeçalho antigo espremia nome, loja e avisos do GPS numa coluna
+          de uma palavra por linha, e os cinco botões passavam da borda da
+          tela (foto do app do Tiago, Frangoso, 02/10/2026). As ações de
+          trabalho (escanear, digitar) desceram para o corpo, grandes; os
+          avisos do GPS viraram cartão de largura inteira logo abaixo. */}
       <div style={{
-        background: "#0F172A", color: "#FFFFFF", padding: "1rem 1.25rem",
+        background: "#0F172A", color: "#FFFFFF", padding: "12px 16px",
         position: "sticky", top: 0, zIndex: 100, boxShadow: "0 4px 15px rgba(0,0,0,0.2)"
       }}>
-        <div style={{ maxWidth: "600px", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{
-                background: gpsStatus === "ativo" ? "#22C55E" : gpsStatus === "negado" ? "#EF4444" : "#F59E0B",
-                width: "8px", height: "8px", borderRadius: "50%"
-              }} />
-              <span style={{ fontWeight: 900, fontSize: "1.05rem" }}>🛵 {session.motoboyName}</span>
+        <div style={{ maxWidth: "600px", margin: "0 auto", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: "50%", background: "#1E293B", flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.25rem", position: "relative",
+          }}>
+            🛵
+            <span style={{
+              position: "absolute", right: 0, bottom: 0, width: 11, height: 11, borderRadius: "50%",
+              border: "2px solid #0F172A",
+              background: gpsStatus === "ativo" ? "#22C55E" : gpsStatus === "negado" ? "#EF4444" : "#F59E0B",
+            }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 900, fontSize: "1rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {session.motoboyName}
             </div>
-            <p style={{ margin: "2px 0 0 0", fontSize: "0.78rem", color: "#94A3B8" }}>
-              Loja: <b>{session.storeName}</b>
-              {" · "}
+            {/* O GPS vem PRIMEIRO: nome de loja comprido (a razão social, às
+                vezes) é cortado com "…", e o selo do GPS não pode sumir. */}
+            <div style={{ fontSize: "0.74rem", color: "#94A3B8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               <b style={{ color: gpsStatus === "ativo" ? "#4ADE80" : gpsStatus === "negado" ? "#F87171" : "#FBBF24" }}>
                 {gpsStatus === "ativo" ? "GPS ativo" : gpsStatus === "negado" ? "GPS desligado" : "GPS…"}
               </b>
-            </p>
-            {/* GPS negado não pode ser silencioso: a loja monta rota olhando o
-                mapa, e um entregador invisível ali parece entregador parado. */}
-            {gpsStatus === "negado" && (
-              <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#FCA5A5", fontWeight: 700 }}>
-                ⚠️ Ative a localização do celular para a loja te ver no mapa.
-              </p>
-            )}
-
-            {/* ── "GPS ATIVO" MENTINDO É PIOR QUE GPS DESLIGADO ────────────
-                O rastreio morre quando o entregador abre o Maps e a aba é
-                suspensa — e o selo continuava verde. A loja olhava o mapa,
-                via o entregador parado no mesmo ponto há meia hora e achava
-                que ele estava enrolando. Aqui o app conta a verdade: há
-                quanto tempo a loja não recebe a sua posição. */}
-            {gpsStatus === "ativo" && ultimoGps !== null && agora - ultimoGps > 120000 && (
-              <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#FBBF24", fontWeight: 700 }}>
-                📍 A loja não recebe sua posição há {Math.floor((agora - ultimoGps) / 60000)} min.
-                Deixe este app aberto na tela para voltar a aparecer no mapa.
-              </p>
-            )}
-
-            {/* A permissão "só desta vez" reinicia o rastreio a cada volta ao
-                app — e é a que o celular oferece primeiro. */}
-            {permissaoFraca && gpsStatus !== "negado" && (
-              <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#FBBF24", fontWeight: 700 }}>
-                💡 Marque <b>Permitir sempre</b> na localização deste site. Com "só desta vez",
-                o rastreio para toda vez que você sai do app.
-              </p>
-            )}
+              {" · "}
+              {session.storeName}
+            </div>
           </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {[
+            { titulo: "Atualizar a lista", onClick: fetchMotoboyOrders, icone: <RefreshCw size={17} style={loadingOrders ? { animation: "spin 1s linear infinite" } : undefined} />, fundo: "#1E293B", cor: "#E2E8F0" },
+            { titulo: "Alterar senha", onClick: () => setShowPassModal(true), icone: <Lock size={17} />, fundo: "#1E293B", cor: "#E2E8F0" },
+            { titulo: "Sair", onClick: handleLogout, icone: <LogOut size={17} />, fundo: "#3F1D1D", cor: "#FCA5A5" },
+          ].map((b) => (
             <button
-              onClick={() => setShowPassModal(true)}
-              style={{ background: "#334155", color: "#F8FAFC", border: "none", padding: "8px 10px", borderRadius: "8px", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
-              title="Alterar Senha"
+              key={b.titulo}
+              onClick={b.onClick}
+              title={b.titulo}
+              aria-label={b.titulo}
+              style={{
+                width: 38, height: 38, flexShrink: 0, borderRadius: 10, border: "none", cursor: "pointer",
+                background: b.fundo, color: b.cor, display: "flex", alignItems: "center", justifyContent: "center",
+              }}
             >
-              <Lock size={14} /> Senha
+              {b.icone}
             </button>
-            {/* PUXAR pedido: escanear o QR da comanda, ou digitar o número.
-                O caminho ensinado é o scanner DE DENTRO do app — a câmera
-                nativa do iPhone abriria outro navegador, sem a sessão. */}
-            <button
-              onClick={() => setShowScanner(true)}
-              style={{ background: "#7C3AED", color: "#fff", border: "none", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
-              title="Escanear o QR da comanda para puxar o pedido"
-            >
-              📷 Escanear
-            </button>
-            <button
-              onClick={() => { setTecladoValor(""); setShowTeclado(true); }}
-              style={{ background: "#F5F3FF", color: "#6D28D9", border: "1.5px solid #DDD6FE", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 800, cursor: "pointer" }}
-              title="Digitar o número da comanda para puxar o pedido"
-            >
-              #️⃣
-            </button>
-            <button
-              onClick={fetchMotoboyOrders}
-              style={{ background: "#334155", color: "#fff", border: "none", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
-            >
-              <RefreshCw size={14} style={loadingOrders ? { animation: "spin 1s linear infinite" } : undefined} /> Sync
-            </button>
-
-            <button
-              onClick={handleLogout}
-              style={{ background: "#FEF2F2", color: "#DC2626", border: "none", padding: "8px 12px", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 800, cursor: "pointer" }}
-            >
-              <LogOut size={14} />
-            </button>
-          </div>
+          ))}
         </div>
       </div>
 
       {/* Main Container */}
       <div style={{ maxWidth: "600px", margin: "0 auto", padding: "1rem" }}>
 
-        {/* Status Card */}
+        {/* Avisos do GPS, em largura inteira. GPS negado não pode ser
+            silencioso (a loja monta rota olhando o mapa); "GPS ativo" sem
+            posição há minutos é pior que desligado (o selo mentia quando a
+            aba era suspensa); e a permissão "só desta vez", a que o celular
+            oferece primeiro, reinicia o rastreio a cada volta ao app. */}
+        {(gpsStatus === "negado" ||
+          (gpsStatus === "ativo" && ultimoGps !== null && agora - ultimoGps > 120000) ||
+          permissaoFraca) && (
+          <div style={{
+            background: gpsStatus === "negado" ? "#FEF2F2" : "#FFFBEB",
+            border: `1.5px solid ${gpsStatus === "negado" ? "#FECACA" : "#FDE68A"}`,
+            color: gpsStatus === "negado" ? "#B91C1C" : "#92400E",
+            borderRadius: 12, padding: "10px 12px", marginBottom: "1rem",
+            fontSize: "0.82rem", fontWeight: 700, lineHeight: 1.45, display: "flex", flexDirection: "column", gap: 6,
+          }}>
+            {gpsStatus === "negado" && (
+              <span>📍 Ative a localização do celular para a loja te ver no mapa.</span>
+            )}
+            {gpsStatus === "ativo" && ultimoGps !== null && agora - ultimoGps > 120000 && (
+              <span>📍 A loja não recebe sua posição há {Math.floor((agora - ultimoGps) / 60000)} min. Deixe este app aberto na tela para voltar a aparecer no mapa.</span>
+            )}
+            {permissaoFraca && gpsStatus !== "negado" && (
+              <span>💡 Na localização deste site, marque <b>Permitir sempre</b>. Com &quot;só desta vez&quot; o rastreio para toda vez que você sai do app.</span>
+            )}
+          </div>
+        )}
+
+        {/* PUXAR pedido — a ação do dia a dia, grande. O caminho ensinado é o
+            scanner DE DENTRO do app: a câmera nativa do iPhone abriria outro
+            navegador, sem a sessão. */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, marginBottom: "1rem" }}>
+          <button
+            onClick={() => setShowScanner(true)}
+            title="Escanear o QR da comanda para puxar o pedido"
+            style={{
+              background: "#7C3AED", color: "#fff", border: "none", padding: "14px 10px", borderRadius: 14,
+              fontSize: "0.98rem", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+              boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
+            }}
+          >
+            📷 Escanear comanda
+          </button>
+          <button
+            onClick={() => { setTecladoValor(""); setShowTeclado(true); }}
+            title="Digitar o número da comanda para puxar o pedido"
+            style={{
+              background: "#FFFFFF", color: "#6D28D9", border: "1.5px solid #DDD6FE", padding: "14px 14px",
+              borderRadius: 14, fontSize: "0.95rem", fontWeight: 900, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+            }}
+          >
+            # Digitar nº
+          </button>
+        </div>
+
+        {/* Status: pendentes e concluídas. Tocar em "concluídas" (ou na
+            faixa de baixo) abre o relatório com filtro de data e hora — o
+            mesmo da loja (components/motoboy/MeuRelatorio.tsx). */}
         <div style={{
-          background: "#FFFFFF", borderRadius: "14px", padding: "1rem", marginBottom: "1rem",
-          display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", border: "1px solid #E2E8F0",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+          background: "#FFFFFF", borderRadius: "14px", marginBottom: "1rem",
+          display: "grid", gridTemplateColumns: "1fr 1fr", border: "1px solid #E2E8F0",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.04)", overflow: "hidden",
         }}>
-          <div style={{ textAlign: "center" }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 700 }}>ENTREGAS PENDENTES</span>
-            <p style={{ margin: "4px 0 0 0", fontSize: "1.6rem", fontWeight: 900, color: "#2563EB" }}>
+          <div style={{ textAlign: "center", padding: "12px 8px" }}>
+            <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 800 }}>PENDENTES</span>
+            <p style={{ margin: "2px 0 0 0", fontSize: "1.7rem", fontWeight: 900, color: "#2563EB" }}>
               {jaSincronizou ? activeOrders.length : "–"}
             </p>
           </div>
-
-          <div style={{ textAlign: "center", borderLeft: "1px solid #E2E8F0" }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 700 }}>CONCLUÍDAS HOJE</span>
-            <p style={{ margin: "4px 0 0 0", fontSize: "1.6rem", fontWeight: 900, color: "#16A34A" }}>
+          <button
+            onClick={() => setMostrarRelatorio(true)}
+            style={{
+              textAlign: "center", padding: "12px 8px", border: "none", borderLeft: "1px solid #E2E8F0",
+              background: "#FFFFFF", cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 800 }}>CONCLUÍDAS HOJE</span>
+            <p style={{ margin: "2px 0 0 0", fontSize: "1.7rem", fontWeight: 900, color: "#16A34A" }}>
               {jaSincronizou ? completedOrders.length : "–"}
             </p>
-          </div>
+          </button>
+          <button
+            onClick={() => setMostrarRelatorio(true)}
+            style={{
+              gridColumn: "1 / -1", border: "none", borderTop: "1px solid #E2E8F0", background: "#F8FAFC",
+              padding: "11px", color: "#0F172A", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer",
+              fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            }}
+          >
+            📊 Meu relatório (data e hora) <ChevronRight size={16} />
+          </button>
         </div>
-
-        {/* O relatório do entregador com filtro de data e hora — o mesmo da
-            loja (components/motoboy/MeuRelatorio.tsx), para os dois
-            conferirem o mesmo período e verem o mesmo número. */}
-        <button
-          onClick={() => setMostrarRelatorio(true)}
-          style={{
-            width: "100%", marginBottom: "1rem", padding: "11px", borderRadius: "12px",
-            border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#0F172A",
-            fontWeight: 800, fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit",
-          }}
-        >
-          📊 Meu relatório (data e hora)
-        </button>
         {mostrarRelatorio && session && (
           <MeuRelatorio motoboyId={session.motoboyId} storeId={session.storeId} aoFechar={() => setMostrarRelatorio(false)} />
         )}

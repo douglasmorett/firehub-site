@@ -35,7 +35,7 @@ type Resposta = {
   orders: {
     id: string; createdAt: string; dailyOrderNumber: number | null; ifoodReference: string | null;
     openDeliveryReference: string | null; customerName: string | null; paymentMethod: string | null;
-    totalAmount: number; cashToDeliver: number; ganhoDoMotoboy: number; status: string;
+    totalAmount: number; cashToDeliver: number; ganhoDoMotoboy: number; status: string; cancelado?: boolean;
   }[];
   error?: string;
 };
@@ -143,7 +143,7 @@ export default function MeuRelatorio({ motoboyId, storeId, aoFechar }: { motoboy
             )}
             {dados.cancelados.qtd > 0 && (
               <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: 10 }}>
-                {dados.cancelados.qtd} pedido{dados.cancelados.qtd > 1 ? "s" : ""} cancelado{dados.cancelados.qtd > 1 ? "s" : ""} no período — fora da conta.
+                {dados.cancelados.qtd} pedido{dados.cancelados.qtd > 1 ? "s" : ""} cancelado{dados.cancelados.qtd > 1 ? "s" : ""} com você no período — a corrida conta, sem dinheiro a entregar.
               </div>
             )}
             {(dados.motoboy?.entregasSemDistancia || 0) > 0 && (
@@ -157,6 +157,9 @@ export default function MeuRelatorio({ motoboyId, storeId, aoFechar }: { motoboy
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 900, fontSize: "0.88rem", color: "#0F172A" }}>
                       #{o.dailyOrderNumber ?? o.ifoodReference ?? o.openDeliveryReference ?? "—"}{" "}
+                      {o.cancelado && (
+                        <span style={{ background: "#FEE2E2", color: "#B91C1C", borderRadius: 6, padding: "1px 6px", fontSize: "0.68rem", fontWeight: 900, marginRight: 4 }}>CANCELADO</span>
+                      )}
                       <span style={{ fontWeight: 600, color: "#64748B" }}>
                         {new Date(o.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                       </span>

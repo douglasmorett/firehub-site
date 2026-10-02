@@ -403,13 +403,13 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                         O endereço é medido automaticamente em alguns minutos — se continuar assim, confira o endereço desses pedidos.
                       </div>
                     )}
-                    {/* Cancelado não é entrega (lib/relatorio-do-entregador.ts):
-                        some da conta, mas a loja vê quantos foram, para acertar
-                        na mão se pagou a saída. */}
+                    {/* Cancelado com o motoboy CONTA na corrida e não no
+                        dinheiro (lib/relatorio-do-entregador.ts). A linha diz
+                        quais foram, para ninguém estranhar o número. */}
                     {(r.cancelados?.qtd ?? 0) > 0 && (
                       <div style={{ fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45 }}>
-                        {r.cancelados.qtd} pedido{r.cancelados.qtd > 1 ? "s" : ""} cancelado{r.cancelados.qtd > 1 ? "s" : ""} com este motoboy no período
-                        ({r.cancelados.lista.map((c: any) => `#${c.dailyOrderNumber ?? c.ifoodReference ?? c.openDeliveryReference ?? "—"}`).join(", ")}) — fora da conta.
+                        {r.cancelados.qtd} pedido{r.cancelados.qtd > 1 ? "s" : ""} cancelado{r.cancelados.qtd > 1 ? "s" : ""} com este motoboy
+                        ({r.cancelados.lista.map((c: any) => `#${c.dailyOrderNumber ?? c.ifoodReference ?? c.openDeliveryReference ?? "—"}`).join(", ")}) — a corrida conta, sem dinheiro a prestar contas.
                       </div>
                     )}
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>
@@ -438,7 +438,11 @@ export default function MotoboyReport({ motoboys, storeTimezone }: { motoboys: M
                               {o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 20)}...` : ""}
                             </span>
                             <span>
-                              {isCash ? (
+                              {o.cancelado ? (
+                                <span title="A corrida conta para o motoboy; o pedido não foi pago" style={{ background: "#FEE2E2", color: "#B91C1C", padding: "2px 6px", borderRadius: 4, fontWeight: 800, fontSize: "0.7rem" }}>
+                                  ✕ CANCELADO — sem dinheiro
+                                </span>
+                              ) : isCash ? (
                                 (o.changeGiven || 0) > 0 ? (
                                   <span style={{ background: "#F0FDFA", color: "#0F766E", border: "1px solid #99F6E4", padding: "2px 8px", borderRadius: 6, fontWeight: 800, fontSize: "0.72rem", display: "inline-flex", alignItems: "center", gap: 4 }}>
                                     💵 Entregar: {fmt(o.cashToDeliver || o.totalAmount)}

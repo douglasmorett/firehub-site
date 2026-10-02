@@ -71,6 +71,7 @@ export async function GET(req: NextRequest) {
         ganhoDoMotoboy: o.ganhoDoMotoboy,
         origemDoGanho: o.origemDoGanho,
         status: o.status,
+        cancelado: o.cancelado,
       })),
     });
   } catch (e: any) {

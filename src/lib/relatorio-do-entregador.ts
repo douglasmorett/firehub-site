@@ -13,12 +13,13 @@
  * entrou às 18h do dia 1 e saiu às 2h do dia 2. Sem hora, o DIA é o
  * expediente, das 5h às 5h do dia seguinte (lib/fuso.ts).
  *
- * ── Cancelado não é entrega ─────────────────────────────────────────────────
- * O relatório da loja contava pedido CANCELADO com motoboy como entrega e
- * somava o ganho dele (22 pedidos em 30 dias, em 10 lojas), enquanto a
- * prestação de contas do dinheiro já o pulava e o app do motoboy nunca o
- * mostrou. Agora fica fora da conta e volta à parte, em `cancelados`, para o
- * lojista ver e acertar na mão se pagou a saída.
+ * ── Cancelado com o motoboy conta ───────────────────────────────────────────
+ * Pedido cancelado que estava com o entregador CONTA como entrega e soma o
+ * ganho: ele saiu, e o costume é receber a corrida (o Douglas, 02/10/2026 —
+ * "se ele puxou o pedido, vai ficar na conta"). O que muda é a informação:
+ * vem marcado como cancelado na lista e contado em `cancelados`, para nenhum
+ * dos dois lados estranhar o número. Dinheiro a prestar contas, não: ninguém
+ * pagou o pedido cancelado.
  */
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
@@ -124,11 +125,10 @@ export async function montarRelatorioDosEntregadores(opts: {
 
   // Mapear motoboys em memória sem chamadas adicionais ao banco
   const report = motoboys.map((mb) => {
-    // Cancelado sai de TODA a conta (entregas, dias, ganho, dinheiro) e volta
-    // à parte — ver o cabeçalho.
-    const todosDoMotoboy = ordersByMotoboy[mb.id] || [];
-    const cancelados = todosDoMotoboy.filter((o) => ehCancelado(o.status));
-    const orders = todosDoMotoboy.filter((o) => !ehCancelado(o.status));
+    // Cancelado com o motoboy CONTA (entrega, dia e ganho) — ver o cabeçalho.
+    // Só não entra no dinheiro a prestar contas, logo abaixo.
+    const orders = ordersByMotoboy[mb.id] || [];
+    const cancelados = orders.filter((o) => ehCancelado(o.status));
 
     const totalDeliveries = orders.length;
     const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
@@ -324,8 +324,10 @@ export async function montarRelatorioDosEntregadores(opts: {
             }
           }
         }
-        const cashToDeliver = isCash ? (changeFor || orderTotal) : 0;
-        const changeGiven = isCash && changeFor ? (changeFor - orderTotal) : 0;
+        // Cancelado: a corrida conta, o dinheiro não — ninguém pagou o pedido.
+        const cancelado = ehCancelado(o.status);
+        const cashToDeliver = isCash && !cancelado ? (changeFor || orderTotal) : 0;
+        const changeGiven = isCash && !cancelado && changeFor ? (changeFor - orderTotal) : 0;
 
         return {
           id: o.id,
@@ -358,6 +360,8 @@ export async function montarRelatorioDosEntregadores(opts: {
           customerAddress: o.customerAddress,
           paymentMethod: o.paymentMethod,
           status: o.status,
+          /** Conta na corrida, sai do dinheiro — as telas marcam "CANCELADO". */
+          cancelado,
           notes: o.notes,
           items: o.items,
           dailyOrderNumber: o.dailyOrderNumber,
