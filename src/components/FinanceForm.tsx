@@ -8,11 +8,37 @@ import { Camera, ScanLine, Loader2, FileText, PenLine, ChevronDown, ChevronUp } 
 type InputMode = "manual" | "ai" | null;
 
 /**
+ * O valor em reais do jeito que o lojista escreve: "1.200,00", "1200,50",
+ * "R$ 850", "1.200". O campo era type="number", e o Chrome em português
+ * descarta a vírgula de "1.200,00" sem avisar: o acordo de R$ 1.200 ia gravar
+ * R$ 1,20. Ponto seguido de exatamente 3 dígitos é milhar; vírgula é decimal.
+ */
+function lerReais(texto: string): number | null {
+  let t = texto.replace(/r\$/gi, "").replace(/\s+/g, "");
+  if (!t) return null;
+  if (t.includes(",")) {
+    t = t.replace(/\./g, "").replace(",", ".");
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(t)) {
+    t = t.replace(/\./g, "");
+  }
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  return Number(t);
+}
+
+const emReais = (n: number) => n.toFixed(2).replace(".", ",");
+
+/**
  * `onSaved` avisa a tela que uma conta entrou. Sem ele o formulário gravava, dizia
  * "registrada com sucesso" e a lista continuava a mesma até um F5 — que era
  * exatamente a impressão de que o lançamento não tinha funcionado.
  */
-export default function FinanceForm({ category = "BUSINESS", onSaved }: { category?: string; onSaved?: () => void }) {
+export default function FinanceForm({ category = "BUSINESS", categorias, onSaved }: {
+  category?: string;
+  /** Sugestões do campo Categoria; sem elas o campo não aparece. */
+  categorias?: string[];
+  onSaved?: () => void;
+}) {
+  const [categoria, setCategoria] = useState("");
   const [loading, setLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [inputMode, setInputMode] = useState<InputMode>(null);
@@ -69,7 +95,7 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
         supplierName: data.supplierName || prev.supplierName,
         barcode: data.barcode || prev.barcode,
         dueDate: data.dueDate || prev.dueDate,
-        value: data.value ? data.value.toString() : prev.value
+        value: typeof data.value === "number" && data.value > 0 ? emReais(data.value) : data.value ? String(data.value) : prev.value
       }));
       setSuccessMsg("✅ IA preencheu os dados encontrados! Confira e complete se necessário.");
     } catch (err: any) {
@@ -98,9 +124,9 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
       return;
     }
 
-    const numValue = parseFloat(formData.value);
-    if (!formData.value || isNaN(numValue) || numValue <= 0) {
-      setErrorMsg("Informe um valor válido maior que zero.");
+    const numValue = lerReais(formData.value);
+    if (numValue === null || numValue <= 0) {
+      setErrorMsg("Informe o valor em reais, por exemplo 1.200,00.");
       setLoading(false);
       return;
     }
@@ -115,13 +141,14 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
       const result = await createPayable({
         ...formData,
         value: numValue,
-        category
+        category: categoria.trim() || category
       });
 
       if (result && 'error' in result) {
         setErrorMsg(result.error || "Erro desconhecido ao registrar.");
       } else {
         setFormData({ supplierName: "", barcode: "", receivedDate: "", dueDate: "", value: "" });
+        setCategoria("");
         setSuccessMsg("✅ Conta registrada! Ela já aparece na lista abaixo.");
         setInputMode(null);
         onSaved?.();
@@ -269,9 +296,12 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
           </div>
         )}
 
-        {/* Formulário manual ou preenchido pela IA */}
+        {/* Formulário manual ou preenchido pela IA.
+            noValidate: o balão do navegador ("Preencha este campo") some em um
+            segundo e o lojista lia "não salvou". A validação do handleSubmit
+            cobre os mesmos campos e fala na caixa vermelha, que fica. */}
         {inputMode !== null && (
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <form noValidate onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             {/* Header do modo selecionado */}
             <div style={{ 
               display: "flex", 
@@ -311,12 +341,12 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
               </div>
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: "bold" }}>Valor (R$) *</label>
-                <input 
-                  required 
-                  type="number" 
-                  step="0.01"
-                  className="input" 
-                  placeholder="0.00"
+                <input
+                  required
+                  type="text"
+                  inputMode="decimal"
+                  className="input"
+                  placeholder="1.200,00"
                   value={formData.value}
                   onChange={e => setFormData({...formData, value: e.target.value})}
                 />
@@ -370,6 +400,25 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
               </div>
             </div>
 
+            {categorias && (
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: "bold" }}>Categoria (Opcional)</label>
+                <input
+                  type="text"
+                  className="input"
+                  list="categorias-da-conta"
+                  maxLength={60}
+                  placeholder="Ex: Funcionários e acordos"
+                  value={categoria}
+                  onChange={e => setCategoria(e.target.value)}
+                />
+                <datalist id="categorias-da-conta">
+                  {categorias.map(c => <option key={c} value={c} />)}
+                </datalist>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Escolha da lista ou escreva uma nova</span>
+              </div>
+            )}
+
             {/* Botões de ação no modo AI */}
             {inputMode === "ai" && (
               <button 
@@ -396,8 +445,15 @@ export default function FinanceForm({ category = "BUSINESS", onSaved }: { catego
               </button>
             )}
 
-            <button 
-              type="submit" 
+            {/* Repete o erro junto do botão: a caixa do topo fica fora da tela no celular. */}
+            {errorMsg && (
+              <div role="alert" style={{ color: "#C92E09", fontSize: "0.85rem", fontWeight: "bold" }}>
+                ⚠️ {errorMsg}
+              </div>
+            )}
+
+            <button
+              type="submit"
               className="btn btn-primary" 
               disabled={loading} 
               style={{ alignSelf: "flex-start", marginTop: "0.5rem", padding: "0.65rem 1.5rem", fontSize: "1rem" }}

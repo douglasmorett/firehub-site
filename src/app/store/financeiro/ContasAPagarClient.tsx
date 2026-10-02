@@ -22,8 +22,12 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { markPayableAsPaid, deletePayable } from "@/app/actions/finance";
+import { markPayableAsPaid, deletePayable, setPayableCategory } from "@/app/actions/finance";
 import FinanceForm from "@/components/FinanceForm";
+import { categoriaDaConta, sugestoesComAsDaLoja, CATEGORIA_MAX } from "@/lib/categoria-da-conta";
+
+/** Filtro "sem categoria": as contas antigas e as lançadas sem escolher uma. */
+const SEM_CATEGORIA = "__sem_categoria__";
 
 export type PayableDTO = {
   id: string;
@@ -57,22 +61,43 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
   const [mostrarForm, setMostrarForm] = useState(false);
   const [mostrarPagas, setMostrarPagas] = useState(false);
   const [confirmarExclusao, setConfirmarExclusao] = useState<string | null>(null);
+  const [editandoCategoria, setEditandoCategoria] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<string | null>(null);
+
+  const sugestoes = useMemo(() => sugestoesComAsDaLoja(payables.map((p) => p.category)), [payables]);
+
+  // Só as categorias que existem nas contas, na ordem de quem tem mais.
+  const categoriasEmUso = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const p of payables) {
+      const c = categoriaDaConta(p.category) ?? SEM_CATEGORIA;
+      n.set(c, (n.get(c) || 0) + 1);
+    }
+    return [...n.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  }, [payables]);
+  const filtroValido = filtro && categoriasEmUso.includes(filtro) ? filtro : null;
+  const visiveis = useMemo(
+    () => filtroValido
+      ? payables.filter((p) => (categoriaDaConta(p.category) ?? SEM_CATEGORIA) === filtroValido)
+      : payables,
+    [payables, filtroValido],
+  );
 
   const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 
   const { atrasadas, hojeLista, futuras, pagas, totalAberto } = useMemo(() => {
-    const pend = payables.filter((p) => p.status === "PENDING");
+    const pend = visiveis.filter((p) => p.status === "PENDING");
     const atrasadas = pend.filter((p) => p.dueDate < hoje);
     const hojeLista = pend.filter((p) => p.dueDate === hoje);
     const futuras = pend.filter((p) => p.dueDate > hoje);
-    const pagas = payables
+    const pagas = visiveis
       .filter((p) => p.status === "PAID")
       .sort((a, b) => (b.paidDate || b.dueDate).localeCompare(a.paidDate || a.dueDate));
     return {
       atrasadas, hojeLista, futuras, pagas,
       totalAberto: pend.reduce((s, p) => s + p.value, 0),
     };
-  }, [payables, hoje]);
+  }, [visiveis, hoje]);
 
   const soma = (l: PayableDTO[]) => l.reduce((s, p) => s + p.value, 0);
 
@@ -83,6 +108,19 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
       router.refresh();
     } catch {
       alert("Não foi possível dar baixa nesta conta. Tente de novo.");
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function salvarCategoria(id: string, categoria: string) {
+    setOcupado(id);
+    try {
+      await setPayableCategory(id, categoria);
+      setEditandoCategoria(null);
+      router.refresh();
+    } catch {
+      alert("Não foi possível salvar a categoria. Tente de novo.");
     } finally {
       setOcupado(null);
     }
@@ -123,6 +161,18 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
           <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 3 }}>
             Vence {fmtData(p.dueDate)} · <span style={{ color: cor, fontWeight: 700 }}>{legenda}</span>
           </div>
+          <button
+            onClick={() => setEditandoCategoria(editandoCategoria === p.id ? null : p.id)}
+            title="Pôr ou trocar a categoria desta conta"
+            style={{
+              marginTop: 6, borderRadius: 999, padding: "2px 10px", fontWeight: 700, fontSize: "0.72rem", cursor: "pointer",
+              ...(categoriaDaConta(p.category)
+                ? { background: "#F1F5F9", color: "#334155", border: "1px solid #E2E8F0" }
+                : { background: "none", color: "#94A3B8", border: "1px dashed #CBD5E1" }),
+            }}
+          >
+            {categoriaDaConta(p.category) ?? "+ categoria"}
+          </button>
         </div>
 
         <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", whiteSpace: "nowrap" }}>
@@ -174,6 +224,40 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
               Cancelar
             </button>
           </div>
+        )}
+
+        {/* Campo sem estado (defaultValue): a Conta é recriada a cada render da
+            tela, e um input controlado perderia o foco a cada letra. */}
+        {editandoCategoria === p.id && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              salvarCategoria(p.id, String(new FormData(e.currentTarget).get("categoria") ?? ""));
+            }}
+            style={{
+              flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center",
+              background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 12px",
+            }}
+          >
+            <input
+              name="categoria"
+              list="categorias-da-conta-lista"
+              defaultValue={categoriaDaConta(p.category) ?? ""}
+              maxLength={CATEGORIA_MAX}
+              placeholder="Ex: Funcionários e acordos"
+              autoFocus
+              className="input"
+              style={{ flex: "1 1 200px" }}
+            />
+            <button type="submit" disabled={ocupado === p.id}
+              style={{ background: "#0F172A", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: "0.78rem" }}>
+              {ocupado === p.id ? "..." : "Salvar"}
+            </button>
+            <button type="button" onClick={() => setEditandoCategoria(null)}
+              style={{ background: "#fff", color: "#475569", border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", fontSize: "0.78rem" }}>
+              Cancelar
+            </button>
+          </form>
         )}
       </div>
     );
@@ -294,10 +378,37 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
 
         {mostrarForm && (
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid #F1F5F9" }}>
-            <FinanceForm category="BUSINESS" onSaved={() => { setMostrarForm(false); router.refresh(); }} />
+            <FinanceForm category="BUSINESS" categorias={sugestoes} onSaved={() => { setMostrarForm(false); router.refresh(); }} />
           </div>
         )}
       </div>
+
+      <datalist id="categorias-da-conta-lista">
+        {sugestoes.map((c) => <option key={c} value={c} />)}
+      </datalist>
+
+      {/* ── FILTRO POR CATEGORIA ──────────────────────────────────────────────
+          Só aparece quando há conta com categoria; filtra os totais também. */}
+      {categoriasEmUso.some((c) => c !== SEM_CATEGORIA) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+          {[null, ...categoriasEmUso].map((c) => {
+            const ativo = filtroValido === c;
+            return (
+              <button
+                key={c ?? "todas"}
+                onClick={() => setFiltro(c)}
+                style={{
+                  background: ativo ? "#0F172A" : "#fff", color: ativo ? "#fff" : "#475569",
+                  border: ativo ? "none" : "1px solid #E2E8F0", borderRadius: 999,
+                  padding: "6px 14px", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                }}
+              >
+                {c === null ? "Todas" : c === SEM_CATEGORIA ? "Sem categoria" : c}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── AS TRÊS FILAS ─────────────────────────────────────────────────── */}
       <Bloco

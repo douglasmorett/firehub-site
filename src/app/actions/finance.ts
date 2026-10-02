@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { dataDaLoja } from "@/lib/fuso";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
+import { CATEGORIA_MAX } from "@/lib/categoria-da-conta";
 
 export async function createPayable(data: {
   supplierName: string;
@@ -51,7 +52,7 @@ export async function createPayable(data: {
         dueDate,
         value: data.value,
         status: "PENDING",
-        category: data.category || "BUSINESS"
+        category: data.category?.trim().slice(0, CATEGORIA_MAX) || "BUSINESS"
       }
     });
 
@@ -102,6 +103,18 @@ export async function markPayableAsPaid(id: string) {
       status: "PAID",
       paidDate: new Date()
     }
+  });
+
+  revalidatePath("/store/financeiro");
+}
+
+/** Põe, troca ou tira (texto vazio) a categoria de uma conta já lançada. */
+export async function setPayableCategory(id: string, categoria: string) {
+  await exigirPayableDaLoja(id);
+
+  await prisma.payable.update({
+    where: { id },
+    data: { category: categoria.trim().slice(0, CATEGORIA_MAX) || "BUSINESS" }
   });
 
   revalidatePath("/store/financeiro");

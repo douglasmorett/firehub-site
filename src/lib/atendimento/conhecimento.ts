@@ -53,6 +53,7 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - Impressora: ícone de impressora no topo do painel (firehubfood.com.br/store/impressoras) → "Baixar Instalador (.exe)" no computador ligado à impressora. O Assistente de Impressão precisa ficar aberto (ícone 🔥 perto do relógio do Windows), com o computador ligado e com internet.
 - iFood, 99Food, JotaJá e pagamento online (Asaas): botão "Central de Integrações" no topo do painel.
 - Fatura do FireHub: menu "Financeiro" → Fatura.
+- Contas a pagar (boletos, acordos, contas sem código de barras): menu "Financeiro" → Contas a Pagar → "Lançar conta", pela foto do boleto (a IA preenche) ou digitando. Código de barras e categoria são opcionais; a categoria se escolhe da lista ou se escreve uma nova, e dá para pôr ou trocar depois clicando em "+ categoria" na conta. O sistema não categoriza sozinho.
 - Nota fiscal (NFC-e): menu "Fiscal".
 - Motoboys, Garçons, KDS, Estoque, Relatórios: cada um tem o seu item no menu.
 - Esqueci a senha: firehubfood.com.br/esqueci-senha (o link chega no e-mail da conta).
