@@ -18,7 +18,7 @@ import { avaliarEdicao } from "@/lib/edicao-de-pedido";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
-import { pagoPeloSite } from "@/lib/pagamento-na-entrega";
+import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
@@ -2060,8 +2060,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       ? printerConfig
       : { ...(printerConfig || {}), autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
 
-    const payStr = (order.paymentMethod || "").toString();
-    const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;
+    // Pago pelo site vai como "Pix Pago Online" (lib/pagamento-na-entrega.ts).
+    const peloSite = pagamentoPeloSiteParaImpressao(order) as { paymentMethod?: string; isPrepaid?: boolean };
+    const payStr = peloSite.paymentMethod || (order.paymentMethod || "").toString();
+    const isOfflinePayment = !peloSite.isPrepaid && (/cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false);
 
     const formattedOrder = {
       id: order.id,

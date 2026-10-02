@@ -87,6 +87,24 @@ export function pagoPeloSite(
 }
 
 /**
+ * Como o pedido pago pelo site vai para o PAPEL. O banco grava só "PIX"
+ * (igual ao Pix do PDV) e a comanda do Assistente decide "pago" pelo texto e
+ * pelo `isPrepaid` — sem isto saía "PIX (COBRAR NA ENTREGA)" e "!! COBRAR DO
+ * CLIENTE NA ENTREGA !!" num Pix já pago (Showrrascão, 02/10/2026).
+ *
+ * "Pix Pago Online", SEM parêntese: o Assistente de qualquer versão lê "pago
+ * online" como pago, e tira o parêntese da linha "Forma de Pagamento:" — com
+ * ele o papel diria só "Pix", e o "NAO COBRAR" depende do aviso ligado na loja.
+ * O `isPrepaid` é a confirmação. Pedido que não foi pago pelo site: {}.
+ */
+export function pagamentoPeloSiteParaImpressao(
+  pedido: Parameters<typeof pagoPeloSite>[0],
+): { paymentMethod: string; isPrepaid: true } | Record<string, never> {
+  const forma = pagoPeloSite(pedido);
+  return forma ? { paymentMethod: `${forma} Pago Online`, isPrepaid: true } : {};
+}
+
+/**
  * Filtro do Prisma para o Gerenciador: tira o pedido pelo site que NUNCA
  * chegou à loja — cancelado sem nunca ter sido pago. É o cliente que fechou a
  * tela do pagamento (ou trocou de cartão para Pix, que cancela um e cria

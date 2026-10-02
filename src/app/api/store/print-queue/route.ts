@@ -20,6 +20,7 @@ import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import { lembrarAssistente } from "@/lib/assistente-da-loja";
 import { getClientIp } from "@/lib/rateLimit";
 import { corteDaVolta } from "@/lib/volta-do-assistente";
+import { pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -459,6 +460,9 @@ export async function GET(req: NextRequest) {
       const comMesa = { ...pedidoDoBanco, tableSession };
       const orderCompleto = {
         ...pedidoDoBanco,
+        // Pix/cartão pago pelo site: o banco diz só "PIX" e o papel cobrava
+        // na entrega (lib/pagamento-na-entrega.ts).
+        ...pagamentoPeloSiteParaImpressao(pedidoDoBanco as any),
         // O PAGER, O "CPF NA NOTA", A MESA E O GARÇOM ENTRAM PELO NOME, igual
         // aos trilhos do navegador — a regra é uma só, em
         // lib/mesa-na-comanda.ts (nomeDoClienteNaComanda).
@@ -762,6 +766,7 @@ export async function GET(req: NextRequest) {
         id: "job_" + pedida.id,
         order: {
           ...order,
+          ...pagamentoPeloSiteParaImpressao(order),
           ...camposDeEntregaParaImpressao(order),
           // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
           // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.

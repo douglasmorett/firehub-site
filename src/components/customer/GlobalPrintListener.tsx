@@ -8,6 +8,7 @@ import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
+import { pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
 import { criarFeedDePedidos, type FeedDePedidos } from "@/lib/feed-de-pedidos";
 
 const LOCK_PREFIX = "firehub_autoprinted_v4_";
@@ -265,8 +266,10 @@ export default function GlobalPrintListener() {
                 try {
                   const { printOrder } = await import("@/lib/print");
 
-                  const payStr = (order.paymentMethod || "").toString();
-                  const isOfflinePayment = /cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false;
+                  // Pago pelo site vai como "Pix Pago Online" (lib/pagamento-na-entrega.ts).
+                  const peloSite = pagamentoPeloSiteParaImpressao(order) as { paymentMethod?: string; isPrepaid?: boolean };
+                  const payStr = peloSite.paymentMethod || (order.paymentMethod || "").toString();
+                  const isOfflinePayment = !peloSite.isPrepaid && (/cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false);
 
                   const activePrinterConfig = printerConfig || {
                     autoprint: true,
