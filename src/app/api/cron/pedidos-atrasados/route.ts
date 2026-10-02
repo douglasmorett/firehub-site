@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { avisarDono } from "@/lib/alertas-do-dono";
+import { ehLojaDeDemonstracao } from "@/lib/pedidos-simulados";
 import { pedidosAtrasados, prazoDeEntregaMin, horaLocal } from "@/lib/painel-do-dono";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +61,8 @@ export async function GET(req: NextRequest) {
       // O dono desligou este alerta? `avisarDono` também confere, mas conferir
       // aqui evita varrer os pedidos de quem não quer ser avisado.
       if (config?.alertas?.pedido_atrasado === false) continue;
+      // A loja de demonstração vive de pedido simulado parado na tela.
+      if (ehLojaDeDemonstracao(loja.id)) continue;
 
       const prazoMin = prazoDeEntregaMin(loja.deliveryZones);
       const atrasados = await pedidosAtrasados(loja.id, prazoMin, agora, loja.storeTimezone);

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode } from "lucide-react";
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
+import SimularPedidos from "./SimularPedidos";
 import {
   avisarQueOCaixaMudou, EVENTO_ABRIR_MENU_DO_CAIXA, PARAMETRO_ABRIR_CAIXA, type PedidoDoCaixa,
 } from "@/lib/caixa-aberto";
@@ -72,12 +73,15 @@ export default function StoreTopNav({
   initialStoreOpen = true, initialCashOpen = false,
   showAntecipacao = false,
   semNavegacao = false,
+  lojaDeDemonstracao = false,
 }: {
   userName: string; userCity: string; userSlug?: string | null;
   showCompras: boolean; isAdmin?: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
   showAntecipacao?: boolean;
   /** A navegação virou barra lateral (StoreSidebar); aqui fica só o status. */
   semNavegacao?: boolean;
+  /** Loja de demonstração do vendedor: botão "Simular pedidos" e as linhas fixas do online no fechamento. */
+  lojaDeDemonstracao?: boolean;
 }) {
   const pathname = usePathname();
   const baseItems = [...NAV_ITEMS];
@@ -259,6 +263,8 @@ export default function StoreTopNav({
 
   // Close modal state
   const [expected, setExpected] = useState<Record<string,number>>({ cash:0, debit:0, credit:0, pix:0, voucher:0, total:0 });
+  // Parte do pago online que veio do site da loja (já dentro de expected.ifoodOnline).
+  const [onlineDoSite, setOnlineDoSite] = useState(0);
   /* Pedidos sem pagamento provado: ficam fora do esperado, mas visíveis. */
   const [pendentes, setPendentes] = useState<{ valor: number; quantidade: number }>({ valor: 0, quantidade: 0 });
   // Fiado da equipe e forma que o sistema nao soube ler: existem como venda,
@@ -407,6 +413,7 @@ export default function StoreTopNav({
     carregarMovs();
     fetch("/api/cash-session").then(r => r.json()).then(d => {
       if (d.expected) setExpected(d.expected);
+      setOnlineDoSite(Number(d.onlineDoSite) || 0);
       if (d.pendentesDePagamento) setPendentes(d.pendentesDePagamento);
       if (d.foraDaConferencia) setForaConf(d.foraDaConferencia);
       if (d.foraDoTurno) setForaDoTurno(d.foraDoTurno);
@@ -1201,7 +1208,34 @@ export default function StoreTopNav({
                         </td>
                       </tr>
                     ))}
-                    {(expected.ifoodOnline || 0) > 0 && (
+                    {/* ── LOJA DE DEMONSTRAÇÃO: AS DUAS LINHAS DO ONLINE, FIXAS ──
+                        Pedido do vendedor (02/10/2026) para mostrar aos
+                        lojistas: "pago online — plataformas" e "pago online —
+                        site" sempre na tela, mesmo zeradas. A soma é a mesma
+                        das linhas de iFood e 99Food das outras lojas — só a
+                        divisão muda, e só aqui (lib/pedidos-simulados.ts). */}
+                    {lojaDeDemonstracao && (
+                      <>
+                        {[
+                          { rotulo: "📱 Pago online — plataformas", detalhe: "iFood, 99Food e outros apps", valor: Math.max(0, (expected.ifoodOnline || 0) - onlineDoSite) + (expected.food99Online || 0) },
+                          { rotulo: "🌐 Pago online — site", detalhe: "Pix e cartão pelo cardápio da loja", valor: onlineDoSite },
+                        ].map(linha => (
+                          <tr key={linha.rotulo} style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF6F2" }}>
+                            <td style={{ padding:"8px 10px", fontWeight:600, color:"#1C1917" }}>
+                              {linha.rotulo}
+                              <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#78716C" }}>{linha.detalhe}</span>
+                            </td>
+                            <td style={{ padding:"8px 10px", textAlign:"right", color:"#1C1917", fontWeight:700 }}>{fmt(linha.valor)}</td>
+                            <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                              <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#E7DDD3", border:"1.5px solid #7DD3FC", fontSize:"0.78rem", textAlign:"center", color:"#1C1917", fontWeight:700 }}>
+                                🔒 {fmt(linha.valor)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    )}
+                    {!lojaDeDemonstracao && (expected.ifoodOnline || 0) > 0 && (
                       <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF6F2" }}>
                         <td style={{ padding:"8px 10px", fontWeight:600, color:"#1C1917" }}>🔴 iFood (Pago Online)</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", color:"#1C1917", fontWeight:700 }}>{fmt(expected.ifoodOnline)}</td>
@@ -1229,7 +1263,7 @@ export default function StoreTopNav({
                         mandam campo como o `discountIfood`. O número sai da
                         conta das promoções, onde cada uma diz quanto a LOJA
                         bancou (lib/cupom-do-parceiro.ts). */}
-                    {(expected.food99Online || 0) > 0 && (
+                    {!lojaDeDemonstracao && (expected.food99Online || 0) > 0 && (
                       <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
                         <td style={{ padding:"8px 10px", fontWeight:600, color:"#B45309" }}>🟡 99Food (Pago Online)</td>
                         <td style={{ padding:"8px 10px", textAlign:"right", color:"#B45309", fontWeight:700 }}>{fmt(expected.food99Online)}</td>
@@ -1420,6 +1454,7 @@ export default function StoreTopNav({
               onClick={() => cashOpen ? setShowCaixaMenu(true) : setShowOpenModal(true)}
             />
             <SiteToggle />
+            {lojaDeDemonstracao && <SimularPedidos />}
 
             {/* iFood stores dropdown */}
             {ifoodStore && (

@@ -37,9 +37,9 @@ export async function GET() {
     : {
         expected: { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, food99Online: 0, food99Coupons: 0, total: 0 },
         foraDaConferencia: { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 },
-        pendentesValor: 0, pendentesQuantidade: 0, movimentacaoEntradas: 0, movimentacaoSaidas: 0,
+        pendentesValor: 0, pendentesQuantidade: 0, movimentacaoEntradas: 0, movimentacaoSaidas: 0, onlineProprio: 0,
       };
-  const { expected, foraDaConferencia, pendentesValor, pendentesQuantidade, movimentacaoEntradas, movimentacaoSaidas } = dados;
+  const { expected, foraDaConferencia, pendentesValor, pendentesQuantidade, movimentacaoEntradas, movimentacaoSaidas, onlineProprio } = dados;
 
   // ── O DINHEIRO DA GAVETA PODE SER DE ANTES DESTE TURNO ─────────────────
   //
@@ -99,6 +99,9 @@ export async function GET() {
   return NextResponse.json({
     session: openSession,
     expected,
+    // Quanto do pago online (já dentro de `expected.ifoodOnline`) veio do site
+    // e dos outros canais da própria loja. Só a loja de demonstração usa.
+    onlineDoSite: Number(onlineProprio.toFixed(2)),
     cashOpen: user.cashOpen,
     // A tela mostra os dois números separados: o operador precisa ver QUANTO
     // saiu, não só um "esperado" já líquido que ele não consegue conferir.

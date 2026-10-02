@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { CartProvider } from "@/components/CartProvider";
 import StoreTopNav from "@/components/customer/StoreTopNav";
+import { ehLojaDeDemonstracao } from "@/lib/pedidos-simulados";
 import StoreSidebar from "@/components/customer/StoreSidebar";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
@@ -168,6 +169,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           initialCashOpen={storeOwner?.cashOpen ?? false}
           showAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
           semNavegacao
+          lojaDeDemonstracao={ehLojaDeDemonstracao(storeOwner?.id || user?.id)}
         />
 
         {/* ── AVISOS DA OPERAÇÃO ────────────────────────────────────────

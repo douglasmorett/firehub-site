@@ -151,6 +151,11 @@ export async function calcularEsperadoDoTurno(
   let pendentesQuantidade = 0;
   let movimentacaoEntradas = 0;
   let movimentacaoSaidas = 0;
+  // A parte do pago online que entrou pelos canais da PRÓPRIA loja (site,
+  // robô, totem) — o resto é repasse de plataforma. Só informação: a
+  // conferência continua somando tudo em `ifoodOnline`, e a loja de
+  // demonstração mostra as duas linhas separadas (lib/pedidos-simulados.ts).
+  let onlineProprio = 0;
 
   // ── O RETRATO DO TURNO ───────────────────────────────────────────────────
   //
@@ -496,6 +501,7 @@ export async function calcularEsperadoDoTurno(
         forma = NAO_IDENTIFICADA;
       }
       if (forma === PAGO_ONLINE) somarEm(onlinePorCanal, canal, valRepasse);
+      if (forma === PAGO_ONLINE && !canalDoPedido(o).ehMarketplace) onlineProprio += valRepasse;
 
       // O cupom que a plataforma pagou NESTE pedido, no retrato. É o mesmo
       // `channelDisc` que a conferência somou no repasse do pago online — com
@@ -781,6 +787,7 @@ export async function calcularEsperadoDoTurno(
     pendentesQuantidade,
     movimentacaoEntradas,
     movimentacaoSaidas,
+    onlineProprio,
     // O retrato do turno — só informação, não entra em conta nenhuma.
     detalhe,
   };
