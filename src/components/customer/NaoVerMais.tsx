@@ -133,7 +133,9 @@ export function BotaoNaoVerMais({
         border: `1px solid ${borda || cor}`,
         color: cor,
         borderRadius: compacto ? 8 : 10,
-        padding: compacto ? "4px 12px" : "9px 14px",
+        padding: compacto ? "0 12px" : "9px 14px",
+        // Na faixa do topo, mesma altura e texto no centro dos botões ao lado (layout.tsx, BOTAO_DA_FAIXA).
+        ...(compacto ? { display: "inline-flex", alignItems: "center", justifyContent: "center", height: 30, minHeight: 0, boxSizing: "border-box" as const, lineHeight: 1 } : {}),
         fontWeight: 700,
         fontSize: compacto ? "0.76rem" : "0.8rem",
         cursor: "pointer",
