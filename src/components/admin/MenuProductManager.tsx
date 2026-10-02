@@ -2838,7 +2838,7 @@ export default function MenuProductManager({
                   {seletorFixo && (
                     <div style={{ marginTop: "8px", padding: "10px", background: "#FFF", border: "1px solid #CCFBF1", borderRadius: "10px" }}>
                       <input autoFocus value={buscaFixo} onChange={e => setBuscaFixo(e.target.value)} placeholder="Buscar no cardápio…"
-                        className="input" style={{ width: "100%", marginBottom: "8px" }} />
+                        className="input-field" style={{ width: "100%", marginBottom: "8px", height: "40px", boxSizing: "border-box" }} />
                       <div style={{ maxHeight: "220px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
                         {candidatosFixos.slice(0, 60).map(item => (
                           <button key={item.id} type="button" onClick={() => { addItemFixo(item.id); setBuscaFixo(""); }}
