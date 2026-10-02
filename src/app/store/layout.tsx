@@ -18,6 +18,16 @@ import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget"
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Botão das faixas do topo: altura fixa e texto no centro. Sem isto o link
+ * herdava a altura mínima do CSS global e o texto ficava no alto do botão.
+ */
+const BOTAO_DA_FAIXA: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center",
+  height: 30, minHeight: 0, padding: "0 16px", boxSizing: "border-box", lineHeight: 1,
+  borderRadius: 8, fontWeight: 700, fontSize: ".8rem", textDecoration: "none", whiteSpace: "nowrap",
+};
+
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
   let session;
   try {
@@ -222,23 +232,18 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           <HideOnCompras>
             <AvisoDispensavel aviso="cobranca-pendente" ocorrencia={pendingPayment.ocorrencia}>
             <div style={{
-              background: "linear-gradient(135deg, #B45309, #B45309)",
+              // Azul de propósito: a cobrança do FireHub não pode se confundir com as cores do painel (laranja/vermelho).
+              background: "linear-gradient(135deg, #1D4ED8, #2563EB)",
               color: "white", padding: "10px 1.5rem", textAlign: "center",
               fontSize: ".85rem", fontWeight: 600,
               display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap",
             }}>
               <span>⚠️ Cobrança pendente de R$ {pendingPayment.amount.toFixed(2).replace(".", ",")} — <strong>Faltam {pendingPayment.daysLeft} {pendingPayment.daysLeft === 1 ? "dia" : "dias"}</strong> para o vencimento. Regularize para evitar bloqueios.</span>
-              <a href="/store/financeiro#fatura" style={{
-                background: "#fff", color: "#B45309", padding: "5px 16px",
-                borderRadius: 8, fontWeight: 700, fontSize: ".8rem", textDecoration: "none",
-              }}>
+              <a href="/store/financeiro#fatura" style={{ ...BOTAO_DA_FAIXA, background: "#fff", color: "#1D4ED8" }}>
                 Ver Fatura
               </a>
               {pendingPayment.url && (
-                <a href={pendingPayment.url} target="_blank" rel="noopener noreferrer" style={{
-                  background: "#fff", color: "#B45309", padding: "5px 16px",
-                  borderRadius: 8, fontWeight: 700, fontSize: ".8rem", textDecoration: "none",
-                }}>
+                <a href={pendingPayment.url} target="_blank" rel="noopener noreferrer" style={{ ...BOTAO_DA_FAIXA, background: "#fff", color: "#1D4ED8" }}>
                   Pagar Agora
                 </a>
               )}
