@@ -206,6 +206,12 @@ export default function CentralDeTutoriais({
   const capituloAtual = tutorial.capitulos.reduce((achado, c, i) => (segundo + 0.25 >= c.em ? i : achado), 0);
 
   const escolher = (i: number) => {
+    // O vídeo que já está na tela não troca de elemento: o autoPlay não dispara de novo, e
+    // clicar no primeiro da lista (o que abre selecionado) não fazia nada.
+    if (i === qual) {
+      video.current?.play().catch(() => {});
+      return;
+    }
     setQual(i);
     setSegundo(0);
     setTocar(true);
