@@ -151,7 +151,7 @@ export async function semear(prisma) {
       },
     });
   }
-  return { loja, produtos };
+  return { loja, produtos, motoboys: { carlos, rafael }, haMin };
 }
 
 /** O pedido que "chega" durante a gravação — é o que mostra a tela se atualizando sozinha. */

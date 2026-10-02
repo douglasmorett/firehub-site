@@ -21,7 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { PlayCircle, X } from "lucide-react";
-import { arquivosDoTutorial, duracaoEmMinutos, relogio, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
+import { arquivosDoTutorial, duracaoEmMinutos, indiceInicial, relogio, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
 
 const CHAVE_VISTO = "firehub_tutorial_visto:";
 const VELOCIDADES = [1, 1.25, 1.5];
@@ -104,6 +104,9 @@ export default function TutorialDaTela() {
   const capituloAtual = tutorial.capitulos.reduce((achado, c, i) => (segundo + 0.25 >= c.em ? i : achado), 0);
 
   const abrir = () => {
+    // Em tela com vários vídeos (Minha loja), abre o da seção em que a pessoa está.
+    setQual(indiceInicial(tutoriais, typeof window !== "undefined" ? window.location.hash : ""));
+    setSegundo(0);
     setAberto(true);
     setJaViu(true);
     try {

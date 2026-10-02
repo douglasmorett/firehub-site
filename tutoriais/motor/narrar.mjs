@@ -60,8 +60,9 @@ async function gemini(modelo, corpo) {
     });
     if (r.ok) return r.json();
     const erro = (await r.text()).slice(0, 300);
-    if (tentativa >= 4 || ![429, 500, 502, 503].includes(r.status)) throw new Error(`Gemini ${modelo} ${r.status}: ${erro}`);
-    await new Promise((ok) => setTimeout(ok, 4000 * tentativa));
+    // Várias gravações em paralelo dividem o mesmo limite por minuto: insistir com calma.
+    if (tentativa >= 10 || ![429, 500, 502, 503].includes(r.status)) throw new Error(`Gemini ${modelo} ${r.status}: ${erro}`);
+    await new Promise((ok) => setTimeout(ok, Math.min(60_000, 6000 * tentativa)));
   }
 }
 

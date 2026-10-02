@@ -54,7 +54,10 @@ if (!soMontar) {
 
   // ── 2. loja fictícia do zero ──
   const prisma = banco();
-  await semear(prisma);
+  const base = await semear(prisma);
+  // Cada tela pede os seus dados (mesas abertas, produto com opção, caixa com movimento):
+  // o roteiro acrescenta por cima da loja-base, sem mexer na semente dos outros.
+  if (roteiro.preparar) await roteiro.preparar(prisma, base);
 
   // ── 3. gravação ──
   const navegador = await abrirNavegador();

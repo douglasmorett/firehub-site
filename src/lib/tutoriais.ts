@@ -35,8 +35,46 @@ export type Tutorial = {
  * Tela grande (Cardápio) leva vários vídeos curtos em vez de um longo.
  */
 const TELAS: Record<string, string[]> = {
+  "/store": ["inicio"],
   "/store/pedidos-clientes": ["pedidos"],
+  "/store/kds": ["kds"],
+  "/store/mesas": ["mesas"],
+  "/store/venda-presencial": ["balcao"],
+  "/store/caixa": ["caixa"],
+  "/store/cardapio": ["cardapio-produto", "cardapio-precos", "cardapio-combos", "cardapio-organizar"],
+  "/store/fiscal": ["fiscal"],
+  "/store/impressoras": ["impressoras"],
+  "/store/minha-loja": ["horarios", "entrega", "pagamento", "equipe", "fidelidade"],
+  "/store/integracoes": ["integracoes"],
+  "/store/chatbot": ["chatbot"],
+  "/store/roteirizacao": ["roteirizacao"],
+  "/store/motoboys": ["motoboys"],
+  "/store/garcons": ["garcons"],
+  "/store/marketing": ["marketing"],
+  "/store/estoque": ["estoque"],
+  "/store/financeiro": ["financeiro"],
+  "/store/relatorios": ["relatorios"],
+  "/store/etiquetas": ["etiquetas"],
+  "/store/funcionarios": ["fiado"],
 };
+
+/**
+ * Em Minha loja, cada seção tem o seu vídeo: a âncora da URL (#entrega) escolhe
+ * qual abre primeiro. Sem âncora conhecida, abre o primeiro da lista.
+ */
+const ANCORA: Record<string, string> = {
+  horarios: "#horarios",
+  entrega: "#entrega",
+  pagamento: "#pagamento",
+  equipe: "#equipe",
+  fidelidade: "#fidelidade",
+};
+
+/** Qual vídeo da lista abrir primeiro, dada a âncora da URL. */
+export function indiceInicial(tutoriais: Tutorial[], hash: string | null | undefined): number {
+  const i = tutoriais.findIndex((t) => ANCORA[t.id] && ANCORA[t.id] === hash);
+  return i >= 0 ? i : 0;
+}
 
 const FICHAS = fichas as Record<string, Tutorial>;
 
@@ -57,7 +95,8 @@ export function tutoriaisDaTela(pathname: string | null | undefined): Tutorial[]
   const p = String(pathname || "");
   let achada = "";
   for (const rota of Object.keys(TELAS)) {
-    const casa = p === rota || p.startsWith(`${rota}/`);
+    // "/store" é o Início e só casa exato: senão o passeio geral apareceria em toda tela sem vídeo.
+    const casa = p === rota || (rota !== "/store" && p.startsWith(`${rota}/`));
     if (casa && rota.length > achada.length) achada = rota;
   }
   if (!achada) return [];
