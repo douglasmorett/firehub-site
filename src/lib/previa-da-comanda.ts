@@ -12,6 +12,7 @@ import { comandaDoAssistente } from "@/lib/gerado/comanda-do-assistente";
 import { lerPapel, type LinhaDoPapel } from "@/lib/papel-da-impressora";
 import { blocosParaOAssistente, saneiaAvisos, type AvisosDesligados, type Bloco } from "@/lib/comanda-modelo";
 import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
+import { camposDoEnderecoParaImpressao } from "@/lib/endereco-impresso";
 
 /**
  * Três pedidos, porque um só não mostra todos os avisos: o pago na entrega
@@ -119,6 +120,9 @@ export function papelDaPrevia(e: EntradaDaPrevia): LinhaDoPapel[] {
     ...pedido,
     // A previsão de entrega pela mesma regra do papel de verdade.
     ...camposDaPrevisaoParaImpressao(pedido),
+    // O endereço em linhas (Rua / Número / Bairro / Cidade), pela mesma regra
+    // da fila e do navegador; a loja do exemplo fica em Rio das Ostras.
+    ...camposDoEnderecoParaImpressao(pedido as any, "Rio das Ostras"),
     blocos: blocosParaOAssistente(e.lista),
     ...(avisos ? { avisos } : {}),
     ...(e.via === "cozinha" ? { semValores: true } : {}),

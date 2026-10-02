@@ -63,7 +63,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: targetId },
-    select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true },
+    select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, city: true },
   });
 
   const pConfig = (user?.printerConfig as any) || { autoprint: true, printers: [] };
@@ -78,5 +78,9 @@ export async function GET() {
     // navegador imprime a comanda do iFood/99Food e precisa saber se ela leva
     // o bloco do prêmio e em qual impressora. Mesma origem da fila da nuvem.
     campanhaConverter: lerCampanha(user?.storeLoyalty),
+    // A cidade da loja separa o bairro da cidade no endereço impresso
+    // ("Rua Paranaíba, 470, Operário, Rio das Ostras" — lib/endereco-impresso.ts).
+    // A fila da nuvem lê a mesma coluna (User.city).
+    cidadeDaLoja: user?.city || "",
   });
 }

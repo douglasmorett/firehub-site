@@ -1687,7 +1687,29 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (order.deliveryType === "DELIVERY" && order.customerAddress) {
     res += LF + DOUBLE_HEIGHT + makeHeaderTitle("ENTREGA") + DOUBLE_OFF + LF;
     marcas.entrega = res.length;
-    res += comNegrito(wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2), "entrega", "endereco", false);
+    // ── O ENDERECO EM LINHAS (1.2.31) ───────────────────────────────────────
+    //
+    // Pedido do Douglas pela Delicia de Casa (02/10/2026): o endereco saia
+    // "todo embolado, separado por virgulas" e o motoboy procurava o bairro
+    // no meio do texto. O site separa (src/lib/endereco-impresso.ts) e manda
+    // `order.enderecoImpresso` = [{ rotulo: "Rua", valor }, { "Numero" }, ...]
+    // so quando conseguiu separar sem perder nada; aqui cada um vira a sua
+    // linha. Sem o campo (pedido antigo, endereco que o site nao separou),
+    // sai o texto de sempre. O `customerAddress` NAO da para quebrar pelo
+    // site: o `wrap` junta qualquer quebra de linha num paragrafo so — por
+    // isso as linhas viajam em campo proprio.
+    const linhasDoEndereco = (Array.isArray(order.enderecoImpresso) ? order.enderecoImpresso : [])
+      .map((l) => {
+        const rotulo = cleanAscii(l && l.rotulo != null ? String(l.rotulo) : "").trim();
+        const valor = cleanAscii(l && l.valor != null ? String(l.valor) : "").trim();
+        return valor ? (rotulo ? rotulo + ": " : "") + valor : "";
+      })
+      .filter(Boolean);
+    if (linhasDoEndereco.length) {
+      for (const l of linhasDoEndereco) res += comNegrito(wrapLines(l, 2), "entrega", "endereco", false);
+    } else {
+      res += comNegrito(wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2), "entrega", "endereco", false);
+    }
   }
 
   /* ── O RECADO DO CLIENTE ────────────────────────────────────────────────
