@@ -60,5 +60,19 @@ for (const [i, c] of g.cenas.entries()) {
   if (!ok) falhas++;
   console.log(`${ok ? "OK    " : "FALHOU"} cena ${String(i + 1).padStart(2)} · roteiro ${(c.inicio / 1000).toFixed(1)}s · ouvido ${primeira ? primeira.inicio.toFixed(1) : "?"}s · fiel ${(nota * 100).toFixed(0)}%${ok ? "" : ` · ouvido: "${ouvido.slice(0, 90)}"`}`);
 }
-console.log(falhas ? `\n${falhas} problema(s) na trilha` : "\ntrilha conferida: todas as falas na hora e na ordem");
+// Tela parada depois da fala. Fala certa e na hora não basta: em 02/10/2026 o Início saiu com 30 s
+// mudos depois da primeira fala (ambiente frio, a ação da cena esperou o tempo-limite do gravador)
+// e a conferência acima aprovou. Nenhum vídeo aprovado tinha pausa de 5 s entre falas.
+const PAUSA_MAXIMA = 5;
+const comFala = g.cenas.filter((c) => c.fala);
+for (const [i, c] of comFala.entries()) {
+  const proxima = comFala[i + 1];
+  if (!proxima) continue;
+  const parada = (proxima.inicio - (c.inicio + c.ms)) / 1000;
+  if (parada > PAUSA_MAXIMA) {
+    falhas++;
+    console.log(`FALHOU tela parada ${parada.toFixed(0)} s depois da fala que começa em ${(c.inicio / 1000).toFixed(1)}s: "${c.fala.slice(0, 60)}…"`);
+  }
+}
+console.log(falhas ? `\n${falhas} problema(s) na trilha` : "\ntrilha conferida: todas as falas na hora e na ordem, sem tela parada");
 process.exit(falhas ? 1 : 0);

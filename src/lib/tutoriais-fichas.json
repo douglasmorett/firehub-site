@@ -146,46 +146,46 @@
   "cardapio-combos": {
     "id": "cardapio-combos",
     "titulo": "Cardápio: combos, adicionais e meio a meio",
-    "duracao": 175,
+    "duracao": 155,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que este vídeo mostra"
       },
       {
-        "em": 15.6,
+        "em": 14.2,
         "titulo": "As perguntas de um combo"
       },
       {
-        "em": 43.6,
+        "em": 35.2,
         "titulo": "Pausar uma opção"
       },
       {
-        "em": 52.1,
+        "em": 43.4,
         "titulo": "Editar perguntas e opções"
       },
       {
-        "em": 82.3,
+        "em": 62.2,
         "titulo": "Adicionais e preço da opção"
       },
       {
-        "em": 110.3,
+        "em": 90.6,
         "titulo": "Lanche com adicionais"
       },
       {
-        "em": 121.5,
+        "em": 102.8,
         "titulo": "Pizza meio a meio"
       },
       {
-        "em": 146.9,
+        "em": 128.3,
         "titulo": "Como o cliente vê"
       },
       {
-        "em": 164.3,
+        "em": 144.5,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "bdd36582"
+    "versao": "d33e6682"
   },
   "cardapio-organizar": {
     "id": "cardapio-organizar",
@@ -690,50 +690,50 @@
   "fiscal": {
     "id": "fiscal",
     "titulo": "Fiscal: como ligar e usar a nota (NFC-e)",
-    "duracao": 237,
+    "duracao": 153,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que é esta tela"
       },
       {
-        "em": 37.1,
+        "em": 10.5,
         "titulo": "O que falta para emitir"
       },
       {
-        "em": 57.6,
+        "em": 19.6,
         "titulo": "Ligar a emissão"
       },
       {
-        "em": 75.7,
+        "em": 33.1,
         "titulo": "O caminho, passo a passo"
       },
       {
-        "em": 83.5,
+        "em": 40.2,
         "titulo": "Certificado digital e CSC"
       },
       {
-        "em": 125.1,
+        "em": 56.7,
         "titulo": "Dados da empresa"
       },
       {
-        "em": 134.2,
+        "em": 65.6,
         "titulo": "Automática ou manual"
       },
       {
-        "em": 161.3,
+        "em": 83.1,
         "titulo": "O momento e o CPF"
       },
       {
-        "em": 192.9,
+        "em": 108.6,
         "titulo": "Acompanhar as notas"
       },
       {
-        "em": 226.5,
+        "em": 142.4,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "c62c752a"
+    "versao": "e567d700"
   },
   "garcons": {
     "id": "garcons",
@@ -874,90 +874,90 @@
   "inicio": {
     "id": "inicio",
     "titulo": "Um passeio pelo painel",
-    "duracao": 260,
+    "duracao": 158,
     "capitulos": [
       {
         "em": 0,
         "titulo": "Bem-vindo ao FireHub"
       },
       {
-        "em": 36.8,
+        "em": 7.4,
         "titulo": "A tela Início"
       },
       {
-        "em": 56.5,
+        "em": 18.1,
         "titulo": "O resumo do dia"
       },
       {
-        "em": 105.8,
+        "em": 45,
         "titulo": "O menu lateral"
       },
       {
-        "em": 128.9,
+        "em": 59,
         "titulo": "Abrir uma tela"
       },
       {
-        "em": 163.7,
+        "em": 70.8,
         "titulo": "Os grupos do menu"
       },
       {
-        "em": 211.4,
+        "em": 110.1,
         "titulo": "Recolher o menu"
       },
       {
-        "em": 219.5,
+        "em": 118.2,
         "titulo": "A barra do topo"
       },
       {
-        "em": 235.7,
+        "em": 134.4,
         "titulo": "Ver cardápio e Integrações"
       },
       {
-        "em": 252.7,
+        "em": 151.3,
         "titulo": "Cada tela tem o seu vídeo"
       }
     ],
-    "versao": "4badfbc8"
+    "versao": "ba9f5b27"
   },
   "integracoes": {
     "id": "integracoes",
     "titulo": "Integrações: conectar iFood e 99Food",
-    "duracao": 216,
+    "duracao": 159,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que é esta tela"
       },
       {
-        "em": 37.1,
+        "em": 17.7,
         "titulo": "Os aplicativos de pedido"
       },
       {
-        "em": 76.5,
+        "em": 39.3,
         "titulo": "Conectar o iFood"
       },
       {
-        "em": 125.7,
+        "em": 80.1,
         "titulo": "Conectar o 99Food"
       },
       {
-        "em": 146,
+        "em": 96,
         "titulo": "JotaJá, Brendi e Wabiz"
       },
       {
-        "em": 161.1,
+        "em": 110.5,
         "titulo": "Os pedidos do aplicativo"
       },
       {
-        "em": 185.6,
+        "em": 127.3,
         "titulo": "Conferir se está ativa"
       },
       {
-        "em": 205.5,
+        "em": 148.2,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "9d5cb3ff"
+    "versao": "9faf5eb2"
   },
   "kds": {
     "id": "kds",
