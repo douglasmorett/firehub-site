@@ -295,7 +295,7 @@ function CampoNumerico({
         ? { ...caixaDoCampo, border: "none", borderRadius: 0, background: "transparent", minWidth: 0 }
         : {
           ...caixaDoCampo,
-          borderColor: invalido ? "#DC2626" : "#E2E8F0",
+          borderColor: invalido ? "#DC2626" : "#B8C2CF",
           background: invalido ? "#FEF2F2" : "#FFFFFF",
         }}
     />
@@ -1218,10 +1218,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   /** Rótulo em cima do campo: é o que evita cabeçalho de coluna espremido. */
   // `maxWidth` para o campo que sobra na quebra de linha não esticar sozinho
   // até a largura toda, ficando gigante embaixo de campos pequenos.
-  const campoDaFaixa: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 3, flex: "1 1 70px", minWidth: 70, maxWidth: 150 };
+  const campoDaFaixa: React.CSSProperties = { display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 3, flex: "1 1 70px", minWidth: 70, maxWidth: 150 };
   // O rótulo QUEBRA em vez de não quebrar: com `nowrap`, rótulo mais largo
   // que o campo vazava para fora do cartão.
-  const rotuloDoCampo: React.CSSProperties = { fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", lineHeight: 1.25 };
+  const rotuloDoCampo: React.CSSProperties = { fontSize: "0.72rem", fontWeight: 700, color: "#334155", lineHeight: 1.25, letterSpacing: "-0.01em" };
 
   // ── A LISTA DO MÉTODO ATIVO, COMO VAI PARA O SERVIDOR ─────────────────────
   //
@@ -2148,9 +2148,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                     onMouseEnter={() => setZonaEmFoco(zona.id)}
                     onMouseLeave={() => setZonaEmFoco(null)}
                     style={{
-                      border: `1px solid ${emFoco ? "#FCA5A5" : "#D5DBE3"}`,
+                      border: `1px solid ${emFoco ? "#FCA5A5" : "#AEB9C7"}`,
                       background: emFoco ? "#FEF2F2" : "#FFFFFF",
-                      boxShadow: "0 1px 3px rgba(15,23,42,0.07)",
+                      boxShadow: "0 1px 2px rgba(15,23,42,0.10), 0 3px 8px rgba(15,23,42,0.07)",
                       borderRadius: 12, padding: "10px 12px", marginBottom: 8, transition: "all .15s ease",
                     }}
                   >
@@ -2226,9 +2226,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                     onMouseEnter={() => setZonaEmFoco(zona.id)}
                     onMouseLeave={() => setZonaEmFoco(null)}
                     style={{
-                      border: `1px solid ${emFoco ? "#94A3B8" : "#D5DBE3"}`,
+                      border: `1px solid ${emFoco ? "#64748B" : "#AEB9C7"}`,
                       background: "#FFFFFF",
-                      boxShadow: emFoco ? "0 3px 10px rgba(15,23,42,0.10)" : "0 1px 3px rgba(15,23,42,0.07)",
+                      boxShadow: emFoco ? "0 4px 14px rgba(15,23,42,0.16)" : "0 1px 2px rgba(15,23,42,0.10), 0 3px 8px rgba(15,23,42,0.07)",
                       borderRadius: 12, padding: "10px 12px", marginBottom: 8, transition: "all .15s ease",
                     }}
                   >
@@ -2241,7 +2241,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                         aria-label="Nome do bairro"
                         autoFocus={focarNoBairro === zona.id}
                         aria-invalid={nomeComErro || undefined}
-                        style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1px solid ${nomeComErro ? "#DC2626" : "#E2E8F0"}`, background: nomeComErro ? "#FEF2F2" : "#fff", fontSize: "0.86rem", fontWeight: 700, color: "#0F172A", outline: "none", fontFamily: "inherit" }}
+                        style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1px solid ${nomeComErro ? "#DC2626" : "#B8C2CF"}`, background: nomeComErro ? "#FEF2F2" : "#fff", fontSize: "0.86rem", fontWeight: 700, color: "#0F172A", outline: "none", fontFamily: "inherit" }}
                       />
                       <button
                         type="button"
@@ -2345,7 +2345,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               {areasDeEntrega.map((area, i) => {
                 const mudar = (patch: Partial<AreaNaTela>) => setAreasDeEntrega((atual) => atual.map((a) => (a.id === area.id ? { ...a, ...patch } : a)));
                 return (
-                  <div key={area.id} style={{ border: "1px solid #D5DBE3", boxShadow: "0 1px 3px rgba(15,23,42,0.07)", borderLeft: "4px solid " + CORES_DA_AREA[i % CORES_DA_AREA.length], borderRadius: 10, padding: "10px 12px", marginBottom: 8, background: "#fff" }}>
+                  <div key={area.id} style={{ border: "1px solid #AEB9C7", boxShadow: "0 1px 2px rgba(15,23,42,0.10), 0 3px 8px rgba(15,23,42,0.07)", borderLeft: "4px solid " + CORES_DA_AREA[i % CORES_DA_AREA.length], borderRadius: 10, padding: "10px 12px", marginBottom: 8, background: "#fff" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                       <input
                         value={area.nome}
@@ -2914,9 +2914,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         .fh-painel-corpo { flex: 1; overflow-y: auto; padding: 14px; }
         /* A lista do cadastro em fundo cinza claro: cartão branco sobre branco
            sumia, e não dava para ver onde um bairro acabava e o outro começava. */
-        .fh-painel-corpo.fh-corpo-lista { background: #F1F4F8; }
-        .fh-corpo-lista .fh-repasse { background: #fff; border-color: #D5DBE3; }
-        .fh-corpo-lista .fh-busca { border-color: #D5DBE3; }
+        .fh-painel-corpo.fh-corpo-lista { background: #E6EBF1; }
+        .fh-corpo-lista .fh-repasse { background: #fff; border-color: #AEB9C7; box-shadow: 0 1px 2px rgba(15,23,42,0.08); }
+        .fh-corpo-lista .fh-busca { border-color: #AEB9C7; background: #fff; }
+        .fh-corpo-lista > p, .fh-corpo-lista > h4 { color: #1E293B !important; }
         .fh-painel-topo .fh-nao-salvo { color: #B45309; font-weight: 700; }
         /* ── ABAS (o "Operação atual | Pré-configurações" do iFood) ─────── */
         .fh-abas {
@@ -2956,7 +2957,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         }
         .fh-tt-ajustes button:hover { background: #F4F4F5; border-color: #A1A1AA; }
         .fh-tt-ajustes button:active { transform: scale(0.97); }
-        .fh-tt-ajuda { margin: 7px 0 14px; font-size: 0.72rem; color: #64748B; line-height: 1.4; }
+        .fh-tt-ajuda { margin: 7px 0 14px; font-size: 0.74rem; color: #334155; line-height: 1.4; }
         .fh-tt-tabela { display: flex; flex-direction: column; }
         .fh-tt-cab, .fh-tt-linha {
           display: grid; grid-template-columns: minmax(0, 1fr) 96px 104px; gap: 8px; align-items: center;
@@ -3006,7 +3007,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           font-size: 0.78rem; font-weight: 700; color: #334155; background: #fff; border: 1.5px solid #E2E8F0;
         }
         .fh-repasse-opcoes button.ativo { border-color: #0F766E; background: #F0FDFA; color: #0F766E; }
-        .fh-repasse-ajuda { margin: 0 0 8px; font-size: 0.74rem; color: #64748B; line-height: 1.45; }
+        .fh-repasse-ajuda { margin: 0 0 8px; font-size: 0.76rem; color: #334155; line-height: 1.45; }
         .fh-simulador {
           margin-top: 16px; border: 1.5px solid #BFDBFE; background: #F8FBFF; border-radius: 12px; padding: 12px;
         }
