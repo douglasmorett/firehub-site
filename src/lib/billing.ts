@@ -30,7 +30,7 @@ import { prisma } from "@/lib/prisma";
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
-import { bloqueioDaMensalidade, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { bloqueioDaMensalidade, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import { ganhaComoVendedor } from "@/lib/vendedores";
 
 /**
@@ -791,6 +791,9 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         dueDate: due,
         description: chargeDescription,
         externalReference: `billing:${cycle.id}`,
+        // Juros e multa do FireHub, não o padrão da conta (lib/prazo-da-mensalidade.ts).
+        interest: { value: JUROS_AO_MES_PCT },
+        fine: { value: MULTA_POR_ATRASO_PCT, type: "PERCENTAGE" },
       };
 
       // ── Comissão de embaixador: dois níveis, nunca mais ──────────────────
