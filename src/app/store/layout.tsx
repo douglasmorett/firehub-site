@@ -8,7 +8,7 @@ import StoreSidebar from "@/components/customer/StoreSidebar";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
-import { bloqueioDoCiclo, diaEMes, diasAte, ultimoDiaSemBloqueio, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { bloqueioDoCiclo, diaEMes, diasAte, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
 import AvisoIaForaDoAr from "@/components/customer/AvisoIaForaDoAr";
@@ -95,8 +95,6 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     venceEm: string;
     /** Dias de calendário até o vencimento; negativo depois dele. */
     diasParaVencer: number;
-    /** "10/10" — último dia antes de o painel travar. */
-    pagarAte: string;
     ocorrencia: string;
   } | null = null;
   const targetFranchiseeId = storeOwner?.id || user?.id;
@@ -119,7 +117,9 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         // O boleto VENCE no dia 5 e o painel só TRAVA depois do dia 10
         // (lib/prazo-da-mensalidade.ts). A faixa contava os dias até o
         // bloqueio e chamava isso de vencimento: com o boleto vencendo em
-        // 05/10, a loja lia "faltam 9 dias".
+        // 05/10, a loja lia "faltam 9 dias". A folga até o dia 10 não aparece
+        // para a loja — o prazo é o dia 5, e depois dele o boleto já cobra
+        // juros e multa (dono, 02/10/2026).
         const venc = vencimentoDoBoleto(closedCycle.yearMonth);
         const bloqueio = bloqueioDoCiclo(closedCycle);
         const now = new Date();
@@ -132,7 +132,6 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           isOverdue,
           venceEm: diaEMes(venc.dia),
           diasParaVencer,
-          pagarAte: diaEMes(ultimoDiaSemBloqueio(closedCycle)),
           // Para o "não ver mais" (components/customer/NaoVerMais.tsx): cala
           // ESTA fatura — e volta uma vez perto do vencimento e outra depois
           // dele, porque o que vem em seguida é o bloqueio da conta, e
@@ -282,7 +281,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
                 ) : pendingPayment.diasParaVencer === 0 ? (
                   <>vence <strong>hoje ({pendingPayment.venceEm})</strong>.</>
                 ) : (
-                  <>venceu em <strong>{pendingPayment.venceEm}</strong>. Pague até <strong>{pendingPayment.pagarAte}</strong> para o sistema não ser bloqueado.</>
+                  <>venceu em <strong>{pendingPayment.venceEm}</strong> e já está com juros e multa. Pague agora para evitar o bloqueio do sistema.</>
                 )}
               </span>
               <a href="/store/financeiro#fatura" style={{ ...BOTAO_DA_FAIXA, background: "#fff", color: "#1D4ED8" }}>
@@ -310,7 +309,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
               <div style={{ fontSize: "3.5rem", marginBottom: "0.75rem" }}>🔒</div>
               <h2 style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A", marginBottom: "0.5rem" }}>Sua conta está bloqueada</h2>
               <p style={{ color: "#64748B", fontSize: "0.92rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
-                A mensalidade venceu em {pendingPayment!.venceEm} e o prazo para pagar sem bloqueio terminou em {pendingPayment!.pagarAte}. Para liberar o sistema imediatamente, efetue o pagamento do valor pendente.
+                A mensalidade venceu em {pendingPayment!.venceEm} e não foi paga. Para liberar o sistema imediatamente, pague o boleto: o valor abaixo, mais os juros e a multa do atraso.
               </p>
 
               <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 14, padding: "1.25rem", marginBottom: "1.5rem" }}>
