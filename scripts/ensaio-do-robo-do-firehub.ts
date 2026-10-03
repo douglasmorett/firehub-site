@@ -18,6 +18,7 @@
  * Lê o banco só para a chave do Gemini (se não estiver no ambiente) e os
  * "Recados do dono" da tela. Custa centavos por rodada.
  */
+import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
 
@@ -25,10 +26,13 @@ const pasta = process.env.ENV_DIR || process.cwd();
 dotenv.config({ path: path.join(pasta, ".env.local"), quiet: true });
 dotenv.config({ path: path.join(pasta, ".env"), quiet: true });
 
-type Fala = { de: "contato" | "robo" | "equipe"; texto: string };
+/** `imagem`: arquivo em scripts/fixtures/ensaio-robo — descrito e mostrado ao robô como no WhatsApp (entrada.ts). */
+type Fala = { de: "contato" | "robo" | "equipe"; texto: string; imagem?: string };
 type Caso = {
   nome: string;
   lojista: boolean;
+  /** Slug de uma loja de verdade: ver_cardapio_da_loja lê o cardápio dela (só leitura). */
+  loja?: string;
   conversa: Fala[];
   /** Tem que aparecer na resposta (cada regex). */
   deve?: RegExp[];
@@ -57,11 +61,12 @@ const CASOS: Caso[] = [
     conversa: [
       { de: "contato", texto: "Como coloco só a pizza grande na promoção?" },
       { de: "robo", texto: "Na linha da Grande, em Promo +R$, ponha quanto ela soma ao preço do produto na promoção e salve." },
+      // Sem a imagem e sem a descrição (o download falhou): ele NÃO viu o print.
       { de: "contato", texto: "📷 Assim?" },
     ],
-    // Ele não vê a imagem: "está certo" só vale condicionado ("se aparecer X, está certo").
-    naoPode: [/(^|[.!]\s+)(sim|isso( mesmo)?|exatamente|perfeito|est[aá] cert[oa])\b/i, /d[aá] para ajustar por a[ií] sim/i],
-    deve: [/Na promo[çc][aã]o sai/i],
+    // Na 1ª rodada com a visão ligada ele "viu" um print que não chegou ("na linha da Grande está certo").
+    naoPode: [/(^|[.!]\s+)(sim|isso( mesmo)?|exatamente|perfeito|est[aá] cert[oa])\b/i, /d[aá] para ajustar por a[ií] sim/i, /(linha da Grande est[aá]|vi que|no seu print)/i],
+    deve: [/(n[aã]o (chegou|veio|consegui ver|abriu|carregou)|mand(a|e) de novo|reenvi)/i],
   },
   {
     nome: "luxuria-marmita-sumiu (03/10)",
@@ -107,7 +112,7 @@ const CASOS: Caso[] = [
     nome: "lead-pix-antes-do-pedido (03/10)",
     lojista: false,
     conversa: [{ de: "contato", texto: "vamos supor que o cliente quer pagar no pix diretamente online, o sistema acusa automaticamente o pagamento antes da confirmação do pedido?" }],
-    deve: [/(depois de pag|s[oó] (a[ií]|depois)|s[oó] (vai|entra|chega).*(pag|cozinha)|enquanto n[aã]o pag)/i],
+    deve: [/(depois de pag|s[oó] (a[ií]|depois)|s[oó] (vai|entra|chega).*(pag|cozinha)|enquanto n[aã]o pag|(reconhece|confirma)[^.]*(na hora|sozinho|autom))/i],
     chamaEquipe: false,
   },
   {
@@ -144,6 +149,54 @@ const CASOS: Caso[] = [
     conversa: [{ de: "contato", texto: "No balcão, consigo tirar aquela aba Todos da tela de pedido? As meninas só fazem pelo nome da categoria" }],
     naoPode: [/(clique|v[aá] em|abra).*(esconder|ocultar|tirar).*Todos/i],
   },
+
+  // ── O robô VÊ a imagem (Douglas, 03/10: "o robô deve ver imagens") ────────
+  {
+    nome: "imagem-print-promo-errada (03/10)",
+    lojista: true,
+    conversa: [
+      { de: "contato", texto: "quero a pizza Grande de filé mignon por 65 na promoção" },
+      { de: "robo", texto: "Na linha da Grande, em Promo +R$, ponha quanto ela soma ao Preço de Venda na promoção e salve." },
+      // Print fiel à tela: Preço de Venda 30, Grande +R$ 50, Promo +R$ 65 e o aviso "Sem efeito".
+      { de: "contato", texto: "Assim?", imagem: "print-promo-grande.jpg" },
+    ],
+    deve: [/\b35\b/, /(menor|sem efeito|ainda n[aã]o|n[aã]o est[aá]|errad|quase)/i],
+    naoPode: [/(^|[.!]\s+)(sim|isso( mesmo)?|exatamente|perfeito|est[aá] cert[oa])\b/i],
+  },
+  {
+    nome: "imagem-print-promo-certa (03/10)",
+    lojista: true,
+    conversa: [{ de: "contato", texto: "é assim que coloca a promoção do x-bacon?", imagem: "print-promocao-do-produto.jpg" }],
+    deve: [/22/, /Salvar/i],
+    chamaEquipe: false,
+  },
+  {
+    nome: "imagem-print-lista-pizza-primeiro (03/10)",
+    lojista: true,
+    conversa: [{ de: "contato", texto: "como faço pra as pizzas aparecerem antes dos lanches?", imagem: "print-lista-do-cardapio.jpg" }],
+    deve: [/(Reordenar|seta|↑)/i],
+    naoPode: [/\b(mudei|coloquei|reordenei)\b/i],
+    chamaEquipe: false,
+  },
+
+  // ── O robô OLHA o cardápio da loja (só leitura, loja de verdade) ─────────
+  {
+    nome: "cardapio-real-serpa-file-mignon (03/10)",
+    lojista: true,
+    loja: "serpa-pizzaria",
+    conversa: [{ de: "contato", texto: "coloquei a pizza grande de filé mignon na promoção, ta certo? era pra ser só a grande" }],
+    // Hoje a Filé Mignon tem Preço promocional R$ 35 NO PRODUTO: a Pequena também baixou.
+    deve: [/(Pequena|todos os tamanhos|pizza inteira|produto inteiro)/i, /(Pre[çc]o promocional|35)/i],
+    chamaEquipe: false,
+  },
+  {
+    nome: "cardapio-real-luxuria-marmita (03/10)",
+    lojista: true,
+    loja: "luxuria-lanches-acai-marmitas",
+    conversa: [{ de: "contato", texto: "a marmita não está aparecendo no cardápio" }],
+    deve: [/(hor[aá]rio|dia|s[aá]bado|domingo|segunda|ter[çc]a|quarta|quinta|sexta|aparece)/i],
+    chamaEquipe: false,
+  },
 ];
 
 const filtro = process.argv.slice(2).map((s) => s.toLowerCase());
@@ -155,8 +208,12 @@ const filtro = process.argv.slice(2).map((s) => s.toLowerCase());
   const { consertarLinksDeVideo, manualDosVideos } = await import("../src/lib/atendimento/videos");
   const { CONHECIMENTO_DO_FIREHUB } = await import("../src/lib/atendimento/conhecimento");
   const { todosOsTutoriais } = await import("../src/lib/tutoriais");
-  const { clienteDoGemini } = await import("../src/lib/atendimento/gemini");
+  const { clienteDoGemini, descreverMidia } = await import("../src/lib/atendimento/gemini");
   const { configDoAtendimento } = await import("../src/lib/atendimento/config");
+  const { cardapioParaOSuporte } = await import("../src/lib/atendimento/cardapio-para-o-suporte");
+  const { prisma } = await import("../src/lib/prisma");
+  /** A descrição de cada imagem, feita uma vez por rodada (como na chegada, entrada.ts). */
+  const descricoes = new Map<string, string>();
   const { ThinkingLevel } = await import("@google/genai");
 
   const ai = await clienteDoGemini();
@@ -179,15 +236,35 @@ const filtro = process.argv.slice(2).map((s) => s.toLowerCase());
       id: "ensaio", nome: caso.lojista ? "Lojista" : "Interessado", nomeDaLoja: caso.lojista ? "Loja do Ensaio" : null, cidade: null,
       etapa: caso.lojista ? "EM_TESTE" : "CONVERSANDO", userId: caso.lojista ? "loja-do-ensaio" : null, resumo: null,
     };
-    const historico = caso.conversa.map((f) => ({
-      direcao: f.de === "contato" ? "ENTRADA" : "SAIDA", autor: f.de === "robo" ? "ROBO" : f.de === "equipe" ? "HUMANO" : "CONTATO",
-      autorNome: f.de === "equipe" ? "Equipe" : null, texto: f.texto,
-    }));
+    // Imagem: a mesma descrição da chegada (entrada.ts) e, nas que vieram depois
+    // da última resposta, a própria imagem para o robô ver.
+    const ultimaSaida = caso.conversa.map((f) => f.de).lastIndexOf("robo") > caso.conversa.map((f) => f.de).lastIndexOf("equipe")
+      ? caso.conversa.map((f) => f.de).lastIndexOf("robo")
+      : caso.conversa.map((f) => f.de).lastIndexOf("equipe");
+    const historico = await Promise.all(
+      caso.conversa.map(async (f, i) => {
+        const base = {
+          direcao: f.de === "contato" ? "ENTRADA" : "SAIDA", autor: f.de === "robo" ? "ROBO" : f.de === "equipe" ? "HUMANO" : "CONTATO",
+          autorNome: f.de === "equipe" ? "Equipe" : null, texto: f.texto, midia: null as { base64: string; mimeType: string } | null,
+        };
+        if (!f.imagem) return base;
+        const base64 = fs.readFileSync(path.join(__dirname, "fixtures", "ensaio-robo", f.imagem)).toString("base64");
+        if (!descricoes.has(f.imagem)) descricoes.set(f.imagem, await descreverMidia(base64, "image/jpeg", f.texto));
+        const descricao = descricoes.get(f.imagem)!;
+        return {
+          ...base,
+          texto: `📷 ${f.texto || "Imagem"}${descricao ? `\n[O que a imagem mostra: ${descricao}]` : ""}`,
+          midia: i > ultimaSaida ? { base64, mimeType: "image/jpeg" } : null,
+        };
+      }),
+    );
     const sistema = instrucoes(config, contato, null, null, caso.lojista, null, { manual, jaEnviados: [] });
     const conversa = conversaParaOModelo(historico);
+    const lojaDeVerdade = caso.loja ? await prisma.user.findFirst({ where: { slug: caso.loja }, select: { id: true } }) : null;
 
-    // O modelo com ferramentas de mentira: nada sai daqui.
+    // O modelo com ferramentas de mentira (o cardápio é o da loja de verdade, só leitura): nada sai daqui.
     const chamadas: string[] = [];
+    const resultados: string[] = [];
     let resposta = "";
     const t0 = Date.now();
     let uso: any = null;
@@ -204,14 +281,20 @@ const filtro = process.argv.slice(2).map((s) => s.toLowerCase());
         break;
       }
       if (r.candidates?.[0]?.content) conversa.push(r.candidates[0].content);
-      conversa.push({
-        role: "user",
-        parts: fc.map((c) => {
-          chamadas.push(`${c.name}(${JSON.stringify(c.args || {}).slice(0, 120)})`);
-          const resultado = c.name === "chamar_pessoa" || c.name === "atualizar_contato" ? { ok: true } : c.name === "estado_da_loja" ? { ok: true, observacao: "Tudo conectado (ensaio)." } : { ok: false, erro: "Indisponível no ensaio." };
-          return { functionResponse: { id: c.id, name: c.name, response: resultado } };
-        }),
-      });
+      const partes = [];
+      for (const c of fc) {
+        chamadas.push(`${c.name}(${JSON.stringify(c.args || {}).slice(0, 120)})`);
+        let resultado: Record<string, unknown> =
+          c.name === "chamar_pessoa" || c.name === "atualizar_contato" ? { ok: true } : c.name === "estado_da_loja" ? { ok: true, observacao: "Tudo conectado (ensaio)." } : { ok: false, erro: "Indisponível no ensaio." };
+        if (c.name === "ver_cardapio_da_loja") {
+          resultado = lojaDeVerdade
+            ? ({ ...(await cardapioParaOSuporte(lojaDeVerdade.id, String((c.args as any)?.busca || ""))) } as Record<string, unknown>)
+            : { erro: "A loja não foi reconhecida por este número. Oriente com a base e, se precisar mexer na conta, chame uma pessoa." };
+        }
+        resultados.push(`${c.name}: ${JSON.stringify(resultado).slice(0, c.name === "ver_cardapio_da_loja" ? 12000 : 1500)}`);
+        partes.push({ functionResponse: { id: c.id, name: c.name, response: resultado } });
+      }
+      conversa.push({ role: "user", parts: partes });
     }
     resposta = consertarLinksDeVideo(paraOWhatsApp(resposta), ids);
     const feito = acaoDitaSemFerramenta(resposta, chamadas.map((c) => ({ nome: c.split("(")[0] })));
@@ -220,7 +303,7 @@ const filtro = process.argv.slice(2).map((s) => s.toLowerCase());
       : await conferirResposta(ai, {
           base: baseDoRevisor,
           conversa: conversaParaORevisor(historico),
-          ferramentas: chamadas.join("\n"),
+          ferramentas: resultados.join("\n"),
           resposta,
         });
 
@@ -237,7 +320,7 @@ const filtro = process.argv.slice(2).map((s) => s.toLowerCase());
       const corrigida = reescrita ? consertarLinksDeVideo(reescrita, ids) : "";
       const segunda = corrigida
         ? await conferirResposta(ai, {
-            base: baseDoRevisor, conversa: conversaParaORevisor(historico), ferramentas: chamadas.join("\n"), resposta: corrigida,
+            base: baseDoRevisor, conversa: conversaParaORevisor(historico), ferramentas: resultados.join("\n"), resposta: corrigida,
           })
         : null;
       if (corrigida && segunda && !segunda.inventou) sairia = corrigida;

@@ -234,15 +234,16 @@ export async function enviarTexto(destino: string, texto: string, opcoes: { como
   }
 }
 
-/** Baixa o áudio que não veio junto no evento (fallback do gateway). */
-export async function baixarAudio(chave: any, mensagem: any): Promise<string | null> {
+/** Baixa a mídia (áudio, imagem, vídeo, PDF) que não veio junto no evento (fallback do gateway). */
+export async function baixarMidia(chave: any, mensagem: any): Promise<string | null> {
   try {
     const { url, headers } = await gateway();
     const res = await fetch(`${url}/chat/getBase64FromMediaMessage/${inst()}`, {
       method: "POST",
       headers,
       body: JSON.stringify({ message: { key: chave, message: mensagem } }),
-      signal: AbortSignal.timeout(15000),
+      // Vídeo e PDF demoram mais que o áudio para sair do gateway.
+      signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) return null;
     const d = await res.json().catch(() => ({}));

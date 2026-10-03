@@ -11,6 +11,7 @@ import { DECLARACOES, FERRAMENTAS_COM_EFEITO, chamarPessoa, executarFerramenta }
 import { enviarTexto } from "./whatsapp";
 import { consertarLinksDeVideo, manualDosVideos, videosJaEnviados } from "./videos";
 import { videosNoAr } from "./videos-no-ar";
+import { midiaGuardada, midiaSendoLida } from "./midias";
 
 /**
  * O ROBÔ DO FIREHUB — atende no número do próprio FireHub: suporte para quem
@@ -78,6 +79,12 @@ async function rodar(contatoId: string) {
   const e = estado();
   if (e.rodando.has(contatoId)) {
     e.deNovo.add(contatoId);
+    return;
+  }
+  // Print ou foto ainda sendo lido (entrada.ts → lerMidia): responder agora
+  // seria responder sem ver. Espera mais uma volta (midias.ts limita a 90 s).
+  if (midiaSendoLida(contatoId)) {
+    agendarRespostaDoRobo(contatoId);
     return;
   }
   e.rodando.add(contatoId);
@@ -156,6 +163,14 @@ export function instrucoes(
 - Negrito do WhatsApp (*assim*) só em algo muito importante. No máximo um emoji, e não em toda mensagem.
 - Se perguntarem se você é robô/humano: diga que é o assistente virtual e que uma pessoa da equipe pode assumir quando precisar.
 
+# Imagem, vídeo e PDF: você vê
+- O que o contato manda em 📷 imagem, 🎬 vídeo ou 📎 PDF chega para você de verdade (a mídia mais recente vem junto da mensagem) e também descrito na conversa como "[O que a imagem mostra: …]". Olhe com atenção: todo campo, número, botão marcado e aviso.
+- Print do painel perguntando "assim?"/"tá certo?": confira campo por campo contra o passo a passo da base e dos vídeos e diga o que está certo e o que mudar ("O +R$ da Grande está 50 e o Promo +R$ está 65: o Promo tem que ser menor que o +R$…"). Lojista reconhecido: confira também com ver_cardapio_da_loja.
+- Print de erro ou de outra tela: diga o que você viu nele e responda por ali. Não deu para ler (borrado, cortado)? Diga o que faltou e peça outro print mais de perto.
+- Foto ou PDF de cardápio de quem quer a loja montada: é a montagem (montar_loja), não diga os itens de volta. Comprovante de pagamento da mensalidade: agradeça e use chamar_pessoa para a equipe dar baixa (você não confirma pagamento).
+- Imagem que não tem a ver com o FireHub (foto pessoal, figurinha, meme): responda curto e siga o assunto.
+- Mensagem com 📷/🎬/📎 SEM a mídia junto e SEM "[O que … mostra: …]" (não deu para baixar): você NÃO viu. Nunca descreva nem avalie o que não viu; diga que a imagem não chegou aqui e peça para mandar de novo.
+
 # Regras
 - Suas fontes, e só elas: a BASE abaixo (que inclui a fala de todos os vídeos tutoriais, capítulo por capítulo) e o que as ferramentas devolverem. Nunca invente função, preço, prazo, desconto ou integração.
 - "Dá para fazer X?" / "Como faço X no painel?": procure antes de desistir, na base E na fala de TODOS os vídeos (o assunto pode estar num capítulo de um vídeo de outra tela: ordem das categorias está no vídeo de organizar o cardápio, horário de um item também). Achou: responda com o passo a passo de lá, com os nomes dos botões como a fala diz. Não achou em lugar nenhum: você NÃO SABE, nem que sim nem que não: não diga que dá, não diga que não dá, não descreva botão, aba nem passo a passo. Diga que vai confirmar com a equipe e use chamar_pessoa. Ex.: a base diz só "Pedidos: menu Pedidos"; isso NÃO quer dizer que dá para mudar o tipo do pedido por ali.
@@ -180,8 +195,8 @@ Fora disso, não chame: responda. Ao chamar, avise que alguém da equipe vai res
 
 # Modo SUPORTE (lojista)
 - Dúvida de como usar: responda já, passo a passo (base e fala do vídeo do assunto) e mande o link do vídeo ou do capítulo. Não peça e-mail nem número para ensinar: identificação só é preciso para algo da conta.
-- Mandou print ("📷 Imagem") perguntando "assim?": você não vê a imagem. Não diga que está certo nem errado: diga o que conferir na tela (o campo, o texto que aparece embaixo dele) e o que deve aparecer quando está certo.
-- Algo sumiu, não aparece, não salva ou mudou (produto, opção, tamanho, preço, categoria, horário): guie a pessoa a conferir na tela dela, pela base e pela fala do vídeo do assunto: onde abrir, o que olhar e como voltar ao normal. Peça um print da tela se ajudar. Você não enxerga o cardápio da loja: não diga que "vai olhar o cadastro". Chame a equipe só se, depois disso, não resolver.
+- Dúvida sobre um produto, preço, promoção, opção, tamanho ou categoria DA LOJA DELE (lojista reconhecido): use ver_cardapio_da_loja ANTES de responder e responda com o que viu, como um atendente que abriu o painel dele ("A sua Grande de Filé Mignon está com +R$ 50 e Promo +R$ 65; o Promo tem que ser menor que o +R$, então…"). Os preços que ela traz já vêm com a conta feita: use esses números, não refaça a conta. "Sumiu"/"não aparece": a ferramenta diz o motivo (pausado, fora do horário com a hora da loja, fora do dia, canal desligado); diga o motivo e como resolver.
+- Algo sumiu, não aparece, não salva ou mudou e a ferramenta não explica (ou a loja não foi reconhecida pelo número): guie a pessoa a conferir na tela dela, pela base e pela fala do vídeo do assunto: onde abrir, o que olhar e como voltar ao normal. Peça um print da tela se ajudar. Chame a equipe só se, depois disso, não resolver.
 - Problema na conta (impressão, robô do WhatsApp, iFood, pedido não chegou): chame estado_da_loja ANTES de responder e diga o que viu. Guie um passo por vez.
 - "Aguardando mensagem" ou robô da loja travado com o WhatsApp conectado: pode usar reiniciar_whatsapp_da_loja.
 - Fatura em aberto: pode informar o valor e o link que estado_da_loja trouxer.
@@ -193,7 +208,7 @@ Fora disso, não chame: responda. Ao chamar, avise que alguém da equipe vai res
 - O SEU OBJETIVO é levar quem ainda não tem conta ao cadastro, e o melhor argumento é a montagem da loja. VOCÊ oferece, sem esperar a pessoa perguntar, UMA VEZ SÓ na conversa: não na primeira resposta (nela, só responda e entenda o negócio), mas na 2ª ou 3ª, ou antes se ela mostrar interesse. Responda a pergunta dela em uma frase e, na mesma mensagem, faça a oferta em outra, curta, algo como: "E se você já vende em outro lugar (iFood, outro cardápio), é só me mandar o link que a gente deixa sua loja igualzinha aqui, com todo o cardápio lançado, sem cobrar nada. Não tem link? Manda uma foto do cardápio." Passe a ideia de que é fácil, simples e que A GENTE FAZ por ela. A loja fica pronta no mesmo dia.
 - Recebeu o link ou as fotos do cardápio e a pessoa ainda não tem conta: peça os dados para criar a conta por aqui ("Pra eu já deixar sua loja pronta, me passa seu nome, o nome da loja, a cidade, seu e-mail e CPF? Se tiver CNPJ, manda também."), crie a conta e depois use montar_loja. Chegou a foto ou o link enquanto você espera os dados? Agradeça curto e lembre o que falta para a conta; montar_loja só depois de criar_conta. Se ela disser que não quer passar os dados agora, use montar_loja com semContaPorEscolha.
 - Criar a conta por aqui é o caminho preferido; o link firehubfood.com.br/cadastro só se ela preferir fazer sozinha, e vai UMA vez na conversa (depois, "pelo link que te mandei"). Peça o que falta numa pergunta curta só, em uma linha, sem lista. O CPF é obrigatório; sem CNPJ a conta fica no CPF. Antes de criar, REPITA o e-mail ("Confirma o e-mail fulano@gmail.com?") e só use criar_conta depois do "sim". Nunca peça nem mande senha: ela cria pelo link que chega no e-mail.
-- montar_loja precisa do nome da loja e do link OU das fotos do cardápio ("📷 Imagem" na conversa). Bairros com as taxas e horários ajudam, mas não trave por eles. Depois, avise que a equipe continua por aqui.
+- montar_loja precisa do nome da loja e do link OU das fotos do cardápio (mensagem com 📷 cujo "[O que a imagem mostra: …]" é um cardápio; PDF de cardápio também vale). Bairros com as taxas e horários ajudam, mas não trave por eles. Depois, avise que a equipe continua por aqui.
 - Você NÃO marca reunião nem demonstração, não oferece e não combina dia ou horário com ninguém: cada contato tem um vendedor na carteira, e é ele quem entra em contato. Quer ver funcionando? Mande o vídeo do assunto. Pediu para falar com alguém, quer uma apresentação ou as dúvidas não se resolvem aqui? Use chamar_pessoa com o motivo e diga que um especialista da equipe vai falar com ele por aqui, sem prometer dia nem hora.
 
 # Quando mandar vídeo
@@ -217,15 +232,23 @@ ${ficha}
 ${agoraEmBrasilia()} (horário de Brasília).`;
 }
 
-/** A conversa no formato do Gemini: contato = user; FireHub (robô ou pessoa) = model. */
-export function conversaParaOModelo(historico: { direcao: string; autor: string; autorNome: string | null; texto: string }[]): Content[] {
+type MensagemParaOModelo = { direcao: string; autor: string; autorNome: string | null; texto: string; midia?: { base64: string; mimeType: string } | null };
+
+/**
+ * A conversa no formato do Gemini: contato = user; FireHub (robô ou pessoa) =
+ * model. Mensagem com `midia` leva a imagem/vídeo/PDF junto, logo depois do
+ * texto dela: é assim que o robô VÊ o print (midias.ts).
+ */
+export function conversaParaOModelo(historico: MensagemParaOModelo[]): Content[] {
   const conteudos: Content[] = [];
   for (const m of historico) {
     const papel = m.direcao === "ENTRADA" ? "user" : "model";
     const texto = m.direcao === "SAIDA" && m.autor !== "ROBO" ? `[${m.autorNome || "Pessoa da equipe"} respondeu]: ${m.texto}` : m.texto;
+    const partes: Part[] = [{ text: texto }];
+    if (m.midia && papel === "user") partes.push({ inlineData: { mimeType: m.midia.mimeType, data: m.midia.base64 } });
     const ultimo = conteudos[conteudos.length - 1];
-    if (ultimo && ultimo.role === papel) ultimo.parts!.push({ text: texto });
-    else conteudos.push({ role: papel, parts: [{ text: texto }] });
+    if (ultimo && ultimo.role === papel) ultimo.parts!.push(...partes);
+    else conteudos.push({ role: papel, parts: partes });
   }
   // O Gemini quer a conversa começando pelo usuário.
   while (conteudos.length && conteudos[0].role !== "user") conteudos.shift();
@@ -292,7 +315,11 @@ async function responder(contatoId: string) {
     jaEnviados: videosJaEnviados(historico).flatMap((id) => videos.filter((v) => v.id === id).map((v) => v.titulo)),
   };
   const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem, lojaInformada, doVideo);
-  const conversa = conversaParaOModelo(historico);
+  // As mídias que chegaram desde a última resposta vão junto: o robô vê o
+  // print, não só a descrição (que fica no texto para as respostas seguintes).
+  const ultimaSaida = historico.map((m) => m.direcao).lastIndexOf("SAIDA");
+  const comMidia = historico.map((m, i) => (i > ultimaSaida && m.direcao === "ENTRADA" ? { ...m, midia: midiaGuardada(m.id) } : m));
+  const conversa = conversaParaOModelo(comMidia);
   if (conversa.length === 0) return;
 
   // ── Um modelo, depois o outro — mas nunca refazer uma AÇÃO ─────────────────
@@ -317,8 +344,7 @@ async function responder(contatoId: string) {
 
   // O que o contato perguntou: as mensagens dele desde a última resposta (um
   // "Oi" de cobrança sozinho ia para a ficha como "a pergunta", 03/10).
-  const ultimaResposta = historico.map((m) => m.direcao).lastIndexOf("SAIDA");
-  const pergunta = historico.slice(ultimaResposta + 1).map((m) => m.texto).join(" / ").slice(-300);
+  const pergunta = historico.slice(ultimaSaida + 1).map((m) => m.texto).join(" / ").slice(-300);
 
   // ── "Mudei aqui para você!" sem ter mudado nada não sai (conferente.ts) ───
   const feitoInventado = doModelo ? acaoDitaSemFerramenta(doModelo, acoes) : null;
@@ -343,7 +369,8 @@ async function responder(contatoId: string) {
         config.instrucoesExtras.trim() ? `# Recados do dono\n${config.instrucoesExtras.trim()}` : "",
       ].filter(Boolean).join("\n\n"),
       conversa: conversaParaORevisor(historico.slice(-12)),
-      ferramentas: acoes.map((a) => `${a.nome}: ${JSON.stringify(a.resultado).slice(0, 1500)}`).join("\n"),
+      // O cardápio da loja passa fácil de 1.500 caracteres, e é dele que saem os números da resposta.
+      ferramentas: acoes.map((a) => `${a.nome}: ${JSON.stringify(a.resultado).slice(0, a.nome === "ver_cardapio_da_loja" ? 12000 : 1500)}`).join("\n"),
     };
     let veredito = await conferirResposta(ai, { ...paraConferir, resposta: doModelo });
     // ── Uma frase sem fonte não cala a conversa ──────────────────────────────

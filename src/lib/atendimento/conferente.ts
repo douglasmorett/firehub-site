@@ -51,7 +51,7 @@ Um passo a passo detalhado em cima de uma linha genérica da base (ex.: a base d
 
 Link de vídeo que não está na base é inventado.
 
-NÃO marque: cumprimento, pergunta, pedir dados, dizer que vai confirmar com a equipe ou chamar alguém, repetir o que o próprio contato disse, conta feita com números que o próprio contato disse usando uma regra da base (ex.: ele pôs 65 no campo e apareceu 95, então o produto custa R$ 30 e o campo deve ser 35), falar do caso dele sem afirmar como o sistema funciona, mandar o link de um vídeo da lista dizendo que ele mostra o assunto do título ou dos capítulos dele.
+NÃO marque: cumprimento, pergunta, pedir dados, dizer que vai confirmar com a equipe ou chamar alguém, repetir o que o próprio contato disse ou o que a imagem/vídeo/PDF dele mostra (vem na conversa como "[O que a imagem mostra: …]"), números e situação de produto que vieram de ver_cardapio_da_loja nas FERRAMENTAS, conta feita com números que o próprio contato disse usando uma regra da base (ex.: ele pôs 65 no campo e apareceu 95, então o produto custa R$ 30 e o campo deve ser 35), falar do caso dele sem afirmar como o sistema funciona, mandar o link de um vídeo da lista dizendo que ele mostra o assunto do título ou dos capítulos dele.
 
 Em "trecho", copie a frase da resposta que não tem fonte (vazio quando inventou = false).`;
 
