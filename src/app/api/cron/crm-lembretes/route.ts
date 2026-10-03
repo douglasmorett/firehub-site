@@ -6,9 +6,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * A cada 5 minutos (scripts/cron-runner.js): reconexão do número do FireHub,
- * lembrete de demonstração ao contato e aviso pendente ao vendedor
- * (lib/crm/lembretes.ts).
+ * A cada 5 minutos (scripts/cron-runner.js): reconexão do número do FireHub
+ * quando ele cai (lib/crm/lembretes.ts). Não avisa ninguém.
  */
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });

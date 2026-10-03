@@ -2,11 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { mesmoTelefone } from "@/lib/telefone";
 import { restartEvolutionInstance } from "@/lib/whatsapp-evolution";
 import { registrarEvento, AUTOR_ROBO, lojaDoTelefone, numerosDaLoja } from "@/lib/crm/contatos";
-import { ANTECEDENCIA_MINIMA_MIN, dataDaAgenda, horaDaAgenda, NOMES_DOS_DIAS, diaDaSemana } from "@/lib/crm/agenda";
-import { marcarReuniao, vagasDaEquipe, vendedorLivrePara, HorarioOcupado } from "@/lib/crm/agenda-servidor";
 import { duracaoEmMinutos } from "@/lib/tutoriais";
 import { estadoDaLojaParaSuporte } from "./estado-da-loja";
-import { avisarDono, avisarVendedor } from "./avisos";
+import { avisarDono } from "./avisos";
 import { criarContaPeloWhatsApp } from "./cadastro";
 import { aulaDoVideo, linkDoVideo } from "./videos";
 import { videosNoAr } from "./videos-no-ar";
@@ -29,15 +27,16 @@ type Contato = {
 };
 
 /** As ferramentas que MUDAM alguma coisa — não podem rodar duas vezes numa resposta (robo.ts). */
-export const FERRAMENTAS_COM_EFEITO = new Set(["marcar_demonstracao", "chamar_pessoa", "montar_loja", "criar_conta", "enviar_link_de_senha", "reiniciar_whatsapp_da_loja"]);
+export const FERRAMENTAS_COM_EFEITO = new Set(["chamar_pessoa", "montar_loja", "criar_conta", "enviar_link_de_senha", "reiniciar_whatsapp_da_loja"]);
 
-/**
- * O robô marca a demonstração sozinho na agenda dos vendedores? Desligado
- * (Douglas, 01/10): demonstração é a última opção e quem combina o horário é
- * uma pessoa — o robô chama pela chamar_pessoa. As duas ferramentas continuam
- * aqui para quando a agenda da equipe estiver em uso.
+/*
+ * O robô NÃO marca reunião nem demonstração — não há ferramenta de agenda aqui
+ * (Douglas, 02/10/2026: "o robô não pode marcar reunião; o vendedor faz contato
+ * com cada um lá na carteira"). As ferramentas horarios_livres e
+ * marcar_demonstracao, que ficavam desligadas por uma chave, saíram de vez para
+ * ninguém religar por engano. Quem quer falar com alguém → chamar_pessoa, e o
+ * vendedor da carteira entra em contato pelo portal dele.
  */
-const DEMONSTRACAO_PELA_AGENDA = false;
 
 /** A loja do contato, se o número que está escrevendo é mesmo o dela (o da loja ou o do proprietário). */
 async function lojaDoNumero(contato: Contato) {
@@ -49,39 +48,12 @@ async function lojaDoNumero(contato: Contato) {
   if (!loja) return null;
   return numerosDaLoja(loja).some((n) => mesmoTelefone(contato.telefone, n)) ? { id: loja.id, email: loja.email } : null;
 }
-/** O vendedor do contato, quando ainda está na equipe: é com ele que a demonstração tem que ser. */
-async function vendedorAtivoDoContato(contato: Contato): Promise<string | null> {
-  if (!contato.vendedorId) return null;
-  const v = await prisma.ambassador.findUnique({ where: { id: contato.vendedorId }, select: { isVendedor: true, active: true } });
-  return v?.isVendedor && v.active ? contato.vendedorId : null;
-}
 
-const TODAS_AS_DECLARACOES = [
+export const DECLARACOES = [
   {
     name: "estado_da_loja",
     description: "Raio-x da loja do lojista que está falando: robô do WhatsApp conectado, Assistente de Impressão (última consulta, versão), canais (iFood, 99Food, JotaJá), teste grátis, fatura em aberto (com link), último pedido. Só funciona quando a loja foi reconhecida pelo número.",
     parametersJsonSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "horarios_livres",
-    description: "Horários livres da equipe para uma demonstração do FireHub (chamada de vídeo com um especialista), nos próximos dias.",
-    parametersJsonSchema: {
-      type: "object",
-      properties: { dias: { type: "integer", description: "Quantos dias à frente olhar (1 a 10). Padrão 5." } },
-    },
-  },
-  {
-    name: "marcar_demonstracao",
-    description: "Marca a demonstração no horário que a pessoa ESCOLHEU entre os oferecidos por horarios_livres.",
-    parametersJsonSchema: {
-      type: "object",
-      properties: {
-        inicio: { type: "string", description: "O início exatamente como veio em horarios_livres (campo 'inicio', ISO)." },
-        nomeDaLoja: { type: "string", description: "Nome do restaurante/loja da pessoa." },
-        nome: { type: "string", description: "Nome da pessoa, se ela disse." },
-      },
-      required: ["inicio"],
-    },
   },
   {
     name: "atualizar_contato",
@@ -174,17 +146,7 @@ const TODAS_AS_DECLARACOES = [
   },
 ] as const;
 
-export const DECLARACOES = TODAS_AS_DECLARACOES.filter(
-  (d) => DEMONSTRACAO_PELA_AGENDA || (d.name !== "horarios_livres" && d.name !== "marcar_demonstracao"),
-);
-
 const soDaLoja = { erro: "A loja não foi reconhecida por este número. Oriente com a base e, se precisar mexer na conta, chame uma pessoa." };
-
-function quandoPorExtenso(inicio: Date): string {
-  const data = dataDaAgenda(inicio);
-  const [, m, d] = data.split("-");
-  return `${NOMES_DOS_DIAS[diaDaSemana(data)].toLowerCase()} ${d}/${m} às ${horaDaAgenda(inicio)}`;
-}
 
 export async function executarFerramenta(nome: string, args: any, contato: Contato): Promise<Record<string, unknown>> {
   switch (nome) {
@@ -193,63 +155,6 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
       if (!loja) return soDaLoja;
       const estado = await estadoDaLojaParaSuporte(loja.id, { aoVivo: true });
       return estado ? { ...estado } : { erro: "Loja não encontrada." };
-    }
-
-    case "horarios_livres": {
-      const dias = Math.max(1, Math.min(Number(args?.dias) || 5, 10));
-      const doContato = await vendedorAtivoDoContato(contato);
-      const vagas = await vagasDaEquipe({ dias, ...(doContato ? { vendedorIds: [doContato] } : {}) });
-      // Um horário conta uma vez, mesmo com dois vendedores livres nele.
-      const porInicio = new Map<number, Date>();
-      for (const v of vagas) for (const h of v.vagas) porInicio.set(h.inicio.getTime(), h.inicio);
-      const lista = [...porInicio.values()].sort((a, b) => a.getTime() - b.getTime()).slice(0, 12);
-      if (lista.length === 0) return { horarios: [], aviso: "Sem horário livre nos próximos dias. Chame uma pessoa para combinar." };
-      return { horarios: lista.map((i) => ({ inicio: i.toISOString(), quando: quandoPorExtenso(i) })), duracao: "cerca de 45 minutos, por chamada de vídeo" };
-    }
-
-    case "marcar_demonstracao": {
-      const inicio = new Date(String(args?.inicio || ""));
-      if (Number.isNaN(inicio.getTime())) return { erro: "Horário inválido. Use o 'inicio' que veio em horarios_livres." };
-      if (inicio.getTime() < Date.now() + ANTECEDENCIA_MINIMA_MIN * 60_000) return { erro: "Esse horário já passou ou está em cima da hora. Ofereça outro." };
-      // Uma demonstração por lead: pedir de novo (ou o modelo repetir a chamada)
-      // devolve a que já está marcada em vez de pôr uma segunda na agenda.
-      const jaMarcada = await prisma.agendaReuniao.findFirst({
-        where: { contatoId: contato.id, tipo: "DEMONSTRACAO", status: "MARCADA", inicio: { gt: new Date() } },
-        orderBy: { inicio: "asc" },
-      });
-      if (jaMarcada) {
-        const v = await prisma.ambassador.findUnique({ where: { id: jaMarcada.vendedorId }, select: { name: true } });
-        return {
-          ok: true, jaEstavaMarcada: true, quando: quandoPorExtenso(jaMarcada.inicio), comQuem: v?.name || "um especialista da equipe",
-          aviso: "A pessoa JÁ tem esta demonstração marcada. Confirme este horário; se ela quiser trocar, use chamar_pessoa.",
-        };
-      }
-      if (args?.nomeDaLoja || args?.nome) {
-        await prisma.crmContato.update({
-          where: { id: contato.id },
-          data: {
-            ...(args.nomeDaLoja ? { nomeDaLoja: String(args.nomeDaLoja).slice(0, 120) } : {}),
-            ...(args.nome && !contato.nome ? { nome: String(args.nome).slice(0, 120) } : {}),
-          },
-        });
-      }
-      const doContato = await vendedorAtivoDoContato(contato);
-      const vendedorId = await vendedorLivrePara(inicio, doContato, !!doContato);
-      if (!vendedorId) return { erro: "Esse horário acabou de ser ocupado. Chame horarios_livres de novo e ofereça outro." };
-      const vendedor = await prisma.ambassador.findUnique({ where: { id: vendedorId }, select: { name: true } });
-      try {
-        const reuniao = await marcarReuniao({ vendedorId, contatoId: contato.id, tipo: "DEMONSTRACAO", inicio, fim: new Date(inicio.getTime() + 45 * 60_000), local: "Chamada de vídeo" }, AUTOR_ROBO);
-        const quando = quandoPorExtenso(inicio);
-        void avisarVendedor(vendedorId, {
-          assunto: `📅 Demonstração marcada: ${quando}`,
-          texto: `O robô marcou uma demonstração na sua agenda: ${quando}, com ${args?.nomeDaLoja || contato.nomeDaLoja || contato.nome || "um lead"}. Chame o contato pela aba Conversas (WhatsApp do FireHub) com o link da chamada.`,
-          link: `https://firehubfood.com.br/vendedor?aba=conversas&contato=${contato.id}`,
-        }).then((ok) => (ok ? prisma.agendaReuniao.update({ where: { id: reuniao.id }, data: { avisoVendedorEm: new Date() } }) : null)).catch(() => null);
-        return { ok: true, quando, comQuem: vendedor?.name || "um especialista da equipe", aviso: "Diga que o especialista vai chamar por aqui no horário com o link da chamada." };
-      } catch (err: any) {
-        if (err instanceof HorarioOcupado) return { erro: "Esse horário acabou de ser ocupado. Ofereça outro." };
-        throw err;
-      }
     }
 
     case "atualizar_contato": {
@@ -396,18 +301,15 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
   }
 }
 
-/** Para o robô na conversa e avisa quem precisa agir. Usada também pela trava de respostas. */
+/**
+ * Para o robô na conversa e avisa o dono. Usada também pela trava de respostas.
+ * O vendedor não é avisado: a conversa aparece no portal dele, no filtro
+ * "Pediram pessoa" (lib/atendimento/avisos.ts).
+ */
 export async function chamarPessoa(contato: Pick<Contato, "id" | "nome" | "nomeDaLoja" | "vendedorId" | "userId">, motivo: string) {
   await prisma.crmContato.update({ where: { id: contato.id }, data: { aguardandoHumanoDesde: new Date() } });
   await registrarEvento(contato.id, "ROBO", `Chamou uma pessoa: ${motivo}`, AUTOR_ROBO);
   const quem = contato.nomeDaLoja || contato.nome || "Um contato";
   const texto = `🙋 ${quem} precisa de uma pessoa no WhatsApp do FireHub.\nMotivo: ${motivo}\nResponda em https://firehubfood.com.br/admin?aba=atendimento&contato=${contato.id}`;
   void avisarDono(texto).catch(() => null);
-  if (contato.vendedorId) {
-    void avisarVendedor(contato.vendedorId, {
-      assunto: `🙋 ${quem} pediu uma pessoa`,
-      texto: `${quem} (seu contato) pediu uma pessoa no WhatsApp do FireHub.\nMotivo: ${motivo}`,
-      link: `https://firehubfood.com.br/vendedor?aba=conversas&contato=${contato.id}`,
-    }).catch(() => null);
-  }
 }

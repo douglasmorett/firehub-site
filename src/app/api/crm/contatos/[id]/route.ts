@@ -7,7 +7,6 @@ import { etapaValida, origemValida } from "@/lib/crm/etapas";
 import { mensagensDoContato } from "@/lib/crm/mensagens";
 import { contatoCompleto, mensagemParaTela, reuniaoParaTela } from "@/lib/crm/serializar";
 import { estadoDaLojaParaSuporte } from "@/lib/atendimento/estado-da-loja";
-import { avisarVendedor } from "@/lib/atendimento/avisos";
 
 export const dynamic = "force-dynamic";
 
@@ -103,17 +102,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if ("vendedorId" in b) {
       if (quem.tipo !== "ADMIN") return NextResponse.json({ error: "Só o admin troca o vendedor do contato." }, { status: 403 });
       const vendedorId = typeof b.vendedorId === "string" && b.vendedorId ? b.vendedorId : null;
-      if (vendedorId !== contato.vendedorId) {
-        await atribuirVendedor(id, vendedorId, autor);
-        if (vendedorId) {
-          const quemE = contato.nomeDaLoja || contato.nome || "um contato";
-          void avisarVendedor(vendedorId, {
-            assunto: `🎯 Novo contato: ${quemE}`,
-            texto: `O admin passou ${quemE} para a sua carteira. Veja a conversa e responda pelo WhatsApp do FireHub, na aba Conversas.`,
-            link: `https://firehubfood.com.br/vendedor?aba=conversas&contato=${id}`,
-          }).catch(() => null);
-        }
-      }
+      // Sem aviso ao vendedor: o contato aparece na carteira dele, no portal (lib/atendimento/avisos.ts).
+      if (vendedorId !== contato.vendedorId) await atribuirVendedor(id, vendedorId, autor);
     }
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Erro ao salvar." }, { status: 400 });

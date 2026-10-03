@@ -35,8 +35,6 @@ export type ConfigDoAtendimento = {
   nomeDoAtendente: string;
   /** WhatsApp pessoal do dono para os avisos (pediu pessoa, número caiu) — sai pelo canal de alertas internos, nunca pelo número do FireHub. */
   avisarNoWhatsApp: string | null;
-  /** E-mail ao vendedor quando marcam na agenda dele ou passam um contato para ele. */
-  avisoAoVendedor: boolean;
   /** O que o dono quer que o robô saiba ou faça além da base (promoção, recado da semana). */
   instrucoesExtras: string;
   /** Gateway próprio para este número (ex.: o de Baileys 7). Vazio = o do ambiente. */
@@ -49,7 +47,6 @@ export const CONFIG_PADRAO: ConfigDoAtendimento = {
   roboLigado: false,
   nomeDoAtendente: "",
   avisarNoWhatsApp: null,
-  avisoAoVendedor: true,
   instrucoesExtras: "",
   evolutionUrl: null,
   evolutionApiKey: null,
@@ -64,7 +61,6 @@ function lerConfig(bruto: unknown): ConfigDoAtendimento {
     roboLigado: d.roboLigado === true,
     nomeDoAtendente: texto(d.nomeDoAtendente, 40).trim(),
     avisarNoWhatsApp: texto(d.avisarNoWhatsApp, 30).trim() || null,
-    avisoAoVendedor: d.avisoAoVendedor !== false,
     instrucoesExtras: texto(d.instrucoesExtras, 4000),
     evolutionUrl: texto(d.evolutionUrl, 300).trim() || null,
     evolutionApiKey: texto(d.evolutionApiKey, 300).trim() || null,

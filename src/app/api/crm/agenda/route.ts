@@ -3,13 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { garantirEstruturaDoCrm } from "@/lib/garantir-colunas";
 import { nomesDaEquipe, quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
 import {
-  dataDaAgenda, horaDaAgenda, instanteDaAgenda, minutosDoHorario, somarDias, vagasDoDia, ANTECEDENCIA_MINIMA_MIN,
+  dataDaAgenda, instanteDaAgenda, minutosDoHorario, somarDias, vagasDoDia, ANTECEDENCIA_MINIMA_MIN,
 } from "@/lib/crm/agenda";
 import { disponibilidadesDos, marcarReuniao, reunioesEntre, vendedoresDaEquipe, HorarioOcupado } from "@/lib/crm/agenda-servidor";
 import { ContatoDeOutraCarteira, criarContatoManual } from "@/lib/crm/contatos";
 import { TIPOS_DE_REUNIAO, type TipoDeReuniao } from "@/lib/crm/etapas";
 import { reuniaoParaTela } from "@/lib/crm/serializar";
-import { avisarVendedor } from "@/lib/atendimento/avisos";
 
 export const dynamic = "force-dynamic";
 
@@ -112,17 +111,7 @@ export async function POST(req: NextRequest) {
       { vendedorId, contatoId, tipo, titulo: b.titulo, inicio, fim, local: b.local, observacao: b.observacao },
       autor,
     );
-    // Marcaram na agenda de outra pessoa: ela fica sabendo na hora.
-    if (!(quem.tipo === "VENDEDOR" && quem.id === vendedorId) && tipo !== "BLOQUEIO") {
-      const [, m, d] = b.data.split("-");
-      void avisarVendedor(vendedorId, {
-        assunto: `📅 Na sua agenda: ${d}/${m} às ${horaDaAgenda(inicio)}`,
-        texto: `${quem.nome} marcou na sua agenda: ${reuniao.titulo} — ${d}/${m} às ${horaDaAgenda(inicio)}.`,
-        link: "https://firehubfood.com.br/vendedor?aba=agenda",
-      })
-        .then((ok) => (ok ? prisma.agendaReuniao.update({ where: { id: reuniao.id }, data: { avisoVendedorEm: new Date() } }) : null))
-        .catch(() => null);
-    }
+    // Marcaram na agenda de outra pessoa: sem aviso, ela vê na aba Agenda do portal (lib/atendimento/avisos.ts).
     const completa = await prisma.agendaReuniao.findUnique({ where: { id: reuniao.id }, include: { contato: true } });
     return NextResponse.json({ reuniao: reuniaoParaTela(completa, await nomesDaEquipe()) });
   } catch (err: any) {

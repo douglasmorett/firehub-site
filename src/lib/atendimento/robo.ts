@@ -14,7 +14,9 @@ import { videosNoAr } from "./videos-no-ar";
 
 /**
  * O ROBÔ DO FIREHUB — atende no número do próprio FireHub: suporte para quem
- * já é loja, venda (até o teste grátis ou uma demonstração) para quem não é.
+ * já é loja, venda (até o teste grátis) para quem não é. Reunião e
+ * demonstração ele NÃO marca: o vendedor da carteira entra em contato
+ * (Douglas, 02/10/2026).
  *
  * ── Quando ele fala ─────────────────────────────────────────────────────────
  *
@@ -167,7 +169,7 @@ function instrucoes(
 - Recebeu o link ou as fotos do cardápio e a pessoa ainda não tem conta: peça os dados para criar a conta por aqui ("Pra eu já deixar sua loja pronta, me passa seu nome, o nome da loja, a cidade, seu e-mail e CPF? Se tiver CNPJ, manda também."), crie a conta e depois use montar_loja. Chegou a foto ou o link enquanto você espera os dados? Agradeça curto e lembre o que falta para a conta; montar_loja só depois de criar_conta. Se ela disser que não quer passar os dados agora, use montar_loja com semContaPorEscolha.
 - Criar a conta por aqui é o caminho preferido; o link firehubfood.com.br/cadastro só se ela preferir fazer sozinha, e vai UMA vez na conversa (depois, "pelo link que te mandei"). Peça o que falta numa pergunta curta só, em uma linha, sem lista. O CPF é obrigatório; sem CNPJ a conta fica no CPF. Antes de criar, REPITA o e-mail ("Confirma o e-mail fulano@gmail.com?") e só use criar_conta depois do "sim". Nunca peça nem mande senha: ela cria pelo link que chega no e-mail.
 - montar_loja precisa do nome da loja e do link OU das fotos do cardápio ("📷 Imagem" na conversa). Bairros com as taxas e horários ajudam, mas não trave por eles. Depois, avise que a equipe continua por aqui.
-- Demonstração com um vendedor é a ÚLTIMA opção: só se a pessoa pedir para ver funcionando ou falar com alguém, ou se as dúvidas não se resolverem aqui. Aí use chamar_pessoa com o motivo "quer agendar demonstração" e diga que a equipe vai combinar o horário por aqui.
+- Você NÃO marca reunião nem demonstração, não oferece e não combina dia ou horário com ninguém: cada contato tem um vendedor na carteira, e é ele quem entra em contato. Quer ver funcionando? Mande o vídeo do assunto. Pediu para falar com alguém, quer uma apresentação ou as dúvidas não se resolvem aqui? Use chamar_pessoa com o motivo e diga que um especialista da equipe vai falar com ele por aqui, sem prometer dia nem hora.
 
 # Quando mandar vídeo
 - "Como faço…?", "onde fica…?", "como configuro…?" sobre algo que um vídeo da lista mostra: responda em uma frase o essencial e mande o link do vídeo na linha de baixo. Ex.: "Na Roteirização você junta os pedidos no mapa e despacha a rota para o motoboy. Esse vídeo mostra o passo a passo:" e, na linha de baixo, o link.
@@ -177,7 +179,7 @@ function instrucoes(
 - Um vídeo por mensagem; dois só se a pergunta for de duas telas. Vídeo que já foi nesta conversa não vai de novo.
 - Problema na conta (não imprime, robô mudo, pedido não entrou) não se resolve com vídeo: primeiro estado_da_loja e os Problemas comuns; o vídeo vem depois, se ajudar.
 - A loja e os valores que aparecem nos vídeos são de demonstração: não fale deles como se fossem da pessoa.
-- Interessado que quer ver como funciona: pode mandar o vídeo do assunto (ou "Um passeio pelo painel", se estiver na lista) antes de falar em demonstração.
+- Interessado que quer ver como funciona: mande o vídeo do assunto (ou "Um passeio pelo painel", se estiver na lista).
 - Nenhum vídeo da lista é do assunto? Responda pela base, como sempre.
 
 # BASE
@@ -272,9 +274,9 @@ async function responder(contatoId: string) {
   if (conversa.length === 0) return;
 
   // ── Um modelo, depois o outro — mas nunca refazer uma AÇÃO ─────────────────
-  // Se o primeiro já marcou a demonstração (ou chamou pessoa, ou mandou o
-  // e-mail) e caiu antes do texto, o segundo começaria do zero e faria de novo:
-  // duas reuniões, dois avisos. Depois de uma ação, a resposta vem da reserva.
+  // Se o primeiro já criou a conta (ou chamou pessoa, ou mandou o e-mail da
+  // senha) e caiu antes do texto, o segundo começaria do zero e faria de novo:
+  // duas contas, dois avisos. Depois de uma ação, a resposta vem da reserva.
   const acoes: AcaoFeita[] = [];
   let resposta = "";
   for (const modelo of MODELOS) {
@@ -409,15 +411,10 @@ function paraOWhatsApp(texto: string): string {
 
 /**
  * O texto quando o modelo agiu mas não chegou a escrever (caiu, devolveu
- * vazio): a pessoa não pode ficar sem saber que a demonstração foi marcada.
+ * vazio): a pessoa não pode ficar sem saber que a conta foi criada.
  */
 function respostaDeReserva(acoes: AcaoFeita[]): string {
   const ultima = (nome: string) => [...acoes].reverse().find((a) => a.nome === nome && (a.resultado as any)?.ok);
-  const demo = ultima("marcar_demonstracao");
-  if (demo) {
-    const r = demo.resultado as any;
-    return `Pronto! Sua demonstração do FireHub ficou marcada para ${r.quando} com ${r.comQuem}. Vamos te chamar por aqui na hora, com o link da chamada. 🔥`;
-  }
   const conta = ultima("criar_conta");
   if (conta) return `Pronto, sua conta no FireHub está criada e o teste grátis começou! Mandei no e-mail ${(conta.resultado as any).email} o link para você criar a senha. Pra gente deixar sua loja pronta, sem custo, é só mandar o link do cardápio que você usa hoje ou uma foto dele.`;
   if (ultima("montar_loja")) return "Recebi o seu cardápio! Nossa equipe já vai continuar por aqui para deixar a sua loja prontinha. 🔥";
@@ -463,7 +460,7 @@ async function conversarComFerramentas(
       acoes.push({ nome: chamada.name || "", resultado });
       respostas.push({ functionResponse: { id: chamada.id, name: chamada.name, response: resultado } });
       // O que a ferramenta mudou no contato vale para a próxima chamada da mesma volta.
-      if (chamada.name === "atualizar_contato" || chamada.name === "marcar_demonstracao" || chamada.name === "criar_conta") {
+      if (chamada.name === "atualizar_contato" || chamada.name === "criar_conta") {
         Object.assign(contato, (await prisma.crmContato.findUnique({ where: { id: contato.id } })) || {});
       }
     }

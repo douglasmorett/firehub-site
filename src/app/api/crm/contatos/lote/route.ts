@@ -3,13 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
 import { atribuirVendedor, mudarEtapa } from "@/lib/crm/contatos";
 import { etapaValida } from "@/lib/crm/etapas";
-import { avisarVendedor } from "@/lib/atendimento/avisos";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST { ids, vendedorId?, etapa? }: distribuir vários contatos de uma vez
- * (admin). O vendedor recebe UM aviso com a quantidade, não um por contato.
+ * (admin). O vendedor não recebe aviso: os contatos aparecem na carteira
+ * dele, no portal (lib/atendimento/avisos.ts).
  */
 export async function POST(req: NextRequest) {
   const quem = await quemEsta();
@@ -32,13 +32,6 @@ export async function POST(req: NextRequest) {
       } catch (err: any) {
         erros.push(err?.message || "erro");
       }
-    }
-    if (vendedorId && mudados > 0) {
-      void avisarVendedor(vendedorId, {
-        assunto: `🎯 ${mudados === 1 ? "Novo contato" : `${mudados} contatos novos`} na sua carteira`,
-        texto: `O admin passou ${mudados === 1 ? "um contato" : `${mudados} contatos`} para a sua carteira.`,
-        link: "https://firehubfood.com.br/vendedor?aba=contatos",
-      }).catch(() => null);
     }
   }
   if ("etapa" in b) {
