@@ -13,7 +13,8 @@ import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido
 import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
-import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
+import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
+import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { avaliarEdicao, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { podeTerReposicao } from "@/lib/reposicao";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
@@ -485,7 +486,9 @@ const DashboardColumn = memo(function DashboardColumn({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0 }}>
           {headerExtra}
-          <span id={columnId === "col-preparo" ? "firehub-em-producao-count-badge" : undefined} data-column-count={count} style={{ background: color, color: "#fff", borderRadius: "20px", padding: "2px 8px", fontSize: "0.78rem", fontWeight: 700, minWidth: "24px", textAlign: "center" }}>{count}</span>
+          {/* Sem id nem data-column-count: o número da extensão de prazo é
+              o span escondido no topo do painel, não o desta coluna filtrada. */}
+          <span style={{ background: color, color: "#fff", borderRadius: "20px", padding: "2px 8px", fontSize: "0.78rem", fontWeight: 700, minWidth: "24px", textAlign: "center" }}>{count}</span>
         </div>
       </div>
       {headerBelow}
@@ -536,16 +539,10 @@ const DashboardColumn = memo(function DashboardColumn({
  * "De verdade" é o mesmo corte que a lista de Agendamentos já usava: mais de
  * 3 horas depois da criação. Previsão de entrega não chega perto disso;
  * agendamento de cliente ("quero amanhã às 20h") passa longe.
+ *
+ * `dataDoPedido` mora em lib/pedidos-na-cozinha.ts: a API da extensão de
+ * prazo usa a mesma data para saber o que ainda está no quadro.
  */
-const AGENDAMENTO_DE_VERDADE_MS = 3 * 60 * 60 * 1000;
-
-function dataDoPedido(o: any): Date {
-  const criado = new Date(o.createdAt);
-  if (!o.scheduledDatetime) return criado;
-  const agendado = new Date(o.scheduledDatetime);
-  if (!Number.isFinite(agendado.getTime())) return criado;
-  return agendado.getTime() - criado.getTime() > AGENDAMENTO_DE_VERDADE_MS ? agendado : criado;
-}
 
 const DashboardOrderCard = memo(function DashboardOrderCard({
   order,
@@ -1786,9 +1783,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // a coluna existia para evitar.
   const aceiteObrigatorio = !colNovos;
   const aceiteEfetivo = autoAccept || aceiteObrigatorio;
-  /** "Pronto na cozinha": o selo que hoje fica dentro de Em Produção. */
-  const prontoNaCozinha = (o: any) =>
-    o.kdsStage === "FINISHED" || o.kdsStage === "READY" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO");
+  // "Pronto na cozinha" (o selo dentro de Em Produção, ou a coluna Prontos):
+  // `prontoNaCozinha`, de lib/pedidos-na-cozinha.ts — a mesma da extensão.
   /** Arrastar para a coluna Prontos = o mesmo clique de "Marcar como Pronto Cozinha". */
   const marcarProntoCozinha = async (orderId: string) => {
     try {
@@ -3546,15 +3542,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
   }, [aguardandoAceite.length, playOrderChime]);
 
-  // Transmite em tempo real a quantidade de pedidos em produção para a extensão Chrome do FireHub
+  // ── O NÚMERO DA EXTENSÃO DE PRAZO ──────────────────────────────────────
+  // Antes ia o tamanho da coluna Em Produção: sem o pronto esperando o
+  // motoboy (coluna Prontos ligada) e obedecendo ao filtro de canal, ao de
+  // tipo e à busca — com o quadro filtrado em "iFood", a extensão punha no
+  // iFood o prazo de um pedaço da loja. Agora é tudo o que ainda não saiu,
+  // pela mesma conta da API que a extensão usa com a aba em segundo plano
+  // (lib/pedidos-na-cozinha.ts). Em "Todas as Lojas" o quadro soma as
+  // filiais e a extensão é de uma loja só: aí o painel não manda número, e
+  // ela fica com a API da própria loja.
+  const visaoDeTodasAsLojas = activeStoreId === "all" && String(user?.role || "").toUpperCase() !== "STAFF";
+  const pedidosNaCozinha = visaoDeTodasAsLojas
+    ? null
+    : contarPedidosDoPrazo(orders, inicioDaJanelaDoQuadro(now, inicioDoDiaDaLoja(user?.storeTimezone, now), cashOpenedAt));
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && pedidosNaCozinha !== null) {
       window.postMessage({
         type: "FIREHUB_EM_PRODUCAO_COUNT",
-        count: preparo.length
+        count: pedidosNaCozinha
       }, "*");
     }
-  }, [preparo.length]);
+  }, [pedidosNaCozinha]);
 
   // Resumo de vendas
   // MESMA regra do quadro: a venda pertence ao dia em que o pedido entrou.
@@ -3598,6 +3606,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // do Ver pedido só aparecem com a emissão ligada (NotaFiscalDoPedido).
     <NotaFiscalDaLojaProvider>
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
+      {/* Lido pela extensão de prazo (firehub-bridge.js, pelo id). Fica aqui,
+          fora das colunas: some coluna (aba no celular) e o número continua;
+          e é um elemento só, então o MutationObserver dela não fica preso a
+          um badge que o React trocou. Vazio em "Todas as Lojas". */}
+      <span id="firehub-em-producao-count-badge" hidden>{pedidosNaCozinha ?? ""}</span>
       {/* MODAL CANCELAR PEDIDO */}
       {cancelConfirmId && (() => {
         const pedido = orders.find(o => o.id === cancelConfirmId);

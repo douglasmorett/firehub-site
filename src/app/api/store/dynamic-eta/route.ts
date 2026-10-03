@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { inicioDoDiaDaLoja } from "@/lib/fuso";
+import { contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 
 /**
  * GET /api/store/dynamic-eta
@@ -110,21 +112,39 @@ export async function GET(req: NextRequest) {
 
     const mode = req.nextUrl.searchParams.get("mode") || "auto";
 
-    // ── CONTABILIZAÇÃO: ABA 'EM PRODUÇÃO' DA TELA DE PEDIDOS ──
-    // Deve ser IDÊNTICO ao filtro do dashboard StoreOrdersDashboard.tsx:
-    // Apenas pedidos recentes das últimas 18h em status ACEITO, PREPARANDO ou PRONTO (DELIVERY)
-    const eighteenHoursAgo = new Date(Date.now() - 18 * 60 * 60 * 1000);
-    const ordersInProduction = await prisma.customerOrder.count({
+    // ── CONTABILIZAÇÃO: OS PEDIDOS QUE A LOJA AINDA TEM PARA DESPACHAR ──
+    // A MESMA conta que o painel manda para a extensão (lib/pedidos-na-cozinha):
+    // a extensão usa esta rota sempre que a aba do painel fica em segundo
+    // plano, e as duas contando diferente faziam o prazo pular. Aceito que
+    // ainda não saiu — o pronto esperando o motoboy conta —, na janela do
+    // quadro (caixa aberto / 12 h / hoje).
+    // A sessão do NextAuth não traz ownerId (o token traz): funcionário logado
+    // tem de cair na loja do dono, não nele mesmo.
+    const donoDaConta = targetUser.ownerId !== undefined
+      ? targetUser.ownerId
+      : (await prisma.user.findUnique({ where: { id: targetUser.id }, select: { ownerId: true } }))?.ownerId;
+    const lojaId = (activeStoreId && activeStoreId !== "all")
+      ? activeStoreId
+      : (donoDaConta || targetUser.id);
+    const agora = new Date();
+    const [loja, caixaAberto] = await Promise.all([
+      prisma.user.findUnique({ where: { id: lojaId }, select: { storeTimezone: true } }),
+      prisma.cashSession.findFirst({
+        where: { franchiseeId: lojaId, status: "OPEN" },
+        orderBy: { openedAt: "desc" },
+        select: { openedAt: true },
+      }),
+    ]);
+    const desde = inicioDaJanelaDoQuadro(agora, inicioDoDiaDaLoja(loja?.storeTimezone, agora), caixaAberto?.openedAt);
+    const naFila = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: { in: validFranchiseeIds },
-        createdAt: { gte: eighteenHoursAgo },
-        OR: [
-          { status: "ACEITO" },
-          { status: "PREPARANDO" },
-          { status: "PRONTO", deliveryType: "DELIVERY" },
-        ],
+        status: { in: ["ACEITO", "PREPARANDO", "PRONTO"] },
+        OR: [{ createdAt: { gte: desde } }, { scheduledDatetime: { gte: desde } }],
       },
+      select: { status: true, deliveryType: true, createdAt: true, scheduledDatetime: true },
     });
+    const ordersInProduction = contarPedidosDoPrazo(naFila, desde);
 
     // ── MODO MANUAL (Regras de Métricas Personalizadas) ──
     if (mode === "manual") {
