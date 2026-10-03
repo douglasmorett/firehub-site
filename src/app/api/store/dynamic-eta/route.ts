@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
       if (leitura.valido) {
         tokenUser = await prisma.user.findFirst({
           where: { id: leitura.userId },
-          select: { id: true, name: true, ownerId: true, email: true },
+          select: { id: true, name: true, ownerId: true, email: true, role: true },
         });
       }
     }
@@ -77,10 +77,15 @@ export async function GET(req: NextRequest) {
 
     storeName = targetUser.name || "FIREHUB";
 
-    // Verificar loja ativa selecionada (via cookie ou query storeId)
+    // Loja escolhida (cookie firehub_active_store ou ?storeId): só o ADMIN,
+    // como nas rotas /api/admin/*. Para a loja, esse cookie é sobra de antes
+    // do multiloja trocar a conta da sessão (lib/loja-ativa.ts) e pode
+    // apontar para outra filial — a extensão contava a fila da loja errada
+    // (visto em 03/10/2026: navegador com cookie de outra loja, API 1, painel 0).
     const cookieStore = req.cookies.get("firehub_active_store")?.value;
     const queryStoreId = req.nextUrl.searchParams.get("storeId");
-    const activeStoreId = queryStoreId || cookieStore;
+    const ehAdmin = String(targetUser.role || "").toUpperCase() === "ADMIN";
+    const activeStoreId = ehAdmin ? (queryStoreId || cookieStore) : null;
 
     // Busca todos os IDs válidos de usuários e funcionários da franquia/loja
     const allStoreUsers = await prisma.user.findMany({
