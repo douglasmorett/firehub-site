@@ -19,6 +19,9 @@
  * Sem Prisma nem "@/…": roda puro no teste.
  */
 
+// Vencimento (dia 5) e bloqueio (depois do dia 10) moram em lib/prazo-da-mensalidade.ts.
+import { bloqueioDoCiclo, mesSeguinte, vencimentoDoBoleto } from "../prazo-da-mensalidade";
+
 export type Papel = "EMBAIXADOR" | "REDE" | "VENDEDOR";
 export const PAPEIS: Papel[] = ["EMBAIXADOR", "REDE", "VENDEDOR"];
 
@@ -174,8 +177,9 @@ export type CicloNasRegras = {
   amountPending: number;
   asaasPaymentId: string | null;
   asaasBoletoUrl: string | null;
-  /** Prazo do BLOQUEIO do painel da loja (fechamento + 10 dias, cron billing-close). */
+  /** Registro do bloqueio; quem decide é `bloqueioDoCiclo` (lib/prazo-da-mensalidade.ts). */
   dueDate: Date | string | null;
+  closedAt?: Date | string | null;
   paidAt: Date | string | null;
   paidValue: number | null;
   paidNetValue: number | null;
@@ -211,31 +215,13 @@ function iso(d: Date | string | null | undefined): string | null {
   return isNaN(t.getTime()) ? null : t.toISOString();
 }
 
-/** "2026-09" → "2026-10". */
-export function mesSeguinte(yearMonth: string): string {
-  const [a, m] = yearMonth.split("-").map(Number);
-  const total = a * 12 + (m - 1) + 1;
-  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
-}
+export { mesSeguinte, vencimentoDoBoleto };
 
 /** "2026-09" menos N meses. */
 export function mesesAntes(yearMonth: string, n: number): string {
   const [a, m] = yearMonth.split("-").map(Number);
   const total = a * 12 + (m - 1) - n;
   return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, "0")}`;
-}
-
-/**
- * O boleto do mês M vence no dia 5 de M+1 (lib/billing.ts, closeBillingCycle).
- * Vencido = passou do fim do dia 5 EM BRASÍLIA (UTC−3, sem horário de verão
- * desde 2019): 06/10 às 03:00 UTC para o boleto de setembro.
- */
-export function vencimentoDoBoleto(yearMonth: string): { dia: string; vencidoDepoisDe: Date } {
-  const [a, m] = mesSeguinte(yearMonth).split("-").map(Number);
-  return {
-    dia: `${a}-${String(m).padStart(2, "0")}-05`,
-    vencidoDepoisDe: new Date(Date.UTC(a, m - 1, 6, 3, 0, 0)),
-  };
 }
 
 /**
@@ -277,7 +263,7 @@ export function mensalidadeDoCiclo(ciclo: CicloNasRegras | null, yearMonth: stri
       return { ...base, situacao: "PAGA", valor: ciclo.amountPending, pago: ciclo.paidNetValue ?? ciclo.paidValue ?? ciclo.amountPending, pagoEm: iso(ciclo.paidAt), boletoUrl: boleto };
     }
     const venc = vencimentoDoBoleto(ciclo.yearMonth);
-    const comum = { ...base, valor: ciclo.amountPending, venceEm: venc.dia, bloqueiaEm: iso(ciclo.dueDate), boletoUrl: boleto };
+    const comum = { ...base, valor: ciclo.amountPending, venceEm: venc.dia, bloqueiaEm: iso(bloqueioDoCiclo(ciclo)), boletoUrl: boleto };
     // Sem boleto no Asaas não há como a loja pagar nem split para cair: a
     // cobrança não saiu (loja sem CPF/CNPJ, ou o Asaas recusou) ou foi apagada.
     if (!ciclo.asaasPaymentId || String(ciclo.asaasStatus || "").toUpperCase() === "DELETED") {

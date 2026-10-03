@@ -8,6 +8,7 @@ import StoreSidebar from "@/components/customer/StoreSidebar";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { bloqueioDoCiclo, diaEMes, diasAte, ultimoDiaSemBloqueio, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
 import AvisoIaForaDoAr from "@/components/customer/AvisoIaForaDoAr";
@@ -88,7 +89,16 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   }
 
   // === PAGAMENTO: verificar ciclo pendente da loja proprietária ===
-  let pendingPayment: { amount: number; url: string | null; isOverdue: boolean; daysLeft: number; ocorrencia: string } | null = null;
+  let pendingPayment: {
+    amount: number; url: string | null; isOverdue: boolean;
+    /** "05/10" — o vencimento impresso no boleto. */
+    venceEm: string;
+    /** Dias de calendário até o vencimento; negativo depois dele. */
+    diasParaVencer: number;
+    /** "10/10" — último dia antes de o painel travar. */
+    pagarAte: string;
+    ocorrencia: string;
+  } | null = null;
   const targetFranchiseeId = storeOwner?.id || user?.id;
   const userEmailClean = (storeOwner?.email || user?.email)?.toLowerCase().replace(/\s+/g, "");
   const isHakimStore = storeOwner?.isFranqueadoHakim === true || user?.isFranqueadoHakim === true || userEmailClean === "contatohakim@gmail.com";
@@ -106,25 +116,28 @@ export default async function StoreLayout({ children }: { children: React.ReactN
       });
 
       if (closedCycle && closedCycle.amountPending > 0) {
-        // Prazo: 10 dias após fechamento (ou dueDate se definido)
-        const closedAt = closedCycle.closedAt ? new Date(closedCycle.closedAt) : new Date();
-        const dueDate = (closedCycle as any).dueDate
-          ? new Date((closedCycle as any).dueDate)
-          : new Date(closedAt.getTime() + 10 * 24 * 60 * 60 * 1000);
+        // O boleto VENCE no dia 5 e o painel só TRAVA depois do dia 10
+        // (lib/prazo-da-mensalidade.ts). A faixa contava os dias até o
+        // bloqueio e chamava isso de vencimento: com o boleto vencendo em
+        // 05/10, a loja lia "faltam 9 dias".
+        const venc = vencimentoDoBoleto(closedCycle.yearMonth);
+        const bloqueio = bloqueioDoCiclo(closedCycle);
         const now = new Date();
-        const isOverdue = now > dueDate;
-        const daysLeft = Math.max(0, Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+        const isOverdue = now >= bloqueio;
+        const diasParaVencer = diasAte(venc.dia, now);
 
         pendingPayment = {
           amount: closedCycle.amountPending,
           url: closedCycle.asaasBoletoUrl,
           isOverdue,
-          daysLeft,
+          venceEm: diaEMes(venc.dia),
+          diasParaVencer,
+          pagarAte: diaEMes(ultimoDiaSemBloqueio(closedCycle)),
           // Para o "não ver mais" (components/customer/NaoVerMais.tsx): cala
-          // ESTA fatura — e volta uma vez nos 3 últimos dias, porque depois do
-          // vencimento o que vem é o bloqueio da conta, e bloqueio sem aviso
-          // na véspera é pior para a loja do que uma faixa a mais.
-          ocorrencia: `${closedCycle.id}:${daysLeft <= 3 ? "reta-final" : "inicio"}`,
+          // ESTA fatura — e volta uma vez perto do vencimento e outra depois
+          // dele, porque o que vem em seguida é o bloqueio da conta, e
+          // bloqueio sem aviso é pior para a loja do que uma faixa a mais.
+          ocorrencia: `${closedCycle.id}:${diasParaVencer < 0 ? "vencida" : diasParaVencer <= 3 ? "reta-final" : "inicio"}`,
         };
       }
     } catch (err) {
@@ -262,7 +275,16 @@ export default async function StoreLayout({ children }: { children: React.ReactN
               fontSize: ".85rem", fontWeight: 600,
               display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap",
             }}>
-              <span>⚠️ Cobrança pendente de R$ {pendingPayment.amount.toFixed(2).replace(".", ",")} — <strong>Faltam {pendingPayment.daysLeft} {pendingPayment.daysLeft === 1 ? "dia" : "dias"}</strong> para o vencimento. Regularize para evitar bloqueios.</span>
+              <span>
+                ⚠️ Mensalidade de R$ {pendingPayment.amount.toFixed(2).replace(".", ",")}{" "}
+                {pendingPayment.diasParaVencer > 0 ? (
+                  <>vence em <strong>{pendingPayment.venceEm}</strong> ({pendingPayment.diasParaVencer === 1 ? "falta 1 dia" : `faltam ${pendingPayment.diasParaVencer} dias`}).</>
+                ) : pendingPayment.diasParaVencer === 0 ? (
+                  <>vence <strong>hoje ({pendingPayment.venceEm})</strong>.</>
+                ) : (
+                  <>venceu em <strong>{pendingPayment.venceEm}</strong>. Pague até <strong>{pendingPayment.pagarAte}</strong> para o sistema não ser bloqueado.</>
+                )}
+              </span>
               <a href="/store/financeiro#fatura" style={{ ...BOTAO_DA_FAIXA, background: "#fff", color: "#1D4ED8" }}>
                 Ver Fatura
               </a>
@@ -288,7 +310,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
               <div style={{ fontSize: "3.5rem", marginBottom: "0.75rem" }}>🔒</div>
               <h2 style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A", marginBottom: "0.5rem" }}>Sua conta está bloqueada</h2>
               <p style={{ color: "#64748B", fontSize: "0.92rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
-                O prazo de 10 dias para pagamento da fatura do mês expirou. Para liberar o sistema imediatamente, efetue o pagamento do valor pendente.
+                A mensalidade venceu em {pendingPayment!.venceEm} e o prazo para pagar sem bloqueio terminou em {pendingPayment!.pagarAte}. Para liberar o sistema imediatamente, efetue o pagamento do valor pendente.
               </p>
 
               <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 14, padding: "1.25rem", marginBottom: "1.5rem" }}>

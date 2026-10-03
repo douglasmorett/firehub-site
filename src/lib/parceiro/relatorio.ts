@@ -70,7 +70,7 @@ const SELECT_DA_LOJA = {
 
 const SELECT_DO_CICLO = {
   franchiseeId: true, yearMonth: true, status: true, amountDue: true, amountPending: true,
-  asaasPaymentId: true, asaasBoletoUrl: true, dueDate: true, paidAt: true, paidValue: true,
+  asaasPaymentId: true, asaasBoletoUrl: true, dueDate: true, closedAt: true, paidAt: true, paidValue: true,
   paidNetValue: true, asaasStatus: true, notes: true,
 } as const;
 

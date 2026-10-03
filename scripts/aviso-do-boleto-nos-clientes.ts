@@ -42,7 +42,7 @@ async function main() {
       console.log(String(loja.storeName).padEnd(24), p.customer, "→", celularDoBoleto(lojaDoBoleto) ?? "(sem celular: só e-mail)");
       continue;
     }
-    const r = await prepararAvisoDoBoleto(BASE, chave, p.customer, lojaDoBoleto);
+    const r = await prepararAvisoDoBoleto(BASE, chave!, p.customer, lojaDoBoleto);
     console.log(String(loja.storeName).padEnd(24), p.customer, "→", r);
   }
 }
