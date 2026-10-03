@@ -6,7 +6,7 @@
  * Regra do dono (27/09/2026): "ativou o Assistente, ele só imprime o que entrar
  * depois dele ativo" — para qualquer versão, não só a 1.2.25+.
  */
-import { corteDaVolta, esquecerAssistentes } from "../src/lib/volta-do-assistente";
+import { corteDaVolta, esquecerAssistentes, ligouHaMs, ATUALIZA_AO_ABRIR_MS } from "../src/lib/volta-do-assistente";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: number | null, esperado: number | null) => {
@@ -53,6 +53,41 @@ esquecerAssistentes();
 pollsAntigos("H", T0, T0 + 60);
 confere("1.2.25+ com internet caída 5 min (mesmo processo) → não é reabertura",
   (corteDaVolta("H", 30, s(T0 + 30)), corteDaVolta("H", 330, s(T0 + 330))), s(T0 - 10));
+
+// ── LIGOU, ATUALIZA (03/10/2026) ─────────────────────────────────────────────
+// A rota da versão libera a atualização nos primeiros 20 min depois de o
+// Assistente abrir de verdade — e só então.
+console.log("\n— Acabou de ligar? (libera a atualização sem esperar a loja parar) —");
+const confereLigou = (oQue: string, obtido: number | null, esperadoSeg: number | null) => {
+  const ok = obtido === (esperadoSeg == null ? null : s(esperadoSeg));
+  if (!ok) falhas++;
+  const fmt = (v: number | null) => (v == null ? "não ligou agora" : `ligou há ${v / 1000}s`);
+  console.log(`${ok ? "✅" : "❌"} ${oQue} — ${fmt(obtido)}${ok ? "" : ` (esperado ${fmt(esperadoSeg == null ? null : s(esperadoSeg))})`}`);
+};
+esquecerAssistentes();
+pollsAntigos("L1", T0, T0 + 60);
+corteDaVolta("L1", null, s(T0 + 60 + 8 * 3600));
+confereLigou("antigo: PC desligado a noite toda e ligado → 90 s depois", ligouHaMs("L1", s(T0 + 60 + 8 * 3600 + 90)), 90);
+confereLigou("…e 25 min depois já passou da janela de 20", (() => {
+  const t = T0 + 60 + 8 * 3600 + 25 * 60;
+  const ms = ligouHaMs("L1", s(t));
+  return ms != null && ms <= ATUALIZA_AO_ABRIR_MS ? ms : null;
+})(), null);
+esquecerAssistentes();
+pollsAntigos("L2", T0, T0 + 60);
+corteDaVolta("L2", null, s(T0 + 120));
+confereLigou("antigo: internet caiu 1 min no meio do jantar → NÃO é ligar", ligouHaMs("L2", s(T0 + 130)), null);
+esquecerAssistentes();
+pollsAntigos("L3", T0, T0 + 60);
+confereLigou("antigo: ligado o dia todo, consultando sem parar → NÃO é ligar", ligouHaMs("L3", s(T0 + 61)), null);
+esquecerAssistentes();
+confereLigou("antigo: primeira consulta depois de um deploy do servidor → não sabe, NÃO libera", (corteDaVolta("L4", null, s(T0)), ligouHaMs("L4", s(T0 + 5))), null);
+esquecerAssistentes();
+corteDaVolta("L5", 40, s(T0));
+confereLigou("1.2.25+ aberto há 40 s (mesmo depois de deploy) → ligou", ligouHaMs("L5", s(T0 + 50)), 90);
+esquecerAssistentes();
+corteDaVolta("L6", 7200, s(T0));
+confereLigou("1.2.25+ aberto há 2 h → NÃO é ligar", ligouHaMs("L6", s(T0 + 3)), null);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

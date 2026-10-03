@@ -38,8 +38,24 @@ export const VOLTA_RAPIDA_MS = 3 * 60_000;
 export const VALIDADE_DA_DECISAO_MS = 30 * 60_000;
 /** Folga da viagem da consulta, a mesma que o teto zero já usava. */
 const FOLGA_MS = 10_000;
+/**
+ * Sumido por mais que isto, o Assistente antigo foi FECHADO ou o PC ficou
+ * desligado — não é a internet que piscou. É o que separa "ligou o
+ * computador" de "caiu a rede no meio do jantar" para quem não informa a
+ * própria abertura.
+ */
+export const FICOU_FORA_MS = 10 * 60_000;
+/**
+ * Até isto depois de abrir, a atualização sai sem esperar a loja parar
+ * (rota /api/assistente/versao). Regra do Douglas, 03/10/2026: "ligou o
+ * computador, ativou ele, tem atualização, atualiza". Cobre a checagem dos
+ * 90 s do boot, a de 10 min de quem ligou sem rede pronta e a de 15 min de
+ * quem imprimiu logo ao abrir.
+ */
+export const ATUALIZA_AO_ABRIR_MS = 20 * 60_000;
 
-type Decisao = { abertura: number; corte: number };
+/** `ligou`: abertura de verdade (informada pelo 1.2.25+ ou depois de muito tempo fora), não um soluço de rede. */
+type Decisao = { abertura: number; corte: number; ligou: boolean };
 
 const ultimaConsulta = new Map<string, number>();
 const decisoes = new Map<string, Decisao>();
@@ -72,7 +88,9 @@ export function corteDaVolta(chave: string, abertoHaSeg: number | null, agora = 
   }
 
   let abertura: number | null = null;
+  let abriuInformado = false;
   if (abertoHaSeg != null && Number.isFinite(abertoHaSeg) && abertoHaSeg >= 0) {
+    abriuInformado = true;
     const informada = agora - abertoHaSeg * 1000;
     // Mesmo processo de antes (a abertura informada não mudou): nada a decidir.
     const mesmoProcesso = decisao && Math.abs(informada - decisao.abertura) < 30_000;
@@ -86,11 +104,24 @@ export function corteDaVolta(chave: string, abertoHaSeg: number | null, agora = 
     // A consulta anterior foi DESTE PC, pouco antes de ele abrir: foi reinício.
     // (Se ela é posterior à abertura, veio de outro PC no mesmo endereço.)
     const reinicio = antes != null && antes <= abertura && abertura - antes <= VOLTA_RAPIDA_MS;
-    decisao = { abertura, corte: reinicio ? antes! : abertura - FOLGA_MS };
+    const ligou = abriuInformado || (antes != null && abertura - antes > FICOU_FORA_MS);
+    decisao = { abertura, corte: reinicio ? antes! : abertura - FOLGA_MS, ligou };
     decisoes.set(chave, decisao);
   }
 
   return decisao ? decisao.corte : null;
+}
+
+/**
+ * Há quantos ms este PC LIGOU o Assistente — ou `null` se o servidor não viu
+ * uma abertura de verdade (PC ligado o dia todo, soluço de rede, servidor
+ * recém-reiniciado sem saber de nada).
+ */
+export function ligouHaMs(chave: string, agora = Date.now()): number | null {
+  const d = decisoes.get(chave);
+  if (!d || !d.ligou) return null;
+  const ms = agora - d.abertura;
+  return ms >= 0 && ms <= VALIDADE_DA_DECISAO_MS ? ms : null;
 }
 
 /** Só para os testes. */
