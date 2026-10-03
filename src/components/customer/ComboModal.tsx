@@ -496,14 +496,19 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                   ? `R$ ${unitFinalPrice.toFixed(2).replace(".", ",")}`
                   : product.price > 0
                     ? `R$ ${product.price.toFixed(2).replace(".", ",")}`
-                    : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
+                    // Base 0 com algo escolhido: o preço é todo das opções, então
+                    // o que vale mostrar é o total. "A partir de R$ 55 + R$ 89,90
+                    // adicionais" (pizza meio a meio) parecia somar R$ 144,90.
+                    : extraSum > 0
+                      ? `R$ ${unitFinalPrice.toFixed(2).replace(".", ",")}`
+                      : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
               </span>
               {emPromocao && (
                 <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#FFF", background: "#C92E09", padding: "2px 8px", borderRadius: "12px" }}>
                   🏷️ PROMOÇÃO
                 </span>
               )}
-              {extraSum > 0 && !emPromocao && (
+              {extraSum > 0 && !emPromocao && product.price > 0 && (
                 <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#B45309", backgroundColor: "#FFF7E6", padding: "2px 8px", borderRadius: "12px" }}>
                   + R$ {extraSum.toFixed(2).replace(".", ",")} adicionais
                 </span>
@@ -688,7 +693,10 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
                                   lugar dos ingredientes, e o cliente que não quer cebola
                                   não tinha como saber (Serpa, 29/09/2026). A nota segue
                                   valendo para o que o grupo define ("13cm" do "Baby"). */}
-                              {item.menuProduct.description && item.menuProduct.description.trim() !== String(item.optionNote || "").trim() && (
+                              {/* Opção cadastrada sem descrição guarda o próprio nome nela
+                                  ("Portuguesa / Portuguesa"): repetir o nome não diz nada. */}
+                              {item.menuProduct.description && item.menuProduct.description.trim() !== String(item.optionNote || "").trim()
+                                && item.menuProduct.description.trim().toLowerCase() !== String(item.menuProduct.name || "").trim().toLowerCase() && (
                                 <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: "1px", lineHeight: 1.3 }}>
                                   {item.menuProduct.description}
                                 </div>

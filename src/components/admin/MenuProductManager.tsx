@@ -3,6 +3,9 @@ import { useState, useEffect, useMemo } from "react";
 import { ehProdutoDeIntegracao, idsSoDeOpcaoDeCombo, combosQueUsamOpcao, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import { perguntaTravadaPelaPausa } from "@/lib/opcao-pausada";
 import { combosQueDependemDoItem, combosParaReativar, itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
+import { pizzasJaMontadas } from "@/lib/pizza-por-tamanho";
+import { precoMinimoDoProduto } from "@/lib/preco-combo";
+import CadastroDePizza, { EscolhaDoNovoItem, type PizzaJaMontada } from "@/components/admin/CadastroDePizza";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
 
@@ -324,6 +327,13 @@ export default function MenuProductManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"all" | "items" | "combos">("all");
+  // "Novo Item" pergunta antes se é pizza ou outro item (components/admin/CadastroDePizza):
+  // a pizza tem o passo a passo dela, o item vai para o formulário, o combo só pelo Novo Combo.
+  const [novoItem, setNovoItem] = useState<{ categoria?: string } | null>(null);
+  const [pizza, setPizza] = useState<{ categoria?: string; editar?: PizzaJaMontada | null } | null>(null);
+  const pizzasExistentes = useMemo(() => pizzasJaMontadas(products || []), [products]);
+  /** A pizza (montada pelo passo a passo) cujo tamanho está aberto no formulário. */
+  const pizzaDoFormulario = editingId ? pizzasExistentes.find(m => m.tamanhos.some(t => t.id === editingId)) || null : null;
 
   // Helper para identificar categorias de integração ocultas
   /**
@@ -487,6 +497,25 @@ export default function MenuProductManager({
       showToast("Erro ao criar categoria", "#C92E09");
     } finally {
       setNewCatSaving(false);
+    }
+  };
+
+  /** Categoria nova pedida no passo a passo da pizza ("Pizzas"): a mesma rota do "Adicionar Categoria". */
+  const criarCategoriaDaPizza = async (nome: string): Promise<string | null> => {
+    const igual = dynCategories.find(c => (c.name || "").trim().toLowerCase() === nome.trim().toLowerCase());
+    if (igual) return igual.name;
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nome.trim(), emoji: "🍕", color: "#E8360C" }),
+      });
+      if (!res.ok) return null;
+      const criada = await res.json();
+      setDynCategories(prev => [...prev, criada]);
+      return criada.name;
+    } catch {
+      return null;
     }
   };
 
@@ -1384,12 +1413,6 @@ export default function MenuProductManager({
       return { ...g, maxQty: qtd, minQty: qtd };
     }));
   };
-  const escolherSeEhCombo = (sim: boolean) => {
-    setIsCombo(sim);
-    // Deixou de ser combo: o que era "item do combo" volta a ser pergunta
-    // comum, visível e editável — nada some sem a loja ver.
-    if (!sim) setComboGroups(prev => prev.map(g => g.fixo ? { ...g, fixo: false } : g));
-  };
   const removeGroup = (idx: number) => setComboGroups(prev => prev.filter((_, i) => i !== idx));
   const updateGroup = (idx: number, key: string, val: any) => {
     setComboGroups(prev => prev.map((g, i) => i === idx ? { ...g, [key]: val } : g));
@@ -1909,7 +1932,7 @@ export default function MenuProductManager({
             <ArrowUpDown size={15} style={{ marginRight: "4px" }} /> Reordenar Cardápio
           </button>
           <button
-            onClick={() => { resetForm(); setIsCombo(false); setCategory(dynCategories[0]?.name || ""); setShowForm(true); }}
+            onClick={() => setNovoItem({})}
             className="btn btn-outline"
             style={{ fontSize: "0.85rem", background: "#FFF", borderColor: "#E8360C", color: "#E8360C", fontWeight: 700 }}
           >
@@ -1972,6 +1995,35 @@ export default function MenuProductManager({
         </div>
       </div>
 
+      {/* NOVO ITEM: pizza ou outro item? */}
+      {novoItem && (
+        <EscolhaDoNovoItem
+          temPizzas={pizzasExistentes.length > 0}
+          onFechar={() => setNovoItem(null)}
+          onPizza={() => { setPizza({ categoria: novoItem.categoria }); setNovoItem(null); }}
+          onItem={() => {
+            const cat = novoItem.categoria;
+            setNovoItem(null);
+            resetForm(); setIsCombo(false);
+            setCategory(cat || dynCategories.find(c => !isIntegrationCategory(c.name))?.name || dynCategories[0]?.name || "");
+            setShowForm(true);
+          }}
+        />
+      )}
+
+      {/* O PASSO A PASSO DA PIZZA */}
+      {pizza && (
+        <CadastroDePizza
+          categorias={dynCategories.filter(c => !isIntegrationCategory(c.name) && !categoriasSoDeOpcoes.has((c.name || "").toLowerCase().trim()))}
+          categoriaInicial={pizza.categoria}
+          existentes={pizzasExistentes}
+          editar={pizza.editar || null}
+          onFechar={() => setPizza(null)}
+          onSalvo={() => router.refresh()}
+          criarCategoria={criarCategoriaDaPizza}
+        />
+      )}
+
       {/* FORM MODAL OVERLAY */}
       {showForm && (
         <div style={{
@@ -1990,7 +2042,7 @@ export default function MenuProductManager({
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", borderBottom: "1px solid #F1F5F9", paddingBottom: "1rem" }}>
               <div>
                 <span style={{ fontSize: "0.72rem", background: editandoOpcao ? "#FAF6F2" : "#FEF2F2", color: editandoOpcao ? "#1C1917" : "#C92E09", fontWeight: 800, padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  {editandoOpcao ? "🧩 Editar Opção de Combo" : editingId ? "✏️ Editar Produto" : "✨ Novo Produto"}
+                  {editandoOpcao ? "🧩 Editar Opção de Combo" : editingId ? (isCombo ? "✏️ Editar Combo" : "✏️ Editar Produto") : (isCombo ? "📦 Novo Combo" : "✨ Novo Produto")}
                 </span>
                 <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#0F172A", margin: "6px 0 0", letterSpacing: "-0.5px" }}>
                   {editingId ? (name || "Editar Produto") : (isCombo ? "Novo Combo" : "Novo Produto")}
@@ -2029,33 +2081,31 @@ export default function MenuProductManager({
               </div>
             )}
 
-            {/* É UM COMBO? Pergunta é uma coisa, combo é outra: pastel com
-                sabor e refrigerante com tamanho têm perguntas e NÃO são combo.
-                Combo junta itens que já estão no cardápio — e por isso pausar
-                um deles oferece pausar o combo. Ver lib/combo-e-pergunta.ts. */}
-            {!editandoOpcao && (
-              <div style={{ marginBottom: "1.25rem" }}>
-                <p style={{ margin: "0 0 8px", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>Isto é um combo?</p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px" }}>
-                  {[
-                    { sim: false, titulo: "Não, é um produto", texto: "Pode ter perguntas: sabor, tamanho, adicionais, ponto da carne." },
-                    { sim: true, titulo: "Sim, é um combo", texto: "Junta itens que já estão no cardápio (ex.: 2 X-Tudo + Batata)." },
-                  ].map(op => {
-                    const marcado = isCombo === op.sim;
-                    return (
-                      <button key={String(op.sim)} type="button" onClick={() => escolherSeEhCombo(op.sim)} aria-pressed={marcado}
-                        style={{
-                          textAlign: "left", padding: "11px 13px", borderRadius: "12px", cursor: "pointer", fontFamily: "inherit",
-                          border: `2px solid ${marcado ? "#C92E09" : "#E2E8F0"}`, background: marcado ? "#FEF2F2" : "#FFF",
-                        }}>
-                        <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: marcado ? "#C92E09" : "#0F172A" }}>
-                          {op.sim ? "📦 " : "🍔 "}{op.titulo}
-                        </span>
-                        <span style={{ display: "block", fontSize: "0.74rem", color: "#64748B", marginTop: "3px", lineHeight: 1.4 }}>{op.texto}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+            {/* COMBO: só pelo botão Novo Combo (Douglas, 02/10/2026: "se eu quiser
+                combo, eu vou clicar em novo combo"). Item e combo são cadastros
+                diferentes, e o formulário não oferece trocar um pelo outro. */}
+            {isCombo && !editandoOpcao && !editingId && (
+              <div style={{ marginBottom: "1.25rem", padding: "12px 14px", background: "#F0FDFA", border: "1.5px solid #99F6E4", borderRadius: "12px" }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: "0.9rem", color: "#0F766E" }}>📦 Como funciona o combo</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#134E4A", lineHeight: 1.55 }}>
+                  O combo junta itens que <strong>já estão no seu cardápio</strong>, como 1 X-Tudo + 1 Batata + 1 Refrigerante.
+                  Cadastre os itens antes (em Novo Item) e escolha-os em <strong>O que o combo leva</strong>, lá embaixo.
+                  Assim, quando um item acabar e você o pausar, o sistema oferece pausar todos os combos que levam ele, de uma vez.
+                </p>
+              </div>
+            )}
+
+            {/* PIZZA MONTADA PELO PASSO A PASSO: sabores e preços de todos os
+                tamanhos se mudam juntos na tela da pizza, não aqui um por um. */}
+            {pizzaDoFormulario && (
+              <div style={{ marginBottom: "1.25rem", padding: "12px 14px", background: "#FFF5F1", border: "1.5px solid #F8B49A", borderRadius: "12px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                <p style={{ margin: 0, flex: 1, minWidth: "220px", fontSize: "0.82rem", color: "#7C2D12", lineHeight: 1.5 }}>
+                  <strong>🍕 Esta pizza foi montada pelo passo a passo.</strong> Para pôr sabor novo ou mudar preço em todos os tamanhos de uma vez, use a tela da pizza. Aqui ficam a foto, os canais e os horários.
+                </p>
+                <button type="button" onClick={() => { const m = pizzaDoFormulario; resetForm(); setPizza({ editar: m }); }}
+                  style={{ padding: "9px 14px", borderRadius: "10px", border: "none", background: "#E8360C", color: "#FFF", fontWeight: 800, fontSize: "0.84rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  Abrir a tela da pizza
+                </button>
               </div>
             )}
 
@@ -3531,7 +3581,7 @@ export default function MenuProductManager({
                         + Criar combo
                       </button>
                       <button
-                        onClick={() => { resetForm(); setIsCombo(false); setCategory(cat.name); setShowForm(true); }}
+                        onClick={() => setNovoItem({ categoria: cat.name })}
                         style={{ padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #CBD5E1", background: "#FFF", fontSize: "0.78rem", fontWeight: 700, color: "#334155", cursor: "pointer" }}
                       >
                         + Criar item
@@ -3713,6 +3763,14 @@ export default function MenuProductManager({
                                     <span style={{ fontSize: "0.6rem", fontWeight: 800, color: "#FFF", background: "#C92E09", borderRadius: 999, padding: "1px 6px" }}>
                                       PROMO
                                     </span>
+                                  </span>
+                                ) : !(Number(p.price) > 0) && p.comboGroups?.length > 0 ? (
+                                  // Preço todo nas opções (a pizza por tamanho, o pastel por
+                                  // tamanho): "R$ 0,00" parecia produto de graça. É o mesmo
+                                  // "a partir de" que o cliente vê (lib/preco-combo.ts).
+                                  <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.1, whiteSpace: "nowrap", marginRight: "6px" }}>
+                                    <span style={{ fontSize: "0.62rem", fontWeight: 700, color: "#94A3B8" }}>a partir de</span>
+                                    <span style={{ fontSize: "1rem", fontWeight: 900, color: "#E8360C" }}>R$ {precoMinimoDoProduto(p).toFixed(2).replace(".", ",")}</span>
                                   </span>
                                 ) : (
                                   <span style={{ fontSize: "1rem", fontWeight: 900, color: "#E8360C", whiteSpace: "nowrap", marginRight: "6px" }}>
