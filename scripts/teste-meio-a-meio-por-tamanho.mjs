@@ -5,7 +5,7 @@
  *   node --experimental-strip-types scripts/teste-meio-a-meio-por-tamanho.mjs
  */
 import { precoUnitarioDoItem, precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, precoDaOpcaoNaTela, adicionaisDetalhados, bloqueiosDaOpcao, opcaoDisponivelNaTela, opcoesBloqueadasEscolhidas, tabelaDaOpcao, grupoAguardaEscolha } from "../src/lib/preco-combo.ts";
-import { meiaNaPizza, TITULO_DO_MEIO, regraDoTitulo } from "../src/lib/meio-a-meio.ts";
+import { meiaNaPizza, TITULO_DO_MEIO, regraDoTitulo, tamanhosSemMeioDaLoja } from "../src/lib/meio-a-meio.ts";
 
 let ok = 0;
 let falhou = 0;
@@ -121,6 +121,22 @@ igual("mesa (lista): Grande + borda = 60 + 7", precoUnitarioDoItem(pizzaBorda, [
 igual("mesa (lista): Pequena + borda = 40 + 5", precoUnitarioDoItem(pizzaBorda, [{ name: "Pequena", quantity: 1 }, { name: "Borda Catupiry", quantity: 1 }]), 45);
 igual("mesa (lista): borda com a Grande não é recusada", opcoesBloqueadasEscolhidas(pizzaBorda, [{ name: "Grande", quantity: 1 }, { name: "Borda Catupiry", quantity: 1 }]), []);
 igual("site: Grande + 3 bordas da Grande", precoUnitarioDoItem(pizzaBorda, { tam: { Grande: 1 }, bG: { "Borda Catupiry": 3 } }), 81);
+
+// ── Tamanho apagado e religado (Calabresa do Chef da Serpa, 02/10/2026) ──
+// Sem a Grande, a meia dela nas outras pizzas foi gravada "Grande: null". Esse
+// null é conta, não regra da casa: com a Grande de volta, a meia volta a ter preço.
+const semGrande = { id: "cdc", name: "Calabresa do Chef", price: 50, comboGroups: [
+  { id: "tam", title: "Tamanho", minQty: 1, maxQty: 1, items: [{ additionalPrice: 0, menuProduct: { name: "Pequena" } }] },
+] };
+const gravadaSemGrande = meiaNaPizza(calabresa, semGrande, "media", ["Pequena"]).precoPorEscolha;
+igual("sem a Grande: meia bloqueada na Grande", gravadaSemGrande, { Pequena: null, Grande: null });
+const daCasa = tamanhosSemMeioDaLoja([gravadaSemGrande, { Pequena: null, Grande: 15 }, JSON.stringify({ Pequena: null, Grande: -5 })]);
+igual("regra da casa: só a Pequena (a Grande tem meia com preço)", [...daCasa], ["Pequena"]);
+const cdc = { ...semGrande, comboGroups: [tamanho(15)] };
+const semMeio = bloqueiosDaOpcao({ precoPorEscolha: gravadaSemGrande }).filter((t) => daCasa.has(t));
+igual("Grande religada: a meia volta na Grande", meiaNaPizza(calabresa, cdc, "media", semMeio).precoPorEscolha, { Pequena: null, Grande: 2.5 });
+igual("tamanho sem nenhuma meia com preço é regra da casa", [...tamanhosSemMeioDaLoja([{ Pequena: null, Grande: null }, { Pequena: null }])].sort(), ["Grande", "Pequena"]);
+igual("tabela vazia ou inválida não vira regra", [...tamanhosSemMeioDaLoja([null, "{x", [], { "": null }])], []);
 
 console.log(`${ok} ok, ${falhou} falhou`);
 process.exit(falhou ? 1 : 0);

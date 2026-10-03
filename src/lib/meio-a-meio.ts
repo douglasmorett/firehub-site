@@ -146,6 +146,44 @@ export function meiaNaPizza(esta: PizzaDoMeio, outra: PizzaDoMeio, regra: RegraD
   };
 }
 
+/**
+ * OS TAMANHOS EM QUE A CASA NÃO FAZ MEIO A MEIO, relidos das meias gravadas.
+ *
+ * O `null` na tabela da meia quer dizer duas coisas, gravadas do mesmo jeito:
+ *   - regra da casa: a Serpa não faz meio a meio na Pequena (o --sem-meio do
+ *     script, que vale para a loja inteira);
+ *   - conta: a outra pizza não tem aquele tamanho (`mesmosTamanhos` acima).
+ * Quando o refazer lia todo `null` como regra da casa, o da conta ficava para
+ * sempre: o Anilton (Serpa, 02/10/2026) apagou a Grande da Calabresa do Chef,
+ * as meias dela nas outras 19 pizzas viraram "Grande: null", e religar a
+ * Grande não devolveu o meio a meio.
+ *
+ * Regra da casa é tamanho bloqueado em alguma meia e com preço em NENHUMA da
+ * loja. Se uma meia qualquer tem preço nele, a casa faz meio a meio ali, e o
+ * `null` é conta, que o refazer recalcula.
+ */
+export function tamanhosSemMeioDaLoja(tabelas: readonly unknown[]): Set<string> {
+  const bloqueados = new Set<string>();
+  const comPreco = new Set<string>();
+  for (const bruta of tabelas) {
+    let tabela: unknown = bruta;
+    if (typeof tabela === "string") {
+      try {
+        tabela = JSON.parse(tabela);
+      } catch {
+        continue;
+      }
+    }
+    if (!tabela || typeof tabela !== "object" || Array.isArray(tabela)) continue;
+    for (const [tamanho, valor] of Object.entries(tabela as Record<string, unknown>)) {
+      if (!tamanho) continue;
+      if (valor === null) bloqueados.add(tamanho);
+      else if (Number.isFinite(Number(valor))) comPreco.add(tamanho);
+    }
+  }
+  return new Set([...bloqueados].filter((t) => !comPreco.has(t)));
+}
+
 function r2(n: number): number {
   return Math.round(n * 100) / 100;
 }

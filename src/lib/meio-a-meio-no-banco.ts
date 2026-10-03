@@ -13,7 +13,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { PREFIXO_DA_MEIA, ehPerguntaDeMeio, meiaNaPizza, regraDoTitulo, type PizzaDoMeio } from "@/lib/meio-a-meio";
+import { PREFIXO_DA_MEIA, ehPerguntaDeMeio, meiaNaPizza, regraDoTitulo, tamanhosSemMeioDaLoja, type PizzaDoMeio } from "@/lib/meio-a-meio";
 import { bloqueiosDaOpcao } from "@/lib/preco-combo";
 
 export async function refazerMeiasDaLoja(franchiseeId: string | null | undefined): Promise<number> {
@@ -58,6 +58,11 @@ export async function refazerMeiasDaLoja(franchiseeId: string | null | undefined
   });
   const porId = new Map<string, PizzaDoMeio>(pizzas.map((p) => [p.id, p]));
   const porNome = new Map<string, PizzaDoMeio>(pizzas.map((p) => [p.name, p]));
+  // A regra da casa ("não faz meio a meio na Pequena") se relê da loja inteira;
+  // o null que só veio da conta não pode virar regra (ver tamanhosSemMeioDaLoja).
+  const daCasa = tamanhosSemMeioDaLoja(
+    nossos.flatMap((g) => g.items.filter((i) => (i.menuProduct?.name || "").startsWith(PREFIXO_DA_MEIA)).map((i) => i.precoPorEscolha))
+  );
 
   let refeitas = 0;
   for (const g of nossos) {
@@ -69,8 +74,10 @@ export async function refazerMeiasDaLoja(franchiseeId: string | null | undefined
       if (!nome.startsWith(PREFIXO_DA_MEIA)) continue;
       const outra = porNome.get(nome.slice(PREFIXO_DA_MEIA.length));
       if (!outra) continue;
-      // Os tamanhos sem meio a meio ficam como estão gravados (null na tabela).
-      const meia = meiaNaPizza(esta, outra, regra, bloqueiosDaOpcao(item as any));
+      // Os tamanhos sem meio a meio por regra da casa ficam bloqueados; o resto
+      // a conta refaz (a outra pizza pode ter ganhado o tamanho de volta).
+      const semMeio = bloqueiosDaOpcao(item as any).filter((t) => daCasa.has(t));
+      const meia = meiaNaPizza(esta, outra, regra, semMeio);
       const igual =
         Number(item.additionalPrice) === meia.additionalPrice &&
         mesmaTabela(item.precoPorEscolha, meia.precoPorEscolha) &&
