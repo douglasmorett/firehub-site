@@ -81,7 +81,7 @@ export const DECLARACOES = [
   },
   {
     name: "chamar_pessoa",
-    description: "Passa a conversa para uma pessoa da equipe: o robô para de responder aqui e a equipe é avisada. Use quando pedirem atendente/humano, em reclamação, cancelamento, cobrança contestada, erro que você não resolve ou pergunta fora da base.",
+    description: "Passa a conversa para uma pessoa da equipe: o robô para de responder aqui e a equipe é avisada. Só quando: pediram atendente/humano; é decisão da equipe (cobrança contestada, cancelamento, desconto, exceção, reclamação séria); alguém precisa fazer algo na conta por ela; a base e os vídeos não cobrem o assunto; ou você já guiou o passo a passo e não resolveu. Dúvida de como usar o painel NÃO é motivo: responda.",
     parametersJsonSchema: {
       type: "object",
       properties: { motivo: { type: "string", description: "Em uma frase, o que a pessoa precisa." } },
@@ -232,7 +232,7 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
       );
       return {
         ok: true, loja: loja.storeName || loja.name,
-        aviso: "Atenda como suporte só com a BASE, sem dados da conta (fatura, pedidos, senha, reiniciar). Explique, curto, que para o atendimento reconhecer este número é só cadastrá-lo no painel: Chatbot IA → Notificações → 'Outras pessoas que recebem os alertas' (ou escrever do WhatsApp cadastrado na loja). Se ele precisar de algo da conta agora, use chamar_pessoa.",
+        aviso: "Atenda como SUPORTE: o passo a passo da base e dos vídeos vale igual para ele; só não mostre nem mexa em dados da conta (fatura, pedidos, senha, reiniciar). Resolva a dúvida primeiro. Depois, explique curto que para o atendimento reconhecer este número é só cadastrá-lo no painel: Minha Loja → WhatsApp do proprietário (se ainda estiver vazio) ou Chatbot IA → Notificações → 'Outras pessoas que recebem os alertas'. chamar_pessoa só se alguém precisar fazer algo na conta por ele.",
       };
     }
 
