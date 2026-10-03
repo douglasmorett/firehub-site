@@ -261,7 +261,7 @@ const s = StyleSheet.create({
   chipTextoAtivo: { color: "#FFFFFF" },
   cartao: { backgroundColor: cor.cartao, borderRadius: raio.medio, borderWidth: 1, borderColor: cor.borda, padding: 12, gap: 8 },
   rotulo: { fontSize: 12, fontWeight: "800", color: cor.textoApagado },
-  campo: { flex: 1, minHeight: 46, borderWidth: 1.5, borderColor: cor.bordaForte, borderRadius: raio.pequeno, paddingHorizontal: 12, fontSize: 17, fontWeight: "700", color: cor.texto, textAlign: "center" },
+  campo: { flex: 1, minWidth: 0, minHeight: 46, borderWidth: 1.5, borderColor: cor.bordaForte, borderRadius: raio.pequeno, paddingHorizontal: 12, fontSize: 17, fontWeight: "700", color: cor.texto, textAlign: "center" },
   dica: { fontSize: 12, color: cor.textoApagado, lineHeight: 17 },
   erro: { backgroundColor: cor.vermelhoClaro, color: cor.vermelho, padding: 10, borderRadius: raio.pequeno, fontWeight: "700", overflow: "hidden" },
   periodo: { textAlign: "center", fontSize: 13, color: cor.textoApagado },

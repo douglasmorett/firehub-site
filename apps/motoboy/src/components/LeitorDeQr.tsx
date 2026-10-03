@@ -73,7 +73,7 @@ export function LeitorDeQr({
               )}
             </View>
           )}
-          <View pointerEvents="none" style={s.mira} />
+          <View style={[s.mira, { pointerEvents: "none" }]} />
         </View>
 
         <View style={s.botoes}>

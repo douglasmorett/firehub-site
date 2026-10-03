@@ -42,11 +42,11 @@ export default function Entrar() {
     if (!acesso.trim() || !senha) return setErro("Informe o telefone e a senha.");
     setEntrando(true);
     try {
-      const sessao = await entrar({ loja, acesso, senha });
+      await entrar({ loja, acesso, senha });
       const puxar = comandaDoQr.current;
       router.replace({
         pathname: "/entregas",
-        params: { ...(puxar ? { puxar } : {}), ...(sessao.trocarSenha ? { trocarSenha: "1" } : {}) },
+        params: puxar ? { puxar } : {},
       });
     } catch (e: any) {
       if (e instanceof ErroDaApi && e.status === 404) setErro("Não achei essa loja. Confira o link ou peça o QR para a loja.");
@@ -132,6 +132,7 @@ export default function Entrar() {
               />
               <Botao
                 titulo=""
+                rotulo={verSenha ? "Esconder a senha" : "Mostrar a senha"}
                 variante="contorno"
                 icone={<Ionicons name={verSenha ? "eye-off" : "eye"} size={20} color={cor.textoSuave} />}
                 aoTocar={() => setVerSenha((v) => !v)}

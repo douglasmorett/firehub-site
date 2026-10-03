@@ -29,6 +29,7 @@ export function Botao({
   desabilitado = false,
   pequeno = false,
   estilo,
+  rotulo,
 }: {
   titulo: string;
   aoTocar: () => void;
@@ -38,12 +39,15 @@ export function Botao({
   desabilitado?: boolean;
   pequeno?: boolean;
   estilo?: StyleProp<ViewStyle>;
+  /** Nome para o leitor de tela quando o botão é só ícone. */
+  rotulo?: string;
 }) {
   const v = estilos[variante];
   const inativo = desabilitado || carregando;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={rotulo ?? titulo}
       accessibilityState={{ disabled: inativo, busy: carregando }}
       disabled={inativo}
       onPress={() => {

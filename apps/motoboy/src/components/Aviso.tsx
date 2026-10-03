@@ -44,10 +44,10 @@ export function AvisoProvider({ children }: { children: ReactNode }) {
       {children}
       {aviso && t && (
         <Animated.View
-          pointerEvents="none"
           accessibilityLiveRegion="polite"
           style={[
             s.caixa,
+            { pointerEvents: "none" },
             { top: insets.top + 8, backgroundColor: t.fundo, borderColor: t.borda, transform: [{ translateY: posicao }] },
           ]}
         >
@@ -69,11 +69,7 @@ const s = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+    boxShadow: "0 6px 12px rgba(0,0,0,0.15)",
   },
   texto: { fontSize: 15, fontWeight: "800", lineHeight: 20 },
 });
