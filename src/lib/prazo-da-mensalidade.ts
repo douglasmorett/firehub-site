@@ -5,6 +5,10 @@
  * painel da loja só BLOQUEIA depois do dia 10: boleto pago no dia 5 leva um dia
  * útil para compensar, e a loja não pode travar em pleno movimento por isso.
  *
+ * A folga é só do bloqueio — nunca aparece para a loja como prazo. Para ela o
+ * prazo é o dia 5; depois dele o boleto já cobra juros (2% ao mês) e multa
+ * (4%), o padrão da conta no Asaas (dono, 02/10/2026).
+ *
  * Até 02/10/2026 o banco guardava só o bloqueio (fechamento + 10 dias, no
  * cron) e o painel, o robô de atendimento e a tela de bloqueio mostravam essa
  * data como vencimento: o boleto de setembro vencia em 05/10 e a loja lia
@@ -65,11 +69,6 @@ export function bloqueioDaMensalidade(yearMonth: string, fechadoEm: Date = new D
  */
 export function bloqueioDoCiclo(ciclo: { yearMonth: string; closedAt?: Date | string | null }): Date {
   return bloqueioDaMensalidade(ciclo.yearMonth, ciclo.closedAt ? new Date(ciclo.closedAt) : new Date(0));
-}
-
-/** Último dia (Brasília) em que dá para pagar sem bloqueio: "2026-10-10". */
-export function ultimoDiaSemBloqueio(ciclo: { yearMonth: string; closedAt?: Date | string | null }): string {
-  return diaEmBrasilia(new Date(bloqueioDoCiclo(ciclo).getTime() - 1));
 }
 
 /** "2026-10-05" → "05/10". */
