@@ -10,8 +10,9 @@
  *
  *   • Cardápio vazio: a janela abre toda vez que a tela abre, até existir o
  *     primeiro produto. Fechar vale só para esta visita.
- *   • Sempre: uma tarja pequena no topo. Com produtos ela pode ser fechada de
- *     vez (lembrado neste navegador); vazia, fica.
+ *   • Sempre: um cartão verde no topo — é a única oferta da tela, então tem
+ *     de aparecer. Com produtos ele pode ser fechado de vez (lembrado neste
+ *     navegador); vazia, fica.
  *
  * O botão só ABRE o WhatsApp do FireHub com a mensagem escrita — quem manda é
  * o lojista. O número do atendimento não envia nada sozinho.
@@ -74,41 +75,108 @@ export default function CopiamosSeuCardapio({
     <>
       {tarjaFechada === false && (
         <div
+          className="copiamos-tarja"
           style={{
+            position: "relative",
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: 16,
             flexWrap: "wrap",
-            background: "#ECFDF5",
-            border: "1px solid #A7F3D0",
-            borderRadius: 12,
-            padding: "8px 12px",
-            marginBottom: "1rem",
-            fontSize: "0.85rem",
-            color: "#065F46",
+            background: "linear-gradient(135deg, #065F46 0%, #047857 55%, #059669 100%)",
+            borderRadius: 16,
+            padding: cardapioVazio ? "18px 20px" : "18px 44px 18px 20px",
+            marginBottom: "1.5rem",
+            color: "#fff",
+            boxShadow: "0 6px 20px rgba(4, 120, 87, 0.22)",
           }}
         >
-          <span style={{ fontSize: "1.1rem" }}>🎁</span>
-          <span style={{ flex: "1 1 240px", lineHeight: 1.35 }}>
-            <strong>Já tem cardápio em outro lugar?</strong> A nossa equipe copia tudo para você em até 24 h, sem custo.
-          </span>
+          <div
+            aria-hidden="true"
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 14,
+              background: "rgba(255,255,255,0.16)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "1.7rem",
+              flexShrink: 0,
+            }}
+          >
+            🎁
+          </div>
+
+          <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+            <span
+              style={{
+                display: "inline-block",
+                background: "#FDE047",
+                color: "#713F12",
+                fontWeight: 800,
+                fontSize: "0.68rem",
+                letterSpacing: "0.5px",
+                textTransform: "uppercase",
+                padding: "3px 9px",
+                borderRadius: 20,
+                marginBottom: 6,
+              }}
+            >
+              Grátis · pronto em até 24 h
+            </span>
+            <h3 style={{ margin: "0 0 4px", fontSize: "1.15rem", fontWeight: 800, lineHeight: 1.25 }}>
+              Já tem cardápio em outro lugar?
+            </h3>
+            <p style={{ margin: 0, fontSize: "0.88rem", lineHeight: 1.45, color: "rgba(255,255,255,0.92)" }}>
+              Mande o link (iFood, Anota AI, site) ou uma foto do cardápio impresso. A nossa equipe{" "}
+              <strong style={{ color: "#fff" }}>copia tudo para você</strong>, sem custo.
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+              {["Produtos, preços e fotos", "Adicionais e combos", "Bairros e taxas de entrega"].map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    background: "rgba(255,255,255,0.14)",
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                    fontSize: "0.76rem",
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ✓ {t}
+                </span>
+              ))}
+            </div>
+          </div>
+
           <a
             href={link}
             target="_blank"
             rel="noopener noreferrer"
+            className="copiamos-botao"
             style={{
-              background: "#16A34A",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: "0.8rem",
-              padding: "6px 12px",
-              borderRadius: 8,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              background: "#fff",
+              color: "#047857",
+              fontWeight: 800,
+              fontSize: "0.92rem",
+              padding: "12px 20px",
+              borderRadius: 12,
               textDecoration: "none",
               whiteSpace: "nowrap",
+              boxShadow: "0 4px 14px rgba(0,0,0,0.15)",
             }}
           >
-            Falar no WhatsApp
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+            </svg>
+            Pedir a cópia no WhatsApp
           </a>
+
           {!cardapioVazio && (
             <button
               type="button"
@@ -116,18 +184,29 @@ export default function CopiamosSeuCardapio({
               aria-label="Fechar aviso"
               title="Fechar aviso"
               style={{
+                position: "absolute",
+                top: 8,
+                right: 10,
                 background: "none",
                 border: "none",
-                color: "#047857",
+                color: "rgba(255,255,255,0.75)",
                 fontSize: "1rem",
                 cursor: "pointer",
-                padding: "2px 4px",
+                padding: "4px 6px",
                 lineHeight: 1,
               }}
             >
               ✕
             </button>
           )}
+
+          <style>{`
+            .copiamos-botao { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+            .copiamos-botao:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.2) !important; }
+            @media (max-width: 640px) {
+              .copiamos-tarja .copiamos-botao { width: 100%; }
+            }
+          `}</style>
         </div>
       )}
 

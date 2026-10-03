@@ -136,8 +136,8 @@ export default async function StoreCardapioPage() {
         </a>
       </div>
 
-      {/* Cardápio vazio: janela oferecendo a cópia pela equipe; sempre, uma
-          tarja pequena no topo. O administrador vê todas as lojas — não é para ele. */}
+      {/* Cardápio vazio: janela oferecendo a cópia pela equipe; sempre, um
+          cartão no topo. O administrador vê todas as lojas — não é para ele. */}
       {user.role !== "ADMIN" && (
         <CopiamosSeuCardapio
           cardapioVazio={products.length === 0}
@@ -150,31 +150,8 @@ export default async function StoreCardapioPage() {
           pela API e a planilha não funcionam, e o FireHub ainda não puxa
           cardápio do iFood. O componente segue em components/IfoodImportButton. */}
 
-      {/* BANNER DE DICA DE ALTA CONVERSÃO: DESTAQUES DA CASA */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, #FFF7E6, #FFF7E6)",
-          border: "1.5px solid #FDE68A",
-          borderRadius: 16,
-          padding: "14px 18px",
-          marginTop: "1rem",
-          marginBottom: "1.5rem",
-          display: "flex",
-          alignItems: "center",
-          gap: "14px",
-          boxShadow: "0 2px 8px rgba(245, 158, 11, 0.08)",
-        }}
-      >
-        <span style={{ fontSize: "1.8rem", flexShrink: 0 }}>💡</span>
-        <div>
-          <h4 style={{ margin: "0 0 2px 0", fontSize: "0.95rem", fontWeight: 800, color: "#92400E" }}>
-            Dica para Aumentar Vendas: Destaques da Casa
-          </h4>
-          <p style={{ margin: 0, fontSize: "0.84rem", color: "#B45309", lineHeight: 1.4 }}>
-            Indique seus itens mais vendidos com a tag <strong>"⭐ Destaque"</strong>. Eles aparecerão no topo da vitrine do seu cardápio digital com fotos em destaque para incentivar seus clientes!
-          </p>
-        </div>
-      </div>
+      {/* A dica "Destaques da Casa" saiu em 02/10/2026: o vídeo de tutorial da
+          tela já explica o que cada coisa faz. */}
 
       {products.length === 0 && user.role !== "ADMIN" ? (
         <div
