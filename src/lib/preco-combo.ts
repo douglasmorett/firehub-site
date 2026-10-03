@@ -524,6 +524,51 @@ export function pisoDoPreco(produto: ProdutoComCombo): number {
 }
 
 /**
+ * As escolhas que FALTAM para a escolha ser válida, completadas com a opção
+ * mais barata — só para o PREÇO, nunca para o que vai à cozinha.
+ *
+ * O robô cobrava `max(conta das escolhas, piso)`. Com um sabor que não casou,
+ * a conta das escolhas era só o adicional e o piso era a pizza mais barata — e
+ * o máximo dos dois jogava o adicional fora. Deeds Delivery, 02/10/2026, pedido
+ * #21: broto de brigadeiro (+19,90) casou, os sabores não, e a pizza foi
+ * gravada por 39,90 em vez de 39,90 + 19,90 no mínimo.
+ *
+ * Pergunta que vale UMA pizza (MAIOR/MÉDIA) com algum sabor escolhido não é
+ * completada: um sabor só é a pizza inteira dele, e completar com o mais barato
+ * baixaria o preço pela média.
+ */
+export function completarEscolhasExigidas(
+  produto: ProdutoComCombo,
+  escolhas: Record<string, Record<string, number>> | null | undefined,
+): Record<string, Record<string, number>> {
+  const saida: Record<string, Record<string, number>> = {};
+  for (const [g, opcoes] of Object.entries(escolhas || {})) saida[g] = { ...opcoes };
+  for (const g of produto.comboGroups || []) {
+    if (!g.id) continue;
+    const exigidos = minimoExigidoDoGrupo(g);
+    if (exigidos <= 0) continue;
+    const doGrupo = saida[g.id] || {};
+    const tem = Object.values(doGrupo).reduce((s, q) => s + (Number(q) || 0), 0);
+    if (tem >= exigidos) continue;
+    if (regraDoGrupo(g) !== "SOMA" && tem > 0) continue;
+    let falta = exigidos - tem;
+    const itens = [...(g.items || [])].sort((a, b) => menorPrecoDaOpcao(a) - menorPrecoDaOpcao(b));
+    for (const item of itens) {
+      const nome = item?.menuProduct?.name;
+      if (!nome) continue;
+      const teto = Number(item.maxPerItem) > 0 ? Number(item.maxPerItem) : falta;
+      const leva = Math.min(teto - (doGrupo[nome] || 0), falta);
+      if (leva <= 0) continue;
+      doGrupo[nome] = (doGrupo[nome] || 0) + leva;
+      falta -= leva;
+      if (falta <= 0) break;
+    }
+    saida[g.id] = doGrupo;
+  }
+  return saida;
+}
+
+/**
  * O preço varia conforme a escolha? Só nesse caso a tela mostra "a partir de".
  * Combo de preço fechado (o "Monte seu Combo (10 itens variados)", R$ 46,90,
  * onde nenhuma opção custa a mais) continua exibindo o preço direto.

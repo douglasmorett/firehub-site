@@ -97,6 +97,29 @@ igual("lista a não casada", x.naoCasadas, ["cheddar extra"]);
 igual("observação do cliente + aviso para a loja", x.notes, "sem cebola · pediu: cheddar extra (conferir — não está no cadastro)");
 igual("nome só com o que casou", x.productName, "Pizza Grande (Calabresa)");
 
+console.log("\n4b) Meio a meio escrito com '1/2' (Deeds, 02/10/2026, pedido #21)");
+const grande = {
+  name: "Pizza Grande 8 Pedaços - 2 Sabores",
+  comboGroups: [
+    { id: "g_sabores", items: [
+      { additionalPrice: 39.9, menuProduct: { name: "Pizza Tradicional Calabresa" } },
+      { additionalPrice: 41.9, menuProduct: { name: "Pizza Tradicional Calabresa Paulista" } },
+      { additionalPrice: 45.9, menuProduct: { name: "Pizza Premium Dois Queijos" } },
+      { additionalPrice: 47.9, menuProduct: { name: "Pizza Premium Calacheese LANÇAMENTO!" } },
+    ] },
+    { id: "g_broto", items: [{ additionalPrice: 19.9, menuProduct: { name: "BROTO BRIGADEIRO" } }] },
+  ],
+};
+const d21 = escolhasDoItem({ options: ["1/2 Pizza Premium Dois Queijos", "1/2 Pizza Premium Calacheese LANÇAMENTO!", "BROTO BRIGADEIRO"], notes: "Dois queijos sem orégano" }, grande);
+igual("os dois sabores e o broto casam", d21.comboSelections, { g_sabores: { "Pizza Premium Dois Queijos": 1, "Pizza Premium Calacheese LANÇAMENTO!": 1 }, g_broto: { "BROTO BRIGADEIRO": 1 } });
+igual("nada para conferir", d21.naoCasadas, []);
+igual("a observação do cliente fica", d21.notes, "Dois queijos sem orégano");
+igual("'½', 'meia' e 'metade de' também", escolhasDoItem({ options: ["½ Pizza Premium Dois Queijos", "meia Pizza Premium Calacheese LANÇAMENTO!"] }, grande).comboSelections,
+  { g_sabores: { "Pizza Premium Dois Queijos": 1, "Pizza Premium Calacheese LANÇAMENTO!": 1 } });
+igual("'metade de' + nome curto que só UMA opção contém", escolhasDoItem({ options: ["metade de Calacheese", "1/2 dois queijos"] }, grande).comboSelections,
+  { g_sabores: { "Pizza Premium Calacheese LANÇAMENTO!": 1, "Pizza Premium Dois Queijos": 1 } });
+igual("nome curto que DUAS opções contêm não adivinha", escolhasDoItem({ options: ["1/2 Calabresa"] }, grande).naoCasadas, ["1/2 Calabresa"]);
+
 console.log("\n5) Bordas");
 igual("options ausente", escolhasDoItem({ name: "Pizza" }, pizza).comboSelections, null);
 igual("options não-array", escolhasDoItem({ options: "calabresa" }, pizza).comboSelections, null);

@@ -28,7 +28,7 @@ import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { trackGeminiUsage, trackDivergenciaDePreco } from "@/lib/usage-tracker";
 import { conferirPrecosDitos, extrairPrecosDoTexto, compararTotalDitoComGravado } from "@/lib/precos-ditos";
 import { normalizeStoreHours } from "@/lib/store-hours";
-import { precoMinimoDoProduto, pisoDoPreco, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, tabelaDaOpcao } from "./preco-combo";
+import { precoMinimoDoProduto, pisoDoPreco, completarEscolhasExigidas, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, tabelaDaOpcao } from "./preco-combo";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, motivoForaDoCardapio, textoDoHorario } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
@@ -2711,8 +2711,12 @@ async function syncAiOrderToDatabase({
       // pedido #9218 — o robô disse ~R$ 46 ao cliente e o sistema gravou
       // Calabresa 33,90 + Frango 46,90 = 80,80.
       const base = Number(matchedProduct.price) || 0;
-      const comEscolhas = doItem.comboSelections
-        ? precoUnitarioDoItem(matchedProduct as any, doItem.comboSelections)
+      // O que faltou para a escolha ser válida (sabor que não casou) entra pela
+      // opção mais barata — só na conta. Sem isto o piso abaixo engolia o
+      // adicional que casou: Deeds, 02/10/2026, broto de R$ 19,90 sumiu da pizza.
+      const temPerguntas = (matchedProduct.comboGroups || []).length > 0;
+      const comEscolhas = temPerguntas
+        ? precoUnitarioDoItem(matchedProduct as any, completarEscolhasExigidas(matchedProduct as any, doItem.comboSelections))
         : base;
       // Piso, não "a partir de": a meia pizza mais barata desconta.
       const precoMinimo = pisoDoPreco(matchedProduct as any);

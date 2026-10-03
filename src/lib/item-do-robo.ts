@@ -76,6 +76,9 @@ export function chaveDeNome(texto: unknown): string {
 
 const LIMITE_DA_OBSERVACAO = 500;
 
+/** "1/2 ", "meia ", "metade de " na frente do sabor — já na chave (sem acento, "1/2" vira "1 2"). */
+const FRACAO_DA_PIZZA = /^(?:1 [234]|meia|meio|metade)\s+(?:(?:de|da|do)\s+)?/;
+
 /** Teto de bom senso: pedido de 30 unidades da mesma opção é erro do modelo. */
 const MAXIMO_POR_OPCAO = 30;
 
@@ -118,14 +121,47 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
   const naoCasadas: string[] = [];
   let somaDasOpcoes = 0;
 
-  /** Procura a opção no cadastro do produto; null quando não existe. */
-  const procurar = (chave: string) => {
+  /** A opção com este nome exato no cadastro do produto; null quando não existe. */
+  const exata = (chave: string) => {
     for (const grupo of produto.comboGroups || []) {
       if (!grupo) continue;
       const opcao = (grupo.items || []).find((gi) => gi && chaveDeNome(gi.menuProduct?.name) === chave);
       if (opcao) return { grupo, opcao };
     }
     return null;
+  };
+
+  /**
+   * Procura a opção: o nome exato; senão sem a fração da meia pizza; senão a
+   * ÚNICA opção do produto que contém o nome pedido, palavra por palavra.
+   *
+   * Deeds Delivery, 02/10/2026, pedido #21: a IA anotou "1/2 Pizza Premium Dois
+   * Queijos" e "1/2 Pizza Premium Calacheese LANÇAMENTO!" — é como se escreve
+   * meio a meio. O "1/2" não casava, os dois sabores foram para "conferir", e a
+   * pizza que o robô disse ao cliente por R$ 69,79 (com o broto) foi gravada por
+   * R$ 42,89. Duas opções que contêm o nome ("Calabresa" com Calabresa Paulista e
+   * Calabresa Argentina) é ambiguidade: não se adivinha, vai para a conferência —
+   * a mesma regra do produto em chatbot-ai.ts.
+   */
+  const procurar = (chave: string) => {
+    if (!chave) return null;
+    const direto = exata(chave);
+    if (direto) return direto;
+    const semFracao = chave.replace(FRACAO_DA_PIZZA, "").trim();
+    if (semFracao && semFracao !== chave) {
+      const achado = exata(semFracao);
+      if (achado) return achado;
+    }
+    const alvo = ` ${semFracao || chave} `;
+    const contem: Array<{ grupo: GrupoDoProduto; opcao: NonNullable<NonNullable<GrupoDoProduto["items"]>[number]> }> = [];
+    for (const grupo of produto.comboGroups || []) {
+      if (!grupo) continue;
+      for (const gi of grupo.items || []) {
+        if (gi && ` ${chaveDeNome(gi.menuProduct?.name)} `.includes(alvo)) contem.push({ grupo, opcao: gi });
+      }
+    }
+    const nomes = new Set(contem.map((c) => chaveDeNome(c.opcao.menuProduct?.name)));
+    return nomes.size === 1 ? contem[0] : null;
   };
 
   for (const bruta of brutas) {
