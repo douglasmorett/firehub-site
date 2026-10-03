@@ -1999,7 +1999,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             ))}
           </div>
 
-          <div className="fh-painel-corpo">
+          <div className={`fh-painel-corpo${aba === "cadastro" ? " fh-corpo-lista" : ""}`}>
         {/* ── MÉTODO DE COBRANÇA ────────────────────────────────────────── */}
         {aba === "configurar" && (
         <div style={{ marginBottom: "1rem" }}>
@@ -2148,8 +2148,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                     onMouseEnter={() => setZonaEmFoco(zona.id)}
                     onMouseLeave={() => setZonaEmFoco(null)}
                     style={{
-                      border: `1.5px solid ${emFoco ? "#FCA5A5" : "#E2E8F0"}`,
+                      border: `1px solid ${emFoco ? "#FCA5A5" : "#D5DBE3"}`,
                       background: emFoco ? "#FEF2F2" : "#FFFFFF",
+                      boxShadow: "0 1px 3px rgba(15,23,42,0.07)",
                       borderRadius: 12, padding: "10px 12px", marginBottom: 8, transition: "all .15s ease",
                     }}
                   >
@@ -2225,8 +2226,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                     onMouseEnter={() => setZonaEmFoco(zona.id)}
                     onMouseLeave={() => setZonaEmFoco(null)}
                     style={{
-                      border: "1.5px solid #E2E8F0",
-                      background: emFoco ? "#F8FAFC" : "#FFFFFF",
+                      border: `1px solid ${emFoco ? "#94A3B8" : "#D5DBE3"}`,
+                      background: "#FFFFFF",
+                      boxShadow: emFoco ? "0 3px 10px rgba(15,23,42,0.10)" : "0 1px 3px rgba(15,23,42,0.07)",
                       borderRadius: 12, padding: "10px 12px", marginBottom: 8, transition: "all .15s ease",
                     }}
                   >
@@ -2343,7 +2345,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               {areasDeEntrega.map((area, i) => {
                 const mudar = (patch: Partial<AreaNaTela>) => setAreasDeEntrega((atual) => atual.map((a) => (a.id === area.id ? { ...a, ...patch } : a)));
                 return (
-                  <div key={area.id} style={{ border: "1px solid #E2E8F0", borderLeft: "4px solid " + CORES_DA_AREA[i % CORES_DA_AREA.length], borderRadius: 10, padding: "10px 12px", marginBottom: 8, background: "#fff" }}>
+                  <div key={area.id} style={{ border: "1px solid #D5DBE3", boxShadow: "0 1px 3px rgba(15,23,42,0.07)", borderLeft: "4px solid " + CORES_DA_AREA[i % CORES_DA_AREA.length], borderRadius: 10, padding: "10px 12px", marginBottom: 8, background: "#fff" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                       <input
                         value={area.nome}
@@ -2910,6 +2912,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           font-size: 0.78rem; line-height: 1.45; max-height: 38%; overflow-y: auto;
         }
         .fh-painel-corpo { flex: 1; overflow-y: auto; padding: 14px; }
+        /* A lista do cadastro em fundo cinza claro: cartão branco sobre branco
+           sumia, e não dava para ver onde um bairro acabava e o outro começava. */
+        .fh-painel-corpo.fh-corpo-lista { background: #F1F4F8; }
+        .fh-corpo-lista .fh-repasse { background: #fff; border-color: #D5DBE3; }
+        .fh-corpo-lista .fh-busca { border-color: #D5DBE3; }
         .fh-painel-topo .fh-nao-salvo { color: #B45309; font-weight: 700; }
         /* ── ABAS (o "Operação atual | Pré-configurações" do iFood) ─────── */
         .fh-abas {
