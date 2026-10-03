@@ -29,6 +29,7 @@
 import { prisma } from "@/lib/prisma";
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
+import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
 import { ganhaComoVendedor } from "@/lib/vendedores";
 
 /**
@@ -765,6 +766,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     }
 
     if (customerId) {
+      // Celular no cliente e WhatsApp só no aviso de criação — antes do
+      // POST /payments, que é quando esse aviso sai (lib/aviso-do-boleto.ts).
+      await prepararAvisoDoBoleto(BASE, asaasKey, customerId, cycle.franchisee);
+
       // Vencimento: dia 5 do próximo mês
       const due = new Date(y, m, 5).toISOString().split("T")[0];
 
