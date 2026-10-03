@@ -18,6 +18,7 @@ import {
   consertarLinksDeVideo,
   linkDoVideo,
   listaDosVideos,
+  manualDosVideos,
   videosJaEnviados,
   videosParaAConversa,
 } from "../src/lib/atendimento/videos";
@@ -39,7 +40,7 @@ const PRIMEIRO: [string, string[]][] = [
   ["como roteirizar os pedidos de entrega", ["roteirizacao"]],
   ["como cadastro um motoboy?", ["motoboys"]],
   ["como coloco um preço diferente no ifood?", ["cardapio-precos"]],
-  ["como faço meio a meio na pizza?", ["cardapio-combos"]],
+  ["como faço meio a meio na pizza?", ["cardapio-pizza"]],
   ["Como mexo nos combos?", ["cardapio-combos"]],
   ["como abro o caixa?", ["caixa"]],
   ["como ligo a nota fiscal", ["fiscal"]],
@@ -127,6 +128,13 @@ if (rot) {
   confere("a aula tem um link por capítulo", rot.capitulos.every((c) => aula.includes(linkDoVideo(rot.id, c.em))));
   confere("a aula tem a fala (não só os títulos)", aula.length > rot.capitulos.map((c) => c.titulo).join("").length * 3);
 }
+// ── O manual: a fala de TODOS os vídeos vai na base (03/10/2026) ───────────
+const manual = manualDosVideos(VIDEOS);
+confere("o manual tem o link de todos os vídeos", VIDEOS.every((v) => manual.includes(linkDoVideo(v.id))));
+confere("o manual tem o link de todo capítulo", VIDEOS.every((v) => v.capitulos.every((c) => manual.includes(linkDoVideo(v.id, c.em)))));
+confere("o manual tem a fala da ordem das categorias", manual.includes("Reordenar Cardápio"));
+confere("manual vazio sem vídeo no ar", manualDosVideos([]) === "");
+console.log(`\nTamanho do manual na base: ${manual.length} caracteres.`);
 console.log(`\nTamanho da lista na base: ${lista.length} caracteres (${VIDEOS.length} vídeos).`);
 
 console.log(falhas ? `\n${falhas} falha(s).` : "\nTudo certo.");

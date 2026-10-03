@@ -5,11 +5,11 @@ import { ROTULO_DA_ETAPA, type Etapa } from "@/lib/crm/etapas";
 import { configDoAtendimento } from "./config";
 import { clienteDoGemini } from "./gemini";
 import { CONHECIMENTO_DO_FIREHUB } from "./conhecimento";
-import { conferirResposta, RESPOSTA_DE_QUEM_NAO_SABE } from "./conferente";
+import { acaoDitaSemFerramenta, conferirResposta, RESPOSTA_DE_QUEM_NAO_FAZ, RESPOSTA_DE_QUEM_NAO_SABE } from "./conferente";
 import { registrarEvento, AUTOR_ROBO } from "@/lib/crm/contatos";
 import { DECLARACOES, FERRAMENTAS_COM_EFEITO, chamarPessoa, executarFerramenta } from "./ferramentas";
 import { enviarTexto } from "./whatsapp";
-import { aulaDoVideo, consertarLinksDeVideo, listaDosVideos, videosJaEnviados, videosParaAConversa } from "./videos";
+import { consertarLinksDeVideo, manualDosVideos, videosJaEnviados } from "./videos";
 import { videosNoAr } from "./videos-no-ar";
 
 /**
@@ -39,14 +39,23 @@ import { videosNoAr } from "./videos-no-ar";
  * ── Dúvida de como usar o painel vira o vídeo dela ─────────────────────────
  *
  * "Como eu mexo na roteirização?" → resposta curta + o link do vídeo da
- * Roteirização (videos.ts). A lista dos vídeos vai sempre na base; a fala dos
- * vídeos do assunto da conversa vai junto, e é dela que sai o passo a passo.
+ * Roteirização (videos.ts). A fala de TODOS os vídeos vai na base (o manual
+ * do painel), e é dela que sai o passo a passo.
+ *
+ * ── Ele não faz o que não tem ferramenta para fazer ───────────────────────
+ *
+ * 03/10/2026, Luxúria: "se você conseguir mudar pra mim [a marmita em
+ * primeiro], eu agradeço" → o robô respondeu "Mudei aqui para você!" sem ter
+ * mexido em nada, e o lojista mandou o print com os lanches em primeiro uma
+ * hora depois. Resposta que diz que algo JÁ FOI FEITO na loja sem uma
+ * ferramenta que faça (acaoDitaSemFerramenta) não sai: vira "a equipe faz" e
+ * chama uma pessoa.
  */
 
 const ESPERA_MS = 6_000;
 const MAXIMO_EM_24H = 25;
 const MENSAGEM_VELHA_MS = 20 * 60_000;
-const MODELOS = ["gemini-3.6-flash", "gemini-2.5-flash"];
+export const MODELOS = ["gemini-3.6-flash", "gemini-2.5-flash"];
 
 type Estado = { timers: Map<string, ReturnType<typeof setTimeout>>; rodando: Set<string>; deNovo: Set<string> };
 function estado(): Estado {
@@ -102,10 +111,10 @@ const SINAIS_DA_OFERTA = [
 ];
 const ehOfertaDaMontagem = (texto: string) => SINAIS_DA_OFERTA.every((r) => r.test(texto));
 
-/** Os vídeos na conversa: a lista de todos (base), a fala dos do assunto e os títulos dos que já foram mandados. */
-type VideosDaConversa = { lista: string; aulas: string; jaEnviados: string[] };
+/** Os vídeos na conversa: o manual (a fala de todos, na base) e os títulos dos que já foram mandados. */
+export type VideosDaConversa = { manual: string; jaEnviados: string[] };
 
-function instrucoes(
+export function instrucoes(
   config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null, ofereceuMontagem: boolean,
   lojaInformada: string | null, videos: VideosDaConversa,
 ): string {
@@ -148,8 +157,10 @@ function instrucoes(
 - Se perguntarem se você é robô/humano: diga que é o assistente virtual e que uma pessoa da equipe pode assumir quando precisar.
 
 # Regras
-- Suas fontes, e só elas: a BASE abaixo, a lista de vídeos, a fala dos vídeos ("O que os vídeos ensinam" e o que ver_tutorial devolver) e o que as outras ferramentas devolverem. Nunca invente função, preço, prazo, desconto ou integração.
-- "Dá para fazer X?" / "Como faço X no painel?": procure antes de desistir. Está na base? Algum vídeo da lista é do assunto? Se a fala dele não está aqui, use ver_tutorial. Achou: responda com o passo a passo de lá. Não achou em lugar nenhum: você NÃO SABE, nem que sim nem que não: não diga que dá, não diga que não dá, não descreva botão, aba nem passo a passo. Diga que vai confirmar com a equipe e use chamar_pessoa. Ex.: a base diz só "Pedidos: menu Pedidos"; isso NÃO quer dizer que dá para mudar o tipo do pedido por ali.
+- Suas fontes, e só elas: a BASE abaixo (que inclui a fala de todos os vídeos tutoriais, capítulo por capítulo) e o que as ferramentas devolverem. Nunca invente função, preço, prazo, desconto ou integração.
+- "Dá para fazer X?" / "Como faço X no painel?": procure antes de desistir, na base E na fala de TODOS os vídeos (o assunto pode estar num capítulo de um vídeo de outra tela: ordem das categorias está no vídeo de organizar o cardápio, horário de um item também). Achou: responda com o passo a passo de lá, com os nomes dos botões como a fala diz. Não achou em lugar nenhum: você NÃO SABE, nem que sim nem que não: não diga que dá, não diga que não dá, não descreva botão, aba nem passo a passo. Diga que vai confirmar com a equipe e use chamar_pessoa. Ex.: a base diz só "Pedidos: menu Pedidos"; isso NÃO quer dizer que dá para mudar o tipo do pedido por ali.
+- Você NÃO mexe na loja de ninguém: não muda cardápio, categoria, produto, preço, horário nem configuração. Nunca diga que mudou, colocou, corrigiu ou ajustou algo, nem que "já está aparecendo". Pediram para fazer por eles? Ensine o passo a passo (é rápido pelo painel) e, se a pessoa quiser mesmo que a equipe faça, use chamar_pessoa (caso 3 abaixo) e diga que a equipe avisa quando estiver feito.
+- Conta com número (preço, promoção, taxa): número errado é pior que nenhum. Explique a regra e mostre à pessoa onde a TELA dela dá o número que falta (ex.: embaixo da linha da opção, "Na promoção sai R$ X (R$ A do produto + R$ B)": o R$ A é o preço do produto, e o Promo +R$ é o preço que ela quer menos o R$ A). Só diga o valor exato quando a pessoa disse com todas as letras o preço do produto, e escreva a conta junto ("65 − 30 = 35"). Nunca tire número do exemplo da base.
 - O que alguém da equipe respondeu antes nesta conversa vale para aquele assunto, não é manual do sistema: não tire dali como funciona outra coisa.
 - Toda resposta passa por uma revisão antes de sair: o que não tiver fonte é barrado e vira "vou confirmar com a equipe". Na dúvida, já diga isso você.
 
@@ -168,7 +179,8 @@ Fora disso, não chame: responda. Ao chamar, avise que alguém da equipe vai res
 - Sempre que descobrir algo (nome, loja, cidade, e-mail, o que a pessoa precisa), use atualizar_contato.
 
 # Modo SUPORTE (lojista)
-- Dúvida de como usar: responda já, passo a passo (base e fala do vídeo do assunto) e mande o link do vídeo. Não peça e-mail nem número para ensinar: identificação só é preciso para algo da conta.
+- Dúvida de como usar: responda já, passo a passo (base e fala do vídeo do assunto) e mande o link do vídeo ou do capítulo. Não peça e-mail nem número para ensinar: identificação só é preciso para algo da conta.
+- Mandou print ("📷 Imagem") perguntando "assim?": você não vê a imagem. Não diga que está certo nem errado: diga o que conferir na tela (o campo, o texto que aparece embaixo dele) e o que deve aparecer quando está certo.
 - Algo sumiu, não aparece, não salva ou mudou (produto, opção, tamanho, preço, categoria, horário): guie a pessoa a conferir na tela dela, pela base e pela fala do vídeo do assunto: onde abrir, o que olhar e como voltar ao normal. Peça um print da tela se ajudar. Você não enxerga o cardápio da loja: não diga que "vai olhar o cadastro". Chame a equipe só se, depois disso, não resolver.
 - Problema na conta (impressão, robô do WhatsApp, iFood, pedido não chegou): chame estado_da_loja ANTES de responder e diga o que viu. Guie um passo por vez.
 - "Aguardando mensagem" ou robô da loja travado com o WhatsApp conectado: pode usar reiniciar_whatsapp_da_loja.
@@ -185,19 +197,19 @@ Fora disso, não chame: responda. Ao chamar, avise que alguém da equipe vai res
 - Você NÃO marca reunião nem demonstração, não oferece e não combina dia ou horário com ninguém: cada contato tem um vendedor na carteira, e é ele quem entra em contato. Quer ver funcionando? Mande o vídeo do assunto. Pediu para falar com alguém, quer uma apresentação ou as dúvidas não se resolvem aqui? Use chamar_pessoa com o motivo e diga que um especialista da equipe vai falar com ele por aqui, sem prometer dia nem hora.
 
 # Quando mandar vídeo
-- "Como faço…?", "onde fica…?", "como configuro…?" sobre algo que um vídeo da lista mostra: responda em uma frase o essencial e mande o link do vídeo na linha de baixo. Ex.: "Na Roteirização você junta os pedidos no mapa e despacha a rota para o motoboy. Esse vídeo mostra o passo a passo:" e, na linha de baixo, o link.
-- Dúvida de um ponto só do vídeo: mande o link do capítulo (o que abre direto naquele ponto), que está em "O que os vídeos ensinam" ou no que ver_tutorial devolveu.
-- O passo a passo que você escreve sai da fala do vídeo ("O que os vídeos ensinam" ou ver_tutorial). Sem a fala na mão, use ver_tutorial ou não descreva passos: só diga que o vídeo mostra e mande o link.
-- O link vai exatamente como está na lista, sozinho na última linha, sem negrito e sem ponto no fim. Nunca monte nem invente link de vídeo.
+- "Como faço…?", "onde fica…?", "como configuro…?" sobre algo que um vídeo mostra: o vídeo NÃO substitui a resposta. Escreva o passo a passo tirado da fala do vídeo (até 4 passos numerados, com os nomes dos botões) e, na linha de baixo, o link para quem quiser ver. Ex.: "1. Clique em Reordenar Cardápio. 2. Arraste a categoria pela alça até o topo. 3. Clique em Salvar Ordem do Cardápio." e depois "Esse trecho do vídeo mostra:" + o link do capítulo.
+- Dúvida de um ponto só do vídeo: mande o link do CAPÍTULO (o que abre direto naquele ponto), não o do vídeo inteiro.
+- Link de vídeo ou capítulo só se a FALA dele mostra o que você explicou. O passo a passo veio da base e nenhum capítulo fala daquilo (ex.: chave Pix no robô, conta do Promo +R$)? Então não mande link nenhum: um vídeo que fala de outra coisa confunde e a revisão barra.
+- O link vai exatamente como está na base, sozinho na última linha, sem negrito e sem ponto no fim. Nunca monte nem invente link de vídeo.
 - Um vídeo por mensagem; dois só se a pergunta for de duas telas. Vídeo que já foi nesta conversa não vai de novo.
 - Problema na conta (não imprime, robô mudo, pedido não entrou) não se resolve com vídeo: primeiro estado_da_loja e os Problemas comuns; o vídeo vem depois, se ajudar.
 - A loja e os valores que aparecem nos vídeos são de demonstração: não fale deles como se fossem da pessoa.
-- Interessado que quer ver como funciona: mande o vídeo do assunto (ou "Um passeio pelo painel", se estiver na lista).
-- Nenhum vídeo da lista é do assunto? Responda pela base, como sempre.
+- Interessado que quer ver como funciona: mande o vídeo do assunto (ou "Um passeio pelo painel", se estiver na base).
+- Nenhum vídeo é do assunto? Responda pela base, como sempre.
 
 # BASE
-${CONHECIMENTO_DO_FIREHUB}${videos.lista ? `\n\n${videos.lista}` : ""}
-${config.instrucoesExtras.trim() ? `\n# Recados do dono (valem mais que a base)\n${config.instrucoesExtras.trim()}\n` : ""}${videos.aulas ? `\n# O que os vídeos ensinam (os do assunto desta conversa: a fala gravada, capítulo por capítulo)\n${videos.aulas}\n` : ""}
+${CONHECIMENTO_DO_FIREHUB}${videos.manual ? `\n\n${videos.manual}` : ""}
+${config.instrucoesExtras.trim() ? `\n# Recados do dono (valem mais que a base)\n${config.instrucoesExtras.trim()}\n` : ""}
 # Quem está falando
 ${ficha}
 
@@ -206,7 +218,7 @@ ${agoraEmBrasilia()} (horário de Brasília).`;
 }
 
 /** A conversa no formato do Gemini: contato = user; FireHub (robô ou pessoa) = model. */
-function conversaParaOModelo(historico: { direcao: string; autor: string; autorNome: string | null; texto: string }[]): Content[] {
+export function conversaParaOModelo(historico: { direcao: string; autor: string; autorNome: string | null; texto: string }[]): Content[] {
   const conteudos: Content[] = [];
   for (const m of historico) {
     const papel = m.direcao === "ENTRADA" ? "user" : "model";
@@ -221,7 +233,7 @@ function conversaParaOModelo(historico: { direcao: string; autor: string; autorN
 }
 
 /** A conversa em texto corrido para o revisor, dizendo quem falou: o que a equipe disse conta como fonte. */
-function conversaParaORevisor(historico: { direcao: string; autor: string; autorNome: string | null; texto: string }[]): string {
+export function conversaParaORevisor(historico: { direcao: string; autor: string; autorNome: string | null; texto: string }[]): string {
   return historico
     .map((m) => {
       const quem = m.direcao === "ENTRADA" ? "Contato" : m.autor === "ROBO" ? "Robô" : `Equipe (${m.autorNome || "pessoa"})`;
@@ -272,14 +284,11 @@ async function responder(contatoId: string) {
     ? null
     : await prisma.crmEvento.findFirst({ where: { contatoId: contato.id, texto: { startsWith: "Diz ser da loja " } }, orderBy: { criadoEm: "desc" }, select: { texto: true } });
   const lojaInformada = informada ? informada.texto.replace(/^Diz ser da loja /, "").replace(/ \(firehubfood[\s\S]*$/, "") : null;
-  // Os vídeos: só os que já estão no servidor; a fala dos que a busca acha nas
-  // últimas mensagens do contato (videos.ts).
+  // Os vídeos: só os que já estão no servidor, com a fala de todos (videos.ts).
   const videos = videosNoAr();
   const idsDosVideos = new Set(videos.map((v) => v.id));
-  const doContato = historico.filter((m) => m.direcao === "ENTRADA").slice(-3).map((m) => m.texto);
   const doVideo: VideosDaConversa = {
-    lista: listaDosVideos(videos),
-    aulas: videosParaAConversa(doContato, videos).map(aulaDoVideo).join("\n\n"),
+    manual: manualDosVideos(videos),
     jaEnviados: videosJaEnviados(historico).flatMap((id) => videos.filter((v) => v.id === id).map((v) => v.titulo)),
   };
   const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem, lojaInformada, doVideo);
@@ -306,20 +315,35 @@ async function responder(contatoId: string) {
   resposta = doModelo || respostaDeReserva(acoes);
   if (!resposta) return;
 
+  // O que o contato perguntou: as mensagens dele desde a última resposta (um
+  // "Oi" de cobrança sozinho ia para a ficha como "a pergunta", 03/10).
+  const ultimaResposta = historico.map((m) => m.direcao).lastIndexOf("SAIDA");
+  const pergunta = historico.slice(ultimaResposta + 1).map((m) => m.texto).join(" / ").slice(-300);
+
+  // ── "Mudei aqui para você!" sem ter mudado nada não sai (conferente.ts) ───
+  const feitoInventado = doModelo ? acaoDitaSemFerramenta(doModelo, acoes) : null;
+  if (feitoInventado) {
+    console.warn(`[Atendimento] Robô disse que fez sem ter feito, para ${contato.id}: "${feitoInventado}"`);
+    resposta = RESPOSTA_DE_QUEM_NAO_FAZ;
+    if (!acoes.some((a) => a.nome === "chamar_pessoa")) {
+      await chamarPessoa(contato, `Pediu para a equipe mexer na loja: "${pergunta}". O robô ia dizer que já tinha feito: "${feitoInventado.slice(0, 300)}" (barrado: ele não mexe na loja).`);
+    } else {
+      await registrarEvento(contato.id, "ROBO", `Barrado: o robô ia dizer que já tinha feito "${feitoInventado.slice(0, 300)}"`, AUTOR_ROBO);
+    }
+  }
+
   // ── A revisão: o que não tem fonte não sai (conferente.ts) ────────────────
-  // A resposta de reserva é texto fixo nosso e não passa por ela. A fala dos
-  // vídeos conta como fonte: a do assunto vai na base, a que o robô pediu pela
-  // ver_tutorial vai inteira nas ferramentas (o corte de 1.500 a picotava).
-  if (doModelo) {
+  // A resposta de reserva é texto fixo nosso e não passa por ela. A fala de
+  // todos os vídeos conta como fonte e vai inteira na base.
+  if (doModelo && !feitoInventado) {
     const paraConferir = {
       base: [
         CONHECIMENTO_DO_FIREHUB,
-        doVideo.lista,
-        doVideo.aulas ? `# O que os vídeos ensinam (a fala gravada de cada capítulo)\n${doVideo.aulas}` : "",
+        doVideo.manual,
         config.instrucoesExtras.trim() ? `# Recados do dono\n${config.instrucoesExtras.trim()}` : "",
       ].filter(Boolean).join("\n\n"),
       conversa: conversaParaORevisor(historico.slice(-12)),
-      ferramentas: acoes.map((a) => `${a.nome}: ${JSON.stringify(a.resultado).slice(0, a.nome === "ver_tutorial" ? 8000 : 1500)}`).join("\n"),
+      ferramentas: acoes.map((a) => `${a.nome}: ${JSON.stringify(a.resultado).slice(0, 1500)}`).join("\n"),
     };
     let veredito = await conferirResposta(ai, { ...paraConferir, resposta: doModelo });
     // ── Uma frase sem fonte não cala a conversa ──────────────────────────────
@@ -344,7 +368,7 @@ async function responder(contatoId: string) {
       // Quem atende precisa ver o que o robô ia dizer, para responder certo
       // (e para a base ganhar o que estava faltando).
       if (!acoes.some((a) => a.nome === "chamar_pessoa")) {
-        await chamarPessoa(contato, `Pergunta que a base não cobre: "${ultima.texto.slice(0, 200)}". O robô ia responder: "${doModelo.slice(0, 400)}" (sem fonte: "${veredito.trecho}"). Barrado pela revisão.`);
+        await chamarPessoa(contato, `Pergunta que a base não cobre: "${pergunta}". O robô ia responder: "${doModelo.slice(0, 400)}" (sem fonte: "${veredito.trecho}"). Barrado pela revisão.`);
       } else {
         await registrarEvento(contato.id, "ROBO", `Revisão barrou: "${doModelo.slice(0, 400)}" (sem fonte: "${veredito.trecho}")`, AUTOR_ROBO);
       }
@@ -386,7 +410,7 @@ type AcaoFeita = { nome: string; resultado: Record<string, unknown> };
  * ação, se houve, já foi feita) e no primeiro modelo. `null` quando não sobra
  * resposta sem o trecho — aí vale o "vou confirmar com a equipe".
  */
-async function reescreverSemOTrecho(
+export async function reescreverSemOTrecho(
   ai: NonNullable<Awaited<ReturnType<typeof clienteDoGemini>>>, sistema: string, conversa: Content[], resposta: string, trecho: string,
 ): Promise<string | null> {
   try {
@@ -414,7 +438,7 @@ async function reescreverSemOTrecho(
  * cliente com os asteriscos (o WhatsApp só entende *um*), e a linha em branco
  * entre frases vira "textão" na tela do celular.
  */
-function paraOWhatsApp(texto: string): string {
+export function paraOWhatsApp(texto: string): string {
   return String(texto || "")
     .replace(/\*\*(.+?)\*\*/g, "*$1*")
     .replace(/[ \t]+\n/g, "\n")

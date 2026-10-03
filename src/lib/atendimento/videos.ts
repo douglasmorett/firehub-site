@@ -15,14 +15,20 @@ import fala from "@/lib/tutoriais-busca.json";
  * existe. O que a voz diz é o manual mais conferido que o FireHub tem, e o
  * revisor (conferente.ts) aceita como fonte.
  *
- * ── Por que não vai tudo no prompt ─────────────────────────────────────────
- * A fala dos vídeos passa de 50 mil caracteres. Em toda resposta, nas
- * chamadas do robô e na do revisor, isso triplicaria o custo (e o
- * gemini-3.6-flash dobra de preço em 2027). Então:
- *   - a LISTA (título, capítulos, link) vai sempre: é por ela que o robô sabe
- *     que existe vídeo de quê;
- *   - a FALA vai só dos vídeos que a busca abaixo acha para a conversa (até 2),
- *     e o robô pede a de outro pela ferramenta ver_tutorial.
+ * ── Por que agora vai tudo no prompt ───────────────────────────────────────
+ * Até 03/10/2026 ia só a fala dos 2 vídeos que a busca por palavra achava na
+ * conversa (o resto, pela ferramenta ver_tutorial), para poupar ~55 mil
+ * caracteres por chamada. A busca errou justo nas dúvidas reais daquele dia:
+ * "marmita em primeiro no cardápio" puxou o vídeo da pizza, "chave do pix pro
+ * robô" puxou a extensão do iFood, "dar desconto" não achou nada — e o robô
+ * respondeu "categoria pausada" para marmita fora do horário. O Douglas: "o
+ * robô tem que saber as informações desses vídeos".
+ *
+ * Então o MANUAL (manualDosVideos: a fala de todos, capítulo por capítulo, com
+ * o link de cada um) vai sempre, na parte fixa das instruções. Por ser igual
+ * em toda conversa, fica no começo do prompt e o cache implícito do Gemini
+ * cobra só uma fração dele depois da primeira chamada. A busca abaixo continua
+ * servindo à central de tutoriais e ao teste.
  *
  * Este arquivo não lê disco: quem diz quais vídeos já estão no servidor é
  * videos-no-ar.ts. Assim o teste (scripts/teste-videos-do-robo.ts) roda sem
@@ -60,6 +66,18 @@ export function aulaDoVideo(t: Tutorial): string {
     return `- ${relogio(c.em)} ${c.titulo} (${linkDoVideo(t.id, c.em)}): ${texto}`;
   });
   return `## ${t.titulo} (${duracaoEmMinutos(t.duracao)}): ${linkDoVideo(t.id)}\n${capitulos.join("\n")}`;
+}
+
+/**
+ * Todos os vídeos no ar, cada um com a fala de cada capítulo: o manual do
+ * painel que o robô lê inteiro (substitui a lista, que só tinha os títulos).
+ */
+export function manualDosVideos(videos: Tutorial[]): string {
+  if (!videos.length) return "";
+  return `# Vídeos tutoriais do painel: o que cada um ensina
+Gravados no painel de verdade, numa loja de demonstração (a loja, os produtos e os valores dos vídeos NÃO são do contato). Cada vídeo abaixo traz o link, e cada capítulo traz o link que abre direto nele (no celular, sem login) e a fala gravada, que é o passo a passo daquela tela. A lista com todos: ${LINK_DOS_TUTORIAIS}
+
+${videos.map(aulaDoVideo).join("\n\n")}`;
 }
 
 // ── QUAL VÍDEO RESPONDE A CONVERSA ─────────────────────────────────────────

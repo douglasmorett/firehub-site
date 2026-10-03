@@ -2,12 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { mesmoTelefone } from "@/lib/telefone";
 import { restartEvolutionInstance } from "@/lib/whatsapp-evolution";
 import { registrarEvento, AUTOR_ROBO, lojaDoTelefone, numerosDaLoja } from "@/lib/crm/contatos";
-import { duracaoEmMinutos } from "@/lib/tutoriais";
 import { estadoDaLojaParaSuporte } from "./estado-da-loja";
 import { avisarDono } from "./avisos";
 import { criarContaPeloWhatsApp } from "./cadastro";
-import { aulaDoVideo, linkDoVideo } from "./videos";
-import { videosNoAr } from "./videos-no-ar";
 
 /**
  * AS FERRAMENTAS DO ROBÔ DO FIREHUB — o que ele pode consultar e fazer.
@@ -116,15 +113,6 @@ export const DECLARACOES = [
         emailConfirmado: { type: "boolean", description: "true só se você repetiu o e-mail e a pessoa confirmou que está certo." },
       },
       required: ["nome", "nomeDaLoja", "cidade", "email", "cpf", "emailConfirmado"],
-    },
-  },
-  {
-    name: "ver_tutorial",
-    description: "O que um vídeo tutorial da lista ensina, capítulo por capítulo (a fala gravada do vídeo), com o link que abre em cada capítulo. Use antes de explicar como se faz algo no painel quando a fala desse vídeo ainda não está nas instruções. Não manda nada para o contato.",
-    parametersJsonSchema: {
-      type: "object",
-      properties: { id: { type: "string", description: "O fim do link do vídeo na lista, ex.: roteirizacao, cardapio-combos, app-motoboy." } },
-      required: ["id"],
     },
   },
   {
@@ -245,15 +233,6 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
         email: String(args?.email || ""), cpf: String(args?.cpf || ""), cnpj: args?.cnpj ? String(args.cnpj) : undefined,
         whatsappDaLoja: args?.whatsappDaLoja ? String(args.whatsappDaLoja) : undefined,
       });
-    }
-
-    case "ver_tutorial": {
-      // Aceita o id ou o link inteiro ("…/tutoriais/roteirizacao?t=40"): o modelo copia o que vê na lista.
-      const id = String(args?.id || "").trim().toLowerCase().replace(/^.*\/tutoriais\//, "").replace(/[/?#].*$/, "");
-      const videos = videosNoAr();
-      const video = videos.find((v) => v.id === id);
-      if (!video) return { erro: `Não há vídeo "${id}" no ar. Use o fim de um link da lista de vídeos.`, ids: videos.map((v) => v.id) };
-      return { titulo: video.titulo, duracao: duracaoEmMinutos(video.duracao), link: linkDoVideo(video.id), aula: aulaDoVideo(video) };
     }
 
     case "montar_loja": {
