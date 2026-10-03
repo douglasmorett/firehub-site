@@ -312,7 +312,9 @@ export default function CadastroDePizza({
   };
 
   const marcados = tamanhos.filter((t) => t.marcado);
-  const precisaDeRegra = marcados.some((t) => t.sabores >= 2);
+  // Sem tamanho marcado ainda, o passo do meio a meio conta: senão o "Passo 1 de 5"
+  // virava "1 de 6" no primeiro toque num tamanho de 2 sabores.
+  const precisaDeRegra = marcados.length === 0 || marcados.some((t) => t.sabores >= 2);
   const passos = PASSOS.filter((p) => p.id !== "regra" || precisaDeRegra);
   const indiceDoPasso = passos.findIndex((p) => p.id === tela);
 

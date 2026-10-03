@@ -8,7 +8,7 @@ import { LOJA } from "../ambiente/semente.mjs";
 import {
   ROTA, PRONTA, linha, cabecalho, janela, lapis, pausar, botaoDaLinha, campo,
   abrirEdicao, esperarFechar, redigitar, rolarSePreciso, cenaFinal, caixa, voltarAoPainel,
-  assentar,
+  assentar, perguntaDoNovoItem, botaoOutroItem, botaoPizza,
 } from "./_cardapio-comum.mjs";
 
 const NOVO = "Misto Quente";
@@ -78,6 +78,29 @@ export default {
         await ctx.ate(0.55);
         await palco.apagarDestaque();
         await palco.clicar(criar);
+        await perguntaDoNovoItem(p).waitFor({ state: "visible", timeout: 8000 });
+        await ctx.ate(1);
+      },
+    },
+    {
+      fala: "Antes, o sistema pergunta o que você vai cadastrar. Pizza tem um passo a passo só dela, com vídeo próprio. Combo tem o botão Novo Combo. Para lanche, porção ou bebida, clique em Outro item.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        const caixaDoCombo = perguntaDoNovoItem(p).locator(".fh-pz-combo");
+        await palco.camera(perguntaDoNovoItem(p), { zoomMax: 1.25, margem: 16 });
+        await ctx.ate(0.2);
+        await palco.destacar(botaoPizza(p), { folga: 4 });
+        await palco.mover(botaoPizza(p), { ms: 600 });
+        await ctx.ate(0.5);
+        await palco.destacar(caixaDoCombo, { folga: 4 });
+        await palco.mover(caixaDoCombo.getByText("Novo Combo", { exact: true }), { ms: 600 });
+        await ctx.ate(0.7);
+        await palco.destacar(botaoOutroItem(p), { folga: 4 });
+        await palco.mover(botaoOutroItem(p), { ms: 600 });
+        await ctx.ate(0.92);
+        await palco.apagarDestaque();
+        await palco.cameraAberta({ ms: 300 });
+        await palco.clicar(botaoOutroItem(p));
         await janela(p).waitFor({ state: "visible", timeout: 8000 });
         await ctx.ate(1);
       },
@@ -179,6 +202,16 @@ export default {
         await palco.cameraAberta({ ms: 400 });
         await palco.rolarAte(campo.salvar(p), { bloco: "end" });
         await palco.clicar(campo.salvar(p));
+        await ctx.ate(1);
+      },
+    },
+    {
+      // A espera pelo servidor (fechar o formulário e a lista voltar com o
+      // preço novo) cai durante esta fala: numa cena só, quando o servidor de
+      // gravação demorava, sobrava tela parada depois da fala.
+      fala: "Pronto: na lista, o produto já aparece com o preço novo.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
         await esperarFechar(palco);
         await linha(p, NOVO).getByText("R$ 15,00").waitFor({ state: "visible", timeout: 10_000 });
         await palco.destacar(linha(p, NOVO).getByText("R$ 15,00"), { folga: 8 });
@@ -266,6 +299,6 @@ export default {
         await voltarAoPainel(palco);
       },
     },
-    cenaFinal("Para rever este vídeo, é só clicar em Tutorial, aqui no topo. Na janela do Tutorial ficam também os outros vídeos do cardápio: preços, combos e organização."),
+    cenaFinal("Para rever este vídeo, é só clicar em Tutorial, aqui no topo. Na janela do Tutorial ficam também os outros vídeos do cardápio: pizza, combos, preços e organização."),
   ],
 };

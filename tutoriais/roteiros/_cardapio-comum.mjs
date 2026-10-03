@@ -75,6 +75,7 @@ export async function assentar(palco) {
   const p = palco.pagina;
   moverNoTempo(palco);
   rolagemFirme(palco);
+  await esconderFaixaDoTutorial(p);
   let ultimo = Date.now();
   const marcar = () => { ultimo = Date.now(); };
   p.on("request", marcar);
@@ -95,6 +96,21 @@ export async function assentar(palco) {
   }
   await p.mouse.move(palco.x, palco.y);
   await dormir(300);
+}
+
+/**
+ * A faixa "Esta tela tem N vídeos tutoriais" (TutorialDaTela variante="faixa")
+ * fica no alto de toda tela que tem vídeo — inclusive na gravação, onde ela
+ * empurrava a lista ~80 px para baixo e mostrava o vídeo dentro do vídeo. Some
+ * nesta página e em toda página que abrir depois (voltar do cardápio do cliente).
+ */
+async function esconderFaixaDoTutorial(p) {
+  const css = ".fh-tutorial-faixa{display:none!important}";
+  await p.addInitScript((regra) => {
+    const pôr = () => { const s = document.createElement("style"); s.textContent = regra; document.head.appendChild(s); };
+    if (document.head) pôr(); else document.addEventListener("DOMContentLoaded", pôr);
+  }, css);
+  await p.addStyleTag({ content: css });
 }
 
 /**
@@ -164,6 +180,14 @@ export async function abrirEdicao(palco, nome) {
   await janela(p).waitFor({ state: "visible", timeout: 8000 });
   await dormir(350);
 }
+
+/**
+ * "Novo Item" e "+ Criar item" perguntam antes: Pizza ou Outro item
+ * (components/admin/CadastroDePizza). Esta é a janela da pergunta.
+ */
+export const perguntaDoNovoItem = (p) => p.getByRole("dialog", { name: "Novo item" });
+export const botaoOutroItem = (p) => perguntaDoNovoItem(p).getByRole("button", { name: /Outro item/ });
+export const botaoPizza = (p) => perguntaDoNovoItem(p).getByRole("button", { name: /^🍕 Pizza|Pizza Tem tamanhos/ });
 
 /** Espera o formulário fechar e a lista recarregar. */
 export async function esperarFechar(palco) {
@@ -280,37 +304,37 @@ export const cenaFinal = (fala) => ({
 
 // ── dados ──────────────────────────────────────────────────────────────────
 /**
- * Um combo de lanche (bebida obrigatória + adicionais opcionais) e uma pizza
- * de dois sabores que cobra o sabor mais caro. As opções nascem carimbadas
- * `apenasEmCombo`, como as que a tela cria em "Cadastrar item novo".
+ * Um combo como o cadastro monta hoje (lib/combo-e-pergunta.ts): o que ele
+ * SEMPRE leva são itens do cardápio (pergunta fixa: 1 opção, mín = máx), a
+ * bebida é escolha do cliente e os adicionais são opcionais. Os adicionais
+ * nascem carimbados `apenasEmCombo`, como os que a tela cria em "Cadastrar
+ * item novo". Pizza não entra aqui: tem passo a passo e vídeo próprios.
  */
 export async function semearCombos(prisma, { loja, produtos }) {
   const L = loja.id;
-  const opcao = (name, description) => prisma.menuProduct.create({
-    data: { franchiseeId: L, name, description: description || name, price: 0, category: "Adicionais", apenasEmCombo: true },
+  const opcao = (name) => prisma.menuProduct.create({
+    data: { franchiseeId: L, name, description: name, price: 0, category: "Adicionais", apenasEmCombo: true },
   });
   const bacon = await opcao("Bacon extra");
   const cheddar = await opcao("Cheddar");
   const ovo = await opcao("Ovo");
-  const sabores = [];
-  for (const [nome, desc] of [
-    ["Calabresa", "Calabresa fatiada e cebola"],
-    ["Marguerita", "Tomate, manjericão e mussarela"],
-    ["Portuguesa", "Presunto, ovo, cebola e azeitona"],
-    ["Frango com Catupiry", "Frango desfiado e catupiry"],
-  ]) sabores.push(await opcao(nome, desc));
-  const precoDoSabor = { Calabresa: 54, Marguerita: 52, Portuguesa: 60, "Frango com Catupiry": 58 };
+  const fixo = (nome, ordem) => ({
+    title: "Vem no combo", minQty: 1, maxQty: 1, sortOrder: ordem,
+    items: { create: [{ menuProductId: produtos[nome].id, additionalPrice: 0, sortOrder: 0 }] },
+  });
 
   const combo = await prisma.menuProduct.create({
     data: {
       franchiseeId: L, name: "Combo X-Bacon", description: "X-Bacon, batata frita e bebida", price: 42,
       category: "Lanches", sortOrder: -1, isCombo: true,
       comboGroups: { create: [
-        { title: "Escolha a bebida", minQty: 1, maxQty: 1, sortOrder: 0, items: { create: [
+        fixo("X-Bacon", 0),
+        fixo("Batata Frita", 1),
+        { title: "Escolha a bebida", minQty: 1, maxQty: 1, sortOrder: 2, items: { create: [
           { menuProductId: produtos["Coca-Cola lata"].id, additionalPrice: 0, sortOrder: 0 },
           { menuProductId: produtos["Guaraná 2 L"].id, additionalPrice: 5, sortOrder: 1 },
         ] } },
-        { title: "Deseja adicionais?", minQty: 0, maxQty: 3, sortOrder: 1, items: { create: [
+        { title: "Deseja adicionais?", minQty: 0, maxQty: 3, sortOrder: 3, items: { create: [
           { menuProductId: bacon.id, additionalPrice: 4, sortOrder: 0 },
           { menuProductId: cheddar.id, additionalPrice: 3, sortOrder: 1 },
           { menuProductId: ovo.id, additionalPrice: 2, sortOrder: 2 },
@@ -318,17 +342,5 @@ export async function semearCombos(prisma, { loja, produtos }) {
       ] },
     },
   });
-
-  const pizza = await prisma.menuProduct.create({
-    data: {
-      franchiseeId: L, name: "Pizza Grande 2 Sabores", description: "8 fatias, até dois sabores", price: 0,
-      category: "Pizzas", sortOrder: -1, isCombo: true,
-      comboGroups: { create: [
-        { title: "Escolha até 2 sabores", minQty: 1, maxQty: 2, priceRule: "MAIOR", sortOrder: 0, items: { create:
-          sabores.map((s, i) => ({ menuProductId: s.id, additionalPrice: precoDoSabor[s.name], sortOrder: i })),
-        } },
-      ] },
-    },
-  });
-  return { combo, pizza };
+  return { combo };
 }

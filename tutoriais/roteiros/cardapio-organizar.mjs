@@ -1,10 +1,10 @@
-// Tutorial 4 de 4 da tela de Cardápio (/store/cardapio): categorias, ordem e
+// Tutorial 5 de 5 da tela de Cardápio (/store/cardapio): categorias, ordem e
 // disponibilidade (canais, dias da semana, etiquetas, estoque).
 //
-// Fora do vídeo, de propósito: o botão "Adicionar Categoria" do topo (não abre
-// nada nesta versão da tela) e renomear categoria (o nome muda, mas os produtos
-// continuam na categoria antiga). A categoria nova é criada pelo caminho que
-// funciona, de dentro do formulário do produto.
+// A categoria nova se cria pelo botão "Adicionar Categoria" do topo, que abre a
+// janela "Nova categoria" (até 02/10/2026 ele não abria nada, e o vídeo ensinava
+// o caminho por dentro do formulário do produto). Fora do vídeo, de propósito:
+// renomear categoria (o nome muda, mas os produtos continuam na antiga).
 import { dormir } from "../motor/palco.mjs";
 import {
   ROTA, PRONTA, linha, cabecalho, janela, canal, campo, bloco,
@@ -17,6 +17,7 @@ const PRODUTO = "Pizza Calabresa";
 const SEGUNDO = "Pizza Marguerita";
 const ALTURA_DA_LISTA = 300;
 
+const janelaDaCategoria = (p) => p.getByRole("dialog", { name: "Nova categoria" });
 const linhaDeOrdem = (p, lista, texto) => p.locator(`[data-ordem-lista="${lista}"]`).filter({ hasText: texto }).first();
 const alca = (p, lista, texto) => linhaDeOrdem(p, lista, texto).locator('span[title="Segure e arraste para mover"]');
 
@@ -39,57 +40,44 @@ export default {
     },
     {
       capitulo: "Criar uma categoria",
-      fala: "A categoria nova se cria de dentro do formulário de um produto. Clique em Criar item e, ao lado de Categoria, em Gerenciar, Nova Categoria.",
+      fala: "Para criar uma categoria, clique em Adicionar Categoria, aqui em cima.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        const criar = cabecalho(p, "Lanches").getByRole("button", { name: "+ Criar item" });
-        await ctx.ate(0.16);
-        await palco.destacar(criar, { folga: 6 });
-        await palco.mover(criar, { ms: 500 });
-        await ctx.ate(0.36);
+        const botao = p.getByRole("button", { name: /Adicionar Categoria/ });
+        await palco.camera([botao, p.getByRole("button", { name: /Novo Combo/ })], { zoomMax: 1.5, margem: 40 });
+        await ctx.ate(0.3);
+        await palco.destacar(botao, { folga: 6 });
+        await palco.mover(botao, { ms: 600 });
+        await ctx.ate(0.75);
         await palco.apagarDestaque();
-        await palco.clicar(criar);
-        await janela(p).waitFor({ state: "visible", timeout: 8000 });
-        const gerenciar = janela(p).getByRole("button", { name: /Gerenciar \/ Nova Categoria/ });
-        await palco.camera([campo.categoria(p), gerenciar, campo.custo(p)], { zoomMax: 1.6, margem: 50 });
-        await palco.destacar(gerenciar, { folga: 6 });
-        await palco.mover(gerenciar, { ms: 600 });
-        await ctx.ate(0.9);
-        await palco.apagarDestaque();
-        await palco.clicar(gerenciar);
+        await palco.clicar(botao);
+        await janelaDaCategoria(p).waitFor({ state: "visible", timeout: 8000 });
+        await palco.cameraAberta({ ms: 300 });
         await ctx.ate(1);
       },
     },
     {
-      fala: "Escreva o nome, troque o emoji se quiser, e clique em Adicionar Categoria. Ela já fica escolhida para o produto que você está cadastrando.",
+      fala: "Escreva o nome, troque o emoji se quiser, e clique em Criar categoria.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        const nome = janela(p).getByPlaceholder("Nome da categoria");
-        const emoji = janela(p).getByPlaceholder(/^Emoji/);
-        const adicionar = janela(p).getByRole("button", { name: /Adicionar Categoria/ });
-        await palco.cameraAberta({ ms: 300 });
-        await palco.rolarAte(adicionar, { bloco: "center" });
-        await palco.camera([campo.categoria(p), emoji, adicionar], { zoomMax: 1.6, margem: 50 });
+        const j = janelaDaCategoria(p);
+        const nome = j.getByPlaceholder(/Nome da categoria/);
+        const emoji = j.getByPlaceholder("Emoji", { exact: true });
+        const criar = j.getByRole("button", { name: "Criar categoria" });
+        await palco.camera(j, { zoomMax: 1.6, margem: 30 });
         await palco.digitar(nome, NOVA);
         await palco.mover(emoji, { ms: 500 });
-        await ctx.ate(0.5);
-        await palco.clicar(adicionar);
-        await janela(p).locator("select.input-field option:checked").filter({ hasText: NOVA }).waitFor({ state: "attached", timeout: 8000 });
-        await palco.destacar(campo.categoria(p), { folga: 6 });
-        await palco.mover(campo.categoria(p), { ms: 600 });
+        await ctx.ate(0.72);
+        await palco.clicar(criar);
+        await j.waitFor({ state: "hidden", timeout: 8000 });
+        await palco.cameraAberta({ ms: 300 });
         await ctx.ate(1);
-        await dormir(400);
-        await palco.apagarDestaque();
-        await palco.cameraAberta({ ms: 400 });
       },
     },
     {
-      fala: "Fechando o formulário, a categoria nova já está no fim da lista, pronta para receber produtos.",
+      fala: "A categoria nova já está no fim da lista, pronta para receber produtos.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await palco.rolarAte(campo.cancelar(p), { bloco: "end" });
-        await palco.clicar(campo.cancelar(p));
-        await esperarFechar(palco);
         await palco.rolarPagina(5000);
         await palco.destacar(cabecalho(p, NOVA), { folga: 4 });
         await palco.mover(cabecalho(p, NOVA).getByText(NOVA), { ms: 700 });
@@ -165,7 +153,8 @@ export default {
         // cor virar — senão a fala diz "volta" e o botão ainda está apagado.
         const totem = canal(p, PRODUTO, "Totem");
         const ligado = () => totem.evaluate((el) => getComputedStyle(el).borderTopColor !== "rgb(226, 232, 240)");
-        const esperar = async (estado) => { for (let i = 0; i < 60 && (await ligado()) !== estado; i++) await dormir(150); };
+        // Até 3 s: com o banco de gravação lento, esperar mais deixava a tela parada depois da fala.
+        const esperar = async (estado) => { for (let i = 0; i < 20 && (await ligado()) !== estado; i++) await dormir(150); };
         await ctx.ate(0.6);
         await palco.apagarDestaque();
         await palco.clicar(totem);
@@ -202,7 +191,7 @@ export default {
     },
     {
       capitulo: "Etiquetas e destaque",
-      fala: "Logo acima ficam as Tags do Produto, como Novo e Mais Vendido. Marque as que quiser e salve: elas aparecem no cardápio do cliente.",
+      fala: "Logo acima ficam as Tags do Produto, como Novo e Mais Vendido. Marque as que quiser e salve: elas aparecem no cardápio do cliente, e também aqui na lista, embaixo do nome do produto.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         const tags = bloco(p, "Tags do Produto");
@@ -287,6 +276,6 @@ export default {
         await palco.cameraAberta({ ms: 400 });
       },
     },
-    cenaFinal("Para rever este vídeo, é só clicar em Tutorial, aqui no topo. Na janela do Tutorial ficam também os outros vídeos do cardápio: produtos, preços e combos."),
+    cenaFinal("Para rever este vídeo, é só clicar em Tutorial, aqui no topo. Na janela do Tutorial ficam também os outros vídeos do cardápio: produtos, pizza, combos e preços."),
   ],
 };

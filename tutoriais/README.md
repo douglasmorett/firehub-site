@@ -103,8 +103,9 @@ Os 28 vídeos foram aprovados pelo Douglas em 02/10/2026.
 | 6 | Operação | Como abrir e fechar o caixa (`caixa`) | Balcão e Histórico de caixas |
 | 7 | Operação | Roteirização: montar a rota e despachar (`roteirizacao`) | Roteirização |
 | 8 | Cardápio | Cadastrar e editar um produto (`cardapio-produto`) | Cardápio |
+| 8b | Cardápio | Pizza com tamanhos e meio a meio (`cardapio-pizza`, 03/10/2026) | Cardápio |
 | 9 | Cardápio | Preço promocional e preço por canal (`cardapio-precos`) | Cardápio |
-| 10 | Cardápio | Combos, adicionais e meio a meio (`cardapio-combos`) | Cardápio |
+| 10 | Cardápio | Combos e adicionais (`cardapio-combos`, refeito em 03/10/2026) | Cardápio |
 | 11 | Cardápio | Categorias, ordem e disponibilidade (`cardapio-organizar`) | Cardápio |
 | 12 | Vendas | Marketing e cupons (`marketing`) | Marketing & cupons |
 | 13 | Vendas | Chatbot IA: o robô do WhatsApp (`chatbot`) | Chatbot IA |
@@ -123,6 +124,7 @@ Os 28 vídeos foram aprovados pelo Douglas em 02/10/2026.
 | 26 | Config. | Fidelidade: cashback e trilha (`fidelidade`) | Minha loja › Fidelidade |
 | 27 | Config. | Impressoras: o Assistente e o que cada uma imprime (`impressoras`) | Impressoras |
 | 28 | Config. | Integrações: conectar iFood e 99Food (`integracoes`) | Integrações |
+| 30 | Config. | Prazo automático no iFood: a extensão do Chrome (`extensao-ifood`, 03/10/2026) | Extensão iFood |
 
 Fora dos vídeos: Totem e Tráfego pago (EM TESTES) e Checklist e ponto (FireCheck).
 

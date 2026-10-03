@@ -145,87 +145,83 @@
   },
   "cardapio-combos": {
     "id": "cardapio-combos",
-    "titulo": "Cardápio: combos, adicionais e meio a meio",
-    "duracao": 155,
+    "titulo": "Cardápio: combos e adicionais",
+    "duracao": 143,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que este vídeo mostra"
       },
       {
-        "em": 14.2,
-        "titulo": "As perguntas de um combo"
+        "em": 9,
+        "titulo": "Novo Combo"
       },
       {
-        "em": 35.2,
-        "titulo": "Pausar uma opção"
+        "em": 29.4,
+        "titulo": "O que o combo leva"
       },
       {
-        "em": 43.4,
-        "titulo": "Editar perguntas e opções"
+        "em": 47.5,
+        "titulo": "Escolha do cliente"
       },
       {
-        "em": 62.2,
-        "titulo": "Adicionais e preço da opção"
+        "em": 64.6,
+        "titulo": "Pausar um item do combo"
       },
       {
-        "em": 90.6,
-        "titulo": "Lanche com adicionais"
+        "em": 86.8,
+        "titulo": "Adicionais num lanche"
       },
       {
-        "em": 102.8,
-        "titulo": "Pizza meio a meio"
+        "em": 123.2,
+        "titulo": "Pausar um adicional"
       },
       {
-        "em": 128.3,
-        "titulo": "Como o cliente vê"
-      },
-      {
-        "em": 144.5,
+        "em": 132.4,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "d33e6682"
+    "versao": "0af53bc6"
   },
   "cardapio-organizar": {
     "id": "cardapio-organizar",
     "titulo": "Cardápio: categorias, ordem e disponibilidade",
-    "duracao": 148,
+    "duracao": 138,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que este vídeo mostra"
       },
       {
-        "em": 10,
+        "em": 9.4,
         "titulo": "Criar uma categoria"
       },
       {
-        "em": 39.2,
+        "em": 27.2,
         "titulo": "Mudar a ordem"
       },
       {
-        "em": 62.5,
+        "em": 50.9,
         "titulo": "Em quais canais o produto aparece"
       },
       {
-        "em": 77.3,
+        "em": 65.3,
         "titulo": "Dias da semana"
       },
       {
-        "em": 91.3,
+        "em": 79.3,
         "titulo": "Etiquetas e destaque"
       },
       {
-        "em": 111.8,
+        "em": 101.7,
         "titulo": "Estoque e pausa"
       },
       {
-        "em": 134,
+        "em": 123.7,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "dc8e67ae"
+    "versao": "8ce8a9c1"
   },
   "cardapio-precos": {
     "id": "cardapio-precos",
@@ -270,46 +266,46 @@
   "cardapio-produto": {
     "id": "cardapio-produto",
     "titulo": "Cardápio: cadastrar e editar um produto",
-    "duracao": 147,
+    "duracao": 155,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que é esta tela"
       },
       {
-        "em": 11.8,
+        "em": 10.3,
         "titulo": "A lista de produtos"
       },
       {
-        "em": 27.7,
+        "em": 25,
         "titulo": "Cadastrar um produto"
       },
       {
-        "em": 41.2,
+        "em": 53,
         "titulo": "A foto"
       },
       {
-        "em": 46.9,
+        "em": 58.6,
         "titulo": "Descrição e comanda"
       },
       {
-        "em": 72.8,
+        "em": 82.9,
         "titulo": "Editar um produto"
       },
       {
-        "em": 89.5,
+        "em": 100.8,
         "titulo": "Pausar e ativar"
       },
       {
-        "em": 110.7,
+        "em": 119.1,
         "titulo": "Como o cliente vê"
       },
       {
-        "em": 134.1,
+        "em": 141.2,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "d72dd3ac"
+    "versao": "9064fbd9"
   },
   "chatbot": {
     "id": "chatbot",
@@ -1347,5 +1343,113 @@
     ],
     "versao": "371201e5",
     "emPe": true
+  },
+  "cardapio-pizza": {
+    "id": "cardapio-pizza",
+    "titulo": "Cardápio: pizza com tamanhos e meio a meio",
+    "duracao": 156,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que este vídeo mostra"
+      },
+      {
+        "em": 9.7,
+        "titulo": "Começar"
+      },
+      {
+        "em": 17.5,
+        "titulo": "Os tamanhos"
+      },
+      {
+        "em": 28.5,
+        "titulo": "Fatias e sabores"
+      },
+      {
+        "em": 42.7,
+        "titulo": "Como cobra o meio a meio"
+      },
+      {
+        "em": 57.1,
+        "titulo": "Sabores e preços"
+      },
+      {
+        "em": 86.1,
+        "titulo": "Borda recheada"
+      },
+      {
+        "em": 96.6,
+        "titulo": "Conferir e salvar"
+      },
+      {
+        "em": 116,
+        "titulo": "Como o cliente vê"
+      },
+      {
+        "em": 131.2,
+        "titulo": "Sabor novo depois"
+      },
+      {
+        "em": 144.1,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "43015958"
+  },
+  "extensao-ifood": {
+    "id": "extensao-ifood",
+    "titulo": "Prazo automático no iFood: a extensão do Chrome",
+    "duracao": 175,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é"
+      },
+      {
+        "em": 13.6,
+        "titulo": "Como funciona"
+      },
+      {
+        "em": 26.3,
+        "titulo": "O que você precisa"
+      },
+      {
+        "em": 38.1,
+        "titulo": "Instalar"
+      },
+      {
+        "em": 52.8,
+        "titulo": "Fixar o ícone"
+      },
+      {
+        "em": 63.3,
+        "titulo": "Entrar"
+      },
+      {
+        "em": 75.5,
+        "titulo": "A aba do iFood"
+      },
+      {
+        "em": 88.9,
+        "titulo": "Motoboys e robô"
+      },
+      {
+        "em": 111.2,
+        "titulo": "Como o prazo é escolhido"
+      },
+      {
+        "em": 139.2,
+        "titulo": "No dia a dia"
+      },
+      {
+        "em": 153.2,
+        "titulo": "Se aparecer um aviso"
+      },
+      {
+        "em": 165.1,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "e6d9ad8a"
   }
 }

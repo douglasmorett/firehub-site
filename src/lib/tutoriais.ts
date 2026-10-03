@@ -45,11 +45,12 @@ const TELAS: Record<string, string[]> = {
   // o vídeo dele aparece também no Balcão, que é onde o caixa fechado trava a venda.
   "/store/venda-presencial": ["balcao", "caixa"],
   "/store/caixa": ["caixa"],
-  "/store/cardapio": ["cardapio-produto", "cardapio-precos", "cardapio-combos", "cardapio-organizar"],
+  "/store/cardapio": ["cardapio-produto", "cardapio-pizza", "cardapio-combos", "cardapio-precos", "cardapio-organizar"],
   "/store/fiscal": ["fiscal"],
   "/store/impressoras": ["impressoras"],
   "/store/minha-loja": ["horarios", "entrega", "pagamento", "equipe", "fidelidade"],
   "/store/integracoes": ["integracoes"],
+  "/store/extensao-ifood": ["extensao-ifood"],
   "/store/chatbot": ["chatbot"],
   "/store/roteirizacao": ["roteirizacao"],
   "/store/motoboys": ["motoboys"],
@@ -82,6 +83,7 @@ const NOMES: Record<string, string> = {
   "/store/impressoras": "Impressoras",
   "/store/minha-loja": "Minha loja",
   "/store/integracoes": "Integrações",
+  "/store/extensao-ifood": "Extensão iFood",
   "/store/chatbot": "Chatbot",
   "/store/roteirizacao": "Roteirização",
   "/store/motoboys": "Motoboys",
@@ -160,11 +162,11 @@ export function tutoriaisDaTela(pathname: string | null | undefined, enviados: T
  */
 const GRUPOS: { titulo: string; ids: string[] }[] = [
   { titulo: "Operação", ids: ["inicio", "pedidos", "kds", "mesas", "balcao", "caixa", "roteirizacao"] },
-  { titulo: "Cardápio", ids: ["cardapio-produto", "cardapio-precos", "cardapio-combos", "cardapio-organizar"] },
+  { titulo: "Cardápio", ids: ["cardapio-produto", "cardapio-pizza", "cardapio-combos", "cardapio-precos", "cardapio-organizar"] },
   { titulo: "Vendas", ids: ["marketing", "chatbot"] },
   { titulo: "Gestão", ids: ["financeiro", "relatorios", "fiscal", "estoque", "etiquetas"] },
   { titulo: "Equipe", ids: ["motoboys", "app-motoboy", "garcons", "fiado"] },
-  { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes"] },
+  { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes", "extensao-ifood"] },
 ];
 
 export function todosOsTutoriais(enviados: TutoriaisEnviados = null): { titulo: string; tutoriais: Tutorial[] }[] {

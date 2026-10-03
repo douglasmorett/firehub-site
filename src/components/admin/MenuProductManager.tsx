@@ -519,6 +519,40 @@ export default function MenuProductManager({
     }
   };
 
+  /**
+   * "Adicionar Categoria" do topo da tela. O botão ligava `showNewCat`, que só
+   * existe DENTRO do formulário de produto: com o formulário fechado, o clique
+   * não fazia nada (e o tutorial ensinava a criar categoria por dentro do
+   * "Criar item"). Agora abre uma janela própria.
+   */
+  const [categoriaAvulsa, setCategoriaAvulsa] = useState(false);
+  const criarCategoriaAvulsa = async () => {
+    const nome = newCatName.trim();
+    if (!nome) return;
+    if (dynCategories.some(c => (c.name || "").trim().toLowerCase() === nome.toLowerCase())) {
+      showToast(`A categoria "${nome}" já existe.`, "#C92E09");
+      return;
+    }
+    setNewCatSaving(true);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nome, emoji: newCatEmoji.trim() || "🍽️", color: newCatColor }),
+      });
+      if (!res.ok) { showToast("Erro ao criar categoria", "#C92E09"); return; }
+      const criada = await res.json();
+      setDynCategories(prev => [...prev, criada]);
+      setCategoriaAvulsa(false);
+      setNewCatName(""); setNewCatEmoji("🍽️");
+      showToast(`Categoria "${criada.name}" criada! Ela está no fim da lista.`);
+    } catch {
+      showToast("Erro ao criar categoria", "#C92E09");
+    } finally {
+      setNewCatSaving(false);
+    }
+  };
+
   const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
   const [imageMode, setImageMode] = useState<"file" | "url">("file");
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -1917,7 +1951,7 @@ export default function MenuProductManager({
 
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           <button
-            onClick={() => setShowNewCat(true)}
+            onClick={() => { setNewCatName(""); setNewCatEmoji("🍽️"); setCategoriaAvulsa(true); }}
             className="btn btn-outline"
             style={{ fontSize: "0.85rem", background: "#FFF", borderColor: "#CBD5E1", color: "#334155", fontWeight: 700 }}
           >
@@ -1994,6 +2028,44 @@ export default function MenuProductManager({
           </select>
         </div>
       </div>
+
+      {/* NOVA CATEGORIA, pelo botão do topo */}
+      {categoriaAvulsa && (
+        <div onMouseDown={e => { if (e.target === e.currentTarget) setCategoriaAvulsa(false); }}
+          style={{ position: "fixed", inset: 0, zIndex: 100001, background: "rgba(15, 23, 42, 0.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div role="dialog" aria-modal="true" aria-label="Nova categoria"
+            style={{ background: "#FFF", borderRadius: "20px", width: "min(460px, 100%)", padding: "20px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.45)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+              <h2 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#0F172A" }}>📁 Nova categoria</h2>
+              <button type="button" onClick={() => setCategoriaAvulsa(false)} aria-label="Fechar"
+                style={{ width: "34px", height: "34px", borderRadius: "50%", border: "none", background: "#F1F5F9", color: "#64748B", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ margin: "0 0 14px", fontSize: "0.86rem", color: "#475569", lineHeight: 1.5 }}>
+              A categoria agrupa os produtos no cardápio, como Lanches, Pizzas ou Bebidas.
+            </p>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <input aria-label="Emoji da categoria" placeholder="Emoji" value={newCatEmoji} onChange={e => setNewCatEmoji(e.target.value)}
+                style={{ width: "64px", height: "44px", padding: "0 8px", border: "1.5px solid #CBD5E1", borderRadius: "10px", fontSize: "1.1rem", textAlign: "center", boxSizing: "border-box" }} />
+              <input autoFocus aria-label="Nome da categoria" placeholder="Nome da categoria (ex.: Sobremesas)" value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); criarCategoriaAvulsa(); } }}
+                style={{ flex: 1, minWidth: 0, height: "44px", padding: "0 12px", border: "1.5px solid #CBD5E1", borderRadius: "10px", fontSize: "0.95rem", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
+              <button type="button" onClick={() => setCategoriaAvulsa(false)}
+                style={{ height: "42px", padding: "0 16px", borderRadius: "10px", border: "1.5px solid #CBD5E1", background: "#FFF", color: "#334155", fontWeight: 800, cursor: "pointer" }}>
+                Cancelar
+              </button>
+              <button type="button" onClick={criarCategoriaAvulsa} disabled={newCatSaving || !newCatName.trim()}
+                style={{ height: "42px", padding: "0 18px", borderRadius: "10px", border: "none", background: "#E8360C", color: "#FFF", fontWeight: 800, cursor: newCatSaving || !newCatName.trim() ? "not-allowed" : "pointer", opacity: newCatSaving || !newCatName.trim() ? 0.6 : 1 }}>
+                {newCatSaving ? "Criando…" : "Criar categoria"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* NOVO ITEM: pizza ou outro item? */}
       {novoItem && (
