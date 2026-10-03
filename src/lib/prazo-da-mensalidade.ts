@@ -46,6 +46,18 @@ export function vencimentoDoBoleto(yearMonth: string): { dia: string; vencidoDep
   };
 }
 
+/**
+ * Atraso: multa de 2% (uma vez) e juros de 1% ao mês, pro rata dia — o Asaas
+ * calcula. É o teto que vale para qualquer lojista: CDC art. 52 §1º (multa) e
+ * Lei de Usura (juros) seguram quem entra com CPF; entre empresas a Lei
+ * 14.905/2024 tirou o teto dos juros, mas multa alta vira briga (CC art. 413).
+ * É também o que o mercado cobra (termos do CardápioWeb, 3.8: 2% + 1% a.m.).
+ * Sem isto no POST /payments o boleto saía com o padrão da conta no Asaas
+ * (multa 4%, juros 2% a.m.), que é o da Icebox, não o do FireHub.
+ */
+export const MULTA_POR_ATRASO_PCT = 2;
+export const JUROS_AO_MES_PCT = 1;
+
 /** Dia do bloqueio: "pague até o dia 10". */
 export const DIA_DO_BLOQUEIO = 10;
 
