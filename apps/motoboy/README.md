@@ -68,9 +68,16 @@ npx eas-cli@latest submit -p ios                              # manda para o Tes
 
 ```bash
 npx expo prebuild --platform android
+# o padrão do template (2 GB, Metaspace 512 MB) estoura com OutOfMemoryError: Metaspace
+sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1536m/' android/gradle.properties
 cd android && ./gradlew assembleRelease
 # sai em android/app/build/outputs/apk/release/app-release.apk
 ```
+
+A primeira vez baixa o NDK e as plataformas do SDK que faltarem (precisa ter as
+licenças aceitas em `Android/Sdk/licenses`) e leva uns 20 a 30 minutos. O APK
+local é assinado com a chave de debug: serve para testar no celular, não para
+a Play. O APK da Play sai do EAS, com a chave guardada lá.
 
 As pastas `android/` e `ios/` são geradas pelo prebuild e **não vão para o
 git**. Configuração nativa (permissões, ícones, plugins) se muda no `app.json`.
