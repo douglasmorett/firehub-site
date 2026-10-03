@@ -53,16 +53,7 @@ export async function GET(req: NextRequest) {
       try {
         const result = await closeBillingCycle(cycle.franchiseeId, prevMonth);
         log.push(`✅ ${cycle.franchiseeId}: ${result.message}`);
-
-        // Setar dueDate = closedAt + 10 dias
-        if (result.charged) {
-          const dueDate = new Date();
-          dueDate.setDate(dueDate.getDate() + 10);
-          await prisma.franchiseeBillingCycle.updateMany({
-            where: { franchiseeId: cycle.franchiseeId, yearMonth: prevMonth },
-            data: { dueDate },
-          });
-        }
+        // O prazo do bloqueio (dueDate) é gravado pelo próprio closeBillingCycle.
         closed++;
       } catch (err: any) {
         log.push(`❌ ${cycle.franchiseeId}: ${err.message}`);
@@ -82,9 +73,9 @@ export async function GET(req: NextRequest) {
 
     log.push(`⚠️ ${overdueCycles.length} ciclos com dueDate vencido`);
 
-    // Nota: O bloqueio já é feito no layout.tsx verificando se o ciclo CLOSED
-    // está vencido. Não precisamos de um campo systemBlocked pois o layout
-    // já calcula isso em runtime (closedAt + 7 dias, que atualizaremos para 10).
+    // Nota: O bloqueio já é feito no layout.tsx comparando com o dueDate (fim
+    // do dia 10 do mês seguinte, lib/prazo-da-mensalidade.ts). Não precisamos
+    // de um campo systemBlocked.
 
     // 3. Taxa de Meta Ads — NÃO é cobrada aqui.
     //

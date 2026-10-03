@@ -30,6 +30,7 @@ import { prisma } from "@/lib/prisma";
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
+import { bloqueioDaMensalidade, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import { ganhaComoVendedor } from "@/lib/vendedores";
 
 /**
@@ -579,7 +580,6 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const isSpecialStore = lojaIsenta(cycle.franchisee);
 
   // Recalcula valores finais (pedidos confirmados do mês)
-  const [y, m] = yearMonth.split("-").map(Number);
   const tz = cycle.franchisee?.storeTimezone || "America/Sao_Paulo";
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
 
@@ -770,8 +770,8 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       // POST /payments, que é quando esse aviso sai (lib/aviso-do-boleto.ts).
       await prepararAvisoDoBoleto(BASE, asaasKey, customerId, cycle.franchisee);
 
-      // Vencimento: dia 5 do próximo mês
-      const due = new Date(y, m, 5).toISOString().split("T")[0];
+      // Vencimento: dia 5 do próximo mês (lib/prazo-da-mensalidade.ts)
+      const due = vencimentoDoBoleto(yearMonth).dia;
 
       // A mensalidade só entra na descrição quando existe: com ela perdoada
       // (teste sem venda) e só a taxa de tráfego a cobrar, o boleto dizia
@@ -879,6 +879,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       asaasPaymentId,
       asaasBoletoUrl,
       asaasBoletoCode,
+      // Prazo do BLOQUEIO (fim do dia 10), não o vencimento do boleto (dia 5).
+      // Era o cron que gravava "fechamento + 10 dias" — o fechamento pelo admin
+      // ficava sem prazo.
+      dueDate: bloqueioDaMensalidade(yearMonth),
       // Teste que acabou no meio do mês: fica escrito de onde a base começou,
       // senão "por que a mensalidade não bate com as vendas do mês?" vira
       // arqueologia toda vez.

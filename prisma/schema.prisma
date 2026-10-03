@@ -1651,7 +1651,7 @@ model FranchiseeBillingCycle {
   // Resultado no fechamento
   amountPending    Float     @default(0)   // amountDue - amountOffset (o que ainda falta)
   // Vencimento e taxas adicionais
-  dueDate          DateTime?                 // Data limite de pagamento (closedAt + 10 dias)
+  dueDate          DateTime?                 // Bloqueio do painel: fim do dia 10 do mês seguinte (o boleto vence no dia 5) — lib/prazo-da-mensalidade.ts
   metaAdsFee       Float     @default(0)     // Taxa tráfego pago acumulada no mês (R$50/semana)
   totemFee         Float     @default(0)     // Taxa de totens ativos no mês (R$ 100 × N)
   // Status do ciclo
