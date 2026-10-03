@@ -23,17 +23,29 @@
  * fecha e continua de onde estava. Capítulos ao lado levam direto ao ponto
  * ("só quero ver como cancela"), e a legenda vem ligada porque cozinha e
  * balcão são barulhentos.
+ *
+ * Tela com vários vídeos (Cardápio tem 4, Minha loja 5): eram pílulas de
+ * texto no alto da janela, e o Douglas abriu, assistiu o primeiro e não
+ * percebeu que havia outros três (02/10/2026). Agora é uma fileira de cartões
+ * numerados com a capa de cada vídeo ("Esta tela tem 4 vídeos"), o título diz
+ * "vídeo 1 de 4", e quando um acaba o próximo começa sozinho depois de uma
+ * contagem — a não ser que a pessoa cancele ou feche a janela.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
-import { Play, PlayCircle, X } from "lucide-react";
+import { Check, ListVideo, Play, PlayCircle, X } from "lucide-react";
 import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
-import { arquivosDoTutorial, duracaoEmMinutos, indiceInicial, nomeDaTela, relogio, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
+import { arquivosDoTutorial, duracaoEmMinutos, indiceInicial, nomeDaTela, relogio, titulosCurtos, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
 
 export const CHAVE_VISTO = "firehub_tutorial_visto:";
 export const VELOCIDADES = [1, 1.25, 1.5];
+
+/** Segundos de contagem antes de o próximo vídeo da tela começar sozinho. */
+const ESPERA_DO_PROXIMO = 6;
+
+const CHAMADA_PADRAO = "Tem um tutorial desta tela";
 
 /**
  * Encaixa a janela por cima na parte da tela que a pessoa VÊ.
@@ -129,10 +141,67 @@ export const ESTILO = `
 .fh-tutorial-capitulo[aria-current="true"]{background:#FFF1EC;color:#9A2A0A;font-weight:700}
 .fh-tutorial-capitulo time{font-variant-numeric:tabular-nums;font-size:.72rem;color:#94A3B8;min-width:30px}
 .fh-tutorial-capitulo[aria-current="true"] time{color:#C2410C}
-.fh-tutorial-outros{display:flex;gap:6px;flex-wrap:wrap;padding:0 20px 12px}
-.fh-tutorial-outros button{border:1px solid #E2E8F0;background:#fff;border-radius:999px;padding:5px 12px;font-size:.76rem;font-weight:700;cursor:pointer;color:#334155;font-family:inherit}
-.fh-tutorial-outros button[aria-pressed="true"]{background:#E8360C;border-color:#E8360C;color:#fff}
-@media (max-width:860px){.fh-tutorial-corpo{grid-template-columns:1fr;padding:0 12px 14px}.fh-tutorial-topo{padding:12px}.fh-tutorial-outros{padding:0 12px 10px}}
+@media (max-width:860px){.fh-tutorial-corpo{grid-template-columns:1fr;padding:0 12px 14px}.fh-tutorial-topo{padding:12px}}
+.fh-tutorial-miniatura.pilha{overflow:visible;background:none}
+.fh-tutorial-miniatura.pilha::before,.fh-tutorial-miniatura.pilha::after{content:"";position:absolute;border-radius:9px;background:#F8B49A;z-index:0}
+.fh-tutorial-miniatura.pilha::before{inset:-6px 10px auto 10px;height:10px;background:#FBD5C5}
+.fh-tutorial-miniatura.pilha::after{inset:-3px 5px auto 5px;height:10px}
+.fh-tutorial-miniatura.pilha img{position:relative;z-index:1;border-radius:9px;background:#0F172A}
+.fh-tutorial-miniatura.pilha .fh-tutorial-play{z-index:2}
+.fh-tutorial-qtd{position:absolute;z-index:2;right:4px;bottom:4px;background:rgba(15,23,42,.86);color:#fff;font-size:.62rem;font-weight:800;padding:1px 5px;border-radius:5px;line-height:1.5}
+.fh-tutorial-cabeca{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.fh-tutorial-sobre{font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#C2410C;white-space:nowrap}
+@media (max-width:520px){.fh-tutorial-sobre-tela{display:none}}
+.fh-tutorial-serie{margin:0 16px 14px 20px;padding:10px 12px 12px;border:1px solid #F5D0C0;background:#FFF8F4;border-radius:14px}
+.fh-tutorial-serie-topo{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin:0 2px 9px}
+.fh-tutorial-serie-topo b{display:inline-flex;align-items:center;gap:6px;font-size:.9rem;font-weight:800;color:#9A2A0A}
+.fh-tutorial-serie-topo span{font-size:.76rem;color:#7C5A4A}
+.fh-tutorial-serie-topo em{margin-left:auto;font-style:normal;font-size:.72rem;font-weight:700;color:#64748B;display:inline-flex;align-items:center;gap:4px}
+.fh-tutorial-cartoes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));gap:8px}
+.fh-tutorial-cartoes li{min-width:0}
+.fh-tutorial-cartao{display:flex;align-items:center;gap:10px;width:100%;height:100%;text-align:left;padding:6px 8px 6px 6px;border-radius:11px;border:1.5px solid #EADFD6;background:#fff;cursor:pointer;font-family:inherit;color:#1C1917}
+.fh-tutorial-cartao:hover{border-color:#F0A584}
+.fh-tutorial-cartao[aria-current="true"]{border-color:#E8360C;box-shadow:0 0 0 3px rgba(232,54,12,.14)}
+.fh-tutorial-cartao-capa{position:relative;flex:none;width:84px;aspect-ratio:16/9;border-radius:7px;overflow:hidden;background:#0F172A}
+.fh-tutorial-cartao-capa img{width:100%;height:100%;object-fit:cover;display:block}
+.fh-tutorial-cartao-capa i{position:absolute;top:4px;left:4px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:rgba(15,23,42,.86);color:#fff;font-style:normal;font-size:.72rem;font-weight:800;display:flex;align-items:center;justify-content:center}
+.fh-tutorial-cartao[aria-current="true"] .fh-tutorial-cartao-capa i{background:#E8360C}
+.fh-tutorial-cartao-texto{min-width:0;display:flex;flex-direction:column;gap:3px}
+.fh-tutorial-cartao-texto b{font-size:.78rem;font-weight:800;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.fh-tutorial-cartao-texto small{font-size:.7rem;color:#64748B;font-weight:600;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.fh-tutorial-cartao-texto .agora{color:#C2410C;font-weight:800;display:inline-flex;align-items:center;gap:3px}
+.fh-tutorial-cartao-texto .visto{color:#15803D;font-weight:800;display:inline-flex;align-items:center;gap:3px}
+.fh-tutorial-serie.muitos .fh-tutorial-cartao-capa{width:64px}
+.fh-tutorial-palco{position:relative}
+.fh-tutorial-fim{position:absolute;inset:0;border-radius:12px;background:rgba(15,23,42,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff;text-align:center;padding:16px}
+.fh-tutorial-fim-rotulo{font-size:.72rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#FDBA74}
+.fh-tutorial-fim-proximo{display:flex;align-items:center;gap:12px;max-width:min(460px,100%);text-align:left}
+.fh-tutorial-fim-proximo img{flex:none;width:120px;aspect-ratio:16/9;object-fit:cover;border-radius:8px;border:2px solid rgba(255,255,255,.25)}
+.fh-tutorial-fim-proximo b,.fh-tutorial-fim-titulo{font-size:1.02rem;font-weight:800;line-height:1.3}
+.fh-tutorial-fim-conta{font-size:.82rem;color:#CBD5E1;font-variant-numeric:tabular-nums}
+.fh-tutorial-fim-barra{display:block;width:min(260px,70%);height:4px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden;position:relative}
+.fh-tutorial-fim-barra::after{content:"";position:absolute;inset:0;background:#FB923C;transform-origin:left;animation:fh-tutorial-encher var(--espera) linear forwards}
+@keyframes fh-tutorial-encher{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.fh-tutorial-fim-ok{width:44px;height:44px;border-radius:50%;background:#16A34A;display:flex;align-items:center;justify-content:center}
+.fh-tutorial-fim-sub{font-size:.82rem;color:#CBD5E1;max-width:420px}
+.fh-tutorial-fim-botoes{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px}
+.fh-tutorial-fim-botoes button{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 16px;border-radius:10px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-weight:800;font-size:.84rem;cursor:pointer;font-family:inherit}
+.fh-tutorial-fim-botoes button.sim{background:#E8360C;border-color:#E8360C}
+.fh-tutorial-fim-botoes button.sim:hover{background:#C92E09}
+.fh-tutorial-fim-botoes button:not(.sim):hover{background:rgba(255,255,255,.1)}
+.fh-tutorial-barra .fh-tutorial-proximo{margin-left:auto;display:inline-flex;align-items:center;gap:6px;max-width:100%;border-color:#F5D0C0;background:#FFF8F4;color:#9A2A0A;padding:5px 11px}
+.fh-tutorial-proximo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:860px){
+  .fh-tutorial-serie{margin:0 12px 12px;padding:9px 10px 10px}
+  .fh-tutorial-serie-topo em{margin-left:0}
+  .fh-tutorial-cartoes{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 6px;-webkit-overflow-scrolling:touch}
+  .fh-tutorial-cartoes li{flex:0 0 min(250px,80%);scroll-snap-align:start}
+  .fh-tutorial-fim-proximo img{width:84px}
+  .fh-tutorial-fim-proximo b,.fh-tutorial-fim-titulo{font-size:.9rem}
+  .fh-tutorial-fim{gap:7px;padding:10px}
+  .fh-tutorial-fim-botoes button{height:34px;padding:0 12px;font-size:.78rem}
+}
+@media (prefers-reduced-motion:reduce){.fh-tutorial-fim-barra::after{animation:none;transform:scaleX(1)}}
 `;
 
 export default function TutorialDaTela({
@@ -141,7 +210,7 @@ export default function TutorialDaTela({
   rotulo,
   foraDoPainel = false,
   variante = "botao",
-  chamada = "Tem um tutorial desta tela",
+  chamada = CHAMADA_PADRAO,
   ocultavel = true,
   estilo,
 }: {
@@ -221,10 +290,19 @@ export default function TutorialDaTela({
 
   const tutorial: Tutorial | undefined = tutoriais[Math.min(qual, tutoriais.length - 1)];
   const primeiroId = tutoriais[0]?.id;
+  const total = tutoriais.length;
+  const serie = total > 1;
+  // Quais vídeos desta tela a pessoa já começou a assistir (o ✓ do cartão).
+  const [vistos, setVistos] = useState<ReadonlySet<string>>(() => new Set());
+  // O vídeo acabou: "proximo" mostra a contagem para o seguinte; "ultimo", o fim da série.
+  const [fim, setFim] = useState<null | "proximo" | "ultimo">(null);
+  const [contagem, setContagem] = useState(ESPERA_DO_PROXIMO);
+  const cartoesRef = useRef<HTMLOListElement>(null);
 
   useEffect(() => {
     setQual(0);
     setAberto(false);
+    setFim(null);
     if (!primeiroId) return;
     try {
       setJaViu(localStorage.getItem(CHAVE_VISTO + primeiroId) === "1");
@@ -233,8 +311,49 @@ export default function TutorialDaTela({
 
   const fechar = useCallback(() => {
     video.current?.pause();
+    setFim(null);
     setAberto(false);
   }, []);
+
+  /** Troca para outro vídeo da tela (o elemento de vídeo é outro: o autoPlay o começa). */
+  const trocar = useCallback((i: number) => {
+    setFim(null);
+    if (i === qual) {
+      const v = video.current;
+      if (v) {
+        if (v.ended) v.currentTime = 0;
+        v.play().catch(() => {});
+      }
+      return;
+    }
+    setQual(i);
+    setSegundo(0);
+  }, [qual]);
+
+  // A contagem do próximo vídeo. Fechar a janela ou cancelar desmonta a contagem.
+  useEffect(() => {
+    if (!aberto || fim !== "proximo") return;
+    setContagem(ESPERA_DO_PROXIMO);
+    const inicio = Date.now();
+    const relogioDaEspera = window.setInterval(() => {
+      const falta = ESPERA_DO_PROXIMO - Math.floor((Date.now() - inicio) / 1000);
+      if (falta <= 0) {
+        window.clearInterval(relogioDaEspera);
+        trocar(qual + 1);
+      } else {
+        setContagem(falta);
+      }
+    }, 250);
+    return () => window.clearInterval(relogioDaEspera);
+  }, [aberto, fim, qual, trocar]);
+
+  // No celular os cartões rolam de lado: o do vídeo que está tocando fica à vista.
+  useEffect(() => {
+    const lista = cartoesRef.current;
+    const cartao = lista?.children[qual] as HTMLElement | undefined;
+    if (!aberto || !lista || !cartao || lista.scrollWidth <= lista.clientWidth) return;
+    lista.scrollTo({ left: Math.max(0, cartao.offsetLeft - lista.offsetLeft - 8), behavior: "smooth" });
+  }, [aberto, qual]);
 
   useEffect(() => {
     if (!aberto) return;
@@ -254,15 +373,36 @@ export default function TutorialDaTela({
   const arquivos = arquivosDoTutorial(tutorial);
   const capituloAtual = tutorial.capitulos.reduce((achado, c, i) => (segundo + 0.25 >= c.em ? i : achado), 0);
 
+  const curtos = titulosCurtos(tutoriais);
+  const assistidos = tutoriais.filter((t) => vistos.has(t.id)).length;
+  const faltando = tutoriais.findIndex((t) => !vistos.has(t.id));
+
   const abrir = () => {
     // Em tela com vários vídeos (Minha loja), abre o da seção em que a pessoa está.
     setQual(indiceInicial(tutoriais, typeof window !== "undefined" ? window.location.hash : ""));
     setSegundo(0);
+    setFim(null);
     setAberto(true);
     setJaViu(true);
+    const v = new Set<string>();
     try {
-      localStorage.setItem(CHAVE_VISTO + tutorial.id, "1");
+      for (const t of tutoriais) if (localStorage.getItem(CHAVE_VISTO + t.id) === "1") v.add(t.id);
     } catch {}
+    setVistos(v);
+  };
+
+  const marcarVisto = (id: string) => {
+    try {
+      localStorage.setItem(CHAVE_VISTO + id, "1");
+    } catch {}
+    setVistos((v) => (v.has(id) ? v : new Set(v).add(id)));
+  };
+
+  const acabou = () => {
+    if (!serie) return;
+    // Em tela cheia a contagem ficaria escondida atrás do vídeo.
+    if (typeof document !== "undefined" && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    setFim(qual < total - 1 ? "proximo" : "ultimo");
   };
 
   const irPara = (em: number) => {
@@ -290,21 +430,28 @@ export default function TutorialDaTela({
       <style dangerouslySetInnerHTML={{ __html: ESTILO }} />
       {variante === "faixa" ? (
         <div className="fh-tutorial-faixa" style={estilo}>
-          <button type="button" className="fh-tutorial-miniatura" onClick={abrir} aria-label={`Assistir: ${tutorial.titulo}`}>
+          <button
+            type="button"
+            className={serie ? "fh-tutorial-miniatura pilha" : "fh-tutorial-miniatura"}
+            onClick={abrir}
+            aria-label={serie ? `Assistir os ${total} vídeos desta tela` : `Assistir: ${tutorial.titulo}`}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={arquivosDoTutorial(tutoriais[0]).capa} alt="" loading="lazy" />
             <span className="fh-tutorial-play"><Play size={14} fill="currentColor" /></span>
+            {serie && <span className="fh-tutorial-qtd">{total} vídeos</span>}
           </button>
           <div className="fh-tutorial-faixa-texto">
-            <b>{chamada}</b>
+            <b>{serie && chamada === CHAMADA_PADRAO ? `Esta tela tem ${total} vídeos tutoriais` : chamada}</b>
             <span>
-              {tutoriais[0].titulo} · {relogio(tutoriais[0].duracao)}
-              {tutoriais.length > 1 && ` · e mais ${tutoriais.length - 1} ${tutoriais.length === 2 ? "vídeo" : "vídeos"} desta tela`}
+              {serie
+                ? curtos.map((c, i) => `${i + 1}. ${c}`).join("  ·  ")
+                : `${tutoriais[0].titulo} · ${relogio(tutoriais[0].duracao)}`}
             </span>
           </div>
           <div className="fh-tutorial-acoes">
             <button type="button" className="fh-tutorial-assistir" onClick={abrir}>
-              <Play size={13} fill="currentColor" /> Assistir
+              <Play size={13} fill="currentColor" /> {serie ? `Assistir os ${total}` : "Assistir"}
             </button>
             {ocultavel && (
               <button type="button" className="fh-tutorial-ocultar" onClick={ocultarFaixa}>Não mostrar mais nesta tela</button>
@@ -317,8 +464,8 @@ export default function TutorialDaTela({
         ref={botaoRef}
         className={`fh-tutorial-botao${tom === "claro" ? " claro" : ""}${rotulo ? " fixo" : ""}`}
         onClick={abrir}
-        title={`Vídeo de ${duracaoEmMinutos(tutorial.duracao)}: ${tutorial.titulo}`}
-        aria-label={nome ? `Tutorial da tela ${nome}` : "Tutorial: como usar esta tela"}
+        title={serie ? `${total} vídeos desta tela: ${curtos.join(" · ")}` : `Vídeo de ${duracaoEmMinutos(tutorial.duracao)}: ${tutorial.titulo}`}
+        aria-label={nome ? `Tutorial da tela ${nome}${serie ? ` (${total} vídeos)` : ""}` : "Tutorial: como usar esta tela"}
       >
         <PlayCircle size={15} />
         <span>{rotulo || <>Tutorial{nome && comNome && <b className="fh-tutorial-nome"> {nome}</b>}</>}</span>
@@ -330,7 +477,10 @@ export default function TutorialDaTela({
         <div ref={fundoRef} className="fh-tutorial-fundo" onMouseDown={(e) => { if (e.target === e.currentTarget) fechar(); }}>
           <div className="fh-tutorial-janela" role="dialog" aria-modal="true" aria-label={tutorial.titulo}>
             <div className="fh-tutorial-topo">
-              <h2>{tutorial.titulo}</h2>
+              <div className="fh-tutorial-cabeca">
+                {serie && <span className="fh-tutorial-sobre">{nome && <span className="fh-tutorial-sobre-tela">{nome} · </span>}vídeo {qual + 1} de {total}</span>}
+                <h2>{tutorial.titulo}</h2>
+              </div>
               {!foraDoPainel && <button type="button" className="fh-tutorial-todos" onClick={() => { fechar(); window.dispatchEvent(new Event(ABRIR_CENTRAL)); }}>
                 Todos os tutoriais
               </button>}
@@ -339,33 +489,108 @@ export default function TutorialDaTela({
               </button>
             </div>
 
-            {tutoriais.length > 1 && (
-              <div className="fh-tutorial-outros">
-                {tutoriais.map((t, i) => (
-                  <button key={t.id} type="button" aria-pressed={i === qual} onClick={() => { setQual(i); setSegundo(0); }}>
-                    {t.titulo} · {duracaoEmMinutos(t.duracao)}
-                  </button>
-                ))}
-              </div>
+            {serie && (
+              <section className={total > 4 ? "fh-tutorial-serie muitos" : "fh-tutorial-serie"} aria-label={`Os ${total} vídeos desta tela`}>
+                <div className="fh-tutorial-serie-topo">
+                  <b><ListVideo size={16} /> Esta tela tem {total} vídeos</b>
+                  <span>Assista na ordem: quando um termina, o próximo começa sozinho.</span>
+                  <em><Check size={13} strokeWidth={3} /> {assistidos} de {total} assistidos</em>
+                </div>
+                <ol className="fh-tutorial-cartoes" ref={cartoesRef} style={{ ["--n" as string]: total }}>
+                  {tutoriais.map((t, i) => {
+                    const atual = i === qual;
+                    return (
+                      <li key={t.id}>
+                        <button type="button" className="fh-tutorial-cartao" aria-current={atual} title={t.titulo} onClick={() => trocar(i)}>
+                          <span className="fh-tutorial-cartao-capa">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={arquivosDoTutorial(t).capa} alt="" loading="lazy" />
+                            <i>{i + 1}</i>
+                          </span>
+                          <span className="fh-tutorial-cartao-texto">
+                            <b>{curtos[i]}</b>
+                            <small>
+                              {duracaoEmMinutos(t.duracao)}
+                              {atual
+                                ? <span className="agora">· <Play size={9} fill="currentColor" /> Assistindo</span>
+                                : vistos.has(t.id) && <span className="visto">· <Check size={11} strokeWidth={3} /> Assistido</span>}
+                            </small>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
             )}
 
             <div className="fh-tutorial-corpo">
               <div>
-                <video
-                  key={tutorial.id}
-                  ref={video}
-                  className={tutorial.emPe ? "fh-tutorial-video em-pe" : "fh-tutorial-video"}
-                  src={arquivos.video}
-                  poster={arquivos.capa}
-                  controls
-                  autoPlay
-                  playsInline
-                  preload="metadata"
-                  onLoadedMetadata={() => { ligarLegenda(); if (video.current) video.current.playbackRate = velocidade; }}
-                  onTimeUpdate={(e) => setSegundo(e.currentTarget.currentTime)}
-                >
-                  <track kind="captions" src={arquivos.legendas} srcLang="pt-BR" label="Português" default />
-                </video>
+                <div className="fh-tutorial-palco">
+                  <video
+                    key={tutorial.id}
+                    ref={video}
+                    className={tutorial.emPe ? "fh-tutorial-video em-pe" : "fh-tutorial-video"}
+                    src={arquivos.video}
+                    poster={arquivos.capa}
+                    controls
+                    autoPlay
+                    playsInline
+                    preload="metadata"
+                    onLoadedMetadata={() => { ligarLegenda(); if (video.current) video.current.playbackRate = velocidade; }}
+                    onPlay={() => { setFim(null); marcarVisto(tutorial.id); }}
+                    onTimeUpdate={(e) => setSegundo(e.currentTarget.currentTime)}
+                    onEnded={acabou}
+                  >
+                    <track kind="captions" src={arquivos.legendas} srcLang="pt-BR" label="Português" default />
+                  </video>
+
+                  {serie && fim === "proximo" && (
+                    <div className="fh-tutorial-fim" role="status">
+                      <span className="fh-tutorial-fim-rotulo">A seguir · vídeo {qual + 2} de {total}</span>
+                      <div className="fh-tutorial-fim-proximo">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={arquivosDoTutorial(tutoriais[qual + 1]).capa} alt="" />
+                        <b>{curtos[qual + 1]}</b>
+                      </div>
+                      <span className="fh-tutorial-fim-conta">Começa em {contagem} s</span>
+                      <i className="fh-tutorial-fim-barra" style={{ ["--espera" as string]: `${ESPERA_DO_PROXIMO}s` }} />
+                      <div className="fh-tutorial-fim-botoes">
+                        <button type="button" className="sim" onClick={() => trocar(qual + 1)}>
+                          <Play size={14} fill="currentColor" /> Assistir agora
+                        </button>
+                        <button type="button" onClick={() => setFim(null)}>Cancelar</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {serie && fim === "ultimo" && (
+                    <div className="fh-tutorial-fim" role="status">
+                      <span className="fh-tutorial-fim-ok"><Check size={24} strokeWidth={3} /></span>
+                      <b className="fh-tutorial-fim-titulo">Este foi o último dos {total} vídeos desta tela.</b>
+                      {faltando >= 0 && (
+                        <span className="fh-tutorial-fim-sub">
+                          Ainda falta assistir o vídeo {faltando + 1}: {curtos[faltando]}.
+                        </span>
+                      )}
+                      <div className="fh-tutorial-fim-botoes">
+                        {faltando >= 0 ? (
+                          <>
+                            <button type="button" className="sim" onClick={() => trocar(faltando)}>
+                              <Play size={14} fill="currentColor" /> Assistir o vídeo {faltando + 1}
+                            </button>
+                            <button type="button" onClick={fechar}>Fechar</button>
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" className="sim" onClick={fechar}>Fechar</button>
+                            <button type="button" onClick={() => trocar(0)}>Rever do início</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="fh-tutorial-barra">
                   Velocidade
                   {VELOCIDADES.map((v) => (
@@ -373,6 +598,11 @@ export default function TutorialDaTela({
                       {String(v).replace(".", ",")}x
                     </button>
                   ))}
+                  {serie && qual < total - 1 && (
+                    <button type="button" className="fh-tutorial-proximo" onClick={() => trocar(qual + 1)} title={tutoriais[qual + 1].titulo}>
+                      <span>Próximo: {qual + 2}. {curtos[qual + 1]}</span> ›
+                    </button>
+                  )}
                 </div>
               </div>
 

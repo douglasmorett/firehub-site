@@ -193,6 +193,22 @@ export function arquivosDoTutorial(t: Tutorial) {
   return { video: `${pasta}/video.mp4`, capa: `${pasta}/capa.jpg`, legendas: `${pasta}/legendas.vtt` };
 }
 
+/**
+ * Os títulos sem o prefixo que todos os vídeos da tela repetem: no cartão,
+ * "Cardápio: cadastrar e editar um produto" vira "Cadastrar e editar um
+ * produto" — o nome da tela já está escrito em cima, e o que diferencia um
+ * vídeo do outro é o que precisa caber. Sem prefixo comum, fica o título inteiro.
+ */
+export function titulosCurtos(tutoriais: Tutorial[]): string[] {
+  const prefixos = tutoriais.map((t) => /^([^:]{2,30}):\s+\S/.exec(t.titulo)?.[1] ?? null);
+  const comum = tutoriais.length > 1 && prefixos[0] && prefixos.every((p) => p === prefixos[0]) ? prefixos[0] : null;
+  return tutoriais.map((t) => {
+    if (!comum) return t.titulo;
+    const resto = t.titulo.slice(comum.length).replace(/^:\s+/, "");
+    return resto.charAt(0).toUpperCase() + resto.slice(1);
+  });
+}
+
 /** "3 min", "1 min" — arredondado para cima: ninguém se sente enganado por sobrar tempo. */
 export function duracaoEmMinutos(segundos: number): string {
   return `${Math.max(1, Math.ceil(segundos / 60))} min`;
