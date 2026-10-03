@@ -1399,7 +1399,7 @@
   "extensao-ifood": {
     "id": "extensao-ifood",
     "titulo": "Prazo automático no iFood: a extensão do Chrome",
-    "duracao": 175,
+    "duracao": 174,
     "capitulos": [
       {
         "em": 0,
@@ -1414,42 +1414,82 @@
         "titulo": "O que você precisa"
       },
       {
-        "em": 38.1,
+        "em": 38.2,
         "titulo": "Instalar"
       },
       {
-        "em": 52.8,
+        "em": 52.1,
         "titulo": "Fixar o ícone"
       },
       {
-        "em": 63.3,
+        "em": 62.5,
         "titulo": "Entrar"
       },
       {
-        "em": 75.5,
+        "em": 74.8,
         "titulo": "A aba do iFood"
       },
       {
-        "em": 88.9,
+        "em": 88.1,
         "titulo": "Motoboys e robô"
       },
       {
-        "em": 111.2,
+        "em": 110.5,
         "titulo": "Como o prazo é escolhido"
       },
       {
-        "em": 139.2,
+        "em": 138,
         "titulo": "No dia a dia"
       },
       {
-        "em": 153.2,
+        "em": 152,
         "titulo": "Se aparecer um aviso"
       },
       {
-        "em": 165.1,
+        "em": 163.9,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "e6d9ad8a"
+    "versao": "e92f9bf5"
+  },
+  "extensao-ifood-ao-vivo": {
+    "id": "extensao-ifood-ao-vivo",
+    "titulo": "Prazo automático no iFood: instalando e vendo funcionar",
+    "duracao": 134,
+    "capitulos": [
+      {
+        "em": 0.4,
+        "titulo": "Instalar"
+      },
+      {
+        "em": 24.1,
+        "titulo": "O ícone de fogo"
+      },
+      {
+        "em": 41.6,
+        "titulo": "Entrar"
+      },
+      {
+        "em": 64.5,
+        "titulo": "Motoboys e robô"
+      },
+      {
+        "em": 85.7,
+        "titulo": "Ao vivo no iFood"
+      },
+      {
+        "em": 108.5,
+        "titulo": "Esvaziou, ele desce"
+      },
+      {
+        "em": 116.9,
+        "titulo": "No dia a dia"
+      },
+      {
+        "em": 127.5,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "f25d7878"
   }
 }

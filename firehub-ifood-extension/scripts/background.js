@@ -378,6 +378,36 @@ async function ensureTabReady(tabId) {
   }
 }
 
+// Recarrega a aba do iFood e espera terminar de carregar.
+async function recarregarAba(tabId) {
+  await chrome.tabs.reload(tabId);
+  await new Promise(function (resolve) {
+    const listener = function (id, info) {
+      if (id === tabId && info.status === "complete") {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(function () {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, 20000);
+  });
+}
+
+// Abre "Operacao atual" e le o prazo, esperando a tela montar (depois de
+// recarregar, os campos levam alguns segundos para aparecer).
+async function lerPrazoDaTela(tabId) {
+  for (let i = 0; i < 15; i++) {
+    await step(tabId, fnClickOperacaoAtual);
+    await wait(1000);
+    const v = await step(tabId, fnReadBaseTime);
+    if (v !== null && v !== undefined) return v;
+  }
+  return null;
+}
+
 /**
  * Aplica o prazo dirigindo a pagina de fora. O laco vive aqui no SW,
  * entao funciona com a aba apenas aberta (oculta, minimizada ou coberta).
@@ -391,6 +421,14 @@ async function applyEtaHeadless(tabId, target) {
     const ready = await ensureTabReady(tabId);
     if (!ready) return { ok: false, reason: "aba-indisponivel" };
 
+    // A tela de Entrega do iFood so habilita o Salvar quando o valor difere do
+    // que estava gravado QUANDO A PAGINA ABRIU, nao do ultimo salvo. Sem
+    // recarregar, voltar ao valor da abertura deixava o Salvar cinza e o iFood
+    // preso no prazo anterior (visto ao vivo em 03/10/2026: aba aberta em 38,
+    // a extensao subiu para 58 e o "volta para 38" nunca gravou). Recarregando
+    // antes, a tela parte do que o iFood tem gravado agora.
+    await recarregarAba(tabId);
+
     const loggedOut = await step(tabId, fnIsLoggedOut);
     if (loggedOut) {
       await chrome.storage.local.set({ ifoodDisconnected: true });
@@ -398,14 +436,7 @@ async function applyEtaHeadless(tabId, target) {
       return { ok: false, reason: "deslogado" };
     }
 
-    await step(tabId, fnClickOperacaoAtual);
-    await wait(1200);
-
-    let current = await step(tabId, fnReadBaseTime);
-    if (current === null || current === undefined) {
-      await wait(2500);
-      current = await step(tabId, fnReadBaseTime);
-    }
+    const current = await lerPrazoDaTela(tabId);
     if (current === null || current === undefined) {
       await chrome.storage.local.set({ ifoodApplyError: "Campos de tempo nao encontrados na tela" });
       return { ok: false, reason: "input" };
@@ -449,8 +480,11 @@ async function applyEtaHeadless(tabId, target) {
 
     await wait(2500);
 
-    // VERIFICACAO REAL: antes o codigo gravava "SALVO!" sem nunca conferir.
-    const after = await step(tabId, fnReadBaseTime);
+    // VERIFICACAO REAL: le de novo DEPOIS de recarregar. O numero na tela antes
+    // de recarregar e so o formulario — foi ele que fez a extensao dar como
+    // aplicado um prazo que o iFood nunca gravou.
+    await recarregarAba(tabId);
+    const after = await lerPrazoDaTela(tabId);
     const ok = after !== null && after !== undefined && Math.abs(after - target) <= 2;
 
     await chrome.storage.local.set(ok

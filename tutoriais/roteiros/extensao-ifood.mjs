@@ -7,10 +7,10 @@
 //
 // O que a fala afirma está na página e na extensão: o prazo sai da tabela de
 // 4 pedidos por motoboy (28/38/58/78 min, background.js); a extensão escreve SÓ
-// no iFood, NÃO pausa a loja e NUNCA abre aba sozinha. O passo 1 é o de quando
-// a loja do Google ainda não liberou a extensão (sem NEXT_PUBLIC_CHROME_EXTENSION_ID,
-// como está em produção em 03/10/2026): a equipe instala pelo WhatsApp. Quando
-// a Web Store aprovar, este vídeo precisa ser regravado.
+// no iFood, NÃO pausa a loja e NUNCA abre aba sozinha. O passo 1 é o da loja do
+// Google (aprovada em 03/10/2026): Abrir na Chrome Web Store → Usar no Chrome.
+// A instalação e a extensão mexendo no iFood ao vivo estão no outro vídeo da
+// tela (extensao-ifood-ao-vivo).
 import { dormir } from "../motor/palco.mjs";
 import { assentar } from "./_cardapio-comum.mjs";
 
@@ -74,14 +74,14 @@ export default {
     },
     {
       capitulo: "Instalar",
-      fala: "O passo a passo tem cinco passos, e você faz uma vez só, no computador do caixa. No primeiro, a nossa equipe instala a extensão junto com você: clique em Pedir a instalação no WhatsApp.",
+      fala: "O passo a passo tem cinco passos, e você faz uma vez só, no computador do caixa. No primeiro, clique em Abrir na Chrome Web Store, e lá em Usar no Chrome e Adicionar extensão.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         const titulo = p.getByRole("heading", { name: "Configure uma vez, em 5 passos" });
         await palco.rolarAte(titulo, { bloco: "start" });
         await palco.destacar(titulo, { folga: 6 });
         await ctx.ate(0.4);
-        const botao = p.getByRole("link", { name: /Pedir a instalação no WhatsApp/ });
+        const botao = p.getByRole("link", { name: /Abrir na Chrome Web Store/ });
         await palco.rolarAte(passo(p, 1), { bloco: "center" });
         await palco.destacar(passo(p, 1), { folga: 4 });
         await ctx.ate(0.72);

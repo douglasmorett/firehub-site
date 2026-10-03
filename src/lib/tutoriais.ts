@@ -50,7 +50,7 @@ const TELAS: Record<string, string[]> = {
   "/store/impressoras": ["impressoras"],
   "/store/minha-loja": ["horarios", "entrega", "pagamento", "equipe", "fidelidade"],
   "/store/integracoes": ["integracoes"],
-  "/store/extensao-ifood": ["extensao-ifood"],
+  "/store/extensao-ifood": ["extensao-ifood", "extensao-ifood-ao-vivo"],
   "/store/chatbot": ["chatbot"],
   "/store/roteirizacao": ["roteirizacao"],
   "/store/motoboys": ["motoboys"],
@@ -166,7 +166,7 @@ const GRUPOS: { titulo: string; ids: string[] }[] = [
   { titulo: "Vendas", ids: ["marketing", "chatbot"] },
   { titulo: "Gestão", ids: ["financeiro", "relatorios", "fiscal", "estoque", "etiquetas"] },
   { titulo: "Equipe", ids: ["motoboys", "app-motoboy", "garcons", "fiado"] },
-  { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes", "extensao-ifood"] },
+  { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes", "extensao-ifood", "extensao-ifood-ao-vivo"] },
 ];
 
 export function todosOsTutoriais(enviados: TutoriaisEnviados = null): { titulo: string; tutoriais: Tutorial[] }[] {

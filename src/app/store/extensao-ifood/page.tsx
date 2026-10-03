@@ -26,9 +26,10 @@ import { AbasDoChrome, BarraDoChrome, FichaDaLoja, Fluxo, Pilula, PopupLogin, Po
  * "Conectar iFood via API Oficial" que não levava a lugar nenhum.
  */
 
-// O ID sai do painel da Chrome Web Store quando o item é criado. Enquanto ele
-// não estiver na env, o passo 1 manda para o suporte em vez de link quebrado.
-const EXTENSION_ID = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID || "";
+// O ID do item na Chrome Web Store. Aprovado e no ar (não listado) — conferido
+// em 03/10/2026: a página da loja mostra "Usar no Chrome". A env continua
+// valendo para trocar de item; vazio de propósito volta o passo 1 para o suporte.
+const EXTENSION_ID = process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID ?? "icmjhjaniopcbdeamcnngoencpcbahhh";
 const STORE_URL = EXTENSION_ID
   ? `https://chromewebstore.google.com/detail/${EXTENSION_ID}`
   : "";

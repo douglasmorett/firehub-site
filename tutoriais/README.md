@@ -151,6 +151,28 @@ Para escrever um roteiro novo, siga `ROTEIRO.md`.
 O relógio da gravação é sempre "noite de movimento": escolhe-se o fuso em que agora são 20h
 (`ambiente/relogio.mjs`), para o vídeo nunca mostrar uma loja lotada às 4 da manhã.
 
+### Gravação ao vivo (`tutoriais/ao-vivo/`)
+
+O vídeo `extensao-ifood-ao-vivo` não sai de roteiro: grava a **tela de verdade** (ffmpeg, área
+1600×900 do monitor principal), porque precisa mostrar a barra do Chrome, a Web Store e o Portal do
+Parceiro do iFood **real**. O iFood recusa navegador com automação ("Access denied"), então a parte do
+iFood é dirigida só por mouse e teclado do Windows (`controle.ps1`, lido pela acessibilidade do
+Windows), no Chrome do dia a dia do dono, com a extensão de desenvolvimento.
+
+- `servidor.mjs subir|parar` — loja de teste na porta 3000 (a extensão de desenvolvimento só conhece
+  firehubfood.com.br e localhost:3001/3000).
+- `gravar-a.mjs` — instalação pela Web Store num Chrome de perfil limpo.
+- `gravar-b.mjs` (ou `gravar-b.cmd`, que roda minimizado) — FireHub à esquerda, iFood à direita; os
+  pedidos chegam por `pedidos.mjs` e a extensão mexe no iFood **de verdade**. `ENSAIO=1` só confere a
+  cena. No fim desliga o robô (confere pela cor da chave) e devolve o prazo que o iFood tinha,
+  conferindo o GRAVADO recarregando a página — o número na tela antes de recarregar é só o formulário.
+- `montar-video.mjs` — junta A e B, corta as recargas do iFood (tela branca), põe cada fala na hora
+  da mudança e borra o nome da loja e o mapa. Os instantes da edição são da tomada usada; outra tomada
+  pede outros números.
+
+Mexe no prazo de uma loja real por uns minutos: só com o OK do dono, fora do horário de pico, e
+anotando antes o prazo de cada raio para devolver.
+
 ## 7. Onde os vídeos ficam
 
 Os arquivos de vídeo **não entram no repositório** (`/public/tutoriais/` está no `.gitignore`).
