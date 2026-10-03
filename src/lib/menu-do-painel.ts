@@ -58,6 +58,7 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
     titulo: "Cardápio & vendas",
     itens: [
       { href: "/store/cardapio", label: "Cardápio", icone: "BookOpen" },
+      { href: "/store/clientes", label: "Clientes", icone: "Contact" },
       { href: "/store/marketing", label: "Marketing & cupons", icone: "Send" },
       { href: "/store/chatbot", label: "Chatbot IA", icone: "Bot", selo: "IA" },
       { href: "/store/meta-ads", label: "Tráfego pago", icone: "PieChart", selo: "EM TESTES" },

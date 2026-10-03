@@ -98,5 +98,36 @@ ok("gasto em 30 dias ignora cancelado e pedido velho", C.gastoEm30Dias([
   { status: "ENTREGUE", createdAt: dia(40), totalAmount: 70 },
 ], AGORA) === 100);
 
+// ── lançamento à mão (aba Clientes): saldo trazido de outro sistema, cortesia, correção
+const aj = (valor, dias, x = {}) => ({ valor, createdAt: dia(dias), motivo: "teste", ...x });
+ok("crédito manual sem pedido nenhum vira saldo", C.saldoDoCashback(regra, [], AGORA, [aj(25, 1)]).saldo === 25);
+ok("crédito manual vence pela validade da loja", C.saldoDoCashback(regra, [], AGORA, [aj(25, 31)]).saldo === 0);
+ok("crédito manual marcado 'não vence' não vence", C.saldoDoCashback(regra, [], AGORA, [aj(25, 400, { semVencimento: true })]).saldo === 25);
+ok("débito manual tira do saldo", C.saldoDoCashback(regra, [ped({ cashbackEarned: 10, createdAt: dia(3), deliveredAt: dia(3) })], AGORA, [aj(-4, 1)]).saldo === 6);
+ok("débito maior que o saldo não deixa negativo", C.saldoDoCashback(regra, [], AGORA, [aj(5, 3), aj(-9, 1)]).saldo === 0);
+ok("pedido usa o crédito manual", C.saldoDoCashback(regra, [ped({ status: "NOVO", cashbackUsed: 8, createdAt: dia(0) })], AGORA, [aj(20, 2)]).saldo === 12);
+const s7 = C.saldoDoCashback(regra, [ped({ cashbackEarned: 4, createdAt: dia(25), deliveredAt: dia(25) })], AGORA, [aj(10, 2, { semVencimento: true }), aj(-3, 1)]);
+ok("débito consome o lote mais velho (o do pedido), o que não vence fica", s7.saldo === 11 && s7.proximoVencimento?.valor === 1, s7);
+
+// ── extrato do painel
+const ex = C.extratoDoCashback(regra, [
+  ped({ id: "pA", dailyOrderNumber: 12, cashbackEarned: 4, createdAt: dia(40), deliveredAt: dia(40) }),
+  ped({ id: "pB", dailyOrderNumber: 30, cashbackEarned: 3, createdAt: dia(5), deliveredAt: dia(5) }),
+  ped({ id: "pC", status: "PREPARANDO", cashbackEarned: 2, createdAt: dia(0) }),
+  ped({ id: "pD", status: "NOVO", cashbackUsed: 1, createdAt: dia(0) }),
+], [aj(20, 3, { motivo: "Saldo do Gama" })], AGORA);
+const tipos = ex.movimentos.map((m) => m.tipo).join(",");
+ok("extrato: do mais novo ao mais velho, com o vencimento no meio", tipos === "uso,credito_manual,ganho,vencido,ganho", tipos);
+ok("extrato: saldo final bate com o saldo", ex.saldo === 22 && ex.movimentos[0].saldoDepois === 22, ex);
+ok("extrato: o vencido sai com o valor que sobrou do lote", ex.movimentos.find((m) => m.tipo === "vencido")?.valor === -4);
+ok("extrato: pedido ainda não entregue fica em 'a receber'", ex.aReceber === 2);
+ok("extrato: movimento do pedido leva o número", ex.movimentos.find((m) => m.pedidoId === "pB")?.pedidoNumero === 30);
+ok("extrato: o lançamento leva o motivo", ex.movimentos.find((m) => m.tipo === "credito_manual")?.motivo === "Saldo do Gama");
+ok("o saldo do cardápio e o do extrato são o mesmo", C.saldoDoCashback(regra, [
+  ped({ cashbackEarned: 4, createdAt: dia(40), deliveredAt: dia(40) }),
+  ped({ cashbackEarned: 3, createdAt: dia(5), deliveredAt: dia(5) }),
+  ped({ status: "NOVO", cashbackUsed: 1, createdAt: dia(0) }),
+], AGORA, [aj(20, 3)]).saldo === ex.saldo);
+
 console.log(falhas ? `\n${falhas} falha(s)` : "\ntudo certo");
 process.exit(falhas ? 1 : 0);

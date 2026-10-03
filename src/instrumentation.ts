@@ -62,6 +62,10 @@ export async function register() {
   // Clientes e relatórios do Acompanhamento iFood (aba do admin). Tabelas
   // próprias; se faltarem, só essa aba para.
   await garantirEstruturaDeAcompanhamento();
+  // Lançamentos de cashback à mão (aba Clientes). Tabela própria por SQL cru;
+  // se faltar, o saldo segue o dos pedidos e só o lançamento falha.
+  const { garantirTabelaDeAjustes } = await import("./lib/cashback-no-banco");
+  await garantirTabelaDeAjustes();
   // Memória da conversa do robô (ChatbotConversationState.history). O schema NÃO
   // conhece a coluna de propósito — o acesso é por SQL cru e falha em silêncio
   // (lib/memoria-da-conversa-no-banco.ts). Aqui é só para o ALTER acontecer no

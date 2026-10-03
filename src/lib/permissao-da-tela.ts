@@ -81,6 +81,8 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/minha-loja", abre: ["minha_loja"] },
   { prefixo: "/store/totem", abre: ["minha_loja"] },
   { prefixo: "/store/marketing", abre: ["minha_loja"] },
+  // A base de clientes e o saldo de cashback: dar saldo é dar dinheiro.
+  { prefixo: "/store/clientes", abre: ["minha_loja", "financeiro"] },
   { prefixo: "/store/chatbot", abre: ["minha_loja"] },
   { prefixo: "/store/meta-ads", abre: ["minha_loja"] },
   { prefixo: "/store/trafego", abre: ["minha_loja"] },

@@ -144,48 +144,124 @@ export type SaldoDoCashback = {
 };
 
 /**
- * O saldo de cashback deste cliente nesta loja, lendo os pedidos dele.
+ * Lançamento feito À MÃO pela loja (aba Clientes do painel): positivo é
+ * crédito, negativo é débito. Existe porque a loja que chega de outro sistema
+ * traz clientes com saldo na carteira de lá (Showrrascão, vinda do Gama em
+ * 03/10/2026) — e porque cortesia ("o pedido atrasou, ganhou R$ 10") e
+ * correção também são do dia a dia.
  *
- * Os créditos entram como lotes (valor, entrou em, vence em) e cada uso
- * consome os mais antigos primeiro — é o que faz o vencimento justo: o que
- * vence é o que sobrou de um lote velho, não o saldo inteiro.
+ * O crédito manual entra como um lote igual ao do pedido entregue: vence pela
+ * validade da loja, contada do lançamento, a não ser que a loja marque que
+ * ele não vence. O débito consome os lotes mais velhos, como o uso no pedido.
  */
-export function saldoDoCashback(regra: RegraDoCashback, pedidos: PedidoDoCashback[], agora = new Date()): SaldoDoCashback {
+export type AjusteDoCashback = {
+  id?: string;
+  valor: number;
+  createdAt: Date | string;
+  semVencimento?: boolean | null;
+  motivo?: string | null;
+  criadoPor?: string | null;
+};
+
+export type MovimentoDoCashback = {
+  em: string;
+  tipo: "ganho" | "uso" | "credito_manual" | "debito_manual" | "vencido";
+  /** Positivo entrou, negativo saiu. */
+  valor: number;
+  saldoDepois: number;
+  pedidoId?: string;
+  pedidoNumero?: number | null;
+  motivo?: string | null;
+  criadoPor?: string | null;
+};
+
+export type ExtratoDoCashback = SaldoDoCashback & {
+  /** Do mais novo para o mais velho. */
+  movimentos: MovimentoDoCashback[];
+  /** Cashback de pedido do site que ainda não foi entregue: entra quando for. */
+  aReceber: number;
+};
+
+type PedidoComNumero = PedidoDoCashback & { dailyOrderNumber?: number | null };
+
+/**
+ * O caminho único do saldo: créditos viram lotes (valor, entrou em, vence em)
+ * e cada uso consome os mais antigos primeiro — é o que faz o vencimento
+ * justo: o que vence é o que sobrou de um lote velho, não o saldo inteiro.
+ */
+function simular(regra: RegraDoCashback, pedidos: PedidoComNumero[], ajustes: AjusteDoCashback[], agora: Date): ExtratoDoCashback {
   const diaMs = 86_400_000;
-  type Evento = { t: number; tipo: "credito" | "uso"; valor: number };
+  type Origem = Omit<MovimentoDoCashback, "em" | "valor" | "saldoDepois">;
+  type Evento = { t: number; tipo: "credito" | "uso"; valor: number; semVencimento?: boolean; origem: Origem };
   const eventos: Evento[] = [];
+  let aReceber = 0;
   for (const p of pedidos) {
     if (!pedidoDoSite(p)) continue;
     if (CANCELADO.has(statusDe(p))) continue;
+    const doPedido = { pedidoId: p.id, pedidoNumero: p.dailyOrderNumber ?? null };
     const usado = Number(p.cashbackUsed) || 0;
-    if (usado > 0) eventos.push({ t: quando(p.createdAt), tipo: "uso", valor: usado });
+    if (usado > 0) eventos.push({ t: quando(p.createdAt), tipo: "uso", valor: usado, origem: { tipo: "uso", ...doPedido } });
     const ganho = Number(p.cashbackEarned) || 0;
     if (ganho > 0 && pedidoConcluido(p)) {
       const t = [quando(p.deliveredAt), quando(p.updatedAt), quando(p.createdAt)].find((x) => Number.isFinite(x))!;
-      eventos.push({ t, tipo: "credito", valor: ganho });
+      eventos.push({ t, tipo: "credito", valor: ganho, origem: { tipo: "ganho", ...doPedido } });
+    } else if (ganho > 0) {
+      aReceber += ganho;
     }
+  }
+  for (const a of ajustes) {
+    const valor = Number(a.valor) || 0;
+    const t = quando(a.createdAt);
+    if (!valor || !Number.isFinite(t)) continue;
+    const quem = { motivo: a.motivo ?? null, criadoPor: a.criadoPor ?? null };
+    eventos.push(
+      valor > 0
+        ? { t, tipo: "credito", valor, semVencimento: a.semVencimento === true, origem: { tipo: "credito_manual", ...quem } }
+        : { t, tipo: "uso", valor: -valor, origem: { tipo: "debito_manual", ...quem } },
+    );
   }
   // Na mesma hora, o crédito vem antes do uso.
   eventos.sort((a, b) => a.t - b.t || (a.tipo === b.tipo ? 0 : a.tipo === "credito" ? -1 : 1));
 
   const lotes: { resto: number; vence: number }[] = [];
   const venceEm = (t: number) => (regra.validadeDias > 0 ? t + regra.validadeDias * diaMs : Infinity);
+  const saldoAgora = () => lotes.reduce((t, l) => t + (l.resto > 0 ? l.resto : 0), 0);
+  const movimentos: MovimentoDoCashback[] = [];
+  // O lote que venceu até `t` sai do saldo, e o extrato mostra a saída na data
+  // do vencimento. Pedido entregue vence na ordem em que entrou; o crédito
+  // manual "não vence" fura essa ordem, por isso a busca é em todos os lotes.
+  const vencerAte = (t: number) => {
+    const vencidos = lotes.filter((l) => l.resto > 0.004 && l.vence <= t).sort((a, b) => a.vence - b.vence);
+    for (const l of vencidos) {
+      const valor = l.resto;
+      l.resto = 0;
+      movimentos.push({ em: new Date(l.vence).toISOString(), tipo: "vencido", valor: -centavos(valor), saldoDepois: centavos(saldoAgora()) });
+    }
+  };
   for (const e of eventos) {
+    vencerAte(e.t);
     if (e.tipo === "credito") {
-      lotes.push({ resto: e.valor, vence: venceEm(e.t) });
-      continue;
+      lotes.push({ resto: e.valor, vence: e.semVencimento ? Infinity : venceEm(e.t) });
+    } else {
+      let falta = e.valor;
+      for (const l of lotes) {
+        if (falta <= 0) break;
+        if (l.vence <= e.t || l.resto <= 0) continue;
+        const tira = Math.min(l.resto, falta);
+        l.resto -= tira;
+        falta -= tira;
+      }
+      // Uso maior que o saldo (pedido feito com saldo que depois foi cancelado
+      // na origem) não deixa saldo negativo: o que faltou simplesmente some.
     }
-    let falta = e.valor;
-    for (const l of lotes) {
-      if (falta <= 0) break;
-      if (l.vence <= e.t || l.resto <= 0) continue;
-      const tira = Math.min(l.resto, falta);
-      l.resto -= tira;
-      falta -= tira;
-    }
-    // Uso maior que o saldo (pedido feito com saldo que depois foi cancelado
-    // na origem) não deixa saldo negativo: o que faltou simplesmente some.
+    movimentos.push({
+      ...e.origem,
+      em: new Date(e.t).toISOString(),
+      valor: centavos(e.tipo === "credito" ? e.valor : -e.valor),
+      saldoDepois: centavos(saldoAgora()),
+    });
   }
+  vencerAte(agora.getTime());
 
   const vivos = lotes.filter((l) => l.resto > 0.004 && l.vence > agora.getTime());
   const saldo = centavos(vivos.reduce((t, l) => t + l.resto, 0));
@@ -193,7 +269,30 @@ export function saldoDoCashback(regra: RegraDoCashback, pedidos: PedidoDoCashbac
   return {
     saldo,
     proximoVencimento: proximo ? { valor: centavos(proximo.resto), em: new Date(proximo.vence).toISOString() } : null,
+    movimentos: movimentos.reverse(),
+    aReceber: centavos(aReceber),
   };
+}
+
+/** O saldo de cashback deste cliente nesta loja, lendo os pedidos dele e os lançamentos da loja. */
+export function saldoDoCashback(
+  regra: RegraDoCashback,
+  pedidos: PedidoDoCashback[],
+  agora = new Date(),
+  ajustes: AjusteDoCashback[] = [],
+): SaldoDoCashback {
+  const { saldo, proximoVencimento } = simular(regra, pedidos, ajustes, agora);
+  return { saldo, proximoVencimento };
+}
+
+/** O saldo e o caminho até ele, para o painel mostrar ao lojista. */
+export function extratoDoCashback(
+  regra: RegraDoCashback,
+  pedidos: PedidoComNumero[],
+  ajustes: AjusteDoCashback[],
+  agora = new Date(),
+): ExtratoDoCashback {
+  return simular(regra, pedidos, ajustes, agora);
 }
 
 /** O que o cliente gastou na loja nos últimos 30 dias (para o nível VIP), sem os cancelados. */
