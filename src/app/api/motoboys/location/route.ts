@@ -11,7 +11,17 @@ import { checkRateLimit } from "@/lib/rateLimit";
 // id→nome para quem quisesse enumerar.
 export async function POST(req: NextRequest) {
   try {
-    const { motoboyId, storeId, lat, lng } = await req.json();
+    const corpo = await req.json();
+    const { lat, lng } = corpo;
+    // App nativo: a posição chega do serviço de localização com a tela apagada,
+    // sempre com a sessão assinada — e é dela que sai quem está andando.
+    const { temSessaoAssinada, exigirMotoboy } = await import("@/lib/motoboy-sessao");
+    const daSessao = temSessaoAssinada(req) ? await exigirMotoboy(req) : null;
+    if (temSessaoAssinada(req) && !daSessao) {
+      return NextResponse.json({ error: "Sessão expirada. Entre de novo.", precisaLogin: true, precisaRelogar: true }, { status: 401 });
+    }
+    const motoboyId = daSessao?.id ?? corpo.motoboyId;
+    const storeId = daSessao?.franchiseeId ?? corpo.storeId;
 
     if (!motoboyId || lat === undefined || lng === undefined) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });

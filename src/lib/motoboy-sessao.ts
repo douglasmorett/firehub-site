@@ -41,6 +41,16 @@ export function criarSessaoDeMotoboy(motoboyId: string, storeId: string, hashSen
 }
 
 /**
+ * A chamada trouxe uma sessão assinada? O app nativo (apps/motoboy) manda em
+ * TODA chamada; a página web só no puxar/soltar. Quem trouxe e ela não confere
+ * leva 401 — nunca cai para o `motoboyId` solto do corpo, senão o token seria
+ * enfeite.
+ */
+export function temSessaoAssinada(req: NextRequest): boolean {
+  return /^Bearer\s+\S/i.test(req.headers.get("authorization") || "");
+}
+
+/**
  * Confere assinatura, validade, existência, loja E `active` numa passada.
  * É async e lê o banco de propósito: a chave depende do hash da senha atual,
  * e a checagem de `active` exige a linha de qualquer jeito.

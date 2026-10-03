@@ -4,15 +4,24 @@ import { Prisma } from "@prisma/client";
 import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
-import { cobrancaNaEntrega } from "@/lib/pagamento-na-entrega";
+import { cobrancaNaEntrega, FORMAS_DE_PAGAMENTO_NA_ENTREGA } from "@/lib/pagamento-na-entrega";
+import { camposDoApp } from "@/lib/app-motoboy/pedido-no-app";
 import { ehPedido99Food } from "@/lib/food99-status";
 import { jaSaiuNoParceiro } from "@/lib/codigo-de-entrega";
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const motoboyId = searchParams.get("motoboyId");
-    const storeId = searchParams.get("storeId");
+    // O app nativo chama com a sessão assinada e `formato=app`; a página web,
+    // com o par solto na URL. Sessão que não confere não cai para o par.
+    const { temSessaoAssinada, exigirMotoboy } = await import("@/lib/motoboy-sessao");
+    const daSessao = temSessaoAssinada(req) ? await exigirMotoboy(req) : null;
+    if (temSessaoAssinada(req) && !daSessao) {
+      return NextResponse.json({ error: "Sessão expirada. Entre de novo.", precisaLogin: true, precisaRelogar: true }, { status: 401 });
+    }
+    const motoboyId = daSessao?.id ?? searchParams.get("motoboyId");
+    const storeId = daSessao?.franchiseeId ?? searchParams.get("storeId");
+    const formatoDoApp = searchParams.get("formato") === "app";
 
     if (!motoboyId || !storeId) {
       return NextResponse.json({ error: "motoboyId e storeId são obrigatórios" }, { status: 400 });
@@ -86,6 +95,8 @@ export async function GET(req: NextRequest) {
         customerName: true,
         customerPhone: true,
         customerAddress: true,
+        // Só o app nativo usa (navegar pelo pino exato); sai da resposta da web.
+        customerLatLng: true,
         paymentMethod: true,
         totalAmount: true,
         deliveryFee: true,
@@ -159,16 +170,32 @@ export async function GET(req: NextRequest) {
       // Sai `null` quando a loja desligou o aviso ou o pedido já está pago —
       // assim o app não precisa saber a regra, só olhar se veio algo.
       const cobranca = appConfig.cobrarNaEntrega ? cobrancaNaEntrega(o as any) : null;
-      return {
-        ...o,
+      const { customerLatLng, ...semPonto } = o;
+      const pedido = {
+        ...semPonto,
         routeSequence: sequencias[o.id] ?? null,
         pedeCodigoEntrega: pedeIfood || pede99,
         canalDoCodigo: pedeIfood ? "iFood" : pede99 ? "99Food" : null,
         cobrarNaEntrega: cobranca && cobranca.cobrar ? cobranca : null,
       };
+      if (!formatoDoApp) return pedido;
+      return {
+        ...pedido,
+        ...camposDoApp(
+          { ...pedido, customerLatLng },
+          { palavrasDeBebida: customBeverageKeywords, lembrarBebidas: appConfig.lembrarBebidas },
+        ),
+      };
     });
 
-    return NextResponse.json({ success: true, orders: ordersComSequencia, customBeverageKeywords, appConfig });
+    return NextResponse.json({
+      success: true,
+      orders: ordersComSequencia,
+      customBeverageKeywords,
+      appConfig,
+      // As formas do "o cliente pagou com", na ordem da página web.
+      ...(formatoDoApp ? { formasDePagamento: FORMAS_DE_PAGAMENTO_NA_ENTREGA } : {}),
+    });
 
   } catch (err: any) {
     console.error("[Motoboy Orders API Error]", err);
@@ -494,7 +521,16 @@ export async function DELETE(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { orderId, motoboyId, storeId, codigo, semCodigo, pagamento } = await req.json().catch(() => ({} as any));
+    const corpo = await req.json().catch(() => ({} as any));
+    const { orderId, codigo, semCodigo, pagamento } = corpo;
+    // App nativo: quem dá a baixa sai da sessão assinada, nunca do corpo.
+    const { temSessaoAssinada, exigirMotoboy } = await import("@/lib/motoboy-sessao");
+    const daSessao = temSessaoAssinada(req) ? await exigirMotoboy(req) : null;
+    if (temSessaoAssinada(req) && !daSessao) {
+      return NextResponse.json({ error: "Sessão expirada. Entre de novo.", precisaLogin: true, precisaRelogar: true }, { status: 401 });
+    }
+    const motoboyId = daSessao?.id ?? corpo.motoboyId;
+    const storeId = daSessao?.franchiseeId ?? corpo.storeId;
     if (!orderId || !motoboyId || !storeId) {
       return NextResponse.json({ error: "orderId, motoboyId e storeId são obrigatórios" }, { status: 400 });
     }

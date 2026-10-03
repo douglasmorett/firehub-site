@@ -22,8 +22,14 @@ const TETO_DO_PERIODO_MS = 45 * 24 * 60 * 60 * 1000;
 export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams;
-    const motoboyId = sp.get("motoboyId");
-    const storeId = sp.get("storeId");
+    // App nativo: o entregador sai da sessão assinada (ver api/motoboys/orders).
+    const { temSessaoAssinada, exigirMotoboy } = await import("@/lib/motoboy-sessao");
+    const daSessao = temSessaoAssinada(req) ? await exigirMotoboy(req) : null;
+    if (temSessaoAssinada(req) && !daSessao) {
+      return NextResponse.json({ error: "Sessão expirada. Entre de novo.", precisaLogin: true, precisaRelogar: true }, { status: 401 });
+    }
+    const motoboyId = daSessao?.id ?? sp.get("motoboyId");
+    const storeId = daSessao?.franchiseeId ?? sp.get("storeId");
     if (!motoboyId || !storeId) {
       return NextResponse.json({ error: "motoboyId e storeId são obrigatórios" }, { status: 400 });
     }

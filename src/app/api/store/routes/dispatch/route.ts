@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
         customerName: true, customerPhone: true, customerAddress: true, dailyOrderNumber: true,
         ifoodOrderId: true, ifoodReference: true, ifoodStoreMerchant: true,
         openDeliveryOrderId: true, openDeliveryChannel: true, openDeliveryReference: true,
+        motoboyId: true,
       },
     });
     const idsDaRota = pedidosDaRota.map((o) => o.id);
@@ -114,6 +115,19 @@ export async function POST(req: NextRequest) {
       });
       // NFC-e na SAÍDA (lib/fiscal-momento decide se é a hora): sem esta linha a nota da rota só saía pela varredura do cron.
       import("@/lib/fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ id: { in: idsDaRota } })).catch(() => {});
+
+      // Aviso no app nativo, só do que CHEGOU ao celular dele agora: a rota
+      // montada já com este entregador avisou na montagem (api/store/routes).
+      const chegaramAgora = pedidosDaRota.filter(
+        (o) =>
+          o.motoboyId !== motoboy.id &&
+          !([...STATUS_FINALIZADOS, ...STATUS_CANCELADOS, "SAIU_ENTREGA"] as string[]).includes(o.status),
+      );
+      if (chegaramAgora.length > 0) {
+        import("@/lib/app-motoboy/aparelhos")
+          .then((m) => m.avisarPedidosNovos(motoboy.id, chegaramAgora, route.routeNumber))
+          .catch(() => {});
+      }
     }
 
     // O WhatsApp sai pela instância da LOJA (o nome dela vem do id da loja —

@@ -581,6 +581,20 @@ export async function PUT(req: Request) {
     console.warn("[Status API] Erro ao disparar notificação WhatsApp:", errWp);
   }
 
+  // Cancelado com entregador: o app nativo dele avisa na hora, com o celular
+  // no bolso — ele pode estar a caminho da porta do cliente com a sacola.
+  if (status === "CANCELADO" && order.motoboyId) {
+    import("@/lib/app-motoboy/aparelhos")
+      .then((m) =>
+        m.avisarMotoboy(order.motoboyId, {
+          titulo: `❌ Pedido${order.dailyOrderNumber ? ` #${order.dailyOrderNumber}` : ""} CANCELADO`,
+          corpo: "Não entregue este pedido. Fale com a loja.",
+          dados: { tipo: "PEDIDO_CANCELADO" },
+        }),
+      )
+      .catch(() => {});
+  }
+
   // Estorno Automático para Pagamentos Online no Cancelamento
   //
   // Pix pelo site (conta Asaas da loja): pago → estorna do saldo da loja;

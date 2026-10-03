@@ -21,6 +21,10 @@ dist
 # vira APK e é instalado no terminal pela loja de aplicativos do PagBank.
 apps/maquininha
 
+# O app do entregador (Expo, iPhone e Android). Também é compilado à parte, pelo
+# EAS, e publicado nas lojas — o site só serve a API que ele chama.
+apps/motoboy
+
 # Segredos e ambiente — as variáveis chegam pelo Coolify, não pela imagem
 .env
 .env.*

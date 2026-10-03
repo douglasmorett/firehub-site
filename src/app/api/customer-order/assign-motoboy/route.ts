@@ -90,6 +90,24 @@ export async function PATCH(req: NextRequest) {
     },
   });
 
+  // Aviso no app nativo do entregador (lib/app-motoboy/aparelhos.ts): quem
+  // recebeu fica sabendo com o celular no bolso, e quem perdeu o pedido para
+  // de procurar a sacola dele. Em segundo plano — a loja não espera o Expo.
+  if (trocandoDeFato && !jaFechou) {
+    import("@/lib/app-motoboy/aparelhos")
+      .then(async ({ avisarPedidosNovos, avisarMotoboy }) => {
+        if (order.motoboyId) await avisarPedidosNovos(order.motoboyId, [order]);
+        if (pedidoAlvo.motoboyId && pedidoAlvo.motoboyId !== order.motoboyId) {
+          await avisarMotoboy(pedidoAlvo.motoboyId, {
+            titulo: `↩️ Pedido${order.dailyOrderNumber ? ` #${order.dailyOrderNumber}` : ""} saiu da sua lista`,
+            corpo: "A loja passou esta entrega para outro entregador.",
+            dados: { tipo: "PEDIDO_REMOVIDO" },
+          });
+        }
+      })
+      .catch(() => {});
+  }
+
   // Disparar notificação automática via WhatsApp para o Motoboy se atribuído
   if (order.motoboy && order.motoboy.phone && order.motoboyId) {
     try {

@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
     // Associa os pedidos à rota e ativa PRIORIDADE PARA ROTA no KDS se o pedido não estiver PRONTO
     const ordersToUpdate = await prisma.customerOrder.findMany({
       where: { id: { in: orderIds } },
-      select: { id: true, status: true },
+      select: { id: true, status: true, motoboyId: true, dailyOrderNumber: true, customerAddress: true },
     });
 
     for (const ord of ordersToUpdate) {
@@ -158,6 +158,17 @@ export async function POST(req: NextRequest) {
           isRoutePriority: isNotReady, // 🚨 Marca PRIORIDADE PARA ROTA no KDS se não estiver pronto!
         },
       });
+    }
+
+    // Rota montada já com entregador: os pedidos aparecem no app dele agora,
+    // então o aviso no celular sai agora (lib/app-motoboy/aparelhos.ts).
+    if (motoboyId) {
+      const novosParaEle = ordersToUpdate.filter((o) => o.motoboyId !== motoboyId && o.status !== "ENTREGUE");
+      if (novosParaEle.length > 0) {
+        import("@/lib/app-motoboy/aparelhos")
+          .then((m) => m.avisarPedidosNovos(String(motoboyId), novosParaEle, finalRouteNumber))
+          .catch(() => {});
+      }
     }
 
     // ── A ORDEM das paradas, que morria aqui ────────────────────────────────
@@ -228,6 +239,12 @@ export async function PATCH(req: NextRequest) {
     // entrega para alguém que não a fez (o relatório soma por motoboyId).
     if (motoboyId !== undefined) {
       const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
+      // Quem estava com cada pedido ANTES: é para eles que sai o "saiu da
+      // sua lista", e é a comparação que decide se o novo precisa de aviso.
+      const abertosAntes = await prisma.customerOrder.findMany({
+        where: { routeId, status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] } },
+        select: { id: true, motoboyId: true, dailyOrderNumber: true, customerAddress: true },
+      });
       await prisma.customerOrder.updateMany({
         where: {
           routeId,
@@ -241,6 +258,25 @@ export async function PATCH(req: NextRequest) {
           motoboyPuxadoEm: null,
         },
       });
+
+      // Aviso no app nativo (lib/app-motoboy/aparelhos.ts), em segundo plano.
+      const novoDono = motoboyId === null ? null : String(motoboyId);
+      const chegaram = abertosAntes.filter((o) => o.motoboyId !== novoDono);
+      const perderam = [...new Set(chegaram.map((o) => o.motoboyId).filter((m): m is string => Boolean(m)))];
+      if (chegaram.length > 0) {
+        import("@/lib/app-motoboy/aparelhos")
+          .then(async ({ avisarPedidosNovos, avisarMotoboy }) => {
+            if (novoDono) await avisarPedidosNovos(novoDono, chegaram, updatedRoute.routeNumber);
+            for (const antigo of perderam) {
+              await avisarMotoboy(antigo, {
+                titulo: `↩️ ${updatedRoute.routeNumber || "A rota"} saiu da sua lista`,
+                corpo: "A loja passou estas entregas para outro entregador.",
+                dados: { tipo: "PEDIDO_REMOVIDO" },
+              });
+            }
+          })
+          .catch(() => {});
+      }
     }
 
     // Se orderIds foram atualizados na rota
