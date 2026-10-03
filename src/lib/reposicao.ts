@@ -1,10 +1,10 @@
 /**
- * REPOSIÇÃO — o item que faltou (ou veio errado) num pedido que já saiu.
+ * REPOSIÇÃO — o item que faltou (ou veio errado) num pedido já lançado.
  *
  * Pedido do Flávio (Showrrascão, 02/10/2026): o cliente pediu 10 esfihas de
  * carne e 1 de Nevada, e a de Nevada não foi. Até aqui a loja resolvia "de
  * mão": refazia no grito, sem papel, sem endereço na comanda e sem nada que
- * dissesse ao motoboy que não era para cobrar. Agora: no pedido que já saiu, a
+ * dissesse ao motoboy que não era para cobrar. Agora: no pedido (qualquer um não cancelado), a
  * loja marca o que faltou e nasce um pedido de reposição que
  *
  *   • imprime a SUA comanda, com endereço e contato do cliente, avisando que
@@ -47,16 +47,15 @@ export const ROTULO_DO_MOTIVO: Record<MotivoDaReposicao, string> = {
 };
 
 /**
- * Só depois que o pedido saiu: antes disso, faltar item se resolve editando o
- * pedido (o lápis), que a cozinha ainda nem terminou.
+ * Em qualquer pedido que é pedido de verdade — não só no que já saiu. O dono
+ * pediu assim (02/10/2026): a loja descobre a falta também com o pedido ainda
+ * na expedição, e procurar a aba só depois do "Saiu" confundia. Fica de fora o
+ * cancelado (não há o que repor) e o que ainda não é pedido.
  */
-export const STATUS_QUE_JA_SAIU = [
-  "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "EM_ROTA",
-  "ENTREGUE", "ENCERRADO", "FINALIZADO", "CONCLUIDO",
-] as const;
+const STATUS_SEM_REPOSICAO = ["CANCELADO", "CANCELLED", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"];
 
-export function pedidoJaSaiu(status: string | null | undefined): boolean {
-  return (STATUS_QUE_JA_SAIU as readonly string[]).includes(String(status || "").toUpperCase());
+export function podeTerReposicao(status: string | null | undefined): boolean {
+  return !STATUS_SEM_REPOSICAO.includes(String(status || "").toUpperCase());
 }
 
 /** O número do pedido como a loja o reconhece. */

@@ -15,7 +15,7 @@ import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { avaliarEdicao, podeEditarPedidos } from "@/lib/edicao-de-pedido";
-import { pedidoJaSaiu } from "@/lib/reposicao";
+import { podeTerReposicao } from "@/lib/reposicao";
 import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
@@ -4064,10 +4064,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {(() => {
                 const operadorDaAba = { role: user?.role, permissions: user?.permissions };
                 const avaliacao = avaliarEdicao(order, operadorDaAba);
-                // "Faltou item": pedido que já saiu (lib/reposicao.ts). Não
+                // "Faltou item": qualquer pedido não cancelado (lib/reposicao.ts). Não
                 // depende da trava da nota — a reposição não mexe no pedido
                 // nem no dinheiro dele, é um pedido novo de R$ 0,00.
-                const podeFaltou = pedidoJaSaiu(order.status) && !(order as any).reposicao && podeEditarPedidos(operadorDaAba);
+                const podeFaltou = podeTerReposicao(order.status) && !(order as any).reposicao && podeEditarPedidos(operadorDaAba);
                 const abas: [typeof abaDoRecibo, string][] = [["comanda", "🧾 Comanda"]];
                 if (avaliacao.modo !== "BLOQUEADO") abas.push(["editar", "✏️ Editar itens"]);
                 if (podeFaltou) abas.push(["faltou", "📦 Faltou item"]);
