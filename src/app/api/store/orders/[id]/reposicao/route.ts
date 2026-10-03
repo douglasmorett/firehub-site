@@ -1,5 +1,6 @@
 /**
- * Reposição: o item que faltou (ou veio errado) — em qualquer pedido não cancelado.
+ * Reposição: o item que faltou (ou veio errado) num pedido que JÁ SAIU
+ * (colunas Saiu para entrega e Finalizado do quadro).
  *
  * POST {
  *   motivo: "FALTOU" | "TROCA",
@@ -71,9 +72,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
     if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
-    if (!podeTerReposicao(order.status)) {
+    if (!podeTerReposicao(order)) {
       return NextResponse.json(
-        { error: "Pedido cancelado ou ainda não lançado não tem reposição." },
+        { error: "A reposição é para pedido que já saiu (Saiu para entrega ou Finalizado). Antes disso, edite o pedido (lápis) — ele ainda está na loja." },
         { status: 400 }
       );
     }

@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * A aba "Faltou item" do modal Ver pedido — em qualquer pedido não cancelado.
+ * A aba "Faltou item" do modal Ver pedido — só em pedido que JÁ SAIU (colunas
+ * Saiu para entrega e Finalizado).
  *
  * O cliente ligou: "a esfiha de Nevada não veio". O atendente marca o que
  * faltou (o item inteiro ou só a opção de dentro do combo), e sai um pedido de

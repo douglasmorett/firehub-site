@@ -1,10 +1,10 @@
 /**
- * REPOSIÇÃO — o item que faltou (ou veio errado) num pedido já lançado.
+ * REPOSIÇÃO — o item que faltou (ou veio errado) num pedido que já saiu.
  *
  * Pedido do Flávio (Showrrascão, 02/10/2026): o cliente pediu 10 esfihas de
  * carne e 1 de Nevada, e a de Nevada não foi. Até aqui a loja resolvia "de
  * mão": refazia no grito, sem papel, sem endereço na comanda e sem nada que
- * dissesse ao motoboy que não era para cobrar. Agora: no pedido (qualquer um não cancelado), a
+ * dissesse ao motoboy que não era para cobrar. Agora: no pedido que já saiu, a
  * loja marca o que faltou e nasce um pedido de reposição que
  *
  *   • imprime a SUA comanda, com endereço e contato do cliente, avisando que
@@ -47,15 +47,31 @@ export const ROTULO_DO_MOTIVO: Record<MotivoDaReposicao, string> = {
 };
 
 /**
- * Em qualquer pedido que é pedido de verdade — não só no que já saiu. O dono
- * pediu assim (02/10/2026): a loja descobre a falta também com o pedido ainda
- * na expedição, e procurar a aba só depois do "Saiu" confundia. Fica de fora o
- * cancelado (não há o que repor) e o que ainda não é pedido.
+ * Só no pedido que está nas colunas "Saiu para entrega" ou "Finalizado" do
+ * quadro. Em Novos, Em Produção e Prontos o pedido ainda está na loja: o que
+ * falta se resolve editando o pedido (o lápis), sem papel novo.
+ *
+ * Vai e volta do dono (02/10/2026): primeiro só depois do "Saiu"; às 22h
+ * passou a valer em qualquer pedido não cancelado; às 23h, vendo a aba num
+ * pedido em Prontos, voltou: "só saiu para entrega e finalizado".
+ *
+ * A retirada (e o balcão) fica em Finalizado com status PRONTO — é o que o
+ * quadro faz (StoreOrdersDashboard, `finalizados`). Entrega com PRONTO ainda
+ * está em Prontos.
  */
-const STATUS_SEM_REPOSICAO = ["CANCELADO", "CANCELLED", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"];
+export const STATUS_QUE_JA_SAIU = [
+  "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "EM_ROTA",
+  "ENTREGUE", "ENCERRADO", "FINALIZADO", "CONCLUIDO",
+] as const;
 
-export function podeTerReposicao(status: string | null | undefined): boolean {
-  return !STATUS_SEM_REPOSICAO.includes(String(status || "").toUpperCase());
+export function podeTerReposicao(pedido: {
+  status: string | null | undefined;
+  deliveryType?: string | null;
+}): boolean {
+  const status = String(pedido.status || "").toUpperCase();
+  if ((STATUS_QUE_JA_SAIU as readonly string[]).includes(status)) return true;
+  const entrega = String(pedido.deliveryType || "").toUpperCase() === "DELIVERY";
+  return status === "PRONTO" && !entrega;
 }
 
 /** O número do pedido como a loja o reconhece. */

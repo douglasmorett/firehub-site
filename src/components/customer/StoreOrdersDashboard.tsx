@@ -4064,10 +4064,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {(() => {
                 const operadorDaAba = { role: user?.role, permissions: user?.permissions };
                 const avaliacao = avaliarEdicao(order, operadorDaAba);
-                // "Faltou item": qualquer pedido não cancelado (lib/reposicao.ts). Não
+                // "Faltou item": só nas colunas Saiu e Finalizado (lib/reposicao.ts). Não
                 // depende da trava da nota — a reposição não mexe no pedido
                 // nem no dinheiro dele, é um pedido novo de R$ 0,00.
-                const podeFaltou = podeTerReposicao(order.status) && !(order as any).reposicao && podeEditarPedidos(operadorDaAba);
+                const podeFaltou = podeTerReposicao(order) && !(order as any).reposicao && podeEditarPedidos(operadorDaAba);
                 const abas: [typeof abaDoRecibo, string][] = [["comanda", "🧾 Comanda"]];
                 if (avaliacao.modo !== "BLOQUEADO") abas.push(["editar", "✏️ Editar itens"]);
                 if (podeFaltou) abas.push(["faltou", "📦 Faltou item"]);
