@@ -67,6 +67,7 @@ export const STATUS_QUE_TROCAM = [
 const RETIRADAS = ["PICKUP", "TAKEOUT", "RETIRADA", "BALCAO", "BALCÃO"];
 
 export type PedidoParaTroca = PedidoParaEdicao & {
+  deliveryFee?: number | null;
   paymentPaidAt?: Date | string | null;
   dispatchedAt?: Date | string | null;
 };
