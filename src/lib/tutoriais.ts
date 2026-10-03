@@ -172,6 +172,16 @@ export function todosOsTutoriais(enviados: TutoriaisEnviados = null): { titulo: 
     .filter((g) => g.tutoriais.length > 0);
 }
 
+/** A ficha de um vídeo pelo id (o fim do link público /tutoriais/<id>). */
+export function tutorialPorId(id: string): Tutorial | null {
+  return Object.prototype.hasOwnProperty.call(FICHAS, id) ? FICHAS[id] : null;
+}
+
+/** O grupo da central em que o vídeo está ("Operação", "Cardápio"...) e os outros vídeos dele. */
+export function grupoDoTutorial(id: string): { titulo: string; ids: string[] } | null {
+  return GRUPOS.find((g) => g.ids.includes(id)) || null;
+}
+
 /** O nome que vai no botão: "Tutorial Pedidos". */
 export function nomeDaTela(pathname: string | null | undefined): string {
   return NOMES[telaDaRota(pathname)] || "";

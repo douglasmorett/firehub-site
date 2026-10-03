@@ -37,7 +37,9 @@ export async function clienteDoGemini(): Promise<GoogleGenAI | null> {
 export async function transcreverAudio(base64: string, mimeType = "audio/ogg"): Promise<string> {
   const ai = await clienteDoGemini();
   if (!ai || !base64) return "";
-  for (const modelo of ["gemini-2.5-flash", "gemini-2.0-flash"]) {
+  // A reserva é o mesmo modelo que responde no robô (o que o projeto usa e precifica em
+  // usage-tracker.ts), não o 2.0, que nenhuma outra parte do atendimento usa mais.
+  for (const modelo of ["gemini-2.5-flash", "gemini-3.6-flash"]) {
     try {
       const r = await ai.models.generateContent({
         model: modelo,

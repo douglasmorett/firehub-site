@@ -51,6 +51,15 @@ export function normalizar(texto: string): string {
   return texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+/** A palavra (já normalizada) e os sinônimos dela — o robô do atendimento usa a mesma régua (lib/atendimento/videos.ts). */
+export function formasDaPalavra(palavra: string): string[] {
+  return GRUPO.get(palavra) || [palavra];
+}
+
+export function ehPalavraDeLigacao(palavra: string): boolean {
+  return LIGACAO.has(palavra);
+}
+
 function palavrasDaBusca(busca: string): string[][] {
   return normalizar(busca)
     .split(" ")

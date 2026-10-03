@@ -9,6 +9,8 @@ import { conferirResposta, RESPOSTA_DE_QUEM_NAO_SABE } from "./conferente";
 import { registrarEvento, AUTOR_ROBO } from "@/lib/crm/contatos";
 import { DECLARACOES, FERRAMENTAS_COM_EFEITO, chamarPessoa, executarFerramenta } from "./ferramentas";
 import { enviarTexto } from "./whatsapp";
+import { aulaDoVideo, consertarLinksDeVideo, listaDosVideos, videosJaEnviados, videosParaAConversa } from "./videos";
+import { videosNoAr } from "./videos-no-ar";
 
 /**
  * O ROBÔ DO FIREHUB — atende no número do próprio FireHub: suporte para quem
@@ -29,6 +31,12 @@ import { enviarTexto } from "./whatsapp";
  *
  * Quem escreve "oi" / "tudo bem?" / "queria saber do sistema" em três
  * mensagens recebe UMA resposta: cada mensagem nova reinicia a espera.
+ *
+ * ── Dúvida de como usar o painel vira o vídeo dela ─────────────────────────
+ *
+ * "Como eu mexo na roteirização?" → resposta curta + o link do vídeo da
+ * Roteirização (videos.ts). A lista dos vídeos vai sempre na base; a fala dos
+ * vídeos do assunto da conversa vai junto, e é dela que sai o passo a passo.
  */
 
 const ESPERA_MS = 6_000;
@@ -90,9 +98,12 @@ const SINAIS_DA_OFERTA = [
 ];
 const ehOfertaDaMontagem = (texto: string) => SINAIS_DA_OFERTA.every((r) => r.test(texto));
 
+/** Os vídeos na conversa: a lista de todos (base), a fala dos do assunto e os títulos dos que já foram mandados. */
+type VideosDaConversa = { lista: string; aulas: string; jaEnviados: string[] };
+
 function instrucoes(
   config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null, ofereceuMontagem: boolean,
-  lojaInformada: string | null,
+  lojaInformada: string | null, videos: VideosDaConversa,
 ): string {
   const apresentacao = config.nomeDoAtendente
     ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub no WhatsApp.`
@@ -115,6 +126,9 @@ function instrucoes(
     ofereceuMontagem
       ? "- A montagem grátis da loja JÁ FOI OFERECIDA nesta conversa. Não ofereça de novo nem peça o link/foto do cardápio outra vez: responda só o que a pessoa perguntou. Se ela mandar o link ou a foto, aí sim siga com a montagem."
       : "- A montagem grátis da loja ainda não foi oferecida.",
+    videos.jaEnviados.length
+      ? `- Vídeos já mandados nesta conversa: ${videos.jaEnviados.join("; ")}. Não mande de novo, a não ser que a pessoa peça ("no vídeo que te mandei").`
+      : "",
   ].filter(Boolean).join("\n");
 
   return `${apresentacao}
@@ -155,9 +169,20 @@ function instrucoes(
 - montar_loja precisa do nome da loja e do link OU das fotos do cardápio ("📷 Imagem" na conversa). Bairros com as taxas e horários ajudam, mas não trave por eles. Depois, avise que a equipe continua por aqui.
 - Demonstração com um vendedor é a ÚLTIMA opção: só se a pessoa pedir para ver funcionando ou falar com alguém, ou se as dúvidas não se resolverem aqui. Aí use chamar_pessoa com o motivo "quer agendar demonstração" e diga que a equipe vai combinar o horário por aqui.
 
+# Quando mandar vídeo
+- "Como faço…?", "onde fica…?", "como configuro…?" sobre algo que um vídeo da lista mostra: responda em uma frase o essencial e mande o link do vídeo na linha de baixo. Ex.: "Na Roteirização você junta os pedidos no mapa e despacha a rota para o motoboy. Esse vídeo mostra o passo a passo:" e, na linha de baixo, o link.
+- Dúvida de um ponto só do vídeo: mande o link do capítulo (o que abre direto naquele ponto), que está em "O que os vídeos ensinam" ou no que ver_tutorial devolveu.
+- O passo a passo que você escreve sai da fala do vídeo ("O que os vídeos ensinam" ou ver_tutorial). Sem a fala na mão, use ver_tutorial ou não descreva passos: só diga que o vídeo mostra e mande o link.
+- O link vai exatamente como está na lista, sozinho na última linha, sem negrito e sem ponto no fim. Nunca monte nem invente link de vídeo.
+- Um vídeo por mensagem; dois só se a pergunta for de duas telas. Vídeo que já foi nesta conversa não vai de novo.
+- Problema na conta (não imprime, robô mudo, pedido não entrou) não se resolve com vídeo: primeiro estado_da_loja e os Problemas comuns; o vídeo vem depois, se ajudar.
+- A loja e os valores que aparecem nos vídeos são de demonstração: não fale deles como se fossem da pessoa.
+- Interessado que quer ver como funciona: pode mandar o vídeo do assunto (ou "Um passeio pelo painel", se estiver na lista) antes de falar em demonstração.
+- Nenhum vídeo da lista é do assunto? Responda pela base, como sempre.
+
 # BASE
-${CONHECIMENTO_DO_FIREHUB}
-${config.instrucoesExtras.trim() ? `\n# Recados do dono (valem mais que a base)\n${config.instrucoesExtras.trim()}\n` : ""}
+${CONHECIMENTO_DO_FIREHUB}${videos.lista ? `\n\n${videos.lista}` : ""}
+${config.instrucoesExtras.trim() ? `\n# Recados do dono (valem mais que a base)\n${config.instrucoesExtras.trim()}\n` : ""}${videos.aulas ? `\n# O que os vídeos ensinam (os do assunto desta conversa: a fala gravada, capítulo por capítulo)\n${videos.aulas}\n` : ""}
 # Quem está falando
 ${ficha}
 
@@ -232,7 +257,17 @@ async function responder(contatoId: string) {
     ? null
     : await prisma.crmEvento.findFirst({ where: { contatoId: contato.id, texto: { startsWith: "Diz ser da loja " } }, orderBy: { criadoEm: "desc" }, select: { texto: true } });
   const lojaInformada = informada ? informada.texto.replace(/^Diz ser da loja /, "").replace(/ \(firehubfood[\s\S]*$/, "") : null;
-  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem, lojaInformada);
+  // Os vídeos: só os que já estão no servidor; a fala dos que a busca acha nas
+  // últimas mensagens do contato (videos.ts).
+  const videos = videosNoAr();
+  const idsDosVideos = new Set(videos.map((v) => v.id));
+  const doContato = historico.filter((m) => m.direcao === "ENTRADA").slice(-3).map((m) => m.texto);
+  const doVideo: VideosDaConversa = {
+    lista: listaDosVideos(videos),
+    aulas: videosParaAConversa(doContato, videos).map(aulaDoVideo).join("\n\n"),
+    jaEnviados: videosJaEnviados(historico).flatMap((id) => videos.filter((v) => v.id === id).map((v) => v.titulo)),
+  };
+  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem, lojaInformada, doVideo);
   const conversa = conversaParaOModelo(historico);
   if (conversa.length === 0) return;
 
@@ -251,17 +286,25 @@ async function responder(contatoId: string) {
     }
     if (acoes.some((a) => FERRAMENTAS_COM_EFEITO.has(a.nome))) break;
   }
-  const doModelo = paraOWhatsApp(resposta);
+  // Link de vídeo sai sempre no formato certo e só de vídeo que existe (videos.ts).
+  const doModelo = consertarLinksDeVideo(paraOWhatsApp(resposta), idsDosVideos);
   resposta = doModelo || respostaDeReserva(acoes);
   if (!resposta) return;
 
   // ── A revisão: o que não tem fonte não sai (conferente.ts) ────────────────
-  // A resposta de reserva é texto fixo nosso e não passa por ela.
+  // A resposta de reserva é texto fixo nosso e não passa por ela. A fala dos
+  // vídeos conta como fonte: a do assunto vai na base, a que o robô pediu pela
+  // ver_tutorial vai inteira nas ferramentas (o corte de 1.500 a picotava).
   if (doModelo) {
     const paraConferir = {
-      base: CONHECIMENTO_DO_FIREHUB + (config.instrucoesExtras.trim() ? `\n\n# Recados do dono\n${config.instrucoesExtras.trim()}` : ""),
+      base: [
+        CONHECIMENTO_DO_FIREHUB,
+        doVideo.lista,
+        doVideo.aulas ? `# O que os vídeos ensinam (a fala gravada de cada capítulo)\n${doVideo.aulas}` : "",
+        config.instrucoesExtras.trim() ? `# Recados do dono\n${config.instrucoesExtras.trim()}` : "",
+      ].filter(Boolean).join("\n\n"),
       conversa: conversaParaORevisor(historico.slice(-12)),
-      ferramentas: acoes.map((a) => `${a.nome}: ${JSON.stringify(a.resultado).slice(0, 1500)}`).join("\n"),
+      ferramentas: acoes.map((a) => `${a.nome}: ${JSON.stringify(a.resultado).slice(0, a.nome === "ver_tutorial" ? 8000 : 1500)}`).join("\n"),
     };
     let veredito = await conferirResposta(ai, { ...paraConferir, resposta: doModelo });
     // ── Uma frase sem fonte não cala a conversa ──────────────────────────────
@@ -271,7 +314,8 @@ async function responder(contatoId: string) {
     // Antes de desistir, a mesma resposta é reescrita SEM o trecho e conferida
     // de novo; o trecho fica na ficha para a base ganhar o que faltava.
     if (veredito?.inventou) {
-      const corrigida = await reescreverSemOTrecho(ai, sistema, conversa, doModelo, veredito.trecho);
+      const reescrita = await reescreverSemOTrecho(ai, sistema, conversa, doModelo, veredito.trecho);
+      const corrigida = reescrita ? consertarLinksDeVideo(reescrita, idsDosVideos) : null;
       const segunda = corrigida ? await conferirResposta(ai, { ...paraConferir, resposta: corrigida }) : null;
       if (corrigida && segunda && !segunda.inventou) {
         await registrarEvento(contato.id, "ROBO", `Revisão tirou da resposta (sem fonte na base): "${veredito.trecho}"`, AUTOR_ROBO);

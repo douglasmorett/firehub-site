@@ -6,6 +6,11 @@
  * robô é instruído a não afirmar nada fora disto: pergunta que a base não
  * cobre vai para uma pessoa. Mudou o preço ou uma tela? Muda aqui.
  *
+ * O como-usar de cada tela vem também dos vídeos tutoriais (videos.ts): a
+ * lista deles entra na base junto com este texto, e a fala dos vídeos do
+ * assunto da conversa também. Tela que ganhou vídeo regravado não precisa de
+ * linha nova aqui.
+ *
  * Checklist e auditoria com IA NÃO entram: são do FireCheck, outro produto,
  * mesmo aparecendo na landing (decisão do Douglas).
  */
@@ -46,7 +51,9 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - Humano, pelo WhatsApp, 7 dias por semana.
 
 # Onde fica cada coisa no painel (firehubfood.com.br/store, entrar em firehubfood.com.br/login)
+- Tutoriais em vídeo: no painel, o botão laranja "Tutoriais em vídeo" no menu lateral abre todos, e o botão "Tutorial" no topo de cada tela abre o vídeo daquela tela. Os mesmos vídeos abrem no celular, sem login, em firehubfood.com.br/tutoriais.
 - Pedidos: menu "Pedidos".
+- Dar desconto num pedido já lançado: em "Pedidos", abrir o pedido → "Editar itens" → "Dar desconto" (em % ou em R$, com o motivo). A tela mostra o total novo antes de salvar. Só vale quando o cliente ainda vai pagar: pedido pago online, pago no aplicativo do parceiro ou com pagamento dividido não recebe desconto por ali.
 - Pedido que entrou como delivery mas o cliente está no salão (ou vai retirar): em "Pedidos", clicar no lápis do pedido → "Trocar para mesa ou balcão" → escolher a mesa (livre abre no nome do cliente; ocupada, o pedido entra na conta dela) ou o balcão. A taxa de entrega sai sozinha. Só antes de o pedido sair; pedido de iFood/99Food não troca; pedido já pago online não vai para a mesa (só para o balcão).
 - Cardápio (produtos, preços, fotos, adicionais, combos): firehubfood.com.br/store/cardapio
 - Horários, endereço, área e taxa de entrega, WhatsApp do proprietário: menu "Minha Loja".
