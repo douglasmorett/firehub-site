@@ -46,3 +46,7 @@ example
 # a configuração mora no app.json, nunca nelas.
 /android
 /ios
+
+# Configuração do Firebase (tem a chave de API do cliente). Fica fora do git:
+# no EAS vai como variável de arquivo GOOGLE_SERVICES_JSON (ver app.config.js).
+google-services.json
