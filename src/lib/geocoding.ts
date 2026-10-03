@@ -1077,6 +1077,25 @@ export async function verifyStoreDeliveryAddress(
     // longe do bairro que o cliente escreveu: aí o mapa só conhece a homônima
     // e a rua dele não está no mapa. A régua é o centro do bairro dele.
     const consultaDoBairro = neigh ? `${neigh}, ${city}` : "";
+    /**
+     * O CENTRO DO BAIRRO só é o que o mapa devolveu se for de fato o bairro: uma
+     * área (bairro, loteamento, conjunto) ou um ponto que fica DENTRO dele.
+     *
+     * Deeds Delivery (Londrina, 02/10/2026): "Francisco Lirola, 249 - Milton
+     * Gavetti". O mapa não conhece o Conjunto Milton Gavetti e devolveu a RUA
+     * Milton Gavetti, no Jamaica, a 7,35 km. Esse ponto virou a régua: a rua do
+     * cliente (Rua Francisco Lirola Sobrinho, a 1,72 km) ficou "longe do bairro"
+     * e foi descartada, e a cotação deu FORA pelo bairro. Rua com o nome do
+     * bairro em outro bairro é homônima, não o bairro — o nome aparece no
+     * displayName dela, por isso a conferência é pelo campo de bairro.
+     */
+    const buscarBairro = async (): Promise<RespostaDoMapa<ResultadoDoMapa | null>> => {
+      const r = await buscarLivre(consultaDoBairro);
+      if (!r.ok || !r.valor) return r;
+      const v = r.valor;
+      const ehOBairro = v.nivel === "area" || (!!nomeDeBairro(v.bairro || "") && bairroConfere(neigh, v.bairro));
+      return ehOBairro ? r : { ok: true, valor: null };
+    };
 
     // ── NÍVEL G: O GOOGLE ────────────────────────────────────────────────
     //
@@ -1122,7 +1141,7 @@ export async function verifyStoreDeliveryAddress(
       if (!temTempoNoMapa()) {
         esgotouOPrazo = true;
       } else {
-        const r = await buscarLivre(consultaDoBairro);
+        const r = await buscarBairro();
         if (!r.ok) {
           falha ??= r.motivo;
         } else if (r.valor || bairroDoGoogle) {
@@ -1142,7 +1161,7 @@ export async function verifyStoreDeliveryAddress(
       if (!temTempoNoMapa()) {
         esgotouOPrazo = true;
       } else {
-        const r = await buscarLivre(consultaDoBairro);
+        const r = await buscarBairro();
         if (!r.ok) {
           falha ??= r.motivo;
         } else {
@@ -1174,7 +1193,7 @@ export async function verifyStoreDeliveryAddress(
       if (!temTempoNoMapa()) {
         return falhou("prazo", { maxRadiusKm, centroDaLoja: loja });
       }
-      const r = await buscarLivre(consultaDoBairro);
+      const r = await buscarBairro();
       if (!r.ok && !bairroDoGoogle) return falhou(r.motivo, { maxRadiusKm, centroDaLoja: loja });
       const centro = (r.ok ? r.valor : null) || bairroDoGoogle;
       if (centro) {

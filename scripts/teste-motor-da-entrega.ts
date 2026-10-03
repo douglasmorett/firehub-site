@@ -644,6 +644,41 @@ async function main() {
   conferir("… e o ponto aproximado fora do raio é DESCONHECIDO (confirme no mapa)", homonima.resultado === "DESCONHECIDO" && homonima.taxa === null);
   conferir("… e NÃO é pelo bairro: o trecho não tem nada a ver com o bairro escrito", homonima.peloBairro !== true, homonima);
 
+  // Deeds Delivery (Londrina, 02/10/2026): "Francisco Lirola, 249 - Milton Gavetti".
+  // O mapa não conhece o bairro e, perguntado por ele, devolve a RUA Milton
+  // Gavetti de outro bairro, longe. Essa rua não é o centro do bairro: a rua do
+  // cliente (num lugar só, com outro nome de bairro no mapa) vale.
+  zerar();
+  const lirola = aoSul(0.9, 0.0021);
+  const ruaComONomeDoBairro = aoSul(6.5, -0.03);
+  nominatim.set(`${norm("Francisco Lirola")}|${norm("Cabo Frio")}`, { status: 200, corpo: [
+    lugar(lirola, { road: "Rua Francisco Lirola Sobrinho", suburb: "Jardim Pacaembu" }),
+  ] });
+  nominatim.set(norm("Milton Gavetti, Cabo Frio"), { status: 200, corpo: [
+    lugar(ruaComONomeDoBairro, { road: "Rua Milton Gavetti", suburb: "Jamaica", classe: "highway", tipo: "residential",
+      display: "Rua Milton Gavetti, Jamaica, Cabo Frio, Rio de Janeiro, Brasil" }),
+  ] });
+  osrm.set(chave4(lirola), osrmOk(1200));
+  const lirolaV = await avaliarEntrega(divinos, { endereco: "Francisco Lirola, 249 - Milton Gavetti", partes: { street: "Francisco Lirola", number: "249", neighborhood: "Milton Gavetti", city: "Cabo Frio" } });
+  conferir("rua com o NOME do bairro em outro bairro não é o centro do bairro: vale a rua do cliente (1,2 km)",
+    lirolaV.resultado === "ATENDE" && lirolaV.ponto?.lat === lirola.lat && lirolaV.distanciaKm === 1.2, lirolaV);
+  conferir("… e não é 'pelo bairro' nem FORA", lirolaV.peloBairro !== true && lirolaV.resultado !== "FORA", lirolaV);
+
+  // A rua com o nome do bairro, mas DENTRO do bairro escrito, continua sendo a
+  // régua: a rua do cliente a 6 km dela não é aceita calada (centro do bairro).
+  zerar();
+  nominatim.set(`${norm("Francisco Lirola")}|${norm("Cabo Frio")}`, { status: 200, corpo: [
+    lugar(lirola, { road: "Rua Francisco Lirola Sobrinho", suburb: "Jardim Pacaembu" }),
+  ] });
+  nominatim.set(norm("Milton Gavetti, Cabo Frio"), { status: 200, corpo: [
+    lugar(ruaComONomeDoBairro, { road: "Rua Milton Gavetti", suburb: "Conjunto Milton Gavetti", classe: "highway", tipo: "residential",
+      display: "Rua Milton Gavetti, Conjunto Milton Gavetti, Cabo Frio, Rio de Janeiro, Brasil" }),
+  ] });
+  osrm.set(chave4(ruaComONomeDoBairro), osrmOk(8000));
+  const noBairroV = await avaliarEntrega(divinos, { endereco: "Francisco Lirola, 249 - Milton Gavetti", partes: { street: "Francisco Lirola", number: "249", neighborhood: "Milton Gavetti", city: "Cabo Frio" } });
+  conferir("rua DENTRO do bairro escrito ainda é a régua do bairro (a rua do cliente longe dela não é aceita calada)",
+    noBairroV.ponto?.lat === ruaComONomeDoBairro.lat && noBairroV.ponto?.origem === "bairro", noBairroV);
+
   // ════════════════════════════════════════════════════════════════════════
   console.log("\n== Duas ruas no texto e rua homônima pelo bairro (Divinos, 25/09/2026, 20h34) ==");
   // Medido no OSM: a Travessa Pantanal existe em DOIS lugares de Cabo Frio — a
