@@ -415,6 +415,14 @@ export default function MesasApp({
   const [showEditModal, setShowEditModal] = useState<TableItem | null>(null);
   const [editNumber, setEditNumber] = useState("");
   const [editLabel, setEditLabel] = useState("");
+  // Nome do cliente e observação da CONTA aberta (não da mesa física): é o
+  // que vai junto quando a conta muda de mesa.
+  const [editCliente, setEditCliente] = useState("");
+  const [editObs, setEditObs] = useState("");
+  useEffect(() => {
+    setEditCliente(showEditModal?.openSession?.customerName || "");
+    setEditObs(showEditModal?.openSession?.notes || "");
+  }, [showEditModal]);
   const [showFreeConfirm, setShowFreeConfirm] = useState(false);
   const [imprimindoConta, setImprimindoConta] = useState(false);
   /** "Selecionar itens para impressão" aberto (components/mesas/SelecionarItensParaImpressao). */
@@ -1194,6 +1202,24 @@ export default function MesasApp({
     if (!showEditModal) return;
     setActionLoading(true);
     try {
+      const conta = showEditModal.openSession;
+      if (conta) {
+        const mudou: Record<string, string> = {};
+        if (editCliente.trim() !== (conta.customerName || "").trim()) mudou.customerName = editCliente;
+        if (editObs.trim() !== (conta.notes || "").trim()) mudou.notes = editObs;
+        if (Object.keys(mudou).length > 0) {
+          const r = await chamar(`/api/store/table-sessions/${conta.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(mudou),
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            showToast(`❌ ${err.error || "Não foi possível salvar o nome do cliente"}`);
+            return;
+          }
+        }
+      }
       const body: Record<string, unknown> = { id: showEditModal.id };
       if (editNumber) body.number = parseInt(editNumber);
       if (editLabel !== undefined) body.label = editLabel || null;
@@ -2847,11 +2873,35 @@ export default function MesasApp({
               <input value={editNumber} onChange={e => setEditNumber(e.target.value)} type="number"
                 style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit" }} />
             </div>
+            {/* Nome do cliente da conta aberta. Antes só existia o campo da
+                mesa física logo abaixo, e a loja escrevia o cliente ali: na
+                transferência o nome ficava na mesa velha (Ragnar, 03/10/2026). */}
+            {showEditModal.openSession && (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>Nome do cliente</label>
+                  <input value={editCliente} onChange={e => setEditCliente(e.target.value)}
+                    maxLength={80}
+                    placeholder="Ex: João, Família Silva..."
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit" }} />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>Observação</label>
+                  <input value={editObs} onChange={e => setEditObs(e.target.value)}
+                    maxLength={120}
+                    placeholder="Ex: aniversário, cadeirinha de bebê, sem glúten..."
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit" }} />
+                </div>
+              </>
+            )}
             <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>Nome/Label (opcional)</label>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>Nome fixo da mesa (opcional)</label>
               <input value={editLabel} onChange={e => setEditLabel(e.target.value)}
                 placeholder="Ex: Varanda, VIP, Terraço"
                 style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit" }} />
+              <div style={{ fontSize: 11.5, color: "#94A3B8", marginTop: 4, lineHeight: 1.4 }}>
+                Fica sempre nesta mesa. Não use para o cliente: o nome do cliente vai junto quando a conta muda de mesa.
+              </div>
             </div>
             {/* Mesa ocupada: dá para mover o cliente daqui mesmo, sem precisar
                 voltar ao painel dela. Só aparece quando há mesa livre. */}
