@@ -1,5 +1,5 @@
 /**
- * Reposição: o item que faltou (ou veio errado) num pedido que JÁ SAIU.
+ * Reposição: o item que faltou (ou veio errado) — em qualquer pedido não cancelado.
  *
  * POST {
  *   motivo: "FALTOU" | "TROCA",
@@ -23,7 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { podeEditarPedidos, empilharEdicao } from "@/lib/edicao-de-pedido";
 import {
-  pedidoJaSaiu,
+  podeTerReposicao,
   numeroDoPedido,
   formaDePagamentoDaReposicao,
   observacaoDaReposicao,
@@ -71,9 +71,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
     if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
-    if (!pedidoJaSaiu(order.status)) {
+    if (!podeTerReposicao(order.status)) {
       return NextResponse.json(
-        { error: "A reposição é para pedido que já saiu. Antes disso, edite o pedido (lápis) — a cozinha ainda está com ele." },
+        { error: "Pedido cancelado ou ainda não lançado não tem reposição." },
         { status: 400 }
       );
     }

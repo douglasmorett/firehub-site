@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * A aba "Faltou item" do modal Ver pedido — só em pedido que JÁ SAIU.
+ * A aba "Faltou item" do modal Ver pedido — em qualquer pedido não cancelado.
  *
  * O cliente ligou: "a esfiha de Nevada não veio". O atendente marca o que
  * faltou (o item inteiro ou só a opção de dentro do combo), e sai um pedido de
@@ -98,7 +98,7 @@ export default function ReposicaoPainel({
   return (
     <div>
       <div style={{ fontSize: "0.8rem", color: "#475569", lineHeight: 1.45, marginBottom: 10 }}>
-        O pedido já saiu. Marque o que <b>não foi</b> (ou foi errado): sai uma <b>comanda nova, já paga</b>, com o endereço do
+        Marque o que <b>faltou</b> (ou foi errado): sai uma <b>comanda nova, já paga</b>, com o endereço do
         cliente, e a cozinha faz primeiro.
       </div>
 
