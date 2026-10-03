@@ -249,7 +249,7 @@ const tipoDaTela = (t: string, zonas: any[]) => {
 // digita; o número é lido a cada tecla e o texto só é reformatado quando ela
 // sai do campo.
 function CampoNumerico({
-  valor, onMudar, formato, rotulo, placeholder, invalido, autoFocus, onSair,
+  valor, onMudar, formato, rotulo, placeholder, invalido, autoFocus, onSair, semMoldura,
 }: {
   valor: number | null;
   onMudar: (n: number | null) => void;
@@ -259,6 +259,8 @@ function CampoNumerico({
   invalido?: boolean;
   autoFocus?: boolean;
   onSair?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  /** Dentro de uma caixa com unidade ("min", "R$"): a moldura e o vermelho são da caixa. */
+  semMoldura?: boolean;
 }) {
   const formatar = (n: number | null) =>
     n == null ? "" : formato === "reais" ? n.toFixed(2).replace(".", ",") : formato === "inteiro" ? String(Math.round(n)) : formatarKm(n);
@@ -289,11 +291,13 @@ function CampoNumerico({
         if (n != null || !texto.trim()) setTexto(formatar(n));
         onSair?.(e);
       }}
-      style={{
-        ...caixaDoCampo,
-        borderColor: invalido ? "#DC2626" : "#E2E8F0",
-        background: invalido ? "#FEF2F2" : "#FFFFFF",
-      }}
+      style={semMoldura
+        ? { ...caixaDoCampo, border: "none", borderRadius: 0, background: "transparent", minWidth: 0 }
+        : {
+          ...caixaDoCampo,
+          borderColor: invalido ? "#DC2626" : "#E2E8F0",
+          background: invalido ? "#FEF2F2" : "#FFFFFF",
+        }}
     />
   );
 }
@@ -456,6 +460,34 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         }))
       : BAIRROS_DE_EXEMPLO.map((b) => ({ id: novoId("b"), ...b, motoboyFee: null }));
   });
+
+  // ── AS ABAS DO PAINEL ─────────────────────────────────────────────────────
+  //
+  // "Tempo e taxa" é o que a loja mexe no dia a dia, no desenho do iFood: o
+  // ajuste rápido e uma linha por faixa/bairro/área. O cadastro (nome, km,
+  // motoboy, apagar) fica na aba ao lado, e o método e os contornos em
+  // "Configurar". Antes era tudo uma coluna só: a Showrrascão, com 55 bairros,
+  // rolava 55 cartões para achar onde mudar o tempo — e mudava um por um.
+  // Loja sem cadastro abre em "Configurar": a primeira decisão é o método.
+  const [aba, setAba] = useState<"tempo" | "cadastro" | "configurar">(() => (zonasIniciais.length > 0 ? "tempo" : "configurar"));
+  const [buscaDoBairro, setBuscaDoBairro] = useState("");
+  const [focarNoBairro, setFocarNoBairro] = useState<string | null>(null);
+  const [tempoParaTodos, setTempoParaTodos] = useState<number | null>(null);
+
+  /**
+   * A tabela da tela num texto, para dizer "não salvo" depois de um ajuste.
+   * Sem o motoboy (a leitura do GET pode ligar/desligar o campo sozinha) e sem
+   * o bairro em branco (o salvar o descarta) — senão a tela acusaria mudança
+   * que a loja não fez.
+   */
+  const retratoDaTabela = currentZoneType + JSON.stringify(
+    porDistancia
+      ? ordenarFaixas(faixas).map((f) => [f.km, f.time, f.fee])
+      : porBairro
+        ? bairros.filter((b) => b.name.trim()).map((b) => [b.name.trim(), b.time, b.fee])
+        : areasDeEntrega.map((a) => [a.nome, a.time, a.fee, a.pontos.length]),
+  );
+  const [tabelaGravada, setTabelaGravada] = useState(retratoDaTabela);
 
   // ── QUANTO O MOTOBOY RECEBE ───────────────────────────────────────────────
   //
@@ -1139,6 +1171,50 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     else if (porDesenho) setAreasDeEntrega((prev) => aplicar(prev, "repasse"));
   };
 
+  /**
+   * O "Ajuste rápido" do iFood: −5/+5 min e −R$ 1/+R$ 1 em TODAS as linhas do
+   * método ativo de uma vez. Linha vazia continua vazia (vazio não é zero).
+   * O tempo não desce de 5 min nem a taxa de zero. Vale para o cliente só
+   * depois do Salvar, como qualquer outra mudança da tela.
+   */
+  const ajustarTodos = (campo: "time" | "fee", passo: number) => {
+    const ajustar = <T extends { time: number | null; fee: number | null }>(lista: T[]): T[] =>
+      lista.map((z) => {
+        const atual = z[campo];
+        if (atual == null) return z;
+        const novo = campo === "time" ? Math.max(5, Math.round(atual + passo)) : Math.max(0, Math.round((atual + passo) * 100) / 100);
+        return novo === atual ? z : { ...z, [campo]: novo };
+      });
+    if (porDistancia) setFaixas(ajustar);
+    else if (porBairro) setBairros(ajustar);
+    else if (porDesenho) setAreasDeEntrega(ajustar);
+  };
+
+  /** O mesmo tempo em todas as linhas — o ponto de partida de quem tem 55 bairros. */
+  const aplicarTempoParaTodos = () => {
+    if (tempoParaTodos == null || tempoParaTodos <= 0) return;
+    const t = Math.round(tempoParaTodos);
+    if (porDistancia) setFaixas((prev) => prev.map((z) => ({ ...z, time: t })));
+    else if (porBairro) setBairros((prev) => prev.map((z) => ({ ...z, time: t })));
+    else if (porDesenho) setAreasDeEntrega((prev) => prev.map((z) => ({ ...z, time: t })));
+  };
+
+  const adicionarBairro = () => {
+    const novo: BairroNaTela = { id: novoId("b"), name: "", time: bairros[bairros.length - 1]?.time ?? 40, fee: null, motoboyFee: null };
+    setBairros((prev) => [...prev, novo]);
+    setBuscaDoBairro("");
+    setFocarNoBairro(novo.id);
+    setAba("cadastro");
+  };
+
+  /** Bairro bate com a busca? Sem acento e sem caixa; o bairro em branco (sendo digitado) aparece sempre. */
+  const bairroNaBusca = (nome: string) => {
+    const q = buscaDoBairro.trim();
+    if (!q || !nome.trim()) return true;
+    const limpar = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    return limpar(nome).includes(limpar(q));
+  };
+
   /** Rótulo em cima do campo: é o que evita cabeçalho de coluna espremido. */
   // `maxWidth` para o campo que sobra na quebra de linha não esticar sozinho
   // até a largura toda, ficando gigante embaixo de campos pequenos.
@@ -1235,6 +1311,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       // Até 8 linhas, e o que não coube é contado (listaDoAviso): cortar
       // calado escondia a 9ª faixa da Divinos.
       setAvisoDoPainel({ tipo: "erro", texto: "Não salvei. Corrija os campos em vermelho:", lista: listaDoAviso(validacao.erros, 8) });
+      // O campo vermelho tem que estar à vista: tempo e taxa estão nas duas
+      // abas; nome, km e motoboy só no cadastro. E a busca não pode escondê-lo.
+      const soTempoETaxa = [...validacao.porId.values()].every((campos) => [...campos].every((c) => c === "time" || c === "fee"));
+      if (!soTempoETaxa) setAba("cadastro");
+      else if (aba === "configurar") setAba("tempo");
+      setBuscaDoBairro("");
       return;
     }
     const cadastro = validacao.resultado;
@@ -1415,6 +1497,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       setSalvo({ tipo: currentZoneType, faixas: retratoDasFaixas(faixas, repassePorFaixa), ponto: latLng, temCadastro: true });
       setIlegivelNoBanco(false);
       setMostrarErros(false);
+      setTabelaGravada(retratoDaTabela);
       // A linha de bairro em branco não foi gravada: some da tela também.
       if (porBairro) setBairros((prev) => (prev.some((b) => !b.name.trim()) ? prev.filter((b) => b.name.trim()) : prev));
       if (!repassePorFaixa) {
@@ -1448,6 +1531,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const [simulacao, setSimulacao] = useState<Simulacao | null>(null);
   const [simErro, setSimErro] = useState("");
   const simControle = useRef<AbortController | null>(null);
+  const simuladorRef = useRef<HTMLDivElement>(null);
 
   const simular = async () => {
     const rua = simRua.trim(), numero = simNumero.trim(), bairro = simBairro.trim();
@@ -1459,6 +1543,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   // Tocar no mapa: o ponto vai como pino do cliente — o mesmo que o cliente
   // faz no cardápio ao arrastar o pino —, sem passar pela busca de endereço.
   const simularNoPonto = async (lat: number, lng: number) => {
+    // O resultado mora na aba "Tempo e taxa": tocar no mapa com outra aberta
+    // simulava sem mostrar nada.
+    setAba("tempo");
+    if (typeof window !== "undefined" && window.innerWidth > 1080) {
+      requestAnimationFrame(() => simuladorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    }
     await pedirCotacao(
       new URLSearchParams({ lat: String(lat), lng: String(lng), origem: "pino" }),
       "Ponto marcado no mapa",
@@ -1594,6 +1684,8 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   const valoresEscondidos = !repassePorFaixa && itensDaLista.some((x) => x.repasse != null);
   const faixasComKm = faixas.filter((z) => z.km != null && z.km > 0);
   const numerosDasFaixas = (campo: "km" | "time" | "fee") => faixasComKm.map((z) => z[campo]).filter((n): n is number => n != null);
+
+  const naoSalvo = retratoDaTabela !== tabelaGravada || pontoMudou;
 
   const corDoAviso = (tipo: "ok" | "erro" | "aviso") =>
     tipo === "ok" ? { bg: "#F0FDFA", fg: "#0F766E", bd: "#99F6E4" } : tipo === "aviso" ? { bg: "#FFF7E6", fg: "#B45309", bd: "#FDE68A" } : { bg: "#FEF2F2", fg: "#B71C1C", bd: "#FECACA" };
@@ -1814,6 +1906,24 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               </div>
             </div>
           )}
+
+          {/* O mesmo resumo para bairro e área desenhada: de quanto a quanto
+              vão o tempo e a taxa, sem abrir a lista. */}
+          {(porBairro || porDesenho) && (() => {
+            const lista: { time: number | null; fee: number | null }[] = porBairro ? bairros.filter((b) => b.name.trim()) : areasDeEntrega;
+            if (lista.length === 0) return null;
+            const tempos = lista.map((z) => z.time).filter((n): n is number => n != null);
+            const taxas = lista.map((z) => z.fee).filter((n): n is number => n != null);
+            return (
+              <div className="fh-mapa-rodape">
+                <div className="fh-resumo-faixas">
+                  <span>{porBairro ? "🏙️" : "✏️"} {lista.length} {porBairro ? (lista.length === 1 ? "bairro" : "bairros") : (lista.length === 1 ? "área" : "áreas")}</span>
+                  {tempos.length > 0 && <span>⏱️ {Math.min(...tempos)} → {Math.max(...tempos)} min</span>}
+                  {taxas.length > 0 && <span>💰 {formatarReais(Math.min(...taxas))} → {formatarReais(Math.max(...taxas))}</span>}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* ── PAINEL FLUTUANTE ──────────────────────────────────────────
@@ -1823,8 +1933,10 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         <aside className="fh-entrega-painel">
           <div className="fh-painel-topo">
             <div>
-              <b>Configurar entrega</b>
-              <span>{porBairro ? "Cobrança por bairro" : porDesenho ? "Cobrança por área desenhada" : porRota ? "Cobrança por km percorrido" : "Cobrança por raio"}</span>
+              <b>Entrega</b>
+              {naoSalvo
+                ? <span className="fh-nao-salvo">● Mudanças não salvas — clique em Salvar</span>
+                : <span>{porBairro ? "Cobrança por bairro" : porDesenho ? "Cobrança por área desenhada" : porRota ? "Cobrança por km percorrido" : "Cobrança por raio"}</span>}
             </div>
             {/* Compacto e sempre à vista, no canto do cabeçalho: o que o
                 lojista procura quando termina de mexer. */}
@@ -1869,8 +1981,27 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             </div>
           )}
 
+          {/* As abas não trocam no meio de um desenho: os botões de fechar e
+              desfazer moram na aba em que ele começou. */}
+          <div className="fh-abas" role="tablist" aria-label="Partes da configuração de entrega">
+            {([
+              { chave: "tempo", nome: "Tempo e taxa" },
+              { chave: "cadastro", nome: `${porBairro ? "Bairros" : porDesenho ? "Áreas" : "Faixas"} (${porBairro ? bairros.length : porDesenho ? areasDeEntrega.length : faixas.length})` },
+              { chave: "configurar", nome: "Configurar" },
+            ] as const).map((a) => (
+              <button key={a.chave} type="button" role="tab" aria-selected={aba === a.chave}
+                className={aba === a.chave ? "ativa" : ""}
+                disabled={!!desenhando && aba !== a.chave}
+                title={desenhando && aba !== a.chave ? "Termine ou cancele o desenho primeiro" : undefined}
+                onClick={() => setAba(a.chave)}>
+                {a.nome}
+              </button>
+            ))}
+          </div>
+
           <div className="fh-painel-corpo">
         {/* ── MÉTODO DE COBRANÇA ────────────────────────────────────────── */}
+        {aba === "configurar" && (
         <div style={{ marginBottom: "1rem" }}>
           <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
             Método de cobrança
@@ -1917,6 +2048,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             não são transferidos — confira a tabela antes de salvar.
           </p>
         </div>
+        )}
+
+          {aba === "cadastro" && (<>
 
           {/* ── QUANTO O MOTOBOY RECEBE ──────────────────────────────────
               A regra que decide o pagamento do entregador nos pedidos do
@@ -1997,17 +2131,6 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           {/* Mode 1: KM / ROTA */}
           {porDistancia && (
             <>
-              {/* Adjust all quickly */}
-              <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px 12px", marginBottom: "12px" }}>
-                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Ajuste rápido</div>
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                  <button type="button" onClick={() => setFaixas(p => p.map(z => z.time == null ? z : ({ ...z, time: Math.max(5, z.time - 5) })))} style={adjBtn}>– 5 min</button>
-                  <button type="button" onClick={() => setFaixas(p => p.map(z => z.time == null ? z : ({ ...z, time: z.time + 5 })))} style={adjBtn}>+ 5 min</button>
-                  <button type="button" onClick={() => setFaixas(p => p.map(z => z.fee == null ? z : ({ ...z, fee: Math.max(0, Math.round((z.fee - 1) * 100) / 100) })))} style={adjBtn}>– R$1</button>
-                  <button type="button" onClick={() => setFaixas(p => p.map(z => z.fee == null ? z : ({ ...z, fee: Math.round((z.fee + 1) * 100) / 100 })))} style={adjBtn}>+ R$1</button>
-                </div>
-              </div>
-
               {/* ── AS FAIXAS, UMA POR CARTÃO ──────────────────────────────
                   Chave = id estável da faixa. O rótulo "De X a Y km" sai da
                   faixa de km imediatamente menor, não da posição na lista —
@@ -2088,7 +2211,11 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           {/* Mode 2: NEIGHBORHOOD (Por Bairro) */}
           {porBairro && (
             <>
-              {bairros.map((zona) => {
+              {bairros.length > 8 && (
+                <input type="search" value={buscaDoBairro} onChange={(e) => setBuscaDoBairro(e.target.value)}
+                  placeholder={`Buscar entre os ${bairros.length} bairros`} aria-label="Buscar bairro" className="fh-busca" />
+              )}
+              {bairros.filter((b) => bairroNaBusca(b.name)).map((zona) => {
                 const mudar = (patch: Partial<BairroNaTela>) => setBairros(prev => prev.map((z) => z.id === zona.id ? { ...z, ...patch } : z));
                 const emFoco = zonaEmFoco === zona.id;
                 const nomeComErro = campoComErro(zona.id, "name");
@@ -2110,6 +2237,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                         onChange={e => mudar({ name: e.target.value })}
                         placeholder="Nome do bairro"
                         aria-label="Nome do bairro"
+                        autoFocus={focarNoBairro === zona.id}
                         aria-invalid={nomeComErro || undefined}
                         style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: 8, border: `1px solid ${nomeComErro ? "#DC2626" : "#E2E8F0"}`, background: nomeComErro ? "#FEF2F2" : "#fff", fontSize: "0.86rem", fontWeight: 700, color: "#0F172A", outline: "none", fontFamily: "inherit" }}
                       />
@@ -2259,11 +2387,115 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             </>
           )}
 
+          </>)}
+
+          {aba === "tempo" && (<>
+          {/* ── TEMPO E TAXA, NO DESENHO DO iFOOD ───────────────────────────
+              Ajuste rápido em cima e uma linha por faixa/bairro/área com o
+              tempo e a taxa. São os mesmos números do cadastro: mudar aqui é
+              mudar lá. O bairro tem o seu próprio tempo, como tem a sua taxa —
+              tempo por distância precisaria do ponto do cliente no mapa, e a
+              entrega por bairro existe justamente para não depender dele. */}
+          <div className="fh-tt-metodo">
+            {nomeDoMetodo(currentZoneType)}
+            <button type="button" onClick={() => setAba("configurar")}>Mudar</button>
+          </div>
+
+          <div className="fh-tt-rotulo">Ajuste rápido</div>
+          <div className="fh-tt-ajustes">
+            <button type="button" onClick={() => ajustarTodos("time", -5)} aria-label="Diminuir 5 minutos em todas">− 5 min</button>
+            <button type="button" onClick={() => ajustarTodos("time", 5)} aria-label="Aumentar 5 minutos em todas">+ 5 min</button>
+            <button type="button" onClick={() => ajustarTodos("fee", -1)} aria-label="Diminuir R$ 1 em todas">− R$ 1</button>
+            <button type="button" onClick={() => ajustarTodos("fee", 1)} aria-label="Aumentar R$ 1 em todas">+ R$ 1</button>
+          </div>
+          <p className="fh-tt-ajuda">
+            Muda {porBairro ? `os ${bairros.length} bairros` : porDesenho ? `as ${areasDeEntrega.length} áreas` : `as ${faixas.length} faixas`} de uma vez. Vale para o cliente depois de <b>Salvar</b>.
+          </p>
+
+          {porBairro && bairros.length > 8 && (
+            <input type="search" value={buscaDoBairro} onChange={(e) => setBuscaDoBairro(e.target.value)}
+              placeholder={`Buscar entre os ${bairros.length} bairros`} aria-label="Buscar bairro" className="fh-busca" />
+          )}
+
+          {(() => {
+            type Linha = { id: string; rotulo: string; dica?: string; time: number | null; fee: number | null; mudar: (campo: "time" | "fee", n: number | null) => void };
+            const linhas: Linha[] = porDistancia
+              ? ordenarFaixas(faixas).map((f) => ({
+                  id: f.id,
+                  rotulo: f.km != null ? `${formatarKm(f.km)} km` : "Nova faixa",
+                  dica: f.km != null ? `Até ${formatarKm(f.km)} km${porRota ? " pela rua" : " em linha reta"}` : undefined,
+                  time: f.time, fee: f.fee,
+                  mudar: (campo, n) => updateZone(f.id, campo, n),
+                }))
+              : porBairro
+                // Em ordem alfabética só aqui: no cadastro a ordem é a da loja,
+                // e o bairro novo aparece no fim, onde ela está digitando.
+                ? bairros
+                    .filter((b) => bairroNaBusca(b.name))
+                    .sort((a, b) => a.name.trim().localeCompare(b.name.trim(), "pt-BR"))
+                    .map((b) => ({
+                      id: b.id, rotulo: b.name.trim() || "(sem nome)", time: b.time, fee: b.fee,
+                      mudar: (campo, n) => setBairros((prev) => prev.map((z) => (z.id === b.id ? { ...z, [campo]: n } : z))),
+                    }))
+                : areasDeEntrega.map((a) => ({
+                    id: a.id, rotulo: a.nome, time: a.time, fee: a.fee,
+                    mudar: (campo, n) => setAreasDeEntrega((prev) => prev.map((z) => (z.id === a.id ? { ...z, [campo]: n } : z))),
+                  }));
+            if (linhas.length === 0) {
+              return (
+                <p className="fh-tt-vazio">
+                  {porBairro && buscaDoBairro.trim()
+                    ? <>Nenhum bairro com &quot;{buscaDoBairro.trim()}&quot;.</>
+                    : porDesenho
+                      ? <>Nenhuma área desenhada ainda. Use o botão abaixo para desenhar a primeira no mapa.</>
+                      : <>Nenhuma {unidade} cadastrada ainda.</>}
+                </p>
+              );
+            }
+            return (
+              <div className="fh-tt-tabela" role="table" aria-label="Tempo e taxa de entrega">
+                <div className="fh-tt-cab" role="row">
+                  <span role="columnheader">{porBairro ? "Bairro" : porDesenho ? "Área" : porRota ? "Pela rua" : "Raio"}</span>
+                  <span role="columnheader">Tempo</span>
+                  <span role="columnheader">Taxa</span>
+                </div>
+                {linhas.map((l) => (
+                  <div key={l.id} role="row" className={`fh-tt-linha${zonaEmFoco === l.id ? " foco" : ""}`}
+                    onMouseEnter={() => setZonaEmFoco(l.id)} onMouseLeave={() => setZonaEmFoco(null)}>
+                    <span role="cell" className="fh-tt-nome" title={l.dica || l.rotulo}>{l.rotulo}</span>
+                    <span role="cell" className={`fh-tt-campo${campoComErro(l.id, "time") ? " invalido" : ""}`}>
+                      <CampoNumerico semMoldura valor={l.time} formato="inteiro" rotulo={`Tempo de entrega — ${l.rotulo} (min)`}
+                        invalido={campoComErro(l.id, "time")} onMudar={(n) => l.mudar("time", n)} />
+                      <i>min</i>
+                    </span>
+                    <span role="cell" className={`fh-tt-campo${campoComErro(l.id, "fee") ? " invalido" : ""}`}>
+                      <i>R$</i>
+                      <CampoNumerico semMoldura valor={l.fee} formato="reais" rotulo={`Taxa de entrega — ${l.rotulo} (R$)`}
+                        invalido={campoComErro(l.id, "fee")} onMudar={(n) => l.mudar("fee", n)} />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* O ponto de partida de quem tem muitos bairros (ou faixas) sem tempo. */}
+          {(porBairro ? bairros.length : porDesenho ? areasDeEntrega.length : faixas.length) > 1 && (
+            <div className="fh-tt-todos">
+              <span>Todos com o mesmo tempo:</span>
+              <span className="fh-tt-campo" style={{ width: 92 }}>
+                <CampoNumerico semMoldura valor={tempoParaTodos} onMudar={setTempoParaTodos} formato="inteiro" rotulo="Mesmo tempo para todos (min)" placeholder="40" />
+                <i>min</i>
+              </span>
+              <button type="button" onClick={aplicarTempoParaTodos} disabled={tempoParaTodos == null || tempoParaTodos <= 0} style={adjBtn}>Aplicar</button>
+            </div>
+          )}
+
           {/* ── SIMULAR UM ENDEREÇO ───────────────────────────────────────
               Pergunta ao mesmo /api/delivery-fee do cardápio. Mostra a
               distância (pela rua, estimada ou em linha reta), a faixa, a taxa,
               o repasse e o tempo — e o ponto no mapa. */}
-          <div className="fh-simulador">
+          <div className="fh-simulador" ref={simuladorRef}>
             <div style={{ fontSize: "0.9rem", fontWeight: 800, color: "#0F172A", marginBottom: 4 }}>🧪 Simular um endereço</div>
             <p style={{ margin: "0 0 9px", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45 }}>
               Digite como o cliente digitaria no cardápio{!porBairro && <>, ou <b>toque no mapa</b> onde mora o cliente</>}. A resposta é a mesma que ele veria, com a configuração <b>salva</b>.
@@ -2365,6 +2597,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
             })()}
           </div>
 
+          </>)}
+
+          {aba === "configurar" && (<>
           {/* ── ONDE VOCÊ ENTREGA (contorno por cima do raio/rota/bairro) ──
               O círculo do raio atravessa a rodovia; o contorno diz até onde a
               moto vai. Dentro dele vale a tabela de sempre; fora, a loja não
@@ -2549,6 +2784,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
               </div>
             ))}
           </div>
+          </>)}
 
           </div>
 
@@ -2558,18 +2794,21 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                 Escolha o local da loja no mapa (busque o endereço acima) para poder salvar.
               </p>
             )}
-            {porBairro ? (
-              <button type="button" onClick={() => setBairros(prev => [...prev, { id: novoId("b"), name: "", time: 40, fee: null, motoboyFee: null }])} className="fh-add-principal">
+            {/* Em "Configurar" o rodapé fica só com o aviso: lá os botões de
+                desenho são os de contorno e de área de risco. Adicionar leva
+                ao cadastro, onde se dá nome (e km) ao item novo. */}
+            {aba === "configurar" ? null : porBairro ? (
+              <button type="button" onClick={adicionarBairro} className="fh-add-principal">
                 <Plus size={15} /> Adicionar bairro
               </button>
             ) : porDesenho ? (
               <button type="button" disabled={!!desenhando}
-                onClick={() => { setAlvoDoDesenho("ENTREGA"); setDesenhando([]); }}
+                onClick={() => { setAba("cadastro"); setAlvoDoDesenho("ENTREGA"); setDesenhando([]); }}
                 className="fh-add-principal" style={desenhando ? { opacity: 0.6, cursor: "not-allowed" } : undefined}>
                 <Plus size={15} /> Desenhar área de entrega no mapa
               </button>
             ) : (
-              <button type="button" onClick={addZone} className="fh-add-principal">
+              <button type="button" onClick={() => { addZone(); setAba("cadastro"); }} className="fh-add-principal">
                 <Plus size={15} /> Adicionar faixa
               </button>
             )}
@@ -2671,6 +2910,78 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           font-size: 0.78rem; line-height: 1.45; max-height: 38%; overflow-y: auto;
         }
         .fh-painel-corpo { flex: 1; overflow-y: auto; padding: 14px; }
+        .fh-painel-topo .fh-nao-salvo { color: #B45309; font-weight: 700; }
+        /* ── ABAS (o "Operação atual | Pré-configurações" do iFood) ─────── */
+        .fh-abas {
+          display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid #E2E8F0;
+          background: #fff; flex-shrink: 0; overflow-x: auto; scrollbar-width: none;
+        }
+        .fh-abas::-webkit-scrollbar { display: none; }
+        .fh-abas button {
+          flex: 1 0 auto; padding: 10px 8px 9px; border: none; background: transparent; cursor: pointer;
+          font-family: inherit; font-size: 0.8rem; font-weight: 700; color: #64748B; white-space: nowrap;
+          border-bottom: 2.5px solid transparent; margin-bottom: -1px;
+        }
+        .fh-abas button:hover:not(:disabled) { color: #0F172A; }
+        .fh-abas button.ativa { color: #C92E09; border-bottom-color: #C92E09; }
+        .fh-abas button:disabled { opacity: 0.45; cursor: not-allowed; }
+        .fh-busca {
+          width: 100%; box-sizing: border-box; padding: 8px 11px; margin-bottom: 10px; border-radius: 9px;
+          border: 1px solid #E2E8F0; font-size: 0.82rem; font-family: inherit; outline: none;
+        }
+        .fh-busca:focus { border-color: #94A3B8; }
+        /* ── TEMPO E TAXA ───────────────────────────────────────────────── */
+        .fh-tt-metodo {
+          display: flex; align-items: center; justify-content: space-between; gap: 8px;
+          font-size: 0.76rem; color: #475569; font-weight: 600; margin-bottom: 14px;
+          padding: 7px 10px; border-radius: 9px; background: #F8FAFC; border: 1px solid #F1F5F9;
+        }
+        .fh-tt-metodo button {
+          border: none; background: transparent; color: #C92E09; font-weight: 800; font-size: 0.76rem;
+          cursor: pointer; font-family: inherit; padding: 0;
+        }
+        .fh-tt-rotulo { font-size: 0.82rem; font-weight: 700; color: #0F172A; margin-bottom: 8px; }
+        .fh-tt-ajustes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+        .fh-tt-ajustes button {
+          min-width: 0; padding: 7px 4px; border-radius: 999px; border: 1px solid #D4D4D8;
+          background: #fff; color: #27272A; font-weight: 600; font-size: 0.78rem; cursor: pointer;
+          font-family: inherit; white-space: nowrap; transition: background .12s ease, border-color .12s ease;
+        }
+        .fh-tt-ajustes button:hover { background: #F4F4F5; border-color: #A1A1AA; }
+        .fh-tt-ajustes button:active { transform: scale(0.97); }
+        .fh-tt-ajuda { margin: 7px 0 14px; font-size: 0.72rem; color: #64748B; line-height: 1.4; }
+        .fh-tt-tabela { display: flex; flex-direction: column; }
+        .fh-tt-cab, .fh-tt-linha {
+          display: grid; grid-template-columns: minmax(0, 1fr) 96px 104px; gap: 8px; align-items: center;
+        }
+        .fh-tt-cab {
+          padding: 0 4px 8px; margin-bottom: 4px; border-bottom: 1px solid #E4E4E7;
+          font-size: 0.8rem; font-weight: 700; color: #3F3F46;
+        }
+        .fh-tt-linha { padding: 5px 4px; border-radius: 8px; }
+        .fh-tt-linha.foco { background: #FEF2F2; }
+        .fh-tt-nome {
+          font-size: 0.84rem; font-weight: 600; color: #18181B; min-width: 0;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .fh-tt-campo {
+          display: flex; align-items: stretch; height: 36px; border: 1px solid #D4D4D8; border-radius: 8px;
+          overflow: hidden; background: #fff; box-sizing: border-box;
+        }
+        .fh-tt-campo:focus-within { border-color: #71717A; box-shadow: 0 0 0 3px rgba(113,113,122,0.15); }
+        .fh-tt-campo.invalido { border-color: #DC2626; background: #FEF2F2; }
+        .fh-tt-campo input { flex: 1; padding: 0 6px !important; }
+        .fh-tt-campo i {
+          display: flex; align-items: center; padding: 0 8px; font-style: normal; font-size: 0.74rem;
+          color: #71717A; background: #F4F4F5; flex-shrink: 0;
+        }
+        .fh-tt-campo i:first-child { border-right: 1px solid #E4E4E7; }
+        .fh-tt-campo i:last-child { border-left: 1px solid #E4E4E7; }
+        .fh-tt-todos {
+          display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px;
+          border-top: 1px dashed #E4E4E7; font-size: 0.76rem; color: #334155;
+        }
+        .fh-tt-vazio { font-size: 0.8rem; color: #64748B; text-align: center; padding: 14px 6px; margin: 0; }
         .fh-painel-rodape { padding: 10px 14px 12px; border-top: 1px solid #F1F5F9; background: #fff; flex-shrink: 0; }
         .fh-add-principal {
           width: 100%; padding: 11px; border-radius: 10px; border: none; cursor: pointer;
