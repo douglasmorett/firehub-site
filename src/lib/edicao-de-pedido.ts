@@ -758,3 +758,38 @@ export function contaDoDescontoDaEdicao(entrada: {
   const total = recalcularTotal({ itens: entrada.itens, deliveryFee: entrada.deliveryFee, discountTotal });
   return { base, valor, discountTotal, total, problema };
 }
+
+/**
+ * O `discountMerchant` do pedido depois de a loja dar `valor` de desconto na
+ * edição. É dele que o fechamento de caixa tira a linha "Desconto" do bloco
+ * (produtos + taxa − desconto = total, lib/apuracao-do-turno.ts) e o
+ * relatório de descontos tira a parte da loja. Sem ele, o desconto aparecia
+ * no fechamento como "outras taxas e ajustes".
+ *
+ *   • Pedido com as colunas (iFood/99 com desconto, site): soma.
+ *   • iFood/99 sem as colunas: o desconto antigo pode ter sido da plataforma,
+ *     então só o novo vira da loja — o resto o caixa continua lendo como
+ *     cupom da plataforma (discountTotal − discountMerchant).
+ *   • Os outros (site antigo, balcão, Wabiz, Brendi, Jotajá): todo desconto é
+ *     da loja, o antigo junto — senão a diferença viraria "cupom da plataforma".
+ */
+export function descontoDaLojaDepoisDaEdicao(
+  pedido: {
+    discountTotal?: number | null;
+    discountMerchant?: number | null;
+    discountIfood?: number | null;
+    source?: string | null;
+    openDeliveryChannel?: string | null;
+    openDeliveryOrderId?: string | null;
+    ifoodOrderId?: string | null;
+  },
+  valor: number
+): number {
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  if (pedido.discountMerchant != null || pedido.discountIfood != null) {
+    return centavos(Number(pedido.discountMerchant || 0) + valor);
+  }
+  const chave = canalDoPedido(pedido as any).chave;
+  if (chave === "IFOOD" || chave === "99FOOD") return centavos(valor);
+  return centavos(Number(pedido.discountTotal || 0) + valor);
+}

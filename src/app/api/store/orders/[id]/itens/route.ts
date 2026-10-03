@@ -67,6 +67,7 @@ import {
   empilharEdicao,
   descontoNaEdicao,
   contaDoDescontoDaEdicao,
+  descontoDaLojaDepoisDaEdicao,
   type RegistroDeEdicao,
 } from "@/lib/edicao-de-pedido";
 import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
@@ -307,7 +308,7 @@ async function editarPedidoProprio(entrada: {
     return cancelarPedido(order, operador);
   }
 
-  const comDesconto = gravacaoDoDesconto(order, finais, desconto, false);
+  const comDesconto = gravacaoDoDesconto(order, finais, desconto);
   if (comDesconto && "erro" in comDesconto) return NextResponse.json({ error: comDesconto.erro }, { status: 400 });
 
   const novoTotal = comDesconto
@@ -416,10 +417,8 @@ async function editarPedidoProprio(entrada: {
  * lib/edicao-de-pedido.ts — a mesma conta que a tela mostrou):
  *
  *   • `discountTotal` soma o desconto novo ao que o pedido já tinha;
- *   • `discountMerchant` também, quando o pedido tem as colunas de quem pagou
- *     (iFood/99/site) ou é de parceiro — é a LOJA que dá. Pedido próprio sem
- *     as colunas fica sem: o relatório de descontos já põe tudo na conta da
- *     loja, e preencher só a parte nova deixaria a antiga "sem dono";
+ *   • `discountMerchant` sempre (descontoDaLojaDepoisDaEdicao): é a LOJA que
+ *     dá, e é desse campo que o fechamento de caixa tira a linha "Desconto";
  *   • a observação ganha "[Desconto: 10% (R$ 5,90) — Pedido atrasado]", o
  *     mesmo formato do balcão (lib/desconto-manual.ts): sai na comanda e o
  *     relatório lê o motivo dali.
@@ -428,7 +427,6 @@ function gravacaoDoDesconto(
   order: any,
   itensFinais: { price: number; quantity: number }[],
   desconto: DescontoManual | null,
-  ehMarketplace: boolean,
 ):
   | null
   | { erro: string }
@@ -443,8 +441,6 @@ function gravacaoDoDesconto(
   if (conta.problema) return { erro: conta.problema };
   if (!(conta.valor > 0)) return { erro: "O pedido não tem valor de item para dar desconto." };
 
-  const centavos = (n: number) => Math.round(n * 100) / 100;
-  const temColunas = order.discountMerchant != null || order.discountIfood != null;
   const nota = notaDoDesconto(desconto, conta.base);
   const notes = [String(order.notes || "").trim(), nota].filter(Boolean).join("\n");
   return {
@@ -453,7 +449,7 @@ function gravacaoDoDesconto(
     descricao: `desconto ${descreverDesconto(desconto, conta.base)}`,
     dados: {
       discountTotal: conta.discountTotal,
-      ...(temColunas || ehMarketplace ? { discountMerchant: centavos(Number(order.discountMerchant || 0) + conta.valor) } : {}),
+      discountMerchant: descontoDaLojaDepoisDaEdicao(order, conta.valor),
       notes,
     },
   };
@@ -527,7 +523,7 @@ async function editarItensDoMarketplace(entrada: {
   }
 
   const finais = sobraram.map((i: any) => ({ price: i.price, quantity: i.quantity }));
-  const comDesconto = gravacaoDoDesconto(order, finais, desconto, true);
+  const comDesconto = gravacaoDoDesconto(order, finais, desconto);
   if (comDesconto && "erro" in comDesconto) {
     return { ok: false, resposta: NextResponse.json({ error: comDesconto.erro }, { status: 400 }) };
   }
