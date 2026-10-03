@@ -4165,6 +4165,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     }
                     const atualizados = await recarregarPedidos();
                     const atual = (atualizados || []).find((o: any) => o.id === order.id);
+                    // Só o desconto: a cozinha não tem nada novo, a comanda não sai de novo.
+                    if (resultado?.soDesconto) {
+                      showToast(
+                        `Desconto de R$ ${(Number(resultado.desconto) || 0).toFixed(2).replace(".", ",")} aplicado. Novo total R$ ${(Number(resultado.totalAmount) || 0).toFixed(2).replace(".", ",")}.`,
+                        "#0F766E"
+                      );
+                      return;
+                    }
                     if (resultado?.acrescimo) {
                       showToast(
                         `Acréscimo de ${(Number(resultado.acrescimo.valor) || 0).toFixed(2).replace(".", ",")} lançado em ${resultado.acrescimo.pagamento}.`,

@@ -47,6 +47,8 @@
 import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { ehPagoOnline } from "@/lib/pagamento-na-entrega";
+import { lerPartes } from "@/lib/pagamento-dividido";
+import { problemaDoDesconto, valorDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
 import { ehEntregaEmDomicilio, mercadoriaJaSaiu } from "@/lib/fiscal-momento";
 
 /** A chave da permissão no CSV de `User.permissions` (ver lib/permissions.ts). */
@@ -136,6 +138,8 @@ export type PedidoParaEdicao = {
   /** A nota fiscal do pedido — ver `travaDaNotaFiscal`. Ausente = sem trava. */
   fiscalStatus?: string | null;
   fiscalInfo?: unknown;
+  /** Pagamento dividido (lib/pagamento-dividido.ts) — trava o desconto, ver `descontoNaEdicao`. */
+  paymentMethods?: unknown;
 };
 
 type PedidoComNotaFiscal = {
@@ -666,8 +670,10 @@ export type RegistroDeEdicao = {
    * sobre a NFC-e — é o que libera a trava da nota (`travaDaNotaFiscal`).
    * TIPO: delivery que virou mesa ou balcão (api/store/orders/[id]/tipo,
    * lib/troca-de-tipo.ts); a taxa sai e o total cai junto.
+   * DESCONTO: desconto dado na aba Editar itens (`descontoNaEdicao`), sem
+   * mexer em item; com item junto, a ação é a do item e o desconto vai na descrição.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;
@@ -688,4 +694,67 @@ export function empilharEdicao(
   const anterior = Array.isArray(historicoAtual) ? (historicoAtual as RegistroDeEdicao[]) : [];
   // Teto para o JSONB não crescer sem fim num pedido que alguém edite em loop.
   return [...anterior, registro].slice(-50);
+}
+
+/**
+ * Dar desconto na edição do pedido — o cliente ligou reclamando do atraso, ou
+ * o atendente tirou um item e quer compensar. Pode quem pode editar, mas só
+ * quando o desconto chega ao bolso do cliente: ele ainda vai PAGAR.
+ *
+ *   • Pago no parceiro (`totalMuda` false) ou pago online: o dinheiro já
+ *     entrou. Baixar o total aqui não devolve nada a ninguém, só faz o
+ *     faturamento divergir do que entrou — e o atendente acharia que deu.
+ *   • Pagamento dividido: as partes somam o total antigo. Desconto por cima
+ *     deixaria o caixa esperando mais do que o pedido vale; a divisão se
+ *     refaz depois do desconto, em "Como o cliente pagou".
+ */
+export function descontoNaEdicao(
+  pedido: PedidoParaEdicao | null | undefined,
+  avaliacao: Avaliacao
+): { pode: true } | { pode: false; motivo: string } {
+  if (!pedido || avaliacao.modo === "BLOQUEADO") {
+    return { pode: false, motivo: (pedido && avaliacao.motivo) || "Pedido não encontrado." };
+  }
+  if (avaliacao.totalMuda === false) {
+    const canal = avaliacao.canal || "parceiro";
+    return {
+      pode: false,
+      motivo: `O cliente já pagou no ${canal}: desconto aqui não devolve dinheiro a ele. Quem devolve é o ${canal}.`,
+    };
+  }
+  if (ehPagoOnline(pedido as any)) {
+    return { pode: false, motivo: "O cliente já pagou online: desconto agora não devolve o dinheiro a ele." };
+  }
+  if (lerPartes(pedido.paymentMethods).length > 1) {
+    return {
+      pode: false,
+      motivo: "Pagamento dividido: passe para \"Uma forma só\" em \"Como o cliente pagou\", dê o desconto e divida de novo.",
+    };
+  }
+  return { pode: true };
+}
+
+/**
+ * A conta do desconto da edição — a tela prevê com ela e a API grava com ela.
+ *
+ * A porcentagem vale sobre os ITENS que ficam no pedido, já tirado o desconto
+ * que ele tinha (cupom, desconto do balcão): "10%" é 10% do que o cliente ia
+ * pagar pela comida. A taxa de entrega fica fora, como no balcão. O desconto
+ * novo SOMA ao que já existia, e nunca passa do valor dos itens.
+ */
+export function contaDoDescontoDaEdicao(entrada: {
+  itens: { price: number; quantity: number }[];
+  discountTotal?: number | null;
+  deliveryFee?: number | null;
+  desconto: DescontoManual;
+}): { base: number; valor: number; discountTotal: number; total: number; problema: string } {
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  const soma = entrada.itens.reduce((acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 0), 0);
+  const descontoAtual = Number(entrada.discountTotal || 0);
+  const base = centavos(Math.max(0, soma - descontoAtual));
+  const problema = problemaDoDesconto(entrada.desconto, base);
+  const valor = problema ? 0 : valorDoDesconto(entrada.desconto, base);
+  const discountTotal = centavos(descontoAtual + valor);
+  const total = recalcularTotal({ itens: entrada.itens, deliveryFee: entrada.deliveryFee, discountTotal });
+  return { base, valor, discountTotal, total, problema };
 }

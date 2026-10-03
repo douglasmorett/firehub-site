@@ -21,6 +21,9 @@
  *     no parceiro, o total fica em pé de propósito; pago na entrega, o total
  *     cai e é o novo valor que o entregador cobra. O acréscimo lá continua
  *     virando um pedido colado, com forma de pagamento própria.
+ *   • Dá para dar DESCONTO na mesma edição (% ou R$, com motivo — o mesmo do
+ *     balcão), desde que o cliente ainda vá pagar: pago online ou no parceiro,
+ *     o botão diz por que não (`descontoNaEdicao`).
  *
  * Quem decide o que pode é lib/edicao-de-pedido.ts — a MESMA função que a API
  * consulta. Esta tela não tem régua própria de status nem de canal: se ela
@@ -28,7 +31,8 @@
  */
 
 import { useState, useMemo, useEffect } from "react";
-import { avaliarEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
+import { avaliarEdicao, contaDoDescontoDaEdicao, descontoNaEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
+import { MOTIVOS_COMUNS, type DescontoManual, type TipoDeDesconto } from "@/lib/desconto-manual";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import ComboModal from "@/components/customer/ComboModal";
 
@@ -75,6 +79,15 @@ const FORMAS_DE_PAGAMENTO = ["Dinheiro", "Pix", "Débito", "Crédito"];
 
 const fmt = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
 
+/** "5,90", "R$ 10", "15%" → número. Texto, não type="number": o Chrome pt-BR lê "1.200,00" como 1,2. */
+function lerValor(texto: string): number {
+  let t = String(texto || "").replace(/r\$|%/gi, "").replace(/\s+/g, "");
+  if (!t) return 0;
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  const n = Number(t);
+  return Number.isFinite(n) ? n : NaN;
+}
+
 export default function EditarPedidoPainel({
   pedido,
   operador,
@@ -85,7 +98,7 @@ export default function EditarPedidoPainel({
   operador: { role?: string | null; permissions?: string | null };
   aoFechar: () => void;
   /** Chamada depois que o servidor confirmou. Recarrega a lista e reimprime. */
-  aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number }) => void;
+  aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number; soDesconto?: boolean; desconto?: number }) => void;
 }) {
   const avaliacao = useMemo(() => avaliarEdicao(pedido, operador), [pedido, operador]);
   const modo: ModoDeEdicao = avaliacao.modo;
@@ -110,6 +123,13 @@ export default function EditarPedidoPainel({
   const [abrindoBusca, setAbrindoBusca] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+
+  // Desconto da edição. Fechado por padrão: a maioria das edições é só item.
+  const [descontoAberto, setDescontoAberto] = useState(false);
+  const [tipoDoDesconto, setTipoDoDesconto] = useState<TipoDeDesconto>("percent");
+  const [valorDoDescontoTexto, setValorDoDescontoTexto] = useState("");
+  const [motivoDoDesconto, setMotivoDoDesconto] = useState("");
+  const podeDesconto = useMemo(() => descontoNaEdicao(pedido, avaliacao), [pedido, avaliacao]);
 
   // O canal de preço DESTE pedido. Precisa ir na busca do cardápio: sem
   // `?canal=`, /api/admin/menu-products devolve o `price` cru, e nas lojas que
@@ -158,6 +178,25 @@ export default function EditarPedidoPainel({
   const taxa = Number(pedido.deliveryFee) || 0;
   const desconto = Number(pedido.discountTotal) || 0;
 
+  // A conta do desconto novo é a do servidor (contaDoDescontoDaEdicao), sobre
+  // os itens que FICAM no pedido. No marketplace o acréscimo vira pedido
+  // colado, então não entra na base.
+  const valorDigitado = lerValor(valorDoDescontoTexto);
+  const descontoNovo: DescontoManual | null =
+    descontoAberto && podeDesconto.pode && valorDoDescontoTexto.trim()
+      ? { tipo: tipoDoDesconto, valor: Number.isFinite(valorDigitado) ? valorDigitado : 0, motivo: motivoDoDesconto.trim() }
+      : null;
+  const contaDoDesconto = useMemo(() => {
+    if (!descontoNovo) return null;
+    const ficam = itensOriginais
+      .filter((i) => !removidos.has(i.id))
+      .map((i) => ({ price: i.price, quantity: quantidades[i.id] ?? i.quantity }));
+    const novos = modo === "MARKETPLACE" ? [] : acrescimos.map((a) => ({ price: a.precoUnitario, quantity: a.quantity }));
+    return contaDoDescontoDaEdicao({ itens: [...ficam, ...novos], discountTotal: desconto, deliveryFee: taxa, desconto: descontoNovo });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [descontoNovo?.tipo, descontoNovo?.valor, descontoNovo?.motivo, itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo]);
+  const descontoValido = !!contaDoDesconto && !contaDoDesconto.problema && contaDoDesconto.valor > 0;
+
   // O mesmo `itens - desconto + taxa` do servidor. Repetido aqui de propósito e
   // só para PREVER o número na tela; quem grava é a API, que recalcula do zero.
   const totalPrevisto = useMemo(() => {
@@ -170,23 +209,28 @@ export default function EditarPedidoPainel({
       // pedido colado, e é esse valor que o cliente paga por fora.
       return Math.round(somaNovos * 100) / 100;
     }
+    if (descontoValido) return contaDoDesconto!.total;
     return Math.round(Math.max(0, somaOriginais + somaNovos - desconto + taxa) * 100) / 100;
-  }, [itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo]);
+  }, [itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo, descontoValido, contaDoDesconto]);
 
   /** O total do PEDIDO depois de tirar item — só existe quando ele acompanha. */
   const totalDoPedidoPrevisto = useMemo(() => {
     const soma = itensOriginais
       .filter((i) => !removidos.has(i.id))
       .reduce((s, i) => s + i.price * (quantidades[i.id] ?? i.quantity), 0);
+    if (descontoValido) return contaDoDesconto!.total;
     return Math.round(Math.max(0, soma - desconto + taxa) * 100) / 100;
-  }, [itensOriginais, removidos, quantidades, desconto, taxa]);
+  }, [itensOriginais, removidos, quantidades, desconto, taxa, descontoValido, contaDoDesconto]);
 
   const totalAtual = Number(pedido.totalAmount) || 0;
   const sobrouAlgum = itensOriginais.some((i) => !removidos.has(i.id));
   const mexeuNosOriginais =
     removidos.size > 0 ||
     itensOriginais.some((i) => (quantidades[i.id] ?? i.quantity) !== i.quantity);
-  const mudouAlgo = acrescimos.length > 0 || mexeuNosOriginais;
+  const mudouOsItens = acrescimos.length > 0 || mexeuNosOriginais;
+  const mudouAlgo = mudouOsItens || descontoValido;
+  /** Só o desconto: a cozinha não tem o que refazer, a comanda não sai de novo. */
+  const soDesconto = descontoValido && !mudouOsItens;
 
   if (modo === "BLOQUEADO") {
     return (
@@ -202,7 +246,14 @@ export default function EditarPedidoPainel({
   }
 
   async function salvar() {
-    if (salvando || !mudouAlgo) return;
+    if (salvando) return;
+    // Desconto digitado com problema ("maior que o pedido"): não salva o resto
+    // calado — o atendente acharia que deu o desconto.
+    if (descontoNovo && contaDoDesconto?.problema) {
+      setErro(contaDoDesconto.problema);
+      return;
+    }
+    if (!mudouAlgo) return;
 
     // Tirar tudo = cancelar. Vale um aviso separado, porque a consequência é
     // outra: o pedido sai do painel e o estoque volta.
@@ -253,6 +304,9 @@ export default function EditarPedidoPainel({
       corpo.itens = itensOriginais
         .filter((i) => !removidos.has(i.id) && (quantidades[i.id] ?? i.quantity) !== i.quantity)
         .map((i) => ({ itemId: i.id, quantity: quantidades[i.id] }));
+      // O servidor recalcula o desconto do zero: vai o pedido (tipo, valor,
+      // motivo), nunca os reais prontos.
+      if (descontoValido && descontoNovo) corpo.desconto = descontoNovo;
 
       const res = await fetch(`/api/store/orders/${pedido.id}/itens`, {
         method: "PATCH",
@@ -571,6 +625,102 @@ export default function EditarPedidoPainel({
         </div>
       )}
 
+      {/* ── Desconto ──────────────────────────────────────────────────── */}
+      <div style={{ marginTop: "12px" }}>
+        {!podeDesconto.pode ? (
+          <div style={{ fontSize: "0.78rem", color: "#64748B", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "8px 10px", lineHeight: 1.4 }}>
+            🏷️ <strong style={{ color: "#475569" }}>Sem desconto aqui:</strong> {podeDesconto.motivo}
+          </div>
+        ) : !descontoAberto ? (
+          <button type="button" onClick={() => setDescontoAberto(true)} style={{ ...botaoSecundario, marginBottom: 0 }}>
+            🏷️ Dar desconto
+          </button>
+        ) : (
+          <div style={{ border: "1px solid #FDE68A", background: "#FFFBEB", borderRadius: "10px", padding: "10px 12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span style={{ fontWeight: 800, fontSize: "0.84rem", color: "#92400E" }}>🏷️ Desconto</span>
+              <button
+                type="button"
+                onClick={() => { setDescontoAberto(false); setValorDoDescontoTexto(""); setMotivoDoDesconto(""); setErro(""); }}
+                style={{ border: "none", background: "none", color: "#92400E", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", textDecoration: "underline", fontFamily: "inherit" }}
+              >
+                Sem desconto
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: "6px", alignItems: "stretch" }}>
+              <div style={{ display: "inline-flex", background: "#FEF3C7", borderRadius: "8px", padding: "2px" }}>
+                {(["percent", "valor"] as TipoDeDesconto[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTipoDoDesconto(t)}
+                    aria-pressed={tipoDoDesconto === t}
+                    style={{
+                      border: "none",
+                      borderRadius: "6px",
+                      padding: "6px 12px",
+                      fontWeight: 800,
+                      fontSize: "0.84rem",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      background: tipoDoDesconto === t ? "#FFF" : "transparent",
+                      color: "#92400E",
+                      boxShadow: tipoDoDesconto === t ? "0 1px 2px rgba(146,64,14,.2)" : "none",
+                    }}
+                  >
+                    {t === "percent" ? "%" : "R$"}
+                  </button>
+                ))}
+              </div>
+              <input
+                autoFocus
+                inputMode="decimal"
+                value={valorDoDescontoTexto}
+                onChange={(e) => { setValorDoDescontoTexto(e.target.value); setErro(""); }}
+                placeholder={tipoDoDesconto === "percent" ? "Ex.: 10" : "Ex.: 5,00"}
+                aria-label={tipoDoDesconto === "percent" ? "Desconto em porcentagem" : "Desconto em reais"}
+                style={{ flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: "8px", border: "1px solid #FCD34D", fontSize: "0.9rem", fontWeight: 700, fontFamily: "inherit", background: "#FFF" }}
+              />
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "8px" }}>
+              {MOTIVOS_COMUNS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMotivoDoDesconto((atual) => (atual === m ? "" : m))}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: "999px",
+                    border: `1px solid ${motivoDoDesconto === m ? "#B45309" : "#FDE68A"}`,
+                    background: motivoDoDesconto === m ? "#FDE68A" : "#FFF",
+                    color: "#92400E",
+                    fontWeight: 700,
+                    fontSize: "0.74rem",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            <input
+              value={motivoDoDesconto}
+              onChange={(e) => setMotivoDoDesconto(e.target.value.slice(0, 60))}
+              placeholder="Motivo (sai na comanda e no relatório)"
+              style={{ width: "100%", marginTop: "6px", padding: "6px 10px", borderRadius: "8px", border: "1px solid #FDE68A", fontSize: "0.8rem", fontFamily: "inherit", background: "#FFF", boxSizing: "border-box" }}
+            />
+            {contaDoDesconto && (
+              <div style={{ marginTop: "8px", fontSize: "0.8rem", color: contaDoDesconto.problema ? "#B71C1C" : "#92400E", fontWeight: 700 }}>
+                {contaDoDesconto.problema
+                  ? contaDoDesconto.problema
+                  : `− ${fmt(contaDoDesconto.valor)} sobre ${fmt(contaDoDesconto.base)} de itens${taxa > 0 ? " (a taxa de entrega fica fora)" : ""}`}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* ── A conta, na cara ──────────────────────────────────────────── */}
       <div style={{ marginTop: "14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "10px 12px", fontSize: "0.84rem" }}>
         {ehMarketplace ? (
@@ -584,7 +734,10 @@ export default function EditarPedidoPainel({
               rotulo={totalAcompanha ? `Total do pedido (cobrar na entrega)` : `Pedido do ${avaliacao.canal || "parceiro"} (já pago lá)`}
               valor={fmt(totalAtual)}
             />
-            {totalAcompanha && mexeuNosOriginais && (
+            {descontoValido && (
+              <Linha rotulo={`Desconto novo${motivoDoDesconto.trim() ? ` (${motivoDoDesconto.trim()})` : ""}`} valor={`− ${fmt(contaDoDesconto!.valor)}`} />
+            )}
+            {totalAcompanha && (mexeuNosOriginais || descontoValido) && (
               <Linha rotulo="Novo total a cobrar" valor={fmt(totalDoPedidoPrevisto)} destaque />
             )}
             {!totalAcompanha && mexeuNosOriginais && (
@@ -598,6 +751,9 @@ export default function EditarPedidoPainel({
           <>
             {taxa > 0 && <Linha rotulo="Taxa de entrega (mantida)" valor={fmt(taxa)} />}
             {desconto > 0 && <Linha rotulo="Desconto do pedido (mantido)" valor={`− ${fmt(desconto)}`} />}
+            {descontoValido && (
+              <Linha rotulo={`Desconto novo${motivoDoDesconto.trim() ? ` (${motivoDoDesconto.trim()})` : ""}`} valor={`− ${fmt(contaDoDesconto!.valor)}`} />
+            )}
             <Linha rotulo="Total hoje" valor={fmt(totalAtual)} />
             <Linha
               rotulo={!sobrouAlgum && acrescimos.length === 0 ? "Pedido será CANCELADO" : "Novo total"}
@@ -635,12 +791,14 @@ export default function EditarPedidoPainel({
             fontFamily: "inherit",
           }}
         >
-          {salvando ? "Salvando..." : "Salvar e reimprimir comanda"}
+          {salvando ? "Salvando..." : soDesconto ? "Salvar desconto" : "Salvar e reimprimir comanda"}
         </button>
       </div>
 
       <div style={{ marginTop: "8px", fontSize: "0.73rem", color: "#64748B", textAlign: "center", lineHeight: 1.4 }}>
-        A comanda sai de novo marcada como 2ª via, para a cozinha descartar a anterior.
+        {soDesconto
+          ? "Só o desconto: a cozinha não muda, então a comanda não sai de novo. Reimprima pela aba Comanda se o entregador precisar do valor novo."
+          : "A comanda sai de novo marcada como 2ª via, para a cozinha descartar a anterior."}
       </div>
 
       {/* A mesma janela do cardápio e da mesa: pergunta os sabores, aplica a

@@ -15,6 +15,11 @@
  *            tirar o último item não vira cancelamento — cancelar pedido de
  *            parceiro é pelo botão que avisa o parceiro.
  *
+ *        { desconto: { tipo: "percent" | "valor", valor, motivo } }
+ *          → desconto dado na edição, sozinho ou junto com os itens. Soma ao
+ *            desconto que o pedido tinha, vale sobre os itens (sem a taxa) e
+ *            só quando o cliente ainda vai pagar (`descontoNaEdicao`).
+ *
  *        { acrescentar: [{ menuProductId, quantity, notes, comboSelections }], pagamento }
  *          → acrescenta item. Em pedido próprio o item entra no MESMO pedido e
  *            o total sobe. Em pedido de marketplace nasce um pedido COLADO
@@ -60,8 +65,11 @@ import {
   avaliarEdicao,
   recalcularTotal,
   empilharEdicao,
+  descontoNaEdicao,
+  contaDoDescontoDaEdicao,
   type RegistroDeEdicao,
 } from "@/lib/edicao-de-pedido";
+import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
 
 /** Os campos do pedido que a decisão e o recálculo precisam. */
 const CAMPOS_DO_PEDIDO = {
@@ -89,6 +97,12 @@ const CAMPOS_DO_PEDIDO = {
   customerAddress: true,
   deliveryType: true,
   editHistory: true,
+  // O desconto da edição: soma ao que o pedido tinha, a parte da loja vai para
+  // `discountMerchant` (relatório de descontos) e o motivo para a observação.
+  notes: true,
+  discountMerchant: true,
+  discountIfood: true,
+  paymentMethods: true,
   // Nota autorizada trava a edição (travaDaNotaFiscal, em avaliarEdicao).
   fiscalStatus: true,
   fiscalInfo: true,
@@ -146,9 +160,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       : [];
 
     const querMexerNosOriginais = itens.length > 0 || removerItemIds.length > 0;
+    const desconto = descontoDoCorpo(body?.desconto);
 
-    if (!querMexerNosOriginais && acrescentar.length === 0) {
+    if (!querMexerNosOriginais && acrescentar.length === 0 && !desconto) {
       return NextResponse.json({ error: "Nada para alterar" }, { status: 400 });
+    }
+    if (desconto) {
+      const pode = descontoNaEdicao(order as any, avaliacao);
+      if (!pode.pode) return NextResponse.json({ error: pode.motivo }, { status: 403 });
     }
 
     // ── Marketplace: as duas metades, cada uma no seu lugar ──────────────
@@ -159,13 +178,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // caixa —, então quando vêm as duas coisas na mesma chamada, a remoção é
     // gravada primeiro e o colado nasce depois.
     if (avaliacao.modo === "MARKETPLACE") {
-      if (querMexerNosOriginais) {
+      if (querMexerNosOriginais || desconto) {
         const resposta = await editarItensDoMarketplace({
           order,
           operador,
           itens,
           removerItemIds,
           totalMuda: avaliacao.totalMuda === true,
+          desconto,
         });
         // Erro (nada válido, ou tirou tudo): não segue para o acréscimo.
         if (!resposta.ok) return resposta.resposta;
@@ -189,7 +209,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // acrescentasse um pastel na mesma edição via a tela prever um total e o
     // pedido fechar noutro, com a Coca ainda lá. Uma transação só também deixa o
     // total ser recalculado uma vez, do estado final.
-    return await editarPedidoProprio({ order, lojaId, operador, itens, removerItemIds, acrescentar });
+    return await editarPedidoProprio({ order, lojaId, operador, itens, removerItemIds, acrescentar, desconto });
   } catch (error: any) {
     console.error("[Editar Pedido PATCH]", error);
     return NextResponse.json({ error: "Erro ao editar o pedido" }, { status: 500 });
@@ -226,8 +246,9 @@ async function editarPedidoProprio(entrada: {
   itens: { itemId: string; quantity: number }[];
   removerItemIds: string[];
   acrescentar: Acrescimo[];
+  desconto: DescontoManual | null;
 }) {
-  const { order, lojaId, operador } = entrada;
+  const { order, lojaId, operador, desconto } = entrada;
 
   // Só itens DESTE pedido: id de item de outro pedido no corpo não alcança nada.
   const idsDoPedido = new Set(order.items.map((i: any) => i.id));
@@ -244,7 +265,8 @@ async function editarPedidoProprio(entrada: {
     novosItens = montados.itens;
   }
 
-  if (remover.length === 0 && mudar.length === 0 && novosItens.length === 0) {
+  const mexeuNosItens = remover.length > 0 || mudar.length > 0 || novosItens.length > 0;
+  if (!mexeuNosItens && !desconto) {
     return NextResponse.json({ error: "Nenhum item válido para alterar" }, { status: 400 });
   }
 
@@ -285,11 +307,16 @@ async function editarPedidoProprio(entrada: {
     return cancelarPedido(order, operador);
   }
 
-  const novoTotal = recalcularTotal({
-    itens: finais,
-    deliveryFee: order.deliveryFee,
-    discountTotal: order.discountTotal,
-  });
+  const comDesconto = gravacaoDoDesconto(order, finais, desconto, false);
+  if (comDesconto && "erro" in comDesconto) return NextResponse.json({ error: comDesconto.erro }, { status: 400 });
+
+  const novoTotal = comDesconto
+    ? comDesconto.total
+    : recalcularTotal({
+        itens: finais,
+        deliveryFee: order.deliveryFee,
+        discountTotal: order.discountTotal,
+      });
 
   const nomeDoItem = (id: string) => {
     const it = order.items.find((i: any) => i.id === id);
@@ -302,6 +329,7 @@ async function editarPedidoProprio(entrada: {
       return `${nomeDoItem(m.itemId)} ${antes}x → ${m.quantity}x`;
     }),
     ...novosItens.map((i) => `+${i.quantity}x ${comEscolhas(i)}`),
+    ...(comDesconto ? [comDesconto.descricao] : []),
   ].join(", ");
 
   const registro: RegistroDeEdicao = {
@@ -312,7 +340,9 @@ async function editarPedidoProprio(entrada: {
         ? "REMOVEU"
         : mudar.length > 0
           ? "MUDOU_QTD"
-          : "ACRESCENTOU",
+          : novosItens.length > 0
+            ? "ACRESCENTOU"
+            : "DESCONTO",
     descricao,
     totalAntes: order.totalAmount || 0,
     totalDepois: novoTotal,
@@ -332,10 +362,17 @@ async function editarPedidoProprio(entrada: {
       where: { id: order.id },
       data: {
         totalAmount: novoTotal,
+        ...(comDesconto ? comDesconto.dados : {}),
         editHistory: empilharEdicao(order.editHistory, registro) as any,
       },
     });
   });
+
+  // Só o desconto: os itens são os mesmos, não há estoque a refazer.
+  if (!mexeuNosItens) {
+    console.log(`[Editar Pedido] ${order.id}: ${descricao}, total ${order.totalAmount} → ${novoTotal}, por ${registro.quem}`);
+    return NextResponse.json({ success: true, totalAmount: novoTotal, registro, soDesconto: true, desconto: comDesconto!.valor });
+  }
 
   // ── ESTOQUE: DEVOLVE TUDO E BAIXA O QUE SOBROU ──────────────────────────
   //
@@ -371,7 +408,55 @@ async function editarPedidoProprio(entrada: {
     `[Editar Pedido] ${order.id}: ${remover.length} removido(s), ${mudar.length} qtd alterada(s), ` +
     `total ${order.totalAmount} → ${novoTotal}, por ${registro.quem}`
   );
-  return NextResponse.json({ success: true, totalAmount: novoTotal, registro });
+  return NextResponse.json({ success: true, totalAmount: novoTotal, registro, ...(comDesconto ? { desconto: comDesconto.valor } : {}) });
+}
+
+/**
+ * O que o desconto da edição grava (contaDoDescontoDaEdicao em
+ * lib/edicao-de-pedido.ts — a mesma conta que a tela mostrou):
+ *
+ *   • `discountTotal` soma o desconto novo ao que o pedido já tinha;
+ *   • `discountMerchant` também, quando o pedido tem as colunas de quem pagou
+ *     (iFood/99/site) ou é de parceiro — é a LOJA que dá. Pedido próprio sem
+ *     as colunas fica sem: o relatório de descontos já põe tudo na conta da
+ *     loja, e preencher só a parte nova deixaria a antiga "sem dono";
+ *   • a observação ganha "[Desconto: 10% (R$ 5,90) — Pedido atrasado]", o
+ *     mesmo formato do balcão (lib/desconto-manual.ts): sai na comanda e o
+ *     relatório lê o motivo dali.
+ */
+function gravacaoDoDesconto(
+  order: any,
+  itensFinais: { price: number; quantity: number }[],
+  desconto: DescontoManual | null,
+  ehMarketplace: boolean,
+):
+  | null
+  | { erro: string }
+  | { total: number; valor: number; descricao: string; dados: Record<string, unknown> } {
+  if (!desconto) return null;
+  const conta = contaDoDescontoDaEdicao({
+    itens: itensFinais,
+    discountTotal: order.discountTotal,
+    deliveryFee: order.deliveryFee,
+    desconto,
+  });
+  if (conta.problema) return { erro: conta.problema };
+  if (!(conta.valor > 0)) return { erro: "O pedido não tem valor de item para dar desconto." };
+
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  const temColunas = order.discountMerchant != null || order.discountIfood != null;
+  const nota = notaDoDesconto(desconto, conta.base);
+  const notes = [String(order.notes || "").trim(), nota].filter(Boolean).join("\n");
+  return {
+    total: conta.total,
+    valor: conta.valor,
+    descricao: `desconto ${descreverDesconto(desconto, conta.base)}`,
+    dados: {
+      discountTotal: conta.discountTotal,
+      ...(temColunas || ehMarketplace ? { discountMerchant: centavos(Number(order.discountMerchant || 0) + conta.valor) } : {}),
+      notes,
+    },
+  };
 }
 
 // ── Marketplace: tirar item e mudar quantidade, sem mexer no repasse ───────
@@ -403,8 +488,11 @@ async function editarItensDoMarketplace(entrada: {
   itens: { itemId: string; quantity: number }[];
   removerItemIds: string[];
   totalMuda: boolean;
+  desconto?: DescontoManual | null;
 }): Promise<{ ok: boolean; resposta: NextResponse }> {
   const { order, operador, totalMuda } = entrada;
+  // Só chega com desconto quando totalMuda: o PATCH recusa o do pedido pago no parceiro.
+  const desconto = totalMuda ? entrada.desconto || null : null;
 
   const idsDoPedido = new Set(order.items.map((i: any) => i.id));
   const remover = entrada.removerItemIds.filter((rid) => idsDoPedido.has(rid));
@@ -413,7 +501,8 @@ async function editarItensDoMarketplace(entrada: {
     .map((m) => ({ itemId: String(m.itemId), quantity: Math.floor(Number(m.quantity)) }))
     .filter((m) => Number.isFinite(m.quantity) && m.quantity >= 1 && m.quantity <= 99);
 
-  if (remover.length === 0 && mudar.length === 0) {
+  const mexeuNosItens = remover.length > 0 || mudar.length > 0;
+  if (!mexeuNosItens && !desconto) {
     return {
       ok: false,
       resposta: NextResponse.json({ error: "Nenhum item válido para alterar" }, { status: 400 }),
@@ -437,13 +526,21 @@ async function editarItensDoMarketplace(entrada: {
     };
   }
 
-  const novoTotal = totalMuda
-    ? recalcularTotal({
-        itens: sobraram.map((i: any) => ({ price: i.price, quantity: i.quantity })),
-        deliveryFee: order.deliveryFee,
-        discountTotal: order.discountTotal,
-      })
-    : Number(order.totalAmount) || 0;
+  const finais = sobraram.map((i: any) => ({ price: i.price, quantity: i.quantity }));
+  const comDesconto = gravacaoDoDesconto(order, finais, desconto, true);
+  if (comDesconto && "erro" in comDesconto) {
+    return { ok: false, resposta: NextResponse.json({ error: comDesconto.erro }, { status: 400 }) };
+  }
+
+  const novoTotal = comDesconto
+    ? comDesconto.total
+    : totalMuda
+      ? recalcularTotal({
+          itens: finais,
+          deliveryFee: order.deliveryFee,
+          discountTotal: order.discountTotal,
+        })
+      : Number(order.totalAmount) || 0;
 
   const nomeDoItem = (id: string) => order.items.find((i: any) => i.id === id)?.productName || "item";
   const descricao =
@@ -453,12 +550,13 @@ async function editarItensDoMarketplace(entrada: {
         const antes = order.items.find((i: any) => i.id === m.itemId)?.quantity;
         return `${nomeDoItem(m.itemId)} ${antes}x → ${m.quantity}x`;
       }),
+      ...(comDesconto ? [comDesconto.descricao] : []),
     ].join(", ") + (totalMuda ? "" : " (pago na plataforma: total mantido)");
 
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem: nomeDoOperador(operador),
-    acao: remover.length > 0 ? "REMOVEU" : "MUDOU_QTD",
+    acao: remover.length > 0 ? "REMOVEU" : mudar.length > 0 ? "MUDOU_QTD" : "DESCONTO",
     descricao,
     totalAntes: order.totalAmount || 0,
     totalDepois: novoTotal,
@@ -475,10 +573,19 @@ async function editarItensDoMarketplace(entrada: {
       where: { id: order.id },
       data: {
         ...(totalMuda ? { totalAmount: novoTotal } : {}),
+        ...(comDesconto ? comDesconto.dados : {}),
         editHistory: empilharEdicao(order.editHistory, registro) as any,
       },
     });
   });
+
+  if (!mexeuNosItens) {
+    console.log(`[Editar Pedido] marketplace ${order.id}: ${descricao}, total ${order.totalAmount} → ${novoTotal}, por ${registro.quem}`);
+    return {
+      ok: true,
+      resposta: NextResponse.json({ success: true, totalAmount: novoTotal, registro, soDesconto: true, desconto: comDesconto!.valor }),
+    };
+  }
 
   import("@/lib/stock")
     .then(async ({ restoreStockForOrder, deductStockForOrder }) => {
@@ -500,7 +607,10 @@ async function editarItensDoMarketplace(entrada: {
 
   return {
     ok: true,
-    resposta: NextResponse.json({ success: true, totalAmount: novoTotal, totalMantido: !totalMuda, registro }),
+    resposta: NextResponse.json({
+      success: true, totalAmount: novoTotal, totalMantido: !totalMuda, registro,
+      ...(comDesconto ? { desconto: comDesconto.valor } : {}),
+    }),
   };
 }
 
