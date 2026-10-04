@@ -780,7 +780,7 @@ function ComoFunciona({ percentuais, papeis, temCarteira }: { percentuais: Recor
     <section className="pp-painel pp-como" aria-labelledby="pp-como-titulo">
       <h2 id="pp-como-titulo" className="pp-h2"><CircleDollarSign size={18} aria-hidden /> Como a sua comissão é calculada</h2>
       <ul>
-        <li>A comissão é uma parte da <strong>mensalidade</strong> que a loja paga à FireHub: 2% do que ela vende no mês (1% até setembro de 2026), no mínimo R$ 100 e no máximo R$ 400.</li>
+        <li>A comissão é uma parte da <strong>mensalidade</strong> que a loja paga à FireHub: 2% do que ela vende no mês (1% nas vendas até 03/10/2026), no mínimo R$ 100 e no máximo R$ 400.</li>
         {papeis.map((p) => (
           <li key={p}><strong>{PAPEL[p].nome}:</strong> {PAPEL[p].explica(percentuais[p])}.</li>
         ))}

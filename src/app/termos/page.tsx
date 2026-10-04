@@ -18,7 +18,7 @@ export default function TermosPage() {
           e paga ao final do mês proporcionalmente ao quanto faturou <strong>dentro da plataforma FireHub</strong>.
         </p>
         <ul style={{ lineHeight: 2, paddingLeft: "1.5rem", fontSize: "0.92rem" }}>
-          <li><strong>Taxa:</strong> 2% do faturamento mensal via FireHub (vale a partir das vendas de outubro de 2026; até setembro de 2026 a taxa era 1%)</li>
+          <li><strong>Taxa:</strong> 2% do faturamento mensal via FireHub, a partir de 04/10/2026 (as vendas até 03/10/2026 são cobradas a 1%)</li>
           <li><strong>Mínimo:</strong> R$ 100,00/mês — <strong>aplicado caso haja vendas no mês ou uso ativo de ferramentas (ex: Chatbot de IA conectado, Cardápio Digital ativo)</strong></li>
           <li><strong>Máximo (teto):</strong> R$ 400,00/mês (para faturamentos ≥ R$ 20.000)</li>
           <li><strong>Sem vendas e sem uso = sem cobrança:</strong> Se você não faturou NADA no mês e não usou ativamente as ferramentas da plataforma, o valor é R$ 0,00</li>
