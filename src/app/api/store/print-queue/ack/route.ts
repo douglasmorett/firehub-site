@@ -19,7 +19,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { lojasQueEstePcAtende } from "@/lib/lojas-no-mesmo-pc-no-banco";
+import { lojasQueEstePcConfirma } from "@/lib/lojas-no-mesmo-pc-no-banco";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     // Assistente de UMA loja as comandas das irmãs, e é ele que confirma todas
     // com o franchiseeId dele. Sem valer para a conta, a comanda da irmã nunca
     // seria carimbada e sairia de novo a cada reinício (lib/lojas-no-mesmo-pc.ts).
-    const lojas = await lojasQueEstePcAtende(franchiseeId);
+    const lojas = await lojasQueEstePcConfirma(franchiseeId);
     const daLoja = lojas.length > 1 ? { in: lojas } : franchiseeId;
     const [pedidos, avulsas] = await Promise.all([
       prisma.customerOrder.updateMany({

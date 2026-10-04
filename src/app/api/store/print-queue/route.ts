@@ -114,14 +114,19 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const pedida = new URL(req.url).searchParams.get("franchiseeId");
   const lojas = pedida ? await lojasQueEstePcAtende(pedida) : [];
-  if (!pedida || lojas.length <= 1) return filaDaLoja(req, pedida, false);
+  if (!pedida || lojas.length === 0) return filaDaLoja(req, pedida, false);
+  // O caso de sempre: só a loja que o Assistente perguntou.
+  if (lojas.length === 1 && lojas[0] === pedida) return filaDaLoja(req, pedida, false);
+  // Uma loja só, mas OUTRA: o painel selecionou essa loja e o Assistente ainda
+  // pergunta pela que foi configurada nele (lib/lojas-no-mesmo-pc.ts).
+  if (lojas.length === 1) return filaDaLoja(req, lojas[0], true);
 
-  // As irmãs primeiro e sem registrar o endereço do Assistente: quem diz "este
-  // PC é da loja X" (lembrarAssistente) é a loja que o painel configurou.
-  const irmas = lojas.filter((id) => id !== pedida);
+  // A primeira da lista é a principal; só quem o Assistente perguntou registra
+  // o endereço dele (lembrarAssistente): "este PC é da loja X" é a loja que o
+  // painel configurou, não a que está sendo servida de carona.
   const [principal, ...dasIrmas] = await Promise.all([
-    filaDaLoja(req, pedida, false),
-    ...irmas.map((id) => filaDaLoja(req, id, true).catch(() => null)),
+    filaDaLoja(req, lojas[0], lojas[0] !== pedida),
+    ...lojas.slice(1).map((id) => filaDaLoja(req, id, id !== pedida).catch(() => null)),
   ]);
   // Falha na loja principal é falha da consulta, como sempre foi. Falha numa
   // irmã não derruba a impressão da principal: só deixa a irmã para o próximo poll.

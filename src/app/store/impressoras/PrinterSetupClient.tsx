@@ -277,11 +277,15 @@ export default function PrinterSetupClient({
       // O mesmo vale para "não imprimir as bebidas da mesa" (engrenagem das
       // Mesas › Impressão, lib/bebida-da-mesa.ts): ligada lá enquanto esta aba
       // estava aberta, voltaria desligada ao salvar aqui.
+      // A loja escolhida no painel (`selecaoDoPainel`) é gravada pela troca de
+      // loja (api/store/switch). Mandá-la de volta daqui, lida no carregamento,
+      // desfaria a escolha feita depois (lib/lojas-no-mesmo-pc.ts).
       const {
         andares: _andaresDaTelaDeMesas,
         mesaSemBebidaNaComanda: _bebidaDaTelaDeMesas,
+        selecaoDoPainel: _selecaoDoPainel,
         ...semAndares
-      } = config as PrinterConfig & { andares?: unknown; mesaSemBebidaNaComanda?: unknown };
+      } = config as PrinterConfig & { andares?: unknown; mesaSemBebidaNaComanda?: unknown; selecaoDoPainel?: unknown };
       const res = await fetch("/api/store/printer-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -731,8 +735,8 @@ export default function PrinterSetupClient({
               <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>🏪 Imprimir os pedidos de todas as suas lojas neste computador</p>
               <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0", lineHeight: 1.45 }}>
                 {config.lojasDaContaNesteComputador
-                  ? `Ligado: as ${lojasNaConta} lojas da conta imprimem aqui, mesmo com o painel aberto em só uma delas.`
-                  : `Desligado: só a loja aberta no painel imprime. Ligue se as ${lojasNaConta} lojas usam este mesmo computador e impressora. Se cada loja tem o seu computador, deixe desligado.`}
+                  ? `Ligado: quem manda é a loja escolhida no topo do painel. Com uma loja escolhida, imprime só ela; em "Todas as lojas", imprime as ${lojasNaConta}.`
+                  : `Desligado: imprime só a loja que foi configurada neste computador. Ligue se as ${lojasNaConta} lojas usam este mesmo computador e impressora. Se cada loja tem o seu computador, deixe desligado.`}
               </p>
             </div>
             <button
