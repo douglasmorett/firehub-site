@@ -17,7 +17,7 @@ import {
 } from "@/lib/entrega-do-robo";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { avaliarCupom, descreverBeneficio } from "@/lib/cupons";
+import { avaliarCupom, cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
 import { fatosDoCupom, hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { codigoCompacto, cupomCitadoPeloCliente, cupomDesteClienteParaOPrompt, cuponsDoRobo, cuponsParaTentar, mensagemDoCupom } from "@/lib/cupom-do-robo";
@@ -32,14 +32,17 @@ import { precoMinimoDoProduto, pisoDoPreco, completarEscolhasExigidas, precoVari
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, motivoForaDoCardapio, textoDoHorario } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
+import { registroDeOpcoes } from "./opcoes-repetidas";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { ehNumeroDoDono } from "./numeros-do-dono";
-import { inicioDoExpedienteDaLoja } from "./fuso";
+import { horaDaLoja, inicioDoExpedienteDaLoja } from "./fuso";
+import { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, mensagemDeBoasVindasDoDia } from "./saudacao-do-dia";
 import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
 import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmergencia } from "./status-para-o-cliente";
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
+import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
 import { DOCUMENTO_NAO_PEDIDO, documentoNoPedido, formasEmTexto, type DocumentoNoPedido } from "./fiscal-modo";
 import { normalizarConfigFiscal } from "./fiscal-config";
 import { lerDocumentoDoCliente } from "./documento-do-cliente";
@@ -119,11 +122,16 @@ export async function processChatbotAI(
   audioData?: { base64: string; mimeType: string },
   pushName?: string,
   /**
-   * O que a mensagem trouxe além do texto. `localizacao` = o ponto que o
-   * cliente mandou pelo 📎 NESTA mensagem (lib/localizacao-do-whatsapp.ts);
-   * a de mensagens anteriores é relida do histórico.
+   * O que a mensagem trouxe além do texto.
+   * - `localizacao`: o ponto que o cliente mandou pelo 📎 NESTA mensagem
+   *   (lib/localizacao-do-whatsapp.ts); a de mensagens anteriores é relida do
+   *   histórico.
+   * - `ultimaMensagemDoClienteEm`: quando o cliente mandou a mensagem ANTERIOR
+   *   a esta (ms). Vem do anti-loop do webhook (`mensagemAnteriorEm`); null =
+   *   nunca falou, undefined = não se sabe (simulador do painel). Decide se esta
+   *   é a primeira mensagem do dia (lib/saudacao-do-dia.ts).
    */
-  extras?: { localizacao?: LocalizacaoVigente | null }
+  extras?: { localizacao?: LocalizacaoVigente | null; ultimaMensagemDoClienteEm?: number | null }
 ) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -186,6 +194,64 @@ export async function processChatbotAI(
   let clientPhoneDigits = "";
   if (remoteJid) {
     clientPhoneDigits = remoteJid.split("@")[0].replace(/\D/g, "");
+  }
+
+  // ── "OI" NA PRIMEIRA MENSAGEM DO DIA GANHA O LINK NA HORA ──────────────────
+  //
+  // Decidido AQUI, antes de carregar cardápio e pedidos e antes de chamar o
+  // modelo: um "oi" não tem pergunta para o modelo responder, e a regra 5 do
+  // prompt (não empurrar link em cortesia) fazia o link só aparecer na terceira
+  // mensagem. O dono pediu o contrário (24/09/2026): cumprimento + link de cara,
+  // e a conversa segue fluida — a resposta entra no histórico como qualquer
+  // outra, e na mensagem seguinte o modelo continua de onde parou.
+  //
+  // É também onde mora o custo: 69% das respostas do robô (03/10/2026, 3 dias,
+  // todas as lojas) eram de conversas que começaram só com um "oi". Quem pega
+  // o link e pede pelo site não gasta IA; quem quer pedir por aqui responde e
+  // o modelo atende normalmente.
+  //
+  // Fica de fora: o dono (modo gerencial não vende), áudio (não se sabe o que
+  // foi dito), loja sem link e quem já falou hoje (lib/saudacao-do-dia.ts).
+  const ehODonoNaSaudacao = ehNumeroDoDono(user.notificationPhone, user.chatbotConfig, clientPhoneDigits);
+  const primeiraMensagemDoDia =
+    !ehODonoNaSaudacao &&
+    ehPrimeiraMensagemDoDia({
+      ultimaMensagemEm: extras?.ultimaMensagemDoClienteEm,
+      historico: history,
+      inicioDoDia: inicioDoExpedienteDaLoja(user.storeTimezone),
+    });
+  const linkDaSaudacao = linkDoCardapioDaLoja(user);
+  if (primeiraMensagemDoDia && linkDaSaudacao && !audioData && ehSoUmaSaudacao(message)) {
+    const cfg = (user.chatbotConfig as any) || {};
+    // O cupom de primeiro pedido vai junto do "oi" — só se a loja tem um
+    // cadastrado, ativo e no prazo, e este número nunca pediu (a mesma régua do
+    // checkout). Falhar a consulta só tira a linha do cupom.
+    let cupomDoPrimeiroPedido: { code: string; beneficio: string } | null = null;
+    try {
+      const primeiro = cupomDePrimeiroPedido(user.storeCoupons);
+      if (
+        primeiro &&
+        !cupomVenceu(primeiro, hojeDaLoja(user.storeTimezone)) &&
+        clientPhoneDigits.length >= 10 &&
+        !(await jaPediuPeloSite(targetFranchiseeId, clientPhoneDigits))
+      ) {
+        cupomDoPrimeiroPedido = { code: primeiro.code, beneficio: descreverBeneficio(primeiro) };
+      }
+    } catch (e: any) {
+      console.error("[Chatbot AI] Saudação: não consegui conferir o cupom de primeiro pedido:", e?.message || e);
+    }
+    return {
+      reply: mensagemDeBoasVindasDoDia({
+        primeiroNome: getFirstName(pushName),
+        nomeDoAtendente: cfg.agentName,
+        nomeDaLoja: user.storeName,
+        horaLocal: horaDaLoja(user.storeTimezone),
+        link: linkDaSaudacao,
+        personalidade: cfg.personality,
+        cupomDePrimeiroPedido: cupomDoPrimeiroPedido,
+      }),
+      saudacaoDoDia: true as const,
+    };
   }
 
   // Extrai todas as sequências numéricas (3 a 12 dígitos) presentes na mensagem e no histórico recente
@@ -605,6 +671,8 @@ export async function processChatbotAI(
   };
 
   const seenProductKeys = new Set<string>();
+  // A lista de opções igual em vários produtos vai uma vez só (lib/opcoes-repetidas.ts).
+  const listasDeOpcoes = registroDeOpcoes();
 
   // Itens que só existem como OPÇÃO dentro de um combo (o "Frango" do combo
   // de pastel, por exemplo) são cadastrados soltos e com preço zero. Se
@@ -796,7 +864,7 @@ export async function processChatbotAI(
           return add > 0 ? `${nome} +R$ ${add.toFixed(2).replace(".", ",")}` : `${nome} (sem custo)`;
         });
 
-        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${opcoes.join(" | ")}${avisoDePausa}`);
+        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${listasDeOpcoes.marcar(`${opcoes.join(" | ")}${avisoDePausa}`)}`);
       }
 
       const line =
@@ -827,15 +895,29 @@ export async function processChatbotAI(
     }
 
     if (isTomorrow && isPromoItem) {
-      const line = `- "${rawCleanName}" (${p.category}): R$ ${p.price.toFixed(2)}${p.description ? ` — ${p.description}` : ""}`;
+      // Só nome e preço: a descrição já está na lista de hoje (quando vale
+      // hoje também) e, para "tem promoção amanhã?", nome e preço respondem.
+      // Na R&D a descrição repetida aqui eram 2,6 mil caracteres por mensagem.
+      const line = `- "${rawCleanName}" (${p.category}): R$ ${p.price.toFixed(2)}`;
       tomorrowPromotions.push(line);
     }
   });
 
-  const weeklyScheduleSummary = Object.entries(dayScheduleMap)
-    .filter(([_, items]) => items.length > 0)
-    .map(([dCode, items]) => `- ${DAY_NAMES[dCode] || dCode}: ${items.join(", ")}`)
+  // Uma linha por PROMOÇÃO, com os dias dela — não uma linha por dia com a
+  // lista inteira. Promoção que vale a semana toda aparecia 7 vezes: no
+  // Showrrascão eram 7 mil caracteres relidos a cada mensagem (03/10/2026).
+  const diasDaPromocao = new Map<string, string[]>();
+  for (const [dCode, items] of Object.entries(dayScheduleMap)) {
+    for (const item of items) diasDaPromocao.set(item, [...(diasDaPromocao.get(item) || []), dCode]);
+  }
+  const weeklyScheduleSummary = [...diasDaPromocao.entries()]
+    .map(([item, dias]) => `- ${item}: ${dias.length === 7 ? "todos os dias" : dias.map((d) => DAY_NAMES[d] || d).join(", ")}`)
     .join("\n");
+
+  const {
+    blocos: [combosDoPrompt, avulsosDoPrompt],
+    secao: secaoDeListasDeOpcoes,
+  } = listasDeOpcoes.resolver([availableCombos, availableSingleProducts]);
 
   const catalogSummary = `=== 🌟 PROMOÇÕES DE HOJE (${currentDayName}) ===
 ${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma promoção cadastrada para hoje."}
@@ -848,11 +930,11 @@ ${tomorrowPromotions.length > 0 ? tomorrowPromotions.join("\n") : "- Nenhuma pro
 ${weeklyScheduleSummary || "- Sem cronograma de promoções cadastrado."}
 (SE O CLIENTE PERGUNTAR EM QUAIS DIAS TEM PROMOÇÃO, CONSULTE ESTA TABELA REAL DA LOJA E RESPONDA COM TOTAL CERTEZA.)
 
-=== COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
-${availableCombos.length > 0 ? availableCombos.join("\n") : "[NENHUM COMBO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER COMBOS QUE NÃO ESTEJAM AQUI!]"}
+${secaoDeListasDeOpcoes ? `${secaoDeListasDeOpcoes}\n\n` : ""}=== COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
+${combosDoPrompt.length > 0 ? combosDoPrompt.join("\n") : "[NENHUM COMBO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER COMBOS QUE NÃO ESTEJAM AQUI!]"}
 
 === PRODUTOS E ITENS AVULSOS DISPONÍVEIS HOJE (${currentDayName}) ===
-${availableSingleProducts.length > 0 ? availableSingleProducts.join("\n") : "[NENHUM ITEM AVULSO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER ITENS QUE NÃO ESTEJAM AQUI!]"}
+${avulsosDoPrompt.length > 0 ? avulsosDoPrompt.join("\n") : "[NENHUM ITEM AVULSO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER ITENS QUE NÃO ESTEJAM AQUI!]"}
 
 === PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER E PROIBIDO DAR O DESCONTO HOJE! ===
 ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
@@ -1294,7 +1376,7 @@ REGRAS ABSOLUTAS:
          prefere vender pelo site: lá o cliente vê foto, escolhe as opções e o pedido cai
          certinho, sem erro de digitação.
      2º) Se o cliente disser que NÃO quer o site e prefere pedir por aqui mesmo pelo WhatsApp:
-         ${cardapioArquivoUrl ? "escreva a marca [[ENVIAR_CARDAPIO]] no fim da sua resposta — o sistema envia a foto/PDF do cardapio automaticamente. Nesse caso nao descreva o cardapio inteiro: diga so algo curto como Claro! Segue nosso cardapio e coloque a marca." : "a loja nao tem arquivo de cardapio carregado, entao liste os itens por escrito com os precos exatos, como voce ja faz."}
+         ${cardapioArquivoUrl ? "escreva a marca [[ENVIAR_CARDAPIO]] no fim da sua resposta — o sistema envia a foto/PDF do cardapio automaticamente. Nesse caso nao descreva o cardapio inteiro: diga so algo curto como Claro! Segue nosso cardapio e coloque a marca." : "a loja nao tem arquivo de cardapio carregado. NAO despeje o cardapio inteiro numa mensagem: pergunte o que ele quer ver (lanches, pizzas, bebidas, combos...) e liste SO aquela parte, no maximo uns 10 itens, um por linha, com os precos exatos. Se ele quiser mais, mande a proxima parte na mensagem seguinte."}
      3º) NUNCA mande a marca [[ENVIAR_CARDAPIO]] antes de ter oferecido o link do site.
 6. REGRAS DE CONSULTA E STATUS DE PEDIDO DO DIA (JOTAJA, IFOOD, SITE E WHATSAPP):
    - Você tem acesso EM TEMPO REAL aos pedidos do dia cadastrados no sistema da loja (Jotajá, iFood, Site e WhatsApp) listados no campo "PEDIDOS RECENTES DO CLIENTE / PEDIDOS ATIVOS DO DIA" abaixo.
@@ -1666,14 +1748,32 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
       // a cada mensagem e só então caía no prompt mínimo, que responde sem
       // cardápio, sem cupom e sem histórico. Parecia "IA burra", era modelo morto.
       // Verificado em 23/08/2026 contra a API: destes, só o 2.5-flash continua de pé.
-      const modelNames = ["gemini-3.6-flash", "gemini-2.5-flash"];
-      
+      //
+      // Desde 03/10/2026 a conversa comum vai ao 3.1 Flash-Lite (~4x mais
+      // barato) e só o fechamento de pedido ao 3.6 — lib/modelo-do-robo.ts
+      // explica a divisão e o A/B que a sustenta. O caro é a reserva do barato.
+      const escolhaDoModelo = escolherModeloDoRobo({
+        temPedidoEmAndamento: Boolean(memoriaDoPedido),
+        mensagem: message || "",
+        historico: Array.isArray(history) ? history : [],
+        temAudio: Boolean(audioData?.base64),
+        anotaPedido: aiOrderingEnabled,
+      });
+      const modelNames = escolhaDoModelo.modelo === MODELO_BARATO
+        ? [MODELO_BARATO, MODELO_DE_PEDIDO]
+        : [MODELO_DE_PEDIDO, "gemini-2.5-flash"];
+
       let generatedText = "";
-      
+
       for (let idx = 0; idx < modelNames.length; idx++) {
         const mName = modelNames[idx];
+        const ehOBarato = mName === MODELO_BARATO;
         const baseTimeout = audioData?.base64 ? 35000 : 12000;
-        const modelTimeout = idx === 0 ? baseTimeout : (baseTimeout - 5000); 
+        // O Lite responde em ~1,2 s (A/B de 03/10/2026): 8 s parado é falha, e
+        // o 3.6 que vem depois dele precisa do prazo cheio (~4,5 s pensando).
+        const modelTimeout = ehOBarato
+          ? baseTimeout - 4000
+          : idx === 0 || modelNames[0] === MODELO_BARATO ? baseTimeout : (baseTimeout - 5000);
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), modelTimeout);
@@ -1682,7 +1782,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
             model: mName,
             contents: fullContents,
             config: {
-              systemInstruction: systemPrompt,
+              systemInstruction: ehOBarato ? systemPrompt + LEMBRETE_DO_MODELO_BARATO : systemPrompt,
               // ── TEMPERATURA: 0.9 era de escrever texto, não de copiar preço ──
               //
               // A REGRA DE FERRO manda copiar o número que está escrito no
@@ -1715,7 +1815,13 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
               // fim. O MÉDIO manteve tudo isso certo. Fica explícito para ninguém
               // trocar sem repetir o teste. O 2.5 de reserva não aceita
               // `thinkingLevel` — fica no padrão dele.
-              ...(mName.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM } } : {}),
+              //
+              // O Flash-Lite vai no MÍNIMO: no A/B de 03/10/2026 o LOW custou
+              // 28% a mais e anotou o pedido do mesmo jeito (10 de 15 com o
+              // lembrete, nos dois) — e pedido nem é com ele.
+              ...(ehOBarato
+                ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } }
+                : mName.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM } } : {}),
               abortSignal: controller.signal,
             }
           });
@@ -1732,7 +1838,12 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                 mName,
                 usage.promptTokenCount || usage.inputTokens || 0,
                 usage.candidatesTokenCount || usage.outputTokens || 0,
-                response?.text ? { remoteJid } : { remoteJid, respostaVazia: true },
+                {
+                  remoteJid,
+                  // Por que foi ao 3.6 ("pedido em andamento", "endereço"…); nulo = conversa comum no Lite.
+                  rota: escolhaDoModelo.motivo,
+                  ...(response?.text ? {} : { respostaVazia: true }),
+                },
                 { thoughtsTokens: usage.thoughtsTokenCount, cachedTokens: usage.cachedContentTokenCount }
               );
             }

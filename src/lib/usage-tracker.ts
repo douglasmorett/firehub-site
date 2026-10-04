@@ -75,6 +75,9 @@ const COTACAO_DOLAR = 5.5;
 const PRECO_GEMINI_USD: Record<string, { entrada: number; saida: number; cache: number }> = {
   "gemini-3.6-flash": { entrada: 0.75, saida: 3.75, cache: 0.075 },
   "gemini-2.5-flash": { entrada: 0.3, saida: 2.5, cache: 0.03 },
+  // Conversa comum do robô desde 03/10/2026 (lib/modelo-do-robo.ts). O Google
+  // prevê desligar em 07/05/2027 e indica o 3.5 Flash-Lite (0,30 / 2,50 / 0,03).
+  "gemini-3.1-flash-lite": { entrada: 0.25, saida: 1.5, cache: 0.025 },
 };
 
 function precoDoModelo(model: string) {

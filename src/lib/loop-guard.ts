@@ -192,7 +192,16 @@ export function prazoDaTrava(motivo?: string | null): number {
 const BOT_SENT_WINDOW = 10;
 
 export type LoopDecision =
-  | { action: "allow" }
+  | {
+      action: "allow";
+      /**
+       * Quando esta conversa recebeu a mensagem ANTERIOR (ms), ou null se
+       * nunca. É o `lastMessageAt` de antes desta mensagem: depois dela ele já
+       * é "agora" e não serve para dizer se o cliente já falou hoje
+       * (lib/saudacao-do-dia.ts). Ausente quando a avaliação falhou.
+       */
+      mensagemAnteriorEm?: number | null;
+    }
   | { action: "ignore"; reason: string }
   | { action: "degrade"; reason: string; message: string };
 
@@ -463,7 +472,7 @@ async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
     lastMessageAt: new Date(now),
   });
 
-  return { action: "allow" };
+  return { action: "allow", mensagemAnteriorEm: lastAt > 0 ? lastAt : null };
 }
 
 async function markDegraded(userId: string, remoteJid: string, reason: string, now: number) {
