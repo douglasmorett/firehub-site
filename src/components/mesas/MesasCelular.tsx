@@ -204,6 +204,7 @@ const CSS = `
 .mc-mesa small { font-size:11px; color:var(--suave); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mc-mesa.ocupada { background:var(--ocupada); border-color:var(--ocupada); color:#fff; }
 .mc-mesa.ocupada small { color:#FFEDD5; }
+.mc-mesa small.mc-mesa-cliente { font-size:12px; font-weight:800; color:inherit; }
 .mc-mesa.minha { box-shadow:0 0 0 3px #FDBA74; }
 .mc-mesa[aria-pressed="true"] { background:var(--ok); border-color:var(--ok); color:#fff; }
 .mc-mesa[aria-pressed="true"] small { color:#CCFBF1; }
@@ -933,18 +934,27 @@ export default function MesasCelular({
                       key={m.id}
                       className={`mc-mesa${s ? " ocupada" : ""}${minha ? " minha" : ""}`}
                       onClick={() => entrarNaMesa(m)}
-                      aria-label={`Mesa ${m.number}${s ? `, ocupada, ${fmt(s.totalAmount)}` : ", livre"}`}
+                      aria-label={`Mesa ${m.number}${s ? `, ocupada${s.customerName ? `, ${s.customerName}` : ""}${s.waiterName ? `, garçom ${s.waiterName}` : ""}, ${fmt(s.totalAmount)}` : ", livre"}`}
                     >
                       <b>{String(m.number).padStart(2, "0")}</b>
                       {s ? (
-                        mostrarTotais ? (
-                          <>
-                            <small style={{ fontWeight: 700, fontSize: 12 }}>{fmt(s.totalAmount)}</small>
-                            <small>{tempoDesde(s.openedAt)}</small>
-                          </>
-                        ) : (
-                          <small>{s.customerName || "ocupada"}</small>
-                        )
+                        <>
+                          {/* Cliente e garçom à vista, como no cartão da versão
+                              completa (Ragnar, 03/10/2026): antes o nome só
+                              aparecia no "Sem total" e o garçom nunca. */}
+                          {s.customerName && <small className="mc-mesa-cliente">{s.customerName}</small>}
+                          {s.waiterName && <small>👤 {s.waiterName}</small>}
+                          {/* O quadrado tem ~100 px no celular: cabem 3 linhas
+                              pequenas. Com cliente E garçom, o tempo fica de fora. */}
+                          {mostrarTotais ? (
+                            <>
+                              <small style={{ fontWeight: 700, fontSize: 12 }}>{fmt(s.totalAmount)}</small>
+                              {!(s.customerName && s.waiterName) && <small>{tempoDesde(s.openedAt)}</small>}
+                            </>
+                          ) : (
+                            !s.customerName && !s.waiterName && <small>ocupada</small>
+                          )}
+                        </>
                       ) : (
                         <small>{m.label || "livre"}</small>
                       )}
