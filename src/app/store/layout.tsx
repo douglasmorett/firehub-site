@@ -21,6 +21,9 @@ import CentralDeTutoriais from "@/components/CentralDeTutoriais";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { TutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import { tutoriaisEnviados } from "@/lib/tutoriais-no-servidor";
+import AceiteDosTermos from "@/components/termos/AceiteDosTermos";
+import { aceitouVersaoAtual } from "@/lib/termos-de-uso";
+import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
 
 export const dynamic = "force-dynamic";
 
@@ -146,6 +149,16 @@ export default async function StoreLayout({ children }: { children: React.ReactN
 
   const isBlocked = pendingPayment?.isOverdue === true;
 
+  // === TERMOS DE USO: o dono aceita a versão em vigor antes de usar o painel ===
+  // Só o dono (sem ownerId): funcionário não assina pela empresa, e o suporte
+  // que entrou pelo "Acessar" do admin não aceita pela loja. Ver
+  // lib/termos-de-uso.ts — erro de banco ali responde "já aceitou".
+  const ehDonoDaConta = user?.role === "FRANCHISEE" && !user?.ownerId && !(session.user as any)?.impersonatedBy;
+  const precisaAceitarTermos = ehDonoDaConta && user?.id ? !(await aceitouVersaoAtual(user.id)) : false;
+  // Conta criada depois desta versão (pelo robô ou pelo admin) nunca viu termo
+  // nenhum: o título não pode dizer "atualizamos".
+  const contaNovaParaOsTermos = !!user?.createdAt && new Date(user.createdAt) >= new Date(`${VERSAO_DOS_TERMOS}T00:00:00-03:00`);
+
   return (
     <CartProvider>
       <TutoriaisEnviados ids={tutoriaisEnviados()}>
@@ -204,7 +217,8 @@ export default async function StoreLayout({ children }: { children: React.ReactN
             aprender o painel é a loja, não quem a está atendendo. */}
         {user?.id && (
           <CentralDeTutoriais
-            abrirSozinha={isFranqueado && !(session.user as any)?.impersonatedBy}
+            // Com a tela dos Termos aberta, a central espera o próximo acesso.
+            abrirSozinha={isFranqueado && !(session.user as any)?.impersonatedBy && !precisaAceitarTermos}
             usuarioId={user.id}
             // Conta antiga guarda o nome da LOJA em `name`: aí a saudação vai sem nome.
             primeiroNome={user.name && user.name.trim() !== (storeOwner?.storeName || user.storeName || "").trim() ? user.name.trim().split(/\s+/)[0] : ""}
@@ -296,6 +310,13 @@ export default async function StoreLayout({ children }: { children: React.ReactN
             </div>
             </AvisoDispensavel>
           </HideOnCompras>
+        )}
+
+        {precisaAceitarTermos && (
+          <AceiteDosTermos
+            nomeDaLoja={storeOwner?.storeName || user?.storeName || session.user?.name || "sua loja"}
+            primeiraVez={contaNovaParaOsTermos}
+          />
         )}
 
         {/* Tela de Bloqueio por Inadimplência — permite o login, mas bloqueia o uso até pagar */}
