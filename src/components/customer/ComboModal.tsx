@@ -4,6 +4,7 @@ import { X, Plus, Minus, Check } from "lucide-react";
 import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela, opcaoDisponivelNaTela, grupoAguardaEscolha } from "@/lib/preco-combo";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import { itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
+import { ehPerguntaDeMeio } from "@/lib/meio-a-meio";
 
 export type ComboGroupData = {
   id: string;
@@ -231,10 +232,14 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
   const itensVisiveis = (group: ComboGroupData) =>
     (group.items || []).filter(i => i.menuProduct?.active !== false && opcaoDisponivelNaTela(i as any, selections));
   // E a pergunta que só existe num tamanho (a borda da Lapastine, uma por
-  // tamanho) espera o tamanho ser escolhido.
+  // tamanho) espera o tamanho ser escolhido. O meio a meio NÃO espera: é ele
+  // que diz ao cliente que a pizza tem dois sabores. Escondido até tocar na
+  // Grande, a La Bonelli (03/10/2026) achou que o meio a meio não existia;
+  // escolhendo o tamanho sem meio (Broto), ele some pela regra de cima.
   const grupoEscondido = (group: ComboGroupData) => {
     const ativos = (group.items || []).filter(i => i.menuProduct?.active !== false);
-    return ativos.length > 0 && (itensVisiveis(group).length === 0 || grupoAguardaEscolha(ativos as any, selections));
+    return ativos.length > 0 && (itensVisiveis(group).length === 0
+      || (!ehPerguntaDeMeio(group.title) && grupoAguardaEscolha(ativos as any, selections)));
   };
   const gruposNaTela = groups.filter(g => !grupoEscondido(g));
 
