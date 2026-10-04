@@ -72,9 +72,24 @@ import { TETO_DE_SPLIT } from "@/lib/parceiro/regras";
  * trocou de estado. É a mesma exigência de prova que o DRE passou a fazer
  * depois do saldo fantasma de R$ 342,35 da Hakim Centro.
  */
+/*
+ * ── CANCELADO CONTA DESDE 04/10/2026 ────────────────────────────────────────
+ *
+ * Dono, 04/10/2026: "pedidos cancelados contam para a soma do valor pago da
+ * mensalidade, pois passaram pelo sistema e geraram custo" (robô, impressão,
+ * integração, servidor). Vale a partir da mesma virada dos 2%
+ * (VIRADA_DOS_2_POR_CENTO), que é a data avisada nos Termos: cancelado de
+ * antes dela continua fora — cobrar para trás uma regra que a loja não
+ * aceitou é o que vira contestação. Rascunho do robô e totem abandonado
+ * continuam fora: não chegaram a ser pedido.
+ */
 const VENDAS_QUE_CONTAM = {
-  status: { notIn: ["CANCELADO", "CRIANDO_IA"] as string[] },
+  status: { notIn: ["CRIANDO_IA"] as string[] },
   NOT: { status: "AGUARDANDO_PAGAMENTO", paymentPaidAt: null },
+  OR: [
+    { status: { not: "CANCELADO" } },
+    { createdAt: { gte: VIRADA_DOS_2_POR_CENTO } },
+  ],
 };
 
 /**

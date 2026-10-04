@@ -7,8 +7,8 @@
  *  - 2% do faturamento, no mínimo R$100 e no máximo R$400/mês
  *    (o teto chega em R$20.000 de faturamento)
  *  - TODO pedido gravado no sistema conta: cardápio digital, WhatsApp, mesa,
- *    balcão, totem e as integrações de iFood, 99Food e Jotajá. Só fica de fora
- *    o que está CANCELADO. Ver a base de cálculo em lib/billing.ts.
+ *    balcão, totem e as integrações de iFood, 99Food e Jotajá. Desde 04/10/2026
+ *    o CANCELADO também conta. Ver a base de cálculo em lib/billing.ts.
  *  - 1ª cobrança: após trial de 15 dias
  *  - Abatimento automático dos pagamentos online recebidos
  *  - Se saldo insuficiente: gera link boleto/PIX dia 1 do mês seguinte

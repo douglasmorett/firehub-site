@@ -6,7 +6,7 @@ import {
   BarChart2, ArrowUpRight, ArrowDownRight, Download, Filter,
   Package, Truck, CreditCard, Percent, Users, Plus, Trash2, Building2
 } from "lucide-react";
-import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, percentualDaVenda } from "@/lib/firehub-billing";
+import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, percentualDaVenda, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { isExemptAccount } from "@/lib/billing";
 import InvoicesClient from "@/components/InvoicesClient";
 import ContasAPagarClient, { type PayableDTO } from "./ContasAPagarClient";
@@ -287,6 +287,16 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
     orders.filter(o => {
       const d = new Date(o.createdAt);
       return d >= from && d <= to && o.status !== "CANCELADO";
+    }), [orders, from, to]);
+
+  // Os pedidos que entram na MENSALIDADE — não é a receita do DRE (`filtered`).
+  // Desde 04/10/2026 o cancelado também conta (passou pelo sistema e gerou
+  // custo); a regra do servidor é VENDAS_QUE_CONTAM em lib/billing.ts.
+  const pedidosDaCobranca = useMemo(() =>
+    orders.filter(o => {
+      const d = new Date(o.createdAt);
+      if (d < from || d > to || o.status === "CRIANDO_IA") return false;
+      return o.status !== "CANCELADO" || d >= VIRADA_DOS_2_POR_CENTO;
     }), [orders, from, to]);
 
   // ===== DESPESAS LANÇADAS À MÃO =====
@@ -1606,7 +1616,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
               {/* Tabela de Pedidos Integrantes */}
               <h4 style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", marginBottom: "0.75rem" }}>
-                📦 Pedidos Integrantes da Cobrança ({filtered.length} pedidos)
+                📦 Pedidos Integrantes da Cobrança ({pedidosDaCobranca.length} pedidos)
               </h4>
 
               <div style={{ border: "1px solid #E2E8F0", borderRadius: "12px", overflow: "hidden" }}>
@@ -1622,14 +1632,14 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.length === 0 ? (
+                    {pedidosDaCobranca.length === 0 ? (
                       <tr>
                         <td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "#94A3B8" }}>
                           Nenhum pedido no período selecionado.
                         </td>
                       </tr>
                     ) : (
-                      filtered.slice(0, 50).map((o: any) => {
+                      pedidosDaCobranca.slice(0, 50).map((o: any) => {
                         // A comissão é sobre o BRUTO (o que o cliente pagou +
                         // cupom da loja + cupom do marketplace) — a mesma base
                         // que lib/billing.ts usa. Mostrar o líquido aqui fazia
@@ -1641,6 +1651,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                           <tr key={o.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                             <td style={{ padding: "10px 12px", fontWeight: 800, color: "#0F172A" }}>
                               #{getOrderDisplayNumber(o)}
+                              {o.status === "CANCELADO" && (
+                                <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#B91C1C" }}>cancelado</div>
+                              )}
                             </td>
                             <td style={{ padding: "10px 12px", color: "#64748B" }}>
                               {new Date(o.createdAt).toLocaleDateString("pt-BR")} {new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
@@ -1662,9 +1675,9 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     )}
                   </tbody>
                 </table>
-                {filtered.length > 50 && (
+                {pedidosDaCobranca.length > 50 && (
                   <div style={{ padding: "8px 12px", textAlign: "center", background: "#F8FAFC", fontSize: "0.75rem", color: "#64748B" }}>
-                    Mostrando os primeiros 50 pedidos de {filtered.length} no ciclo.
+                    Mostrando os primeiros 50 pedidos de {pedidosDaCobranca.length} no ciclo.
                   </div>
                 )}
               </div>
