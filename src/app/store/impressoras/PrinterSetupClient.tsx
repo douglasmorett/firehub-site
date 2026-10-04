@@ -37,6 +37,11 @@ type PrinterConfig = {
    * imprimem sozinhos (fila da nuvem, ouvinte global e painel de pedidos).
    */
   imprimirSoNoFimDoKds?: boolean;
+  /**
+   * Este computador imprime os pedidos de TODAS as lojas da conta, e não só da
+   * que está aberta no painel. A fila da nuvem lê (lib/lojas-no-mesmo-pc.ts).
+   */
+  lojasDaContaNesteComputador?: boolean;
   autoBeverageTag?: boolean;
   customBeverageKeywords?: string;
   defaultPaperWidth?: "58mm" | "80mm"; // herdado por impressora detectada sozinha
@@ -101,8 +106,10 @@ const ASSISTANT_URL = "http://localhost:7891";
 
 /* ─── Componente principal ───────────────────────────────────── */
 export default function PrinterSetupClient({
-  storeName, storeSlug, franchiseeId, initialConfig, categories, lojasDeOrigem = [],
+  storeName, storeSlug, franchiseeId, initialConfig, categories, lojasDeOrigem = [], lojasNaConta = 1,
 }: {
+  /** Quantas lojas a conta tem. Mais de uma: aparece "imprimir as lojas da conta". */
+  lojasNaConta?: number;
   storeName: string;
   /** Slug da loja: monta a URL do QR do motoboy na comanda de teste. */
   storeSlug: string;
@@ -710,6 +717,33 @@ export default function PrinterSetupClient({
             <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: config.autoprint ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
           </button>
         </div>
+
+        {/* ── Várias lojas no mesmo computador ───────────────────────────────
+            Sem isto o Assistente imprime só a loja aberta no painel: a China
+            Pow e o Yakisoba do San dividiam um PC e os pedidos pagos do
+            Yakisoba ficaram 20 horas sem papel (04/10/2026). É opção, e não
+            automático, porque uma conta com lojas em endereços diferentes
+            imprimiria o pedido de uma na impressora da outra. Vale para a conta
+            inteira: basta ligar uma vez. Só aparece com mais de uma loja. */}
+        {lojasNaConta > 1 && (
+          <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem 1.5rem", border: `1.5px solid ${config.lojasDaContaNesteComputador ? "#99F6E4" : "#E2E8F0"}`, marginBottom: "1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div>
+              <p style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>🏪 Imprimir os pedidos de todas as suas lojas neste computador</p>
+              <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "2px 0 0", lineHeight: 1.45 }}>
+                {config.lojasDaContaNesteComputador
+                  ? `Ligado: as ${lojasNaConta} lojas da conta imprimem aqui, mesmo com o painel aberto em só uma delas.`
+                  : `Desligado: só a loja aberta no painel imprime. Ligue se as ${lojasNaConta} lojas usam este mesmo computador e impressora. Se cada loja tem o seu computador, deixe desligado.`}
+              </p>
+            </div>
+            <button
+              onClick={() => setConfig(c => ({ ...c, lojasDaContaNesteComputador: !c.lojasDaContaNesteComputador }))}
+              aria-label="Imprimir os pedidos de todas as lojas da conta neste computador"
+              style={{ width: 52, height: 28, borderRadius: 14, background: config.lojasDaContaNesteComputador ? "#0F766E" : "#E2E8F0", border: "none", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}
+            >
+              <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: config.lojasDaContaNesteComputador ? 27 : 3, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+            </button>
+          </div>
+        )}
 
         {/* ── Imprimir só quando a cozinha finalizar no KDS ──────────────────
             Fica logo abaixo da impressão automática porque é uma regra SOBRE

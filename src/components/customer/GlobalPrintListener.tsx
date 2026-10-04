@@ -148,6 +148,22 @@ export default function GlobalPrintListener() {
   const isFirstPollRef = useRef(true);
   const [printerConfig, setPrinterConfig] = useState<any>(null);
   const [configLoaded, setConfigLoaded] = useState(false);
+  // O nome de cada loja da conta. Com o painel em "Todas as lojas" chegam
+  // pedidos das duas lojas, e a comanda do Yakisoba do San não pode sair com
+  // "China Pow" no topo (04/10/2026): o nome é o da loja DO PEDIDO.
+  const nomesDasLojasRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    if (!session?.user) return;
+    fetch("/api/store/list")
+      .then((res) => res.json())
+      .then((data) => {
+        const lista = Array.isArray(data) ? data : data?.stores || data?.lojas || [];
+        const nomes: Record<string, string> = {};
+        for (const l of lista) if (l?.id && l?.storeName) nomes[String(l.id)] = String(l.storeName).trim();
+        nomesDasLojasRef.current = nomes;
+      })
+      .catch(() => {});
+  }, [session]);
 
   // Carregar configurações de impressora da loja
   useEffect(() => {
@@ -371,7 +387,11 @@ export default function GlobalPrintListener() {
                     continue;
                   }
 
-                  const storeName = (printerConfig as any)?.storeName || (session.user as any)?.storeName || "FIREHUB";
+                  const storeName =
+                    nomesDasLojasRef.current[String((order as any).franchiseeId || "")] ||
+                    (printerConfig as any)?.storeName ||
+                    (session.user as any)?.storeName ||
+                    "FIREHUB";
                   const result = await printOrder(
                     comanda as any,
                     storeName,

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 // de qual marca é cada pedido (lib/lojas-de-origem-da-conta.ts).
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
+import { lojasDoGrupo } from "@/lib/loja-ativa";
 import PrinterSetupClient from "./PrinterSetupClient";
 
 export default async function ImpressorasPage() {
@@ -25,6 +26,10 @@ export default async function ImpressorasPage() {
     select: { id: true, storeName: true, printerConfig: true, slug: true, accountGroupId: true },
   });
   if (!user) redirect("/");
+
+  // Quantas lojas a conta tem: com mais de uma, a tela oferece "este computador
+  // imprime as lojas da conta" (lib/lojas-no-mesmo-pc.ts).
+  const lojasNaConta = (await lojasDoGrupo(ownerId).catch(() => [])).length;
 
   const lojasDeOrigem = await lojasDeOrigemDaConta(ownerId, (user as any).accountGroupId || null).catch(() => [] as LojaDeOrigem[]);
 
@@ -88,6 +93,7 @@ export default async function ImpressorasPage() {
       initialConfig={user.printerConfig as any}
       categories={categories}
       lojasDeOrigem={lojasDeOrigem}
+      lojasNaConta={lojasNaConta}
     />
   );
 }

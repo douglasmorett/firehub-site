@@ -19,6 +19,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { lojasQueEstePcAtende } from "@/lib/lojas-no-mesmo-pc-no-banco";
 
 export const dynamic = "force-dynamic";
 
@@ -42,13 +43,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const agora = new Date();
+    // Com "este computador imprime as lojas da conta" ligado, a fila entrega ao
+    // Assistente de UMA loja as comandas das irmãs, e é ele que confirma todas
+    // com o franchiseeId dele. Sem valer para a conta, a comanda da irmã nunca
+    // seria carimbada e sairia de novo a cada reinício (lib/lojas-no-mesmo-pc.ts).
+    const lojas = await lojasQueEstePcAtende(franchiseeId);
+    const daLoja = lojas.length > 1 ? { in: lojas } : franchiseeId;
     const [pedidos, avulsas] = await Promise.all([
       prisma.customerOrder.updateMany({
-        where: { id: { in: ids }, franchiseeId, printedAt: null },
+        where: { id: { in: ids }, franchiseeId: daLoja, printedAt: null },
         data: { printedAt: agora },
       }),
       prisma.printRequest.updateMany({
-        where: { id: { in: ids }, franchiseeId, printedAt: null },
+        where: { id: { in: ids }, franchiseeId: daLoja, printedAt: null },
         data: { printedAt: agora },
       }).catch(() => ({ count: 0 })),
     ]);

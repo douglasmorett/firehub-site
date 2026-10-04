@@ -22,6 +22,8 @@ import { lembrarAssistente } from "@/lib/assistente-da-loja";
 import { getClientIp } from "@/lib/rateLimit";
 import { corteDaVolta } from "@/lib/volta-do-assistente";
 import { pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
+import { lojasQueEstePcAtende } from "@/lib/lojas-no-mesmo-pc-no-banco";
+import { juntarJobsDasLojas } from "@/lib/lojas-no-mesmo-pc";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -96,10 +98,41 @@ export async function POST(req: NextRequest) {
   }
 }
 
+/**
+ * A fila que o Assistente consulta a cada 3 s.
+ *
+ * Quando a conta liga "este computador imprime as lojas da conta"
+ * (lib/lojas-no-mesmo-pc.ts), a consulta de UMA loja devolve também as
+ * comandas das irmãs: a fila de cada loja roda inteira, com a configuração da
+ * própria loja (impressoras, modelo, andares), e as listas se juntam. O
+ * Assistente continua falando de uma loja só, e nenhuma versão dele precisa
+ * mudar. O /ack faz a conta inteira (ack/route.ts), senão a comanda da irmã
+ * nunca seria dada como impressa e sairia de novo a cada reinício.
+ *
+ * Sem a opção ligada, é exatamente a fila de sempre.
+ */
 export async function GET(req: NextRequest) {
+  const pedida = new URL(req.url).searchParams.get("franchiseeId");
+  const lojas = pedida ? await lojasQueEstePcAtende(pedida) : [];
+  if (!pedida || lojas.length <= 1) return filaDaLoja(req, pedida, false);
+
+  // As irmãs primeiro e sem registrar o endereço do Assistente: quem diz "este
+  // PC é da loja X" (lembrarAssistente) é a loja que o painel configurou.
+  const irmas = lojas.filter((id) => id !== pedida);
+  const [principal, ...dasIrmas] = await Promise.all([
+    filaDaLoja(req, pedida, false),
+    ...irmas.map((id) => filaDaLoja(req, id, true).catch(() => null)),
+  ]);
+  // Falha na loja principal é falha da consulta, como sempre foi. Falha numa
+  // irmã não derruba a impressão da principal: só deixa a irmã para o próximo poll.
+  if (!principal.ok) return principal;
+
+  return NextResponse.json({ jobs: await juntarJobsDasLojas(principal, dasIrmas) });
+}
+
+async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma: boolean) {
   try {
     const { searchParams } = new URL(req.url);
-    const franchiseeId = searchParams.get("franchiseeId");
     const sinceParam = searchParams.get("since");
 
     // ── O que o Assistente conta de si (1.2.7+) ────────────────────────────
@@ -173,7 +206,7 @@ export async function GET(req: NextRequest) {
 
     // Quem é a loja deste endereço: é assim que a rota da versão reconhece o
     // Assistente antigo, que pergunta sem dizer quem é (lib/assistente-da-loja.ts).
-    if (franchiseeId) lembrarAssistente(getClientIp(req), franchiseeId);
+    if (franchiseeId && !daIrma) lembrarAssistente(getClientIp(req), franchiseeId);
 
     // Uma unica leitura da config da loja (nao repete o JSON por pedido).
     //
