@@ -44,12 +44,15 @@ function primeiroPasso(p: Pedido): Passo {
 export function FluxoDaEntrega({
   pedido,
   formas,
+  permitirSemCodigo,
   aoFechar,
   baixar,
 }: {
   /** A tela monta este fluxo só enquanto há um pedido em entrega: cada abertura começa do zero. */
   pedido: Pedido;
   formas: string[];
+  /** A loja deixa fechar sem o código (App Motoboys → configurações)? */
+  permitirSemCodigo: boolean;
   aoFechar: () => void;
   /** A baixa de verdade (PATCH). O fluxo só fecha quando ela confirma. */
   baixar: (pedido: Pedido, extra: ExtraDaBaixa) => Promise<ResultadoDaBaixa>;
@@ -229,22 +232,25 @@ export function FluxoDaEntrega({
             icone={<Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />}
             aoTocar={() => finalizar({ ...extra, codigo })}
           />
-          <Botao
-            titulo="O cliente não tem o código"
-            variante="claro"
-            pequeno
-            desabilitado={enviando}
-            aoTocar={() =>
-              Alert.alert(
-                "Confirmar sem o código?",
-                `O ${canal || "iFood"} pode não reconhecer a entrega. Só faça isso se o cliente realmente não tem o código.`,
-                [
-                  { text: "Voltar", style: "cancel" },
-                  { text: "Confirmar sem código", style: "destructive", onPress: () => finalizar({ ...extra, semCodigo: true }) },
-                ],
-              )
-            }
-          />
+          {/* Só se a loja deixa fechar sem código; o servidor também recusa. */}
+          {permitirSemCodigo ? (
+            <Botao
+              titulo="O cliente não tem o código"
+              variante="claro"
+              pequeno
+              desabilitado={enviando}
+              aoTocar={() =>
+                Alert.alert(
+                  "Confirmar sem o código?",
+                  `O ${canal || "iFood"} pode não reconhecer a entrega. Só faça isso se o cliente realmente não tem o código.`,
+                  [
+                    { text: "Voltar", style: "cancel" },
+                    { text: "Confirmar sem código", style: "destructive", onPress: () => finalizar({ ...extra, semCodigo: true }) },
+                  ],
+                )
+              }
+            />
+          ) : null}
         </>
       ) : null}
 

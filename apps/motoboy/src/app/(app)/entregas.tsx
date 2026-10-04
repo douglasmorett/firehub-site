@@ -79,6 +79,9 @@ export default function Entregas() {
 
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [formas, setFormas] = useState<string[]>(FORMAS_PADRAO);
+  /** Os minutos de amarelo/vermelho da loja e o que ela liberou no app. */
+  const [limites, setLimites] = useState<ListaDePedidos["alertaDeTempo"] | null>(null);
+  const [permitirSemCodigo, setPermitirSemCodigo] = useState(true);
   const [sincronizou, setSincronizou] = useState(false);
   const [erroSync, setErroSync] = useState<"rede" | "servidor" | null>(null);
   const [ultimaSync, setUltimaSync] = useState<Date | null>(null);
@@ -141,6 +144,8 @@ export default function Entregas() {
       for (const o of lista) if (FINALIZADO(o.status)) baixasLocais.current.delete(o.id);
       setPedidos(aplicarBaixasLocais(lista));
       if (r.formasDePagamento?.length) setFormas(r.formasDePagamento);
+      if (r.alertaDeTempo) setLimites(r.alertaDeTempo);
+      setPermitirSemCodigo(r.appConfig?.permitirSemCodigo !== false);
       setSincronizou(true);
       setErroSync(null);
       setUltimaSync(new Date());
@@ -486,6 +491,7 @@ export default function Entregas() {
               pedido={p}
               ordem={i + 1}
               agora={agora}
+              limites={limites ?? null}
               ocupado={baixando === p.id}
               aoEntregar={() => setEmEntrega(p)}
               aoDevolver={() => devolver(p)}
@@ -516,7 +522,7 @@ export default function Entregas() {
 
       {/* Montado só enquanto aberto: cada entrega começa do primeiro passo. */}
       {emEntrega ? (
-        <FluxoDaEntrega pedido={emEntrega} formas={formas} aoFechar={() => setEmEntrega(null)} baixar={baixar} />
+        <FluxoDaEntrega pedido={emEntrega} formas={formas} permitirSemCodigo={permitirSemCodigo} aoFechar={() => setEmEntrega(null)} baixar={baixar} />
       ) : null}
 
       <LeitorDeQr
