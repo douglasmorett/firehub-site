@@ -187,7 +187,13 @@ Muito obrigado e bom apetite! ⭐😋`;
 
     if (message) {
       console.log(`[OrderNotification] Enviando notificação '${type}' para ${phoneClean} do pedido ${shortId}`);
-      await sendEvolutionMessage(order.franchiseeId, phoneClean, message);
+      const enviou = await sendEvolutionMessage(order.franchiseeId, phoneClean, message);
+      // O gateway recusa (503) quando a instância da loja não está aberta, e
+      // este retorno era jogado fora: o painel dizia "conectado" e o cliente
+      // ficava sem aviso, sem rastro no log do site.
+      if (!enviou) {
+        console.error(`[OrderNotification] ⛔ '${type}' do pedido ${shortId} NÃO saiu: o gateway recusou o envio da loja ${order.franchiseeId} (instância firehub_${order.franchiseeId.slice(-10)} fora do ar?). Reconecte o WhatsApp da loja.`);
+      }
     }
   } catch (err: any) {
     console.error(`[OrderNotification] Erro ao enviar notificação '${type}' para pedido ${orderId}:`, err?.message || err);

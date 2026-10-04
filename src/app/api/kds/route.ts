@@ -431,6 +431,15 @@ export async function PUT(req: NextRequest) {
         status: "PREPARANDO",
       },
     });
+    // O aviso "seu pedido entrou na cozinha" saía só pelo painel de pedidos.
+    // Loja que trabalha pelo KDS nunca o mandava: o cliente recebia o
+    // "recebido" e o silêncio até o "saiu". Mesma regra da rota de status:
+    // só na PRIMEIRA entrada em produção, nunca ao refazer o passo.
+    if (order.status === "NOVO" || order.status === "AGUARDANDO_PAGAMENTO") {
+      import("@/lib/order-notifications")
+        .then((m) => m.sendOrderNotification(orderId, "EM_PREPARO"))
+        .catch(() => {});
+    }
     return NextResponse.json({ success: true, stage: "PRODUCTION" });
   }
 
