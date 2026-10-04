@@ -7,7 +7,7 @@ import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil, Volume2, UtensilsCrossed, Bike, Receipt } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
-import { lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
+import { DIAS_DO_RELATORIO, lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { ESTADOS_DE_ENTREGADOR_IFOOD } from "@/lib/entrega-parceira";
 import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido";
 import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
@@ -6706,6 +6706,42 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </span>
                 </label>
               ))}
+            </div>
+
+            {/* ── O relatório do entregador no app ── (Lucas, Frangoso, 03/10/2026) */}
+            <div style={{
+              background: "#F8FAFC", border: "1.5px solid #CBD5E1", borderRadius: "10px",
+              padding: "1rem", marginBottom: "1.25rem"
+            }}>
+              <label style={{ fontSize: "0.76rem", fontWeight: 800, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: 4 }}>
+                Relatório do entregador
+              </label>
+              <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", cursor: "pointer", borderTop: "1px solid #E2E8F0" }}>
+                <input
+                  type="checkbox"
+                  checked={appMotoboyCfg.relatorioLiberado}
+                  onChange={(e) => salvarAppMotoboy({ ...appMotoboyCfg, relatorioLiberado: e.target.checked })}
+                  style={{ marginTop: 3, width: 18, height: 18, accentColor: "#1C1917", flexShrink: 0 }}
+                />
+                <span>
+                  <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>📊 Mostrar o &quot;Meu relatório&quot; no app</span>
+                  <span style={{ display: "block", fontSize: "0.76rem", color: "#64748B", marginTop: 2 }}>O entregador confere as entregas dele, quanto tem a receber e o dinheiro a acertar com a loja.</span>
+                </span>
+              </label>
+              {appMotoboyCfg.relatorioLiberado && (
+                <label style={{ display: "flex", gap: 10, alignItems: "center", padding: "9px 0 0", borderTop: "1px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 700, color: "#0F172A" }}>
+                  Pode ver até
+                  <select
+                    value={appMotoboyCfg.relatorioDias}
+                    onChange={(e) => salvarAppMotoboy({ ...appMotoboyCfg, relatorioDias: Number(e.target.value) })}
+                    style={{ padding: "6px 8px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontWeight: 800, fontFamily: "inherit" }}
+                  >
+                    {DIAS_DO_RELATORIO.map((d) => (
+                      <option key={d} value={d}>{d === 1 ? "só hoje (24 h)" : `${d} dias para trás`}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
 
             <div style={{ display: "flex" }}>

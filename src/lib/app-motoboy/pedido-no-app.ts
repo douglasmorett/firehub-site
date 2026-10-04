@@ -56,11 +56,46 @@ function pontoExato(latLng: unknown): { lat: number; lng: number } | null {
   return { lat, lng };
 }
 
+/**
+ * O ponto para MOSTRAR no mapa — qualquer um que o pedido tenha. Diferente
+ * de `pontoExato` (que guia a navegação): para o entregador ver "onde fica",
+ * o ponto achado pelo texto ajuda, e o app avisa quando é só aproximado.
+ * O Lucas (Frangoso, 03/10/2026): "às vezes o motoboy não precisa usar GPS,
+ * eu vejo no mapa onde é e vou embora".
+ */
+export function pontoNoMapa(latLng: unknown): { lat: number; lng: number; aproximado: boolean } | null {
+  if (!latLng || typeof latLng !== "object") return null;
+  const p = latLng as { lat?: unknown; lng?: unknown; origem?: unknown };
+  const lat = Number(p.lat);
+  const lng = Number(p.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
+  const origem = String(p.origem ?? "").trim();
+  // "bairro" = centro do bairro: serve para a direção, não para a porta.
+  return { lat, lng, aproximado: /^bairro|centr[oó]ide|dicion/i.test(origem) };
+}
+
+/**
+ * O telefone do cliente como o entregador usa. O iFood manda o 0800 com o
+ * localizador ("08007003050 ID: 19612595"): discar só o 0800 e mostrar o ID,
+ * que a central pede. WhatsApp só para celular de verdade.
+ */
+export function telefoneDoCliente(bruto: string | null | undefined): { discar: string; id: string | null; whatsapp: string | null } | null {
+  const texto = String(bruto || "");
+  const [antes, depois] = texto.split(/\bID\b\s*:?/i);
+  const discar = String(antes || "").replace(/\D/g, "");
+  if (discar.length < 8) return null;
+  const id = depois ? depois.replace(/\D/g, "") || null : null;
+  const ehCelular = !discar.startsWith("0800") && discar.length >= 10;
+  const comPais = discar.length >= 12 && discar.startsWith("55") ? discar : `55${discar}`;
+  return { discar, id, whatsapp: ehCelular ? comPais : null };
+}
+
 /** As observações sem as marcas que os parceiros colam no texto. */
-function observacaoLimpa(notas: string | null | undefined): string {
+export function observacaoLimpa(notas: string | null | undefined): string {
   return String(notas || "")
-    .replace(/Pedido iFood #[A-Za-z0-9_-]+/gi, "")
-    .replace(/Pedido Jotajá #[A-Za-z0-9_-]+/gi, "")
+    // "Obs/Ref: Pedido Brendi #6003" no app do Frangoso (03/10/2026): a
+    // referência já aparece na etiqueta do canal, aqui é só ruído.
+    .replace(/Pedido (iFood|Jotaj[áa]|Brendi|99\s?Food|Wabiz|Anota\s?A[ií])\s*#\s*[A-Za-z0-9_-]+/gi, "")
     .replace(/^(\s*\|\s*)+|(\s*\|\s*)+$/g, "")
     .trim();
 }
@@ -73,6 +108,7 @@ type PedidoDaLista = {
   customerAddress?: string | null;
   customerLatLng?: unknown;
   notes?: string | null;
+  customerPhone?: string | null;
   motoboyPuxadoEm?: Date | string | null;
   cobrarNaEntrega?: { metodo?: string | null } | null;
 };
@@ -94,6 +130,9 @@ export function camposDoApp(
     refDaPlataforma: refDaPlataforma && String(refDaPlataforma) !== String(numero) ? String(refDaPlataforma) : null,
     endereco,
     destino: paraOMapa ? { texto: paraOMapa, ponto: pontoExato(pedido.customerLatLng) } : null,
+    /** O ponto para o mapa dentro do app (pode ser só aproximado). */
+    mapa: pontoNoMapa(pedido.customerLatLng),
+    telefone: telefoneDoCliente(pedido.customerPhone),
     observacao: observacaoLimpa(pedido.notes),
     sacola: { ...sacola, resumo: resumoDoPedido(sacola) },
     /** O "você entregou a bebida?" antes da baixa. Vazio = a loja desligou ou não há bebida. */

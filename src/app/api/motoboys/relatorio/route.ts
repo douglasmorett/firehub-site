@@ -42,11 +42,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Acesso encerrado. Fale com a loja.", precisaRelogar: true }, { status: 401 });
     }
 
-    const loja = await prisma.user.findUnique({ where: { id: storeId }, select: { storeTimezone: true } });
+    const loja = await prisma.user.findUnique({ where: { id: storeId }, select: { storeTimezone: true, appMotoboyConfig: true } });
     const tz = loja?.storeTimezone || "America/Sao_Paulo";
-    const { fromDate, toDate } = periodoDoRelatorio(sp.get("from"), sp.get("to"), tz);
+
+    // A loja decide se o entregador vê o relatório e até quantos dias para
+    // trás (App Motoboys → configurações; lib/app-motoboy-config.ts).
+    const { lerAppMotoboyConfig } = await import("@/lib/app-motoboy-config");
+    const cfg = lerAppMotoboyConfig(loja?.appMotoboyConfig);
+    if (!cfg.relatorioLiberado) {
+      return NextResponse.json({ error: "A loja não liberou o relatório no app. Peça o acerto para ela.", relatorioFechado: true }, { status: 403 });
+    }
+
+    const periodo = periodoDoRelatorio(sp.get("from"), sp.get("to"), tz);
+    let fromDate = periodo.fromDate;
+    const toDate = periodo.toDate;
     if (toDate.getTime() - fromDate.getTime() > TETO_DO_PERIODO_MS) {
       return NextResponse.json({ error: "Escolha um período de até 45 dias." }, { status: 400 });
+    }
+    // Mais para trás do que a loja libera: o começo é puxado para o limite, e
+    // a resposta diz o período que valeu (o app mostra as datas de `period`).
+    const limiteDeTras = Date.now() - cfg.relatorioDias * 24 * 3600_000;
+    if (fromDate.getTime() < limiteDeTras) fromDate = new Date(limiteDeTras);
+    if (toDate.getTime() <= fromDate.getTime()) {
+      return NextResponse.json({ error: `A loja libera só os últimos ${cfg.relatorioDias} dia(s).` }, { status: 400 });
     }
 
     const { period, report } = await montarRelatorioDosEntregadores({ lojaId: storeId, motoboyId, fromDate, toDate, tz });

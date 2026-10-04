@@ -22,6 +22,8 @@ import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica } from "@/lib/pagamento-n
 import VerPedido from "@/components/motoboy/VerPedido";
 import MeuRelatorio from "@/components/motoboy/MeuRelatorio";
 import TutorialDaTela from "@/components/TutorialDaTela";
+import { CORES_DA_URGENCIA, textoDaUrgencia, urgenciaDaEntrega, type LimitesDaUrgencia } from "@/lib/app-motoboy/urgencia";
+import { observacaoLimpa, telefoneDoCliente } from "@/lib/app-motoboy/pedido-no-app";
 
 export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
@@ -255,6 +257,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         setOrders(aplicarBaixasLocais(data.orders || []));
         setBevKeywords(data.customBeverageKeywords || "");
         if (data.appConfig) setAppConfig(data.appConfig);
+        if (data.alertaDeTempo) setAlertaDeTempo(data.alertaDeTempo);
         setJaSincronizou(true);
         setSyncErro(null);
         setUltimaSync(new Date());
@@ -526,7 +529,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   /** Palavras de bebida personalizadas da loja — vêm junto com os pedidos. */
   const [bevKeywords, setBevKeywords] = useState<string>("");
   /** O que o dono ligou no painel (App Motoboys → configurações). */
-  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; cobrarNaEntrega: boolean; pedirCodigoEntrega: boolean; pedirCodigo99Food: boolean }>({ lembrarBebidas: true, cobrarNaEntrega: true, pedirCodigoEntrega: true, pedirCodigo99Food: true });
+  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; cobrarNaEntrega: boolean; pedirCodigoEntrega: boolean; pedirCodigo99Food: boolean; relatorioLiberado?: boolean; relatorioDias?: number }>({ lembrarBebidas: true, cobrarNaEntrega: true, pedirCodigoEntrega: true, pedirCodigo99Food: true });
+  /** Os minutos de amarelo/vermelho da loja (os do KDS), para a cor de cada entrega. */
+  const [alertaDeTempo, setAlertaDeTempo] = useState<LimitesDaUrgencia | null>(null);
+  /** Pedido cujo mapa está aberto dentro do cartão. */
+  const [mapaAberto, setMapaAberto] = useState<string | null>(null);
+  /** "Abrir com…": o entregador escolhe o app de mapa que tem no celular. */
+  const [escolherMapa, setEscolherMapa] = useState<{ titulo: string; google: string; waze: string; apple: string; geo: string } | null>(null);
 
   /**
    * Pedido que ainda tem dinheiro para receber na porta.
@@ -1002,10 +1011,10 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             </p>
           </div>
           <button
-            onClick={() => setMostrarRelatorio(true)}
+            onClick={() => { if (appConfig.relatorioLiberado !== false) setMostrarRelatorio(true); }}
             style={{
               textAlign: "center", padding: "12px 8px", border: "none", borderLeft: "1px solid #E2E8F0",
-              background: "#FFFFFF", cursor: "pointer", fontFamily: "inherit",
+              background: "#FFFFFF", cursor: appConfig.relatorioLiberado !== false ? "pointer" : "default", fontFamily: "inherit",
             }}
           >
             <span style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 800 }}>CONCLUÍDAS HOJE</span>
@@ -1013,18 +1022,22 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               {jaSincronizou ? completedOrders.length : "–"}
             </p>
           </button>
-          <button
-            onClick={() => setMostrarRelatorio(true)}
-            style={{
-              gridColumn: "1 / -1", border: "none", borderTop: "1px solid #E2E8F0", background: "#F8FAFC",
-              padding: "11px", color: "#0F172A", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer",
-              fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            }}
-          >
-            📊 Meu relatório (data e hora) <ChevronRight size={16} />
-          </button>
+          {/* A loja decide se o entregador vê o relatório (App Motoboys →
+              configurações). Desligado, o botão some; o servidor também recusa. */}
+          {appConfig.relatorioLiberado !== false && (
+            <button
+              onClick={() => setMostrarRelatorio(true)}
+              style={{
+                gridColumn: "1 / -1", border: "none", borderTop: "1px solid #E2E8F0", background: "#F8FAFC",
+                padding: "11px", color: "#0F172A", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer",
+                fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}
+            >
+              📊 Meu relatório (data e hora) <ChevronRight size={16} />
+            </button>
+          )}
         </div>
-        {mostrarRelatorio && session && (
+        {mostrarRelatorio && session && appConfig.relatorioLiberado !== false && (
           <MeuRelatorio motoboyId={session.motoboyId} storeId={session.storeId} aoFechar={() => setMostrarRelatorio(false)} />
         )}
 
@@ -1088,8 +1101,15 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             // que é o que serve para casar a sacola no balcão do marketplace.
             const num = (order as any).dailyOrderNumber || order.orderNumber || (order as any).ifoodReference || (order as any).openDeliveryReference || order.displayId || order.id.replace(/\D/g, "").slice(-2) || "#";
             const refDaPlataforma = (order as any).ifoodReference || (order as any).openDeliveryReference || null;
-            const cleanPhone = (order.customerPhone || "").replace(/\D/g, "");
-            const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
+            // O telefone separado do localizador do iFood ("0800… ID: 123"):
+            // discar o 0800 e mostrar o ID. WhatsApp só para celular — o 0800
+            // ia para o wa.me e não abria conversa nenhuma.
+            const telefone = telefoneDoCliente(order.customerPhone);
+            const waLink = telefone?.whatsapp ? `https://wa.me/${telefone.whatsapp}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
+            // Cor da urgência, a mesma régua do KDS (lib/app-motoboy/urgencia.ts).
+            const urgencia = urgenciaDaEntrega((order as any).previsaoEntrega?.em, agora, alertaDeTempo);
+            const corUrg = urgencia ? CORES_DA_URGENCIA[urgencia.faixa] : null;
+            const pontoMapa = (order as any).mapa as { lat: number; lng: number; aproximado: boolean } | null;
 
             // ── O QUE VAI PARA O NAVEGADOR DE MAPA NÃO É O QUE O HUMANO LÊ ──
             //
@@ -1127,19 +1147,32 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             const cobranca = (order as any).cobrarNaEntrega as
               | { metodo: string; valor: number; trocoPara?: number; levarDeTroco?: number }
               | null | undefined;
-            const rawNotes = order.notes || "";
-            const cleanNotes = rawNotes
-              .replace(/Pedido iFood #[A-Za-z0-9_-]+/gi, "")
-              .replace(/Pedido Jotajá #[A-Za-z0-9_-]+/gi, "")
-              .replace(/^(\s*\|\s*)+|(\s*\|\s*)+$/g, "")
-              .trim();
+            // Sem as marcas de parceiro ("Pedido Brendi #6003" vinha como Obs/Ref).
+            const cleanNotes = observacaoLimpa(order.notes);
+            // "Abrir com…": o pino quando é exato, senão o endereço limpo.
+            const alvoDoMapa = pontoMapa && !pontoMapa.aproximado ? `${pontoMapa.lat},${pontoMapa.lng}` : addrParaMapa;
+            const opcoesDeMapa = temDestino
+              ? {
+                  titulo: addr,
+                  google: mapsNavUrl as string,
+                  waze: pontoMapa && !pontoMapa.aproximado
+                    ? `https://waze.com/ul?ll=${pontoMapa.lat},${pontoMapa.lng}&navigate=yes`
+                    : (wazeNavUrl as string),
+                  apple: `https://maps.apple.com/?daddr=${encodeURIComponent(alvoDoMapa)}&dirflg=d`,
+                  geo: pontoMapa && !pontoMapa.aproximado
+                    ? `geo:${pontoMapa.lat},${pontoMapa.lng}?q=${pontoMapa.lat},${pontoMapa.lng}`
+                    : `geo:0,0?q=${encodeURIComponent(addrParaMapa)}`,
+                }
+              : null;
 
             return (
               <div
                 key={order.id}
                 style={{
                   background: "#FFFFFF", borderRadius: "16px", padding: "1.1rem", marginBottom: "1rem",
-                  border: "2px solid #2563EB", boxShadow: "0 4px 12px rgba(37,99,235,0.15)",
+                  // A borda pega a cor da urgência: de longe dá para ver qual
+                  // entrega está apertada.
+                  border: `2px solid ${corUrg ? corUrg.borda : "#2563EB"}`, boxShadow: "0 4px 12px rgba(37,99,235,0.15)",
                   position: "relative"
                 }}
               >
@@ -1183,17 +1216,85 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                   </div>
                 </div>
 
+                {/* ── ATÉ QUANDO ENTREGAR ─────────────────────────────────
+                    O horário que o cliente espera (a previsão da comanda) e a
+                    cor da urgência do KDS: verde com tempo, amarelo
+                    apertando, vermelho em cima da hora ou atrasado. Pedido do
+                    Lucas (Frangoso, 03/10/2026). */}
+                {urgencia && corUrg && (
+                  <div style={{
+                    background: corUrg.fundo, color: corUrg.texto, border: `1.5px solid ${corUrg.borda}`,
+                    borderRadius: 10, padding: "7px 10px", marginBottom: "0.7rem",
+                    fontWeight: 900, fontSize: "0.9rem", display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    <Clock size={16} /> {textoDaUrgencia(urgencia)}
+                  </div>
+                )}
+
                 {/* Customer Details */}
                 <div style={{ marginBottom: "0.85rem", display: "flex", flexDirection: "column", gap: "6px" }}>
                   <p style={{ margin: 0, fontWeight: 800, fontSize: "0.98rem", color: "#1E293B" }}>
                     👤 {order.customerName}
                   </p>
-                  
-                  <div style={{ background: "#EFF6FF", padding: "8px 12px", borderRadius: "10px", border: "1px solid #BFDBFE" }}>
+
+                  {/* Tocar no endereço abre "Abrir com…" — o app de mapa que o
+                      entregador tem no celular (Lucas: "no outro você clica no
+                      endereço e ele pergunta qual navegador abrir"). */}
+                  <button
+                    type="button"
+                    onClick={() => opcoesDeMapa && setEscolherMapa(opcoesDeMapa)}
+                    disabled={!opcoesDeMapa}
+                    style={{
+                      background: "#EFF6FF", padding: "8px 12px", borderRadius: "10px", border: "1px solid #BFDBFE",
+                      textAlign: "left", cursor: opcoesDeMapa ? "pointer" : "default", fontFamily: "inherit", width: "100%",
+                    }}
+                  >
                     <p style={{ margin: 0, fontWeight: 800, fontSize: "0.92rem", color: "#1D4ED8", lineHeight: "1.4" }}>
                       📍 {addr}
                     </p>
-                  </div>
+                    {opcoesDeMapa && (
+                      <span style={{ display: "block", marginTop: 3, fontSize: "0.72rem", fontWeight: 700, color: "#3B82F6" }}>
+                        Toque para abrir no app de mapa
+                      </span>
+                    )}
+                  </button>
+
+                  {/* O ponto no mapa, sem sair do app: quem conhece a cidade
+                      olha onde é e vai (Lucas). O mesmo embed do Google do
+                      modal "Informações da Entrega" do painel — já liberado no
+                      frame-src do CSP (next.config.ts). Aberto só quando ele pede. */}
+                  {pontoMapa && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setMapaAberto((atual) => (atual === order.id ? null : order.id))}
+                        style={{
+                          background: mapaAberto === order.id ? "#0F172A" : "#FFFFFF",
+                          color: mapaAberto === order.id ? "#FFFFFF" : "#1D4ED8",
+                          border: "1.5px solid #BFDBFE", borderRadius: 10, padding: "8px 12px",
+                          fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", gap: 6, justifyContent: "center",
+                        }}
+                      >
+                        <MapPin size={16} /> {mapaAberto === order.id ? "Fechar o mapa" : "Ver no mapa"}
+                      </button>
+                      {mapaAberto === order.id && (
+                        <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid #CBD5E1" }}>
+                          <iframe
+                            title={`Mapa da entrega #${num}`}
+                            src={`https://maps.google.com/maps?q=${pontoMapa.lat},${pontoMapa.lng}&z=16&output=embed`}
+                            style={{ width: "100%", height: 240, border: 0, display: "block" }}
+                            loading="lazy"
+                          />
+                          {pontoMapa.aproximado && (
+                            <div style={{ background: "#FFFBEB", color: "#92400E", fontSize: "0.75rem", fontWeight: 700, padding: "6px 10px" }}>
+                              Ponto aproximado (pelo bairro). Confira o número na rua.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   {/* ── PAGAMENTO E TROCO ──────────────────────────────────
                       Pedido a receber ganha borda verde e o valor em destaque:
@@ -1282,19 +1383,44 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 </div>
                 )}
 
-                {waLink && (
-                  <a
-                    href={waLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                      background: "#25D366", color: "#FFFFFF", padding: "8px", borderRadius: "10px",
-                      textDecoration: "none", fontSize: "0.82rem", fontWeight: 800, marginBottom: "0.85rem"
-                    }}
-                  >
-                    <MessageCircle size={16} /> Falar com Cliente no WhatsApp
-                  </a>
+                {/* LIGAR e WHATSAPP. Só existia o WhatsApp, e o pedido do
+                    iFood (0800 + ID) ficava sem caminho nenhum até o cliente
+                    (Lucas, Frangoso, 03/10/2026). O ID do iFood aparece para
+                    o entregador digitar quando a central pedir. */}
+                {telefone && (
+                  <div style={{ marginBottom: "0.85rem", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: waLink ? "1fr 1fr" : "1fr", gap: "0.5rem" }}>
+                      <a
+                        href={`tel:${telefone.discar}`}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                          background: "#FFFFFF", color: "#0F172A", padding: "9px", borderRadius: "10px",
+                          border: "1.5px solid #CBD5E1", textDecoration: "none", fontSize: "0.82rem", fontWeight: 800,
+                        }}
+                      >
+                        <Phone size={16} /> Ligar
+                      </a>
+                      {waLink && (
+                        <a
+                          href={waLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                            background: "#25D366", color: "#FFFFFF", padding: "9px", borderRadius: "10px",
+                            textDecoration: "none", fontSize: "0.82rem", fontWeight: 800,
+                          }}
+                        >
+                          <MessageCircle size={16} /> WhatsApp
+                        </a>
+                      )}
+                    </div>
+                    {telefone.id && (
+                      <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#475569", textAlign: "center" }}>
+                        📞 Na ligação, a central do iFood pede o ID: <span style={{ color: "#0F172A", fontSize: "0.9rem" }}>{telefone.id}</span>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {/* Confirm Delivery Button */}
@@ -1338,6 +1464,47 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         )}
 
       </div>
+
+      {/* ── ABRIR COM… ─────────────────────────────────────────────────────
+          O entregador escolhe o app de mapa que tem. No Android, "Outro app"
+          (geo:) chama a lista do próprio sistema; no iPhone vai o Apple Maps. */}
+      {escolherMapa && (
+        <div
+          onClick={() => setEscolherMapa(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", zIndex: 10000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#fff", width: "100%", maxWidth: 520, borderRadius: "18px 18px 0 0", padding: "16px 16px 24px", display: "flex", flexDirection: "column", gap: 8 }}
+          >
+            <div style={{ fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>Abrir com…</div>
+            <div style={{ fontSize: "0.8rem", color: "#64748B", marginBottom: 4 }}>{escolherMapa.titulo}</div>
+            {[
+              { rotulo: "🗺️ Google Maps", href: escolherMapa.google, mostrar: true },
+              { rotulo: "🧭 Waze", href: escolherMapa.waze, mostrar: true },
+              { rotulo: "🍎 Apple Maps", href: escolherMapa.apple, mostrar: typeof navigator !== "undefined" && /iPhone|iPad|Mac/i.test(navigator.userAgent) },
+              { rotulo: "📱 Outro app do celular", href: escolherMapa.geo, mostrar: typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent) },
+            ].filter((o) => o.mostrar).map((o) => (
+              <a
+                key={o.rotulo}
+                href={o.href}
+                target={o.href.startsWith("geo:") ? undefined : "_blank"}
+                rel="noreferrer"
+                onClick={() => setEscolherMapa(null)}
+                style={{ padding: "13px 14px", borderRadius: 12, border: "1.5px solid #E2E8F0", textDecoration: "none", color: "#0F172A", fontWeight: 800, fontSize: "0.95rem" }}
+              >
+                {o.rotulo}
+              </a>
+            ))}
+            <button
+              onClick={() => setEscolherMapa(null)}
+              style={{ marginTop: 4, padding: "12px", borderRadius: 12, border: "none", background: "#F1F5F9", color: "#475569", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal Alterar Senha */}
       {showPassModal && (

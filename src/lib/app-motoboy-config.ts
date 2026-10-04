@@ -22,19 +22,32 @@
  *   ("caso o procedimento não seja seguido, eventuais prejuízos serão de
  *   responsabilidade do lojista"). Então pede em todo pedido do 99 com
  *   entrega própria; loja cujos pedidos não trazem código desliga aqui.
+ * - `relatorioLiberado` / `relatorioDias`: o "Meu relatório" do entregador
+ *   (api/motoboys/relatorio). O Lucas (Frangoso, 03/10/2026) pediu que a loja
+ *   decida se o motoboy vê o relatório e até quantos dias para trás ("só dá
+ *   para ver o relatório por uma semana"). Padrão: liberado, 45 dias — o que
+ *   já valia antes de a opção existir.
  */
 export type AppMotoboyConfig = {
   lembrarBebidas: boolean;
   cobrarNaEntrega: boolean;
   pedirCodigoEntrega: boolean;
   pedirCodigo99Food: boolean;
+  relatorioLiberado: boolean;
+  /** Até quantos dias para trás o entregador consulta (1 a 45). */
+  relatorioDias: number;
 };
+
+/** As escolhas que o painel oferece para `relatorioDias`. */
+export const DIAS_DO_RELATORIO = [1, 7, 15, 31, 45] as const;
 
 export const APP_MOTOBOY_PADRAO: AppMotoboyConfig = {
   lembrarBebidas: true,
   cobrarNaEntrega: true,
   pedirCodigoEntrega: true,
   pedirCodigo99Food: true,
+  relatorioLiberado: true,
+  relatorioDias: 45,
 };
 
 export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
@@ -45,11 +58,14 @@ export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
     if (typeof o.cobrarNaEntrega === "boolean") cfg.cobrarNaEntrega = o.cobrarNaEntrega;
     if (typeof o.pedirCodigoEntrega === "boolean") cfg.pedirCodigoEntrega = o.pedirCodigoEntrega;
     if (typeof o.pedirCodigo99Food === "boolean") cfg.pedirCodigo99Food = o.pedirCodigo99Food;
+    if (typeof o.relatorioLiberado === "boolean") cfg.relatorioLiberado = o.relatorioLiberado;
+    const dias = Math.round(Number(o.relatorioDias));
+    if (o.relatorioDias != null && Number.isFinite(dias) && dias >= 1) cfg.relatorioDias = Math.min(45, dias);
   }
   return cfg;
 }
 
-/** Só as chaves conhecidas entram no banco, e só como booleano. */
+/** Só as chaves conhecidas entram no banco: os booleanos e os dias do relatório (1 a 45). */
 export function limparAppMotoboyConfig(bruto: unknown): AppMotoboyConfig | null {
   if (bruto === null) return null;
   if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return null;

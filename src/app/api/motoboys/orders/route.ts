@@ -5,7 +5,9 @@ import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { cobrancaNaEntrega, FORMAS_DE_PAGAMENTO_NA_ENTREGA } from "@/lib/pagamento-na-entrega";
-import { camposDoApp } from "@/lib/app-motoboy/pedido-no-app";
+import { camposDoApp, pontoNoMapa } from "@/lib/app-motoboy/pedido-no-app";
+import { previsaoDaEntrega } from "@/lib/previsao-da-entrega";
+import { limitesDoAlerta } from "@/lib/relatorios/tempos";
 import { ehPedido99Food } from "@/lib/food99-status";
 import { jaSaiuNoParceiro } from "@/lib/codigo-de-entrega";
 
@@ -40,7 +42,7 @@ export async function GET(req: NextRequest) {
 
     const storeOwner = await prisma.user.findUnique({
       where: { id: storeId },
-      select: { storeTimezone: true, printerConfig: true, appMotoboyConfig: true }
+      select: { storeTimezone: true, printerConfig: true, appMotoboyConfig: true, timeAlertConfig: true }
     });
     const tz = storeOwner?.storeTimezone || "America/Sao_Paulo";
     // O que o dono configurou para a hora da entrega (lembrar bebidas, pedir
@@ -97,6 +99,9 @@ export async function GET(req: NextRequest) {
         customerAddress: true,
         // Só o app nativo usa (navegar pelo pino exato); sai da resposta da web.
         customerLatLng: true,
+        // A previsão de entrega (lib/previsao-da-entrega.ts, a mesma da comanda).
+        scheduledDatetime: true,
+        tempoEntregaMin: true,
         paymentMethod: true,
         totalAmount: true,
         deliveryFee: true,
@@ -170,9 +175,15 @@ export async function GET(req: NextRequest) {
       // Sai `null` quando a loja desligou o aviso ou o pedido já está pago —
       // assim o app não precisa saber a regra, só olhar se veio algo.
       const cobranca = appConfig.cobrarNaEntrega ? cobrancaNaEntrega(o as any) : null;
-      const { customerLatLng, ...semPonto } = o;
+      const { customerLatLng, scheduledDatetime, tempoEntregaMin, ...semPonto } = o;
       const pedido = {
         ...semPonto,
+        // Até quando o cliente espera receber: o motoboy vê a hora e a cor da
+        // urgência (Lucas, Frangoso, 03/10/2026: "tinha que aparecer o
+        // horário da entrega").
+        previsaoEntrega: previsaoDaEntrega({ createdAt: o.createdAt, scheduledDatetime, tempoEntregaMin, deliveryType: o.deliveryType }),
+        // O ponto para o entregador VER no mapa (pode ser aproximado).
+        mapa: pontoNoMapa(customerLatLng),
         routeSequence: sequencias[o.id] ?? null,
         pedeCodigoEntrega: pedeIfood || pede99,
         canalDoCodigo: pedeIfood ? "iFood" : pede99 ? "99Food" : null,
@@ -193,6 +204,9 @@ export async function GET(req: NextRequest) {
       orders: ordersComSequencia,
       customBeverageKeywords,
       appConfig,
+      // As cores de urgência: os mesmos minutos do KDS e do painel (Alertas de
+      // Produção). A conta é no celular, porque o relógio anda entre as buscas.
+      alertaDeTempo: limitesDoAlerta(storeOwner?.timeAlertConfig),
       // As formas do "o cliente pagou com", na ordem da página web.
       ...(formatoDoApp ? { formasDePagamento: FORMAS_DE_PAGAMENTO_NA_ENTREGA } : {}),
     });
