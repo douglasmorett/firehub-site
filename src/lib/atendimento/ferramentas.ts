@@ -2,12 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { mesmoTelefone } from "@/lib/telefone";
 import { restartEvolutionInstance } from "@/lib/whatsapp-evolution";
 import { registrarEvento, AUTOR_ROBO, lojaDoTelefone, numerosDaLoja } from "@/lib/crm/contatos";
-import { duracaoEmMinutos } from "@/lib/tutoriais";
 import { estadoDaLojaParaSuporte } from "./estado-da-loja";
+import { cardapioParaOSuporte } from "./cardapio-para-o-suporte";
 import { avisarDono } from "./avisos";
 import { criarContaPeloWhatsApp } from "./cadastro";
-import { aulaDoVideo, linkDoVideo } from "./videos";
-import { videosNoAr } from "./videos-no-ar";
 
 /**
  * AS FERRAMENTAS DO ROBÔ DO FIREHUB — o que ele pode consultar e fazer.
@@ -54,6 +52,14 @@ export const DECLARACOES = [
     name: "estado_da_loja",
     description: "Raio-x da loja do lojista que está falando: robô do WhatsApp conectado, Assistente de Impressão (última consulta, versão), canais (iFood, 99Food, JotaJá), teste grátis, fatura em aberto (com link), último pedido. Só funciona quando a loja foi reconhecida pelo número.",
     parametersJsonSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "ver_cardapio_da_loja",
+    description: "Olha o cardápio DA LOJA do lojista que está falando, como o atendente abriria o painel dele (só leitura): para cada produto achado, a situação AGORA (aparece ou não no cardápio do cliente e por quê: pausado, fora do horário, fora do dia, canal desligado), o Preço de Venda, a promoção, e cada pergunta com as opções, o +R$, o Promo +R$ e quanto o cliente paga, com a conta já feita. Traz também a hora da loja e a ordem das categorias. Use SEMPRE que a dúvida for sobre um produto, preço, promoção, opção ou categoria da loja dele ('sumiu', 'não aparece', 'pus 65 e ficou 95', 'a ordem'), antes de explicar. Só funciona quando a loja foi reconhecida pelo número.",
+    parametersJsonSchema: {
+      type: "object",
+      properties: { busca: { type: "string", description: "Nome do produto ou da categoria como o lojista falou, ex.: 'filé mignon', 'marmita', 'calabresa do chef'. Vazio = só a ordem das categorias." } },
+    },
   },
   {
     name: "atualizar_contato",
@@ -119,15 +125,6 @@ export const DECLARACOES = [
     },
   },
   {
-    name: "ver_tutorial",
-    description: "O que um vídeo tutorial da lista ensina, capítulo por capítulo (a fala gravada do vídeo), com o link que abre em cada capítulo. Use antes de explicar como se faz algo no painel quando a fala desse vídeo ainda não está nas instruções. Não manda nada para o contato.",
-    parametersJsonSchema: {
-      type: "object",
-      properties: { id: { type: "string", description: "O fim do link do vídeo na lista, ex.: roteirizacao, cardapio-combos, app-motoboy." } },
-      required: ["id"],
-    },
-  },
-  {
     name: "montar_loja",
     description: "Passa para a equipe a montagem da loja (lançar o cardápio inteiro, de graça, e configurar bairros, taxas e horários). Use quando tiver o nome da loja e o link do cardápio OU as fotos do cardápio enviadas na conversa. A equipe continua a conversa por aqui.",
     parametersJsonSchema: {
@@ -150,6 +147,13 @@ const soDaLoja = { erro: "A loja não foi reconhecida por este número. Oriente 
 
 export async function executarFerramenta(nome: string, args: any, contato: Contato): Promise<Record<string, unknown>> {
   switch (nome) {
+    case "ver_cardapio_da_loja": {
+      const loja = await lojaDoNumero(contato);
+      if (!loja) return soDaLoja;
+      const cardapio = await cardapioParaOSuporte(loja.id, String(args?.busca || "").slice(0, 120));
+      return cardapio ? { ...cardapio } : { erro: "Loja não encontrada." };
+    }
+
     case "estado_da_loja": {
       const loja = await lojaDoNumero(contato);
       if (!loja) return soDaLoja;
@@ -245,15 +249,6 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
         email: String(args?.email || ""), cpf: String(args?.cpf || ""), cnpj: args?.cnpj ? String(args.cnpj) : undefined,
         whatsappDaLoja: args?.whatsappDaLoja ? String(args.whatsappDaLoja) : undefined,
       });
-    }
-
-    case "ver_tutorial": {
-      // Aceita o id ou o link inteiro ("…/tutoriais/roteirizacao?t=40"): o modelo copia o que vê na lista.
-      const id = String(args?.id || "").trim().toLowerCase().replace(/^.*\/tutoriais\//, "").replace(/[/?#].*$/, "");
-      const videos = videosNoAr();
-      const video = videos.find((v) => v.id === id);
-      if (!video) return { erro: `Não há vídeo "${id}" no ar. Use o fim de um link da lista de vídeos.`, ids: videos.map((v) => v.id) };
-      return { titulo: video.titulo, duracao: duracaoEmMinutos(video.duracao), link: linkDoVideo(video.id), aula: aulaDoVideo(video) };
     }
 
     case "montar_loja": {

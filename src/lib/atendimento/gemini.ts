@@ -31,6 +31,51 @@ export async function clienteDoGemini(): Promise<GoogleGenAI | null> {
 }
 
 /**
+ * O QUE A IMAGEM (OU O VÍDEO, OU O PDF) MOSTRA, em texto — feito na chegada,
+ * como a transcrição do áudio. Douglas, 03/10/2026: "o robô deve ver imagens".
+ *
+ * Fica gravado na mensagem: a equipe lê na tela, o revisor confere contra ele
+ * e as respostas seguintes do robô continuam sabendo o que veio no print. Na
+ * resposta logo depois, o robô recebe também a imagem de verdade (midias.ts).
+ *
+ * O que mais chega é print do painel ("Assim?"), foto de cardápio para a
+ * montagem da loja, comprovante e print de erro. Por isso: todo texto e número
+ * visível, o que está marcado, e nada inventado. Vazio quando não deu.
+ */
+const PEDIDO_DA_DESCRICAO = `Você é os olhos do atendimento do FireHub (sistema para delivery e restaurantes) no WhatsApp. Um contato mandou esta mídia. Descreva para quem vai responder, em português, sem comentários e sem cumprimentar:
+1. Primeiro, em uma linha, o que é: print do painel do FireHub (diga a tela, se der para saber), print de outro sistema (iFood, WhatsApp, banco…), foto de cardápio, comprovante, boleto, nota fiscal, foto de impressora/equipamento, documento, outro.
+2. Depois, TODO texto, número, preço e campo que dá para ler, na ordem da tela, dizendo o valor de cada campo ("Promo +R$: 65", "Preço de Venda: 30,00"), o que está marcado/selecionado/ligado e qualquer mensagem de erro ou aviso, exatamente como está escrito.
+3. Foto de cardápio: diga que é cardápio, as categorias e os itens com preço (até uns 60; depois "e mais N itens").
+4. Vídeo: o que a pessoa faz na tela, passo a passo, e onde aparece erro.
+Não invente o que não dá para ler: escreva "(ilegível)". Texto simples, sem markdown (nada de **, # ou ---), um item por linha com "- ". Até 2.500 caracteres.`;
+
+export async function descreverMidia(base64: string, mimeType: string, legenda = ""): Promise<string> {
+  const ai = await clienteDoGemini();
+  if (!ai || !base64) return "";
+  const mime = String(mimeType || "image/jpeg").split(";")[0].trim() || "image/jpeg";
+  for (const modelo of ["gemini-3.6-flash", "gemini-2.5-flash"]) {
+    try {
+      const r = await ai.models.generateContent({
+        model: modelo,
+        contents: [{
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: mime, data: base64.replace(/^data:[^,]+,/, "") } },
+            { text: legenda ? `${PEDIDO_DA_DESCRICAO}\n\nO contato escreveu junto: "${legenda.slice(0, 500)}"` : PEDIDO_DA_DESCRICAO },
+          ],
+        }],
+        config: { temperature: 0 },
+      });
+      const texto = (r.text || "").trim();
+      if (texto) return texto.slice(0, 3000);
+    } catch (err: any) {
+      console.warn(`[Atendimento] Descrição da mídia com ${modelo} falhou: ${err?.message}`);
+    }
+  }
+  return "";
+}
+
+/**
  * O que a pessoa disse no áudio, em texto — para a conversa na tela e para o
  * robô. Vazio quando não deu (a tela mostra "áudio" e segue).
  */

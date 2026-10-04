@@ -15,7 +15,7 @@ export type NovaMensagem = {
   autor: "CLIENTE" | "ROBO" | "ADMIN" | "VENDEDOR" | "CELULAR" | "SISTEMA";
   autorId?: string | null;
   autorNome?: string | null;
-  tipo?: "TEXTO" | "AUDIO" | "IMAGEM" | "VIDEO" | "LOCALIZACAO";
+  tipo?: "TEXTO" | "AUDIO" | "IMAGEM" | "VIDEO" | "ARQUIVO" | "LOCALIZACAO";
   texto: string;
   status?: "OK" | "FALHOU";
   criadoEm?: Date;
