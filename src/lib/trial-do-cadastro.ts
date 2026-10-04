@@ -33,6 +33,8 @@ export const TRIAL_PADRAO_DIAS = 15;
 export const CODIGOS_DE_TRIAL_ESTENDIDO: Record<string, number> = {
   conect: 30,
   firehubconect: 30,
+  // Embaixador Allan Barros (Delivery de Marmita), liberado em 04/10/2026.
+  deliverydemarmita: 30,
 };
 
 /**
