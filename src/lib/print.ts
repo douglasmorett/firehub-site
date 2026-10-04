@@ -547,7 +547,17 @@ export async function printOrder(
   itemCategories: Record<string, string> = {}, // { "item name" => "categoria" }
   force = false,
   /** Comanda da cozinha: mesmos itens, sem preço nenhum na folha. */
-  semValores = false
+  semValores = false,
+  /**
+   * O botão "Cupom Completo (Com Valores)": a pessoa escolheu UM papel.
+   *
+   * Na Map Grill (04/10/2026), impressora única com o modelo "Cozinha sem
+   * valores" e a via do entregador marcada, o botão soltava os dois papéis — a
+   * comanda sem valores do modelo e a via. Escolha explícita vence o modelo:
+   * com via do entregador, sai só ela (é o cupom completo, com o QR); sem via,
+   * cada impressora imprime com valores, mesmo a que tem modelo sem valores.
+   */
+  cupomCompleto = false
 ): Promise<{ success: boolean; printed: number; attempted: boolean; aguardando: boolean }> {
   const baseUrl = await getAssistantUrl();
   if (!baseUrl) return { success: false, printed: 0, attempted: false, aguardando: false };
@@ -633,6 +643,14 @@ export async function printOrder(
   // fila, roteamento-de-impressao.ts → umaPorImpressora).
   const uniquePrinters = umaPorImpressora(printersToUse);
 
+  if (cupomCompleto && !semValores) {
+    const via = impressoraDaViaDoEntregador(todasAsImpressoras, order as any, []);
+    if (via) {
+      const r = await imprimirViaDoEntregador(via);
+      return { success: r.ok, printed: r.ok ? 1 : 0, attempted: true, aguardando: r.aguardando };
+    }
+  }
+
   let printed = 0;
   // Alguma impressora respondeu "pendente no Assistente": ele vai insistir.
   let aguardando = false;
@@ -670,6 +688,12 @@ export async function printOrder(
       semValores
     );
 
+    // Cupom completo pedido no botão: o modelo sem valores da impressora não
+    // vale (cai no padrão da loja), senão o papel sai sem os valores pedidos.
+    const modeloSemValores = semValoresDaImpressora(printerConfig, (printer as any).modeloId);
+    const modeloId = cupomCompleto && modeloSemValores ? undefined : (printer as any).modeloId;
+    const semValoresAqui = semValores || (!cupomCompleto && modeloSemValores);
+
     const result = await printToDevice(
       printer.name,
       filteredOrder,
@@ -682,7 +706,7 @@ export async function printOrder(
       printer.escposProfile,
       // O botão "Cupom da cozinha" força sem valores em todas; o modelo da
       // impressora ("Cozinha sem valores") força só nela.
-      semValores || semValoresDaImpressora(printerConfig, (printer as any).modeloId),
+      semValoresAqui,
       printer.somenteBebidas === true,
       printer.separarItens === true,
       qrLigadoNaImpressora(printer, printerConfig as any),
@@ -695,10 +719,10 @@ export async function printOrder(
       // loja com mais de uma. Impressora sem `modeloId` (inclusive a sintética
       // de resgate, que não tem cadastro) cai no modelo padrão da loja.
       blocosDoPedido(printerConfig, {
-        semValores: semValores || semValoresDaImpressora(printerConfig, (printer as any).modeloId),
-        modeloId: (printer as any).modeloId,
+        semValores: semValoresAqui,
+        modeloId,
       }),
-      avisosDoPedido(printerConfig, { modeloId: (printer as any).modeloId })
+      avisosDoPedido(printerConfig, { modeloId })
     );
     if (result.ok) printed++;
     if (result.aguardando) aguardando = true;
@@ -711,7 +735,14 @@ export async function printOrder(
   // que acabou de sair na mesma impressora. O "Cupom da cozinha" não a leva.
   const daVia = semValores ? null : impressoraDaViaDoEntregador(todasAsImpressoras, order as any, receberam);
   if (daVia) {
-    const via = await printToDevice(
+    const via = await imprimirViaDoEntregador(daVia);
+    if (via.aguardando) aguardando = true;
+  }
+
+  return { success: printed > 0, printed, attempted: true, aguardando };
+
+  function imprimirViaDoEntregador(daVia: (typeof todasAsImpressoras)[number]) {
+    return printToDevice(
       daVia.name,
       { ...order, id: String(order.id) + SUFIXO_DA_VIA_DO_ENTREGADOR } as PrintOrder,
       storeName,
@@ -729,10 +760,7 @@ export async function printOrder(
       blocosDaViaDoEntregador(printerConfig),
       avisosDoPedido(printerConfig)
     );
-    if (via.aguardando) aguardando = true;
   }
-
-  return { success: printed > 0, printed, attempted: true, aguardando };
 }
 
 /* ─── Comanda de teste ─────────────────────────────────────

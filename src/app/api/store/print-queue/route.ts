@@ -759,9 +759,19 @@ export async function GET(req: NextRequest) {
       // "Imprimir teste" de UMA impressora (PrinterSetupClient): sai só nela.
       // Roteado como pedido, o item de teste — sem categoria — saía em todas.
       const alvo = typeof order.impressoraAlvo === "string" ? order.impressoraAlvo.trim() : "";
+      // "Cupom Completo (Com Valores)" no botão: UM papel com valores, a mesma
+      // regra do navegador (lib/print.ts, cupomCompleto). Com via do entregador
+      // marcada, sai só ela; sem via, o modelo sem valores da impressora não vale.
+      const completo = order.cupomCompleto === true && order.semValores !== true;
+      const daVia = completo && !alvo ? impressoraDaViaDoEntregador(printers, order, []) : null;
       const destinos = alvo
         ? [{ impressora: printers.find((p) => String(p?.name || "").trim() === alvo) || { name: alvo }, itens: order.items || [] }]
-        : destinosDoPedido(printers, order, { palavrasDeBebida: pc?.customBeverageKeywords });
+        : daVia
+          ? [{ impressora: daVia, itens: order.items || [] }]
+          : destinosDoPedido(printers, order, { palavrasDeBebida: pc?.customBeverageKeywords });
+      const modeloSemValores = (imp: any) => !completo && semValoresDaImpressora(pc, imp?.modeloId);
+      const blocosDoDestino = (imp: any) =>
+        daVia ? blocosDaViaDoEntregador(pc) : completo && semValoresDaImpressora(pc, imp?.modeloId) ? blocosDaComanda : blocosDaImpressora(imp);
       // ── A REIMPRESSÃO SAI IGUAL À ORIGINAL ──────────────────────────────
       // Os destinos daqui não levavam o QR do motoboy, o modelo de cada
       // impressora nem o "sem valores" dela: o botão Imprimir usado fora do PC
@@ -809,10 +819,10 @@ export async function GET(req: NextRequest) {
           // Reimpressão sai igual à original: com o bloco da campanha onde ele
           // saiu da primeira vez.
           ...camposDaCampanha(order, owner?.storeLoyalty, slugDaLoja, d.impressora.name),
-          ...(qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
-          ...(blocosDaImpressora(d.impressora as any) ? { blocos: blocosDaImpressora(d.impressora as any) } : {}),
+          ...(daVia || qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
+          ...(blocosDoDestino(d.impressora) ? { blocos: blocosDoDestino(d.impressora) } : {}),
           ...(avisosDaImpressora(d.impressora as any) ? { avisos: avisosDaImpressora(d.impressora as any) } : {}),
-          ...(semValoresDaImpressora(pc, (d.impressora as any)?.modeloId) ? { semValores: true } : {}),
+          ...(modeloSemValores(d.impressora) ? { semValores: true } : {}),
         })),
         createdAt: pedida.createdAt.toISOString(),
       };

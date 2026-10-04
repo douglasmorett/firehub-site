@@ -2185,7 +2185,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // 2. Tenta enviar diretamente para o Assistente FireHub de Impressão Térmica RAW
     try {
       const { printOrder } = await import("@/lib/print");
-      const result = await printOrder(comanda as any, storeName, activeConfig, {}, isManual, semValores);
+      // "Cupom Completo" no botão é um papel só, com valores (lib/print.ts).
+      const result = await printOrder(comanda as any, storeName, activeConfig, {}, isManual, semValores, isManual && type === "completo");
       if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#0F766E");
         printedLocally = true;
@@ -2225,7 +2226,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           franchiseeId: user.ownerId || user.id,
           // O "Cupom da cozinha" pela nuvem também sai sem valores: o
           // Assistente lê `order.semValores` em todos os destinos.
-          order: semValores ? { ...comanda, semValores: true } : comanda,
+          order: semValores
+            ? { ...comanda, semValores: true }
+            : isManual && type === "completo" ? { ...comanda, cupomCompleto: true } : comanda,
           storeName,
           paperWidth: receiptPaperSize || "80mm",
         }),
