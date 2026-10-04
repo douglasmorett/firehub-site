@@ -33,6 +33,7 @@ import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, motivoForaDoCardapio, t
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
 import { registroDeOpcoes } from "./opcoes-repetidas";
+import { palavrasDaConversa, produtoCitado } from "./cardapio-citado";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { ehNumeroDoDono } from "./numeros-do-dono";
 import { horaDaLoja, inicioDoExpedienteDaLoja } from "./fuso";
@@ -692,6 +693,13 @@ export async function processChatbotAI(
   // final é conferida contra o estoque em syncAiOrderToDatabase.
   const estoqueDoRobo = await estoqueDaLojaOuVazio(targetFranchiseeId);
 
+  // O que a conversa citou (mensagem + histórico, inclusive o que o robô
+  // ofereceu): só esses produtos levam as opções completas no prompt.
+  const palavrasCitadas = palavrasDaConversa([
+    message,
+    ...(Array.isArray(history) ? history.map((h: any) => h?.text) : []),
+  ]);
+
   products.forEach((p: any) => {
     if (soOpcaoDeCombo.has(String(p.id))) return;
     const rawCleanName = (p.name || "").split("|")[0].trim();
@@ -865,6 +873,14 @@ export async function processChatbotAI(
         });
 
         linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${listasDeOpcoes.marcar(`${opcoes.join(" | ")}${avisoDePausa}`)}`);
+      }
+
+      // Produto que a conversa não citou vai sem as opções: só os nomes dos
+      // grupos (lib/cardapio-citado.ts). O "a partir de" acima já foi calculado
+      // com elas, então o preço anunciado continua o certo.
+      if (linhasDeOpcoes.length > 0 && !produtoCitado(p, palavrasCitadas)) {
+        const grupos = (ofertado.comboGroups || []).map((g: any) => g?.title).filter(Boolean);
+        linhasDeOpcoes.splice(0, linhasDeOpcoes.length, `    ↳ tem escolhas (${grupos.join(", ") || "opções"}) — a lista completa aparece aqui quando o cliente citar este produto`);
       }
 
       const line =
