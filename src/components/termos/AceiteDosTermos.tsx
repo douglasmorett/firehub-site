@@ -59,7 +59,7 @@ export default function AceiteDosTermos({ nomeDaLoja, primeiraVez }: { nomeDaLoj
             {primeiraVez ? "Termos de Uso do FireHub" : "Atualizamos os Termos de Uso"}
           </h2>
           <p style={{ margin: 0, fontSize: ".88rem", color: "#64748B", lineHeight: 1.5 }}>
-            Para continuar usando o painel, leia e aceite a versão de {DATA_DOS_TERMOS}. Leva um minuto: comece pelo resumo logo abaixo.
+            Para continuar usando o painel, leia e aceite a versão de {DATA_DOS_TERMOS}.
           </p>
         </header>
 
