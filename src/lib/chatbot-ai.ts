@@ -54,6 +54,7 @@ import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-font
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
 import { tempoDeEntregaParaGravar } from "./previsao-da-entrega";
+import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
 
 /**
@@ -172,6 +173,10 @@ export async function processChatbotAI(
   if (!user) {
     return { reply: "Desculpe, loja não encontrada." };
   }
+  // O endereço da loja costuma ser o texto cru do mapa ("Rua Beira Alta, Vila
+  // Monte Alegre, Cabo Frio, …, Região Sudeste, Brasil"). O robô copiava o
+  // bairro dali para o pedido do cliente (lib/bairro-dos-correios.ts).
+  user.storeAddress = await enderecoDoMapaComBairroDosCorreios(user.storeAddress, user.city);
 
   const targetFranchiseeId = user.ownerId || user.id;
 
@@ -1202,9 +1207,14 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
       const distancia = v.modo === "KM" ? frasesDaDistancia(v, ehRota) : null;
       const pedirLocalizacao = motivoParaPedirLocalizacao(v, Boolean(coordsQueValem));
       // Com a localização, o "endereço no mapa" pode nem existir: o ponto é o do aparelho.
-      const ondeFoiMedido = coordsQueValem && !v.enderecoNoMapa
+      // O modelo copia o bairro deste texto para o resumo: tem de ser o nome que
+      // a cidade usa, não o "Vila …" do mapa (lib/bairro-dos-correios.ts).
+      const enderecoNoMapa = v.enderecoNoMapa
+        ? await enderecoDoMapaComBairroDosCorreios(v.enderecoNoMapa, (user as any).city)
+        : "";
+      const ondeFoiMedido = coordsQueValem && !enderecoNoMapa
         ? "Ponto: a localização que o cliente mandou pelo WhatsApp"
-        : `Endereço no mapa: "${v.enderecoNoMapa || enderecoDaCotacao.trim()}"`;
+        : `Endereço no mapa: "${enderecoNoMapa || enderecoDaCotacao.trim()}"`;
       const linhaDaLocalizacao = avaliacao.trocouPeloTexto
         ? `\n- ⚠️ O cliente tinha mandado a LOCALIZAÇÃO, mas o endereço que ele DIGITOU depois fica longe dela: a área e a taxa acima são do endereço DIGITADO. Confirme com ele, numa frase, que a entrega é nesse endereço (se for na localização, peça para ele mandar a localização de novo).`
         : coordsQueValem
