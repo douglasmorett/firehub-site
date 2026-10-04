@@ -4,8 +4,8 @@
  * Motor de faturamento "Use First, Pay Later" — 100% automático.
  *
  * Regra:
- *   Taxa = 2% do faturamento mensal do franqueado (1% até 2026-09 — ver
- *   percentualDoMes em lib/firehub-billing.ts)
+ *   Taxa = 2% do faturamento mensal do franqueado (1% nas vendas até
+ *   03/10/2026 — ver VIRADA_DOS_2_POR_CENTO em lib/firehub-billing.ts)
  *   Mínimo: R$100 · Máximo: R$400
  *
  * Base de cálculo: soma do valor BRUTO (totalAmount + discountTotal, ver
@@ -28,7 +28,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { calcMensalidade, FIREHUB_PLAN, percentualDoMes } from "@/lib/firehub-billing";
+import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, MES_DOS_2_POR_CENTO, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
 import { bloqueioDaMensalidade, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
@@ -314,6 +314,22 @@ export function inicioDaCobranca(
 }
 
 /**
+ * Parte das vendas do mês feita antes de 04/10/2026, que é cobrada a 1% (ver
+ * VIRADA_DOS_2_POR_CENTO). Só outubro/2026 tem essa parte; os outros meses
+ * nem consultam o banco. Mesma base do resto: VENDAS_QUE_CONTAM e o bruto.
+ */
+async function vendasAntesDaVirada(franchiseeId: string, yearMonth: string, desde: Date, monthEnd: Date): Promise<number> {
+  if (yearMonth !== MES_DOS_2_POR_CENTO) return 0;
+  const ate = monthEnd < VIRADA_DOS_2_POR_CENTO ? monthEnd : VIRADA_DOS_2_POR_CENTO;
+  if (desde >= ate) return 0;
+  const agg = await prisma.customerOrder.aggregate({
+    where: { franchiseeId, ...VENDAS_QUE_CONTAM, createdAt: { gte: desde, lt: ate } },
+    _sum: CAMPOS_DO_BRUTO,
+  });
+  return faturamentoBruto(agg._sum);
+}
+
+/**
  * Garante que existe um ciclo OPEN para o franqueado no mês atual.
  * Criado automaticamente ao primeiro pedido do mês.
  */
@@ -382,7 +398,8 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
     : null;
 
   const totalSales = agg ? faturamentoBruto(agg._sum) : 0;
-  const { mensalidade: amountDue } = calcMensalidade(totalSales, false, mes);
+  const antesDaVirada = inicio ? await vendasAntesDaVirada(franchiseeId, mes, inicio, monthEnd) : 0;
+  const { mensalidade: amountDue } = calcMensalidade(totalSales, false, mes, antesDaVirada);
 
   // As taxas já acumuladas no ciclo (tráfego pago, totem) entram no pendente.
   //
@@ -633,7 +650,8 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     motivosUso = uso.motivos;
   }
 
-  const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage, yearMonth);
+  const antesDaVirada = await vendasAntesDaVirada(franchiseeId, yearMonth, inicio ?? monthStart, monthEnd);
+  const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage, yearMonth, antesDaVirada);
 
   // Quem NÃO paga mensalidade: loja isenta, quem não usou nada e quem está em
   // teste sem ter vendido. Isto era decidido lá embaixo, no bloco que zera o
@@ -975,7 +993,9 @@ export async function getCurrentCycleView(franchiseeId: string) {
   }
 
   // Mesma conta do fechamento, para o painel bater com o boleto.
-  const previsaoPorVendas = (vendasDoMes > 0 && !emTeste) ? calcMensalidade(vendasDoMes, true, yearMonth).mensalidade : 0;
+  const previsaoPorVendas = (vendasDoMes > 0 && !emTeste)
+    ? calcMensalidade(vendasDoMes, true, yearMonth, inicio ? await vendasAntesDaVirada(franchiseeId, yearMonth, inicio, monthEnd) : 0).mensalidade
+    : 0;
   const devidoAgora = emTeste ? 0 : Math.max(previsaoPorVendas, previsaoPorUso?.valor || 0);
 
   // Loja que só recebe pedido de marketplace nunca passa por `ensureCycle`, e

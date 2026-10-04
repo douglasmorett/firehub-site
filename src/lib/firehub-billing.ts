@@ -15,16 +15,24 @@
  *
  * ── A taxa é do MÊS cobrado, não do dia em que a conta roda ─────────────────
  *
- * Até setembro/2026 a taxa era 1% (teto em R$40.000). De outubro/2026 em
- * diante é 2% — mesmo piso e mesmo teto, só que o teto chega com metade do
- * faturamento. O fechamento de um mês roda DEPOIS que ele acaba (e um ciclo
- * pode ser recalculado/fechado dias depois), então usar a taxa "de hoje"
- * cobraria setembro a 2%. Quem calcula um mês específico passa o `yearMonth`
- * dele para `calcMensalidade`; sem mês, vale a taxa atual.
+ * Até 03/10/2026 a taxa era 1% (teto em R$40.000). Desde 04/10/2026 é 2% —
+ * mesmo piso e mesmo teto, só que o teto chega com metade do faturamento. O
+ * fechamento de um mês roda DEPOIS que ele acaba (e um ciclo pode ser
+ * recalculado/fechado dias depois), então usar a taxa "de hoje" cobraria
+ * setembro a 2%. Quem calcula um mês específico passa o `yearMonth` dele para
+ * `calcMensalidade`; sem mês, vale a taxa atual.
+ *
+ * Outubro/2026 é o mês da virada (dono, 04/10: "a partir de hoje dia 04"): as
+ * vendas de 01 a 03/10 entram a 1% e as de 04/10 em diante a 2%, e o piso e o
+ * teto valem sobre a SOMA do mês. Quem calcula outubro passa também
+ * `vendasAntesDaVirada` (lib/billing.ts soma essa parte à parte).
  */
 
-/** Primeiro mês (AAAA-MM) cobrado a 2%. Antes dele, 1%. */
+/** Mês (AAAA-MM) em que os 2% começam. Antes dele, 1%. */
 export const MES_DOS_2_POR_CENTO = "2026-10";
+
+/** Instante em que os 2% começam: 04/10/2026, meia-noite de Brasília. */
+export const VIRADA_DOS_2_POR_CENTO = new Date("2026-10-04T00:00:00-03:00");
 
 export const FIREHUB_PLAN = {
   PERCENT_RATE: 2,          // 2% sobre o faturamento (desde 2026-10)
@@ -43,10 +51,20 @@ export const FIREHUB_PLAN = {
   SPLIT_PLATFORM: 0.02,     // 2% do faturamento = mensalidade via split
 };
 
-/** Percentual cobrado sobre o faturamento de um mês (AAAA-MM). Sem mês = o atual. */
+/**
+ * Percentual de um mês (AAAA-MM) — o que vale para o mês daqui em diante, para
+ * mostrar na tela. Sem mês = o atual. Em outubro/2026 as vendas de 01 a 03
+ * ainda são 1%: para a conta de verdade, `calcMensalidade` com
+ * `vendasAntesDaVirada`; para uma venda só, `percentualDaVenda`.
+ */
 export function percentualDoMes(yearMonth?: string | null): number {
   if (yearMonth && yearMonth < MES_DOS_2_POR_CENTO) return 1;
   return FIREHUB_PLAN.PERCENT_RATE;
+}
+
+/** Percentual que incide sobre uma venda feita em `quando`. */
+export function percentualDaVenda(quando: Date | string): number {
+  return new Date(quando) < VIRADA_DOS_2_POR_CENTO ? 1 : FIREHUB_PLAN.PERCENT_RATE;
 }
 
 /**
@@ -57,8 +75,10 @@ export function percentualDoMes(yearMonth?: string | null): number {
  * - Se faturamento > 0 ou tiver uso ativo → mínimo de R$100 se aplica
  *
  * `yearMonth` é o mês que está sendo cobrado (ver MES_DOS_2_POR_CENTO).
+ * `vendasAntesDaVirada` é a parte de `faturamentoMes` feita antes de
+ * 04/10/2026, cobrada a 1% (só existe em outubro/2026).
  */
-export function calcMensalidade(faturamentoMes: number, hasActiveUsage: boolean = false, yearMonth?: string | null): {
+export function calcMensalidade(faturamentoMes: number, hasActiveUsage: boolean = false, yearMonth?: string | null, vendasAntesDaVirada: number = 0): {
   mensalidade: number;
   modelo: "zero" | "percentual" | "fixo";
   faturamento: number;
@@ -69,7 +89,8 @@ export function calcMensalidade(faturamentoMes: number, hasActiveUsage: boolean 
   let modelo: "zero" | "percentual" | "fixo";
 
   const percentual = percentualDoMes(yearMonth);
-  const bruto = faturamentoMes * (percentual / 100);
+  const aUmPorCento = percentual > 1 ? Math.min(Math.max(0, vendasAntesDaVirada), faturamentoMes) : 0;
+  const bruto = (faturamentoMes - aUmPorCento) * (percentual / 100) + aUmPorCento * 0.01;
 
   // REGRA PRINCIPAL: sem vendas E sem uso ativo = sem cobrança
   if (faturamentoMes === 0 && !hasActiveUsage) {

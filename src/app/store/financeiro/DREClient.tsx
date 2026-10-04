@@ -6,7 +6,7 @@ import {
   BarChart2, ArrowUpRight, ArrowDownRight, Download, Filter,
   Package, Truck, CreditCard, Percent, Users, Plus, Trash2, Building2
 } from "lucide-react";
-import { calcMensalidade, FIREHUB_PLAN, percentualDoMes } from "@/lib/firehub-billing";
+import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, percentualDaVenda } from "@/lib/firehub-billing";
 import { isExemptAccount } from "@/lib/billing";
 import InvoicesClient from "@/components/InvoicesClient";
 import ContasAPagarClient, { type PayableDTO } from "./ContasAPagarClient";
@@ -1635,7 +1635,8 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                         // que lib/billing.ts usa. Mostrar o líquido aqui fazia
                         // a soma das linhas não bater com o topo do extrato.
                         const bruto = (o.totalAmount || 0) + (o.discountTotal || 0);
-                        const comissaoPedido = bruto * percentualDoMes(billingCycle?.yearMonth) / 100;
+                        // Pela data do pedido: em outubro/2026, até o dia 3 é 1%.
+                        const comissaoPedido = bruto * percentualDaVenda(o.createdAt) / 100;
                         return (
                           <tr key={o.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                             <td style={{ padding: "10px 12px", fontWeight: 800, color: "#0F172A" }}>

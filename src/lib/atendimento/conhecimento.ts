@@ -40,7 +40,7 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - Mínimo de R$ 100 e máximo de R$ 400 por mês. A partir de R$ 20 mil de faturamento, não paga mais que R$ 400.
 - Sem taxa por pedido. Mês sem vender nada e sem usar as funções: R$ 0. Usando ativamente (robô conectado, integrações) sem faturar: só o mínimo.
 - Exemplos: faturou R$ 12.500 no mês → R$ 250; faturou R$ 30.000 → R$ 400 (o teto).
-- Até setembro de 2026 a taxa era 1%; de outubro de 2026 em diante é 2% para todas as lojas (mínimo e máximo continuam os mesmos).
+- Até 03/10/2026 a taxa era 1%; a partir de 04/10/2026 é 2% para todas as lojas (mínimo e máximo continuam os mesmos). Em outubro, as vendas de 1 a 3 entram a 1%.
 
 ## Teste grátis
 - 15 dias completos, sem cartão de crédito, sem compromisso, sem multa. Todas as funções liberadas.
