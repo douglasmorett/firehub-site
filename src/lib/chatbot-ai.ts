@@ -17,7 +17,7 @@ import {
 } from "@/lib/entrega-do-robo";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { avaliarCupom, descreverBeneficio } from "@/lib/cupons";
+import { avaliarCupom, cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
 import { fatosDoCupom, hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { codigoCompacto, cupomCitadoPeloCliente, cupomDesteClienteParaOPrompt, cuponsDoRobo, cuponsParaTentar, mensagemDoCupom } from "@/lib/cupom-do-robo";
@@ -35,7 +35,8 @@ import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagD
 import { registroDeOpcoes } from "./opcoes-repetidas";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { ehNumeroDoDono } from "./numeros-do-dono";
-import { inicioDoExpedienteDaLoja } from "./fuso";
+import { horaDaLoja, inicioDoExpedienteDaLoja } from "./fuso";
+import { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, mensagemDeBoasVindasDoDia } from "./saudacao-do-dia";
 import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
 import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmergencia } from "./status-para-o-cliente";
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
@@ -121,11 +122,16 @@ export async function processChatbotAI(
   audioData?: { base64: string; mimeType: string },
   pushName?: string,
   /**
-   * O que a mensagem trouxe além do texto. `localizacao` = o ponto que o
-   * cliente mandou pelo 📎 NESTA mensagem (lib/localizacao-do-whatsapp.ts);
-   * a de mensagens anteriores é relida do histórico.
+   * O que a mensagem trouxe além do texto.
+   * - `localizacao`: o ponto que o cliente mandou pelo 📎 NESTA mensagem
+   *   (lib/localizacao-do-whatsapp.ts); a de mensagens anteriores é relida do
+   *   histórico.
+   * - `ultimaMensagemDoClienteEm`: quando o cliente mandou a mensagem ANTERIOR
+   *   a esta (ms). Vem do anti-loop do webhook (`mensagemAnteriorEm`); null =
+   *   nunca falou, undefined = não se sabe (simulador do painel). Decide se esta
+   *   é a primeira mensagem do dia (lib/saudacao-do-dia.ts).
    */
-  extras?: { localizacao?: LocalizacaoVigente | null }
+  extras?: { localizacao?: LocalizacaoVigente | null; ultimaMensagemDoClienteEm?: number | null }
 ) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -188,6 +194,64 @@ export async function processChatbotAI(
   let clientPhoneDigits = "";
   if (remoteJid) {
     clientPhoneDigits = remoteJid.split("@")[0].replace(/\D/g, "");
+  }
+
+  // ── "OI" NA PRIMEIRA MENSAGEM DO DIA GANHA O LINK NA HORA ──────────────────
+  //
+  // Decidido AQUI, antes de carregar cardápio e pedidos e antes de chamar o
+  // modelo: um "oi" não tem pergunta para o modelo responder, e a regra 5 do
+  // prompt (não empurrar link em cortesia) fazia o link só aparecer na terceira
+  // mensagem. O dono pediu o contrário (24/09/2026): cumprimento + link de cara,
+  // e a conversa segue fluida — a resposta entra no histórico como qualquer
+  // outra, e na mensagem seguinte o modelo continua de onde parou.
+  //
+  // É também onde mora o custo: 69% das respostas do robô (03/10/2026, 3 dias,
+  // todas as lojas) eram de conversas que começaram só com um "oi". Quem pega
+  // o link e pede pelo site não gasta IA; quem quer pedir por aqui responde e
+  // o modelo atende normalmente.
+  //
+  // Fica de fora: o dono (modo gerencial não vende), áudio (não se sabe o que
+  // foi dito), loja sem link e quem já falou hoje (lib/saudacao-do-dia.ts).
+  const ehODonoNaSaudacao = ehNumeroDoDono(user.notificationPhone, user.chatbotConfig, clientPhoneDigits);
+  const primeiraMensagemDoDia =
+    !ehODonoNaSaudacao &&
+    ehPrimeiraMensagemDoDia({
+      ultimaMensagemEm: extras?.ultimaMensagemDoClienteEm,
+      historico: history,
+      inicioDoDia: inicioDoExpedienteDaLoja(user.storeTimezone),
+    });
+  const linkDaSaudacao = linkDoCardapioDaLoja(user);
+  if (primeiraMensagemDoDia && linkDaSaudacao && !audioData && ehSoUmaSaudacao(message)) {
+    const cfg = (user.chatbotConfig as any) || {};
+    // O cupom de primeiro pedido vai junto do "oi" — só se a loja tem um
+    // cadastrado, ativo e no prazo, e este número nunca pediu (a mesma régua do
+    // checkout). Falhar a consulta só tira a linha do cupom.
+    let cupomDoPrimeiroPedido: { code: string; beneficio: string } | null = null;
+    try {
+      const primeiro = cupomDePrimeiroPedido(user.storeCoupons);
+      if (
+        primeiro &&
+        !cupomVenceu(primeiro, hojeDaLoja(user.storeTimezone)) &&
+        clientPhoneDigits.length >= 10 &&
+        !(await jaPediuPeloSite(targetFranchiseeId, clientPhoneDigits))
+      ) {
+        cupomDoPrimeiroPedido = { code: primeiro.code, beneficio: descreverBeneficio(primeiro) };
+      }
+    } catch (e: any) {
+      console.error("[Chatbot AI] Saudação: não consegui conferir o cupom de primeiro pedido:", e?.message || e);
+    }
+    return {
+      reply: mensagemDeBoasVindasDoDia({
+        primeiroNome: getFirstName(pushName),
+        nomeDoAtendente: cfg.agentName,
+        nomeDaLoja: user.storeName,
+        horaLocal: horaDaLoja(user.storeTimezone),
+        link: linkDaSaudacao,
+        personalidade: cfg.personality,
+        cupomDePrimeiroPedido: cupomDoPrimeiroPedido,
+      }),
+      saudacaoDoDia: true as const,
+    };
   }
 
   // Extrai todas as sequências numéricas (3 a 12 dígitos) presentes na mensagem e no histórico recente

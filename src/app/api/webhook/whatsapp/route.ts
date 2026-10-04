@@ -1642,7 +1642,13 @@ async function handleIncomingMessage(body: any, instance: string) {
     });
 
     const espera = await comPrazo(
-      processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName, { localizacao }),
+      // `mensagemAnteriorEm` é o que diz se este "oi" é o primeiro do dia
+      // (lib/saudacao-do-dia.ts): depois desta mensagem o anti-loop já
+      // carimbou "agora", então só o valor de ANTES serve.
+      processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName, {
+        localizacao,
+        ultimaMensagemDoClienteEm: guard.action === "allow" ? guard.mensagemAnteriorEm ?? null : undefined,
+      }),
       aiTimeout,
       async (respostaTardia, atrasoMs) => {
         if (vigia) clearTimeout(vigia);
