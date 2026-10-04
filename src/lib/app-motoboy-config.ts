@@ -36,6 +36,11 @@ export type AppMotoboyConfig = {
   relatorioLiberado: boolean;
   /** Até quantos dias para trás o entregador consulta (1 a 45). */
   relatorioDias: number;
+  /**
+   * O botão "O cliente não tem o código" fecha o pedido sem conferir. O dono
+   * (04/10/2026) quis a escolha na mão da loja; padrão: liberado (como era).
+   */
+  permitirSemCodigo: boolean;
 };
 
 /** As escolhas que o painel oferece para `relatorioDias`. */
@@ -48,6 +53,7 @@ export const APP_MOTOBOY_PADRAO: AppMotoboyConfig = {
   pedirCodigo99Food: true,
   relatorioLiberado: true,
   relatorioDias: 45,
+  permitirSemCodigo: true,
 };
 
 export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
@@ -59,6 +65,7 @@ export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
     if (typeof o.pedirCodigoEntrega === "boolean") cfg.pedirCodigoEntrega = o.pedirCodigoEntrega;
     if (typeof o.pedirCodigo99Food === "boolean") cfg.pedirCodigo99Food = o.pedirCodigo99Food;
     if (typeof o.relatorioLiberado === "boolean") cfg.relatorioLiberado = o.relatorioLiberado;
+    if (typeof o.permitirSemCodigo === "boolean") cfg.permitirSemCodigo = o.permitirSemCodigo;
     const dias = Math.round(Number(o.relatorioDias));
     if (o.relatorioDias != null && Number.isFinite(dias) && dias >= 1) cfg.relatorioDias = Math.min(45, dias);
   }

@@ -6692,6 +6692,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   rotulo: "🔐 Pedir o código de entrega do cliente (99Food)",
                   ajuda: "Nos pedidos do 99Food entregues pela loja. O app confere direto no 99Food e o pedido é concluído lá na hora — sem o entregador precisar abrir o site de confirmação.",
                 },
+                {
+                  chave: "permitirSemCodigo" as const,
+                  rotulo: "🚪 Deixar o motoboy finalizar sem o código",
+                  ajuda: "Mostra o botão \"O cliente não tem o código\". Desmarcado, o pedido do iFood/99 só fecha com o código conferido pela plataforma.",
+                },
               ]).map((op) => (
                 <label key={op.chave} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", cursor: "pointer", borderTop: "1px solid #E2E8F0" }}>
                   <input

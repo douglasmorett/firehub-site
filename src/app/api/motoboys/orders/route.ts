@@ -641,12 +641,40 @@ export async function PATCH(req: NextRequest) {
             { status: 428 },
           );
         }
+        // ── SEM CONFIRMAÇÃO DA PLATAFORMA, NÃO FECHA (04/10/2026) ───────────
+        //
+        // Até aqui, quando o iFood/99 não conferia (403 "Access Denied",
+        // "No permission", rede), a entrega era concluída com qualquer código
+        // — o Lucas (Frangoso) viu código errado finalizando. O dono decidiu:
+        // "se eles não liberaram, não vai, e avisa código errado". O 403 do
+        // iFood é intermitente (a reconferência do cron passava na 2ª), então
+        // antes de recusar o servidor tenta de novo, até 3 vezes. A tentativa
+        // recusada fica em ifoodDropCodeInfo como "nao-confirmado" (o cron de
+        // reconferência só olha "indisponivel" — não mexe neste pedido aberto).
+        const naoConfirmado = async (info: Record<string, unknown>, texto: string) => {
+          await prisma.customerOrder
+            .update({ where: { id: order.id }, data: { ifoodDropCodeInfo: { ...info, resultado: "nao-confirmado", quando: new Date().toISOString() } as any } })
+            .catch(() => {});
+          console.warn(`[Motoboy Entrega] ${canal} não confirmou o código de ${order.id} — entrega NÃO concluída (${JSON.stringify(info).slice(0, 200)})`);
+          return NextResponse.json({ error: texto, codigoIncorreto: true, naoConfirmado: true }, { status: 422 });
+        };
+        const esperar = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+
         if (!exigeCodigo) {
           const { conferirCodigoEntrega99 } = await import("@/lib/food99-status");
-          const r = await conferirCodigoEntrega99(
+          const textoDoErro = (x: { errno: unknown; errmsg?: unknown }) => `${x.errno} ${x.errmsg || ""}`.toLowerCase();
+          const ehErradoNo99 = (t: string) => /c[oó]digo|delivery_?code|verif|invalid|incorrect|wrong|not match|n[aã]o confere/.test(t);
+          let r = await conferirCodigoEntrega99(
             { openDeliveryOrderId: String((order as any).openDeliveryOrderId), franchiseeId: order.franchiseeId },
             digitado,
           );
+          for (let tentativa = 2; tentativa <= 3 && !r.conferido && !ehErradoNo99(textoDoErro(r)); tentativa++) {
+            await esperar(1200);
+            r = await conferirCodigoEntrega99(
+              { openDeliveryOrderId: String((order as any).openDeliveryOrderId), franchiseeId: order.franchiseeId },
+              digitado,
+            );
+          }
           // O que no 99Food significa "esse código está errado". Ainda não
           // sabemos o errno exato (nenhuma loja usou até hoje), então a
           // decisão é pela MENSAGEM — e, na dúvida, deixa passar. Cada
@@ -667,8 +695,7 @@ export async function PATCH(req: NextRequest) {
               { status: 422 },
             );
           } else {
-            avisoCodigo = `Entrega confirmada. O 99Food não conferiu o código agora (${r.errno}: ${r.errmsg}) — a loja foi avisada.`;
-            console.warn(`[Motoboy Entrega] 99Food verifyDeliveryCode ${order.id}: ${r.errno} ${r.errmsg} — entrega concluída mesmo assim`);
+            return naoConfirmado(infoCodigo, `O 99Food não confirmou este código. Confira com o cliente e digite de novo.`);
           }
         } else try {
           const { conferirCodigoDeEntrega, despacharNoIfood } = await import("@/lib/ifood-pedido");
@@ -680,7 +707,11 @@ export async function PATCH(req: NextRequest) {
             await despacharNoIfood(order as any, rotulo);
             despachouIfoodAgora = true;
           }
-          const r = await conferirCodigoDeEntrega(order as any, digitado, rotulo);
+          let r = await conferirCodigoDeEntrega(order as any, digitado, rotulo);
+          for (let tentativa = 2; tentativa <= 3 && r.resultado === "indisponivel"; tentativa++) {
+            await esperar(1200);
+            r = await conferirCodigoDeEntrega(order as any, digitado, rotulo);
+          }
           infoCodigo = {
             canal: "iFood", endpoint: "order", digitado, status: r.status, origem: r.origem ?? null,
             resposta: String(r.texto || "").slice(0, 300),
@@ -695,23 +726,26 @@ export async function PATCH(req: NextRequest) {
               { status: 422 },
             );
           } else {
-            console.warn(`[Motoboy Entrega] verifyDeliveryCode ${order.id}: ${r.status} ${String(r.texto || "").slice(0, 200)} — entrega concluída mesmo assim`);
-            avisoCodigo =
-              r.status === 403
-                ? "Entrega confirmada. O iFood recusou a conferência do código nesta loja — avise o suporte do FireHub."
-                : `Entrega confirmada. Não consegui conferir o código com o iFood agora (${r.status || "sem resposta"}).`;
+            return naoConfirmado(infoCodigo, "O iFood não confirmou este código. Confira com o cliente e digite de novo.");
           }
         } catch (e: any) {
-          console.warn(`[Motoboy Entrega] verifyDeliveryCode ${order.id} falhou: ${e?.message} — entrega concluída mesmo assim`);
-          infoCodigo = {
-            canal: "iFood", digitado, status: 0, resposta: String(e?.message || "erro").slice(0, 300),
-            resultado: "indisponivel", motoboyId: String(motoboyId),
-          };
-          avisoCodigo = "Entrega confirmada. Não consegui falar com o iFood para conferir o código.";
+          return naoConfirmado(
+            { canal: "iFood", digitado, status: 0, resposta: String(e?.message || "erro").slice(0, 300), motoboyId: String(motoboyId) },
+            "Não consegui confirmar o código com o iFood. Tente de novo em instantes.",
+          );
         }
       }
     }
     if ((exigeCodigo || eh99Propria) && semCodigo) {
+      // "O cliente não tem o código" só vale se a loja deixou (App Motoboys →
+      // configurações; o dono, 04/10/2026: "escolhe na configuração").
+      const lojaDoSem = await prisma.user.findUnique({ where: { id: String(storeId) }, select: { appMotoboyConfig: true } });
+      if (!lerAppMotoboyConfig(lojaDoSem?.appMotoboyConfig).permitirSemCodigo) {
+        return NextResponse.json(
+          { error: "A loja não permite finalizar sem o código. Peça o código ao cliente ou fale com a loja.", semCodigoBloqueado: true },
+          { status: 403 },
+        );
+      }
       console.warn(`[Motoboy Entrega] ⚠️ pedido ${order.id} (${exigeCodigo ? "iFood" : "99Food"}) baixado SEM código de entrega (motoboy ${motoboyId})`);
       infoCodigo = {
         canal: exigeCodigo ? "iFood" : "99Food", digitado: null,

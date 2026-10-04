@@ -529,7 +529,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   /** Palavras de bebida personalizadas da loja — vêm junto com os pedidos. */
   const [bevKeywords, setBevKeywords] = useState<string>("");
   /** O que o dono ligou no painel (App Motoboys → configurações). */
-  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; cobrarNaEntrega: boolean; pedirCodigoEntrega: boolean; pedirCodigo99Food: boolean; relatorioLiberado?: boolean; relatorioDias?: number }>({ lembrarBebidas: true, cobrarNaEntrega: true, pedirCodigoEntrega: true, pedirCodigo99Food: true });
+  const [appConfig, setAppConfig] = useState<{ lembrarBebidas: boolean; cobrarNaEntrega: boolean; pedirCodigoEntrega: boolean; pedirCodigo99Food: boolean; relatorioLiberado?: boolean; relatorioDias?: number; permitirSemCodigo?: boolean }>({ lembrarBebidas: true, cobrarNaEntrega: true, pedirCodigoEntrega: true, pedirCodigo99Food: true });
   /** Os minutos de amarelo/vermelho da loja (os do KDS), para a cor de cada entrega. */
   const [alertaDeTempo, setAlertaDeTempo] = useState<LimitesDaUrgencia | null>(null);
   /** Pedido cujo mapa está aberto dentro do cartão. */
@@ -1391,7 +1391,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                   <div style={{ marginBottom: "0.85rem", display: "flex", flexDirection: "column", gap: 6 }}>
                     <div style={{ display: "grid", gridTemplateColumns: waLink ? "1fr 1fr" : "1fr", gap: "0.5rem" }}>
                       <a
-                        href={`tel:${telefone.discar}`}
+                        href={`tel:${telefone.discar}${telefone.id ? `,,${telefone.id}` : ""}`}
                         style={{
                           display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                           background: "#FFFFFF", color: "#0F172A", padding: "9px", borderRadius: "10px",
@@ -1417,7 +1417,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                     </div>
                     {telefone.id && (
                       <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#475569", textAlign: "center" }}>
-                        📞 Na ligação, a central do iFood pede o ID: <span style={{ color: "#0F172A", fontSize: "0.9rem" }}>{telefone.id}</span>
+                        📞 O Ligar já digita o ID depois do 0800. Se a central pedir de novo: <span style={{ color: "#0F172A", fontSize: "0.9rem" }}>{telefone.id}</span>
                       </div>
                     )}
                   </div>
@@ -1970,21 +1970,25 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 : <CheckCircle2 size={18} />}
               Conferir e confirmar entrega
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!confirm("Confirmar a entrega SEM o código? O iFood pode não reconhecer a entrega. Só faça isso se o cliente realmente não tem o código.")) return;
-                const alvo = codigoModalOrder.id;
-                setCodigoModalOrder(null);
-                handleMarkDelivered(alvo, { ...extraDaBaixa, semCodigo: true });
-              }}
-              style={{
-                width: "100%", marginTop: "10px", padding: "10px", background: "#FFFFFF", color: "#B91C1C",
-                border: "1.5px solid #FCA5A5", borderRadius: "12px", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer"
-              }}
-            >
-              Cliente não tem o código
-            </button>
+            {/* Só aparece se a loja deixa fechar sem código (App Motoboys →
+                configurações). O servidor também recusa. */}
+            {appConfig.permitirSemCodigo !== false && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!confirm("Confirmar a entrega SEM o código? O iFood pode não reconhecer a entrega. Só faça isso se o cliente realmente não tem o código.")) return;
+                  const alvo = codigoModalOrder.id;
+                  setCodigoModalOrder(null);
+                  handleMarkDelivered(alvo, { ...extraDaBaixa, semCodigo: true });
+                }}
+                style={{
+                  width: "100%", marginTop: "10px", padding: "10px", background: "#FFFFFF", color: "#B91C1C",
+                  border: "1.5px solid #FCA5A5", borderRadius: "12px", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer"
+                }}
+              >
+                Cliente não tem o código
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setCodigoModalOrder(null)}
