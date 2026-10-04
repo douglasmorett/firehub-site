@@ -38,6 +38,7 @@ import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./
 import { isStoreOpen } from "@/lib/store-hours";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
 import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
+import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
 import {
   assinaturaDaConsulta, avisoDoPontoSemEndereco, BOTAO_DO_GPS, carimboDoPonto, comoAbrirOMapa, consultaDaCotacao, criarSequenciadorDeCotacoes,
   enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
@@ -1961,7 +1962,14 @@ export default function CustomerStorePage({
         leuOMapa = true;
         // O bairro também vem de residential/quarter/hamlet: loteamento sem
         // `suburb` fazia o GPS preciso ser jogado fora (enderecoDoReverso).
-        const { rua: road, numero: houseNum, bairro: neigh } = enderecoDoReverso(revData?.address);
+        const { rua: road, numero: houseNum, bairro: bairroDoMapa } = enderecoDoReverso(revData?.address);
+        // O mapa diz "Vila Monte Alegre" onde os Correios e o cliente dizem
+        // "Monte Alegre" (Cabo Frio): o bairro na tela é o dos Correios
+        // quando é o mesmo lugar (lib/bairro-dos-correios.ts).
+        const a = revData?.address || {};
+        const neigh = await bairroComNomeDosCorreios(
+          bairroDoMapa, road, a.city || a.town || a.municipality || a.village || "", a["ISO3166-2-lvl4"] || a.state,
+        );
         if (road && pode(endereco.street)) { setCustomerStreet(road); endereco.street = road; }
         if (houseNum && pode(endereco.number)) { setCustomerNumber(houseNum); endereco.number = houseNum; numeroDoMapa = true; }
         if (neigh && !isNeighborhoodType && pode(endereco.neighborhood)) { setCustomerNeighborhood(neigh); endereco.neighborhood = neigh; }

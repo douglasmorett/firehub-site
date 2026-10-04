@@ -110,7 +110,11 @@ export async function bairroDaRuaNosCorreios(
   let bairro: string | null = null;
   try {
     const url = `https://viacep.com.br/ws/${uf}/${encodeURIComponent(cidadeLimpa)}/${encodeURIComponent(ruaLimpa)}/json/`;
-    const r = await f(url, { signal: AbortSignal.timeout(opcoes.prazoMs ?? 2500) });
+    // Navegador antigo não tem AbortSignal.timeout: aí vai sem prazo.
+    const signal = typeof (AbortSignal as any)?.timeout === "function"
+      ? ((AbortSignal as any).timeout(opcoes.prazoMs ?? 2500) as AbortSignal)
+      : undefined;
+    const r = await f(url, { signal });
     if (!r.ok) return null;
     const lista = await r.json().catch(() => null);
     if (!Array.isArray(lista)) return null;
@@ -123,6 +127,39 @@ export async function bairroDaRuaNosCorreios(
   }
   cache.set(chave, { bairro, em: Date.now() });
   return bairro;
+}
+
+/** UF a partir do nome do estado ("Rio de Janeiro"), da sigla ("RJ") ou do ISO ("BR-RJ"). */
+export function ufDoEstado(estado: string | null | undefined): string | null {
+  const t = String(estado || "").trim();
+  const iso = t.match(/^BR-([A-Z]{2})$/i);
+  if (iso) return iso[1].toUpperCase();
+  if (/^[A-Za-z]{2}$/.test(t) && Object.values(UF_DO_ESTADO).includes(t.toUpperCase())) return t.toUpperCase();
+  return UF_DO_ESTADO[normal(t)] ?? null;
+}
+
+/**
+ * Só o bairro: o dos Correios quando é o mesmo do mapa com um prefixo a menos,
+ * senão o do mapa. Serve ao navegador (o ViaCEP aceita chamada direta, como o
+ * campo de CEP do checkout — lib/cep.ts) e ao servidor. Nunca lança.
+ */
+export async function bairroComNomeDosCorreios(
+  bairroDoMapa: string,
+  rua: string,
+  cidade: string,
+  estadoOuUf: string | null | undefined,
+  opcoes: { fetch?: typeof fetch; prazoMs?: number } = {},
+): Promise<string> {
+  const uf = ufDoEstado(estadoOuUf);
+  if (!bairroDoMapa || !rua || !cidade || !uf) return bairroDoMapa;
+  try {
+    const dosCorreios = await bairroDaRuaNosCorreios(rua, cidade, uf, opcoes);
+    return dosCorreios && dosCorreios !== bairroDoMapa && mesmoBairroSemPrefixo(bairroDoMapa, dosCorreios)
+      ? dosCorreios
+      : bairroDoMapa;
+  } catch {
+    return bairroDoMapa;
+  }
 }
 
 /**

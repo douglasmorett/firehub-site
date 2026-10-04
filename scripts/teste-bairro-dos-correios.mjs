@@ -13,7 +13,7 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync("src/lib/bairro-dos-correios.ts", "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { enderecoDoMapaComBairroDosCorreios, mesmoBairroSemPrefixo, lerTextoDoMapa } = await import(
+const { enderecoDoMapaComBairroDosCorreios, mesmoBairroSemPrefixo, lerTextoDoMapa, ufDoEstado, bairroComNomeDosCorreios } = await import(
   "data:text/javascript," + encodeURIComponent(js)
 );
 
@@ -88,6 +88,16 @@ igual("vazio", await enderecoDoMapaComBairroDosCorreios("", "CABO FRIO", f), "")
 const antes = chamadas;
 await enderecoDoMapaComBairroDosCorreios("Rua Beira Alta, Vila Monte Alegre, Cabo Frio, Rio de Janeiro, Brasil", "CABO FRIO", f);
 igual("a mesma rua não pergunta de novo (cache)", chamadas, antes);
+
+console.log("\n4) Só o bairro (site pelo GPS, localização da loja)");
+igual("UF pelo ISO", ufDoEstado("BR-RJ"), "RJ");
+igual("UF pelo nome", ufDoEstado("Rio de Janeiro"), "RJ");
+igual("UF pela sigla", ufDoEstado("sp"), "SP");
+igual("estado desconhecido", ufDoEstado("Narnia"), null);
+igual("Vila Monte Alegre vira Monte Alegre", await bairroComNomeDosCorreios("Vila Monte Alegre", "Rua do Ouro", "Cabo Frio", "BR-RJ", f), "Monte Alegre");
+igual("bairro diferente fica o do mapa", await bairroComNomeDosCorreios("Vila Boca do Mato", "Rua Rosalina Cardoso da Fonseca", "Cabo Frio", "Rio de Janeiro", f), "Vila Boca do Mato");
+igual("sem UF fica o do mapa", await bairroComNomeDosCorreios("Vila Monte Alegre", "Rua do Ouro", "Cabo Frio", "", f), "Vila Monte Alegre");
+igual("sem bairro fica vazio", await bairroComNomeDosCorreios("", "Rua do Ouro", "Cabo Frio", "RJ", f), "");
 
 if (process.argv.includes("--viacep")) {
   console.log("\n4) ViaCEP de verdade");
