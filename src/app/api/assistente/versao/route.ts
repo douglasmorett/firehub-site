@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { VERSAO_ASSISTENTE_ATUAL } from "@/lib/print";
 import { getClientIp } from "@/lib/rateLimit";
 import { lojaDoEndereco, podeAtualizarAgora } from "@/lib/assistente-da-loja";
+import { ligouHaMs, ATUALIZA_AO_ABRIR_MS } from "@/lib/volta-do-assistente";
 
 export const dynamic = "force-dynamic";
 
@@ -30,13 +31,39 @@ const URL_DO_INSTALADOR = "https://firehubfood.com.br/downloads/FireHub-Assisten
  *
  * `pedido=1` é o "procurar atualização agora" da bandeja ou do suporte: quem
  * pediu decidiu a hora, e a trava não vale.
+ *
+ * ── LIGOU, ATUALIZA (03/10/2026) ───────────────────────────────────────────
+ * Regra do Douglas: "ligou o computador, ativou ele, tem atualização,
+ * atualiza — não importa a regra nenhuma". A trava existia porque atualizar
+ * no meio do serviço cuspia comandas antigas; desde que o Assistente só
+ * imprime o que entra depois de aberto (lib/volta-do-assistente.ts), abrir e
+ * já reiniciar para a versão nova não reimprime nada. E o PC da loja é ligado
+ * pouco antes de abrir: esperar "a loja parada" deixava as lojas semanas numa
+ * versão velha.
+ *
+ * Então, nos primeiros 20 min depois de o Assistente abrir, a versão nova sai
+ * sem olhar horário nem pedido. Quem diz que ele abriu é a fila da nuvem (o
+ * servidor vê o PC voltar a consultar), e isso vale para QUALQUER versão já
+ * instalada; a que manda `abertoHaSeg` aqui também é reconhecida direto.
+ * Depois disso, com o PC ligado há tempo, volta a valer a loja parada.
  */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const pedidoAMao = params.get("pedido") === "1";
-  const franchiseeId = params.get("franchiseeId") || lojaDoEndereco(getClientIp(req));
+  const ip = getClientIp(req);
+  const franchiseeId = params.get("franchiseeId") || lojaDoEndereco(ip);
 
-  if (!pedidoAMao) {
+  const abertoHaSeg = params.has("abertoHaSeg") ? Number(params.get("abertoHaSeg")) : NaN;
+  const ligouHa = Number.isFinite(abertoHaSeg) && abertoHaSeg >= 0
+    ? abertoHaSeg * 1000
+    : franchiseeId ? ligouHaMs(`${franchiseeId}|${ip}`) : null;
+  const acabouDeLigar = ligouHa != null && ligouHa <= ATUALIZA_AO_ABRIR_MS;
+  const versaoDoPc = params.get("v") || "";
+  if (acabouDeLigar && !pedidoAMao && versaoDoPc && versaoDoPc !== VERSAO_ASSISTENTE_ATUAL) {
+    console.log(`[Assistente/versao] liberada ao ligar: loja ${franchiseeId}, aberto há ${Math.round(ligouHa! / 1000)} s, ${versaoDoPc} → ${VERSAO_ASSISTENTE_ATUAL}`);
+  }
+
+  if (!pedidoAMao && !acabouDeLigar) {
     let decisao: { pode: boolean; motivo: string };
     try {
       decisao = await podeAtualizarAgora(franchiseeId);
