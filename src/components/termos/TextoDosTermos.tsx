@@ -12,9 +12,14 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 import { DATA_DOS_TERMOS } from "@/lib/termos-versao";
-import { FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { FIREHUB_PLAN, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { MULTA_POR_ATRASO_PCT, JUROS_AO_MES_PCT } from "@/lib/prazo-da-mensalidade";
 import { SPLIT_FIREHUB_PERCENTUAL } from "@/lib/pix-online";
+
+/** "04/10/2026" e "03/10/2026" — saem da mesma data que a cobrança usa. */
+const dataBr = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+const DATA_DA_VIRADA = dataBr(VIRADA_DOS_2_POR_CENTO);
+const DIA_ANTES_DA_VIRADA = dataBr(new Date(VIRADA_DOS_2_POR_CENTO.getTime() - 1));
 
 const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -61,6 +66,15 @@ export default function TextoDosTermos({ compacto = false }: { compacto?: boolea
         Quem aceita declara ter poderes para representar a empresa cadastrada.
       </p>
 
+      <Destaque>
+        <p style={{ ...p, margin: 0 }}>
+          <strong style={{ color: "#C2410C" }}>Aviso de reajuste:</strong> a partir de <strong>{DATA_DA_VIRADA}</strong>, a
+          mensalidade do FireHub passa a ser de <strong>{FIREHUB_PLAN.PERCENT_RATE}% do faturamento</strong> (antes, 1%). As vendas
+          feitas até {DIA_ANTES_DA_VIRADA} continuam cobradas a 1%. O mínimo de {reais(FIREHUB_PLAN.MIN_MONTHLY)} e o máximo
+          de {reais(FIREHUB_PLAN.MAX_MONTHLY)} por mês não mudam (item 4.2).
+        </p>
+      </Destaque>
+
       <Secao n="1" titulo="O que é o FireHub">
         <Item n="1.1">O FireHub é um software de gestão oferecido pela internet (SaaS) para restaurantes e negócios de comida: cardápio digital, pedidos, balcão, mesas, totem, tela da cozinha (KDS), entregadores, integrações com marketplaces, atendimento automático pelo WhatsApp com inteligência artificial, emissão de nota fiscal, financeiro, estoque, tráfego pago e outras funções.</Item>
         <Item n="1.2">O FireHub é uma ferramenta de gestão. Ele <strong>não é parte das vendas do Lojista</strong>, não é marketplace, não vende, não prepara e não entrega produtos, e não é intermediador de pagamento. A relação com o cliente final, inclusive a de consumo, é exclusivamente do Lojista.</Item>
@@ -83,7 +97,7 @@ export default function TextoDosTermos({ compacto = false }: { compacto?: boolea
 
       <Secao n="4" titulo="Preço, cobrança e atraso">
         <Item n="4.1"><strong>Teste grátis:</strong> 15 dias a partir do cadastro, ou o prazo informado na página de cadastro. As vendas feitas durante o teste não entram na cobrança.</Item>
-        <Item n="4.2"><strong>Mensalidade:</strong> {FIREHUB_PLAN.PERCENT_RATE}% do faturamento do mês registrado no FireHub, no mínimo {reais(FIREHUB_PLAN.MIN_MONTHLY)} e no máximo {reais(FIREHUB_PLAN.MAX_MONTHLY)}. Entra todo pedido de todos os canais (cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá e demais integrações), pelo valor cheio antes de cupons e descontos. Pedidos cancelados ficam de fora. Até setembro de 2026 o percentual era 1%.</Item>
+        <Item n="4.2"><strong>Mensalidade:</strong> {FIREHUB_PLAN.PERCENT_RATE}% do faturamento do mês registrado no FireHub, no mínimo {reais(FIREHUB_PLAN.MIN_MONTHLY)} e no máximo {reais(FIREHUB_PLAN.MAX_MONTHLY)}. Entra todo pedido de todos os canais (cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá e demais integrações), pelo valor cheio antes de cupons e descontos. Pedidos cancelados ficam de fora. O percentual de {FIREHUB_PLAN.PERCENT_RATE}% vale para as vendas a partir de {DATA_DA_VIRADA}; as vendas até {DIA_ANTES_DA_VIRADA} são cobradas a 1%, e o mínimo e o máximo valem sobre o total do mês.</Item>
         <Item n="4.3">Mês sem nenhuma venda e sem uso do sistema: R$ 0,00. Mês sem venda, mas com uso ativo (robô conectado, integrações ligadas, financeiro ou estoque em uso): cobra-se o mínimo.</Item>
         <Item n="4.4"><strong>Serviços adicionais</strong>, cobrados na mesma fatura: cada loja adicional ligada a um mesmo marketplace, {reais(FIREHUB_PLAN.EXTRA_STORE_FEE)} por mês (a primeira é gratuita); totem, R$ 100,00 por mês por totem; tráfego pago, R$ 50,00 por semana de campanha ativa, independentemente do resultado. A verba dos anúncios é paga pelo Lojista diretamente à Meta.</Item>
         <Item n="4.5"><strong>Pagamento online pelo site:</strong> é processado na conta Asaas do próprio Lojista. Sobre cada pedido pago online, o FireHub fica com {SPLIT_FIREHUB_PERCENTUAL}% do valor, além das tarifas do Asaas, que são do Asaas.</Item>
