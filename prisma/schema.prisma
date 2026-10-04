@@ -2263,3 +2263,22 @@ model AcompanhamentoRelatorio {
 
   @@index([clienteId, mes])
 }
+
+/// Prova do aceite eletrônico dos Termos de Uso (lib/termos-de-uso.ts). Só
+/// cresce; sem chave estrangeira para o User de propósito — apagar a conta não
+/// apaga a prova. Tabela criada também pelo próprio lib, na primeira consulta.
+model AceiteDosTermos {
+  id        String   @id @default(cuid())
+  userId    String
+  /// VERSAO_DOS_TERMOS (lib/termos-versao.ts) aceita.
+  versao    String
+  /// CADASTRO · PAINEL
+  origem    String
+  ip        String?
+  userAgent String?
+  email     String?
+  nome      String?
+  aceitoEm  DateTime @default(now())
+
+  @@index([userId, versao])
+}

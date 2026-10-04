@@ -7,6 +7,8 @@ import { getCorsHeaders } from "@/lib/cors";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { diasDeTesteDoLink } from "@/lib/trial-do-cadastro";
 import { cpfValido } from "@/lib/fiscal-validacao";
+import { registrarAceite } from "@/lib/termos-de-uso";
+import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
 import { aoCadastrarLoja } from "@/lib/crm/contatos";
 
 // CORS headers for cross-origin requests from firehubfood.com.br
@@ -26,7 +28,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, password, phone, storeName, cnpj, cpf, semCnpj, city, repasseConfig, refCode, comoConheceu, faturamento } = await req.json();
+    const { name, email, password, phone, storeName, cnpj, cpf, semCnpj, city, repasseConfig, refCode, comoConheceu, faturamento, aceitouTermos, versaoDosTermos } = await req.json();
 
     // Validações básicas
     if (!name || !email || !password) {
@@ -212,6 +214,17 @@ export async function POST(req: NextRequest) {
         planPercent: 2,
       },
     });
+
+    // Prova do aceite dos Termos marcado na tela de cadastro. Falhar aqui não
+    // derruba o cadastro: sem a linha, a conta só cai na tela de aceite do
+    // painel no primeiro acesso (lib/termos-de-uso.ts).
+    if (aceitouTermos === true && versaoDosTermos === VERSAO_DOS_TERMOS) {
+      try {
+        await registrarAceite({ userId: user.id, origem: "CADASTRO", headers: req.headers, email: user.email, nome: name });
+      } catch (err) {
+        console.error("[Register] Falha ao gravar o aceite dos Termos:", err);
+      }
+    }
 
     // O lead do CRM vira "em teste" e, se um vendedor cuidava dele, a loja já
     // nasce na carteira desse vendedor (os 3% dele). Nunca lança.

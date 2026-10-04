@@ -2,6 +2,7 @@
 import { nomeDaLojaPeloCnpj } from "@/lib/slug-da-loja";
 import { diasDeTesteDoLink, TRIAL_PADRAO_DIAS } from "@/lib/trial-do-cadastro";
 import { useState, useEffect } from "react";
+import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
 
 const API = "";
 const PORTAL = API;
@@ -180,7 +181,10 @@ export default function CadastroPage() {
         name: nome, email, password: senha, phone: whatsapp.replace(/\D/g, ""),
         cnpj: semCnpj ? null : cnpjData?.cnpj, cpf: cpf.replace(/\D/g, ""), semCnpj,
         storeName, city: semCnpj ? cidadeSemCnpj.trim() : cnpjData?.municipio, refCode,
-        comoConheceu, faturamento
+        comoConheceu, faturamento,
+        // Vira prova em AceiteDosTermos (lib/termos-de-uso.ts). Sem isto a
+        // conta nasce sem aceite e cai na tela de aceite do painel.
+        aceitouTermos: termos, versaoDosTermos: VERSAO_DOS_TERMOS,
       };
       if (repasseData) body.repasseConfig = repasseData;
 
@@ -445,9 +449,11 @@ export default function CadastroPage() {
                   </div>
                   <label className="check-opt">
                     <input type="checkbox" checked={termos} onChange={e => setTermos(e.target.checked)} />
-                    Aceito os <a href="#" style={{ color: "#EF4444", marginLeft: 3 }}>Termos de Uso</a>
-                    <span style={{ margin: "0 3px" }}>e</span>
-                    <a href="#" style={{ color: "#EF4444" }}>Política de Privacidade</a>
+                    <span>
+                      Li e aceito os <a href="/termos" target="_blank" rel="noopener noreferrer" style={{ color: "#EF4444", fontWeight: 700 }}>Termos de Uso</a>
+                      {" "}e a{" "}
+                      <a href="/privacidade" target="_blank" rel="noopener noreferrer" style={{ color: "#EF4444", fontWeight: 700 }}>Política de Privacidade</a> do FireHub
+                    </span>
                   </label>
                   <button type="submit" className="btn" disabled={loading}>
                     {loading ? "Criando sua conta..." : "🔥 Começar Teste Grátis"}
