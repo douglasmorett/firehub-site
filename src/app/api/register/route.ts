@@ -209,7 +209,7 @@ export async function POST(req: NextRequest) {
         autoAcceptOrders: false,
         storeAlertSound: "bell",
         storeOrderCount: 0,
-        planPercent: 1,
+        planPercent: 2,
       },
     });
 

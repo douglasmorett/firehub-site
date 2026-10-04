@@ -4,7 +4,8 @@
  * Motor de faturamento "Use First, Pay Later" — 100% automático.
  *
  * Regra:
- *   Taxa = 1% do faturamento mensal do franqueado
+ *   Taxa = 2% do faturamento mensal do franqueado (1% até 2026-09 — ver
+ *   percentualDoMes em lib/firehub-billing.ts)
  *   Mínimo: R$100 · Máximo: R$400
  *
  * Base de cálculo: soma do valor BRUTO (totalAmount + discountTotal, ver
@@ -13,7 +14,7 @@
  * gravada como CustomerOrder —
  * cardápio digital, chatbot de WhatsApp, mesa, balcão, totem e os pedidos
  * importados das integrações de iFood, 99Food e Jotajá. Não existe filtro por
- * `source` aqui, e é intencional: o trato é 1% de tudo que passa pelo sistema.
+ * `source` aqui, e é intencional: o trato é 2% de tudo que passa pelo sistema.
  *
  * Fluxo:
  *   1. Pedido é confirmado (status ACEITO/ENTREGUE) → trackSaleForBilling()
@@ -27,7 +28,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { calcMensalidade, FIREHUB_PLAN, percentualDoMes } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
 import { bloqueioDaMensalidade, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
@@ -333,7 +334,9 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
     data: {
       franchiseeId,
       yearMonth,
-      planPercent: isExempt ? 0 : (user?.planPercent ?? 1), // default 1%
+      // Retrato da taxa do mês cobrado (1% até 2026-09, 2% depois), não do
+      // `User.planPercent` — que só serve para marcar isenção (0).
+      planPercent: isExempt ? 0 : percentualDoMes(yearMonth),
       status: isExempt ? "PAID" : "OPEN",
     },
   });
@@ -379,7 +382,7 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
     : null;
 
   const totalSales = agg ? faturamentoBruto(agg._sum) : 0;
-  const { mensalidade: amountDue } = calcMensalidade(totalSales);
+  const { mensalidade: amountDue } = calcMensalidade(totalSales, false, mes);
 
   // As taxas já acumuladas no ciclo (tráfego pago, totem) entram no pendente.
   //
@@ -432,7 +435,9 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
 
   await prisma.franchiseeBillingCycle.update({
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth: mes } },
-    data: { totalSales, amountDue: devidoGravado, amountPending: pendingVal },
+    // `planPercent` regravado: ciclo criado antes da troca para 2% (ou por
+    // outro módulo) guardava o 1% antigo.
+    data: { totalSales, amountDue: devidoGravado, amountPending: pendingVal, planPercent: isExempt ? 0 : percentualDoMes(mes) },
   });
 
   console.log(
@@ -628,7 +633,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     motivosUso = uso.motivos;
   }
 
-  const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage);
+  const { mensalidade: amountDue } = calcMensalidade(totalSales, hasUsage, yearMonth);
 
   // Quem NÃO paga mensalidade: loja isenta, quem não usou nada e quem está em
   // teste sem ter vendido. Isto era decidido lá embaixo, no bloco que zera o
@@ -637,7 +642,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   const mensalidadePerdoada = isSpecialStore || isentoPorTeste || !hasUsage;
   const mensalidadePendente = mensalidadePerdoada ? 0 : Math.max(0, amountDue - cycle.amountOffset);
 
-  // Taxas fixas do mês, por fora do 1% sobre as vendas.
+  // Taxas fixas do mês, por fora do percentual sobre as vendas.
   //
   // A primeira loja integrada a cada marketplace é gratuita; cada loja
   // ADICIONAL ligada na mesma conta custa EXTRA_STORE_FEE por mês. Isto já era
@@ -782,7 +787,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       ];
       const chargeDescription = linhasDaFatura.length > 0
         ? `FireHub ${yearMonth} — ${linhasDaFatura.join(" + ")}`
-        : `FireHub ${yearMonth} — Taxa de plataforma (1% · mín R$100 · máx R$400)`;
+        : `FireHub ${yearMonth} — Taxa de plataforma (${percentualDoMes(yearMonth)}% · mín R$${FIREHUB_PLAN.MIN_MONTHLY} · máx R$${FIREHUB_PLAN.MAX_MONTHLY})`;
 
       const payload: any = {
         customer: customerId,
@@ -872,6 +877,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     where: { id: cycle.id },
     data: {
       totalSales,
+      planPercent: isSpecialStore ? 0 : percentualDoMes(yearMonth),
       // Mensalidade perdoada (teste / sem uso) mas com taxa a cobrar: gravar o
       // `amountDue` cheio faria o painel do admin mostrar uma dívida que não
       // está no boleto.
@@ -964,12 +970,12 @@ export async function getCurrentCycleView(franchiseeId: string) {
   if (vendasDoMes === 0 && !emTeste) {
     const uso = await detectarUsoDaLoja(franchiseeId, inicio ?? monthStart, monthEnd);
     if (uso.usou) {
-      previsaoPorUso = { valor: calcMensalidade(0, true).mensalidade, motivos: uso.motivos };
+      previsaoPorUso = { valor: calcMensalidade(0, true, yearMonth).mensalidade, motivos: uso.motivos };
     }
   }
 
   // Mesma conta do fechamento, para o painel bater com o boleto.
-  const previsaoPorVendas = (vendasDoMes > 0 && !emTeste) ? calcMensalidade(vendasDoMes, true).mensalidade : 0;
+  const previsaoPorVendas = (vendasDoMes > 0 && !emTeste) ? calcMensalidade(vendasDoMes, true, yearMonth).mensalidade : 0;
   const devidoAgora = emTeste ? 0 : Math.max(previsaoPorVendas, previsaoPorUso?.valor || 0);
 
   // Loja que só recebe pedido de marketplace nunca passa por `ensureCycle`, e

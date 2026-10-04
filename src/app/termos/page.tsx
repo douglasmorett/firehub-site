@@ -18,9 +18,9 @@ export default function TermosPage() {
           e paga ao final do mês proporcionalmente ao quanto faturou <strong>dentro da plataforma FireHub</strong>.
         </p>
         <ul style={{ lineHeight: 2, paddingLeft: "1.5rem", fontSize: "0.92rem" }}>
-          <li><strong>Taxa:</strong> 1% do faturamento mensal via FireHub</li>
+          <li><strong>Taxa:</strong> 2% do faturamento mensal via FireHub (vale a partir das vendas de outubro de 2026; até setembro de 2026 a taxa era 1%)</li>
           <li><strong>Mínimo:</strong> R$ 100,00/mês — <strong>aplicado caso haja vendas no mês ou uso ativo de ferramentas (ex: Chatbot de IA conectado, Cardápio Digital ativo)</strong></li>
-          <li><strong>Máximo (teto):</strong> R$ 400,00/mês (para faturamentos ≥ R$ 40.000)</li>
+          <li><strong>Máximo (teto):</strong> R$ 400,00/mês (para faturamentos ≥ R$ 20.000)</li>
           <li><strong>Sem vendas e sem uso = sem cobrança:</strong> Se você não faturou NADA no mês e não usou ativamente as ferramentas da plataforma, o valor é R$ 0,00</li>
           <li><strong>Período de teste:</strong> 15 dias gratuitos a partir da criação da conta</li>
         </ul>
@@ -32,9 +32,9 @@ export default function TermosPage() {
           <strong>⚠️ Exemplos práticos:</strong>
           <ul style={{ margin: "6px 0 0", paddingLeft: "1.2rem" }}>
             <li>Usou o sistema <strong>1 dia</strong> e fez 1 venda de R$30 → cobrança de <strong>R$100</strong> (mínimo)</li>
-            <li>Usou o sistema o mês todo, vendeu R$8.000 → cobrança de <strong>R$100</strong> (1% de R$8.000 = R$80, abaixo do mínimo)</li>
-            <li>Vendeu R$25.000 no mês (somando cardápio, WhatsApp e iFood) → cobrança de <strong>R$250</strong> (1% de R$25.000)</li>
-            <li>Vendeu R$60.000 no mês → cobrança de <strong>R$400</strong> (teto máximo)</li>
+            <li>Usou o sistema o mês todo, vendeu R$4.000 → cobrança de <strong>R$100</strong> (2% de R$4.000 = R$80, abaixo do mínimo)</li>
+            <li>Vendeu R$12.500 no mês (somando cardápio, WhatsApp e iFood) → cobrança de <strong>R$250</strong> (2% de R$12.500)</li>
+            <li>Vendeu R$30.000 no mês → cobrança de <strong>R$400</strong> (teto máximo — 2% daria R$600)</li>
             <li><strong>Não fez nenhuma venda</strong>, mas manteve o sistema em uso (chatbot conectado, integrações ligadas, financeiro ou estoque em uso) → cobrança de <strong>R$100</strong> (mínimo)</li>
             <li><strong>Não fez nenhuma venda e não usou nenhuma funcionalidade</strong> → <strong>R$0</strong> (sem cobrança)</li>
             <li><strong>Pausou a loja</strong> e não vendeu nada → <strong>R$0</strong> (sem cobrança enquanto pausado)</li>

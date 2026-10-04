@@ -6,7 +6,7 @@ import {
   BarChart2, ArrowUpRight, ArrowDownRight, Download, Filter,
   Package, Truck, CreditCard, Percent, Users, Plus, Trash2, Building2
 } from "lucide-react";
-import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { calcMensalidade, FIREHUB_PLAN, percentualDoMes } from "@/lib/firehub-billing";
 import { isExemptAccount } from "@/lib/billing";
 import InvoicesClient from "@/components/InvoicesClient";
 import ContasAPagarClient, { type PayableDTO } from "./ContasAPagarClient";
@@ -51,7 +51,7 @@ const DEFAULT_GATEWAY_FEES: Record<string, number> = {
 };
 
 // Plataforma FireHub — Pay as You Grow
-// 3% do faturamento (mín R$60 · teto R$300)
+// 2% do faturamento (mín R$100 · teto R$400) — ver lib/firehub-billing.ts
 function calcPlatformFee(total: number): number {
   return calcMensalidade(total).mensalidade;
 }
@@ -613,7 +613,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
         {activeTab === "mensalidade" && (() => {
           // A fatura de verdade é o ciclo do servidor (/api/billing/cycle): a
           // mesma conta do boleto, com o período de teste descontado e as taxas
-          // somadas. Antes o valor era 1% da receita do período filtrado no
+          // somadas. Antes o valor era o percentual da receita do período filtrado no
           // DRE — ignorava teste, abatimento e taxas —, e o botão "Pagar
           // agora (PIX)" só abria um alert dizendo "código gerado".
           const ciclo = billingCycle;
@@ -623,6 +623,8 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
           const cobraDesde = ciclo?.cobrancaDesde ? new Date(ciclo.cobrancaDesde) : null;
           const dataCurta = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
           const baseVendas = ciclo ? ciclo.totalSales : dre.receitaBruta;
+          // A taxa é a do mês do ciclo: o boleto de setembro/2026 ainda é 1%.
+          const pctDoCiclo = percentualDoMes(ciclo?.yearMonth);
           const valFatura = isExempt ? 0 : (ciclo ? ciclo.amountPending : calcMensalidade(dre.receitaBruta).mensalidade);
           const statusCiclo = ciclo?.status || "OPEN";
           const boletoUrl = ciclo?.asaasBoletoUrl || null;
@@ -656,7 +658,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
                       {isExempt
                         ? "Esta conta é isenta de mensalidade e de comissão da plataforma."
-                        : "Plano: 1% sobre o valor cheio das vendas (antes de cupons) · mínimo R$ 100,00 · teto R$ 400,00/mês"}
+                        : `Plano: ${pctDoCiclo}% sobre o valor cheio das vendas (antes de cupons) · mínimo R$ ${FIREHUB_PLAN.MIN_MONTHLY},00 · teto R$ ${FIREHUB_PLAN.MAX_MONTHLY},00/mês`}
                       {!isExempt && cobraDesde && !emTeste && (
                         <> · Teste terminou em {dataCurta(cobraDesde)}: só as vendas a partir daí entram na conta.</>
                       )}
@@ -725,7 +727,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                       ? "Nada ainda: as vendas passam a contar quando o teste terminar"
                       : cobraDesde && cobraDesde.getDate() !== 1
                         ? `Vendas desde ${dataCurta(cobraDesde)} (fim do teste), valor cheio antes de cupons`
-                        : "Vendas do mês, valor cheio antes de cupons · 1% sobre isto"}
+                        : `Vendas do mês, valor cheio antes de cupons · ${pctDoCiclo}% sobre isto`}
                   </p>
                 </div>
 
@@ -892,7 +894,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
             <div style={{ padding: "12px 24px 4px", background: "#FAF6F2" }}>
               <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#1C1917", letterSpacing: 1 }}>PLATAFORMA FIREHUB</span>
             </div>
-            <DRERow label={`(-) Mensalidade FireHub (3% · mín R$60 · teto R$${FIREHUB_PLAN.MAX_MONTHLY})`} value={-dre.taxaFireHub} color="#1C1917" />
+            <DRERow label={`(-) Mensalidade FireHub (${FIREHUB_PLAN.PERCENT_RATE}% · mín R$${FIREHUB_PLAN.MIN_MONTHLY} · teto R$${FIREHUB_PLAN.MAX_MONTHLY})`} value={-dre.taxaFireHub} color="#1C1917" />
             <div style={{ padding: "6px 24px 10px", background: "#FAF6F2" }}>
               <span style={{ fontSize: "0.72rem", color: "#1C1917" }}>
                 {dre.receitaBruta >= FIREHUB_PLAN.THRESHOLD
@@ -1558,7 +1560,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                     Extrato Detalhado da Cobrança — FireHub Pro
                   </h3>
                   <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>
-                    Detalhamento de todos os pedidos e cálculo transparente da comissão oficial de 1%
+                    Detalhamento de todos os pedidos e cálculo transparente da comissão oficial de {percentualDoMes(billingCycle?.yearMonth)}%
                   </p>
                 </div>
               </div>
@@ -1572,7 +1574,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
 
             {/* Content Body */}
             <div style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
-              {/* Card Resumo 1% Promessa */}
+              {/* Card Resumo da taxa */}
               <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "14px", padding: "1.25rem", marginBottom: "1.25rem" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
                   <div>
@@ -1585,7 +1587,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                   <div>
                     <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>TAXA OFICIAL APLICADA</span>
                     <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#0F766E", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                      1,0% <span style={{ fontSize: "0.7rem", color: "#0F766E", background: "#F0FDFA", padding: "2px 6px", borderRadius: 4, fontWeight: 800 }}>Promessa Landing Page</span>
+                      {percentualDoMes(billingCycle?.yearMonth).toFixed(1).replace(".", ",")}% <span style={{ fontSize: "0.7rem", color: "#0F766E", background: "#F0FDFA", padding: "2px 6px", borderRadius: 4, fontWeight: 800 }}>Promessa Landing Page</span>
                     </div>
                   </div>
 
@@ -1598,7 +1600,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                 </div>
 
                 <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid #E2E8F0", fontSize: "0.78rem", color: "#475569", lineHeight: 1.5 }}>
-                  💡 <strong>Regra Oficial do Plano FireHub:</strong> A comissão é de exatamente <strong>1% sobre o faturamento do mês</strong> (respeitando o piso mínimo de R$ 100,00 e o teto máximo fixo de R$ 400,00/mês).
+                  💡 <strong>Regra Oficial do Plano FireHub:</strong> A comissão é de exatamente <strong>{percentualDoMes(billingCycle?.yearMonth)}% sobre o faturamento do mês</strong> (respeitando o piso mínimo de R$ 100,00 e o teto máximo fixo de R$ 400,00/mês).
                 </div>
               </div>
 
@@ -1616,7 +1618,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                       <th style={{ padding: "10px 12px" }}>Cliente</th>
                       <th style={{ padding: "10px 12px" }}>Forma de Pagam.</th>
                       <th style={{ padding: "10px 12px" }}>Valor bruto</th>
-                      <th style={{ padding: "10px 12px" }}>Comissão (1%)</th>
+                      <th style={{ padding: "10px 12px" }}>Comissão ({percentualDoMes(billingCycle?.yearMonth)}%)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1633,7 +1635,7 @@ export default function DREClient({ orders, paymentFees, storeName, storeCreated
                         // que lib/billing.ts usa. Mostrar o líquido aqui fazia
                         // a soma das linhas não bater com o topo do extrato.
                         const bruto = (o.totalAmount || 0) + (o.discountTotal || 0);
-                        const comissaoPedido = bruto * 0.01;
+                        const comissaoPedido = bruto * percentualDoMes(billingCycle?.yearMonth) / 100;
                         return (
                           <tr key={o.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                             <td style={{ padding: "10px 12px", fontWeight: 800, color: "#0F172A" }}>

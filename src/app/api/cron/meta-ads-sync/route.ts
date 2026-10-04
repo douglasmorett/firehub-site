@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { getCurrentYearMonth } from "@/lib/billing";
+import { percentualDoMes } from "@/lib/firehub-billing";
 
 /**
  * GET /api/cron/meta-ads-sync
@@ -181,7 +182,7 @@ async function lancarTaxaNoCicloAberto(
 
     try {
       await prisma.franchiseeBillingCycle.create({
-        data: { franchiseeId, yearMonth, planPercent, metaAdsFee: valor, status: "OPEN" },
+        data: { franchiseeId, yearMonth, planPercent: planPercent === 0 ? 0 : percentualDoMes(yearMonth), metaAdsFee: valor, status: "OPEN" },
       });
       return yearMonth;
     } catch {
