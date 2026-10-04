@@ -41,6 +41,7 @@ import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmerge
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
+import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
 import { DOCUMENTO_NAO_PEDIDO, documentoNoPedido, formasEmTexto, type DocumentoNoPedido } from "./fiscal-modo";
 import { normalizarConfigFiscal } from "./fiscal-config";
 import { lerDocumentoDoCliente } from "./documento-do-cliente";
@@ -838,9 +839,15 @@ export async function processChatbotAI(
     }
   });
 
-  const weeklyScheduleSummary = Object.entries(dayScheduleMap)
-    .filter(([_, items]) => items.length > 0)
-    .map(([dCode, items]) => `- ${DAY_NAMES[dCode] || dCode}: ${items.join(", ")}`)
+  // Uma linha por PROMOÇÃO, com os dias dela — não uma linha por dia com a
+  // lista inteira. Promoção que vale a semana toda aparecia 7 vezes: no
+  // Showrrascão eram 7 mil caracteres relidos a cada mensagem (03/10/2026).
+  const diasDaPromocao = new Map<string, string[]>();
+  for (const [dCode, items] of Object.entries(dayScheduleMap)) {
+    for (const item of items) diasDaPromocao.set(item, [...(diasDaPromocao.get(item) || []), dCode]);
+  }
+  const weeklyScheduleSummary = [...diasDaPromocao.entries()]
+    .map(([item, dias]) => `- ${item}: ${dias.length === 7 ? "todos os dias" : dias.map((d) => DAY_NAMES[d] || d).join(", ")}`)
     .join("\n");
 
   const {
@@ -1677,14 +1684,32 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
       // a cada mensagem e só então caía no prompt mínimo, que responde sem
       // cardápio, sem cupom e sem histórico. Parecia "IA burra", era modelo morto.
       // Verificado em 23/08/2026 contra a API: destes, só o 2.5-flash continua de pé.
-      const modelNames = ["gemini-3.6-flash", "gemini-2.5-flash"];
-      
+      //
+      // Desde 03/10/2026 a conversa comum vai ao 3.1 Flash-Lite (~4x mais
+      // barato) e só o fechamento de pedido ao 3.6 — lib/modelo-do-robo.ts
+      // explica a divisão e o A/B que a sustenta. O caro é a reserva do barato.
+      const escolhaDoModelo = escolherModeloDoRobo({
+        temPedidoEmAndamento: Boolean(memoriaDoPedido),
+        mensagem: message || "",
+        historico: Array.isArray(history) ? history : [],
+        temAudio: Boolean(audioData?.base64),
+        anotaPedido: aiOrderingEnabled,
+      });
+      const modelNames = escolhaDoModelo.modelo === MODELO_BARATO
+        ? [MODELO_BARATO, MODELO_DE_PEDIDO]
+        : [MODELO_DE_PEDIDO, "gemini-2.5-flash"];
+
       let generatedText = "";
-      
+
       for (let idx = 0; idx < modelNames.length; idx++) {
         const mName = modelNames[idx];
+        const ehOBarato = mName === MODELO_BARATO;
         const baseTimeout = audioData?.base64 ? 35000 : 12000;
-        const modelTimeout = idx === 0 ? baseTimeout : (baseTimeout - 5000); 
+        // O Lite responde em ~1,2 s (A/B de 03/10/2026): 8 s parado é falha, e
+        // o 3.6 que vem depois dele precisa do prazo cheio (~4,5 s pensando).
+        const modelTimeout = ehOBarato
+          ? baseTimeout - 4000
+          : idx === 0 || modelNames[0] === MODELO_BARATO ? baseTimeout : (baseTimeout - 5000);
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), modelTimeout);
@@ -1693,7 +1718,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
             model: mName,
             contents: fullContents,
             config: {
-              systemInstruction: systemPrompt,
+              systemInstruction: ehOBarato ? systemPrompt + LEMBRETE_DO_MODELO_BARATO : systemPrompt,
               // ── TEMPERATURA: 0.9 era de escrever texto, não de copiar preço ──
               //
               // A REGRA DE FERRO manda copiar o número que está escrito no
@@ -1726,7 +1751,13 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
               // fim. O MÉDIO manteve tudo isso certo. Fica explícito para ninguém
               // trocar sem repetir o teste. O 2.5 de reserva não aceita
               // `thinkingLevel` — fica no padrão dele.
-              ...(mName.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM } } : {}),
+              //
+              // O Flash-Lite vai no MÍNIMO: no A/B de 03/10/2026 o LOW custou
+              // 28% a mais e anotou o pedido do mesmo jeito (10 de 15 com o
+              // lembrete, nos dois) — e pedido nem é com ele.
+              ...(ehOBarato
+                ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } }
+                : mName.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM } } : {}),
               abortSignal: controller.signal,
             }
           });
@@ -1743,7 +1774,12 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                 mName,
                 usage.promptTokenCount || usage.inputTokens || 0,
                 usage.candidatesTokenCount || usage.outputTokens || 0,
-                response?.text ? { remoteJid } : { remoteJid, respostaVazia: true },
+                {
+                  remoteJid,
+                  // Por que foi ao 3.6 ("pedido em andamento", "endereço"…); nulo = conversa comum no Lite.
+                  rota: escolhaDoModelo.motivo,
+                  ...(response?.text ? {} : { respostaVazia: true }),
+                },
                 { thoughtsTokens: usage.thoughtsTokenCount, cachedTokens: usage.cachedContentTokenCount }
               );
             }
