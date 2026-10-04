@@ -946,7 +946,12 @@ model CustomerOrder {
   ///   status, resposta, motoboyId, quando }. É o que prova se a conferência
   /// com o parceiro funcionou — e, quando não funcionou, por quê.
   ifoodDropCodeInfo      Json?
-  ifoodDropCodeAt        DateTime?          // Quando o evento do código chegou
+  /// readyToPickup/dispatch/conclude que o iFood barrou (403 "Access Denied",
+  /// 429, 5xx, sem rede), por ação: { desde, tentativas, ultimaTentativa,
+  /// status, texto, rotulo }. O cron do iFood manda de novo e apaga a marca
+  /// quando passa (lib/ifood-acao-pendente.ts).
+  ifoodAcoesPendentes    Json?
+  ifoodDropCodeAt       DateTime?          // Quando o evento do código chegou
   // === OPEN DELIVERY / JOTAJA ===
   openDeliveryOrderId     String?   @unique   // ID do pedido no Open Delivery (idempotência)
   openDeliveryReference   String?             // Número de exibição do pedido (#1234)

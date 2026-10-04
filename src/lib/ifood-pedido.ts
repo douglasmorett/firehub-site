@@ -26,6 +26,7 @@
 import { chamarComContexto, type RespostaIfood } from "./ifood-http";
 import { contextoDoPedido, type OrigemToken } from "./ifood-token";
 import { lerRespostaCodigoIfood, type ResultadoCodigo } from "./codigo-de-entrega";
+import { anotarResultadoDaAcao, ehAcaoRepetivel } from "./ifood-acao-pendente";
 
 const ORDER = "/order/v1.0/orders";
 
@@ -87,7 +88,7 @@ export async function acaoNoPedidoIfood(
   opts: { body?: unknown; rotulo?: string } = {},
 ): Promise<RespostaPedido> {
   if (!pedido.ifoodOrderId) return falha("pedido sem ifoodOrderId");
-  return chamarPeloPedido(
+  const r = await chamarPeloPedido(
     pedido,
     `${ORDER}/${pedido.ifoodOrderId}/${acao}`,
     {
@@ -97,6 +98,14 @@ export async function acaoNoPedidoIfood(
     },
     opts.rotulo ?? "iFood Sync",
   );
+  // Pronto/saiu/concluído barrados pelo iFood ficam anotados para o cron
+  // mandar de novo — antes só iam para o log, e o cliente via "pronto" com a
+  // comida já na rua (ver lib/ifood-acao-pendente.ts). Sem tentativa nenhuma
+  // (loja sem credencial) não há o que repetir.
+  if (ehAcaoRepetivel(acao) && r.tentativas > 0) {
+    await anotarResultadoDaAcao(pedido.ifoodOrderId, acao, r, opts.rotulo ?? null);
+  }
+  return r;
 }
 
 /**

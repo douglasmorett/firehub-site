@@ -404,8 +404,19 @@ export async function GET(req: NextRequest) {
       log.push(`[código de entrega] erro: ${e?.message}`);
     }
 
+    // Pronto/saiu/concluído que o iFood barrou do mesmo jeito: sem isto o
+    // cliente via "pronto" com a comida na rua (lib/ifood-acao-pendente.ts).
+    let acoesBarradas = { tentados: 0, passaram: 0 };
+    try {
+      const { repetirAcoesBarradas } = await import("@/lib/ifood-acao-pendente");
+      acoesBarradas = await repetirAcoesBarradas(log);
+    } catch (e: any) {
+      log.push(`[ações barradas] erro: ${e?.message}`);
+    }
+
     return NextResponse.json({
       codigosDeEntrega,
+      acoesBarradas,
       ok: true,
       events: events.length,
       created,
