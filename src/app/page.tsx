@@ -717,13 +717,12 @@ export default function Home() {
               {/* Faixa info */}
               <div style={{background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:14,padding:"16px 20px",marginBottom:24}}>
                 <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{(() => {
-                  // A conta mostra o que a loja PAGA: acima do teto, "× 2% = R$ 500" contradizia os R$ 400 logo acima.
                   if (sliderValue === 0) return "Zero faturamento e sem uso ativo?";
                   const fat = `R$ ${sliderValue.toLocaleString("pt-BR")}`;
                   const pct = sliderValue * 0.02;
                   const r = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-                  if (pct > 400) return `${fat} × 2% daria ${r(pct)} → você paga só ${r(400)} (teto)`;
-                  if (pct < 100) return `${fat} × 2% = ${r(pct)} → você paga o mínimo de ${r(100)}`;
+                  // Acima do teto só aparece o limite: nenhum valor maior que R$ 400 na tela.
+                  if (pct > 400) return `Faturamento de ${fat} → ${r(400)} (limite máximo)`;
                   return `Faturamento de ${fat} × 2% = ${r(pct)}`;
                 })()}</p>
                 <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Sem vendas E sem usar as funcionalidades ativamente, a taxa é R$ 0. Se houver uso ativo (ex: Chatbot), aplica-se a taxa mínima." : calculatedPrice <= 100 ? "Valor mínimo de R$ 100,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 20k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>

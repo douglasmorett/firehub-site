@@ -66,15 +66,6 @@ export default function TextoDosTermos({ compacto = false }: { compacto?: boolea
         Quem aceita declara ter poderes para representar a empresa cadastrada.
       </p>
 
-      <Destaque>
-        <p style={{ ...p, margin: 0 }}>
-          <strong style={{ color: "#C2410C" }}>Aviso de reajuste:</strong> a partir de <strong>{DATA_DA_VIRADA}</strong>, a
-          mensalidade do FireHub passa a ser de <strong>{FIREHUB_PLAN.PERCENT_RATE}% do faturamento</strong> (antes, 1%). As vendas
-          feitas até {DIA_ANTES_DA_VIRADA} continuam cobradas a 1%. O mínimo de {reais(FIREHUB_PLAN.MIN_MONTHLY)} e o máximo
-          de {reais(FIREHUB_PLAN.MAX_MONTHLY)} por mês não mudam (item 4.2).
-        </p>
-      </Destaque>
-
       <Secao n="1" titulo="O que é o FireHub">
         <Item n="1.1">O FireHub é um software de gestão oferecido pela internet (SaaS) para restaurantes e negócios de comida: cardápio digital, pedidos, balcão, mesas, totem, tela da cozinha (KDS), entregadores, integrações com marketplaces, atendimento automático pelo WhatsApp com inteligência artificial, emissão de nota fiscal, financeiro, estoque, tráfego pago e outras funções.</Item>
         <Item n="1.2">O FireHub é uma ferramenta de gestão. Ele <strong>não é parte das vendas do Lojista</strong>, não é marketplace, não vende, não prepara e não entrega produtos, e não é intermediador de pagamento. A relação com o cliente final, inclusive a de consumo, é exclusivamente do Lojista.</Item>
