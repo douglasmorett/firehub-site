@@ -21,6 +21,7 @@ import {
 } from "@/lib/cadastro-da-entrega";
 import MandeSeusBairros from "@/components/customer/MandeSeusBairros";
 import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from "lucide-react";
+import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
 
 const ZONE_COLORS = ["#C92E09", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
 
@@ -631,8 +632,13 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         const addr = data.address || {};
         const road = addr.road || addr.street || addr.pedestrian || "";
         const houseNumber = addr.house_number ? `, ${addr.house_number}` : "";
-        const suburb = addr.suburb || addr.neighbourhood || addr.quarter || "";
         const city = addr.city || addr.town || addr.village || addr.municipality || "";
+        // "Vila Monte Alegre" no mapa, "Monte Alegre" nos Correios e para o
+        // cliente: o endereço da loja leva o nome dos Correios quando é o mesmo
+        // bairro (lib/bairro-dos-correios.ts).
+        const suburb = await bairroComNomeDosCorreios(
+          addr.suburb || addr.neighbourhood || addr.quarter || "", road, city, addr["ISO3166-2-lvl4"] || addr.state,
+        );
         const state = addr.state ? ` - ${addr.state}` : "";
 
         let formatted = "";

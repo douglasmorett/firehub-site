@@ -8,6 +8,7 @@ import { esquecerPontoDaLoja } from "@/lib/distancia-da-entrega";
 import { cadastroParaGravar, mesclarRegraDeRepasse } from "@/lib/cadastro-da-entrega";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
+import { enderecoDoMapaComBairroDosCorreios } from "@/lib/bairro-dos-correios";
 
 /**
  * GET: o cadastro de entrega GRAVADO da loja da sessão.
@@ -281,6 +282,17 @@ export async function PUT(req: Request) {
       ...jaMontado,
       repasseDoEntregador: mesclarRegraDeRepasse(jaMontado.repasseDoEntregador, body.repasseDoEntregador),
     };
+  }
+
+  // O endereço escolhido no mapa chega como o texto cru do OpenStreetMap ("Rua
+  // Beira Alta, Vila Monte Alegre, Cabo Frio, …, Região Sudeste, Brasil"):
+  // grava com o bairro dos Correios e sem "Região…"/"Brasil". O estado fica —
+  // é dele que o fuso logo abaixo sai (lib/bairro-dos-correios.ts).
+  if (typeof data.storeAddress === "string" && data.storeAddress.trim()) {
+    data.storeAddress = await enderecoDoMapaComBairroDosCorreios(
+      data.storeAddress,
+      data.city !== undefined ? data.city : currentUser.city,
+    );
   }
 
   // O fuso segue o ENDEREÇO. Se cidade, endereço ou o próprio fuso vieram no
