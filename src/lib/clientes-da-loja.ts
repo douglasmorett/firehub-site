@@ -27,6 +27,8 @@ import { extratoDoCliente, garantirTabelaDeAjustes, horaEmUtc, saldosDaLoja } fr
 import { lerCashback, type ExtratoDoCashback } from "@/lib/cashback";
 import { nomeDoCanal } from "@/lib/canal-do-pedido";
 import { telefoneNacional } from "@/lib/lote-de-saldo";
+import { nomeDoItem } from "@/lib/nome-do-item";
+import { parseComboSelections } from "@/lib/parse-combo";
 
 export type SessaoDosClientes = { lojaId: string; quem: string; storeLoyalty: unknown };
 
@@ -391,5 +393,78 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
       cancelados: pedidos.length - validos.length,
     },
     cashback,
+  };
+}
+
+// ── Um pedido do cliente ────────────────────────────────────────────────────
+//
+// Pedido do Luiz (Divinos Burger, 03/10/2026): a ficha mostrava os pedidos do
+// cliente com data, pagamento e total, mas não abria nenhum. Para compensar
+// uma taxa cobrada errado ele precisava saber O QUE foi pedido e quanto foi a
+// entrega — e a única saída era caçar o pedido pela data na tela de Pedidos.
+
+export type PedidoDoCliente = {
+  id: string;
+  numero: number | null;
+  em: string;
+  status: string;
+  canal: string;
+  tipo: string;
+  pagamento: string | null;
+  troco: number | null;
+  endereco: string | null;
+  observacao: string | null;
+  itens: { qtd: number; nome: string; total: number; opcoes: { qtd: number; nome: string }[]; observacao: string | null }[];
+  produtos: number;
+  taxaDeEntrega: number;
+  desconto: number;
+  cashbackUsado: number;
+  total: number;
+};
+
+/** Só pedido desta loja: o id vem do navegador. */
+export async function pedidoDoCliente(sessao: SessaoDosClientes, id: string): Promise<PedidoDoCliente | null> {
+  if (!id) return null;
+  const p = await prisma.customerOrder.findFirst({
+    where: { id, franchiseeId: sessao.lojaId },
+    select: {
+      id: true, dailyOrderNumber: true, createdAt: true, status: true, deliveryType: true, paymentMethod: true,
+      changeAmount: true, customerAddress: true, notes: true, deliveryFee: true, discountTotal: true,
+      cashbackUsed: true, totalAmount: true,
+      source: true, ifoodOrderId: true, ifoodReference: true, openDeliveryChannel: true, openDeliveryOrderId: true,
+      items: { select: { productName: true, quantity: true, price: true, notes: true, comboSelections: true, menuProduct: { select: { name: true } } } },
+    },
+  });
+  if (!p) return null;
+
+  const itens = p.items.map((it) => {
+    const qtd = Number(it.quantity) || 1;
+    return {
+      qtd,
+      nome: nomeDoItem(it),
+      // `price` é o unitário com os adicionais (lib/preco-combo.ts).
+      total: Math.round((Number(it.price) || 0) * qtd * 100) / 100,
+      opcoes: parseComboSelections(it.comboSelections).map((o) => ({ qtd: Number(o.quantity) || 1, nome: o.name })),
+      observacao: it.notes?.trim() || null,
+    };
+  });
+  const entrega = String(p.deliveryType || "").toUpperCase() === "DELIVERY";
+  return {
+    id: p.id,
+    numero: p.dailyOrderNumber ?? null,
+    em: new Date(p.createdAt).toISOString(),
+    status: String(p.status || ""),
+    canal: nomeDoCanal(p),
+    tipo: String(p.deliveryType || ""),
+    pagamento: p.paymentMethod || null,
+    troco: p.changeAmount ? Number(p.changeAmount) : null,
+    endereco: entrega ? String(p.customerAddress || "").replace(/\s+/g, " ").trim() || null : null,
+    observacao: p.notes?.trim() || null,
+    itens,
+    produtos: Math.round(itens.reduce((t, i) => t + i.total, 0) * 100) / 100,
+    taxaDeEntrega: Number(p.deliveryFee) || 0,
+    desconto: Number(p.discountTotal) || 0,
+    cashbackUsado: Number(p.cashbackUsed) || 0,
+    total: Number(p.totalAmount) || 0,
   };
 }

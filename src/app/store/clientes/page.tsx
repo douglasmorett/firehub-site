@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDownCircle, ArrowUpCircle, ChevronLeft, ChevronRight, Contact, Download, FileUp,
+  ArrowDownCircle, ArrowUpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Contact, Download, FileUp,
   MessageCircle, Plus, Search, Wallet, X,
 } from "lucide-react";
 
@@ -564,6 +564,7 @@ function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: str
   const [erro, setErro] = useState("");
   const [operacao, setOperacao] = useState<"dar" | "tirar" | null>(null);
   const [aba, setAba] = useState<"extrato" | "pedidos" | "enderecos">("extrato");
+  const [pedidoAberto, setPedidoAberto] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -685,19 +686,30 @@ function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: str
               {d.pedidos.length === 0 && <Vazio texto="Este cliente ainda não pediu na loja." />}
               {d.pedidos.map((p) => {
                 const cancelado = /CANCEL|RECUS|REJEIT/.test(p.status.toUpperCase());
+                const aberto = pedidoAberto === p.id;
                 return (
-                  <div key={p.id} style={{ background: "#fff", border: borda, borderRadius: 10, padding: "9px 12px", display: "flex", justifyContent: "space-between", gap: 10, opacity: cancelado ? 0.6 : 1 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: "0.86rem" }}>
-                        {p.numero ? `#${p.numero} · ` : ""}{p.canal} · {STATUS[p.status.toUpperCase()] || p.status}
+                  <div key={p.id} style={{ background: "#fff", border: aberto ? `1.5px solid ${vermelho}` : borda, borderRadius: 10, opacity: cancelado && !aberto ? 0.6 : 1 }}>
+                    <button
+                      onClick={() => setPedidoAberto(aberto ? null : p.id)}
+                      aria-expanded={aberto}
+                      style={{ width: "100%", background: "none", border: "none", padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, cursor: "pointer", textAlign: "left", font: "inherit", color: "inherit" }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: "0.86rem" }}>
+                          {p.numero ? `#${p.numero} · ` : ""}{p.canal} · {STATUS[p.status.toUpperCase()] || p.status}
+                        </div>
+                        <div style={{ fontSize: "0.76rem", color: corSuave }}>
+                          {dataHora(p.em)}{p.pagamento ? ` · ${p.pagamento}` : ""}
+                          {p.cashbackUsado > 0 ? ` · usou ${fmt(p.cashbackUsado)} de cashback` : ""}
+                          {p.cashbackGerado > 0 ? ` · gerou ${fmt(p.cashbackGerado)}` : ""}
+                        </div>
                       </div>
-                      <div style={{ fontSize: "0.76rem", color: corSuave }}>
-                        {dataHora(p.em)}{p.pagamento ? ` · ${p.pagamento}` : ""}
-                        {p.cashbackUsado > 0 ? ` · usou ${fmt(p.cashbackUsado)} de cashback` : ""}
-                        {p.cashbackGerado > 0 ? ` · gerou ${fmt(p.cashbackGerado)}` : ""}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 800, textDecoration: cancelado ? "line-through" : "none" }}>{fmt(p.total)}</span>
+                        {aberto ? <ChevronUp size={16} color={corSuave} /> : <ChevronDown size={16} color={corSuave} />}
                       </div>
-                    </div>
-                    <div style={{ fontWeight: 800, whiteSpace: "nowrap", textDecoration: cancelado ? "line-through" : "none" }}>{fmt(p.total)}</div>
+                    </button>
+                    {aberto && <PedidoDoCliente id={p.id} />}
                   </div>
                 );
               })}
@@ -714,6 +726,78 @@ function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: str
         </>
       )}
     </Janela>
+  );
+}
+
+type PedidoAberto = {
+  troco: number | null;
+  endereco: string | null;
+  observacao: string | null;
+  itens: { qtd: number; nome: string; total: number; opcoes: { qtd: number; nome: string }[]; observacao: string | null }[];
+  produtos: number;
+  taxaDeEntrega: number;
+  desconto: number;
+  cashbackUsado: number;
+  total: number;
+};
+
+/**
+ * O pedido aberto dentro da ficha: o que foi pedido, a entrega e a conta.
+ * Pedido do Luiz (Divinos Burger, 03/10/2026) — antes a lista não abria.
+ */
+function PedidoDoCliente({ id }: { id: string }) {
+  const [p, setP] = useState<PedidoAberto | null>(null);
+  const [erro, setErro] = useState("");
+  useEffect(() => {
+    let vivo = true;
+    fetch(`/api/store/clientes/pedido?id=${encodeURIComponent(id)}`, { cache: "no-store" })
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || "Não foi possível abrir o pedido.");
+        if (vivo) setP(j);
+      })
+      .catch((e) => vivo && setErro(e?.message || "Não foi possível abrir o pedido."));
+    return () => { vivo = false; };
+  }, [id]);
+
+  const caixa = { borderTop: borda, padding: "10px 12px 12px", display: "grid", gap: 8, fontSize: "0.84rem" } as const;
+  if (erro) return <div style={{ ...caixa, color: "#B91C1C" }}>{erro}</div>;
+  if (!p) return <div style={{ ...caixa, color: corSuave }}>Abrindo o pedido…</div>;
+
+  const linha = (rotulo: string, valor: string, forte = false) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontWeight: forte ? 800 : 500 }}>
+      <span style={{ color: forte ? undefined : corSuave }}>{rotulo}</span>
+      <span style={{ whiteSpace: "nowrap" }}>{valor}</span>
+    </div>
+  );
+  return (
+    <div style={caixa}>
+      <div style={{ display: "grid", gap: 6 }}>
+        {p.itens.length === 0 && <span style={{ color: corSuave }}>Pedido sem itens gravados.</span>}
+        {p.itens.map((it, i) => (
+          <div key={i}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ fontWeight: 700 }}>{it.qtd}x {it.nome}</span>
+              <span style={{ whiteSpace: "nowrap" }}>{fmt(it.total)}</span>
+            </div>
+            {it.opcoes.map((o, j) => (
+              <div key={j} style={{ color: corSuave, fontSize: "0.78rem", paddingLeft: 14 }}>{o.qtd > 1 ? `${o.qtd}x ` : ""}{o.nome}</div>
+            ))}
+            {it.observacao && <div style={{ color: "#92400E", fontSize: "0.78rem", paddingLeft: 14 }}>Obs.: {it.observacao}</div>}
+          </div>
+        ))}
+      </div>
+      {p.observacao && <div style={{ background: "#FFFBEB", borderRadius: 8, padding: "6px 9px", color: "#92400E", fontSize: "0.8rem" }}>Obs. do pedido: {p.observacao}</div>}
+      {p.endereco && <div style={{ fontSize: "0.8rem" }}><span style={{ color: corSuave }}>Entrega: </span>{p.endereco}</div>}
+      <div style={{ borderTop: borda, paddingTop: 8, display: "grid", gap: 3 }}>
+        {linha("Produtos", fmt(p.produtos))}
+        {p.taxaDeEntrega > 0 && linha("Taxa de entrega", fmt(p.taxaDeEntrega))}
+        {p.desconto > 0 && linha("Desconto", `− ${fmt(p.desconto)}`)}
+        {p.cashbackUsado > 0 && linha("Cashback usado", `− ${fmt(p.cashbackUsado)}`)}
+        {linha("Total", fmt(p.total), true)}
+        {p.troco ? linha("Troco para", fmt(p.troco)) : null}
+      </div>
+    </div>
   );
 }
 
