@@ -61,18 +61,6 @@ export default function TextoDosTermos({ compacto = false }: { compacto?: boolea
         Quem aceita declara ter poderes para representar a empresa cadastrada.
       </p>
 
-      <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: compacto ? "0.8rem 1rem" : "1.1rem 1.35rem", margin: "1rem 0" }}>
-        <strong style={{ fontSize: `${tam}rem`, color: "#0F172A" }}>Em poucas palavras</strong>
-        <ul style={{ ...p, margin: "0.4rem 0 0", paddingLeft: "1.2rem" }}>
-          <li>O FireHub é uma <strong>ferramenta</strong>. A venda, o produto, a entrega e o atendimento ao seu cliente são da sua loja.</li>
-          <li>Você paga <strong>{FIREHUB_PLAN.PERCENT_RATE}% do que vende pelo sistema</strong>, no mínimo {reais(FIREHUB_PLAN.MIN_MONTHLY)} e no máximo {reais(FIREHUB_PLAN.MAX_MONTHLY)} por mês. Sem fidelidade e sem multa para cancelar.</li>
-          <li>Sistema na internet pode cair ou ficar lento. <strong>Tenha sempre um plano B</strong> para receber e anotar pedidos.</li>
-          <li>iFood, WhatsApp, Asaas, SEFAZ e outros serviços são de terceiros: o FireHub não responde pelo que eles fazem.</li>
-          <li>Robô e IA podem errar: <strong>confira os pedidos</strong>. Cardápio, preços, taxas e dados fiscais são configurados e conferidos por você.</li>
-          <li>O FireHub <strong>não responde por lucros cessantes</strong> nem por vendas perdidas, e a responsabilidade dele tem limite de valor (item 9).</li>
-        </ul>
-      </div>
-
       <Secao n="1" titulo="O que é o FireHub">
         <Item n="1.1">O FireHub é um software de gestão oferecido pela internet (SaaS) para restaurantes e negócios de comida: cardápio digital, pedidos, balcão, mesas, totem, tela da cozinha (KDS), entregadores, integrações com marketplaces, atendimento automático pelo WhatsApp com inteligência artificial, emissão de nota fiscal, financeiro, estoque, tráfego pago e outras funções.</Item>
         <Item n="1.2">O FireHub é uma ferramenta de gestão. Ele <strong>não é parte das vendas do Lojista</strong>, não é marketplace, não vende, não prepara e não entrega produtos, e não é intermediador de pagamento. A relação com o cliente final, inclusive a de consumo, é exclusivamente do Lojista.</Item>
