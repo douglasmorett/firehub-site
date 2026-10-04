@@ -41,6 +41,7 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - Sem taxa por pedido. Mês sem vender nada e sem usar as funções: R$ 0. Usando ativamente (robô conectado, integrações) sem faturar: só o mínimo.
 - Exemplos: faturou R$ 12.500 no mês → R$ 250; faturou R$ 30.000 → R$ 400 (o teto).
 - Até 03/10/2026 a taxa era 1%; a partir de 04/10/2026 é 2% para todas as lojas (mínimo e máximo continuam os mesmos). Em outubro, as vendas de 1 a 3 entram a 1%.
+- Desde 04/10/2026, pedido cancelado também entra na conta da mensalidade (passou pelo sistema e gerou custo). Rascunho do robô que não virou pedido e pedido do totem que não foi pago não contam.
 
 ## Teste grátis
 - 15 dias completos, sem cartão de crédito, sem compromisso, sem multa. Todas as funções liberadas.
