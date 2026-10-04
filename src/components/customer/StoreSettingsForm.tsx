@@ -1083,6 +1083,30 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <h4 style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A", marginBottom: "0.85rem" }}>Pagamento na entrega (Maquininha / Dinheiro)</h4>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
 
+          {/* PIX NA ENTREGA — o cliente paga na chave da loja quando recebe.
+              A tela só tinha o Pix PELO SITE (Asaas), então a loja que desligou
+              todas as formas presenciais continuava com "Pix (na entrega)" no
+              cardápio e não havia botão para tirar (Baianin Pizzaria, 04/10/2026).
+              O cardápio e o servidor já obedecem `paymentFees.PIX.active`
+              (lib/formas-do-cardapio.ts); faltava só poder desligar. */}
+          {(() => {
+            const cfg = paymentConfig.PIX || { rate: 0, active: true };
+            return (
+              <div style={{ borderRadius: "12px", border: `1.5px solid ${cfg.active !== false ? '#4CAF5030' : '#E2E8F020'}`, background: cfg.active !== false ? '#4CAF5005' : '#F8FAFC', overflow: 'hidden' }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem" }}>
+                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#4CAF5015", display: "flex", alignItems: "center", justifyContent: "center" }}><Banknote size={17} color="#0D9488" /></div>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0F172A", display: "block" }}>Pix na entrega</span>
+                    <span style={{ fontSize: "0.72rem", color: "#64748B" }}>O cliente paga o Pix na sua chave quando recebe. Desligue para não oferecer.</span>
+                  </div>
+                  <button onClick={() => { setPaymentConfig((p: any) => ({ ...p, PIX: { ...(p.PIX || { rate: 0 }), active: !(p.PIX?.active !== false) } })); setDirtyPayment(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                    {cfg.active !== false ? <ToggleRight size={32} color="#0D9488" /> : <ToggleLeft size={32} color="#CBD5E1" />}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* DINHEIRO */}
           {(() => {
             const cfg = paymentConfig.DINHEIRO || { rate: 0, active: true };
