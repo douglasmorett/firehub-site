@@ -4,8 +4,8 @@
  * Regras:
  *  - Faturamento = 0 e sem uso ativo → R$0 (sem cobrança)
  *  - Faturamento = 0 com uso ativo   → mínimo de R$100/mês
- *  - Faturamento < R$40.000/mês      → 1% do faturamento (mín R$100)
- *  - Faturamento ≥ R$40.000/mês      → R$400 fixo (teto máximo)
+ *  - 2% do faturamento, no mínimo R$100 e no máximo R$400/mês
+ *    (o teto chega em R$20.000 de faturamento)
  *  - TODO pedido gravado no sistema conta: cardápio digital, WhatsApp, mesa,
  *    balcão, totem e as integrações de iFood, 99Food e Jotajá. Só fica de fora
  *    o que está CANCELADO. Ver a base de cálculo em lib/billing.ts.
@@ -13,15 +13,24 @@
  *  - Abatimento automático dos pagamentos online recebidos
  *  - Se saldo insuficiente: gera link boleto/PIX dia 1 do mês seguinte
  *
- * ✅ Diferencial: Concorrência cobra 4% — FireHub cobra apenas 1%
- *    mantendo piso de R$100 e teto de R$400.
+ * ── A taxa é do MÊS cobrado, não do dia em que a conta roda ─────────────────
+ *
+ * Até setembro/2026 a taxa era 1% (teto em R$40.000). De outubro/2026 em
+ * diante é 2% — mesmo piso e mesmo teto, só que o teto chega com metade do
+ * faturamento. O fechamento de um mês roda DEPOIS que ele acaba (e um ciclo
+ * pode ser recalculado/fechado dias depois), então usar a taxa "de hoje"
+ * cobraria setembro a 2%. Quem calcula um mês específico passa o `yearMonth`
+ * dele para `calcMensalidade`; sem mês, vale a taxa atual.
  */
 
+/** Primeiro mês (AAAA-MM) cobrado a 2%. Antes dele, 1%. */
+export const MES_DOS_2_POR_CENTO = "2026-10";
+
 export const FIREHUB_PLAN = {
-  PERCENT_RATE: 1,          // 1% sobre o faturamento
+  PERCENT_RATE: 2,          // 2% sobre o faturamento (desde 2026-10)
   MIN_MONTHLY: 100,         // Mínimo R$100/mês
   MAX_MONTHLY: 400,         // Teto R$400/mês
-  THRESHOLD: 40000,         // A partir de R$40.000, vai pro teto fixo
+  THRESHOLD: 20000,         // Faturamento em que os 2% chegam no teto
   TRIAL_DAYS: 15,           // Dias de trial gratuito
   // Marketplace: a primeira loja integrada é gratuita; cada loja adicional
   // ligada na MESMA conta custa isto por mês. Vale para iFood e 99Food.
@@ -31,8 +40,14 @@ export const FIREHUB_PLAN = {
   CREDIT_RATE: 0.0399,      // 3,99% cartão crédito (spread MDR)
   DEBIT_RATE: 0.0149,       // 1,49% débito
   VOUCHER_RATE: 0.0249,     // 2,49% voucher VR
-  SPLIT_PLATFORM: 0.01,     // 1% do faturamento = mensalidade via split
+  SPLIT_PLATFORM: 0.02,     // 2% do faturamento = mensalidade via split
 };
+
+/** Percentual cobrado sobre o faturamento de um mês (AAAA-MM). Sem mês = o atual. */
+export function percentualDoMes(yearMonth?: string | null): number {
+  if (yearMonth && yearMonth < MES_DOS_2_POR_CENTO) return 1;
+  return FIREHUB_PLAN.PERCENT_RATE;
+}
 
 /**
  * Calcula a mensalidade do mês com base no faturamento FireHub
@@ -40,8 +55,10 @@ export const FIREHUB_PLAN = {
  * Regra especial:
  * - Se faturamento = 0 e a conta não tem uso ativo → cobra R$0
  * - Se faturamento > 0 ou tiver uso ativo → mínimo de R$100 se aplica
+ *
+ * `yearMonth` é o mês que está sendo cobrado (ver MES_DOS_2_POR_CENTO).
  */
-export function calcMensalidade(faturamentoMes: number, hasActiveUsage: boolean = false): {
+export function calcMensalidade(faturamentoMes: number, hasActiveUsage: boolean = false, yearMonth?: string | null): {
   mensalidade: number;
   modelo: "zero" | "percentual" | "fixo";
   faturamento: number;
@@ -51,19 +68,19 @@ export function calcMensalidade(faturamentoMes: number, hasActiveUsage: boolean 
   let mensalidade: number;
   let modelo: "zero" | "percentual" | "fixo";
 
+  const percentual = percentualDoMes(yearMonth);
+  const bruto = faturamentoMes * (percentual / 100);
+
   // REGRA PRINCIPAL: sem vendas E sem uso ativo = sem cobrança
   if (faturamentoMes === 0 && !hasActiveUsage) {
     mensalidade = 0;
     modelo = "zero";
-  } else if (faturamentoMes >= FIREHUB_PLAN.THRESHOLD) {
+  } else if (bruto >= FIREHUB_PLAN.MAX_MONTHLY) {
     mensalidade = FIREHUB_PLAN.MAX_MONTHLY; // R$400 fixo
     modelo = "fixo";
   } else {
-    // 1% do faturamento, com mínimo de R$100
-    mensalidade = Math.max(
-      FIREHUB_PLAN.MIN_MONTHLY,
-      faturamentoMes * (FIREHUB_PLAN.PERCENT_RATE / 100)
-    );
+    // Percentual do faturamento, com mínimo de R$100
+    mensalidade = Math.max(FIREHUB_PLAN.MIN_MONTHLY, bruto);
     modelo = "percentual";
   }
 

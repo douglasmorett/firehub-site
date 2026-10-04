@@ -36,10 +36,11 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - Marketing: cupons, fidelidade/cashback, recuperação de clientes que sumiram, disparos no WhatsApp.
 
 ## Preço (plano único, todas as funções)
-- 1% de tudo que a loja fatura dentro do FireHub (cardápio digital, WhatsApp, mesa, balcão, iFood, 99Food e JotaJá entram na mesma conta).
-- Mínimo de R$ 100 e máximo de R$ 400 por mês. Acima de R$ 40 mil de faturamento, não paga mais que R$ 400.
+- 2% de tudo que a loja fatura dentro do FireHub (cardápio digital, WhatsApp, mesa, balcão, iFood, 99Food e JotaJá entram na mesma conta).
+- Mínimo de R$ 100 e máximo de R$ 400 por mês. A partir de R$ 20 mil de faturamento, não paga mais que R$ 400.
 - Sem taxa por pedido. Mês sem vender nada e sem usar as funções: R$ 0. Usando ativamente (robô conectado, integrações) sem faturar: só o mínimo.
-- Exemplo: faturou R$ 25.000 no mês → R$ 250.
+- Exemplos: faturou R$ 12.500 no mês → R$ 250; faturou R$ 30.000 → R$ 400 (o teto).
+- Até setembro de 2026 a taxa era 1%; de outubro de 2026 em diante é 2% para todas as lojas (mínimo e máximo continuam os mesmos).
 
 ## Teste grátis
 - 15 dias completos, sem cartão de crédito, sem compromisso, sem multa. Todas as funções liberadas.

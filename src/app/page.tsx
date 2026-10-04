@@ -57,13 +57,13 @@ const COMPARE = [
   ["Integração iFood / 99Food", true, true, false],
 ];
 
-// Preço = 1% do faturamento, mín R$100, máx R$400
-const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(100, Math.min(400, rev * 0.01));
+// Preço = 2% do faturamento, mín R$100, máx R$400 (teto em R$ 20 mil)
+const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(100, Math.min(400, rev * 0.02));
 
 const FAQ = [
   { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades durante o período de teste." },
   { q: "E se eu não usar a plataforma?", a: "Se você não vender nada e não usar nenhuma funcionalidade no mês, você não paga nada. Se você usar a plataforma ativamente (chatbot conectado, integrações ligadas, financeiro, estoque) sem faturar, aplica-se apenas a mensalidade mínima." },
-  { q: "Como funciona a cobrança?", a: "Cobramos apenas 1% de tudo que você fatura dentro do FireHub — cardápio digital, WhatsApp, mesa, balcão, iFood, 99Food e Jotajá entram na mesma conta. Mínimo de R$ 100 e máximo de R$ 400 por mês. Sem taxa por pedido, sem surpresas." },
+  { q: "Como funciona a cobrança?", a: "Cobramos apenas 2% de tudo que você fatura dentro do FireHub — cardápio digital, WhatsApp, mesa, balcão, iFood, 99Food e Jotajá entram na mesma conta. Mínimo de R$ 100 e máximo de R$ 400 por mês — a partir de R$ 20 mil de faturamento você não paga mais nada a mais. Sem taxa por pedido, sem surpresas." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona 100% no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento." },
   { q: "Como é o suporte?", a: "Humano, via WhatsApp, 7 dias por semana — manhã, tarde e noite. Você nunca fica sem resposta." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
@@ -679,14 +679,14 @@ export default function Home() {
                 <input
                   type="range"
                   min={0}
-                  max={40000}
+                  max={25000}
                   step={500}
                   value={sliderValue}
                   onChange={(e) => setSliderValue(Number(e.target.value))}
                   style={{width:"100%",accentColor:"#EF4444",cursor:"pointer"}}
                 />
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:".72rem",color:"#9CA3AF",marginTop:4}}>
-                  <span>R$ 0</span><span>R$ 5k</span><span>R$ 10k</span><span>R$ 20k</span><span>R$ 30k</span><span>R$ 40k</span>
+                  <span>R$ 0</span><span>R$ 5k</span><span>R$ 10k</span><span>R$ 15k</span><span>R$ 20k</span><span>R$ 25k</span>
                 </div>
               </div>
 
@@ -699,7 +699,7 @@ export default function Home() {
               {/* Percentual info */}
               <div style={{display:"flex",justifyContent:"center",gap:24,marginBottom:20}}>
                 <div style={{textAlign:"center"}}>
-                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#EF4444"}}>1%</p>
+                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#EF4444"}}>2%</p>
                   <p style={{fontSize:".72rem",color:"#9CA3AF"}}>do faturamento</p>
                 </div>
                 <div style={{width:1,background:"#E5E7EB"}} />
@@ -716,8 +716,8 @@ export default function Home() {
 
               {/* Faixa info */}
               <div style={{background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:14,padding:"16px 20px",marginBottom:24}}>
-                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Zero faturamento e sem uso ativo?" : `Faturamento de R$ ${sliderValue.toLocaleString("pt-BR")} × 1% = R$ ${(sliderValue * 0.01).toFixed(2).replace(".",",")}`}</p>
-                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Sem vendas E sem usar as funcionalidades ativamente, a taxa é R$ 0. Se houver uso ativo (ex: Chatbot), aplica-se a taxa mínima." : calculatedPrice <= 100 ? "Valor mínimo de R$ 100,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 40k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
+                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{sliderValue === 0 ? "Zero faturamento e sem uso ativo?" : `Faturamento de R$ ${sliderValue.toLocaleString("pt-BR")} × 2% = R$ ${(sliderValue * 0.02).toFixed(2).replace(".",",")}`}</p>
+                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Sem vendas E sem usar as funcionalidades ativamente, a taxa é R$ 0. Se houver uso ativo (ex: Chatbot), aplica-se a taxa mínima." : calculatedPrice <= 100 ? "Valor mínimo de R$ 100,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 20k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
               </div>
 
 

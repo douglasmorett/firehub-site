@@ -19,6 +19,7 @@ import {
   linkDeRecargaDoMeta,
 } from "@/lib/meta-ads";
 import { segredoOpcional } from "@/lib/segredos";
+import { percentualDoMes } from "@/lib/firehub-billing";
 
 /** Piso do Meta: abaixo de ~R$ 10/dia o conjunto de anúncios nem é aceito. */
 const INVESTIMENTO_MINIMO = 70;
@@ -492,7 +493,7 @@ export async function POST(req: NextRequest) {
         create: {
           franchiseeId,
           yearMonth,
-          planPercent: user.planPercent ?? 1,
+          planPercent: user.planPercent === 0 ? 0 : percentualDoMes(yearMonth),
           metaAdsFee: taxaSemanal,
           status: "OPEN",
         },
@@ -699,7 +700,7 @@ export async function PUT(req: NextRequest) {
           create: {
             franchiseeId: campaign.franchiseeId,
             yearMonth,
-            planPercent: user.planPercent ?? 1,
+            planPercent: user.planPercent === 0 ? 0 : percentualDoMes(yearMonth),
             metaAdsFee: taxaSemanal,
             status: "OPEN",
           },
