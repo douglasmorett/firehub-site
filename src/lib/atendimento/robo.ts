@@ -28,9 +28,12 @@ import { midiaGuardada, midiaSendoLida } from "./midias";
  *     pela tela ou pelo celular) nem esperando uma pessoa;
  *   - a última mensagem da conversa é do contato, e é recente — ligar o robô
  *     de manhã não faz ele responder o que chegou de madrugada;
- *   - menos de 25 respostas dele nesta conversa em 24 h (depois chama pessoa).
- *     Eram 15; com o suporte passo a passo (Douglas, 02/10: "só chamar a
- *     gente quando ele não sabe mesmo") uma conversa de ajuda passa disso.
+ *   - a conversa não está em LAÇO: menos de 20 respostas dele em 10 minutos
+ *     (depois chama pessoa). Era uma cota de 15, depois 25, respostas em 24 h —
+ *     e o Douglas, em 05/10/2026: "se o cliente falar mais de 15 vezes, não
+ *     responde? Que loucura é essa?". Conversa longa de gente é atendimento,
+ *     não abuso; o que a trava precisa pegar é robô respondendo a robô
+ *     (resposta automática do outro lado), que dispara em minutos.
  *
  * ── Espera o contato terminar de digitar ───────────────────────────────────
  *
@@ -54,7 +57,9 @@ import { midiaGuardada, midiaSendoLida } from "./midias";
  */
 
 const ESPERA_MS = 6_000;
-const MAXIMO_EM_24H = 25;
+/** Trava de laço: tantas respostas do robô nesta janela = algo respondendo sozinho do outro lado. */
+const MAXIMO_NA_JANELA = 20;
+const JANELA_DO_LACO_MS = 10 * 60_000;
 const MENSAGEM_VELHA_MS = 20 * 60_000;
 export const MODELOS = ["gemini-3.6-flash", "gemini-2.5-flash"];
 
@@ -280,10 +285,10 @@ async function responder(contatoId: string) {
   if (Date.now() - ultima.criadoEm.getTime() > MENSAGEM_VELHA_MS) return;
 
   const respostas = await prisma.crmMensagem.count({
-    where: { contatoId: contato.id, autor: "ROBO", criadoEm: { gte: new Date(Date.now() - 24 * 60 * 60_000) } },
+    where: { contatoId: contato.id, autor: "ROBO", criadoEm: { gte: new Date(Date.now() - JANELA_DO_LACO_MS) } },
   });
-  if (respostas >= MAXIMO_EM_24H) {
-    await chamarPessoa(contato, `O robô já respondeu ${respostas} vezes em 24 h nesta conversa.`);
+  if (respostas >= MAXIMO_NA_JANELA) {
+    await chamarPessoa(contato, `O robô respondeu ${respostas} vezes em 10 minutos nesta conversa: parece resposta automática do outro lado.`);
     return;
   }
 
