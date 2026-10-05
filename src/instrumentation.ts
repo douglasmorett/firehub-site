@@ -66,6 +66,10 @@ export async function register() {
   // se faltar, o saldo segue o dos pedidos e só o lançamento falha.
   const { garantirTabelaDeAjustes } = await import("./lib/cashback-no-banco");
   await garantirTabelaDeAjustes();
+  // Acréscimo que o cliente pede pelo robô e a loja aceita no pop-up. Se
+  // faltar, o robô volta a chamar atendente para pedido já na cozinha.
+  const { garantirTabelaDeAcrescimos } = await import("./lib/acrescimo-no-banco");
+  await garantirTabelaDeAcrescimos();
   // Memória da conversa do robô (ChatbotConversationState.history). O schema NÃO
   // conhece a coluna de propósito — o acesso é por SQL cru e falha em silêncio
   // (lib/memoria-da-conversa-no-banco.ts). Aqui é só para o ALTER acontecer no

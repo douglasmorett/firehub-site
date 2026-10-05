@@ -373,7 +373,16 @@ const dadosDoPedido = (p: PedidoCandidato): string => {
  * A seção do prompt com o que já está no banco para este cliente. "" quando não
  * há nada — o prompt não ganha seção vazia.
  */
-export function memoriaDoPedidoParaOPrompt(candidatos: PedidoCandidato[], agora: number): string {
+export function memoriaDoPedidoParaOPrompt(
+  candidatos: PedidoCandidato[],
+  agora: number,
+  /**
+   * `semPedidoAceito`: o pedido já aceito vai no bloco de acréscimo
+   * (lib/acrescimo-do-pedido.ts), que deixa o cliente pedir para acrescentar.
+   * O bloco daqui mandaria chamar atendente para o mesmo pedido.
+   */
+  opcoes: { semPedidoAceito?: boolean } = {},
+): string {
   const validos = candidatosValidos(candidatos, agora).filter((p) => (p.items || []).length > 0);
   const enviado = validos.find((p) => String(p.status).toUpperCase() === "NOVO");
   // Rascunho MAIS VELHO que o pedido enviado é resto de conversa anterior (a
@@ -411,7 +420,7 @@ export function memoriaDoPedidoParaOPrompt(candidatos: PedidoCandidato[], agora:
   }
 
   const aceito = candidatosSoDeComparacao(candidatos, agora).filter((p) => (p.items || []).length > 0)[0];
-  if (aceito && !enviado) {
+  if (aceito && !enviado && !opcoes.semPedidoAceito) {
     const n = aceito.dailyOrderNumber ?? "—";
     blocos.push(
       `👨‍🍳 PEDIDO Nº ${n} JÁ ACEITO PELA LOJA e em preparo:\n` +

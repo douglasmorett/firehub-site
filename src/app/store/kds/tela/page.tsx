@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import TutorialDaTela from "@/components/TutorialDaTela";
+import AvisoDeAcrescimo from "@/components/customer/AvisoDeAcrescimo";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
@@ -1138,6 +1139,9 @@ export default function KDSTelaPage() {
 
   return (
     <>
+      {/* Cliente pedindo pelo WhatsApp para acrescentar num pedido que já está
+          aqui na cozinha: quem sabe se ainda dá é a cozinha (lib/acrescimo-do-pedido.ts). */}
+      <AvisoDeAcrescimo />
       {/* Hack anti-congelamento para Smart TVs: Áudio silencioso em loop infinito mantém o processador acordado */}
       <audio
         id="tv-keepalive-audio"

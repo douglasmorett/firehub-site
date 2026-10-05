@@ -76,3 +76,52 @@ caso("pedido do robô entra no saldo; rascunho não", () => {
 });
 
 console.log(`\n${ok} casos ok`);
+
+// ── Acréscimo a pedido já na loja (lib/acrescimo-do-pedido.ts) ──────────────
+import { pedidoAtivoParaOPrompt, situacaoDoPedido, mensagemDaResposta, mensagemDoAcrescimoEnviado } from "../src/lib/acrescimo-do-pedido";
+
+const base = { numero: 47, minutos: 35, itens: "1x Pizza Grande", total: 46, entrega: true, taxaDeEntrega: 6 };
+
+caso("situação do pedido pelo status", () => {
+  assert.equal(situacaoDoPedido("NOVO"), "NAO_ACEITO");
+  assert.equal(situacaoDoPedido("PREPARANDO"), "NA_COZINHA");
+  assert.equal(situacaoDoPedido("PRONTO"), "NA_COZINHA");
+  assert.equal(situacaoDoPedido("SAIU_ENTREGA"), "SAIU");
+  assert.equal(situacaoDoPedido("ENTREGUE"), "ENCERRADO");
+});
+
+caso("na cozinha: pergunta se quer acrescentar e ensina a tag", () => {
+  const t = pedidoAtivoParaOPrompt({ ...base, status: "PREPARANDO" });
+  assert.match(t, /Quer acrescentar nesse pedido\?/);
+  assert.match(t, /"acrescentarAoPedido": 47/);
+  assert.match(t, /SÓ os itens NOVOS/);
+  assert.match(t, /NÃO diga que já foi incluído/);
+});
+
+caso("saiu para entrega: avisa que é pedido novo com nova taxa", () => {
+  const t = pedidoAtivoParaOPrompt({ ...base, status: "SAIU_ENTREGA" });
+  assert.match(t, /JÁ SAIU PARA ENTREGA/);
+  assert.match(t, /a entrega é cobrada de novo \(a taxa foi R\$ 6,00/);
+  assert.doesNotMatch(t, /acrescentarAoPedido": 47/);
+});
+
+caso("acréscimo esperando a loja: não emite outro", () => {
+  const t = pedidoAtivoParaOPrompt({ ...base, status: "ACEITO", acrescimoPendente: "2x Coca 2L" });
+  assert.match(t, /esperando a resposta da loja: 2x Coca 2L/);
+  assert.match(t, /NÃO emita outra tag/);
+});
+
+caso("encerrado não vai ao prompt", () => {
+  assert.equal(pedidoAtivoParaOPrompt({ ...base, status: "ENTREGUE" }), "");
+});
+
+caso("mensagens ao cliente", () => {
+  const itens = [{ productName: "Coca 2L", quantity: 2, price: 12 }];
+  assert.match(mensagemDoAcrescimoEnviado(47, itens), /pedido nº 47: 2x Coca 2L \(\+R\$ 24,00\)/);
+  assert.match(mensagemDaResposta({ aceito: true, numero: 47, itens, novoTotal: 70 }), /Novo total: R\$ 70,00/);
+  const recusa = mensagemDaResposta({ aceito: false, numero: 47, itens, textoDaLoja: "Acabou a Coca" });
+  assert.match(recusa, /não conseguiu incluir 2x Coca 2L/);
+  assert.match(recusa, /Acabou a Coca/);
+});
+
+console.log(`\n${ok} casos ok (com o acréscimo)`);

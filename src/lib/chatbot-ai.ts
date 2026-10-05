@@ -57,6 +57,8 @@ import { previsaoDaEntrega, tempoDeEntregaParaGravar } from "./previsao-da-entre
 import { cashbackDoPedido, lerCashback, resgateMaximo } from "./cashback";
 import { cashbackDoCliente } from "./cashback-no-banco";
 import { cashbackDoClienteParaOPrompt, comandaDoRobo } from "./comanda-do-robo";
+import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from "./acrescimo-do-pedido";
+import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco";
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
 
@@ -980,7 +982,43 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
       const agoraDaMemoria = Date.now();
       const daConversa = await pedidosQueATagPodeTocar(targetFranchiseeId, clientPhoneDigits, agoraDaMemoria);
       idsDaConversa = daConversa.map((p: any) => String(p.id));
-      memoriaDoPedido = memoriaDoPedidoParaOPrompt(daConversa as any, agoraDaMemoria);
+
+      // ── O PEDIDO DE HOJE QUE O ROBÔ JÁ NÃO ALTERA SOZINHO ─────────────────
+      // (lib/acrescimo-do-pedido.ts) Aceito, em preparo, pronto ou a caminho,
+      // em qualquer hora do turno: sem isto, "manda mais uma coca" 30 minutos
+      // depois virava pedido NOVO, com outra taxa e outro motoboy. O pedido
+      // ainda não aceito dos primeiros 20 minutos continua com a memória de
+      // sempre, que deixa o robô alterar direto.
+      let blocoDoPedidoAtivo = "";
+      try {
+        const ativo = await pedidoAtivoDoTelefone(targetFranchiseeId, clientPhoneDigits);
+        const jaNaMemoria = ativo && candidatosValidos(daConversa as any, agoraDaMemoria).some((p) => p.id === ativo.pedido.id);
+        if (ativo && !jaNaMemoria) {
+          const p = ativo.pedido;
+          blocoDoPedidoAtivo = pedidoAtivoParaOPrompt({
+            numero: p.dailyOrderNumber ?? null,
+            status: p.status,
+            minutos: Math.max(0, Math.round((agoraDaMemoria - new Date(p.createdAt).getTime()) / 60000)),
+            itens: itensEmTexto(p.items.map((i) => ({
+              productName: i.productName || "Item",
+              quantity: i.quantity,
+              price: 0,
+              comboSelections: (i.comboSelections as any) ?? null,
+            }))),
+            total: Number(p.totalAmount) || 0,
+            entrega: String(p.deliveryType || "").toUpperCase() === "DELIVERY",
+            taxaDeEntrega: Number(p.deliveryFee) || 0,
+            acrescimoPendente: ativo.pendente ? itensEmTexto(ativo.pendente.itens) : null,
+          });
+        }
+      } catch (e: any) {
+        console.error("[Chatbot AI] Não consegui ler o pedido em andamento do cliente:", e?.message || e);
+      }
+
+      memoriaDoPedido = [
+        memoriaDoPedidoParaOPrompt(daConversa as any, agoraDaMemoria, { semPedidoAceito: Boolean(blocoDoPedidoAtivo) }),
+        blocoDoPedidoAtivo,
+      ].filter(Boolean).join("\n\n");
     } catch (e: any) {
       console.error("[Chatbot AI] Não consegui ler o rascunho do cliente para o prompt:", e?.message || e);
     }
@@ -2256,6 +2294,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                     timeZone: (user as any).storeTimezone,
                   },
                   cashback: { storeLoyalty: (user as any).storeLoyalty },
+                  remoteJid: remoteJid ?? null,
                   textosDoCliente: [
                     ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").slice(-12).map((h: any) => String(h.text || "")),
                     String(message || ""),
@@ -2659,6 +2698,7 @@ async function syncAiOrderToDatabase({
   jaPediuLocalizacao,
   cupons,
   cashback,
+  remoteJid,
   textosDoCliente,
 }: {
   franchiseeId: string;
@@ -2692,6 +2732,8 @@ async function syncAiOrderToDatabase({
   cupons?: { lista: unknown; campanha: unknown; chatbotConfig: unknown; timeZone: string | null | undefined };
   /** A regra de cashback da loja (`User.storeLoyalty`). Ausente = pedido sem cashback. */
   cashback?: { storeLoyalty: unknown };
+  /** A conversa do WhatsApp: é por ela que a resposta da loja a um acréscimo volta ao cliente. */
+  remoteJid?: string | null;
   /** O que o cliente escreveu nesta conversa: prova de que o cupom estratégico veio dele. */
   textosDoCliente?: string[];
 }): Promise<SyncResultado> {
@@ -3027,6 +3069,65 @@ async function syncAiOrderToDatabase({
       `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} pedidos="${pedidos}"`
     );
     return { gravado: false, motivo: `nenhum item do pedido existe no cardápio (${pedidos || "sem itens"})` };
+  }
+
+  // ── ACRÉSCIMO A PEDIDO QUE JÁ ESTÁ NA COZINHA (lib/acrescimo-do-pedido.ts) ──
+  //
+  // A tag traz SÓ os itens novos e o número do pedido. Nada é gravado no
+  // pedido aqui: vira um pedido de acréscimo que a loja aceita ou recusa no
+  // pop-up do painel, e a resposta vai ao cliente pelo WhatsApp. Uma tag dessas
+  // nunca pode cair no caminho de baixo — criaria um pedido só com os itens
+  // novos, que é exatamente o pedido duplicado que isto existe para evitar.
+  const acrescentarAoPedido = payload?.acrescentarAoPedido ?? payload?.acrescentar ?? null;
+  if (acrescentarAoPedido != null && acrescentarAoPedido !== "" && acrescentarAoPedido !== false) {
+    if (!isFinal) {
+      return { gravado: false, motivo: "acréscimo ainda sendo combinado", regraDeNegocio: true, manterRespostaDaIa: true };
+    }
+    const itensDoAcrescimo = orderItemsData.map((i: any) => ({
+      menuProductId: i.menuProductId ?? null,
+      productName: i.productName,
+      quantity: i.quantity,
+      price: i.price,
+      notes: i.notes ?? null,
+      comboSelections: i.comboSelections ?? null,
+    }));
+    const r = await registrarAcrescimo({
+      franchiseeId,
+      telefone: phoneClean,
+      remoteJid: remoteJid ?? null,
+      numeroDoPedido: acrescentarAoPedido,
+      itens: itensDoAcrescimo,
+    });
+    if (r.ok) {
+      return r.repetido
+        ? { gravado: false, motivo: "acréscimo já esperando a loja", regraDeNegocio: true, manterRespostaDaIa: true }
+        : {
+            gravado: false,
+            motivo: `acréscimo enviado à loja (pedido nº ${r.numero ?? "—"})`,
+            regraDeNegocio: true,
+            mensagemParaOCliente: mensagemDoAcrescimoEnviado(r.numero, itensDoAcrescimo),
+          };
+    }
+    if (r.situacao === "SAIU") {
+      return {
+        gravado: false,
+        motivo: r.motivo,
+        regraDeNegocio: true,
+        mensagemParaOCliente:
+          `Seu pedido já saiu para entrega 🛵, então não dá mais para incluir nele. ` +
+          `Para esses itens a gente faz um pedido novo, e a entrega é cobrada de novo. Tudo bem pra você?`,
+      };
+    }
+    console.warn(`[Chatbot AI Order Sync] ➕ Acréscimo não registrado: ${r.motivo}. Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`);
+    return {
+      gravado: false,
+      motivo: `acréscimo não registrado: ${r.motivo}`,
+      regraDeNegocio: true,
+      chamarAtendente: true,
+      mensagemParaOCliente:
+        `Não consegui achar o seu pedido em andamento para incluir esses itens 😕 ` +
+        `Já chamei alguém da loja para resolver com você por aqui mesmo.`,
+    };
   }
 
   // ── O QUE ESTA TAG FAZ COM O QUE JÁ ESTÁ NO BANCO ─────────────────────────
