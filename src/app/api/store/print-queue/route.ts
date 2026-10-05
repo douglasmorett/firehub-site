@@ -24,6 +24,7 @@ import { corteDaVolta } from "@/lib/volta-do-assistente";
 import { pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
 import { lojasQueEstePcAtende } from "@/lib/lojas-no-mesmo-pc-no-banco";
 import { juntarJobsDasLojas } from "@/lib/lojas-no-mesmo-pc";
+import { chaveDoAssistente, registrarAssistente, trabalhosDoAssistente } from "@/lib/dono-da-impressora";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -112,6 +113,30 @@ export async function POST(req: NextRequest) {
  * Sem a opção ligada, é exatamente a fila de sempre.
  */
 export async function GET(req: NextRequest) {
+  const resposta = await filaParaOAssistente(req);
+  // ── UM ASSISTENTE POR IMPRESSORA (lib/dono-da-impressora.ts) ──────────
+  // Dois Assistentes da loja que enxergam a mesma impressora imprimiam o
+  // pedido duas vezes (NIK, ELGIN da cozinha, 04/10/2026). Cada impressora
+  // fica com um só: o de versão mais nova entre os que consultaram há pouco.
+  const searchParams = new URL(req.url).searchParams;
+  const loja = searchParams.get("franchiseeId");
+  if (!loja || !resposta.ok) return resposta;
+  try {
+    const estado = estadoInformado(searchParams);
+    const chave = chaveDoAssistente(getClientIp(req), estado);
+    registrarAssistente(loja, chave, estado);
+    const corpo = await resposta.clone().json();
+    if (!Array.isArray(corpo?.jobs) || corpo.jobs.length === 0) return resposta;
+    const meus = trabalhosDoAssistente(corpo.jobs, loja, chave);
+    if (meus.length === corpo.jobs.length && meus.every((j: unknown, i: number) => j === corpo.jobs[i])) return resposta;
+    return NextResponse.json({ ...corpo, jobs: meus });
+  } catch {
+    // A regra nova nunca pode calar a fila: na dúvida, a de sempre.
+    return resposta;
+  }
+}
+
+async function filaParaOAssistente(req: NextRequest) {
   const pedida = new URL(req.url).searchParams.get("franchiseeId");
   const lojas = pedida ? await lojasQueEstePcAtende(pedida) : [];
   if (!pedida || lojas.length === 0) return filaDaLoja(req, pedida, false);
