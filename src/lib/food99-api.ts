@@ -821,16 +821,32 @@ export async function listarLojasAutorizadas(): Promise<
   const lojas: LojaAutorizada[] = [];
   let cru: any = null;
 
-  // A doc recomenda páginas de 5 a 15 (máximo 50) para não estourar timeout.
+  // Página de 50 (o máximo da doc) e intervalo entre páginas: o endpoint aceita
+  // UMA chamada por segundo (10005 "window: 1s, limit: 1"). Com páginas de 15 e
+  // as chamadas coladas, a 16ª loja autorizada — a Pizzaria 17, em 05/10/2026 —
+  // fez a lista precisar de uma 2ª página, que voltava sempre 10005. A lista
+  // inteira falhava, a procura caía no shop/list (que não vê loja ainda sem
+  // vínculo) e a tela dizia "todas já pertencem a outra loja" para quem tinha
+  // acabado de autorizar.
+  const esperar = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
   for (let pagina = 1; pagina <= 10; pagina++) {
-    const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: pagina, page_size: 15 };
-    const corpo = { ...base, sign: assinarOficial(base, cred.appSecret) };
-    const r = await chamar<any>("/v3/auth/authorization/getAuthorizedShops", {
-      metodo: "POST",
-      corpo,
-      idsCrus: ["app_id"],
-      base: BASE_V3,
-    });
+    if (pagina > 1) await esperar(1_100);
+    const pedir = () => {
+      const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: pagina, page_size: 50 };
+      const corpo = { ...base, sign: assinarOficial(base, cred.appSecret) };
+      return chamar<any>("/v3/auth/authorization/getAuthorizedShops", {
+        metodo: "POST",
+        corpo,
+        idsCrus: ["app_id"],
+        base: BASE_V3,
+      });
+    };
+    let r = await pedir();
+    // Outra tela (ou o cron) pode ter gastado a janela de 1s agora mesmo.
+    for (let tentativa = 0; tentativa < 2 && (r.errno === 10005 || /frequency/i.test(r.errmsg || "")); tentativa++) {
+      await esperar(1_100);
+      r = await pedir();
+    }
 
     if (r.errno !== 0) {
       return {
