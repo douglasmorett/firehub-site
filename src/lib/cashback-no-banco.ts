@@ -149,6 +149,12 @@ export async function cashbackDoCliente(
   storeLoyalty: unknown,
   telefone: string,
   agora = new Date(),
+  /**
+   * Pedidos que ficam fora da conta. O robô regrava o MESMO pedido quando o
+   * cliente altera: o uso que ele já tinha não pode reduzir o saldo que ele
+   * mesmo vai usar de novo (a mesma ideia do `excetoPedidoId` do cupom).
+   */
+  excetoPedidoIds: string[] = [],
 ): Promise<CashbackDoCliente | null> {
   const regra = lerCashback(storeLoyalty);
   if (!regra.ativo) return null;
@@ -157,7 +163,9 @@ export async function cashbackDoCliente(
 
   // O cliente que só tem o saldo trazido de outro sistema ainda não tem
   // pedido aqui — por isso os lançamentos contam mesmo sem pedido nenhum.
-  const [pedidos, ajustes] = await Promise.all([pedidosDoTelefone(franchiseeId, final), ajustesDaLoja(franchiseeId, final)]);
+  const [todos, ajustes] = await Promise.all([pedidosDoTelefone(franchiseeId, final), ajustesDaLoja(franchiseeId, final)]);
+  const fora = new Set(excetoPedidoIds);
+  const pedidos = fora.size ? todos.filter((p) => !fora.has(p.id)) : todos;
   if (!pedidos.length && !ajustes.length) return { saldo: 0, proximoVencimento: null, taxa: taxaDoCliente(regra, 0) };
 
   const saldo = saldoDoCashback(regra, pedidos, agora, ajustes);

@@ -53,7 +53,10 @@ import { marcarAguardandoLoja } from "./finalizar-rascunho";
 import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-fonte";
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
-import { tempoDeEntregaParaGravar } from "./previsao-da-entrega";
+import { previsaoDaEntrega, tempoDeEntregaParaGravar } from "./previsao-da-entrega";
+import { cashbackDoPedido, lerCashback, resgateMaximo } from "./cashback";
+import { cashbackDoCliente } from "./cashback-no-banco";
+import { cashbackDoClienteParaOPrompt, comandaDoRobo } from "./comanda-do-robo";
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
 
@@ -1074,6 +1077,35 @@ ${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "N
     console.error("[Chatbot AI] Não consegui conferir o cupom do cliente:", e?.message || e);
   }
 
+  // O saldo de cashback deste telefone NESTA loja (lib/cashback-no-banco.ts),
+  // sem os pedidos desta conversa — o que a alteração regrava. Só quando o robô
+  // anota pedido: sem a tag, não há onde o cliente usar o saldo.
+  let cashbackDesteCliente = "";
+  if (aiOrderingEnabled && clientPhoneDigits.length >= 10) {
+    try {
+      const regraDoCashback = lerCashback((user as any).storeLoyalty);
+      if (regraDoCashback.ativo) {
+        const doCliente = await cashbackDoCliente(
+          targetFranchiseeId,
+          (user as any).storeLoyalty,
+          clientPhoneDigits,
+          new Date(),
+          idsDaConversa
+        );
+        if (doCliente && doCliente.saldo > 0) {
+          cashbackDesteCliente = cashbackDoClienteParaOPrompt({
+            saldo: doCliente.saldo,
+            maxResgatePct: regraDoCashback.maxResgatePct,
+            vence: doCliente.proximoVencimento,
+            fuso: (user as any).storeTimezone,
+          });
+        }
+      }
+    } catch (e: any) {
+      console.error("[Chatbot AI] Não consegui conferir o cashback do cliente:", e?.message || e);
+    }
+  }
+
   // ── IA FORA DO AR É INCIDENTE, NÃO MODO DE OPERAÇÃO ──────────────────────
   //
   // Quando os modelos falhavam, o robô caía numa frase fixa com o nome do
@@ -1727,7 +1759,7 @@ RETORNO APÓS INATIVIDADE DE 20 MINUTOS (MUITO IMPORTANTE!):
 ` : ""}
 PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
 ${recentOrdersSummary}
-${cupomDesteCliente ? `\n${cupomDesteCliente}\n` : ""}${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}${addressValidationText}
+${cupomDesteCliente ? `\n${cupomDesteCliente}\n` : ""}${cashbackDesteCliente ? `\n${cashbackDesteCliente}\n` : ""}${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}${addressValidationText}
 
 Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma ideia só, até uns 150 caracteres, sem repetir o que já foi dito e sem oferta de ajuda no final. Só o resumo do pedido e a lista de preços que o cliente pediu podem ser maiores.`;
 
@@ -2223,6 +2255,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                     chatbotConfig: user.chatbotConfig,
                     timeZone: (user as any).storeTimezone,
                   },
+                  cashback: { storeLoyalty: (user as any).storeLoyalty },
                   textosDoCliente: [
                     ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").slice(-12).map((h: any) => String(h.text || "")),
                     String(message || ""),
@@ -2244,7 +2277,61 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
 
         const gravouFinalizado = resultadoDoSync?.gravado === true && resultadoDoSync.finalizado;
 
-        if (gravouFinalizado && resultadoDoSync?.gravado === true) {
+        // ── A COMANDA DO CLIENTE SAI DO PEDIDO GRAVADO (lib/comanda-do-robo.ts) ──
+        //
+        // Fechou (ou alterou) o pedido: a resposta deixa de ser o texto do
+        // modelo e vira a comanda montada com o que está NO BANCO — itens,
+        // pagamento, taxa, endereço, previsão, cupom, cashback e total. A tag
+        // repetida (o "obrigado" depois do fechamento) não manda de novo.
+        // Falhou a leitura? Fica o caminho antigo logo abaixo.
+        let comandaDoCliente: string | null = null;
+        if (gravouFinalizado && resultadoDoSync?.gravado === true && !resultadoDoSync.repetido) {
+          try {
+            const gravado = await prisma.customerOrder.findUnique({
+              where: { id: resultadoDoSync.orderId },
+              include: { items: true },
+            });
+            if (gravado && gravado.items.length > 0) {
+              const previsao = previsaoDaEntrega(gravado);
+              comandaDoCliente = comandaDoRobo({
+                numero: gravado.dailyOrderNumber ?? resultadoDoSync.numero,
+                status: gravado.status,
+                alterado: resultadoDoSync.alterado,
+                itens: gravado.items.map((i) => ({
+                  quantity: i.quantity,
+                  productName: i.productName || "Item",
+                  price: Number(i.price) || 0,
+                  comboSelections: (i.comboSelections as any) ?? null,
+                  notes: i.notes,
+                })),
+                formaDePagamento: gravado.paymentMethod,
+                trocoPara: gravado.changeAmount,
+                entrega: String(gravado.deliveryType || "").toUpperCase() === "DELIVERY",
+                taxaDeEntrega: Number(gravado.deliveryFee) || 0,
+                freteGratisAcimaDe: resultadoDoSync.freteGratisAcimaDe ?? null,
+                endereco: gravado.customerAddress,
+                previsao: previsao ? new Date(previsao.em) : null,
+                fuso: (user as any).storeTimezone,
+                cupom: resultadoDoSync.cupom ?? null,
+                cupomRecusado: resultadoDoSync.cupomRecusado ?? null,
+                cashbackUsado: Number(gravado.cashbackUsed) || 0,
+                cashbackGerado: Number(gravado.cashbackEarned) || 0,
+                total: Number(gravado.totalAmount) || 0,
+              });
+            }
+          } catch (e: any) {
+            console.error("[Chatbot AI] Não consegui montar a comanda do cliente:", e?.message || e);
+          }
+        }
+
+        if (gravouFinalizado && resultadoDoSync?.gravado === true && comandaDoCliente) {
+          cleanText = comandaDoCliente;
+          if (pixDaLoja && pagaNoPix(resultadoDoSync.formaDePagamento)) {
+            cleanText += textoDoPixNoPedido(pixDaLoja, resultadoDoSync.total);
+            enviarChavePix = true;
+          }
+          console.log(`[Chatbot AI] ✅ Comanda enviada ao cliente: pedido ${resultadoDoSync.orderId} (nº ${resultadoDoSync.numero ?? "—"}), R$ ${resultadoDoSync.total.toFixed(2)}${resultadoDoSync.cashbackUsado ? `, cashback -R$ ${resultadoDoSync.cashbackUsado.toFixed(2)}` : ""}.`);
+        } else if (gravouFinalizado && resultadoDoSync?.gravado === true) {
           // Prova de gravação: o número do pedido entra na mensagem. É o mesmo
           // número do painel — cliente e loja falam do mesmo pedido.
           const numero = resultadoDoSync.numero;
@@ -2282,6 +2369,13 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           // cupom. Só quando a mensagem fala de total — "anotado, mais algo?"
           // não ganha linha de cupom a cada item.
           cleanText += mensagemDoCupom(resultadoDoSync, cleanText, false);
+          // O modelo não calcula o cashback (o prompt proíbe): quando o resumo
+          // fala de total, o valor exato vem daqui, do que foi gravado.
+          const usado = resultadoDoSync.cashbackUsado || 0;
+          if (usado > 0 && /total/i.test(cleanText)) {
+            const reaisDe = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+            cleanText += `\n\n💰 Seu cashback de ${reaisDe(usado)} entra como desconto: o total fica ${reaisDe(resultadoDoSync.total)}.`;
+          }
         } else if ((payloadQueriaFinalizar || prometeuCozinha) && !gravouFinalizado) {
           // A IA prometeu (ou tentou finalizar) e o pedido NÃO está no banco.
           // A promessa não pode sair. Mensagem honesta + atendente humano.
@@ -2465,6 +2559,14 @@ type SyncResultado =
       totalDitoPelaIa?: number | null;
       /** A forma de pagamento gravada ("Pix", "Dinheiro"...). */
       formaDePagamento?: string | null;
+      /** Saldo de cashback abatido neste pedido. */
+      cashbackUsado?: number;
+      /** Cashback que este pedido gera quando for entregue. */
+      cashbackGerado?: number;
+      /** O pedido já tinha sido enviado e a tag o alterou. */
+      alterado?: boolean;
+      /** A tag final veio repetida e nada mudou: o cliente já recebeu a confirmação. */
+      repetido?: boolean;
     }
   | {
       gravado: false;
@@ -2556,6 +2658,7 @@ async function syncAiOrderToDatabase({
   localizacaoDescartada,
   jaPediuLocalizacao,
   cupons,
+  cashback,
   textosDoCliente,
 }: {
   franchiseeId: string;
@@ -2587,6 +2690,8 @@ async function syncAiOrderToDatabase({
   jaPediuLocalizacao?: boolean;
   /** Os cupons da loja e o que o robô pode dar (lib/cupom-do-robo.ts). Ausente = pedido sem cupom. */
   cupons?: { lista: unknown; campanha: unknown; chatbotConfig: unknown; timeZone: string | null | undefined };
+  /** A regra de cashback da loja (`User.storeLoyalty`). Ausente = pedido sem cashback. */
+  cashback?: { storeLoyalty: unknown };
   /** O que o cliente escreveu nesta conversa: prova de que o cupom estratégico veio dele. */
   textosDoCliente?: string[];
 }): Promise<SyncResultado> {
@@ -2970,6 +3075,7 @@ async function syncAiOrderToDatabase({
       finalizado: true,
       itens: igual.items.length,
       total: Number(igual.totalAmount) || 0,
+      repetido: true,
     };
   }
   const existingDraft =
@@ -3334,14 +3440,67 @@ async function syncAiOrderToDatabase({
     }
   }
   const descontoDosItens = cupomAplicado && !cupomAplicado.freteGratis ? cupomAplicado.desconto : 0;
-  totalOrderAmount = centavos(Math.max(0, totalItemsSum - descontoDosItens + deliveryFee));
   if (cupomAplicado) {
     console.log(`[Chatbot AI Order Sync] 🎟️ Cupom ${cupomAplicado.code} no pedido: -R$ ${cupomAplicado.desconto.toFixed(2)} · loja ${franchiseeId} · tel ${phoneClean.slice(-4)}`);
   }
-  /** O cupom fica REGISTRADO como no checkout do site: desconto da loja e a marca que conta os usos. */
-  const descontoParaGravar = cupomAplicado
-    ? { discountTotal: cupomAplicado.desconto, discountMerchant: cupomAplicado.desconto }
+
+  // ── CASHBACK (lib/cashback.ts) ────────────────────────────────────────────
+  //
+  // A régua do checkout do site: a tag só PEDE (`usarCashback`), e o saldo é
+  // relido aqui, dos pedidos deste telefone NESTA loja — com este pedido fora
+  // da conta, senão a alteração de um pedido que já usou o saldo o perderia.
+  // Sem o campo na tag, vale o que o pedido já tinha: o modelo nem sempre
+  // repete o campo na finalização. O que o pedido gera só vira saldo quando
+  // ele é entregue. Como o cupom, o cashback nunca impede o pedido.
+  let cashbackUsado = 0;
+  let cashbackGerado = 0;
+  if (cashback) {
+    const regraDoCashback = lerCashback(cashback.storeLoyalty);
+    if (regraDoCashback.ativo) {
+      try {
+        const doCliente = await cashbackDoCliente(
+          franchiseeId,
+          cashback.storeLoyalty,
+          phoneClean,
+          new Date(),
+          existingDraft?.id ? [existingDraft.id] : []
+        );
+        const pediu = payload?.usarCashback;
+        const querUsar = pediu === true || (pediu !== false && (Number((existingDraft as any)?.cashbackUsed) || 0) > 0);
+        const produtosAPagar = Math.max(0, totalItemsSum - descontoDosItens);
+        if (querUsar && doCliente && doCliente.saldo > 0) {
+          cashbackUsado = resgateMaximo(regraDoCashback, doCliente.saldo, produtosAPagar);
+        }
+        cashbackGerado = cashbackDoPedido(
+          regraDoCashback,
+          totalItemsSum,
+          Math.max(0, produtosAPagar - cashbackUsado),
+          doCliente?.taxa ?? regraDoCashback.taxa
+        );
+        if (cashbackUsado > 0) {
+          console.log(`[Chatbot AI Order Sync] 💰 Cashback no pedido: -R$ ${cashbackUsado.toFixed(2)} (saldo R$ ${doCliente?.saldo.toFixed(2)}) · loja ${franchiseeId} · tel ${phoneClean.slice(-4)}`);
+        }
+      } catch (e: any) {
+        console.error("[Chatbot AI Order Sync] Não consegui aplicar o cashback:", e?.message || e);
+        cashbackUsado = 0;
+        cashbackGerado = 0;
+      }
+    }
+  }
+
+  totalOrderAmount = centavos(Math.max(0, totalItemsSum - descontoDosItens - cashbackUsado + deliveryFee));
+  /**
+   * Cupom e cashback ficam REGISTRADOS como no checkout do site: o desconto da
+   * loja soma os dois, e as colunas do cashback são o que o saldo lê depois.
+   */
+  const descontoNoPedido = centavos((cupomAplicado?.desconto || 0) + cashbackUsado);
+  const descontoParaGravar = descontoNoPedido > 0
+    ? { discountTotal: descontoNoPedido, discountMerchant: descontoNoPedido }
     : { discountTotal: null, discountMerchant: null };
+  const cashbackParaGravar = {
+    cashbackUsed: cashbackUsado > 0 ? centavos(cashbackUsado) : null,
+    cashbackEarned: cashbackGerado > 0 ? cashbackGerado : null,
+  };
 
   // ── O QUE A ENTREGA GRAVA NO PEDIDO (R7) ──────────────────────────────────
   //
@@ -3488,7 +3647,8 @@ async function syncAiOrderToDatabase({
     (avisosDaEntrega.length ? ` · ${avisosDaEntrega.join(" · ")}` : "") +
     (entregaGratis ? ` · Frete grátis (${entregaGratis.motivo}) — taxa ref: ${reais(entregaGratis.valor)}` : "") +
     (doPedido.observacao ? ` · Obs: ${doPedido.observacao}` : "") +
-    (cupomAplicado ? ` · [Cupom: ${cupomAplicado.code}]` : "");
+    (cupomAplicado ? ` · [Cupom: ${cupomAplicado.code}]` : "") +
+    (cashbackUsado > 0 ? ` · [Cashback usado: ${reais(cashbackUsado)}]` : "");
 
   // Troco só existe em dinheiro. Se esta tag não trouxe o valor mas o rascunho
   // já tinha, ele fica — o modelo nem sempre repete o campo; se o cliente mudou
@@ -3553,6 +3713,7 @@ async function syncAiOrderToDatabase({
         // chegar aqui com um pedido enviado. Se um dia deixar, o status fica.
         status: !isFinal && existingDraft.status !== "CRIANDO_IA" ? existingDraft.status : finalStatus,
         ...descontoParaGravar,
+        ...cashbackParaGravar,
         notes: notesText,
         ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         // O pedido nasce AGORA, quando o cliente confirma — não quando o robô
@@ -3604,7 +3765,9 @@ async function syncAiOrderToDatabase({
         ...(repasseDoEntregador != null ? { motoboyFee: repasseDoEntregador } : {}),
         ...(tempoDaEntrega != null ? { tempoEntregaMin: tempoDaEntrega } : {}),
         ...(entregaGratis ? { entregaGratis } : {}),
-        ...(cupomAplicado ? descontoParaGravar : {}),
+        ...(descontoNoPedido > 0 ? descontoParaGravar : {}),
+        ...(cashbackUsado > 0 ? { cashbackUsed: cashbackParaGravar.cashbackUsed } : {}),
+        ...(cashbackGerado > 0 ? { cashbackEarned: cashbackParaGravar.cashbackEarned } : {}),
         source: "WHATSAPP_IA",
         status: finalStatus,
         notes: notesText,
@@ -3661,6 +3824,9 @@ async function syncAiOrderToDatabase({
     cupomRecusado,
     totalDitoPelaIa: Number.isFinite(Number(payload?.totalAmount)) && payload?.totalAmount != null ? centavos(Number(payload.totalAmount)) : null,
     formaDePagamento: payload.paymentMethod || (existingDraft as any)?.paymentMethod || null,
+    cashbackUsado,
+    cashbackGerado,
+    alterado: Boolean(existingDraft && existingDraft.status !== "CRIANDO_IA"),
   };
 }
 

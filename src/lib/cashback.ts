@@ -23,8 +23,11 @@
  *
  * ── Onde vale ───────────────────────────────────────────────────────────────
  *
- * No pedido feito pelo site da loja, que é onde o cashback é anunciado e onde
- * se usa o saldo. Balcão, mesa, robô e aplicativos não geram nem consomem.
+ * Nos dois canais da própria loja em que o cliente se identifica pelo
+ * telefone: o site e o robô do WhatsApp. Desde 05/10/2026 o robô confere o
+ * saldo, pergunta se o cliente quer usar e grava as mesmas duas colunas que o
+ * checkout do site (lib/chatbot-ai.ts). O rascunho do robô (CRIANDO_IA) não
+ * conta: ainda não é pedido. Balcão, mesa e aplicativos não geram nem consomem.
  */
 
 import { chaveDoCanal } from "./canal-do-pedido";
@@ -120,9 +123,16 @@ const CONCLUIDO = new Set(["ENTREGUE", "ENCERRADO", "CONCLUIDO", "FINALIZADO", "
 
 const statusDe = (p: { status?: string | null }) => String(p.status || "").toUpperCase().trim();
 
-/** O pedido foi feito pelo site da loja (o único canal que gera e consome cashback). */
+/** O pedido foi feito pelo site da loja. */
 export function pedidoDoSite(p: PedidoParaCanal): boolean {
   return chaveDoCanal(p) === "SITE";
+}
+
+/** O pedido gera e consome cashback: site, ou robô do WhatsApp já fechado (rascunho não). */
+export function pedidoComCashback(p: PedidoParaCanal & { status?: string | null }): boolean {
+  const canal = chaveDoCanal(p);
+  if (canal === "SITE") return true;
+  return canal === "WHATSAPP_IA" && statusDe(p) !== "CRIANDO_IA";
 }
 
 /**
@@ -178,7 +188,7 @@ export type MovimentoDoCashback = {
 export type ExtratoDoCashback = SaldoDoCashback & {
   /** Do mais novo para o mais velho. */
   movimentos: MovimentoDoCashback[];
-  /** Cashback de pedido do site que ainda não foi entregue: entra quando for. */
+  /** Cashback de pedido (site ou robô) que ainda não foi entregue: entra quando for. */
   aReceber: number;
 };
 
@@ -196,7 +206,7 @@ function simular(regra: RegraDoCashback, pedidos: PedidoComNumero[], ajustes: Aj
   const eventos: Evento[] = [];
   let aReceber = 0;
   for (const p of pedidos) {
-    if (!pedidoDoSite(p)) continue;
+    if (!pedidoComCashback(p)) continue;
     if (CANCELADO.has(statusDe(p))) continue;
     const doPedido = { pedidoId: p.id, pedidoNumero: p.dailyOrderNumber ?? null };
     const usado = Number(p.cashbackUsed) || 0;
