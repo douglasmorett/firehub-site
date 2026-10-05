@@ -1278,11 +1278,22 @@ export function montarComanda(
     const N = (chave: string) => negritoDoBloco(bloco, chave);
 
     switch (bloco.tipo) {
-      case "numeroPedido":
+      case "numeroPedido": {
         if (pedido.numero != null && pedido.numero !== "") {
-          por(`(${pedido.numero}) ${R("delivery")} ${pedido.codigoCanal || ""}`.replace(/\s+/g, " ").trim(), { ...formato, negrito: N("delivery"), rotulo: "delivery" });
+          por(`(${pedido.numero}) ${R("delivery")}`.replace(/\s+/g, " ").trim(), { ...formato, negrito: N("delivery"), rotulo: "delivery" });
+        }
+        // ── O NÚMERO NO APP LOGO ABAIXO DO NOSSO ─────────────────────────
+        // Decisão do dono (05/10/2026): centralizado e grande, colado ao
+        // nosso — é por ele que a loja acha o pedido no 99Food/iFood. A
+        // palavra continua sendo a do bloco dataHora, onde a loja a edita.
+        // O gêmeo é o case "numeroPedido" do firehub-print-assistant/server.js.
+        if (pedido.codigoCanal) {
+          const daData = modelo.find((b) => b.tipo === "dataHora") || ({ tipo: "dataHora" } as Bloco);
+          por(`${rotuloDoBloco(daData, "numeroNoParceiro")} ${String(pedido.codigoCanal).replace("#", "")}`.trim(),
+            { alinhamento: formato.alinhamento || "centro", negrito: negritoDoBloco(daData, "numeroNoParceiro"), tamanho: DESTAQUE_DO_NUMERO_NO_APP, rotulo: "numeroNoParceiro" });
         }
         break;
+      }
 
       case "canal":
         if (pedido.canal) por(pedido.canal.toUpperCase(), formato);
@@ -1301,7 +1312,9 @@ export function montarComanda(
         // Decisão do dono (19/09/2026), com a comanda do próprio iFood como
         // régua — lá o número sai em corpo dobrado. A DATA continua miúda: ela
         // é conferência, não é o que alguém procura com o telefone na mão.
-        if (pedido.codigoCanal) {
+        // Desde 05/10/2026 ele sai com o bloco numeroPedido; aqui só quando a
+        // loja desligou aquele bloco, senão sumiria do papel.
+        if (pedido.codigoCanal && !modelo.some((b) => b.tipo === "numeroPedido" && b.ligado)) {
           por(`${R("numeroNoParceiro")} ${String(pedido.codigoCanal).replace("#", "")}`.trim(),
             { ...formato, negrito: N("numeroNoParceiro"), tamanho: DESTAQUE_DO_NUMERO_NO_APP, rotulo: "numeroNoParceiro" });
         }

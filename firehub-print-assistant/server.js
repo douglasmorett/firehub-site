@@ -1221,11 +1221,13 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
       const f = { negrito: bl.negrito, tamanho: bl.tamanho, alinhamento: bl.alinhamento, invertido: bl.invertido };
       switch (bl.tipo) {
         case "numeroPedido": {
-          // A linha "N. no iFood" mora no bloco dataHora. Desligado ele, o
-          // numero do app sobe para o topo — senao sumiria do papel.
-          const temLinhaDoApp = blocos.some((b) => b && b.tipo === "dataHora" && b.ligado !== false);
-          const topo = temLinhaDoApp ? headerLine : headerLineComRef;
-          if (topo) out += linha(topo, f);
+          // O numero no app vem logo abaixo do nosso, centralizado e grande
+          // (dono, 05/10/2026) — em qualquer modelo que a loja tenha montado.
+          if (headerLine) out += linha(headerLine, f);
+          if (orderRef) {
+            out += linha(rotuloDoNumeroNoApp + " " + cleanAscii(orderRef),
+              { alinhamento: f.alinhamento || "centro", negrito: N("dataHora", "numeroNoParceiro", true), tamanho: CORPO_DO_NUMERO_NO_APP });
+          }
           // O garcom anda com o numero da mesa, no mesmo corpo da linha do
           // canal no layout padrao — nao some porque a loja montou modelo.
           if (linhaDoGarcom) out += linha(linhaDoGarcom, { alinhamento: f.alinhamento || "centro", tamanho: 1.5, negrito: true });
@@ -1248,11 +1250,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           out += linha(R("loja", "estabelecimento", "Estabelecimento:") + " " + cleanAscii(storeName || "FIREHUB").toUpperCase(), { ...f, negrito: f.negrito || N("loja", "estabelecimento", false) });
           break;
         case "dataHora":
-          // O numero no app sai no corpo do destaque, nao no do bloco: e o que
-          // a loja procura dentro do iFood/99 com o cliente no telefone. A
+          // O numero no app agora sai com o bloco numeroPedido. So volta aqui
+          // quando a loja desligou aquele bloco — senao sumiria do papel. A
           // data segue o bloco, porque e conferencia. Mesma regra da previa do
           // site (DESTAQUE_DO_NUMERO_NO_APP em lib/comanda-modelo.ts).
-          if (orderRef) {
+          if (orderRef && !blocos.some((b) => b && b.tipo === "numeroPedido" && b.ligado !== false)) {
             out += linha(rotuloDoNumeroNoApp + " " + cleanAscii(orderRef),
               { ...f, negrito: N("dataHora", "numeroNoParceiro", true), tamanho: CORPO_DO_NUMERO_NO_APP });
           }
@@ -1512,17 +1514,15 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const orderRef = ehConta ? "" : String(order.ifoodReference || order.openDeliveryReference || "").trim();
   const refTag = orderRef ? `#${orderRef}` : "";
 
-  // ── EM CIMA O NOSSO, EMBAIXO O DELES ─────────────────────────────────
+  // ── EM CIMA O NOSSO, LOGO EMBAIXO O DELES ────────────────────────────
   //
   // O numero do parceiro saia duas vezes: no topo, colado ao nosso, e na
   // linha "N. do Pedido". Decisao do dono (23/09/2026): o topo e so o nosso
-  // numero; o do app sai uma vez, na linha propria. `headerLineComRef` so
-  // existe para o modelo que DESLIGOU essa linha (bloco dataHora): ali o
-  // numero do app volta para o topo, senao some do papel.
+  // numero; o do app sai uma vez, na linha propria — que desde 05/10/2026 vem
+  // logo abaixo do nosso, centralizada e grande.
   const headerLine = seqNumStr
     ? `(${seqNumStr}) ${tagDoTopo}`
     : tagDoTopo;
-  const headerLineComRef = `${headerLine}  ${refTag}`.trim();
   // "N. no iFood:" / "N. no 99Food:" — "N. do Pedido:" ao lado do nosso numero
   // grande no topo deixava a duvida de qual dos dois era o pedido.
   const nomeDoApp = NOME_DO_CANAL[String(order.source || "").toUpperCase()]
@@ -1592,6 +1592,16 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // colunas em 3x, entao "(79) DELIVERY #3523" quebra em duas linhas, que e o
   // que o iFood tambem faz. O par disto esta em modeloPadrao() no site.
   res += ampliado(headerLine, 3, { centro: true, negrito: N("numeroPedido", "delivery", true) });
+  // ── O NUMERO NO APP LOGO ABAIXO DO NOSSO ─────────────────────────────
+  //
+  // Decisao do dono (05/10/2026), com a comanda da Pizzaria 17 na mao: o
+  // numero no 99Food/iFood vem colado ao nosso, centralizado e grande. Antes
+  // ele morava embaixo de "Estabelecimento", depois do canal e do aviso de
+  // entrega — e e por ele que a loja acha o pedido no app quando o cliente
+  // liga. Sai uma vez so: a linha de baixo deixou de existir.
+  if (orderRef) {
+    res += ampliado(rotuloDoNumeroNoApp + " " + cleanAscii(orderRef), CORPO_DO_NUMERO_NO_APP, { centro: true, negrito: N("dataHora", "numeroNoParceiro", true) });
+  }
   // O garcom logo abaixo da mesa: e a quem a cozinha entrega o prato pronto.
   if (linhaDoGarcom) {
     res += DOUBLE_HEIGHT + BOLD_ON + centerLine(linhaDoGarcom) + BOLD_OFF + DOUBLE_OFF;
@@ -1636,14 +1646,9 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   res += LEFT + divider;
   marcas.loja = res.length;
   res += comNegrito(wrapLines(R("loja", "estabelecimento", "Estabelecimento:") + " " + cleanAscii(storeName || "FIREHUB").toUpperCase(), 2), "loja", "estabelecimento", false);
-  // O NUMERO NO APP SAI GRANDE. E por ele que a loja acha o pedido dentro do
-  // iFood/99 quando o cliente liga reclamando, e era a unica linha miuda no
-  // meio de um cabecalho de numeros grandes: para ler, alguem pegava o papel e
-  // aproximava do rosto. A DATA continua pequena — ela e conferencia, ninguem
-  // a procura com o telefone na mao.
-  if (orderRef) {
-    res += ampliado(rotuloDoNumeroNoApp + " " + cleanAscii(orderRef), CORPO_DO_NUMERO_NO_APP, { negrito: N("dataHora", "numeroNoParceiro", true) });
-  }
+  // O numero no app saiu daqui: agora vem logo abaixo do nosso, no topo. A
+  // DATA continua pequena — ela e conferencia, ninguem a procura com o
+  // telefone na mao.
   const dateStr = order.createdAt ? new Date(order.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
   const timeStr = order.createdAt ? new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
   if (dateStr) res += comNegrito(R("dataHora", "data", "Data:") + " " + dateStr + " " + timeStr, "dataHora", "data", false) + LF;
