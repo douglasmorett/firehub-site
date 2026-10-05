@@ -17,7 +17,7 @@ import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { avaliarEdicao, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { podeTerReposicao } from "@/lib/reposicao";
-import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
+import { aguardandoFimDoKds, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
@@ -1984,12 +1984,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     carregar();
     // O painel fica aberto o dia inteiro no PC do caixa, e a config vinha uma
     // vez só: a campanha "converter" (ou uma impressora nova) configurada em
-    // Minha Loja só valia aqui depois de recarregar a página. Uma leitura a
-    // cada 5 min e ao voltar para a aba resolve sem ninguém precisar saber.
-    const timer = setInterval(carregar, 5 * 60 * 1000);
+    // Minha Loja só valia aqui depois de recarregar a página. Releitura
+    // periódica, ao voltar para a aba e quando a tela de Impressoras salva
+    // neste navegador. Era a cada 5 min: tempo de sobra para "imprimir só
+    // quando o KDS finalizar" ser ignorado em vários pedidos (05/10/2026).
+    const timer = setInterval(carregar, RELEITURA_DA_CONFIG_MS);
     const aoFocar = () => { if (document.visibilityState === "visible") carregar(); };
+    const aoSalvar = (e: StorageEvent) => { if (e.key === AVISO_DE_CONFIG_SALVA) carregar(); };
     document.addEventListener("visibilitychange", aoFocar);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", aoFocar); };
+    window.addEventListener("storage", aoSalvar);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", aoFocar);
+      window.removeEventListener("storage", aoSalvar);
+    };
   }, []);
 
   // Espelha a largura REAL configurada em /store/impressoras no preview do recibo,

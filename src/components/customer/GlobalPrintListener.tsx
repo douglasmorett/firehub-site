@@ -4,7 +4,7 @@ import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
-import { aguardandoFimDoKds } from "@/lib/momento-da-impressao";
+import { aguardandoFimDoKds, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
@@ -165,16 +165,31 @@ export default function GlobalPrintListener() {
       .catch(() => {});
   }, [session]);
 
-  // Carregar configurações de impressora da loja
+  // Carregar configurações de impressora da loja — e RELER. Lida uma vez só,
+  // a aba aberta antes de a loja mudar a configuração ("imprimir só quando o
+  // KDS finalizar", impressora nova) seguia com a antiga até alguém recarregar
+  // a página (lib/momento-da-impressao.ts, AVISO_DE_CONFIG_SALVA).
   useEffect(() => {
     if (!session?.user) return;
-    fetch("/api/store/printer-config")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && !data.error) setPrinterConfig(data);
-      })
-      .catch(() => {})
-      .finally(() => setConfigLoaded(true));
+    const carregar = () =>
+      fetch("/api/store/printer-config", { cache: "no-store" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && !data.error) setPrinterConfig(data);
+        })
+        .catch(() => {})
+        .finally(() => setConfigLoaded(true));
+    carregar();
+    const timer = setInterval(carregar, RELEITURA_DA_CONFIG_MS);
+    const aoFocar = () => { if (document.visibilityState === "visible") carregar(); };
+    const aoSalvar = (e: StorageEvent) => { if (e.key === AVISO_DE_CONFIG_SALVA) carregar(); };
+    document.addEventListener("visibilitychange", aoFocar);
+    window.addEventListener("storage", aoSalvar);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", aoFocar);
+      window.removeEventListener("storage", aoSalvar);
+    };
   }, [session]);
 
   useEffect(() => {

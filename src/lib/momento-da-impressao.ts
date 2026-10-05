@@ -88,3 +88,16 @@ export function motivoDaEspera(
   if (!aguardandoFimDoKds(pedido, config)) return null;
   return "A comanda sai quando a cozinha finalizar o pedido no KDS (opção ligada em Impressoras).";
 }
+
+/**
+ * Chave do localStorage que a tela de Impressoras toca ao salvar. As abas do
+ * painel abertas no MESMO navegador ouvem o evento `storage` e releem a
+ * configuração na hora; em outro computador, a releitura periódica (60 s)
+ * pega a mudança. Antes, o GlobalPrintListener lia a configuração uma vez só,
+ * ao abrir: a Pizzaria 17 ligou "imprimir só quando o KDS finalizar" em
+ * 05/10/2026 e a aba aberta antes disso seguia imprimindo na chegada.
+ */
+export const AVISO_DE_CONFIG_SALVA = "firehub:config-de-impressao-salva";
+
+/** De quanto em quanto tempo as abas abertas releem a configuração de impressão. */
+export const RELEITURA_DA_CONFIG_MS = 60 * 1000;

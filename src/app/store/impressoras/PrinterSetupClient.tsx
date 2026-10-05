@@ -98,6 +98,7 @@ type PrinterEntry = {
  *  O tipo mora em lib/loja-de-origem.ts, que o quadro de pedidos também usa. */
 export type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
+import { AVISO_DE_CONFIG_SALVA } from "@/lib/momento-da-impressao";
 
 type AssistantStatus = "checking" | "disconnected" | "connected";
 type DetectedPrinter = { name: string; driver: string; port: string; status: string };
@@ -294,6 +295,9 @@ export default function PrinterSetupClient({
       // O fetch não falha com 4xx/5xx: sem isto a tela dizia "✅ Salvo!" com
       // o servidor tendo recusado.
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // As abas do painel abertas neste navegador releem na hora
+      // (lib/momento-da-impressao.ts, AVISO_DE_CONFIG_SALVA).
+      try { localStorage.setItem(AVISO_DE_CONFIG_SALVA, String(Date.now())); } catch {}
 
       // Este POST sai SEMPRE, mesmo sem nenhuma impressora cadastrada.
       //
