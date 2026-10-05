@@ -419,6 +419,13 @@ export async function POST(req: NextRequest) {
     if (saiuAgora) {
       console.log(`[Motoboy Puxou] pedido ${alvo.id} #${numero}: ${alvo.status} → SAIU_ENTREGA`);
       const pedido = alvo as any;
+      // O cliente fica sabendo que saiu — a mesma mensagem do botão do painel.
+      // Fora do bloco dos parceiros de propósito: lá dentro o aviso esperava
+      // iFood/99Food/Brendi/Wabiz/JotaJá responderem (até dezenas de segundos)
+      // e, se um travasse, o cliente nunca sabia que o pedido saiu.
+      import("@/lib/order-notifications")
+        .then((m) => m.sendOrderNotification(alvo.id, "SAIU_ENTREGA"))
+        .catch(() => {});
       (async () => {
         const rotulo = "Motoboy Puxou → parceiro";
         if (pedido.ifoodOrderId) {
@@ -472,11 +479,6 @@ export async function POST(req: NextRequest) {
             console.warn(`[${rotulo}] erro:`, e?.message);
           }
         }
-        // O cliente fica sabendo que saiu — a mesma mensagem do botão do painel.
-        try {
-          const { sendOrderNotification } = await import("@/lib/order-notifications");
-          sendOrderNotification(alvo.id, "SAIU_ENTREGA").catch(() => {});
-        } catch {}
         // Puxar é a SAÍDA: é aqui que a NFC-e tem de sair (lib/fiscal-momento).
         try {
           const { emitirNfceAutomatica } = await import("@/lib/fiscal-automatico");

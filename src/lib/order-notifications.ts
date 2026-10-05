@@ -187,7 +187,13 @@ Muito obrigado e bom apetite! ⭐😋`;
 
     if (message) {
       console.log(`[OrderNotification] Enviando notificação '${type}' para ${phoneClean} do pedido ${shortId}`);
-      const enviou = await sendEvolutionMessage(order.franchiseeId, phoneClean, message);
+      let enviou = await sendEvolutionMessage(order.franchiseeId, phoneClean, message);
+      // Uma segunda tentativa: o gateway devolve "Timed Out" de vez em quando
+      // (visto no log de 04/10) e o aviso do pedido não tinha outra chance.
+      if (!enviou) {
+        await new Promise((r) => setTimeout(r, 5000));
+        enviou = await sendEvolutionMessage(order.franchiseeId, phoneClean, message);
+      }
       // O gateway recusa (503) quando a instância da loja não está aberta, e
       // este retorno era jogado fora: o painel dizia "conectado" e o cliente
       // ficava sem aviso, sem rastro no log do site.
