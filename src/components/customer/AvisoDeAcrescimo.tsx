@@ -13,7 +13,7 @@ import { PALETA } from "@/lib/paleta-brasa";
  *     acréscimo e o cliente recebe o novo total no WhatsApp;
  *   - Recusar → a loja escreve o motivo (ou usa um pronto) e ele vai ao cliente.
  *
- * Montado na tela de pedidos e no KDS. Consulta /api/store/acrescimos sozinho,
+ * Montado SÓ na tela de pedidos (o dono não quer no KDS, 05/10/2026). Consulta /api/store/acrescimos sozinho,
  * como o AvisosDoDia: não depende do feed de pedidos de quem o monta.
  */
 

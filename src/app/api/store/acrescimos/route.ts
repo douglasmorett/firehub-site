@@ -2,8 +2,8 @@
  * GET  /api/store/acrescimos            → acréscimos que clientes pediram pelo robô e esperam a loja
  * POST /api/store/acrescimos { id, acao: "aceitar" | "recusar", texto? } → a resposta da loja
  *
- * Consultado em loop pelo AvisoDeAcrescimo (components/customer), montado na
- * tela de pedidos e no KDS — a cozinha é quem sabe se ainda dá para incluir.
+ * Consultado em loop pelo AvisoDeAcrescimo (components/customer), montado SÓ
+ * na tela de pedidos — no KDS não (dono, 05/10/2026).
  * A regra mora em lib/acrescimo-do-pedido.ts e lib/acrescimo-no-banco.ts.
  */
 import { NextResponse } from "next/server";
