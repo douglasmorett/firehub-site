@@ -14,7 +14,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { generateDailyOrderNumber } from "@/lib/order-number";
-import { SEM_PRODUTO_DE_INTEGRACAO, disponivelAgora } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, motivoForaDoCardapio, textoDoHorario, textoDosDias } from "@/lib/cardapio-interno";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import { conferirEstoque } from "@/lib/estoque-restante";
@@ -86,6 +86,10 @@ export async function lancarNaMesa(opcoes: {
   const porId = new Map(produtosDaLoja.map((p) => [p.id, p]));
 
   const recusados: string[] = [];
+  // Fora do dia/horário é outra conversa: o item ESTÁ no cardápio, só não
+  // vende agora. Misturar os dois mandava o lojista cadastrar de novo um
+  // produto que já existe (Ragnar Burger, 06/10/2026).
+  const foraDaHora: string[] = [];
   const itensValidados: {
     menuProductId: string;
     quantity: number;
@@ -103,8 +107,10 @@ export async function lancarNaMesa(opcoes: {
     }
     // Produto de dia ou horário específico não sai fora dele; a tela pode
     // estar aberta desde ontem.
-    if (!disponivelAgora(produto, fuso)) {
-      recusados.push(produto.name);
+    const fora = motivoForaDoCardapio(produto, fuso);
+    if (fora) {
+      const quando = fora === "horario" ? textoDoHorario(produto.availableHours) : textoDosDias(produto.availableDays);
+      foraDaHora.push(quando ? `${produto.name} (só vende ${quando})` : produto.name);
       continue;
     }
     // Mesma conta do cardápio, do modal e do totem (src/lib/preco-combo.ts).
@@ -122,6 +128,19 @@ export async function lancarNaMesa(opcoes: {
       tableGuestId: item.tableGuestId ? String(item.tableGuestId) : null,
       notes: item.notes ? String(item.notes).trim().slice(0, 200) || null : null,
     });
+  }
+
+  if (foraDaHora.length > 0) {
+    // Dizer o motivo CERTO: "não está no cardápio da mesa" manda o lojista
+    // procurar um item que está lá — e o caminho do conserto junto, porque
+    // quem marcou os dias foi ele, nesta tela.
+    return {
+      ok: false,
+      status: 400,
+      error:
+        `Fora do dia/horário de venda: ${foraDaHora.join(", ")}. ` +
+        "Para vender todo dia, abra Cardápio → o item → 📅 Dias de Disponibilidade → Sempre Ativo.",
+    };
   }
 
   if (recusados.length > 0) {

@@ -191,6 +191,36 @@ export function lerHorarioDoProduto(availableHours: unknown): HorarioDoProduto |
   }
 }
 
+/**
+ * Os dias em que o produto vende, por extenso e na ordem da semana:
+ * "seg, qua e sex". Vazio quando ele vende todo dia — o chamador decide o que
+ * dizer nesse caso.
+ *
+ * A ordem é a da SEMANA, não a de gravação: o cadastro grava na ordem em que o
+ * lojista clicou, e "sáb, seg e qua" faz ele reler a frase duas vezes.
+ */
+export function textoDosDias(availableDays: unknown): string {
+  let dias: string[] = [];
+  try {
+    const lidos = typeof availableDays === "string" ? JSON.parse(availableDays) : availableDays;
+    if (!Array.isArray(lidos)) return "";
+    dias = lidos.map((d) => String(d).trim().toUpperCase());
+  } catch {
+    return "";
+  }
+  const naSemana = ORDEM_DA_SEMANA.filter((d) => dias.includes(d));
+  // Nenhum dia ou a semana inteira querem dizer a mesma coisa: vende sempre.
+  if (naSemana.length === 0 || naSemana.length === ORDEM_DA_SEMANA.length) return "";
+  const nomes = naSemana.map((d) => NOME_CURTO_DO_DIA[d]);
+  if (nomes.length === 1) return nomes[0];
+  return `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+}
+
+const ORDEM_DA_SEMANA = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"];
+const NOME_CURTO_DO_DIA: Record<string, string> = {
+  SEG: "seg", TER: "ter", QUA: "qua", QUI: "qui", SEX: "sex", SAB: "sáb", DOM: "dom",
+};
+
 /** "das 09:00 às 14:00" — ou "" para o produto do dia todo. */
 export function textoDoHorario(availableHours: unknown): string {
   const h = lerHorarioDoProduto(availableHours);
@@ -243,6 +273,24 @@ export function disponivelAgora(
   ref: Date = new Date()
 ): boolean {
   return motivoForaDoCardapio(produto, timeZone, ref) === null;
+}
+
+/**
+ * Anota em cada produto POR QUE ele não se vende agora — "dia", "horario" ou
+ * null —, para a tela de venda não precisar de relógio próprio.
+ *
+ * Quem decide é o SERVIDOR, que conhece o `storeTimezone`. A tela roda no
+ * aparelho da loja, mas um tablet com o fuso errado (ou a loja de Manaus, uma
+ * hora atrás de Brasília) faria a vitrine discordar de quem recusa o
+ * lançamento — e o garçom veria o item, tocaria, e levaria um erro. Mesma
+ * bandeira de `apenasOpcaoDeCombo` e `esgotado`: o servidor calcula, a tela lê.
+ */
+export function comDisponibilidadeAnotada<T extends { availableDays?: unknown; availableHours?: unknown }>(
+  produtos: T[],
+  timeZone?: string | null,
+  ref: Date = new Date()
+): (T & { foraDoCardapioAgora: "dia" | "horario" | null })[] {
+  return produtos.map((p) => ({ ...p, foraDoCardapioAgora: motivoForaDoCardapio(p, timeZone, ref) }));
 }
 
 /**

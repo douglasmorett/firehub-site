@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
-import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, lerHorarioDoProduto } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, lerHorarioDoProduto, comDisponibilidadeAnotada } from "@/lib/cardapio-interno";
+import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { SELECT_DO_CARDAPIO, ordemDasCategorias, ordenarComoALoja } from "@/lib/cardapio-da-loja";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
@@ -317,10 +318,15 @@ export async function GET(req: NextRequest) {
     // Admin sem loja escolhida vê a rede inteira: aí não há um estoque só.
     const lojaDoCardapio = scope.isAdmin ? scope.adminStoreId : scope.storeId;
     const estoque = await estoqueDaLojaOuVazio(lojaDoCardapio);
+    // Dia e horário: o item de dia específico fora do dia dele. Decidido no
+    // SERVIDOR porque quem manda é o fuso da LOJA — o mesmo relógio que recusa
+    // o lançamento na mesa (lib/lancar-na-mesa.ts). Sem esta bandeira a mesa
+    // era a ÚNICA tela de venda que ignorava o campo.
+    const fuso = await fusoDaLoja(lojaDoCardapio);
     // Na ordem que a loja escolheu em "Reordenar Cardápio", não na alfabética.
     return NextResponse.json(
       ordenarComoALoja(
-        comPreco.map((p: any) => comEstoqueAnotado({ ...p, apenasOpcaoDeCombo: soOpcao.has(String(p.id)) }, estoque)),
+        comDisponibilidadeAnotada(comPreco as any[], fuso).map((p: any) => comEstoqueAnotado({ ...p, apenasOpcaoDeCombo: soOpcao.has(String(p.id)) }, estoque)),
         await ordemDasCategorias(lojaDoCardapio)
       )
     );

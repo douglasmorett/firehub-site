@@ -9,7 +9,7 @@
  * tablet e outro no celular, e "sumiu item da mesa" voltaria a ser impossível
  * de investigar.
  */
-import { idsSoDeOpcaoDeCombo } from "@/lib/cardapio-interno";
+import { idsSoDeOpcaoDeCombo, motivoForaDoCardapio, textoDoHorario, textoDosDias } from "@/lib/cardapio-interno";
 
 export interface ItemDaMesa {
   id: string;
@@ -75,6 +75,22 @@ export function montarCardapioDaMesa(data: any[]): {
     ? new Set(data.filter((p: any) => p.apenasOpcaoDeCombo).map((p: any) => String(p.id)))
     : idsSoDeOpcaoDeCombo(data);
 
+  // ── Dia e horário do item ────────────────────────────────────────────
+  //
+  // A mesa era a ÚNICA tela de venda que ignorava `availableDays` /
+  // `availableHours`. O site, o totem, o balcão e o robô já respeitavam —
+  // e, pior, `lib/lancar-na-mesa.ts` RECUSA o item fora do dia. O garçom via
+  // o produto na vitrine, tocava, e levava "não está no cardápio da mesa".
+  // Queixa da Ragnar Burger em 06/10/2026, uma terça: o "Burger Clássico"
+  // estava cadastrado em seg, qua, qui, sex, sáb e dom.
+  //
+  // Quem decide é o SERVIDOR (`foraDoCardapioAgora`), que conhece o fuso da
+  // loja — é o mesmo relógio que recusa o lançamento, então a vitrine não
+  // tem como discordar dele. O cálculo local fica de reserva para um payload
+  // antigo, sem a bandeira.
+  const foraDoCardapio = (p: any): "dia" | "horario" | null =>
+    p?.foraDoCardapioAgora !== undefined ? p.foraDoCardapioAgora : motivoForaDoCardapio(p);
+
   const paraItem = (p: any): ItemDaMesa => ({
     id: p.id,
     name: p.name,
@@ -100,6 +116,7 @@ export function montarCardapioDaMesa(data: any[]): {
     // aparecendo aqui. Balcão já olha activePDV, totem já olha activeTotem.
     .filter((p: any) => p.activeGarcom !== false)
     .filter((p: any) => p.esgotado !== true)
+    .filter((p: any) => !foraDoCardapio(p))
     .filter((p: any) => !soOpcaoDeCombo.has(String(p.id)))
     .map(paraItem);
 
@@ -115,6 +132,17 @@ export function montarCardapioDaMesa(data: any[]): {
     if (p.active === false) return "pausado no cardápio";
     if (p.activeGarcom === false) return "desligado para o garçom no cadastro";
     if (p.esgotado === true) return "estoque zerou — pausado até repor (Cardápio → 📦 Estoque)";
+    // O caminho exato do cadastro: sem ele o lojista procura o item em
+    // "pausado" e não acha — ele está ativo, só não vende HOJE.
+    const fora = foraDoCardapio(p);
+    if (fora === "horario") {
+      const quando = textoDoHorario(p.availableHours);
+      return `fora do horário${quando ? " — só vende " + quando : ""} (Cardápio → o item → 📅 Dias de Disponibilidade)`;
+    }
+    if (fora === "dia") {
+      const quando = textoDosDias(p.availableDays);
+      return `hoje não é dia dele${quando ? " — só vende " + quando : ""} (Cardápio → o item → 📅 Dias de Disponibilidade)`;
+    }
     if (p.apenasEmCombo === true) return "complemento de combo — aparece dentro da pergunta do combo";
     if (soOpcaoDeCombo.has(String(p.id))) return "sem preço em nenhum canal — não dá para lançar na comanda";
     return null;

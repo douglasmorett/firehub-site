@@ -12,7 +12,8 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { orderByCardapio } from "./menu-order";
-import { SEM_PRODUTO_DE_INTEGRACAO } from "./cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, comDisponibilidadeAnotada } from "./cardapio-interno";
+import { fusoDaLoja } from "./fuso-da-loja";
 import { aplicarPrecoNoCardapio, type CanalDePreco } from "./preco-por-canal";
 import { estoqueDaLojaOuVazio, comEstoqueAnotado } from "./estoque-restante";
 
@@ -72,7 +73,11 @@ export async function cardapioDaLoja(franchiseeId: string, canal: CanalDePreco) 
   // qualquer jeito ao gravar.
   const estoque = await estoqueDaLojaOuVazio(franchiseeId);
   const comEstoque = estoque.size === 0 ? produtos : produtos.map((p) => comEstoqueAnotado(p, estoque));
-  return ordenarComoALoja(aplicarPrecoNoCardapio(comEstoque as any[], canal), await ordemDasCategorias(franchiseeId));
+  // Dia e horário do item (a esfirra só de segunda, a marmita das 9h às 14h)
+  // decididos AQUI, no fuso da loja — o mesmo relógio de lib/lancar-na-mesa.ts,
+  // que recusa o lançamento. A tela só lê `foraDoCardapioAgora`.
+  const comDia = comDisponibilidadeAnotada(comEstoque as any[], await fusoDaLoja(franchiseeId));
+  return ordenarComoALoja(aplicarPrecoNoCardapio(comDia as any[], canal), await ordemDasCategorias(franchiseeId));
 }
 
 /**
