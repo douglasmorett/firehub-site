@@ -710,7 +710,29 @@ export default function VendaPresencialPage() {
       // deste campo existir — mesma falha, consertada junto.
       setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setBairro(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento(""); setVoucherBrand("");
       setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null); setCotacaoDoBalcao(null);
-      if (dividir) ligarDivisao(false);
+
+      // ── E A FORMA DE PAGAMENTO TAMBÉM ────────────────────────────────
+      //
+      // O bloco acima diz "tudo do cliente sai daqui" e esquecia justamente
+      // o que cobra: a forma de pagamento e o funcionário da conta ficavam.
+      // Quem vendia na conta de um funcionário continuava com "Conta
+      // Funcionário" e o nome dele escolhidos no pedido seguinte — e, como
+      // a validação já estava satisfeita, o atendente clicava em finalizar e
+      // a venda do PRÓXIMO cliente ia para a dívida do funcionário, sem a
+      // tela perguntar nada. Queixa do Danilo (NIK Esfihas, 06/10/2026):
+      // "fecha sem dar opção de escolher a forma de pagamento e finaliza no
+      // fiado". Medido em produção: 20 pedidos de cliente — R$ 503,83 em 14
+      // dias, só na NIK — lançados na conta de 13 funcionários diferentes,
+      // todos logo depois de uma venda legítima de funcionário.
+      //
+      // O desconto estava na mesma situação: "10% cortesia" dado a um
+      // cliente seguia aplicado no próximo, calado.
+      setPaymentMethod("Dinheiro");
+      setDividir(false);
+      setPartes([]);
+      setSelectedEmployeeId("");
+      setSelectedEmployeeName("");
+      limparDesconto();
     } else {
       const err = await res.json();
       setMsg("❌ " + (err.error || "Erro ao registrar pedido."));
