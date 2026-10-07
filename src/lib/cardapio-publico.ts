@@ -10,7 +10,7 @@
 import { prisma } from "@/lib/prisma";
 import { orderByCardapio } from "@/lib/menu-order";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
-import { SEM_PRODUTO_DE_INTEGRACAO, disponivelAgora } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, disponivelAgora, ehProdutoDeIntegracao } from "@/lib/cardapio-interno";
 import { aplicarEstoqueNaVitrine, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio";
@@ -217,7 +217,32 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // Item fora do dia nem entra no payload: além de não aparecer, não vai no
   // HTML público. Quem é opção DENTRO de combo continua intacto — as opções
   // vêm pela consulta aninhada, que este filtro não toca.
-  const menuDoDia = (menuProducts as any[]).filter((p) => disponivelAgora(p, franchisee.storeTimezone));
+  // ── O ESPELHO DAS INTEGRAÇÕES NÃO É CARDÁPIO DA LOJA ────────────────────
+  //
+  // O canal "salao" já filtrava (SEM_PRODUTO_DE_INTEGRACAO no `where`); o
+  // delivery — que é o cardápio público, o site que a loja divulga — não.
+  // Resultado medido em 07/10/2026: 239 produtos da categoria "99Food" à
+  // venda no site PRÓPRIO de 10 lojas, com o preço do marketplace. Na NIK
+  // eram 39, e entre eles a "Esfiha Creme de Ninho com Kit Kat" que o
+  // lojista tinha tirado do cardápio dele no dia anterior: ele apagava de um
+  // lado e ela continuava no site pelo outro, a R$ 19,90 em vez de R$ 14,90.
+  //
+  // Aqui o filtro é em MEMÓRIA, não no `where`, por causa da rede de
+  // segurança abaixo. E condena só pela CATEGORIA: a consulta já exige
+  // `active: true`, então a regra do prefixo (que só vale para espelho
+  // INATIVO) não tem como condenar cardápio real importado com id
+  // `ifood-…` — o caso que já escondeu 43 itens vendáveis uma vez.
+  const semEspelho = (menuProducts as any[]).filter(
+    (p) => !ehProdutoDeIntegracao(p.category, p.id, p.active),
+  );
+  // REDE DE SEGURANÇA: loja que ainda não montou cardápio próprio e vive do
+  // espelho ficaria com a página VAZIA — pior do que mostrar o espelho. A
+  // DUGABURGUER estava exatamente assim (0 produtos próprios, 5 de espelho,
+  // 51 pedidos em 30 dias). Sem cardápio próprio, nada muda para ela; no dia
+  // em que importar o dela, o espelho sai sozinho.
+  const menuSemEspelho = semEspelho.length > 0 ? semEspelho : (menuProducts as any[]);
+
+  const menuDoDia = menuSemEspelho.filter((p) => disponivelAgora(p, franchisee.storeTimezone));
 
   // Estoque disponível: o que esgotou fecha, igual ao iFood. O que ainda tem
   // leva o restante junto, para o carrinho não deixar pedir mais do que há —
