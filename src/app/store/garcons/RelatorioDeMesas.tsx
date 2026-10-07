@@ -78,6 +78,23 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
   const total = dados?.vendas.total || 0;
   const pct = (v: number) => (total > 0 ? `${((v / total) * 100).toFixed(0)}%` : "—");
 
+  // Pedido do Fabiano (Ragnar Burger, 06/10/2026), sobre ESTA tabela:
+  // ticket médio e percentual de vendas por garçom.
+  //
+  // O ticket é por MESA FECHADA, não por pedido: a mesa é a unidade que o
+  // garçom atende, e um pedido de mesa nasce "N/A" — quem guarda o dinheiro
+  // é a sessão (lib/pagamentos-da-mesa.ts). Garçom sem mesa fechada no
+  // período não vira divisão por zero.
+  const ticket = (consumo: number, mesas: number) => (mesas > 0 ? fmt(consumo / mesas) : "—");
+
+  // Percentual sobre o CONSUMO NAS MESAS do período, que é o total desta
+  // tabela — não sobre o faturamento da loja, senão a coluna somaria menos
+  // de 100% e ninguém entenderia por quê (delivery e balcão ficam de fora).
+  const pctDoSalao = (v: number) => {
+    const base = dados?.mesas.consumo || 0;
+    return base > 0 ? `${((v / base) * 100).toFixed(1)}%` : "—";
+  };
+
   const botaoFiltro = (chave: typeof filtro, rotulo: string) => (
     <button
       key={chave}
@@ -155,15 +172,17 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Garçom</th>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Mesas</th>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Consumo</th>
+              <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Ticket médio</th>
+              <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>% das vendas</th>
               <th style={{ padding: "14px 16px", color: "#1E293B", fontWeight: 800, fontSize: 13, textAlign: "right" }}>Taxa de serviço</th>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Gorjetas</th>
             </tr>
           </thead>
           <tbody>
             {carregando ? (
-              <tr><td colSpan={5} style={{ padding: 40, textAlign: "center" }}><Loader2 className="animate-spin mx-auto text-slate-400" size={32} /></td></tr>
+              <tr><td colSpan={7} style={{ padding: 40, textAlign: "center" }}><Loader2 className="animate-spin mx-auto text-slate-400" size={32} /></td></tr>
             ) : !dados || dados.mesas.porGarcom.length === 0 ? (
-              <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>Nenhuma mesa fechada no período.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>Nenhuma mesa fechada no período.</td></tr>
             ) : (
               <>
                 {dados.mesas.porGarcom.map((g) => (
@@ -178,6 +197,8 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                     </td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569", fontWeight: 600 }}>{g.mesas}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569" }}>{fmt(g.consumo)}</td>
+                    <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569", fontWeight: 600 }}>{ticket(g.consumo, g.mesas)}</td>
+                    <td style={{ padding: "14px 16px", textAlign: "right", color: "#64748B", fontWeight: 700 }}>{pctDoSalao(g.consumo)}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#0F766E" }}>{fmt(g.taxaServico)}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#B45309", fontWeight: 700 }}>{g.gorjetas > 0 ? fmt(g.gorjetas) : "—"}</td>
                   </tr>
@@ -186,6 +207,8 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                   <td style={{ padding: "14px 16px", fontWeight: 900, color: "#1E293B" }}>Total</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{dados.mesas.fechadas}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{fmt(dados.mesas.consumo)}</td>
+                  <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{ticket(dados.mesas.consumo, dados.mesas.fechadas)}</td>
+                  <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#64748B" }}>{dados.mesas.consumo > 0 ? "100%" : "—"}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 900, color: "#134E4A" }}>{fmt(dados.mesas.taxaServico)}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#B45309" }}>{dados.mesas.gorjetas > 0 ? fmt(dados.mesas.gorjetas) : "—"}</td>
                 </tr>
