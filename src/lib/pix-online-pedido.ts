@@ -477,6 +477,7 @@ export async function conferirPagamentoDoPedido(orderId: string): Promise<Situac
     select: {
       id: true, franchiseeId: true, status: true, paymentPaidAt: true, totalAmount: true, createdAt: true,
       dailyOrderNumber: true, gatewayProvider: true, gatewayPaymentId: true, pagarmeStatus: true, customerName: true,
+      taxaOnline: true,
     },
   });
   if (!pedido) return { pago: false, encerrado: true, motivo: "cancelado" };
@@ -524,6 +525,14 @@ export async function conferirPagamentoDoPedido(orderId: string): Promise<Situac
     if (Math.abs(valorPago - Number(pedido.totalAmount)) > 0.01) {
       // Não acontece com cobrança que o FireHub criou; se acontecer, é gente.
       console.error(`[PagamentoOnline] Pedido ${orderId}: Asaas diz ${valorPago}, pedido vale ${pedido.totalAmount}. Não confirmado.`);
+      // A conferência roda a cada 3 s na tela, no webhook e no cron: o aviso
+      // sai UMA vez por pedido (de novo só se o valor recebido mudar).
+      const taxa = ((pedido.taxaOnline as any) || {}) as Record<string, any>;
+      if (Number(taxa.valorDivergente?.valorPago) === valorPago) return { pago: false, encerrado: false };
+      await prisma.customerOrder.update({
+        where: { id: orderId },
+        data: { taxaOnline: { ...taxa, valorDivergente: { valorPago, avisadoEm: new Date().toISOString() } } },
+      });
       await avisarLoja(
         pedido.franchiseeId,
         `⚠️ *Pagamento pelo site: valor diferente* — pedido ${numeroDoPedido(pedido)} de ${pedido.customerName}.\n` +
