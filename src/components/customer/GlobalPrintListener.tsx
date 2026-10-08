@@ -148,6 +148,8 @@ export default function GlobalPrintListener() {
   const isFirstPollRef = useRef(true);
   const [printerConfig, setPrinterConfig] = useState<any>(null);
   const [configLoaded, setConfigLoaded] = useState(false);
+  /** A config das lojas irmãs ("Todas as lojas"), por id, com a hora da leitura. */
+  const configsDasIrmasRef = useRef<Record<string, { config: any; lidaEm: number }>>({});
   // O nome de cada loja da conta. Com o painel em "Todas as lojas" chegam
   // pedidos das duas lojas, e a comanda do Yakisoba do San não pode sair com
   // "China Pow" no topo (04/10/2026): o nome é o da loja DO PEDIDO.
@@ -210,6 +212,32 @@ export default function GlobalPrintListener() {
         }
       }
     } catch {}
+
+    // ── A CONFIG DA LOJA DE CADA PEDIDO ────────────────────────────────────
+    //
+    // Em "Todas as lojas" o feed traz os pedidos das lojas irmãs, e este
+    // ouvinte os imprimia com a config da loja LOGADA: impressoras, modelo e
+    // "itens separados" da outra loja. A Frangoso marcou "separar" na
+    // impressora dela e o pedido saía agrupado; a reimpressão, com a Frangoso
+    // selecionada, saía certa (Lucas, 04 e 05/10/2026). A fila da nuvem sempre
+    // usou a config da loja de cada pedido. Relida no mesmo ritmo da principal.
+    const lojaDaSessao = String((session.user as any)?.ownerId || (session.user as any)?.id || "");
+    const configDaLojaDoPedido = async (order: any) => {
+      const loja = String(order?.franchiseeId || "");
+      if (!loja || !lojaDaSessao || loja === lojaDaSessao) return printerConfig;
+      const guardada = configsDasIrmasRef.current[loja];
+      if (guardada && Date.now() - guardada.lidaEm < RELEITURA_DA_CONFIG_MS) return guardada.config;
+      try {
+        const r = await fetch(`/api/store/printer-config?loja=${encodeURIComponent(loja)}`, { cache: "no-store" });
+        const c = r.ok ? await r.json() : null;
+        if (c && !c.error) {
+          configsDasIrmasRef.current[loja] = { config: c, lidaEm: Date.now() };
+          return c;
+        }
+      } catch {}
+      // Sem resposta: a última lida desta loja; nunca lida, a da sessão (como era).
+      return guardada?.config || printerConfig;
+    };
 
     const pollAndPrint = async () => {
       if (!active || isPollingRef.current) return;
@@ -283,7 +311,11 @@ export default function GlobalPrintListener() {
                 // `continue` sem reivindicar de propósito: o pedido tem que
                 // continuar candidato: quando o KDS finalizar, é este mesmo
                 // laço que vai imprimi-lo.
-                if (aguardandoFimDoKds(order, printerConfig)) continue;
+                // A config da loja DESTE pedido: no "Todas as lojas" chegam
+                // pedidos das irmãs, e cada uma tem as suas impressoras e o seu
+                // "itens separados" (ver configDaLojaDoPedido).
+                const configDoPedido = await configDaLojaDoPedido(order);
+                if (aguardandoFimDoKds(order, configDoPedido)) continue;
 
                 // Reivindica atomicamente ANTES de disparar a impressão
                 claimOrderPrint(order);
@@ -302,7 +334,7 @@ export default function GlobalPrintListener() {
                   const payStr = peloSite.paymentMethod || (order.paymentMethod || "").toString();
                   const isOfflinePayment = !peloSite.isPrepaid && (/cobrar|dinheiro|maquin|entrega|pendente|troco/i.test(payStr) || order.isPrepaid === false);
 
-                  const activePrinterConfig = printerConfig || {
+                  const activePrinterConfig = configDoPedido || printerConfig || {
                     autoprint: true,
                     printers: [
                       { id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" as const },

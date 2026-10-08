@@ -50,16 +50,34 @@ export async function PUT(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
   const currentUser = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true },
+    select: { id: true, ownerId: true, role: true },
   });
   if (!currentUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
-  const targetId = currentUser.ownerId || currentUser.id;
+  let targetId = currentUser.ownerId || currentUser.id;
+
+  // ── A CONFIG DA LOJA DO PEDIDO (?loja=) ──────────────────────────────────
+  //
+  // Painel em "Todas as lojas": chegam pedidos das lojas irmãs, e o navegador
+  // os imprimia com a configuração da loja LOGADA — impressoras, "itens
+  // separados", modelo. A Frangoso marcou "separar" na impressora dela e o
+  // pedido saía agrupado; a reimpressão, com a Frangoso selecionada, saía
+  // certa (Lucas, 04 e 05/10/2026). A fila da nuvem sempre usou a config da
+  // loja de cada pedido. Só loja do MESMO grupo, e funcionário fica na dele.
+  const pedida = req.nextUrl.searchParams.get("loja");
+  if (pedida && pedida !== targetId && String(currentUser.role || "").toUpperCase() !== "STAFF") {
+    const { lojasDoGrupo } = await import("@/lib/loja-ativa");
+    const grupo = await lojasDoGrupo(targetId);
+    if (!grupo.some((l) => l.id === pedida)) {
+      return NextResponse.json({ error: "Loja fora da sua conta" }, { status: 403 });
+    }
+    targetId = pedida;
+  }
 
   const user = await prisma.user.findUnique({
     where: { id: targetId },
