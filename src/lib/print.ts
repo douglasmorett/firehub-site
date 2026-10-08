@@ -429,6 +429,9 @@ async function printToDevice(
           // que não conhece, então quem não atualizou imprime como sempre.
           ifoodStoreName: (order as any).ifoodStoreName,
           openDeliveryReference: (order as any).openDeliveryReference,
+          // O nome do app no "N. no 99Food:" quando a origem gravada é a
+          // genérica (OPEN_DELIVERY); o Assistente lê `source` primeiro.
+          openDeliveryChannel: (order as any).openDeliveryChannel,
           // ── QR "PUXAR PEDIDO" na comanda ────────────────────────────────
           // O código é só AAAAMMDD-numero — o mesmo número que já sai em corpo
           // dobrado no topo desta comanda, nada de segredo no papel. Quem
