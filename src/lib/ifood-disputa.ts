@@ -176,14 +176,20 @@ export async function gravarDesfecho(orderId: string, meta: any): Promise<{ acho
   let corte = false;
   if (parcial && aceitou) {
     const viaProposta = statusDesfecho.includes("ALTERNATIVE");
-    const r = await aplicarCancelamentoParcial(atual.id, {
-      id: String(d.disputeId || meta?.disputeId || `ifood:${orderId}`),
-      canal: "iFood",
-      itens: itensDaDisputa(d),
-      valor: valorDaDisputaParcial(d, { usarProposta: viaProposta }),
-      motivo: d.reason || null,
-    });
-    corte = r.aplicado;
+    const itens = itensDaDisputa(d);
+    const valor = valorDaDisputaParcial(d, { usarProposta: viaProposta });
+    // Sem valor e sem item conhecido não há o que riscar nem o que tirar do
+    // total: um aviso de corte zerado só ensinaria a loja a ignorar o aviso.
+    if (valor > 0 || itens.length > 0) {
+      const r = await aplicarCancelamentoParcial(atual.id, {
+        id: String(d.disputeId || meta?.disputeId || `ifood:${orderId}`),
+        canal: "iFood",
+        itens,
+        valor,
+        motivo: d.reason || null,
+      });
+      corte = r.aplicado;
+    }
   }
   return { achou: true, status: statusDesfecho, corte };
 }
