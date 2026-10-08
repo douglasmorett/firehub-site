@@ -227,6 +227,9 @@ export default function KDSTelaPage() {
    */
   const filtroMexidoAqui = useRef(false);
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
+  // Painel "⏩ Prioridade" do topo: quem fura a fila (kdsConfig.prioridade).
+  const [showPrioridade, setShowPrioridade] = useState(false);
+  const [salvandoPrioridade, setSalvandoPrioridade] = useState(false);
   /** Esta tela existe no painel do KDS (achada pelo id do link ou pelo nome)? */
   const temTelaSalva = useRef(false);
   /**
@@ -1397,11 +1400,140 @@ export default function KDSTelaPage() {
                 </button>
               )}
 
+              {/* ── ⏩ PRIORIDADE NA COZINHA ─────────────────────────────────
+                  A regra é da LOJA (vale em todas as telas), mas fica aqui em
+                  cima porque é na frente da TV que a cozinha sente a falta —
+                  o dono da Pizzaria 17 procurou aqui, não no hub (08/10/2026).
+                  Marcou, salvou e a fila se reordena na hora. */}
+              <div style={{ position: "relative" }}>
+                <button
+                  onClick={() => { setShowPrioridade((v) => !v); setShowCategoryPopup(false); }}
+                  title="Escolher quais pedidos entram na frente da fila"
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 10,
+                    border: "1px solid #44403C",
+                    background: (kdsConfig?.prioridade.length || 0) > 0 ? "#B45309" : "#1C1917",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontFamily: FONT,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ⏩ Prioridade
+                  {(kdsConfig?.prioridade.length || 0) > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 800, opacity: 0.95 }}>
+                      {kdsConfig!.prioridade
+                        .map((t) => ({ MESA: "Mesa", BALCAO: "Balcão", RETIRADA: "Retirada", DELIVERY: "Delivery" } as const)[t])
+                        .join(" · ")}
+                    </span>
+                  )}
+                </button>
+                {showPrioridade && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      right: 0,
+                      zIndex: 1000,
+                      background: "#111118",
+                      border: "1px solid #44403C",
+                      borderRadius: 12,
+                      padding: 16,
+                      width: 300,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #292524", paddingBottom: 8 }}>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: "#94A3B8" }}>ENTRAM NA FRENTE</span>
+                      <button
+                        onClick={() => setShowPrioridade(false)}
+                        style={{ background: "none", border: "none", color: "#94A3B8", fontSize: 16, cursor: "pointer" }}
+                        aria-label="Fechar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {([
+                      { id: "MESA", rotulo: "🍽️ Mesa", dica: "garçom ou QR da mesa" },
+                      { id: "BALCAO", rotulo: "🧍 Balcão", dica: "feito na loja para levar" },
+                      { id: "RETIRADA", rotulo: "🛍️ Retirada", dica: "site, app ou WhatsApp, cliente vem buscar" },
+                      { id: "DELIVERY", rotulo: "🛵 Delivery", dica: "para entregar" },
+                    ] as const).map((t) => {
+                      const atual = kdsConfig?.prioridade || [];
+                      const on = atual.includes(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          disabled={salvandoPrioridade}
+                          onClick={async () => {
+                            const antes = kdsConfig;
+                            const nova = on ? atual.filter((x) => x !== t.id) : [...atual, t.id];
+                            setKdsConfig({ soNaFinalizacao: antes?.soNaFinalizacao || [], prioridade: nova });
+                            setSalvandoPrioridade(true);
+                            try {
+                              const r = await fetch("/api/store/kds-config", {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                credentials: "include",
+                                body: JSON.stringify({ prioridade: nova }),
+                              });
+                              if (!r.ok) throw new Error(String(r.status));
+                              const salvo = await r.json().catch(() => null);
+                              if (salvo) setKdsConfig(lerKdsConfig(salvo));
+                              await fetchOrders();
+                            } catch {
+                              setKdsConfig(antes);
+                              alert("Não consegui salvar a prioridade. A fila continua como estava. Confira a internet e tente de novo.");
+                            } finally {
+                              setSalvandoPrioridade(false);
+                            }
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            padding: "10px 12px",
+                            borderRadius: 10,
+                            border: `1.5px solid ${on ? "#F59E0B" : "#292524"}`,
+                            background: on ? "rgba(245,158,11,0.16)" : "#1C1917",
+                            color: "#fff",
+                            cursor: salvandoPrioridade ? "wait" : "pointer",
+                            fontFamily: FONT,
+                            textAlign: "left",
+                          }}
+                        >
+                          <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <span style={{ fontWeight: 800, fontSize: 14 }}>{t.rotulo}</span>
+                            <span style={{ fontSize: 11, color: "#94A3B8" }}>{t.dica}</span>
+                          </span>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: on ? "#FCD34D" : "#64748B", whiteSpace: "nowrap" }}>
+                            {on ? "✓ na frente" : "pela chegada"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <div style={{ fontSize: 11, color: "#94A3B8", lineHeight: 1.4, marginTop: 4 }}>
+                      Vale para todas as telas do KDS. Entre os marcados, quem chegou primeiro. Item faltante e rota criada continuam no topo.
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Esta tela cobre a barra do topo do painel, que é onde o botão Tutorial mora. */}
               <TutorialDaTela />
 
               <button
-                onClick={() => setShowCategoryPopup((prev) => !prev)}
+                onClick={() => { setShowCategoryPopup((prev) => !prev); setShowPrioridade(false); }}
                 style={{
                   padding: "6px 14px",
                   borderRadius: 10,
