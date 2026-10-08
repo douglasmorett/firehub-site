@@ -148,3 +148,30 @@ export function deveReconferir(
 
   return { digitado };
 }
+
+/**
+ * O código desta entrega já foi conferido pela plataforma?
+ *
+ * ── O CÓDIGO VEM PRIMEIRO (Lucas, Frangoso, 05/10/2026) ─────────────────────
+ *
+ * O app perguntava bebida, depois pagamento e só no fim o código — porque a
+ * conferência aceita conclui o pedido no iFood/99 e o entregador "já saiu da
+ * tela". Na porta é o contrário: "primeiro pega o código, depois o restante;
+ * só abro a bag depois que tenho o código". O dono confirmou: enquanto o código
+ * não for aprovado, não tem por que seguir para pagamento e bebida.
+ *
+ * Então a conferência virou um passo próprio (PATCH com `apenasConferirCodigo`)
+ * e a baixa vem depois, quando pagamento e bebida estão resolvidos. Entre um e
+ * outro o pedido já está concluído na plataforma: a baixa NÃO pode conferir de
+ * novo (o iFood responderia "já confirmado", o 99 recusaria) nem pedir o código
+ * outra vez se o app fechou no meio — é isto que ela consulta.
+ *
+ * Só o `conferido` do MESMO canal vale. `indisponivel`, `nao-confirmado`,
+ * `errado` e `sem-codigo` não são aprovação.
+ */
+export function codigoJaConferido(info: unknown, canal: "iFood" | "99Food"): boolean {
+  const i = (info ?? null) as Record<string, unknown> | null;
+  if (!i || typeof i !== "object") return false;
+  if (i.resultado !== "conferido") return false;
+  return i.canal === canal;
+}

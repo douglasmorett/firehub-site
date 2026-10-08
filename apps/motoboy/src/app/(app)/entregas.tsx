@@ -36,7 +36,7 @@ import { useAviso } from "@/components/Aviso";
 import { Botao } from "@/components/Botao";
 import { CartaoDoPedido } from "@/components/CartaoDoPedido";
 import { Folha } from "@/components/Folha";
-import { FluxoDaEntrega, type ExtraDaBaixa, type ResultadoDaBaixa } from "@/components/FluxoDaEntrega";
+import { FluxoDaEntrega, type ExtraDaBaixa, type ResultadoDaBaixa, type ResultadoDaConferencia } from "@/components/FluxoDaEntrega";
 import { LeitorDeQr } from "@/components/LeitorDeQr";
 import { cor, raio, reais } from "@/components/tema";
 import { chamar, ErroDaApi, type ListaDePedidos, type Pedido, type RespostaDaBaixa } from "@/lib/api";
@@ -273,6 +273,41 @@ export default function Entregas() {
         },
       },
     ]);
+  }
+
+  /**
+   * O primeiro passo da porta: confere o código com o iFood/99 e NÃO dá baixa
+   * (o servidor grava a aprovação; a baixa depois do pagamento e da bebida a
+   * reconhece). Aprovado, o pedido deixa de pedir código — o app pode fechar
+   * aqui e voltar depois sem o cliente ditar de novo.
+   */
+  async function conferirCodigo(p: Pedido, codigo: string): Promise<ResultadoDaConferencia> {
+    if (!sessao || baixandoAgora.current.has(p.id)) return { ok: false };
+    baixandoAgora.current.add(p.id);
+    try {
+      await chamar("/api/motoboys/orders", {
+        metodo: "PATCH",
+        token: sessao.token,
+        corpo: { orderId: p.id, codigo, apenasConferirCodigo: true },
+        limite: 30_000,
+      });
+      setPedidos((lista) => lista.map((o) => (o.id === p.id ? { ...o, pedeCodigoEntrega: false } : o)));
+      return { ok: true };
+    } catch (e) {
+      if (await quandoSessaoCai(e)) return { ok: false };
+      if (e instanceof ErroDaApi) {
+        if (e.corpo?.codigoIncorreto || e.corpo?.ifoodIndisponivel || e.corpo?.parceiroIndisponivel || e.corpo?.precisaCodigo) {
+          return { ok: false, erroNoCodigo: e.message };
+        }
+        return {
+          ok: false,
+          erro: e.tipo === "rede" ? "Sem conexão — o código NÃO foi conferido. Tente de novo." : e.message,
+        };
+      }
+      return { ok: false, erro: (e as Error)?.message };
+    } finally {
+      baixandoAgora.current.delete(p.id);
+    }
   }
 
   async function baixar(p: Pedido, extra: ExtraDaBaixa): Promise<ResultadoDaBaixa> {
@@ -516,7 +551,13 @@ export default function Entregas() {
 
       {/* Montado só enquanto aberto: cada entrega começa do primeiro passo. */}
       {emEntrega ? (
-        <FluxoDaEntrega pedido={emEntrega} formas={formas} aoFechar={() => setEmEntrega(null)} baixar={baixar} />
+        <FluxoDaEntrega
+          pedido={emEntrega}
+          formas={formas}
+          aoFechar={() => setEmEntrega(null)}
+          baixar={baixar}
+          conferirCodigo={conferirCodigo}
+        />
       ) : null}
 
       <LeitorDeQr
