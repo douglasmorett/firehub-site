@@ -3249,6 +3249,52 @@ export default function ChatbotHubClient() {
               </div>
             </div>
 
+            {/* CONFERIR CADA PEDIDO DO ROBÔ ANTES DA COZINHA (lib/finalizar-rascunho.ts).
+                Pizzaria 17 (08/10/2026): o robô atende tudo, mas a loja quer
+                olhar cada pedido antes de entrar. Ausente = NÃO (como era). */}
+            {config.aiOrderingEnabled !== false && (
+              <div style={{ marginBottom: "1.25rem", padding: "14px", background: "#F5F3FF", borderRadius: "14px", border: "1.5px solid #DDD6FE" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#4C1D95" }}>
+                      🧾 Conferir cada pedido do robô antes de ir para a cozinha?
+                    </div>
+                    <p style={{ fontSize: "0.76rem", color: "#334155", marginTop: "4px", lineHeight: "1.45" }}>
+                      <strong>SIM:</strong> o robô atende e tira o pedido inteiro, mas ele só entra na produção depois que alguém da loja aceitar.
+                      Na tela de <strong>Pedidos</strong> aparece um aviso roxo com tudo o que o cliente pediu e o WhatsApp dele, com
+                      <strong> Aceitar</strong>, <strong>Editar</strong> ou <strong>Não aceitar</strong>. O cliente recebe o resumo na hora e a confirmação quando a loja aceitar.
+                      <br />
+                      <strong>NÃO:</strong> o pedido do robô entra direto, como os do site.
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", flexShrink: 0, marginTop: "4px" }}>
+                    <button
+                      onClick={() => handleSaveConfig({ conferirPedidoDoRobo: true })}
+                      style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: config.conferirPedidoDoRobo === true ? "#6D28D9" : "#E2E8F0",
+                      color: config.conferirPedidoDoRobo === true ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                    >
+                      SIM
+                    </button>
+                    <button
+                      onClick={() => handleSaveConfig({ conferirPedidoDoRobo: false })}
+                      style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: config.conferirPedidoDoRobo !== true ? "#64748B" : "#E2E8F0",
+                      color: config.conferirPedidoDoRobo !== true ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                    >
+                      NÃO
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* CHAVE PIX DA LOJA, QUE O ROBÔ MANDA AO CLIENTE */}
             <PixDaLojaNoRobo
               valor={config.pixDaLoja}
@@ -3392,6 +3438,47 @@ export default function ChatbotHubClient() {
                     }}
                   >
                     SÓ DELIVERY
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* FAZ RESERVA DE MESA? (Pizzaria 17, 08/10/2026: o robô dizia que
+                não fazia). SIM: ele diz que faz e chama a equipe para anotar.
+                NÃO: diz que não faz. Sem resposta: diz que vai confirmar. */}
+            <div style={{ marginBottom: "1.25rem", padding: "12px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A" }}>
+                    📅 Seu restaurante faz reserva de mesa?
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "2px", lineHeight: 1.45 }}>
+                    <strong>SIM:</strong> quando o cliente pedir reserva, o robô diz que a loja faz e chama alguém da equipe para anotar (dia, horário e número de pessoas).{" "}
+                    <strong>NÃO:</strong> ele avisa com educação que a loja não trabalha com reserva.
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                  <button
+                    onClick={() => handleSaveConfig({ fazReservaDeMesa: true })}
+                    style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: config.fazReservaDeMesa === true ? "#1C1917" : "#E2E8F0",
+                      color: config.fazReservaDeMesa === true ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    SIM
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ fazReservaDeMesa: false })}
+                    style={{
+                      padding: "8px 16px", borderRadius: "8px", border: "none",
+                      background: config.fazReservaDeMesa === false ? "#64748B" : "#E2E8F0",
+                      color: config.fazReservaDeMesa === false ? "#fff" : "#475569",
+                      fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                    }}
+                  >
+                    NÃO
                   </button>
                 </div>
               </div>

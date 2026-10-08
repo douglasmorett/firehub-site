@@ -115,6 +115,9 @@ export async function POST(req: NextRequest) {
       "active", "personality", "customPrompt", "agentName", "storeType",
       "acceptsPickup", "externalMenuUrl", "autoAcceptOrders",
       "aiOrderingEnabled", "stopOnHumanRequest",
+      // A loja confere cada pedido do robô antes da cozinha (lib/finalizar-rascunho.ts)
+      // e diz se faz reserva de mesa (o robô fala que faz e chama a equipe).
+      "conferirPedidoDoRobo", "fazReservaDeMesa",
       "instantCoupon", "instantCouponCode", "instantCouponValue",
       "phone", "connected", "connectedAt",
       // Campanhas de recuperação (7/15/30 dias) e cupons.

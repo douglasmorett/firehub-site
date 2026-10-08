@@ -144,6 +144,28 @@ export function marcarAguardandoLoja(notas: unknown, motivo: string): string {
   return `${MARCA_AGUARDANDO_LOJA}: ${porque}${resto ? ` · ${resto}` : ""}`;
 }
 
+// ── "CONFERIR CADA PEDIDO DO ROBÔ" ──────────────────────────────────────────
+//
+// Pizzaria 17 (08/10/2026): o robô atende e tira o pedido inteiro, mas a loja
+// quer conferir CADA um antes de ele ir para a cozinha — olhar a conversa,
+// corrigir o que precisar e só então aceitar. Com a opção ligada
+// (`chatbotConfig.conferirPedidoDoRobo`), o fechamento do robô não vira
+// pedido: o rascunho fica completo e marcado com este motivo, e o painel abre
+// o aviso roxo "Pedido novo do robô". Ausente = desligada (como era).
+
+export const MOTIVO_CONFERIR_PEDIDO = "conferir o pedido do robô";
+
+/** A loja pediu para conferir cada pedido do robô antes de ele entrar? */
+export function conferePedidoDoRobo(chatbotConfig: unknown): boolean {
+  const c: any = chatbotConfig && typeof chatbotConfig === "object" ? chatbotConfig : {};
+  return c.conferirPedidoDoRobo === true;
+}
+
+/** O rascunho está parado só para a conferência da loja (não por endereço)? */
+export function esperandoConferencia(pedido: { status?: unknown; notes?: unknown } | null | undefined): boolean {
+  return motivoDeAguardarLoja(pedido) === MOTIVO_CONFERIR_PEDIDO;
+}
+
 /** Este rascunho está esperando a loja? O motivo, ou null. */
 export function motivoDeAguardarLoja(pedido: { status?: unknown; notes?: unknown } | null | undefined): string | null {
   if (!pedido || String(pedido.status || "").toUpperCase() !== "CRIANDO_IA") return null;

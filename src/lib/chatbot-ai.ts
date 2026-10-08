@@ -49,7 +49,7 @@ import { normalizarConfigFiscal } from "./fiscal-config";
 import { lerDocumentoDoCliente } from "./documento-do-cliente";
 import { conferirEstoque, estoqueDaLojaOuVazio } from "./estoque-restante";
 import { STATUS_QUE_NAO_CONTAM } from "./estoque-do-cardapio";
-import { marcarAguardandoLoja } from "./finalizar-rascunho";
+import { conferePedidoDoRobo, esperandoConferencia, MARCA_AGUARDANDO_LOJA, marcarAguardandoLoja, MOTIVO_CONFERIR_PEDIDO } from "./finalizar-rascunho";
 import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-fonte";
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
@@ -1508,7 +1508,7 @@ ${prazoDaLoja.regra}
     - VOCÊ SÓ PODE OFERECER E REGISTRAR O QUE ESTÁ NA LISTA OFICIAL FORNECIDA. SE O CLIENTE PEDIR UM PRODUTO OU SABOR QUE NÃO EXISTE AQUI, NEGUE COM EDUCAÇÃO E OFEREÇA AS OPÇÕES DISPONÍVEIS.
     - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
 10b. O QUE NÃO ESTÁ ESCRITO, VOCÊ NÃO SABE (serviços e funcionamento da loja):
-    - Rodízio, buffet, self-service, reserva de mesa, estacionamento, música ao vivo, espaço kids, happy hour, Wi-Fi, festa ou evento, e qualquer outra coisa sobre COMO a loja funciona: só afirme se estiver ESCRITO em DADOS DA LOJA, no cardápio ou nas instruções da loja abaixo.
+    - Rodízio, buffet, self-service, ${typeof (chatbotConfig as any).fazReservaDeMesa === "boolean" ? "" : "reserva de mesa, "}estacionamento, música ao vivo, espaço kids, happy hour, Wi-Fi, festa ou evento, e qualquer outra coisa sobre COMO a loja funciona: só afirme se estiver ESCRITO em DADOS DA LOJA, no cardápio ou nas instruções da loja abaixo.
     - Não deduza pelo tipo de loja. Pizzaria com salão NÃO quer dizer que tem rodízio; ter endereço NÃO quer dizer que tem estacionamento.
     - Se não estiver escrito, responda que essa informação você não tem aqui e que vai chamar alguém da equipe para confirmar — e inclua no final a marca [[CHAMAR_ATENDENTE]]. Não diga "sim, temos" nem "não temos" por palpite.
 11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
@@ -1526,10 +1526,20 @@ ${prazoDaLoja.regra}
     - NUNCA DEIXE DE RESPONDER NENHUMA MENSAGEM SÓ PORQUE A LOJA OU O CAIXA ESTÁ FECHADO.
     - Se o cliente mandar mensagem com a loja fechada, responda normalmente com toda a atenção e simpatia, tire as dúvidas e informe UMA VEZ na conversa a que horas a loja abre novamente.
 17. QUANDO O CLIENTE PERGUNTAR O ENDEREÇO / LOCALIZAÇÃO OU SE PODE COMER NO LOCAL:
-${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESENCIAL / FÍSICA!
-    - Responda exatamente: "Temos loja física sim! Nosso endereço é: ${user.storeAddress || user.city || ""}" (SEM NENHUM LINK!).${(user.storeAddress || user.city) ? "" : " ⚠️ A loja NÃO cadastrou o endereço: NÃO invente rua nem bairro — diga que confirma o endereço com a equipe e já chame uma pessoa."}` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
+${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESENCIAL / FÍSICA, COM SALÃO ABERTO PARA COMER NO LOCAL!
+    - Responda exatamente: "Temos loja física sim, com salão aberto pra você comer aqui! Nosso endereço é: ${user.storeAddress || user.city || ""}" (SEM NENHUM LINK!).
+    - Se perguntarem se podem comer no local, se tem salão ou mesa: diga que SIM, que o salão está aberto, e informe o horário de funcionamento de hoje pelo "Quadro Geral de Horários" em DADOS DA LOJA. NUNCA diga que a loja é só delivery.${(user.storeAddress || user.city) ? "" : " ⚠️ A loja NÃO cadastrou o endereço: NÃO invente rua nem bairro — diga que confirma o endereço com a equipe e já chame uma pessoa."}` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
     - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Não temos atendimento no local! 😊"`}
-18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA, FRETE OU SE ENTREGAMOS EM UM BAIRRO/RUA:
+${(chatbotConfig as any).fazReservaDeMesa === true
+  ? `17b. RESERVA DE MESA — A LOJA FAZ RESERVA DE MESA:
+    - Se o cliente pedir reserva (mesa, aniversário, grupo, festa no salão), diga com alegria que fazemos reserva sim! Pergunte o dia, o horário e quantas pessoas, se ele ainda não disse, e avise que vai chamar alguém da equipe para confirmar a reserva. Inclua no final a marca [[CHAMAR_ATENDENTE]].
+    - NUNCA diga que a loja não faz reserva e NUNCA confirme a reserva sozinho: quem confirma é a equipe.
+`
+  : (chatbotConfig as any).fazReservaDeMesa === false
+  ? `17b. RESERVA DE MESA — A LOJA NÃO FAZ RESERVA:
+    - Se o cliente pedir reserva, diga com educação que a loja não trabalha com reserva de mesa${chatbotConfig.storeType === "PHYSICAL" ? ", mas que o salão está aberto nos horários de funcionamento (informe o de hoje)" : ""}.
+`
+  : ""}18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA, FRETE OU SE ENTREGAMOS EM UM BAIRRO/RUA:
     - REGRA INFALÍVEL DE ÁREA DE ENTREGA:
       a) Consulte o campo "VALIDAÇÃO DA ÁREA DE ENTREGA" abaixo, quando ele existir (o sistema o monta quando o cliente manda um endereço${modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" ? " ou a localização" : ""}).
       b) Se ele disser "A LOJA ATENDE", diga que entregamos sim, com alegria, e informe a taxa que está lá.
@@ -2275,6 +2285,8 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   payload: orderPayload,
                   storeProducts: products,
                   autoAccept: user.chatbotConfig ? (user.chatbotConfig as any).autoAcceptOrders === true : false,
+                  // A loja confere cada pedido antes de entrar (lib/finalizar-rascunho.ts).
+                  conferirAntes: conferePedidoDoRobo(user.chatbotConfig),
                   minimumOrderValue,
                   minimumOrderValuePickup,
                   lojaAberta: estadoAtualDaLoja.aberta,
@@ -2315,6 +2327,9 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           /pedido\s+(?:foi\s+)?(?:confirmado|registrado|anotado|fechado)|(?:enviado|foi|está|esta|já\s+est[áa])\s+(?:para|pra|na)\s+(?:a\s+)?(?:nossa\s+)?cozinha/i.test(cleanText);
 
         const gravouFinalizado = resultadoDoSync?.gravado === true && resultadoDoSync.finalizado;
+        // Fechado pelo cliente, mas parado para a loja conferir: o resumo vai
+        // igual, com o título "assim que a loja aceitar" e sem número do dia.
+        const esperandoALoja = resultadoDoSync?.gravado === true && resultadoDoSync.aguardandoConferencia === true;
 
         // ── A COMANDA DO CLIENTE SAI DO PEDIDO GRAVADO (lib/comanda-do-robo.ts) ──
         //
@@ -2324,7 +2339,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         // repetida (o "obrigado" depois do fechamento) não manda de novo.
         // Falhou a leitura? Fica o caminho antigo logo abaixo.
         let comandaDoCliente: string | null = null;
-        if (gravouFinalizado && resultadoDoSync?.gravado === true && !resultadoDoSync.repetido) {
+        if ((gravouFinalizado || esperandoALoja) && resultadoDoSync?.gravado === true && !resultadoDoSync.repetido) {
           try {
             const gravado = await prisma.customerOrder.findUnique({
               where: { id: resultadoDoSync.orderId },
@@ -2363,7 +2378,17 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           }
         }
 
-        if (gravouFinalizado && resultadoDoSync?.gravado === true && comandaDoCliente) {
+        if (esperandoALoja && resultadoDoSync?.gravado === true) {
+          // A LOJA CONFERE ANTES: nada de "foi para a cozinha" nem chave Pix —
+          // a loja ainda pode corrigir ou não aceitar. O cliente recebe o
+          // resumo e, quando a loja aceitar, o aviso de pedido recebido
+          // (api/store/orders/[id]/finalizar-rascunho).
+          cleanText =
+            !resultadoDoSync.repetido && comandaDoCliente
+              ? comandaDoCliente
+              : "Seu pedido já está com a loja para conferir ✅ Assim que aceitarem, você recebe a confirmação por aqui! 😉";
+          console.log(`[Chatbot AI] ⏳ Pedido ${resultadoDoSync.orderId} fechado pelo cliente, esperando a loja conferir (R$ ${resultadoDoSync.total.toFixed(2)}).`);
+        } else if (gravouFinalizado && resultadoDoSync?.gravado === true && comandaDoCliente) {
           cleanText = comandaDoCliente;
           if (pixDaLoja && pagaNoPix(resultadoDoSync.formaDePagamento)) {
             cleanText += textoDoPixNoPedido(pixDaLoja, resultadoDoSync.total);
@@ -2606,6 +2631,9 @@ type SyncResultado =
       alterado?: boolean;
       /** A tag final veio repetida e nada mudou: o cliente já recebeu a confirmação. */
       repetido?: boolean;
+      /** O cliente fechou, mas a loja confere cada pedido do robô: ficou como
+       *  rascunho esperando o aceite (lib/finalizar-rascunho.ts). */
+      aguardandoConferencia?: boolean;
     }
   | {
       gravado: false;
@@ -2700,6 +2728,7 @@ async function syncAiOrderToDatabase({
   cashback,
   remoteJid,
   textosDoCliente,
+  conferirAntes,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -2736,6 +2765,8 @@ async function syncAiOrderToDatabase({
   remoteJid?: string | null;
   /** O que o cliente escreveu nesta conversa: prova de que o cupom estratégico veio dele. */
   textosDoCliente?: string[];
+  /** A loja confere cada pedido do robô antes de entrar (`chatbotConfig.conferirPedidoDoRobo`). */
+  conferirAntes?: boolean;
 }): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
@@ -3771,6 +3802,29 @@ async function syncAiOrderToDatabase({
     ...(i.menuProductId ? { menuProduct: { connect: { id: i.menuProductId } } } : {}),
   });
 
+  // ── A LOJA CONFERE CADA PEDIDO DO ROBÔ (lib/finalizar-rascunho.ts) ──────
+  //
+  // O cliente fechou, mas a loja quer ver antes de ir para a cozinha
+  // (Pizzaria 17, 08/10/2026). O pedido é gravado COMPLETO, só que continua
+  // rascunho: sem número do dia, sem comanda, fora do KDS — e com a marca que
+  // abre o aviso roxo no painel. Pedido JÁ enviado que o cliente alterou não
+  // volta a esperar: ele já foi aceito, e a alteração segue o caminho de sempre.
+  const segurarParaConferir =
+    isFinal && conferirAntes === true && (!existingDraft || String(existingDraft.status).toUpperCase() === "CRIANDO_IA");
+  const fechaDeVerdade = isFinal && !segurarParaConferir;
+  const statusParaGravar = segurarParaConferir ? "CRIANDO_IA" : finalStatus;
+  const notasParaGravar = segurarParaConferir ? marcarAguardandoLoja(notesText, MOTIVO_CONFERIR_PEDIDO) : notesText;
+  // Já estava esperando a conferência e a tag veio igual (o "obrigado"): o
+  // cliente já recebeu o resumo, não manda de novo.
+  const assinaturaDosItens = (itens: any[]) =>
+    itens.map((i) => `${i.quantity}x${i.productName}|${Number(i.price) || 0}`).sort().join(";");
+  const conferenciaRepetida =
+    segurarParaConferir &&
+    !!existingDraft &&
+    esperandoConferencia(existingDraft) &&
+    Math.abs((Number(existingDraft.totalAmount) || 0) - totalOrderAmount) < 0.005 &&
+    assinaturaDosItens((existingDraft as any).items || []) === assinaturaDosItens(orderItemsData as any[]);
+
   // Preenchidos pelo ramo que efetivamente gravar — são a prova que sobe para
   // o chamador e vira o "nº do pedido" que o cliente recebe.
   let pedidoGravadoId = "";
@@ -3790,7 +3844,7 @@ async function syncAiOrderToDatabase({
     }
 
     let finalDailyNumber = existingDraft.dailyOrderNumber;
-    if (isFinal && !finalDailyNumber) {
+    if (fechaDeVerdade && !finalDailyNumber) {
       finalDailyNumber = await generateDailyOrderNumber(franchiseeId);
     }
 
@@ -3812,18 +3866,18 @@ async function syncAiOrderToDatabase({
         totalAmount: totalOrderAmount,
         // Cinto e suspensório: `destinoDaTag` já não deixa uma tag não-final
         // chegar aqui com um pedido enviado. Se um dia deixar, o status fica.
-        status: !isFinal && existingDraft.status !== "CRIANDO_IA" ? existingDraft.status : finalStatus,
+        status: !isFinal && existingDraft.status !== "CRIANDO_IA" ? existingDraft.status : statusParaGravar,
         ...descontoParaGravar,
         ...cashbackParaGravar,
-        notes: notesText,
-        ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
+        notes: notasParaGravar,
+        ...(fechaDeVerdade && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         // O pedido nasce AGORA, quando o cliente confirma — não quando o robô
         // abriu o rascunho na primeira mensagem. Com o createdAt do rascunho,
         // uma conversa de 40 minutos entregava à impressão um pedido "de 40
         // minutos atrás": o ouvinte do painel só imprime o que tem menos de
         // 30 min, e a fila da nuvem só lê 2 h. O número do dia já era gerado
         // aqui, no fechamento; a data acompanha.
-        ...(isFinal && existingDraft.status === "CRIANDO_IA" ? { createdAt: new Date() } : {}),
+        ...(fechaDeVerdade && existingDraft.status === "CRIANDO_IA" ? { createdAt: new Date() } : {}),
         // ALTERAÇÃO DE PEDIDO JÁ ENVIADO PRECISA VOLTAR AO PAPEL. A fila
         // automática de impressão ignora pedido com `printedAt` carimbado
         // (print-queue/route.ts): sem zerar, o sabor trocado, o "sem cebola" e
@@ -3837,11 +3891,11 @@ async function syncAiOrderToDatabase({
     });
     pedidoGravadoId = existingDraft.id;
     numeroDoPedido = finalDailyNumber ?? null;
-    console.log(`[Chatbot AI Order Sync] 🔄 Pedido IA atualizado (${existingDraft.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
+    console.log(`[Chatbot AI Order Sync] 🔄 Pedido IA atualizado (${existingDraft.id}): status=${statusParaGravar}${segurarParaConferir ? " (esperando a loja conferir)" : ""}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee})`);
   } else {
     // Cria novo pedido rascunho
     let finalDailyNumber = null;
-    if (isFinal) {
+    if (fechaDeVerdade) {
       finalDailyNumber = await generateDailyOrderNumber(franchiseeId);
     }
 
@@ -3870,9 +3924,9 @@ async function syncAiOrderToDatabase({
         ...(cashbackUsado > 0 ? { cashbackUsed: cashbackParaGravar.cashbackUsed } : {}),
         ...(cashbackGerado > 0 ? { cashbackEarned: cashbackParaGravar.cashbackEarned } : {}),
         source: "WHATSAPP_IA",
-        status: finalStatus,
-        notes: notesText,
-        ...(isFinal && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
+        status: statusParaGravar,
+        notes: notasParaGravar,
+        ...(fechaDeVerdade && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         items: {
           create: orderItemsData.map(itemParaOBanco),
         },
@@ -3880,11 +3934,12 @@ async function syncAiOrderToDatabase({
     });
     pedidoGravadoId = newOrder.id;
     numeroDoPedido = finalDailyNumber ?? null;
-    console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${finalStatus}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee}, ${deliveryType})`);
+    console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${statusParaGravar}${segurarParaConferir ? " (esperando a loja conferir)" : ""}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee}, ${deliveryType})`);
   }
 
-  // 🖨️ APENAS SE O PEDIDO FOI TOTALMENTE FINALIZADO E CONFIRMADO PELO CLIENTE:
-  if (isFinal) {
+  // 🖨️ APENAS SE O PEDIDO FOI TOTALMENTE FINALIZADO E CONFIRMADO PELO CLIENTE
+  // (e a loja não pediu para conferir antes — aí a comanda sai no aceite):
+  if (fechaDeVerdade) {
     try {
       // O id EXATO do pedido que acabou de ser gravado.
       //
@@ -3913,8 +3968,10 @@ async function syncAiOrderToDatabase({
     gravado: true,
     orderId: pedidoGravadoId,
     numero: numeroDoPedido,
-    status: finalStatus,
-    finalizado: isFinal,
+    status: statusParaGravar,
+    finalizado: fechaDeVerdade,
+    ...(segurarParaConferir ? { aguardandoConferencia: true } : {}),
+    ...(conferenciaRepetida ? { repetido: true } : {}),
     itens: orderItemsData.length,
     total: totalOrderAmount,
     ehEntrega: deliveryType === "DELIVERY",
@@ -3942,9 +3999,19 @@ export async function checkAndCleanupStaleAiDrafts(franchiseeIdFilter?: string) 
     const now = Date.now();
     const twentyMinAgo = new Date(now - 20 * 60 * 1000); // 20 minutos sem interagir
 
+    // O pedido parado para a LOJA conferir (lib/finalizar-rascunho.ts) não é
+    // cliente sumido: o cliente fechou e espera o aceite. Cancelá-lo aos 20
+    // min, no meio do movimento, jogaria fora um pedido feito. Ele só sai
+    // depois de 3 h esquecido.
+    const tresHorasAtras = new Date(now - 3 * 60 * 60 * 1000);
     const whereCondition: any = {
       status: "CRIANDO_IA",
-      updatedAt: { lte: twentyMinAgo }
+      updatedAt: { lte: twentyMinAgo },
+      OR: [
+        { notes: null },
+        { NOT: { notes: { startsWith: `${MARCA_AGUARDANDO_LOJA}: ${MOTIVO_CONFERIR_PEDIDO}` } } },
+        { updatedAt: { lte: tresHorasAtras } },
+      ],
     };
     if (franchiseeIdFilter) {
       whereCondition.franchiseeId = franchiseeIdFilter;

@@ -30,7 +30,8 @@ import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
 import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperandoLoja";
-import { motivoDeAguardarLoja } from "@/lib/finalizar-rascunho";
+import { esperandoConferencia, motivoDeAguardarLoja } from "@/lib/finalizar-rascunho";
+import AvisoPedidoDoRoboParaConferir from "@/components/customer/AvisoPedidoDoRoboParaConferir";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
@@ -4024,6 +4025,71 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const primeiro = esperando[0];
         if (!primeiro) return null;
         const dispensar = () => setAvisosDispensados((d) => [...d, primeiro.id]);
+        const naoAceitar = async (motivoDaRecusa: string) => {
+          try {
+            const res = await fetch("/api/customer-order/status", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ orderId: primeiro.id, status: "CANCELADO", cancelReason: motivoDaRecusa }),
+            });
+            const d = await res.json().catch(() => null);
+            if (!res.ok) return d?.error || "Não consegui cancelar o pedido.";
+            dispensar();
+            await recarregarPedidos();
+            return null;
+          } catch {
+            return "Não consegui falar com o servidor. Verifique a internet e tente de novo.";
+          }
+        };
+
+        // PEDIDO DO ROBÔ PARA CONFERIR (chatbotConfig.conferirPedidoDoRobo):
+        // o cliente fechou e a loja confere antes da cozinha. Aceitar grava o
+        // pedido como o robô montou — e como ACEITO, porque a loja acabou de
+        // aceitar — mantendo a medida da entrega que ele já fez.
+        if (esperandoConferencia(primeiro)) {
+          const entrega = String(primeiro.deliveryType || "").toUpperCase() === "DELIVERY";
+          return (
+            <AvisoPedidoDoRoboParaConferir
+              key={primeiro.id}
+              pedido={primeiro}
+              quantosMais={esperando.length - 1}
+              onDepois={dispensar}
+              onEditar={() => { dispensar(); setRascunhoParaFinalizar(primeiro.id); }}
+              onNaoAceitar={naoAceitar}
+              onAceitar={async () => {
+                try {
+                  const res = await fetch(`/api/store/orders/${primeiro.id}/finalizar-rascunho`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      tipo: entrega ? "DELIVERY" : "RETIRADA",
+                      customerName: primeiro.customerName || "Cliente WhatsApp",
+                      customerPhone: primeiro.customerPhone || "",
+                      customerAddress: primeiro.customerAddress || "",
+                      taxa: entrega ? Number(primeiro.deliveryFee) || 0 : 0,
+                      paymentMethod: primeiro.paymentMethod || "",
+                      troco: primeiro.changeAmount ?? "",
+                      observacao: "",
+                      aceitar: true,
+                      manterEntregaDoRobo: true,
+                    }),
+                  });
+                  const d = await res.json().catch(() => null);
+                  if (!res.ok || !d?.success) {
+                    const motivo = d?.error || "Não consegui aceitar o pedido.";
+                    return d?.campo ? `${motivo} Use ✏️ Editar para completar.` : motivo;
+                  }
+                  dispensar();
+                  await recarregarPedidos();
+                  return null;
+                } catch {
+                  return "Não consegui falar com o servidor. Verifique a internet e tente de novo.";
+                }
+              }}
+            />
+          );
+        }
+
         return (
           <AvisoPedidoEsperandoLoja
             key={primeiro.id}
@@ -4032,22 +4098,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             quantosMais={esperando.length - 1}
             onAceitar={() => { dispensar(); setRascunhoParaFinalizar(primeiro.id); }}
             onDepois={dispensar}
-            onNaoAceitar={async (motivoDaRecusa) => {
-              try {
-                const res = await fetch("/api/customer-order/status", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ orderId: primeiro.id, status: "CANCELADO", cancelReason: motivoDaRecusa }),
-                });
-                const d = await res.json().catch(() => null);
-                if (!res.ok) return d?.error || "Não consegui cancelar o pedido.";
-                dispensar();
-                await recarregarPedidos();
-                return null;
-              } catch {
-                return "Não consegui falar com o servidor. Verifique a internet e tente de novo.";
-              }
-            }}
+            onNaoAceitar={naoAceitar}
           />
         );
       })()}

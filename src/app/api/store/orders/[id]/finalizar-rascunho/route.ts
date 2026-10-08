@@ -21,6 +21,7 @@ import {
   lerFinalizacao,
   notasDaFinalizacao,
   statusDaFinalizacao,
+  esperandoConferencia,
   totalComATaxa,
 } from "@/lib/finalizar-rascunho";
 
@@ -159,7 +160,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let campos: ReturnType<typeof camposDaEntrega> | null = null;
     let tempoDaEntrega: number | null = null;
     let notasDeEntrega: string[] = [];
-    if (f.tipo === "DELIVERY" && loja) {
+
+    // ── PEDIDO DO ROBÔ CONFERIDO PELA LOJA (chatbotConfig.conferirPedidoDoRobo) ──
+    // Aceitar pelo aviso roxo é a loja dizendo "está certo como o robô montou":
+    // vale a medida da entrega que o robô JÁ fez com o ponto do cliente
+    // (distância, ponto, repasse, prazo). Medir de novo só pelo texto do
+    // endereço daria uma medida pior. Se a loja mudou o endereço, o tipo ou a
+    // taxa, mede como sempre.
+    const mesmoEndereco =
+      String(f.customerAddress || "").trim().toLowerCase() === String(order.customerAddress || "").trim().toLowerCase();
+    const manterEntregaDoRobo =
+      corpo?.manterEntregaDoRobo === true &&
+      f.tipo === "DELIVERY" &&
+      String(order.deliveryType || "").toUpperCase() === "DELIVERY" &&
+      mesmoEndereco &&
+      Math.abs(f.taxa - (Number(order.deliveryFee) || 0)) < 0.005;
+    // Quem confere e aceita está aceitando: entra ACEITO, não volta para Novos
+    // esperando um segundo aceite — vale também pelo "Editar" do mesmo aviso.
+    const aceitoPelaLoja = corpo?.aceitar === true || esperandoConferencia(order);
+
+    if (f.tipo === "DELIVERY" && loja && !manterEntregaDoRobo) {
       try {
         const partes = {
           street: typeof corpo?.customerStreet === "string" ? corpo.customerStreet : undefined,
@@ -203,7 +223,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: `${estoque.mensagem} Ajuste o pedido com o cliente.` }, { status: 409 });
     }
 
-    const status = statusDaFinalizacao(loja?.chatbotConfig);
+    const status = aceitoPelaLoja ? "ACEITO" : statusDaFinalizacao(loja?.chatbotConfig);
     const dailyOrderNumber = order.dailyOrderNumber || (await generateDailyOrderNumber(lojaId));
     const quem = nomeDoOperador(operador);
     const totalAmount = totalComATaxa(order.totalAmount, order.deliveryFee, f.taxa);
@@ -228,7 +248,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         changeAmount: f.troco,
         deliveryFee: f.taxa,
         totalAmount,
-        ...(f.tipo === "DELIVERY"
+        ...(manterEntregaDoRobo
+          ? {}
+          : f.tipo === "DELIVERY"
           ? {
               ...(campos?.deliveryDistance != null ? { deliveryDistance: campos.deliveryDistance } : {}),
               ...(campos?.customerLatLng ? { customerLatLng: campos.customerLatLng as any } : {}),

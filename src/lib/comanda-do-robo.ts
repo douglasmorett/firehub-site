@@ -60,7 +60,7 @@ export type DadosDaComanda = {
 const reais = (n: number) => `R$ ${(Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace(".", ",")}`;
 
 /** As escolhas do item numa linha: "Grande, Bacon x2". */
-function escolhasDoItem(item: ItemDaComanda): string {
+export function escolhasDoItem(item: ItemDaComanda): string {
   const sel = item.comboSelections;
   if (!sel || typeof sel !== "object") return "";
   const partes: string[] = [];
