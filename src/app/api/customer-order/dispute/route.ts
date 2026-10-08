@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { ehDisputaParcial, itensDaDisputa, valorDaDisputaParcial } from "@/lib/cancelamento-parcial";
+import { aplicarCancelamentoParcial } from "@/lib/cancelamento-parcial-no-banco";
 
 export async function PUT(req: Request) {
   const session = await getServerSession(authOptions);
@@ -89,7 +91,9 @@ export async function PUT(req: Request) {
         : Array.isArray(meta.alternatives) ? meta.alternatives : [];
       const altTempo = alternativas.find((a) => String(a?.type || "").toUpperCase() === "ADDITIONAL_TIME");
       const altReembolso = alternativas.find((a) => String(a?.type || "").toUpperCase() === "REFUND");
-      const ehParcial = order.cancelDispute?.parcial === true || String(meta.action || "").toUpperCase() === "PARTIAL_CANCELLATION";
+      // Parcial e reembolso de item são de PARTE do pedido: aceitar nunca cai
+      // no acceptCancellation (o cancelamento do pedido inteiro).
+      const ehParcial = ehDisputaParcial(order.cancelDispute);
       const ehCancelamento = String(meta.action || "").toUpperCase() === "CANCELLATION";
 
       if (action === "update_delivery_time") {
@@ -194,17 +198,32 @@ export async function PUT(req: Request) {
 
   // Update local database
   const dispute = order.cancelDispute || {};
-  const ehParcialLocal = dispute.parcial === true || String(dispute.metadata?.action || "").toUpperCase() === "PARTIAL_CANCELLATION";
+  // Parcial e reembolso de item (lib/cancelamento-parcial.ts → ehDisputaParcial):
+  // a disputa que o poll do painel gravava SEM `parcial` também entra — era ela
+  // que fazia o "Aceitar" mandar o pedido inteiro para Cancelado.
+  const ehParcialLocal = ehDisputaParcial(dispute);
   if (action === "accept" && ehParcialLocal) {
-    // Cancelamento PARCIAL aceito: o pedido NÃO é cancelado — continua como
-    // está, marcado "cancelamento parcial" com os itens e o valor devolvido.
-    const valorReembolso = (Array.isArray(dispute.itens) ? dispute.itens : []).reduce((s: number, i: any) => s + (Number(i.valor) || 0), 0);
+    // Cancelamento PARCIAL aceito: o pedido NÃO é cancelado — continua, com o
+    // total menor e os itens que saíram riscados, e a loja recebe o aviso.
+    const valorReembolso = valorDaDisputaParcial(dispute);
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
         cancelDispute: { ...dispute, pending: false, parcial: true, resolved: "accepted_partial", valorReembolso, resolvedAt: new Date().toISOString(), ifoodResult, ifoodOk, ifoodErro },
       } as any,
     });
+    // O iFood recusou o aceite: lá nada saiu, aqui também não. Quando ele
+    // aceitar (pelo portal ou por prazo), o desfecho corta — mesmo registro.
+    const itens = itensDaDisputa(dispute);
+    if (ifoodOk !== false && (valorReembolso > 0 || itens.length > 0)) {
+      await aplicarCancelamentoParcial(orderId, {
+        id: String(dispute.disputeId || `ifood:${order.ifoodOrderId || orderId}`),
+        canal: "iFood",
+        itens,
+        valor: valorReembolso,
+        motivo: dispute.reason || null,
+      }).catch((e) => console.error("[iFood Dispute] Não consegui registrar o cancelamento parcial:", e?.message));
+    }
   } else if (action === "accept" || (action === "deny_delivery" && String(dispute.metadata?.action || "").toUpperCase() === "CANCELLATION")) {
     await prisma.customerOrder.update({
       where: { id: orderId },

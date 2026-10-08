@@ -31,8 +31,15 @@
  * confirmação — api/customer-order). Cancelar isso não tira nada da cozinha.
  */
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
+import {
+  lerCancelamentosParciais,
+  marcarCienteNosRegistros,
+  semCiente,
+  type ItemCancelado,
+} from "@/lib/cancelamento-parcial";
 
 export type AvisoDeCancelamento = {
   id: string;
@@ -60,6 +67,30 @@ export type AvisoDeDisputa = {
   tipo: string | null;
   abertaEm: string | null;
   expiraEm: string | null;
+};
+
+/**
+ * "Foi feito um cancelamento parcial no seu iFood" (dono, 08/10/2026): o app
+ * tirou parte do pedido, o pedido continua. Um aviso por corte
+ * (lib/cancelamento-parcial.ts), com o "Ciente" gravado no próprio registro.
+ */
+export type AvisoDeCancelamentoParcial = {
+  /** O pedido. */
+  id: string;
+  /** O corte, dentro do pedido (o mesmo pedido pode ter dois). */
+  registroId: string;
+  numero: number | null;
+  /** Onde o pedido entrou (iFood, 99Food...). */
+  canal: string;
+  referencia: string | null;
+  cliente: string;
+  /** Quem cortou: "iFood", "99Food". */
+  quem: string;
+  itens: ItemCancelado[];
+  valor: number;
+  totalAntes: number;
+  totalDepois: number;
+  quando: string;
 };
 
 /** Quem cancelou e NÃO gera aviso: a própria loja e o robô limpando rascunho. */
@@ -97,7 +128,7 @@ export async function avisosDoDia(
   lojaIds: string[],
   fuso: string,
   agora: Date = new Date()
-): Promise<{ cancelamentos: AvisoDeCancelamento[]; disputas: AvisoDeDisputa[] }> {
+): Promise<{ cancelamentos: AvisoDeCancelamento[]; disputas: AvisoDeDisputa[]; parciais: AvisoDeCancelamentoParcial[] }> {
   const inicio = inicioDoExpedienteDaLoja(fuso, agora);
   const semanaAtras = new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000);
   const campos = {
@@ -106,7 +137,7 @@ export async function avisosDoDia(
     ifoodOrderId: true, ifoodReference: true, tableSessionId: true,
   } as const;
 
-  const [cancelados, comDisputa] = await Promise.all([
+  const [cancelados, comDisputa, comParcial] = await Promise.all([
     prisma.customerOrder.findMany({
       where: {
         franchiseeId: { in: lojaIds },
@@ -133,7 +164,46 @@ export async function avisosDoDia(
       select: { ...campos, cancelDispute: true },
       take: 20,
     }),
+    // Cortes do app (lib/cancelamento-parcial.ts). O "sem ciente" e o "do dia"
+    // estão DENTRO da lista JSON — filtrados abaixo; aqui só o que tem corte.
+    (prisma.customerOrder as any).findMany({
+      where: {
+        franchiseeId: { in: lojaIds },
+        createdAt: { gte: semanaAtras },
+        status: { notIn: GRAFIAS_DE_CANCELADO },
+        cancelamentoParcial: { not: Prisma.DbNull },
+      },
+      select: { ...campos, cancelamentoParcial: true },
+      orderBy: { updatedAt: "desc" },
+      take: 30,
+    }) as Promise<any[]>,
   ]);
+
+  // O corte conta do dia em que aconteceu, como o cancelamento: pedido de
+  // ontem não se salva mais e aviso velho ensina a loja a ignorar o som.
+  const parciais: AvisoDeCancelamentoParcial[] = [];
+  for (const o of comParcial) {
+    const c = nomeDoCanal(o);
+    for (const r of semCiente(lerCancelamentosParciais(o.cancelamentoParcial))) {
+      const quando = new Date(r.quando);
+      if (Number.isNaN(quando.getTime()) || quando < inicio) continue;
+      parciais.push({
+        id: o.id,
+        registroId: r.id,
+        numero: o.dailyOrderNumber,
+        canal: c.nome,
+        referencia: c.referencia,
+        cliente: o.customerName || "",
+        quem: r.canal,
+        itens: Array.isArray(r.itens) ? r.itens : [],
+        valor: r.valor,
+        totalAntes: r.totalAntes,
+        totalDepois: r.totalDepois,
+        quando: quando.toISOString(),
+      });
+    }
+  }
+  parciais.sort((a, b) => a.quando.localeCompare(b.quando));
 
   const cancelamentos: AvisoDeCancelamento[] = cancelados.map((o) => {
     const c = nomeDoCanal(o);
@@ -174,7 +244,36 @@ export async function avisosDoDia(
     });
   }
 
-  return { cancelamentos, disputas };
+  return { cancelamentos, disputas, parciais };
+}
+
+/**
+ * "Ciente" do cancelamento parcial: grava no registro do corte quem viu e
+ * quando. Vale para todas as telas. Só pedido das lojas desta conta — o id
+ * vem do navegador.
+ */
+export async function marcarCienteParcial(
+  lojaIds: string[],
+  pedidos: { id: string; registros?: string[] }[],
+  quem: string
+): Promise<number> {
+  const limpos = pedidos
+    .filter((p) => p && typeof p.id === "string" && p.id.length > 0 && p.id.length < 64)
+    .slice(0, 30);
+  let marcados = 0;
+  for (const p of limpos) {
+    const pedido: any = await (prisma.customerOrder as any).findFirst({
+      where: { id: p.id, franchiseeId: { in: lojaIds } },
+      select: { id: true, cancelamentoParcial: true },
+    });
+    if (!pedido) continue;
+    const ids = Array.isArray(p.registros) ? p.registros.filter((r) => typeof r === "string").slice(0, 20) : null;
+    const r = marcarCienteNosRegistros(lerCancelamentosParciais(pedido.cancelamentoParcial), quem, ids);
+    if (r.marcados === 0) continue;
+    await (prisma.customerOrder as any).update({ where: { id: pedido.id }, data: { cancelamentoParcial: r.registros } });
+    marcados += r.marcados;
+  }
+  return marcados;
 }
 
 /**

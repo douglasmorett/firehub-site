@@ -844,6 +844,9 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // `updatedAt` é reescrito pela impressão e não serve de relógio — e o
   // "Ciente" de quem viu, que vale para todas as telas da loja.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelledAt" TIMESTAMP(3)`,
+  // Cancelamento PARCIAL feito pelo app (lib/cancelamento-parcial.ts): os
+  // cortes, o total de antes e de depois e o "Ciente" do aviso.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelamentoParcial" JSONB`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelCienteEm" TIMESTAMP(3)`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "cancelCientePor" TEXT`,
 
