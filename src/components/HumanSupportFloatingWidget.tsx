@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { ehTelaSemWidget } from "@/lib/telas-sem-widget";
 import { useArrastavel } from "@/lib/useArrastavel";
 import { MessageSquare, X, Send, User, CheckCircle2, Bot, ShieldCheck } from "lucide-react";
+import SuporteDoFireHub, { useRespostaNovaDoSuporte } from "@/components/SuporteDoFireHub";
+import { EVENTO_ABRIR_SUPORTE } from "@/lib/abrir-suporte";
 
 export default function HumanSupportFloatingWidget() {
   // Este botão é montado no layout de /store inteiro, então aparecia também na
@@ -25,7 +27,8 @@ export default function HumanSupportFloatingWidget() {
   // A aba de cima mostra quem CHAMOU uma pessoa. Esta mostra todo mundo com
   // quem o robô está falando agora — é o pedido do lojista que quer acompanhar
   // o atendimento sem abrir o WhatsApp no celular.
-  const [aba, setAba] = useState<"fila" | "robo">("fila");
+  // A terceira aba é a loja falando com o FIREHUB (SuporteDoFireHub), não com cliente.
+  const [aba, setAba] = useState<"fila" | "robo" | "suporte">("fila");
   const [conversas, setConversas] = useState<any[]>([]);
   const [conversaAberta, setConversaAberta] = useState<string | null>(null);
   const [mensagens, setMensagens] = useState<any[]>([]);
@@ -174,6 +177,13 @@ export default function HumanSupportFloatingWidget() {
   // aqui em cima, junto dos outros hooks: o `return null` de `escondido` vem
   // depois, e hook que não roda em toda renderização derruba a tela.
   const arraste = useArrastavel();
+  const respostaDoSuporte = useRespostaNovaDoSuporte((open && aba === "suporte") || escondido);
+
+  useEffect(() => {
+    const abrirSuporte = () => { setOpen(true); setAba("suporte"); };
+    window.addEventListener(EVENTO_ABRIR_SUPORTE, abrirSuporte);
+    return () => window.removeEventListener(EVENTO_ABRIR_SUPORTE, abrirSuporte);
+  }, []);
 
   const fetchChats = async () => {
     try {
@@ -297,9 +307,11 @@ export default function HumanSupportFloatingWidget() {
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <MessageSquare size={20} />
               <div>
-                <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>WhatsApp da loja</div>
+                <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>{aba === "suporte" ? "Suporte FireHub" : "WhatsApp da loja"}</div>
                 <div style={{ fontSize: "0.72rem", color: "#FECACA" }}>
-                  {aba === "fila"
+                  {aba === "suporte"
+                    ? "O assistente responde na hora; a equipe, quando precisar"
+                    : aba === "fila"
                     ? chats.length === 0
                       ? "Nenhum cliente aguardando no momento"
                       : `${chats.length} ${chats.length === 1 ? "cliente solicitando" : "clientes solicitando"} atendimento`
@@ -319,6 +331,7 @@ export default function HumanSupportFloatingWidget() {
             {([
               ["fila", `🙋 Chamando${chats.length > 0 ? ` (${chats.length})` : ""}`],
               ["robo", `🤖 Robô atendendo${conversas.length > 0 ? ` (${conversas.length})` : ""}`],
+              ["suporte", `💬 Suporte FireHub${respostaDoSuporte ? " •" : ""}`],
             ] as const).map(([id, rotulo]) => (
               <button
                 key={id}
@@ -340,8 +353,11 @@ export default function HumanSupportFloatingWidget() {
             ))}
           </div>
 
-          {/* ── ABA DO ROBÔ ─────────────────────────────────────────────── */}
-          {aba === "robo" ? (
+          {/* ── ABA DO SUPORTE DO FIREHUB ───────────────────────────────── */}
+          {aba === "suporte" ? (
+            <SuporteDoFireHub />
+          ) : /* ── ABA DO ROBÔ ─────────────────────────────────────────────── */
+          aba === "robo" ? (
             !conversaAberta ? (
               <div style={{ flex: 1, overflowY: "auto", padding: "12px", background: "#F8FAFC" }}>
                 {semAcesso ? (
@@ -629,7 +645,7 @@ export default function HumanSupportFloatingWidget() {
           suporte do FireHub. Este abre o WhatsApp DA LOJA. */}
       {!open && (
         <div
-          onClick={() => setOpen(true)}
+          onClick={() => { setOpen(true); if (respostaDoSuporte && totalUnread === 0) setAba("suporte"); }}
           style={{
             position: "absolute",
             bottom: 14,
@@ -646,7 +662,7 @@ export default function HumanSupportFloatingWidget() {
             cursor: "pointer",
           }}
         >
-          WhatsApp da loja
+          {respostaDoSuporte ? "O suporte respondeu" : "WhatsApp da loja"}
         </div>
       )}
 
@@ -666,7 +682,8 @@ export default function HumanSupportFloatingWidget() {
           // Quem acabou de arrastar a bolinha para o lado nao quer a janela de
           // conversas abrindo em cima do que estava tentando alcancar.
           if (arraste.arrastou()) return;
-          const abrindo = !open; setOpen(abrindo); if (abrindo) { conversaAbertaRef.current = null; setConversaAberta(null); setSelectedChatJid(null); setReplyText(""); setErroDoEnvio(""); if (totalUnread > 0) setAba("fila"); }
+          // Cliente esperando na loja passa na frente da resposta do suporte.
+          const abrindo = !open; setOpen(abrindo); if (abrindo) { conversaAbertaRef.current = null; setConversaAberta(null); setSelectedChatJid(null); setReplyText(""); setErroDoEnvio(""); if (totalUnread > 0) setAba("fila"); else if (respostaDoSuporte) setAba("suporte"); }
         }}
         style={{
           width: "56px",

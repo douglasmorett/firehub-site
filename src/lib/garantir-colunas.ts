@@ -1159,6 +1159,8 @@ const INSTRUCOES_CRM = [
   `CREATE UNIQUE INDEX IF NOT EXISTS "CrmMensagem_waId_key" ON "CrmMensagem"("waId")`,
   `CREATE INDEX IF NOT EXISTS "CrmMensagem_contatoId_criadoEm_idx" ON "CrmMensagem"("contatoId", "criadoEm")`,
   `CREATE INDEX IF NOT EXISTS "CrmMensagem_autor_criadoEm_idx" ON "CrmMensagem"("autor", "criadoEm")`,
+  // O chat de suporte do painel (lib/atendimento/painel.ts) grava na mesma conversa.
+  `ALTER TABLE "CrmMensagem" ADD COLUMN IF NOT EXISTS "canal" TEXT NOT NULL DEFAULT 'WHATSAPP'`,
   `CREATE TABLE IF NOT EXISTS "CrmEvento" (
      "id" TEXT NOT NULL,
      "contatoId" TEXT NOT NULL,

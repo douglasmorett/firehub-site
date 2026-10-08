@@ -20,6 +20,7 @@ export async function PUT(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
   const mudancas: Partial<ConfigDoAtendimento> = {};
   if (typeof b.roboLigado === "boolean") mudancas.roboLigado = b.roboLigado;
+  if (typeof b.roboNoPainel === "boolean") mudancas.roboNoPainel = b.roboNoPainel;
   if (typeof b.nomeDoAtendente === "string") mudancas.nomeDoAtendente = b.nomeDoAtendente;
   if (typeof b.avisarNoWhatsApp === "string") mudancas.avisarNoWhatsApp = b.avisarNoWhatsApp.replace(/[^\d+]/g, "") || null;
   if (typeof b.instrucoesExtras === "string") mudancas.instrucoesExtras = b.instrucoesExtras;

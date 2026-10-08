@@ -38,12 +38,17 @@ export const FERRAMENTAS_COM_EFEITO = new Set(["chamar_pessoa", "montar_loja", "
 
 /** A loja do contato, se o número que está escrevendo é mesmo o dela (o da loja ou o do proprietário). */
 async function lojaDoNumero(contato: Contato) {
-  if (!contato.userId || !contato.telefone) return null;
+  if (!contato.userId) return null;
+  // O chat do painel: quem escreve passou pelo login da loja (painel.ts acha o
+  // contato pelo `userId` da sessão, então o vínculo não veio de e-mail digitado).
+  const peloPainel = (contato as any).canalDaConversa === "PAINEL";
+  if (!peloPainel && !contato.telefone) return null;
   const loja = await prisma.user.findUnique({
     where: { id: contato.userId },
     select: { id: true, email: true, storePhone: true, notificationPhone: true, chatbotConfig: true },
   });
   if (!loja) return null;
+  if (peloPainel) return { id: loja.id, email: loja.email };
   return numerosDaLoja(loja).some((n) => mesmoTelefone(contato.telefone, n)) ? { id: loja.id, email: loja.email } : null;
 }
 
@@ -305,6 +310,7 @@ export async function chamarPessoa(contato: Pick<Contato, "id" | "nome" | "nomeD
   await prisma.crmContato.update({ where: { id: contato.id }, data: { aguardandoHumanoDesde: new Date() } });
   await registrarEvento(contato.id, "ROBO", `Chamou uma pessoa: ${motivo}`, AUTOR_ROBO);
   const quem = contato.nomeDaLoja || contato.nome || "Um contato";
-  const texto = `🙋 ${quem} precisa de uma pessoa no WhatsApp do FireHub.\nMotivo: ${motivo}\nResponda em https://firehubfood.com.br/admin?aba=atendimento&contato=${contato.id}`;
+  const onde = (contato as any).canalDaConversa === "PAINEL" ? "no chat de suporte do painel" : "no WhatsApp do FireHub";
+  const texto = `🙋 ${quem} precisa de uma pessoa ${onde}.\nMotivo: ${motivo}\nResponda em https://firehubfood.com.br/admin?aba=atendimento&contato=${contato.id}`;
   void avisarDono(texto).catch(() => null);
 }

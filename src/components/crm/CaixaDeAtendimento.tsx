@@ -1,7 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, Bot, Check, CheckCheck, Clock, Hand, MessageCircle, PanelRight, Pause, Search, SendHorizontal, Smartphone,
+  ArrowLeft, Bot, Check, CheckCheck, Clock, Hand, MessageCircle, Monitor, PanelRight, Pause, Search, SendHorizontal, Smartphone,
   Store, TriangleAlert, UserRound, X, type LucideIcon,
 } from "lucide-react";
 import type { ContatoDaLista, MensagemDaTela } from "@/lib/crm/serializar";
@@ -58,10 +58,14 @@ export default function CaixaDeAtendimento({
   const [mensagens, setMensagens] = useState<MensagemDaTela[]>([]);
   const [texto, setTexto] = useState("");
   const [assinar, setAssinar] = useState(true);
+  // Por onde a resposta sai: null = por onde o contato escreveu por último (o
+  // WhatsApp do FireHub ou o chat de suporte do painel da loja).
+  const [canalEscolhido, setCanalEscolhido] = useState<"WHATSAPP" | "PAINEL" | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [fichaAberta, setFichaAberta] = useState(false);
   const [roboLigado, setRoboLigado] = useState<boolean | null>(null);
+  const [roboNoPainel, setRoboNoPainel] = useState<boolean | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const colarNoFim = useRef(true);
@@ -88,6 +92,7 @@ export default function CaixaDeAtendimento({
     setContatos(r.dados.contatos || []);
     setTotais({ aguardando: r.dados.totais?.aguardando || 0, naoLidas: r.dados.totais?.naoLidas || 0 });
     setRoboLigado(typeof r.dados.roboLigado === "boolean" ? r.dados.roboLigado : null);
+    setRoboNoPainel(typeof r.dados.roboNoPainel === "boolean" ? r.dados.roboNoPainel : null);
   }, [busca, filtro, vendedorFiltro]);
 
   useEffect(() => {
@@ -115,6 +120,7 @@ export default function CaixaDeAtendimento({
     // (nem habilita o envio) enquanto a nova carrega.
     setDetalhe(null);
     setMensagens([]);
+    setCanalEscolhido(null);
     if (!selecionado) return;
     colarNoFim.current = true;
     setErroEnvio(null);
@@ -160,7 +166,7 @@ export default function CaixaDeAtendimento({
     if (!conteudo || !alvo || alvo !== selecionado || enviando) return;
     setEnviando(true);
     setErroEnvio(null);
-    const r = await api(`/api/crm/contatos/${alvo}/mensagens`, { method: "POST", json: { texto: conteudo, assinar } });
+    const r = await api(`/api/crm/contatos/${alvo}/mensagens`, { method: "POST", json: { texto: conteudo, assinar, canal } });
     setEnviando(false);
     if (abertaRef.current !== alvo) return;
     if (r.dados?.mensagem) {
@@ -184,6 +190,8 @@ export default function CaixaDeAtendimento({
   };
 
   const c = detalhe?.contato;
+  const ultimaEntrada = [...mensagens].reverse().find((m) => m.direcao === "ENTRADA");
+  const canal: "WHATSAPP" | "PAINEL" = canalEscolhido || (ultimaEntrada?.canal === "PAINEL" && c?.temPainel ? "PAINEL" : "WHATSAPP");
   const nomeDe = (x: { nomeDaLoja: string | null; nome: string | null; telefone: string | null }) => x.nomeDaLoja || x.nome || x.telefone || "Contato";
 
   const blocos = useMemo(() => {
@@ -200,8 +208,8 @@ export default function CaixaDeAtendimento({
   // O robô nesta conversa, numa palavra e numa cor (a pílula da faixa).
   const estadoDoRobo = !c
     ? null
-    : roboLigado === false
-      ? { tom: "cinza", texto: "Robô desligado (geral)" }
+    : (ultimaEntrada?.canal === "PAINEL" ? roboNoPainel : roboLigado) === false
+      ? { tom: "cinza", texto: ultimaEntrada?.canal === "PAINEL" ? "Robô do painel desligado (geral)" : "Robô desligado (geral)" }
       : c.roboDesligado
         ? { tom: "cinza", texto: "Robô desligado aqui" }
         : c.aguardandoHumano
@@ -349,6 +357,7 @@ export default function CaixaDeAtendimento({
                           {rotulo && <div className="quem">{Icone && <Icone size={12} strokeWidth={2.4} aria-hidden />}{rotulo}</div>}
                           {comNegrito(m.texto)}
                           <div className="hora">
+                            {m.canal === "PAINEL" && <span title="Pelo chat de suporte do painel da loja" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Monitor size={11} strokeWidth={2.4} aria-hidden /> painel</span>}
                             {m.status === "FALHOU" && <span className="erro-envio"><TriangleAlert size={11} strokeWidth={2.6} aria-hidden /> não enviada</span>}
                             {horaDe(m.criadoEm)}
                             {m.direcao === "SAIDA" && m.status !== "FALHOU" && <CheckCheck size={13} strokeWidth={2.2} aria-label="enviada" />}
@@ -366,7 +375,7 @@ export default function CaixaDeAtendimento({
                   <textarea
                     className="crm-textarea"
                     rows={1}
-                    placeholder={c.podeResponder ? "Escreva a resposta…" : "Este contato não tem WhatsApp."}
+                    placeholder={!c.podeResponder ? "Este contato não tem WhatsApp." : canal === "PAINEL" ? "Escreva a resposta (vai para o chat do painel da loja)…" : "Escreva a resposta…"}
                     aria-label="Resposta"
                     disabled={!c.podeResponder}
                     value={texto}
@@ -379,7 +388,29 @@ export default function CaixaDeAtendimento({
                 </div>
                 <div className="crm-compor-dica">
                   <span>Enter envia · Shift+Enter pula linha</span>
-                  {modo === "VENDEDOR" && (
+                  {c.temPainel && (
+                    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }} role="radiogroup" aria-label="Responder por">
+                      Responder por
+                      {(["WHATSAPP", "PAINEL"] as const).map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          role="radio"
+                          aria-checked={canal === k}
+                          onClick={() => setCanalEscolhido(k)}
+                          title={k === "PAINEL" ? "O chat “Suporte FireHub” dentro do painel da loja: não depende do WhatsApp" : "O WhatsApp do FireHub"}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 999, cursor: "pointer", font: "inherit", fontWeight: 700,
+                            border: `1px solid ${canal === k ? "#C2410C" : "#D6D3D1"}`, background: canal === k ? "#FFF7ED" : "transparent", color: canal === k ? "#C2410C" : "inherit",
+                          }}
+                        >
+                          {k === "PAINEL" ? <Monitor size={11} aria-hidden /> : <Smartphone size={11} aria-hidden />}
+                          {k === "PAINEL" ? "Painel" : "WhatsApp"}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                  {modo === "VENDEDOR" && canal === "WHATSAPP" && (
                     <label style={{ display: "inline-flex", gap: 5, alignItems: "center", cursor: "pointer" }}>
                       <input type="checkbox" checked={assinar} onChange={(e) => setAssinar(e.target.checked)} /> assinar com meu nome
                     </label>

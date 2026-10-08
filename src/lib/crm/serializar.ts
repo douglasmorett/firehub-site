@@ -41,7 +41,9 @@ export function contatoCompleto(c: any, nomes: Map<string, string>) {
     notas: (c.notas as string | null) || null,
     resumo: (c.resumo as string | null) || null,
     motivoPerda: (c.motivoPerda as string | null) || null,
-    podeResponder: !!(c.jid || c.telefone),
+    podeResponder: !!(c.jid || c.telefone || c.userId),
+    /** Tem loja: dá para responder pelo chat de suporte do painel (lib/atendimento/painel.ts). */
+    temPainel: !!c.userId,
   };
 }
 
@@ -56,6 +58,7 @@ export function mensagemParaTela(m: any) {
     tipo: m.tipo as string,
     texto: m.texto as string,
     status: m.status as string,
+    canal: (m.canal === "PAINEL" ? "PAINEL" : "WHATSAPP") as "WHATSAPP" | "PAINEL",
     criadoEm: new Date(m.criadoEm).toISOString(),
   };
 }

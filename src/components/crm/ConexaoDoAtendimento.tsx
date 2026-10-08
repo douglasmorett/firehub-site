@@ -5,6 +5,7 @@ import { Modal, api, haQuanto } from "./comum";
 
 type Config = {
   roboLigado: boolean;
+  roboNoPainel: boolean;
   nomeDoAtendente: string;
   avisarNoWhatsApp: string | null;
   instrucoesExtras: string;
@@ -47,12 +48,15 @@ export default function ConexaoDoAtendimento() {
     return () => clearInterval(i);
   }, [carregar]);
 
-  const alternarRobo = async () => {
+  const alternarRobo = async (onde: "roboLigado" | "roboNoPainel") => {
     if (!config) return;
-    const ligar = !config.roboLigado;
-    if (ligar && !confirm("Ligar o robô? A partir de agora ele responde sozinho as mensagens NOVAS que chegarem no WhatsApp do FireHub. Quando alguém da equipe responde, ele fica quieto naquela conversa (10 min depois do celular, 2 h depois da tela).")) return;
+    const ligar = !config[onde];
+    const aviso = onde === "roboLigado"
+      ? "Ligar o robô? A partir de agora ele responde sozinho as mensagens NOVAS que chegarem no WhatsApp do FireHub. Quando alguém da equipe responde, ele fica quieto naquela conversa (10 min depois do celular, 2 h depois da tela)."
+      : "Ligar o robô no chat do painel? Ele responde sozinho quem escrever pelo \"Suporte FireHub\" dentro do painel da loja, e chama a equipe quando precisar.";
+    if (ligar && !confirm(aviso)) return;
     setTrocandoRobo(true);
-    const r = await api("/api/crm/atendimento", { method: "PUT", json: { roboLigado: ligar } });
+    const r = await api("/api/crm/atendimento", { method: "PUT", json: { [onde]: ligar } });
     setTrocandoRobo(false);
     if (r.ok) setConfig(r.dados.config); else setErro(r.erro);
   };
@@ -76,20 +80,22 @@ export default function ConexaoDoAtendimento() {
         {config && !cx?.conectado && <button className="crm-faixa-btn primario" onClick={() => setAberto(true)}>Conectar</button>}
         <span style={{ flex: 1 }} />
         {config && (
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }} title="Com o robô desligado as conversas só são gravadas; ninguém responde sozinho.">
-            <Bot size={16} aria-hidden style={{ color: config.roboLigado ? "#4ADE80" : "#A8A29E" }} />
-            <span style={{ color: config.roboLigado ? "#F5F0E8" : "#B5ADA5" }}>Robô {config.roboLigado ? "ligado" : "desligado"}</span>
-            <button
-              role="switch"
-              aria-checked={config.roboLigado}
-              aria-label="Ligar ou desligar o robô"
-              disabled={trocandoRobo}
-              onClick={alternarRobo}
-              style={{ width: 44, height: 26, borderRadius: 13, border: "none", cursor: "pointer", position: "relative", background: config.roboLigado ? "#22C55E" : "#57514A", transition: "background-color .15s ease-out" }}
-            >
-              <span style={{ position: "absolute", top: 3, left: config.roboLigado ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#FFFFFF", transition: "left .15s ease-out", boxShadow: "0 1px 2px rgba(0,0,0,.3)" }} />
-            </button>
-          </label>
+          <>
+            <Interruptor
+              rotulo={`Robô no WhatsApp ${config.roboLigado ? "ligado" : "desligado"}`}
+              ligado={config.roboLigado}
+              ocupado={trocandoRobo}
+              dica="Com o robô desligado as conversas do WhatsApp só são gravadas; ninguém responde sozinho."
+              aoTrocar={() => alternarRobo("roboLigado")}
+            />
+            <Interruptor
+              rotulo={`No painel ${config.roboNoPainel ? "ligado" : "desligado"}`}
+              ligado={config.roboNoPainel}
+              ocupado={trocandoRobo}
+              dica="O chat “Suporte FireHub” dentro do painel da loja. Não depende do WhatsApp: continua de pé se o número cair."
+              aoTrocar={() => alternarRobo("roboNoPainel")}
+            />
+          </>
         )}
         <button className="crm-faixa-btn" onClick={() => setAberto(true)}><Settings size={14} aria-hidden /> Conexão e robô</button>
       </div>
@@ -230,5 +236,24 @@ function ModalDaConexao({ config, aoFechar, aoMudar }: { config: Config; aoFecha
         </section>
       </div>
     </Modal>
+  );
+}
+
+function Interruptor({ rotulo, ligado, ocupado, dica, aoTrocar }: { rotulo: string; ligado: boolean; ocupado: boolean; dica: string; aoTrocar: () => void }) {
+  return (
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }} title={dica}>
+      <Bot size={16} aria-hidden style={{ color: ligado ? "#4ADE80" : "#A8A29E" }} />
+      <span style={{ color: ligado ? "#F5F0E8" : "#B5ADA5" }}>{rotulo}</span>
+      <button
+        role="switch"
+        aria-checked={ligado}
+        aria-label={rotulo}
+        disabled={ocupado}
+        onClick={aoTrocar}
+        style={{ width: 44, height: 26, borderRadius: 13, border: "none", cursor: "pointer", position: "relative", background: ligado ? "#22C55E" : "#57514A", transition: "background-color .15s ease-out" }}
+      >
+        <span style={{ position: "absolute", top: 3, left: ligado ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#FFFFFF", transition: "left .15s ease-out", boxShadow: "0 1px 2px rgba(0,0,0,.3)" }} />
+      </button>
+    </label>
   );
 }

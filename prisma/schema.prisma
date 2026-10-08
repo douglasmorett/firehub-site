@@ -2131,6 +2131,8 @@ model CrmMensagem {
   texto     String
   /// OK · FALHOU (o gateway recusou o envio)
   status    String     @default("OK")
+  /// WHATSAPP (o número do FireHub) · PAINEL (o chat de suporte dentro do painel da loja)
+  canal     String     @default("WHATSAPP")
   criadoEm  DateTime   @default(now())
 
   @@index([contatoId, criadoEm])

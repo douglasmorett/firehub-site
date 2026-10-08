@@ -78,7 +78,8 @@ export async function GET(req: NextRequest) {
       naoLidas,
     },
     quem: { tipo: quem.tipo, id: quem.id, nome: quem.nome },
-    // A tela diz "robô atende esta conversa" só se o interruptor geral estiver ligado.
-    roboLigado: (await configDoAtendimento()).roboLigado,
+    // A tela diz "robô atende esta conversa" só se o interruptor geral estiver
+    // ligado — o do WhatsApp ou o do chat do painel, conforme a conversa.
+    ...(await configDoAtendimento().then((c) => ({ roboLigado: c.roboLigado, roboNoPainel: c.roboNoPainel }))),
   });
 }

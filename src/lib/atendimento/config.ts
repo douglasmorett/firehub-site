@@ -31,6 +31,14 @@ export type EstadoDaConexao = {
 
 export type ConfigDoAtendimento = {
   roboLigado: boolean;
+  /**
+   * O robô no chat de suporte do PAINEL (lib/atendimento/painel.ts). Interruptor
+   * próprio: o do WhatsApp desliga junto com o número quando ele cai, e o chat
+   * do painel existe justamente para o lojista ter onde falar nessa hora.
+   * Nasce LIGADO — pedido do Douglas (08/10/2026): o robô atende pelo painel,
+   * manda o tutorial e chama a equipe quando precisa.
+   */
+  roboNoPainel: boolean;
   /** Nome que o robô usa para se apresentar. Vazio = "atendimento do FireHub", sem inventar nome. */
   nomeDoAtendente: string;
   /** WhatsApp pessoal do dono para os avisos (pediu pessoa, número caiu) — sai pelo canal de alertas internos, nunca pelo número do FireHub. */
@@ -45,6 +53,7 @@ export type ConfigDoAtendimento = {
 
 export const CONFIG_PADRAO: ConfigDoAtendimento = {
   roboLigado: false,
+  roboNoPainel: true,
   nomeDoAtendente: "",
   avisarNoWhatsApp: null,
   instrucoesExtras: "",
@@ -59,6 +68,7 @@ function lerConfig(bruto: unknown): ConfigDoAtendimento {
   const texto = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
   return {
     roboLigado: d.roboLigado === true,
+    roboNoPainel: d.roboNoPainel !== false,
     nomeDoAtendente: texto(d.nomeDoAtendente, 40).trim(),
     avisarNoWhatsApp: texto(d.avisarNoWhatsApp, 30).trim() || null,
     instrucoesExtras: texto(d.instrucoesExtras, 4000),

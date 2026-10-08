@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { ehTelaSemWidget } from "@/lib/telas-sem-widget";
 import { useArrastavel } from "@/lib/useArrastavel";
+import { abrirSuporteDoFireHub } from "@/lib/abrir-suporte";
 
 const WA_URL = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20saber%20mais%20sobre%20o%20FireHub";
 
@@ -32,6 +33,10 @@ export default function FloatingContactWidget({
   // sem recarregar derrubava a tela com "rendered fewer hooks than expected".
   // Agora a decisão é só um booleano aqui, e o return acontece depois de todos.
   const escondido = ehTelaSemWidget(pathname);
+  // Dentro do painel o lojista fala com o FireHub pelo chat do próprio painel
+  // (aba "Suporte FireHub" do balão da loja), que não depende do WhatsApp do
+  // FireHub — o número já caiu duas vezes (08/10/2026). O WhatsApp fica de 2ª opção.
+  const noPainel = !!pathname?.startsWith("/store");
 
   // Stop pulsing after first open
   useEffect(() => {
@@ -99,13 +104,32 @@ export default function FloatingContactWidget({
             <span className="fcw-menu-subtitle">Escolha o melhor canal</span>
           </div>
 
+          {noPainel && (
+            <button
+              className="fcw-option"
+              style={{ "--ch-color": "#C92E09", "--delay": "0ms", border: "none", background: "none", cursor: "pointer", width: "100%", textAlign: "left", fontFamily: "inherit", fontSize: "inherit" } as React.CSSProperties}
+              onClick={() => { setOpen(false); abrirSuporteDoFireHub(); }}
+            >
+              <span className="fcw-option-icon" style={{ background: "#C92E09" }}>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden>
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-3 12H7v-2h10v2zm0-3H7V9h10v2zm0-3H7V6h10v2z"/>
+                </svg>
+              </span>
+              <span className="fcw-option-text">
+                <span className="fcw-option-label">Chat de suporte</span>
+                <span className="fcw-option-sub">Aqui no painel, resposta na hora</span>
+              </span>
+              <span className="fcw-option-arrow">→</span>
+            </button>
+          )}
+
           {/* WhatsApp */}
           <a
             href={WA_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="fcw-option"
-            style={{ "--ch-color": "#25D366", "--delay": "0ms" } as React.CSSProperties}
+            style={{ "--ch-color": "#25D366", "--delay": noPainel ? "60ms" : "0ms" } as React.CSSProperties}
             onClick={() => setOpen(false)}
           >
             <span className="fcw-option-icon" style={{ background: "#25D366" }}>
@@ -115,7 +139,7 @@ export default function FloatingContactWidget({
             </span>
             <span className="fcw-option-text">
               <span className="fcw-option-label">WhatsApp</span>
-              <span className="fcw-option-sub">Resposta rápida</span>
+              <span className="fcw-option-sub">{noPainel ? "Se preferir" : "Resposta rápida"}</span>
             </span>
             <span className="fcw-option-arrow">→</span>
           </a>

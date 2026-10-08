@@ -1,6 +1,6 @@
 import { ThinkingLevel, type Content, type Part } from "@google/genai";
 import { prisma } from "@/lib/prisma";
-import { gravarMensagem, mensagensDoContato } from "@/lib/crm/mensagens";
+import { gravarMensagem, mensagensDoContato, type Canal } from "@/lib/crm/mensagens";
 import { ROTULO_DA_ETAPA, type Etapa } from "@/lib/crm/etapas";
 import { configDoAtendimento } from "./config";
 import { clienteDoGemini } from "./gemini";
@@ -128,15 +128,18 @@ export type VideosDaConversa = { manual: string; jaEnviados: string[] };
 
 export function instrucoes(
   config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null, ofereceuMontagem: boolean,
-  lojaInformada: string | null, videos: VideosDaConversa,
+  lojaInformada: string | null, videos: VideosDaConversa, canal: Canal = "WHATSAPP",
 ): string {
+  const onde = canal === "PAINEL" ? "no chat de suporte dentro do painel do FireHub" : "no WhatsApp";
   const apresentacao = config.nomeDoAtendente
-    ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub no WhatsApp.`
-    : "Você é o assistente virtual do atendimento do FireHub no WhatsApp. Você não tem nome próprio: nunca invente um.";
+    ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub ${onde}.`
+    : `Você é o assistente virtual do atendimento do FireHub ${onde}. Você não tem nome próprio: nunca invente um.`;
   const ficha = [
     `- Nome: ${contato.nome || "não sabemos ainda"}`,
     `- Loja: ${contato.nomeDaLoja || "não sabemos ainda"}${contato.cidade ? ` (${contato.cidade})` : ""}`,
-    contato.userId
+    canal === "PAINEL" && contato.userId
+      ? "- É LOJISTA e está escrevendo de DENTRO do painel da loja dele, já logado (a conta está confirmada pelo login). Modo SUPORTE. Ele está com o painel aberto agora: pode dizer \"aí no menu…\", \"clique em…\". Se pedir uma pessoa, a equipe responde aqui mesmo, neste chat."
+      : contato.userId
       ? "- É LOJISTA: a loja dele foi reconhecida pelo número que está escrevendo. Modo SUPORTE."
       : lojaInformada
         ? `- Diz ser da loja ${lojaInformada}, mas escreve de um número que NÃO está cadastrado nela. Modo SUPORTE: ensine o passo a passo normalmente (base e vídeos); só não mostre nem mexa em dados da conta (fatura, pedidos, senha, reiniciar). Não venda nem ofereça cadastro.`
@@ -272,10 +275,10 @@ export function conversaParaORevisor(historico: { direcao: string; autor: string
 
 async function responder(contatoId: string) {
   const config = await configDoAtendimento();
-  if (!config.roboLigado || config.conexao.conectado === false) return;
+  if (!config.roboLigado && !config.roboNoPainel) return;
 
   const contato = await prisma.crmContato.findUnique({ where: { id: contatoId } });
-  if (!contato || contato.roboDesligado || !contato.jid) return;
+  if (!contato || contato.roboDesligado) return;
   if (contato.aguardandoHumanoDesde) return;
   if (contato.roboPausadoAte && contato.roboPausadoAte.getTime() > Date.now()) return;
 
@@ -283,6 +286,13 @@ async function responder(contatoId: string) {
   const ultima = historico[historico.length - 1];
   if (!ultima || ultima.direcao !== "ENTRADA") return;
   if (Date.now() - ultima.criadoEm.getTime() > MENSAGEM_VELHA_MS) return;
+
+  // A resposta vai por onde a pessoa escreveu (painel.ts). O chat do painel não
+  // depende do WhatsApp: é para ele continuar de pé quando o número cai.
+  const canal: Canal = ultima.canal === "PAINEL" ? "PAINEL" : "WHATSAPP";
+  if (canal === "PAINEL" ? !config.roboNoPainel : (!config.roboLigado || config.conexao.conectado === false || !contato.jid)) return;
+  // As ferramentas que mexem na conta aceitam o login do painel como prova da loja (ferramentas.ts).
+  (contato as any).canalDaConversa = canal;
 
   const respostas = await prisma.crmMensagem.count({
     where: { contatoId: contato.id, autor: "ROBO", criadoEm: { gte: new Date(Date.now() - JANELA_DO_LACO_MS) } },
@@ -319,7 +329,7 @@ async function responder(contatoId: string) {
     manual: manualDosVideos(videos),
     jaEnviados: videosJaEnviados(historico).flatMap((id) => videos.filter((v) => v.id === id).map((v) => v.titulo)),
   };
-  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem, lojaInformada, doVideo);
+  const sistema = instrucoes(config, contato, vendedor, linkEnviado?.criadoEm || null, ofereceuMontagem, lojaInformada, doVideo, canal);
   // As mídias que chegaram desde a última resposta vão junto: o robô vê o
   // print, não só a descrição (que fica no texto para as respostas seguintes).
   const ultimaSaida = historico.map((m) => m.direcao).lastIndexOf("SAIDA");
@@ -426,10 +436,11 @@ async function responder(contatoId: string) {
   // uma já chegou enquanto o modelo agia (a confirmação da ação sai mesmo
   // assim), esta resposta entra logo depois da mensagem que ela respondeu.
   const momento = chegouOutra ? new Date(ultima.criadoEm.getTime() + 1) : new Date();
-  const envio = await enviarTexto(contato.jid, resposta, { comoRobo: true });
+  // No painel não há envio: gravar é entregar (o balão lê daqui).
+  const envio = canal === "PAINEL" ? { ok: true as const, erro: undefined } : await enviarTexto(contato.jid!, resposta, { comoRobo: true });
   await gravarMensagem({
     contatoId: contato.id, direcao: "SAIDA", autor: "ROBO", autorNome: config.nomeDoAtendente || "Robô",
-    texto: resposta, status: envio.ok ? "OK" : "FALHOU", criadoEm: momento,
+    texto: resposta, status: envio.ok ? "OK" : "FALHOU", canal, criadoEm: momento,
   });
   if (!envio.ok) console.error(`[Atendimento] Resposta do robô não saiu para ${contato.id}: ${envio.erro}`);
   if (chegouOutra) agendarRespostaDoRobo(contato.id);
