@@ -78,7 +78,7 @@ const nikFim: TelaDoKds[] = [
   { id: "fe", name: "Finalização Esfihas", stage: "finishing", categoryFilter: ["Esfihas Tradicionais", "Esfihas Doces"] },
   { id: "fp", name: "Finalização Pizza", stage: "finishing", categoryFilter: ["Pizzas Tradicionais", "Sabores de Pizza"] },
 ];
-const configNik = { soNaFinalizacao: ["Bebidas", "Molhos"] };
+const configNik = { soNaFinalizacao: ["Bebidas", "Molhos"], prioridade: [] };
 const naFinalizacao = (tela: TelaDoKds, p: { items: Item[] }) =>
   naTela(pedidoNaTela(p, {
     filtroDestaTela: tela.categoryFilter!,
