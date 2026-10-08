@@ -229,6 +229,26 @@ export default function KDSTelaPage() {
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
   // Painel "⏩ Prioridade" do topo: quem fura a fila (kdsConfig.prioridade).
   const [showPrioridade, setShowPrioridade] = useState(false);
+  // ── TELA GIRADA (TV de pé) ───────────────────────────────────────────────
+  // A Smart TV presa na vertical não avisa o navegador que está de pé, e o
+  // KDS abre deitado (Pizzaria 17, 08/10/2026). O botão ⟳ gira o layout
+  // inteiro 90° para um lado ou para o outro — depende de como a TV foi
+  // pendurada. É do APARELHO, não da loja: cada TV tem a sua posição, por isso
+  // fica no localStorage (sem ele, a tela abre deitada como sempre abriu).
+  const [rotacao, setRotacao] = useState<0 | 90 | 270>(0);
+  useEffect(() => {
+    try {
+      const salvo = Number(localStorage.getItem("kds-rotacao"));
+      if (salvo === 90 || salvo === 270) setRotacao(salvo);
+    } catch {}
+  }, []);
+  const girarTela = () => {
+    const proxima = rotacao === 0 ? 90 : rotacao === 90 ? 270 : 0;
+    setRotacao(proxima);
+    try {
+      localStorage.setItem("kds-rotacao", String(proxima));
+    } catch {}
+  };
   const [salvandoPrioridade, setSalvandoPrioridade] = useState(false);
   /** Esta tela existe no painel do KDS (achada pelo id do link ou pelo nome)? */
   const temTelaSalva = useRef(false);
@@ -1184,11 +1204,23 @@ export default function KDSTelaPage() {
         }
       `}</style>
 
-      {/* Fullscreen overlay that covers everything including the store nav */}
+      {/* Fullscreen overlay that covers everything including the store nav.
+          Girada, troca largura por altura e roda a partir do canto: os
+          elementos `fixed` de dentro (rodapé, avisos) giram junto, porque o
+          `transform` vira o referencial deles. */}
       <div
         style={{
           position: "fixed",
-          inset: 0,
+          ...(rotacao === 0
+            ? { inset: 0 }
+            : {
+                top: 0,
+                left: 0,
+                width: "100vh",
+                height: "100vw",
+                transformOrigin: "top left",
+                transform: rotacao === 90 ? "rotate(90deg) translateY(-100%)" : "rotate(-90deg) translateX(-100%)",
+              }),
           zIndex: 9999,
           background: "#0a0a0a",
           fontFamily: FONT,
@@ -1399,6 +1431,30 @@ export default function KDSTelaPage() {
                   ✕ Limpar ({activeCategories.length})
                 </button>
               )}
+
+              {/* ⟳ Girar a tela — discreto: só quem pendurou a TV de pé precisa. */}
+              <button
+                onClick={girarTela}
+                title={rotacao === 0 ? "Girar a tela (TV de pé)" : rotacao === 90 ? "Girar para o outro lado" : "Voltar a tela ao normal"}
+                aria-label="Girar a tela"
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  border: "1px solid #292524",
+                  background: rotacao === 0 ? "transparent" : "#1C1917",
+                  color: rotacao === 0 ? "#64748B" : "#E2E8F0",
+                  fontSize: 16,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontFamily: FONT,
+                  flexShrink: 0,
+                }}
+              >
+                ⟳
+              </button>
 
               {/* ── ⏩ PRIORIDADE NA COZINHA ─────────────────────────────────
                   A regra é da LOJA (vale em todas as telas), mas fica aqui em
