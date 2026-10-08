@@ -176,6 +176,11 @@ export async function avisosDoDia(
       select: { ...campos, cancelamentoParcial: true },
       orderBy: { updatedAt: "desc" },
       take: 30,
+    }).catch((e: any) => {
+      // Falhar aqui não pode calar o cancelamento e a disputa, que são os
+      // avisos que param a cozinha.
+      console.error("[Avisos] Não consegui listar os cancelamentos parciais:", e?.message);
+      return [];
     }) as Promise<any[]>,
   ]);
 
